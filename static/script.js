@@ -555,6 +555,7 @@ $(document).ready(function() {
         const fontSize = fontSizeInput.val();
         const fontFamily = fontFamilySelect.val();
         const modelProvider = $("#modelProvider").val();
+        const customProviderBaseUrl = modelProvider === 'custom'? $("#customProviderBaseUrl").val() : undefined;
         const imageData = images[currentImageIndex].originalDataURL.split(',')[1];
         const promptContent = currentPromptContent;
 
@@ -567,6 +568,7 @@ $(document).ready(function() {
                 textDirection: layoutDirectionSelect.val(),
                 fontSize: fontSize,
                 model_provider: modelProvider,
+                custom_base_url: customProviderBaseUrl,
                 api_key: apiKey,
                 model_name: modelName,
                 fontFamily: fontFamily,
@@ -654,6 +656,7 @@ $(document).ready(function() {
         const fontSize = fontSizeInput.val();
         const fontFamily = fontFamilySelect.val();
         const modelProvider = $("#modelProvider").val();
+        const customProviderBaseUrl = modelProvider === 'custom'? $("#customProviderBaseUrl").val() : undefined;
         const promptContent = currentPromptContent;
         const layoutDirection = layoutDirectionSelect.val();
 
@@ -665,6 +668,7 @@ $(document).ready(function() {
                     textDirection: layoutDirection,
                     fontSize: fontSize,
                     model_provider: modelProvider,
+                    custom_base_url: customProviderBaseUrl,
                     api_key: apiKey,
                     model_name: modelName,
                     fontFamily: fontFamily,
@@ -794,10 +798,24 @@ $(document).ready(function() {
     });
 
 
-    modelProviderSelect.on('change', function() {
+    modelProviderSelect.change(function() {
         updateModelSuggestions();
+        const customSettings = document.getElementById('customProviderSettings');
+        if ($(this).val() === "custom") {
+            customSettings.style.display = "block";
+        } else {
+            customSettings.style.display = "none";
+        }
     });
 
+    $(document).ready(function() {
+        const customSettings = document.getElementById('customProviderSettings');
+        if (modelProviderSelect.val() === "custom") {
+            customSettings.style.display = "block";
+        } else {
+            customSettings.style.display = "none";
+        }
+    });
     function updateModelSuggestions() {
         const provider = modelProviderSelect.val();
         modelSuggestionsDiv.empty();

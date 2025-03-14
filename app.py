@@ -44,6 +44,7 @@ def translate_image():
         target_language = data.get('target_language')
         text_direction = data.get('textDirection')
         fontSize_str = data.get('fontSize')
+        custom_base_url = data.get('custom_base_url')
         api_key = data.get('api_key')
         model_name = data.get('model_name')
         model_provider = data.get('model_provider')
@@ -67,6 +68,7 @@ def translate_image():
             text_direction=text_direction,
             fontSize=fontSize,
             model_provider=model_provider,
+            custom_base_url=custom_base_url,
             api_key=api_key,
             model_name=model_name,
             fontFamily=fontFamily,
