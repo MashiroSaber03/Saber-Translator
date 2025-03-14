@@ -62,7 +62,7 @@
 
 1.  **下载最新版本**:  前往 [Releases](https://github.com/MashiroSaber03/Saber-Translator/releases) 页面，下载最新版本的压缩包。
 2.  **解压**:  将下载的压缩包解压到任意目录。
-3.  **运行程序**:  在解压后的目录中，找到 `Saber-Translator.exe` (或其他可执行文件)，双击运行即可。
+3.  **运行程序**:  在解压后的目录中，找到 `Saber-Translator.exe` ，双击运行即可。
 4.  **开始翻译**:  程序启动后，会自动在浏览器中打开 Saber-Translator 的 Web 界面 (默认地址为 `http://127.0.0.1:5000/`)。
 5.  **后续步骤**:  参考 "快速上手" 部分的说明，上传漫画、配置翻译设置、开始翻译，并查看和下载翻译结果。
 
@@ -97,11 +97,10 @@
     *   楷体 (STKAITI.TTF)
     *   隶书 (STLITI.TTF)
     *   宋体 (STSONG.TTF)
-    *   微软雅黑 (MSYH.TTC)（暂时不可用）
-    *   微软雅黑粗体 (MSYHBD.TTC)（暂时不可用）
+    *   微软雅黑 (MSYH.TTC)
+    *   微软雅黑粗体 (MSYHBD.TTC)
     *   幼圆 (SIMYOU.TTF)
     *   仿宋 (STFANGSO.TTF)
-    *   (用户可以自行添加更多字体到 static 文件夹)
 
 ## ❤️ 贡献
 
@@ -119,7 +118,6 @@
 
 *   **Star 项目**: 如果你觉得 Saber-Translator 对你有帮助，请给项目点个 Star，这将是对我最大的鼓励和支持！
 *   **分享推荐**: 将 Saber-Translator 分享给你的朋友或有需要的人。
-*   **捐赠支持 (未来考虑)**: 未来可能会考虑开通捐赠渠道，感谢你的支持！
 
 ## ✨ Demo (效果示例)
 
@@ -159,7 +157,6 @@
 
 <br/>
 
-**更多 Demo 效果敬请期待...**
 
 ## Disclaimer (免责声明)
 
