@@ -56,6 +56,44 @@
     *   自动记录用户常用的 AI 模型，方便下次快速选择。
     *   提供模型选择建议 (未来功能)。
 
+## ✨ Demo (效果示例)
+
+<div align='center'>
+    <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/interface.png" width="80%" alt="Saber-Translator 翻译界面">
+    <p>_✨ Saber-Translator 翻译界面概览 ✨_</p>
+</div>
+
+<br/>
+
+**翻译效果对比：**
+
+<div align='center'>
+    <table style="width: 80%; border-collapse: collapse;">
+        <tr>
+            <th style="width: 50%; border: 1px solid #ddd; padding: 8px; text-align: center;">翻译前</th>
+            <th style="width: 50%; border: 1px solid #ddd; padding: 8px; text-align: center;">翻译后</th>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/before1.png" width="90%" alt="翻译前图片 1">
+            </td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/after1.png" width="90%" alt="翻译后图片 1">
+            </td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/before2.png" width="90%" alt="翻译前图片 2">
+            </td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/after2.png" width="90%" alt="翻译后图片 2">
+            </td>
+        </tr>
+    </table>
+</div>
+
+<br/>
+
 ## ✨ 使用方式
 
 ### 快速上手
@@ -101,44 +139,6 @@
     *   微软雅黑粗体 (MSYHBD.TTC)
     *   幼圆 (SIMYOU.TTF)
     *   仿宋 (STFANGSO.TTF)
-
-## ✨ Demo (效果示例)
-
-<div align='center'>
-    <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/interface.png" width="80%" alt="Saber-Translator 翻译界面">
-    <p>_✨ Saber-Translator 翻译界面概览 ✨_</p>
-</div>
-
-<br/>
-
-**翻译效果对比：**
-
-<div align='center'>
-    <table style="width: 80%; border-collapse: collapse;">
-        <tr>
-            <th style="width: 50%; border: 1px solid #ddd; padding: 8px; text-align: center;">翻译前</th>
-            <th style="width: 50%; border: 1px solid #ddd; padding: 8px; text-align: center;">翻译后</th>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
-                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/before1.png" width="90%" alt="翻译前图片 1">
-            </td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
-                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/after1.png" width="90%" alt="翻译后图片 1">
-            </td>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
-                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/before2.png" width="90%" alt="翻译前图片 2">
-            </td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
-                <img src="https://github.com/MashiroSaber03/Saber-Translator/raw/main/pic/after2.png" width="90%" alt="翻译后图片 2">
-            </td>
-        </tr>
-    </table>
-</div>
-
-<br/>
 
 ## 💖 赞助 (Sponsorship)
 
