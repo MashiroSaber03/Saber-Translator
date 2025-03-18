@@ -149,8 +149,14 @@
 你可以通过微信或支付宝扫描下方二维码进行赞赏。 你的每一份支持都将用于项目的服务器维护、功能开发和持续优化。
 
 <div align="center">
-    <img src="pic/wechat_qrcode.png" width="200" alt="微信赞赏码">  <img src="pic/alipay_qrcode.png" width="200" alt="支付宝赞赏码">
-    <p align="center">微信赞赏码</p>   <p align="center">支付宝赞赏码</p>
+    <div style="display: inline-block; text-align: center; margin-right: 20px;">
+        <img src="pic/wechat_qrcode.png" width="200" alt="微信赞赏码">
+        <p>微信赞赏码</p>
+    </div>
+    <div style="display: inline-block; text-align: center;">
+        <img src="pic/alipay_qrcode.png" width="200" alt="支付宝赞赏码">
+        <p>支付宝赞赏码</p>
+    </div>
 </div>
 
 <p align="center">
@@ -187,3 +193,4 @@
 <p align="center">
     感谢使用 Saber-Translator！希望它能帮助你更好地享受漫画阅读的乐趣！
 </p>
+
