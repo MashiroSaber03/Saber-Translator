@@ -148,14 +148,14 @@
 
 你可以通过微信或支付宝扫描下方二维码进行赞赏。 你的每一份支持都将用于项目的服务器维护、功能开发和持续优化。
 
-<div align="center">
-    <div style="display: inline-block; text-align: center; margin-right: 20px;">
-        <img src="pic/wechat_qrcode.png" width="200" alt="微信赞赏码">
-        <p>微信赞赏码</p>
+<div style="text-align: center;">
+    <div style="display: inline-block; margin-right: 30px;">
+        <img src="pic/wechat_qrcode.png" width="180" alt="微信赞赏码" style="display: block; margin-bottom: 5px; margin-left: auto; margin-right: auto;">
+        <p style="text-align: center; margin-bottom: 0;">微信赞赏码</p>
     </div>
-    <div style="display: inline-block; text-align: center;">
-        <img src="pic/alipay_qrcode.png" width="200" alt="支付宝赞赏码">
-        <p>支付宝赞赏码</p>
+    <div style="display: inline-block;">
+        <img src="pic/alipay_qrcode.png" width="180" alt="支付宝赞赏码" style="display: block; margin-bottom: 5px; margin-left: auto; margin-right: auto;">
+        <p style="text-align: center; margin-bottom: 0;">支付宝赞赏码</p>
     </div>
 </div>
 
