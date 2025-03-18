@@ -102,23 +102,6 @@
     *   幼圆 (SIMYOU.TTF)
     *   仿宋 (STFANGSO.TTF)
 
-## ❤️ 贡献
-
-欢迎任何形式的贡献，包括但不限于：
-
-*   **代码贡献 (Pull Requests)**: 修复 Bug, 增加新功能, 优化代码性能等。
-*   **问题反馈 (Issues)**: 报告 Bug, 提出功能建议, 分享使用遇到的问题等。
-*   **文档完善**: 改进 README 文档, 编写更详细的使用教程等。
-*   **翻译贡献**: 将 README 文档翻译成其他语言。
-*   **推广宣传**: 向更多人介绍和推荐 Saber-Translator。
-
-如果你希望为 Saber-Translator 做出贡献，请随时提交 Issues 或 Pull Requests！
-
-## 🌟 支持
-
-*   **Star 项目**: 如果你觉得 Saber-Translator 对你有帮助，请给项目点个 Star，这将是对我最大的鼓励和支持！
-*   **分享推荐**: 将 Saber-Translator 分享给你的朋友或有需要的人。
-
 ## ✨ Demo (效果示例)
 
 <div align='center'>
@@ -167,12 +150,29 @@
 
 <div align="center">
     <img src="pic/wechat_qrcode.png" width="200" alt="微信赞赏码">  <img src="pic/alipay_qrcode.png" width="200" alt="支付宝赞赏码">
+    <p align="center">微信赞赏码</p>   <p align="center">支付宝赞赏码</p>
 </div>
 
 <p align="center">
     再次感谢你的慷慨支持！
 </p>
 
+## ❤️ 贡献
+
+欢迎任何形式的贡献，包括但不限于：
+
+*   **代码贡献 (Pull Requests)**: 修复 Bug, 增加新功能, 优化代码性能等。
+*   **问题反馈 (Issues)**: 报告 Bug, 提出功能建议, 分享使用遇到的问题等。
+*   **文档完善**: 改进 README 文档, 编写更详细的使用教程等。
+*   **翻译贡献**: 将 README 文档翻译成其他语言。
+*   **推广宣传**: 向更多人介绍和推荐 Saber-Translator。
+
+如果你希望为 Saber-Translator 做出贡献，请随时提交 Issues 或 Pull Requests！
+
+## 🌟 支持
+
+*   **Star 项目**: 如果你觉得 Saber-Translator 对你有帮助，请给项目点个 Star，这将是对我最大的鼓励和支持！
+*   **分享推荐**: 将 Saber-Translator 分享给你的朋友或有需要的人。
 
 ## Disclaimer (免责声明)
 
