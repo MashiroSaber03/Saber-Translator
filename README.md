@@ -119,6 +119,28 @@
 *   **Star 项目**: 如果你觉得 Saber-Translator 对你有帮助，请给项目点个 Star，这将是对我最大的鼓励和支持！
 *   **分享推荐**: 将 Saber-Translator 分享给你的朋友或有需要的人。
 
+## 💖 赞助 (Sponsorship)
+
+感谢你对 Saber-Translator 项目的关注和支持！ 如果你觉得本项目对你有所帮助，并且愿意支持我继续开发和维护，可以通过以下方式进行赞助。 你的支持是我前进的最大动力！
+
+**赞助方式：**
+
+你可以通过微信或支付宝扫描下方二维码进行赞赏。 你的每一份支持都将用于项目的服务器维护、功能开发和持续优化。
+
+**微信赞赏码：**
+
+<div align="center">
+    <img src="pic/wechat_qrcode.png" width="200" alt="微信赞赏码">
+</div>
+
+**支付宝赞赏码：**
+
+<div align="center">
+    <img src="pic/alipay_qrcode.png" width="200" alt="支付宝赞赏码">
+</div>
+
+再次感谢你的慷慨支持！
+
 ## ✨ Demo (效果示例)
 
 <div align='center'>
