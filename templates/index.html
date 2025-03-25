@@ -57,7 +57,14 @@
                             <select id="modelProvider">
                                 <option value="siliconflow">SiliconFlow</option>
                                 <option value="deepseek">DeepSeek</option>
+                                <option value="custom">自定义服务商</option>
                             </select>
+                        </div>
+                        <div id="customProviderSettings" style="display: none;">
+                            <div>
+                                <label for="customProviderBaseUrl">Base URL:</label>
+                                <input type="text" id="customProviderBaseUrl" placeholder="https://api.deepseek.com/v1">
+                            </div>
                         </div>
                         <div>
                             <label for="apiKey">API Key:</label>

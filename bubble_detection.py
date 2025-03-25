@@ -30,7 +30,7 @@ ocr = manga_ocr.MangaOcr(model_path)
 
 DEFAULT_PROMPT = "你是一个好用的翻译助手。请将我的日文翻译成中文，我发给你所有的话都是需要翻译的内容，你只需要回答翻译结果。特别注意：翻译结果字数不能超过原文字数！翻译结果请符合中文的语言习惯。"
 
-def translate_text(text, target_language, model_provider, api_key=None, model_name=None, prompt_content=None):
+def translate_text(text, target_language, model_provider, custom_base_url=None, api_key=None, model_name=None, prompt_content=None):
     if prompt_content is None:
         prompt_content = DEFAULT_PROMPT
 
@@ -65,6 +65,25 @@ def translate_text(text, target_language, model_provider, api_key=None, model_na
             return translated_text
         except Exception as e:
             print(f"DeepSeek 翻译 API 请求失败: {e}")
+            return "翻译失败"
+    elif model_provider == 'custom':
+        if not custom_base_url:
+            print(f"自定义服务商需要提供对应的URL！")
+            return "翻译失败"
+        client = OpenAI(api_key=api_key, base_url=custom_base_url)
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompt_content},
+                    {"role": "user", "content": text},
+                ],
+                timeout=10
+            )
+            translated_text = response.choices[0].message.content.strip()
+            return translated_text
+        except Exception as e:
+            print(f"自定义服务商翻译 API 请求失败: {e}")
             return "翻译失败"
     else:
         print(f"未知的翻译模型提供商: {model_provider}")
@@ -138,7 +157,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill='blac
             current_x += char_width
         current_y += line_height
 
-def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical', fontSize=30, model_provider='siliconflow', api_key=None, model_name=None, fontFamily="static/STSONG.TTF", prompt_content=None):
+def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical', fontSize=30, model_provider='siliconflow', custom_base_url=None, api_key=None, model_name=None, fontFamily="static/STSONG.TTF", prompt_content=None):
     try:
         img_np = np.array(image)
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -165,7 +184,7 @@ def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical
             bubble_img = img_cv[y1:y2, x1:x2]
             bubble_img_pil = Image.fromarray(cv2.cvtColor(bubble_img, cv2.COLOR_BGR2RGB))
             text = ocr(bubble_img_pil)
-            translated_text = translate_text(text, target_language, model_provider, api_key=api_key, model_name=model_name, prompt_content=prompt_content)
+            translated_text = translate_text(text, target_language=target_language, model_provider=model_provider, custom_base_url=custom_base_url, api_key=api_key, model_name=model_name, prompt_content=prompt_content)
             bubble_texts.append(translated_text)
 
         img_pil = image.copy()
