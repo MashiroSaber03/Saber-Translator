@@ -17,9 +17,9 @@ Flask==3.1.0
 Flask-Cors==5.0.0
 fonttools==4.56.0
 fsspec==2025.2.0
-fugaschi==1.4.0
+fugashi==1.4.0
 gitdb==4.0.12
-GitPython==3.1.45
+GitPython==3.1.44
 google-ai-generativelanguage==0.6.15
 google-api-core==2.24.1
 google-api-python-client==2.161.0
@@ -45,7 +45,7 @@ jiter==0.8.2
 kiwisolver==1.4.8
 lazy_loader==0.4
 loguru==0.7.3
-manga-ocr==0.1.15
+manga-ocr==0.1.14
 MarkupSafe==3.0.2
 matplotlib==3.10.0
 mpmath==1.3.0
@@ -64,7 +64,7 @@ psutil==7.0.0
 py-cpuinfo==9.0.0
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
-pycclipp==1.3.0.post7
+pyclipper==1.3.0.post6
 pydantic==2.10.6
 pydantic_core==2.27.2
 pyparsing==3.2.1
@@ -84,7 +84,7 @@ scipy==1.15.2
 seaborn==0.13.2
 shapely==2.0.7
 six==1.17.0
-smapp==5.0.2
+smmap==5.0.2
 sniffio==1.3.1
 sympy==1.13.1
 termcolor==2.5.0
@@ -104,6 +104,3 @@ uritemplate==4.1.1
 urllib3==2.3.0
 Werkzeug==3.1.3
 win32-setctime==1.2.0
-
-
-

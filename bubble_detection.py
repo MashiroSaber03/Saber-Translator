@@ -10,9 +10,12 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 weights_path = os.path.join(current_dir, "weights", "best.pt")
 
 repo_dir = os.path.join(current_dir, "ultralytics_yolov5_master")
-weights_path = os.path.join(current_dir, "weights", "best.pt")
 
-model = torch.hub.load(repo_or_dir=repo_dir, source='local', model='custom', path=weights_path)
+if os.path.exists(repo_dir):
+    model = torch.hub.load(repo_or_dir=repo_dir, source='local', model='custom', path=weights_path)
+else:
+    raise FileNotFoundError(f'ultralytics/yolov5 项目文件未找到：{repo_dir}。请确保已下载项目文件并将其放在正确的位置。'
+                            f'Checkout https://github.com/ultralytics/yolov5 for available files.')
 
 model.conf = 0.6
 
@@ -20,7 +23,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(current_dir, "manga_ocr_model")
 
 if not os.path.exists(model_path):
-    raise FileNotFoundError(f"Manga OCR 模型文件夹未找到：{model_path}。请确保已下载模型文件并将其放在正确的位置。")
+    raise FileNotFoundError(f"Manga OCR 模型文件夹未找到：{model_path}。请确保已下载模型文件并将其放在正确的位置。"
+                            f"Checkout 'https://huggingface.co/kha-white/manga-ocr-base/tree/main' for available files.")
 
 ocr = manga_ocr.MangaOcr(model_path)
 
