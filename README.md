@@ -135,38 +135,6 @@
 *   **插件系统**: 开放插件接口，允许用户扩展更多功能 (例如 词典查询、术语库、风格迁移等)。
 *   **移动端 App**: 开发移动端 App，方便用户在手机或平板上使用。
 
-## ⚡ 支持情况
-
-*   **支持文件格式**:
-    *   图片: JPG, PNG, JPEG 等常见图片格式
-    *   PDF 漫画文件
-*   **支持翻译服务商**:
-    *   SiliconFlow (硅基流动)
-    *   DeepSeek (深度求索)
-    *   ollama本地部署的LLM
-    *   (未来计划支持更多)
-*   **支持的源语言**:
-    *   日文
-    *   英文
-    *   韩文
-*   **支持目标语言**:
-    *   简体中文 (zh)
-    *   (未来计划支持更多语言)
-*   **支持排版方向**:
-    *   竖向排版 (vertical)
-    *   横向排版 (horizontal)
-*   **支持字体 (static 文件夹下)**:
-    *   华文行楷 (STXINGKA.TTF)
-    *   华文新魏 (STXINWEI.TTF)
-    *   华文中宋 (STZHONGS.TTF)
-    *   楷体 (STKAITI.TTF)
-    *   隶书 (STLITI.TTF)
-    *   宋体 (STSONG.TTF)
-    *   微软雅黑 (MSYH.TTC)
-    *   微软雅黑粗体 (MSYHBD.TTC)
-    *   幼圆 (SIMYOU.TTF)
-    *   仿宋 (STFANGSO.TTF)
-
 ## 💖 赞助 (Sponsorship)
 
 感谢你对 Saber-Translator 项目的关注和支持！ 如果你觉得本项目对你有所帮助，并且愿意支持我继续开发和维护，可以通过以下方式进行赞助。 你的支持是我前进的最大动力！
