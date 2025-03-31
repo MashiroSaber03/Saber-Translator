@@ -661,6 +661,8 @@ $(document).ready(function() {
         const fontFamily = fontFamilySelect.val();
         const modelProvider = $("#modelProvider").val();
         const customProviderBaseUrl = modelProvider === 'custom'? $("#customProviderBaseUrl").val() : undefined;
+        const baidu_appid = modelProvider === 'baidu'? $("#baiduAppId").val() : undefined;
+        const baidu_keys = modelProvider === 'baidu'? $("#baiduKeys").val() : undefined;
         const promptContent = currentPromptContent;
         const layoutDirection = layoutDirectionSelect.val();
 
@@ -673,6 +675,8 @@ $(document).ready(function() {
                     fontSize: fontSize,
                     model_provider: modelProvider,
                     custom_base_url: customProviderBaseUrl,
+                    baidu_appid: baidu_appid,
+                    baidu_keys: baidu_keys,
                     api_key: apiKey,
                     model_name: modelName,
                     fontFamily: fontFamily,
