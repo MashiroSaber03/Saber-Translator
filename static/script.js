@@ -556,6 +556,8 @@ $(document).ready(function() {
         const fontFamily = fontFamilySelect.val();
         const modelProvider = $("#modelProvider").val();
         const customProviderBaseUrl = modelProvider === 'custom'? $("#customProviderBaseUrl").val() : undefined;
+        const baidu_appid = modelProvider === 'baidu'? $("#baiduAppId").val() : undefined;
+        const baidu_keys = modelProvider === 'baidu'? $("#baiduKeys").val() : undefined;
         const imageData = images[currentImageIndex].originalDataURL.split(',')[1];
         const promptContent = currentPromptContent;
 
@@ -569,6 +571,8 @@ $(document).ready(function() {
                 fontSize: fontSize,
                 model_provider: modelProvider,
                 custom_base_url: customProviderBaseUrl,
+                baidu_appid: baidu_appid,
+                baidu_keys: baidu_keys,
                 api_key: apiKey,
                 model_name: modelName,
                 fontFamily: fontFamily,
@@ -801,10 +805,18 @@ $(document).ready(function() {
     modelProviderSelect.change(function() {
         updateModelSuggestions();
         const customSettings = document.getElementById('customProviderSettings');
+        const baiduSettings = document.getElementById('baiduProviderSettings');
+        const baseSettings = document.getElementById('baseProviderSettings');
         if ($(this).val() === "custom") {
             customSettings.style.display = "block";
-        } else {
+        } else if ($(this).val() === "baidu"){
+            baiduSettings.style.display = "block";
             customSettings.style.display = "none";
+            baseSettings.style.display = "none";
+        }else {
+            customSettings.style.display = "none";
+            baiduSettings.style.display = "none";
+            baseSettings.style.display = "block";
         }
     });
 

@@ -58,6 +58,7 @@
                                 <option value="siliconflow">SiliconFlow</option>
                                 <option value="deepseek">DeepSeek</option>
                                 <option value="custom">自定义服务商</option>
+                                <option value="baidu">百度翻译</option>
                             </select>
                         </div>
                         <div id="customProviderSettings" style="display: none;">
@@ -66,15 +67,27 @@
                                 <input type="text" id="customProviderBaseUrl" placeholder="https://api.deepseek.com/v1">
                             </div>
                         </div>
-                        <div>
-                            <label for="apiKey">API Key:</label>
-                            <input type="text" id="apiKey" placeholder="请输入API Key">
-                        </div>
-                        <div>
-                            <label for="modelName">大模型型号:</label>
-                            <input type="text" id="modelName" placeholder="请输入模型型号">
-                            <div id="model-suggestions">
+                        <div id="baiduProviderSettings" style="display: none;">
+                            <div style="margin-bottom: 10px">
+                                <label for="baiduAppId">APP ID:</label>
+                                <input type="text" id="baiduAppId" placeholder="请输入APP ID">
                             </div>
+                            <div>
+                                <label for="baiduKeys">密钥:</label>
+                                <input type="text" id="baiduKeys" placeholder="请输入密钥">
+                            </div>
+                        </div>
+                        <div id="baseProviderSettings">
+                            <div style="margin-bottom: 10px">
+                                <label for="apiKey">API Key:</label>
+                                <input type="text" id="apiKey" placeholder="请输入API Key">
+                            </div>
+                            <div>
+                                <label for="modelName">大模型型号:</label>
+                                <input type="text" id="modelName" placeholder="请输入模型型号">
+                                <div id="model-suggestions">
+                            </div>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -82,7 +95,7 @@
                     <h3>提示词设置</h3>
                     <textarea id="promptContent" placeholder="在这里修改提示词"></textarea>
                     <div class="prompt-management">
-                        <label for="rememberPrompt"><input type="checkbox" id="rememberPrompt">记住提示词</label>
+                        <label for="rememberPrompt"><input type="checkbox" id="rememberPrompt">&nbsp;记住提示词</label>
                         <input type="text" id="promptName" placeholder="提示词名称">
                     </div>
                     <button id="savePromptButton">应用提示词</button>

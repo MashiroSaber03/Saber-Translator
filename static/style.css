@@ -388,7 +388,6 @@ footer {
     font-size: 1em;
     font-family: monospace;
     resize: vertical;
-    margin-bottom: 10px;
 }
 
 #settings-sidebar #prompt-settings button#savePromptButton {
@@ -409,11 +408,9 @@ footer {
 }
 
 #settings-sidebar #prompt-settings .prompt-management {
-    display: flex;
     align-items: center;
-    margin-top: 10px;
     gap: 10px;
-    margin-bottom: 0;
+    margin-bottom: 5px;
 }
 
 #settings-sidebar #prompt-settings .prompt-management label {

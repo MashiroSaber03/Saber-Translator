@@ -1,3 +1,6 @@
+import hashlib
+import time
+import requests
 import torch
 import cv2
 import numpy as np
@@ -30,7 +33,9 @@ ocr = manga_ocr.MangaOcr(model_path)
 
 DEFAULT_PROMPT = "你是一个好用的翻译助手。请将我的日文翻译成中文，我发给你所有的话都是需要翻译的内容，你只需要回答翻译结果。特别注意：翻译结果字数不能超过原文字数！翻译结果请符合中文的语言习惯。"
 
-def translate_text(text, target_language, model_provider, custom_base_url=None, api_key=None, model_name=None, prompt_content=None):
+def translate_text(text, target_language, model_provider,
+                   custom_base_url=None, api_key=None, model_name=None, prompt_content=None,
+                   baidu_appid=None, baidu_keys=None):
     if prompt_content is None:
         prompt_content = DEFAULT_PROMPT
 
@@ -84,6 +89,34 @@ def translate_text(text, target_language, model_provider, custom_base_url=None, 
             return translated_text
         except Exception as e:
             print(f"自定义服务商翻译 API 请求失败: {e}")
+            return "翻译失败"
+    elif model_provider == 'baidu':
+        api_url = 'https://fanyi-api.baidu.com/api/trans/vip/translate'
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        salt = str(time.time())
+        sign = baidu_appid+text+salt+baidu_keys
+        data = {
+            'q': text,
+            'from': 'auto',
+            'to': target_language,
+            'appid': baidu_appid,
+            'salt': salt,
+            'sign': hashlib.md5(sign.encode(encoding='UTF-8')).hexdigest(),
+        }
+        try:
+            response = requests.post(url=api_url, params=data, headers=headers).json()
+            time.sleep(1)  # 百度翻译 OPS = 1
+            if 'error_code' in response.keys():
+                print(response['error_code'])
+                print(response['error_msg'])
+                return f"{text[:5]}...: {response['error_code']}, {response['error_msg']}"
+            else:
+                translated_text = response['trans_result'][0]['dst']
+                return translated_text
+        except BaseException as e:
+            print(f"请求失败: {e}")
             return "翻译失败"
     else:
         print(f"未知的翻译模型提供商: {model_provider}")
@@ -157,7 +190,9 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill='blac
             current_x += char_width
         current_y += line_height
 
-def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical', fontSize=30, model_provider='siliconflow', custom_base_url=None, api_key=None, model_name=None, fontFamily="static/STSONG.TTF", prompt_content=None):
+def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical', fontSize=30,
+                           model_provider='siliconflow', custom_base_url=None, api_key=None, model_name=None,
+                           fontFamily="static/STSONG.TTF", prompt_content=None, baidu_appid=None, baidu_keys=None):
     try:
         img_np = np.array(image)
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -184,14 +219,19 @@ def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical
             bubble_img = img_cv[y1:y2, x1:x2]
             bubble_img_pil = Image.fromarray(cv2.cvtColor(bubble_img, cv2.COLOR_BGR2RGB))
             text = ocr(bubble_img_pil)
-            translated_text = translate_text(text, target_language=target_language, model_provider=model_provider, custom_base_url=custom_base_url, api_key=api_key, model_name=model_name, prompt_content=prompt_content)
+            translated_text = translate_text(text, target_language=target_language, model_provider=model_provider,
+                                             custom_base_url=custom_base_url, api_key=api_key,
+                                             model_name=model_name, prompt_content=prompt_content,
+                                             baidu_appid=baidu_appid, baidu_keys=baidu_keys)
             bubble_texts.append(translated_text)
 
         img_pil = image.copy()
         draw = ImageDraw.Draw(img_pil)
 
         # 修改字体路径获取方式
-        font_path = os.path.join(os.path.dirname(__file__), fontFamily)
+        font_path = os.path.dirname(__file__)
+        for each in fontFamily.split('/'):
+            font_path = os.path.join(font_path, each)
         print(f"尝试加载字体 (detect_text_in_bubbles): {font_path}")
 
         try:
@@ -200,6 +240,7 @@ def detect_text_in_bubbles(image, target_language='zh', text_direction='vertical
             font = ImageFont.load_default()
             print(f"使用默认字体,因为发生以下错误：{e}")
         except Exception as e:
+            font = None
             print(f"加载字体时发生未知错误: {e}")
 
         if font is None:
@@ -233,7 +274,9 @@ def re_render_text_in_bubbles(image, translated_texts, bubble_coords, fontSize=3
         draw = ImageDraw.Draw(img_pil)
 
         # 修改字体路径获取方式
-        font_path = os.path.join(os.path.dirname(__file__), fontFamily)
+        font_path = os.path.dirname(__file__)
+        for each in fontFamily.split('/'):
+            font_path = os.path.join(font_path, each)
         print(f"尝试加载字体 (re_render_text_in_bubbles): {font_path}")
 
         try:
@@ -242,6 +285,7 @@ def re_render_text_in_bubbles(image, translated_texts, bubble_coords, fontSize=3
             font = ImageFont.load_default()
             print(f"使用默认字体,因为发生以下错误：{e}")
         except Exception as e:
+            font = None
             print(f"加载字体时发生未知错误: {e}")
 
         if font is None:
