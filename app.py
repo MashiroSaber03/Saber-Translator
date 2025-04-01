@@ -6,7 +6,6 @@ import io
 from bubble_detection import detect_text_in_bubbles, DEFAULT_PROMPT, re_render_text_in_bubbles
 import webbrowser
 import threading
-from openai import OpenAI
 import json
 import PyPDF2
 from flask_cors import CORS
@@ -45,14 +44,22 @@ def translate_image():
         text_direction = data.get('textDirection')
         fontSize_str = data.get('fontSize')
         custom_base_url = data.get('custom_base_url')
+        baidu_appid = data.get('baidu_appid')
+        baidu_keys = data.get('baidu_keys')
         api_key = data.get('api_key')
         model_name = data.get('model_name')
         model_provider = data.get('model_provider')
         fontFamily = data.get('fontFamily')
         prompt_content = data.get('prompt_content')
 
-        if not all([image_data, target_language, text_direction, fontSize_str, api_key, model_name, model_provider, fontFamily]):
-            return jsonify({'error': '缺少必要的参数'}), 400
+        if not all([image_data, target_language, text_direction, fontSize_str, model_provider, fontFamily]):
+            return jsonify({'error': '缺少必要的参数，请检查设置'}), 400
+        elif model_provider in ['siliconflow', 'deepseek'] and not all([api_key, model_name]):
+            return jsonify({'error': '缺少必要的参数，请检查 AI 设置'}), 400
+        elif model_provider == 'custom' and not all([custom_base_url, api_key, model_name]):
+            return jsonify({'error': '缺少必要的参数，请检查 AI 设置'}), 400
+        elif model_provider == 'baidu' and not all([baidu_appid, baidu_keys]):
+            return jsonify({'error': '缺少必要的参数，请检查设置'}), 400
 
         try:
             fontSize = int(fontSize_str)
@@ -72,7 +79,9 @@ def translate_image():
             api_key=api_key,
             model_name=model_name,
             fontFamily=fontFamily,
-            prompt_content=prompt_content
+            prompt_content=prompt_content,
+            baidu_appid=baidu_appid,
+            baidu_keys=baidu_keys
         )
 
         buffered = io.BytesIO()

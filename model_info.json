@@ -8,5 +8,6 @@
   "deepseek": [
     "deepseek-reasoner",
     "deepseek-chat"
-  ]
+  ],
+  "baidu": []
 }
