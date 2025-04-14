@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAMA修复功能测试</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            margin: 20px;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .image-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .image-container img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #resultImage {
+            max-width: 100%;
+            margin-top: 15px;
+            display: none;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LAMA修复功能测试</h1>
+        
+        <div class="control-group">
+            <label for="repairMethod">修复方法:</label>
+            <select id="repairMethod">
+                <option value="false">纯色填充</option>
+                <option value="true" selected>MI-GAN</option>
+                <option value="lama">LAMA</option>
+            </select>
+        </div>
+        
+        <button id="testButton">测试LAMA修复</button>
+        <button id="apiTestButton">测试API端点</button>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="image-container">
+            <div>
+                <h3>测试结果图像</h3>
+                <img id="resultImage" src="" alt="测试结果图像">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // 测试LAMA修复功能
+            $('#testButton').on('click', function() {
+                const repairMethod = $('#repairMethod').val();
+                const useInpainting = repairMethod === 'true';
+                const useLama = repairMethod === 'lama';
+                
+                // 显示正在处理消息
+                $('#status').removeClass('success error').addClass('success').text('正在测试...').show();
+                
+                // 创建测试请求
+                const testData = {
+                    use_inpainting: useInpainting,
+                    use_lama: useLama
+                };
+                
+                console.log('发送测试请求:', testData);
+                
+                // 发送测试请求
+                $.ajax({
+                    url: '/test_params',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(testData),
+                    success: function(response) {
+                        console.log('测试结果:', response);
+                        if (response.success) {
+                            $('#status').removeClass('error').addClass('success')
+                                .html('测试成功：<pre>' + JSON.stringify(response, null, 2) + '</pre>')
+                                .show();
+                        } else {
+                            $('#status').removeClass('success').addClass('error')
+                                .html('测试失败：<pre>' + JSON.stringify(response, null, 2) + '</pre>')
+                                .show();
+                        }
+                    },
+                    error: function(error) {
+                        console.error('测试错误:', error);
+                        $('#status').removeClass('success').addClass('error')
+                            .text('测试错误: ' + (error.responseJSON ? error.responseJSON.error : error.statusText))
+                            .show();
+                    }
+                });
+            });
+            
+            // 测试API端点
+            $('#apiTestButton').on('click', function() {
+                $('#status').removeClass('success error').addClass('success').text('正在测试API端点...').show();
+                
+                $.ajax({
+                    url: '/test_lama_repair',
+                    type: 'GET',
+                    success: function(response) {
+                        console.log('API测试结果:', response);
+                        if (response.success) {
+                            $('#status').removeClass('error').addClass('success')
+                                .text('API测试成功：' + response.message)
+                                .show();
+                            
+                            // 显示结果图像
+                            if (response.result_image) {
+                                $('#resultImage').attr('src', 'data:image/png;base64,' + response.result_image).show();
+                            }
+                        } else {
+                            $('#status').removeClass('success').addClass('error')
+                                .text('API测试失败：' + (response.error || '未知错误'))
+                                .show();
+                        }
+                    },
+                    error: function(error) {
+                        console.error('API测试错误:', error);
+                        $('#status').removeClass('success').addClass('error')
+                            .text('API测试错误: ' + (error.responseJSON ? error.responseJSON.error : error.statusText))
+                            .show();
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html> 
