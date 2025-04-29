@@ -39,7 +39,7 @@ Saber-Translator 提供了一站式的漫画翻译解决方案，主要功能包
 
 3.  **多语言 OCR 引擎**:
     *   基于 **[Manga OCR](https://github.com/kha-white/manga-ocr)** 实现高效的**日语**文本识别。
-    *   集成**[Paddle OCR](https://github.com/PaddlePaddle/PaddleOCR)** 支持**英语、韩语、繁体中文、法语、德语**等多种其他语言的文本识别。
+    *   集成 **[Paddle OCR](https://github.com/PaddlePaddle/PaddleOCR)** 支持**英语、韩语、繁体中文、法语、德语**等多种其他语言的文本识别。
 
 4.  **强大的 AI 翻译核心**:
     *   内置支持 **SiliconFlow**, **DeepSeek**, **火山引擎 (Volcano Engine)**, **彩云小译** 等多种云端翻译服务。
