@@ -7,6 +7,7 @@ import * as api from './api.js';
 import * as events from './events.js';
 import * as editMode from './edit_mode.js';
 import * as constants from './constants.js'; // 导入前端常量
+<<<<<<< HEAD
 import * as labelingMode from './labeling_mode.js';
 import * as session from './session.js'; // 导入session模块，用于自动存档
 // import $ from 'jquery'; // 假设 jQuery 已全局加载
@@ -155,6 +156,10 @@ export async function reRenderWithNewFillColor(newFillColor) {
     }
 }
 
+=======
+// import $ from 'jquery'; // 假设 jQuery 已全局加载
+
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 // --- 初始化函数 ---
 
 /**
@@ -174,6 +179,7 @@ function initializeApp() {
     // 2. 初始化提示词设置 (调用 API)
     initializePromptSettings();
     initializeTextboxPromptSettings();
+<<<<<<< HEAD
     initializeAiVisionOcrPromptSettings();
 
     // --- 初始化 RPD 状态 (从 state.js 的默认值开始) ---
@@ -187,6 +193,8 @@ function initializeApp() {
     // --- 更新UI输入框以反映初始/加载的RPD状态 ---
     ui.updateRpdInputFields(); // <--- 新增调用
     // ---------------------------------------------
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     // 3. 初始化可折叠面板
     initializeCollapsiblePanels();
@@ -196,6 +204,7 @@ function initializeApp() {
 
     // 5. 检查初始模型提供商并更新 UI
     checkInitialModelProvider();
+<<<<<<< HEAD
     
     // 6. 初始化OCR引擎设置
     initializeOcrEngineSettings();
@@ -214,16 +223,29 @@ function initializeApp() {
     ui.updateButtonStates();
 
     // 9. 初始化修复选项的显示状态
+=======
+
+    // 6. 绑定所有事件监听器
+    events.bindEventListeners();
+
+    // 7. 更新初始按钮状态
+    ui.updateButtonStates();
+
+    // 8. 初始化修复选项的显示状态
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const initialRepairMethod = $('#useInpainting').val();
     ui.toggleInpaintingOptions(
         initialRepairMethod === 'true' || initialRepairMethod === 'lama',
         initialRepairMethod === 'false'
     );
 
+<<<<<<< HEAD
     // 10. 初始化 UI 显示
     ui.updateTranslatePromptUI(); // 更新漫画翻译提示词UI
     ui.updateAiVisionOcrPromptUI(); // 更新AI视觉OCR提示词UI
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     console.log("应用程序初始化完成。");
 }
 
@@ -235,6 +257,7 @@ function initializeApp() {
 export function initializePromptSettings() { // 导出以便外部调用（如果需要）
     api.getPromptsApi()
         .then(response => {
+<<<<<<< HEAD
             state.setPromptState(
                 state.isTranslateJsonMode ? state.defaultTranslateJsonPrompt : response.default_prompt_content,
                 response.default_prompt_content, // 普通默认
@@ -242,13 +265,21 @@ export function initializePromptSettings() { // 导出以便外部调用（如�
                 state.defaultTranslateJsonPrompt // JSON默认
             );
             ui.updateTranslatePromptUI(); // 根据当前模式更新文本框和按钮
+=======
+            state.setPromptState(response.default_prompt_content, response.default_prompt_content, response.prompt_names || []);
+            $('#promptContent').val(state.currentPromptContent);
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             ui.populatePromptDropdown(state.savedPromptNames, $('#promptDropdown'), $('#promptDropdownButton'), loadPromptContent, deletePrompt);
         })
         .catch(error => {
             console.error("获取提示词信息失败:", error);
             const errorMsg = "获取默认提示词失败";
             state.setPromptState(errorMsg, errorMsg, []);
+<<<<<<< HEAD
             ui.updateTranslatePromptUI();
+=======
+            $('#promptContent').val(errorMsg);
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             ui.populatePromptDropdown([], $('#promptDropdown'), $('#promptDropdownButton'), loadPromptContent, deletePrompt);
         });
 }
@@ -273,6 +304,7 @@ export function initializeTextboxPromptSettings() { // 导出
 }
 
 /**
+<<<<<<< HEAD
  * 初始化AI视觉OCR提示词
  */
 export function initializeAiVisionOcrPromptSettings() {
@@ -283,11 +315,14 @@ export function initializeAiVisionOcrPromptSettings() {
 }
 
 /**
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
  * 加载指定名称的漫画翻译提示词内容
  * @param {string} promptName - 提示词名称
  */
 function loadPromptContent(promptName) { // 私有辅助函数
     if (promptName === constants.DEFAULT_PROMPT_NAME) {
+<<<<<<< HEAD
         // 根据当前模式加载对应的默认提示词
         const contentToLoad = state.isTranslateJsonMode ? state.defaultTranslateJsonPrompt : state.defaultPromptContent;
         state.currentPromptContent = contentToLoad; // 直接更新当前内容
@@ -311,6 +346,15 @@ function loadPromptContent(promptName) { // 私有辅助函数
                         ui.showGeneralMessage("检测到普通格式提示词，已自动切换到普通模式。", "info", false, 3000);
                     }
                 }
+=======
+        state.setPromptState(state.defaultPromptContent, state.defaultPromptContent, state.savedPromptNames);
+        $('#promptContent').val(state.currentPromptContent);
+    } else {
+        api.getPromptContentApi(promptName)
+            .then(response => {
+                state.setPromptState(response.prompt_content, state.defaultPromptContent, state.savedPromptNames);
+                $('#promptContent').val(state.currentPromptContent);
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             })
             .catch(error => {
                 console.error("加载提示词内容失败:", error);
@@ -420,12 +464,16 @@ function initializeThemeMode() { // 私有辅助函数
  */
 function checkInitialModelProvider() { // 私有辅助函数
     const selectedProvider = $('#modelProvider').val();
+<<<<<<< HEAD
     console.log("初始化模型提供商:", selectedProvider);  // 添加日志
     
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     ui.updateApiKeyInputState(selectedProvider === 'ollama' || selectedProvider === 'sakura',
                               selectedProvider === 'ollama' || selectedProvider === 'sakura' ? '本地部署无需API Key' : '请输入API Key');
     ui.toggleOllamaUI(selectedProvider === 'ollama');
     ui.toggleSakuraUI(selectedProvider === 'sakura');
+<<<<<<< HEAD
     ui.toggleCaiyunUI(selectedProvider === 'caiyun');
     ui.toggleBaiduTranslateUI(selectedProvider === 'baidu_translate');
     ui.toggleYoudaoTranslateUI(selectedProvider === 'youdao_translate');
@@ -441,6 +489,12 @@ function checkInitialModelProvider() { // 私有辅助函数
         api.getUsedModelsApi('volcano')
             .then(response => ui.updateModelSuggestions(response.models))
             .catch(error => console.error("获取火山引擎模型建议失败:", error));
+=======
+    if (selectedProvider === 'ollama') {
+        fetchOllamaModels();
+    } else if (selectedProvider === 'sakura') {
+        fetchSakuraModels();
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
@@ -529,7 +583,10 @@ export function handleFiles(files) { // 导出
                 ui.showError("未能成功加载任何图片。");
             }
             ui.updateButtonStates();
+<<<<<<< HEAD
             session.triggerAutoSave(); // <--- 添加文件成功后触发自动存档
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         })
         .catch(error => {
             ui.hideLoading();
@@ -620,6 +677,7 @@ function sortImagesByName() { // 私有
  * 切换显示的图片
  * @param {number} index - 要显示的图片索引
  */
+<<<<<<< HEAD
 export function switchImage(index) {
     if (index < 0 || index >= state.images.length) return;
 
@@ -670,6 +728,23 @@ export function switchImage(index) {
     console.log("切换到图片:", index, imageData.fileName);
 
     // --- 更新基础 UI ---
+=======
+export function switchImage(index) { // 导出
+    if (index < 0 || index >= state.images.length) return;
+
+    if (state.editModeActive) {
+        const currentImage = state.getCurrentImage();
+        if (currentImage) {
+            currentImage.bubbleSettings = JSON.parse(JSON.stringify(state.bubbleSettings));
+            currentImage.bubbleTexts = state.bubbleSettings.map(s => s.text);
+        }
+    }
+
+    state.setCurrentImageIndex(index);
+    const imageData = state.getCurrentImage();
+    console.log("切换到图片:", index, imageData.fileName);
+
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     ui.hideError();
     ui.hideLoading();
     $('#translatingMessage').hide();
@@ -680,6 +755,7 @@ export function switchImage(index) {
     ui.showResultSection(true);
     ui.updateDetectedTextDisplay();
     ui.updateRetranslateButton();
+<<<<<<< HEAD
     // --------------------
 
     // --- 加载新图片的设置到 UI ---
@@ -732,12 +808,35 @@ export function switchImage(index) {
     // 触发 change 以更新依赖 UI (比如修复选项的显隐)
     $('#useInpainting').trigger('change'); // 这个会调用 toggleInpaintingOptions
     $('#autoFontSize').trigger('change');
+=======
+
+    // 更新全局设置控件
+    $('#autoFontSize').prop('checked', imageData.autoFontSize);
+    $('#fontSize').prop('disabled', imageData.autoFontSize).val(imageData.autoFontSize ? '-' : imageData.fontSize);
+    $('#fontFamily').val(imageData.fontFamily);
+    $('#layoutDirection').val(imageData.layoutDirection);
+    const useInpainting = imageData.originalUseInpainting;
+    const useLama = imageData.originalUseLama;
+    let repairMethod = 'false';
+    if (useLama) repairMethod = 'lama';
+    else if (useInpainting) repairMethod = 'true';
+    $('#useInpainting').val(repairMethod);
+    ui.toggleInpaintingOptions(useInpainting || useLama, !useInpainting && !useLama);
+    if(useInpainting || useLama) {
+        $('#inpaintingStrength').val(imageData.inpaintingStrength || constants.DEFAULT_INPAINTING_STRENGTH);
+        $('#inpaintingStrengthValue').text($('#inpaintingStrength').val());
+        $('#blendEdges').prop('checked', imageData.blendEdges !== undefined ? imageData.blendEdges : true);
+    }
+     $('#fillColor').val(imageData.fillColor || constants.DEFAULT_FILL_COLOR);
+
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     ui.updateButtonStates();
     $('.thumbnail-item').removeClass('active');
     $(`.thumbnail-item[data-index="${index}"]`).addClass('active');
     ui.scrollToActiveThumbnail();
 
+<<<<<<< HEAD
     // --- 处理模式状态 ---
     if (wasInLabelingMode) {
         // 如果是从标注模式切换来的，加载新图片的标注框（如果有）
@@ -748,11 +847,25 @@ export function switchImage(index) {
 
     // 触发自动存档
     session.triggerAutoSave();
+=======
+    if (state.editModeActive) {
+        editMode.initBubbleSettings();
+        if (state.bubbleSettings.length > 0) {
+            editMode.selectBubble(0);
+        } else {
+            ui.updateBubbleEditArea(-1);
+            ui.updateBubbleHighlight(-1);
+        }
+    } else {
+        editMode.exitEditMode();
+    }
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
  * 翻译当前图片
  */
+<<<<<<< HEAD
 export function translateCurrentImage() {
     const currentImage = state.getCurrentImage();
     if (!currentImage) return Promise.reject("No current image"); // 返回一个被拒绝的Promise
@@ -784,6 +897,18 @@ export function translateCurrentImage() {
         console.log(`翻译当前图片 ${state.currentImageIndex}: 未找到手动标注框，将进行自动检测。`);
     }
     // ------------------------------------------
+=======
+export function translateCurrentImage() { // 导出
+    const currentImage = state.getCurrentImage();
+    if (!currentImage) return;
+
+    // 移除重复的showLoading调用，因为events.js已经显示了消息
+    ui.showTranslatingIndicator(state.currentImageIndex);
+
+    const repairSettings = ui.getRepairSettings(); // 需要在 ui.js 中导出
+    const isAutoFontSize = $('#autoFontSize').is(':checked');
+    const fontSize = isAutoFontSize ? 'auto' : $('#fontSize').val();
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     const params = {
         image: currentImage.originalDataURL.split(',')[1],
@@ -793,7 +918,11 @@ export function translateCurrentImage() {
         autoFontSize: isAutoFontSize,
         api_key: $('#apiKey').val(),
         model_name: $('#modelName').val(),
+<<<<<<< HEAD
         model_provider: modelProvider, // 使用获取到的服务商
+=======
+        model_provider: $('#modelProvider').val(),
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         fontFamily: $('#fontFamily').val(),
         textDirection: $('#layoutDirection').val(),
         prompt_content: $('#promptContent').val(),
@@ -806,6 +935,7 @@ export function translateCurrentImage() {
         fill_color: $('#fillColor').val(),
         text_color: $('#textColor').val(),
         rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
+<<<<<<< HEAD
         skip_translation: false,
         skip_ocr: false,
         remove_only: false,
@@ -941,6 +1071,57 @@ export function translateAllImages() {
     state.setBatchTranslationInProgress(true);
 
     // --- 获取全局设置 (保持不变) ---
+=======
+        skip_translation: false, skip_ocr: false, remove_only: false,
+    };
+
+    api.translateImageApi(params)
+        .then(response => {
+            ui.hideTranslatingIndicator(state.currentImageIndex);
+
+            state.updateCurrentImageProperty('translatedDataURL', 'data:image/png;base64,' + response.translated_image);
+            state.updateCurrentImageProperty('cleanImageData', response.clean_image);
+            state.updateCurrentImageProperty('bubbleTexts', response.bubble_texts);
+            state.updateCurrentImageProperty('bubbleCoords', response.bubble_coords);
+            state.updateCurrentImageProperty('originalTexts', response.original_texts);
+            state.updateCurrentImageProperty('textboxTexts', response.textbox_texts);
+            state.updateCurrentImageProperty('fontSize', fontSize);
+            state.updateCurrentImageProperty('autoFontSize', isAutoFontSize);
+            state.updateCurrentImageProperty('fontFamily', params.fontFamily);
+            state.updateCurrentImageProperty('layoutDirection', params.textDirection);
+            state.updateCurrentImageProperty('showOriginal', false);
+            state.updateCurrentImageProperty('translationFailed', false);
+            state.updateCurrentImageProperty('originalUseInpainting', params.use_inpainting);
+            state.updateCurrentImageProperty('originalUseLama', params.use_lama);
+            state.updateCurrentImageProperty('inpaintingStrength', params.inpainting_strength);
+            state.updateCurrentImageProperty('blendEdges', params.blend_edges);
+            state.updateCurrentImageProperty('fillColor', params.fill_color);
+            state.updateCurrentImageProperty('textColor', params.text_color);
+            state.updateCurrentImageProperty('bubbleSettings', null);
+            state.setBubbleSettings([]);
+
+            switchImage(state.currentImageIndex); // 重新加载以更新所有 UI
+            ui.updateDetectedTextDisplay();
+            ui.updateRetranslateButton();
+            ui.updateButtonStates();
+
+            api.saveModelInfoApi(params.model_provider, params.model_name);
+        })
+        .catch(error => {
+            ui.hideTranslatingIndicator(state.currentImageIndex);
+            state.updateCurrentImageProperty('translationFailed', true);
+            ui.renderThumbnails();
+            ui.showError(`翻译失败: ${error.message}`);
+            ui.updateButtonStates();
+            ui.updateRetranslateButton();
+        });
+}
+
+/**
+ * 翻译所有图片
+ */
+export function translateAllImages() { // 导出
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const targetLanguage = $('#targetLanguage').val();
     const sourceLanguage = $('#sourceLanguage').val();
     const isAutoFontSize = $('#autoFontSize').is(':checked');
@@ -953,12 +1134,17 @@ export function translateAllImages() {
     const useTextboxPrompt = $('#enableTextboxPrompt').prop('checked');
     const textboxPromptContent = $('#textboxPromptContent').val();
     const fillColor = $('#fillColor').val();
+<<<<<<< HEAD
     const repairSettings = ui.getRepairSettings(); // ui.js 获取修复设置
+=======
+    const repairSettings = ui.getRepairSettings();
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const useInpainting = repairSettings.useInpainting;
     const useLama = repairSettings.useLama;
     const inpaintingStrength = parseFloat($('#inpaintingStrength').val());
     const blendEdges = $('#blendEdges').prop('checked');
     const promptContent = $('#promptContent').val();
+<<<<<<< HEAD
     const textColor = $('#textColor').val();
     const rotationAngle = parseFloat($('#rotationAngle').val() || '0');
     const ocr_engine = $('#ocrEngine').val();
@@ -1033,11 +1219,28 @@ export function translateAllImages() {
             
             // 批量翻译完成后执行一次自动存档
             session.triggerAutoSave();
+=======
+
+    // 参数检查... (省略，假设与 translateCurrentImage 类似)
+
+    let currentIndex = 0;
+    const totalImages = state.images.length;
+    ui.updateProgressBar(0, `0/${totalImages}`);
+    ui.showGeneralMessage("批量翻译中...", "info", false, 0);
+
+    function processNextImage() {
+        if (currentIndex >= totalImages) {
+            ui.updateProgressBar(100, `${totalImages}/${totalImages}`);
+            $(".message.info").fadeOut(300, function() { $(this).remove(); });
+            ui.updateButtonStates();
+            ui.showGeneralMessage('所有图片翻译完成', "success");
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             return;
         }
 
         ui.updateProgressBar((currentIndex / totalImages) * 100, `${currentIndex}/${totalImages}`);
         ui.showTranslatingIndicator(currentIndex);
+<<<<<<< HEAD
         const imageData = state.images[currentIndex]; // 获取当前循环索引对应的图片数据
 
         // --- 关键修改：检查并使用当前图片的已保存手动坐标 (逻辑保持不变) ---
@@ -1053,6 +1256,11 @@ export function translateAllImages() {
         // ----------------------------------------------
 
         const data = { // 准备 API 请求数据
+=======
+        const imageData = state.images[currentIndex];
+
+        const data = {
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             image: imageData.originalDataURL.split(',')[1],
             target_language: targetLanguage, source_language: sourceLanguage,
             fontSize: fontSize, autoFontSize: isAutoFontSize,
@@ -1061,6 +1269,7 @@ export function translateAllImages() {
             prompt_content: promptContent, use_textbox_prompt: useTextboxPrompt,
             textbox_prompt_content: textboxPromptContent, use_inpainting: useInpainting,
             use_lama: useLama, blend_edges: blendEdges, inpainting_strength: inpaintingStrength,
+<<<<<<< HEAD
             fill_color: fillColor,
             text_color: textColor,
             rotation_angle: rotationAngle,
@@ -1151,6 +1360,50 @@ export function translateAllImages() {
         // --- 结束核心修改 ---
     }
     processNextImage(); // 开始处理第一张图片
+=======
+            fill_color: fillColor, 
+            text_color: $('#textColor').val(),
+            rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
+            skip_translation: false, skip_ocr: false, remove_only: false,
+        };
+
+        api.translateImageApi(data)
+            .then(response => {
+                ui.hideTranslatingIndicator(currentIndex);
+                // 更新图片状态
+                imageData.translatedDataURL = 'data:image/png;base64,' + response.translated_image;
+                imageData.cleanImageData = response.clean_image;
+                imageData.bubbleTexts = response.bubble_texts;
+                imageData.bubbleCoords = response.bubble_coords;
+                imageData.originalTexts = response.original_texts;
+                imageData.textboxTexts = response.textbox_texts;
+                imageData.fontSize = fontSize; imageData.autoFontSize = isAutoFontSize;
+                imageData.fontFamily = fontFamily; imageData.layoutDirection = textDirection;
+                imageData.showOriginal = false; imageData.translationFailed = false;
+                imageData.originalUseInpainting = useInpainting; imageData.originalUseLama = useLama;
+                imageData.inpaintingStrength = inpaintingStrength; imageData.blendEdges = blendEdges;
+                imageData.fillColor = fillColor;
+                imageData.textColor = $('#textColor').val();
+                imageData.bubbleSettings = null; // 清空旧设置
+
+                ui.renderThumbnails(); // 更新缩略图
+                if (currentIndex === state.currentImageIndex) {
+                    switchImage(state.currentImageIndex); // 更新当前显示
+                }
+            })
+            .catch(error => {
+                ui.hideTranslatingIndicator(currentIndex);
+                console.error(`图片 ${currentIndex} 翻译失败:`, error);
+                imageData.translationFailed = true;
+                ui.renderThumbnails(); // 更新缩略图显示失败
+            })
+            .finally(() => {
+                currentIndex++;
+                processNextImage(); // 处理下一张
+            });
+    }
+    processNextImage(); // 开始处理
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 // --- 其他需要导出的函数 ---
@@ -1158,6 +1411,7 @@ export function translateAllImages() {
 // 需要将它们的实现从 script.js 移到这里，并添加 export
 
 /**
+<<<<<<< HEAD
  * 下载当前图片（翻译后或原始图片）
  */
 export function downloadCurrentImage() {
@@ -1169,6 +1423,16 @@ export function downloadCurrentImage() {
         ui.showDownloadingMessage(true);
         try {
             const base64Data = imageDataURL.split(',')[1];
+=======
+ * 下载当前翻译后的图片
+ */
+export function downloadCurrentImage() {
+    const currentImage = state.getCurrentImage();
+    if (currentImage && currentImage.translatedDataURL) {
+        ui.showDownloadingMessage(true);
+        try {
+            const base64Data = currentImage.translatedDataURL.split(',')[1];
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             const byteCharacters = atob(base64Data);
             const byteArrays = [];
             for (let offset = 0; offset < byteCharacters.length; offset += 512) {
@@ -1182,9 +1446,13 @@ export function downloadCurrentImage() {
             const a = document.createElement('a');
             a.href = url;
             let fileName = currentImage.fileName || `image_${state.currentImageIndex}.png`;
+<<<<<<< HEAD
             // 为已翻译和未翻译的图片使用不同前缀
             const prefix = currentImage.translatedDataURL ? 'translated' : 'original';
             fileName = `${prefix}_${fileName.replace(/\.[^/.]+$/, "")}.png`;
+=======
+            fileName = `translated_${fileName.replace(/\.[^/.]+$/, "")}.png`;
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             a.download = fileName;
             document.body.appendChild(a);
             a.click();
@@ -1197,7 +1465,11 @@ export function downloadCurrentImage() {
             ui.showDownloadingMessage(false);
         }
     } else {
+<<<<<<< HEAD
         ui.showGeneralMessage("没有可下载的图片", "warning");
+=======
+        ui.showGeneralMessage("没有可下载的翻译图片", "warning");
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
@@ -1206,6 +1478,7 @@ export function downloadCurrentImage() {
  */
 export function downloadAllImages() {
     const selectedFormat = $('#downloadFormat').val();
+<<<<<<< HEAD
 
     // --- 新增代码：立即显示提示信息 ---
     ui.showGeneralMessage("下载中...下载打包需要一定时间，请耐心等待...", "info", false, 0);
@@ -1214,6 +1487,11 @@ export function downloadAllImages() {
     ui.showDownloadingMessage(true); // 显示下载中并禁用按钮
 
     // 延迟执行下载，给 UI 更新时间 (保持不变)
+=======
+    ui.showDownloadingMessage(true); // 显示下载中
+
+    // 延迟执行下载，给 UI 更新时间
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     setTimeout(() => {
         try {
             switch(selectedFormat) {
@@ -1225,6 +1503,7 @@ export function downloadAllImages() {
         } catch (e) {
             console.error("下载所有图片时出错:", e);
             ui.showGeneralMessage("下载失败", "error");
+<<<<<<< HEAD
             // --- 新增：移除提示信息 ---
             $(".message.info").fadeOut(300, function() { $(this).remove(); });
             // ------------------------
@@ -1233,10 +1512,16 @@ export function downloadAllImages() {
              // 注意：ZIP/PDF/CBZ 函数内部会隐藏进度条和消息，并调用 showDownloadingMessage(false)
              console.log("Download All Images finally block executing...");
              // ui.showDownloadingMessage(false); // 这句可以移到 helper 函数的 finally 中确保执行
+=======
+        } finally {
+             // 注意：ZIP/PDF/CBZ 函数内部会隐藏进度条和消息
+             // ui.showDownloadingMessage(false); // 不在这里隐藏
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         }
     }, 100); // 短暂延迟
 }
 
+<<<<<<< HEAD
 // --- 修改 downloadAllAsZip, downloadAllAsPDF, downloadAllAsCBZ ---
 
 function downloadAllAsZip() {
@@ -1274,10 +1559,29 @@ function downloadAllAsZip() {
         ui.updateProgressBar((processed / allImages.length) * 100, `压缩进度: ${processed}/${allImages.length}`);
     });
     
+=======
+// --- ZIP/PDF/CBZ 下载辅助函数 (私有) ---
+function downloadAllAsZip() {
+    ui.updateProgressBar(0, "准备 ZIP 下载...");
+    $("#translationProgressBar").show();
+    const zip = new JSZip(); // 确保 JSZip 已加载
+    const translatedImages = state.images.filter(img => img.translatedDataURL);
+    if (translatedImages.length === 0) { /* ... */ $("#translationProgressBar").hide(); return; }
+    let processed = 0;
+    translatedImages.forEach((imgData, i) => {
+        const base64Data = imgData.translatedDataURL.split(',')[1];
+        const fileName = imgData.fileName || `image_${i}.png`;
+        const safeFileName = `translated_${String(i).padStart(3, '0')}_${fileName.replace(/[^a-zA-Z0-9.]/g, '_')}`; // 清理文件名
+        zip.file(safeFileName + '.png', base64Data, {base64: true});
+        processed++;
+        ui.updateProgressBar((processed / translatedImages.length) * 100, `压缩进度: ${processed}/${translatedImages.length}`);
+    });
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     zip.generateAsync({type:"blob"})
         .then(content => {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(content);
+<<<<<<< HEAD
             link.download = "comic_translator_images.zip";
             link.click();
             URL.revokeObjectURL(link.href);
@@ -1391,10 +1695,61 @@ function downloadAllAsPDF() {
     processImage(0); // 开始处理
 }
 
+=======
+            link.download = "translated_images.zip";
+            link.click();
+            URL.revokeObjectURL(link.href);
+            $("#translationProgressBar").hide();
+            ui.showGeneralMessage(`已成功下载 ${translatedImages.length} 张翻译图片 (ZIP)`, "success");
+        })
+        .catch(error => { /* ... */ $("#translationProgressBar").hide(); });
+}
+function downloadAllAsPDF() {
+    ui.updateProgressBar(0, "准备 PDF 下载...");
+    $("#translationProgressBar").show();
+    const { jsPDF } = window.jspdf; // 确保 jsPDF 已加载
+    const pdf = new jsPDF({orientation: 'p', unit: 'px', format: 'a4'}); // 使用像素单位可能更直观
+    const translatedImages = state.images.filter(img => img.translatedDataURL);
+    if (translatedImages.length === 0) { /* ... */ $("#translationProgressBar").hide(); return; }
+    let processed = 0;
+    const processImage = (index) => {
+        if (index >= translatedImages.length) {
+            pdf.save('translated_images.pdf');
+            $("#translationProgressBar").hide();
+            ui.showGeneralMessage(`已成功创建 PDF 文件`, "success");
+            return;
+        }
+        if (index > 0) pdf.addPage();
+        const img = new Image();
+        img.onload = function() {
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const ratio = Math.min(pdfWidth / img.naturalWidth, pdfHeight / img.naturalHeight);
+            const imgWidth = img.naturalWidth * ratio;
+            const imgHeight = img.naturalHeight * ratio;
+            const x = (pdfWidth - imgWidth) / 2;
+            const y = (pdfHeight - imgHeight) / 2;
+            pdf.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
+            processed++;
+            ui.updateProgressBar((processed / translatedImages.length) * 100, `PDF 创建进度: ${processed}/${translatedImages.length}`);
+            processImage(index + 1);
+        };
+        img.onerror = () => { // 处理图片加载失败
+             console.error(`加载图片 ${index} 失败，跳过`);
+             processed++;
+             ui.updateProgressBar((processed / translatedImages.length) * 100, `PDF 创建进度: ${processed}/${translatedImages.length}`);
+             processImage(index + 1);
+        }
+        img.src = translatedImages[index].translatedDataURL;
+    };
+    processImage(0);
+}
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 function downloadAllAsCBZ() {
     ui.updateProgressBar(0, "准备 CBZ 下载...");
     $("#translationProgressBar").show();
     const zip = new JSZip();
+<<<<<<< HEAD
     
     // 修改：使用所有图片，不仅是已翻译的
     const allImages = state.images;
@@ -1426,10 +1781,24 @@ function downloadAllAsCBZ() {
         ui.updateProgressBar((processed / allImages.length) * 100, `CBZ 创建进度: ${processed}/${allImages.length}`);
     });
     
+=======
+    const translatedImages = state.images.filter(img => img.translatedDataURL);
+    if (translatedImages.length === 0) { /* ... */ $("#translationProgressBar").hide(); return; }
+    let processed = 0;
+    translatedImages.forEach((imgData, i) => {
+        const base64Data = imgData.translatedDataURL.split(',')[1];
+        const fileName = imgData.fileName || `image_${i}.png`;
+        const safeFileName = `${String(i).padStart(3, '0')}_${fileName.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+        zip.file(safeFileName + '.png', base64Data, {base64: true}); // 确保是 png
+        processed++;
+        ui.updateProgressBar((processed / translatedImages.length) * 100, `CBZ 创建进度: ${processed}/${translatedImages.length}`);
+    });
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     zip.generateAsync({type:"blob"})
         .then(content => {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(content);
+<<<<<<< HEAD
             link.download = "comic_translator_images.cbz";
             link.click();
             URL.revokeObjectURL(link.href);
@@ -1450,6 +1819,15 @@ function downloadAllAsCBZ() {
         .finally(() => { // 确保按钮总是被重新启用
             ui.showDownloadingMessage(false);
         });
+=======
+            link.download = "translated_images.cbz";
+            link.click();
+            URL.revokeObjectURL(link.href);
+            $("#translationProgressBar").hide();
+            ui.showGeneralMessage(`已成功创建 CBZ 文件`, "success");
+        })
+        .catch(error => { /* ... */ $("#translationProgressBar").hide(); });
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -1504,7 +1882,11 @@ export function applySettingsToAll() { // 导出
 
     // 重新渲染当前图片以立即看到效果
     if (state.getCurrentImage()?.translatedDataURL) {
+<<<<<<< HEAD
         editMode.reRenderFullImage(); // 不再传递全局变更标记
+=======
+        editMode.reRenderFullImage(true); // 标记为全局变更
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
     ui.hideLoading();
     ui.showGeneralMessage("设置已应用到所有已翻译图片（下次查看时生效）", "success");
@@ -1525,6 +1907,7 @@ export function removeBubbleTextOnly() { // 导出
     const repairSettings = ui.getRepairSettings();
     const isAutoFontSize = $('#autoFontSize').is(':checked');
     const fontSize = isAutoFontSize ? 'auto' : $('#fontSize').val();
+<<<<<<< HEAD
     const ocr_engine = $('#ocrEngine').val();
 
     // --- 关键修改：检查并使用已保存的手动坐标 ---
@@ -1539,6 +1922,8 @@ export function removeBubbleTextOnly() { // 导出
         console.log(`消除文字 ${state.currentImageIndex}: 未找到手动标注框，将进行自动检测。`);
     }
     // ------------------------------------------
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     const params = {
         image: currentImage.originalDataURL.split(',')[1],
@@ -1560,6 +1945,7 @@ export function removeBubbleTextOnly() { // 导出
         fill_color: $('#fillColor').val(),
         text_color: $('#textColor').val(),
         rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
+<<<<<<< HEAD
         skip_translation: true,
         remove_only: true,
         use_json_format_translation: false,
@@ -1664,6 +2050,53 @@ export function removeBubbleTextOnly() { // 导出
                 reject(error); // 拒绝Promise
             });
     });
+=======
+        skip_translation: true, // 告诉后端跳过翻译步骤
+        skip_ocr: false, // 仍然需要OCR来定位文本
+        remove_only: true, // 仅消除文字
+    };
+
+    api.translateImageApi(params)
+        .then(response => {
+            // 移除hideLoading调用
+            ui.hideTranslatingIndicator(state.currentImageIndex);
+
+            // 更新当前图片对象
+            currentImage.translatedDataURL = 'data:image/png;base64,' + response.translated_image;
+            currentImage.cleanImageData = response.clean_image;
+            currentImage.bubbleTexts = response.bubble_texts || [];  // 可能为空
+            currentImage.bubbleCoords = response.bubble_coords || [];
+            currentImage.originalTexts = response.original_texts || [];
+            currentImage.textboxTexts = response.textbox_texts || [];
+            currentImage.fontSize = fontSize;
+            currentImage.autoFontSize = isAutoFontSize;
+            currentImage.fontFamily = $('#fontFamily').val();
+            currentImage.layoutDirection = $('#layoutDirection').val();
+            currentImage.showOriginal = false;
+            // 移除之前的翻译失败标记（如果有）
+            currentImage.translationFailed = false;
+
+            currentImage.originalUseInpainting = params.use_inpainting;
+            currentImage.originalUseLama = params.use_lama;
+            currentImage.inpaintingStrength = params.inpainting_strength;
+            currentImage.blendEdges = params.blend_edges;
+            currentImage.fillColor = params.fill_color;
+            currentImage.textColor = params.text_color;
+            currentImage.bubbleSettings = null;
+
+            switchImage(state.currentImageIndex); // 重新加载以更新所有 UI
+            ui.showGeneralMessage("文字已消除", "success");
+            ui.updateButtonStates();
+            ui.updateRetranslateButton();
+            ui.updateDetectedTextDisplay(); // 显示检测到的文本
+        })
+        .catch(error => {
+            // 移除hideLoading调用
+            ui.hideTranslatingIndicator(state.currentImageIndex);
+            ui.showGeneralMessage(`操作失败: ${error.message}`, "error");
+            ui.updateButtonStates();
+        });
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -1679,6 +2112,7 @@ export function checkForFailedTranslations() { // 导出
     return checkList.some(text => text && text.includes("翻译失败"));
 }
 
+<<<<<<< HEAD
 /**
  * 初始化OCR引擎设置
  */
@@ -1706,6 +2140,8 @@ function initializeOcrEngineSettings() {
     
     console.log(`初始化OCR引擎设置: 当前选择 ${selectedEngine}`);
 }
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 // --- 应用启动 ---
 $(document).ready(initializeApp);

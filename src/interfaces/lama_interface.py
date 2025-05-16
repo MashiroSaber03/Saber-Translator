@@ -2,7 +2,11 @@ import os
 import sys
 import logging
 import numpy as np
+<<<<<<< HEAD
 from PIL import Image, ImageDraw # 确保 ImageDraw 已导入，测试代码需要
+=======
+from PIL import Image
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 # 导入路径助手，确保能找到 sd-webui-cleaner 和模型
 from src.shared.path_helpers import resource_path, get_debug_dir
@@ -29,6 +33,7 @@ if os.path.exists(cleaner_path):
 
         LiteLama = OriginalLiteLama # 赋值给全局变量
 
+<<<<<<< HEAD
         # 定义我们自己的 LiteLama2 类，直接模仿重构前的代码
         class LiteLama2(OriginalLiteLama):
             _instance = None
@@ -81,6 +86,66 @@ if os.path.exists(cleaner_path):
                 super().__init__(self._checkpoint_path, self._config_path)
         
         # 使用我们的LiteLama2替代原来的LamaSingleton
+=======
+        # 定义我们自己的 LiteLama2 (如果需要保持原样) 或直接使用导入的 LiteLama
+        # 这里我们简化，直接使用导入的 LiteLama，但保留单例模式
+        class LamaSingleton:
+            _instance = None
+            _model = None
+            _device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+            @classmethod
+            def get_instance(cls):
+                if cls._instance is None:
+                    cls._instance = cls()
+                    try:
+                        # 配置模型路径
+                        model_dir = resource_path("sd-webui-cleaner/models")
+                        checkpoint_path = os.path.join(model_dir, "big-lama.safetensors")
+
+                        if not os.path.exists(checkpoint_path):
+                            logger.error(f"LAMA 模型文件不存在: {checkpoint_path}")
+                            logger.error("请手动下载模型文件到 sd-webui-cleaner/models/ 目录: https://huggingface.co/anyisalin/big-lama/resolve/main/big-lama.safetensors")
+                            raise FileNotFoundError("LAMA 模型文件未找到")
+
+                        # 配置配置文件路径 (可选，litelama 可能有默认)
+                        # config_path = resource_path("config.yaml") # 或者其他路径
+                        config_path = None # 使用默认
+
+                        logger.info(f"初始化 LAMA 模型，检查点: {checkpoint_path}, 配置: {config_path or '默认'}")
+                        # 使用导入的 LiteLama 类进行初始化
+                        cls._model = LiteLama(checkpoint_path=checkpoint_path, config_path=config_path)
+                        logger.info(f"LAMA 模型初始化成功，将使用设备: {cls._device}")
+
+                    except Exception as e:
+                        logger.error(f"初始化 LAMA 模型失败: {e}", exc_info=True)
+                        cls._instance = None # 初始化失败，重置实例
+                        raise e # 重新抛出异常
+                return cls._instance
+
+            def predict(self, image, mask):
+                if self._model is None:
+                    logger.error("LAMA 模型未初始化，无法执行预测。")
+                    return None
+
+                try:
+                    logger.info(f"将 LAMA 模型移动到设备: {self._device}")
+                    self._model.to(self._device)
+                    logger.info("开始 LAMA 预测...")
+                    result = self._model.predict(image, mask)
+                    logger.info("LAMA 预测完成。")
+                    return result
+                except Exception as e:
+                    logger.error(f"LAMA 预测过程中出错: {e}", exc_info=True)
+                    return None
+                finally:
+                    # 将模型移回 CPU 以释放 GPU 内存 (如果使用了 GPU)
+                    if self._device.startswith("cuda"):
+                        logger.info("将 LAMA 模型移回 CPU。")
+                        self._model.to("cpu")
+                        torch.cuda.empty_cache() # 清理缓存
+
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         LAMA_AVAILABLE = True
         logger.info("LAMA 功能已成功初始化。")
 
@@ -100,6 +165,7 @@ else:
     logger.warning(f"未找到 sd-webui-cleaner 目录: {cleaner_path}，LAMA 功能不可用。")
 
 
+<<<<<<< HEAD
 def lama_clean_object(image, mask):
     """
     使用LAMA清理图像中的对象
@@ -143,11 +209,19 @@ def lama_clean_object(image, mask):
 def clean_image_with_lama(image, mask, use_gpu=True):
     """
     使用 LAMA 模型清除图像中的文本。
+=======
+def clean_image_with_lama(image, mask):
+    """
+    使用 LAMA 模型清除图像中的文本/对象。
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Args:
         image (PIL.Image.Image): 原始图像。
         mask (PIL.Image.Image): 蒙版图像，白色(255)区域为需要清除的部分。
+<<<<<<< HEAD
         use_gpu (bool): 是否使用GPU (现在总是尊重GPU可用性)
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Returns:
         PIL.Image.Image or None: 修复后的图像，如果失败则返回 None。
@@ -157,6 +231,7 @@ def clean_image_with_lama(image, mask, use_gpu=True):
         return None
 
     try:
+<<<<<<< HEAD
         logger.info("开始使用LAMA进行图像修复")
         
         # 确保图像和蒙版都是RGB格式
@@ -183,6 +258,25 @@ def clean_image_with_lama(image, mask, use_gpu=True):
             return result
         else:
             logger.error("LAMA修复失败，返回None")
+=======
+        lama_instance = LamaSingleton.get_instance()
+        if lama_instance is None:
+            logger.error("无法获取 LAMA 模型实例。")
+            return None
+
+        # 确保图像和蒙版是 RGB 格式
+        init_image = image.convert("RGB")
+        mask_image = mask.convert("RGB")
+
+        # 调用单例的 predict 方法
+        result = lama_instance.predict(init_image, mask_image)
+
+        if result:
+            logger.info("LAMA 修复成功。")
+            return result
+        else:
+            logger.error("LAMA 修复失败 (预测方法返回 None)。")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             return None
     except Exception as e:
         logger.error(f"LAMA 修复过程中出错: {e}", exc_info=True)
@@ -202,15 +296,19 @@ if __name__ == '__main__':
     print("--- 测试 LAMA 接口 ---")
     print(f"LAMA 可用状态: {LAMA_AVAILABLE}")
 
+<<<<<<< HEAD
     # 配置日志以便查看输出
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     if LAMA_AVAILABLE:
         # 需要一个测试图片和掩码路径
         test_image_path = resource_path('pic/before1.png') # 替换为你的测试图片
         # 创建一个简单的测试掩码
         try:
+<<<<<<< HEAD
             # ！！！修改点：使用正确的绝对导入路径！！！
             from src.core.detection import get_bubble_coordinates # 假设此函数用于测试
             # ！！！结束修改点！！！
@@ -218,6 +316,11 @@ if __name__ == '__main__':
             img = Image.open(test_image_path).convert("RGB")
             mask = Image.new("L", img.size, 0) # 黑色背景
             draw = ImageDraw.Draw(mask) # ImageDraw 已在文件顶部导入
+=======
+            img = Image.open(test_image_path).convert("RGB")
+            mask = Image.new("L", img.size, 0) # 黑色背景
+            draw = ImageDraw.Draw(mask)
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             w, h = img.size
             # 在中间画一个白色矩形表示要修复的区域
             draw.rectangle([(w//4, h//4), (w*3//4, h*3//4)], fill=255)
@@ -235,8 +338,11 @@ if __name__ == '__main__':
             else:
                 print("LAMA 修复测试失败。")
 
+<<<<<<< HEAD
         except ImportError:
             print("错误：无法导入 src.core.detection 进行测试。请确保该模块存在。")
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         except FileNotFoundError:
              print(f"错误：测试图片未找到 {test_image_path}")
         except Exception as e:

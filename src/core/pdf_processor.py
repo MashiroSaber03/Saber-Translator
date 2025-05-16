@@ -1,9 +1,16 @@
 import io
 import logging
 from PIL import Image
+<<<<<<< HEAD
 import PyPDF2 
 
 logger = logging.getLogger("PDFProcessor")
+=======
+import PyPDF2 # 确保 PyPDF2 已安装
+
+logger = logging.getLogger("PDFProcessor")
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 def extract_images_from_pdf(pdf_file_stream):
     """

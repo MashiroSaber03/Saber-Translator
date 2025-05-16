@@ -11,6 +11,7 @@ export const DEFAULT_PROMPT_NAME = "默认提示词";
 
 // 默认气泡填充颜色（白色）
 export const DEFAULT_FILL_COLOR = '#FFFFFF';
+<<<<<<< HEAD
 
 // --- 新增：自动存档常量 ---
 export const AUTO_SAVE_SLOT_NAME = "__autosave__"; // 内部使用的固定名称
@@ -31,3 +32,5 @@ export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将
 export const DEFAULT_RPD_TRANSLATION = 0; // 0 表示无限制
 export const DEFAULT_RPD_AI_VISION_OCR = 0;
 // ------------------------
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

@@ -309,8 +309,12 @@ class PaddleOCRHandler:
                             if texts:
                                 recognized_text = " ".join(texts)
                                 recognized_texts.append(recognized_text)
+<<<<<<< HEAD
                                 # 修改日志格式，与MangaOCR保持一致
                                 logger.info(f"气泡{i}识别文本: '{recognized_text}'")
+=======
+                                logger.info(f"气泡{i}识别文本: {recognized_text}")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             else:
                                 recognized_texts.append("")
                                 logger.info(f"气泡{i}未识别出文本")
@@ -325,11 +329,15 @@ class PaddleOCRHandler:
                                         text_parts.append(line[1][0])
                                 recognized_text = " ".join(text_parts)
                             recognized_texts.append(recognized_text)
+<<<<<<< HEAD
                             # 修改日志格式，与MangaOCR保持一致
                             if recognized_text:
                                 logger.info(f"气泡{i}识别文本: '{recognized_text}'")
                             else:
                                 logger.info(f"气泡{i}未识别出文本")
+=======
+                            logger.info(f"气泡{i}识别文本: {recognized_text}")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                     else:
                         recognized_texts.append("")
                         logger.info(f"气泡{i}未识别出文本")

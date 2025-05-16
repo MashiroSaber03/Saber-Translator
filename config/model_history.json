@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "custom_openai": [
     "deepseek-chat"
@@ -14,4 +15,37 @@
   "ollama": [
     "qwen:7b"
   ]
+=======
+{
+  "modelProvider": "siliconflow",
+  "modelName": "deepseek-ai/DeepSeek-V3",
+  "siliconflow": [
+    "doubao-1.5-pro-32k-250115",
+    "deepseek-ai/DeepSeek-V2.5",
+    "deepseek-ai/DeepSeek-V3"
+  ],
+  "deepseek": [
+    "deepseek-reasoner",
+    "deepseek-chat"
+  ],
+  "ollama": [
+    "deepseek-r1:8b",
+    "qwen:7b",
+    "llama3"
+  ],
+  "volcano": [
+    "doubao-1.5-pro",
+    "Doubao-1.5-lite-32k",
+    "doubao-1.5-pro-32k-250115"
+  ],
+  "sakura": [
+    "GalTransl-7B-v2.6-IQ4_XS.gguf",
+    "sakura-7b-qwen2.5-v1.0",
+    "sakura-14b-qwen2.5-v1.0",
+    "sakura-32b-qwen2beta-v0.9"
+  ],
+  "dummy": [
+    "dummy"
+  ]
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }

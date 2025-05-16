@@ -14,6 +14,10 @@ from src.core.processing import process_image_translation
 from src.core.rendering import re_render_text_in_bubbles, render_single_bubble # 添加渲染函数
 from src.core.translation import translate_single_text # 添加单文本翻译函数
 from src.interfaces.lama_interface import is_lama_available, clean_image_with_lama, LAMA_AVAILABLE
+<<<<<<< HEAD
+=======
+from src.interfaces.migan_interface import is_migan_available
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 # 导入共享模块
 from src.shared import constants
@@ -42,6 +46,7 @@ def translate_image():
         logger.info(f"文字方向: {data.get('textDirection')}, 字体: {data.get('fontFamily')}, 字号: {data.get('fontSize')}")
         logger.info(f"跳过翻译: {data.get('skip_translation', False)}, 跳过OCR: {data.get('skip_ocr', False)}")  # 更新日志
         logger.info(f"仅消除模式: {data.get('remove_only', False)}")  # 添加仅消除模式日志
+<<<<<<< HEAD
         
         # --- 获取新的 JSON 格式标记 ---
         use_json_format_translation = data.get('use_json_format_translation', False)
@@ -69,6 +74,8 @@ def translate_image():
         logger.info(f"RPD 设置: 翻译服务 RPD={rpd_limit_translation}, AI视觉OCR RPD={rpd_limit_ai_vision_ocr}")
         # --------------------------
         
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         logger.info("------------------------")
         
         image_data = data.get('image')
@@ -94,6 +101,7 @@ def translate_image():
         fill_color = data.get('fill_color', constants.DEFAULT_FILL_COLOR)  # 新增：气泡填充颜色参数
         text_color = data.get('text_color', constants.DEFAULT_TEXT_COLOR)  # 新增：文字颜色参数
         rotation_angle = data.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)  # 新增：旋转角度参数
+<<<<<<< HEAD
         ocr_engine = data.get('ocr_engine', 'auto')  # 新增：OCR引擎选择参数
         
         # 百度OCR相关参数
@@ -112,6 +120,17 @@ def translate_image():
         logger.info(f"自定义 OpenAI Base URL: {custom_base_url if custom_base_url else '未提供'}")
         # ---------------------------------
         
+=======
+        
+        # 添加更多日志记录
+        logger.info(f"使用智能修复: {use_inpainting}, 使用LAMA修复: {use_lama}")
+        logger.info(f"跳过OCR识别: {skip_ocr}")  # 添加新日志
+        logger.info(f"气泡填充颜色: {fill_color}")  # 添加填充颜色日志
+        logger.info(f"自动字体大小: {autoFontSize}")  # 添加自动字体大小日志
+        logger.info(f"文字颜色: {text_color}, 旋转角度: {rotation_angle}")  # 添加文字颜色和旋转角度日志
+        
+        # 检查必要参数
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         # 对于仅消除文字模式，放宽对API和模型参数的要求
         if remove_only:
             logger.info("仅消除文字模式：不检查API和模型参数")
@@ -123,6 +142,7 @@ def translate_image():
                 return jsonify({'error': '缺少必要的参数'}), 400
                 
             # 对于非本地部署的服务商，API Key是必须的
+<<<<<<< HEAD
             if model_provider == constants.CUSTOM_OPENAI_PROVIDER_ID:
                 if not api_key:
                     return jsonify({'error': '使用自定义OpenAI兼容服务时必须提供API Key'}), 400
@@ -136,6 +156,10 @@ def translate_image():
         # 检查百度OCR参数
         if ocr_engine == 'baidu_ocr' and not (baidu_api_key and baidu_secret_key):
             return jsonify({'error': '使用百度OCR时必须提供API Key和Secret Key'}), 400
+=======
+            if model_provider not in ['ollama', 'sakura'] and not api_key:
+                return jsonify({'error': '非本地部署模式下必须提供API Key'}), 400
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
         # 处理字体大小 - 支持自动字体大小
         if autoFontSize:
@@ -151,6 +175,7 @@ def translate_image():
                     logger.info(f"从自动字号切换到非自动字号，使用默认字号: {font_size}")
                 else:
                     font_size = int(font_size_str)
+<<<<<<< HEAD
             except (ValueError, TypeError):
                 logger.warning(f"字体大小参数'{font_size_str}'无效，使用默认值: {constants.DEFAULT_FONT_SIZE}")
                 font_size = constants.DEFAULT_FONT_SIZE
@@ -194,6 +219,41 @@ def translate_image():
         # 如果是仅消除文字模式，跳过翻译
         if remove_only or skip_translation:
             logger.info("仅消除文字模式或跳过翻译，处理将省略翻译步骤")
+=======
+                    if font_size <= 0:
+                        return jsonify({'error': '字号大小必须是正整数'}), 400
+            except ValueError:
+                if font_size_str == 'auto':
+                    font_size = 'auto'
+                    logger.info("使用自动字体大小（值为'auto'）")
+                else:
+                    return jsonify({'error': '字号大小必须是整数或"auto"'}), 400
+            except TypeError:
+                # 如果fontSize_str为None，使用默认值
+                font_size = constants.DEFAULT_FONT_SIZE
+                logger.info(f"使用默认字号: {font_size}")
+
+        # 处理字体路径
+        corrected_font_path = get_font_path(font_family)
+        print(f"原始字体路径: {font_family}, 修正后: {corrected_font_path}")
+
+        img = Image.open(io.BytesIO(base64.b64decode(image_data)))
+        
+        # 确定修复方法
+        inpainting_method = 'solid'  # 默认使用纯色填充
+        if use_lama and is_lama_available():
+            inpainting_method = 'lama'
+        elif use_inpainting and is_migan_available():
+            inpainting_method = 'migan'
+            
+        # 仅消除文字模式或跳过翻译步骤
+        if remove_only or skip_translation:
+            print("执行仅消除文字模式，跳过翻译步骤")
+            if skip_ocr:
+                print("同时跳过OCR文本识别步骤")
+            
+            # 使用核心处理模块
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             translated_image, original_texts, bubble_texts, textbox_texts, bubble_coords, bubble_styles = process_image_translation(
                 image_pil=img,
                 target_language=target_language,
@@ -213,6 +273,7 @@ def translate_image():
                 migan_blend_edges=blend_edges,
                 skip_ocr=skip_ocr,
                 skip_translation=True,  # 设置跳过翻译
+<<<<<<< HEAD
                 provided_coords=provided_coords,
                 text_color=text_color,  # 传递文字颜色参数
                 rotation_angle=rotation_angle,  # 传递旋转角度参数
@@ -233,6 +294,10 @@ def translate_image():
                 rpd_limit_translation=rpd_limit_translation,
                 rpd_limit_ai_vision_ocr=rpd_limit_ai_vision_ocr
                 # ------------------------------------
+=======
+                text_color=text_color,  # 传递文字颜色参数
+                rotation_angle=rotation_angle  # 传递旋转角度参数
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             )
             
             # 确保返回空文本
@@ -260,6 +325,7 @@ def translate_image():
                 migan_strength=inpainting_strength,
                 migan_blend_edges=blend_edges,
                 skip_ocr=skip_ocr,
+<<<<<<< HEAD
                 provided_coords=provided_coords,
                 text_color=text_color,  # 传递文字颜色参数
                 rotation_angle=rotation_angle,  # 传递旋转角度参数
@@ -280,6 +346,11 @@ def translate_image():
                 rpd_limit_translation=rpd_limit_translation,
                 rpd_limit_ai_vision_ocr=rpd_limit_ai_vision_ocr
                 # ------------------------------------
+=======
+                skip_translation=skip_translation,
+                text_color=text_color,  # 传递文字颜色参数
+                rotation_angle=rotation_angle  # 传递旋转角度参数
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             )
             
             # textbox_texts已从detect_text_in_bubbles函数中获取，无需在这里处理
@@ -414,6 +485,7 @@ def re_render_image():
         corrected_font_path = get_font_path(fontFamily)
         logger.info(f"原始字体路径: {fontFamily}, 修正后: {corrected_font_path}")
 
+<<<<<<< HEAD
         # === 修改：优先使用干净的图片，并重构图像处理逻辑 ===
         # 默认使用当前图片为基础，如果提供了image_data
         img = None
@@ -470,6 +542,63 @@ def re_render_image():
             else:
                 logger.error("既没有干净图片也没有当前图片，无法渲染")
                 return jsonify({'error': '未提供图像数据'}), 400
+=======
+        # 优先使用干净的图片（如果可用）
+        if clean_image_data:
+            logger.info("使用消除文字后的干净图片进行重新渲染")
+            img = Image.open(io.BytesIO(base64.b64decode(clean_image_data)))
+            
+            # 重要：即使使用干净图片，也要设置跳过修复标记和标记已修复背景
+            if is_font_style_change:
+                setattr(img, '_skip_inpainting', True)
+                # 保存干净图片引用到新图像中
+                setattr(img, '_clean_image', img.copy())
+                setattr(img, '_clean_background', img.copy())
+                setattr(img, '_migan_inpainted', True)  # 设置已修复背景标记
+                logger.info("使用干净图片，并设置跳过修复标记和已修复背景标记")
+                logger.info("已保存干净图片引用到图像对象，用于后续处理")
+        else:
+            # 回退到当前图片
+            logger.info("没有找到干净图片，使用当前图片")
+            img = Image.open(io.BytesIO(base64.b64decode(image_data)))
+            
+            # 对于字体样式变更，我们应该总是跳过修复，不再需要额外检查_migan_inpainted
+            if is_font_style_change:
+                # 设置跳过修复标记
+                setattr(img, '_skip_inpainting', True)
+                # 设置已修复背景标记
+                setattr(img, '_migan_inpainting', True)
+                logger.info("检测到字体样式变更，设置跳过修复标记和已修复背景标记")
+                
+                # 如果是字体样式变更但没有干净图片，需要提示用户
+                if not clean_image_data:
+                    logger.warning("警告：没有找到消除文字后的干净图片，字体样式变更可能会导致文字叠加问题")
+                    # 如果是智能修复模式则报错，传统模式则继续执行
+                    if use_inpainting or use_lama:
+                        return jsonify({'error': '未找到干净的背景图片，请重新进行翻译以获得更好的效果'}), 400
+                    else:
+                        logger.info("传统纯色填充模式，虽然没有干净图片但允许继续执行")
+                        # 为传统模式创建带有纯色气泡的"干净"图片
+                        # 注意：这个并不是真正干净的背景，但比直接使用有文字的图片要好
+                        try:
+                            fill_color = request.json.get('fill_color', constants.DEFAULT_FILL_COLOR)  # 获取填充颜色，默认白色
+                            logger.info(f"尝试创建临时干净背景（带填充颜色 {fill_color} 的气泡）")
+                            img_copy = img.copy()
+                            draw = ImageDraw.Draw(img_copy)
+                            for x1, y1, x2, y2 in bubble_coords:
+                                draw.rectangle(((x1, y1), (x2, y2)), fill=fill_color)
+                            setattr(img, '_clean_image', img_copy)
+                            setattr(img, '_clean_background', img_copy)
+                            logger.info(f"成功创建临时干净背景，填充颜色: {fill_color}")
+                        except Exception as e:
+                            logger.error(f"创建临时干净背景失败: {e}")
+                
+                # 如果图像已有修复标记，将其保留以便后续处理
+                if hasattr(img, '_migan_inpainted'):
+                    logger.info("保留MI-GAN图像修复标记")
+                if hasattr(img, '_lama_inpainted'):
+                    logger.info("保留LAMA图像修复标记")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         
         # 提取颜色和旋转角度设置
         textColor = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
@@ -504,7 +633,10 @@ def re_render_image():
             if use_individual_styles:
                 logger.info("前端请求强制使用单个气泡样式，将优先使用各气泡的独立设置")
         
+<<<<<<< HEAD
         # 渲染文本到图像
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         rendered_image = re_render_text_in_bubbles(
             img,
             bubble_texts,
@@ -516,12 +648,19 @@ def re_render_image():
             blend_edges=blend_edges,
             inpainting_strength=inpainting_strength,
             use_lama=use_lama,  # 传递LAMA修复选项
+<<<<<<< HEAD
             fill_color=data.get('fill_color', constants.DEFAULT_FILL_COLOR),  # 传递填充颜色，默认白色
+=======
+            fill_color=request.json.get('fill_color', constants.DEFAULT_FILL_COLOR),  # 传递填充颜色，默认白色
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             text_color=textColor,  # 传递文字颜色
             rotation_angle=rotationAngle  # 传递旋转角度
         )
 
+<<<<<<< HEAD
         # 转换结果图像为Base64字符串
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         buffered = io.BytesIO()
         rendered_image.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
@@ -933,6 +1072,7 @@ def route_translate_single_text():
         model_name = data.get('model_name')
         model_provider = data.get('model_provider')
         prompt_content = data.get('prompt_content')
+<<<<<<< HEAD
         use_json_format = data.get('use_json_format', False)
         custom_base_url = data.get('custom_base_url') # --- 新增获取 ---
 
@@ -962,11 +1102,33 @@ def route_translate_single_text():
         try:
             logger.info(f"开始调用translate_single_text函数进行翻译... JSON模式: {use_json_format}, 自定义BaseURL: {custom_base_url if custom_base_url else '无'}, RPD: {rpd_limit_translation}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
+=======
+
+        # 记录请求参数
+        logger.info(f"收到单条文本翻译请求: 目标语言={target_language}, 模型={model_provider}/{model_name}")
+        logger.info(f"原文长度: {len(original_text) if original_text else 0}字符")
+
+        # 检查除API Key外的必要参数
+        if not all([original_text, target_language, model_name, model_provider]):
+            logger.error("缺少必要的参数")
+            return jsonify({'error': '缺少必要的参数'}), 400
+            
+        # 对于非本地部署的服务商，API Key是必须的
+        if model_provider not in ['ollama', 'sakura'] and not api_key:
+            logger.error("非本地部署模式下必须提供API Key")
+            return jsonify({'error': '非本地部署模式下必须提供API Key'}), 400
+
+        try:
+            # 使用导入的函数
+            logger.info("开始调用translate_single_text函数进行翻译...")
+            translated = translate_single_text(
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 original_text, 
                 target_language, 
                 model_provider, 
                 api_key=api_key, 
                 model_name=model_name, 
+<<<<<<< HEAD
                 prompt_content=prompt_content,
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
@@ -978,15 +1140,35 @@ def route_translate_single_text():
                 save_model_info_api(model_provider, model_name)
             except Exception as e:
                 logger.warning(f"保存模型历史时出错: {e}")
+=======
+                prompt_content=prompt_content
+            )
+            
+            # 不再在后端自动保存模型历史，改由前端请求保存
+            # 模型历史保存已移至config_api.py的save_model_info_api函数
+            
+            logger.info(f"翻译成功，翻译结果长度: {len(translated) if translated else 0}字符")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             
             return jsonify({
                 'translated_text': translated
             })
 
         except Exception as e:
+<<<<<<< HEAD
             logger.error(f"翻译单条文本时出错: {e}")
             return jsonify({'error': f'翻译失败: {str(e)}'}), 500
 
     except Exception as e:
         logger.error(f"处理单条文本翻译请求时出错: {e}")
         return jsonify({'error': f'请求处理失败: {str(e)}'}), 500
+=======
+            logger.error(f"翻译单一文本失败: {e}")
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    except Exception as e:
+        logger.error(f"处理单条文本翻译请求时出错: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

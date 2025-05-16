@@ -1,5 +1,6 @@
 // src/app/static/js/state.js
 
+<<<<<<< HEAD
 // 导入常量模块
 import * as constants from './constants.js';
 
@@ -53,10 +54,38 @@ export let isAiVisionOcrJsonMode = false;
 export let rpdLimitTranslation = constants.DEFAULT_RPD_TRANSLATION; // 从前端常量获取默认值
 export let rpdLimitAiVisionOcr = constants.DEFAULT_RPD_AI_VISION_OCR;
 // --------------------
+=======
+// --- 核心状态变量 ---
+export let images = []; // 存储所有图片信息的数组
+export let currentImageIndex = -1; // 当前显示的图片索引
+export let editModeActive = false; // 编辑模式是否激活
+export let selectedBubbleIndex = -1; // 编辑模式下选中的气泡索引
+export let bubbleSettings = []; // 当前图片的独立气泡设置 (编辑模式用)
+export let initialBubbleSettings = []; // 进入编辑模式时的初始气泡设置备份
+
+// --- 提示词状态 ---
+export let currentPromptContent = ""; // 当前漫画翻译提示词内容
+export let defaultPromptContent = ""; // 默认漫画翻译提示词内容
+export let savedPromptNames = []; // 已保存的漫画翻译提示词名称列表
+
+export let currentTextboxPromptContent = ""; // 当前文本框提示词内容
+export let defaultTextboxPromptContent = ""; // 默认文本框提示词内容
+export let savedTextboxPromptNames = []; // 已保存的文本框提示词名称列表
+export let useTextboxPrompt = false; // 是否启用文本框提示词
+
+// --- 默认设置 (可以从 state 获取，避免硬编码) ---
+// 注意：这些值应该在 main.js 初始化时从 DOM 读取一次
+export let defaultFontSize = 25;
+export let defaultFontFamily = 'fonts/STSONG.TTF'; // 初始值，会被 main.js 更新
+export let defaultLayoutDirection = 'vertical';
+export let defaultTextColor = '#000000';
+export let defaultFillColor = '#FFFFFF' // 白色的填充颜色;
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 // --- 更新状态的函数 ---
 
 /**
+<<<<<<< HEAD
  * 添加图片到状态数组
  * @param {object} imageObject - 要添加的图片对象
  */
@@ -85,6 +114,13 @@ export function setImages(newImages) {
         hasUnsavedChanges: img.hasUnsavedChanges || false
     }));
     setHasUnsavedChanges(false);
+=======
+ * 更新图片数组
+ * @param {Array} newImages - 新的图片数组
+ */
+export function setImages(newImages) {
+    images = newImages;
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -93,8 +129,11 @@ export function setImages(newImages) {
  */
 export function setCurrentImageIndex(index) {
     currentImageIndex = index;
+<<<<<<< HEAD
     const currentImage = getCurrentImage();
     setHasUnsavedChanges(currentImage?.hasUnsavedChanges || false);
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -124,6 +163,7 @@ export function updateCurrentImageProperty(key, value) {
 }
 
 /**
+<<<<<<< HEAD
  * 更新指定索引图片的特定属性
  * @param {number} index - 要更新的图片索引
  * @param {string} key - 要更新的属性名
@@ -139,12 +179,17 @@ export function updateImagePropertyByIndex(index, key, value) {
 }
 
 /**
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
  * 设置编辑模式状态
  * @param {boolean} isActive - 是否激活编辑模式
  */
 export function setEditModeActive(isActive) {
     editModeActive = isActive;
+<<<<<<< HEAD
     if(isActive) setHasUnsavedChanges(false);
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -161,6 +206,10 @@ export function setSelectedBubbleIndex(index) {
  */
 export function setBubbleSettings(settings) {
     bubbleSettings = settings;
+<<<<<<< HEAD
+=======
+    // 同时更新当前图片的 bubbleSettings 属性
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     updateCurrentImageProperty('bubbleSettings', JSON.parse(JSON.stringify(settings)));
 }
 
@@ -171,7 +220,12 @@ export function setBubbleSettings(settings) {
  */
 export function updateSingleBubbleSetting(index, newSetting) {
     if (index >= 0 && index < bubbleSettings.length) {
+<<<<<<< HEAD
         bubbleSettings[index] = { ...bubbleSettings[index], ...newSetting };
+=======
+        bubbleSettings[index] = { ...bubbleSettings[index], ...newSetting }; // 合并更新
+        // 同时更新当前图片的 bubbleSettings 属性
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         updateCurrentImageProperty('bubbleSettings', JSON.parse(JSON.stringify(bubbleSettings)));
     } else {
         console.warn(`状态更新失败: 无法更新气泡 ${index} 的设置，索引无效`);
@@ -192,10 +246,16 @@ export function setInitialBubbleSettings(settings) {
  * @param {string} defaultContent - 默认内容
  * @param {Array<string>} names - 已保存名称列表
  */
+<<<<<<< HEAD
 export function setPromptState(current, defaultContent, names, defaultJsonPromptContent = constants.DEFAULT_TRANSLATE_JSON_PROMPT) {
     currentPromptContent = current;
     defaultPromptContent = defaultContent;
     defaultTranslateJsonPrompt = defaultJsonPromptContent;
+=======
+export function setPromptState(current, defaultContent, names) {
+    currentPromptContent = current;
+    defaultPromptContent = defaultContent;
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     savedPromptNames = names;
 }
 
@@ -259,6 +319,7 @@ export function setDefaultFillColor(color) {
     defaultFillColor = color;
 }
 
+<<<<<<< HEAD
 /**
  * 设置手动标注坐标，并更新未保存状态
  * @param {Array<Array<number>>} coords - 新的坐标数组
@@ -372,18 +433,50 @@ export function deleteImage(index) {
             currentImageIndex--;
             const currentImg = getCurrentImage();
             setHasUnsavedChanges(currentImg?.hasUnsavedChanges || false);
+=======
+// 可以在这里添加更多状态管理函数，例如添加图片、删除图片等
+/**
+ * 添加图片到状态数组
+ * @param {object} imageObject - 要添加的图片对象
+ */
+export function addImage(imageObject) {
+    images.push(imageObject);
+}
+
+/**
+ * 删除指定索引的图片
+ * @param {number} index - 要删除的图片索引
+ * @returns {boolean} 是否成功删除
+ */
+export function deleteImage(index) {
+    if (index >= 0 && index < images.length) {
+        images.splice(index, 1);
+        // 如果删除的是当前图片或之前的图片，需要调整 currentImageIndex
+        if (currentImageIndex === index) {
+            currentImageIndex = Math.min(index, images.length - 1); // 尝试选中下一个或最后一个
+            if (images.length === 0) currentImageIndex = -1; // 如果空了则设为-1
+        } else if (currentImageIndex > index) {
+            currentImageIndex--; // 如果删除的是前面的，当前索引减一
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         }
         return true;
     }
     return false;
 }
 
+<<<<<<< HEAD
+=======
+/**
+ * 清空所有图片
+ */
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 export function clearImages() {
     images = [];
     currentImageIndex = -1;
     bubbleSettings = [];
     initialBubbleSettings = [];
     selectedBubbleIndex = -1;
+<<<<<<< HEAD
     setEditModeActive(false);
     setLabelingModeActive(false);
     setManualCoords([], true);
@@ -510,4 +603,6 @@ export function setRpdLimitAiVisionOcr(limit) {
     const newLimit = parseInt(limit);
     rpdLimitAiVisionOcr = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
     console.log(`状态更新: AI视觉OCR RPD -> ${rpdLimitAiVisionOcr}`);
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }

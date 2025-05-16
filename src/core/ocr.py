@@ -1,5 +1,6 @@
 import logging
 import os
+<<<<<<< HEAD
 import time # 为AI Vision添加time导入
 from PIL import Image
 import cv2 # 需要 cv2 来裁剪图像
@@ -7,10 +8,16 @@ import numpy as np
 import io
 import json # 确保导入 json
 import re
+=======
+from PIL import Image
+import cv2 # 需要 cv2 来裁剪图像
+import numpy as np
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 # 导入接口和常量
 from src.interfaces.manga_ocr_interface import recognize_japanese_text, get_manga_ocr_instance
 from src.interfaces.paddle_ocr_interface import get_paddle_ocr_handler, PaddleOCRHandler
+<<<<<<< HEAD
 from src.interfaces.baidu_ocr_interface import recognize_text_with_baidu_ocr, test_baidu_ocr_connection
 from src.shared import constants
 from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
@@ -19,10 +26,15 @@ from src.shared.image_helpers import image_to_base64 # 导入图像转Base64助�
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
 # 导入RPD限制辅助函数
 from src.core.translation import _enforce_rpd_limit
+=======
+from src.shared import constants
+from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 logger = logging.getLogger("CoreOCR")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+<<<<<<< HEAD
 # --- RPD Limiting Globals for AI Vision OCR ---
 _ai_vision_ocr_rpd_last_reset_time_container = [0]
 _ai_vision_ocr_rpd_request_count_container = [0]
@@ -84,11 +96,17 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               rpd_limit_ai_vision: int = constants.DEFAULT_RPD_AI_VISION_OCR): # <--- 新增RPD参数
     """
     根据源语言和引擎选择，使用合适的 OCR 引擎识别所有气泡内的文本。
+=======
+def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan'):
+    """
+    根据源语言，使用合适的 OCR 引擎识别所有气泡内的文本。
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Args:
         image_pil (PIL.Image.Image): 包含气泡的原始 PIL 图像。
         bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
         source_language (str): 源语言代码 (例如 'japan', 'en', 'korean')。
+<<<<<<< HEAD
         ocr_engine (str): OCR引擎选择，可以是 'auto', 'manga_ocr', 'paddle_ocr', 'baidu_ocr' 或 'ai_vision'。
         baidu_api_key (str, optional): 百度OCR API Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
         baidu_secret_key (str, optional): 百度OCR Secret Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
@@ -99,6 +117,8 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         ai_vision_ocr_prompt (str, optional): AI视觉OCR提示词，仅当 ocr_engine 为 'ai_vision' 时需要。
         use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
         rpd_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Returns:
         list: 包含每个气泡识别文本的列表，顺序与 bubble_coords 一致。
@@ -108,6 +128,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         logger.info("没有气泡坐标，跳过 OCR。")
         return []
 
+<<<<<<< HEAD
     # --- 确定 OCR 引擎类型 ---
     ocr_engine_type = 'Unknown'
     if ocr_engine == 'auto':
@@ -192,6 +213,23 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
 
     # --- 使用 PaddleOCR ---
     elif ocr_engine_type == 'PaddleOCR':
+=======
+    # 确定使用哪个 OCR 引擎
+    ocr_engine_type = constants.SUPPORTED_LANGUAGES_OCR.get(source_language, 'MangaOCR') # 默认为 MangaOCR
+    logger.info(f"源语言: {source_language}, 选择 OCR 引擎: {ocr_engine_type}")
+
+    recognized_texts = [""] * len(bubble_coords) # 初始化结果列表
+
+    # 将 PIL Image 转换为 numpy 数组以方便裁剪
+    try:
+        img_np = np.array(image_pil.convert('RGB')) # 确保是 RGB
+    except Exception as e:
+        logger.error(f"将 PIL 图像转换为 NumPy 数组失败: {e}", exc_info=True)
+        return recognized_texts # 返回空结果
+
+    # --- 使用 PaddleOCR ---
+    if ocr_engine_type == 'PaddleOCR':
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         paddle_ocr = get_paddle_ocr_handler()
         if paddle_ocr and paddle_ocr.initialize(source_language): # 尝试初始化对应语言
             try:
@@ -200,12 +238,15 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                 logger.info(f"开始使用 PaddleOCR 识别 {len(bubble_coords)} 个气泡...")
                 recognized_texts = paddle_ocr.recognize_text(image_pil, bubble_coords)
                 logger.info("PaddleOCR 识别完成。")
+<<<<<<< HEAD
 
                 # 在核心OCR模块中记录每个气泡的识别结果，确保与MangaOCR保持一致的格式
                 for i, text in enumerate(recognized_texts):
                     if text:
                         logger.info(f"气泡 {i} 识别文本: '{text}'")
                 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 # 确保返回列表长度与坐标一致
                 if len(recognized_texts) != len(bubble_coords):
                      logger.warning(f"PaddleOCR 返回结果数量 ({len(recognized_texts)}) 与气泡数量 ({len(bubble_coords)}) 不匹配，将进行填充。")
@@ -244,11 +285,15 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                     # 调用 MangaOCR 接口识别
                     text = recognize_japanese_text(bubble_img_pil)
                     recognized_texts[i] = text
+<<<<<<< HEAD
                     # 输出识别文本到日志
                     if text:
                         logger.info(f"气泡 {i} 识别文本: '{text}'")
                     else:
                         logger.info(f"气泡 {i} 未识别出文本")
+=======
+                    # logger.debug(f"气泡 {i} MangaOCR 结果: {text}")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
                 except Exception as e:
                     logger.error(f"处理气泡 {i} (MangaOCR) 时出错: {e}", exc_info=True)
@@ -256,6 +301,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
             logger.info("MangaOCR 识别完成。")
         else:
             logger.error("无法初始化 MangaOCR，OCR 步骤跳过。")
+<<<<<<< HEAD
     elif ocr_engine_type == 'AIVision':
         # 调用AI视觉OCR服务
         if all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
@@ -340,6 +386,8 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                 logger.error(f"AI视觉OCR 处理出错: {e}", exc_info=True)
         else:
             logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     else:
          logger.error(f"未知的 OCR 引擎类型: {ocr_engine_type}")
 
@@ -383,3 +431,10 @@ if __name__ == '__main__':
 
     # 测试英语 (PaddleOCR)
     run_test(test_image_path_en, 'en')
+<<<<<<< HEAD
+=======
+
+    # 测试韩语 (PaddleOCR) - 需要韩语图片
+    # test_image_path_ko = resource_path('path/to/korean_image.png')
+    # run_test(test_image_path_ko, 'korean')
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

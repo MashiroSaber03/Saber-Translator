@@ -4,6 +4,10 @@ import numpy as np
 import os
 import sys
 
+<<<<<<< HEAD
+=======
+# 添加项目根目录到Python路径，使模块导入在直接运行脚本时也能工作
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 try:
     from src.interfaces.yolo_interface import detect_bubbles # 正常导入方式
     # 确保得到config_loader模块

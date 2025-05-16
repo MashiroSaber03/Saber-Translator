@@ -2,9 +2,13 @@ import * as state from './state.js';
 import * as ui from './ui.js';
 import * as api from './api.js';
 import * as editMode from './edit_mode.js'; // 引入编辑模式逻辑
+<<<<<<< HEAD
 import * as labelingMode from './labeling_mode.js'; // <--- 新增导入
 import * as main from './main.js';
 import * as session from './session.js'; // <--- 新增导入
+=======
+// import $ from 'jquery'; // 假设 jQuery 已全局加载
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 /**
  * 绑定所有事件监听器
@@ -62,6 +66,7 @@ export function bindEventListeners() {
     $("#inpaintingStrength").on('input', handleInpaintingStrengthChange); // 滑块实时变化
     $("#blendEdges").on('change', handleGlobalSettingChange); // 边缘融合也触发重渲染
     $("#fillColor").on('input', handleGlobalSettingChange); // 填充颜色实时变化
+<<<<<<< HEAD
     $("#ocrEngine").on('change', handleOcrEngineChange); // OCR引擎变化
     
     // 百度OCR相关事件
@@ -71,6 +76,8 @@ export function bindEventListeners() {
     // AI视觉OCR相关事件
     $("#aiVisionProvider, #aiVisionModelName, #aiVisionOcrPrompt").on('change', handleGlobalSettingChange);
     $("#testAiVisionOcrButton").on('click', handleTestAiVisionOcr); // AI视觉OCR测试按钮
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     // --- 模型与提示词 ---
     $("#modelProvider").on('change', handleModelProviderChange);
@@ -78,6 +85,7 @@ export function bindEventListeners() {
     $("#modelName").on('blur', handleModelNameBlur);
     // Ollama/Sakura 测试按钮 (如果存在)
     // 注意：按钮是动态添加的，需要使用事件委托或在按钮创建后绑定
+<<<<<<< HEAD
     $(document).on('click', '#testOllamaButton', function() {
         // 使用函数调用以确保 this 上下文正确
         api.testOllamaConnectionApi().then(response => {
@@ -128,16 +136,30 @@ export function bindEventListeners() {
     $("#rememberPrompt").on('change', function() {
         $("#promptName").toggle($(this).is(':checked'));
     });
+=======
+    $(document).on('click', '#testOllamaButton', api.testOllamaConnectionApi); // 直接调用 API 测试
+    $(document).on('click', '#testSakuraButton', api.testSakuraConnectionApi); // 直接调用 API 测试
+    // 模型按钮点击 (事件委托)
+    $(document).on('click', '#ollamaModelsList .model-button, #sakuraModelsList .model-button', handleModelButtonClick);
+
+
+    $("#savePromptButton").on('click', handleSavePrompt);
+    $("#promptDropdownButton").on('click', (e) => { e.stopPropagation(); $("#promptDropdown").toggle(); });
+    // 下拉列表项和删除按钮的点击事件在 populate 函数中绑定
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     $("#enableTextboxPrompt").on('change', handleEnableTextboxPromptChange);
     $("#saveTextboxPromptButton").on('click', handleSaveTextboxPrompt);
     $("#textboxPromptDropdownButton").on('click', (e) => { e.stopPropagation(); $("#textboxPromptDropdown").toggle(); });
     // 下拉列表项和删除按钮的点击事件在 populate 函数中绑定
+<<<<<<< HEAD
     
     // 记住文本框提示词复选框变更事件
     $("#rememberTextboxPrompt").on('change', function() {
         $("#textboxPromptName").toggle($(this).is(':checked'));
     });
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     // --- 系统与其他 ---
     $("#cleanDebugFilesButton").on('click', handleCleanDebugFiles);
@@ -147,17 +169,21 @@ export function bindEventListeners() {
     $(document).on('click', '.donate-close', handleDonateClose);
     $(window).on('click', handleWindowClickForModal); // 点击模态框外部关闭
 
+<<<<<<< HEAD
     // === 修改/新增：会话管理按钮事件 ===
     $("#saveCurrentSessionButton").on('click', handleSaveCurrentSession); // <--- 新增"保存"绑定
     $("#saveAsSessionButton").on('click', handleSaveAsSession);       // <--- 修改为"另存为"绑定 (原 handleSaveSession)
     $("#loadSessionButton").on('click', handleLoadSessionClick);
     // === 结束修改/新增 ===
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     // --- 编辑模式 ---
     $("#toggleEditModeButton").on('click', editMode.toggleEditMode);
     // 气泡列表项点击 (事件委托)
     $("#bubbleList").on('click', '.bubble-item', handleBubbleItemClick);
     // 编辑区域输入/变更事件
+<<<<<<< HEAD
     $("#bubbleTextEditor").on('input', handleBubbleEditorChange);
     $("#bubbleFontSize").on('change', handleBubbleSettingChange);
     $("#autoBubbleFontSize").on('change', handleBubbleSettingChange);
@@ -166,6 +192,15 @@ export function bindEventListeners() {
     $("#bubbleTextColor").on('input', handleBubbleSettingChange);
     $("#bubbleFillColor").on('input', handleBubbleSettingChange);
     $("#bubbleRotationAngle").on('input', handleBubbleRotationChange);
+=======
+    $("#bubbleTextEditor").on('input', handleBubbleEditorChange); // 文本实时变化
+    $("#bubbleFontSize").on('change', handleBubbleSettingChange);
+    $("#autoBubbleFontSize").on('change', handleBubbleSettingChange); // 自动字号
+    $("#bubbleFontFamily").on('change', handleBubbleSettingChange);
+    $("#bubbleTextDirection").on('change', handleBubbleSettingChange);
+    $("#bubbleTextColor").on('input', handleBubbleSettingChange); // 颜色实时变化
+    $("#bubbleRotationAngle").on('input', handleBubbleRotationChange); // 旋转实时变化 (带延迟)
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     $("#positionOffsetX").on('input', handleBubblePositionChange); // 位置实时变化 (带延迟)
     $("#positionOffsetY").on('input', handleBubblePositionChange); // 位置实时变化 (带延迟)
     // 编辑操作按钮
@@ -205,6 +240,7 @@ export function bindEventListeners() {
     $("#managePluginsButton").on('click', handleManagePluginsClick);
     $(document).on('click', '.plugin-modal-close', handlePluginModalClose);
     $(window).on('click', handleWindowClickForPluginModal);
+<<<<<<< HEAD
     // 实时启用/禁用开关 (事件委托) - target 指向 input
     $("#pluginListContainer").on('change', 'input.plugin-enable-toggle', handlePluginToggleChange);
     // 删除按钮 (事件委托) - target 指向 button
@@ -307,6 +343,18 @@ export function bindEventListeners() {
         // localStorage.setItem('rpdLimitAiVisionOcr', state.rpdLimitAiVisionOcr);
     });
     // ---------------------------
+=======
+    $("#pluginListContainer").on('change', '.plugin-enable-toggle', handlePluginToggleChange);
+    $("#pluginListContainer").on('click', '.plugin-delete-button', handlePluginDeleteClick);
+    // 添加插件设置按钮 (事件委托)
+    $("#pluginListContainer").on('click', '.plugin-settings-button', handlePluginSettingsClick);
+    
+    // 插件配置模态框关闭按钮 (事件委托，因为模态框是动态创建的)
+    $(document).on('click', '#pluginConfigModal .plugin-modal-close', handlePluginConfigModalClose);
+    
+    // 插件配置保存按钮 (事件委托)
+    $(document).on('submit', '#pluginConfigForm', handlePluginConfigSave);
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     console.log("事件监听器绑定完成。");
 }
@@ -341,6 +389,7 @@ function handleTranslateCurrent() {
     // 使用showGeneralMessage替代showLoading
     ui.showGeneralMessage("翻译中...", "info", false, 0);
     // translateCurrentImage 函数需要在 main.js 或 api.js 中定义并导出
+<<<<<<< HEAD
     import('./main.js').then(main => {
         main.translateCurrentImage()
             .then(() => {
@@ -350,6 +399,9 @@ function handleTranslateCurrent() {
                 // 错误处理
             });
     });
+=======
+    import('./main.js').then(main => main.translateCurrentImage());
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 function handleRemoveTextOnly() {
@@ -360,6 +412,7 @@ function handleRemoveTextOnly() {
     // 使用showGeneralMessage替代showLoading
     ui.showGeneralMessage("消除文字中...", "info", false, 0);
     // removeBubbleTextOnly 函数需要在 main.js 或 api.js 中定义并导出
+<<<<<<< HEAD
     import('./main.js').then(main => {
         main.removeBubbleTextOnly()
             .then(() => {
@@ -369,6 +422,9 @@ function handleRemoveTextOnly() {
                 // 错误处理
             });
     });
+=======
+    import('./main.js').then(main => main.removeBubbleTextOnly());
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 function handleTranslateAll() {
@@ -388,7 +444,10 @@ function handleClearAll() {
         ui.updateButtonStates();
         ui.updateProgressBar(0, ''); // 重置进度条
         editMode.exitEditMode(); // 如果在编辑模式则退出
+<<<<<<< HEAD
         session.triggerAutoSave(); // <--- 清除所有图片后触发 (会保存一个空状态)
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
@@ -408,7 +467,10 @@ function handleDeleteCurrent() {
                 ui.updateButtonStates();
                 editMode.exitEditMode();
             }
+<<<<<<< HEAD
             session.triggerAutoSave(); // <--- 删除图片后触发
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         }
     }
 }
@@ -476,6 +538,7 @@ function handleDownloadAll() {
     import('./main.js').then(main => main.downloadAllImages());
 }
 
+<<<<<<< HEAD
 function handleGlobalSettingChange(event) {
     const currentImage = state.getCurrentImage();
     const changedElement = event.target; // 获取触发事件的元素
@@ -625,12 +688,43 @@ function handleGlobalSettingChange(event) {
     } else if (!settingsUpdated && settingId !== 'fillColor') {
          console.log("全局设置变更未导致需要重渲染的更新。");
     }
+=======
+function handleGlobalSettingChange() {
+    // 当全局字体/大小/方向/颜色等改变时，如果当前有已翻译图片，触发重渲染
+    const currentImage = state.getCurrentImage();
+    if (currentImage && currentImage.translatedDataURL) {
+        console.log("全局设置变更，触发重新渲染...");
+        
+        // 检测是否是从自动字号切换到非自动字号
+        const isAutoFontSizeChange = $(this).attr('id') === 'autoFontSize';
+        const isPrevAutoFontSize = currentImage.autoFontSize;
+        const isNowAutoFontSize = $('#autoFontSize').is(':checked');
+        
+        // 如果是自动字号切换到非自动字号，特殊处理
+        if (isAutoFontSizeChange && isPrevAutoFontSize && !isNowAutoFontSize) {
+            console.log("检测到从自动字号切换到非自动字号");
+            // 启用字号输入，并设置为默认值
+            $('#fontSize').prop('disabled', false).val(state.defaultFontSize);
+        }
+        
+        // reRenderTranslatedImage 函数需要在 main.js 或 edit_mode.js 中定义并导出
+        import('./edit_mode.js').then(edit => edit.reRenderFullImage(true, isPrevAutoFontSize && !isNowAutoFontSize)); // 传递参数表明是全局设置变更以及是否从自动切换到非自动
+    }
+    // 更新状态中的默认值 (如果需要)
+    // state.setDefaultFontSize(...) 等
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 function handleInpaintingMethodChange() {
     const repairMethod = $(this).val();
+<<<<<<< HEAD
     // 根据新的函数签名调用，只在选择 'lama' 时传递 true 给第一个参数
     ui.toggleInpaintingOptions(repairMethod === 'lama', repairMethod === 'false');
+=======
+    const showInpaintingOptions = repairMethod === 'true' || repairMethod === 'lama';
+    const showSolidOptions = repairMethod === 'false';
+    ui.toggleInpaintingOptions(showInpaintingOptions, showSolidOptions);
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     // 这个变化不直接触发重渲染，下次翻译或手动重渲染时生效
 }
 
@@ -640,6 +734,7 @@ function handleInpaintingStrengthChange(e) {
 }
 
 function handleModelProviderChange() {
+<<<<<<< HEAD
     const selectedProvider = $(this).val().toLowerCase(); // 转小写以便比较
     const isLocalDeployment = selectedProvider === 'ollama' || selectedProvider === 'sakura';
     
@@ -710,15 +805,39 @@ function handleModelProviderChange() {
         $('label[for="modelName"]').text('大模型型号:');
         $('#modelName').attr('placeholder', '请输入模型型号');
     }
+=======
+    const selectedProvider = $(this).val();
+    ui.updateApiKeyInputState(selectedProvider === 'ollama' || selectedProvider === 'sakura',
+                              selectedProvider === 'ollama' || selectedProvider === 'sakura' ? '本地部署无需API Key' : '请输入API Key');
+    ui.toggleOllamaUI(selectedProvider === 'ollama');
+    ui.toggleSakuraUI(selectedProvider === 'sakura');
+
+    if (selectedProvider === 'ollama') {
+        import('./main.js').then(main => main.fetchOllamaModels()); // 获取模型
+    } else if (selectedProvider === 'sakura') {
+        import('./main.js').then(main => main.fetchSakuraModels()); // 获取模型
+    } else {
+         $('#ollamaModelsList').empty().hide(); // 隐藏其他服务商的模型列表
+         $('#sakuraModelsList').empty().hide();
+    }
+    // 获取历史模型建议
+    api.getUsedModelsApi(selectedProvider)
+        .then(response => ui.updateModelSuggestions(response.models))
+        .catch(error => console.error("获取模型建议失败:", error));
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 function handleModelNameFocus() {
     const modelProvider = $('#modelProvider').val();
+<<<<<<< HEAD
     if (modelProvider && 
         modelProvider !== 'ollama' && 
         modelProvider !== 'sakura' && 
         modelProvider !== 'baidu_translate' && 
         modelProvider !== 'youdao_translate') { // 本地模型和敏感API不显示历史建议
+=======
+    if (modelProvider && modelProvider !== 'ollama' && modelProvider !== 'sakura') { // 本地模型不显示历史建议
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         api.getUsedModelsApi(modelProvider)
             .then(response => ui.updateModelSuggestions(response.models))
             .catch(error => console.error("获取模型建议失败:", error));
@@ -737,6 +856,7 @@ function handleModelButtonClick(e) {
     $('#modelName').val(modelName);
     $('.model-button').removeClass('selected');
     $(e.target).addClass('selected');
+<<<<<<< HEAD
     
     // 获取当前选择的模型提供商
     const modelProvider = $('#modelProvider').val();
@@ -751,6 +871,8 @@ function handleModelButtonClick(e) {
                 console.error(`保存模型信息失败: ${error.message}`);
             });
     }
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 
@@ -840,6 +962,7 @@ function handleCleanDebugFiles() {
 }
 
 function handleGlobalKeyDown(e) {
+<<<<<<< HEAD
     // 检查是否在文本输入框中
     const isInTextInput = $(e.target).is('input[type="text"], textarea, [contenteditable="true"]') || 
                           $(e.target).attr('id') === 'bubbleTextEditor';
@@ -864,6 +987,22 @@ function handleGlobalKeyDown(e) {
     // 如果在文本输入框中，不拦截键盘事件，让浏览器处理默认行为
     if (isInTextInput) return;
 
+=======
+    // 编辑模式下禁用部分快捷键，或赋予不同功能
+    if (state.editModeActive) {
+        // 例如，在编辑模式下左右箭头可以切换气泡
+        if (e.keyCode == 37) { // Left Arrow
+             e.preventDefault();
+             editMode.selectPrevBubble();
+        } else if (e.keyCode == 39) { // Right Arrow
+             e.preventDefault();
+             editMode.selectNextBubble();
+        }
+        // 可以添加其他编辑模式快捷键，如 Alt+Up/Down 调整字号
+        return; // 阻止后续的全局快捷键处理
+    }
+
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     // 非编辑模式下的快捷键
     if (e.altKey) {
         const fontSizeInput = $("#fontSize"); // 获取全局字号输入框
@@ -911,6 +1050,7 @@ function handleDonateClose() {
 }
 
 function handleWindowClickForModal(event) {
+<<<<<<< HEAD
     // 检查点击的目标是否是模态框本身 (即背景遮罩)
     const modal = $(".modal:visible");
     if (modal.length > 0 && event.target == modal[0]) {
@@ -918,17 +1058,22 @@ function handleWindowClickForModal(event) {
     }
     
     // 检查是否点击了赞助模态窗口的背景
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     if (event.target === $("#donateModal")[0]) {
         $("#donateModal").css("display", "none");
     }
 }
 
+<<<<<<< HEAD
 // === 新增："加载/管理会话"按钮的处理函数 ===
 function handleLoadSessionClick() {
     session.showSessionManager(); // 调用 session.js 中的函数
 }
 // === 结束新增 ===
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 // --- 编辑模式事件处理 ---
 
 function handleBubbleItemClick(e) {
@@ -953,11 +1098,16 @@ function handleBubbleEditorChange(e) {
 }
 
 // 气泡设置变更事件 (字体、大小、方向、颜色) - 触发预览渲染
+<<<<<<< HEAD
 function handleBubbleSettingChange(event) {
+=======
+function handleBubbleSettingChange() {
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const index = state.selectedBubbleIndex;
     if (index >= 0) {
         const currentSetting = state.bubbleSettings[index];
         const isAuto = $('#autoBubbleFontSize').is(':checked');
+<<<<<<< HEAD
         let fromAutoSwitch = false;
 
         // 处理自动字号切换
@@ -989,6 +1139,26 @@ function handleBubbleSettingChange(event) {
         // 触发预览 (renderBubblePreview 内部调用 reRenderFullImage)
         // reRenderFullImage 内部现在会处理独立填充色
         editMode.renderBubblePreview(index);
+=======
+        
+        // 检测是否从自动字号切换到非自动字号
+        const isPrevAuto = currentSetting.autoFontSize;
+        if (this.id === 'autoBubbleFontSize' && isPrevAuto && !isAuto) {
+            console.log("单气泡从自动字号切换到手动字号，使用默认字号");
+            // 启用字号输入，设置为默认值
+            $('#bubbleFontSize').prop('disabled', false).val(state.defaultFontSize);
+        }
+        
+        const settingUpdate = {
+            fontSize: isAuto ? 'auto' : parseInt($('#bubbleFontSize').val()),
+            autoFontSize: isAuto,
+            fontFamily: $('#bubbleFontFamily').val(),
+            textDirection: $('#bubbleTextDirection').val(),
+            textColor: $('#bubbleTextColor').val()
+        };
+        state.updateSingleBubbleSetting(index, settingUpdate);
+        editMode.renderBubblePreview(index); // 触发预览
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
@@ -1077,6 +1247,7 @@ function handleManagePluginsClick() {
     container.html("<p>正在加载插件列表...</p>"); // 显示加载提示
     modal.css("display", "block"); // 先显示模态框
 
+<<<<<<< HEAD
     // --- 修改: 先获取默认状态，再获取插件列表 ---
     let fetchedDefaultStates = {};
     api.getPluginDefaultStatesApi()
@@ -1094,6 +1265,12 @@ function handleManagePluginsClick() {
             if (response.success) {
                 // 将获取到的默认状态传递给渲染函数
                 ui.renderPluginList(response.plugins, fetchedDefaultStates);
+=======
+    api.getPluginsApi()
+        .then(response => {
+            if (response.success) {
+                ui.renderPluginList(response.plugins); // 使用 UI 模块渲染列表
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             } else {
                 throw new Error(response.error || "无法加载插件列表");
             }
@@ -1101,7 +1278,10 @@ function handleManagePluginsClick() {
         .catch(error => {
             container.html(`<p class="error">加载插件列表失败: ${error.message}</p>`);
         });
+<<<<<<< HEAD
     // --------------------------------------------
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 function handlePluginModalClose() {
@@ -1248,6 +1428,7 @@ function handlePluginConfigSave(e) {
             ui.showGeneralMessage(`保存插件 '${pluginName}' 配置失败: ${error.message}`, "error");
         });
 }
+<<<<<<< HEAD
 
 // --- 新增: 处理默认启用状态变化的事件处理器 ---
 function handlePluginDefaultStateChange(e) {
@@ -1555,3 +1736,5 @@ function handleToggleAiVisionJsonPrompt() {
 }
 
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

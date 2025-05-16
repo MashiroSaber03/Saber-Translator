@@ -19,6 +19,7 @@ import threading # 需要threading
 from src.core.pdf_processor import extract_images_from_pdf # 导入 PDF 处理函数
 from src.shared.path_helpers import get_debug_dir, resource_path # 需要调试目录函数和路径助手
 from src.interfaces.lama_interface import clean_image_with_lama, LAMA_AVAILABLE # 导入LAMA接口
+<<<<<<< HEAD
 from src.interfaces.baidu_ocr_interface import test_baidu_ocr_connection # 导入百度OCR接口测试方法
 from src.interfaces.vision_interface import test_ai_vision_ocr # 导入AI视觉OCR测试函数
 from src.interfaces.baidu_translate_interface import baidu_translate # 导入百度翻译接口
@@ -27,6 +28,10 @@ from src.plugins.base import PluginBase # 需要基类来检查类型
 from src.shared.image_helpers import base64_to_image # 需要 image_helpers
 from src.core.detection import get_bubble_coordinates # 需要 detection
 from src.shared import constants # 导入常量
+=======
+from src.plugins.manager import get_plugin_manager # 需要插件管理器
+from src.plugins.base import PluginBase # 需要基类来检查类型
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 # ... 其他需要的导入 ...
 
 # 获取 logger
@@ -582,6 +587,7 @@ def save_plugin_config_api(plugin_name):
         else:
              return jsonify({'success': False, 'error': '保存插件配置失败'}), 500
 
+<<<<<<< HEAD
 @system_bp.route('/detect_boxes', methods=['POST'])
 def detect_boxes_api():
     """接收图片数据，仅返回检测到的气泡坐标"""
@@ -836,3 +842,9 @@ def test_youdao_translate():
             'success': False,
             'message': f'连接失败：{error_msg}'
         })
+=======
+# 当该模块被导入时自动调用（但仅在应用作为主程序运行时）
+if __name__ != '__main__':
+    # 我们不在蓝图导入时就启动服务，而是让应用决定何时启动
+    print("系统API蓝图已加载，可通过 start_service_monitor() 启动服务监控")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

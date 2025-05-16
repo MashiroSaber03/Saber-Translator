@@ -26,7 +26,11 @@
             </div>
             <div class="header-links">
                 <span class="open-source-notice">本项目完全开源免费，请勿上当受骗</span>
+<<<<<<< HEAD
                 <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
+=======
+                <a href="https://note.youdao.com/s/5Ar90qR2" target="_blank" class="tutorial-link">使用教程</a>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 <a href="javascript:void(0)" class="donate-link" id="donateButton">
                     <!-- 使用 url_for 加载图片 -->
                     <img src="{{ url_for('static', filename='pic/donate-icon.png') }}" alt="赞助" class="donate-icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23f06292%22><path d=%22M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z%22/></svg>'">
@@ -53,6 +57,7 @@
                     <div class="collapsible-content">
                         <div class="settings-form">
                             <div>
+<<<<<<< HEAD
                                 <label for="sourceLanguage">源语言:</label>
                                 <select id="sourceLanguage">
                                     <option value="japan" selected>日语</option>
@@ -139,6 +144,28 @@
                                 </div>
                             </div>
                             
+=======
+                                <label for="targetLanguage">翻译语言:</label>
+                                <select id="targetLanguage">
+                                    <option value="zh">简体中文</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="sourceLanguage">源语言:</label>
+                                <select id="sourceLanguage">
+                                    <option value="japan" selected>日语 (MangaOCR)</option>
+                                    <option value="en">英语 (PaddleOCR)</option>
+                                    <option value="korean">韩语 (PaddleOCR)</option>
+                                    <!-- 其他 PaddleOCR 语言 -->
+                                    <option value="chinese_cht">繁体中文 (PaddleOCR)</option>
+                                    <option value="french">法文 (PaddleOCR)</option>
+                                    <option value="german">德文 (PaddleOCR)</option>
+                                    <option value="russian">俄文 (PaddleOCR)</option>
+                                    <option value="italian">意大利文 (PaddleOCR)</option>
+                                    <option value="spanish">西班牙文 (PaddleOCR)</option>
+                                </select>
+                            </div>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             <div>
                                 <label for="fontSize">字号大小:</label>
                                 <div class="fontSize-control">
@@ -158,8 +185,13 @@
                                     <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
                                     <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
                                     <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
+<<<<<<< HEAD
                                     <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
                                     <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
+=======
+                                    <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;" selected>宋体</option>
+                                    <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;">微软雅黑</option>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                                     <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
                                     <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
                                     <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
@@ -180,15 +212,26 @@
                             </div>
                             <div>
                                 <label for="textColor">文字颜色:</label>
+<<<<<<< HEAD
                                 <input type="color" id="textColor" value="#231816">
+=======
+                                <input type="color" id="textColor" value="#000000">
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             </div>
                             <div>
                                 <label for="useInpainting">气泡填充方式:</label>
                                 <select id="useInpainting">
                                     <option value="false" selected>纯色填充</option>
+<<<<<<< HEAD
                                     <option value="lama">LAMA修复</option>
                                 </select>
                                 <div class="input-hint">LAMA效果更好但需要更多计算资源</div>
+=======
+                                    <option value="true">MI-GAN</option>
+                                    <option value="lama">LAMA修复</option>
+                                </select>
+                                <div class="input-hint">MI-GAN/LAMA效果更好但需要更多计算资源</div>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             </div>
                             <div id="solidColorOptions">
                                 <label for="fillColor">填充颜色:</label>
@@ -220,6 +263,7 @@
                                 <select id="modelProvider">
                                     <option value="siliconflow">SiliconFlow</option>
                                     <option value="deepseek">DeepSeek</option>
+<<<<<<< HEAD
                                     <option value="volcano">火山引擎</option>
                                     <option value="caiyun">彩云小译</option>
                                     <option value="baidu_translate">百度翻译</option>
@@ -228,23 +272,31 @@
                                     <option value="ollama">Ollama(本地部署)</option>
                                     <option value="sakura">Sakura(本地部署)</option>
                                     <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+=======
+                                    <option value="ollama">Ollama(本地部署)</option>
+                                    <option value="sakura">Sakura(本地部署)</option>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                                 </select>
                             </div>
                             <div>
                                 <label for="apiKey">API Key:</label>
                                 <input type="text" id="apiKey" placeholder="请输入API Key">
                             </div>
+<<<<<<< HEAD
                             <div id="customBaseUrlDiv" style="display: none;">
                                 <label for="customBaseUrl">Base URL:</label>
                                 <input type="text" id="customBaseUrl" placeholder="例如: https://api.example.com/v1">
                                 <div class="input-hint">请输入 OpenAI 兼容 API 的基础 URL。</div>
                             </div>
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             <div>
                                 <label for="modelName">大模型型号:</label>
                                 <input type="text" id="modelName" placeholder="请输入模型型号">
                                 <div id="model-suggestions" style="display: none;"></div>
                                 <!-- Ollama/Sakura 模型列表和测试按钮会由 JS 动态添加 -->
                             </div>
+<<<<<<< HEAD
                             <!-- 新增：翻译服务 RPD 设置 -->
                             <div>
                                 <label for="rpdTranslation">每分钟最大翻译请求数 (RPD):</label>
@@ -252,6 +304,8 @@
                                 <div class="input-hint">0 表示无限制。用于控制对翻译API的调用频率。</div>
                             </div>
                             <!-- 结束新增 -->
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                         </div>
                     </div>
                 </div>
@@ -262,10 +316,13 @@
                             <h4>漫画翻译提示词</h4>
                             <!-- 使用后端传递的默认值 -->
                             <textarea id="promptContent" placeholder="在这里修改提示词">{{ default_prompt_content }}</textarea>
+<<<<<<< HEAD
                             <div class="prompt-format-toggle">
                                 <button id="toggleTranslateJsonPromptButton" class="format-toggle-button">使用JSON提示词</button>
                                 <div class="input-hint">JSON格式输出更结构化，可减少额外说明</div>
                             </div>
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                             <div class="prompt-management">
                                 <label for="rememberPrompt"><input type="checkbox" id="rememberPrompt">记住提示词</label>
                                 <input type="text" id="promptName" placeholder="提示词名称" style="display: none;">
@@ -308,9 +365,12 @@
                 <button id="deleteCurrentImageButton" class="settings-button red-button" disabled>删除当前图片</button>
                 <button id="cleanDebugFilesButton" class="settings-button orange-button">清理调试文件</button>
                 <button id="managePluginsButton" class="settings-button blue-button">插件管理</button>
+<<<<<<< HEAD
                 <button id="saveCurrentSessionButton" class="settings-button green-button" style="margin-top: 15px;">保存</button>
                 <button id="saveAsSessionButton" class="settings-button orange-button" style="margin-top: 5px;">另存为...</button>
                 <button id="loadSessionButton" class="settings-button blue-button" style="margin-top: 5px;">加载/管理会话</button>
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 <div class="navigation-buttons">
                     <button id="prevImageButton" disabled>上一张</button>
                     <button id="nextImageButton" disabled>下一张</button>
@@ -340,12 +400,15 @@
                 <div class="image-controls">
                     <button id="toggleImageButton" style="display: none;">切换原图/翻译图</button>
                     <button id="toggleEditModeButton">切换编辑模式</button>
+<<<<<<< HEAD
                     <button id="toggleLabelingModeButton" style="display: none;">进入标注模式</button>
                     <button id="autoDetectBoxesButton" class="labeling-tool-button" style="display: none;">自动检测</button>
                     <button id="clearManualBoxesButton" class="labeling-tool-button" style="display: none;">清除所有框</button>
                     <button id="addManualBoxButton" class="labeling-tool-button" style="display: none;">添加框</button>
                     <button id="deleteSelectedBoxButton" class="labeling-tool-button" style="display: none;" disabled>删除选中框</button>
                     <button id="useManualBoxesButton" class="labeling-tool-button" style="display: none;" disabled>使用手动框翻译</button>
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                     <div class="image-size-control">
                         <label for="imageSize">图片大小:</label>
                         <input type="range" id="imageSize" min="50" max="200" value="100" class="slider">
@@ -393,8 +456,13 @@
                                             <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
                                             <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
                                             <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
+<<<<<<< HEAD
                                             <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
                                             <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
+=======
+                                            <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;" selected>宋体</option>
+                                            <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;">微软雅黑</option>
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                                             <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
                                             <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
                                             <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
@@ -415,17 +483,24 @@
                                     </div>
                                     <div>
                                         <label for="bubbleTextColor">文字颜色:</label>
+<<<<<<< HEAD
                                         <input type="color" id="bubbleTextColor" value="#231816">
+=======
+                                        <input type="color" id="bubbleTextColor" value="#000000">
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                                     </div>
                                     <div>
                                         <label for="bubbleRotationAngle">旋转角度:</label>
                                         <input type="range" id="bubbleRotationAngle" min="-180" max="180" step="5" value="0" class="slider">
                                         <span id="bubbleRotationAngleValue">0°</span>
                                     </div>
+<<<<<<< HEAD
                                     <div>
                                         <label for="bubbleFillColor">气泡填充颜色:</label>
                                         <input type="color" id="bubbleFillColor">
                                     </div>
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                                 </div>
                                 <div class="bubble-position-settings">
                                     <h4>位置调整</h4>
@@ -520,6 +595,7 @@
         </div>
     </div>
 
+<<<<<<< HEAD
     <!-- === 新增：会话管理弹出层 === -->
     <div id="sessionManagerModal" class="session-modal" style="display: none;"> <!-- 初始隐藏 -->
         <div class="session-modal-content">
@@ -533,6 +609,8 @@
     </div>
     <!-- === 结束新增 === -->
 
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     <!-- 使用 url_for 加载 JS 模块 -->
     <script src="{{ url_for('static', filename='js/main.js') }}" type="module"></script>
 

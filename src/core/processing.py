@@ -6,10 +6,21 @@ import time
 import os
 import sys
 from src.plugins.manager import get_plugin_manager
+<<<<<<< HEAD
 from src.plugins.hooks import * 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+=======
+from src.plugins.hooks import * # 导入所有钩子常量
+
+# 将项目根目录添加到Python路径
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+# 使用绝对导入
+# 导入核心模块的函数
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 from src.core.detection import get_bubble_coordinates
 from src.core.ocr import recognize_text_in_bubbles
 from src.core.translation import translate_text_list
@@ -36,7 +47,11 @@ def process_image_translation(
     prompt_content=None,
     use_textbox_prompt=False,
     textbox_prompt_content=None,
+<<<<<<< HEAD
     inpainting_method='solid', # 'solid', 'lama'
+=======
+    inpainting_method='solid', # 'solid', 'migan', 'lama'
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     fill_color=constants.DEFAULT_FILL_COLOR,
     migan_strength=constants.DEFAULT_INPAINTING_STRENGTH,
     migan_blend_edges=True,
@@ -45,6 +60,7 @@ def process_image_translation(
     yolo_conf_threshold=0.6, # YOLO 置信度阈值
     ignore_connection_errors=True, # 是否忽略翻译和修复服务连接错误
     text_color=constants.DEFAULT_TEXT_COLOR, # 文字颜色
+<<<<<<< HEAD
     rotation_angle=constants.DEFAULT_ROTATION_ANGLE, # 文字旋转角度
     provided_coords=None, # 新增：接收前端提供的手动标注坐标
     ocr_engine='auto', # 新增：OCR引擎选择，可以是'auto', 'manga_ocr', 'paddle_ocr', 或 'baidu_ocr'
@@ -64,6 +80,9 @@ def process_image_translation(
     rpd_limit_translation: int = constants.DEFAULT_RPD_TRANSLATION,
     rpd_limit_ai_vision_ocr: int = constants.DEFAULT_RPD_AI_VISION_OCR
     # --------------------
+=======
+    rotation_angle=constants.DEFAULT_ROTATION_ANGLE # 文字旋转角度
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     ):
     """
     执行完整的图像翻译处理流程。
@@ -71,6 +90,7 @@ def process_image_translation(
     Args:
         image_pil (PIL.Image.Image): 输入的原始 PIL 图像。
         ... (其他参数与原 detect_text_in_bubbles 类似) ...
+<<<<<<< HEAD
         inpainting_method (str): 'solid', 'lama'
         yolo_conf_threshold (float): YOLO 检测置信度。
         provided_coords (list): 前端提供的气泡坐标列表，如果提供则优先使用。
@@ -79,6 +99,10 @@ def process_image_translation(
         baidu_secret_key (str): 百度OCR Secret Key，仅当 ocr_engine 为 'baidu_ocr' 时使用。
         baidu_version (str): 百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL (用于翻译)。
+=======
+        inpainting_method (str): 'solid', 'migan', 'lama'
+        yolo_conf_threshold (float): YOLO 检测置信度。
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Returns:
         tuple: (
@@ -126,6 +150,7 @@ def process_image_translation(
 
     try:
         # 1. 检测气泡坐标
+<<<<<<< HEAD
         # --- 新增：优先使用前端提供的坐标 ---
         if provided_coords and isinstance(provided_coords, list) and len(provided_coords) > 0:
             bubble_coords = provided_coords
@@ -137,6 +162,12 @@ def process_image_translation(
             bubble_coords = get_bubble_coordinates(image_pil, conf_threshold=yolo_conf_threshold)
             logger.info(f"气泡检测完成，找到 {len(bubble_coords)} 个气泡 (耗时: {time.time() - start_time:.2f}s)")
         # ------------------------------------
+=======
+        logger.info("步骤 1: 检测气泡坐标...")
+        start_time = time.time()
+        bubble_coords = get_bubble_coordinates(image_pil, conf_threshold=yolo_conf_threshold)
+        logger.info(f"气泡检测完成，找到 {len(bubble_coords)} 个气泡 (耗时: {time.time() - start_time:.2f}s)")
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         
         # --- 触发 AFTER_DETECTION 钩子 ---
         try:
@@ -164,6 +195,7 @@ def process_image_translation(
             # ---------------------------
             logger.info("步骤 2: OCR 识别文本...")
             start_time = time.time()
+<<<<<<< HEAD
             
             # 如果使用百度OCR，传递相关参数
             if ocr_engine == 'baidu_ocr':
@@ -195,6 +227,9 @@ def process_image_translation(
                 # 使用其他OCR引擎
                 original_texts = recognize_text_in_bubbles(image_pil, bubble_coords, source_language, ocr_engine)
                 
+=======
+            original_texts = recognize_text_in_bubbles(image_pil, bubble_coords, source_language)
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             logger.info(f"OCR 完成 (耗时: {time.time() - start_time:.2f}s)")
             # --- 触发 AFTER_OCR 钩子 ---
             try:
@@ -225,11 +260,15 @@ def process_image_translation(
                      model_name = initial_params.get('model_name', model_name)
                      prompt_content = initial_params.get('prompt_content', prompt_content)
                      textbox_prompt_content = initial_params.get('textbox_prompt_content', textbox_prompt_content)
+<<<<<<< HEAD
                      custom_base_url = initial_params.get('custom_base_url', custom_base_url)
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             except Exception as hook_e:
                  logger.error(f"执行 {BEFORE_TRANSLATION} 钩子时出错: {hook_e}", exc_info=True)
             # ------------------------------------
             logger.info("步骤 3: 翻译文本...")
+<<<<<<< HEAD
             logger.info(f"翻译模型: {model_provider}, 模型名称: {model_name}")
             logger.info(f"待翻译文本数量: {len(original_texts)}")
             for i, text in enumerate(original_texts):
@@ -264,6 +303,21 @@ def process_image_translation(
                     )
                 else:
                     translated_textbox_texts = translated_bubble_texts
+=======
+            start_time = time.time()
+            # 漫画气泡翻译
+            try:
+                translated_bubble_texts = translate_text_list(
+                    original_texts, target_language, model_provider, api_key, model_name, prompt_content
+                )
+                # 文本框翻译 (如果启用)
+                if use_textbox_prompt and textbox_prompt_content:
+                    translated_textbox_texts = translate_text_list(
+                        original_texts, target_language, model_provider, api_key, model_name, textbox_prompt_content
+                    )
+                else:
+                    translated_textbox_texts = translated_bubble_texts # 否则与气泡翻译相同
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 logger.info(f"翻译完成 (耗时: {time.time() - start_time:.2f}s)")
                 # --- 触发 AFTER_TRANSLATION 钩子 ---
                 try:
@@ -275,7 +329,10 @@ def process_image_translation(
                      logger.error(f"执行 {AFTER_TRANSLATION} 钩子时出错: {hook_e}", exc_info=True)
                 # ----------------------------------
             except Exception as e:
+<<<<<<< HEAD
                 logger.error(f"翻译过程发生错误: {e}", exc_info=True)
+=======
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 if ignore_connection_errors:
                     logger.warning(f"翻译服务出错，使用空翻译结果: {e}")
                     # 使用原文复制代替翻译结果，或者在需要时保持空字符串
@@ -299,7 +356,12 @@ def process_image_translation(
         start_time = time.time()
         try:
             inpainted_image, clean_background_img = inpaint_bubbles( # 现在我们保存 clean_bg
+<<<<<<< HEAD
                 image_pil, bubble_coords, method=inpainting_method, fill_color=fill_color
+=======
+                image_pil, bubble_coords, method=inpainting_method, fill_color=fill_color,
+                migan_strength=migan_strength, migan_blend_edges=migan_blend_edges
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             )
             logger.info(f"背景处理完成 (耗时: {time.time() - start_time:.2f}s)")
             # --- 触发 AFTER_INPAINTING 钩子 ---
@@ -316,7 +378,18 @@ def process_image_translation(
                 logger.error(f"执行 {AFTER_INPAINTING} 钩子时出错: {hook_e}", exc_info=True)
             # --------------------------------
         except Exception as e:
+<<<<<<< HEAD
             if ignore_connection_errors and "lama" in inpainting_method.lower():
+=======
+            if ignore_connection_errors and "migan" in inpainting_method.lower():
+                # 如果 MIGAN 出错，回退到纯色填充
+                logger.warning(f"MIGAN 修复出错，回退到纯色填充: {e}")
+                inpainted_image, _ = inpaint_bubbles(
+                    image_pil, bubble_coords, method='solid', fill_color=fill_color
+                )
+                logger.info("使用纯色填充完成背景处理")
+            elif ignore_connection_errors and "lama" in inpainting_method.lower():
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 # 如果 LAMA 出错，回退到纯色填充
                 logger.warning(f"LAMA 修复出错，回退到纯色填充: {e}")
                 inpainted_image, _ = inpaint_bubbles(
@@ -448,6 +521,7 @@ if __name__ == '__main__':
                 "migan_strength": 1.0,
                 "ignore_connection_errors": True,  # 添加错误处理参数
                 "text_color": constants.DEFAULT_TEXT_COLOR, # 文字颜色
+<<<<<<< HEAD
                 "rotation_angle": constants.DEFAULT_ROTATION_ANGLE, # 文字旋转角度
                 "provided_coords": None, # 不提供手动标注坐标
                 "ocr_engine": 'auto', # 使用默认的 OCR 引擎
@@ -463,6 +537,10 @@ if __name__ == '__main__':
                 "custom_base_url": None,
                 "rpd_limit_translation": constants.DEFAULT_RPD_TRANSLATION,
                 "rpd_limit_ai_vision_ocr": constants.DEFAULT_RPD_AI_VISION_OCR
+=======
+                "rotation_angle": constants.DEFAULT_ROTATION_ANGLE # 文字旋转角度
+                # 其他参数使用默认值
+>>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             }
             print(f"\n测试参数: { {k:v for k,v in test_params.items() if k != 'image_pil'} }")
 
