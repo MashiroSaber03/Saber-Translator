@@ -1,0 +1,17 @@
+{
+  "custom_openai": [
+    "deepseek-chat"
+  ],
+  "siliconflow": [
+    "deepseek-ai/DeepSeek-V3"
+  ],
+  "gemini": [
+    "gemini-2.0-flash"
+  ],
+  "sakura": [
+    "GalTransl-7B-v2.6-IQ4_XS.gguf"
+  ],
+  "ollama": [
+    "qwen:7b"
+  ]
+}

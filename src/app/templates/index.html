@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saber-Translator</title>
+    <!-- 使用 url_for 加载 CSS -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- 添加 Favicon -->
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <!-- 预加载 jQuery, JSZip, jsPDF -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+    <!-- 页面头部横幅 -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo-container">
+                <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" title="访问项目仓库">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/logo.png') }}" alt="Saber-Translator Logo" class="app-logo">
+                    <span class="app-name">Saber-Translator</span>
+                </a>
+            </div>
+            <div class="header-links">
+                <span class="open-source-notice">本项目完全开源免费，请勿上当受骗</span>
+                <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
+                <a href="javascript:void(0)" class="donate-link" id="donateButton">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/donate-icon.png') }}" alt="赞助" class="donate-icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23f06292%22><path d=%22M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z%22/></svg>'">
+                    <span>请作者喝奶茶</span>
+                </a>
+                <a href="https://github.com/MashiroSaber03" target="_blank" class="github-link">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/github.jpg') }}" alt="GitHub" class="github-icon">
+                </a>
+                <button id="themeToggle" class="theme-toggle" title="切换亮暗模式">
+                    <span class="theme-icon light-icon">☀️</span>
+                    <span class="theme-icon dark-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside id="settings-sidebar">
+            <div class="card settings-card">
+                <h2>翻译设置</h2>
+                <div id="font-settings" class="settings-card">
+                    <h3 class="collapsible-header">文字设置 <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="settings-form">
+                            <div>
+                                <label for="sourceLanguage">源语言:</label>
+                                <select id="sourceLanguage">
+                                    <option value="japan" selected>日语</option>
+                                    <option value="en">英语</option>
+                                    <option value="korean">韩语</option>
+                                    <!-- 其他 PaddleOCR 语言 -->
+                                    <option value="chinese_cht">繁体中文</option>
+                                    <option value="french">法文</option>
+                                    <option value="german">德文</option>
+                                    <option value="russian">俄文</option>
+                                    <option value="italian">意大利文</option>
+                                    <option value="spanish">西班牙文</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="ocrEngine">OCR引擎:</label>
+                                <select id="ocrEngine">
+                                    <option value="auto" selected>自动选择</option>
+                                    <option value="manga_ocr">MangaOCR</option>
+                                    <option value="paddle_ocr">PaddleOCR</option>
+                                    <option value="baidu_ocr">百度OCR</option>
+                                    <option value="ai_vision">AI视觉OCR</option>
+                                </select>
+                                <div class="input-hint">自动选择会根据源语言自动使用合适的OCR</div>
+                            </div>
+                            <!-- 百度OCR设置 -->
+                            <div id="baiduOcrOptions" style="display: none;">
+                                <div>
+                                    <label for="baiduApiKey">百度API Key:</label>
+                                    <input type="text" id="baiduApiKey" placeholder="请输入百度OCR API Key">
+                                </div>
+                                <div>
+                                    <label for="baiduSecretKey">Secret Key:</label>
+                                    <input type="text" id="baiduSecretKey" placeholder="请输入百度OCR Secret Key">
+                                </div>
+                                <div>
+                                    <label for="baiduVersion">识别版本:</label>
+                                    <select id="baiduVersion">
+                                        <option value="standard" selected>标准版</option>
+                                        <option value="high_precision">高精度版</option>
+                                    </select>
+                                </div>
+                                <div class="test-button-container">
+                                    <button id="testBaiduOcrButton" type="button" class="test-button">测试百度OCR</button>
+                                </div>
+                            </div>
+                            
+                            <!-- AI视觉OCR设置 -->
+                            <div id="aiVisionOcrOptions" style="display: none;">
+                                <div>
+                                    <label for="aiVisionProvider">服务商:</label>
+                                    <select id="aiVisionProvider">
+                                        <option value="siliconflow" selected>SiliconFlow (硅基流动)</option>
+                                        <option value="volcano">火山引擎</option>
+                                        <option value="gemini">Google Gemini</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="aiVisionApiKey">API Key:</label>
+                                    <input type="text" id="aiVisionApiKey" placeholder="请输入API Key">
+                                </div>
+                                <div>
+                                    <label for="aiVisionModelName">模型名称:</label>
+                                    <input type="text" id="aiVisionModelName" placeholder="如: silicon-llava2-34b" list="aiVisionModelsList">
+                                    <datalist id="aiVisionModelsList"></datalist>
+                                </div>
+                                <div>
+                                    <label for="aiVisionOcrPrompt">OCR提示词:</label>
+                                    <textarea id="aiVisionOcrPrompt" rows="4" placeholder="AI视觉OCR提示词"></textarea>
+                                    <div class="prompt-format-toggle">
+                                        <button id="toggleAiVisionJsonPromptButton" class="format-toggle-button">使用JSON提示词</button>
+                                        <div class="input-hint">JSON格式输出更结构化，可减少额外说明</div>
+                                    </div>
+                                </div>
+                                <!-- 新增：AI视觉OCR RPD 设置 -->
+                                <div>
+                                    <label for="rpdAiVisionOcr">每分钟最大AI视觉OCR请求数 (RPD):</label>
+                                    <input type="number" id="rpdAiVisionOcr" value="0" min="0" step="1">
+                                    <div class="input-hint">0 表示无限制。用于控制对AI视觉OCR API的调用频率。</div>
+                                </div>
+                                <!-- 结束新增 -->
+                                <div class="test-button-container">
+                                    <button id="testAiVisionOcrButton" type="button" class="test-button">测试AI视觉OCR</button>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label for="fontSize">字号大小:</label>
+                                <div class="fontSize-control">
+                                    <input type="number" id="fontSize" value="25" min="10" max="100">
+                                    <div class="auto-fontSize-option">
+                                        <input type="checkbox" id="autoFontSize">
+                                        <label for="autoFontSize">自动字号</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="fontFamily">字体:</label>
+                                <!-- 使用相对路径作为 value -->
+                                <select id="fontFamily">
+                                    <option value="fonts/STXINGKA.TTF" style="font-family: '华文行楷', cursive;">华文行楷</option>
+                                    <option value="fonts/STXINWEI.TTF" style="font-family: '华文新魏', cursive;">华文新魏</option>
+                                    <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
+                                    <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
+                                    <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
+                                    <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
+                                    <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
+                                    <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
+                                    <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
+                                    <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
+                                    <option value="fonts/STHUPO.TTF" style="font-family: '华文琥珀', cursive;">华文琥珀</option>
+                                    <option value="fonts/STXIHEI.TTF" style="font-family: '华文细黑', sans-serif;">华文细黑</option>
+                                    <option value="fonts/simkai.ttf" style="font-family: '楷体', serif;">中易楷体</option>
+                                    <option value="fonts/simfang.ttf" style="font-family: '仿宋', serif;">中易仿宋</option>
+                                    <option value="fonts/simhei.ttf" style="font-family: '黑体', sans-serif;">中易黑体</option>
+                                    <option value="fonts/SIMLI.TTF" style="font-family: '隶书', serif;">中易隶书</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="layoutDirection">排版设置:</label>
+                                <select id="layoutDirection">
+                                    <option value="vertical" selected>竖向排版</option>
+                                    <option value="horizontal">横向排版</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="textColor">文字颜色:</label>
+                                <input type="color" id="textColor" value="#231816">
+                            </div>
+                            <div>
+                                <label for="useInpainting">气泡填充方式:</label>
+                                <select id="useInpainting">
+                                    <option value="false" selected>纯色填充</option>
+                                    <option value="lama">LAMA修复</option>
+                                </select>
+                                <div class="input-hint">LAMA效果更好但需要更多计算资源</div>
+                            </div>
+                            <div id="solidColorOptions">
+                                <label for="fillColor">填充颜色:</label>
+                                <input type="color" id="fillColor" value="#FFFFFF"><!-- 白色填充 -->
+                            </div>
+                            <div id="inpaintingOptions" style="display: none;">
+                                <div>
+                                    <label for="inpaintingStrength">修复强度:</label>
+                                    <input type="range" id="inpaintingStrength" min="0.1" max="5.0" step="0.1" value="1.0" class="slider">
+                                    <span id="inpaintingStrengthValue">1.0</span>
+                                    <div class="input-hint">值越大修复越强，可能改变背景细节</div>
+                                </div>
+                                <div>
+                                    <label for="blendEdges">边缘融合:</label>
+                                    <input type="checkbox" id="blendEdges" checked>
+                                    <div class="input-hint">使修复区域边缘更自然</div>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="applyFontSettingsToAllButton" type="button" class="settings-button">应用到全部图片</button>
+                    </div>
+                </div>
+                <div id="ai-model-settings" class="settings-card">
+                    <h3 class="collapsible-header">AI模型设置 <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="settings-form">
+                            <div>
+                                <label for="modelProvider">翻译服务商:</label>
+                                <select id="modelProvider">
+                                    <option value="siliconflow">SiliconFlow</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="volcano">火山引擎</option>
+                                    <option value="caiyun">彩云小译</option>
+                                    <option value="baidu_translate">百度翻译</option>
+                                    <option value="youdao_translate">有道翻译</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="ollama">Ollama(本地部署)</option>
+                                    <option value="sakura">Sakura(本地部署)</option>
+                                    <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="apiKey">API Key:</label>
+                                <input type="text" id="apiKey" placeholder="请输入API Key">
+                            </div>
+                            <div id="customBaseUrlDiv" style="display: none;">
+                                <label for="customBaseUrl">Base URL:</label>
+                                <input type="text" id="customBaseUrl" placeholder="例如: https://api.example.com/v1">
+                                <div class="input-hint">请输入 OpenAI 兼容 API 的基础 URL。</div>
+                            </div>
+                            <div>
+                                <label for="modelName">大模型型号:</label>
+                                <input type="text" id="modelName" placeholder="请输入模型型号">
+                                <div id="model-suggestions" style="display: none;"></div>
+                                <!-- Ollama/Sakura 模型列表和测试按钮会由 JS 动态添加 -->
+                            </div>
+                            <!-- 新增：翻译服务 RPD 设置 -->
+                            <div>
+                                <label for="rpdTranslation">每分钟最大翻译请求数 (RPD):</label>
+                                <input type="number" id="rpdTranslation" value="0" min="0" step="1">
+                                <div class="input-hint">0 表示无限制。用于控制对翻译API的调用频率。</div>
+                            </div>
+                            <!-- 结束新增 -->
+                        </div>
+                    </div>
+                </div>
+                <div id="prompt-settings" class="settings-card">
+                    <h3 class="collapsible-header">提示词设置 <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="prompt-section">
+                            <h4>漫画翻译提示词</h4>
+                            <!-- 使用后端传递的默认值 -->
+                            <textarea id="promptContent" placeholder="在这里修改提示词">{{ default_prompt_content }}</textarea>
+                            <div class="prompt-format-toggle">
+                                <button id="toggleTranslateJsonPromptButton" class="format-toggle-button">使用JSON提示词</button>
+                                <div class="input-hint">JSON格式输出更结构化，可减少额外说明</div>
+                            </div>
+                            <div class="prompt-management">
+                                <label for="rememberPrompt"><input type="checkbox" id="rememberPrompt">记住提示词</label>
+                                <input type="text" id="promptName" placeholder="提示词名称" style="display: none;">
+                            </div>
+                            <button id="savePromptButton">应用提示词</button>
+                            <div id="prompt-dropdown-container">
+                                <button id="promptDropdownButton" style="display: none;">已保存提示词 <span style="margin-left: 5px;">▼</span></button>
+                                <div id="promptDropdown" style="display: none;">
+                                    <!-- 提示词列表由 JS 填充 -->
+                                </div>
+                            </div>
+                        </div>
+                        <hr class="prompt-divider">
+                        <div class="prompt-section">
+                            <h4>文本框提示词</h4>
+                            <div class="prompt-management">
+                                <label for="enableTextboxPrompt" style="font-size: 0.8em;"><input type="checkbox" id="enableTextboxPrompt">启用独立文本框提示词</label>
+                            </div>
+                            <!-- 使用后端传递的默认值 -->
+                            <textarea id="textboxPromptContent" placeholder="在这里修改文本框提示词" style="display: none;">{{ default_textbox_prompt_content }}</textarea>
+                            <div class="prompt-management" style="display: none;" id="textboxPromptManagement">
+                                <label for="rememberTextboxPrompt"><input type="checkbox" id="rememberTextboxPrompt">记住提示词</label>
+                                <input type="text" id="textboxPromptName" placeholder="提示词名称" style="display: none;">
+                            </div>
+                            <button id="saveTextboxPromptButton" style="display: none;">应用提示词</button>
+                            <div id="textbox-prompt-dropdown-container" style="display: none;">
+                                <button id="textboxPromptDropdownButton" style="display: none;">已保存提示词 <span style="margin-left: 5px;">▼</span></button>
+                                <div id="textboxPromptDropdown" style="display: none;">
+                                    <!-- 提示词列表由 JS 填充 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="translateButton" disabled>翻译当前图片</button>
+                <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>
+                <button id="translateAllButton" disabled>翻译所有图片</button>
+                <button id="clearAllImagesButton" class="settings-button red-button">清除所有图片</button>
+                <button id="deleteCurrentImageButton" class="settings-button red-button" disabled>删除当前图片</button>
+                <button id="cleanDebugFilesButton" class="settings-button orange-button">清理调试文件</button>
+                <button id="managePluginsButton" class="settings-button blue-button">插件管理</button>
+                <button id="saveCurrentSessionButton" class="settings-button green-button" style="margin-top: 15px;">保存</button>
+                <button id="saveAsSessionButton" class="settings-button orange-button" style="margin-top: 5px;">另存为...</button>
+                <button id="loadSessionButton" class="settings-button blue-button" style="margin-top: 5px;">加载/管理会话</button>
+                <div class="navigation-buttons">
+                    <button id="prevImageButton" disabled>上一张</button>
+                    <button id="nextImageButton" disabled>下一张</button>
+                </div>
+            </div>
+        </aside>
+
+        <main id="image-display-area">
+            <section id="upload-section" class="card upload-card">
+                <div id="drop-area">
+                    <p>拖拽图片或PDF文件到这里，或 <span id="select-file-link">点击选择文件</span></p>
+                    <input type="file" id="imageUpload" accept="image/*, application/pdf" multiple style="display: none;">
+                </div>
+                <div id="errorMessage" class="error-message" style="display: none;"></div>
+                <div id="loadingAnimation" class="loading-animation" style="display: none;">
+                    <div class="spinner"></div> <!-- 假设 spinner 是 CSS 动画 -->
+                </div>
+                <div id="uploadThumbnailList" class="thumbnails"></div>
+                <div id="translationProgressBar" style="display: none;">
+                    <div class="progress-bar-label">翻译进度: <span id="progressPercent">0/0</span></div>
+                    <div class="progress-bar">
+                        <div class="progress"></div>
+                    </div>
+                </div>
+            </section>
+            <section id="result-section" class="card result-card" style="display: none;">
+                <div class="image-controls">
+                    <button id="toggleImageButton" style="display: none;">切换原图/翻译图</button>
+                    <button id="toggleEditModeButton">切换编辑模式</button>
+                    <button id="toggleLabelingModeButton" style="display: none;">进入标注模式</button>
+                    <button id="autoDetectBoxesButton" class="labeling-tool-button" style="display: none;">自动检测</button>
+                    <button id="clearManualBoxesButton" class="labeling-tool-button" style="display: none;">清除所有框</button>
+                    <button id="addManualBoxButton" class="labeling-tool-button" style="display: none;">添加框</button>
+                    <button id="deleteSelectedBoxButton" class="labeling-tool-button" style="display: none;" disabled>删除选中框</button>
+                    <button id="useManualBoxesButton" class="labeling-tool-button" style="display: none;" disabled>使用手动框翻译</button>
+                    <div class="image-size-control">
+                        <label for="imageSize">图片大小:</label>
+                        <input type="range" id="imageSize" min="50" max="200" value="100" class="slider">
+                        <span id="imageSizeValue">100%</span>
+                    </div>
+                    <!-- 重新翻译失败按钮会由 JS 添加 -->
+                </div>
+                <div class="content-container">
+                    <div class="image-container">
+                        <img id="translatedImageDisplay" src="#" alt="翻译后图片" style="display: none;">
+                        <!-- 高亮框会由 JS 添加 -->
+                    </div>
+                    <div id="editModeContainer" class="edit-mode-container" style="display: none;">
+                        <h3>气泡编辑模式</h3>
+                        <div class="bubble-list-container">
+                            <div class="bubble-list-header">
+                                <h4>气泡列表</h4>
+                                <span class="bubble-count">共 <span id="bubbleCount">0</span> 个气泡</span>
+                            </div>
+                            <div class="bubble-list" id="bubbleList"></div>
+                        </div>
+                        <div class="bubble-edit-container">
+                            <h4>编辑气泡 #<span id="currentBubbleIndex">0</span></h4>
+                            <div class="bubble-edit-content">
+                                <textarea id="bubbleTextEditor" placeholder="气泡文字内容"></textarea>
+                            </div>
+                            <div class="bubble-edit-settings">
+                                <div class="bubble-font-settings">
+                                    <div>
+                                        <label for="bubbleFontSize">字号大小:</label>
+                                        <div class="fontSize-control">
+                                            <input type="number" id="bubbleFontSize" value="25" min="10" max="100">
+                                            <div class="auto-fontSize-option">
+                                                <input type="checkbox" id="autoBubbleFontSize">
+                                                <label for="autoBubbleFontSize">自动字号</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label for="bubbleFontFamily">字体:</label>
+                                        <!-- 使用相对路径 value -->
+                                        <select id="bubbleFontFamily">
+                                            <option value="fonts/STXINGKA.TTF" style="font-family: '华文行楷', cursive;">华文行楷</option>
+                                            <option value="fonts/STXINWEI.TTF" style="font-family: '华文新魏', cursive;">华文新魏</option>
+                                            <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
+                                            <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
+                                            <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
+                                            <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
+                                            <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
+                                            <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
+                                            <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
+                                            <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
+                                            <option value="fonts/STHUPO.TTF" style="font-family: '华文琥珀', cursive;">华文琥珀</option>
+                                            <option value="fonts/STXIHEI.TTF" style="font-family: '华文细黑', sans-serif;">华文细黑</option>
+                                            <option value="fonts/simkai.ttf" style="font-family: '楷体', serif;">中易楷体</option>
+                                            <option value="fonts/simfang.ttf" style="font-family: '仿宋', serif;">中易仿宋</option>
+                                            <option value="fonts/simhei.ttf" style="font-family: '黑体', sans-serif;">中易黑体</option>
+                                            <option value="fonts/SIMLI.TTF" style="font-family: '隶书', serif;">中易隶书</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="bubbleTextDirection">排版设置:</label>
+                                        <select id="bubbleTextDirection">
+                                            <option value="vertical" selected>竖向排版</option>
+                                            <option value="horizontal">横向排版</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="bubbleTextColor">文字颜色:</label>
+                                        <input type="color" id="bubbleTextColor" value="#231816">
+                                    </div>
+                                    <div>
+                                        <label for="bubbleRotationAngle">旋转角度:</label>
+                                        <input type="range" id="bubbleRotationAngle" min="-180" max="180" step="5" value="0" class="slider">
+                                        <span id="bubbleRotationAngleValue">0°</span>
+                                    </div>
+                                    <div>
+                                        <label for="bubbleFillColor">气泡填充颜色:</label>
+                                        <input type="color" id="bubbleFillColor">
+                                    </div>
+                                </div>
+                                <div class="bubble-position-settings">
+                                    <h4>位置调整</h4>
+                                    <div class="position-control">
+                                        <div class="position-arrows">
+                                            <button id="moveUp" class="arrow-button up-button">↑</button>
+                                            <div class="position-arrows-middle">
+                                                <button id="moveLeft" class="arrow-button left-button">←</button>
+                                                <button id="resetPosition" class="arrow-button reset-button">⌂</button>
+                                                <button id="moveRight" class="arrow-button right-button">→</button>
+                                            </div>
+                                            <button id="moveDown" class="arrow-button down-button">↓</button>
+                                        </div>
+                                        <div class="position-values">
+                                            <div class="position-value-display">
+                                                <label>X:</label> <span id="positionOffsetXValue">0</span>
+                                            </div>
+                                            <div class="position-value-display">
+                                                <label>Y:</label> <span id="positionOffsetYValue">0</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="positionOffsetX" value="0">
+                                <input type="hidden" id="positionOffsetY" value="0">
+                                <div class="bubble-action-buttons">
+                                    <button id="applyBubbleEdit">应用更改</button>
+                                    <button id="applyToAllBubbles">应用到所有气泡</button>
+                                    <button id="resetBubbleEdit">重置</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-info" id="detectedTextInfo" style="display: none;">
+                    <h3>检测到的文本（原文 → 译文）</h3>
+                    <pre id="detectedTextList"></pre>
+                </div>
+                <p id="downloadingMessage" style="display: none;">下载中，请稍候...</p>
+                <div class="download-buttons">
+                    <button id="downloadButton" style="display: none;">下载当前图片</button>
+                    <div class="download-all-container">
+                        <button id="downloadAllImagesButton" style="display: none;">下载所有图片</button>
+                        <div class="download-format-selector">
+                            <select id="downloadFormat">
+                                <option value="zip" selected>ZIP压缩包</option>
+                                <option value="pdf">PDF文件</option>
+                                <option value="cbz">CBZ漫画格式</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <aside id="thumbnail-sidebar">
+            <div class="card thumbnail-card">
+                <h2>图片概览</h2>
+                <ul id="thumbnailList"></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 赞助弹出层 -->
+    <div id="donateModal" class="donate-modal">
+        <div class="donate-modal-content">
+            <span class="donate-close">×</span>
+            <h3>感谢您的支持!</h3>
+            <p>您的赞助将帮助我们持续改进这个工具</p>
+            <div class="donate-qrcodes">
+                <div class="donate-qrcode-item">
+                    <img src="{{ url_for('static', filename='pic/wechat_qrcode.png') }}" alt="微信支付">
+                    <p>微信支付</p>
+                </div>
+                <div class="donate-qrcode-item">
+                    <img src="{{ url_for('static', filename='pic/alipay_qrcode.png') }}" alt="支付宝">
+                    <p>支付宝</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 插件管理弹出层 -->
+    <div id="pluginManagerModal" class="plugin-modal" style="display: none;">
+        <div class="plugin-modal-content">
+            <span class="plugin-modal-close">&times;</span>
+            <h3>插件管理</h3>
+            <div id="pluginListContainer">
+                <!-- 插件列表将由 JS 动态填充 -->
+                <p>正在加载插件列表...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- === 新增：会话管理弹出层 === -->
+    <div id="sessionManagerModal" class="session-modal" style="display: none;"> <!-- 初始隐藏 -->
+        <div class="session-modal-content">
+            <span class="session-modal-close">&times;</span>
+            <h3>加载 / 管理会话</h3>
+            <div id="sessionListContainer">
+                <!-- 会话列表将由 JS 动态填充 -->
+                <p>正在加载会话列表...</p>
+            </div>
+        </div>
+    </div>
+    <!-- === 结束新增 === -->
+
+    <!-- 使用 url_for 加载 JS 模块 -->
+    <script src="{{ url_for('static', filename='js/main.js') }}" type="module"></script>
+
+</body>
+</html>

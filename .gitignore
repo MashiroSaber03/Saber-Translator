@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+env/
+*.egg-info/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+nbproject/ # NetBeans
+*.sublime-project
+*.sublime-workspace
+
+# Distribution / packaging
+build/
+dist/
+*.spec
+*.zip
+*.tar.gz
+*.exe
+*.dmg
+*.deb
+*.rpm
+
+# Logs and runtime data (根据你的需求决定是否忽略)
+logs/
+data/debug/
+data/uploads/
+# data/sessions/  # 会话数据如果包含敏感信息或非常大，通常不建议提交
+                  # 如果你需要备份会话结构但不包含图片数据，可能需要更复杂的处理
+
+# Configuration files that might contain secrets (确保敏感配置不提交)
+# 例如：config/secrets.json (如果存在此类文件)
+# 但 config/prompts.json, config/model_history.json 等通常是需要版本控制的
+
+# Models and large dependencies (这些通常不通过 Git 管理)
+weights/
+models/
+manga_ocr_model/
+sd-webui-cleaner/
+ultralytics_yolov5_master/
+
+# Temporary files
+temp/
+temp_paddleocr/
+
+# Other
+.DS_Store  # macOS
+Thumbs.db # Windows
