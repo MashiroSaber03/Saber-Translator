@@ -1,10 +1,4 @@
-<<<<<<< HEAD
 {
   "min_brightness": "1",
   "avoid_white": true
-=======
-{
-  "min_brightness": "1",
-  "avoid_white": true
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }

@@ -89,28 +89,20 @@ export function updateTranslatedImage(dataURL) {
  * 更新缩略图列表
  */
 export function renderThumbnails() {
-<<<<<<< HEAD
     const thumbnailList = $("#thumbnail-sidebar #thumbnailList");
-=======
-    const thumbnailList = $("#thumbnail-sidebar #thumbnailList"); // 在函数内获取
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     thumbnailList.empty();
     state.images.forEach((imageData, index) => {
         const thumbnailItem = $("<div class='thumbnail-item' data-index='" + index + "'></div>");
         const thumbnailImage = $("<img class='thumbnail-image'>").attr('src', imageData.originalDataURL);
         thumbnailItem.append(thumbnailImage);
 
-<<<<<<< HEAD
         // 清除旧标记
         thumbnailItem.find('.translation-failed-indicator, .labeled-indicator').remove();
 
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         if (index === state.currentImageIndex) {
             thumbnailItem.addClass('active');
         }
 
-<<<<<<< HEAD
         // 优先显示失败标记
         if (imageData.translationFailed) {
             thumbnailItem.addClass('translation-failed');
@@ -124,22 +116,11 @@ export function renderThumbnails() {
             thumbnailItem.append('<span class="labeled-indicator">✏️</span>'); // 使用特定类名
         }
         // -------------------------------------
-=======
-        if (imageData.translationFailed) {
-             thumbnailItem.addClass('translation-failed');
-             thumbnailItem.attr('title', '翻译失败，点击可重试');
-             thumbnailItem.append('<span class="error-indicator">!</span>');
-        }
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
         thumbnailItem.data('index', index);
         thumbnailList.append(thumbnailItem);
     });
-<<<<<<< HEAD
     scrollToActiveThumbnail(); // 保持滚动逻辑
-=======
-    scrollToActiveThumbnail();
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -194,10 +175,7 @@ export function updateButtonStates() {
     const downloadButton = $("#downloadButton");
     const downloadAllImagesButton = $("#downloadAllImagesButton");
     const toggleImageButton = $('#toggleImageButton');
-<<<<<<< HEAD
     const toggleLabelingModeButton = $("#toggleLabelingModeButton");
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     const hasImages = state.images.length > 0;
     const hasCurrentImage = state.currentImageIndex >= 0 && state.currentImageIndex < state.images.length;
@@ -229,7 +207,6 @@ export function updateButtonStates() {
     downloadAllImagesButton.toggle(hasAnyTranslated && !isLoading);
     $('#downloadFormat').toggle(hasAnyTranslated && !isLoading);
 
-<<<<<<< HEAD
     // 标注模式按钮只在有当前图片且非加载状态时显示
     toggleLabelingModeButton.toggle(hasCurrentImage && !isLoading);
     // 如果处于标注模式，禁用翻译按钮等（除非是"使用手动框翻译"按钮）
@@ -241,11 +218,6 @@ export function updateButtonStates() {
     }
 
     updateNavigationButtons();
-=======
-    updateNavigationButtons(); // 更新翻页按钮 (也应考虑 isLoading)
-    $("#prevImageButton").prop('disabled', state.currentImageIndex <= 0 || isLoading);
-    $("#nextImageButton").prop('disabled', state.currentImageIndex >= state.images.length - 1 || isLoading);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 
@@ -360,7 +332,6 @@ export function updateProgressBar(percentage, text = '') {
 }
 
 /**
-<<<<<<< HEAD
  * 显示/隐藏下载状态并禁用/启用按钮
  * @param {boolean} show - 是否显示下载状态 (现在只控制按钮禁用)
  */
@@ -374,21 +345,6 @@ export function showDownloadingMessage(show) {
     // 可能还需要禁用其他在下载时不应操作的按钮
     // $("#translateButton").prop('disabled', show);
     // $("#clearAllImagesButton").prop('disabled', show);
-=======
- * 显示/隐藏下载消息
- * @param {boolean} show - 是否显示
- */
-export function showDownloadingMessage(show) {
-    if (show) {
-        $("#downloadingMessage").show();
-        $("#downloadButton").prop('disabled', true);
-        $("#downloadAllImagesButton").prop('disabled', true);
-    } else {
-        $("#downloadingMessage").hide();
-        $("#downloadButton").prop('disabled', false);
-        $("#downloadAllImagesButton").prop('disabled', false);
-    }
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -515,7 +471,6 @@ export function updateSakuraModelList(models) {
  * @param {string} [placeholder='请输入API Key'] - 占位符文本
  */
 export function updateApiKeyInputState(disabled, placeholder = '请输入API Key') {
-<<<<<<< HEAD
     // --- 修改：确保自定义服务商时启用 API Key ---
     const selectedProvider = $('#modelProvider').val();
     if (selectedProvider === 'custom_openai') { // 使用常量会更好，但为了简单这里用字符串
@@ -523,8 +478,6 @@ export function updateApiKeyInputState(disabled, placeholder = '请输入API Key
         placeholder = '请输入 API Key (自定义服务)';
     }
     // ----------------------------------------
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     $('#apiKey').attr('placeholder', placeholder).prop('disabled', disabled);
     if (disabled) {
         $('#apiKey').val('');
@@ -556,7 +509,6 @@ export function toggleSakuraUI(show) {
 }
 
 /**
-<<<<<<< HEAD
  * 显示或隐藏彩云小译相关 UI 元素
  * @param {boolean} show - 是否显示
  */
@@ -662,8 +614,6 @@ function testBaiduTranslateConnection() {
 }
 
 /**
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
  * 更新图片大小滑块和显示
  * @param {number} value - 滑块值 (百分比)
  */
@@ -674,7 +624,6 @@ export function updateImageSizeDisplay(value) {
 
 /**
  * 显示/隐藏修复选项
-<<<<<<< HEAD
  * @param {boolean} showLamaOptions - 是否显示 LAMA 选项（现在不再有 MI-GAN 选项）
  * @param {boolean} showSolidOptions - 是否显示纯色填充选项
  */
@@ -684,23 +633,11 @@ export function toggleInpaintingOptions(showLamaOptions, showSolidOptions) {
     
     // 如果 LAMA 有独立的选项（比如强度、融合），在这里控制显示
     if (showLamaOptions) {
-=======
- * @param {boolean} showInpaintingOptions - 是否显示 MI-GAN/LAMA 选项
- * @param {boolean} showSolidOptions - 是否显示纯色填充选项
- */
-export function toggleInpaintingOptions(showInpaintingOptions, showSolidOptions) {
-    const inpaintingOptionsDiv = $("#inpaintingOptions"); // 在函数内获取
-    const solidColorOptionsDiv = $("#solidColorOptions"); // 在函数内获取
-    if (showInpaintingOptions) {
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         inpaintingOptionsDiv.slideDown();
     } else {
         inpaintingOptionsDiv.slideUp();
     }
-<<<<<<< HEAD
     
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     if (showSolidOptions) {
         solidColorOptionsDiv.slideDown();
     } else {
@@ -714,21 +651,15 @@ export function toggleInpaintingOptions(showInpaintingOptions, showSolidOptions)
  * @param {'info' | 'success' | 'warning' | 'error'} [type='info'] - 消息类型
  * @param {boolean} [isHTML=false] - 消息内容是否为 HTML
  * @param {number} [duration=5000] - 自动消失时间 (毫秒)，0 表示不自动消失
-<<<<<<< HEAD
  * @param {string} [messageId=''] - 消息唯一标识符，用于后续清除特定消息
  * @returns {string} 消息ID，如果未提供则自动生成
  */
 export function showGeneralMessage(message, type = 'info', isHTML = false, duration = 5000, messageId = '') {
-=======
- */
-export function showGeneralMessage(message, type = 'info', isHTML = false, duration = 5000) {
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     let messageContainer = $('#messageContainer');
     if (messageContainer.length === 0) {
         messageContainer = $('<div id="messageContainer" class="message-container"></div>');
         $('body').append(messageContainer);
     }
-<<<<<<< HEAD
     
     // 生成唯一消息ID或使用提供的ID
     const msgId = messageId || 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -741,23 +672,16 @@ export function showGeneralMessage(message, type = 'info', isHTML = false, durat
     const messageElement = $('<div class="message"></div>').addClass(type);
     messageElement.attr('data-msg-id', msgId);
     
-=======
-    const messageElement = $('<div class="message"></div>').addClass(type);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     if (isHTML) {
         messageElement.html(message);
     } else {
         messageElement.text(message);
     }
-<<<<<<< HEAD
     
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const closeButton = $('<button class="close-message" title="关闭消息">×</button>');
     closeButton.on('click', function() {
         messageElement.fadeOut(300, function() { $(this).remove(); });
     });
-<<<<<<< HEAD
     
     messageElement.append(closeButton);
     messageContainer.append(messageElement);
@@ -796,15 +720,6 @@ export function clearAllGeneralMessages(type = '') {
     $(selector).fadeOut(300, function() { 
         $(this).remove(); 
     });
-=======
-    messageElement.append(closeButton);
-    messageContainer.append(messageElement);
-    if (duration > 0) {
-        setTimeout(function() {
-            messageElement.fadeOut(300, function() { $(this).remove(); });
-        }, duration);
-    }
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 // --- 编辑模式 UI 更新 ---
@@ -858,10 +773,7 @@ export function updateBubbleEditArea(index) {
     const positionOffsetY = $("#positionOffsetY");
     const positionOffsetXValue = $("#positionOffsetXValue");
     const positionOffsetYValue = $("#positionOffsetYValue");
-<<<<<<< HEAD
     const bubbleFillColorInput = $("#bubbleFillColor"); // 新的颜色选择器
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     if (index < 0 || index >= state.bubbleSettings.length) {
         // 清空编辑区
@@ -872,10 +784,7 @@ export function updateBubbleEditArea(index) {
         bubbleFontFamily.val(state.defaultFontFamily);
         bubbleTextDirection.val(state.defaultLayoutDirection);
         bubbleTextColor.val(state.defaultTextColor);
-<<<<<<< HEAD
         bubbleFillColorInput.val(state.getCurrentImage()?.fillColor || state.defaultFillColor); // 清空时设为当前图片的全局填充色或默认
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         bubbleRotationAngle.val(0);
         bubbleRotationAngleValue.text('0°');
         positionOffsetX.val(0);
@@ -900,10 +809,7 @@ export function updateBubbleEditArea(index) {
     bubbleFontFamily.val(setting.fontFamily || state.defaultFontFamily);
     bubbleTextDirection.val(setting.textDirection || state.defaultLayoutDirection);
     bubbleTextColor.val(setting.textColor || state.defaultTextColor);
-<<<<<<< HEAD
     bubbleFillColorInput.val(setting.fillColor || state.getCurrentImage()?.fillColor || state.defaultFillColor);
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     bubbleRotationAngle.val(setting.rotationAngle || 0);
     bubbleRotationAngleValue.text((setting.rotationAngle || 0) + '°');
 
@@ -916,7 +822,6 @@ export function updateBubbleEditArea(index) {
 
 /**
  * 添加或更新气泡高亮效果
-<<<<<<< HEAD
  * @param {number} selectedBubbleIndex - 当前选中的气泡索引, -1 表示没有选中
  */
 export function updateBubbleHighlight(selectedBubbleIndex) {
@@ -978,46 +883,6 @@ export function updateBubbleHighlight(selectedBubbleIndex) {
             editMode.selectBubble(bubbleIndex);
         });
     });
-=======
- * @param {number} bubbleIndex - 要高亮的索引, -1 表示移除高亮
- */
-export function updateBubbleHighlight(bubbleIndex) {
-    $('.highlight-bubble').remove();
-
-    if (bubbleIndex < 0) return;
-
-    const currentImage = state.getCurrentImage();
-    if (!currentImage || !currentImage.bubbleCoords || bubbleIndex >= currentImage.bubbleCoords.length) return;
-
-    const [x1, y1, x2, y2] = currentImage.bubbleCoords[bubbleIndex];
-    const highlightElement = $('<div class="highlight-bubble"></div>');
-    const imageElement = $('#translatedImageDisplay');
-    const imageContainer = $('.image-container');
-
-    // 确保图片已加载且尺寸有效
-    const imageNaturalWidth = imageElement[0].naturalWidth;
-    const imageNaturalHeight = imageElement[0].naturalHeight;
-    if (!imageNaturalWidth || !imageNaturalHeight || imageNaturalWidth === 0 || imageNaturalHeight === 0) {
-        console.warn("无法更新高亮：图像尺寸无效或未加载");
-        return;
-    }
-
-    const imageDisplayWidth = imageElement.width();
-    const imageDisplayHeight = imageElement.height();
-    const scaleX = imageDisplayWidth / imageNaturalWidth;
-    const scaleY = imageDisplayHeight / imageNaturalHeight;
-    const imageOffset = imageElement.position();
-    const imageLeft = imageOffset ? imageOffset.left : 0;
-    const imageTop = imageOffset ? imageOffset.top : 0;
-
-    highlightElement.css({
-        'left': `${imageLeft + x1 * scaleX}px`,
-        'top': `${imageTop + y1 * scaleY}px`,
-        'width': `${(x2 - x1) * scaleX}px`,
-        'height': `${(y2 - y1) * scaleY}px`
-    });
-    imageContainer.append(highlightElement);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -1035,7 +900,6 @@ export function toggleEditModeUI(isActive) {
         detectedTextInfo.hide();
         $('body').addClass('edit-mode-active');
         updateBubbleListUI();
-<<<<<<< HEAD
         
         // 初始显示所有气泡高亮
         if (state.selectedBubbleIndex >= 0) {
@@ -1046,17 +910,11 @@ export function toggleEditModeUI(isActive) {
         $(window).on('resize.bubbleHighlight', function() {
             updateBubbleHighlight(state.selectedBubbleIndex);
         });
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     } else {
         toggleEditModeButton.text("切换编辑模式").removeClass("active");
         editModeContainer.hide();
         detectedTextInfo.show();
-<<<<<<< HEAD
         $('.highlight-bubble').remove(); // 移除所有高亮框
-=======
-        $('.highlight-bubble').remove();
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         $('body').removeClass('edit-mode-active');
         $(window).off('resize.bubbleHighlight');
     }
@@ -1116,7 +974,6 @@ export function getRepairSettings() {
 /**
  * 渲染插件列表到模态窗口
  * @param {Array<object>} plugins - 插件信息数组
-<<<<<<< HEAD
  * @param {object} defaultStates - 插件默认启用状态字典 { pluginName: boolean }
  */
 export function renderPluginList(plugins, defaultStates = {}) {
@@ -1131,15 +988,6 @@ export function renderPluginList(plugins, defaultStates = {}) {
 
     if (!plugins || plugins.length === 0) {
         container.append("<p>未找到任何插件。</p>");
-=======
- */
-export function renderPluginList(plugins) {
-    const container = $("#pluginListContainer");
-    container.empty();
-
-    if (!plugins || plugins.length === 0) {
-        container.html("<p>未找到任何插件。</p>");
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         return;
     }
 
@@ -1154,7 +1002,6 @@ export function renderPluginList(plugins) {
         pluginDiv.append(header);
         if (plugin.description) pluginDiv.append(`<p class="plugin-description">${plugin.description}</p>`);
 
-<<<<<<< HEAD
         const controls = $('<div class="plugin-controls" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;"></div>'); // 新增容器
 
         // --- 新增: 默认启用状态控制 ---
@@ -1176,18 +1023,10 @@ export function renderPluginList(plugins) {
         const toggleCheckbox = $('<input type="checkbox" class="plugin-enable-toggle">');
         toggleCheckbox.prop('checked', plugin.enabled); // 当前实时状态
         toggleCheckbox.attr('data-plugin-name', plugin.name); // 关联插件名
-=======
-        const actions = $('<div class="plugin-actions"></div>');
-        // 启用/禁用开关
-        const toggleLabel = $('<label class="plugin-toggle"></label>');
-        const toggleCheckbox = $('<input type="checkbox" class="plugin-enable-toggle">');
-        toggleCheckbox.prop('checked', plugin.enabled);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         toggleLabel.append(toggleCheckbox);
         toggleLabel.append(plugin.enabled ? ' 已启用' : ' 已禁用');
         actions.append(toggleLabel);
 
-<<<<<<< HEAD
         // 设置按钮
         const settingsButton = $('<button class="plugin-settings-button">设置</button>');
         settingsButton.attr('data-plugin-name', plugin.name); // 关联插件名
@@ -1200,24 +1039,6 @@ export function renderPluginList(plugins) {
 
         controls.append(actions); // 将 actions 添加到 controls 容器右侧
         pluginDiv.append(controls); // 将 controls 添加到插件项
-=======
-        // --- 添加设置按钮 (如果插件有配置) ---
-        // 需要后端在 /api/plugins 返回的数据中包含一个标记，指示是否有配置
-        // 或者在点击按钮时再查询 schema
-        // 简单起见，我们先假设后端返回的数据包含 `has_config: true/false`
-        // if (plugin.has_config) { // 假设后端返回了这个标记
-        // 或者更健壮的方式是，总是显示按钮，点击时再检查 schema
-        const settingsButton = $('<button class="plugin-settings-button">设置</button>');
-        actions.append(settingsButton);
-        // }
-        // ------------------------------------
-
-        // 删除按钮
-        const deleteButton = $('<button class="plugin-delete-button">删除</button>');
-        actions.append(deleteButton);
-
-        pluginDiv.append(actions);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         container.append(pluginDiv);
     });
 }
@@ -1304,7 +1125,6 @@ export function showPluginConfigModal(pluginName, schema, currentConfig) {
 
     // 绑定关闭事件 (在 events.js 中处理)
     // 绑定表单提交事件 (在 events.js 中处理)
-<<<<<<< HEAD
 }
 
 /**
@@ -1798,6 +1618,4 @@ export function updateRpdInputFields() {
     $('#rpdTranslation').val(state.rpdLimitTranslation);
     $('#rpdAiVisionOcr').val(state.rpdLimitAiVisionOcr);
     console.log("UI 更新: RPD输入框已更新为当前状态值。");
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }

@@ -14,17 +14,12 @@ import colorama
 from datetime import datetime
 from src.plugins.manager import get_plugin_manager
 from src.interfaces.yolo_interface import load_yolo_model
-<<<<<<< HEAD
 import mimetypes
 
 # 显式地为 .js 文件添加正确的 MIME 类型
 # Flask/Werkzeug 在服务静态文件时通常会参考这个
 mimetypes.add_type('text/javascript', '.js')
 
-=======
-
-# 初始化colorama以支持彩色输出
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 colorama.init()
 
 # 配置日志
@@ -105,7 +100,6 @@ def setup_logging():
                 'level': 'INFO',
                 'propagate': False
             },
-<<<<<<< HEAD
             'PaddleOCR': {
                 'handlers': ['console', 'file'],  # PaddleOCR日志记录到控制台和文件
                 'level': 'INFO',  
@@ -116,8 +110,6 @@ def setup_logging():
                 'level': 'INFO',
                 'propagate': False
             },
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             'urllib3': {
                 'handlers': ['file'],
                 'level': 'WARNING',
@@ -136,7 +128,6 @@ def setup_logging():
     # 创建应用日志记录器
     logger = logging.getLogger('comic_translator')
     
-<<<<<<< HEAD
     # 输出佛祖保佑，永无BUG的ASCII艺术
     buddha_art = r"""
                            _ooOoo_
@@ -163,8 +154,6 @@ def setup_logging():
     
     print(f"{colorama.Fore.GREEN}{buddha_art}{colorama.Style.RESET_ALL}")
     
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     # 添加应用启动分隔线
     logger.info("="*30)
     logger.info("漫画翻译器启动")
@@ -181,10 +170,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 # 创建日志记录器
 logger = setup_logging()
-<<<<<<< HEAD
 logger.info("已手动添加 '.js' 的 MIME 类型为 'text/javascript'")
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
 # 准备应用程序
 app = Flask(__name__,
@@ -394,14 +380,11 @@ def test_sakura_connection_redirect():
     else:
         return redirect("/api/test_sakura_connection", code=307)
 
-<<<<<<< HEAD
 @app.route('/test_baidu_translate_connection', methods=['POST'])
 def test_baidu_translate_connection_redirect():
     """重定向到系统API蓝图中的测试百度翻译API连接端点"""
     return redirect("/api/test_baidu_translate_connection", code=307)
 
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 # -----------------------------------------------
 
 if __name__ == '__main__':
@@ -425,21 +408,15 @@ if __name__ == '__main__':
         'transformers': logging.WARNING,
         'mangaocr': logging.WARNING,
         'manga_ocr': logging.WARNING,
-<<<<<<< HEAD
         'paddleocr': logging.WARNING,  # 只控制PaddleOCR库的内部日志，不影响我们的PaddleOCR接口日志
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
     
     for module, level in silenced_modules.items():
         logging.getLogger(module).setLevel(level)
     
-<<<<<<< HEAD
     # 确保翻译模块的日志级别为INFO
     logging.getLogger('CoreTranslation').setLevel(logging.INFO)
     
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     # 找到loguru日志库的处理器并禁用控制台输出
     try:
         from loguru import logger as loguru_logger
@@ -484,10 +461,6 @@ if __name__ == '__main__':
     cli = sys.modules['flask.cli']
     cli.show_server_banner = lambda *x: None
     
-<<<<<<< HEAD
     app.run(debug=False, use_reloader=False)
 
     
-=======
-    app.run(debug=False, use_reloader=False)
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

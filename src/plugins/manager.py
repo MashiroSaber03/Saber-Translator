@@ -6,7 +6,6 @@ import json # 需要 json 来读写配置文件
 from .base import PluginBase # 导入插件基类
 from .hooks import ALL_HOOKS, BEFORE_PROCESSING, AFTER_OCR # 导入所有钩子名称常量
 from src.shared.path_helpers import resource_path # 需要路径助手
-<<<<<<< HEAD
 from src.shared.config_loader import get_config_path, load_json_config, save_json_config # 导入 config_loader 函数
 
 logger = logging.getLogger("PluginManager")
@@ -15,12 +14,6 @@ logger = logging.getLogger("PluginManager")
 PLUGIN_DEFAULT_STATES_FILE = 'plugin_default_states.json'
 # ---------------
 
-=======
-from src.shared.config_loader import get_config_path # 需要获取 config 目录
-
-logger = logging.getLogger("PluginManager")
-
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 class PluginManager:
     """
     负责发现、加载、管理和执行插件。
@@ -47,7 +40,6 @@ class PluginManager:
         # 确保用户插件目录存在
         os.makedirs(resource_path('plugins'), exist_ok=True)
 
-<<<<<<< HEAD
         # --- 新增: 加载用户设置的默认状态 ---
         self.plugin_default_states = self._load_plugin_default_states()
         # ----------------------------------
@@ -87,10 +79,6 @@ class PluginManager:
         return self.save_plugin_default_states() # 保存更改
     # ---------------------------------
 
-=======
-        logger.info(f"插件管理器初始化，扫描目录: {self.plugin_dirs}")
-
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     def discover_and_load_plugins(self):
         """
         扫描指定目录，发现并加载所有有效的插件。
@@ -98,10 +86,7 @@ class PluginManager:
         logger.info("开始发现和加载插件...")
         loaded_count = 0
         potential_plugins = self._find_potential_plugins()
-<<<<<<< HEAD
         needs_saving_defaults = False # 标记是否有新插件需要保存默认值
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
         for name, module_path, package_path in potential_plugins:
             try:
@@ -122,7 +107,6 @@ class PluginManager:
                     attr = getattr(plugin_module, attr_name)
                     if inspect.isclass(attr) and issubclass(attr, PluginBase) and attr is not PluginBase:
                         logger.info(f"发现插件类: {attr.__name__} in {name}")
-<<<<<<< HEAD
                         # --- 修改: 传递 needs_saving_defaults 标记 ---
                         plugin_loaded, default_saved = self._load_plugin_class(attr)
                         if plugin_loaded:
@@ -130,10 +114,6 @@ class PluginManager:
                             if default_saved:
                                 needs_saving_defaults = True
                         # -------------------------------------------
-=======
-                        self._load_plugin_class(attr)
-                        loaded_count += 1
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                         break # 每个模块只加载第一个找到的插件类
 
             except ImportError as e:
@@ -142,15 +122,11 @@ class PluginManager:
                 logger.error(f"加载插件 '{name}' 时发生未知错误: {e}", exc_info=True)
 
         logger.info(f"插件加载完成，共加载 {loaded_count} 个插件。")
-<<<<<<< HEAD
         # --- 修改: 如果有新插件添加了默认状态，则保存文件 ---
         if needs_saving_defaults:
             self.save_plugin_default_states()
         # ---------------------------------------------
         self._enable_plugins_based_on_defaults() # 使用新方法启用
-=======
-        self._enable_default_plugins() # 加载后启用默认插件
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     def _find_potential_plugins(self):
         """在插件目录中查找可能的插件模块。"""
@@ -187,28 +163,18 @@ class PluginManager:
 
 
     def _load_plugin_class(self, plugin_class):
-<<<<<<< HEAD
         """
         实例化插件类，注册钩子，并处理默认启用状态。
         返回: (bool: 是否加载成功, bool: 是否为该插件添加了新的默认状态)
         """
-=======
-        """实例化插件类并注册钩子。"""
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         try:
             plugin_instance = plugin_class(plugin_manager=self, app=self.app)
             plugin_name = plugin_instance.plugin_name
 
             if plugin_name in self.plugins:
                 logger.warning(f"插件名称冲突: '{plugin_name}' 已存在，跳过 {plugin_class.__name__}。")
-<<<<<<< HEAD
                 return False, False
 
-=======
-                return
-
-            # 执行插件的 setup 方法
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             if plugin_instance.setup():
                 self.plugins[plugin_name] = plugin_instance
                 self.plugin_metadata[plugin_name] = plugin_instance.get_metadata()
@@ -218,7 +184,6 @@ class PluginManager:
                 # --------------------
                 self._register_hooks(plugin_instance)
                 logger.info(f"插件 '{plugin_name}' 加载、配置并设置成功。")
-<<<<<<< HEAD
 
                 # --- 新增: 处理默认启用状态持久化 ---
                 default_added = False
@@ -237,13 +202,6 @@ class PluginManager:
         except Exception as e:
             logger.error(f"实例化或设置插件类 '{plugin_class.__name__}' 失败: {e}", exc_info=True)
             return False, False
-=======
-            else:
-                logger.error(f"插件 '{plugin_name}' 的 setup 方法返回 False，加载失败。")
-
-        except Exception as e:
-            logger.error(f"实例化或设置插件类 '{plugin_class.__name__}' 失败: {e}", exc_info=True)
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     def _register_hooks(self, plugin_instance):
         """检查插件实例并注册其实现的钩子方法。"""
@@ -257,7 +215,6 @@ class PluginManager:
                     self.hooks[hook_name].append(method)
                     logger.debug(f"插件 '{plugin_name}' 注册了钩子: {hook_name}")
 
-<<<<<<< HEAD
     def _enable_plugins_based_on_defaults(self):
         """根据用户配置或插件自身默认值启用插件。"""
         logger.info("根据用户设置启用插件...")
@@ -276,15 +233,6 @@ class PluginManager:
                  instance.disable() # 调用 disable 确保状态正确
 
         logger.info(f"共启用 {enabled_count} 个插件（根据用户设置）。")
-=======
-    def _enable_default_plugins(self):
-        """启用标记为默认启用的插件。"""
-        logger.info("跳过启用默认插件，所有插件将默认保持关闭状态...")
-        # 以下是原代码，现在被禁用
-        # for name, instance in self.plugins.items():
-        #     if instance.plugin_enabled_by_default:
-        #         instance.enable()
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     def get_plugin(self, name):
         """获取指定名称的插件实例。"""

@@ -15,7 +15,6 @@ MODEL_HISTORY_FILE = 'model_history.json'
 PROMPTS_FILE = 'prompts.json'
 TEXTBOX_PROMPTS_FILE = 'textbox_prompts.json'
 
-<<<<<<< HEAD
 # --- 新增自定义OpenAI服务商ID ---
 CUSTOM_OPENAI_PROVIDER_ID = 'custom_openai'
 # ---------------------------------
@@ -30,12 +29,6 @@ YOUDAO_TRANSLATE_ENGINE_ID = 'youdao_translate'
 # 默认字体路径现在指向 src/app/static/fonts/
 DEFAULT_FONT_RELATIVE_PATH = os.path.join('src', 'app', 'static', 'fonts', 'msyh.ttc')
 DEFAULT_FONT_PATH = "static/msyh.ttc"  # 保留旧变量以兼容现有代码
-=======
-# --- 文件与目录 ---
-# 默认字体路径现在指向 src/app/static/fonts/
-DEFAULT_FONT_RELATIVE_PATH = os.path.join('src', 'app', 'static', 'fonts', 'STSONG.TTF')
-DEFAULT_FONT_PATH = "static/STSONG.TTF"  # 保留旧变量以兼容现有代码
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 UPLOAD_FOLDER_NAME = 'uploads'
 TEMP_FOLDER_NAME = 'temp'
 UPLOAD_FOLDER = 'uploads'  # 保留旧变量以兼容现有代码
@@ -46,11 +39,7 @@ DEFAULT_TARGET_LANG = 'zh'
 DEFAULT_SOURCE_LANG = 'japan'
 DEFAULT_FONT_SIZE = 30
 DEFAULT_TEXT_DIRECTION = 'vertical'
-<<<<<<< HEAD
 DEFAULT_TEXT_COLOR = '#231816'
-=======
-DEFAULT_TEXT_COLOR = '#000000'
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 DEFAULT_ROTATION_ANGLE = 0
 DEFAULT_FILL_COLOR = '#FFFFFF'
 DEFAULT_INPAINTING_STRENGTH = 1.0
@@ -78,7 +67,6 @@ PADDLE_LANG_MAP = {
     "russian": "ru",
     "italian": "italian",
     "spanish": "spanish"
-<<<<<<< HEAD
 }
 
 # --- 百度OCR相关 ---
@@ -208,6 +196,3 @@ DEFAULT_AI_VISION_OCR_JSON_PROMPT = """你是一个OCR助手。请将我发送�
 # --- RPD (Requests Per Minute) Limiting ---
 DEFAULT_RPD_TRANSLATION = 0  # 0 表示无限制
 DEFAULT_RPD_AI_VISION_OCR = 0 # 0 表示无限制
-=======
-}
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915

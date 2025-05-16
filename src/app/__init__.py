@@ -8,13 +8,8 @@ from flask import Blueprint
 main_bp = Blueprint(
     'main',
     __name__,
-<<<<<<< HEAD
     template_folder='../../templates',  
     static_folder='../../static'  
-=======
-    template_folder='../../templates',  # 使用绝对路径指向项目根目录下的templates文件夹
-    static_folder='../../static'  # 使用绝对路径指向项目根目录下的static文件夹
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 )
 
 # 导入路由定义

@@ -2,11 +2,8 @@ import * as state from './state.js';
 import * as ui from './ui.js';
 import * as api from './api.js';
 import * as constants from './constants.js'; // <--- 添加导入
-<<<<<<< HEAD
 import * as session from './session.js'; // <--- 添加导入，用于自动存档
 import * as main from './main.js'; // 导入main模块以使用loadImage函数
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 // import $ from 'jquery'; // 假设 jQuery 已全局加载
 
 /**
@@ -42,7 +39,6 @@ export function toggleEditMode() {
 
     } else {
         // --- 退出编辑模式 ---
-<<<<<<< HEAD
         ui.toggleEditModeUI(false); // 更新 UI (这会清除所有高亮框)
         
         // 确保清除任何可能存在的"重新渲染中..."消息
@@ -52,13 +48,6 @@ export function toggleEditMode() {
         const currentImage = state.getCurrentImage();
         if (currentImage && state.bubbleSettings.length > 0) { // 仅在有设置时保存
             // 保存气泡设置到图像对象，确保完整复制所有属性，包括fillColor
-=======
-        ui.toggleEditModeUI(false); // 更新 UI
-        // 保存最终的气泡设置到当前图片对象
-        const currentImage = state.getCurrentImage();
-        if (currentImage && state.bubbleSettings.length > 0) { // 仅在有设置时保存
-            // 保存气泡设置到图像对象
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             currentImage.bubbleSettings = JSON.parse(JSON.stringify(state.bubbleSettings));
             // 同时更新 bubbleTexts
             currentImage.bubbleTexts = state.bubbleSettings.map(s => s.text);
@@ -70,7 +59,6 @@ export function toggleEditMode() {
             currentImage.fontFamily = firstBubbleSetting.fontFamily;
             currentImage.layoutDirection = firstBubbleSetting.textDirection;
             
-<<<<<<< HEAD
             // 重新渲染以确保更改立即可见，并等待渲染完成后再继续
             reRenderFullImage()
                 .then(() => {
@@ -95,26 +83,13 @@ export function toggleEditMode() {
             state.setSelectedBubbleIndex(-1); // 重置选中索引
             state.setInitialBubbleSettings([]); // 清空备份
         }
-=======
-            // 重新渲染以确保更改立即可见
-            reRenderFullImage();
-            
-            console.log("退出编辑模式，已保存气泡设置到图像对象");
-        }
-        state.setSelectedBubbleIndex(-1); // 重置选中索引
-        state.setInitialBubbleSettings([]); // 清空备份
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
 /**
  * 初始化或加载当前图片的气泡设置
  */
-<<<<<<< HEAD
 export function initBubbleSettings() {
-=======
-function initBubbleSettings() {
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     const currentImage = state.getCurrentImage();
     if (!currentImage || !currentImage.bubbleCoords) {
         console.error("无法初始化气泡设置：无效的图像或坐标");
@@ -122,7 +97,6 @@ function initBubbleSettings() {
         return;
     }
 
-<<<<<<< HEAD
     const imageGlobalFillColor = currentImage.fillColor || state.defaultFillColor; // 当前图片的全局填充色
 
     if (currentImage.bubbleSettings && currentImage.bubbleSettings.length === currentImage.bubbleCoords.length) {
@@ -138,46 +112,12 @@ function initBubbleSettings() {
     } else {
         console.log("创建新的默认气泡设置 (含填充色)");
         const newSettings = [];
-=======
-    // 检查当前图像是否已有保存的气泡设置
-    if (currentImage.bubbleSettings && currentImage.bubbleSettings.length === currentImage.bubbleCoords.length) {
-        console.log("加载当前图像已保存的气泡设置");
-        
-        // 更新：确保使用最新的全局设置更新现有的气泡设置
-        // 从当前UI控件读取全局设置
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         const globalFontSize = $('#autoFontSize').is(':checked') ? 'auto' : parseInt($('#fontSize').val());
         const globalAutoFontSize = $('#autoFontSize').is(':checked');
         const globalFontFamily = $('#fontFamily').val();
         const globalTextDirection = $('#layoutDirection').val();
-<<<<<<< HEAD
         const globalTextColor = $('#textColor').val(); // 全局文本颜色
         // globalFillColor 已经通过 imageGlobalFillColor 获取
-=======
-        const globalTextColor = $('#textColor').val();
-        
-        // 创建设置的深拷贝并更新为当前全局设置
-        const updatedSettings = currentImage.bubbleSettings.map(setting => ({
-            ...setting,
-            fontSize: globalFontSize,
-            autoFontSize: globalAutoFontSize,
-            fontFamily: globalFontFamily,
-            textDirection: globalTextDirection,
-            textColor: globalTextColor
-        }));
-        
-        state.setBubbleSettings(updatedSettings);
-    } else {
-        // 创建新的默认设置
-        console.log("创建新的默认气泡设置");
-        const newSettings = [];
-        // 从当前UI控件读取全局设置 (而不是从state读取默认值)
-        const globalFontSize = $('#autoFontSize').is(':checked') ? 'auto' : parseInt($('#fontSize').val());
-        const globalAutoFontSize = $('#autoFontSize').is(':checked');
-        const globalFontFamily = $('#fontFamily').val();
-        const globalTextDirection = $('#layoutDirection').val();
-        const globalTextColor = $('#textColor').val();
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
         if (!currentImage.bubbleTexts || currentImage.bubbleTexts.length !== currentImage.bubbleCoords.length) {
             currentImage.bubbleTexts = Array(currentImage.bubbleCoords.length).fill("");
@@ -191,7 +131,6 @@ function initBubbleSettings() {
                 fontFamily: globalFontFamily,
                 textDirection: globalTextDirection,
                 position: { x: 0, y: 0 },
-<<<<<<< HEAD
                 textColor: globalTextColor, // 使用全局文本颜色
                 rotationAngle: 0,
                 fillColor: imageGlobalFillColor // <--- 新增：使用图片的全局填充色初始化
@@ -201,17 +140,6 @@ function initBubbleSettings() {
         currentImage.bubbleSettings = JSON.parse(JSON.stringify(newSettings));
     }
     ui.updateBubbleListUI();
-=======
-                textColor: globalTextColor,
-                rotationAngle: 0
-            });
-        }
-        state.setBubbleSettings(newSettings);
-        // 同时保存到当前图像对象
-        currentImage.bubbleSettings = JSON.parse(JSON.stringify(newSettings));
-    }
-    ui.updateBubbleListUI(); // 更新列表显示
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /**
@@ -225,7 +153,6 @@ export function selectBubble(index) {
     }
     state.setSelectedBubbleIndex(index);
     ui.updateBubbleEditArea(index);
-<<<<<<< HEAD
     ui.updateBubbleHighlight(index); // 这会更新所有气泡的高亮框并标记选中的
     
     // 滚动气泡列表到选中项，但不滚动页面
@@ -236,14 +163,6 @@ export function selectBubble(index) {
         bubbleList.animate({
             scrollTop: bubbleItem.position().top + bubbleList.scrollTop() - bubbleList.position().top
         }, 300);
-=======
-    ui.updateBubbleHighlight(index);
-    // 滚动气泡列表到选中项
-    const bubbleItem = $(`.bubble-item[data-index="${index}"]`);
-    if (bubbleItem.length) {
-        // 使用原生 scrollIntoView
-        bubbleItem[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }
 
@@ -299,11 +218,7 @@ export function renderBubblePreview(bubbleIndex) {
         // 如果是从自动切换到非自动
         if (isPrevAuto && !isNowAuto) {
             console.log(`气泡 ${bubbleIndex} 从自动字号切换到手动字号`);
-<<<<<<< HEAD
             reRenderFullImage(true); // 参数表示是从自动切换到手动
-=======
-            reRenderFullImage(false, true); // 第二个参数表示是从自动切换到手动
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             return;
         }
     }
@@ -314,7 +229,6 @@ export function renderBubblePreview(bubbleIndex) {
 
 /**
  * 重新渲染整个图像
-<<<<<<< HEAD
  * @param {boolean} [fromAutoToManual=false] - (保留) 是否是从自动字号切换到手动字号,用于后端特殊处理
  * @returns {Promise<void>} - 在渲染成功时 resolve，失败时 reject
  */
@@ -553,141 +467,6 @@ export function reRenderFullImage(fromAutoToManual = false) {
                 reject(error);
             });
     });
-=======
- * @param {boolean} [isGlobalChange=false] - 是否是全局设置变更触发的重渲染
- * @param {boolean} [fromAutoToManual=false] - 是否是从自动字号切换到手动字号
- */
-export function reRenderFullImage(isGlobalChange = false, fromAutoToManual = false) {
-    const currentImage = state.getCurrentImage();
-    if (!currentImage || !currentImage.bubbleCoords || !currentImage.translatedDataURL) {
-        console.error("无法重新渲染：缺少必要数据");
-        ui.showGeneralMessage("无法重新渲染，缺少图像或气泡数据", "error");
-        return;
-    }
-
-    // 移除高亮
-    ui.updateBubbleHighlight(-1);
-    
-    // 使用通用消息提示而不是全屏加载提示
-    ui.showGeneralMessage("重新渲染中...", "info", false, 0);
-
-    // 准备数据
-    const imageToUse = currentImage.translatedDataURL.split(',')[1];
-    // 优先使用持久化的干净图，其次是临时图
-    const cleanImage = currentImage.cleanImageData || currentImage._tempCleanImage || null;
-
-    // 在编辑模式下，优先使用bubbleSettings中的文本，否则使用图片的翻译文本
-    let currentTexts = [];
-    if (state.editModeActive && state.bubbleSettings && state.bubbleSettings.length > 0) {
-        // 在编辑模式下，使用当前编辑的文本
-        currentTexts = state.bubbleSettings.map(setting => setting.text || "");
-    } else {
-        // 非编辑模式下，使用已翻译的文本
-        currentTexts = currentImage.bubbleTexts || [];
-    }
-    
-    // 确保文本数组长度和气泡坐标匹配
-    if (!currentTexts || currentTexts.length !== currentImage.bubbleCoords.length) {
-        console.error("重新渲染错误：翻译文本数据缺失或与坐标数量不匹配！", {
-            textsLength: currentTexts ? currentTexts.length : 'undefined',
-            coordsLength: currentImage.bubbleCoords ? currentImage.bubbleCoords.length : 'undefined'
-        });
-        ui.showGeneralMessage("内部错误：文本与坐标数据不匹配，无法重新渲染", "error");
-        ui.hideLoading(); // 隐藏加载状态
-        return; // 阻止发送无效请求
-    }
-
-    const allBubbleStyles = state.bubbleSettings.map((setting, i) => {
-        // 如果是全局变更，应用全局设置；否则使用气泡自己的设置
-        const fontSize = isGlobalChange ? ($('#autoFontSize').is(':checked') ? 'auto' : parseInt($('#fontSize').val())) : setting.fontSize;
-        const autoFontSize = isGlobalChange ? $('#autoFontSize').is(':checked') : setting.autoFontSize;
-        const fontFamily = isGlobalChange ? $('#fontFamily').val() : setting.fontFamily;
-        const textDirection = isGlobalChange ? $('#layoutDirection').val() : setting.textDirection;
-        const textColor = isGlobalChange ? $('#textColor').val() : setting.textColor;
-        const position = setting.position || { x: 0, y: 0 };
-        const rotationAngle = setting.rotationAngle || 0;
-
-        return {
-            fontSize: fontSize,
-            autoFontSize: autoFontSize,
-            fontFamily: fontFamily, // 传递相对路径或名称
-            textDirection: textDirection,
-            position: position, // 后端需要 position_offset
-            textColor: textColor,
-            rotationAngle: rotationAngle
-        };
-    });
-
-    // 准备 API 请求数据
-    const data = {
-        image: imageToUse,
-        clean_image: cleanImage,
-        bubble_texts: currentTexts,
-        bubble_coords: currentImage.bubbleCoords,
-        // 全局设置（兼容后端 API）
-        fontSize: $('#fontSize').val(),
-        autoFontSize: $('#autoFontSize').is(':checked'),
-        fontFamily: $('#fontFamily').val(),
-        textDirection: $('#layoutDirection').val(),
-        // 增加全局文本颜色和旋转角度参数
-        textColor: $('#textColor').val(),
-        rotationAngle: parseFloat($('#rotationAngle').val() || '0'),
-        // 传递所有气泡的详细样式
-        all_bubble_styles: allBubbleStyles,
-        // 强制使用单个气泡样式,而不是全局样式
-        use_individual_styles: true,
-        // 传递修复相关的全局设置
-        use_inpainting: $('#useInpainting').val() === 'true',
-        use_lama: $('#useInpainting').val() === 'lama',
-        blend_edges: $('#blendEdges').prop('checked'),
-        inpainting_strength: parseFloat($('#inpaintingStrength').val()),
-        fill_color: $('#fillColor').val(),
-        is_font_style_change: true,
-        // 添加是否从自动字号切换到手动字号的标记
-        prev_auto_font_size: fromAutoToManual
-    };
-    
-    console.log('发送重新渲染请求，包含单独气泡样式数据:', allBubbleStyles.length, '个气泡', 
-                fromAutoToManual ? '(从自动字号切换到手动字号)' : '');
-
-    api.reRenderImageApi(data)
-        .then(response => {
-            // 移除重新渲染中的提示消息
-            $(".message.info").fadeOut(300, function() { $(this).remove(); });
-            
-            if (response.rendered_image) {
-                // 更新状态
-                state.updateCurrentImageProperty('translatedDataURL', 'data:image/png;base64,' + response.rendered_image);
-                // 更新 UI
-                ui.updateTranslatedImage(state.getCurrentImage().translatedDataURL);
-                // 保存更新后的设置到图像对象
-                state.updateCurrentImageProperty('bubbleSettings', JSON.parse(JSON.stringify(state.bubbleSettings)));
-                state.updateCurrentImageProperty('bubbleTexts', currentTexts); // 更新文本状态
-                
-                // 同时更新图片全局设置属性
-                if (isGlobalChange || state.editModeActive) {
-                    state.updateCurrentImageProperty('fontSize', $('#autoFontSize').is(':checked') ? 'auto' : parseInt($('#fontSize').val()));
-                    state.updateCurrentImageProperty('autoFontSize', $('#autoFontSize').is(':checked'));
-                    state.updateCurrentImageProperty('fontFamily', $('#fontFamily').val());
-                    state.updateCurrentImageProperty('layoutDirection', $('#layoutDirection').val());
-                }
-
-                // 图片加载完成后重新应用高亮
-                $('#translatedImageDisplay').one('load', () => {
-                    ui.updateBubbleHighlight(state.selectedBubbleIndex);
-                });
-            } else {
-                throw new Error("渲染 API 未返回图像数据");
-            }
-        })
-        .catch(error => {
-            // 移除重新渲染中的提示消息
-            $(".message.info").fadeOut(300, function() { $(this).remove(); });
-            
-            ui.showGeneralMessage(`重新渲染失败: ${error.message}`, "error");
-            ui.updateBubbleHighlight(state.selectedBubbleIndex); // 失败也要恢复高亮
-        });
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 
@@ -822,18 +601,10 @@ function triggerDelayedPreview(bubbleIndex) {
 }
 
 /**
-<<<<<<< HEAD
  * 退出编辑模式
  */
 export function exitEditMode() {
     if (state.editModeActive) {
         toggleEditMode(); // 这会处理所有清理工作，然后设置 editModeActive = false
-=======
- * 退出编辑模式（如果当前处于编辑模式）
- */
-export function exitEditMode() {
-    if (state.editModeActive) {
-        toggleEditMode();
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     }
 }

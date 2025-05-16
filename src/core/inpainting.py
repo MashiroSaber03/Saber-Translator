@@ -7,16 +7,6 @@ import cv2 # 需要 cv2 来创建掩码
 # 导入接口和常量
 # 尝试导入接口，如果失败则标记为不可用
 try:
-<<<<<<< HEAD
-=======
-    from src.interfaces.migan_interface import get_migan_inpainter
-    _MIGAN_AVAILABLE = True
-except ImportError:
-    _MIGAN_AVAILABLE = False
-    get_migan_inpainter = None # 定义一个空函数避免 NameError
-
-try:
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     from src.interfaces.lama_interface import clean_image_with_lama, is_lama_available
 except ImportError:
     is_lama_available = lambda: False # 定义一个返回 False 的函数
@@ -28,7 +18,6 @@ from src.shared.path_helpers import get_debug_dir, resource_path # 导入 resour
 logger = logging.getLogger("CoreInpainting")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-<<<<<<< HEAD
 def create_bubble_mask(image_size, bubble_coords):
     """
     为气泡创建掩码图像 (黑色区域为修复区)。
@@ -36,21 +25,11 @@ def create_bubble_mask(image_size, bubble_coords):
     参考MI-GAN项目的掩码处理方法，更精细地创建文字区域掩码
     黑色区域（0）表示需要修复的区域
     白色区域（255）表示保留的区域
-=======
-def is_migan_available():
-    """检查 MI-GAN 功能是否可用 (基于导入成功)"""
-    return _MIGAN_AVAILABLE
-
-def create_bubble_mask(image_size, bubble_coords):
-    """
-    为气泡创建掩码图像 (黑色区域为修复区)。
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     """
     logger.info(f"创建气泡掩码，图像大小：{image_size}, 气泡数量：{len(bubble_coords)}")
     if not bubble_coords:
         return np.ones(image_size[:2], dtype=np.uint8) * 255
 
-<<<<<<< HEAD
     # 创建全白掩码（全部保留）
     mask = np.ones(image_size[:2], dtype=np.uint8) * 255
     
@@ -102,27 +81,6 @@ def create_bubble_mask(image_size, bubble_coords):
             logger.info("黑色区域过大，执行掩码收缩操作")
             kernel = np.ones((3, 3), np.uint8)
             mask = cv2.erode(mask, kernel, iterations=1)
-=======
-    mask = np.ones(image_size[:2], dtype=np.uint8) * 255
-    padding_ratio = 0.02
-    min_padding = 1
-
-    for x1, y1, x2, y2 in bubble_coords:
-        width = x2 - x1
-        height = y2 - y1
-        if width <= 0 or height <= 0: continue
-
-        padding_w = max(min_padding, int(width * padding_ratio))
-        padding_h = max(min_padding, int(height * padding_ratio))
-
-        inner_x1 = min(x1 + padding_w, x2 - 1)
-        inner_y1 = min(y1 + padding_h, y2 - 1)
-        inner_x2 = max(x2 - padding_w, x1 + 1)
-        inner_y2 = max(y2 - padding_h, y1 + 1)
-
-        if inner_x1 < inner_x2 and inner_y1 < inner_y2:
-             cv2.rectangle(mask, (inner_x1, inner_y1), (inner_x2, inner_y2), 0, -1)
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     try:
         debug_dir = get_debug_dir("inpainting_masks")
@@ -132,27 +90,15 @@ def create_bubble_mask(image_size, bubble_coords):
 
     return mask
 
-<<<<<<< HEAD
 def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constants.DEFAULT_FILL_COLOR):
-=======
-def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constants.DEFAULT_FILL_COLOR,
-                    migan_strength=constants.DEFAULT_INPAINTING_STRENGTH, migan_blend_edges=True):
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     """
     根据指定方法修复或填充图像中的气泡区域。
 
     Args:
         image_pil (PIL.Image.Image): 原始 PIL 图像。
         bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
-<<<<<<< HEAD
         method (str): 修复方法 ('solid', 'lama')。
         fill_color (str): 'solid' 方法使用的填充颜色。
-=======
-        method (str): 修复方法 ('solid', 'migan', 'lama')。
-        fill_color (str): 'solid' 方法使用的填充颜色。
-        migan_strength (float): MI-GAN 修复强度。
-        migan_blend_edges (bool): MI-GAN 是否进行边缘融合。
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     Returns:
         PIL.Image.Image: 处理后的 PIL 图像。
@@ -164,11 +110,7 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
 
     try:
         img_np = np.array(image_pil.convert('RGB'))
-<<<<<<< HEAD
         image_size = img_np.shape
-=======
-        image_size = img_np.shape[:2]
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
     except Exception as e:
          logger.error(f"无法将输入图像转换为 NumPy 数组: {e}", exc_info=True)
          return image_pil.copy(), None
@@ -179,24 +121,14 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
 
     result_img = image_pil.copy()
     clean_background = None
-<<<<<<< HEAD
     inpainting_successful = False
-=======
-    inpainting_successful = False # 标记修复是否成功
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 
     # 2. 根据方法进行处理
     if method == 'lama' and is_lama_available() and clean_image_with_lama:
         logger.info("使用 LAMA 接口进行修复...")
         try:
-<<<<<<< HEAD
             # 直接传递掩码，不需要在这里反转，因为clean_image_with_lama已经处理掩码反转
             repaired_img = clean_image_with_lama(image_pil, bubble_mask_pil)
-=======
-            mask_np_inverted = 255 - bubble_mask_np
-            inverted_mask_pil = Image.fromarray(mask_np_inverted)
-            repaired_img = clean_image_with_lama(image_pil, inverted_mask_pil)
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
             if repaired_img:
                 result_img = repaired_img
                 clean_background = result_img.copy()
@@ -209,39 +141,8 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
              logger.error(f"LAMA 修复过程中出错: {e}", exc_info=True)
              logger.info("LAMA 出错，将回退。")
 
-<<<<<<< HEAD
     # 如果修复未成功或选择了纯色填充
     if (not inpainting_successful) or method == 'solid':
-=======
-    # 如果 LAMA 失败或未选择 LAMA，尝试 MI-GAN
-    if not inpainting_successful and method == 'migan' and is_migan_available() and get_migan_inpainter:
-        logger.info(f"使用 MI-GAN 接口进行修复 (强度: {migan_strength}, 融合: {migan_blend_edges})...")
-        try:
-            inpainter = get_migan_inpainter()
-            if inpainter:
-                repaired_img = inpainter.inpaint(
-                    image_pil,
-                    bubble_mask_pil,
-                    blend_edges=migan_blend_edges,
-                    strength=migan_strength
-                )
-                if repaired_img:
-                    result_img = repaired_img
-                    clean_background = result_img.copy()
-                    setattr(result_img, '_migan_inpainted', True)
-                    inpainting_successful = True
-                    logger.info("MI-GAN 修复成功。")
-                else:
-                    logger.error("MI-GAN 修复执行失败，未返回结果。将回退。")
-            else:
-                 logger.error("无法获取 MI-GAN 实例。将回退。")
-        except Exception as e:
-             logger.error(f"MI-GAN 修复过程中出错: {e}", exc_info=True)
-             logger.info("MI-GAN 出错，将回退。")
-
-    # 如果修复未成功或选择了纯色填充
-    if not inpainting_successful:
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
         logger.info(f"执行纯色填充，颜色: {fill_color}")
         # 确保在 result_img 上绘制（可能是原图副本，也可能是修复失败后的图）
         try:
@@ -311,24 +212,6 @@ if __name__ == '__main__':
                      clean_solid.save(save_path_clean)
                      print(f"纯色填充干净背景已保存到: {save_path_clean}")
 
-<<<<<<< HEAD
-=======
-                # 测试 MI-GAN
-                print("\n测试 MI-GAN...")
-                if is_migan_available():
-                    migan_img, clean_migan = inpaint_bubbles(img_pil, coords, method='migan', migan_strength=1.5)
-                    if migan_img:
-                        save_path = get_debug_dir("test_result_migan.png")
-                        migan_img.save(save_path)
-                        print(f"MI-GAN 结果已保存到: {save_path}")
-                    if clean_migan:
-                         save_path_clean = get_debug_dir("test_clean_migan.png")
-                         clean_migan.save(save_path_clean)
-                         print(f"MI-GAN 干净背景已保存到: {save_path_clean}")
-                else:
-                    print("MI-GAN 不可用，跳过测试。")
-
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
                 # 测试 LAMA
                 print("\n测试 LAMA...")
                 if is_lama_available():

@@ -52,11 +52,7 @@ aside {
   left: 20px;
   width: 300px;
   height: calc(100vh - 40px);
-<<<<<<< HEAD
   overflow-y: auto !important;
-=======
-  overflow-y: auto;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
   padding-top: 20px;
   box-sizing: border-box;
   margin-right: 0;
@@ -118,12 +114,8 @@ aside {
 }
 
 #settings-sidebar .settings-form > div {
-<<<<<<< HEAD
   margin-bottom: 15px;
   position: relative;
-=======
-  margin-bottom: 10px;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 #settings-sidebar label {
@@ -229,7 +221,6 @@ aside {
   box-shadow: 0 6px 10px rgba(211, 84, 0, 0.3);
 }
 
-<<<<<<< HEAD
 #settings-sidebar button.green-button {
   background: linear-gradient(135deg, #5cb85c 0%, #4cae4c 100%); /* 绿色渐变 */
   box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
@@ -240,8 +231,6 @@ aside {
   box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
 }
 
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 #settings-sidebar .navigation-buttons {
   display: flex;
   gap: 10px;
@@ -369,7 +358,6 @@ aside {
 
 #image-display-area #result-section .image-container {
   width: 100%;
-<<<<<<< HEAD
   position: relative; /* 确保设置相对定位 */
   padding-top: 150%; /* 这个 padding-top 是为了保持宽高比，应该保留 */
   margin-bottom: 20px;
@@ -381,16 +369,6 @@ aside {
   text-align: center; /* 让内部的 img 居中（如果 img 是 inline-block） */
   /* padding: 0; */ /* 不需要额外的padding，已经有padding-top */
   /* border: none; */ /* 保留边框样式 */
-=======
-  position: relative;
-  padding-top: 150%;
-  margin-bottom: 20px;
-  background-color: #f7fafc;
-  border: 1px solid #e0e6ed;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 #image-display-area #result-section #translatedImageDisplay {
@@ -407,7 +385,6 @@ aside {
   transition: width 0.3s ease;
 }
 
-<<<<<<< HEAD
 /* 气泡高亮效果 - 基础样式 */
 .highlight-bubble {
   position: absolute;
@@ -430,19 +407,6 @@ aside {
   0% { border-color: #e74c3c; }
   50% { border-color: #ff6b6b; }
   100% { border-color: #e74c3c; }
-=======
-/* 气泡高亮效果 */
-.highlight-bubble {
-  position: absolute;
-  border: 3px solid #ff4500;
-  box-shadow: 0 0 10px rgba(255, 69, 0, 0.7);
-  pointer-events: none;
-  z-index: 1000;
-  border-radius: 5px;
-  animation: pulse 1.5s infinite;
-  box-sizing: border-box;
-  overflow: visible !important;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /* 编辑模式下的图像容器样式 */
@@ -457,15 +421,6 @@ aside {
   z-index: 1;
 }
 
-<<<<<<< HEAD
-=======
-@keyframes pulse {
-  0% { border-color: #ff4500; box-shadow: 0 0 10px rgba(255, 69, 0, 0.7); }
-  50% { border-color: #ffcc00; box-shadow: 0 0 15px rgba(255, 204, 0, 0.9); }
-  100% { border-color: #ff4500; box-shadow: 0 0 10px rgba(255, 69, 0, 0.7); }
-}
-
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 #image-display-area #result-section .image-controls {
   margin-bottom: 15px;
   display: flex;
@@ -1053,11 +1008,7 @@ footer {
   width: 100%;
 }
 
-<<<<<<< HEAD
 #toggleImageButton, #toggleEditModeButton, #toggleLabelingModeButton {
-=======
-#toggleImageButton, #toggleEditModeButton {
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
   padding: 10px 20px;
   background: linear-gradient(135deg, #149ddd 0%, #17a2b8 100%);
   color: white;
@@ -1071,11 +1022,7 @@ footer {
   box-shadow: 0 4px 6px rgba(23, 162, 184, 0.2);
 }
 
-<<<<<<< HEAD
 #toggleImageButton:hover, #toggleEditModeButton:hover, #toggleLabelingModeButton:hover {
-=======
-#toggleImageButton:hover, #toggleEditModeButton:hover {
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
   background: linear-gradient(135deg, #117a8b 0%, #17a2b8 100%);
   box-shadow: 0 6px 10px rgba(23, 162, 184, 0.3);
   transform: translateY(-2px);
@@ -1297,32 +1244,18 @@ footer {
 }
 
 .collapsible-content {
-<<<<<<< HEAD
   overflow: visible;
   max-height: none;  /* 移除任何高度限制 */
   transition: max-height 0.3s ease;
-=======
-  overflow: hidden;
-  transition: max-height 0.3s ease;
-  max-height: 1000px; /* 足够大的初始高度 */
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 .collapsible-content.collapsed {
   max-height: 0;
-<<<<<<< HEAD
   overflow: hidden;
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
   padding-top: 0;
   padding-bottom: 0;
   margin-top: 0;
   margin-bottom: 0;
-<<<<<<< HEAD
-=======
-  overflow: hidden;
-  visibility: hidden; /* 完全隐藏内容防止焦点问题 */
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /* 重置section间距 */
@@ -1389,34 +1322,20 @@ footer {
 .content-container {
   display: flex;
   flex-direction: row;
-<<<<<<< HEAD
   gap: 15px; /* 从20px减小到15px，减少容器间的间距 */
   width: 100%;
   align-items: stretch;
   box-sizing: border-box; /* 确保边框和内边距计入宽度 */
-=======
-  gap: 20px;
-  width: 100%;
-  align-items: stretch;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /* 在编辑模式下调整图像容器大小 */
 .edit-mode-active .image-container {
-<<<<<<< HEAD
   width: 66.67% !important; /* 从50%改为66.67%，约为2/3 */
   flex: 0 0 66.67%;
   position: relative;
   height: auto;
   min-height: 400px;
   box-sizing: border-box; /* 确保边框和内边距计入宽度 */
-=======
-  width: 50% !important;
-  flex: 0 0 50%;
-  position: relative;
-  height: auto;
-  min-height: 400px;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 /* 调整编辑模式下图片容器的padding-top，保持比例 */
@@ -1426,30 +1345,18 @@ footer {
 
 /* 编辑模式容器样式 */
 .edit-mode-container {
-<<<<<<< HEAD
   flex: 0 0 33.33%; /* 从45%改为33.33%，约为1/3 */
   width: 33.33%;
-=======
-  flex: 0 0 45%;
-  width: 45%;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
   display: flex;
   flex-direction: column;
   gap: 10px;
   background-color: #f9f9f9;
   border-radius: 8px;
-<<<<<<< HEAD
   padding: 10px; /* 从15px减小到10px，减少内边距 */
   height: 100%;
   max-height: none;
   overflow-y: auto;
   box-sizing: border-box; /* 确保边框和内边距计入宽度 */
-=======
-  padding: 15px;
-  height: 100%;
-  max-height: none;
-  overflow-y: auto;
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
 }
 
 .edit-mode-container h3 {
@@ -2708,7 +2615,6 @@ body.dark-mode .plugin-config-description {
 .plugin-config-save:hover {
   background-color: #218838;
 }
-<<<<<<< HEAD
 
 /* 标注框基础样式 */
 .manual-bounding-box {
@@ -3170,5 +3076,3 @@ body.dark-mode .session-details {
 .dark-mode .format-toggle-button.active:hover {
     background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
 }
-=======
->>>>>>> c92c015a833d6ba188c79cc00af9af36ed518915
