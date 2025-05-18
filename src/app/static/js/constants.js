@@ -31,3 +31,7 @@ export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将
 export const DEFAULT_RPD_TRANSLATION = 0; // 0 表示无限制
 export const DEFAULT_RPD_AI_VISION_OCR = 0;
 // ------------------------
+
+// --- 新增：自定义 AI 视觉 OCR 服务商 ID (前端使用) ---
+export const CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND = 'custom_openai_vision';
+// ----------------------------------------------------

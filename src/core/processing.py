@@ -62,8 +62,10 @@ def process_image_translation(
     custom_base_url=None, # --- 新增参数 ---
     # --- 新增 RPD 参数 ---
     rpd_limit_translation: int = constants.DEFAULT_RPD_TRANSLATION,
-    rpd_limit_ai_vision_ocr: int = constants.DEFAULT_RPD_AI_VISION_OCR
-    # --------------------
+    rpd_limit_ai_vision_ocr: int = constants.DEFAULT_RPD_AI_VISION_OCR,
+    # VVVVVV 新增参数 VVVVVV
+    custom_ai_vision_base_url=None, # 用于AI视觉OCR的自定义Base URL
+    # ^^^^^^ 结束新增 ^^^^^^
     ):
     """
     执行完整的图像翻译处理流程。
@@ -188,8 +190,9 @@ def process_image_translation(
                     ai_vision_api_key=ai_vision_api_key,
                     ai_vision_model_name=ai_vision_model_name,
                     ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                    custom_ai_vision_base_url=custom_ai_vision_base_url,
                     use_json_format_for_ai_vision=use_json_format_ai_vision_ocr,
-                    rpd_limit_ai_vision=rpd_limit_ai_vision_ocr # <--- 传递RPD参数
+                    rpd_limit_ai_vision=rpd_limit_ai_vision_ocr
                 )
             else:
                 # 使用其他OCR引擎
@@ -462,7 +465,8 @@ if __name__ == '__main__':
                 "use_json_format_ai_vision_ocr": False,
                 "custom_base_url": None,
                 "rpd_limit_translation": constants.DEFAULT_RPD_TRANSLATION,
-                "rpd_limit_ai_vision_ocr": constants.DEFAULT_RPD_AI_VISION_OCR
+                "rpd_limit_ai_vision_ocr": constants.DEFAULT_RPD_AI_VISION_OCR,
+                "custom_ai_vision_base_url": None,
             }
             print(f"\n测试参数: { {k:v for k,v in test_params.items() if k != 'image_pil'} }")
 

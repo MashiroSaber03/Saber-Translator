@@ -5,6 +5,7 @@ import * as editMode from './edit_mode.js'; // 引入编辑模式逻辑
 import * as labelingMode from './labeling_mode.js'; // <--- 新增导入
 import * as main from './main.js';
 import * as session from './session.js'; // <--- 新增导入
+import * as constants from './constants.js'; // 确保导入前端常量
 
 /**
  * 绑定所有事件监听器
@@ -68,11 +69,72 @@ export function bindEventListeners() {
     $("#baiduApiKey, #baiduSecretKey, #baiduVersion").on('change', handleGlobalSettingChange);
     $("#testBaiduOcrButton").on('click', api.testBaiduOcrConnectionApi); // 百度OCR测试按钮
     
-    // AI视觉OCR相关事件
-    $("#aiVisionProvider, #aiVisionModelName, #aiVisionOcrPrompt").on('change', handleGlobalSettingChange);
-    $("#testAiVisionOcrButton").on('click', handleTestAiVisionOcr); // AI视觉OCR测试按钮
+    // --- AI视觉OCR相关事件 ---
+    // (如果之前有AI视觉OCR的事件绑定，这是修改；如果是全新的，这是新增)
 
-    // --- 模型与提示词 ---
+    // AI视觉OCR服务商选择变更
+    $("#aiVisionProvider").on('change', async function(e) {
+        const provider = $(this).val();
+        state.setAiVisionProvider(provider); // 更新 state 中的服务商
+
+        // VVVVVV 新增逻辑：根据选择显示/隐藏自定义 Base URL 输入框 VVVVVV
+        if (provider === constants.CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND) { // 使用前端常量比较
+            ui.toggleCustomAiVisionBaseUrlUI(true);
+            // 可选: 如果用户切换到自定义，但 Base URL 为空，可以聚焦输入框
+            // if (!$("#customAiVisionBaseUrl").val().trim()) {
+            //     $("#customAiVisionBaseUrl").focus();
+            // }
+        } else {
+            ui.toggleCustomAiVisionBaseUrlUI(false);
+        }
+        // ^^^^^^ 结束新增逻辑 ^^^^^^
+
+        // --- 已有的火山引擎模型建议逻辑 (保持或调整) ---
+        if (provider === 'volcano') {
+            // const { getUsedModelsApi } = await import('./api.js'); // 这些 import 最好在文件顶部
+            // const { updateModelSuggestions } = await import('./ui.js');
+            try {
+                const response = await api.getUsedModelsApi('volcano'); // 使用 api.js 中的函数
+                if (response && response.models) {
+                    // ... (更新 datalist 的逻辑保持不变) ...
+                    // 示例性地假设 updateModelSuggestions 能够处理 aiVisionModelName 的 datalist
+                    ui.updateModelSuggestions(response.models, 'aiVisionModelsList', 'aiVisionModelName');
+                }
+            } catch (error) {
+                console.error("获取火山引擎模型建议失败:", error);
+            }
+        } else {
+            // 清除非火山引擎时的模型建议 (如果适用)
+             ui.updateModelSuggestions([], 'aiVisionModelsList', 'aiVisionModelName');
+        }
+        // --- 结束火山引擎逻辑 ---
+
+        // 确保这个变更也被视为全局设置变更，以便在必要时触发重渲染或状态保存
+        handleGlobalSettingChange({ target: this }); // 模拟事件对象，this 指向 #aiVisionProvider
+    });
+
+    // AI视觉OCR API Key, 模型名称, 提示词的 change 事件 (保持不变，它们调用 handleGlobalSettingChange)
+    $("#aiVisionApiKey, #aiVisionModelName, #aiVisionOcrPrompt").on('change', handleGlobalSettingChange);
+    $("#toggleAiVisionJsonPromptButton").on('click', handleToggleAiVisionJsonPrompt); // JSON切换
+    $("#rpdAiVisionOcr").on('change input', function() { // RPD 设置
+        const value = $(this).val();
+        state.setRpdLimitAiVisionOcr(value);
+    });
+
+
+    // VVVVVV 新增：自定义AI视觉Base URL输入框的 input 事件监听 VVVVVV
+    $("#customAiVisionBaseUrl").on('input', function() {
+        const url = $(this).val().trim();
+        state.setCustomAiVisionBaseUrl(url); // 实时更新 state.js 中的值
+        // 如果需要，也可以将此视为一个会触发自动存档或影响"已修改"状态的全局设置变更
+        // handleGlobalSettingChange({ target: this }); // 但通常 Base URL 更改不直接触发重渲染
+    });
+    // ^^^^^^ 结束新增 ^^^^^^
+
+    // 测试AI视觉OCR按钮点击 (保持不变，内部逻辑在 handleTestAiVisionOcr 中修改)
+    $("#testAiVisionOcrButton").on('click', handleTestAiVisionOcr);
+
+    // 模型与提示词 ---
     $("#modelProvider").on('change', handleModelProviderChange);
     $("#modelName").on('focus', handleModelNameFocus);
     $("#modelName").on('blur', handleModelNameBlur);
@@ -121,7 +183,6 @@ export function bindEventListeners() {
     
     // --- 新增 JSON 提示词切换按钮事件 ---
     $('#toggleTranslateJsonPromptButton').on('click', handleToggleTranslateJsonPrompt);
-    $('#toggleAiVisionJsonPromptButton').on('click', handleToggleAiVisionJsonPrompt);
     // ------------------------------------
     
     // 记住提示词复选框变更事件
@@ -1443,6 +1504,13 @@ document.getElementById('aiVisionProvider').addEventListener('change', async fun
     const { setAiVisionProvider } = await import('./state.js');
     setAiVisionProvider(provider);
     
+    // 新增：处理自定义Base URL输入框的显示/隐藏
+    const { toggleCustomAiVisionBaseUrlUI } = await import('./ui.js');
+    const { CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND } = await import('./constants.js');
+    
+    // 显示/隐藏自定义Base URL输入框
+    toggleCustomAiVisionBaseUrlUI(provider === CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND);
+    
     // 如果是火山引擎，获取历史模型建议
     if (provider === 'volcano') {
         const { getUsedModelsApi } = await import('./api.js');
@@ -1498,37 +1566,50 @@ document.getElementById('aiVisionOcrPrompt').addEventListener('input', function(
     });
 });
 
-// 处理测试AI视觉OCR按钮点击
-function handleTestAiVisionOcr() {
+// 处理自定义AI视觉Base URL变更
+document.getElementById('customAiVisionBaseUrl').addEventListener('input', function(e) {
+    const baseUrl = e.target.value.trim();
+    import('./state.js').then(state => {
+        state.setCustomAiVisionBaseUrl(baseUrl);
+    });
+});
+
+// 修改 handleTestAiVisionOcr 函数
+async function handleTestAiVisionOcr() {
     const provider = $("#aiVisionProvider").val();
     const apiKey = $("#aiVisionApiKey").val();
     const modelName = $("#aiVisionModelName").val();
     const prompt = $("#aiVisionOcrPrompt").val();
-    
-    // 参数验证
+
     if(!apiKey) {
         ui.showGeneralMessage("请输入API Key", "error");
         return;
     }
-    
     if(!modelName) {
         ui.showGeneralMessage("请输入模型名称", "error");
         return;
     }
-    
-    // 显示加载提示
+
+    // VVVVVV 新增：如果选择自定义服务，检查 Base URL 是否填写 VVVVVV
+    if (provider === constants.CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND) {
+        const customBaseUrl = $("#customAiVisionBaseUrl").val().trim();
+        if (!customBaseUrl) {
+            ui.showGeneralMessage("自定义AI视觉服务需要填写Base URL！", "error");
+            return; // 阻止后续 API 调用
+        }
+        // 注意：state.customAiVisionBaseUrl 应该已经被 #customAiVisionBaseUrl 的 input 事件更新了
+        // 所以 api.js 中的 testAiVisionOcrApi 会自动从 state 中获取
+    }
+    // ^^^^^^ 结束新增 ^^^^^^
+
     ui.showGeneralMessage("正在测试AI视觉OCR连接...", "info", false);
-    
-    // 调用测试API
+
+    // api.js 中的 testAiVisionOcrApi 将负责从 state 中获取 customAiVisionBaseUrl
     api.testAiVisionOcrApi(provider, apiKey, modelName, prompt)
         .then(response => {
             if(response.success) {
                 ui.showGeneralMessage(`测试成功: ${response.message}`, "success");
-                
-                // 保存设置到state中
-                state.setAiVisionProvider(provider);
-                state.setAiVisionModelName(modelName);
-                state.setAiVisionOcrPrompt(prompt || "");
+                // 状态已在各自的 change/input 事件中更新，这里无需重复设置
             } else {
                 ui.showGeneralMessage(`测试失败: ${response.message}`, "error");
             }

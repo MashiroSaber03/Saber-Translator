@@ -49,6 +49,10 @@ export let aiVisionOcrPrompt = constants.DEFAULT_AI_VISION_OCR_PROMPT;
 export let defaultAiVisionOcrJsonPrompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT;
 export let isAiVisionOcrJsonMode = false;
 
+// VVVVVV 新增状态变量 VVVVVV
+export let customAiVisionBaseUrl = ''; // 用于存储自定义AI视觉服务的Base URL
+// ^^^^^^ 结束新增状态变量 ^^^^^^
+
 // --- 新增 RPD 状态 ---
 export let rpdLimitTranslation = constants.DEFAULT_RPD_TRANSLATION; // 从前端常量获取默认值
 export let rpdLimitAiVisionOcr = constants.DEFAULT_RPD_AI_VISION_OCR;
@@ -511,3 +515,14 @@ export function setRpdLimitAiVisionOcr(limit) {
     rpdLimitAiVisionOcr = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
     console.log(`状态更新: AI视觉OCR RPD -> ${rpdLimitAiVisionOcr}`);
 }
+
+// VVVVVV 新增 setter 函数 VVVVVV
+/**
+ * 设置自定义AI视觉服务的Base URL
+ * @param {string} url - Base URL
+ */
+export function setCustomAiVisionBaseUrl(url) {
+    customAiVisionBaseUrl = url;
+    console.log(`状态更新: 自定义AI视觉Base URL -> ${url}`);
+}
+// ^^^^^^ 结束新增 setter 函数 ^^^^^^

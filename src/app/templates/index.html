@@ -108,8 +108,16 @@
                                         <option value="siliconflow" selected>SiliconFlow (硅基流动)</option>
                                         <option value="volcano">火山引擎</option>
                                         <option value="gemini">Google Gemini</option>
+                                        <option value="custom_openai_vision">自定义 OpenAI 兼容视觉服务</option>
                                     </select>
                                 </div>
+                                <!-- VVVVVV 新增的 Base URL 输入区域 VVVVVV -->
+                                <div id="customAiVisionBaseUrlDiv" style="display: none;">
+                                    <label for="customAiVisionBaseUrl">Base URL (视觉服务):</label>
+                                    <input type="text" id="customAiVisionBaseUrl" placeholder="例如: https://api.example.com/v1">
+                                    <div class="input-hint">请输入 OpenAI 兼容视觉 API 的基础 URL。</div>
+                                </div>
+                                <!-- ^^^^^^ 结束新增的 Base URL 输入区域 ^^^^^^ -->
                                 <div>
                                     <label for="aiVisionApiKey">API Key:</label>
                                     <input type="text" id="aiVisionApiKey" placeholder="请输入API Key">

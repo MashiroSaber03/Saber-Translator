@@ -696,14 +696,21 @@ def test_ai_vision_ocr_api():
         api_key = data.get('api_key')
         model_name = data.get('model_name')
         prompt = data.get('prompt')
+        # VVVVVV 新增：获取自定义AI视觉Base URL VVVVVV
+        custom_ai_vision_base_url = data.get('custom_ai_vision_base_url') # <<< 获取新的参数
+        # ^^^^^^ 结束新增 ^^^^^^
         
         # 检查必要参数
-        if not all([provider, api_key, model_name]):
-            missing = []
-            if not provider: missing.append('provider')
-            if not api_key: missing.append('api_key')
-            if not model_name: missing.append('model_name')
-            
+        missing = []
+        if not provider: missing.append('provider')
+        if not api_key: missing.append('api_key')
+        if not model_name: missing.append('model_name')
+        # VVVVVV 新增参数检查：如果使用自定义AI视觉OCR，必须提供Base URL VVVVVV
+        if provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
+            missing.append('custom_ai_vision_base_url (当选择自定义服务时)')
+        # ^^^^^^ 结束新增参数检查 ^^^^^^
+        
+        if missing:
             return jsonify({
                 'success': False,
                 'message': f'缺少必要参数: {", ".join(missing)}'
@@ -743,17 +750,18 @@ def test_ai_vision_ocr_api():
         logger.info(f"使用测试图片: {test_img_path}")
         
         # 调用测试函数
-        success, result = test_ai_vision_ocr(
-            test_img_path, 
-            provider, 
-            api_key, 
+        success, result_message = test_ai_vision_ocr( # result -> result_message 以匹配函数签名
+            test_img_path,
+            provider,
+            api_key,
             model_name,
-            prompt
+            prompt,
+            custom_base_url=custom_ai_vision_base_url # <<< 新增传递
         )
         
         return jsonify({
             'success': success,
-            'message': result,
+            'message': result_message,
             'test_image_path': test_img_path
         })
         

@@ -80,6 +80,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               baidu_api_key=None, baidu_secret_key=None, baidu_version="standard",
                               ai_vision_provider=None, ai_vision_api_key=None,
                               ai_vision_model_name=None, ai_vision_ocr_prompt=None,
+                              custom_ai_vision_base_url=None,
                               use_json_format_for_ai_vision=False,
                               rpd_limit_ai_vision: int = constants.DEFAULT_RPD_AI_VISION_OCR): # <--- 新增RPD参数
     """
@@ -97,6 +98,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         ai_vision_api_key (str, optional): AI视觉服务API Key，仅当 ocr_engine 为 'ai_vision' 时需要。
         ai_vision_model_name (str, optional): AI视觉服务使用的模型名称，仅当 ocr_engine 为 'ai_vision' 时需要。
         ai_vision_ocr_prompt (str, optional): AI视觉OCR提示词，仅当 ocr_engine 为 'ai_vision' 时需要。
+        custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的Base URL，仅当使用自定义服务时需要。
         use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
         rpd_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
 
@@ -257,9 +259,12 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         else:
             logger.error("无法初始化 MangaOCR，OCR 步骤跳过。")
     elif ocr_engine_type == 'AIVision':
-        # 调用AI视觉OCR服务
         if all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
-            logger.info(f"开始使用 AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}, RPD: {rpd_limit_ai_vision if rpd_limit_ai_vision > 0 else '无'}) 识别 {len(bubble_coords)} 个气泡...")
+            if ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
+                logger.error("使用自定义AI视觉OCR时，缺少Base URL (custom_ai_vision_base_url)，OCR步骤跳过。")
+                return [""] * len(bubble_coords)
+
+            logger.info(f"开始使用 AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}, RPD: {rpd_limit_ai_vision if rpd_limit_ai_vision > 0 else '无'}, BaseURL: {custom_ai_vision_base_url if custom_ai_vision_base_url else '服务商默认'}) 识别 {len(bubble_coords)} 个气泡...")
             
             # 根据是否使用JSON格式，选择合适的提示词
             current_ai_vision_ocr_prompt = ai_vision_ocr_prompt
@@ -294,13 +299,13 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                         # -----------------------------------------
                         
                         logger.info(f"处理气泡 {i} (AI视觉OCR)...")
-                        # 调用接口函数
                         ocr_result_raw = call_ai_vision_ocr_service(
                             bubble_img_pil,
                             provider=ai_vision_provider,
                             api_key=ai_vision_api_key,
                             model_name=ai_vision_model_name,
-                            prompt=current_ai_vision_ocr_prompt # 使用调整后的提示词
+                            prompt=current_ai_vision_ocr_prompt,
+                            custom_base_url=custom_ai_vision_base_url
                         )
                         
                         extracted_text_final = ""
@@ -331,13 +336,12 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                         if i < len(bubble_coords) - 1:  # 如果不是最后一个气泡
                             time.sleep(0.5)  # 延迟500毫秒
                             
-                    except Exception as e:
-                        logger.error(f"处理气泡 {i} (AI视觉OCR) 时出错: {e}", exc_info=True)
-                        recognized_texts[i] = ""  # 出错时设置为空字符串
-                
+                    except Exception as e_bubble:
+                        logger.error(f"处理气泡 {i} (AI视觉OCR) 时出错: {e_bubble}", exc_info=True)
+                        recognized_texts[i] = ""
                 logger.info("AI视觉OCR 识别完成。")
-            except Exception as e:
-                logger.error(f"AI视觉OCR 处理出错: {e}", exc_info=True)
+            except Exception as e_loop:
+                logger.error(f"AI视觉OCR 处理循环中发生错误: {e_loop}", exc_info=True)
         else:
             logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
     else:

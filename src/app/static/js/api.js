@@ -4,6 +4,7 @@
 // import $ from 'jquery'; // 如果使用 npm 安装了 jQuery
 // 或者确保 jQuery 已经全局加载
 import * as state from './state.js'; // 导入 state 以获取当前 RPD 设置
+import * as constants from './constants.js'; // 确保导入前端常量
 
 /**
  * 封装 AJAX 请求
@@ -73,7 +74,21 @@ export function translateImageApi(params) {
         rpd_limit_translation: state.rpdLimitTranslation,
         rpd_limit_ai_vision_ocr: state.rpdLimitAiVisionOcr
     };
-    console.log("translateImageApi: 发送的参数（含RPD）:", apiParams);
+
+    // VVVVVV 新增逻辑：为自定义AI视觉OCR添加Base URL VVVVVV
+    if (params.ocr_engine === 'ai_vision' && params.ai_vision_provider === constants.CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND) {
+        if (state.customAiVisionBaseUrl && state.customAiVisionBaseUrl.trim() !== '') {
+            apiParams.custom_ai_vision_base_url = state.customAiVisionBaseUrl;
+        } else {
+            // 如果 Base URL 为空，翻译请求可能会失败，或者后端会处理此情况。
+            // 前端最好在发起请求前就进行校验 (已在 events.js 中添加)。
+            // 此处可以加一个警告，或者如果后端不处理空URL，则应在此处阻止请求。
+            console.warn("translateImageApi: 尝试使用自定义AI视觉OCR但未提供Base URL。");
+        }
+    }
+    // ^^^^^^ 结束新增逻辑 ^^^^^^
+
+    console.log("translateImageApi: 发送的参数（含RPD和可能的自定义视觉Base URL）:", apiParams);
     return makeApiRequest('/api/translate_image', 'POST', apiParams);
 }
 
@@ -493,12 +508,27 @@ export function renameSessionApi(oldName, newName) {
  * @returns {Promise<object>}
  */
 export function testAiVisionOcrApi(provider, apiKey, modelName, prompt = null) {
-    return makeApiRequest('/api/test_ai_vision_ocr', 'POST', {
+    const payload = {
         provider: provider,
         api_key: apiKey,
         model_name: modelName,
         prompt: prompt
-    });
+    };
+
+    // VVVVVV 新增逻辑：为自定义AI视觉OCR添加Base URL VVVVVV
+    if (provider === constants.CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND) {
+        if (state.customAiVisionBaseUrl && state.customAiVisionBaseUrl.trim() !== '') {
+            payload.custom_ai_vision_base_url = state.customAiVisionBaseUrl;
+        } else {
+            // 如果 Base URL 为空，测试请求应该失败。
+            // 在 events.js 中已经做了检查，这里可以作为最后防线。
+            console.error("testAiVisionOcrApi: 自定义AI视觉服务需要填写Base URL！");
+            return Promise.reject({ message: "自定义AI视觉服务需要填写Base URL！" });
+        }
+    }
+    // ^^^^^^ 结束新增逻辑 ^^^^^^
+
+    return makeApiRequest('/api/test_ai_vision_ocr', 'POST', payload);
 }
 
 // --- TODO: 在后续步骤中添加重命名的 API 调用函数 ---

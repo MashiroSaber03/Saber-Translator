@@ -17,62 +17,114 @@ from src.shared.image_helpers import image_to_base64
 # 设置日志
 logger = logging.getLogger("VisionInterface")
 
-def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None):
+# VVVVVV 新增：通用的 OpenAI 兼容视觉 API 调用函数 VVVVVV
+def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, base_url_to_use, service_friendly_name, start_time):
     """
-    调用AI视觉OCR服务识别图片中的文字
-    
-    Args:
-        image_pil (PIL.Image): 要识别的图片(PIL图像对象)
-        provider (str): 服务提供商 ('siliconflow', 'volcano', 'gemini', 等)
-        api_key (str): API密钥
-        model_name (str): 模型名称
-        prompt (str): 提示词
-        
-    Returns:
-        str: 识别结果文本，识别失败则返回空字符串
+    通用的 OpenAI 兼容视觉 API 调用函数。
     """
+    logger.info(f"开始调用 {service_friendly_name} 视觉API (通过 OpenAI SDK)，模型: {model_name}, BaseURL: {base_url_to_use}")
+    try:
+        if not base_url_to_use: # 增加对 base_url_to_use 的检查
+            logger.error(f"调用 {service_friendly_name} 失败：未提供 Base URL。")
+            return ""
+
+        client = OpenAI(api_key=api_key, base_url=base_url_to_use) # 使用传入的 base_url_to_use
+
+        payload_messages = [ # payload 结构保持一致
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                ]
+            }
+        ]
+        # (可选) 调试日志，与 Gemini 部分类似
+        # debug_payload = { "model": model_name, "messages": [...] }
+        # logger.debug(f"{service_friendly_name} API 请求体 (无图): {json.dumps(debug_payload, ensure_ascii=False)}")
+
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=payload_messages,
+            timeout=60
+        )
+
+        if response and response.choices and len(response.choices) > 0:
+            content = response.choices[0].message.content
+            elapsed_time = time.time() - start_time
+            logger.info(f"{service_friendly_name} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
+            logger.info(f"识别结果 (前100字符): {content[:100]}")
+            return content.strip()
+        else:
+            logger.error(f"{service_friendly_name} 响应格式异常或无有效结果, 响应: {response}")
+            return ""
+    except Exception as e:
+        logger.error(f"调用 {service_friendly_name} 视觉API ({base_url_to_use}) 时发生异常: {e}", exc_info=True)
+        # 记录更详细的错误响应 (如果可用)
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = e.response.json()
+                logger.error(f"{service_friendly_name} API 错误详情: {error_detail}")
+            except json.JSONDecodeError:
+                logger.error(f"{service_friendly_name} API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
+        return ""
+# ^^^^^^ 结束新增辅助函数 ^^^^^^
+
+
+def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
+                               # VVVVVV 新增 custom_base_url 参数 VVVVVV
+                               custom_base_url=None):
+                               # ^^^^^^ 结束新增 ^^^^^^
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
-    
     if not api_key:
         logger.error(f"未提供 {provider} 的API密钥")
         return ""
-    
     if not model_name:
         logger.error(f"未提供 {provider} 的模型名称")
         return ""
-    
     if not prompt:
         prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
         logger.info(f"使用默认AI视觉OCR提示词")
 
-    # 测量开始时间，用于计算耗时
     start_time = time.time()
-    
-    # 转换图片为Base64
     try:
         image_base64 = image_to_base64(image_pil)
     except Exception as e:
         logger.error(f"图像转Base64失败: {e}")
         return ""
-    
+
     try:
-        # 根据不同的提供商调用不同的API
-        if provider.lower() == 'siliconflow':
+        provider_lower = provider.lower()
+        if provider_lower == 'siliconflow':
             return call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start_time)
-        elif provider.lower() == 'volcano':
-            return call_volcano_vision_api(image_base64, api_key, model_name, prompt, start_time)
-        elif provider.lower() == 'gemini':
-            return call_gemini_vision_api(image_base64, api_key, model_name, prompt, start_time)
-        # 未来可以添加其他提供商的支持
-        # elif provider.lower() == 'openai':
-        #    return call_openai_vision_api(image_base64, api_key, model_name, prompt, start_time)
+        elif provider_lower == 'volcano':
+            # VVVVVV 修改为调用通用函数 VVVVVV
+            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
+                                                   "https://ark.cn-beijing.volces.com/api/v3",
+                                                   "火山引擎", start_time)
+            # ^^^^^^ 结束修改 ^^^^^^
+        elif provider_lower == 'gemini':
+            # VVVVVV 修改为调用通用函数 VVVVVV
+            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
+                                                   "https://generativelanguage.googleapis.com/v1beta/openai/",
+                                                   "Gemini Vision", start_time)
+            # ^^^^^^ 结束修改 ^^^^^^
+        # VVVVVV 新增对自定义服务商的处理 VVVVVV
+        elif provider_lower == constants.CUSTOM_AI_VISION_PROVIDER_ID: # 使用后端常量
+            if not custom_base_url: # 检查 custom_base_url
+                logger.error(f"未提供自定义AI视觉OCR服务的Base URL (provider: {provider})")
+                return ""
+            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
+                                                   custom_base_url, # <<< 使用传入的自定义 Base URL
+                                                   "自定义OpenAI兼容视觉服务", start_time)
+        # ^^^^^^ 结束新增 ^^^^^^
         else:
             logger.error(f"不支持的AI视觉OCR服务提供商: {provider}")
             return ""
-    except Exception as e:
-        logger.error(f"调用AI视觉OCR服务失败: {e}")
+    except Exception as e: # 捕获 call_xxx 函数可能抛出的其他未预料错误
+        logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)
         return ""
 
 def call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start_time):
@@ -156,152 +208,33 @@ def call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start
         logger.error(f"调用SiliconFlow视觉API时发生异常: {e}")
         return ""
 
-def call_volcano_vision_api(image_base64, api_key, model_name, prompt, start_time):
-    """
-    调用火山引擎的视觉API进行OCR识别
-    
-    Args:
-        image_base64 (str): Base64编码的图片数据
-        api_key (str): 火山引擎 API密钥
-        model_name (str): 模型名称
-        prompt (str): 提示词
-        start_time (float): 计时起点
-    
-    Returns:
-        str: 识别结果文本
-    """
-    logger.info(f"开始调用火山引擎视觉API进行OCR识别，模型: {model_name}")
-    
-    try:
-        # 使用OpenAI客户端，但指定火山引擎的API基础URL
-        client = OpenAI(api_key=api_key, base_url="https://ark.cn-beijing.volces.com/api/v3")
-        
-        # 构建请求负载
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
-                ]}
-            ],
-            timeout=60
-        )
-        
-        # 提取识别结果
-        if response and response.choices and len(response.choices) > 0:
-            content = response.choices[0].message.content
-            # 计算耗时
-            elapsed_time = time.time() - start_time
-            logger.info(f"火山引擎视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
-            logger.info(f"识别结果: {content}")
-            return content.strip()
-        else:
-            logger.error(f"火山引擎响应格式异常")
-            return ""
-    except Exception as e:
-        logger.error(f"调用火山引擎视觉API时发生异常: {e}")
-        return ""
-
-def call_gemini_vision_api(image_base64, api_key, model_name, prompt, start_time):
-    """
-    调用 Google Gemini Vision API (通过OpenAI兼容接口)进行OCR识别
-    """
-    logger.info(f"开始调用 Gemini Vision API进行OCR识别，模型: {model_name}")
-    
-    if not model_name:
-        logger.error("调用 Gemini Vision API 失败: 未提供模型名称。")
-        return ""
-
-    try:
-        # 根据教程，使用 OpenAI() client 和指定的 base_url
-        client = OpenAI(
-            api_key=api_key,
-            # 教程截图中的 base_url，确保末尾有 /
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/" 
-        )
-        
-        payload_messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
-                ]
-            }
-        ]
-        
-        # 打印将要发送的请求体（不含图片数据，用于调试）
-        debug_payload = {
-            "model": model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}} # 隐藏实际图片数据
-                    ]
-                }
-            ]
-        }
-        logger.debug(f"Gemini Vision API 请求体 (无图): {json.dumps(debug_payload, ensure_ascii=False)}")
-
-        response = client.chat.completions.create(
-            model=model_name, # 例如 "gemini-1.5-flash-latest" 或教程中的 "gemini-2.0-flash"
-            messages=payload_messages,
-            timeout=60 
-        )
-        
-        if response and response.choices and len(response.choices) > 0:
-            content = response.choices[0].message.content
-            elapsed_time = time.time() - start_time
-            logger.info(f"Gemini Vision OCR识别成功，模型: {model_name}，耗时: {elapsed_time:.2f}秒")
-            # 仅记录部分结果以避免日志过长
-            logger.info(f"Gemini Vision OCR 识别结果 (前100字符): {content[:100]}")
-            return content.strip()
-        else:
-            logger.error(f"Gemini Vision API响应格式异常或无有效结果，模型: {model_name}, 响应: {response}")
-            return ""
-            
-    except Exception as e:
-        logger.error(f"调用 Gemini Vision API 时发生异常 (模型: {model_name}): {e}", exc_info=True)
-        if hasattr(e, 'response') and e.response is not None:
-            try:
-                error_detail = e.response.json()
-                logger.error(f"Gemini API 错误详情: {error_detail}")
-            except json.JSONDecodeError:
-                logger.error(f"Gemini API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
-        return ""
-
-# 测试函数
-def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None):
-    """
-    测试AI视觉OCR功能
-    
-    Args:
-        image_path (str): 图片文件路径
-        provider (str): 服务提供商
-        api_key (str): API密钥
-        model_name (str): 模型名称
-        prompt (str, optional): 提示词，如果不提供则使用默认提示词
-    
-    Returns:
-        bool: 测试是否成功
-    """
+# 更新 test_ai_vision_ocr 函数签名和内部调用
+def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
+                       # VVVVVV 新增 custom_base_url 参数 VVVVVV
+                       custom_base_url=None):
+                       # ^^^^^^ 结束新增 ^^^^^^
     try:
         # 加载图片
         with Image.open(image_path) as img:
             # 调用OCR服务
-            result = call_ai_vision_ocr_service(
-                img, provider, api_key, model_name, prompt
+            result = call_ai_vision_ocr_service( # 调用更新后的主服务函数
+                img,
+                provider,
+                api_key,
+                model_name,
+                prompt,
+                custom_base_url=custom_base_url # <<< 传递自定义 Base URL
             )
-            
+
             if result:
-                logger.info(f"测试成功，识别结果: {result}")
-                return True, result
+                logger.info(f"测试成功，服务商: {provider}, 模型: {model_name}, 识别结果 (部分): {result[:100]}...")
+                return True, f"识别成功 (部分结果: {result[:50]}...)" # 返回更简洁的消息给前端
             else:
-                logger.error("测试失败，未返回有效识别结果")
+                logger.error(f"测试失败，服务商: {provider}, 模型: {model_name}, 未返回有效识别结果")
                 return False, "OCR识别失败，未返回有效结果"
+    except FileNotFoundError:
+        logger.error(f"测试图片未找到: {image_path}")
+        return False, f"测试图片未找到: {image_path}"
     except Exception as e:
-        logger.error(f"测试过程中发生错误: {e}")
+        logger.error(f"测试过程中发生错误 (服务商: {provider}, 模型: {model_name}): {e}", exc_info=True)
         return False, f"测试出错: {str(e)}" 

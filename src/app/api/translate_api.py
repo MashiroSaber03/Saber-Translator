@@ -106,6 +106,7 @@ def translate_image():
         ai_vision_api_key = data.get('ai_vision_api_key')
         ai_vision_model_name = data.get('ai_vision_model_name')
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt', constants.DEFAULT_AI_VISION_OCR_PROMPT)
+        custom_ai_vision_base_url = data.get('custom_ai_vision_base_url') # <<< 获取新的参数
         
         # --- 新增: 获取 custom_base_url ---
         custom_base_url = data.get('custom_base_url') # 新增
@@ -136,6 +137,13 @@ def translate_image():
         # 检查百度OCR参数
         if ocr_engine == 'baidu_ocr' and not (baidu_api_key and baidu_secret_key):
             return jsonify({'error': '使用百度OCR时必须提供API Key和Secret Key'}), 400
+
+        # 检查自定义AI视觉OCR参数
+        if ocr_engine == constants.AI_VISION_OCR_ENGINE_ID and \
+           ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and \
+           not custom_ai_vision_base_url:
+            logger.error("请求错误：使用自定义AI视觉OCR服务时缺少 custom_ai_vision_base_url")
+            return jsonify({'error': '使用自定义AI视觉OCR服务时必须提供Base URL (custom_ai_vision_base_url)'}), 400
 
         # 处理字体大小 - 支持自动字体大小
         if autoFontSize:
@@ -225,6 +233,7 @@ def translate_image():
                 ai_vision_api_key=ai_vision_api_key,
                 ai_vision_model_name=ai_vision_model_name,
                 ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                custom_ai_vision_base_url=custom_ai_vision_base_url, # <<< 新增传递
                 # --- 传递新参数 ---
                 use_json_format_translation=False, # 仅消除文字，不翻译，所以翻译JSON模式无效
                 use_json_format_ai_vision_ocr=use_json_format_ai_vision_ocr,
@@ -272,6 +281,7 @@ def translate_image():
                 ai_vision_api_key=ai_vision_api_key,
                 ai_vision_model_name=ai_vision_model_name,
                 ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                custom_ai_vision_base_url=custom_ai_vision_base_url, # <<< 新增传递
                 # --- 传递新参数 ---
                 use_json_format_translation=use_json_format_translation,
                 use_json_format_ai_vision_ocr=use_json_format_ai_vision_ocr,

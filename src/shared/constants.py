@@ -129,7 +129,9 @@ PROJECT_TO_BAIDU_TRANSLATE_LANG_MAP = {
 # --- AI 视觉 OCR 相关 ---
 AI_VISION_OCR_ENGINE_ID = 'ai_vision'  # 定义唯一标识符
 
-# 新增 AI 视觉 OCR 默认提示词
+# 新增自定义OpenAI兼容服务商ID (确保这个值是唯一的)
+CUSTOM_AI_VISION_PROVIDER_ID = 'custom_openai_vision' # 与翻译的自定义ID区分
+
 DEFAULT_AI_VISION_OCR_PROMPT = """你是一个ocr助手，你需要将我发送给你的图片中的文字提取出来并返回给我，要求：
 1、完整识别：我发送给你的图片中的文字都是需要识别的内容
 2、非贪婪输出：不要返回任何其他解释和说明。"""
@@ -138,7 +140,8 @@ DEFAULT_AI_VISION_OCR_PROMPT = """你是一个ocr助手，你需要将我发送�
 SUPPORTED_AI_VISION_PROVIDERS = {
     'siliconflow': 'SiliconFlow (硅基流动)',
     'volcano': '火山引擎',
-    'gemini': 'Google Gemini'
+    'gemini': 'Google Gemini',
+    CUSTOM_AI_VISION_PROVIDER_ID: '自定义 OpenAI 兼容视觉服务'
 }
 
 # --- 有道翻译相关 ---

@@ -1619,3 +1619,19 @@ export function updateRpdInputFields() {
     $('#rpdAiVisionOcr').val(state.rpdLimitAiVisionOcr);
     console.log("UI 更新: RPD输入框已更新为当前状态值。");
 }
+
+/**
+ * 显示或隐藏自定义 AI 视觉 OCR 服务的 Base URL 输入框
+ * @param {boolean} show - 是否显示
+ */
+export function toggleCustomAiVisionBaseUrlUI(show) {
+    const customBaseUrlDiv = $("#customAiVisionBaseUrlDiv"); // 获取元素
+    if (show) {
+        customBaseUrlDiv.slideDown(); // 使用 jQuery 的 slideDown 动画显示
+    } else {
+        customBaseUrlDiv.slideUp();   // 使用 jQuery 的 slideUp 动画隐藏
+        // 可选：当隐藏时清空输入框内容
+        // $('#customAiVisionBaseUrl').val('');
+    }
+    console.log(`UI 更新: 自定义AI视觉Base URL输入框已 ${show ? '显示' : '隐藏'}`);
+}
