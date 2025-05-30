@@ -43,55 +43,55 @@ youdao_translate = YoudaoTranslateInterface()
 logger = logging.getLogger("CoreTranslation")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# --- RPD Limiting Globals for Translation ---
-_translation_rpd_last_reset_time_container = [0]
-_translation_rpd_request_count_container = [0]
+# --- rpm Limiting Globals for Translation ---
+_translation_rpm_last_reset_time_container = [0]
+_translation_rpm_request_count_container = [0]
 # ------------------------------------------
 
-def _enforce_rpd_limit(rpd_limit: int, service_name: str, last_reset_time_ref: list, request_count_ref: list):
+def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: list, request_count_ref: list):
     """
-    执行RPD（每分钟请求数）限制检查和等待。
+    执行rpm（每分钟请求数）限制检查和等待。
     使用列表作为引用类型来修改外部的 last_reset_time 和 request_count。
 
     Args:
-        rpd_limit (int): 每分钟最大请求数。如果为0或负数，则不限制。
+        rpm_limit (int): 每分钟最大请求数。如果为0或负数，则不限制。
         service_name (str): 服务名称，用于日志记录。
         last_reset_time_ref (list): 包含上次重置时间的列表 (e.g., [timestamp])。
         request_count_ref (list): 包含当前请求计数的列表 (e.g., [count])。
     """
-    if rpd_limit <= 0:
+    if rpm_limit <= 0:
         return # 无限制
 
     current_time = time.time()
 
     # 检查是否需要重置窗口
     if current_time - last_reset_time_ref[0] >= 60:
-        logger.info(f"RPD: {service_name} - 1分钟窗口已过，重置计数器和时间。")
+        logger.info(f"rpm: {service_name} - 1分钟窗口已过，重置计数器和时间。")
         last_reset_time_ref[0] = current_time
         request_count_ref[0] = 0
 
-    # 检查是否达到RPD限制
-    if request_count_ref[0] >= rpd_limit:
+    # 检查是否达到rpm限制
+    if request_count_ref[0] >= rpm_limit:
         time_to_wait = 60 - (current_time - last_reset_time_ref[0])
         if time_to_wait > 0:
-            logger.info(f"RPD: {service_name} - 已达到每分钟 {rpd_limit} 次请求上限。将等待 {time_to_wait:.2f} 秒...")
+            logger.info(f"rpm: {service_name} - 已达到每分钟 {rpm_limit} 次请求上限。将等待 {time_to_wait:.2f} 秒...")
             time.sleep(time_to_wait)
             # 等待结束后，这是一个新的窗口
             last_reset_time_ref[0] = time.time() # 更新为当前时间
             request_count_ref[0] = 0
         else:
             # 理论上不应该到这里，因为上面的窗口重置逻辑会处理
-            logger.info(f"RPD: {service_name} - 窗口已过但计数未重置，立即重置。")
+            logger.info(f"rpm: {service_name} - 窗口已过但计数未重置，立即重置。")
             last_reset_time_ref[0] = current_time
             request_count_ref[0] = 0
     
     # 如果是窗口内的第一次请求，设置窗口开始时间
     if request_count_ref[0] == 0 and last_reset_time_ref[0] == 0: # 或者 last_reset_time_ref[0] 远早于 current_time - 60
         last_reset_time_ref[0] = current_time
-        logger.info(f"RPD: {service_name} - 启动新的1分钟请求窗口。")
+        logger.info(f"rpm: {service_name} - 启动新的1分钟请求窗口。")
 
     request_count_ref[0] += 1
-    logger.debug(f"RPD: {service_name} - 当前窗口请求计数: {request_count_ref[0]}/{rpd_limit if rpd_limit > 0 else '无限制'}")
+    logger.debug(f"rpm: {service_name} - 当前窗口请求计数: {request_count_ref[0]}/{rpm_limit if rpm_limit > 0 else '无限制'}")
 
 # 添加安全JSON解析函数
 def _safely_extract_from_json(json_str, field_name):
@@ -144,7 +144,8 @@ def _safely_extract_from_json(json_str, field_name):
 def translate_single_text(text, target_language, model_provider, 
                           api_key=None, model_name=None, prompt_content=None, 
                           use_json_format=False, custom_base_url=None,
-                          rpd_limit_translation: int = constants.DEFAULT_RPD_TRANSLATION): # <--- 新增RPD参数
+                          rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
+                          jsonPromptMode: str = 'normal'): # <--- 新增rpm参数
     """
     使用指定的大模型翻译单段文本。
 
@@ -157,7 +158,7 @@ def translate_single_text(text, target_language, model_provider,
         prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
         use_json_format (bool): 是否期望并解析JSON格式的响应。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpd_limit_translation (int): 翻译服务的每分钟请求数限制。
+        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
     Returns:
         str: 翻译后的文本，如果失败则返回 "翻译失败: [原因]"。
     """
@@ -173,19 +174,19 @@ def translate_single_text(text, target_language, model_provider,
     elif use_json_format and '"translated_text"' not in prompt_content: # 如果用户传入了自定义提示词但不是JSON格式
         logger.warning("期望JSON格式输出，但提供的翻译提示词可能不是JSON格式。")
 
-    logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, RPD: {rpd_limit_translation if rpd_limit_translation > 0 else '无'})")
+    logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})")
 
     max_retries = 3
     retry_count = 0
     translated_text = "翻译失败: 未知错误"
 
-    # --- RPD Enforcement ---
+    # --- rpm Enforcement ---
     # 使用容器来传递引用
-    _enforce_rpd_limit(
-        rpd_limit_translation,
+    _enforce_rpm_limit(
+        rpm_limit_translation,
         f"Translation ({model_provider})",
-        _translation_rpd_last_reset_time_container,
-        _translation_rpd_request_count_container
+        _translation_rpm_last_reset_time_container,
+        _translation_rpm_request_count_container
     )
     # ---------------------
 
@@ -201,8 +202,7 @@ def translate_single_text(text, target_language, model_provider,
                     messages=[
                         {"role": "system", "content": prompt_content},
                         {"role": "user", "content": text},
-                    ],
-                    timeout=60
+                    ]
                 )
                 translated_text = response.choices[0].message.content.strip()
                 
@@ -216,8 +216,7 @@ def translate_single_text(text, target_language, model_provider,
                     messages=[
                         {"role": "system", "content": prompt_content},
                         {"role": "user", "content": text},
-                    ],
-                    timeout=30
+                    ]
                 )
                 translated_text = response.choices[0].message.content.strip()
                 
@@ -230,8 +229,7 @@ def translate_single_text(text, target_language, model_provider,
                     messages=[
                         {"role": "system", "content": prompt_content},
                         {"role": "user", "content": text},
-                    ],
-                    timeout=30
+                    ]
                 )
                 translated_text = response.choices[0].message.content.strip()
 
@@ -262,7 +260,7 @@ def translate_single_text(text, target_language, model_provider,
                     "media": "text"
                 }
                 
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response = requests.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()
                 if "target" in result and len(result["target"]) > 0:
@@ -281,7 +279,7 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": f"将下面的日文文本翻译成中文：{text}"}
                     ]
                 }
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response = requests.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()
                 translated_text = result['choices'][0]['message']['content'].strip()
@@ -296,7 +294,7 @@ def translate_single_text(text, target_language, model_provider,
                     ],
                     "stream": False
                 }
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload)
                 response.raise_for_status()
                 result = response.json()
                 if "message" in result and "content" in result["message"]:
@@ -362,7 +360,6 @@ def translate_single_text(text, target_language, model_provider,
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=gemini_messages,
-                    timeout=60 
                 )
                 translated_text = response.choices[0].message.content.strip()
                 logger.info(f"Gemini 文本翻译成功，模型: {model_name}")
@@ -383,7 +380,6 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "system", "content": prompt_content},
                         {"role": "user", "content": text},
                     ],
-                    timeout=60 # 可以考虑让用户配置超时
                 )
                 translated_text = response.choices[0].message.content.strip()
             else:
@@ -449,7 +445,7 @@ def translate_with_mock(text, target_language, api_key=None, model_name=None, pr
 def translate_text_list(texts, target_language, model_provider, 
                         api_key=None, model_name=None, prompt_content=None, 
                         use_json_format=False, custom_base_url=None,
-                        rpd_limit_translation: int = constants.DEFAULT_RPD_TRANSLATION): # <--- 新增RPD参数
+                        rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION): # <--- 新增rpm参数
     """
     翻译文本列表中的每一项。
 
@@ -462,7 +458,7 @@ def translate_text_list(texts, target_language, model_provider,
         prompt_content (str, optional): 自定义提示词。
         use_json_format (bool): 是否期望并解析JSON格式的响应。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpd_limit_translation (int): 翻译服务的每分钟请求数限制。
+        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
     Returns:
         list: 包含翻译后文本的列表，顺序与输入列表一致。失败的项包含错误信息。
     """
@@ -470,7 +466,7 @@ def translate_text_list(texts, target_language, model_provider,
     if not texts:
         return translated_texts
 
-    logger.info(f"开始批量翻译 {len(texts)} 个文本片段 (使用 {model_provider}, RPD: {rpd_limit_translation if rpd_limit_translation > 0 else '无'})...")
+    logger.info(f"开始批量翻译 {len(texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
     
     # 特殊处理模拟翻译提供商
     if model_provider.lower() == 'mock':
@@ -496,7 +492,7 @@ def translate_text_list(texts, target_language, model_provider,
                 prompt_content=prompt_content,
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url,
-                rpd_limit_translation=rpd_limit_translation # <--- 传递参数
+                rpm_limit_translation=rpm_limit_translation # <--- 传递参数
             )
             translated_texts.append(translated)
     
@@ -565,7 +561,7 @@ if __name__ == '__main__':
 
     print(f"\n测试 Ollama ({test_model_ollama}):")
     try:
-        requests.get("http://localhost:11434", timeout=1)
+        requests.get("http://localhost:11434")
         result_ollama = translate_single_text(test_text_en, 'zh', 'ollama', model_name=test_model_ollama)
         print(f"  '{test_text_en}' -> '{result_ollama}'")
     except requests.exceptions.ConnectionError:
@@ -575,7 +571,7 @@ if __name__ == '__main__':
 
     print(f"\n测试 Sakura ({test_model_sakura}):")
     try:
-        requests.get("http://localhost:8080", timeout=1)
+        requests.get("http://localhost:8080")
         result_sakura = translate_single_text(test_text_jp, 'zh', 'sakura', model_name=test_model_sakura)
         print(f"  '{test_text_jp}' -> '{result_sakura}'")
     except requests.exceptions.ConnectionError:
@@ -587,7 +583,7 @@ if __name__ == '__main__':
     test_list = ["Hello", "World", "これはペンです"]
     # 尝试使用 Ollama 进行批量测试，如果 Ollama 不可用，则此部分会失败
     try:
-        requests.get("http://localhost:11434", timeout=1)
+        requests.get("http://localhost:11434")
         translated_list = translate_text_list(test_list, 'zh', 'ollama', model_name=test_model_ollama)
         print(f"批量翻译结果 ({len(translated_list)}):")
         for i, t in enumerate(translated_list):

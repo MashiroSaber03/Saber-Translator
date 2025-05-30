@@ -17,15 +17,15 @@ from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
 from src.shared.image_helpers import image_to_base64 # 导入图像转Base64助手
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
-# 导入RPD限制辅助函数
-from src.core.translation import _enforce_rpd_limit
+# 导入rpm限制辅助函数
+from src.core.translation import _enforce_rpm_limit
 
 logger = logging.getLogger("CoreOCR")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# --- RPD Limiting Globals for AI Vision OCR ---
-_ai_vision_ocr_rpd_last_reset_time_container = [0]
-_ai_vision_ocr_rpd_request_count_container = [0]
+# --- rpm Limiting Globals for AI Vision OCR ---
+_ai_vision_ocr_rpm_last_reset_time_container = [0]
+_ai_vision_ocr_rpm_request_count_container = [0]
 # --------------------------------------------
 
 # 在解析JSON响应时增加安全提取方法
@@ -82,7 +82,8 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               ai_vision_model_name=None, ai_vision_ocr_prompt=None,
                               custom_ai_vision_base_url=None,
                               use_json_format_for_ai_vision=False,
-                              rpd_limit_ai_vision: int = constants.DEFAULT_RPD_AI_VISION_OCR): # <--- 新增RPD参数
+                              rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+                              jsonPromptMode: str = 'normal'): # <--- 新增rpm参数
     """
     根据源语言和引擎选择，使用合适的 OCR 引擎识别所有气泡内的文本。
 
@@ -100,7 +101,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         ai_vision_ocr_prompt (str, optional): AI视觉OCR提示词，仅当 ocr_engine 为 'ai_vision' 时需要。
         custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的Base URL，仅当使用自定义服务时需要。
         use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
-        rpd_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
+        rpm_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
 
     Returns:
         list: 包含每个气泡识别文本的列表，顺序与 bubble_coords 一致。
@@ -264,7 +265,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                 logger.error("使用自定义AI视觉OCR时，缺少Base URL (custom_ai_vision_base_url)，OCR步骤跳过。")
                 return [""] * len(bubble_coords)
 
-            logger.info(f"开始使用 AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}, RPD: {rpd_limit_ai_vision if rpd_limit_ai_vision > 0 else '无'}, BaseURL: {custom_ai_vision_base_url if custom_ai_vision_base_url else '服务商默认'}) 识别 {len(bubble_coords)} 个气泡...")
+            logger.info(f"开始使用 AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}, rpm: {rpm_limit_ai_vision if rpm_limit_ai_vision > 0 else '无'}, BaseURL: {custom_ai_vision_base_url if custom_ai_vision_base_url else '服务商默认'}) 识别 {len(bubble_coords)} 个气泡...")
             
             # 根据是否使用JSON格式，选择合适的提示词
             current_ai_vision_ocr_prompt = ai_vision_ocr_prompt
@@ -289,12 +290,12 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                         except Exception as save_e:
                             logger.warning(f"保存 AI视觉OCR 调试气泡图像失败: {save_e}")
                         
-                        # --- RPD Enforcement for AI Vision OCR ---
-                        _enforce_rpd_limit(
-                            rpd_limit_ai_vision,
+                        # --- rpm Enforcement for AI Vision OCR ---
+                        _enforce_rpm_limit(
+                            rpm_limit_ai_vision,
                             f"AI Vision OCR ({ai_vision_provider})",
-                            _ai_vision_ocr_rpd_last_reset_time_container,
-                            _ai_vision_ocr_rpd_request_count_container
+                            _ai_vision_ocr_rpm_last_reset_time_container,
+                            _ai_vision_ocr_rpm_request_count_container
                         )
                         # -----------------------------------------
                         

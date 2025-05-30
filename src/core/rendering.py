@@ -14,6 +14,70 @@ logger = logging.getLogger("CoreRendering")
 # --- 字体加载缓存 ---
 _font_cache = {}
 
+# --- 特殊字符的字体路径 ---
+NOTOSANS_FONT_PATH = os.path.join('src', 'app', 'static', 'fonts', 'NotoSans-Medium.ttf')
+
+# --- 需要使用特殊字体渲染的字符 ---
+SPECIAL_CHARS = {'‼', '⁉'}
+
+# --- 竖排标点符号映射表 ---
+VERTICAL_PUNCTUATION_MAP = {
+    # 中文标点
+     '（': '︵', '）': '︶', 
+    '【': '︻', '】': '︼', '「': '﹁', '」': '﹂', 
+    '『': '﹃', '』': '﹄', '〈': '︿', '〉': '﹀',
+    '"': '﹃', '"': '﹄', ''': '﹁', ''': '﹂',
+    '《': '︽', '》': '︾', '［': '︹', '］': '︺',
+    '｛': '︷', '｝': '︸', '〔': '︹', '〕': '︺',
+    '—': '︱', '…': '︙', '～': '︴',
+    
+    # 英文标点
+    '(': '︵', ')': '︶',
+    '[': '︹', ']': '︺', '{': '︷', '}': '︸',
+    '<': '︿', '>': '﹀', '-': '︱', '~': '︴'
+}
+
+# 特殊组合标点映射
+SPECIAL_PUNCTUATION_PATTERNS = [
+    ('...', '︙'),     # 连续三个点映射成竖直省略号
+    ('…', '︙'),       # Unicode省略号映射成竖直省略号
+    ('!!', '‼'),       # 连续两个感叹号映射成双感叹号
+    ('!!!', '‼'),      # 连续三个感叹号映射成双感叹号
+    ('！！', '‼'),     # 中文连续两个感叹号
+    ('！！！', '‼'),   # 中文连续三个感叹号
+    ('!?', '⁉'),       # 感叹号加问号映射成感叹问号组合
+    ('?!', '⁉'),       # 问号加感叹号映射成感叹问号组合
+    ('！？', '⁉'),     # 中文感叹号加问号
+    ('？！', '⁉'),     # 中文问号加感叹号
+]
+
+def map_to_vertical_punctuation(text):
+    """
+    将文本中的标点符号映射为竖排标点符号
+    
+    Args:
+        text (str): 原始文本
+        
+    Returns:
+        str: 转换后的文本，标点符号已替换为竖排版本
+    """
+    # 首先处理特殊组合标点
+    for pattern, replacement in SPECIAL_PUNCTUATION_PATTERNS:
+        text = text.replace(pattern, replacement)
+    
+    # 然后处理单个标点
+    result = ""
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if char in VERTICAL_PUNCTUATION_MAP:
+            result += VERTICAL_PUNCTUATION_MAP[char]
+        else:
+            result += char
+        i += 1
+    
+    return result
+
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
     加载字体文件，带缓存。
@@ -68,7 +132,7 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
 
 def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='vertical',
                              font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH,
-                             min_size=12, max_size=60, padding_ratio=0.9):
+                             min_size=12, max_size=60, padding_ratio=1.0):
     """
     使用二分法计算最佳字体大小。
     """
@@ -127,9 +191,12 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
     return result
 
 # --- 占位符，后续步骤会添加 ---
-def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=constants.DEFAULT_TEXT_COLOR, rotation_angle=constants.DEFAULT_ROTATION_ANGLE):
+def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=constants.DEFAULT_TEXT_COLOR, rotation_angle=constants.DEFAULT_ROTATION_ANGLE, bubble_width=None):
     if not text:
         return
+    
+    # 将标点符号转换为竖排样式
+    text = map_to_vertical_punctuation(text)
 
     lines = []
     current_line = ""
@@ -150,8 +217,32 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=consta
 
     lines.append(current_line)
 
-    current_x = x
     column_width = font.size + 5
+    
+    # 计算文本段落的总宽度
+    total_text_width = len(lines) * column_width
+    
+    # 在竖排文本中，x 是气泡的右边界
+    if bubble_width is not None:
+        # 如果传入了气泡宽度，使用气泡宽度计算居中位置
+        bubble_center_x = x - bubble_width / 2
+        current_x = bubble_center_x + total_text_width / 2
+    else:
+        # 如果没有传入气泡宽度，默认靠右对齐
+        current_x = x
+    
+    # 计算文本垂直方向的总高度
+    max_line_chars = 0
+    for line in lines:
+        max_line_chars = max(max_line_chars, len(line))
+    total_text_height = max_line_chars * line_height
+    
+    # 计算垂直方向的居中偏移
+    if total_text_height < max_height:
+        vertical_offset = (max_height - total_text_height) / 2
+        current_y = y + vertical_offset
+    else:
+        current_y = y  # 如果文本高度超过气泡高度，则不进行垂直居中
     
     # 如果需要旋转，先获取原始图像
     original_image = None
@@ -160,20 +251,43 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=consta
             original_image = draw._image
         
         # 计算所有列的中心点，用于旋转
-        center_x = x - (len(lines) * column_width) / 2
+        if bubble_width is not None:
+            center_x = x - bubble_width / 2  # 使用气泡中心点作为旋转中心
+        else:
+            center_x = x - (len(lines) * column_width) / 2  # 默认计算方式
         center_y = y + max_height / 2
 
+    # 预加载NotoSans字体，用于特殊字符
+    special_font = None
+    font_size = font.size  # 获取当前字体大小
+
     for line in lines:
-        current_y = y
+        line_start_y = current_y  # 使用计算出的居中起始位置
         for char in line:
             # 计算字符尺寸
-            bbox = font.getbbox(char)
+            current_font = font
+            # 检查是否为需要特殊字体的字符
+            if char in SPECIAL_CHARS:
+                if special_font is None:
+                    try:
+                        # 第一次遇到特殊字符时加载特殊字体
+                        special_font = get_font(NOTOSANS_FONT_PATH, font_size)
+                        logger.info(f"为特殊字符加载NotoSans字体，字号为 {font_size}")
+                    except Exception as e:
+                        logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                        special_font = font  # 如果加载失败，使用普通字体
+                
+                if special_font is not None:
+                    current_font = special_font
+            
+            # 使用当前选定的字体计算字符尺寸
+            bbox = current_font.getbbox(char)
             char_width = bbox[2] - bbox[0]
             char_height = bbox[3] - bbox[1]
             
             # 计算正确的位置（右上角对齐）
             text_x = current_x - char_width
-            text_y = current_y
+            text_y = line_start_y
             
             if rotation_angle != 0 and original_image is not None:
                 try:
@@ -185,8 +299,8 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=consta
                     temp_img = Image.new('RGBA', original_image.size, (0, 0, 0, 0))
                     temp_draw = ImageDraw.Draw(temp_img)
                     
-                    # 在临时图像上绘制文本
-                    temp_draw.text((text_x, text_y), char, font=font, fill=fill)
+                    # 在临时图像上绘制文本，使用适当的字体
+                    temp_draw.text((text_x, text_y), char, font=current_font, fill=fill)
                     
                     # 旋转临时图像
                     rotated_temp = temp_img.rotate(
@@ -200,12 +314,12 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height, fill=consta
                     original_image.paste(rotated_temp, (0, 0), rotated_temp)
                 except Exception as e:
                     logger.error(f"旋转渲染失败，回退到直接渲染: {e}")
-                    draw.text((text_x, text_y), char, font=font, fill=fill)
+                    draw.text((text_x, text_y), char, font=current_font, fill=fill)
             else:
                 # 不旋转时，直接在原始 draw 对象上绘制
-                draw.text((text_x, text_y), char, font=font, fill=fill)
+                draw.text((text_x, text_y), char, font=current_font, fill=fill)
                 
-            current_y += line_height
+            line_start_y += line_height
         current_x -= column_width
 
 def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill=constants.DEFAULT_TEXT_COLOR, rotation_angle=constants.DEFAULT_ROTATION_ANGLE):
@@ -234,6 +348,10 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill=const
     current_y = y
     line_height = font.size + 5
     
+    # 预加载NotoSans字体，用于特殊字符
+    special_font = None
+    font_size = font.size  # 获取当前字体大小
+    
     # 如果需要旋转，先获取原始图像
     original_image = None
     if rotation_angle != 0:
@@ -247,7 +365,22 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill=const
     for line in lines:
         current_x = x
         for char in line:
-            bbox = font.getbbox(char)
+            # 检查是否为需要特殊字体的字符
+            current_font = font
+            if char in SPECIAL_CHARS:
+                if special_font is None:
+                    try:
+                        # 第一次遇到特殊字符时加载特殊字体
+                        special_font = get_font(NOTOSANS_FONT_PATH, font_size)
+                    except Exception as e:
+                        logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                        special_font = font  # 如果加载失败，使用普通字体
+                
+                if special_font is not None:
+                    current_font = special_font
+
+            # 使用当前选定的字体计算字符尺寸
+            bbox = current_font.getbbox(char)
             char_width = bbox[2] - bbox[0]
             char_height = bbox[3] - bbox[1]
             
@@ -261,8 +394,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill=const
                     temp_img = Image.new('RGBA', original_image.size, (0, 0, 0, 0))
                     temp_draw = ImageDraw.Draw(temp_img)
                     
-                    # 在临时图像上绘制文本
-                    temp_draw.text((current_x, current_y), char, font=font, fill=fill)
+                    # 在临时图像上绘制文本，使用适当的字体
+                    temp_draw.text((current_x, current_y), char, font=current_font, fill=fill)
                     
                     # 旋转临时图像
                     rotated_temp = temp_img.rotate(
@@ -276,9 +409,9 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, fill=const
                     original_image.paste(rotated_temp, (0, 0), rotated_temp)
                 except Exception as e:
                     logger.error(f"旋转渲染失败，回退到直接渲染: {e}")
-                    draw.text((current_x, current_y), char, font=font, fill=fill)
+                    draw.text((current_x, current_y), char, font=current_font, fill=fill)
             else:
-                draw.text((current_x, current_y), char, font=font, fill=fill)
+                draw.text((current_x, current_y), char, font=current_font, fill=fill)
             
             current_x += char_width
         current_y += line_height
@@ -347,16 +480,17 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_styles):
         # --- 计算绘制参数 ---
         offset_x = position_offset.get('x', 0)
         offset_y = position_offset.get('y', 0)
-        draw_x = x1 + 10 + offset_x
-        draw_y = y1 + 10 + offset_y
-        vertical_draw_x = x2 - 10 + offset_x
-        max_text_width = max(10, x2 - x1 - 20)
-        max_text_height = max(10, y2 - y1 - 20)
+        draw_x = x1 + offset_x
+        draw_y = y1 + offset_y
+        vertical_draw_x = x2 + offset_x
+        max_text_width = max(10, x2 - x1)
+        max_text_height = max(10, y2 - y1)
 
         # --- 调用绘制函数 ---
         try:
             if text_direction == 'vertical':
-                draw_multiline_text_vertical(draw, text, font, vertical_draw_x, draw_y, max_text_height, fill=text_color, rotation_angle=rotation_angle)
+                bubble_width = max_text_width  # 气泡的宽度，用于居中计算
+                draw_multiline_text_vertical(draw, text, font, vertical_draw_x, draw_y, max_text_height, fill=text_color, rotation_angle=rotation_angle, bubble_width=bubble_width)
             elif text_direction == 'horizontal':
                 draw_multiline_text_horizontal(draw, text, font, draw_x, draw_y, max_text_width, fill=text_color, rotation_angle=rotation_angle)
             else:
@@ -408,11 +542,11 @@ def render_single_bubble(
         # 导入修复相关模块
         from src.core.inpainting import inpaint_bubbles
         from src.interfaces.lama_interface import is_lama_available
-        from src.interfaces.migan_interface import is_migan_available
+        # from src.interfaces.migan_interface import is_migan_available
         
         inpainting_method = 'solid'
         if use_lama and is_lama_available(): inpainting_method = 'lama'
-        elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
+        # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
         img_pil, generated_clean_bg = inpaint_bubbles(
             image, target_coords, method=inpainting_method, fill_color=fill_color
         )
@@ -480,7 +614,6 @@ def render_single_bubble(
     # --- 准备返回值 ---
     img_with_bubbles_pil = img_pil
     # 附加必要的属性
-    if hasattr(image, '_migan_inpainted'): setattr(img_with_bubbles_pil, '_migan_inpainted', True)
     if hasattr(image, '_lama_inpainted'): setattr(img_with_bubbles_pil, '_lama_inpainted', True)
     if clean_image_base:
          setattr(img_with_bubbles_pil, '_clean_image', clean_image_base)
@@ -533,11 +666,11 @@ def re_render_text_in_bubbles(
         # 导入修复相关模块
         from src.core.inpainting import inpaint_bubbles
         from src.interfaces.lama_interface import is_lama_available
-        from src.interfaces.migan_interface import is_migan_available
+        # from src.interfaces.migan_interface import is_migan_available
         
         inpainting_method = 'solid'
         if use_lama and is_lama_available(): inpainting_method = 'lama'
-        elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
+        # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
 
         logger.info(f"重渲染时选择修复/填充方法: {inpainting_method}")
         img_pil, generated_clean_bg = inpaint_bubbles(
@@ -587,7 +720,6 @@ def re_render_text_in_bubbles(
     # --- 准备返回值 ---
     img_with_bubbles_pil = img_pil
     # 附加必要的属性
-    if hasattr(image, '_migan_inpainted'): setattr(img_with_bubbles_pil, '_migan_inpainted', True)
     if hasattr(image, '_lama_inpainted'): setattr(img_with_bubbles_pil, '_lama_inpainted', True)
     if clean_image_base:
          setattr(img_with_bubbles_pil, '_clean_image', clean_image_base)
