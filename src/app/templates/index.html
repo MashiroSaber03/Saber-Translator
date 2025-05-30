@@ -131,14 +131,18 @@
                                     <label for="aiVisionOcrPrompt">OCR提示词:</label>
                                     <textarea id="aiVisionOcrPrompt" rows="4" placeholder="AI视觉OCR提示词"></textarea>
                                     <div class="prompt-format-toggle">
-                                        <button id="toggleAiVisionJsonPromptButton" class="format-toggle-button">使用JSON提示词</button>
+                                        <!-- 将按钮替换为选择器 -->
+                                        <select id="aiVisionPromptModeSelect" class="prompt-mode-select">
+                                            <option value="normal">普通提示词</option>
+                                            <option value="json">JSON提示词</option>
+                                        </select>
                                         <div class="input-hint">JSON格式输出更结构化，可减少额外说明</div>
                                     </div>
                                 </div>
-                                <!-- 新增：AI视觉OCR RPD 设置 -->
+                                <!-- 新增：AI视觉OCR rpm 设置 -->
                                 <div>
-                                    <label for="rpdAiVisionOcr">每分钟最大AI视觉OCR请求数 (RPD):</label>
-                                    <input type="number" id="rpdAiVisionOcr" value="0" min="0" step="1">
+                                    <label for="rpmAiVisionOcr">每分钟最大AI视觉OCR请求数 (rpm):</label>
+                                    <input type="number" id="rpmAiVisionOcr" value="0" min="0" step="1">
                                     <div class="input-hint">0 表示无限制。用于控制对AI视觉OCR API的调用频率。</div>
                                 </div>
                                 <!-- 结束新增 -->
@@ -158,26 +162,13 @@
                                 </div>
                             </div>
                             <div>
-                                <label for="fontFamily">字体:</label>
+                                <label for="fontFamily">文本字体:</label>
                                 <!-- 使用相对路径作为 value -->
                                 <select id="fontFamily">
-                                    <option value="fonts/STXINGKA.TTF" style="font-family: '华文行楷', cursive;">华文行楷</option>
-                                    <option value="fonts/STXINWEI.TTF" style="font-family: '华文新魏', cursive;">华文新魏</option>
-                                    <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
-                                    <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
-                                    <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
-                                    <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
-                                    <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
-                                    <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
-                                    <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
-                                    <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
-                                    <option value="fonts/STHUPO.TTF" style="font-family: '华文琥珀', cursive;">华文琥珀</option>
-                                    <option value="fonts/STXIHEI.TTF" style="font-family: '华文细黑', sans-serif;">华文细黑</option>
-                                    <option value="fonts/simkai.ttf" style="font-family: '楷体', serif;">中易楷体</option>
-                                    <option value="fonts/simfang.ttf" style="font-family: '仿宋', serif;">中易仿宋</option>
-                                    <option value="fonts/simhei.ttf" style="font-family: '黑体', sans-serif;">中易黑体</option>
-                                    <option value="fonts/SIMLI.TTF" style="font-family: '隶书', serif;">中易隶书</option>
+                                    <option value="custom-font" data-custom="true">自定义字体...</option>
+                                    <!-- 动态加载字体选项 -->
                                 </select>
+                                <input type="file" id="fontUpload" accept=".ttf,.ttc,.otf" style="display: none;">
                             </div>
                             <div>
                                 <label for="layoutDirection">排版设置:</label>
@@ -205,7 +196,7 @@
                             <div id="inpaintingOptions" style="display: none;">
                                 <div>
                                     <label for="inpaintingStrength">修复强度:</label>
-                                    <input type="range" id="inpaintingStrength" min="0.1" max="5.0" step="0.1" value="1.0" class="slider">
+                                    <input type="range" id="inpaintingStrength" min="0.1" max="5.0" step="0.1" value="1.0" class="slider range-slider">
                                     <span id="inpaintingStrengthValue">1.0</span>
                                     <div class="input-hint">值越大修复越强，可能改变背景细节</div>
                                 </div>
@@ -253,10 +244,10 @@
                                 <div id="model-suggestions" style="display: none;"></div>
                                 <!-- Ollama/Sakura 模型列表和测试按钮会由 JS 动态添加 -->
                             </div>
-                            <!-- 新增：翻译服务 RPD 设置 -->
+                            <!-- 新增：翻译服务 rpm 设置 -->
                             <div>
-                                <label for="rpdTranslation">每分钟最大翻译请求数 (RPD):</label>
-                                <input type="number" id="rpdTranslation" value="0" min="0" step="1">
+                                <label for="rpmTranslation">每分钟最大翻译请求数 (rpm):</label>
+                                <input type="number" id="rpmTranslation" value="0" min="0" step="1">
                                 <div class="input-hint">0 表示无限制。用于控制对翻译API的调用频率。</div>
                             </div>
                             <!-- 结束新增 -->
@@ -271,7 +262,11 @@
                             <!-- 使用后端传递的默认值 -->
                             <textarea id="promptContent" placeholder="在这里修改提示词">{{ default_prompt_content }}</textarea>
                             <div class="prompt-format-toggle">
-                                <button id="toggleTranslateJsonPromptButton" class="format-toggle-button">使用JSON提示词</button>
+                                <!-- 将按钮替换为选择器 -->
+                                <select id="translatePromptModeSelect" class="prompt-mode-select">
+                                    <option value="normal">普通提示词</option>
+                                    <option value="json">JSON提示词</option>
+                                </select>
                                 <div class="input-hint">JSON格式输出更结构化，可减少额外说明</div>
                             </div>
                             <div class="prompt-management">
@@ -309,12 +304,74 @@
                     </div>
                 </div>
 
+                <!-- 高质量翻译模式板块 -->
+                <div id="high-quality-translation" class="settings-card">
+                    <h3 class="collapsible-header">高质量翻译模式 (Beta) <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="settings-form">
+                            <div>
+                                <label for="hqTranslateProvider">AI服务商:</label>
+                                <select id="hqTranslateProvider">
+                                    <option value="siliconflow">SiliconFlow</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="volcano">火山引擎</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="hqApiKey">API Key:</label>
+                                <input type="text" id="hqApiKey" placeholder="请输入API Key">
+                            </div>
+                            <div>
+                                <label for="hqModelName">模型名称:</label>
+                                <input type="text" id="hqModelName" placeholder="请输入模型名称">
+                            </div>
+                            <div id="hqCustomBaseUrlDiv" style="display: none;">
+                                <label for="hqCustomBaseUrl">Base URL:</label>
+                                <input type="text" id="hqCustomBaseUrl" placeholder="如 https://your-api-endpoint.com/v1">
+                            </div>
+                            <div>
+                                <label for="hqBatchSize">每批次图片数:</label>
+                                <input type="number" id="hqBatchSize" min="1">
+                                <div class="input-hint">每次请求发送的图片数量，太多可能超出AI上下文长度</div>
+                            </div>
+                            <div>
+                                <label for="hqSessionReset">会话重置频率:</label>
+                                <input type="number" id="hqSessionReset" min="1">
+                                <div class="input-hint">发送多少批次后重置会话上下文</div>
+                            </div>
+                            <div>
+                                <label for="hqRpmLimit">RPM限制:</label>
+                                <input type="number" id="hqRpmLimit" min="1" max="100">
+                                <div class="input-hint">每分钟最大请求数量</div>
+                            </div>
+                            <div>
+                                <label for="hqLowReasoning">关闭思考功能:</label>
+                                <input type="checkbox" id="hqLowReasoning">
+                                <div class="input-hint">部分模型支持关闭思考以加快响应速度</div>
+                            </div>
+                            <div>
+                                <label for="hqForceJsonOutput">强制JSON输出:</label>
+                                <input type="checkbox" id="hqForceJsonOutput">
+                                <div class="input-hint">使用API参数强制输出JSON，仅支持OpenAI兼容接口</div>
+                            </div>
+                            <div>
+                                <label for="hqPrompt">翻译提示词:</label>
+                                <textarea id="hqPrompt" rows="4"></textarea>
+                            </div>
+                            <button id="startHqTranslation" class="settings-button">开始高质量翻译</button>
+                        </div>
+                    </div>
+                </div>
+
                 <button id="translateButton" disabled>翻译当前图片</button>
-                <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>
                 <button id="translateAllButton" disabled>翻译所有图片</button>
-                <button id="clearAllImagesButton" class="settings-button red-button">清除所有图片</button>
+                <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>
+                <button id="removeAllTextButton" disabled title="消除所有图片中的气泡文字，无需填写翻译服务商和API Key">消除所有图片文字</button>
                 <button id="deleteCurrentImageButton" class="settings-button red-button" disabled>删除当前图片</button>
-                <button id="cleanDebugFilesButton" class="settings-button orange-button">清理调试文件</button>
+                <button id="clearAllImagesButton" class="settings-button red-button">清除所有图片</button>
+                <button id="cleanDebugFilesButton" class="settings-button orange-button">清理临时文件</button>
                 <button id="managePluginsButton" class="settings-button blue-button">插件管理</button>
                 <button id="saveCurrentSessionButton" class="settings-button green-button" style="margin-top: 15px;">保存</button>
                 <button id="saveAsSessionButton" class="settings-button orange-button" style="margin-top: 5px;">另存为...</button>
@@ -338,7 +395,7 @@
                 </div>
                 <div id="uploadThumbnailList" class="thumbnails"></div>
                 <div id="translationProgressBar" style="display: none;">
-                    <div class="progress-bar-label">翻译进度: <span id="progressPercent">0/0</span></div>
+                    <div class="progress-bar-label">进度: <span id="progressPercent">0/0</span></div>
                     <div class="progress-bar">
                         <div class="progress"></div>
                     </div>
@@ -350,13 +407,14 @@
                     <button id="toggleEditModeButton">切换编辑模式</button>
                     <button id="toggleLabelingModeButton" style="display: none;">进入标注模式</button>
                     <button id="autoDetectBoxesButton" class="labeling-tool-button" style="display: none;">自动检测</button>
+                    <button id="detectAllImagesButton" class="labeling-tool-button" style="display: none;">检测所有图片</button>
                     <button id="clearManualBoxesButton" class="labeling-tool-button" style="display: none;">清除所有框</button>
                     <button id="addManualBoxButton" class="labeling-tool-button" style="display: none;">添加框</button>
                     <button id="deleteSelectedBoxButton" class="labeling-tool-button" style="display: none;" disabled>删除选中框</button>
                     <button id="useManualBoxesButton" class="labeling-tool-button" style="display: none;" disabled>使用手动框翻译</button>
                     <div class="image-size-control">
                         <label for="imageSize">图片大小:</label>
-                        <input type="range" id="imageSize" min="50" max="200" value="100" class="slider">
+                        <input type="range" id="imageSize" min="50" max="200" value="100" class="slider range-slider">
                         <span id="imageSizeValue">100%</span>
                     </div>
                     <!-- 重新翻译失败按钮会由 JS 添加 -->
@@ -393,25 +451,11 @@
                                         </div>
                                     </div>
                                     <div>
-                                        <label for="bubbleFontFamily">字体:</label>
+                                        <label for="bubbleFontFamily">文本字体:</label>
                                         <!-- 使用相对路径 value -->
                                         <select id="bubbleFontFamily">
-                                            <option value="fonts/STXINGKA.TTF" style="font-family: '华文行楷', cursive;">华文行楷</option>
-                                            <option value="fonts/STXINWEI.TTF" style="font-family: '华文新魏', cursive;">华文新魏</option>
-                                            <option value="fonts/STZHONGS.TTF" style="font-family: '华文中宋', serif;">华文中宋</option>
-                                            <option value="fonts/STKAITI.TTF" style="font-family: '楷体', serif;">楷体</option>
-                                            <option value="fonts/STLITI.TTF" style="font-family: '隶书', serif;">隶书</option>
-                                            <option value="fonts/STSONG.TTF" style="font-family: '宋体', serif;">宋体</option>
-                                            <option value="fonts/msyh.ttc" style="font-family: '微软雅黑', sans-serif;" selected>微软雅黑</option>
-                                            <option value="fonts/msyhbd.ttc" style="font-family: '微软雅黑', sans-serif; font-weight: bold;">微软雅黑粗体</option>
-                                            <option value="fonts/SIMYOU.TTF" style="font-family: '幼圆', sans-serif;">幼圆</option>
-                                            <option value="fonts/STFANGSO.TTF" style="font-family: '仿宋', serif;">仿宋</option>
-                                            <option value="fonts/STHUPO.TTF" style="font-family: '华文琥珀', cursive;">华文琥珀</option>
-                                            <option value="fonts/STXIHEI.TTF" style="font-family: '华文细黑', sans-serif;">华文细黑</option>
-                                            <option value="fonts/simkai.ttf" style="font-family: '楷体', serif;">中易楷体</option>
-                                            <option value="fonts/simfang.ttf" style="font-family: '仿宋', serif;">中易仿宋</option>
-                                            <option value="fonts/simhei.ttf" style="font-family: '黑体', sans-serif;">中易黑体</option>
-                                            <option value="fonts/SIMLI.TTF" style="font-family: '隶书', serif;">中易隶书</option>
+                                            <option value="custom-font" data-custom="true">自定义字体...</option>
+                                            <!-- 动态加载字体选项 -->
                                         </select>
                                     </div>
                                     <div>
@@ -427,7 +471,7 @@
                                     </div>
                                     <div>
                                         <label for="bubbleRotationAngle">旋转角度:</label>
-                                        <input type="range" id="bubbleRotationAngle" min="-180" max="180" step="5" value="0" class="slider">
+                                        <input type="range" id="bubbleRotationAngle" min="-180" max="180" step="5" value="0" class="slider range-slider">
                                         <span id="bubbleRotationAngleValue">0°</span>
                                     </div>
                                     <div>
@@ -474,9 +518,9 @@
                 </div>
                 <p id="downloadingMessage" style="display: none;">下载中，请稍候...</p>
                 <div class="download-buttons">
-                    <button id="downloadButton" style="display: none;">下载当前图片</button>
+                    <button id="downloadButton">下载当前图片</button>
                     <div class="download-all-container">
-                        <button id="downloadAllImagesButton" style="display: none;">下载所有图片</button>
+                        <button id="downloadAllImagesButton">下载所有图片</button>
                         <div class="download-format-selector">
                             <select id="downloadFormat">
                                 <option value="zip" selected>ZIP压缩包</option>
@@ -485,6 +529,11 @@
                             </select>
                         </div>
                     </div>
+                    <!-- 新增导出和导入文本按钮 -->
+                    <button id="exportTextButton">导出文本</button>
+                    <button id="importTextButton">导入文本</button>
+                    <!-- 隐藏的文件输入框，用于导入文本 -->
+                    <input type="file" id="importTextFileInput" style="display: none;" accept=".json">
                 </div>
             </section>
         </main>
@@ -533,6 +582,19 @@
         <div class="session-modal-content">
             <span class="session-modal-close">&times;</span>
             <h3>加载 / 管理会话</h3>
+            
+            <!-- 添加自动存档开关 -->
+            <div class="auto-save-toggle" style="margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+                <label class="switch-container">
+                    <input type="checkbox" id="autoSaveToggle">
+                    <span class="slider round"></span>
+                    <span class="switch-label">启用自动存档</span>
+                </label>
+                <p style="margin: 5px 0 0 0; font-size: 0.85em; color: #6c757d;">
+                    自动存档会在翻译、编辑或切换图片等操作后自动保存当前工作状态
+                </p>
+            </div>
+            
             <div id="sessionListContainer">
                 <!-- 会话列表将由 JS 动态填充 -->
                 <p>正在加载会话列表...</p>
