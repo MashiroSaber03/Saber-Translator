@@ -196,6 +196,6 @@ DEFAULT_AI_VISION_OCR_JSON_PROMPT = """你是一个OCR助手。请将我发送�
   "extracted_text": "[这里放入所有识别到的文字，可以包含换行符以大致保留原始分段，但不要包含任何其他非文本内容]"
 }"""
 
-# --- RPD (Requests Per Minute) Limiting ---
-DEFAULT_RPD_TRANSLATION = 0  # 0 表示无限制
-DEFAULT_RPD_AI_VISION_OCR = 0 # 0 表示无限制
+# --- rpm (Requests Per Minute) Limiting ---
+DEFAULT_rpm_TRANSLATION = 0  # 0 表示无限制
+DEFAULT_rpm_AI_VISION_OCR = 0 # 0 表示无限制
