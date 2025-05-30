@@ -153,52 +153,89 @@ aside {
 }
 
 #settings-sidebar button#translateButton,
-#settings-sidebar button#translateAllButton,
-#settings-sidebar button#removeTextOnlyButton,
-#settings-sidebar button#clearAllImagesButton,
-#settings-sidebar button#deleteCurrentImageButton {
-  width: 100%;
-  padding: 14px 25px;
-  background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
+#settings-sidebar button#translateAllButton {
+    width: 100%;
+    padding: 14px 25px;
+    background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.3s;
+    margin-top: 15px;
+    box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
 }
 
 #settings-sidebar button#translateButton:hover,
-#settings-sidebar button#translateAllButton:hover,
-#settings-sidebar button#removeTextOnlyButton:hover {
-  background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
-  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
-  transform: translateY(-2px);
+#settings-sidebar button#translateAllButton:hover {
+    background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
+    box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
+    transform: translateY(-2px);
 }
 
 #settings-sidebar button#translateButton:before,
-#settings-sidebar button#translateAllButton:before,
-#settings-sidebar button#removeTextOnlyButton:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
+#settings-sidebar button#translateAllButton:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.7s;
 }
 
 #settings-sidebar button#translateButton:hover:before,
-#settings-sidebar button#translateAllButton:hover:before,
-#settings-sidebar button#removeTextOnlyButton:hover:before {
-  left: 100%;
+#settings-sidebar button#translateAllButton:hover:before {
+    left: 100%;
+}
+
+#settings-sidebar button#removeTextOnlyButton,
+#settings-sidebar button#removeAllTextButton {
+    width: 100%;
+    padding: 14px 25px;
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.3s;
+    margin-top: 15px;
+    box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+#settings-sidebar button#removeTextOnlyButton:hover,
+#settings-sidebar button#removeAllTextButton:hover {
+    background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
+    box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
+    transform: translateY(-2px);
+}
+
+#settings-sidebar button#removeTextOnlyButton:before,
+#settings-sidebar button#removeAllTextButton:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.7s;
+}
+
+#settings-sidebar button#removeTextOnlyButton:hover:before,
+#settings-sidebar button#removeAllTextButton:hover:before {
+    left: 100%;
 }
 
 #settings-sidebar button.red-button {
@@ -545,6 +582,17 @@ aside {
 
 #image-display-area #result-section .download-buttons button:hover:before {
   left: 100%;
+}
+
+/* 导出/导入文本按钮样式 */
+#exportTextButton, #importTextButton {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%) !important;
+  box-shadow: 0 4px 6px rgba(46, 204, 113, 0.2) !important;
+}
+
+#exportTextButton:hover, #importTextButton:hover {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%) !important;
+  box-shadow: 0 6px 10px rgba(46, 204, 113, 0.3) !important;
 }
 
 #image-display-area #upload-section #loadingMessage,
@@ -955,6 +1003,14 @@ footer {
   font-weight: normal;
   text-align: center;
   white-space: nowrap;
+}
+
+/* 针对高质量翻译按钮的专门样式，确保文本居中 */
+#settings-sidebar button#startHqTranslation {
+  text-align: center;
+  justify-content: center;
+  display: flex;
+  align-items: center;
 }
 
 #settings-sidebar button.settings-button:hover {
@@ -3075,4 +3131,263 @@ body.dark-mode .session-details {
 
 .dark-mode .format-toggle-button.active:hover {
     background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+}
+
+/* 提示词模式选择器 */
+.prompt-mode-select {
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    background-color: #f8f8f8;
+    font-size: 14px;
+    min-width: 150px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.prompt-mode-select:hover {
+    background-color: #eaeaea;
+    border-color: #aaa;
+}
+
+/* 为暗色模式添加样式 */
+body.dark-mode .prompt-mode-select {
+    background-color: #333;
+    border-color: #555;
+    color: #eee;
+}
+
+body.dark-mode .prompt-mode-select:hover {
+    background-color: #444;
+    border-color: #777;
+}
+
+/* 保留原有的格式切换按钮样式，但可能将不再使用 */
+.format-toggle-button {
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    background-color: #f8f8f8;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#settings-sidebar button#clearAllImagesButton,
+#settings-sidebar button#deleteCurrentImageButton {
+    width: 100%;
+    padding: 14px 25px;
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.3s;
+    margin-top: 15px;
+    box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+#settings-sidebar button#clearAllImagesButton:hover,
+#settings-sidebar button#deleteCurrentImageButton:hover {
+    background: linear-gradient(135deg, #bd2130 0%, #c82333 100%);
+    box-shadow: 0 6px 10px rgba(220, 53, 69, 0.3);
+    transform: translateY(-2px);
+}
+
+#settings-sidebar button#clearAllImagesButton:before,
+#settings-sidebar button#deleteCurrentImageButton:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.7s;
+}
+
+#settings-sidebar button#clearAllImagesButton:hover:before,
+#settings-sidebar button#deleteCurrentImageButton:hover:before {
+    left: 100%;
+}
+
+/* 自动存档开关样式 */
+.switch-container {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.switch-container input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    background-color: #ccc;
+    transition: .4s;
+    margin-right: 10px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+.switch-label {
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+}
+
+body.dark-mode .switch-label {
+    color: #e2e8f0;
+}
+
+.auto-save-toggle {
+    margin-bottom: 15px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #2196F3;
+}
+
+body.dark-mode .auto-save-toggle {
+    background-color: #2d3748;
+    border-left-color: #3498db;
+}
+
+/* 添加特定的范围滑块样式，防止与开关滑块冲突 */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #ccc;
+  border-radius: 3px;
+  outline: none;
+  transition: .2s;
+  position: relative;
+}
+
+input[type="range"].slider:before {
+  content: none !important;
+  display: none !important;
+}
+
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+}
+
+input[type="range"].slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+}
+
+.switch-container .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+}
+
+/* 覆盖全局.slider:before，确保它不会影响范围滑块 */
+.slider:not(.switch-container .slider):before {
+    content: none !important;
+    display: none !important;
+}
+
+/* 为范围滑块添加特定样式 */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  background: #ddd;
+  border-radius: 4px;
+  outline: none;
+  opacity: 0.7;
+  transition: opacity .2s;
+  border: none;
+}
+
+.range-slider:hover {
+  opacity: 1;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+.range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+/* 确保范围滑块不受开关滑块伪元素的影响 */
+.range-slider:before {
+  content: none !important;
+  display: none !important;
 }
