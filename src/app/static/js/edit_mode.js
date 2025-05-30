@@ -103,9 +103,13 @@ export function initBubbleSettings() {
         console.log("加载当前图像已保存的气泡设置 (含填充色检查)");
         const loadedSettings = JSON.parse(JSON.stringify(currentImage.bubbleSettings));
         // 确保每个加载的设置都有 fillColor
-        loadedSettings.forEach(setting => {
+        loadedSettings.forEach((setting, index) => {
             if (!setting.hasOwnProperty('fillColor') || setting.fillColor === null || setting.fillColor === undefined) {
                 setting.fillColor = imageGlobalFillColor; // 如果缺失，用图片的全局填充色
+            }
+            // 确保每个气泡都有正确的文本内容（从bubbleTexts数组获取）
+            if ((!setting.text || setting.text === "") && currentImage.bubbleTexts && currentImage.bubbleTexts[index]) {
+                setting.text = currentImage.bubbleTexts[index];
             }
         });
         state.setBubbleSettings(loadedSettings);
@@ -121,10 +125,16 @@ export function initBubbleSettings() {
 
         if (!currentImage.bubbleTexts || currentImage.bubbleTexts.length !== currentImage.bubbleCoords.length) {
             currentImage.bubbleTexts = Array(currentImage.bubbleCoords.length).fill("");
+        } else if (currentImage.bubbleTexts.length < currentImage.bubbleCoords.length) {
+            // 如果bubbleTexts长度小于bubbleCoords，则扩展数组
+            while (currentImage.bubbleTexts.length < currentImage.bubbleCoords.length) {
+                currentImage.bubbleTexts.push("");
+            }
         }
 
         for (let i = 0; i < currentImage.bubbleCoords.length; i++) {
             newSettings.push({
+                // 优先使用bubbleTexts中的文本内容
                 text: currentImage.bubbleTexts[i] || "",
                 fontSize: globalFontSize,
                 autoFontSize: globalAutoFontSize,
@@ -280,7 +290,10 @@ export function reRenderFullImage(fromAutoToManual = false) {
             let appliedIndividualFills = false;
             
             // 检查是否使用了LAMA修复，如果是则不进行填充
-            const usesLamaInpainting = currentImage.hasOwnProperty('_lama_inpainted') && currentImage._lama_inpainted === true;
+            const usesLamaInpainting = (
+                (currentImage.hasOwnProperty('_lama_inpainted') && currentImage._lama_inpainted === true) || 
+                (currentImage.originalUseLama === true)
+            );
             
             if (usesLamaInpainting && currentImage.cleanImageData) {
                 console.log("reRenderFullImage: 检测到使用LAMA修复，跳过纯色填充，直接使用LAMA修复的背景。");
@@ -362,11 +375,33 @@ export function reRenderFullImage(fromAutoToManual = false) {
         }
 
         if (!currentTexts || currentTexts.length !== currentImage.bubbleCoords.length) {
-            console.error("重新渲染错误：文本与坐标不匹配！");
-            ui.showGeneralMessage("内部错误：文本与坐标数据不匹配", "error");
-            ui.clearGeneralMessageById(loadingMessageId);
-            reject(new Error("文本与坐标数据不匹配"));
-            return;
+            console.error("重新渲染错误：文本与坐标不匹配！", 
+                          `文本数量: ${currentTexts ? currentTexts.length : 0}, 坐标数量: ${currentImage.bubbleCoords ? currentImage.bubbleCoords.length : 0}`);
+            
+            // 修复：如果文本数量不匹配，则调整文本数组长度以匹配坐标数量
+            if (currentImage.bubbleCoords && currentImage.bubbleCoords.length > 0) {
+                if (!currentTexts) {
+                    currentTexts = [];
+                }
+                
+                // 扩展或截断文本数组以匹配坐标数组长度
+                if (currentTexts.length < currentImage.bubbleCoords.length) {
+                    // 如果文本数量不足，用空字符串填充
+                    while (currentTexts.length < currentImage.bubbleCoords.length) {
+                        currentTexts.push("");
+                    }
+                    console.log("已自动填充缺失的文本条目");
+                } else if (currentTexts.length > currentImage.bubbleCoords.length) {
+                    // 如果文本数量过多，截断多余部分
+                    currentTexts = currentTexts.slice(0, currentImage.bubbleCoords.length);
+                    console.log("已截断多余的文本条目");
+                }
+            } else {
+                ui.clearGeneralMessageById(loadingMessageId);
+                ui.showGeneralMessage("错误：没有有效的气泡坐标", "error");
+                reject(new Error("没有有效的气泡坐标"));
+                return;
+            }
         }
         
         let allBubbleStyles = [];

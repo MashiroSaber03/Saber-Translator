@@ -3,7 +3,7 @@
 // 引入 jQuery (或者使用 fetch API)
 // import $ from 'jquery'; // 如果使用 npm 安装了 jQuery
 // 或者确保 jQuery 已经全局加载
-import * as state from './state.js'; // 导入 state 以获取当前 RPD 设置
+import * as state from './state.js'; // 导入 state 以获取当前 rpm 设置
 import * as constants from './constants.js'; // 确保导入前端常量
 
 /**
@@ -68,11 +68,11 @@ function makeApiRequest(url, method, data = null, dataType = 'json', contentType
  * @returns {Promise<object>} - 包含翻译结果的 Promise
  */
 export function translateImageApi(params) {
-    // 从 state 中获取当前的 RPD 设置并添加到参数中
+    // 从 state 中获取当前的 rpm 设置并添加到参数中
     const apiParams = {
         ...params,
-        rpd_limit_translation: state.rpdLimitTranslation,
-        rpd_limit_ai_vision_ocr: state.rpdLimitAiVisionOcr
+        rpm_limit_translation: state.rpmLimitTranslation,
+        rpm_limit_ai_vision_ocr: state.rpmLimitAiVisionOcr
     };
 
     // VVVVVV 新增逻辑：为自定义AI视觉OCR添加Base URL VVVVVV
@@ -88,7 +88,7 @@ export function translateImageApi(params) {
     }
     // ^^^^^^ 结束新增逻辑 ^^^^^^
 
-    console.log("translateImageApi: 发送的参数（含RPD和可能的自定义视觉Base URL）:", apiParams);
+    console.log("translateImageApi: 发送的参数（含rpm和可能的自定义视觉Base URL）:", apiParams);
     return makeApiRequest('/api/translate_image', 'POST', apiParams);
 }
 
@@ -125,13 +125,13 @@ export function applySettingsToAllApi(params) {
  * @returns {Promise<object>} - 包含翻译结果的 Promise
  */
 export function translateSingleTextApi(params) {
-    // 从 state 中获取当前的 RPD 设置并添加到参数中
+    // 从 state 中获取当前的 rpm 设置并添加到参数中
     const apiParams = {
         ...params,
-        rpd_limit_translation: state.rpdLimitTranslation
-        // AI Vision OCR RPD 不适用于单文本翻译
+        rpm_limit_translation: state.rpmLimitTranslation
+        // AI Vision OCR rpm 不适用于单文本翻译
     };
-    console.log("translateSingleTextApi: 发送的参数（含RPD）:", apiParams);
+    console.log("translateSingleTextApi: 发送的参数（含rpm）:", apiParams);
     return makeApiRequest('/api/translate_single_text', 'POST', apiParams);
 }
 
@@ -529,6 +529,51 @@ export function testAiVisionOcrApi(provider, apiKey, modelName, prompt = null) {
     // ^^^^^^ 结束新增逻辑 ^^^^^^
 
     return makeApiRequest('/api/test_ai_vision_ocr', 'POST', payload);
+}
+
+/**
+ * 获取字体列表
+ * @param {Function} successCallback - 成功时的回调函数
+ * @param {Function} errorCallback - 失败时的回调函数
+ */
+export function getFontListApi(successCallback, errorCallback) {
+    $.ajax({
+        url: '/api/get_font_list',
+        type: 'GET',
+        success: function(response) {
+            if (successCallback) successCallback(response);
+        },
+        error: function(xhr, status, error) {
+            console.error('获取字体列表失败:', error);
+            if (errorCallback) errorCallback(error);
+        }
+    });
+}
+
+/**
+ * 上传字体文件
+ * @param {File} fontFile - 字体文件
+ * @param {Function} successCallback - 成功时的回调函数
+ * @param {Function} errorCallback - 失败时的回调函数
+ */
+export function uploadFontApi(fontFile, successCallback, errorCallback) {
+    const formData = new FormData();
+    formData.append('font', fontFile);
+    
+    $.ajax({
+        url: '/api/upload_font',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+            if (successCallback) successCallback(response);
+        },
+        error: function(xhr, status, error) {
+            console.error('上传字体失败:', error);
+            if (errorCallback) errorCallback(xhr.responseJSON?.error || error);
+        }
+    });
 }
 
 // --- TODO: 在后续步骤中添加重命名的 API 调用函数 ---

@@ -27,9 +27,25 @@ export const DEFAULT_TRANSLATE_JSON_PROMPT = `你是一个专业的翻译引擎�
 export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将我发送给你的图片中的所有文字提取出来。\n当文本中包含特殊字符（如大括号{}、引号""、反斜杠\等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。如果需要，你可以使用转义字符\\来表示这些特殊字符。\n请严格按照以下 JSON 格式返回结果，不要添加任何额外的解释或对话:\n{\n  "extracted_text": "[这里放入所有识别到的文字，可以包含换行符以大致保留原始分段，但不要包含任何其他非文本内容]"\n}`;
 // ----------------------------
 
-// --- 新增 RPD 默认值 ---
-export const DEFAULT_RPD_TRANSLATION = 0; // 0 表示无限制
-export const DEFAULT_RPD_AI_VISION_OCR = 0;
+// --- 新增：高质量翻译模式默认提示词 ---
+export const DEFAULT_HQ_TRANSLATE_PROMPT = `你是一个漫画翻译助手，我会提供原始漫画图片和导出的JSON翻译文件，帮我润色校对漫画的翻译
+翻译润色要求：
+仅修改JSON中的"translated"译文和""textDirection"排版方向这两个字段内容，保持其他所有结构和字段不变，"textDirection"排版方向只能从"vertical"和"horizontal"这两个参数中选择
+json中的"imagelndex"序号是每张图片的页码，在翻译前先根据json文件中每页图片的原文内容和所有漫画图片对我给你的所有图片进行排序，在进行上下文对比时要严格按照"imagelndex"序号进行对比，你在翻译时要按照"imagelndex"的顺序进行顺序翻译，从而使得每句翻译足够连贯，上下文不会突兀
+通过json中每页图片的"original"原文内容和所有的漫画图片明确每句话在那页图的哪个位置，并结合漫画图像和上下文语境，让翻译更加连贯自然，符合角色语气和场景
+json中的"bubblelndex"标号可能不正确，你需要根据图片自行判断每句话的正确顺序，从而输出符合上下文连贯的翻译，但在输出翻译时不要修改原本的"bubblelndex"标号
+保留原文的表达意图和情感，但使用更地道、流畅的表达方式
+注意专有名词和术语的一致性翻译
+如遇幽默、双关语或文化特定内容，请尽量找到目标语言中恰当的表达
+不要添加原文中不存在的信息或解释
+保持简洁明了，符合气泡空间限制
+译文字数尽量不要超过原文
+你需要直接返回修改后的完整JSON文件，无需解释每处修改原因。`;
+// -----------------------------------------
+
+// --- 新增 rpm 默认值 ---
+export const DEFAULT_rpm_TRANSLATION = 0; // 0 表示无限制
+export const DEFAULT_rpm_AI_VISION_OCR = 0;
 // ------------------------
 
 // --- 新增：自定义 AI 视觉 OCR 服务商 ID (前端使用) ---

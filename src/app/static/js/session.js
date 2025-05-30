@@ -51,8 +51,8 @@ function collectCurrentSessionData() {
         fillColor: $('#fillColor').val(),
         inpaintingStrength: parseFloat($('#inpaintingStrength').val()),
         blendEdges: $('#blendEdges').is(':checked'),
-        rpdLimitTranslation: state.rpdLimitTranslation,         // <--- 新增
-        rpdLimitAiVisionOcr: state.rpdLimitAiVisionOcr,       // <--- 新增
+        rpmLimitTranslation: state.rpmLimitTranslation,         // <--- 新增
+        rpmLimitAiVisionOcr: state.rpmLimitAiVisionOcr,       // <--- 新增
         // 可以添加其他需要保存的 UI 状态，如图片缩放比例等
         // imageZoom: $('#imageSize').val()
     };
@@ -299,18 +299,18 @@ export function handleLoadSession(sessionName) {
                     $('#inpaintingStrengthValue').text($('#inpaintingStrength').val());
                     $('#blendEdges').prop('checked', uiSettings.blendEdges === undefined ? true : uiSettings.blendEdges);
 
-                    // --- 新增：恢复RPD设置 ---
-                    if (uiSettings.rpdLimitTranslation !== undefined) {
-                        state.setRpdLimitTranslation(uiSettings.rpdLimitTranslation);
+                    // --- 新增：恢复rpm设置 ---
+                    if (uiSettings.rpmLimitTranslation !== undefined) {
+                        state.setrpmLimitTranslation(uiSettings.rpmLimitTranslation);
                     } else {
-                        state.setRpdLimitTranslation(constants.DEFAULT_RPD_TRANSLATION); // 如果会话中没有，则用默认值
+                        state.setrpmLimitTranslation(constants.DEFAULT_rpm_TRANSLATION); // 如果会话中没有，则用默认值
                     }
-                    if (uiSettings.rpdLimitAiVisionOcr !== undefined) {
-                        state.setRpdLimitAiVisionOcr(uiSettings.rpdLimitAiVisionOcr);
+                    if (uiSettings.rpmLimitAiVisionOcr !== undefined) {
+                        state.setrpmLimitAiVisionOcr(uiSettings.rpmLimitAiVisionOcr);
                     } else {
-                        state.setRpdLimitAiVisionOcr(constants.DEFAULT_RPD_AI_VISION_OCR);
+                        state.setrpmLimitAiVisionOcr(constants.DEFAULT_rpm_AI_VISION_OCR);
                     }
-                    ui.updateRpdInputFields(); // 更新UI显示
+                    ui.updaterpmInputFields(); // 更新UI显示
                     // ------------------------
 
                     // 再次触发 change 事件确保依赖 UI 更新
@@ -487,6 +487,12 @@ export function triggerAutoSave(delay = AUTO_SAVE_DELAY) {
     // 检查是否正在进行批量翻译，如果是则跳过自动保存
     if (state.isBatchTranslationInProgress) {
         console.log("批量翻译进行中，跳过自动存档");
+        return;
+    }
+    
+    // 检查自动存档是否启用，如果未启用则跳过
+    if (!state.getAutoSaveEnabled()) {
+        console.log("自动存档功能已禁用，跳过自动存档");
         return;
     }
 

@@ -26,6 +26,17 @@ export function showLoading(message = "处理中，请稍候...") {
 }
 
 /**
+ * 更新加载状态的消息文本
+ * @param {string} message - 新的消息文本
+ */
+export function updateLoadingMessage(message) {
+    // 移除所有info类型的通用消息
+    $(".message.info").fadeOut(200, function() { $(this).remove(); });
+    // 显示新的消息
+    showGeneralMessage(message, "info", false, 0);
+}
+
+/**
  * 隐藏加载状态
  */
 export function hideLoading() {
@@ -71,18 +82,17 @@ export function showResultSection(show) {
  */
 export function updateTranslatedImage(dataURL) {
     const translatedImageDisplay = $("#translatedImageDisplay");
-    const downloadButton = $("#downloadButton");
     const toggleImageButton = $('#toggleImageButton');
 
     if (dataURL) {
         translatedImageDisplay.attr('src', dataURL).show();
-        downloadButton.show();
         toggleImageButton.show();
     } else {
         translatedImageDisplay.removeAttr('src').hide();
-        downloadButton.hide();
         toggleImageButton.hide();
     }
+    
+    // 下载按钮的显示/隐藏现在由 updateButtonStates 函数控制
 }
 
 /**
@@ -168,6 +178,7 @@ export function updateNavigationButtons() {
 export function updateButtonStates() {
     const translateButton = $("#translateButton"); // 在函数内获取
     const removeTextOnlyButton = $("#removeTextOnlyButton");
+    const removeAllTextButton = $("#removeAllTextButton");
     const translateAllButton = $("#translateAllButton");
     const clearAllImagesButton = $("#clearAllImagesButton");
     const deleteCurrentImageButton = $("#deleteCurrentImageButton");
@@ -184,6 +195,7 @@ export function updateButtonStates() {
 
     translateButton.prop('disabled', !hasCurrentImage || isLoading);
     removeTextOnlyButton.prop('disabled', !hasCurrentImage || isLoading);
+    removeAllTextButton.prop('disabled', !hasImages || isLoading);
     translateAllButton.prop('disabled', !hasImages || isLoading);
     clearAllImagesButton.prop('disabled', !hasImages || isLoading);
     deleteCurrentImageButton.prop('disabled', !hasCurrentImage || isLoading);
@@ -200,12 +212,19 @@ export function updateButtonStates() {
     if (hasCurrentImage && state.images[state.currentImageIndex].translatedDataURL) {
         hasTranslated = true;
     }
-    downloadButton.toggle(hasTranslated && !isLoading);
+    
+    // 修改：只要有当前图片就显示下载按钮，不再需要已翻译
+    downloadButton.toggle(hasCurrentImage && !isLoading);
+    // 只有已翻译的图片才显示切换按钮
     toggleImageButton.toggle(hasTranslated && !isLoading);
 
-    const hasAnyTranslated = state.images.some(img => img.translatedDataURL);
-    downloadAllImagesButton.toggle(hasAnyTranslated && !isLoading);
-    $('#downloadFormat').toggle(hasAnyTranslated && !isLoading);
+    // 修改：只要有图片就显示下载所有图片按钮，不再需要已翻译
+    downloadAllImagesButton.toggle(hasImages && !isLoading);
+    $('#downloadFormat').toggle(hasImages && !isLoading);
+    
+    // 新增：导出文本和导入文本按钮状态
+    $('#exportTextButton').toggle(hasImages && !isLoading);
+    $('#importTextButton').toggle(hasImages && !isLoading);
 
     // 标注模式按钮只在有当前图片且非加载状态时显示
     toggleLabelingModeButton.toggle(hasCurrentImage && !isLoading);
@@ -322,12 +341,12 @@ export function updateProgressBar(percentage, text = '') {
     percentage = Math.max(0, Math.min(100, percentage));
     progressBar.css('width', percentage + '%');
     progressPercent.text(text || `${percentage.toFixed(0)}%`);
-    if (percentage > 0 && percentage < 100) {
-        translationProgressBar.show();
-    } else if (percentage >= 100) {
-        setTimeout(() => translationProgressBar.hide(), 1000);
+    
+    // 修改进度条显示逻辑：只要不是完成状态，就显示进度条
+    if (percentage < 100) {
+        translationProgressBar.show(); // 确保进度条在开始时就显示
     } else {
-        translationProgressBar.hide();
+        setTimeout(() => translationProgressBar.hide(), 1000); // 完成后延迟隐藏
     }
 }
 
@@ -1251,6 +1270,8 @@ export function toggleLabelingModeUI(isActive) {
         $('#clearManualBoxesButton').prop('disabled', !hasCoords);
         $('#useManualBoxesButton').prop('disabled', !hasCoords);
         $('#deleteSelectedBoxButton').prop('disabled', state.selectedManualBoxIndex === -1);
+        // 启用"检测所有图片"按钮，但仅当有多张图片时
+        $('#detectAllImagesButton').prop('disabled', state.images.length <= 1);
 
         // 设置图片容器光标为十字准星 (移到 labeling_mode.js 中处理可能更好，但这里也放一份确保生效)
         $('.image-container').css('cursor', 'crosshair');
@@ -1378,11 +1399,21 @@ export function renderSessionList(sessions) {
 }
 
 /**
+ * 更新自动存档开关的状态
+ */
+export function updateAutoSaveToggle() {
+    const isEnabled = state.getAutoSaveEnabled();
+    $('#autoSaveToggle').prop('checked', isEnabled);
+}
+
+/**
  * 显示会话管理模态框。
  */
 export function showSessionManagerModal() {
     const modal = $("#sessionManagerModal");
     modal.css("display", "block");
+    // 更新自动存档开关状态
+    updateAutoSaveToggle();
     // 可选：在显示时先显示加载提示，由 session.js 获取数据后再调用 renderSessionList
     // $("#sessionListContainer").html("<p>正在加载会话列表...</p>");
 }
@@ -1576,11 +1607,11 @@ function testYoudaoTranslateConnection() {
  */
 export function updateTranslatePromptUI() {
     $('#promptContent').val(state.currentPromptContent);
-    const button = $('#toggleTranslateJsonPromptButton');
+    // 更新选择器的选中值
     if (state.isTranslateJsonMode) {
-        button.text("使用普通提示词").addClass('active');
+        $('#translatePromptModeSelect').val('json');
     } else {
-        button.text("使用JSON提示词").removeClass('active');
+        $('#translatePromptModeSelect').val('normal');
     }
 }
 
@@ -1589,11 +1620,11 @@ export function updateTranslatePromptUI() {
  */
 export function updateAiVisionOcrPromptUI() {
     $('#aiVisionOcrPrompt').val(state.aiVisionOcrPrompt);
-    const button = $('#toggleAiVisionJsonPromptButton');
+    // 更新选择器的选中值
     if (state.isAiVisionOcrJsonMode) {
-        button.text("使用普通提示词").addClass('active');
+        $('#aiVisionPromptModeSelect').val('json');
     } else {
-        button.text("使用JSON提示词").removeClass('active');
+        $('#aiVisionPromptModeSelect').val('normal');
     }
 }
 
@@ -1612,12 +1643,12 @@ export function toggleCustomOpenAiUI(show) {
 }
 
 /**
- * 更新RPD输入框的显示值
+ * 更新rpm输入框的显示值
  */
-export function updateRpdInputFields() {
-    $('#rpdTranslation').val(state.rpdLimitTranslation);
-    $('#rpdAiVisionOcr').val(state.rpdLimitAiVisionOcr);
-    console.log("UI 更新: RPD输入框已更新为当前状态值。");
+export function updaterpmInputFields() {
+    $('#rpmTranslation').val(state.rpmLimitTranslation);
+    $('#rpmAiVisionOcr').val(state.rpmLimitAiVisionOcr);
+    console.log("UI 更新: rpm输入框已更新为当前状态值。");
 }
 
 /**
@@ -1634,4 +1665,121 @@ export function toggleCustomAiVisionBaseUrlUI(show) {
         // $('#customAiVisionBaseUrl').val('');
     }
     console.log(`UI 更新: 自定义AI视觉Base URL输入框已 ${show ? '显示' : '隐藏'}`);
+}
+
+/**
+ * 加载并渲染字体列表
+ * @param {String} selectedFont - 当前选中的字体路径
+ * @param {Boolean} updateBubbleFontFamily - 是否同时更新编辑模式字体选择器
+ */
+export function loadFontList(selectedFont, updateBubbleFontFamily = true) {
+    import('./api.js').then(api => {
+        api.getFontListApi(
+            response => {
+                // 更新主界面字体选择器
+                updateFontSelector($('#fontFamily'), response, selectedFont);
+                
+                // 同时更新编辑模式的字体选择器
+                if (updateBubbleFontFamily) {
+                    updateFontSelector($('#bubbleFontFamily'), response, selectedFont);
+                }
+                
+                console.log("字体列表加载完成，当前选中字体:", $('#fontFamily').val());
+            },
+            error => {
+                console.error('加载字体列表失败:', error);
+                showGeneralMessage('加载字体列表失败，将使用默认字体', 'error', 'font-list-error');
+            }
+        );
+    });
+}
+
+/**
+ * 更新字体选择器的选项
+ * @param {jQuery} selector - 字体选择器jQuery对象
+ * @param {Object} response - 字体列表API响应
+ * @param {String} selectedFont - 当前选中的字体路径
+ */
+function updateFontSelector(selector, response, selectedFont) {
+    // 清空除了"自定义字体"选项外的所有选项
+    selector.find('option:not([data-custom])').remove();
+    
+    // 添加字体选项
+    response.fonts.forEach(font => {
+        const fontClass = font.display_name.replace(/\s+/g, '').toLowerCase();
+        const option = $('<option>')
+            .val(font.path)
+            .text(font.display_name)
+            .attr('style', `font-family: '${fontClass}', ${getGenericFontFamily(font.display_name)};`);
+        
+        // 设置选中状态
+        if (selectedFont && selectedFont === font.path) {
+            option.prop('selected', true);
+        }
+        
+        // 微软雅黑作为备选默认字体（如果没有指定字体或找不到指定的字体）
+        if ((!selectedFont || selector.val() === 'custom-font') && font.path === 'fonts/msyh.ttc') {
+            option.prop('selected', true);
+        }
+        
+        // 将选项添加到选择器
+        selector.append(option);
+    });
+    
+    // 如果仍然没有选中任何字体（选择器值仍为custom-font），则选择第一个实际字体
+    if (selector.val() === 'custom-font') {
+        selector.find('option:not([data-custom]):first').prop('selected', true);
+    }
+}
+
+/**
+ * 根据字体名称推断通用字体族
+ * @param {String} fontName - 字体名称
+ * @returns {String} - 通用字体族
+ */
+function getGenericFontFamily(fontName) {
+    const lowerFontName = fontName.toLowerCase();
+    
+    // 检查是否包含关键字来决定字体族
+    if (lowerFontName.includes('黑体') || lowerFontName.includes('雅黑')) {
+        return 'sans-serif';
+    } else if (lowerFontName.includes('宋体') || lowerFontName.includes('楷体') || 
+              lowerFontName.includes('仿宋') || lowerFontName.includes('隶书')) {
+        return 'serif';
+    } else if (lowerFontName.includes('行楷') || lowerFontName.includes('琥珀') || 
+              lowerFontName.includes('新魏')) {
+        return 'cursive';
+    } else {
+        // 默认
+        return 'sans-serif';
+    }
+}
+
+/**
+ * 处理自定义字体上传
+ * @param {File} fontFile - 上传的字体文件
+ */
+export function handleFontUpload(fontFile) {
+    import('./api.js').then(api => {
+        showLoading('正在上传字体...');
+        
+        api.uploadFontApi(
+            fontFile,
+            response => {
+                hideLoading();
+                if (response.success) {
+                    showGeneralMessage('字体上传成功！', 'success', 'font-upload-success');
+                    
+                    // 刷新字体列表并选择新上传的字体
+                    loadFontList(response.path);
+                } else {
+                    showGeneralMessage('字体上传失败: ' + (response.error || '未知错误'), 'error', 'font-upload-error');
+                }
+            },
+            error => {
+                hideLoading();
+                showGeneralMessage('字体上传失败: ' + error, 'error', 'font-upload-error');
+            }
+        );
+    });
 }

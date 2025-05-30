@@ -6,6 +6,7 @@ import * as labelingMode from './labeling_mode.js'; // <--- 新增导入
 import * as main from './main.js';
 import * as session from './session.js'; // <--- 新增导入
 import * as constants from './constants.js'; // 确保导入前端常量
+import * as hqTranslation from './high_quality_translation.js'; // 导入高质量翻译模块
 
 /**
  * 绑定所有事件监听器
@@ -36,27 +37,32 @@ export function bindEventListeners() {
 
     // --- 主要操作按钮 ---
     $("#translateButton").on('click', handleTranslateCurrent);
-    $("#removeTextOnlyButton").on('click', handleRemoveTextOnly); // 仅消除文字
     $("#translateAllButton").on('click', handleTranslateAll);
-    $("#clearAllImagesButton").on('click', handleClearAll);
+    $("#removeTextOnlyButton").on('click', handleRemoveTextOnly); // 仅消除文字
+    $("#removeAllTextButton").on('click', handleRemoveAllText); // 消除所有图片文字
     $("#deleteCurrentImageButton").on('click', handleDeleteCurrent);
+    $("#clearAllImagesButton").on('click', handleClearAll);
     $("#applyFontSettingsToAllButton").on('click', handleApplySettingsToAll); // 应用设置到全部
 
     // --- 导航与显示 ---
     $("#prevImageButton").on('click', handlePrevImage);
     $("#nextImageButton").on('click', handleNextImage);
     $("#toggleImageButton").on('click', handleToggleImageDisplay);
-    $("#imageSizeSlider").on('input', handleImageSizeChange);
+    $("#imageSize").on('input', handleImageSizeChange);
     $("#thumbnail-sidebar #thumbnailList").on('click', '.thumbnail-item', handleThumbnailClick); // 事件委托
 
     // --- 下载 ---
     $("#downloadButton").on('click', handleDownloadCurrent);
     $("#downloadAllImagesButton").on('click', handleDownloadAll);
+    
+    // --- 导出和导入文本 ---
+    $("#exportTextButton").on('click', handleExportText);
+    $("#importTextButton").on('click', handleImportTextClick);
+    $("#importTextFileInput").on('change', handleImportTextFile);
 
     // --- 设置项变更 ---
     $("#fontSize").on('change', handleGlobalSettingChange);
     $("#autoFontSize").on('change', handleGlobalSettingChange); // 自动字号也触发
-    $("#fontFamily").on('change', handleGlobalSettingChange);
     $("#layoutDirection").on('change', handleGlobalSettingChange);
     $("#textColor").on('input', handleGlobalSettingChange); // 颜色实时变化
     $("#useInpainting").on('change', handleInpaintingMethodChange);
@@ -115,10 +121,10 @@ export function bindEventListeners() {
 
     // AI视觉OCR API Key, 模型名称, 提示词的 change 事件 (保持不变，它们调用 handleGlobalSettingChange)
     $("#aiVisionApiKey, #aiVisionModelName, #aiVisionOcrPrompt").on('change', handleGlobalSettingChange);
-    $("#toggleAiVisionJsonPromptButton").on('click', handleToggleAiVisionJsonPrompt); // JSON切换
-    $("#rpdAiVisionOcr").on('change input', function() { // RPD 设置
+    // 移除旧的按钮点击事件绑定，改为在上面使用选择器change事件
+    $("#rpmAiVisionOcr").on('change input', function() { // rpm 设置
         const value = $(this).val();
-        state.setRpdLimitAiVisionOcr(value);
+        state.setrpmLimitAiVisionOcr(value);
     });
 
 
@@ -182,7 +188,7 @@ export function bindEventListeners() {
     // 下拉列表项和删除按钮的点击事件在 populate 函数中绑定
     
     // --- 新增 JSON 提示词切换按钮事件 ---
-    $('#toggleTranslateJsonPromptButton').on('click', handleToggleTranslateJsonPrompt);
+    // 移除旧的按钮点击事件绑定，改为使用选择器change事件
     // ------------------------------------
     
     // 记住提示词复选框变更事件
@@ -283,6 +289,7 @@ export function bindEventListeners() {
     // --- 新增：标注模式 ---
     $("#toggleLabelingModeButton").on('click', handleToggleLabelingMode);
     $("#autoDetectBoxesButton").on('click', labelingMode.handleAutoDetectClick);
+    $("#detectAllImagesButton").on('click', labelingMode.handleDetectAllImagesClick);
     $("#clearManualBoxesButton").on('click', labelingMode.handleClearManualBoxesClick);
     $("#deleteSelectedBoxButton").on('click', handleDeleteSelectedBoxClick);
     $("#useManualBoxesButton").on('click', labelingMode.handleUseManualBoxesClick);
@@ -354,22 +361,91 @@ export function bindEventListeners() {
     });
     // ------------------------
 
-    // --- 新增：RPD 设置变更事件 ---
-    $("#rpdTranslation").on('change input', function() { // 'input' 事件可实现更实时的更新（可选）
+    // --- 新增：rpm 设置变更事件 ---
+    $("#rpmTranslation").on('change input', function() { // 'input' 事件可实现更实时的更新（可选）
         const value = $(this).val();
-        state.setRpdLimitTranslation(value);
+        state.setrpmLimitTranslation(value);
         // 可选：如果需要，可以在这里触发一个保存用户偏好的操作，例如到 localStorage
-        // localStorage.setItem('rpdLimitTranslation', state.rpdLimitTranslation);
+        // localStorage.setItem('rpmLimitTranslation', state.rpmLimitTranslation);
     });
 
-    $("#rpdAiVisionOcr").on('change input', function() {
+    $("#rpmAiVisionOcr").on('change input', function() {
         const value = $(this).val();
-        state.setRpdLimitAiVisionOcr(value);
-        // localStorage.setItem('rpdLimitAiVisionOcr', state.rpdLimitAiVisionOcr);
+        state.setrpmLimitAiVisionOcr(value);
+        // localStorage.setItem('rpmLimitAiVisionOcr', state.rpmLimitAiVisionOcr);
     });
     // ---------------------------
 
+    // 绑定事件监听器部分中添加选择器change事件
+    $("#translatePromptModeSelect").on('change', handleTranslatePromptModeChange);
+    $("#aiVisionPromptModeSelect").on('change', handleAiVisionPromptModeChange);
+
+    // 字体家族下拉框变更事件 - 主界面和编辑模式字体选择
+    $(document).on('change', "#fontFamily, #bubbleFontFamily", function() {
+        const selectedValue = $(this).val();
+        const isEditMode = this.id === 'bubbleFontFamily';
+        
+        if (selectedValue === 'custom-font') {
+            // 触发文件选择对话框
+            $('#fontUpload').click();
+            
+            // 重新选择之前的值，因为"自定义字体..."不是真正的字体选项
+            const previousValue = $(this).data('previous-value') || 'fonts/msyh.ttc'; // 默认微软雅黑
+            $(this).val(previousValue);
+        } else {
+            // 保存当前选择的值，以便"自定义字体"选项后可以恢复
+            $(this).data('previous-value', selectedValue);
+            
+            // 如果是编辑模式，调用编辑模式的处理函数，否则调用全局设置处理函数
+            if (isEditMode) {
+                handleBubbleSettingChange({ target: this });
+            } else {
+                handleGlobalSettingChange({ target: this });
+            }
+        }
+    });
+
+    // 字体文件上传事件
+    $("#fontUpload").on('change', function(event) {
+        if (this.files && this.files.length > 0) {
+            const fontFile = this.files[0];
+            ui.handleFontUpload(fontFile);
+            // 重置文件输入，以便可以再次选择同一文件
+            this.value = '';
+        }
+    });
+
     console.log("事件监听器绑定完成。");
+
+    // 添加自动存档开关的事件处理
+    $(document).on('change', '#autoSaveToggle', function() {
+        const isEnabled = $(this).is(':checked');
+        state.setAutoSaveEnabled(isEnabled);
+        console.log(`自动存档功能已${isEnabled ? '启用' : '禁用'}`);
+        ui.showGeneralMessage(`自动存档功能已${isEnabled ? '启用' : '禁用'}`, isEnabled ? 'success' : 'info', false, 2000);
+    });
+
+    // 初始化高质量翻译模块UI
+    hqTranslation.initHqTranslationUI();
+
+    // 绑定高质量翻译模式的事件
+    $("#hqTranslateProvider").on('change', handleHqTranslateProviderChange);
+    $("#hqApiKey").on('change', handleHqApiKeyChange);
+    $("#hqModelName").on('change', handleHqModelNameChange);
+    $("#hqCustomBaseUrl").on('input', handleHqCustomBaseUrlChange);
+    $("#hqBatchSize").on('change', handleHqBatchSizeChange);
+    $("#hqSessionReset").on('change', handleHqSessionResetChange);
+    $("#hqRpmLimit").on('change', handleHqRpmLimitChange);
+    $("#hqLowReasoning").on('change', handleHqLowReasoningChange);
+    $("#hqForceJsonOutput").on('change', handleHqForceJsonOutputChange); // 新增：绑定强制JSON输出选项的事件
+    $("#hqPrompt").on('input', handleHqPromptChange);
+    $("#startHqTranslation").on('click', function() {
+        hqTranslation.startHqTranslation();
+    });
+
+    // 源语言和目标语言
+    $('#sourceLanguage').on('change', handleSourceLanguageChange);
+    $('#targetLanguage').on('change', handleTargetLanguageChange);
 }
 
 // --- 事件处理函数 ---
@@ -430,6 +506,14 @@ function handleRemoveTextOnly() {
                 // 错误处理
             });
     });
+}
+
+function handleRemoveAllText() {
+    if (state.images.length === 0) {
+        ui.showGeneralMessage("请先添加图片", "warning");
+        return;
+    }
+    import('./main.js').then(main => main.removeAllBubblesText());
 }
 
 function handleTranslateAll() {
@@ -528,13 +612,11 @@ function handleThumbnailClick(e) {
 }
 
 function handleDownloadCurrent() {
-    // downloadCurrentImage 函数需要在 main.js 中定义并导出
-    import('./main.js').then(main => main.downloadCurrentImage());
+    main.downloadCurrentImage();
 }
 
 function handleDownloadAll() {
-    // downloadAllImages 函数需要在 main.js 中定义并导出
-    import('./main.js').then(main => main.downloadAllImages());
+    main.downloadAllImages();
 }
 
 function handleGlobalSettingChange(event) {
@@ -886,16 +968,18 @@ function handleSaveTextboxPrompt() {
 }
 
 function handleCleanDebugFiles() {
-    if (confirm('确定要清理所有调试文件吗？这将释放磁盘空间，但不会影响您的翻译图片。')) {
-        ui.showLoading("正在清理调试文件...");
+    if (confirm('确定要清理所有调试文件和下载临时文件吗？这将释放磁盘空间，但不会影响您的翻译图片。')) {
+        ui.showLoading("正在清理文件...");
         api.cleanDebugFilesApi()
             .then(response => {
                 ui.hideLoading();
-                ui.showGeneralMessage(response.message, response.success ? "success" : "error");
+                // 消息可能包含多个结果，用换行显示更清晰
+                const formattedMessage = response.message.replace(/\s*\|\s*/g, '<br>');
+                ui.showGeneralMessage(formattedMessage, response.success ? "success" : "error");
             })
             .catch(error => {
                 ui.hideLoading();
-                ui.showGeneralMessage(`清理调试文件失败: ${error.message}`, "error");
+                ui.showGeneralMessage(`清理文件失败: ${error.message}`, "error");
             });
     }
 }
@@ -1633,6 +1717,151 @@ function handleToggleTranslateJsonPrompt() {
 function handleToggleAiVisionJsonPrompt() {
     state.setAiVisionOcrPromptMode(!state.isAiVisionOcrJsonMode); // 切换模式并加载对应默认提示词
     ui.updateAiVisionOcrPromptUI(); // 更新UI显示
+}
+
+/**
+ * 处理漫画翻译提示词模式选择器变更
+ */
+function handleTranslatePromptModeChange() {
+    const mode = $(this).val();
+    const useJson = mode === 'json';
+    state.setTranslatePromptMode(useJson); // 设置模式并加载对应默认提示词
+    ui.updateTranslatePromptUI(); // 更新UI显示
+}
+
+/**
+ * 处理AI视觉OCR提示词模式选择器变更
+ */
+function handleAiVisionPromptModeChange() {
+    const mode = $(this).val();
+    const useJson = mode === 'json';
+    state.setAiVisionOcrPromptMode(useJson); // 设置模式并加载对应默认提示词
+    ui.updateAiVisionOcrPromptUI(); // 更新UI显示
+}
+
+/**
+ * 处理导出文本按钮点击
+ */
+function handleExportText() {
+    main.exportText();
+}
+
+/**
+ * 处理导入文本按钮点击 - 触发文件选择
+ */
+function handleImportTextClick() {
+    $("#importTextFileInput").click();
+}
+
+/**
+ * 处理导入文本文件选择变更
+ */
+function handleImportTextFile(e) {
+    if (this.files && this.files.length > 0) {
+        main.importText(this.files[0]);
+        // 重置文件输入框，以便同一文件可以再次选择
+        $(this).val('');
+    }
+}
+
+/**
+ * 处理高质量翻译服务商变更
+ */
+function handleHqTranslateProviderChange() {
+    const provider = $(this).val();
+    state.setHqTranslateProvider(provider);
+    
+    // 根据服务商切换UI显示
+    if (provider === 'custom_openai') {
+        $('#hqCustomBaseUrlDiv').show();
+    } else {
+        $('#hqCustomBaseUrlDiv').hide();
+    }
+}
+
+/**
+ * 处理高质量翻译API Key变更
+ */
+function handleHqApiKeyChange() {
+    const apiKey = $(this).val();
+    state.setHqApiKey(apiKey);
+}
+
+/**
+ * 处理高质量翻译模型名称变更
+ */
+function handleHqModelNameChange() {
+    const modelName = $(this).val();
+    state.setHqModelName(modelName);
+}
+
+/**
+ * 处理高质量翻译自定义Base URL变更
+ */
+function handleHqCustomBaseUrlChange() {
+    const url = $(this).val();
+    state.setHqCustomBaseUrl(url);
+}
+
+/**
+ * 处理高质量翻译每批次图片数变更
+ */
+function handleHqBatchSizeChange() {
+    const size = $(this).val();
+    state.setHqBatchSize(size);
+}
+
+/**
+ * 处理高质量翻译会话重置频率变更
+ */
+function handleHqSessionResetChange() {
+    const reset = $(this).val();
+    state.setHqSessionReset(reset);
+}
+
+/**
+ * 处理高质量翻译RPM限制变更
+ */
+function handleHqRpmLimitChange() {
+    const limit = $(this).val();
+    state.setHqRpmLimit(limit);
+}
+
+/**
+ * 处理高质量翻译低推理模式变更
+ */
+function handleHqLowReasoningChange() {
+    const low = $('#hqLowReasoning').prop('checked');
+    state.setHqLowReasoning(low);
+}
+
+/**
+ * 处理高质量翻译强制JSON输出选项变更
+ */
+function handleHqForceJsonOutputChange() {
+    const force = $('#hqForceJsonOutput').prop('checked');
+    state.setHqForceJsonOutput(force);
+}
+
+function handleHqPromptChange() {
+    const prompt = $('#hqPrompt').val();
+    state.setHqPrompt(prompt);
+}
+
+/**
+ * 处理源语言变更
+ */
+function handleSourceLanguageChange() {
+    const lang = $(this).val();
+    state.setSourceLanguage(lang);
+}
+
+/**
+ * 处理目标语言变更
+ */
+function handleTargetLanguageChange() {
+    const lang = $(this).val();
+    state.setTargetLanguage(lang);
 }
 
 

@@ -76,33 +76,66 @@ export function enterLabelingMode() {
 }
 
 /**
+ * 加载当前图片的气泡坐标用于标注
+ * 在切换图片但保持标注模式时被调用
+ */
+export function loadBubbleCoordsForLabeling() {
+    if (!state.isLabelingModeActive) return;
+    
+    const currentImage = state.getCurrentImage();
+    if (!currentImage) return;
+
+    console.log("切换图片：加载新图片的标注框...");
+    
+    // 清除选中状态
+    state.setSelectedManualBoxIndex(-1);
+    
+    // --- 加载坐标逻辑（与enterLabelingMode中相同）---
+    let initialCoords = [];
+    // 优先加载已保存的手动坐标
+    if (currentImage.savedManualCoords && currentImage.savedManualCoords.length > 0) {
+        initialCoords = JSON.parse(JSON.stringify(currentImage.savedManualCoords));
+        console.log(`切换图片：加载了图片 ${state.currentImageIndex} 已保存的 ${initialCoords.length} 个手动标注框。`);
+        state.setManualCoords(initialCoords, true); // 标记为从加载，不触发 unsavedChanges
+        state.setHasUnsavedChanges(false); // 重置当前模式的未保存状态
+        currentImage.hasUnsavedChanges = false; // 重置图片对象的状态
+    }
+    // 如果没有保存的手动框，再尝试加载自动检测的框作为起点
+    else if (currentImage.bubbleCoords && currentImage.bubbleCoords.length > 0) {
+        initialCoords = JSON.parse(JSON.stringify(currentImage.bubbleCoords));
+        console.log(`切换图片：加载了图片 ${state.currentImageIndex} 自动检测的 ${initialCoords.length} 个框作为初始标注。`);
+        state.setManualCoords(initialCoords, false); // *非*加载，标记为需要保存
+        state.setHasUnsavedChanges(true); // 标记为需要保存
+        currentImage.hasUnsavedChanges = true;
+    } else {
+        // 如果两者都没有，则为空
+        state.setManualCoords([], true); // 清空，标记为非更改
+        state.setHasUnsavedChanges(false);
+        currentImage.hasUnsavedChanges = false;
+    }
+    // --------------------
+}
+
+/**
  * 退出标注模式
- * @param {boolean} [promptSave=true] - 是否弹窗提示保存
+ * @param {boolean} [promptSave=true] - 参数保留但不再使用，总是自动保存
  */
 export function exitLabelingMode(promptSave = true) {
     if (!state.isLabelingModeActive) return;
 
     console.log("尝试退出标注模式...");
 
-    // --- 检查是否有未保存的更改 ---
+    // --- 自动保存未保存的更改 ---
     let shouldExit = true; // 默认允许退出
-    if (promptSave && state.hasUnsavedChanges) {
-        if (confirm("您有未保存的标注更改,是否要保存?\n(选择\"确定\"保存,选择\"取消\"放弃更改并退出)")) {
-            if (!state.saveManualCoordsToImage()) { // 调用保存函数
-                // 如果保存失败（理论上不应发生，除非状态混乱）
-                ui.showGeneralMessage("保存标注失败！", "error");
-                shouldExit = confirm("保存失败。是否仍要退出并放弃更改？"); // 再次确认是否放弃
-            } else {
-                ui.showGeneralMessage("标注已保存。", "success", false, 2000);
-                ui.renderThumbnails(); // 保存成功后更新缩略图
-            }
+    if (state.hasUnsavedChanges) {
+        // 自动保存，不再提示
+        if (!state.saveManualCoordsToImage()) { // 调用保存函数
+            // 如果保存失败（理论上不应发生，除非状态混乱）
+            ui.showGeneralMessage("保存标注失败！", "error");
+            // 即使保存失败也继续退出
         } else {
-            console.log("用户选择不保存标注更改，丢弃更改。");
-            // 丢弃更改，需要重置图片对象的 hasUnsavedChanges（如果之前设置了）
-            const currentImage = state.getCurrentImage();
-            if (currentImage) {
-                currentImage.hasUnsavedChanges = false;
-            }
+            ui.showGeneralMessage("标注已保存。", "success", false, 2000);
+            ui.renderThumbnails(); // 保存成功后更新缩略图
         }
     }
     // ----------------------------
@@ -128,7 +161,7 @@ export function exitLabelingMode(promptSave = true) {
         
         session.triggerAutoSave(); // <--- 退出标注模式后触发自动存档
     } else {
-         console.log("用户取消退出标注模式。");
+         console.log("退出标注模式失败。");
     }
 }
 
@@ -171,6 +204,99 @@ export function handleAutoDetectClick() {
             ui.showGeneralMessage(`自动检测失败: ${error.message}`, "error");
             ui.toggleLabelingModeUI(true); // 更新按钮状态
         });
+}
+
+/**
+ * 处理"检测所有图片"按钮点击
+ * 会对所有上传的图片进行文本框检测，并保存检测结果
+ */
+export function handleDetectAllImagesClick() {
+    if (!state.isLabelingModeActive) return;
+
+    if (state.images.length <= 1) {
+        ui.showGeneralMessage("至少需要两张图片才能执行批量检测。", "warning");
+        return;
+    }
+
+    // 确认对话框，因为这会影响所有图片
+    if (!confirm("此操作将对所有图片进行文本框检测，可能会覆盖已有的手动标注。确定继续吗？")) {
+        return;
+    }
+
+    // 记录当前索引，以便处理完后恢复
+    const originalIndex = state.currentImageIndex;
+    
+    // 显示处理开始消息
+    ui.showLoading("正在对所有图片进行文本框检测...");
+    ui.updateProgressBar(0, "0/" + state.images.length);
+    $("#translationProgressBar").show();
+    
+    // 定义一个递归函数来处理每张图片
+    const processNextImage = (index = 0, totalDetected = 0) => {
+        if (index >= state.images.length) {
+            // 所有图片处理完成
+            ui.hideLoading();
+            $("#translationProgressBar").hide();
+            
+            // 返回到原始图片并刷新显示
+            if (originalIndex !== state.currentImageIndex) {
+                state.setCurrentImageIndex(originalIndex);
+                loadBubbleCoordsForLabeling(); // 重新加载当前图片的坐标
+                ui.drawBoundingBoxes(state.manualBubbleCoords);
+            }
+            
+            ui.showGeneralMessage(`批量检测完成！共处理 ${state.images.length} 张图片，检测到 ${totalDetected} 个文本框。`, "success");
+            ui.renderThumbnails(); // 更新缩略图显示 (可能会添加标注图标)
+            session.triggerAutoSave(); // 触发自动保存
+            return;
+        }
+        
+        // 更新进度条
+        const progress = Math.floor((index / state.images.length) * 100);
+        ui.updateProgressBar(progress, `${index}/${state.images.length}`);
+        
+        // 获取当前处理的图片
+        const image = state.images[index];
+        if (!image || !image.originalDataURL) {
+            // 跳过无效图片
+            processNextImage(index + 1, totalDetected);
+            return;
+        }
+        
+        // 获取图片数据
+        const imageData = image.originalDataURL.split(',')[1];
+        
+        // 调用API检测文本框
+        api.detectBoxesApi(imageData)
+            .then(response => {
+                if (response.success && response.bubble_coords) {
+                    // 保存检测到的坐标到图片对象
+                    image.savedManualCoords = response.bubble_coords;
+                    image.hasUnsavedChanges = false; // 标记为已保存
+                    
+                    // 如果是当前图片，同时更新显示
+                    if (index === state.currentImageIndex) {
+                        state.setManualCoords(response.bubble_coords, true);
+                        ui.drawBoundingBoxes(state.manualBubbleCoords);
+                    }
+                    
+                    // 继续处理下一张图片
+                    processNextImage(index + 1, totalDetected + response.bubble_coords.length);
+                } else {
+                    console.error(`图片 ${index} 检测失败:`, response.error || "未返回坐标");
+                    // 跳过错误，继续处理下一张
+                    processNextImage(index + 1, totalDetected);
+                }
+            })
+            .catch(error => {
+                console.error(`图片 ${index} 检测出错:`, error);
+                // 跳过错误，继续处理下一张
+                processNextImage(index + 1, totalDetected);
+            });
+    };
+    
+    // 开始处理第一张图片
+    processNextImage(0);
 }
 
 /**

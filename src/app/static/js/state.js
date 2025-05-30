@@ -21,6 +21,9 @@ export let hasUnsavedChanges = false;
 // --- 批量处理状态 ---
 export let isBatchTranslationInProgress = false;
 
+// --- 自动存档状态 ---
+export let isAutoSaveEnabled = false; // 默认关闭自动存档
+
 // --- 提示词状态 ---
 export let currentPromptContent = "";
 export let defaultPromptContent = "";
@@ -53,10 +56,27 @@ export let isAiVisionOcrJsonMode = false;
 export let customAiVisionBaseUrl = ''; // 用于存储自定义AI视觉服务的Base URL
 // ^^^^^^ 结束新增状态变量 ^^^^^^
 
-// --- 新增 RPD 状态 ---
-export let rpdLimitTranslation = constants.DEFAULT_RPD_TRANSLATION; // 从前端常量获取默认值
-export let rpdLimitAiVisionOcr = constants.DEFAULT_RPD_AI_VISION_OCR;
+// --- 新增 rpm 状态 ---
+export let rpmLimitTranslation = constants.DEFAULT_rpm_TRANSLATION; // 从前端常量获取默认值
+export let rpmLimitAiVisionOcr = constants.DEFAULT_rpm_AI_VISION_OCR;
 // --------------------
+
+// --- 高质量翻译模式状态 ---
+export let hqTranslateProvider = 'siliconflow';
+export let hqApiKey = '';
+export let hqModelName = '';
+export let hqCustomBaseUrl = '';
+export let hqBatchSize = 5;
+export let hqSessionReset = 10;
+export let hqRpmLimit = 6;
+export let hqLowReasoning = true;
+export let hqPrompt = constants.DEFAULT_HQ_TRANSLATE_PROMPT;
+export let hqForceJsonOutput = true;
+// --------------------
+
+// 源语言和目标语言
+export let sourceLanguage = 'auto'; // 默认为自动检测
+export let targetLanguage = 'zh-CN'; // 默认为简体中文
 
 // --- 更新状态的函数 ---
 
@@ -449,30 +469,80 @@ export function setAiVisionOcrPrompt(prompt) {
 
 /**
  * 设置漫画翻译提示词模式和内容
- * @param {boolean} useJson - 是否使用JSON模式
+ * @param {boolean|string} mode - 如果是布尔值，则使用旧逻辑(true=json,false=normal)；如果是字符串，则是新的模式名称
  * @param {string} [content=null] - 如果提供，则设置当前内容；否则根据模式使用默认值
  */
-export function setTranslatePromptMode(useJson, content = null) {
-    isTranslateJsonMode = useJson;
-    if (content !== null) {
-        currentPromptContent = content;
+export function setTranslatePromptMode(mode, content = null) {
+    // 兼容旧的布尔参数
+    if (typeof mode === 'boolean') {
+        isTranslateJsonMode = mode;
+        if (content !== null) {
+            currentPromptContent = content;
+        } else {
+            currentPromptContent = mode ? defaultTranslateJsonPrompt : defaultPromptContent;
+        }
     } else {
-        currentPromptContent = useJson ? defaultTranslateJsonPrompt : defaultPromptContent;
+        // 新逻辑，mode是字符串，表示模式名称
+        switch (mode) {
+            case 'json':
+                isTranslateJsonMode = true;
+                if (content !== null) {
+                    currentPromptContent = content;
+                } else {
+                    currentPromptContent = defaultTranslateJsonPrompt;
+                }
+                break;
+            case 'normal':
+            default:
+                isTranslateJsonMode = false;
+                if (content !== null) {
+                    currentPromptContent = content;
+                } else {
+                    currentPromptContent = defaultPromptContent;
+                }
+                break;
+            // 未来可以在这里添加更多的case来支持更多模式
+        }
     }
     console.log(`状态更新: 漫画翻译JSON模式 -> ${isTranslateJsonMode}, 当前提示词已更新`);
 }
 
 /**
  * 设置AI视觉OCR提示词模式和内容
- * @param {boolean} useJson - 是否使用JSON模式
+ * @param {boolean|string} mode - 如果是布尔值，则使用旧逻辑(true=json,false=normal)；如果是字符串，则是新的模式名称
  * @param {string} [content=null] - 如果提供，则设置当前内容；否则根据模式使用默认值
  */
-export function setAiVisionOcrPromptMode(useJson, content = null) {
-    isAiVisionOcrJsonMode = useJson;
-    if (content !== null) {
-        aiVisionOcrPrompt = content;
+export function setAiVisionOcrPromptMode(mode, content = null) {
+    // 兼容旧的布尔参数
+    if (typeof mode === 'boolean') {
+        isAiVisionOcrJsonMode = mode;
+        if (content !== null) {
+            aiVisionOcrPrompt = content;
+        } else {
+            aiVisionOcrPrompt = mode ? defaultAiVisionOcrJsonPrompt : constants.DEFAULT_AI_VISION_OCR_PROMPT;
+        }
     } else {
-        aiVisionOcrPrompt = useJson ? defaultAiVisionOcrJsonPrompt : constants.DEFAULT_AI_VISION_OCR_PROMPT;
+        // 新逻辑，mode是字符串，表示模式名称
+        switch (mode) {
+            case 'json':
+                isAiVisionOcrJsonMode = true;
+                if (content !== null) {
+                    aiVisionOcrPrompt = content;
+                } else {
+                    aiVisionOcrPrompt = defaultAiVisionOcrJsonPrompt;
+                }
+                break;
+            case 'normal':
+            default:
+                isAiVisionOcrJsonMode = false;
+                if (content !== null) {
+                    aiVisionOcrPrompt = content;
+                } else {
+                    aiVisionOcrPrompt = constants.DEFAULT_AI_VISION_OCR_PROMPT;
+                }
+                break;
+            // 未来可以在这里添加更多的case来支持更多模式
+        }
     }
     console.log(`状态更新: AI视觉OCR JSON模式 -> ${isAiVisionOcrJsonMode}, 当前提示词已更新`);
 }
@@ -497,23 +567,23 @@ export function setBatchTranslationInProgress(isInProgress) {
 }
 
 /**
- * 设置翻译服务的RPD限制
+ * 设置翻译服务的rpm限制
  * @param {number} limit - 每分钟请求数 (0表示无限制)
  */
-export function setRpdLimitTranslation(limit) {
+export function setrpmLimitTranslation(limit) {
     const newLimit = parseInt(limit);
-    rpdLimitTranslation = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
-    console.log(`状态更新: 翻译服务 RPD -> ${rpdLimitTranslation}`);
+    rpmLimitTranslation = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
+    console.log(`状态更新: 翻译服务 rpm -> ${rpmLimitTranslation}`);
 }
 
 /**
- * 设置AI视觉OCR服务的RPD限制
+ * 设置AI视觉OCR服务的rpm限制
  * @param {number} limit - 每分钟请求数 (0表示无限制)
  */
-export function setRpdLimitAiVisionOcr(limit) {
+export function setrpmLimitAiVisionOcr(limit) {
     const newLimit = parseInt(limit);
-    rpdLimitAiVisionOcr = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
-    console.log(`状态更新: AI视觉OCR RPD -> ${rpdLimitAiVisionOcr}`);
+    rpmLimitAiVisionOcr = isNaN(newLimit) || newLimit < 0 ? 0 : newLimit;
+    console.log(`状态更新: AI视觉OCR rpm -> ${rpmLimitAiVisionOcr}`);
 }
 
 // VVVVVV 新增 setter 函数 VVVVVV
@@ -526,3 +596,122 @@ export function setCustomAiVisionBaseUrl(url) {
     console.log(`状态更新: 自定义AI视觉Base URL -> ${url}`);
 }
 // ^^^^^^ 结束新增 setter 函数 ^^^^^^
+
+/**
+ * 设置自动存档是否启用
+ * @param {boolean} enabled - 是否启用自动存档
+ */
+export function setAutoSaveEnabled(enabled) {
+    isAutoSaveEnabled = enabled;
+    // 将设置保存到localStorage以便在会话间保持
+    try {
+        localStorage.setItem('autoSaveEnabled', enabled);
+    } catch (e) {
+        console.warn('无法保存自动存档设置到localStorage:', e);
+    }
+}
+
+/**
+ * 获取自动存档是否启用
+ * @returns {boolean} 自动存档是否启用
+ */
+export function getAutoSaveEnabled() {
+    return isAutoSaveEnabled;
+}
+
+/**
+ * 设置高质量翻译服务商
+ * @param {string} provider - 服务商标识
+ */
+export function setHqTranslateProvider(provider) {
+    hqTranslateProvider = provider;
+}
+
+/**
+ * 设置高质量翻译API Key
+ * @param {string} apiKey - API密钥
+ */
+export function setHqApiKey(apiKey) {
+    hqApiKey = apiKey;
+}
+
+/**
+ * 设置高质量翻译模型名称
+ * @param {string} modelName - 模型名称
+ */
+export function setHqModelName(modelName) {
+    hqModelName = modelName;
+}
+
+/**
+ * 设置高质量翻译自定义Base URL
+ * @param {string} url - 自定义Base URL
+ */
+export function setHqCustomBaseUrl(url) {
+    hqCustomBaseUrl = url;
+}
+
+/**
+ * 设置高质量翻译每批次图片数
+ * @param {number} size - 每批次图片数
+ */
+export function setHqBatchSize(size) {
+    hqBatchSize = parseInt(size) || 5;
+}
+
+/**
+ * 设置高质量翻译会话重置频率
+ * @param {number} reset - 会话重置频率
+ */
+export function setHqSessionReset(reset) {
+    hqSessionReset = parseInt(reset) || 10;
+}
+
+/**
+ * 设置高质量翻译RPM限制
+ * @param {number} limit - RPM限制
+ */
+export function setHqRpmLimit(limit) {
+    hqRpmLimit = parseInt(limit) || 6;
+}
+
+/**
+ * 设置高质量翻译是否使用低推理模式
+ * @param {boolean} low - 是否使用低推理模式
+ */
+export function setHqLowReasoning(low) {
+    hqLowReasoning = low;
+}
+
+/**
+ * 设置高质量翻译提示词
+ * @param {string} prompt - 提示词
+ */
+export function setHqPrompt(prompt) {
+    hqPrompt = prompt;
+}
+
+/**
+ * 设置高质量翻译强制JSON输出选项
+ * @param {boolean} force - 是否强制JSON输出
+ */
+export function setHqForceJsonOutput(force) {
+    hqForceJsonOutput = force;
+    console.log(`状态更新: 高质量翻译强制JSON输出 -> ${force ? '启用' : '禁用'}`);
+}
+
+/**
+ * 设置源语言
+ * @param {string} lang - 语言代码
+ */
+export function setSourceLanguage(lang) {
+    sourceLanguage = lang;
+}
+
+/**
+ * 设置目标语言
+ * @param {string} lang - 语言代码
+ */
+export function setTargetLanguage(lang) {
+    targetLanguage = lang;
+}
