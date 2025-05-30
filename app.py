@@ -387,6 +387,27 @@ def test_baidu_translate_connection_redirect():
 
 # -----------------------------------------------
 
+# 在应用启动时创建必要的文件夹
+def create_required_directories():
+    # 获取项目根目录
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    # 确保config目录及其子目录存在
+    os.makedirs(os.path.join(base_path, 'config'), exist_ok=True)
+    os.makedirs(os.path.join(base_path, 'config', 'plugin_configs'), exist_ok=True)
+    
+    # 确保data目录及其子目录存在
+    os.makedirs(os.path.join(base_path, 'data', 'debug'), exist_ok=True)
+    os.makedirs(os.path.join(base_path, 'data', 'sessions'), exist_ok=True)
+    os.makedirs(os.path.join(base_path, 'data', 'uploads'), exist_ok=True)
+    os.makedirs(os.path.join(base_path, 'data', 'temp'), exist_ok=True)  # 新增: 临时目录
+    
+    # 确保logs目录存在
+    os.makedirs(os.path.join(base_path, 'logs'), exist_ok=True)
+
+# 在应用启动时调用
+create_required_directories()
+
 if __name__ == '__main__':
     # 禁用Flask的默认日志处理
     app.logger.handlers.clear()
