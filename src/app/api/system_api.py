@@ -2,7 +2,7 @@
 包含与系统功能相关的API端点
 """
 
-from flask import Blueprint, request, jsonify # 导入 Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file, session, abort # 导入 Blueprint, request, jsonify, send_file, session, abort
 # 导入系统相关模块 (os, shutil, requests, pdf processor 等)
 import os
 import shutil
@@ -15,6 +15,9 @@ import traceback # 需要traceback
 import time # 需要time
 import logging # 需要logging
 import threading # 需要threading
+import zipfile # 新增: 用于处理zip文件
+import uuid # 新增: 用于生成唯一ID
+from werkzeug.utils import secure_filename # 需要 secure_filename
 
 from src.core.pdf_processor import extract_images_from_pdf # 导入 PDF 处理函数
 from src.shared.path_helpers import get_debug_dir, resource_path # 需要调试目录函数和路径助手
@@ -74,11 +77,12 @@ def upload_pdf_api():
 
 @system_bp.route('/clean_debug_files', methods=['POST'])
 def clean_debug_files():
-    """清理调试目录中的文件"""
+    """清理调试目录中的文件和临时下载文件"""
     try:
         debug_dir = get_debug_dir()
+        success_messages = []
         
-        # 检查debug目录是否存在
+        # 1. 清理调试目录
         if os.path.exists(debug_dir):
             # 记录清理前的状态
             files_count = 0
@@ -102,14 +106,51 @@ def clean_debug_files():
             # 保留目录结构但清空内容
             os.makedirs(os.path.join(debug_dir, "bubbles"), exist_ok=True)
             
-            return jsonify({
-                'success': True, 
-                'message': f'已清理 {files_count} 个调试文件，释放了 {total_size_mb:.2f}MB 空间'
-            })
+            success_messages.append(f'已清理 {files_count} 个调试文件，释放了 {total_size_mb:.2f}MB 空间')
         else:
-            return jsonify({'success': True, 'message': '没有找到需要清理的调试文件'})
+            success_messages.append('没有找到需要清理的调试文件')
+            
+        # 2. 清理临时下载文件
+        base_path = resource_path('')
+        temp_base_dir = os.path.join(base_path, 'data', 'temp')
+        
+        if os.path.exists(temp_base_dir):
+            temp_files_count = 0
+            temp_dirs_count = 0
+            temp_total_size = 0
+            
+            # 遍历临时目录
+            for dir_name in os.listdir(temp_base_dir):
+                dir_path = os.path.join(temp_base_dir, dir_name)
+                if os.path.isdir(dir_path):
+                    # 统计目录内文件大小
+                    for root, dirs, files in os.walk(dir_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            temp_files_count += 1
+                            temp_total_size += os.path.getsize(file_path)
+                    
+                    # 删除临时目录
+                    try:
+                        shutil.rmtree(dir_path)
+                        temp_dirs_count += 1
+                        logger.info(f"已删除临时目录: {dir_path}")
+                    except Exception as e:
+                        logger.error(f"删除临时目录失败: {dir_path} - {str(e)}")
+            
+            # 以MB为单位的总大小
+            temp_total_size_mb = temp_total_size / (1024 * 1024)
+            
+            if temp_dirs_count > 0:
+                success_messages.append(f'已清理 {temp_dirs_count} 个临时下载目录，包含 {temp_files_count} 个文件，释放了 {temp_total_size_mb:.2f}MB 空间')
+            else:
+                success_messages.append('没有找到需要清理的临时下载文件')
+        else:
+            success_messages.append('没有找到临时下载目录')
+        
+        return jsonify({'success': True, 'message': ' | '.join(success_messages)})
     except Exception as e:
-        print(f"清理调试文件失败: {e}")
+        print(f"清理文件失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @system_bp.route('/test_ollama_connection', methods=['GET'])
@@ -122,7 +163,7 @@ def test_ollama_connection():
         
         # 先检查Ollama服务是否可用
         try:
-            response = requests.get("http://localhost:11434/api/version", timeout=5)
+            response = requests.get("http://localhost:11434/api/version")
             if response.status_code != 200:
                 return jsonify({
                     'success': False,
@@ -139,7 +180,7 @@ def test_ollama_connection():
         
         # 获取已安装的模型列表
         try:
-            models_response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            models_response = requests.get("http://localhost:11434/api/tags")
             if models_response.status_code != 200:
                 return jsonify({
                     'success': False,
@@ -316,7 +357,7 @@ def test_sakura_connection():
             try:
                 # Sakura使用OpenAI兼容的API，尝试获取models列表
                 print(f"尝试连接Sakura服务 ({retry+1}/{max_retries})...")
-                response = requests.get("http://localhost:8080/v1/models", timeout=timeout_seconds)
+                response = requests.get("http://localhost:8080/v1/models")
                 
                 if response.status_code == 200:
                     models_data = response.json()
@@ -398,7 +439,7 @@ def check_services_availability():
     
     while True:
         try:
-            response = requests.get("http://localhost:8080/v1/models", timeout=5)
+            response = requests.get("http://localhost:8080/v1/models")
             if response.status_code == 200:
                 # 成功获取模型列表
                 models_data = response.json()
@@ -844,3 +885,356 @@ def test_youdao_translate():
             'success': False,
             'message': f'连接失败：{error_msg}'
         })
+
+@system_bp.route('/get_font_list', methods=['GET'])
+def get_font_list():
+    """
+    获取fonts目录中的所有字体文件
+    
+    Returns:
+        JSON数组，包含所有字体文件的信息
+        {
+            'fonts': [
+                {
+                    'file_name': 'xxx.ttf',
+                    'display_name': '显示名称',
+                    'path': 'fonts/xxx.ttf'
+                }
+            ],
+            'default_fonts': {
+                '微软雅黑': 'fonts/msyh.ttc',
+                '华文行楷': 'fonts/STXINGKA.TTF',
+                // ... 其他默认字体映射
+            }
+        }
+    """
+    try:
+        # 字体目录路径
+        font_dir = resource_path(os.path.join('src', 'app', 'static', 'fonts'))
+        
+        # 默认字体映射（保持原有名称）
+        default_fonts = {
+            '华文行楷': 'fonts/STXINGKA.TTF',
+            '华文新魏': 'fonts/STXINWEI.TTF',
+            '华文中宋': 'fonts/STZHONGS.TTF',
+            '楷体': 'fonts/STKAITI.TTF',
+            '隶书': 'fonts/STLITI.TTF',
+            '宋体': 'fonts/STSONG.TTF',
+            '微软雅黑': 'fonts/msyh.ttc',
+            '微软雅黑粗体': 'fonts/msyhbd.ttc',
+            '幼圆': 'fonts/SIMYOU.TTF',
+            '仿宋': 'fonts/STFANGSO.TTF',
+            '华文琥珀': 'fonts/STHUPO.TTF',
+            '华文细黑': 'fonts/STXIHEI.TTF',
+            '中易楷体': 'fonts/simkai.ttf',
+            '中易仿宋': 'fonts/simfang.ttf',
+            '中易黑体': 'fonts/simhei.ttf',
+            '中易隶书': 'fonts/SIMLI.TTF'
+        }
+        
+        # 获取所有字体文件
+        all_fonts = []
+        for file_name in os.listdir(font_dir):
+            if file_name.lower().endswith(('.ttf', '.ttc', '.otf')):
+                # 用于显示的名称 - 移除扩展名，将文件名转换为更友好的格式
+                display_name = os.path.splitext(file_name)[0]
+                
+                # 检查是否在默认映射中
+                is_default = False
+                for name, path in default_fonts.items():
+                    if file_name == os.path.basename(path):
+                        display_name = name  # 使用默认映射中的名称
+                        is_default = True
+                        break
+                
+                # 如不在默认映射中，则生成一个友好的名称
+                if not is_default:
+                    # 将大写文件名转为更友好的格式
+                    if display_name.isupper():
+                        display_name = ' '.join(display_name.split('_'))
+                        display_name = display_name.title()
+                        
+                font_info = {
+                    'file_name': file_name,
+                    'display_name': display_name,
+                    'path': f'fonts/{file_name}',
+                    'is_default': is_default
+                }
+                all_fonts.append(font_info)
+                
+        # 按默认字体优先、然后按名称排序
+        all_fonts.sort(key=lambda x: (not x['is_default'], x['display_name']))
+        
+        return jsonify({
+            'fonts': all_fonts,
+            'default_fonts': default_fonts
+        })
+    except Exception as e:
+        logger.error(f"获取字体列表失败: {str(e)}", exc_info=True)
+        return jsonify({'error': f"获取字体列表失败: {str(e)}"}), 500
+
+@system_bp.route('/upload_font', methods=['POST'])
+def upload_font():
+    """
+    上传字体文件
+    
+    Returns:
+        JSON响应，包含上传结果
+    """
+    try:
+        if 'font' not in request.files:
+            return jsonify({'error': '未找到字体文件'}), 400
+        
+        font_file = request.files['font']
+        
+        if font_file.filename == '':
+            return jsonify({'error': '未选择字体文件'}), 400
+            
+        if not font_file.filename.lower().endswith(('.ttf', '.ttc', '.otf')):
+            return jsonify({'error': '只支持TTF、TTC和OTF格式的字体文件'}), 400
+        
+        # 安全的文件名
+        filename = secure_filename(font_file.filename)
+        
+        # 字体目录路径
+        font_dir = resource_path(os.path.join('src', 'app', 'static', 'fonts'))
+        
+        # 确保目录存在
+        os.makedirs(font_dir, exist_ok=True)
+        
+        # 保存文件
+        file_path = os.path.join(font_dir, filename)
+        font_file.save(file_path)
+        
+        # 生成友好的显示名称
+        display_name = os.path.splitext(filename)[0]
+        if display_name.isupper():
+            display_name = ' '.join(display_name.split('_'))
+            display_name = display_name.title()
+        
+        return jsonify({
+            'success': True,
+            'file_name': filename,
+            'display_name': display_name,
+            'path': f'fonts/{filename}'
+        })
+    except Exception as e:
+        logger.error(f"上传字体文件失败: {str(e)}", exc_info=True)
+        return jsonify({'error': f"上传字体文件失败: {str(e)}"}), 500
+
+# 新增API端点：批量下载图片
+@system_bp.route('/download_all_images', methods=['POST'])
+def download_all_images_api():
+    """
+    接收图像数据，将它们保存在临时目录，然后打包成ZIP、PDF或CBZ并返回下载链接
+    """
+    logger.info("收到批量下载请求")
+    
+    try:
+        # 获取请求数据
+        data = request.json
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+            
+        format_type = data.get('format', 'zip')
+        image_data_list = data.get('images', [])
+        
+        if not image_data_list:
+            return jsonify({'error': '没有提供图片数据'}), 400
+            
+        logger.info(f"准备处理 {len(image_data_list)} 张图片，格式: {format_type}")
+            
+        # 创建唯一的临时目录
+        unique_id = str(uuid.uuid4())
+        # 获取临时目录路径，这里使用data/temp/{unique_id}作为临时目录
+        base_path = resource_path('')
+        temp_dir = os.path.join(base_path, 'data', 'temp', unique_id)
+        os.makedirs(temp_dir, exist_ok=True)
+        logger.info(f"创建临时目录: {temp_dir}")
+        
+        # 保存所有图片到临时目录
+        saved_files = []
+        for i, img_data in enumerate(image_data_list):
+            if not img_data:
+                logger.warning(f"跳过索引 {i} 的空图片数据")
+                continue
+                
+            try:
+                # 处理Base64数据
+                if ',' in img_data:
+                    img_data = img_data.split(',', 1)[1]
+                    
+                # 解码Base64数据
+                img_bytes = base64.b64decode(img_data)
+                img = Image.open(io.BytesIO(img_bytes))
+                
+                # 保存图片到临时目录
+                filename = f"image_{i:03d}.png"
+                filepath = os.path.join(temp_dir, filename)
+                img.save(filepath, format="PNG")
+                saved_files.append(filepath)
+                logger.info(f"已保存图片 {i+1}/{len(image_data_list)}: {filename}")
+            except Exception as e:
+                logger.error(f"保存图片 {i} 失败: {str(e)}")
+        
+        if not saved_files:
+            logger.error("没有成功保存任何图片")
+            return jsonify({'error': '所有图片处理失败'}), 500
+            
+        logger.info(f"成功保存 {len(saved_files)}/{len(image_data_list)} 张图片")
+        
+        # 根据请求的格式类型打包文件
+        output_path = ""
+        if format_type == 'zip' or format_type == 'cbz':
+            # ZIP和CBZ格式基本相同，只是扩展名不同
+            ext = '.cbz' if format_type == 'cbz' else '.zip'
+            output_path = os.path.join(temp_dir, f"comic_translator_images{ext}")
+            
+            with zipfile.ZipFile(output_path, 'w') as zipf:
+                for file in saved_files:
+                    # 只添加文件名，不包含路径
+                    zipf.write(file, os.path.basename(file))
+                    
+            logger.info(f"已创建{format_type.upper()}文件: {output_path}")
+            
+        elif format_type == 'pdf':
+            # 创建PDF文件
+            output_path = os.path.join(temp_dir, "comic_translator_images.pdf")
+            
+            # 使用PIL创建PDF
+            images = []
+            for file in saved_files:
+                try:
+                    img = Image.open(file).convert('RGB')
+                    images.append(img)
+                except Exception as e:
+                    logger.error(f"加载图片到PDF失败: {file} - {str(e)}")
+            
+            if images:
+                first_image = images[0]
+                if len(images) > 1:
+                    first_image.save(output_path, save_all=True, append_images=images[1:])
+                else:
+                    first_image.save(output_path)
+                logger.info(f"已创建PDF文件: {output_path}")
+            else:
+                logger.error("无法创建PDF：没有有效图像")
+                return jsonify({'error': '创建PDF失败：没有有效图像'}), 500
+        else:
+            logger.error(f"不支持的格式类型: {format_type}")
+            return jsonify({'error': f'不支持的格式类型: {format_type}'}), 400
+            
+        # 返回用于下载的文件路径
+        # 注意：这里返回的是相对路径，前端需要通过/download_file/{unique_id}访问
+        return jsonify({
+            'success': True,
+            'message': f'已成功处理 {len(saved_files)} 张图片',
+            'file_id': unique_id,
+            'format': format_type
+        })
+        
+    except Exception as e:
+        logger.error(f"批量下载处理失败: {str(e)}")
+        return jsonify({'error': f'批量下载处理失败: {str(e)}'}), 500
+
+# 新增API端点：下载处理好的文件
+@system_bp.route('/download_file/<file_id>', methods=['GET'])
+def download_processed_file_api(file_id):
+    """
+    下载之前处理好的文件
+    """
+    format_type = request.args.get('format', 'zip')
+    try:
+        # 验证file_id，防止路径注入
+        if not file_id or '..' in file_id or '/' in file_id or '\\' in file_id:
+            logger.error(f"无效的file_id: {file_id}")
+            return jsonify({'error': '无效的文件ID'}), 400
+            
+        # 构建文件路径
+        base_path = resource_path('')
+        temp_dir = os.path.join(base_path, 'data', 'temp', file_id)
+        
+        if not os.path.exists(temp_dir):
+            logger.error(f"临时目录不存在: {temp_dir}")
+            return jsonify({'error': '请求的文件不存在或已过期'}), 404
+            
+        # 根据格式类型确定文件名和MIME类型
+        filename = ""
+        mime_type = ""
+        
+        if format_type == 'zip':
+            filename = "comic_translator_images.zip"
+            file_path = os.path.join(temp_dir, filename)
+            mime_type = "application/zip"
+        elif format_type == 'cbz':
+            filename = "comic_translator_images.cbz"
+            file_path = os.path.join(temp_dir, filename)
+            mime_type = "application/x-cbz"
+        elif format_type == 'pdf':
+            filename = "comic_translator_images.pdf"
+            file_path = os.path.join(temp_dir, filename)
+            mime_type = "application/pdf"
+        else:
+            logger.error(f"不支持的格式: {format_type}")
+            return jsonify({'error': f'不支持的格式: {format_type}'}), 400
+            
+        if not os.path.exists(file_path):
+            logger.error(f"文件不存在: {file_path}")
+            return jsonify({'error': '请求的文件不存在或已过期'}), 404
+            
+        # 返回文件
+        return send_file(
+            file_path, 
+            mimetype=mime_type,
+            as_attachment=True, 
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"下载文件失败: {str(e)}")
+        return jsonify({'error': f'下载文件失败: {str(e)}'}), 500
+
+# 新增API端点：清理过期临时文件
+@system_bp.route('/clean_temp_files', methods=['POST'])
+def clean_temp_files_api():
+    """
+    清理临时下载文件夹中的过期文件
+    """
+    try:
+        # 获取临时目录路径
+        base_path = resource_path('')
+        temp_base_dir = os.path.join(base_path, 'data', 'temp')
+        
+        if not os.path.exists(temp_base_dir):
+            logger.info(f"临时目录不存在，无需清理: {temp_base_dir}")
+            return jsonify({'success': True, 'message': '临时目录不存在，无需清理'})
+            
+        # 获取当前时间
+        current_time = time.time()
+        # 设置过期时间为24小时
+        expiry_time = current_time - (24 * 60 * 60)
+        removed_count = 0
+        
+        # 遍历所有子目录
+        for dir_name in os.listdir(temp_base_dir):
+            dir_path = os.path.join(temp_base_dir, dir_name)
+            if os.path.isdir(dir_path):
+                # 检查目录的创建时间
+                dir_creation_time = os.path.getctime(dir_path)
+                if dir_creation_time < expiry_time:
+                    # 删除过期目录
+                    try:
+                        shutil.rmtree(dir_path)
+                        removed_count += 1
+                        logger.info(f"已删除过期临时目录: {dir_path}")
+                    except Exception as e:
+                        logger.error(f"删除临时目录失败: {dir_path} - {str(e)}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'已清理 {removed_count} 个过期临时目录'
+        })
+        
+    except Exception as e:
+        logger.error(f"清理临时文件失败: {str(e)}")
+        return jsonify({'error': f'清理临时文件失败: {str(e)}'}), 500

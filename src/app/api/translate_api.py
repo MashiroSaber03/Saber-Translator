@@ -49,24 +49,24 @@ def translate_image():
         logger.info(f"JSON输出模式: 翻译={use_json_format_translation}, AI视觉OCR={use_json_format_ai_vision_ocr}")
         # ------------------------------
         
-        # --- 新增：获取 RPD 参数 ---
-        rpd_limit_translation = data.get('rpd_limit_translation', constants.DEFAULT_RPD_TRANSLATION)
-        rpd_limit_ai_vision_ocr = data.get('rpd_limit_ai_vision_ocr', constants.DEFAULT_RPD_AI_VISION_OCR)
+        # --- 新增：获取 rpm 参数 ---
+        rpm_limit_translation = data.get('rpm_limit_translation', constants.DEFAULT_rpm_TRANSLATION)
+        rpm_limit_ai_vision_ocr = data.get('rpm_limit_ai_vision_ocr', constants.DEFAULT_rpm_AI_VISION_OCR)
         
-        # 确保RPD值是整数
+        # 确保rpm值是整数
         try:
-            rpd_limit_translation = int(rpd_limit_translation)
-            if rpd_limit_translation < 0: rpd_limit_translation = 0 # 负数视为无限制
+            rpm_limit_translation = int(rpm_limit_translation)
+            if rpm_limit_translation < 0: rpm_limit_translation = 0 # 负数视为无限制
         except (ValueError, TypeError):
-            rpd_limit_translation = constants.DEFAULT_RPD_TRANSLATION
+            rpm_limit_translation = constants.DEFAULT_rpm_TRANSLATION
         
         try:
-            rpd_limit_ai_vision_ocr = int(rpd_limit_ai_vision_ocr)
-            if rpd_limit_ai_vision_ocr < 0: rpd_limit_ai_vision_ocr = 0
+            rpm_limit_ai_vision_ocr = int(rpm_limit_ai_vision_ocr)
+            if rpm_limit_ai_vision_ocr < 0: rpm_limit_ai_vision_ocr = 0
         except (ValueError, TypeError):
-            rpd_limit_ai_vision_ocr = constants.DEFAULT_RPD_AI_VISION_OCR
+            rpm_limit_ai_vision_ocr = constants.DEFAULT_rpm_AI_VISION_OCR
         
-        logger.info(f"RPD 设置: 翻译服务 RPD={rpd_limit_translation}, AI视觉OCR RPD={rpd_limit_ai_vision_ocr}")
+        logger.info(f"rpm 设置: 翻译服务 rpm={rpm_limit_translation}, AI视觉OCR rpm={rpm_limit_ai_vision_ocr}")
         # --------------------------
         
         logger.info("------------------------")
@@ -238,9 +238,9 @@ def translate_image():
                 use_json_format_translation=False, # 仅消除文字，不翻译，所以翻译JSON模式无效
                 use_json_format_ai_vision_ocr=use_json_format_ai_vision_ocr,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
-                # --- 传递 RPD 参数给核心处理函数 ---
-                rpd_limit_translation=rpd_limit_translation,
-                rpd_limit_ai_vision_ocr=rpd_limit_ai_vision_ocr
+                # --- 传递 rpm 参数给核心处理函数 ---
+                rpm_limit_translation=rpm_limit_translation,
+                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr
                 # ------------------------------------
             )
             
@@ -286,9 +286,9 @@ def translate_image():
                 use_json_format_translation=use_json_format_translation,
                 use_json_format_ai_vision_ocr=use_json_format_ai_vision_ocr,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
-                # --- 传递 RPD 参数给核心处理函数 ---
-                rpd_limit_translation=rpd_limit_translation,
-                rpd_limit_ai_vision_ocr=rpd_limit_ai_vision_ocr
+                # --- 传递 rpm 参数给核心处理函数 ---
+                rpm_limit_translation=rpm_limit_translation,
+                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr
                 # ------------------------------------
             )
             
@@ -946,13 +946,13 @@ def route_translate_single_text():
         use_json_format = data.get('use_json_format', False)
         custom_base_url = data.get('custom_base_url') # --- 新增获取 ---
 
-        # --- 新增：获取 RPD 参数 ---
-        rpd_limit_translation = data.get('rpd_limit_translation', constants.DEFAULT_RPD_TRANSLATION)
+        # --- 新增：获取 rpm 参数 ---
+        rpm_limit_translation = data.get('rpm_limit_translation', constants.DEFAULT_rpm_TRANSLATION)
         try:
-            rpd_limit_translation = int(rpd_limit_translation)
-            if rpd_limit_translation < 0: rpd_limit_translation = 0
+            rpm_limit_translation = int(rpm_limit_translation)
+            if rpm_limit_translation < 0: rpm_limit_translation = 0
         except (ValueError, TypeError):
-            rpd_limit_translation = constants.DEFAULT_RPD_TRANSLATION
+            rpm_limit_translation = constants.DEFAULT_rpm_TRANSLATION
         # --------------------------
 
         if not all([original_text, target_language, model_provider]):
@@ -970,7 +970,7 @@ def route_translate_single_text():
             return jsonify({'error': '非本地部署模式下必须提供API Key'}), 400
 
         try:
-            logger.info(f"开始调用translate_single_text函数进行翻译... JSON模式: {use_json_format}, 自定义BaseURL: {custom_base_url if custom_base_url else '无'}, RPD: {rpd_limit_translation}")
+            logger.info(f"开始调用translate_single_text函数进行翻译... JSON模式: {use_json_format}, 自定义BaseURL: {custom_base_url if custom_base_url else '无'}, rpm: {rpm_limit_translation}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
                 original_text, 
                 target_language, 
@@ -980,7 +980,7 @@ def route_translate_single_text():
                 prompt_content=prompt_content,
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
-                rpd_limit_translation=rpd_limit_translation # <--- 传递RPD参数
+                rpm_limit_translation=rpm_limit_translation # <--- 传递rpm参数
             )
             
             # 保存模型使用历史
