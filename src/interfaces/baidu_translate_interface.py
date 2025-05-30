@@ -57,7 +57,7 @@ class BaiduTranslateInterface:
         # 发送请求并处理重试
         for attempt in range(max_retries):
             try:
-                response = requests.post(self.API_URL, params=params, headers=headers, timeout=10)
+                response = requests.post(self.API_URL, params=params, headers=headers)
                 result = response.json()
                 
                 # 检查返回的错误码

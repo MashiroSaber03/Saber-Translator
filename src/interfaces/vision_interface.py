@@ -45,8 +45,7 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
 
         response = client.chat.completions.create(
             model=model_name,
-            messages=payload_messages,
-            timeout=60
+            messages=payload_messages
         )
 
         if response and response.choices and len(response.choices) > 0:
@@ -175,8 +174,7 @@ def call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start
         response = requests.post(
             "https://api.siliconflow.cn/v1/chat/completions",
             headers=headers,
-            json=payload,
-            timeout=60  # 设置超时为60秒
+            json=payload
         )
         
         # 检查响应状态
