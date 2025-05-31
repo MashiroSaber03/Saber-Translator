@@ -3,6 +3,7 @@
     "deepseek-chat"
   ],
   "siliconflow": [
+    "deepseek-ai/DeepSeek-V2.5",
     "deepseek-ai/DeepSeek-V3"
   ],
   "gemini": [
