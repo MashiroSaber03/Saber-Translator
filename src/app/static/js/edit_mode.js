@@ -15,11 +15,13 @@ export function toggleEditMode() {
     if (state.editModeActive) {
         // --- 进入编辑模式 ---
         const currentImage = state.getCurrentImage();
-        if (!currentImage || !currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) { // 检查是否有气泡
-            ui.showGeneralMessage("当前图片没有可编辑的气泡", "warning");
-            state.setEditModeActive(false); // 切换失败，恢复状态
-            return;
-        }
+        
+        // 删除以下检查，允许没有气泡的图片也能进入编辑模式
+        // if (!currentImage || !currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) { // 检查是否有气泡
+        //     ui.showGeneralMessage("当前图片没有可编辑的气泡", "warning");
+        //     state.setEditModeActive(false); // 切换失败，恢复状态
+        //     return;
+        // }
 
         ui.toggleEditModeUI(true); // 更新 UI
         initBubbleSettings(); // 初始化或加载气泡设置
@@ -27,11 +29,11 @@ export function toggleEditMode() {
         state.setInitialBubbleSettings(JSON.parse(JSON.stringify(state.bubbleSettings)));
         console.log("已保存初始气泡设置:", state.initialBubbleSettings);
 
-        // 默认选择第一个气泡
-        if (state.bubbleSettings.length > 0) {
+        // 默认选择第一个气泡，如果有的话
+        if (state.bubbleSettings && state.bubbleSettings.length > 0) {
             selectBubble(0);
         } else {
-            // 没有气泡，清空编辑区 (理论上不会到这里，因为前面检查了)
+            // 没有气泡，清空编辑区
             ui.updateBubbleEditArea(-1);
         }
         // 确保有干净背景
@@ -91,8 +93,15 @@ export function toggleEditMode() {
  */
 export function initBubbleSettings() {
     const currentImage = state.getCurrentImage();
-    if (!currentImage || !currentImage.bubbleCoords) {
-        console.error("无法初始化气泡设置：无效的图像或坐标");
+    if (!currentImage) {
+        console.error("无法初始化气泡设置：无效的图像");
+        state.setBubbleSettings([]);
+        return;
+    }
+
+    // 处理没有气泡的情况
+    if (!currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) {
+        console.log("当前图片没有气泡，初始化空的气泡设置");
         state.setBubbleSettings([]);
         return;
     }
