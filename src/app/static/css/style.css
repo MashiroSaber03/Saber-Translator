@@ -3391,3 +3391,182 @@ input[type="range"].slider::-moz-range-thumb {
   content: none !important;
   display: none !important;
 }
+
+/* === 新增描边选项样式 START === */
+#settings-sidebar #enableTextStroke { /* 让复选框和标签在视觉上更对齐 */
+    margin-left: 5px;
+    transform: scale(1.1); /* 轻微放大复选框 */
+}
+
+#settings-sidebar #textStrokeOptions {
+    /* background-color: rgba(0,0,0,0.02); */ /* 可选：轻微背景色 */
+    /* border-radius: 4px; */ /* 可选：圆角 */
+    /* padding-top: 5px; */ /* 已在HTML中通过padding-left和margin-top调整 */
+}
+
+#settings-sidebar #textStrokeOptions div { /* 每个描边参数项 */
+    /* margin-bottom: 10px; 已在HTML中通过style添加 */
+}
+
+#settings-sidebar #textStrokeOptions label {
+    font-size: 0.95em; /* 标签字号可以略小一点 */
+    /* margin-bottom: 3px; 已在HTML中通过style的父div调整 */
+}
+
+#settings-sidebar #textStrokeOptions input[type="color"],
+#settings-sidebar #textStrokeOptions input[type="number"] {
+    /* padding: 8px; */ /* 已在HTML中通过style调整 */
+    /* font-size: 0.95em; */ /* 输入框字号 */
+    /* width: auto; */ /* 允许宽度自适应或通过style设固定值 */
+}
+/* === 新增描边选项样式 END === */
+
+/* AI校对设置相关样式 */
+#proofreadingSettingsModal .modal-content {
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.proofreading-settings-container {
+    padding: 10px;
+}
+
+.proofreading-enable-section {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: #f5f8fa;
+    border-radius: 8px;
+}
+
+#proofreadingRoundsContainer {
+    margin-bottom: 20px;
+}
+
+.proofreading-round {
+    margin-bottom: 15px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+}
+
+.round-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.round-name {
+    flex: 1;
+    font-weight: bold;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.remove-round-button {
+    background-color: #ff4d4d;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+}
+
+.round-settings > div {
+    margin-bottom: 10px;
+}
+
+.round-settings label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.round-settings select,
+.round-settings input[type="text"],
+.round-settings input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.round-settings textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    resize: vertical;
+}
+
+.proofreading-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+}
+
+#addRoundButton {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#saveProofreadingSettingsButton {
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* 校对按钮样式 */
+#proofreadButton,
+#proofreadSettingsButton {
+    width: 100%;
+    padding: 14px 25px;
+    background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.3s;
+    margin-top: 15px;
+    box-shadow: 0 4px 6px rgba(142, 68, 173, 0.2);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+#proofreadButton:hover,
+#proofreadSettingsButton:hover {
+    background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%);
+    box-shadow: 0 6px 10px rgba(142, 68, 173, 0.3);
+    transform: translateY(-2px);
+}
+
+#proofreadButton:before,
+#proofreadSettingsButton:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.7s;
+}
+
+#proofreadButton:hover:before,
+#proofreadSettingsButton:hover:before {
+    left: 100%;
+}

@@ -68,6 +68,13 @@ def translate_image():
         
         logger.info(f"rpm 设置: 翻译服务 rpm={rpm_limit_translation}, AI视觉OCR rpm={rpm_limit_ai_vision_ocr}")
         # --------------------------
+
+        # === 新增：获取描边参数 START ===
+        enable_text_stroke = data.get('enableTextStroke', constants.DEFAULT_TEXT_STROKE_ENABLED)
+        text_stroke_color = data.get('textStrokeColor', constants.DEFAULT_TEXT_STROKE_COLOR)
+        text_stroke_width = int(data.get('textStrokeWidth', constants.DEFAULT_TEXT_STROKE_WIDTH))
+        logger.info(f"描边设置: enable={enable_text_stroke}, color={text_stroke_color}, width={text_stroke_width}")
+        # === 新增：获取描边参数 END ===
         
         logger.info("------------------------")
         
@@ -240,7 +247,12 @@ def translate_image():
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 # --- 传递 rpm 参数给核心处理函数 ---
                 rpm_limit_translation=rpm_limit_translation,
-                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr
+                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr,
+                # === 新增：传递描边参数给 processing START ===
+                enable_text_stroke=enable_text_stroke,
+                text_stroke_color=text_stroke_color,
+                text_stroke_width=text_stroke_width
+                # === 新增：传递描边参数给 processing END ===
                 # ------------------------------------
             )
             
@@ -288,7 +300,12 @@ def translate_image():
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 # --- 传递 rpm 参数给核心处理函数 ---
                 rpm_limit_translation=rpm_limit_translation,
-                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr
+                rpm_limit_ai_vision_ocr=rpm_limit_ai_vision_ocr,
+                # === 新增：传递描边参数给 processing START ===
+                enable_text_stroke=enable_text_stroke,
+                text_stroke_color=text_stroke_color,
+                text_stroke_width=text_stroke_width
+                # === 新增：传递描边参数给 processing END ===
                 # ------------------------------------
             )
             
@@ -364,6 +381,14 @@ def re_render_image():
         inpainting_strength = float(data.get('inpainting_strength', constants.DEFAULT_INPAINTING_STRENGTH))  # 默认修复强度为1.0
         is_font_style_change = data.get('is_font_style_change', False)  # 是否仅是字体/字号修改
         all_bubble_styles = data.get('all_bubble_styles', [])  # 获取所有气泡的样式
+
+        # === 新增：获取描边参数 START ===
+        # 这些通常是全局设置，所以从请求的顶层获取
+        enable_text_stroke = data.get('enableTextStroke', constants.DEFAULT_TEXT_STROKE_ENABLED)
+        text_stroke_color = data.get('textStrokeColor', constants.DEFAULT_TEXT_STROKE_COLOR)
+        text_stroke_width = int(data.get('textStrokeWidth', constants.DEFAULT_TEXT_STROKE_WIDTH))
+        logger.info(f"重渲染描边设置: enable={enable_text_stroke}, color={text_stroke_color}, width={text_stroke_width}")
+        # === 新增：获取描边参数 END ===
 
         if not all([fontFamily, text_direction]):
             return jsonify({'error': '缺少必要的参数'}), 400
@@ -500,7 +525,11 @@ def re_render_image():
                     'text_direction': style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
                     'position_offset': style.get('position', {'x': 0, 'y': 0}),
                     'text_color': style.get('textColor', textColor),  # 使用単个气泡设置或全局颜色
-                    'rotation_angle': style.get('rotationAngle', rotationAngle)   # 使用単个气泡设置或全局旋转角度
+                    'rotation_angle': style.get('rotationAngle', rotationAngle),   # 使用単个气泡设置或全局旋转角度
+                    # 如果前端的 all_bubble_styles 包含描边，则使用它们，否则使用全局的
+                    'enableStroke': style.get('enableStroke', enable_text_stroke),
+                    'strokeColor': style.get('strokeColor', text_stroke_color),
+                    'strokeWidth': style.get('strokeWidth', text_stroke_width)
                 }
                 bubble_styles[str(i)] = converted_style
                 logger.info(f"保存气泡 {i} 的样式: 字号={converted_style['fontSize']}, 自动字号={converted_style['autoFontSize']}, 字体={converted_style['fontFamily']}, 方向={converted_style['text_direction']}, 颜色={converted_style['text_color']}, 旋转={converted_style['rotation_angle']}")
@@ -528,7 +557,14 @@ def re_render_image():
             use_lama=use_lama,  # 传递LAMA修复选项
             fill_color=data.get('fill_color', constants.DEFAULT_FILL_COLOR),  # 传递填充颜色，默认白色
             text_color=textColor,  # 传递文字颜色
-            rotation_angle=rotationAngle  # 传递旋转角度
+            rotation_angle=rotationAngle,  # 传递旋转角度
+            # === 新增：传递全局描边参数给 re_render_text_in_bubbles START ===
+            # 注意：如果上面已经将描边信息整合到 img._bubble_styles，这里可能不需要再传全局的
+            # 但为了兼容性或明确性，可以传递。re_render_text_in_bubbles 内部会决定如何使用。
+            enable_stroke_param=enable_text_stroke,
+            stroke_color_param=text_stroke_color,
+            stroke_width_param=text_stroke_width
+            # === 新增：传递全局描边参数给 re_render_text_in_bubbles END ===
         )
 
         # 转换结果图像为Base64字符串
@@ -569,6 +605,13 @@ def re_render_single_bubble():
         # 新增参数：文字颜色和旋转角度
         text_color = data.get('text_color', constants.DEFAULT_TEXT_COLOR)  # 默认黑色
         rotation_angle = data.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)  # 默认0度，不旋转
+        
+        # === 新增：获取描边参数 START ===
+        enable_text_stroke = data.get('enableTextStroke', constants.DEFAULT_TEXT_STROKE_ENABLED)
+        text_stroke_color = data.get('textStrokeColor', constants.DEFAULT_TEXT_STROKE_COLOR)
+        text_stroke_width = int(data.get('textStrokeWidth', constants.DEFAULT_TEXT_STROKE_WIDTH))
+        logger.info(f"单气泡描边设置: enable={enable_text_stroke}, color={text_stroke_color}, width={text_stroke_width}")
+        # === 新增：获取描边参数 END ===
         
         # 处理自动字体大小
         autoFontSize = data.get('autoFontSize', False)
@@ -643,7 +686,12 @@ def re_render_single_bubble():
             'text_direction': text_direction,
             'position_offset': position_offset,
             'text_color': text_color,           # 新增：文字颜色
-            'rotation_angle': rotation_angle    # 新增：旋转角度
+            'rotation_angle': rotation_angle,    # 新增：旋转角度
+            # === 新增：描边参数 START ===
+            'enableStroke': enable_text_stroke,
+            'strokeColor': text_stroke_color,
+            'strokeWidth': text_stroke_width
+            # === 新增：描边参数 END ===
         }
         logger.info(f"当前气泡 {bubble_index} 的样式设置: {bubble_style}")
         logger.info(f"特别检查排版方向: text_direction={text_direction}")
@@ -694,8 +742,13 @@ def re_render_single_bubble():
                     'fontFamily': font_path,
                     'text_direction': style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
                     'position_offset': style.get('position', {'x': 0, 'y': 0}),
-                    'text_color': style.get('textColor', constants.DEFAULT_TEXT_COLOR),  # 新增：文字颜色
-                    'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)   # 新增：旋转角度
+                    'text_color': style.get('textColor', constants.DEFAULT_TEXT_COLOR),
+                    'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),
+                    # === 新增：描边参数 START ===
+                    'enableStroke': style.get('enableStroke', enable_text_stroke),
+                    'strokeColor': style.get('strokeColor', text_stroke_color),
+                    'strokeWidth': style.get('strokeWidth', text_stroke_width)
+                    # === 新增：描边参数 END ===
                 }
                 
                 # 确保正确保存文字方向设置
@@ -801,6 +854,13 @@ def apply_settings_to_all_images():
         textColor = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
         rotationAngle = data.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)
         
+        # === 新增：获取描边参数 START ===
+        enable_text_stroke = data.get('enableTextStroke', constants.DEFAULT_TEXT_STROKE_ENABLED)
+        text_stroke_color = data.get('textStrokeColor', constants.DEFAULT_TEXT_STROKE_COLOR)
+        text_stroke_width = int(data.get('textStrokeWidth', constants.DEFAULT_TEXT_STROKE_WIDTH))
+        logger.info(f"全局应用描边设置: enable={enable_text_stroke}, color={text_stroke_color}, width={text_stroke_width}")
+        # === 新增：获取描边参数 END ===
+        
         # 获取其他必要参数
         all_images = data.get('all_images', [])
         all_clean_images = data.get('all_clean_images', [])
@@ -857,7 +917,12 @@ def apply_settings_to_all_images():
                         'textDirection': textDirection,
                         'position': {'x': 0, 'y': 0},  # 保持默认位置
                         'textColor': textColor,
-                        'rotationAngle': rotationAngle
+                        'rotationAngle': rotationAngle,
+                        # === 新增：描边参数 START ===
+                        'enableStroke': enable_text_stroke,
+                        'strokeColor': text_stroke_color,
+                        'strokeWidth': text_stroke_width
+                        # === 新增：描边参数 END ===
                     }
                     all_bubble_styles.append(bubble_style)
                 
@@ -872,7 +937,12 @@ def apply_settings_to_all_images():
                         'text_direction': style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
                         'position_offset': style.get('position', {'x': 0, 'y': 0}),
                         'text_color': style.get('textColor', constants.DEFAULT_TEXT_COLOR),
-                        'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)
+                        'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),
+                        # === 新增：描边参数 START ===
+                        'enableStroke': style.get('enableStroke', enable_text_stroke),
+                        'strokeColor': style.get('strokeColor', text_stroke_color),
+                        'strokeWidth': style.get('strokeWidth', text_stroke_width)
+                        # === 新增：描边参数 END ===
                     }
                     bubble_styles[str(j)] = converted_style
                 
@@ -898,7 +968,14 @@ def apply_settings_to_all_images():
                     use_lama=use_lama,  # 传递LAMA修复选项
                     fill_color=data.get('fill_color', constants.DEFAULT_FILL_COLOR),  # 使用文字颜色作为填充颜色
                     text_color=textColor,  # 传递文字颜色
-                    rotation_angle=rotationAngle  # 传递旋转角度
+                    rotation_angle=rotationAngle,  # 传递旋转角度
+                    # === 新增：传递全局描边参数给 re_render_text_in_bubbles START ===
+                    # 注意：如果上面已经将描边信息整合到 img._bubble_styles，这里可能不需要再传全局的
+                    # 但为了兼容性或明确性，可以传递。re_render_text_in_bubbles 内部会决定如何使用。
+                    enable_stroke_param=enable_text_stroke,
+                    stroke_color_param=text_stroke_color,
+                    stroke_width_param=text_stroke_width
+                    # === 新增：传递全局描边参数给 re_render_text_in_bubbles END ===
                 )
                 
                 # 转换为base64字符串

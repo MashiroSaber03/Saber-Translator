@@ -199,3 +199,9 @@ DEFAULT_AI_VISION_OCR_JSON_PROMPT = """你是一个OCR助手。请将我发送�
 # --- rpm (Requests Per Minute) Limiting ---
 DEFAULT_rpm_TRANSLATION = 0  # 0 表示无限制
 DEFAULT_rpm_AI_VISION_OCR = 0 # 0 表示无限制
+
+# --- 文本描边默认值 ---
+DEFAULT_TEXT_STROKE_ENABLED = False
+DEFAULT_TEXT_STROKE_COLOR = '#FFFFFF' # 默认白色描边
+DEFAULT_TEXT_STROKE_WIDTH = 1         # 默认1像素宽度
+# ------------------------

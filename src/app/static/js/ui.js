@@ -187,6 +187,8 @@ export function updateButtonStates() {
     const downloadAllImagesButton = $("#downloadAllImagesButton");
     const toggleImageButton = $('#toggleImageButton');
     const toggleLabelingModeButton = $("#toggleLabelingModeButton");
+    const proofreadButton = $("#proofreadButton"); // 校对按钮
+    const proofreadSettingsButton = $("#proofreadSettingsButton"); // 校对设置按钮
 
     const hasImages = state.images.length > 0;
     const hasCurrentImage = state.currentImageIndex >= 0 && state.currentImageIndex < state.images.length;
@@ -206,6 +208,11 @@ export function updateButtonStates() {
     } else {
         console.warn("#applyFontSettingsToAllButton 未找到!");
     }
+    
+    // 校对按钮状态更新
+    proofreadButton.prop('disabled', !hasImages || isLoading || state.isBatchTranslationInProgress);
+    // 校对设置按钮始终保持启用状态，类似于"加载/管理会话"按钮
+    proofreadSettingsButton.prop('disabled', false);
 
 
     let hasTranslated = false;
@@ -793,6 +800,12 @@ export function updateBubbleEditArea(index) {
     const positionOffsetXValue = $("#positionOffsetXValue");
     const positionOffsetYValue = $("#positionOffsetYValue");
     const bubbleFillColorInput = $("#bubbleFillColor"); // 新的颜色选择器
+    // === 新增：获取描边控件 START ===
+    const bubbleEnableStroke = $("#bubbleEnableStroke");
+    const bubbleStrokeColor = $("#bubbleStrokeColor");
+    const bubbleStrokeWidth = $("#bubbleStrokeWidth");
+    const bubbleStrokeOptions = $(".bubble-stroke-options");
+    // === 新增：获取描边控件 END ===
 
     if (index < 0 || index >= state.bubbleSettings.length) {
         // 清空编辑区
@@ -810,6 +823,12 @@ export function updateBubbleEditArea(index) {
         positionOffsetY.val(0);
         positionOffsetXValue.text(0);
         positionOffsetYValue.text(0);
+        // === 新增：重置描边控件 START ===
+        bubbleEnableStroke.prop('checked', state.enableTextStroke);
+        bubbleStrokeColor.val(state.textStrokeColor);
+        bubbleStrokeWidth.val(state.textStrokeWidth);
+        bubbleStrokeOptions.toggle(state.enableTextStroke);
+        // === 新增：重置描边控件 END ===
         return;
     }
 
@@ -837,6 +856,14 @@ export function updateBubbleEditArea(index) {
     positionOffsetY.val(position.y);
     positionOffsetXValue.text(position.x);
     positionOffsetYValue.text(position.y);
+    
+    // === 新增：更新描边控件 START ===
+    const enableStroke = setting.enableStroke !== undefined ? setting.enableStroke : state.enableTextStroke;
+    bubbleEnableStroke.prop('checked', enableStroke);
+    bubbleStrokeColor.val(setting.strokeColor || state.textStrokeColor);
+    bubbleStrokeWidth.val(setting.strokeWidth !== undefined ? setting.strokeWidth : state.textStrokeWidth);
+    bubbleStrokeOptions.toggle(enableStroke);
+    // === 新增：更新描边控件 END ===
 }
 
 /**
@@ -1782,4 +1809,18 @@ export function handleFontUpload(fontFile) {
             }
         );
     });
+}
+
+/**
+ * 显示AI校对设置弹窗
+ */
+export function showProofreadingSettingsModal() {
+    $("#proofreadingSettingsModal").show();
+}
+
+/**
+ * 隐藏AI校对设置弹窗
+ */
+export function hideProofreadingSettingsModal() {
+    $("#proofreadingSettingsModal").hide();
 }

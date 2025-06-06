@@ -42,6 +42,9 @@ export let defaultFontFamily = 'fonts/STSONG.TTF';
 export let defaultLayoutDirection = 'vertical';
 export let defaultTextColor = '#000000';
 export let defaultFillColor = '#FFFFFF';
+export let defaultEnableTextStroke = true;
+export let defaultTextStrokeColor = '#FFFFFF';
+export let defaultTextStrokeWidth = 3;
 
 // --- OCR 引擎状态 ---
 export let ocrEngine = 'auto';
@@ -66,17 +69,29 @@ export let hqTranslateProvider = 'siliconflow';
 export let hqApiKey = '';
 export let hqModelName = '';
 export let hqCustomBaseUrl = '';
-export let hqBatchSize = 5;
-export let hqSessionReset = 10;
-export let hqRpmLimit = 6;
-export let hqLowReasoning = true;
+export let hqBatchSize = 3;
+export let hqSessionReset = 20;
+export let hqRpmLimit = 7;
+export let hqLowReasoning = false;
+export let hqNoThinkingMethod = 'gemini'; // 取消思考的方法: 'gemini' 或 'volcano'
 export let hqPrompt = constants.DEFAULT_HQ_TRANSLATE_PROMPT;
 export let hqForceJsonOutput = true;
+
+// --- AI校对功能状态 ---
+export let isProofreadingEnabled = true;
+export let proofreadingRounds = [];
+export let proofreadingNoThinkingMethod = 'gemini'; // 取消思考的方法: 'gemini' 或 'volcano'
+
 // --------------------
 
 // 源语言和目标语言
 export let sourceLanguage = 'auto'; // 默认为自动检测
 export let targetLanguage = 'zh-CN'; // 默认为简体中文
+
+// --- 新增状态变量 ---
+export let enableTextStroke = defaultEnableTextStroke;
+export let textStrokeColor = defaultTextStrokeColor;
+export let textStrokeWidth = defaultTextStrokeWidth;
 
 // --- 更新状态的函数 ---
 
@@ -94,6 +109,10 @@ export function addImage(imageObject) {
         originalUseLama: undefined,
         inpaintingStrength: constants.DEFAULT_INPAINTING_STRENGTH,
         blendEdges: true,
+        // 添加描边相关属性的默认值
+        enableTextStroke: defaultEnableTextStroke,
+        textStrokeColor: defaultTextStrokeColor,
+        textStrokeWidth: defaultTextStrokeWidth,
     };
     images.push(newImage);
 }
@@ -106,7 +125,11 @@ export function setImages(newImages) {
     images = newImages.map(img => ({
         ...img,
         savedManualCoords: img.savedManualCoords || null,
-        hasUnsavedChanges: img.hasUnsavedChanges || false
+        hasUnsavedChanges: img.hasUnsavedChanges || false,
+        // 确保描边相关属性有默认值
+        enableTextStroke: img.enableTextStroke !== undefined ? img.enableTextStroke : defaultEnableTextStroke,
+        textStrokeColor: img.textStrokeColor || defaultTextStrokeColor,
+        textStrokeWidth: img.textStrokeWidth !== undefined ? img.textStrokeWidth : defaultTextStrokeWidth
     }));
     setHasUnsavedChanges(false);
 }
@@ -656,7 +679,7 @@ export function setHqCustomBaseUrl(url) {
  * @param {number} size - 每批次图片数
  */
 export function setHqBatchSize(size) {
-    hqBatchSize = parseInt(size) || 5;
+    hqBatchSize = parseInt(size) || 3;
 }
 
 /**
@@ -664,7 +687,7 @@ export function setHqBatchSize(size) {
  * @param {number} reset - 会话重置频率
  */
 export function setHqSessionReset(reset) {
-    hqSessionReset = parseInt(reset) || 10;
+    hqSessionReset = parseInt(reset) || 20;
 }
 
 /**
@@ -672,7 +695,7 @@ export function setHqSessionReset(reset) {
  * @param {number} limit - RPM限制
  */
 export function setHqRpmLimit(limit) {
-    hqRpmLimit = parseInt(limit) || 6;
+    hqRpmLimit = parseInt(limit) || 7;
 }
 
 /**
@@ -681,6 +704,15 @@ export function setHqRpmLimit(limit) {
  */
 export function setHqLowReasoning(low) {
     hqLowReasoning = low;
+}
+
+/**
+ * 设置高质量翻译取消思考方法
+ * @param {string} method - 取消思考方法('gemini'或'volcano')
+ */
+export function setHqNoThinkingMethod(method) {
+    hqNoThinkingMethod = method;
+    console.log(`状态更新: 高质量翻译取消思考方法 -> ${method}`);
 }
 
 /**
@@ -714,4 +746,45 @@ export function setSourceLanguage(lang) {
  */
 export function setTargetLanguage(lang) {
     targetLanguage = lang;
+}
+
+export function setDefaultTextStrokeSettings(enabled, color, width) {
+    defaultEnableTextStroke = enabled;
+    defaultTextStrokeColor = color;
+    defaultTextStrokeWidth = width;
+}
+
+export function setEnableTextStroke(enabled) {
+    enableTextStroke = enabled;
+    console.log(`状态更新: enableTextStroke -> ${enableTextStroke}`);
+}
+
+export function setTextStrokeColor(color) {
+    textStrokeColor = color;
+    console.log(`状态更新: textStrokeColor -> ${textStrokeColor}`);
+}
+
+export function setTextStrokeWidth(width) {
+    textStrokeWidth = parseInt(width);
+    if (isNaN(textStrokeWidth) || textStrokeWidth < 0) {
+        textStrokeWidth = 0;
+    }
+    console.log(`状态更新: textStrokeWidth -> ${textStrokeWidth}`);
+}
+
+/**
+ * 设置校对功能启用状态
+ * @param {boolean} enabled - 是否启用
+ */
+export function setProofreadingEnabled(enabled) {
+    isProofreadingEnabled = enabled;
+}
+
+/**
+ * 设置AI校对取消思考方法
+ * @param {string} method - 取消思考方法('gemini'或'volcano')
+ */
+export function setProofreadingNoThinkingMethod(method) {
+    proofreadingNoThinkingMethod = method;
+    console.log(`状态更新: AI校对取消思考方法 -> ${method}`);
 }

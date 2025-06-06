@@ -103,7 +103,8 @@ export async function reRenderWithNewFillColor(newFillColor) {
         currentImage.bubbleCoords.forEach(coords => {
             const [x1, y1, x2, y2] = coords;
             ctx.fillStyle = newFillColor;
-            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+            // 修复：增加1像素填充范围，确保完全覆盖
+            ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
         });
 
         // 4. 获取填充后的图像数据 (这将作为新的"干净背景"传递给渲染API)
@@ -214,6 +215,19 @@ export function initializeApp() {
         console.error("初始化高质量翻译模块失败:", error);
     }
 
+    // 4.1 初始化AI校对模块
+    try {
+        console.log("初始化AI校对模块...");
+        // 导入并初始化校对模块
+        import('./ai_proofreading.js').then(proofreading => {
+            proofreading.initProofreadingUI();
+        }).catch(error => {
+            console.error("加载AI校对模块失败:", error);
+        });
+    } catch (error) {
+        console.error("初始化AI校对模块失败:", error);
+    }
+
     // 5. 初始化亮暗模式
     initializeThemeMode();
 
@@ -259,6 +273,19 @@ export function initializeApp() {
     } catch (e) {
         console.warn('无法从localStorage加载自动存档设置:', e);
     }
+
+    // 新增：设置描边参数
+    state.setDefaultTextStrokeSettings(
+        $('#enableTextStroke').is(':checked'),
+        $('#textStrokeColor').val(),
+        parseInt($('#textStrokeWidth').val()) || 1
+    );
+    state.setEnableTextStroke(state.defaultEnableTextStroke);
+    state.setTextStrokeColor(state.defaultTextStrokeColor);
+    state.setTextStrokeWidth(state.defaultTextStrokeWidth);
+
+    // 初始化UI显示 (确保描边参数选项根据初始状态正确显示/隐藏)
+    $("#textStrokeOptions").toggle(state.enableTextStroke); // 新增
 
     console.log("应用程序初始化完成。");
 }
@@ -326,12 +353,14 @@ function loadPromptContent(promptName) { // 私有辅助函数
     if (promptName === constants.DEFAULT_PROMPT_NAME) {
         // 根据当前模式加载对应的默认提示词
         const contentToLoad = state.isTranslateJsonMode ? state.defaultTranslateJsonPrompt : state.defaultPromptContent;
-        state.currentPromptContent = contentToLoad; // 直接更新当前内容
+        // 修复：不要直接赋值，应该使用setter方法
+        state.setPromptState(contentToLoad, state.defaultPromptContent, state.savedPromptNames, state.defaultTranslateJsonPrompt);
         ui.updateTranslatePromptUI(); // 更新UI
     } else {
         api.getPromptContentApi(promptName)
             .then(response => {
-                state.currentPromptContent = response.prompt_content;
+                // 修复：不要直接赋值，应该使用setter方法
+                state.setPromptState(response.prompt_content, state.defaultPromptContent, state.savedPromptNames, state.defaultTranslateJsonPrompt);
                 ui.updateTranslatePromptUI();
                 // 尝试智能判断并切换模式 (可选的高级功能)
                 if (response.prompt_content.includes('"translated_text":')) {
@@ -712,61 +741,68 @@ export function switchImage(index) {
     // --------------------
 
     // --- 加载新图片的设置到 UI ---
-    if (!imageData.translatedDataURL && !imageData.originalDataURL) { // 如果是完全空的图片对象
-        // 重置所有UI为全局默认值
-        $('#autoFontSize').prop('checked', false); // 假设默认不自动
-        $('#fontSize').prop('disabled', false).val(state.defaultFontSize);
-        // 将使用默认字体，稍后会调用loadFontList来更新字体选择器
-        const fontFamily = state.defaultFontFamily;
+    if (!imageData.translatedDataURL && !imageData.originalDataURL) {
+        // 此条件分支代表一个未加载任何图片的空位置，可以重置到全局默认值
+        $('#fontSize').val(state.defaultFontSize);
+        $('#fontFamily').val(state.defaultFontFamily);
         $('#layoutDirection').val(state.defaultLayoutDirection);
         $('#textColor').val(state.defaultTextColor);
+        $('#fillColor').val(state.defaultFillColor);
         $('#rotationAngle').val(0);
-        $('#rotationAngleValue').text('0°');
-        $('#useInpainting').val('false'); // 默认纯色填充
-        $('#fillColor').val(state.defaultFillColor); // <--- 使用全局默认填充色
-        // ... 其他修复参数也重置 ...
+        // 新增：重置描边UI为全局默认
+        $('#enableTextStroke').prop('checked', state.defaultEnableTextStroke);
+        $('#textStrokeColor').val(state.defaultTextStrokeColor);
+        $('#textStrokeWidth').val(state.defaultTextStrokeWidth);
+        $("#textStrokeOptions").toggle(state.defaultEnableTextStroke);
         
-        // 更新字体选择器
-        ui.loadFontList(fontFamily);
-    } else if (!imageData.translatedDataURL && imageData.originalDataURL) { // 有原图但未翻译
+        // 更新全局状态变量
+        state.setEnableTextStroke(state.defaultEnableTextStroke);
+        state.setTextStrokeColor(state.defaultTextStrokeColor);
+        state.setTextStrokeWidth(state.defaultTextStrokeWidth);
+    } else if (!imageData.translatedDataURL && imageData.originalDataURL) {
         // 通常我们希望保留用户在翻译前的全局设置，或者也可以重置
         // 这里我们选择保留当前UI控件的值（通常是上一个图片的或全局默认的）
         // 但要确保 fillColor 反映图片自身的记录，如果没有，则用全局的
         $('#fillColor').val(imageData.fillColor || state.defaultFillColor);
-    }
-    else { // 图片已翻译或处理过
-        // 图片已翻译，加载其保存的设置到 UI
-        $('#autoFontSize').prop('checked', imageData.autoFontSize || false);
-        $('#fontSize').prop('disabled', imageData.autoFontSize || false).val(imageData.autoFontSize ? '-' : (imageData.fontSize || state.defaultFontSize));
         
-        // 先获取当前图片的字体设置
-        const fontFamily = imageData.fontFamily || state.defaultFontFamily;
-        console.log("切换到图片的字体设置:", fontFamily);
+        // 新增：如果图片有独立描边设置则加载，否则使用全局
+        const enableStroke = imageData.enableTextStroke === undefined ? state.enableTextStroke : imageData.enableTextStroke;
+        const strokeColor = imageData.textStrokeColor || state.textStrokeColor;
+        const strokeWidth = imageData.textStrokeWidth === undefined ? state.textStrokeWidth : imageData.textStrokeWidth;
         
-        // 更新字体选择器，确保显示正确的字体
-        ui.loadFontList(fontFamily);
+        $('#enableTextStroke').prop('checked', enableStroke);
+        $('#textStrokeColor').val(strokeColor);
+        $('#textStrokeWidth').val(strokeWidth);
+        $("#textStrokeOptions").toggle(enableStroke);
         
-        $('#layoutDirection').val(imageData.layoutDirection || state.defaultLayoutDirection); 
+        // 更新全局状态变量
+        state.setEnableTextStroke(enableStroke);
+        state.setTextStrokeColor(strokeColor);
+        state.setTextStrokeWidth(strokeWidth);
+    } else { // 图片已翻译或处理过
+        // 加载图片自身记录的设置或回退到全局默认设置
+        $('#fontSize').val(imageData.fontSize || state.defaultFontSize);
+        $('#fontFamily').val(imageData.fontFamily || state.defaultFontFamily);
+        $('#layoutDirection').val(imageData.textDirection || state.defaultLayoutDirection);
         $('#textColor').val(imageData.textColor || state.defaultTextColor);
-        $('#rotationAngle').val(imageData.rotationAngle || 0);
-        $('#rotationAngleValue').text((imageData.rotationAngle || 0) + '°');
-
-        // 加载修复设置
-        const useInpainting = imageData.originalUseInpainting;
-        const useLama = imageData.originalUseLama;
-        let repairMethod = 'false';
-        if (useLama) repairMethod = 'lama';
-        else if (useInpainting) repairMethod = 'true';
-        $('#useInpainting').val(repairMethod);
-        // ui.toggleInpaintingOptions(useInpainting || useLama, !useInpainting && !useLama); // 旧的，下面会触发change
-
-        if(useInpainting || useLama) {
-            $('#inpaintingStrength').val(imageData.inpaintingStrength === undefined ? constants.DEFAULT_INPAINTING_STRENGTH : imageData.inpaintingStrength);
-            $('#inpaintingStrengthValue').text($('#inpaintingStrength').val());
-            $('#blendEdges').prop('checked', imageData.blendEdges === undefined ? true : imageData.blendEdges);
-        }
         // 加载图片自身记录的填充色，如果不存在，则使用全局默认填充色
-        $('#fillColor').val(imageData.fillColor || state.defaultFillColor); // <--- 修改：加载图片自身的填充色
+        $('#fillColor').val(imageData.fillColor || state.defaultFillColor);
+        $('#rotationAngle').val(imageData.rotationAngle || 0);
+        
+        // 新增：加载图片的描边设置或全局设置
+        const enableStroke = imageData.enableTextStroke === undefined ? state.enableTextStroke : imageData.enableTextStroke;
+        const strokeColor = imageData.textStrokeColor || state.textStrokeColor;
+        const strokeWidth = imageData.textStrokeWidth === undefined ? state.textStrokeWidth : imageData.textStrokeWidth;
+        
+        $('#enableTextStroke').prop('checked', enableStroke);
+        $('#textStrokeColor').val(strokeColor);
+        $('#textStrokeWidth').val(strokeWidth);
+        $("#textStrokeOptions").toggle(enableStroke);
+        
+        // 更新全局状态变量
+        state.setEnableTextStroke(enableStroke);
+        state.setTextStrokeColor(strokeColor);
+        state.setTextStrokeWidth(strokeWidth);
     }
 
     // 触发 change 以更新依赖 UI (比如修复选项的显隐)
@@ -831,8 +867,7 @@ export function translateCurrentImage() {
         image: currentImage.originalDataURL.split(',')[1],
         target_language: $('#targetLanguage').val(),
         source_language: $('#sourceLanguage').val(),
-        fontSize: fontSize,
-        autoFontSize: isAutoFontSize,
+        fontSize: fontSize, autoFontSize: isAutoFontSize,
         api_key: $('#apiKey').val(),
         model_name: $('#modelName').val(),
         model_provider: modelProvider, // 使用获取到的服务商
@@ -848,18 +883,26 @@ export function translateCurrentImage() {
         fill_color: $('#fillColor').val(),
         text_color: $('#textColor').val(),
         rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
-        skip_translation: false,
         skip_ocr: false,
-        remove_only: false,
+        skip_translation: false,
         bubble_coords: coordsToUse,
         ocr_engine: ocr_engine,
-        baidu_api_key: ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null,
-        baidu_secret_key: ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null,
-        baidu_version: ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : 'standard',
+        baidu_ocr_api_key: ocr_engine === 'baidu' ? $('#baiduOcrApiKey').val() : null,
+        baidu_ocr_secret_key: ocr_engine === 'baidu' ? $('#baiduOcrSecretKey').val() : null,
+        baidu_ocr_version: ocr_engine === 'baidu' ? $('#baiduOcrVersion').val() : null,
         ai_vision_provider: ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null,
         ai_vision_api_key: ocr_engine === 'ai_vision' ? $('#aiVisionApiKey').val() : null,
         ai_vision_model_name: ocr_engine === 'ai_vision' ? $('#aiVisionModelName').val() : null,
         ai_vision_ocr_prompt: ocr_engine === 'ai_vision' ? $('#aiVisionOcrPrompt').val() : null,
+
+        // === 新增描边参数 START ===
+        enableTextStroke: state.enableTextStroke,       // 从 state.js 获取
+        textStrokeColor: state.textStrokeColor,         // 从 state.js 获取
+        textStrokeWidth: state.textStrokeWidth,         // 从 state.js 获取
+        // === 新增描边参数 END ===
+        
+        rpm_limit_translation: state.rpmLimitTranslation,
+        rpm_limit_ai_vision_ocr: state.rpmLimitAiVisionOcr,
         use_json_format_translation: state.isTranslateJsonMode,
         use_json_format_ai_vision_ocr: state.isAiVisionOcrJsonMode
     };
@@ -879,7 +922,7 @@ export function translateCurrentImage() {
     // ----------------------------------------------------
 
     // 检查百度OCR配置
-    if (ocr_engine === 'baidu_ocr' && (!params.baidu_api_key || !params.baidu_secret_key)) {
+    if (ocr_engine === 'baidu_ocr' && (!params.baidu_ocr_api_key || !params.baidu_ocr_secret_key)) {
         ui.showGeneralMessage("使用百度OCR时必须提供API Key和Secret Key", "error");
         ui.hideTranslatingIndicator(state.currentImageIndex);
         return Promise.reject("Baidu OCR configuration error"); // 返回一个被拒绝的Promise
@@ -919,6 +962,12 @@ export function translateCurrentImage() {
                 state.updateCurrentImageProperty('fillColor', params.fill_color);
                 state.updateCurrentImageProperty('textColor', params.text_color);
                 state.updateCurrentImageProperty('bubbleSettings', null); // 清空编辑设置
+
+                // === 新增：保存描边参数到图片属性 START ===
+                state.updateCurrentImageProperty('enableTextStroke', params.enableTextStroke);
+                state.updateCurrentImageProperty('textStrokeColor', params.textStrokeColor);
+                state.updateCurrentImageProperty('textStrokeWidth', params.textStrokeWidth);
+                // === 新增：保存描边参数到图片属性 END ===
 
                 // 根据使用的修复方法设置标记
                 if (repairSettings.useLama) {
@@ -1010,6 +1059,12 @@ export function translateAllImages() {
     const textColor = $('#textColor').val();
     const rotationAngle = parseFloat($('#rotationAngle').val() || '0');
     const ocr_engine = $('#ocrEngine').val();
+    
+    // === 新增：获取全局描边参数 START ===
+    const enableTextStroke = state.enableTextStroke;
+    const textStrokeColor = state.textStrokeColor;
+    const textStrokeWidth = state.textStrokeWidth;
+    // === 新增：获取全局描边参数 END ===
 
     // 百度OCR相关参数
     const baiduApiKey = ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null;
@@ -1125,6 +1180,13 @@ export function translateAllImages() {
             ai_vision_model_name: aiVisionModelName,
             ai_vision_ocr_prompt: aiVisionOcrPrompt,
             custom_base_url: customBaseUrlForAll, // --- 传递 custom_base_url ---
+            
+            // === 新增：传递描边参数 START ===
+            enableTextStroke: enableTextStroke,
+            textStrokeColor: textStrokeColor,
+            textStrokeWidth: textStrokeWidth,
+            // === 新增：传递描边参数 END ===
+            
             use_json_format_translation: aktuellenTranslateJsonMode,
             use_json_format_ai_vision_ocr: aktuellenAiVisionOcrJsonMode
         };
@@ -1156,6 +1218,12 @@ export function translateAllImages() {
                 state.updateImagePropertyByIndex(currentIndex, 'fillColor', fillColor);
                 state.updateImagePropertyByIndex(currentIndex, 'textColor', textColor);
                 state.updateImagePropertyByIndex(currentIndex, 'bubbleSettings', null); // 清空编辑设置
+                
+                // === 新增：保存描边参数到图片属性 START ===
+                state.updateImagePropertyByIndex(currentIndex, 'enableTextStroke', enableTextStroke);
+                state.updateImagePropertyByIndex(currentIndex, 'textStrokeColor', textStrokeColor);
+                state.updateImagePropertyByIndex(currentIndex, 'textStrokeWidth', textStrokeWidth);
+                // === 新增：保存描边参数到图片属性 END ===
 
                 // 根据使用的修复方法设置标记
                 if (useLama) {
@@ -1415,7 +1483,12 @@ export async function applySettingsToAll() { // 导出
         fontFamily: currentImage.fontFamily,
         textDirection: currentImage.layoutDirection,
         textColor: $('#textColor').val(), // 使用当前的全局颜色
-        rotationAngle: 0 // 全局应用时不应用旋转
+        rotationAngle: 0, // 全局应用时不应用旋转
+        // === 新增：描边参数 START ===
+        enableStroke: state.enableTextStroke,
+        strokeColor: state.textStrokeColor,
+        strokeWidth: state.textStrokeWidth
+        // === 新增：描边参数 END ===
     };
 
     ui.showLoading("应用设置到所有图片...");
@@ -1453,7 +1526,12 @@ export async function applySettingsToAll() { // 导出
                     fontFamily: settingsToApply.fontFamily,
                     textDirection: settingsToApply.textDirection,
                     textColor: settingsToApply.textColor,
-                    rotationAngle: settingsToApply.rotationAngle
+                    rotationAngle: settingsToApply.rotationAngle,
+                    // === 新增：描边参数 START ===
+                    enableStroke: settingsToApply.enableStroke,
+                    strokeColor: settingsToApply.strokeColor, 
+                    strokeWidth: settingsToApply.strokeWidth
+                    // === 新增：描边参数 END ===
                 }));
             }
             
@@ -1489,11 +1567,10 @@ export async function applySettingsToAll() { // 导出
 /**
  * 仅消除当前图片的气泡文字
  */
-export function removeBubbleTextOnly() { // 导出
+export function removeBubbleTextOnly() {
     const currentImage = state.getCurrentImage();
-    if (!currentImage) return;
+    if (!currentImage) return Promise.reject("No current image"); // 返回Promise
 
-    // 移除showLoading调用，events.js已处理显示消息
     ui.showTranslatingIndicator(state.currentImageIndex);
 
     const repairSettings = ui.getRepairSettings();
@@ -1501,12 +1578,12 @@ export function removeBubbleTextOnly() { // 导出
     const fontSize = isAutoFontSize ? 'auto' : $('#fontSize').val();
     const ocr_engine = $('#ocrEngine').val();
 
+    let coordsToUse = null;
+    let usedManualCoords = false; // 添加变量定义
     // --- 关键修改：检查并使用已保存的手动坐标 ---
-    let coordsToUse = null; // 默认不传递，让后端自动检测
-    let usedManualCoords = false; // 标记是否使用了手动坐标
     if (currentImage.savedManualCoords && currentImage.savedManualCoords.length > 0) {
         coordsToUse = currentImage.savedManualCoords;
-        usedManualCoords = true;
+        usedManualCoords = true; // 设置为true，表示使用了手动坐标
         console.log(`消除文字 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已保存的手动标注框。`);
         ui.showGeneralMessage("检测到手动标注框，将优先使用...", "info", false, 3000);
     } else {
@@ -1518,10 +1595,11 @@ export function removeBubbleTextOnly() { // 导出
         image: currentImage.originalDataURL.split(',')[1],
         target_language: $('#targetLanguage').val(),
         source_language: $('#sourceLanguage').val(),
-        fontSize: fontSize, autoFontSize: isAutoFontSize,
+        fontSize: fontSize, 
+        autoFontSize: isAutoFontSize,
         api_key: $('#apiKey').val(), 
         model_name: $('#modelName').val(),
-        model_provider: $('#modelProvider').val(), 
+        model_provider: $('#modelProvider').val(),
         fontFamily: $('#fontFamily').val(),
         textDirection: $('#layoutDirection').val(),
         prompt_content: $('#promptContent').val(),
@@ -1534,36 +1612,45 @@ export function removeBubbleTextOnly() { // 导出
         fill_color: $('#fillColor').val(),
         text_color: $('#textColor').val(),
         rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
-        skip_translation: true,
-        remove_only: true,
-        use_json_format_translation: false,
-        use_json_format_ai_vision_ocr: state.isAiVisionOcrJsonMode,
+        skip_ocr: false, 
+        skip_translation: true, // 关键：跳过翻译步骤
+        remove_only: true, // 添加此参数，表示仅消除文字
         bubble_coords: coordsToUse,
         ocr_engine: ocr_engine,
-        baidu_api_key: ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null,
-        baidu_secret_key: ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null,
-        baidu_version: ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : 'standard',
+        baidu_ocr_api_key: ocr_engine === 'baidu' ? $('#baiduOcrApiKey').val() : null,
+        baidu_ocr_secret_key: ocr_engine === 'baidu' ? $('#baiduOcrSecretKey').val() : null,
+        baidu_ocr_version: ocr_engine === 'baidu' ? $('#baiduOcrVersion').val() : null,
         ai_vision_provider: ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null,
         ai_vision_api_key: ocr_engine === 'ai_vision' ? $('#aiVisionApiKey').val() : null,
         ai_vision_model_name: ocr_engine === 'ai_vision' ? $('#aiVisionModelName').val() : null,
-        ai_vision_ocr_prompt: ocr_engine === 'ai_vision' ? $('#aiVisionOcrPrompt').val() : null
+        ai_vision_ocr_prompt: ocr_engine === 'ai_vision' ? $('#aiVisionOcrPrompt').val() : null,
+
+        // === 新增描边参数 START ===
+        enableTextStroke: state.enableTextStroke,
+        textStrokeColor: state.textStrokeColor,
+        textStrokeWidth: state.textStrokeWidth,
+        // === 新增描边参数 END ===
+
+        rpm_limit_translation: state.rpmLimitTranslation,
+        rpm_limit_ai_vision_ocr: state.rpmLimitAiVisionOcr,
+        use_json_format_translation: state.isTranslateJsonMode,
+        use_json_format_ai_vision_ocr: state.isAiVisionOcrJsonMode
     };
 
     // 检查百度OCR配置
-    if (ocr_engine === 'baidu_ocr' && (!params.baidu_api_key || !params.baidu_secret_key)) {
+    if (ocr_engine === 'baidu_ocr' && (!params.baidu_ocr_api_key || !params.baidu_ocr_secret_key)) {
         ui.showGeneralMessage("使用百度OCR时必须提供API Key和Secret Key", "error");
         ui.hideTranslatingIndicator(state.currentImageIndex);
-        return;
+        return Promise.reject("Baidu OCR configuration error"); // 返回一个被拒绝的Promise
     }
     
     // 检查AI视觉OCR配置
     if (ocr_engine === 'ai_vision' && (!params.ai_vision_api_key || !params.ai_vision_model_name)) {
         ui.showGeneralMessage("使用AI视觉OCR时必须提供API Key和模型名称", "error");
         ui.hideTranslatingIndicator(state.currentImageIndex);
-        return;
+        return Promise.reject("AI Vision OCR configuration error"); // 返回一个被拒绝的Promise
     }
 
-    // 返回一个Promise
     return new Promise((resolve, reject) => {
         api.translateImageApi(params)
             .then(response => {

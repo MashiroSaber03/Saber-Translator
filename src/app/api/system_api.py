@@ -993,8 +993,17 @@ def upload_font():
         if not font_file.filename.lower().endswith(('.ttf', '.ttc', '.otf')):
             return jsonify({'error': '只支持TTF、TTC和OTF格式的字体文件'}), 400
         
-        # 安全的文件名
-        filename = secure_filename(font_file.filename)
+        # 获取原始文件名
+        original_filename = font_file.filename
+        
+        # 安全处理文件名但保留中文字符
+        # 移除不安全的字符，但保留中文字符
+        import re
+        # 仅保留字母、数字、下划线、横杠、点和中文字符
+        safe_filename = re.sub(r'[^\w\.-\u4e00-\u9fff]', '_', original_filename)
+        # 确保文件名不为空
+        if not safe_filename:
+            safe_filename = 'unnamed_font.ttf'
         
         # 字体目录路径
         font_dir = resource_path(os.path.join('src', 'app', 'static', 'fonts'))
@@ -1003,20 +1012,20 @@ def upload_font():
         os.makedirs(font_dir, exist_ok=True)
         
         # 保存文件
-        file_path = os.path.join(font_dir, filename)
+        file_path = os.path.join(font_dir, safe_filename)
         font_file.save(file_path)
         
         # 生成友好的显示名称
-        display_name = os.path.splitext(filename)[0]
+        display_name = os.path.splitext(safe_filename)[0]
         if display_name.isupper():
             display_name = ' '.join(display_name.split('_'))
             display_name = display_name.title()
         
         return jsonify({
             'success': True,
-            'file_name': filename,
+            'file_name': safe_filename,
             'display_name': display_name,
-            'path': f'fonts/{filename}'
+            'path': f'fonts/{safe_filename}'
         })
     except Exception as e:
         logger.error(f"上传字体文件失败: {str(e)}", exc_info=True)

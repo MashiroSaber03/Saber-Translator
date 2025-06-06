@@ -519,9 +519,24 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
         console.log("已启用强制JSON输出模式");
     }
     
-    // 添加reasoning_effort参数(如果需要)
+    // 获取当前取消思考方法设置
+    const noThinkingMethod = state.hqNoThinkingMethod || 'gemini';
+    
+    // 根据不同取消思考方法添加参数
     if (lowReasoning) {
-        apiParams.reasoning_effort = "low";
+        if (noThinkingMethod === 'gemini') {
+            // Gemini风格：使用reasoning_effort参数
+            apiParams.reasoning_effort = "low";
+            console.log("使用Gemini方式取消思考: reasoning_effort=low");
+        } else if (noThinkingMethod === 'volcano' && provider === 'volcano') {
+            // 火山引擎风格：设置thinking=null
+            apiParams.thinking = null;
+            console.log("使用火山引擎方式取消思考: thinking=null");
+        } else {
+            // 默认使用Gemini风格
+            apiParams.reasoning_effort = "low";
+            console.log("使用默认方式取消思考: reasoning_effort=low");
+        }
     }
     
     // 根据不同服务商设置不同的endpoint
@@ -738,6 +753,9 @@ async function importTranslationResult(importedData) {
         
         // 如果图片有更新，重新渲染
         if (imageUpdated) {
+            // 更新图片的fontFamily属性，确保切换图片后能保持字体设置
+            image.fontFamily = currentFontFamily;
+            
             // 使用已有的reRenderFullImage函数重新渲染
             await new Promise(resolve => {
                 if (image.translatedDataURL) {
@@ -761,6 +779,12 @@ async function importTranslationResult(importedData) {
     // 确保在完成导入后，字体选择器还原为保存的字体
     if (savedFontFamily) {
         $('#fontFamily').val(savedFontFamily);
+        
+        // 同时更新当前图片的fontFamily属性，确保切换图片后仍然保持选择的字体
+        const currentImage = state.images[originalImageIndex];
+        if (currentImage) {
+            currentImage.fontFamily = savedFontFamily;
+        }
     }
 }
 
@@ -777,25 +801,98 @@ async function switchToImage(index) {
 }
 
 /**
- * 初始化高质量翻译模块的UI事件
+ * 初始化高质量翻译设置UI
  */
 export function initHqTranslationUI() {
-    // 初始化UI元素的值为state中的值
+    // 服务商选择
     $('#hqTranslateProvider').val(state.hqTranslateProvider);
+    
+    // API Key
     $('#hqApiKey').val(state.hqApiKey);
+    
+    // 模型名称
     $('#hqModelName').val(state.hqModelName);
+    
+    // 自定义Base URL(仅当选择自定义OpenAI兼容服务时可见)
     $('#hqCustomBaseUrl').val(state.hqCustomBaseUrl);
+    $('.custom-base-url-div').toggle($('#hqTranslateProvider').val() === 'custom_openai');
+    
+    // 批次大小
     $('#hqBatchSize').val(state.hqBatchSize);
+    
+    // 会话重置频率
     $('#hqSessionReset').val(state.hqSessionReset);
+    
+    // RPM限制
     $('#hqRpmLimit').val(state.hqRpmLimit);
+    
+    // 低推理模式
     $('#hqLowReasoning').prop('checked', state.hqLowReasoning);
+    
+    // 强制JSON输出
     $('#hqForceJsonOutput').prop('checked', state.hqForceJsonOutput);
+    
+    // 取消思考方法选择
+    let noThinkingMethodSelector = `
+    <div>
+        <label>取消思考方法:</label>
+        <select id="hqNoThinkingMethod">
+            <option value="gemini" ${state.hqNoThinkingMethod === 'gemini' ? 'selected' : ''}>Gemini (reasoning_effort)</option>
+            <option value="volcano" ${state.hqNoThinkingMethod === 'volcano' ? 'selected' : ''}>火山引擎 (thinking: null)</option>
+        </select>
+    </div>`;
+    
+    // 在低推理模式选项后面插入取消思考方法选择器
+    $('#hqLowReasoning').closest('div').after(noThinkingMethodSelector);
+    
+    // 翻译提示词
     $('#hqPrompt').val(state.hqPrompt);
     
-    // 根据当前服务商显示/隐藏Base URL输入框
-    if (state.hqTranslateProvider === 'custom_openai') {
-        $('#hqCustomBaseUrlDiv').show();
-    } else {
-        $('#hqCustomBaseUrlDiv').hide();
-    }
+    // 绑定事件处理程序
+    $('#hqTranslateProvider').on('change', function() {
+        const provider = $(this).val();
+        state.setHqTranslateProvider(provider);
+        $('.custom-base-url-div').toggle(provider === 'custom_openai');
+    });
+    
+    $('#hqApiKey').on('change', function() {
+        state.setHqApiKey($(this).val());
+    });
+    
+    $('#hqModelName').on('change', function() {
+        state.setHqModelName($(this).val());
+    });
+    
+    $('#hqCustomBaseUrl').on('change', function() {
+        state.setHqCustomBaseUrl($(this).val());
+    });
+    
+    $('#hqBatchSize').on('change', function() {
+        state.setHqBatchSize($(this).val());
+    });
+    
+    $('#hqSessionReset').on('change', function() {
+        state.setHqSessionReset($(this).val());
+    });
+    
+    $('#hqRpmLimit').on('change', function() {
+        state.setHqRpmLimit($(this).val());
+    });
+    
+    $('#hqLowReasoning').on('change', function() {
+        state.setHqLowReasoning($(this).is(':checked'));
+    });
+    
+    // 添加对取消思考方法选择器的事件处理
+    $('#hqNoThinkingMethod').on('change', function() {
+        state.setHqNoThinkingMethod($(this).val());
+    });
+    
+    $('#hqForceJsonOutput').on('change', function() {
+        state.setHqForceJsonOutput($(this).is(':checked'));
+    });
+    
+    $('#hqPrompt').on('change', function() {
+        state.setHqPrompt($(this).val());
+    });
 } 

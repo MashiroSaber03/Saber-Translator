@@ -18,7 +18,7 @@ const AUTO_SAVE_DELAY = 10000; // 自动存档延迟时间 (毫秒)，例如 10 
  * @returns {object | null} 包含当前状态的对象，如果无法获取则返回 null。
  */
 function collectCurrentSessionData() {
-    console.log("开始收集当前会话状态...");
+    console.log("开始收集当前会话状态 (含描边)...");
 
     // 检查是否有图片数据，如果没有则无法保存有意义的会话
     if (!state.images || state.images.length === 0) {
@@ -53,10 +53,17 @@ function collectCurrentSessionData() {
         blendEdges: $('#blendEdges').is(':checked'),
         rpmLimitTranslation: state.rpmLimitTranslation,         // <--- 新增
         rpmLimitAiVisionOcr: state.rpmLimitAiVisionOcr,       // <--- 新增
+
+        // === 新增：收集描边设置 START ===
+        enableTextStroke: state.enableTextStroke,       // 从 state.js 获取
+        textStrokeColor: state.textStrokeColor,         // 从 state.js 获取
+        textStrokeWidth: state.textStrokeWidth,         // 从 state.js 获取
+        // === 新增：收集描边设置 END ===
+
         // 可以添加其他需要保存的 UI 状态，如图片缩放比例等
         // imageZoom: $('#imageSize').val()
     };
-    console.log("收集到的 UI 设置:", uiSettings);
+    console.log("收集到的 UI 设置 (含描边):", uiSettings);
 
     // 2. 收集图片状态 (深拷贝以避免修改原始状态)
     // 注意：这里包含了 Base64 数据，会比较大
@@ -74,7 +81,7 @@ function collectCurrentSessionData() {
         currentImageIndex: currentIndex
     };
 
-    console.log("会话状态收集完成。");
+    console.log("会话状态收集完成 (含描边)。");
     return sessionData;
 }
 
@@ -209,7 +216,7 @@ export function showSessionManager() {
  * @param {string} sessionName - 要加载的会话名称。
  */
 export function handleLoadSession(sessionName) {
-    console.log(`请求加载会话: ${sessionName}`);
+    console.log(`请求加载会话 (含描边恢复): ${sessionName}`);
 
     // 0. 退出可能存在的编辑或标注模式
     if (state.editModeActive) {
@@ -235,7 +242,7 @@ export function handleLoadSession(sessionName) {
     api.loadSessionApi(sessionName)
         .then(response => {
             if (response.success && response.session_data) {
-                console.log("成功加载会话数据:", response.session_data);
+                console.log("成功加载会话数据 (含描边):", response.session_data);
                 const loadedData = response.session_data;
                 const uiSettings = loadedData.ui_settings || {}; // <--- 在这里先获取 uiSettings
 
@@ -313,18 +320,36 @@ export function handleLoadSession(sessionName) {
                     ui.updaterpmInputFields(); // 更新UI显示
                     // ------------------------
 
+                    // === 新增：恢复描边设置 START ===
+                    const enableStroke = uiSettings.enableTextStroke === undefined ? state.defaultEnableTextStroke : uiSettings.enableTextStroke;
+                    const strokeColor = uiSettings.textStrokeColor || state.defaultTextStrokeColor;
+                    const strokeWidth = uiSettings.textStrokeWidth === undefined ? state.defaultTextStrokeWidth : parseInt(uiSettings.textStrokeWidth);
+                    
+                    state.setEnableTextStroke(enableStroke);
+                    state.setTextStrokeColor(strokeColor);
+                    state.setTextStrokeWidth(strokeWidth);
+                    
+                    // 更新描边相关的UI控件
+                    $('#enableTextStroke').prop('checked', enableStroke);
+                    $('#textStrokeColor').val(strokeColor);
+                    $('#textStrokeWidth').val(strokeWidth);
+                    $("#textStrokeOptions").toggle(enableStroke); // 根据加载的值显示/隐藏
+                    console.log("描边 UI 设置已恢复。");
+                    // === 新增：恢复描边设置 END ===
+
                     // 再次触发 change 事件确保依赖 UI 更新
                     $('#modelProvider').trigger('change');
                     $('#useInpainting').trigger('change');
                     $('#enableTextboxPrompt').trigger('change');
                     $('#autoFontSize').trigger('change');
+                    $('#enableTextStroke').trigger('change'); // 如果描边选项的显示依赖于此
                     // --- 结束 UI 恢复代码块 ---
 
-                    console.log("UI 设置已最终恢复。");
+                    console.log("UI 设置已最终恢复 (含描边)。");
 
                 } catch (uiError) {
-                     console.error("最终恢复 UI 设置时出错:", uiError);
-                     ui.showGeneralMessage("部分 UI 设置恢复失败，但会话数据已加载。", "warning");
+                    console.error("最终恢复 UI 设置时出错 (含描边):", uiError);
+                    ui.showGeneralMessage("部分 UI 设置恢复失败，但会话数据已加载。", "warning");
                 }
 
                 // 6. 最后更新按钮状态
@@ -339,7 +364,7 @@ export function handleLoadSession(sessionName) {
         })
         .catch(error => {
             ui.hideLoading();
-            console.error(`加载会话 "${sessionName}" 失败:`, error);
+            console.error(`加载会话 "${sessionName}" 失败 (含描边恢复):`, error);
             ui.showGeneralMessage(`加载会话失败: ${error.message || '未知错误'}`, "error");
             // 加载失败后，可能需要重置界面到初始状态或保留当前状态
             // state.clearImages(); // 可以选择清空

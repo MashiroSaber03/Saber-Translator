@@ -143,7 +143,12 @@ export function initBubbleSettings() {
                 position: { x: 0, y: 0 },
                 textColor: globalTextColor, // 使用全局文本颜色
                 rotationAngle: 0,
-                fillColor: imageGlobalFillColor // <--- 新增：使用图片的全局填充色初始化
+                fillColor: imageGlobalFillColor, // <--- 新增：使用图片的全局填充色初始化
+                // === 新增：气泡描边设置 START ===
+                enableStroke: state.enableTextStroke, // 初始使用全局描边设置
+                strokeColor: state.textStrokeColor,   // 初始使用全局描边颜色
+                strokeWidth: state.textStrokeWidth    // 初始使用全局描边宽度
+                // === 新增：气泡描边设置 END ===
             });
         }
         state.setBubbleSettings(newSettings);
@@ -259,7 +264,7 @@ export function reRenderFullImage(fromAutoToManual = false) {
 
         // 使用固定消息ID，确保相同操作只显示一条消息
         const loadingMessageId = "rendering_loading_message";
-        ui.showGeneralMessage("重新渲染中...", "info", false, 0, loadingMessageId);
+        ui.showGeneralMessage("重新渲染中，请不要在重渲染时快速切换图片", "info", false, 0, loadingMessageId);
 
         let preFilledBackgroundBase64 = null; // 用于存储前端预填充后的背景
         let backendShouldInpaint = false; // 后端是否需要做任何背景修复
@@ -307,14 +312,14 @@ export function reRenderFullImage(fromAutoToManual = false) {
                         if (bubbleSetting && bubbleSetting.fillColor) {
                             const [x1, y1, x2, y2] = coords;
                             ctx.fillStyle = bubbleSetting.fillColor;
-                            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                            ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                             appliedIndividualFills = true;
                         } else {
                             // 如果某个气泡没有独立填充色，则使用图片的全局填充色
                             const imageFillColor = currentImage.fillColor || state.defaultFillColor;
                             const [x1, y1, x2, y2] = coords;
                             ctx.fillStyle = imageFillColor;
-                            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                            ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                         }
                     });
                     if(appliedIndividualFills) {
@@ -328,14 +333,14 @@ export function reRenderFullImage(fromAutoToManual = false) {
                         if (bubbleSetting && bubbleSetting.fillColor) {
                             const [x1, y1, x2, y2] = coords;
                             ctx.fillStyle = bubbleSetting.fillColor;
-                            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                            ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                             appliedIndividualFills = true;
                         } else {
                             // 如果某个气泡没有独立填充色，则使用图片的全局填充色
                             const imageFillColor = currentImage.fillColor || state.defaultFillColor;
                             const [x1, y1, x2, y2] = coords;
                             ctx.fillStyle = imageFillColor;
-                            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                            ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                         }
                     });
                     if(appliedIndividualFills) {
@@ -347,7 +352,7 @@ export function reRenderFullImage(fromAutoToManual = false) {
                     currentImage.bubbleCoords.forEach(coords => {
                         const [x1, y1, x2, y2] = coords;
                         ctx.fillStyle = imageFillColor;
-                        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                        ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                     });
                     console.log("reRenderFullImage: 已在前端应用图片的全局填充色。");
                 }
@@ -413,7 +418,12 @@ export function reRenderFullImage(fromAutoToManual = false) {
                 textDirection: setting.textDirection || state.defaultLayoutDirection,
                 position: setting.position || { x: 0, y: 0 },
                 textColor: setting.textColor || state.defaultTextColor,
-                rotationAngle: setting.rotationAngle || 0
+                rotationAngle: setting.rotationAngle || 0,
+                // === 新增：添加描边参数 START ===
+                enableStroke: setting.enableStroke !== undefined ? setting.enableStroke : state.enableTextStroke,
+                strokeColor: setting.strokeColor || state.textStrokeColor,
+                strokeWidth: setting.strokeWidth !== undefined ? setting.strokeWidth : state.textStrokeWidth
+                // === 新增：添加描边参数 END ===
             }));
         } else if (currentImage.bubbleSettings && currentImage.bubbleSettings.length === currentImage.bubbleCoords.length) {
             allBubbleStyles = currentImage.bubbleCoords.map((_, i) => {
@@ -425,7 +435,12 @@ export function reRenderFullImage(fromAutoToManual = false) {
                     textDirection: setting.textDirection || state.defaultLayoutDirection,
                     position: setting.position || { x: 0, y: 0 },
                     textColor: setting.textColor || state.defaultTextColor,
-                    rotationAngle: setting.rotationAngle || 0
+                    rotationAngle: setting.rotationAngle || 0,
+                    // === 新增：添加描边参数 START ===
+                    enableStroke: setting.enableStroke !== undefined ? setting.enableStroke : state.enableTextStroke,
+                    strokeColor: setting.strokeColor || state.textStrokeColor,
+                    strokeWidth: setting.strokeWidth !== undefined ? setting.strokeWidth : state.textStrokeWidth
+                    // === 新增：添加描边参数 END ===
                 };
             });
         } else {
@@ -443,7 +458,12 @@ export function reRenderFullImage(fromAutoToManual = false) {
                 textDirection: globalTextDirection,
                 position: { x: 0, y: 0 },
                 textColor: globalTextColor,
-                rotationAngle: globalRotationAngle
+                rotationAngle: globalRotationAngle,
+                // === 新增：添加描边参数 START ===
+                enableStroke: state.enableTextStroke,
+                strokeColor: state.textStrokeColor,
+                strokeWidth: state.textStrokeWidth
+                // === 新增：添加描边参数 END ===
             }));
         }
 
@@ -469,8 +489,17 @@ export function reRenderFullImage(fromAutoToManual = false) {
             fill_color: null,     // 后端不需要全局填充色了
 
             is_font_style_change: true,
-            prev_auto_font_size: fromAutoToManual
+            prev_auto_font_size: fromAutoToManual,
+
+            // === 新增：传递描边参数 START ===
+            enableTextStroke: state.enableTextStroke,
+            textStrokeColor: state.textStrokeColor,
+            textStrokeWidth: state.textStrokeWidth
+            // === 新增：传递描边参数 END ===
         };
+
+        // 添加日志显示描边参数
+        console.log(`reRenderFullImage: 发送描边参数 - 启用=${data.enableTextStroke}, 颜色=${data.textStrokeColor}, 宽度=${data.textStrokeWidth}`);
 
         api.reRenderImageApi(data)
             .then(response => {
@@ -520,7 +549,12 @@ export function applySettingsToAllBubbles() {
         fontFamily: currentSetting.fontFamily,
         textDirection: currentSetting.textDirection,
         textColor: currentSetting.textColor,
-        rotationAngle: currentSetting.rotationAngle
+        rotationAngle: currentSetting.rotationAngle,
+        // === 新增：复制描边设置 START ===
+        enableStroke: currentSetting.enableStroke,
+        strokeColor: currentSetting.strokeColor,
+        strokeWidth: currentSetting.strokeWidth
+        // === 新增：复制描边设置 END ===
     }));
     state.setBubbleSettings(newSettings); // 更新状态
     ui.updateBubbleListUI(); // 更新列表
@@ -607,7 +641,7 @@ function ensureCleanBackground() {
                     ctx.drawImage(img, 0, 0);
                     ctx.fillStyle = $('#fillColor').val() || state.defaultFillColor;
                     for (const [x1, y1, x2, y2] of currentImage.bubbleCoords) {
-                        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                        ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
                     }
                     const tempCleanImage = canvas.toDataURL('image/png').split(',')[1];
                     currentImage._tempCleanImage = tempCleanImage;

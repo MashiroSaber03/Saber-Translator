@@ -65,6 +65,11 @@ def process_image_translation(
     rpm_limit_ai_vision_ocr: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     # VVVVVV 新增参数 VVVVVV
     custom_ai_vision_base_url=None, # 用于AI视觉OCR的自定义Base URL
+    # === 新增描边参数 START ===
+    enable_text_stroke=constants.DEFAULT_TEXT_STROKE_ENABLED,
+    text_stroke_color=constants.DEFAULT_TEXT_STROKE_COLOR,
+    text_stroke_width=constants.DEFAULT_TEXT_STROKE_WIDTH
+    # === 新增描边参数 END ===
     # ^^^^^^ 结束新增 ^^^^^^
     ):
     """
@@ -342,7 +347,12 @@ def process_image_translation(
                 'text_direction': text_direction,
                 'position_offset': {'x': 0, 'y': 0},
                 'text_color': text_color,
-                'rotation_angle': rotation_angle
+                'rotation_angle': rotation_angle,
+                # === 新增描边参数 START ===
+                'enableStroke': enable_text_stroke,
+                'strokeColor': text_stroke_color,
+                'strokeWidth': text_stroke_width
+                # === 新增描边参数 END ===
             }
         
         # --- 触发 BEFORE_RENDERING 钩子 ---
@@ -467,6 +477,9 @@ if __name__ == '__main__':
                 "rpm_limit_translation": constants.DEFAULT_rpm_TRANSLATION,
                 "rpm_limit_ai_vision_ocr": constants.DEFAULT_rpm_AI_VISION_OCR,
                 "custom_ai_vision_base_url": None,
+                "enable_text_stroke": constants.DEFAULT_TEXT_STROKE_ENABLED,
+                "text_stroke_color": constants.DEFAULT_TEXT_STROKE_COLOR,
+                "text_stroke_width": constants.DEFAULT_TEXT_STROKE_WIDTH
             }
             print(f"\n测试参数: { {k:v for k,v in test_params.items() if k != 'image_pil'} }")
 

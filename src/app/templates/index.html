@@ -76,7 +76,6 @@
                                     <option value="baidu_ocr">百度OCR</option>
                                     <option value="ai_vision">AI视觉OCR</option>
                                 </select>
-                                <div class="input-hint">自动选择会根据源语言自动使用合适的OCR</div>
                             </div>
                             <!-- 百度OCR设置 -->
                             <div id="baiduOcrOptions" style="display: none;">
@@ -155,10 +154,10 @@
                                 <label for="fontSize">字号大小:</label>
                                 <div class="fontSize-control">
                                     <input type="number" id="fontSize" value="25" min="10" max="100">
-                                    <div class="auto-fontSize-option">
-                                        <input type="checkbox" id="autoFontSize">
-                                        <label for="autoFontSize">自动字号</label>
-                                    </div>
+                                    <span class="auto-fontSize-option" style="display: inline-flex; align-items: center; margin-left: 10px;">
+                                        <input type="checkbox" id="autoFontSize" style="margin-right: 5px; vertical-align: middle;">
+                                        <label for="autoFontSize" style="margin-bottom: 0; display: flex; align-items: center;">自动字号</label>
+                                    </span>
                                 </div>
                             </div>
                             <div>
@@ -182,12 +181,28 @@
                                 <input type="color" id="textColor" value="#231816">
                             </div>
                             <div>
+                                <span style="display: inline-flex; align-items: center;">
+                                    <input type="checkbox" id="enableTextStroke" style="margin-right: 5px; vertical-align: middle;" checked>
+                                    <label for="enableTextStroke" style="margin-bottom: 0; display: flex; align-items: center;">启用文本描边:</label>
+                                </span>
+                            </div>
+                            <div id="textStrokeOptions" style="display: block; margin-left: 20px; border-left: 2px solid #eee; padding-left: 15px; margin-top: 5px;">
+                                <div style="margin-bottom: 10px;">
+                                    <label for="textStrokeColor">描边颜色:</label>
+                                    <input type="color" id="textStrokeColor" value="#FFFFFF">
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <label for="textStrokeWidth">描边宽度 (px):</label>
+                                    <input type="number" id="textStrokeWidth" value="3" min="0" max="10" style="width: 60px; padding: 5px;">
+                                    <div class="input-hint" style="margin-top: 2px;">0 表示无描边。</div>
+                                </div>
+                            </div>
+                            <div>
                                 <label for="useInpainting">气泡填充方式:</label>
                                 <select id="useInpainting">
                                     <option value="false" selected>纯色填充</option>
                                     <option value="lama">LAMA修复</option>
                                 </select>
-                                <div class="input-hint">LAMA效果更好但需要更多计算资源</div>
                             </div>
                             <div id="solidColorOptions">
                                 <label for="fillColor">填充颜色:</label>
@@ -201,8 +216,10 @@
                                     <div class="input-hint">值越大修复越强，可能改变背景细节</div>
                                 </div>
                                 <div>
-                                    <label for="blendEdges">边缘融合:</label>
-                                    <input type="checkbox" id="blendEdges" checked>
+                                    <span style="display: inline-flex; align-items: center;">
+                                        <input type="checkbox" id="blendEdges" style="margin-right: 5px; vertical-align: middle;" checked>
+                                        <label for="blendEdges" style="margin-bottom: 0; display: flex; align-items: center;">边缘融合:</label>
+                                    </span>
                                     <div class="input-hint">使修复区域边缘更自然</div>
                                 </div>
                             </div>
@@ -334,27 +351,26 @@
                             <div>
                                 <label for="hqBatchSize">每批次图片数:</label>
                                 <input type="number" id="hqBatchSize" min="1">
-                                <div class="input-hint">每次请求发送的图片数量，太多可能超出AI上下文长度</div>
                             </div>
                             <div>
                                 <label for="hqSessionReset">会话重置频率:</label>
                                 <input type="number" id="hqSessionReset" min="1">
-                                <div class="input-hint">发送多少批次后重置会话上下文</div>
                             </div>
                             <div>
                                 <label for="hqRpmLimit">RPM限制:</label>
                                 <input type="number" id="hqRpmLimit" min="1" max="100">
-                                <div class="input-hint">每分钟最大请求数量</div>
                             </div>
                             <div>
-                                <label for="hqLowReasoning">关闭思考功能:</label>
-                                <input type="checkbox" id="hqLowReasoning">
-                                <div class="input-hint">部分模型支持关闭思考以加快响应速度</div>
+                                <span style="display: inline-flex; align-items: center;">
+                                    <input type="checkbox" id="hqLowReasoning" style="margin-right: 5px; vertical-align: middle;">
+                                    <label for="hqLowReasoning" style="margin-bottom: 0; display: flex; align-items: center;">关闭思考功能:</label>
+                                </span>
                             </div>
                             <div>
-                                <label for="hqForceJsonOutput">强制JSON输出:</label>
-                                <input type="checkbox" id="hqForceJsonOutput">
-                                <div class="input-hint">使用API参数强制输出JSON，仅支持OpenAI兼容接口</div>
+                                <span style="display: inline-flex; align-items: center;">
+                                    <input type="checkbox" id="hqForceJsonOutput" style="margin-right: 5px; vertical-align: middle;">
+                                    <label for="hqForceJsonOutput" style="margin-bottom: 0; display: flex; align-items: center;">强制JSON输出:</label>
+                                </span>
                             </div>
                             <div>
                                 <label for="hqPrompt">翻译提示词:</label>
@@ -367,6 +383,8 @@
 
                 <button id="translateButton" disabled>翻译当前图片</button>
                 <button id="translateAllButton" disabled>翻译所有图片</button>
+                <button id="proofreadButton" disabled>AI校对</button>
+                <button id="proofreadSettingsButton" disabled>校对设置</button>
                 <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>
                 <button id="removeAllTextButton" disabled title="消除所有图片中的气泡文字，无需填写翻译服务商和API Key">消除所有图片文字</button>
                 <button id="deleteCurrentImageButton" class="settings-button red-button" disabled>删除当前图片</button>
@@ -444,10 +462,10 @@
                                         <label for="bubbleFontSize">字号大小:</label>
                                         <div class="fontSize-control">
                                             <input type="number" id="bubbleFontSize" value="25" min="10" max="100">
-                                            <div class="auto-fontSize-option">
-                                                <input type="checkbox" id="autoBubbleFontSize">
-                                                <label for="autoBubbleFontSize">自动字号</label>
-                                            </div>
+                                            <span class="auto-fontSize-option" style="display: inline-flex; align-items: center; margin-left: 10px;">
+                                                <input type="checkbox" id="autoBubbleFontSize" style="margin-right: 5px; vertical-align: middle;">
+                                                <label for="autoBubbleFontSize" style="margin-bottom: 0; display: flex; align-items: center;">自动字号</label>
+                                            </span>
                                         </div>
                                     </div>
                                     <div>
@@ -478,6 +496,24 @@
                                         <label for="bubbleFillColor">气泡填充颜色:</label>
                                         <input type="color" id="bubbleFillColor">
                                     </div>
+                                    <!-- 新增：单独气泡描边设置 START -->
+                                    <div>
+                                        <span style="display: inline-flex; align-items: center;">
+                                            <input type="checkbox" id="bubbleEnableStroke" style="margin-right: 5px; vertical-align: middle;">
+                                            <label for="bubbleEnableStroke" style="margin-bottom: 0; display: flex; align-items: center;">启用文本描边:</label>
+                                        </span>
+                                    </div>
+                                    <div class="bubble-stroke-options" style="display: none;">
+                                        <div>
+                                            <label for="bubbleStrokeColor">描边颜色:</label>
+                                            <input type="color" id="bubbleStrokeColor" value="#FFFFFF">
+                                        </div>
+                                        <div>
+                                            <label for="bubbleStrokeWidth">描边宽度 (px):</label>
+                                            <input type="number" id="bubbleStrokeWidth" value="1" min="0" max="10" style="width: 60px; padding: 5px;">
+                                        </div>
+                                    </div>
+                                    <!-- 新增：单独气泡描边设置 END -->
                                 </div>
                                 <div class="bubble-position-settings">
                                     <h4>位置调整</h4>
@@ -602,6 +638,31 @@
         </div>
     </div>
     <!-- === 结束新增 === -->
+
+    <!-- AI校对设置弹窗 -->
+    <div id="proofreadingSettingsModal" class="plugin-modal" style="display: none;">
+        <div class="plugin-modal-content">
+            <span class="plugin-modal-close">&times;</span>
+            <h3>AI校对设置</h3>
+            <div class="proofreading-settings-container">
+                <div class="proofreading-enable-section">
+                    <label for="proofreadingEnabled">启用AI校对:</label>
+                    <input type="checkbox" id="proofreadingEnabled">
+                    <span class="input-hint">启用后点击"AI校对"按钮将执行多轮校对</span>
+                </div>
+                
+                <h3>校对轮次配置</h3>
+                <div id="proofreadingRoundsContainer">
+                    <!-- 轮次内容将通过JS动态添加 -->
+                </div>
+                
+                <div class="proofreading-buttons">
+                    <button id="addRoundButton" class="settings-button">添加轮次</button>
+                    <button id="saveProofreadingSettingsButton" class="settings-button primary">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- 使用 url_for 加载 JS 模块 -->
     <script src="{{ url_for('static', filename='js/main.js') }}" type="module"></script>

@@ -38,6 +38,8 @@ export function bindEventListeners() {
     // --- 主要操作按钮 ---
     $("#translateButton").on('click', handleTranslateCurrent);
     $("#translateAllButton").on('click', handleTranslateAll);
+    $("#proofreadButton").on('click', handleProofread);
+    $("#proofreadSettingsButton").on('click', handleProofreadSettings);
     $("#removeTextOnlyButton").on('click', handleRemoveTextOnly); // 仅消除文字
     $("#removeAllTextButton").on('click', handleRemoveAllText); // 消除所有图片文字
     $("#deleteCurrentImageButton").on('click', handleDeleteCurrent);
@@ -231,14 +233,23 @@ export function bindEventListeners() {
     $("#bubbleFontFamily").on('change', handleBubbleSettingChange);
     $("#bubbleTextDirection").on('change', handleBubbleSettingChange);
     $("#bubbleTextColor").on('input', handleBubbleSettingChange);
-    $("#bubbleFillColor").on('input', handleBubbleSettingChange);
     $("#bubbleRotationAngle").on('input', handleBubbleRotationChange);
+    $("#bubbleFillColor").on('input', handleBubbleSettingChange);
+    
+    // === 新增：气泡描边控件事件绑定 START ===
+    $("#bubbleEnableStroke").on('change', handleBubbleEnableStrokeChange);
+    $("#bubbleStrokeColor").on('input', handleBubbleStrokeSettingChange);
+    $("#bubbleStrokeWidth").on('input', handleBubbleStrokeSettingChange);
+    // === 新增：气泡描边控件事件绑定 END ===
+    
     $("#positionOffsetX").on('input', handleBubblePositionChange); // 位置实时变化 (带延迟)
     $("#positionOffsetY").on('input', handleBubblePositionChange); // 位置实时变化 (带延迟)
+    
     // 编辑操作按钮
     $("#applyBubbleEdit").on('click', handleApplyBubbleEdit);
     $("#applyToAllBubbles").on('click', handleApplyToAllBubbles);
     $("#resetBubbleEdit").on('click', handleResetBubbleEdit);
+
     // 位置调整按钮 (mousedown 用于连续调整)
     $("#moveUp, #moveDown, #moveLeft, #moveRight").on("mousedown", handlePositionButtonMouseDown);
     $(document).on("mouseup", handlePositionButtonMouseUp); // 监听全局 mouseup
@@ -360,6 +371,27 @@ export function bindEventListeners() {
         }
     });
     // ------------------------
+    
+    // --- 校对设置模态框事件 ---
+    $(document).on('click', '#proofreadingSettingsModal .plugin-modal-close', function() {
+        ui.hideProofreadingSettingsModal();
+    });
+    $(window).on('click', function(event) {
+        const modal = $("#proofreadingSettingsModal");
+        if (modal.length > 0 && event.target == modal[0]) {
+            ui.hideProofreadingSettingsModal();
+        }
+    });
+    // 保存校对设置按钮
+    $(document).on('click', '#saveProofreadingSettingsButton', function() {
+        import('./ai_proofreading.js').then(proofreading => {
+            proofreading.saveProofreadingSettings();
+        }).catch(error => {
+            console.error("保存校对设置失败:", error);
+            ui.showGeneralMessage("保存校对设置失败: " + error.message, "error");
+        });
+    });
+    // ------------------------
 
     // --- 新增：rpm 设置变更事件 ---
     $("#rpmTranslation").on('change input', function() { // 'input' 事件可实现更实时的更新（可选）
@@ -446,6 +478,11 @@ export function bindEventListeners() {
     // 源语言和目标语言
     $('#sourceLanguage').on('change', handleSourceLanguageChange);
     $('#targetLanguage').on('change', handleTargetLanguageChange);
+
+    // --- 描边设置 ---  (可以放在 "#textColor" 事件绑定之后)
+    $("#enableTextStroke").on('change', handleEnableTextStrokeChange);
+    $("#textStrokeColor").on('input', handleTextStrokeSettingChange);
+    $("#textStrokeWidth").on('input', handleTextStrokeSettingChange); // 'input' 事件用于实时响应数字输入框
 }
 
 // --- 事件处理函数 ---
@@ -630,8 +667,10 @@ function handleGlobalSettingChange(event) {
     // 获取新值，并根据类型处理
     if (changedElement.type === 'checkbox') {
         newValue = changedElement.checked;
-    } else if (changedElement.type === 'number' || settingId === 'fontSize') {
-        newValue = parseInt(changedElement.value) || state.defaultFontSize; // 处理字号
+    } else if (changedElement.type === 'number' || settingId === 'fontSize' || settingId === 'textStrokeWidth') { // 添加 textStrokeWidth
+        newValue = parseInt(changedElement.value);
+        if (settingId === 'fontSize' && isNaN(newValue)) newValue = state.defaultFontSize;
+        if (settingId === 'textStrokeWidth' && (isNaN(newValue) || newValue < 0)) newValue = 0; // 描边宽度不能为负
     } else if (changedElement.type === 'range') {
         newValue = parseFloat(changedElement.value); // 处理滑块
     } else {
@@ -642,13 +681,13 @@ function handleGlobalSettingChange(event) {
 
     // 更新全局默认值状态（用于新图片）
     switch (settingId) {
-        case 'fontSize': state.setDefaultFontSize(newValue); break;
-        case 'fontFamily': state.setDefaultFontFamily(newValue); break;
-        case 'layoutDirection': state.setDefaultLayoutDirection(newValue); break;
-        case 'textColor': state.setDefaultTextColor(newValue); break;
+        case 'fontSize': state.setDefaultFontSize(newValue); settingsUpdated = true; break;
+        case 'fontFamily': state.setDefaultFontFamily(newValue); settingsUpdated = true; break;
+        case 'layoutDirection': state.setDefaultLayoutDirection(newValue); settingsUpdated = true; break;
+        case 'textColor': state.setDefaultTextColor(newValue); settingsUpdated = true; break;
         case 'fillColor': 
             state.setDefaultFillColor(newValue);
-            if (currentImage && !state.isLabelingModeActive) {
+            if (currentImage && !state.isLabelingModeActive) { // 移除描边相关的条件检查
                 console.log("全局填充色变更，触发带新填充色的重渲染...");
                 main.reRenderWithNewFillColor(newValue); // 调用新的函数
             }
@@ -659,6 +698,21 @@ function handleGlobalSettingChange(event) {
         case 'aiVisionModelName': state.setAiVisionModelName(newValue); break;
         case 'aiVisionOcrPrompt': state.setAiVisionOcrPrompt(newValue); break;
         // case 'rotationAngle': state.setDefaultRotationAngle(newValue); break; // 如果需要
+
+        // === 新增描边相关的 case START ===
+        case 'enableTextStroke':
+            // 状态已在 handleEnableTextStrokeChange 中通过 state.setEnableTextStroke 更新
+            settingsUpdated = true; // 标记需要重渲染
+            break;
+        case 'textStrokeColor':
+            // 状态已在 handleTextStrokeSettingChange 中通过 state.setTextStrokeColor 更新
+            if ($("#enableTextStroke").is(':checked')) settingsUpdated = true;
+            break;
+        case 'textStrokeWidth':
+            // 状态已在 handleTextStrokeSettingChange 中通过 state.setTextStrokeWidth 更新
+            if ($("#enableTextStroke").is(':checked')) settingsUpdated = true;
+            break;
+        // === 新增描边相关的 case END ===
     }
 
     // --- 确认更新 state.bubbleSettings 的逻辑 ---
@@ -681,6 +735,27 @@ function handleGlobalSettingChange(event) {
                  case 'fontFamily': setting.fontFamily = newValue; settingsUpdated = true; break;
                  case 'layoutDirection': setting.textDirection = newValue; settingsUpdated = true; break;
                  case 'textColor': setting.textColor = newValue; settingsUpdated = true; break;
+                 // === 新增：处理描边相关全局参数 START ===
+                 case 'enableTextStroke':
+                     // 更新所有气泡的描边启用状态
+                     setting.enableStroke = newValue;
+                     settingsUpdated = true;
+                     break;
+                 case 'textStrokeColor':
+                     // 如果描边已启用，更新所有气泡的描边颜色
+                     if ($("#enableTextStroke").is(':checked')) {
+                         setting.strokeColor = newValue;
+                         settingsUpdated = true;
+                     }
+                     break;
+                 case 'textStrokeWidth':
+                     // 如果描边已启用，更新所有气泡的描边宽度
+                     if ($("#enableTextStroke").is(':checked')) {
+                         setting.strokeWidth = newValue;
+                         settingsUpdated = true;
+                     }
+                     break;
+                 // === 新增：处理描边相关全局参数 END ===
             }
         });
         if (settingsUpdated) {
@@ -746,6 +821,24 @@ function handleGlobalSettingChange(event) {
                     case 'rotationAngle': 
                         setting.rotationAngle = newValue; 
                         break;
+                    // === 新增：处理描边相关全局参数 START ===
+                    case 'enableTextStroke':
+                        // 更新所有气泡的描边启用状态
+                        setting.enableStroke = newValue;
+                        break;
+                    case 'textStrokeColor':
+                        // 如果描边已启用，更新所有气泡的描边颜色
+                        if ($("#enableTextStroke").is(':checked')) {
+                            setting.strokeColor = newValue;
+                        }
+                        break;
+                    case 'textStrokeWidth':
+                        // 如果描边已启用，更新所有气泡的描边宽度
+                        if ($("#enableTextStroke").is(':checked')) {
+                            setting.strokeWidth = newValue;
+                        }
+                        break;
+                    // === 新增：处理描边相关全局参数 END ===
                     // 其他属性保持不变
                 }
             });
@@ -764,7 +857,15 @@ function handleGlobalSettingChange(event) {
     // 并且 *不是* fillColor 的改动（因为它已经通过 reRenderWithNewFillColor 处理了）
     if (currentImage && currentImage.translatedDataURL && settingsUpdated && settingId !== 'fillColor') {
         console.log(`全局设置变更 (${settingId}) 后，准备重新渲染...`);
-        editMode.reRenderFullImage();
+        // 确保 editModeActive 为 false 时，reRenderFullImage 能正确处理全局设置
+        // 或者，如果 reRenderFullImage 总是从 state.js 读取描边设置，则不需要额外操作
+        if (state.editModeActive) {
+            editMode.reRenderFullImage();
+        } else {
+            // 非编辑模式下的重渲染，可能需要一个通用的重渲染函数或修改 reRenderFullImage
+            // 暂时假设 reRenderFullImage 能处理非编辑模式下的全局参数
+            editMode.reRenderFullImage();
+        }
     } else if (!settingsUpdated && settingId !== 'fillColor') {
          console.log("全局设置变更未导致需要重渲染的更新。");
     }
@@ -1127,18 +1228,23 @@ function handleBubbleSettingChange(event) {
             fontFamily: $('#bubbleFontFamily').val(),
             textDirection: $('#bubbleTextDirection').val(),
             textColor: $('#bubbleTextColor').val(),
-            fillColor: $('#bubbleFillColor').val() // <--- 获取独立填充色
+            fillColor: $('#bubbleFillColor').val(), // <--- 获取独立填充色
+            // === 新增：获取描边设置 START ===
+            enableStroke: $('#bubbleEnableStroke').is(':checked'),
+            strokeColor: $('#bubbleStrokeColor').val(),
+            strokeWidth: parseInt($('#bubbleStrokeWidth').val()) || 0
+            // === 新增：获取描边设置 END ===
         };
 
         state.updateSingleBubbleSetting(index, settingUpdate);
         // 触发预览 (renderBubblePreview 内部调用 reRenderFullImage)
         // reRenderFullImage 内部现在会处理独立填充色
-        editMode.renderBubblePreview(index);
+        import('./edit_mode.js').then(editMode => {
+            editMode.renderBubblePreview(index);
+        });
     }
 }
 
-// 旋转角度变化 (带延迟渲染)
-let rotationTimer = null;
 function handleBubbleRotationChange(e) {
     const index = state.selectedBubbleIndex;
     if (index >= 0) {
@@ -1153,8 +1259,6 @@ function handleBubbleRotationChange(e) {
     }
 }
 
-// 位置偏移变化 (带延迟渲染)
-let positionTimer = null;
 function handleBubblePositionChange(e) {
     const index = state.selectedBubbleIndex;
     if (index >= 0) {
@@ -1862,6 +1966,130 @@ function handleSourceLanguageChange() {
 function handleTargetLanguageChange() {
     const lang = $(this).val();
     state.setTargetLanguage(lang);
+}
+
+// 新增描边事件处理函数
+function handleEnableTextStrokeChange(event) {
+    const isEnabled = $(this).is(':checked');
+    state.setEnableTextStroke(isEnabled); // 更新状态
+    $("#textStrokeOptions").toggle(isEnabled); // 根据复选框状态显示/隐藏描边参数选项
+
+    // 触发全局设置变更，这将调用 handleGlobalSettingChange
+    // handleGlobalSettingChange 会判断是否需要重渲染
+    console.log("描边启用状态改变，触发全局设置变更处理...");
+    handleGlobalSettingChange({ target: this }); // 模拟事件对象传递给全局处理器
+    session.triggerAutoSave(); // 状态改变，触发自动存档
+}
+
+function handleTextStrokeSettingChange(event) {
+    // 只有在 "启用文本描边" 被勾选时，描边颜色和宽度的改变才应该生效并触发重渲染
+    if ($("#enableTextStroke").is(':checked')) {
+        const color = $("#textStrokeColor").val();
+        const width = parseInt($("#textStrokeWidth").val());
+
+        // 更新状态
+        state.setTextStrokeColor(color);
+        state.setTextStrokeWidth(width); // state.setTextStrokeWidth 内部会处理 NaN
+
+        // 触发全局设置变更
+        console.log("描边颜色或宽度改变，触发全局设置变更处理...");
+        handleGlobalSettingChange({ target: this });
+        session.triggerAutoSave(); // 状态改变，触发自动存档
+    } else {
+        // 如果未启用描边，仅更新状态，但不触发重渲染
+        const color = $("#textStrokeColor").val();
+        const width = parseInt($("#textStrokeWidth").val());
+        state.setTextStrokeColor(color);
+        state.setTextStrokeWidth(width);
+        console.log("描边未启用，仅更新描边参数状态，不触发重渲染。");
+    }
+}
+
+// === 新增：气泡描边控件事件处理 START ===
+/**
+ * 处理单个气泡描边启用状态变更
+ */
+function handleBubbleEnableStrokeChange(event) {
+    const enabled = $(event.target).is(':checked');
+    const index = state.selectedBubbleIndex;
+    if (index < 0) return;
+    
+    $(".bubble-stroke-options").toggle(enabled);
+    state.updateSingleBubbleSetting(index, { enableStroke: enabled });
+    console.log(`气泡 #${index + 1} 描边状态设置为 ${enabled}`);
+    
+    // 立即更新预览
+    import('./edit_mode.js').then(editMode => {
+        editMode.renderBubblePreview(index);
+    });
+}
+
+/**
+ * 处理单个气泡描边颜色和宽度变更
+ */
+function handleBubbleStrokeSettingChange(event) {
+    const index = state.selectedBubbleIndex;
+    if (index < 0) return;
+    
+    const settingId = event.target.id;
+    const enabled = $("#bubbleEnableStroke").is(':checked');
+    
+    // 只有在启用描边时才应用更改
+    if (!enabled) return;
+    
+    if (settingId === 'bubbleStrokeColor') {
+        const color = $(event.target).val();
+        state.updateSingleBubbleSetting(index, { strokeColor: color });
+        console.log(`气泡 #${index + 1} 描边颜色设置为 ${color}`);
+    } else if (settingId === 'bubbleStrokeWidth') {
+        const width = parseInt($(event.target).val());
+        if (isNaN(width) || width < 0) {
+            $(event.target).val(0);
+            state.updateSingleBubbleSetting(index, { strokeWidth: 0 });
+            console.log(`气泡 #${index + 1} 描边宽度设置为 0`);
+        } else {
+            state.updateSingleBubbleSetting(index, { strokeWidth: width });
+            console.log(`气泡 #${index + 1} 描边宽度设置为 ${width}`);
+        }
+    }
+    
+    // 立即更新预览
+    import('./edit_mode.js').then(editMode => {
+        editMode.renderBubblePreview(index);
+    });
+}
+// === 新增：气泡描边控件事件处理 END ===
+
+/**
+ * 处理AI校对按钮点击
+ */
+function handleProofread() {
+    if (state.images.length === 0) {
+        ui.showGeneralMessage("请先添加图片", "warning");
+        return;
+    }
+    
+    // 导入AI校对模块并启动校对流程
+    import('./ai_proofreading.js').then(proofreading => {
+        proofreading.startProofreading();
+    }).catch(error => {
+        console.error("启动AI校对失败:", error);
+        ui.showGeneralMessage("启动AI校对失败: " + error.message, "error");
+    });
+}
+
+/**
+ * 处理校对设置按钮点击
+ */
+function handleProofreadSettings() {
+    // 导入AI校对模块并初始化设置UI，无需检查批量操作状态
+    import('./ai_proofreading.js').then(proofreading => {
+        proofreading.initProofreadingUI();
+        ui.showProofreadingSettingsModal();
+    }).catch(error => {
+        console.error("打开校对设置失败:", error);
+        ui.showGeneralMessage("打开校对设置失败: " + error.message, "error");
+    });
 }
 
 
