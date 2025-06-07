@@ -757,21 +757,11 @@ export function updateBubbleListUI() {
     const bubbleList = $("#bubbleList"); // 在函数内获取
     const bubbleCount = $("#bubbleCount"); // 在函数内获取
     bubbleList.empty();
-    
     const currentImage = state.getCurrentImage();
-    if (!currentImage) {
+    if (!currentImage || !currentImage.bubbleCoords) {
         bubbleCount.text("0");
-        bubbleList.append($("<div>").addClass("no-bubbles-message").text("当前无图片"));
         return;
     }
-    
-    if (!currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) {
-        bubbleCount.text("0");
-        bubbleList.append($("<div>").addClass("no-bubbles-message").text("当前图片没有气泡"));
-        bubbleList.append($("<div>").addClass("no-bubbles-hint").text("您可以使用标注模式添加气泡"));
-        return;
-    }
-    
     const coords = currentImage.bubbleCoords;
     const settings = state.bubbleSettings;
 
@@ -888,7 +878,7 @@ export function updateBubbleHighlight(selectedBubbleIndex) {
     if (!state.editModeActive) return;
 
     const currentImage = state.getCurrentImage();
-    if (!currentImage || !currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) return;
+    if (!currentImage || !currentImage.bubbleCoords) return;
 
     // 获取图片元素和容器
     const imageElement = $('#translatedImageDisplay');

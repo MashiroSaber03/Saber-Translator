@@ -30,7 +30,7 @@ export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将
 // --- 新增：高质量翻译模式默认提示词 ---
 export const DEFAULT_HQ_TRANSLATE_PROMPT = `你是一个漫画翻译助手，我会提供原始漫画图片和导出的只含原文不含译文JSON翻译文件，帮我将原文翻译成中文
 翻译要求：
-1.仅修改JSON中的"translated"译文内容，保持其他所有结构和字段不变
+1.仅修改JSON中的"translated"译文，保持其他所有结构和字段不变。
 2.json中的"imagelndex"序号是每张图片的页码，在翻译前先根据json文件中每页图片的原文内容和所有漫画图片对我给你的所有图片进行排序，在进行上下文对比时要严格按照"imagelndex"序号进行对比，你在翻译时要按照"imagelndex"的顺序进行顺序翻译，从而使得每句翻译足够连贯，上下文不会突兀
 3.通过json中每页图片的"original"原文内容和所有的漫画图片明确每句话在那页图的哪个位置，并结合漫画图像和上下文语境，让翻译更加连贯自然，符合角色语气和场景
 4.json中的"bubblelndex"标号可能不正确，你需要根据图片自行判断每句话的正确顺序，从而输出符合上下文连贯的翻译，但在输出翻译时不要修改原本的"bubblelndex"标号

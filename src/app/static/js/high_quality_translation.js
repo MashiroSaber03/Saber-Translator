@@ -744,6 +744,8 @@ async function importTranslationResult(importedData) {
                     } else {
                         // 只更新textDirection，保持其他设置（特别是fontFamily）不变
                         image.bubbleSettings[bubbleIndex].textDirection = textDirection;
+                        // 确保字体设置被正确维护
+                        image.bubbleSettings[bubbleIndex].fontFamily = currentFontFamily;
                     }
                 }
             }
@@ -784,6 +786,14 @@ async function importTranslationResult(importedData) {
         const currentImage = state.images[originalImageIndex];
         if (currentImage) {
             currentImage.fontFamily = savedFontFamily;
+            // 更新当前状态中的所有气泡的字体设置
+            if (currentImage.bubbleSettings && Array.isArray(currentImage.bubbleSettings)) {
+                currentImage.bubbleSettings.forEach(settings => {
+                    if (settings) {
+                        settings.fontFamily = savedFontFamily;
+                    }
+                });
+            }
         }
     }
 }
