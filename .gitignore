@@ -61,3 +61,17 @@ temp_paddleocr/
 # Other OS-specific files
 .DS_Store
 Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+pytest_cache/
+
+# Claude Code
+.claude/*

@@ -1,0 +1,254 @@
+[tool.poetry]
+name = "manga-translator"
+version = "0.1.0"
+description = "A manga/image translation application"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+accelerate = "1.5.2"
+aiofiles = "23.2.1"
+albucore = "0.0.23"
+albumentations = "2.0.5"
+altgraph = "0.17.4"
+annotated-types = "0.7.0"
+antlr4-python3-runtime = "4.9.3"
+anyio = "4.8.0"
+astor = "0.8.1"
+beautifulsoup4 = "4.13.3"
+bidict = "0.23.1"
+blinker = "1.9.0"
+certifi = "2025.1.31"
+charset-normalizer = "3.4.1"
+click = "8.1.8"
+colorama = "0.4.6"
+coloredlogs = "15.0.1"
+contourpy = "1.3.1"
+controlnet-aux = "0.0.3"
+cycler = "0.12.1"
+Cython = "3.0.12"
+decorator = "5.2.1"
+diffusers = "0.16.1"
+distro = "1.9.0"
+einops = "0.8.1"
+exceptiongroup = "1.2.2"
+fastapi = "0.115.11"
+ffmpy = "0.5.0"
+filelock = "3.18.0"
+fire = "0.7.0"
+Flask = "2.2.3"
+flask-cors = "5.0.1"
+flask-sock = "0.7.0"
+Flask-SocketIO = "5.5.1"
+flaskwebgui = "0.3.5"
+flatbuffers = "25.2.10"
+fonttools = "4.56.0"
+fsspec = "2025.3.0"
+fugashi = "1.4.0"
+gitdb = "4.0.12"
+GitPython = "3.1.44"
+gradio = "5.21.0"
+gradio_client = "1.7.2"
+groovy = "0.1.2"
+h11 = "0.14.0"
+httpcore = "1.0.7"
+httpx = "0.28.1"
+huggingface-hub = "0.29.3"
+humanfriendly = "10.0"
+idna = "3.10"
+imageio = "2.37.0"
+importlib_metadata = "8.6.1"
+iniconfig = "2.1.0"
+itsdangerous = "2.2.0"
+jaconv = "0.4.0"
+Jinja2 = "3.1.6"
+jiter = "0.9.0"
+joblib = "1.4.2"
+kiwisolver = "1.4.8"
+kornia = "0.8.0"
+kornia_rs = "0.1.8"
+lama-cleaner = "1.2.5"
+lap = "0.5.12"
+lazy_loader = "0.4"
+litelama = "0.1.7"
+lmdb = "1.6.2"
+loguru = "0.7.3"
+lxml = "5.3.1"
+manga-ocr = "0.1.14"
+markdown-it-py = "3.0.0"
+MarkupSafe = "2.1.5"
+matplotlib = "3.10.1"
+mdurl = "0.1.2"
+mpmath = "1.3.0"
+networkx = "3.4.2"
+numpy = "2.1.1"
+ollama = "0.4.7"
+omegaconf = "2.3.0"
+onnxruntime = "1.21.0"
+openai = "1.66.3"
+opencv-contrib-python = "4.11.0.86"
+opencv-python = "4.11.0.86"
+opencv-python-headless = "4.11.0.86"
+opt-einsum = "3.3.0"
+orjson = "3.10.15"
+packaging = "24.2"
+paddleocr = "2.10.0"
+paddlepaddle = "2.6.2"
+pandas = "2.2.3"
+pdf2image = "1.17.0"
+pefile = "2023.2.7"
+piexif = "1.1.3"
+pillow = "11.1.0"
+pluggy = "1.5.0"
+protobuf = "3.20.2"
+psutil = "7.0.0"
+py-cpuinfo = "9.0.0"
+pyclipper = "1.3.0.post6"
+pydantic = "2.10.6"
+pydantic_core = "2.27.2"
+pydub = "0.25.1"
+Pygments = "2.19.1"
+pyinstaller = "6.12.0"
+pyinstaller-hooks-contrib = "2025.1"
+pyparsing = "3.2.1"
+PyPDF2 = "3.0.1"
+pyperclip = "1.9.0"
+pyreadline3 = "3.5.4"
+python-dateutil = "2.9.0.post0"
+python-docx = "1.1.2"
+python-engineio = "4.11.2"
+python-multipart = "0.0.20"
+python-socketio = "5.12.1"
+pytz = "2025.1"
+pywin32-ctypes = "0.2.3"
+PyYAML = "6.0.2"
+RapidFuzz = "3.12.2"
+regex = "2024.11.6"
+requests = "2.32.3"
+rich = "13.9.4"
+ruff = "0.11.0"
+safehttpx = "0.1.6"
+safetensors = "0.5.3"
+scikit-image = "0.25.2"
+scikit-learn = "1.6.1"
+scipy = "1.15.2"
+seaborn = "0.13.2"
+semantic-version = "2.10.0"
+shapely = "2.0.7"
+shellingham = "1.5.4"
+simple-websocket = "1.1.0"
+simsim = "6.2.1"
+six = "1.17.0"
+smmap = "5.0.2"
+sniffio = "1.3.1"
+soupsieve = "2.6"
+starlette = "0.46.1"
+stringzilla = "3.12.3"
+sympy = "1.13.1"
+termcolor = "2.5.0"
+threadpoolctl = "3.6.0"
+tifffile = "2025.3.13"
+timm = "1.0.15"
+tokenizers = "0.13.3"
+tomli = "2.2.1"
+tomlkit = "0.13.2"
+torch = "2.6.0"
+torchaudio = "2.6.0"
+torchvision = "0.21.0"
+tqdm = "4.67.1"
+transformers = "4.27.4"
+typer = "0.15.2"
+typing_extensions = "4.12.2"
+tzdata = "2025.1"
+ultralytics = "8.3.91"
+ultralytics-thop = "2.0.14"
+unidic-lite = "1.0.8"
+urllib3 = "2.3.0"
+uvicorn = "0.34.0"
+websockets = "15.0.1"
+Werkzeug = "2.2.2"
+whichcraft = "0.6.1"
+win32_setctime = "1.2.0"
+wsproto = "1.2.0"
+yacs = "0.1.8"
+zipp = "3.21.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-cov = "^5.0.0"
+pytest-mock = "^3.14.0"
+
+[tool.poetry.scripts]
+test = "pytest:main"
+tests = "pytest:main"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=tests",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=80",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
+norecursedirs = [".git", ".tox", "dist", "build", "*.egg", "__pycache__"]
+
+[tool.coverage.run]
+source = ["src", "tests"]
+omit = [
+    "*/__pycache__/*",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/virtualenv/*",
+    "*/env/*",
+    "*/.venv/*",
+    "*/setup.py",
+]
+branch = true
+parallel = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "def __str__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
