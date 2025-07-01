@@ -483,6 +483,58 @@ export function bindEventListeners() {
     $("#enableTextStroke").on('change', handleEnableTextStrokeChange);
     $("#textStrokeColor").on('input', handleTextStrokeSettingChange);
     $("#textStrokeWidth").on('input', handleTextStrokeSettingChange); // 'input' 事件用于实时响应数字输入框
+
+    // 百度OCR 版本选择
+    document.getElementById('baiduVersion').addEventListener('change', function(e) {
+        const version = e.target.value;
+        import('./state.js').then(state => {
+            state.setBaiduVersion(version);
+        });
+    });
+
+    // 百度OCR 源语言选择
+    document.getElementById('baiduSourceLanguage').addEventListener('change', function(e) {
+        const language = e.target.value;
+        import('./state.js').then(state => {
+            state.setBaiduOcrSourceLanguage(language);
+        });
+    });
+
+    // 添加OCR引擎切换处理
+    document.getElementById('ocrEngine').addEventListener('change', handleOcrEngineChange);
+
+    // 初始化时触发一次OCR引擎切换事件，确保正确显示/隐藏选项
+    document.addEventListener('DOMContentLoaded', function() {
+        // 触发OCR引擎切换事件以设置初始状态
+        handleOcrEngineChange({target: document.getElementById('ocrEngine')});
+    });
+
+    // 定义处理OCR引擎切换的函数
+    function handleOcrEngineChange(e) {
+        const ocrEngine = e.target.value;
+        const paddleOcrOptions = document.getElementById('paddleOcrOptions');
+        const baiduOcrOptions = document.getElementById('baiduOcrOptions');
+        const aiVisionOcrOptions = document.getElementById('aiVisionOcrOptions');
+        
+        // 隐藏所有OCR引擎特定选项
+        paddleOcrOptions.style.display = 'none';
+        baiduOcrOptions.style.display = 'none';
+        aiVisionOcrOptions.style.display = 'none';
+        
+        // 根据选择的OCR引擎显示对应选项
+        if (ocrEngine === 'paddle_ocr') {
+            paddleOcrOptions.style.display = 'block';
+        } else if (ocrEngine === 'baidu_ocr') {
+            baiduOcrOptions.style.display = 'block';
+        } else if (ocrEngine === 'ai_vision') {
+            aiVisionOcrOptions.style.display = 'block';
+        }
+        
+        // 更新状态
+        import('./state.js').then(module => {
+            module.setOcrEngine(ocrEngine);
+        });
+    }
 }
 
 // --- 事件处理函数 ---
@@ -656,23 +708,40 @@ function handleDownloadAll() {
     main.downloadAllImages();
 }
 
-function handleGlobalSettingChange(event) {
+/**
+ * 处理全局设置变化 (通用处理器)
+ */
+function handleGlobalSettingChange(e) {
+    // 增加安全检查，确保e参数存在
+    e = e || { target: null };
+
+    // 获取修改后的value和设置id
+    // 这里的 settingId 是元素的id，如 'fontSize', 'fontFamily', 'layoutDirection' 等
+    const changedElement = e.target;
+    if (!changedElement) {
+        console.error("handleGlobalSettingChange: 事件对象或目标元素未定义");
+        return;
+    }
+    
+    let settingId = changedElement.id;
     const currentImage = state.getCurrentImage();
-    const changedElement = event.target; // 获取触发事件的元素
-    const settingId = changedElement.id; // 获取元素 ID (如 'fontSize', 'fontFamily', etc.)
+    
+    if (!settingId) {
+        // 可能是jQuery对象或其他类型的元素
+        console.warn("handleGlobalSettingChange: 无法确定设置ID，尝试从jQuery获取");
+        settingId = $(changedElement).attr('id');
+        if (!settingId) {
+            console.error("handleGlobalSettingChange: 无法确定要修改的设置ID");
+            return;
+        }
+    }
+    
+    // 获取新值 (根据元素类型处理)
     let newValue;
-
-    console.log(`全局设置变更: ${settingId}`);
-
-    // 获取新值，并根据类型处理
     if (changedElement.type === 'checkbox') {
         newValue = changedElement.checked;
-    } else if (changedElement.type === 'number' || settingId === 'fontSize' || settingId === 'textStrokeWidth') { // 添加 textStrokeWidth
-        newValue = parseInt(changedElement.value);
-        if (settingId === 'fontSize' && isNaN(newValue)) newValue = state.defaultFontSize;
-        if (settingId === 'textStrokeWidth' && (isNaN(newValue) || newValue < 0)) newValue = 0; // 描边宽度不能为负
-    } else if (changedElement.type === 'range') {
-        newValue = parseFloat(changedElement.value); // 处理滑块
+    } else if (settingId === 'fontSize' || settingId === 'rotationAngle') {
+        newValue = parseFloat(changedElement.value); // 数值转换
     } else {
         newValue = changedElement.value; // 其他 (select, color, text)
     }
@@ -852,22 +921,27 @@ function handleGlobalSettingChange(event) {
     }
     // --- 结束确认 ---
 
-    // --- 触发重渲染 ---
-    // 只有在当前有已翻译图片并且确实有设置被更新时才重渲染
+    // --- 检查是否需要触发重渲染 ---
+    // 首先检查这次设置更改是否来自于切换图片的操作
+    // 将 isFromSwitchImage 设为 true 表示是从切换图片操作中触发的设置更改
+    const isFromSwitchImage = window._isChangingFromSwitchImage || false;
+    
+    // 只有在当前有已翻译图片并且确实有设置被更新时才考虑重渲染
     // 并且 *不是* fillColor 的改动（因为它已经通过 reRenderWithNewFillColor 处理了）
-    if (currentImage && currentImage.translatedDataURL && settingsUpdated && settingId !== 'fillColor') {
+    // 并且 *不是* 切换图片时触发的设置变更
+    if (currentImage && currentImage.translatedDataURL && settingsUpdated && settingId !== 'fillColor' && !isFromSwitchImage) {
         console.log(`全局设置变更 (${settingId}) 后，准备重新渲染...`);
         // 确保 editModeActive 为 false 时，reRenderFullImage 能正确处理全局设置
-        // 或者，如果 reRenderFullImage 总是从 state.js 读取描边设置，则不需要额外操作
         if (state.editModeActive) {
             editMode.reRenderFullImage();
         } else {
-            // 非编辑模式下的重渲染，可能需要一个通用的重渲染函数或修改 reRenderFullImage
-            // 暂时假设 reRenderFullImage 能处理非编辑模式下的全局参数
+            // 非编辑模式下的重渲染
             editMode.reRenderFullImage();
         }
     } else if (!settingsUpdated && settingId !== 'fillColor') {
-         console.log("全局设置变更未导致需要重渲染的更新。");
+        console.log("全局设置变更未导致需要重渲染的更新。");
+    } else if (isFromSwitchImage) {
+        console.log("检测到来自切换图片的设置变更，跳过重渲染。");
     }
 }
 
@@ -1563,41 +1637,30 @@ function handleSaveAsSession() {
 /**
  * 处理OCR引擎变更
  */
-function handleOcrEngineChange() {
-    const ocr_engine = $("#ocrEngine").val();
-    // 先清除之前的样式
-    $("#baiduOcrOptions, #aiVisionOcrOptions").css({
-        'margin-bottom': '15px',
-        'padding': '10px',
-        'border-radius': '8px',
-        'background-color': 'rgba(0,0,0,0.02)'
-    });
+function handleOcrEngineChange(e) {
+    const ocrEngine = e.target.value;
+    const paddleOcrOptions = document.getElementById('paddleOcrOptions');
+    const baiduOcrOptions = document.getElementById('baiduOcrOptions');
+    const aiVisionOcrOptions = document.getElementById('aiVisionOcrOptions');
     
-    // 隐藏所有OCR选项
-    $("#baiduOcrOptions").hide();
-    $("#aiVisionOcrOptions").hide();
+    // 隐藏所有OCR引擎特定选项
+    paddleOcrOptions.style.display = 'none';
+    baiduOcrOptions.style.display = 'none';
+    aiVisionOcrOptions.style.display = 'none';
     
-    // 根据选择显示对应的OCR设置选项
-    if (ocr_engine === 'baidu_ocr') {
-        // 显示百度OCR设置
-        $("#baiduOcrOptions").show();
-    } else if (ocr_engine === 'ai_vision') {
-        // 显示AI视觉OCR设置
-        $("#aiVisionOcrOptions").show();
+    // 根据选择的OCR引擎显示对应选项
+    if (ocrEngine === 'paddle_ocr') {
+        paddleOcrOptions.style.display = 'block';
+    } else if (ocrEngine === 'baidu_ocr') {
+        baiduOcrOptions.style.display = 'block';
+    } else if (ocrEngine === 'ai_vision') {
+        aiVisionOcrOptions.style.display = 'block';
     }
     
-    // 保存OCR引擎状态
-    state.setOcrEngine(ocr_engine);
-    
-    // 强制父容器重新计算高度
-    setTimeout(() => {
-        $("#font-settings .collapsible-content").css('height', 'auto');
-        if ($("#font-settings .collapsible-content").is(":visible")) {
-            $("#font-settings .collapsible-content").scrollTop(0);
-        }
-    }, 10);
-    
-    handleGlobalSettingChange();
+    // 更新状态
+    import('./state.js').then(module => {
+        module.setOcrEngine(ocrEngine);
+    });
 }
 
 /**
@@ -1610,27 +1673,7 @@ function handleDeleteSelectedBoxClick() {
 }
 
 // 添加OCR引擎切换处理
-document.getElementById('ocrEngine').addEventListener('change', function(e) {
-    const ocrEngine = e.target.value;
-    const baiduOcrOptions = document.getElementById('baiduOcrOptions');
-    const aiVisionOcrOptions = document.getElementById('aiVisionOcrOptions');
-    
-    // 隐藏所有OCR引擎特定选项
-    baiduOcrOptions.style.display = 'none';
-    aiVisionOcrOptions.style.display = 'none';
-    
-    // 根据选择的OCR引擎显示对应选项
-    if (ocrEngine === 'baidu_ocr') {
-        baiduOcrOptions.style.display = 'block';
-    } else if (ocrEngine === 'ai_vision') {
-        aiVisionOcrOptions.style.display = 'block';
-    }
-    
-    // 更新状态
-    import('./state.js').then(state => {
-        state.setOcrEngine(ocrEngine);
-    });
-});
+document.getElementById('ocrEngine').addEventListener('change', handleOcrEngineChange);
 
 // 添加百度OCR测试按钮事件
 document.getElementById('testBaiduOcrButton').addEventListener('click', async function() {

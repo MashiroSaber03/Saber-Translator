@@ -25,78 +25,113 @@ logger = logging.getLogger("CoreProcessing")
 
 def process_image_translation(
     image_pil, # 原始 PIL Image
-    target_language=constants.DEFAULT_TARGET_LANG,
-    source_language=constants.DEFAULT_SOURCE_LANG,
-    font_size_setting=constants.DEFAULT_FONT_SIZE, # 可以是 'auto' 或数字
-    font_family_rel=constants.DEFAULT_FONT_RELATIVE_PATH,
-    text_direction=constants.DEFAULT_TEXT_DIRECTION,
-    model_provider=constants.DEFAULT_MODEL_PROVIDER,
+    target_language='zh',
+    source_language='japan',
+    font_size_setting=25,
+    font_family_rel='fonts/Noto_Sans_SC_Regular.ttf',
+    text_direction='vertical',
+    model_provider='ollama',
     api_key=None,
-    model_name=None,
-    prompt_content=None,
+    model_name='deepseek-coder:latest',
+    prompt_content='',
     use_textbox_prompt=False,
-    textbox_prompt_content=None,
+    textbox_prompt_content='',
     inpainting_method='solid', # 'solid', 'lama'
-    fill_color=constants.DEFAULT_FILL_COLOR,
-    migan_strength=constants.DEFAULT_INPAINTING_STRENGTH,
+    fill_color='#ffffff',
+    migan_strength=1.0,
     migan_blend_edges=True,
     skip_ocr=False,
     skip_translation=False,
     yolo_conf_threshold=0.6, # YOLO 置信度阈值
     ignore_connection_errors=True, # 是否忽略翻译和修复服务连接错误
-    text_color=constants.DEFAULT_TEXT_COLOR, # 文字颜色
-    rotation_angle=constants.DEFAULT_ROTATION_ANGLE, # 文字旋转角度
+    text_color='#000000',
+    rotation_angle=0,
     provided_coords=None, # 新增：接收前端提供的手动标注坐标
     ocr_engine='auto', # 新增：OCR引擎选择，可以是'auto', 'manga_ocr', 'paddle_ocr', 或 'baidu_ocr'
     baidu_api_key=None, # 新增：百度OCR API Key
     baidu_secret_key=None, # 新增：百度OCR Secret Key
-    baidu_version='standard', # 新增：百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)
-    # 新增 AI 视觉 OCR 参数
-    ai_vision_provider=None,
-    ai_vision_api_key=None,
-    ai_vision_model_name=None,
-    ai_vision_ocr_prompt=None,
+    baidu_version="standard", # 新增：百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)
+    baidu_ocr_language="auto_detect", # 百度OCR源语言
+    ai_vision_provider=None, # AI视觉OCR服务商
+    ai_vision_api_key=None, # AI视觉OCR API Key
+    ai_vision_model_name=None, # AI视觉OCR模型名称
+    ai_vision_ocr_prompt=None, # AI视觉OCR提示词
     # --- 新增 JSON 格式标记参数 ---
     use_json_format_translation=False,
     use_json_format_ai_vision_ocr=False,
     custom_base_url=None, # --- 新增参数 ---
     # --- 新增 rpm 参数 ---
-    rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
-    rpm_limit_ai_vision_ocr: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+    rpm_limit_translation=0,
+    rpm_limit_ai_vision_ocr=0,
     # VVVVVV 新增参数 VVVVVV
     custom_ai_vision_base_url=None, # 用于AI视觉OCR的自定义Base URL
     # === 新增描边参数 START ===
-    enable_text_stroke=constants.DEFAULT_TEXT_STROKE_ENABLED,
-    text_stroke_color=constants.DEFAULT_TEXT_STROKE_COLOR,
-    text_stroke_width=constants.DEFAULT_TEXT_STROKE_WIDTH
+    enable_text_stroke=False,
+    text_stroke_color='#ffffff',
+    text_stroke_width=3
     # === 新增描边参数 END ===
     # ^^^^^^ 结束新增 ^^^^^^
     ):
     """
     执行完整的图像翻译处理流程。
-
+    
+    此函数实现了漫画翻译的完整流程，包括气泡检测、文本识别(OCR)、翻译和渲染。
+    支持多种OCR引擎、翻译服务提供商以及文本渲染样式。整个过程中，插件系统可以
+    通过钩子函数介入处理流程的各个阶段。支持自定义源语言、目标语言和样式设置。
+    
     Args:
-        image_pil (PIL.Image.Image): 输入的原始 PIL 图像。
-        ... (其他参数与原 detect_text_in_bubbles 类似) ...
-        inpainting_method (str): 'solid', 'lama'
-        yolo_conf_threshold (float): YOLO 检测置信度。
-        provided_coords (list): 前端提供的气泡坐标列表，如果提供则优先使用。
-        ocr_engine (str): OCR引擎选择，可以是'auto', 'manga_ocr', 'paddle_ocr', 或 'baidu_ocr'。
-        baidu_api_key (str): 百度OCR API Key，仅当 ocr_engine 为 'baidu_ocr' 时使用。
-        baidu_secret_key (str): 百度OCR Secret Key，仅当 ocr_engine 为 'baidu_ocr' 时使用。
-        baidu_version (str): 百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)。
-        custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL (用于翻译)。
-
+        image_pil (PIL.Image.Image): 输入的原始PIL图像对象
+        target_language (str): 目标语言代码，如'zh'表示中文
+        source_language (str): 源语言代码，如'japan'、'en'、'korean'等
+        font_size_setting (int): 字体大小设置，单位为像素
+        font_family_rel (str): 相对路径的字体文件路径
+        text_direction (str): 文本排列方向，可选'vertical'(竖排)或'horizontal'(横排)
+        model_provider (str): 翻译模型提供商，如'ollama'、'sakura'、'siliconflow'等
+        api_key (str): API密钥，非本地部署的翻译服务需要
+        model_name (str): 模型名称，取决于所选的model_provider
+        prompt_content (str): 自定义翻译提示词内容
+        use_textbox_prompt (bool): 是否使用专为文本框优化的提示词
+        textbox_prompt_content (str): 文本框翻译的提示词内容
+        inpainting_method (str): 气泡内容擦除方法，可选'solid'(纯色填充)或'lama'(AI修复)
+        fill_color (str): 气泡填充颜色，格式为十六进制RGB如'#ffffff'
+        migan_strength (float): MIGAN修复强度，范围0.0-1.0
+        migan_blend_edges (bool): 是否对MIGAN修复结果的边缘进行混合
+        skip_ocr (bool): 是否跳过OCR步骤，用于已有文本识别结果的情况
+        skip_translation (bool): 是否跳过翻译步骤，用于仅重新渲染的情况
+        yolo_conf_threshold (float): YOLO气泡检测的置信度阈值，范围0.0-1.0
+        ignore_connection_errors (bool): 是否忽略翻译和修复服务的连接错误
+        text_color (str): 文本颜色，格式为十六进制RGB如'#000000'
+        rotation_angle (float): 文本旋转角度，单位为度
+        provided_coords (list): 前端提供的气泡坐标列表，如有则优先使用
+        ocr_engine (str): OCR引擎选择，可选'auto'、'manga_ocr'、'paddle_ocr'或'baidu_ocr'
+        baidu_api_key (str): 百度OCR的API Key
+        baidu_secret_key (str): 百度OCR的Secret Key
+        baidu_version (str): 百度OCR版本，可选'standard'(标准版)或'high_precision'(高精度版)
+        baidu_ocr_language (str): 百度OCR源语言，可选'auto_detect'或特定语言代码
+        ai_vision_provider (str): AI视觉OCR服务提供商
+        ai_vision_api_key (str): AI视觉OCR服务的API Key
+        ai_vision_model_name (str): AI视觉OCR使用的模型名称
+        ai_vision_ocr_prompt (str): AI视觉OCR的提示词
+        use_json_format_translation (bool): 翻译是否使用JSON格式的响应
+        use_json_format_ai_vision_ocr (bool): AI视觉OCR是否使用JSON格式的响应
+        custom_base_url (str): 用户自定义的OpenAI兼容API基础URL(用于翻译)
+        rpm_limit_translation (int): 翻译服务的每分钟请求数限制
+        rpm_limit_ai_vision_ocr (int): AI视觉OCR服务的每分钟请求数限制
+        custom_ai_vision_base_url (str): AI视觉OCR服务的自定义基础URL
+        enable_text_stroke (bool): 是否启用文本描边
+        text_stroke_color (str): 文本描边颜色，格式为十六进制RGB
+        text_stroke_width (int): 文本描边宽度，单位为像素
+    
     Returns:
-        tuple: (
-            processed_image: PIL.Image.Image, # 处理后的图像
-            original_texts: list,            # 原始识别文本列表
-            translated_bubble_texts: list,   # 气泡翻译文本列表
-            translated_textbox_texts: list,  # 文本框翻译文本列表
-            bubble_coords: list,             # 气泡坐标列表
-            bubble_styles: dict              # 应用的初始气泡样式字典
-        )
-        如果处理失败，processed_image 将是原始图像的副本。
+        tuple: 包含以下元素的元组:
+            processed_image (PIL.Image.Image): 处理后的图像
+            original_texts (list): 原始识别文本列表
+            translated_bubble_texts (list): 气泡翻译文本列表
+            translated_textbox_texts (list): 文本框翻译文本列表
+            bubble_coords (list): 气泡坐标列表，格式为[(x1, y1, x2, y2), ...]
+            bubble_styles (dict): 应用的气泡样式字典
+        
+        注意: 如果处理失败，processed_image将是原始图像的副本。
     """
     logger.info(f"开始处理图像翻译流程: 源={source_language}, 目标={target_language}, 修复={inpainting_method}")
     start_time_total = time.time() # 记录总时间
@@ -147,7 +182,10 @@ def process_image_translation(
         
         # --- 触发 AFTER_DETECTION 钩子 ---
         try:
-            hook_result = plugin_mgr.trigger_hook(AFTER_DETECTION, image_pil, bubble_coords, initial_params)
+            hook_result = plugin_mgr.trigger_hook(AFTER_DETECTION, image_pil, bubble_coords, {
+                'target_language': target_language,
+                'source_language': source_language
+            })
             if hook_result and isinstance(hook_result[0], list): # 钩子应返回包含列表的元组
                 bubble_coords = hook_result[0] # 更新坐标
                 logger.info("AFTER_DETECTION 钩子修改了气泡坐标。")
@@ -165,7 +203,10 @@ def process_image_translation(
         if not skip_ocr:
             # --- 触发 BEFORE_OCR 钩子 ---
             try:
-                 plugin_mgr.trigger_hook(BEFORE_OCR, image_pil, bubble_coords, initial_params)
+                 plugin_mgr.trigger_hook(BEFORE_OCR, image_pil, bubble_coords, {
+                     'ocr_engine': ocr_engine,
+                     'source_language': source_language
+                 })
             except Exception as hook_e:
                  logger.error(f"执行 {BEFORE_OCR} 钩子时出错: {hook_e}", exc_info=True)
             # ---------------------------
@@ -182,7 +223,15 @@ def process_image_translation(
                     ocr_engine,
                     baidu_api_key=baidu_api_key,
                     baidu_secret_key=baidu_secret_key,
-                    baidu_version=baidu_version
+                    baidu_version=baidu_version,
+                    baidu_ocr_language=baidu_ocr_language,
+                    ai_vision_provider=ai_vision_provider,
+                    ai_vision_api_key=ai_vision_api_key,
+                    ai_vision_model_name=ai_vision_model_name,
+                    ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                    custom_ai_vision_base_url=custom_ai_vision_base_url,
+                    use_json_format_for_ai_vision=use_json_format_ai_vision_ocr,
+                    rpm_limit_ai_vision=rpm_limit_ai_vision_ocr
                 )
             elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID:
                 logger.info(f"使用AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}) 识别文本...")
@@ -206,7 +255,10 @@ def process_image_translation(
             logger.info(f"OCR 完成 (耗时: {time.time() - start_time:.2f}s)")
             # --- 触发 AFTER_OCR 钩子 ---
             try:
-                hook_result = plugin_mgr.trigger_hook(AFTER_OCR, image_pil, original_texts, bubble_coords, initial_params)
+                hook_result = plugin_mgr.trigger_hook(AFTER_OCR, image_pil, original_texts, bubble_coords, {
+                    'ocr_engine': ocr_engine,
+                    'source_language': source_language
+                })
                 if hook_result and isinstance(hook_result[0], list):
                     original_texts = hook_result[0] # 更新识别文本
                     logger.info("AFTER_OCR 钩子修改了识别文本。")
@@ -223,7 +275,10 @@ def process_image_translation(
         if not skip_translation:
             # --- 触发 BEFORE_TRANSLATION 钩子 ---
             try:
-                hook_result = plugin_mgr.trigger_hook(BEFORE_TRANSLATION, original_texts, initial_params)
+                hook_result = plugin_mgr.trigger_hook(BEFORE_TRANSLATION, original_texts, {
+                    'target_language': target_language,
+                    'source_language': source_language
+                })
                 if hook_result:
                      original_texts, initial_params = hook_result # 更新待翻译文本和参数
                      logger.info("BEFORE_TRANSLATION 钩子修改了文本或参数。")
@@ -275,7 +330,10 @@ def process_image_translation(
                 logger.info(f"翻译完成 (耗时: {time.time() - start_time:.2f}s)")
                 # --- 触发 AFTER_TRANSLATION 钩子 ---
                 try:
-                    hook_result = plugin_mgr.trigger_hook(AFTER_TRANSLATION, translated_bubble_texts, translated_textbox_texts, original_texts, initial_params)
+                    hook_result = plugin_mgr.trigger_hook(AFTER_TRANSLATION, translated_bubble_texts, translated_textbox_texts, original_texts, {
+                        'target_language': target_language,
+                        'source_language': source_language
+                    })
                     if hook_result and len(hook_result) >= 2 and isinstance(hook_result[0], list) and isinstance(hook_result[1], list):
                          translated_bubble_texts, translated_textbox_texts = hook_result[:2] # 只取前两个元素，更新翻译结果
                          logger.info("AFTER_TRANSLATION 钩子修改了翻译结果。")
@@ -299,7 +357,10 @@ def process_image_translation(
         # 4. 修复/填充背景
         # --- 触发 BEFORE_INPAINTING 钩子 ---
         try:
-            plugin_mgr.trigger_hook(BEFORE_INPAINTING, image_pil, bubble_coords, initial_params)
+            plugin_mgr.trigger_hook(BEFORE_INPAINTING, image_pil, bubble_coords, {
+                'target_language': target_language,
+                'source_language': source_language
+            })
         except Exception as hook_e:
             logger.error(f"执行 {BEFORE_INPAINTING} 钩子时出错: {hook_e}", exc_info=True)
         # ---------------------------------
@@ -312,7 +373,10 @@ def process_image_translation(
             logger.info(f"背景处理完成 (耗时: {time.time() - start_time:.2f}s)")
             # --- 触发 AFTER_INPAINTING 钩子 ---
             try:
-                hook_result = plugin_mgr.trigger_hook(AFTER_INPAINTING, inpainted_image, clean_background_img, bubble_coords, initial_params)
+                hook_result = plugin_mgr.trigger_hook(AFTER_INPAINTING, inpainted_image, clean_background_img, bubble_coords, {
+                    'target_language': target_language,
+                    'source_language': source_language
+                })
                 if hook_result and len(hook_result) >= 2 and isinstance(hook_result[0], Image.Image):
                      inpainted_image, clean_background_img = hook_result[:2] # 只取前两个元素，更新图像
                      # 如果 clean_background_img 被更新，需要重新附加到 inpainted_image
@@ -357,7 +421,10 @@ def process_image_translation(
         
         # --- 触发 BEFORE_RENDERING 钩子 ---
         try:
-            hook_result = plugin_mgr.trigger_hook(BEFORE_RENDERING, inpainted_image, translated_bubble_texts, bubble_coords, initial_bubble_styles, initial_params)
+            hook_result = plugin_mgr.trigger_hook(BEFORE_RENDERING, inpainted_image, translated_bubble_texts, bubble_coords, initial_bubble_styles, {
+                'target_language': target_language,
+                'source_language': source_language
+            })
             if hook_result and len(hook_result) >= 4:
                  # 只解包前4个元素，忽略其余元素
                  inpainted_image, translated_bubble_texts, bubble_coords, initial_bubble_styles = hook_result[:4]
@@ -399,7 +466,10 @@ def process_image_translation(
                 'bubble_coords': bubble_coords,
                 'bubble_styles': initial_bubble_styles
             }
-            hook_result = plugin_mgr.trigger_hook(AFTER_PROCESSING, processed_image, final_results, initial_params)
+            hook_result = plugin_mgr.trigger_hook(AFTER_PROCESSING, processed_image, final_results, {
+                'target_language': target_language,
+                'source_language': source_language
+            })
             if hook_result and len(hook_result) >= 2 and isinstance(hook_result[0], Image.Image):
                  processed_image, final_results = hook_result[:2] # 只取前两个元素，更新最终图像和结果
                  # 可能需要从 final_results 更新局部变量以便返回

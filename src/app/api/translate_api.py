@@ -107,6 +107,7 @@ def translate_image():
         baidu_api_key = data.get('baidu_api_key')
         baidu_secret_key = data.get('baidu_secret_key')
         baidu_version = data.get('baidu_version', 'standard')
+        baidu_ocr_language = data.get('baidu_ocr_language', 'auto_detect')  # 添加百度OCR源语言参数
         
         # 新增：获取 AI 视觉 OCR 参数
         ai_vision_provider = data.get('ai_vision_provider')
@@ -235,6 +236,7 @@ def translate_image():
                 baidu_api_key=baidu_api_key,  # 百度OCR API Key
                 baidu_secret_key=baidu_secret_key,  # 百度OCR Secret Key
                 baidu_version=baidu_version,  # 百度OCR版本
+                baidu_ocr_language=baidu_ocr_language,  # 百度OCR源语言
                 # 新增传递 AI 视觉 OCR 参数
                 ai_vision_provider=ai_vision_provider,
                 ai_vision_api_key=ai_vision_api_key,
@@ -288,6 +290,7 @@ def translate_image():
                 baidu_api_key=baidu_api_key,  # 百度OCR API Key
                 baidu_secret_key=baidu_secret_key,  # 百度OCR Secret Key
                 baidu_version=baidu_version,  # 百度OCR版本
+                baidu_ocr_language=baidu_ocr_language,  # 百度OCR源语言
                 # 新增传递 AI 视觉 OCR 参数
                 ai_vision_provider=ai_vision_provider,
                 ai_vision_api_key=ai_vision_api_key,

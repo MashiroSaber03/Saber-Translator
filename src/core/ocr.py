@@ -33,12 +33,15 @@ def _safely_extract_from_json(json_str, field_name):
     """
     安全地从JSON字符串中提取特定字段，处理各种异常情况。
     
+    当标准JSON解析失败时，此函数会尝试使用正则表达式和简单文本处理
+    来提取所需字段。适用于处理格式不规范的JSON响应。
+    
     Args:
-        json_str (str): JSON格式的字符串
+        json_str (str): JSON格式的字符串或类似JSON的文本
         field_name (str): 要提取的字段名
         
     Returns:
-        str: 提取的文本，如果失败则返回简化处理的原始文本
+        str: 提取的文本，如果所有提取方法都失败则返回简化处理的原始文本
     """
     # 尝试直接解析
     try:
@@ -76,8 +79,9 @@ def _safely_extract_from_json(json_str, field_name):
         # 所有方法都失败，返回原始文本
         return json_str
 
-def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan', ocr_engine='auto', 
+def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan', ocr_engine='paddle_ocr', 
                               baidu_api_key=None, baidu_secret_key=None, baidu_version="standard",
+                              baidu_ocr_language="auto_detect", # 新增百度OCR源语言参数
                               ai_vision_provider=None, ai_vision_api_key=None,
                               ai_vision_model_name=None, ai_vision_ocr_prompt=None,
                               custom_ai_vision_base_url=None,
@@ -85,27 +89,33 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
                               jsonPromptMode: str = 'normal'): # <--- 新增rpm参数
     """
-    根据源语言和引擎选择，使用合适的 OCR 引擎识别所有气泡内的文本。
-
+    根据源语言和引擎选择，使用指定的OCR引擎识别所有气泡内的文本。
+    
+    该函数会根据提供的气泡坐标裁剪图像，然后使用选定的OCR引擎识别每个气泡中的文本。
+    支持多种OCR引擎，包括MangaOCR、PaddleOCR、百度OCR和AI视觉OCR。会在调试目录
+    保存裁剪后的气泡图像，以便排查问题。
+    
     Args:
-        image_pil (PIL.Image.Image): 包含气泡的原始 PIL 图像。
-        bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
-        source_language (str): 源语言代码 (例如 'japan', 'en', 'korean')。
-        ocr_engine (str): OCR引擎选择，可以是 'auto', 'manga_ocr', 'paddle_ocr', 'baidu_ocr' 或 'ai_vision'。
-        baidu_api_key (str, optional): 百度OCR API Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
-        baidu_secret_key (str, optional): 百度OCR Secret Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
-        baidu_version (str, optional): 百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)。
-        ai_vision_provider (str, optional): AI视觉服务商，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_api_key (str, optional): AI视觉服务API Key，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_model_name (str, optional): AI视觉服务使用的模型名称，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_ocr_prompt (str, optional): AI视觉OCR提示词，仅当 ocr_engine 为 'ai_vision' 时需要。
-        custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的Base URL，仅当使用自定义服务时需要。
-        use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
-        rpm_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
-
+        image_pil (PIL.Image.Image): 包含气泡的原始PIL图像对象
+        bubble_coords (list): 气泡坐标列表，格式为[(x1, y1, x2, y2), ...]
+        source_language (str): 源语言代码，如'japan'、'en'、'korean'等
+        ocr_engine (str): OCR引擎选择，可选值有'manga_ocr'、'paddle_ocr'、'baidu_ocr'或'ai_vision'
+        baidu_api_key (str, optional): 百度OCR的API Key，仅当ocr_engine为'baidu_ocr'时需要
+        baidu_secret_key (str, optional): 百度OCR的Secret Key，仅当ocr_engine为'baidu_ocr'时需要
+        baidu_version (str, optional): 百度OCR版本，可选'standard'(标准版)或'high_precision'(高精度版)
+        baidu_ocr_language (str, optional): 百度OCR源语言设置，可选'auto_detect'(自动检测)或特定语言代码
+        ai_vision_provider (str, optional): AI视觉服务提供商，仅当ocr_engine为'ai_vision'时需要
+        ai_vision_api_key (str, optional): AI视觉服务API Key，仅当ocr_engine为'ai_vision'时需要
+        ai_vision_model_name (str, optional): AI视觉使用的模型名称，仅当ocr_engine为'ai_vision'时需要
+        ai_vision_ocr_prompt (str, optional): AI视觉OCR使用的提示词，仅当ocr_engine为'ai_vision'时需要
+        custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的基础URL，仅当使用自定义服务时需要
+        use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应
+        rpm_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制
+        jsonPromptMode (str): JSON提示模式，默认为'normal'
+        
     Returns:
-        list: 包含每个气泡识别文本的列表，顺序与 bubble_coords 一致。
-              如果某个气泡识别失败，对应位置为空字符串 ""。
+        list: 包含每个气泡识别文本的列表，顺序与bubble_coords一致
+              如果某个气泡识别失败，对应位置为空字符串""
     """
     if not bubble_coords:
         logger.info("没有气泡坐标，跳过 OCR。")
@@ -113,22 +123,19 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
 
     # --- 确定 OCR 引擎类型 ---
     ocr_engine_type = 'Unknown'
-    if ocr_engine == 'auto':
-        ocr_engine_type = constants.SUPPORTED_LANGUAGES_OCR.get(source_language, 'MangaOCR')
-        logger.info(f"源语言: {source_language}, 自动选择 OCR 引擎: {ocr_engine_type}")
-    elif ocr_engine == 'manga_ocr':
+    if ocr_engine == 'manga_ocr':
         ocr_engine_type = 'MangaOCR'
     elif ocr_engine == 'paddle_ocr':
         ocr_engine_type = 'PaddleOCR'
+        logger.info(f"使用PaddleOCR引擎，源语言: {source_language}")
     elif ocr_engine == 'baidu_ocr':
         ocr_engine_type = 'BaiduOCR'
     elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID: # 使用常量
         ocr_engine_type = 'AIVision' # 内部使用的类型名
-        logger.info(f"源语言: {source_language}, 选择 OCR 引擎: AI视觉 ({ai_vision_provider})")
+        logger.info(f"使用AI视觉OCR引擎: {ai_vision_provider}")
     else:
-        logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用自动选择。")
-        ocr_engine_type = constants.SUPPORTED_LANGUAGES_OCR.get(source_language, 'MangaOCR')
-        logger.info(f"源语言: {source_language}, 自动选择 OCR 引擎: {ocr_engine_type}")
+        logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
+        ocr_engine_type = 'PaddleOCR'
 
     recognized_texts = [""] * len(bubble_coords)
     try:
@@ -142,9 +149,18 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         if baidu_api_key and baidu_secret_key:
             logger.info(f"开始使用百度OCR ({baidu_version}) 逐个识别 {len(bubble_coords)} 个气泡...")
             
-            # 获取百度OCR的语言映射
-            baidu_language = constants.BAIDU_LANG_MAP.get(source_language, source_language)
-            logger.info(f"将源语言 '{source_language}' 映射为百度OCR语言 '{baidu_language}'")
+            # 使用指定的百度OCR语言
+            baidu_language = baidu_ocr_language
+            if baidu_language == 'auto_detect':
+                logger.info(f"百度OCR使用自动检测语言")
+            else:
+                # 确保传递原始源语言，让baidu_ocr_interface处理将其映射为百度OCR对应的语言代码
+                # 如果未指定百度OCR语言，则使用传入的source_language
+                if baidu_language == "" or baidu_language == "无":
+                    baidu_language = source_language
+                    logger.info(f"百度OCR使用源语言: '{source_language}' (替代'无'设置)")
+                else:
+                    logger.info(f"百度OCR使用指定语言: '{baidu_language}'")
             
             # 百度OCR需要逐个处理气泡，添加请求间隔避免QPS限制
             for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
@@ -232,19 +248,23 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
             # MangaOCR 需要逐个处理气泡
             for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
                 try:
+                    logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，坐标: ({x1}, {y1}, {x2}, {y2})")
                     # 裁剪气泡图像 (使用 NumPy 数组)
                     bubble_img_np = img_np[y1:y2, x1:x2]
                     # 转换为 PIL Image
                     bubble_img_pil = Image.fromarray(bubble_img_np)
+                    logger.info(f"气泡 {i} 图像尺寸: {bubble_img_pil.size}")
 
                     # 保存调试图像 (可选)
                     try:
                         debug_dir = get_debug_dir("ocr_bubbles")
                         bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}.png"))
+                        logger.debug(f"已保存气泡 {i} 的调试图像")
                     except Exception as save_e:
                         logger.warning(f"保存 OCR 调试气泡图像失败: {save_e}")
 
                     # 调用 MangaOCR 接口识别
+                    logger.info(f"开始调用MangaOCR识别气泡 {i} 内容...")
                     text = recognize_japanese_text(bubble_img_pil)
                     recognized_texts[i] = text
                     # 输出识别文本到日志

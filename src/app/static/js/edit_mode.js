@@ -59,26 +59,11 @@ export function toggleEditMode() {
             currentImage.fontFamily = firstBubbleSetting.fontFamily;
             currentImage.layoutDirection = firstBubbleSetting.textDirection;
             
-            // 重新渲染以确保更改立即可见，并等待渲染完成后再继续
-            reRenderFullImage()
-                .then(() => {
-                    console.log("退出编辑模式，已保存气泡设置到图像对象，渲染完成");
-                    state.setSelectedBubbleIndex(-1); // 重置选中索引
-                    state.setInitialBubbleSettings([]); // 清空备份
-                    session.triggerAutoSave(); // 触发自动保存
-                })
-                .catch(err => {
-                    console.error("退出编辑模式时渲染失败:", err);
-                    ui.showGeneralMessage("退出编辑模式时渲染失败，请重试", "error");
-                    // 即使渲染失败，仍然重置状态
-                    state.setSelectedBubbleIndex(-1);
-                    state.setInitialBubbleSettings([]);
-                });
-                
-            // 添加安全超时，确保即使渲染未完成，也能在10秒后自动清除消息
-            setTimeout(() => {
-                ui.clearGeneralMessageById("rendering_loading_message");
-            }, 10000);
+            // 不再触发重渲染，直接处理后续逻辑
+            console.log("退出编辑模式，已保存气泡设置到图像对象，不触发重渲染");
+            state.setSelectedBubbleIndex(-1); // 重置选中索引
+            state.setInitialBubbleSettings([]); // 清空备份
+            session.triggerAutoSave(); // 触发自动保存
         } else {
             state.setSelectedBubbleIndex(-1); // 重置选中索引
             state.setInitialBubbleSettings([]); // 清空备份
@@ -245,14 +230,17 @@ export function renderBubblePreview(bubbleIndex) {
 /**
  * 重新渲染整个图像
  * @param {boolean} [fromAutoToManual=false] - (保留) 是否是从自动字号切换到手动字号,用于后端特殊处理
+ * @param {boolean} [silentMode=false] - 是否静默模式，不更新界面显示
  * @returns {Promise<void>} - 在渲染成功时 resolve，失败时 reject
  */
-export function reRenderFullImage(fromAutoToManual = false) {
+export function reRenderFullImage(fromAutoToManual = false, silentMode = false) {
     return new Promise(async (resolve, reject) => { // 改为 async 以便使用 await
         const currentImage = state.getCurrentImage();
         if (!currentImage || (!currentImage.translatedDataURL && !currentImage.originalDataURL)) {
             console.error("无法重新渲染：缺少必要数据");
-            ui.showGeneralMessage("无法重新渲染，缺少图像或气泡数据", "error");
+            if (!silentMode) {
+                ui.showGeneralMessage("无法重新渲染，缺少图像或气泡数据", "error");
+            }
             reject(new Error("无法重新渲染：缺少必要数据"));
             return;
         }
@@ -264,7 +252,9 @@ export function reRenderFullImage(fromAutoToManual = false) {
 
         // 使用固定消息ID，确保相同操作只显示一条消息
         const loadingMessageId = "rendering_loading_message";
-        ui.showGeneralMessage("重新渲染中，请不要在重渲染时快速切换图片", "info", false, 0, loadingMessageId);
+        if (!silentMode) {
+            ui.showGeneralMessage("重新渲染中，请不要在重渲染时快速切换图片", "info", false, 0, loadingMessageId);
+        }
 
         let preFilledBackgroundBase64 = null; // 用于存储前端预填充后的背景
         let backendShouldInpaint = false; // 后端是否需要做任何背景修复
@@ -503,7 +493,9 @@ export function reRenderFullImage(fromAutoToManual = false) {
 
         api.reRenderImageApi(data)
             .then(response => {
-                ui.clearGeneralMessageById(loadingMessageId);
+                if (!silentMode) {
+                    ui.clearGeneralMessageById(loadingMessageId);
+                }
                 if (response.rendered_image) {
                     state.updateCurrentImageProperty('translatedDataURL', 'data:image/png;base64,' + response.rendered_image);
                     // **重要**：如果前端成功预填充了背景，那么这个预填充的背景应该成为新的 cleanImageData
@@ -515,19 +507,28 @@ export function reRenderFullImage(fromAutoToManual = false) {
                     // 如果之前是 _tempCleanImageForFill，它已经被用掉了，不再需要。
 
                     state.updateCurrentImageProperty('bubbleTexts', currentTexts);
-                    ui.updateTranslatedImage(state.getCurrentImage().translatedDataURL);
-                    $('#translatedImageDisplay').one('load', () => {
-                        ui.updateBubbleHighlight(state.selectedBubbleIndex);
+                    
+                    if (!silentMode) {
+                        // 只在非静默模式下更新UI
+                        ui.updateTranslatedImage(state.getCurrentImage().translatedDataURL);
+                        $('#translatedImageDisplay').one('load', () => {
+                            ui.updateBubbleHighlight(state.selectedBubbleIndex);
+                            resolve();
+                        });
+                    } else {
+                        // 静默模式下直接解析Promise，不更新UI
                         resolve();
-                    });
+                    }
                 } else {
                     throw new Error("渲染 API 未返回图像数据");
                 }
             })
             .catch(error => {
-                ui.clearGeneralMessageById(loadingMessageId);
-                ui.showGeneralMessage(`重新渲染失败: ${error.message}`, "error");
-                ui.updateBubbleHighlight(state.selectedBubbleIndex);
+                if (!silentMode) {
+                    ui.clearGeneralMessageById(loadingMessageId);
+                    ui.showGeneralMessage(`重新渲染失败: ${error.message}`, "error");
+                    ui.updateBubbleHighlight(state.selectedBubbleIndex);
+                }
                 reject(error);
             });
     });
@@ -675,5 +676,39 @@ function triggerDelayedPreview(bubbleIndex) {
 export function exitEditMode() {
     if (state.editModeActive) {
         toggleEditMode(); // 这会处理所有清理工作，然后设置 editModeActive = false
+    }
+}
+
+/**
+ * 退出编辑模式，但不触发重渲染
+ * 用于切换图片等场景，避免不必要的重渲染
+ */
+export function exitEditModeWithoutRender() {
+    if (state.editModeActive) {
+        // 更新UI状态
+        ui.toggleEditModeUI(false);
+        
+        // 保存最终的气泡设置到当前图片对象
+        const currentImage = state.getCurrentImage();
+        if (currentImage && state.bubbleSettings.length > 0) {
+            // 保存气泡设置到图像对象，确保完整复制所有属性
+            currentImage.bubbleSettings = JSON.parse(JSON.stringify(state.bubbleSettings));
+            // 同时更新 bubbleTexts
+            currentImage.bubbleTexts = state.bubbleSettings.map(s => s.text);
+            
+            // 同步更新当前图片的全局属性，确保一致性
+            const firstBubbleSetting = state.bubbleSettings[0];
+            currentImage.fontSize = firstBubbleSetting.fontSize;
+            currentImage.autoFontSize = firstBubbleSetting.autoFontSize;
+            currentImage.fontFamily = firstBubbleSetting.fontFamily;
+            currentImage.layoutDirection = firstBubbleSetting.textDirection;
+        }
+        
+        // 更新状态变量
+        state.setEditModeActive(false);
+        state.setSelectedBubbleIndex(-1);
+        state.setInitialBubbleSettings([]);
+        
+        console.log("已退出编辑模式（无重渲染）");
     }
 }

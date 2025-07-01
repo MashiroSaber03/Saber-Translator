@@ -3,6 +3,7 @@
     "deepseek-chat"
   ],
   "siliconflow": [
+    "deepseek-eek-V2.5",
     "deepseek-ai/DeepSeek-V2.5",
     "deepseek-ai/DeepSeek-V3"
   ],
@@ -13,6 +14,7 @@
     "GalTransl-7B-v2.6-IQ4_XS.gguf"
   ],
   "ollama": [
+    "deepseek-r1:8b",
     "qwen:7b"
   ]
 }

@@ -49,6 +49,7 @@ export let defaultTextStrokeWidth = 3;
 // --- OCR 引擎状态 ---
 export let ocrEngine = 'auto';
 export let baiduOcrVersion = 'standard';
+export let baiduOcrSourceLanguage = 'auto_detect';
 export let aiVisionProvider = 'siliconflow';
 export let aiVisionModelName = '';
 export let aiVisionOcrPrompt = constants.DEFAULT_AI_VISION_OCR_PROMPT;
@@ -460,10 +461,26 @@ export function setOcrEngine(engine) {
 
 /**
  * 设置百度OCR版本
- * @param {string} version - 百度OCR版本('standard', 'high_precision')
+ * @param {string} version - 百度OCR版本 ('standard' 或 'high_precision')
  */
-export function setBaiduOcrVersion(version) {
+export function setBaiduVersion(version) {
     baiduOcrVersion = version;
+}
+
+/**
+ * 设置百度OCR源语言
+ * @param {string} language - 百度OCR源语言代码
+ */
+export function setBaiduOcrSourceLanguage(language) {
+    baiduOcrSourceLanguage = language;
+}
+
+/**
+ * 获取百度OCR源语言
+ * @returns {string} - 百度OCR源语言代码
+ */
+export function getBaiduOcrSourceLanguage() {
+    return baiduOcrSourceLanguage;
 }
 
 /**

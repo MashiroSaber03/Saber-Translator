@@ -24,7 +24,15 @@ colorama.init()
 
 # 配置日志
 def setup_logging():
-    """配置统一的日志系统"""
+    """
+    配置统一的日志系统。
+    
+    设置并配置应用程序的日志系统，包括创建日志目录、配置日志格式和处理程序。
+    添加彩色日志输出，设置不同模块的日志级别，并输出ASCII艺术和系统信息。
+    
+    Returns:
+        logging.Logger: 配置好的日志记录器实例，可用于应用程序全局日志记录。
+    """
     # 创建日志目录
     log_dir = os.path.join(basedir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
@@ -229,6 +237,12 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER_PATH
 os.makedirs(UPLOAD_FOLDER_PATH, exist_ok=True)
 
 def open_browser():
+    """
+    打开默认浏览器并访问应用程序的本地地址。
+    
+    此函数在应用程序启动后被调用，用于自动打开浏览器，
+    提供更好的用户体验。
+    """
     webbrowser.open_new("http://127.0.0.1:5000/")
 
 # ---------- 添加重定向路由以保持向后兼容性 ----------
@@ -236,22 +250,41 @@ def open_browser():
 # 添加配置API的重定向路由
 @app.route('/get_prompts', methods=['GET'])
 def get_prompts_redirect():
-    """重定向到配置API蓝图中的获取提示词端点"""
+    """
+    重定向到配置API蓝图中的获取提示词端点。
+    
+    此函数保持向后兼容性，将旧路径重定向到新的API路径结构。
+    
+    Returns:
+        Response: 重定向响应，指向新的API路径。
+    """
     return redirect("/api/get_prompts", code=307)
 
 @app.route('/get_textbox_prompts', methods=['GET'])
 def get_textbox_prompts_redirect():
-    """重定向到配置API蓝图中的获取文本框提示词端点"""
+    """
+    重定向到配置API蓝图中的获取文本框提示词端点。
+    
+    此函数保持向后兼容性，将旧路径重定向到新的API路径结构。
+    
+    Returns:
+        Response: 重定向响应，指向新的API路径。
+    """
     return redirect("/api/get_textbox_prompts", code=307)
 
 @app.route('/get_used_models', methods=['GET'])
 def get_used_models_redirect():
-    """重定向到配置API蓝图中的获取使用过的模型端点"""
+    """
+    重定向到配置API蓝图中的获取使用过的模型端点。
+    
+    此函数保持向后兼容性，将旧路径重定向到新的API路径结构。
+    将请求参数一并传递给新端点。
+    
+    Returns:
+        Response: 重定向响应，指向新的API路径。
+    """
     query_string = request.query_string.decode()
-    if query_string:
-        return redirect(f"/api/get_used_models?{query_string}", code=307)
-    else:
-        return redirect("/api/get_used_models", code=307)
+    return redirect(f"/api/get_used_models?{query_string}", code=307) if query_string else redirect("/api/get_used_models", code=307)
 
 @app.route('/get_model_info', methods=['GET'])
 def get_model_info_redirect():
@@ -389,6 +422,13 @@ def test_baidu_translate_connection_redirect():
 
 # 在应用启动时创建必要的文件夹
 def create_required_directories():
+    """
+    创建应用程序所需的所有目录结构。
+    
+    检查并创建应用程序运行时所需的各种目录，如临时文件夹、
+    上传文件夹、数据目录和调试目录等。确保应用程序可以正常
+    存取文件。
+    """
     # 获取项目根目录
     base_path = os.path.dirname(os.path.abspath(__file__))
     
@@ -458,14 +498,19 @@ if __name__ == '__main__':
     
     # 预加载MangaOCR模型
     try:
-        # 在导入MangaOCR之前先关闭其日志输出
+        # 在导入MangaOCR之前先设置日志级别
+        # 允许MangaOCR接口的INFO日志，但限制库内部的日志
         for manga_log in ['manga_ocr.ocr', 'manga_ocr']:
             manga_logger = logging.getLogger(manga_log)
-            manga_logger.setLevel(logging.WARNING)
+            manga_logger.setLevel(logging.WARNING)  # 限制库内部日志
             # 移除控制台处理器
             for handler in list(manga_logger.handlers):
                 if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
                     manga_logger.removeHandler(handler)
+        
+        # 确保我们自己的MangaOCR接口日志可见
+        logging.getLogger('MangaOCRInterface').setLevel(logging.INFO)
+        logging.getLogger('CoreOCR').setLevel(logging.INFO)
             
         from src.interfaces.manga_ocr_interface import preload_manga_ocr
         preload_manga_ocr()

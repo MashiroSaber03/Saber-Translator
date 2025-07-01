@@ -174,6 +174,12 @@ async function removeAllImagesText() {
             baiduApiKey = state.baiduApiKey || $('#baiduApiKey').val();
             baiduSecretKey = state.baiduSecretKey || $('#baiduSecretKey').val();
             baiduVersion = state.baiduVersion || $('#baiduVersion').val() || 'standard';
+            // 检查百度OCR源语言设置，如果为"无"或空值，则使用所选的源语言
+            const baiduOcrLang = state.getBaiduOcrSourceLanguage ? state.getBaiduOcrSourceLanguage() : $('#baiduOcrSourceLanguage').val();
+            if (baiduOcrLang === '无' || !baiduOcrLang || baiduOcrLang === '') {
+                console.log("高质量翻译: 百度OCR语言设置为空或'无'，将使用选择的源语言:", sourceLanguage);
+                state.setBaiduOcrSourceLanguage(sourceLanguage);
+            }
         } else if (ocr_engine === 'ai_vision') {
             aiVisionProvider = state.aiVisionProvider || $('#aiVisionProvider').val();
             aiVisionApiKey = state.aiVisionApiKey || $('#aiVisionApiKey').val();
@@ -230,6 +236,7 @@ async function removeAllImagesText() {
                 baidu_api_key: baiduApiKey,
                 baidu_secret_key: baiduSecretKey,
                 baidu_version: baiduVersion,
+                baidu_ocr_language: ocr_engine === 'baidu_ocr' ? state.getBaiduOcrSourceLanguage() : null,
                 ai_vision_provider: aiVisionProvider,
                 ai_vision_api_key: aiVisionApiKey,
                 ai_vision_model_name: aiVisionModelName,
@@ -653,7 +660,7 @@ async function importTranslationResult(importedData) {
         throw new Error("没有有效的翻译数据可导入");
     }
     
-    // 保存当前图片索引
+    // 保存当前图片索引，以便导入完成后返回
     const originalImageIndex = state.currentImageIndex;
     
     // 获取当前的全局设置作为默认值，但使用保存的字体设置
@@ -667,8 +674,19 @@ async function importTranslationResult(importedData) {
     
     console.log("高质量翻译导入结果使用的字体:", currentFontFamily);
     
+    ui.updateProgressBar(90, "更新图片数据...");
+    
+    // 创建一个队列，用于存储所有渲染任务
+    const renderTasks = [];
+    
     // 遍历导入的数据
+    const totalImages = importedData.length;
+    let processedImages = 0;
+    
     for (const imageData of importedData) {
+        processedImages++;
+        ui.updateProgressBar(90 + (processedImages / totalImages * 5), `处理图片 ${processedImages}/${totalImages}`);
+        
         const imageIndex = imageData.imageIndex;
         
         // 检查图片索引是否有效
@@ -676,9 +694,6 @@ async function importTranslationResult(importedData) {
             console.warn(`跳过无效的图片索引: ${imageIndex}`);
             continue;
         }
-        
-        // 切换到该图片
-        await switchToImage(imageIndex);
         
         const image = state.images[imageIndex];
         let imageUpdated = false;
@@ -753,30 +768,53 @@ async function importTranslationResult(importedData) {
             imageUpdated = true;
         }
         
-        // 如果图片有更新，重新渲染
+        // 如果图片有更新，添加到渲染队列
         if (imageUpdated) {
             // 更新图片的fontFamily属性，确保切换图片后能保持字体设置
             image.fontFamily = currentFontFamily;
             
-            // 使用已有的reRenderFullImage函数重新渲染
-            await new Promise(resolve => {
-                if (image.translatedDataURL) {
-                    // 如果已经有翻译图像，重新渲染
-                    import('./edit_mode.js').then(editMode => {
-                        editMode.reRenderFullImage().then(resolve);
-                    });
-                } else {
-                    resolve();
-                }
-            });
-            
-            // 短暂停顿，以便用户可以看到进度
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // 添加到渲染队列
+            if (image.translatedDataURL) {
+                renderTasks.push(async () => {
+                    const editMode = await import('./edit_mode.js');
+                    
+                    // 保存当前索引
+                    const currentIndex = state.currentImageIndex;
+                    
+                    // 临时切换到目标图片（但不更新UI）
+                    state.setCurrentImageIndex(imageIndex);
+                    
+                    try {
+                        // 重新渲染图片
+                        await editMode.reRenderFullImage(false, true); // 传入silentMode=true参数，表示静默渲染
+                        
+                        // 图片已在reRenderFullImage中更新到state中
+                        console.log(`已完成图片 ${imageIndex} 的渲染`);
+                    } finally {
+                        // 恢复原始索引（但不更新UI）
+                        state.setCurrentImageIndex(currentIndex);
+                    }
+                });
+            }
         }
     }
     
-    // 全部导入完成后，回到最初的图片
-    await switchToImage(originalImageIndex);
+    // 开始执行渲染队列
+    ui.updateProgressBar(95, "开始渲染图片...");
+    ui.showGeneralMessage("正在渲染图片，请稍候...", "info", false);
+    
+    // 执行所有渲染任务
+    for (let i = 0; i < renderTasks.length; i++) {
+        ui.updateProgressBar(95 + (i / renderTasks.length * 5), `渲染图片 ${i+1}/${renderTasks.length}`);
+        await renderTasks[i]();
+    }
+    
+    ui.updateProgressBar(100, "完成图片更新");
+    
+    // 全部导入完成后，回到最初的图片并刷新UI
+    // 不使用自定义的switchToImage函数，而是直接使用main.js的switchImage函数
+    const main = await import('./main.js');
+    main.switchImage(originalImageIndex); // 这会触发UI刷新，显示最新的渲染结果
     
     // 确保在完成导入后，字体选择器还原为保存的字体
     if (savedFontFamily) {
@@ -796,18 +834,6 @@ async function importTranslationResult(importedData) {
             }
         }
     }
-}
-
-/**
- * 切换到指定索引的图片
- */
-async function switchToImage(index) {
-    return new Promise(resolve => {
-        import('./main.js').then(main => {
-            main.switchImage(index);
-            resolve();
-        });
-    });
 }
 
 /**

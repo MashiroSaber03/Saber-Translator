@@ -179,7 +179,7 @@ export function initializeApp() {
     // 初始化翻译语言设置
     state.setSourceLanguage($('#sourceLanguage').val() || 'auto');
     state.setTargetLanguage($('#targetLanguage').val() || 'zh-CN');
-    state.setOcrEngine($('#ocrEngine').val() || 'auto');
+    state.setOcrEngine($('#ocrEngine').val() || 'manga_ocr');
 
     // 1.1 加载动态字体列表
     ui.loadFontList(state.defaultFontFamily);
@@ -688,17 +688,17 @@ function sortImagesByName() { // 私有
 export function switchImage(index) {
     if (index < 0 || index >= state.images.length) return;
 
+    // 设置一个全局标记，表示当前正在进行切换图片操作
+    // 这个标记将在 handleGlobalSettingChange 中被检测到，以避免重渲染
+    window._isChangingFromSwitchImage = true;
+    
     const wasInLabelingMode = state.isLabelingModeActive; // 记录切换前的模式
 
     // --- 退出当前模式 (如果需要) ---
-    // 如果在编辑模式，保存当前图片的 bubbleSettings
+    // 如果在编辑模式，保存当前图片的 bubbleSettings，但不触发重渲染
     if (state.editModeActive) {
-        const prevImage = state.getCurrentImage();
-        if (prevImage) {
-            prevImage.bubbleSettings = JSON.parse(JSON.stringify(state.bubbleSettings));
-            prevImage.bubbleTexts = state.bubbleSettings.map(s => s.text);
-        }
-        editMode.exitEditMode(); // 退出编辑模式
+        // 使用新的函数退出编辑模式但不触发重渲染
+        editMode.exitEditModeWithoutRender();
     }
     // 如果在标注模式，检查未保存更改并决定是否退出或保存
     if (wasInLabelingMode) {
@@ -826,6 +826,12 @@ export function switchImage(index) {
 
     // 触发自动存档
     session.triggerAutoSave();
+    
+    // 重置切换图片操作的标记
+    setTimeout(() => {
+        window._isChangingFromSwitchImage = false;
+        console.log("已重置切换图片操作标记");
+    }, 100); // 短暂延迟以确保所有设置更改事件都能检测到这个标记
 }
 
 /**
@@ -887,9 +893,14 @@ export function translateCurrentImage() {
         skip_translation: false,
         bubble_coords: coordsToUse,
         ocr_engine: ocr_engine,
-        baidu_ocr_api_key: ocr_engine === 'baidu' ? $('#baiduOcrApiKey').val() : null,
-        baidu_ocr_secret_key: ocr_engine === 'baidu' ? $('#baiduOcrSecretKey').val() : null,
-        baidu_ocr_version: ocr_engine === 'baidu' ? $('#baiduOcrVersion').val() : null,
+        baidu_api_key: ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null,
+        baidu_secret_key: ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null,
+        baidu_version: ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : null,
+        baidu_ocr_language: ocr_engine === 'baidu_ocr' ? (() => {
+            const baiduOcrLang = state.getBaiduOcrSourceLanguage();
+            // 如果百度OCR语言设置为"无"或空，则使用用户选择的源语言
+            return (baiduOcrLang === '无' || !baiduOcrLang || baiduOcrLang === '') ? $('#sourceLanguage').val() : baiduOcrLang;
+        })() : null, // 添加百度OCR源语言
         ai_vision_provider: ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null,
         ai_vision_api_key: ocr_engine === 'ai_vision' ? $('#aiVisionApiKey').val() : null,
         ai_vision_model_name: ocr_engine === 'ai_vision' ? $('#aiVisionModelName').val() : null,
@@ -922,7 +933,7 @@ export function translateCurrentImage() {
     // ----------------------------------------------------
 
     // 检查百度OCR配置
-    if (ocr_engine === 'baidu_ocr' && (!params.baidu_ocr_api_key || !params.baidu_ocr_secret_key)) {
+    if (ocr_engine === 'baidu_ocr' && (!params.baidu_api_key || !params.baidu_secret_key)) {
         ui.showGeneralMessage("使用百度OCR时必须提供API Key和Secret Key", "error");
         ui.hideTranslatingIndicator(state.currentImageIndex);
         return Promise.reject("Baidu OCR configuration error"); // 返回一个被拒绝的Promise
@@ -1069,7 +1080,8 @@ export function translateAllImages() {
     // 百度OCR相关参数
     const baiduApiKey = ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null;
     const baiduSecretKey = ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null;
-    const baiduVersion = ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : 'standard';
+    const baiduVersion = ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : null;
+    const baiduOcrLanguage = ocr_engine === 'baidu_ocr' ? state.getBaiduOcrSourceLanguage() : null; // 添加百度OCR源语言
     
     // AI视觉OCR相关参数
     const aiVisionProvider = ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null;
@@ -1136,6 +1148,13 @@ export function translateAllImages() {
             // 设置批量翻译状态为已完成
             state.setBatchTranslationInProgress(false);
             
+            // 批量翻译完成后，刷新当前显示的图片
+            const originalImageIndex = state.currentImageIndex; // 获取当前显示的图片索引
+            if (originalImageIndex >= 0) {
+                // 重新显示当前图片，触发UI刷新显示最新渲染结果
+                switchImage(originalImageIndex);
+            }
+            
             // 批量翻译完成后执行一次自动存档
             session.triggerAutoSave();
             return;
@@ -1175,6 +1194,7 @@ export function translateAllImages() {
             baidu_api_key: baiduApiKey,
             baidu_secret_key: baiduSecretKey,
             baidu_version: baiduVersion,
+            baidu_ocr_language: baiduOcrLanguage, // 添加百度OCR源语言
             ai_vision_provider: aiVisionProvider,
             ai_vision_api_key: aiVisionApiKey,
             ai_vision_model_name: aiVisionModelName,
@@ -1595,50 +1615,40 @@ export function removeBubbleTextOnly() {
         image: currentImage.originalDataURL.split(',')[1],
         target_language: $('#targetLanguage').val(),
         source_language: $('#sourceLanguage').val(),
-        fontSize: fontSize, 
+        fontSize: fontSize,
         autoFontSize: isAutoFontSize,
-        api_key: $('#apiKey').val(), 
-        model_name: $('#modelName').val(),
-        model_provider: $('#modelProvider').val(),
+        api_key: null,  // 仅消除文字模式不需要API Key
+        model_name: null,
+        model_provider: null,
         fontFamily: $('#fontFamily').val(),
         textDirection: $('#layoutDirection').val(),
-        prompt_content: $('#promptContent').val(),
-        use_textbox_prompt: $('#enableTextboxPrompt').prop('checked'),
-        textbox_prompt_content: $('#textboxPromptContent').val(),
+        prompt_content: null,
+        use_textbox_prompt: false,
+        textbox_prompt_content: null,
         use_inpainting: repairSettings.useInpainting,
         use_lama: repairSettings.useLama,
-        blend_edges: $('#blendEdges').prop('checked'),
+        blend_edges: $("#blendEdges").prop('checked'),
         inpainting_strength: parseFloat($('#inpaintingStrength').val()),
         fill_color: $('#fillColor').val(),
         text_color: $('#textColor').val(),
-        rotation_angle: parseFloat($('#rotationAngle').val() || '0'),
-        skip_ocr: false, 
-        skip_translation: true, // 关键：跳过翻译步骤
-        remove_only: true, // 添加此参数，表示仅消除文字
+        rotation_angle: 0,  // 默认旋转角度
+        skip_ocr: false,
+        skip_translation: true,  // 跳过翻译
+        remove_only: true,  // 标记仅消除文字模式
         bubble_coords: coordsToUse,
         ocr_engine: ocr_engine,
-        baidu_ocr_api_key: ocr_engine === 'baidu' ? $('#baiduOcrApiKey').val() : null,
-        baidu_ocr_secret_key: ocr_engine === 'baidu' ? $('#baiduOcrSecretKey').val() : null,
-        baidu_ocr_version: ocr_engine === 'baidu' ? $('#baiduOcrVersion').val() : null,
+        baidu_api_key: ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null,
+        baidu_secret_key: ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null,
+        baidu_version: ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : null,
+        baidu_ocr_language: ocr_engine === 'baidu_ocr' ? state.getBaiduOcrSourceLanguage() : null, // 添加百度OCR源语言
         ai_vision_provider: ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null,
         ai_vision_api_key: ocr_engine === 'ai_vision' ? $('#aiVisionApiKey').val() : null,
         ai_vision_model_name: ocr_engine === 'ai_vision' ? $('#aiVisionModelName').val() : null,
         ai_vision_ocr_prompt: ocr_engine === 'ai_vision' ? $('#aiVisionOcrPrompt').val() : null,
-
-        // === 新增描边参数 START ===
-        enableTextStroke: state.enableTextStroke,
-        textStrokeColor: state.textStrokeColor,
-        textStrokeWidth: state.textStrokeWidth,
-        // === 新增描边参数 END ===
-
-        rpm_limit_translation: state.rpmLimitTranslation,
-        rpm_limit_ai_vision_ocr: state.rpmLimitAiVisionOcr,
-        use_json_format_translation: state.isTranslateJsonMode,
-        use_json_format_ai_vision_ocr: state.isAiVisionOcrJsonMode
     };
 
     // 检查百度OCR配置
-    if (ocr_engine === 'baidu_ocr' && (!params.baidu_ocr_api_key || !params.baidu_ocr_secret_key)) {
+    if (ocr_engine === 'baidu_ocr' && (!params.baidu_api_key || !params.baidu_secret_key)) {
         ui.showGeneralMessage("使用百度OCR时必须提供API Key和Secret Key", "error");
         ui.hideTranslatingIndicator(state.currentImageIndex);
         return Promise.reject("Baidu OCR configuration error"); // 返回一个被拒绝的Promise
@@ -1777,17 +1787,20 @@ function initializeOcrEngineSettings() {
     const selectedEngine = $('#ocrEngine').val();
     
     // 根据选择显示/隐藏OCR设置区域
+    $('#paddleOcrOptions').hide();
     $('#baiduOcrOptions').hide();
     $('#aiVisionOcrOptions').hide();
     
-    if (selectedEngine === 'baidu_ocr') {
+    if (selectedEngine === 'paddle_ocr') {
+        $('#paddleOcrOptions').show();
+    } else if (selectedEngine === 'baidu_ocr') {
         $('#baiduOcrOptions').show();
     } else if (selectedEngine === 'ai_vision') {
         $('#aiVisionOcrOptions').show();
     }
     
     // 设置初始状态的样式
-    $("#baiduOcrOptions, #aiVisionOcrOptions").css({
+    $("#paddleOcrOptions, #baiduOcrOptions, #aiVisionOcrOptions").css({
         'margin-bottom': '15px',
         'padding': '10px',
         'border-radius': '8px',
@@ -1843,6 +1856,10 @@ export function removeAllBubblesText() {
     const baiduApiKey = ocr_engine === 'baidu_ocr' ? $('#baiduApiKey').val() : null;
     const baiduSecretKey = ocr_engine === 'baidu_ocr' ? $('#baiduSecretKey').val() : null;
     const baiduVersion = ocr_engine === 'baidu_ocr' ? $('#baiduVersion').val() : 'standard';
+    // 如果百度OCR语言设置为"无"或空，则使用用户选择的源语言
+    const sourceLang = $('#sourceLanguage').val();
+    const baiduOcrLang = state.getBaiduOcrSourceLanguage();
+    const baiduOcrLanguage = (baiduOcrLang === '无' || !baiduOcrLang || baiduOcrLang === '') ? sourceLang : baiduOcrLang;
     
     // AI视觉OCR相关参数
     const aiVisionProvider = ocr_engine === 'ai_vision' ? $('#aiVisionProvider').val() : null;
@@ -1937,6 +1954,7 @@ export function removeAllBubblesText() {
             baidu_api_key: baiduApiKey,
             baidu_secret_key: baiduSecretKey,
             baidu_version: baiduVersion,
+            baidu_ocr_language: baiduOcrLanguage, // 使用根据条件确定的语言设置
             ai_vision_provider: aiVisionProvider,
             ai_vision_api_key: aiVisionApiKey,
             ai_vision_model_name: aiVisionModelName,
@@ -2157,6 +2175,9 @@ export function importText(jsonFile) {
             // 遍历导入的数据
             const totalImages = importedData.length;
             let processedImages = 0;
+
+            // 创建一个队列，用于存储所有渲染任务
+            const renderTasks = [];
             
             for (const imageData of importedData) {
                 processedImages++;
@@ -2181,65 +2202,47 @@ export function importText(jsonFile) {
                 // 遍历气泡数据
                 for (const bubbleData of imageData.bubbles) {
                     const bubbleIndex = bubbleData.bubbleIndex;
+                    const original = bubbleData.original;
+                    const translated = bubbleData.translated;
+                    const textDirection = bubbleData.textDirection || 'vertical'; // 获取排版方向，默认为竖排
                     
-                    // 检查气泡索引是否有效
-                    if (bubbleIndex < 0 || bubbleIndex >= image.originalTexts.length) {
-                        console.warn(`跳过无效的气泡索引: 图片${imageIndex}，气泡${bubbleIndex}`);
-                        continue;
-                    }
-                    
-                    // 确保气泡数组长度足够
+                    // 确保数组索引存在
                     while (image.bubbleTexts.length <= bubbleIndex) {
-                        image.bubbleTexts.push('');
+                        image.bubbleTexts.push("");
+                    }
+                    while (image.originalTexts.length <= bubbleIndex) {
+                        image.originalTexts.push("");
                     }
                     
-                    // 更新气泡译文
-                    image.bubbleTexts[bubbleIndex] = bubbleData.translated;
+                    // 更新文本
+                    if (original) image.originalTexts[bubbleIndex] = original;
+                    if (translated) image.bubbleTexts[bubbleIndex] = translated;
                     
-                    // 从JSON中获取排版方向信息，其余参数使用左侧边栏的当前设置
-                    const textDirection = bubbleData.textDirection || $('#layoutDirection').val();
+                    // 更新气泡设置
+                    if (!image.bubbleSettings) image.bubbleSettings = [];
+                    while (image.bubbleSettings.length <= bubbleIndex) {
+                        image.bubbleSettings.push(null);
+                    }
                     
-                    // 如果图片没有bubbleSettings或长度不匹配，则初始化它
-                    if (!image.bubbleSettings || 
-                        !Array.isArray(image.bubbleSettings) || 
-                        image.bubbleSettings.length !== image.bubbleCoords.length) {
-                        // 创建新的气泡设置，使用当前左侧边栏的设置
-                        const newSettings = [];
-                        for (let i = 0; i < image.bubbleCoords.length; i++) {
-                            const bubbleTextDirection = (i === bubbleIndex && textDirection) ? textDirection : $('#layoutDirection').val();
-                            newSettings.push({
-                                // 使用更新后的bubbleTexts数组的值，确保每个气泡都有正确的文本
-                                text: image.bubbleTexts[i] || "",
-                                fontSize: currentFontSize,
-                                autoFontSize: currentAutoFontSize,
-                                fontFamily: currentFontFamily,
-                                textDirection: bubbleTextDirection,
-                                position: { x: 0, y: 0 },
-                                textColor: currentTextColor,
-                                rotationAngle: currentRotationAngle,
-                                fillColor: currentFillColor
-                            });
-                        }
-                        image.bubbleSettings = newSettings;
+                    if (!image.bubbleSettings[bubbleIndex]) {
+                        image.bubbleSettings[bubbleIndex] = {
+                            text: translated || "",
+                            fontSize: currentFontSize,
+                            autoFontSize: currentAutoFontSize,
+                            fontFamily: currentFontFamily,
+                            textDirection: textDirection,
+                            textColor: currentTextColor,
+                            fillColor: currentFillColor,
+                            rotationAngle: currentRotationAngle
+                        };
                     } else {
-                        // 更新对应气泡的所有设置，保留从JSON中导入的排版方向，其余使用左侧边栏的当前设置
-                        if (image.bubbleSettings[bubbleIndex]) {
-                            image.bubbleSettings[bubbleIndex] = {
-                                ...image.bubbleSettings[bubbleIndex],
-                                text: bubbleData.translated,
-                                fontSize: currentFontSize,
-                                autoFontSize: currentAutoFontSize,
-                                fontFamily: currentFontFamily,
-                                textDirection: textDirection, // 使用从JSON导入的排版方向
-                                textColor: currentTextColor,
-                                rotationAngle: currentRotationAngle,
-                                fillColor: currentFillColor
-                            };
-                        }
+                        // 更新现有设置中的文本和排版方向
+                        image.bubbleSettings[bubbleIndex].text = translated || "";
+                        image.bubbleSettings[bubbleIndex].textDirection = textDirection;
                     }
                     
-                    updatedBubbles++;
                     imageUpdated = true;
+                    updatedBubbles++;
                 }
                 
                 // 确保图片的bubbleSettings中的text属性与bubbleTexts一致
@@ -2254,37 +2257,50 @@ export function importText(jsonFile) {
                 if (imageUpdated) {
                     updatedImages++;
                     
-                    // 切换到当前更新的图片并重新渲染它
-                    await new Promise(resolve => {
-                        // 切换到当前处理的图片
-                        switchImage(imageIndex);
-                        
-                        // 如果图片已经有翻译数据，重新渲染它
-                        if (image.translatedDataURL) {
-                            // 重新渲染当前图片
-                            if (state.editModeActive) {
-                                // 如果在编辑模式，使用编辑模式的方式重新渲染
-                                import('./edit_mode.js').then(editMode => {
-                                    editMode.reRenderFullImage().then(resolve);
-                                });
-                            } else {
-                                // 否则也需要重新渲染来显示新文本
-                                import('./edit_mode.js').then(editMode => {
-                                    editMode.reRenderFullImage().then(resolve);
-                                });
+                    // 不切换图片，而是将渲染任务添加到队列中
+                    if (image.translatedDataURL) {
+                        renderTasks.push(async () => {
+                            // 创建一个离屏画布，避免切换图片
+                            const tempImage = await loadImage(image.originalDataURL);
+                            const canvas = document.createElement('canvas');
+                            canvas.width = tempImage.width;
+                            canvas.height = tempImage.height;
+                            
+                            // 借用edit_mode.js中的渲染逻辑，但不切换图片
+                            const editMode = await import('./edit_mode.js');
+                            
+                            // 保存当前索引
+                            const currentIndex = state.currentImageIndex;
+                            
+                            // 临时切换到目标图片（但不更新UI）
+                            state.setCurrentImageIndex(imageIndex);
+                            
+                            try {
+                                // 重新渲染图片
+                                await editMode.reRenderFullImage(false, true); // 传入silentMode=true参数，表示静默渲染
+                                
+                                // 图片已在reRenderFullImage中更新到state中
+                                console.log(`已完成图片 ${imageIndex} 的渲染`);
+                            } finally {
+                                // 恢复原始索引（但不更新UI）
+                                state.setCurrentImageIndex(currentIndex);
                             }
-                        } else {
-                            // 如果图片没有被翻译过，只切换到该图片但无需渲染
-                            resolve();
-                        }
-                    });
-                    
-                    // 在导入并渲染每张图片后短暂停顿，以便用户可以看到进度
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                        });
+                    }
                 }
             }
             
-            ui.updateProgressBar(90, "完成图片更新，恢复原始视图...");
+            // 开始执行渲染队列
+            ui.updateProgressBar(90, "开始渲染图片...");
+            ui.showGeneralMessage("正在渲染图片，请稍候...", "info", false);
+            
+            // 执行所有渲染任务
+            for (let i = 0; i < renderTasks.length; i++) {
+                ui.updateProgressBar(90 + (i / renderTasks.length * 10), `渲染图片 ${i+1}/${renderTasks.length}`);
+                await renderTasks[i]();
+            }
+            
+            ui.updateProgressBar(100, "完成图片更新");
             
             // 全部导入完成后，回到最初的图片
             switchImage(originalImageIndex);
@@ -2293,7 +2309,6 @@ export function importText(jsonFile) {
             ui.renderThumbnails();
             
             // 显示导入结果
-            ui.updateProgressBar(100, "导入完成");
             ui.showGeneralMessage(`导入成功！更新了${updatedImages}张图片中的${updatedBubbles}个气泡文本`, "success");
             
             // 触发自动保存

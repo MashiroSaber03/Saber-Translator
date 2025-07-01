@@ -43,9 +43,13 @@ class PaddleOCRHandler:
         初始化PaddleOCR模型
         
         参数:
-        - lang: 语言代码，支持 "en"(英文)、"korean"(韩文)等
+        - lang: 语言代码，支持 "en"(英文)、"korean"(韩文)、"japan"(日语)等
         """
         try:
+            # 获取语言代码
+            lang_code = self.lang_dict.get(lang, "en")
+            logger.info(f"初始化PaddleOCR，源语言: {lang} -> 模型语言代码: {lang_code}")
+            
             # 确保模型已下载
             self._ensure_models_downloaded(lang)
             
@@ -55,9 +59,6 @@ class PaddleOCRHandler:
             except ImportError:
                 logger.error("PaddleOCR模块未安装，请使用pip install paddleocr安装")
                 raise ImportError("需要先安装PaddleOCR: pip install paddleocr")
-            
-            # 获取语言代码
-            lang_code = self.lang_dict.get(lang, "en")
             
             # 检查模型目录是否存在
             det_model_dir = os.path.join(self.model_dir, f"det_{lang_code}")
@@ -86,16 +87,46 @@ class PaddleOCRHandler:
                 logger.error(f"方向分类模型目录不存在: {cls_model_dir}")
             
             # 初始化OCR对象
-            logger.info(f"初始化PaddleOCR引擎 (语言: {lang})")
-            self.ocr = PaddleOCR(
-                use_angle_cls=True,  # 使用方向分类器
-                lang=lang_code,      # 设置识别语言
-                use_gpu=False,       # 默认使用CPU
-                det_model_dir=det_model_dir,  # 检测模型路径
-                rec_model_dir=rec_model_dir,  # 识别模型路径
-                cls_model_dir=cls_model_dir,  # 方向分类模型路径
-                show_log=False       # 不显示日志
-            )
+            logger.info(f"初始化PaddleOCR引擎 (语言: {lang}, 模型语言代码: {lang_code})")
+            
+            # 尝试使用语言代码初始化PaddleOCR
+            try:
+                self.ocr = PaddleOCR(
+                    use_angle_cls=True,  # 使用方向分类器
+                    lang=lang_code,      # 设置识别语言
+                    use_gpu=False,       # 默认使用CPU
+                    det_model_dir=det_model_dir,  # 检测模型路径
+                    rec_model_dir=rec_model_dir,  # 识别模型路径
+                    cls_model_dir=cls_model_dir,  # 方向分类模型路径
+                    show_log=False       # 不显示日志
+                )
+            except Exception as e:
+                logger.error(f"使用语言代码 {lang_code} 初始化PaddleOCR失败: {e}", exc_info=True)
+                
+                # 尝试使用英文模型作为后备
+                if lang_code != "en":
+                    logger.warning(f"尝试使用英文模型作为后备...")
+                    en_det_model_dir = os.path.join(self.model_dir, "det_en")
+                    en_rec_model_dir = os.path.join(self.model_dir, "rec_en")
+                    
+                    # 确保英文模型已下载
+                    self._ensure_models_downloaded("en")
+                    
+                    # 使用英文模型初始化
+                    self.ocr = PaddleOCR(
+                        use_angle_cls=True,
+                        lang="en",
+                        use_gpu=False,
+                        det_model_dir=en_det_model_dir,
+                        rec_model_dir=en_rec_model_dir,
+                        cls_model_dir=cls_model_dir,
+                        show_log=False
+                    )
+                    logger.info("使用英文模型成功初始化PaddleOCR (作为后备)")
+                else:
+                    # 如果英文模型也失败，则无法初始化
+                    logger.error("无法初始化PaddleOCR引擎")
+                    return False
             
             self.initialized = True
             self.current_lang = lang
@@ -180,6 +211,7 @@ class PaddleOCRHandler:
         model_urls = {
             "ch": "https://paddleocr.bj.bcebos.com/PP-OCRv3/chinese/ch_PP-OCRv3_rec_infer.tar",
             "korean": "https://paddleocr.bj.bcebos.com/PP-OCRv3/multilingual/korean_PP-OCRv3_rec_infer.tar",
+            "japanese": "https://paddleocr.bj.bcebos.com/PP-OCRv3/multilingual/japan_PP-OCRv3_rec_infer.tar",
             # 以下暂时全部使用英文模型替代
             "chinese_cht": rec_url,
             "french": rec_url,

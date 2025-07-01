@@ -58,6 +58,7 @@ SUPPORTED_LANGUAGES_OCR = {
     "spanish": "PaddleOCR"
 }
 PADDLE_LANG_MAP = {
+    "japan": "japanese",
     "en": "en",
     "korean": "korean",
     "chinese": "ch",

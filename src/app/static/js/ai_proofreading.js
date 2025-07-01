@@ -516,10 +516,24 @@ async function importProofreadingResult(importedData) {
     const currentRotationAngle = parseFloat($('#rotationAngle').val() || '0');
     
     console.log(`轮次 ${currentRound + 1}/${totalRounds}: 开始导入校对结果`);
+    ui.updateProgressBar((currentRound / totalRounds) * 100 + (1 / totalRounds) * 92, '更新图片数据...');
     
     try {
+        // 创建一个队列，用于存储所有渲染任务
+        const renderTasks = [];
+        
+        // 遍历导入的数据
+        const totalImages = importedData.length;
+        let processedImages = 0;
+        
         // 处理每个图片的校对结果
         for (const imageData of importedData) {
+            processedImages++;
+            ui.updateProgressBar(
+                (currentRound / totalRounds) * 100 + (1 / totalRounds) * (92 + processedImages / totalImages * 5), 
+                `处理图片 ${processedImages}/${totalImages}`
+            );
+            
             const imageIndex = imageData.imageIndex;
             
             // 检查图片索引是否有效
@@ -533,9 +547,6 @@ async function importProofreadingResult(importedData) {
                 console.warn(`图片 ${imageIndex}: 没有有效的气泡数据，跳过该图片`);
                 continue;
             }
-            
-            // 切换到该图片
-            await switchToImage(imageIndex);
             
             // 获取该图片的当前数据
             const image = state.images[imageIndex];
@@ -613,26 +624,53 @@ async function importProofreadingResult(importedData) {
                 imageUpdated = true;
             }
             
-            // 如果图片有更新，重新渲染
+            // 如果图片有更新，添加到渲染队列
             if (imageUpdated) {
-                // 使用已有的reRenderFullImage函数重新渲染
-                await new Promise(resolve => {
-                    if (image.translatedDataURL) {
-                        // 如果已经有翻译图像，重新渲染
-                        import('./edit_mode.js').then(editMode => {
-                            editMode.reRenderFullImage().then(resolve);
-                        });
-                    } else {
-                        resolve();
-                    }
-                });
+                // 添加到渲染队列
+                if (image.translatedDataURL) {
+                    renderTasks.push(async () => {
+                        // 借用edit_mode.js中的渲染逻辑，但不切换图片
+                        const editMode = await import('./edit_mode.js');
+                        
+                        // 保存当前索引
+                        const currentIndex = state.currentImageIndex;
+                        
+                        // 临时切换到目标图片（但不更新UI）
+                        state.setCurrentImageIndex(imageIndex);
+                        
+                        try {
+                            // 重新渲染图片
+                            await editMode.reRenderFullImage(false, true); // 传入silentMode=true参数，表示静默渲染
+                            
+                            // 图片已在reRenderFullImage中更新到state中
+                            console.log(`已完成图片 ${imageIndex} 的渲染`);
+                        } finally {
+                            // 恢复原始索引（但不更新UI）
+                            state.setCurrentImageIndex(currentIndex);
+                        }
+                    });
+                }
             }
         }
         
-        // 还原到原始图片索引
-        if (originalImageIndex !== state.currentImageIndex) {
-            await switchToImage(originalImageIndex);
+        // 开始执行渲染队列
+        ui.updateProgressBar(
+            (currentRound / totalRounds) * 100 + (1 / totalRounds) * 97, 
+            "开始渲染图片..."
+        );
+        ui.showGeneralMessage(`轮次 ${currentRound + 1}/${totalRounds}: 正在渲染图片...`, "info", false);
+        
+        // 执行所有渲染任务
+        for (let i = 0; i < renderTasks.length; i++) {
+            ui.updateProgressBar(
+                (currentRound / totalRounds) * 100 + (1 / totalRounds) * (97 + i / renderTasks.length * 3), 
+                `渲染图片 ${i+1}/${renderTasks.length}`
+            );
+            await renderTasks[i]();
         }
+        
+        // 全部导入完成后，回到最初的图片
+        main.switchImage(originalImageIndex);
         
         console.log(`轮次 ${currentRound + 1}/${totalRounds}: 校对结果导入完成`);
         

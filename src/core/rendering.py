@@ -53,10 +53,14 @@ SPECIAL_PUNCTUATION_PATTERNS = [
 
 def map_to_vertical_punctuation(text):
     """
-    将文本中的标点符号映射为竖排标点符号
+    将文本中的标点符号映射为竖排标点符号。
+    
+    在竖排文本排版中，常规的横排标点符号会显得不协调。此函数将常规标点转换为
+    专门用于竖排排版的对应标点形式，例如将横向的括号"()"转换为竖向的"︵︶"。
+    同时处理特殊组合标点，如连续感叹号或问号组合等。
     
     Args:
-        text (str): 原始文本
+        text (str): 原始文本，包含需要转换的标点符号
         
     Returns:
         str: 转换后的文本，标点符号已替换为竖排版本
@@ -80,14 +84,18 @@ def map_to_vertical_punctuation(text):
 
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
-    加载字体文件，带缓存。
-
+    加载字体文件，带缓存功能。
+    
+    根据给定的字体路径和大小加载字体对象。为了提高性能，已加载的字体会被缓存。
+    如果指定字体加载失败，将尝试使用默认字体。若默认字体也无法加载，
+    最终会使用Pillow的内置默认字体。
+    
     Args:
-        font_family_relative_path (str): 字体的相对路径 (相对于项目根目录)。
-        font_size (int): 字体大小。
-
+        font_family_relative_path (str): 字体的相对路径（相对于项目根目录）
+        font_size (int): 字体大小，单位为像素
+        
     Returns:
-        ImageFont.FreeTypeFont or ImageFont.ImageFont: 加载的字体对象，失败则返回默认字体。
+        ImageFont.FreeTypeFont or ImageFont.ImageFont: 加载的字体对象，失败则返回默认字体
     """
     # 确保 font_size 是整数
     try:
@@ -135,6 +143,23 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
                              min_size=12, max_size=60, padding_ratio=1.0):
     """
     使用二分法计算最佳字体大小。
+    
+    根据给定的气泡大小和文本内容，计算能使文本恰好适合气泡的最佳字体大小。
+    对文本方向（横排/竖排）有不同的计算逻辑。使用二分搜索算法，在最小和最大
+    字号之间找到最佳值，确保文本能完整显示在气泡内。
+    
+    Args:
+        text (str): 要渲染的文本内容
+        bubble_width (int): 气泡宽度，单位为像素
+        bubble_height (int): 气泡高度，单位为像素
+        text_direction (str): 文本方向，'vertical'表示竖排，'horizontal'表示横排
+        font_family_relative_path (str): 字体的相对路径
+        min_size (int): 允许的最小字体大小
+        max_size (int): 允许的最大字体大小
+        padding_ratio (float): 内边距比例，用于控制文本与气泡边界的距离
+        
+    Returns:
+        int: 计算得到的最佳字体大小
     """
     if not text or not text.strip() or bubble_width <= 0 or bubble_height <= 0:
         return constants.DEFAULT_FONT_SIZE
@@ -451,104 +476,125 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
 def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_styles):
     """
     在图像上渲染所有气泡的文本，使用各自的样式。
-
+    
+    根据提供的文本列表、气泡坐标和样式设置，将文本渲染到相应的气泡位置。
+    支持不同的文本方向、字体、颜色和描边效果等样式设置。每个气泡可以有
+    独立的样式设置，未指定的样式参数将使用默认值。
+    
     Args:
-        draw_image (PIL.Image.Image): 要绘制文本的 PIL 图像对象 (会被直接修改)。
-        all_texts (list): 所有气泡的文本列表。
-        bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
-        bubble_styles (dict): 包含每个气泡样式的字典，键为气泡索引(字符串),
-                              值为样式字典 {'fontSize':, 'autoFontSize':, 'fontFamily':,
-                              'textDirection':, 'position_offset':, 'textColor':, 'rotationAngle':}。
+        draw_image (PIL.ImageDraw.ImageDraw): PIL的绘图对象，用于在图像上绘制文本
+        all_texts (list): 所有气泡的文本列表
+        bubble_coords (list): 所有气泡的坐标列表，格式为[(x1, y1, x2, y2), ...]
+        bubble_styles (dict): 包含气泡样式信息的字典，结构为：
+            {
+                'fontSizes': {气泡索引: 字体大小},
+                'fontFamilies': {气泡索引: 字体路径},
+                'textDirections': {气泡索引: 文本方向},
+                'positionOffsets': {气泡索引: {'x': x偏移, 'y': y偏移}},
+                'textColors': {气泡索引: 文本颜色},
+                'rotationAngles': {气泡索引: 旋转角度},
+                'enableStroke': {气泡索引: 是否启用描边},
+                'strokeColors': {气泡索引: 描边颜色},
+                'strokeWidths': {气泡索引: 描边宽度}
+            }
+    
+    Returns:
+        None: 函数直接在提供的draw_image上绘制，不返回新对象
     """
-    if not all_texts or not bubble_coords or len(all_texts) != len(bubble_coords):
-        logger.warning(f"文本({len(all_texts) if all_texts else 0})、坐标({len(bubble_coords) if bubble_coords else 0})数量不匹配，无法渲染。")
-        return
-
-    draw = ImageDraw.Draw(draw_image)
-    logger.info(f"开始渲染 {len(bubble_coords)} 个气泡的文本...")
-
-    for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-        # 确保索引有效
-        if i >= len(all_texts):
-            logger.warning(f"索引 {i} 超出文本列表范围，跳过。")
+    logger.info(f"渲染所有气泡文本，共 {len(all_texts)} 个气泡")
+    
+    # 提取气泡样式
+    font_sizes = bubble_styles.get('fontSizes', {})
+    font_families = bubble_styles.get('fontFamilies', {})
+    text_directions = bubble_styles.get('textDirections', {})
+    position_offsets = bubble_styles.get('positionOffsets', {})
+    text_colors = bubble_styles.get('textColors', {}) # 新增支持文本颜色
+    rotation_angles = bubble_styles.get('rotationAngles', {}) # 新增支持旋转角度
+    
+    # --- 新增支持文本描边 ---
+    enable_stroke_settings = bubble_styles.get('enableStroke', {})
+    stroke_colors = bubble_styles.get('strokeColors', {})
+    stroke_widths = bubble_styles.get('strokeWidths', {})
+    # ----------------------
+    
+    for i, (text, (x1, y1, x2, y2)) in enumerate(zip(all_texts, bubble_coords)):
+        if not text:
             continue
-
-        style = bubble_styles.get(str(i), {}) # 获取当前气泡样式
-        text = all_texts[i] if all_texts[i] is not None else "" # 处理 None 值
-
-        # --- 获取样式参数 ---
-        font_size_setting = style.get('fontSize', constants.DEFAULT_FONT_SIZE)
-        auto_font_size = style.get('autoFontSize', False)
-        # fontFamily 应该是相对路径，如 'src/app/static/fonts/...'
-        font_family_rel = style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH)
-        text_direction = style.get('text_direction', constants.DEFAULT_TEXT_DIRECTION)
-        position_offset = style.get('position_offset', {'x': 0, 'y': 0})
-        text_color = style.get('text_color', constants.DEFAULT_TEXT_COLOR)
-        rotation_angle = style.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)
-
-        # === 新增：从 style 字典获取描边参数 START ===
-        enable_stroke_to_use = style.get('enableStroke', False) # 键名与前端对应
-        stroke_color_to_use = style.get('strokeColor', "#FFFFFF")
-        stroke_width_to_use = style.get('strokeWidth', 0)
-        # logger.debug(f"Bubble {i} stroke params: enable={enable_stroke_to_use}, color={stroke_color_to_use}, width={stroke_width_to_use}")
-        # === 新增：从 style 字典获取描边参数 END ===
-
-        # --- 处理字体大小 ---
-        current_font_size = constants.DEFAULT_FONT_SIZE
-        if auto_font_size:
+        
+        bubble_index = str(i)  # 气泡索引转为字符串，用于字典键
+        
+        # 确定当前气泡的样式
+        font_size = font_sizes.get(bubble_index, constants.DEFAULT_FONT_SIZE)
+        font_family_rel = font_families.get(bubble_index, constants.DEFAULT_FONT_RELATIVE_PATH)
+        text_direction = text_directions.get(bubble_index, constants.DEFAULT_TEXT_DIRECTION)
+        position_offset = position_offsets.get(bubble_index, {'x': 0, 'y': 0})
+        text_color = text_colors.get(bubble_index, constants.DEFAULT_TEXT_COLOR) # 获取文本颜色
+        rotation_angle = rotation_angles.get(bubble_index, constants.DEFAULT_ROTATION_ANGLE) # 获取旋转角度
+        
+        # --- 获取文本描边设置 ---
+        enable_stroke = enable_stroke_settings.get(bubble_index, False)
+        stroke_color = stroke_colors.get(bubble_index, "#FFFFFF")
+        stroke_width = int(stroke_widths.get(bubble_index, 0))
+        # -----------------------
+        
+        x_offset = position_offset.get('x', 0)
+        y_offset = position_offset.get('y', 0)
+        
+        # 获取字体
+        font = get_font(font_family_rel, font_size)
+        if font is None:
+            logger.error(f"获取字体失败: {font_family_rel} (大小: {font_size})，跳过气泡 {i}")
+            continue
+            
+        # 绘制文本
+        try:
             bubble_width = x2 - x1
             bubble_height = y2 - y1
-            if 'calculated_font_size' in style and style['calculated_font_size']:
-                 current_font_size = style['calculated_font_size']
-            else:
-                 current_font_size = calculate_auto_font_size(
-                     text, bubble_width, bubble_height, text_direction, font_family_rel
-                 )
-                 style['calculated_font_size'] = current_font_size # 保存计算结果
-        elif isinstance(font_size_setting, (int, float)) and font_size_setting > 0:
-            current_font_size = int(font_size_setting)
-        elif isinstance(font_size_setting, str) and font_size_setting.isdigit(): # 处理字符串形式的数字
-             current_font_size = int(font_size_setting)
-
-        # --- 加载字体 ---
-        font = get_font(font_family_rel, current_font_size)
-        if font is None:
-            logger.error(f"气泡 {i}: 无法加载字体 {font_family_rel} (大小: {current_font_size})，跳过渲染。")
-            continue
-
-        # --- 计算绘制参数 ---
-        offset_x = position_offset.get('x', 0)
-        offset_y = position_offset.get('y', 0)
-        draw_x = x1 + offset_x
-        draw_y = y1 + offset_y
-        vertical_draw_x = x2 + offset_x # 竖排时，x是右边界
-        max_text_width = max(10, x2 - x1)
-        max_text_height = max(10, y2 - y1)
-
-        # --- 调用绘制函数 ---
-        try:
+            
+            # 计算文本位置
             if text_direction == 'vertical':
-                bubble_width_for_centering = max_text_width
-                draw_multiline_text_vertical(draw, text, font, vertical_draw_x, draw_y, max_text_height,
-                                           fill=text_color, rotation_angle=rotation_angle,
-                                           # 传递描边参数
-                                           enable_stroke=enable_stroke_to_use,
-                                           stroke_color=stroke_color_to_use,
-                                           stroke_width=stroke_width_to_use,
-                                           bubble_width=bubble_width_for_centering)
-            elif text_direction == 'horizontal':
-                draw_multiline_text_horizontal(draw, text, font, draw_x, draw_y, max_text_width,
-                                             fill=text_color, rotation_angle=rotation_angle,
-                                             # 传递描边参数
-                                             enable_stroke=enable_stroke_to_use,
-                                             stroke_color=stroke_color_to_use,
-                                             stroke_width=stroke_width_to_use)
-            else:
-                logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
-        except Exception as render_e:
-             logger.error(f"渲染气泡 {i} 时出错: {render_e}", exc_info=True)
-
-    logger.info("所有气泡文本渲染完成。")
+                # 竖直排版：右边是第一列，从右向左绘制
+                start_x = x2 + x_offset  # 从右边框开始
+                start_y = y1 + y_offset  # 从上边框开始
+                
+                # 在气泡内绘制竖排文本
+                draw_multiline_text_vertical(
+                    draw_image, 
+                    text, 
+                    font, 
+                    start_x, 
+                    start_y, 
+                    bubble_height,
+                    fill=text_color, # 使用指定的文本颜色
+                    rotation_angle=rotation_angle, # 使用指定的旋转角度
+                    enable_stroke=enable_stroke, # 传递描边设置
+                    stroke_color=stroke_color,
+                    stroke_width=stroke_width,
+                    bubble_width=bubble_width # 传递气泡宽度以支持居中
+                )
+            else:  # 'horizontal'
+                # 水平排版：顶部是第一行，从上往下绘制
+                start_x = x1 + x_offset  # 从左边框开始
+                start_y = y1 + y_offset  # 从上边框开始
+                
+                # 在气泡内绘制横排文本
+                draw_multiline_text_horizontal(
+                    draw_image,
+                    text,
+                    font,
+                    start_x,
+                    start_y,
+                    bubble_width,
+                    fill=text_color, # 使用指定的文本颜色
+                    rotation_angle=rotation_angle, # 使用指定的旋转角度
+                    enable_stroke=enable_stroke, # 传递描边设置  
+                    stroke_color=stroke_color,
+                    stroke_width=stroke_width
+                )
+            
+            logger.info(f"成功渲染气泡 {i} 文本: '{text[:20]}...' (方向: {text_direction})")
+        except Exception as e:
+            logger.error(f"渲染气泡 {i} 文本时出错: {e}", exc_info=True)
 
 def render_single_bubble(
     image,

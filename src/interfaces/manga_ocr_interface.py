@@ -187,8 +187,10 @@ def recognize_japanese_text(image_pil):
     Returns:
         str: 识别出的文本，如果失败则返回空字符串。
     """
+    logger.info("开始使用MangaOCR识别文本...")
     ocr_instance = get_manga_ocr_instance()
     if ocr_instance is None:
+        logger.error("MangaOCR实例获取失败，无法进行识别")
         return ""
 
     try:
@@ -197,11 +199,15 @@ def recognize_japanese_text(image_pil):
             logger.debug(f"将图像从 {image_pil.mode} 转换为 RGB 以进行 MangaOCR")
             image_pil = image_pil.convert('RGB')
 
+        logger.info(f"调用MangaOCR识别图像，尺寸: {image_pil.size}...")
         text = ocr_instance(image_pil)
-        # logger.debug(f"MangaOCR 识别结果: {text}")
+        if text:
+            logger.info(f"MangaOCR识别成功，结果: '{text}'")
+        else:
+            logger.info("MangaOCR未识别出文本")
         return text if text else ""
     except Exception as e:
-        logger.error(f"MangaOCR 识别失败: {e}", exc_info=True)
+        logger.error(f"MangaOCR识别失败: {e}", exc_info=True)
         return ""
 
 # --- 测试代码 ---

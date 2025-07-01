@@ -88,7 +88,7 @@ class BaiduOCRInterface:
         
         Args:
             image_bytes: 图像字节数据
-            language: 语言代码 (japanese, chinese, english, 等)
+            language: 语言代码或 'auto_detect' 表示自动检测
             
         Returns:
             识别出的文本列表
@@ -113,15 +113,18 @@ class BaiduOCRInterface:
             "image": image_base64
         }
         
-        # 添加语言参数（如果不是自动）
-        if language != "auto" and language in self.LANGUAGE_MAPPING:
-            mapped_language = self.LANGUAGE_MAPPING[language]
-            # 百度OCR要求语言代码必须大写
-            data["language_type"] = mapped_language.upper()
-            logger.info(f"设置百度OCR语言类型为: {mapped_language} (原始语言代码: {language})")
+        # 添加语言参数（如果不是自动检测）
+        if language != "auto" and language != "auto_detect":
+            # 如果是直接指定的百度OCR语言代码（如CHN_ENG, JAP等）
+            lang_code = language
+            # 如果language是源语言代码，尝试转换为百度OCR需要的语言代码
+            if language.lower() in self.LANGUAGE_MAPPING:
+                lang_code = self.LANGUAGE_MAPPING[language.lower()]
+            data["language_type"] = lang_code
+            logger.info(f"设置百度OCR语言类型为: {lang_code} (源语言: {language})")
         else:
-            # 如果是auto或未知语言，不设置language_type参数，让API自动检测
-            logger.info("未指定语言或使用自动检测，不设置language_type参数")
+            # 如果是auto或auto_detect，不设置language_type参数，让API自动检测
+            logger.info("使用自动检测语言，不设置language_type参数")
         
         # 确保请求间隔
         self._ensure_request_interval()

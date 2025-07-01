@@ -51,13 +51,16 @@ _translation_rpm_request_count_container = [0]
 def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: list, request_count_ref: list):
     """
     执行rpm（每分钟请求数）限制检查和等待。
-    使用列表作为引用类型来修改外部的 last_reset_time 和 request_count。
-
+    
+    通过跟踪请求计数和窗口重置时间，实现对API请求频率的限制。
+    使用列表作为引用类型来修改外部的计时器和计数器状态。
+    如果在当前分钟内请求数已达上限，函数会阻塞等待到下一个窗口期。
+    
     Args:
-        rpm_limit (int): 每分钟最大请求数。如果为0或负数，则不限制。
-        service_name (str): 服务名称，用于日志记录。
-        last_reset_time_ref (list): 包含上次重置时间的列表 (e.g., [timestamp])。
-        request_count_ref (list): 包含当前请求计数的列表 (e.g., [count])。
+        rpm_limit (int): 每分钟最大请求数，如果为0或负数则表示不限制
+        service_name (str): 服务名称，用于日志记录
+        last_reset_time_ref (list): 包含上次重置时间的列表引用 (e.g., [timestamp])
+        request_count_ref (list): 包含当前请求计数的列表引用 (e.g., [count])
     """
     if rpm_limit <= 0:
         return # 无限制
@@ -98,12 +101,15 @@ def _safely_extract_from_json(json_str, field_name):
     """
     安全地从JSON字符串中提取特定字段，处理各种异常情况。
     
+    当标准JSON解析失败时，此函数会尝试使用正则表达式和简单文本处理
+    来提取所需字段。适用于处理格式不规范的JSON响应。
+    
     Args:
-        json_str (str): JSON格式的字符串
+        json_str (str): JSON格式的字符串或类似JSON的文本
         field_name (str): 要提取的字段名
         
     Returns:
-        str: 提取的文本，如果失败则返回简化处理的原始文本
+        str: 提取的文本，如果所有提取方法都失败则返回简化处理的原始文本
     """
     # 尝试直接解析
     try:
@@ -148,19 +154,26 @@ def translate_single_text(text, target_language, model_provider,
                           jsonPromptMode: str = 'normal'): # <--- 新增rpm参数
     """
     使用指定的大模型翻译单段文本。
-
+    
+    支持多种翻译提供商，包括SiliconFlow、DeepSeek、火山引擎、Ollama、Sakura等。
+    根据提供商的不同，自动选择适当的API调用方式。可以使用自定义提示词和JSON格式返回。
+    支持rpm（每分钟请求数）限制，以防止超出API使用限制。
+    
     Args:
-        text (str): 需要翻译的原始文本。
-        target_language (str): 目标语言代码 (例如 'zh')。
-        model_provider (str): 模型提供商 ('siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'caiyun', 'baidu_translate', 'youdao_translate')。
-        api_key (str, optional): API 密钥 (对于非本地部署是必需的)。
-        model_name (str, optional): 模型名称。
-        prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
-        use_json_format (bool): 是否期望并解析JSON格式的响应。
-        custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
+        text (str): 需要翻译的原始文本
+        target_language (str): 目标语言代码，如'zh'表示中文
+        model_provider (str): 模型提供商，支持'siliconflow'、'deepseek'、'volcano'、
+                             'ollama'、'sakura'、'caiyun'、'baidu_translate'、'youdao_translate'等
+        api_key (str, optional): API密钥，对非本地部署的服务通常是必需的
+        model_name (str, optional): 模型名称，每个提供商支持的模型不同
+        prompt_content (str, optional): 自定义提示词，如为None则使用默认提示词
+        use_json_format (bool): 是否期望并解析JSON格式的响应
+        custom_base_url (str, optional): 用户自定义的OpenAI兼容API的Base URL
+        rpm_limit_translation (int): 翻译服务的每分钟请求数限制
+        jsonPromptMode (str): JSON提示模式，可选'normal'、'strict'等
+        
     Returns:
-        str: 翻译后的文本，如果失败则返回 "翻译失败: [原因]"。
+        str: 翻译后的文本，如果翻译失败则返回错误信息，格式为"翻译失败: [原因]"
     """
     if not text or not text.strip():
         return ""
@@ -447,25 +460,32 @@ def translate_text_list(texts, target_language, model_provider,
                         use_json_format=False, custom_base_url=None,
                         rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION): # <--- 新增rpm参数
     """
-    翻译文本列表中的每一项。
-
+    批量翻译一组文本。
+    
+    将一组文本批量翻译为目标语言，支持多种翻译服务提供商。
+    此函数会循环处理每个文本项，并根据提供商类型调用相应的翻译方法。
+    支持rpm（每分钟请求数）限制，以避免API请求过于频繁。
+    
     Args:
-        texts (list): 包含待翻译文本字符串的列表。
-        target_language (str): 目标语言代码。
-        model_provider (str): 模型提供商。
-        api_key (str, optional): API 密钥。
-        model_name (str, optional): 模型名称。
-        prompt_content (str, optional): 自定义提示词。
-        use_json_format (bool): 是否期望并解析JSON格式的响应。
-        custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
+        texts (list): 需要翻译的文本列表
+        target_language (str): 目标语言代码，如'zh'表示中文
+        model_provider (str): 模型提供商，支持'siliconflow'、'deepseek'、'volcano'、
+                             'ollama'、'sakura'、'caiyun'、'baidu_translate'等
+        api_key (str, optional): API密钥，对非本地部署的服务通常是必需的
+        model_name (str, optional): 模型名称，每个提供商支持的模型不同
+        prompt_content (str, optional): 自定义提示词，如为None则使用默认提示词
+        use_json_format (bool): 是否期望并解析JSON格式的响应
+        custom_base_url (str, optional): 用户自定义的OpenAI兼容API的Base URL
+        rpm_limit_translation (int): 翻译服务的每分钟请求数限制
+        
     Returns:
-        list: 包含翻译后文本的列表，顺序与输入列表一致。失败的项包含错误信息。
+        list: 翻译后的文本列表，顺序与输入文本列表一致，失败的项包含错误信息
     """
     translated_texts = []
+    
     if not texts:
         return translated_texts
-
+        
     logger.info(f"开始批量翻译 {len(texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
     
     # 特殊处理模拟翻译提供商
@@ -484,9 +504,9 @@ def translate_text_list(texts, target_language, model_provider,
         # 正常翻译流程
         for i, text in enumerate(texts):
             translated = translate_single_text(
-                text,
-                target_language,
-                model_provider,
+                text, 
+                target_language, 
+                model_provider, 
                 api_key=api_key,
                 model_name=model_name,
                 prompt_content=prompt_content,
@@ -495,7 +515,7 @@ def translate_text_list(texts, target_language, model_provider,
                 rpm_limit_translation=rpm_limit_translation # <--- 传递参数
             )
             translated_texts.append(translated)
-    
+        
     logger.info("批量翻译完成。")
     return translated_texts
 
