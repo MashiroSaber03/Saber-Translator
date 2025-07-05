@@ -13,7 +13,7 @@
         <img src="https://img.shields.io/github/stars/MashiroSaber03/Saber-Translator?style=social" alt="GitHub stars">
     </a>
     <a href="LICENSE">
-        <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+        <img src="https://img.shields.io/badge/License-GPL3.0-yellow.svg" alt="License">
     </a>
 </p>
 
