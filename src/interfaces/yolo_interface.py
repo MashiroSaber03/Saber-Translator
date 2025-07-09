@@ -2,6 +2,10 @@ import torch
 import os
 import logging
 import sys
+ # --- 兼容 WindowsPath 权重文件的 monkey-patch ---
+import pickle
+import torch
+from pathlib import PosixPath
 
 # 添加项目根目录到Python路径，使模块导入在直接运行脚本时也能工作
 try:
@@ -55,16 +59,28 @@ def load_yolo_model(weights_name='best.pt', repo_dir_name='ultralytics_yolov5_ma
             return None
 
         logger.info(f"开始加载 YOLOv5 模型: {weights_path}")
-        # 强制重新加载，避免缓存问题，并指定本地源
-        # 使用 trust_repo=True (如果你的 torch 版本支持) 或适应旧版 API
-        try:
-             # 尝试使用 trust_repo=True (适用于较新版本 PyTorch Hub)
-             _yolo_model = torch.hub.load(repo_or_dir=repo_dir, model='custom', path=weights_path, source='local', force_reload=False, trust_repo=True)
-        except TypeError:
-             # 回退到旧版 API (没有 trust_repo 参数)
-             logger.warning("当前 PyTorch Hub 版本不支持 trust_repo=True，尝试旧版 API。")
-             _yolo_model = torch.hub.load(repo_or_dir=repo_dir, model='custom', path=weights_path, source='local', force_reload=False)
 
+        orig_unpickler = pickle._Unpickler if hasattr(pickle, "_Unpickler") else pickle.Unpickler
+        orig_find_class = orig_unpickler.find_class
+
+        def patched_find_class(self, module, name):
+            if module == "pathlib" and name == "WindowsPath":
+                return PosixPath
+            return orig_find_class(self, module, name)
+
+        orig_unpickler.find_class = patched_find_class
+
+        try:
+            # 尝试使用 trust_repo=True (适用于较新版本 PyTorch Hub)
+            _yolo_model = torch.hub.load(repo_or_dir=repo_dir, model='custom', path=weights_path, source='local', force_reload=True, trust_repo=True)
+        except Exception as e:
+            logger.error(f"加载 YOLOv5 模型失败: {e}", exc_info=True)
+            #  # 回退到旧版 API (没有 trust_repo 参数)
+            logger.warning("当前 PyTorch Hub 版本不支持 trust_repo=True，尝试旧版 API。")
+            _yolo_model = torch.hub.load(repo_or_dir=repo_dir, model='custom', path=weights_path, source='local', force_reload=True)
+        finally:
+            # 恢复原始 find_class，避免影响全局
+            orig_unpickler.find_class = orig_find_class
 
         _yolo_model.conf = conf_threshold
         _model_conf = conf_threshold # 保存当前置信度
