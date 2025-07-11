@@ -530,6 +530,7 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
     const noThinkingMethod = state.hqNoThinkingMethod || 'gemini';
     
     // 根据不同取消思考方法添加参数
+        // 根据不同取消思考方法添加参数
     if (lowReasoning) {
         if (noThinkingMethod === 'gemini') {
             // Gemini风格：使用reasoning_effort参数
@@ -539,6 +540,9 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             // 火山引擎风格：设置thinking=null
             apiParams.thinking = null;
             console.log("使用火山引擎方式取消思考: thinking=null");
+        } else if (noThinkingMethod === 'qwen') {
+            apiParams.think = false;
+            console.log("使用千文方式取消思考: think=false");
         } else {
             // 默认使用Gemini风格
             apiParams.reasoning_effort = "low";
@@ -875,6 +879,7 @@ export function initHqTranslationUI() {
         <select id="hqNoThinkingMethod">
             <option value="gemini" ${state.hqNoThinkingMethod === 'gemini' ? 'selected' : ''}>Gemini (reasoning_effort)</option>
             <option value="volcano" ${state.hqNoThinkingMethod === 'volcano' ? 'selected' : ''}>火山引擎 (thinking: null)</option>
+            <option value="qwen" ${state.hqNoThinkingMethod === 'qwen' ? 'selected' : ''}>Qwen3 (\\no_think)</option>
         </select>
     </div>`;
     
