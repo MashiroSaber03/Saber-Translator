@@ -15,6 +15,14 @@ from datetime import datetime
 from src.plugins.manager import get_plugin_manager
 from src.interfaces.yolo_interface import load_yolo_model
 import mimetypes
+import platform
+import pathlib
+
+# 全局 monkey-patch: 兼容 WindowsPath pickle 权重在 Linux 加载
+if platform.system() == 'Windows':
+    pathlib.PosixPath = pathlib.WindowsPath
+else:
+    pathlib.WindowsPath = pathlib.PosixPath
 
 # 显式地为 .js 文件添加正确的 MIME 类型
 # Flask/Werkzeug 在服务静态文件时通常会参考这个
