@@ -505,11 +505,24 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
     ];
     
     // 添加图片到消息中
-    for (const imgBase64 of imageBase64Array) {
+    // 自动识别 base64 内容并拼接正确 DataURL 头部
+    function guessMimeTypeFromBase64(b64) {
+        if (!b64 || typeof b64 !== "string") return "application/octet-stream";
+        if (b64.startsWith("/9j/")) return "image/jpeg";
+        if (b64.startsWith("UklGR")) return "image/webp";
+        if (b64.startsWith("iVBORw0KGgo")) return "image/png";
+        if (b64.startsWith("R0lGODdh") || b64.startsWith("R0lGODlh")) return "image/gif";
+        // 可扩展更多格式
+        return "application/octet-stream";
+    }
+    for (let i = 0; i < imageBase64Array.length; i++) {
+        const imgBase64 = imageBase64Array[i];
+        const mimeType = guessMimeTypeFromBase64(imgBase64);
+        console.log(`[callAiForTranslation] 第${i}张图片推断mimeType:`, mimeType);
         messages[1].content.push({
             type: "image_url",
             image_url: {
-                url: `data:image/png;base64,${imgBase64}`
+                url: `data:${mimeType};base64,${imgBase64}`
             }
         });
     }
@@ -539,6 +552,9 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             // 火山引擎风格：设置thinking=null
             apiParams.thinking = null;
             console.log("使用火山引擎方式取消思考: thinking=null");
+        } else if (noThinkingMethod === 'qwen') {
+            apiParams.think = false;
+            console.log("使用千文方式取消思考: think=false");
         } else {
             // 默认使用Gemini风格
             apiParams.reasoning_effort = "low";
@@ -875,6 +891,7 @@ export function initHqTranslationUI() {
         <select id="hqNoThinkingMethod">
             <option value="gemini" ${state.hqNoThinkingMethod === 'gemini' ? 'selected' : ''}>Gemini (reasoning_effort)</option>
             <option value="volcano" ${state.hqNoThinkingMethod === 'volcano' ? 'selected' : ''}>火山引擎 (thinking: null)</option>
+            <option value="qwen" ${state.hqNoThinkingMethod === 'qwen' ? 'selected' : ''}>Qwen3 (\\no_think)</option>
         </select>
     </div>`;
     
