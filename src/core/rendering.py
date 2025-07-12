@@ -3,7 +3,7 @@ import math
 import os
 from PIL import Image, ImageDraw, ImageFont
 import cv2 # 导入 cv2 备用
-
+from PIL import ImageDraw
 # 导入常量和路径助手
 from src.shared import constants
 from src.shared.path_helpers import resource_path, get_debug_dir # 导入 get_debug_dir
@@ -502,68 +502,90 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_styles):
         None: 函数直接在提供的draw_image上绘制，不返回新对象
     """
     logger.info(f"渲染所有气泡文本，共 {len(all_texts)} 个气泡")
+
+    # --- 强制转换 draw_image 为 ImageDraw.ImageDraw ---
     
-    # 提取气泡样式
-    font_sizes = bubble_styles.get('fontSizes', {})
-    font_families = bubble_styles.get('fontFamilies', {})
-    text_directions = bubble_styles.get('textDirections', {})
-    position_offsets = bubble_styles.get('positionOffsets', {})
-    text_colors = bubble_styles.get('textColors', {}) # 新增支持文本颜色
-    rotation_angles = bubble_styles.get('rotationAngles', {}) # 新增支持旋转角度
-    
-    # --- 新增支持文本描边 ---
-    enable_stroke_settings = bubble_styles.get('enableStroke', {})
-    stroke_colors = bubble_styles.get('strokeColors', {})
-    stroke_widths = bubble_styles.get('strokeWidths', {})
-    # ----------------------
-    
+    if not hasattr(draw_image, "text") or not hasattr(draw_image, "rectangle"):
+        # 假定传入的是 PIL.Image.Image
+        draw_image = ImageDraw.Draw(draw_image)
+        logger.info("[DEBUG] 自动将 draw_image 转为 ImageDraw.Draw 实例。")
+    # ------------------------------------------------
+
+    # 兼容两种 bubble_styles 结构：新结构 {'0': {...}}，旧结构 {'fontSizes': {...}}
+    is_new_style = False
+    if not any(k.startswith('font') or k.endswith('s') for k in bubble_styles.keys()):
+        is_new_style = True
+
     for i, (text, (x1, y1, x2, y2)) in enumerate(zip(all_texts, bubble_coords)):
         if not text:
             continue
-        
+
         bubble_index = str(i)  # 气泡索引转为字符串，用于字典键
-        
-        # 确定当前气泡的样式
-        font_size = font_sizes.get(bubble_index, constants.DEFAULT_FONT_SIZE)
-        font_family_rel = font_families.get(bubble_index, constants.DEFAULT_FONT_RELATIVE_PATH)
-        text_direction = text_directions.get(bubble_index, constants.DEFAULT_TEXT_DIRECTION)
-        position_offset = position_offsets.get(bubble_index, {'x': 0, 'y': 0})
-        text_color = text_colors.get(bubble_index, constants.DEFAULT_TEXT_COLOR) # 获取文本颜色
-        rotation_angle = rotation_angles.get(bubble_index, constants.DEFAULT_ROTATION_ANGLE) # 获取旋转角度
-        
-        # --- 获取文本描边设置 ---
-        enable_stroke = enable_stroke_settings.get(bubble_index, False)
-        stroke_color = stroke_colors.get(bubble_index, "#FFFFFF")
-        stroke_width = int(stroke_widths.get(bubble_index, 0))
-        # -----------------------
-        
+
+        if is_new_style:
+            style = bubble_styles.get(bubble_index, {})
+            font_size = style.get('fontSize', constants.DEFAULT_FONT_SIZE)
+            font_family_rel = style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH)
+            text_direction = style.get('text_direction', constants.DEFAULT_TEXT_DIRECTION)
+            position_offset = style.get('position_offset', {'x': 0, 'y': 0})
+            text_color = style.get('text_color', constants.DEFAULT_TEXT_COLOR)
+            rotation_angle = style.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)
+            enable_stroke = style.get('enableStroke', False)
+            stroke_color = style.get('strokeColor', "#FFFFFF")
+            stroke_width = int(style.get('strokeWidth', 0))
+        else:
+            font_sizes = bubble_styles.get('fontSizes', {})
+            font_families = bubble_styles.get('fontFamilies', {})
+            text_directions = bubble_styles.get('textDirections', {})
+            position_offsets = bubble_styles.get('positionOffsets', {})
+            text_colors = bubble_styles.get('textColors', {})
+            rotation_angles = bubble_styles.get('rotationAngles', {})
+            enable_stroke_settings = bubble_styles.get('enableStroke', {})
+            stroke_colors = bubble_styles.get('strokeColors', {})
+            stroke_widths = bubble_styles.get('strokeWidths', {})
+
+            font_size = font_sizes.get(bubble_index, constants.DEFAULT_FONT_SIZE)
+            font_family_rel = font_families.get(bubble_index, constants.DEFAULT_FONT_RELATIVE_PATH)
+            text_direction = text_directions.get(bubble_index, constants.DEFAULT_TEXT_DIRECTION)
+            position_offset = position_offsets.get(bubble_index, {'x': 0, 'y': 0})
+            text_color = text_colors.get(bubble_index, constants.DEFAULT_TEXT_COLOR)
+            rotation_angle = rotation_angles.get(bubble_index, constants.DEFAULT_ROTATION_ANGLE)
+            enable_stroke = enable_stroke_settings.get(bubble_index, False)
+            stroke_color = stroke_colors.get(bubble_index, "#FFFFFF")
+            stroke_width = int(stroke_widths.get(bubble_index, 0))
+
         x_offset = position_offset.get('x', 0)
         y_offset = position_offset.get('y', 0)
-        
+
         # 获取字体
         font = get_font(font_family_rel, font_size)
         if font is None:
             logger.error(f"获取字体失败: {font_family_rel} (大小: {font_size})，跳过气泡 {i}")
             continue
-            
+
         # 绘制文本
         try:
             bubble_width = x2 - x1
             bubble_height = y2 - y1
-            
+
+            # 关键日志：渲染前输出当前气泡的字体参数
+            logger.info(
+                f"[字体调试] 气泡{i} 渲染参数: font_family='{font_family_rel}', font_size={font_size}, text_direction='{text_direction}', text='{text[:20]}...'"
+            )
+
             # 计算文本位置
             if text_direction == 'vertical':
                 # 竖直排版：右边是第一列，从右向左绘制
                 start_x = x2 + x_offset  # 从右边框开始
                 start_y = y1 + y_offset  # 从上边框开始
-                
+
                 # 在气泡内绘制竖排文本
                 draw_multiline_text_vertical(
-                    draw_image, 
-                    text, 
-                    font, 
-                    start_x, 
-                    start_y, 
+                    draw_image,
+                    text,
+                    font,
+                    start_x,
+                    start_y,
                     bubble_height,
                     fill=text_color, # 使用指定的文本颜色
                     rotation_angle=rotation_angle, # 使用指定的旋转角度
@@ -576,7 +598,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_styles):
                 # 水平排版：顶部是第一行，从上往下绘制
                 start_x = x1 + x_offset  # 从左边框开始
                 start_y = y1 + y_offset  # 从上边框开始
-                
+
                 # 在气泡内绘制横排文本
                 draw_multiline_text_horizontal(
                     draw_image,
@@ -587,11 +609,11 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_styles):
                     bubble_width,
                     fill=text_color, # 使用指定的文本颜色
                     rotation_angle=rotation_angle, # 使用指定的旋转角度
-                    enable_stroke=enable_stroke, # 传递描边设置  
+                    enable_stroke=enable_stroke, # 传递描边设置
                     stroke_color=stroke_color,
                     stroke_width=stroke_width
                 )
-            
+
             logger.info(f"成功渲染气泡 {i} 文本: '{text[:20]}...' (方向: {text_direction})")
         except Exception as e:
             logger.error(f"渲染气泡 {i} 文本时出错: {e}", exc_info=True)

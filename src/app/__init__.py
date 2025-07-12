@@ -8,8 +8,8 @@ from flask import Blueprint
 main_bp = Blueprint(
     'main',
     __name__,
-    template_folder='../../templates',  
-    static_folder='../../static'  
+    template_folder='../templates',
+    static_folder='../../static'
 )
 
 # 导入路由定义

@@ -855,9 +855,17 @@ function handleGlobalSettingChange(e) {
             // 修复设置通常是全局的，不直接保存在图片上，除非你有意设计如此
         }
         
-        // 检查是否存在个性化气泡设置，如果存在，只更新对应的参数，而不是清空
-        if (currentImage.bubbleSettings && Array.isArray(currentImage.bubbleSettings) && 
+        // 检查是否存在个性化气泡设置，如果存在，批量同步字体设置
+        if (currentImage.bubbleSettings && Array.isArray(currentImage.bubbleSettings) &&
             currentImage.bubbleSettings.length === (currentImage.bubbleCoords ? currentImage.bubbleCoords.length : 0)) {
+            if (settingId === 'fontFamily') {
+                // 批量同步所有气泡的 fontFamily
+                currentImage.bubbleSettings.forEach(setting => {
+                    setting.fontFamily = newValue;
+                });
+                // 立即更新 bubbleSettings 引用，确保后端能收到最新值
+                state.setBubbleSettings([...currentImage.bubbleSettings]);
+            }
             
             console.log(`检测到个性化气泡设置，只更新 ${settingId} 属性，保留其他个性化设置`);
             
