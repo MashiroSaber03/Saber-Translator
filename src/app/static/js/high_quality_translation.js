@@ -249,7 +249,7 @@ async function removeAllImagesText() {
                     ui.hideTranslatingIndicator(currentIndex);
                     
                     // 更新图片状态
-                    state.updateImagePropertyByIndex(currentIndex, 'translatedDataURL', 'data:image/png;base64,' + response.translated_image);
+                    state.updateImagePropertyByIndex(currentIndex, 'translatedDataURL', 'data:image/webp;base64,' + response.translated_image);
                     state.updateImagePropertyByIndex(currentIndex, 'cleanImageData', response.clean_image);
                     
                     // 确保bubbleTexts和bubbleCoords长度匹配
@@ -413,7 +413,7 @@ async function processBatchTranslation(jsonData, imageBase64Array, batchSize, se
         try {
             // 等待速率限制
             await rateLimiter.waitForTurn();
-            
+
             // 发送批次到AI
             const result = await callAiForTranslation(
                 batchImages,
@@ -427,17 +427,17 @@ async function processBatchTranslation(jsonData, imageBase64Array, batchSize, se
                 sessionId,
                 forceJsonOutput
             );
-            
+
             // 解析并保存结果
             if (result) {
                 allBatchResults.push(result);
             }
-            
+
             // 增加批次计数
             batchCount++;
-            
+
         } catch (error) {
-            console.error(`批次 ${batchIndex + 1} 翻译失败:`, error);
+                        console.error(`批次 ${batchIndex + 1} 翻译失败:`, error);
             ui.showGeneralMessage(`批次 ${batchIndex + 1} 翻译失败: ${error.message}`, "error", true);
             // 继续处理下一批次
         }
@@ -503,34 +503,46 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             ]
         }
     ];
-    
+
     // 添加图片到消息中
-    for (const imgBase64 of imageBase64Array) {
+    // 自动识别 base64 内容并拼接正确 DataURL 头部
+    function guessMimeTypeFromBase64(b64) {
+        if (!b64 || typeof b64 !== "string") return "application/octet-stream";
+        if (b64.startsWith("/9j/")) return "image/jpeg";
+        if (b64.startsWith("UklGR")) return "image/webp";
+        if (b64.startsWith("iVBORw0KGgo")) return "image/png";
+        if (b64.startsWith("R0lGODdh") || b64.startsWith("R0lGODlh")) return "image/gif";
+        // 可扩展更多格式
+        return "application/octet-stream";
+    }
+    for (let i = 0; i < imageBase64Array.length; i++) {
+        const imgBase64 = imageBase64Array[i];
+        const mimeType = guessMimeTypeFromBase64(imgBase64);
+        console.log(`[callAiForTranslation] 第${i}张图片推断mimeType:`, mimeType);
         messages[1].content.push({
             type: "image_url",
             image_url: {
-                url: `data:image/png;base64,${imgBase64}`
+                url: `data:${mimeType};base64,${imgBase64}`
             }
         });
     }
-    
+
     // 构建API请求参数
     const apiParams = {
         model: modelName,
         messages: messages
     };
-    
+
     // 如果强制JSON输出，添加response_format参数
     if (forceJsonOutput) {
         apiParams.response_format = { type: "json_object" };
         console.log("已启用强制JSON输出模式");
     }
-    
+
     // 获取当前取消思考方法设置
     const noThinkingMethod = state.hqNoThinkingMethod || 'gemini';
-    
+
     // 根据不同取消思考方法添加参数
-        // 根据不同取消思考方法添加参数
     if (lowReasoning) {
         if (noThinkingMethod === 'gemini') {
             // Gemini风格：使用reasoning_effort参数
@@ -549,7 +561,7 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             console.log("使用默认方式取消思考: reasoning_effort=low");
         }
     }
-    
+
     // 根据不同服务商设置不同的endpoint
     let baseUrl = "";
     switch (provider) {
@@ -571,7 +583,7 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
         default:
             baseUrl = "https://api.siliconflow.cn/v1/chat/completions";
     }
-    
+
     // 发送请求
     try {
         const response = await fetch(baseUrl, {
@@ -582,18 +594,18 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             },
             body: JSON.stringify(apiParams)
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`API请求失败: ${response.status} ${errorText}`);
         }
-        
+
         const result = await response.json();
-        
+
         // 提取AI返回的文本
         if (result.choices && result.choices.length > 0) {
             let content = result.choices[0].message.content;
-            
+
             // 如果是强制JSON输出，则内容应该已经是JSON了
             if (forceJsonOutput) {
                 try {
@@ -611,7 +623,7 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
                 if (jsonMatch && jsonMatch[1]) {
                     content = jsonMatch[1];
                 }
-                
+
                 try {
                     // 尝试解析JSON
                     return JSON.parse(content);
