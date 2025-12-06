@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saber-Translator</title>
+    <!-- 使用 url_for 加载 CSS -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/settings-modal.css') }}">
+    <!-- 添加 Favicon -->
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <!-- 预加载 jQuery, JSZip, jsPDF -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+    <!-- 页面头部横幅 -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo-container">
+                <a href="/" title="返回书架">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/logo.png') }}" alt="Saber-Translator Logo" class="app-logo">
+                    <span class="app-name">Saber-Translator</span>
+                </a>
+            </div>
+            <div class="header-links">
+                <a href="/" class="back-to-shelf" title="返回书架">📚</a>
+                <button id="saveCurrentSessionButton" class="save-header-btn" title="保存进度" style="display: none;">💾</button>
+                <button id="openSettingsBtn" class="settings-header-btn" title="打开设置">
+                    <span class="icon">⚙️</span>
+                    <span>设置</span>
+                </button>
+                <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
+                <a href="javascript:void(0)" class="donate-link" id="donateButton">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/donate-icon.png') }}" alt="赞助" class="donate-icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23f06292%22><path d=%22M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z%22/></svg>'">
+                    <span>请作者喝奶茶</span>
+                </a>
+                <a href="https://github.com/MashiroSaber03" target="_blank" class="github-link">
+                    <!-- 使用 url_for 加载图片 -->
+                    <img src="{{ url_for('static', filename='pic/github.jpg') }}" alt="GitHub" class="github-icon">
+                </a>
+                <button id="themeToggle" class="theme-toggle" title="切换亮暗模式">
+                    <span class="theme-icon light-icon">☀️</span>
+                    <span class="theme-icon dark-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside id="settings-sidebar">
+            <div class="card settings-card">
+                <h2>翻译设置</h2>
+                <div id="font-settings" class="settings-card">
+                    <h3 class="collapsible-header">文字设置 <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="settings-form">
+                            <div>
+                                <label for="fontSize">字号大小:</label>
+                                <div class="fontSize-control">
+                                    <input type="number" id="fontSize" value="25" min="10" max="100">
+                                    <span class="auto-fontSize-option" style="display: inline-flex; align-items: center; margin-left: 10px;" title="勾选后，首次翻译时自动为每个气泡计算合适的字号">
+                                        <input type="checkbox" id="autoFontSize" style="margin-right: 5px; vertical-align: middle;">
+                                        <label for="autoFontSize" style="margin-bottom: 0; display: flex; align-items: center;">自动计算初始字号</label>
+                                    </span>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="fontFamily">文本字体:</label>
+                                <!-- 使用相对路径作为 value -->
+                                <select id="fontFamily">
+                                    <option value="custom-font" data-custom="true">自定义字体...</option>
+                                    <!-- 动态加载字体选项 -->
+                                </select>
+                                <input type="file" id="fontUpload" accept=".ttf,.ttc,.otf" style="display: none;">
+                            </div>
+                            <div>
+                                <label for="layoutDirection">排版设置:</label>
+                                <select id="layoutDirection">
+                                    <option value="auto">自动 (根据检测)</option>
+                                    <option value="vertical" selected>竖向排版</option>
+                                    <option value="horizontal">横向排版</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="textColor">文字颜色:</label>
+                                <input type="color" id="textColor" value="#231816">
+                            </div>
+                            <div>
+                                <span style="display: inline-flex; align-items: center;">
+                                    <input type="checkbox" id="strokeEnabled" style="margin-right: 5px; vertical-align: middle;" checked>
+                                    <label for="strokeEnabled" style="margin-bottom: 0; display: flex; align-items: center;">启用文本描边:</label>
+                                </span>
+                            </div>
+                            <div id="strokeOptions" style="display: block; margin-left: 20px; border-left: 2px solid #eee; padding-left: 15px; margin-top: 5px;">
+                                <div style="margin-bottom: 10px;">
+                                    <label for="strokeColor">描边颜色:</label>
+                                    <input type="color" id="strokeColor" value="#FFFFFF">
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <label for="strokeWidth">描边宽度 (px):</label>
+                                    <input type="number" id="strokeWidth" value="3" min="0" max="10" style="width: 60px; padding: 5px;">
+                                    <div class="input-hint" style="margin-top: 2px;">0 表示无描边。</div>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="useInpainting">气泡填充方式:</label>
+                                <select id="useInpainting">
+                                    <option value="false" selected>纯色填充</option>
+                                    <option value="lama_mpe">LAMA修复 (速度优化)</option>
+                                    <option value="litelama">LAMA修复 (通用)</option>
+                                </select>
+                            </div>
+                            <div id="solidColorOptions">
+                                <label for="fillColor">填充颜色:</label>
+                                <input type="color" id="fillColor" value="#FFFFFF"><!-- 白色填充 -->
+                            </div>
+                        </div>
+                        <button id="applyFontSettingsToAllButton" type="button" class="settings-button">应用到全部图片</button>
+                    </div>
+                </div>
+                <!-- OCR和检测器设置已移至顶部设置模态框，此处保留隐藏元素用于数据同步 -->
+                <div id="ocr-detection-settings" class="sidebar-hidden-config" style="display: none;">
+                    <!-- 检测器设置 -->
+                    <select id="textDetector">
+                        <option value="ctd">CTD</option>
+                        <option value="yolo">YSGYolo</option>
+                        <option value="yolov5">YOLOv5</option>
+                        <option value="default">Default (DBNet)</option>
+                    </select>
+                    <input type="number" id="boxExpandRatio" value="0">
+                    <input type="number" id="boxExpandTop" value="0">
+                    <input type="number" id="boxExpandBottom" value="0">
+                    <input type="number" id="boxExpandLeft" value="0">
+                    <input type="number" id="boxExpandRight" value="0">
+                    <input type="checkbox" id="showDetectionDebug">
+                    <input type="checkbox" id="usePreciseMask" checked>
+                    <input type="number" id="maskDilateSize" value="20">
+                    <input type="number" id="maskBoxExpandRatio" value="20">
+                    <!-- OCR设置 -->
+                    <select id="ocrEngine">
+                        <option value="manga_ocr">MangaOCR</option>
+                        <option value="paddle_ocr">PaddleOCR</option>
+                        <option value="baidu_ocr">百度OCR</option>
+                        <option value="ai_vision">AI视觉OCR</option>
+                    </select>
+                    <select id="sourceLanguage">
+                        <option value="japanese">日语</option>
+                        <option value="en">英语</option>
+                        <option value="chinese">简体中文</option>
+                        <option value="chinese_cht">繁体中文</option>
+                        <option value="korean">韩语</option>
+                        <option value="french">法语</option>
+                        <option value="german">德语</option>
+                        <option value="spanish">西班牙语</option>
+                        <option value="italian">意大利语</option>
+                        <option value="portuguese">葡萄牙语</option>
+                        <option value="russian">俄语</option>
+                    </select>
+                    <!-- 百度OCR -->
+                    <input type="text" id="baiduApiKey" class="secure-input" autocomplete="off">
+                    <input type="text" id="baiduSecretKey" class="secure-input" autocomplete="off">
+                    <select id="baiduVersion">
+                        <option value="standard">标准版</option>
+                        <option value="high_precision">高精度版</option>
+                    </select>
+                    <select id="baiduSourceLanguage">
+                        <option value="auto_detect">自动检测</option>
+                        <option value="CHN_ENG">中英文混合</option>
+                        <option value="JAP">日语</option>
+                        <option value="KOR">韩语</option>
+                    </select>
+                    <!-- AI视觉OCR -->
+                    <select id="aiVisionProvider">
+                        <option value="siliconflow">SiliconFlow</option>
+                        <option value="volcano">火山引擎</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="custom_openai_vision">自定义 OpenAI 兼容服务</option>
+                    </select>
+                    <input type="text" id="aiVisionApiKey" class="secure-input" autocomplete="off">
+                    <input type="text" id="aiVisionModelName">
+                    <input type="text" id="customAiVisionBaseUrl">
+                    <textarea id="aiVisionOcrPrompt">{{ default_ai_vision_ocr_prompt }}</textarea>
+                    <select id="aiVisionPromptModeSelect">
+                        <option value="normal">普通</option>
+                        <option value="json">JSON</option>
+                    </select>
+                    <input type="number" id="rpmAiVisionOcr" value="0">
+                </div>
+                <!-- AI模型设置已移至顶部设置模态框，此处保留隐藏元素用于数据同步 -->
+                <div id="ai-model-settings" class="sidebar-hidden-config" style="display: none;">
+                    <select id="modelProvider">
+                        <option value="siliconflow">SiliconFlow</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="volcano">火山引擎</option>
+                        <option value="caiyun">彩云小译</option>
+                        <option value="baidu_translate">百度翻译</option>
+                        <option value="youdao_translate">有道翻译</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="ollama">Ollama</option>
+                        <option value="sakura">Sakura</option>
+                        <option value="custom_openai">自定义 OpenAI</option>
+                    </select>
+                    <input type="text" id="apiKey" class="secure-input" autocomplete="off">
+                    <input type="text" id="customBaseUrl">
+                    <input type="text" id="modelName">
+                    <input type="number" id="rpmTranslation" value="0">
+                    <input type="number" id="translationMaxRetries" value="3">
+                </div>
+                <!-- 提示词设置已移至顶部设置模态框的"翻译服务"页面，此处保留隐藏元素用于数据同步 -->
+                <div id="prompt-settings" class="settings-card sidebar-hidden-config" style="display: none;">
+                    <textarea id="promptContent" style="display: none;">{{ default_prompt_content }}</textarea>
+                    <select id="translatePromptModeSelect" style="display: none;">
+                        <option value="normal">普通提示词</option>
+                        <option value="json">JSON提示词</option>
+                    </select>
+                    <input type="checkbox" id="enableTextboxPrompt" style="display: none;">
+                    <textarea id="textboxPromptContent" style="display: none;">{{ default_textbox_prompt_content }}</textarea>
+                </div>
+
+                <!-- 高质量翻译设置已移至顶部设置模态框，此处保留隐藏元素用于数据同步 -->
+                <div id="high-quality-translation" class="sidebar-hidden-config" style="display: none;">
+                    <select id="hqTranslateProvider">
+                        <option value="siliconflow">SiliconFlow</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="volcano">火山引擎</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+                    </select>
+                    <input type="text" id="hqApiKey" class="secure-input" autocomplete="off">
+                    <input type="text" id="hqModelName">
+                    <input type="text" id="hqCustomBaseUrl">
+                    <input type="number" id="hqBatchSize" value="5">
+                    <input type="number" id="hqSessionReset" value="3">
+                    <input type="number" id="hqRpmLimit" value="10">
+                    <input type="number" id="hqMaxRetries" value="2">
+                    <input type="checkbox" id="hqLowReasoning">
+                    <select id="hqNoThinkingMethod"><option value="gemini">gemini</option><option value="volcano">volcano</option></select>
+                    <input type="checkbox" id="hqForceJsonOutput">
+                    <textarea id="hqPrompt">{{ default_hq_prompt }}</textarea>
+                </div>
+                <button id="translateButton" disabled>翻译当前图片</button>
+                <button id="translateAllButton" disabled>翻译所有图片</button>
+                <button id="startHqTranslationBtn" class="settings-button purple-button" disabled title="使用高质量翻译模式（需在设置中配置）">高质量翻译</button>
+                <button id="proofreadButton" disabled>AI校对</button>
+                <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>
+                <button id="removeAllTextButton" disabled title="消除所有图片中的气泡文字，无需填写翻译服务商和API Key">消除所有图片文字</button>
+                <button id="deleteCurrentImageButton" class="settings-button red-button" disabled>删除当前图片</button>
+                <button id="clearAllImagesButton" class="settings-button red-button">清除所有图片</button>
+                <button id="cleanDebugFilesButton" class="settings-button orange-button">清理临时文件</button>
+                <button id="managePluginsButton" class="settings-button blue-button">插件管理</button>
+                <div class="navigation-buttons">
+                    <button id="prevImageButton" disabled>上一张</button>
+                    <button id="nextImageButton" disabled>下一张</button>
+                </div>
+            </div>
+        </aside>
+
+        <main id="image-display-area">
+            <section id="upload-section" class="card upload-card">
+                <div id="drop-area">
+                    <p>拖拽图片或PDF文件到这里，或 <span id="select-file-link">点击选择文件</span></p>
+                    <input type="file" id="imageUpload" accept="image/*, application/pdf" multiple style="display: none;">
+                </div>
+                <div id="errorMessage" class="error-message" style="display: none;"></div>
+                <div id="loadingAnimation" class="loading-animation" style="display: none;">
+                    <div class="spinner"></div> <!-- 假设 spinner 是 CSS 动画 -->
+                </div>
+                <div id="uploadThumbnailList" class="thumbnails"></div>
+                <div id="translationProgressBar" style="display: none;">
+                    <div class="progress-bar-label">进度: <span id="progressPercent">0/0</span> <span style="color: #888; font-size: 0.85em; margin-left: 10px;">（书架模式下退出前请点击顶部保存按钮）</span></div>
+                    <div class="progress-bar">
+                        <div class="progress"></div>
+                    </div>
+                    <button id="pauseTranslationButton" class="pause-btn" style="display: none;">
+                        <span class="pause-icon">⏸</span> 暂停
+                    </button>
+                </div>
+            </section>
+            <section id="result-section" class="card result-card" style="display: none;">
+                <div class="image-controls">
+                    <button id="toggleImageButton" style="display: none;">切换原图/翻译图</button>
+                    <button id="toggleEditModeButton">切换编辑模式</button>
+                    <div class="image-size-control">
+                        <label for="imageSize">图片大小:</label>
+                        <input type="range" id="imageSize" min="50" max="200" value="100" class="slider range-slider">
+                        <span id="imageSizeValue">100%</span>
+                    </div>
+                    <!-- 重新翻译失败按钮会由 JS 添加 -->
+                </div>
+                <div class="content-container">
+                    <div class="image-container">
+                        <img id="translatedImageDisplay" src="#" alt="翻译后图片" style="display: none;">
+                        <!-- 高亮框会由 JS 添加 -->
+                    </div>
+                    <!-- 旧版编辑模式容器已删除，使用新版 #editWorkspace -->
+                </div>
+
+                <!-- ============ 新版编辑工作区 ============ -->
+                <div class="edit-workspace" id="editWorkspace">
+                    <!-- 顶部工具栏 - 双行布局 -->
+                    <div class="edit-toolbar-wrapper">
+                        <!-- 第一行：导航和视图控制 -->
+                        <div class="edit-toolbar toolbar-row-1">
+                            <!-- 图片导航 -->
+                            <div class="image-navigator">
+                                <button id="prevImageBtn" class="nav-btn" title="上一张图片 (PageUp)">◀◀</button>
+                                <span class="image-indicator" id="imageIndicator" title="点击展开缩略图">
+                                    图 <span id="currentImageNum">1</span> / <span id="totalImageNum">1</span>
+                                </span>
+                                <button id="nextImageBtn" class="nav-btn" title="下一张图片 (PageDown)">▶▶</button>
+                                <button id="toggleThumbnails" class="thumb-toggle-btn" title="显示/隐藏缩略图">☷</button>
+                            </div>
+                            
+                            <div class="toolbar-divider"></div>
+                            
+                            <!-- 气泡导航 -->
+                            <div class="bubble-navigator">
+                                <button id="prevBubbleBtn" class="nav-btn" title="上一个气泡 (←)">◀</button>
+                                <span class="bubble-indicator">
+                                    气泡 <span id="currentBubbleNum">1</span> / <span id="totalBubbleNum">0</span>
+                                </span>
+                                <button id="nextBubbleBtn" class="nav-btn" title="下一个气泡 (→)">▶</button>
+                            </div>
+                            
+                            <div class="toolbar-divider"></div>
+                            
+                            <div class="view-controls">
+                                <button id="layoutToggle" class="layout-toggle-btn" title="切换布局：左右/上下">
+                                    <svg viewBox="0 0 20 20" width="16" height="16" class="layout-icon-horizontal">
+                                        <rect x="1" y="2" width="8" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                        <rect x="11" y="2" width="8" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    </svg>
+                                    <svg viewBox="0 0 20 20" width="16" height="16" class="layout-icon-vertical" style="display:none;">
+                                        <rect x="2" y="1" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                        <rect x="2" y="11" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    </svg>
+                                </button>
+                                <button id="viewModeToggle" class="view-mode-btn" title="切换单图/双图模式">
+                                    <span class="dual-icon">⧉</span>
+                                </button>
+                                <button id="syncViewToggle" title="同步缩放/拖动" style="font-size: 12px;">🔗</button>
+                                <button id="fitToScreen" title="适应屏幕 (双击)">⛶</button>
+                                <button id="zoomIn" title="放大 (+)">+</button>
+                                <span id="zoomLevel">100%</span>
+                                <button id="zoomOut" title="缩小 (-)">−</button>
+                                <button id="resetZoom" title="原始大小">1:1</button>
+                            </div>
+                            
+                            <div class="toolbar-spacer"></div>
+                            
+                            <button id="exitEditModeBtn" class="secondary-btn">退出编辑</button>
+                        </div>
+                        
+                        <!-- 第二行：操作工具 -->
+                        <div class="edit-toolbar toolbar-row-2">
+                            <!-- 气泡操作工具组 -->
+                            <div class="annotation-tools">
+                            <!-- 从标注模式迁移的功能 -->
+                            <button id="autoDetectBtn" class="annotation-btn detect-btn" title="自动检测当前图片的文本框">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    <path d="M9 9l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                <span>检测</span>
+                            </button>
+                            <button id="detectAllBtn" class="annotation-btn detect-btn" title="批量检测所有图片">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <circle cx="5" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1"/>
+                                    <path d="M7 7l2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+                                    <circle cx="10" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="1"/>
+                                    <path d="M12 12l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                                <span>批量检测</span>
+                            </button>
+                            <button id="translateWithBubblesBtn" class="annotation-btn primary-action-btn" title="使用当前文本框翻译此图片">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <path d="M2 3h5M4.5 3v7M2 6h5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                                    <path d="M9 13l2-7 2 7M9.5 11h3" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                                </svg>
+                                <span>翻译</span>
+                            </button>
+                            <div class="toolbar-divider"></div>
+                            <button id="addBubbleBtn" class="annotation-btn" title="添加气泡框（或中键拖拽绘制）">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    <path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.5"/>
+                                </svg>
+                                <span>添加</span>
+                            </button>
+                            <button id="deleteBubbleBtn" class="annotation-btn" title="删除选中气泡框 (Delete)" disabled>
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    <path d="M5 8h6" stroke="currentColor" stroke-width="1.5"/>
+                                </svg>
+                                <span>删除</span>
+                            </button>
+                            <button id="repairBubbleBtn" class="annotation-btn" title="修复选中气泡背景 (R)" disabled>
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <path d="M2 14l3-3m0 0l6-6 3 3-6 6m-3 0l-1 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M11 5l-1-1 2-2 2 2-2 2-1-1z" fill="currentColor"/>
+                                </svg>
+                                <span>修复</span>
+                            </button>
+                            <div class="toolbar-divider"></div>
+                            <!-- 笔刷工具 -->
+                            <button id="repairBrushBtn" class="annotation-btn brush-btn" title="修复笔刷 (按住R+左键拖拽)">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    <circle cx="8" cy="8" r="2" fill="currentColor"/>
+                                </svg>
+                                <span>修复笔刷</span>
+                            </button>
+                            <button id="restoreBrushBtn" class="annotation-btn brush-btn" title="还原笔刷 (按住U+左键拖拽)">
+                                <svg viewBox="0 0 16 16" width="14" height="14">
+                                    <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    <path d="M5 8h6M8 5v6" stroke="currentColor" stroke-width="1" transform="rotate(45 8 8)"/>
+                                </svg>
+                                <span>还原笔刷</span>
+                            </button>
+                            <span id="brushSizeDisplay" class="brush-size-display" style="display:none;">30px</span>
+                            <!-- 帮助提示图标 -->
+                            <div class="help-tooltip-container">
+                                <button class="help-tooltip-btn" id="editHelpBtn" title="快捷键操作帮助">
+                                    <svg viewBox="0 0 16 16" width="14" height="14">
+                                        <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                                        <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor">?</text>
+                                    </svg>
+                                    <span class="help-btn-text">快捷键</span>
+                                </button>
+                                <div class="help-tooltip-popup" id="editHelpPopup">
+                                    <div class="help-section">
+                                        <div class="help-title">🖱️ 鼠标操作</div>
+                                        <div class="help-item"><span class="help-key">左键点击气泡</span><span class="help-desc">选择气泡</span></div>
+                                        <div class="help-item"><span class="help-key">Shift+左键点击</span><span class="help-desc">多选气泡</span></div>
+                                        <div class="help-item"><span class="help-key">左键拖拽四角/边</span><span class="help-desc">调整大小</span></div>
+                                        <div class="help-item"><span class="help-key">左键拖拽框内部</span><span class="help-desc">移动气泡框</span></div>
+                                        <div class="help-item"><span class="help-key">中键拖拽</span><span class="help-desc">绘制新气泡框</span></div>
+                                    </div>
+                                    <div class="help-section">
+                                        <div class="help-title">⌨️ 快捷键</div>
+                                        <div class="help-item"><span class="help-key">A / D</span><span class="help-desc">切换上/下一张图片</span></div>
+                                        <div class="help-item"><span class="help-key">Ctrl+Enter</span><span class="help-desc">应用并跳转下一张</span></div>
+                                        <div class="help-item"><span class="help-key">Delete / Backspace</span><span class="help-desc">删除选中气泡</span></div>
+                                        <div class="help-item"><span class="help-key">按住R+左键拖拽</span><span class="help-desc">修复笔刷</span></div>
+                                        <div class="help-item"><span class="help-key">按住U+左键拖拽</span><span class="help-desc">还原笔刷</span></div>
+                                        <div class="help-item"><span class="help-key">笔刷模式下滚轮</span><span class="help-desc">调整笔刷大小</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 编辑模式进度显示 -->
+                        <div class="edit-progress-container" id="editProgressContainer" style="display: none;">
+                            <div class="edit-progress-info">
+                                <span class="edit-progress-text" id="editProgressText">处理中...</span>
+                                <span class="edit-progress-count" id="editProgressCount">0/0</span>
+                            </div>
+                            <div class="edit-progress-bar">
+                                <div class="edit-progress-fill" id="editProgressFill"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="toolbar-spacer"></div>
+                        
+                        <div class="quick-actions">
+                            <button id="applyAndNext" class="primary-btn">应用并下一张 →</button>
+                        </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 缩略图面板 -->
+                    <div class="edit-thumbnails-panel" id="editThumbnailsPanel" style="display: none;">
+                        <div class="thumbnails-scroll" id="editThumbnailsScroll">
+                            <!-- 缩略图由JS动态生成 -->
+                        </div>
+                    </div>
+
+                    <div class="edit-main-layout">
+                        <!-- 双图对照区域 -->
+                        <div class="image-comparison-container">
+                            <!-- 原图面板 -->
+                            <div class="image-panel original-panel" id="originalPanel">
+                                <div class="panel-header">
+                                    <span class="panel-title">📖 原图 (日文)</span>
+                                    <button class="panel-toggle" data-panel="original" title="折叠/展开">−</button>
+                                </div>
+                                <div class="image-viewport" id="originalViewport" tabindex="0">
+                                    <div class="image-canvas-wrapper" id="originalCanvasWrapper">
+                                        <img id="originalImageDisplay" src="#" alt="原图">
+                                        <div class="bubble-highlight-layer" id="originalHighlights"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 分隔条 -->
+                            <div class="panel-divider" id="panelDivider">
+                                <div class="divider-handle">⋮</div>
+                            </div>
+
+                            <!-- 翻译图面板 -->
+                            <div class="image-panel translated-panel" id="translatedPanel">
+                                <div class="panel-header">
+                                    <span class="panel-title">📝 翻译图 (中文)</span>
+                                    <button class="panel-toggle" data-panel="translated" title="折叠/展开">−</button>
+                                </div>
+                                <div class="image-viewport" id="translatedViewport" tabindex="0">
+                                    <div class="image-canvas-wrapper" id="translatedCanvasWrapper">
+                                        <img id="translatedImageDisplayNew" src="#" alt="翻译图">
+                                        <div class="bubble-highlight-layer" id="translatedHighlights"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧编辑面板 -->
+                        <div class="edit-panel-container" id="editPanelContainer">
+                            <div class="panel-resize-handle vertical" id="editPanelResizer">⋮⋮⋮</div>
+                            <div class="edit-panel-content">
+                                <div class="text-column original-text-column text-block">
+                                    <div class="text-column-header">
+                                        <span class="column-title">🇯🇵 日语原文 (OCR结果)</span>
+                                        <button class="re-ocr-btn" id="reOcrBtn" title="重新OCR此气泡">🔄</button>
+                                    </div>
+                                    <textarea id="originalTextEditor" 
+                                              class="text-editor original-editor"
+                                              placeholder="OCR识别的日语原文..."
+                                              spellcheck="false"></textarea>
+                                    <div class="text-actions">
+                                        <button class="copy-btn" data-target="originalTextEditor">📋 复制</button>
+                                        <button class="keyboard-toggle-btn" id="toggleKanaKeyboard" title="显示/隐藏50音键盘">⌨️ 50音</button>
+                                    </div>
+                                    
+                                    <!-- 50音软键盘 -->
+                                    <div class="kana-keyboard" id="kanaKeyboard" style="display: none;">
+                                        <div class="kana-keyboard-header">
+                                            <span class="kana-keyboard-title">50音键盘</span>
+                                            <div class="kana-keyboard-tabs">
+                                                <button class="kana-tab active" data-tab="basic">基本</button>
+                                                <button class="kana-tab" data-tab="dakuten">浊/半浊音</button>
+                                                <button class="kana-tab" data-tab="combo">拗音</button>
+                                                <button class="kana-tab" data-tab="special">特殊</button>
+                                            </div>
+                                            <button class="kana-keyboard-close" id="closeKanaKeyboard">✕</button>
+                                        </div>
+                                        
+                                        <!-- 基本50音 -->
+                                        <div class="kana-tab-content active" data-content="basic">
+                                            <table class="kana-table">
+                                                <thead>
+                                                    <tr><th></th><th>あ段</th><th>い段</th><th>う段</th><th>え段</th><th>お段</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr><td class="row-label">あ行</td><td><button class="kana-key" data-h="あ" data-k="ア">あ<br>ア</button></td><td><button class="kana-key" data-h="い" data-k="イ">い<br>イ</button></td><td><button class="kana-key" data-h="う" data-k="ウ">う<br>ウ</button></td><td><button class="kana-key" data-h="え" data-k="エ">え<br>エ</button></td><td><button class="kana-key" data-h="お" data-k="オ">お<br>オ</button></td></tr>
+                                                    <tr><td class="row-label">か行</td><td><button class="kana-key" data-h="か" data-k="カ">か<br>カ</button></td><td><button class="kana-key" data-h="き" data-k="キ">き<br>キ</button></td><td><button class="kana-key" data-h="く" data-k="ク">く<br>ク</button></td><td><button class="kana-key" data-h="け" data-k="ケ">け<br>ケ</button></td><td><button class="kana-key" data-h="こ" data-k="コ">こ<br>コ</button></td></tr>
+                                                    <tr><td class="row-label">さ行</td><td><button class="kana-key" data-h="さ" data-k="サ">さ<br>サ</button></td><td><button class="kana-key" data-h="し" data-k="シ">し<br>シ</button></td><td><button class="kana-key" data-h="す" data-k="ス">す<br>ス</button></td><td><button class="kana-key" data-h="せ" data-k="セ">せ<br>セ</button></td><td><button class="kana-key" data-h="そ" data-k="ソ">そ<br>ソ</button></td></tr>
+                                                    <tr><td class="row-label">た行</td><td><button class="kana-key" data-h="た" data-k="タ">た<br>タ</button></td><td><button class="kana-key" data-h="ち" data-k="チ">ち<br>チ</button></td><td><button class="kana-key" data-h="つ" data-k="ツ">つ<br>ツ</button></td><td><button class="kana-key" data-h="て" data-k="テ">て<br>テ</button></td><td><button class="kana-key" data-h="と" data-k="ト">と<br>ト</button></td></tr>
+                                                    <tr><td class="row-label">な行</td><td><button class="kana-key" data-h="な" data-k="ナ">な<br>ナ</button></td><td><button class="kana-key" data-h="に" data-k="ニ">に<br>ニ</button></td><td><button class="kana-key" data-h="ぬ" data-k="ヌ">ぬ<br>ヌ</button></td><td><button class="kana-key" data-h="ね" data-k="ネ">ね<br>ネ</button></td><td><button class="kana-key" data-h="の" data-k="ノ">の<br>ノ</button></td></tr>
+                                                    <tr><td class="row-label">は行</td><td><button class="kana-key" data-h="は" data-k="ハ">は<br>ハ</button></td><td><button class="kana-key" data-h="ひ" data-k="ヒ">ひ<br>ヒ</button></td><td><button class="kana-key" data-h="ふ" data-k="フ">ふ<br>フ</button></td><td><button class="kana-key" data-h="へ" data-k="ヘ">へ<br>ヘ</button></td><td><button class="kana-key" data-h="ほ" data-k="ホ">ほ<br>ホ</button></td></tr>
+                                                    <tr><td class="row-label">ま行</td><td><button class="kana-key" data-h="ま" data-k="マ">ま<br>マ</button></td><td><button class="kana-key" data-h="み" data-k="ミ">み<br>ミ</button></td><td><button class="kana-key" data-h="む" data-k="ム">む<br>ム</button></td><td><button class="kana-key" data-h="め" data-k="メ">め<br>メ</button></td><td><button class="kana-key" data-h="も" data-k="モ">も<br>モ</button></td></tr>
+                                                    <tr><td class="row-label">や行</td><td><button class="kana-key" data-h="や" data-k="ヤ">や<br>ヤ</button></td><td class="empty-cell"></td><td><button class="kana-key" data-h="ゆ" data-k="ユ">ゆ<br>ユ</button></td><td class="empty-cell"></td><td><button class="kana-key" data-h="よ" data-k="ヨ">よ<br>ヨ</button></td></tr>
+                                                    <tr><td class="row-label">ら行</td><td><button class="kana-key" data-h="ら" data-k="ラ">ら<br>ラ</button></td><td><button class="kana-key" data-h="り" data-k="リ">り<br>リ</button></td><td><button class="kana-key" data-h="る" data-k="ル">る<br>ル</button></td><td><button class="kana-key" data-h="れ" data-k="レ">れ<br>レ</button></td><td><button class="kana-key" data-h="ろ" data-k="ロ">ろ<br>ロ</button></td></tr>
+                                                    <tr><td class="row-label">わ行</td><td><button class="kana-key" data-h="わ" data-k="ワ">わ<br>ワ</button></td><td><button class="kana-key" data-h="ゐ" data-k="ヰ">ゐ<br>ヰ</button></td><td class="empty-cell"></td><td><button class="kana-key" data-h="ゑ" data-k="ヱ">ゑ<br>ヱ</button></td><td><button class="kana-key" data-h="を" data-k="ヲ">を<br>ヲ</button></td></tr>
+                                                    <tr><td class="row-label">ん</td><td><button class="kana-key" data-h="ん" data-k="ン">ん<br>ン</button></td><td class="empty-cell"></td><td class="empty-cell"></td><td class="empty-cell"></td><td class="empty-cell"></td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        <!-- 浊音/半浊音 -->
+                                        <div class="kana-tab-content" data-content="dakuten">
+                                            <table class="kana-table">
+                                                <thead>
+                                                    <tr><th></th><th>あ段</th><th>い段</th><th>う段</th><th>え段</th><th>お段</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr><td class="row-label">が行</td><td><button class="kana-key" data-h="が" data-k="ガ">が<br>ガ</button></td><td><button class="kana-key" data-h="ぎ" data-k="ギ">ぎ<br>ギ</button></td><td><button class="kana-key" data-h="ぐ" data-k="グ">ぐ<br>グ</button></td><td><button class="kana-key" data-h="げ" data-k="ゲ">げ<br>ゲ</button></td><td><button class="kana-key" data-h="ご" data-k="ゴ">ご<br>ゴ</button></td></tr>
+                                                    <tr><td class="row-label">ざ行</td><td><button class="kana-key" data-h="ざ" data-k="ザ">ざ<br>ザ</button></td><td><button class="kana-key" data-h="じ" data-k="ジ">じ<br>ジ</button></td><td><button class="kana-key" data-h="ず" data-k="ズ">ず<br>ズ</button></td><td><button class="kana-key" data-h="ぜ" data-k="ゼ">ぜ<br>ゼ</button></td><td><button class="kana-key" data-h="ぞ" data-k="ゾ">ぞ<br>ゾ</button></td></tr>
+                                                    <tr><td class="row-label">だ行</td><td><button class="kana-key" data-h="だ" data-k="ダ">だ<br>ダ</button></td><td><button class="kana-key" data-h="ぢ" data-k="ヂ">ぢ<br>ヂ</button></td><td><button class="kana-key" data-h="づ" data-k="ヅ">づ<br>ヅ</button></td><td><button class="kana-key" data-h="で" data-k="デ">で<br>デ</button></td><td><button class="kana-key" data-h="ど" data-k="ド">ど<br>ド</button></td></tr>
+                                                    <tr><td class="row-label">ば行</td><td><button class="kana-key" data-h="ば" data-k="バ">ば<br>バ</button></td><td><button class="kana-key" data-h="び" data-k="ビ">び<br>ビ</button></td><td><button class="kana-key" data-h="ぶ" data-k="ブ">ぶ<br>ブ</button></td><td><button class="kana-key" data-h="べ" data-k="ベ">べ<br>ベ</button></td><td><button class="kana-key" data-h="ぼ" data-k="ボ">ぼ<br>ボ</button></td></tr>
+                                                    <tr><td class="row-label">ぱ行</td><td><button class="kana-key" data-h="ぱ" data-k="パ">ぱ<br>パ</button></td><td><button class="kana-key" data-h="ぴ" data-k="ピ">ぴ<br>ピ</button></td><td><button class="kana-key" data-h="ぷ" data-k="プ">ぷ<br>プ</button></td><td><button class="kana-key" data-h="ぺ" data-k="ペ">ぺ<br>ペ</button></td><td><button class="kana-key" data-h="ぽ" data-k="ポ">ぽ<br>ポ</button></td></tr>
+                                                    <tr><td class="row-label">ゔ</td><td class="empty-cell"></td><td class="empty-cell"></td><td><button class="kana-key" data-h="ゔ" data-k="ヴ">ゔ<br>ヴ</button></td><td class="empty-cell"></td><td class="empty-cell"></td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        <!-- 拗音 -->
+                                        <div class="kana-tab-content" data-content="combo">
+                                            <table class="kana-table">
+                                                <thead>
+                                                    <tr><th></th><th>ゃ</th><th>ゅ</th><th>ょ</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr><td class="row-label">き</td><td><button class="kana-key" data-h="きゃ" data-k="キャ">きゃ<br>キャ</button></td><td><button class="kana-key" data-h="きゅ" data-k="キュ">きゅ<br>キュ</button></td><td><button class="kana-key" data-h="きょ" data-k="キョ">きょ<br>キョ</button></td></tr>
+                                                    <tr><td class="row-label">し</td><td><button class="kana-key" data-h="しゃ" data-k="シャ">しゃ<br>シャ</button></td><td><button class="kana-key" data-h="しゅ" data-k="シュ">しゅ<br>シュ</button></td><td><button class="kana-key" data-h="しょ" data-k="ショ">しょ<br>ショ</button></td></tr>
+                                                    <tr><td class="row-label">ち</td><td><button class="kana-key" data-h="ちゃ" data-k="チャ">ちゃ<br>チャ</button></td><td><button class="kana-key" data-h="ちゅ" data-k="チュ">ちゅ<br>チュ</button></td><td><button class="kana-key" data-h="ちょ" data-k="チョ">ちょ<br>チョ</button></td></tr>
+                                                    <tr><td class="row-label">に</td><td><button class="kana-key" data-h="にゃ" data-k="ニャ">にゃ<br>ニャ</button></td><td><button class="kana-key" data-h="にゅ" data-k="ニュ">にゅ<br>ニュ</button></td><td><button class="kana-key" data-h="にょ" data-k="ニョ">にょ<br>ニョ</button></td></tr>
+                                                    <tr><td class="row-label">ひ</td><td><button class="kana-key" data-h="ひゃ" data-k="ヒャ">ひゃ<br>ヒャ</button></td><td><button class="kana-key" data-h="ひゅ" data-k="ヒュ">ひゅ<br>ヒュ</button></td><td><button class="kana-key" data-h="ひょ" data-k="ヒョ">ひょ<br>ヒョ</button></td></tr>
+                                                    <tr><td class="row-label">み</td><td><button class="kana-key" data-h="みゃ" data-k="ミャ">みゃ<br>ミャ</button></td><td><button class="kana-key" data-h="みゅ" data-k="ミュ">みゅ<br>ミュ</button></td><td><button class="kana-key" data-h="みょ" data-k="ミョ">みょ<br>ミョ</button></td></tr>
+                                                    <tr><td class="row-label">り</td><td><button class="kana-key" data-h="りゃ" data-k="リャ">りゃ<br>リャ</button></td><td><button class="kana-key" data-h="りゅ" data-k="リュ">りゅ<br>リュ</button></td><td><button class="kana-key" data-h="りょ" data-k="リョ">りょ<br>リョ</button></td></tr>
+                                                    <tr><td class="row-label">ぎ</td><td><button class="kana-key" data-h="ぎゃ" data-k="ギャ">ぎゃ<br>ギャ</button></td><td><button class="kana-key" data-h="ぎゅ" data-k="ギュ">ぎゅ<br>ギュ</button></td><td><button class="kana-key" data-h="ぎょ" data-k="ギョ">ぎょ<br>ギョ</button></td></tr>
+                                                    <tr><td class="row-label">じ</td><td><button class="kana-key" data-h="じゃ" data-k="ジャ">じゃ<br>ジャ</button></td><td><button class="kana-key" data-h="じゅ" data-k="ジュ">じゅ<br>ジュ</button></td><td><button class="kana-key" data-h="じょ" data-k="ジョ">じょ<br>ジョ</button></td></tr>
+                                                    <tr><td class="row-label">び</td><td><button class="kana-key" data-h="びゃ" data-k="ビャ">びゃ<br>ビャ</button></td><td><button class="kana-key" data-h="びゅ" data-k="ビュ">びゅ<br>ビュ</button></td><td><button class="kana-key" data-h="びょ" data-k="ビョ">びょ<br>ビョ</button></td></tr>
+                                                    <tr><td class="row-label">ぴ</td><td><button class="kana-key" data-h="ぴゃ" data-k="ピャ">ぴゃ<br>ピャ</button></td><td><button class="kana-key" data-h="ぴゅ" data-k="ピュ">ぴゅ<br>ピュ</button></td><td><button class="kana-key" data-h="ぴょ" data-k="ピョ">ぴょ<br>ピョ</button></td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        <!-- 特殊字符 -->
+                                        <div class="kana-tab-content" data-content="special">
+                                            <div class="kana-special-section">
+                                                <div class="kana-special-group">
+                                                    <span class="group-label">小书</span>
+                                                    <button class="kana-key" data-h="ぁ" data-k="ァ">ぁ<br>ァ</button>
+                                                    <button class="kana-key" data-h="ぃ" data-k="ィ">ぃ<br>ィ</button>
+                                                    <button class="kana-key" data-h="ぅ" data-k="ゥ">ぅ<br>ゥ</button>
+                                                    <button class="kana-key" data-h="ぇ" data-k="ェ">ぇ<br>ェ</button>
+                                                    <button class="kana-key" data-h="ぉ" data-k="ォ">ぉ<br>ォ</button>
+                                                    <button class="kana-key" data-h="ゃ" data-k="ャ">ゃ<br>ャ</button>
+                                                    <button class="kana-key" data-h="ゅ" data-k="ュ">ゅ<br>ュ</button>
+                                                    <button class="kana-key" data-h="ょ" data-k="ョ">ょ<br>ョ</button>
+                                                    <button class="kana-key" data-h="っ" data-k="ッ">っ<br>ッ</button>
+                                                    <button class="kana-key" data-h="ゎ" data-k="ヮ">ゎ<br>ヮ</button>
+                                                </div>
+                                                <div class="kana-special-group">
+                                                    <span class="group-label">长音/符号</span>
+                                                    <button class="kana-key special-key" data-char="ー">ー</button>
+                                                    <button class="kana-key special-key" data-char="〜">〜</button>
+                                                    <button class="kana-key special-key" data-char="・">・</button>
+                                                    <button class="kana-key special-key" data-char="。">。</button>
+                                                    <button class="kana-key special-key" data-char="、">、</button>
+                                                    <button class="kana-key special-key" data-char="！">！</button>
+                                                    <button class="kana-key special-key" data-char="？">？</button>
+                                                    <button class="kana-key special-key" data-char="…">…</button>
+                                                </div>
+                                                <div class="kana-special-group">
+                                                    <span class="group-label">括号</span>
+                                                    <button class="kana-key special-key" data-char="「">「</button>
+                                                    <button class="kana-key special-key" data-char="」">」</button>
+                                                    <button class="kana-key special-key" data-char="『">『</button>
+                                                    <button class="kana-key special-key" data-char="』">』</button>
+                                                    <button class="kana-key special-key" data-char="（">（</button>
+                                                    <button class="kana-key special-key" data-char="）">）</button>
+                                                    <button class="kana-key special-key" data-char="【">【</button>
+                                                    <button class="kana-key special-key" data-char="】">】</button>
+                                                </div>
+                                                <div class="kana-special-group">
+                                                    <span class="group-label">外来语</span>
+                                                    <button class="kana-key" data-h="" data-k="ヴァ">ヴァ</button>
+                                                    <button class="kana-key" data-h="" data-k="ヴィ">ヴィ</button>
+                                                    <button class="kana-key" data-h="" data-k="ヴ">ヴ</button>
+                                                    <button class="kana-key" data-h="" data-k="ヴェ">ヴェ</button>
+                                                    <button class="kana-key" data-h="" data-k="ヴォ">ヴォ</button>
+                                                    <button class="kana-key" data-h="" data-k="ファ">ファ</button>
+                                                    <button class="kana-key" data-h="" data-k="フィ">フィ</button>
+                                                    <button class="kana-key" data-h="" data-k="フェ">フェ</button>
+                                                    <button class="kana-key" data-h="" data-k="フォ">フォ</button>
+                                                    <button class="kana-key" data-h="" data-k="ティ">ティ</button>
+                                                    <button class="kana-key" data-h="" data-k="ディ">ディ</button>
+                                                    <button class="kana-key" data-h="" data-k="デュ">デュ</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- 键盘底部控制栏 -->
+                                        <div class="kana-keyboard-footer">
+                                            <div class="kana-mode-switch">
+                                                <label class="kana-mode-label">
+                                                    <input type="radio" name="kanaMode" value="hiragana" checked>
+                                                    <span>平假名</span>
+                                                </label>
+                                                <label class="kana-mode-label">
+                                                    <input type="radio" name="kanaMode" value="katakana">
+                                                    <span>片假名</span>
+                                                </label>
+                                            </div>
+                                            <div class="kana-target-switch">
+                                                <span class="target-label">输入到:</span>
+                                                <select id="kanaTargetSelect">
+                                                    <option value="original">日语原文</option>
+                                                    <option value="translated">中文译文</option>
+                                                </select>
+                                            </div>
+                                            <button class="kana-backspace-btn" id="kanaBackspace" title="删除">⌫</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="text-column translated-text-column text-block">
+                                    <div class="text-column-header">
+                                        <span class="column-title">🇨🇳 中文译文</span>
+                                        <button class="re-translate-btn" id="reTranslateBtn" title="重新翻译此气泡">🔄</button>
+                                    </div>
+                                    <textarea id="translatedTextEditor" 
+                                              class="text-editor translated-editor"
+                                              placeholder="翻译后的中文..."
+                                              spellcheck="false"></textarea>
+                                    <div class="text-actions">
+                                        <button class="copy-btn" data-target="translatedTextEditor">📋 复制</button>
+                                        <button class="apply-text-btn" id="applyTextBtn">✓ 应用文本</button>
+                                    </div>
+                                </div>
+                                
+                                <div class="style-settings-section text-block">
+                                    <!-- Office风格文字设置工具栏 -->
+                                    <div class="office-toolbar">
+                                        <!-- 第一行：字体 + 字号 -->
+                                        <div class="toolbar-row toolbar-row-top">
+                                            <div class="combo-control font-control">
+                                                <label>字体</label>
+                                                <select id="fontFamilyNew" class="toolbar-font-select" title="字体">
+                                                    <option value="custom-font" data-custom="true">自定义字体...</option>
+                                                </select>
+                                            </div>
+                                            <div class="combo-control size-control">
+                                                <label>字号</label>
+                                                <div class="size-input-wrap">
+                                                    <input type="number" id="fontSizeInput" class="toolbar-fontsize-input" 
+                                                           min="10" max="100" step="1" value="24" title="字号">
+                                                    <div class="toolbar-fontsize-btns">
+                                                        <button class="toolbar-fontsize-btn" id="fontSizeUp" title="增大字号">A+</button>
+                                                        <button class="toolbar-fontsize-btn" id="fontSizeDown" title="减小字号">A-</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- 第二行：样式工具按钮 -->
+                                        <div class="toolbar-row toolbar-row-actions">
+                                            <div class="toolbar-icon-group" aria-label="排版方向">
+                                                <button class="toolbar-btn" id="directionVerticalBtn" title="竖向排版" data-active="true">
+                                                    <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 2v12M8 2L5 5M8 2l3 3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <button class="toolbar-btn" id="directionHorizontalBtn" title="横向排版">
+                                                    <svg viewBox="0 0 16 16" width="16" height="16"><path d="M2 8h12M14 8l-3-3M14 8l-3 3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <select id="textDirectionNew" style="display:none;">
+                                                    <option value="vertical" selected>竖向</option>
+                                                    <option value="horizontal">横向</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div class="toolbar-divider vertical"></div>
+                                            
+                                            <div class="toolbar-color-group">
+                                                <div class="toolbar-color-picker" title="文字颜色">
+                                                    <button class="toolbar-btn toolbar-color-btn" id="textColorBtn">
+                                                        <svg viewBox="0 0 16 16" width="16" height="16">
+                                                            <text x="3" y="11" font-size="10" font-weight="bold" fill="currentColor">A</text>
+                                                        </svg>
+                                                        <span class="color-indicator" id="textColorIndicator" style="background:#231816;"></span>
+                                                    </button>
+                                                    <input type="color" id="textColorNew" value="#231816" class="hidden-color-input">
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="toolbar-divider vertical"></div>
+                                            
+                                            <!-- 背景修复方式选择器 -->
+                                            <div class="toolbar-inpaint-group" title="背景修复方式">
+                                                <select id="bubbleInpaintMethodNew" class="toolbar-inpaint-select">
+                                                    <option value="solid" selected>纯色填充</option>
+                                                    <option value="lama_mpe">LAMA修复(漫画)</option>
+                                                    <option value="litelama">LAMA修复(通用)</option>
+                                                </select>
+                                                
+                                                <!-- 纯色填充时的颜色选择器 -->
+                                                <div class="toolbar-color-picker toolbar-solid-color-options" id="solidColorOptionsNew">
+                                                    <button class="toolbar-btn toolbar-color-btn" id="fillColorBtn">
+                                                        <svg viewBox="0 0 16 16" width="16" height="16">
+                                                            <rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                                                            <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.3"/>
+                                                        </svg>
+                                                        <span class="color-indicator" id="fillColorIndicator" style="background:#FFFFFF;"></span>
+                                                    </button>
+                                                    <input type="color" id="fillColorNew" value="#FFFFFF" class="hidden-color-input">
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="toolbar-divider vertical"></div>
+                                            
+                                            <div class="toolbar-stroke-cluster">
+                                                <button class="toolbar-btn" id="strokeToggleBtn" title="文字描边" data-active="true">
+                                                    <svg viewBox="0 0 16 16" width="16" height="16">
+                                                        <text x="3" y="12" font-size="11" font-weight="bold" stroke="currentColor" stroke-width="2" fill="none">A</text>
+                                                        <text x="3" y="12" font-size="11" font-weight="bold" fill="currentColor">A</text>
+                                                    </svg>
+                                                </button>
+                                                <input type="checkbox" id="strokeEnabledNew" checked style="display:none;">
+                                                
+                                                <div class="toolbar-color-picker toolbar-stroke-options" id="strokeColorPicker" title="描边颜色">
+                                                    <button class="toolbar-btn toolbar-color-btn" id="strokeColorBtn">
+                                                        <svg viewBox="0 0 16 16" width="16" height="16">
+                                                            <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
+                                                        </svg>
+                                                        <span class="color-indicator" id="strokeColorIndicator" style="background:#FFFFFF;"></span>
+                                                    </button>
+                                                    <input type="color" id="strokeColorNew" value="#FFFFFF" class="hidden-color-input">
+                                                </div>
+                                                
+                                                <div class="toolbar-stroke-width toolbar-stroke-options" title="描边宽度">
+                                                    <input type="number" id="strokeWidthNew" value="3" min="0" max="10" class="toolbar-mini-input">
+                                                    <span class="toolbar-unit">px</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- 第三行：旋转 + 位置 -->
+                                        <div class="toolbar-row toolbar-row-bottom">
+                                            <div class="toolbar-rotation-group" title="旋转角度">
+                                                <button class="toolbar-btn" id="rotateLeftBtn" title="逆时针旋转">
+                                                    <svg viewBox="0 0 16 16" width="16" height="16">
+                                                        <path d="M2 8a6 6 0 1 1 1.5 4" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                                                        <path d="M2 5v3.5h3.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                                                    </svg>
+                                                </button>
+                                                <input type="number" id="rotationAngleNew" class="toolbar-mini-input toolbar-rotation-input" 
+                                                       min="-180" max="180" step="5" value="0">
+                                                <span class="toolbar-unit">°</span>
+                                                <button class="toolbar-btn" id="rotateRightBtn" title="顺时针旋转">
+                                                    <svg viewBox="0 0 16 16" width="16" height="16">
+                                                        <path d="M14 8a6 6 0 1 0-1.5 4" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                                                        <path d="M14 5v3.5h-3.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                                                    </svg>
+                                                </button>
+                                                <button class="toolbar-btn toolbar-small-btn" id="rotateResetBtn" title="重置旋转">0</button>
+                                            </div>
+                                            
+                                            <div class="toolbar-divider vertical"></div>
+                                            
+                                            <div class="toolbar-position-group" title="位置调整">
+                                                <button class="toolbar-btn" id="moveLeftNew" title="左移">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <button class="toolbar-btn" id="moveRightNew" title="右移">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <button class="toolbar-btn" id="moveUpNew" title="上移">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 10l5-5 5 5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <button class="toolbar-btn" id="moveDownNew" title="下移">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 6l5 5 5-5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                                </button>
+                                                <span class="toolbar-position-value">
+                                                    <span id="positionXValue">0</span>,<span id="positionYValue">0</span>
+                                                </span>
+                                                <button class="toolbar-btn toolbar-small-btn" id="resetPositionNew" title="重置位置">⌂</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 字号预设快捷按钮（可折叠） -->
+                                    <details class="fontsize-presets-panel">
+                                        <summary>字号预设</summary>
+                                        <div class="font-size-presets" id="fontSizePresets">
+                                            <!-- 预设按钮由JS生成 -->
+                                        </div>
+                                    </details>
+                                    
+                                    <!-- 隐藏的滑块保持兼容 -->
+                                    <input type="range" id="fontSizeSlider" style="display:none;"
+                                           min="10" max="100" step="2" value="24">
+                                    
+                                    <!-- 操作按钮 -->
+                                    <div class="edit-action-buttons">
+                                        <button class="btn-apply" id="applyBubbleEditNew">应用</button>
+                                        <button class="btn-apply-all" id="applyToAllBubblesNew">应用全部</button>
+                                        <button class="btn-reset" id="resetBubbleEditNew">重置</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ============ 新版编辑工作区结束 ============ -->
+
+                <div class="text-info" id="detectedTextInfo" style="display: none;">
+                    <h3>检测到的文本（原文 → 译文）</h3>
+                    <pre id="detectedTextList"></pre>
+                </div>
+                <p id="downloadingMessage" style="display: none;">下载中，请稍候...</p>
+                <div class="download-buttons">
+                    <button id="downloadButton">下载当前图片</button>
+                    <div class="download-all-container">
+                        <button id="downloadAllImagesButton">下载所有图片</button>
+                        <div class="download-format-selector">
+                            <select id="downloadFormat">
+                                <option value="zip" selected>ZIP压缩包</option>
+                                <option value="pdf">PDF文件</option>
+                                <option value="cbz">CBZ漫画格式</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 新增导出和导入文本按钮 -->
+                    <button id="exportTextButton">导出文本</button>
+                    <button id="importTextButton">导入文本</button>
+                    <!-- 隐藏的文件输入框，用于导入文本 -->
+                    <input type="file" id="importTextFileInput" style="display: none;" accept=".json">
+                </div>
+            </section>
+        </main>
+
+        <aside id="thumbnail-sidebar">
+            <div class="card thumbnail-card">
+                <h2>图片概览</h2>
+                <ul id="thumbnailList"></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 赞助弹出层 -->
+    <div id="donateModal" class="donate-modal">
+        <div class="donate-modal-content">
+            <span class="donate-close">×</span>
+            <h3>感谢您的支持!</h3>
+            <p>您的赞助将帮助我们持续改进这个工具</p>
+            <div class="donate-qrcodes">
+                <div class="donate-qrcode-item">
+                    <img src="{{ url_for('static', filename='pic/wechat_qrcode.png') }}" alt="微信支付">
+                    <p>微信支付</p>
+                </div>
+                <div class="donate-qrcode-item">
+                    <img src="{{ url_for('static', filename='pic/alipay_qrcode.png') }}" alt="支付宝">
+                    <p>支付宝</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 插件管理弹出层 -->
+    <div id="pluginManagerModal" class="plugin-modal" style="display: none;">
+        <div class="plugin-modal-content">
+            <span class="plugin-modal-close">&times;</span>
+            <h3>插件管理</h3>
+            <div id="pluginListContainer">
+                <!-- 插件列表将由 JS 动态填充 -->
+                <p>正在加载插件列表...</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- AI校对设置弹窗 -->
+    <div id="proofreadingSettingsModal" class="plugin-modal" style="display: none;">
+        <div class="plugin-modal-content">
+            <span class="plugin-modal-close">&times;</span>
+            <h3>AI校对设置</h3>
+            <div class="proofreading-settings-container">
+                <div class="proofreading-enable-section">
+                    <label for="proofreadingEnabled">启用AI校对:</label>
+                    <input type="checkbox" id="proofreadingEnabled" checked>
+                    <span class="input-hint">启用后点击"AI校对"按钮将执行多轮校对</span>
+                </div>
+                <!-- 隐藏的同步元素 -->
+                <input type="number" id="proofreadingMaxRetries" value="2" style="display:none;">
+                
+                <h3>校对轮次配置</h3>
+                <div id="proofreadingRoundsContainer">
+                    <!-- 轮次内容将通过JS动态添加 -->
+                </div>
+                
+                <div class="proofreading-buttons">
+                    <button id="addRoundButton" class="settings-button">添加轮次</button>
+                    <button id="saveProofreadingSettingsButton" class="settings-button primary">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === 设置模态框 === -->
+    <div id="settingsModal" class="settings-modal" style="display: none;">
+        <div class="settings-modal-content">
+            <div class="settings-modal-header">
+                <h3>⚙️ 设置</h3>
+                <span class="settings-modal-close">&times;</span>
+            </div>
+            
+            <!-- Tab 导航 -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" data-tab="ocr">OCR识别</button>
+                <button class="settings-tab" data-tab="translate">翻译服务</button>
+                <button class="settings-tab" data-tab="detection">检测设置</button>
+                <button class="settings-tab" data-tab="hq">高质量翻译</button>
+                <button class="settings-tab" data-tab="proofreading">AI校对</button>
+                <button class="settings-tab" data-tab="prompt-library">提示词管理</button>
+            </div>
+            
+            <!-- Tab 内容 -->
+            <div class="settings-tab-content">
+                <!-- OCR设置 -->
+                <div class="settings-tab-pane active" id="settings-ocr">
+                    <div class="settings-group">
+                        <div class="settings-group-title">OCR引擎选择</div>
+                        <div class="settings-item">
+                            <label for="settingsOcrEngine">OCR引擎:</label>
+                            <select id="settingsOcrEngine">
+                                <option value="manga_ocr" selected>MangaOCR (日语专用)</option>
+                                <option value="paddle_ocr">PaddleOCR (多语言)</option>
+                                <option value="baidu_ocr">百度OCR</option>
+                                <option value="ai_vision">AI视觉OCR</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- PaddleOCR设置 -->
+                    <div class="settings-group" id="settingsPaddleOcrGroup" style="display:none;">
+                        <div class="settings-group-title">PaddleOCR 设置</div>
+                        <div class="settings-item">
+                            <label for="settingsSourceLanguage">源语言:</label>
+                            <select id="settingsSourceLanguage">
+                                <optgroup label="🚀 默认模型（推荐）">
+                                    <option value="japanese" selected>日语</option>
+                                    <option value="en">英语</option>
+                                    <option value="chinese">简体中文</option>
+                                    <option value="chinese_cht">繁体中文</option>
+                                </optgroup>
+                                <optgroup label="🎯 专用模型">
+                                    <option value="korean">韩语</option>
+                                </optgroup>
+                                <optgroup label="🌍 拉丁语系">
+                                    <option value="french">法语</option>
+                                    <option value="german">德语</option>
+                                    <option value="spanish">西班牙语</option>
+                                    <option value="italian">意大利语</option>
+                                    <option value="portuguese">葡萄牙语</option>
+                                </optgroup>
+                                <optgroup label="🌏 其他语系">
+                                    <option value="russian">俄语</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 百度OCR设置 -->
+                    <div class="settings-group" id="settingsBaiduOcrGroup" style="display:none;">
+                        <div class="settings-group-title">百度OCR 设置</div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsBaiduApiKey">API Key:</label>
+                                <div class="password-input-wrapper">
+                                    <input type="text" id="settingsBaiduApiKey" class="secure-input" placeholder="请输入百度OCR API Key" autocomplete="off">
+                                    <button type="button" class="password-toggle-btn" tabindex="-1">
+                                        <span class="eye-icon">👁</span>
+                                        <span class="eye-off-icon">👁‍🗨</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsBaiduSecretKey">Secret Key:</label>
+                                <div class="password-input-wrapper">
+                                    <input type="text" id="settingsBaiduSecretKey" class="secure-input" placeholder="请输入Secret Key" autocomplete="off">
+                                    <button type="button" class="password-toggle-btn" tabindex="-1">
+                                        <span class="eye-icon">👁</span>
+                                        <span class="eye-off-icon">👁‍🗨</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsBaiduVersion">识别版本:</label>
+                                <select id="settingsBaiduVersion">
+                                    <option value="standard" selected>标准版</option>
+                                    <option value="high_precision">高精度版</option>
+                                </select>
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsBaiduSourceLanguage">源语言:</label>
+                                <select id="settingsBaiduSourceLanguage">
+                                    <option value="auto_detect" selected>自动检测</option>
+                                    <option value="CHN_ENG">中英文混合</option>
+                                    <option value="ENG">英文</option>
+                                    <option value="JAP">日语</option>
+                                    <option value="KOR">韩语</option>
+                                    <option value="FRE">法语</option>
+                                    <option value="GER">德语</option>
+                                    <option value="RUS">俄语</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button id="settingsTestBaiduOcr" class="settings-test-btn">🔗 测试连接</button>
+                    </div>
+                    
+                    <!-- AI视觉OCR设置 -->
+                    <div class="settings-group" id="settingsAiVisionGroup" style="display:none;">
+                        <div class="settings-group-title">AI视觉OCR 设置</div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsAiVisionProvider">服务商:</label>
+                                <select id="settingsAiVisionProvider">
+                                    <option value="siliconflow" selected>SiliconFlow (硅基流动)</option>
+                                    <option value="volcano">火山引擎</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="custom_openai_vision">自定义 OpenAI 兼容服务</option>
+                                </select>
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsAiVisionApiKey">API Key:</label>
+                                <div class="password-input-wrapper">
+                                    <input type="text" id="settingsAiVisionApiKey" class="secure-input" placeholder="请输入API Key" autocomplete="off">
+                                    <button type="button" class="password-toggle-btn" tabindex="-1">
+                                        <span class="eye-icon">👁</span>
+                                        <span class="eye-off-icon">👁‍🗨</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-item" id="settingsCustomAiVisionBaseUrlDiv" style="display:none;">
+                            <label for="settingsCustomAiVisionBaseUrl">Base URL:</label>
+                            <input type="text" id="settingsCustomAiVisionBaseUrl" placeholder="例如: https://api.example.com/v1">
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsAiVisionModelName">模型名称:</label>
+                            <div class="model-input-with-fetch">
+                                <input type="text" id="settingsAiVisionModelName" placeholder="如: silicon-llava2-34b">
+                                <button type="button" id="settingsAiVisionFetchModelsBtn" class="fetch-models-btn" title="获取可用模型列表">
+                                    <span class="fetch-icon">🔍</span>
+                                    <span class="fetch-text">获取模型</span>
+                                </button>
+                            </div>
+                            <div id="settingsAiVisionModelSelectDiv" class="model-select-container" style="display:none;">
+                                <select id="settingsAiVisionModelSelect" class="model-select">
+                                    <option value="">-- 选择模型 --</option>
+                                </select>
+                                <span id="settingsAiVisionModelCount" class="model-count"></span>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsAiVisionOcrPrompt">OCR提示词:</label>
+                            <textarea id="settingsAiVisionOcrPrompt" rows="3" placeholder="AI视觉OCR提示词">{{ default_ai_vision_ocr_prompt }}</textarea>
+                            <div class="prompt-format-selector">
+                                <select id="settingsAiVisionPromptMode">
+                                    <option value="normal">普通提示词</option>
+                                    <option value="json">JSON提示词</option>
+                                </select>
+                                <span class="input-hint">JSON格式输出更结构化</span>
+                            </div>
+                            <!-- 已保存提示词选择器 -->
+                            <div class="saved-prompts-picker" data-target="settingsAiVisionOcrPrompt">
+                                <span class="picker-label">📑 快速选择:</span>
+                                <div class="prompts-chips-container" id="aiVisionOcrPromptsChips">
+                                    <!-- 由JS动态填充 -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsRpmAiVisionOcr">RPM限制 (每分钟请求数):</label>
+                            <input type="number" id="settingsRpmAiVisionOcr" value="0" min="0" step="1">
+                            <div class="input-hint">0 表示无限制</div>
+                        </div>
+                        <button id="settingsTestAiVisionOcr" class="settings-test-btn">🔗 测试连接</button>
+                    </div>
+                </div>
+                
+                <!-- 翻译服务设置 -->
+                <div class="settings-tab-pane" id="settings-translate">
+                    <div class="settings-group">
+                        <div class="settings-group-title">翻译服务配置</div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsModelProvider">翻译服务商:</label>
+                                <select id="settingsModelProvider">
+                                    <option value="siliconflow">SiliconFlow</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="volcano">火山引擎</option>
+                                    <option value="caiyun">彩云小译</option>
+                                    <option value="baidu_translate">百度翻译</option>
+                                    <option value="youdao_translate">有道翻译</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="ollama">Ollama (本地)</option>
+                                    <option value="sakura">Sakura (本地)</option>
+                                    <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+                                </select>
+                            </div>
+                            <!-- 通用API Key (云服务商) -->
+                            <div class="settings-item" id="settingsApiKeyDiv">
+                                <label for="settingsApiKey" id="settingsApiKeyLabel">API Key:</label>
+                                <div class="password-input-wrapper">
+                                    <input type="text" id="settingsApiKey" class="secure-input" placeholder="请输入API Key" autocomplete="off">
+                                    <button type="button" class="password-toggle-btn" tabindex="-1">
+                                        <span class="eye-icon">👁</span>
+                                        <span class="eye-off-icon">👁‍🗨</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 自定义OpenAI Base URL -->
+                        <div class="settings-item" id="settingsCustomBaseUrlDiv" style="display:none;">
+                            <label for="settingsCustomBaseUrl">Base URL:</label>
+                            <input type="text" id="settingsCustomBaseUrl" placeholder="例如: https://api.example.com/v1">
+                        </div>
+                        
+                        <!-- 通用模型名称 (云服务商) -->
+                        <div class="settings-item" id="settingsModelNameDiv">
+                            <label for="settingsModelName" id="settingsModelNameLabel">模型名称:</label>
+                            <div class="model-input-with-fetch">
+                                <input type="text" id="settingsModelName" placeholder="请输入模型名称">
+                                <button type="button" id="settingsFetchModelsBtn" class="fetch-models-btn" title="获取可用模型列表">
+                                    <span class="fetch-icon">🔍</span>
+                                    <span class="fetch-text">获取模型</span>
+                                </button>
+                            </div>
+                            <div id="settingsModelSuggestions"></div>
+                            <div id="settingsModelSelectDiv" class="model-select-container" style="display:none;">
+                                <select id="settingsModelSelect" class="model-select">
+                                    <option value="">-- 选择模型 --</option>
+                                </select>
+                                <span id="settingsModelCount" class="model-count"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Ollama/Sakura 本地服务 - 模型列表 -->
+                        <div class="settings-item" id="settingsLocalModelDiv" style="display:none;">
+                            <label id="settingsLocalModelLabel">可用模型:</label>
+                            <div id="settingsOllamaModelsList" class="model-list" style="display:none;"></div>
+                            <div id="settingsSakuraModelsList" class="model-list" style="display:none;"></div>
+                            <div class="input-hint" id="settingsLocalModelHint">点击"测试连接"获取可用模型列表</div>
+                        </div>
+                        
+                        <!-- RPM限制 (仅AI翻译服务需要) -->
+                        <div class="settings-item" id="settingsRpmDiv">
+                            <label for="settingsRpmTranslation">RPM限制 (每分钟请求数):</label>
+                            <input type="number" id="settingsRpmTranslation" value="0" min="0" step="1">
+                            <div class="input-hint">0 表示无限制</div>
+                        </div>
+                        
+                        <!-- 翻译失败重试次数 -->
+                        <div class="settings-item" id="settingsRetriesDiv">
+                            <label for="settingsTranslationMaxRetries">翻译失败重试次数:</label>
+                            <input type="number" id="settingsTranslationMaxRetries" value="3" min="0" max="10" step="1">
+                            <div class="input-hint">普通翻译失败时的重试次数，0表示不重试，最大10次</div>
+                        </div>
+                        
+                        <button id="settingsTestTranslation" class="settings-test-btn">🔗 测试连接</button>
+                    </div>
+                    
+                    <!-- 漫画翻译提示词（从提示词页面移过来） -->
+                    <div class="settings-group">
+                        <div class="settings-group-title">漫画翻译提示词</div>
+                        <div class="settings-item">
+                            <textarea id="settingsPromptContent" rows="5" placeholder="在这里修改翻译提示词">{{ default_prompt_content }}</textarea>
+                            <div class="prompt-format-selector">
+                                <select id="settingsTranslatePromptMode">
+                                    <option value="normal">普通提示词</option>
+                                    <option value="json">JSON提示词</option>
+                                </select>
+                            </div>
+                            <!-- 已保存提示词选择器 -->
+                            <div class="saved-prompts-picker" data-target="settingsPromptContent">
+                                <span class="picker-label">📑 快速选择:</span>
+                                <div class="prompts-chips-container" id="translatePromptsChips">
+                                    <!-- 由JS动态填充 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 文本框提示词 -->
+                    <div class="settings-group">
+                        <div class="settings-group-title">
+                            文本框提示词
+                            <label class="settings-checkbox" style="margin-left: 15px; font-weight: normal;">
+                                <input type="checkbox" id="settingsEnableTextboxPrompt">
+                                <span>启用独立文本框提示词</span>
+                            </label>
+                        </div>
+                        <div id="settingsTextboxPromptArea" style="display:none;">
+                            <div class="settings-item">
+                                <textarea id="settingsTextboxPromptContent" rows="4" placeholder="在这里修改文本框提示词">{{ default_textbox_prompt_content }}</textarea>
+                                <!-- 已保存提示词选择器 -->
+                                <div class="saved-prompts-picker" data-target="settingsTextboxPromptContent">
+                                    <span class="picker-label">📑 快速选择:</span>
+                                    <div class="prompts-chips-container" id="textboxPromptsChips">
+                                        <!-- 由JS动态填充 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 检测设置 -->
+                <div class="settings-tab-pane" id="settings-detection">
+                    <div class="settings-group">
+                        <div class="settings-group-title">文本检测器</div>
+                        <div class="settings-item">
+                            <label for="settingsTextDetector">检测器类型:</label>
+                            <select id="settingsTextDetector">
+                                <option value="default" selected>Default (DBNet ResNet34)</option>
+                                <option value="ctd">CTD (Comic Text Detector)</option>
+                                <option value="yolo">YSGYolo</option>
+                                <option value="yolov5">YOLOv5 (旧版)</option>
+                            </select>
+                        </div>
+                        <div class="settings-item" id="usePreciseMaskItem">
+                            <label class="settings-checkbox">
+                                <input type="checkbox" id="settingsUsePreciseMask" checked>
+                                <span>使用精确文字掩膜</span>
+                            </label>
+                            <div class="input-hint">使用模型生成的像素级文字掩膜进行背景修复，而非合并后的文本框区域。修复效果更精确，但可能遗漏部分文字。</div>
+                        </div>
+                        <div class="settings-item" id="maskDilateSizeItem">
+                            <label for="settingsMaskDilateSize">掩膜膨胀 (像素):</label>
+                            <input type="number" id="settingsMaskDilateSize" value="10" min="0" max="50" step="1" style="width: 80px;">
+                            <div class="input-hint">对精确文字掩膜进行膨胀处理，扩大修复区域。适用于文字边缘残留的情况。</div>
+                        </div>
+                        <div class="settings-item" id="maskBoxExpandRatioItem">
+                            <label for="settingsMaskBoxExpandRatio">标注框扩大比例 (%):</label>
+                            <input type="number" id="settingsMaskBoxExpandRatio" value="20" min="0" max="200" step="5" style="width: 80px;">
+                            <div class="input-hint">扩大标注框的收录范围，确保框边缘附近的文字也能被修复。</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <div class="settings-group-title">检测框扩展设置</div>
+                        <div class="settings-item">
+                            <label for="settingsBoxExpandRatio">整体扩展 (%):</label>
+                            <input type="number" id="settingsBoxExpandRatio" value="0" min="0" max="50" step="1" style="width: 80px;">
+                            <div class="input-hint">所有边同时向外扩展，基于文本框宽高比例</div>
+                        </div>
+                        
+                        <div style="margin-top: 15px;">
+                            <label style="font-weight: 500; margin-bottom: 10px; display: block;">各边独立扩展:</label>
+                            <div class="expand-settings-grid">
+                                <div class="settings-item">
+                                    <label for="settingsBoxExpandTop">上边 (%):</label>
+                                    <input type="number" id="settingsBoxExpandTop" value="0" min="0" max="50" step="1">
+                                </div>
+                                <div class="settings-item">
+                                    <label for="settingsBoxExpandBottom">下边 (%):</label>
+                                    <input type="number" id="settingsBoxExpandBottom" value="0" min="0" max="50" step="1">
+                                </div>
+                                <div class="settings-item">
+                                    <label for="settingsBoxExpandLeft">左边 (%):</label>
+                                    <input type="number" id="settingsBoxExpandLeft" value="0" min="0" max="50" step="1">
+                                </div>
+                                <div class="settings-item">
+                                    <label for="settingsBoxExpandRight">右边 (%):</label>
+                                    <input type="number" id="settingsBoxExpandRight" value="0" min="0" max="50" step="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <div class="settings-group-title">调试选项</div>
+                        <div class="settings-item">
+                            <label class="settings-checkbox">
+                                <input type="checkbox" id="settingsShowDetectionDebug">
+                                <span>显示检测框调试</span>
+                            </label>
+                            <div class="input-hint">翻译后在图片上用红框显示检测器检测到的原始文本行边界</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 高质量翻译设置 -->
+                <div class="settings-tab-pane" id="settings-hq">
+                    <div class="settings-group">
+                        <div class="settings-group-title">高质量翻译模式 (Beta)</div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsHqTranslateProvider">AI服务商:</label>
+                                <select id="settingsHqTranslateProvider">
+                                    <option value="siliconflow">SiliconFlow</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="volcano">火山引擎</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="custom_openai">自定义 OpenAI 兼容服务</option>
+                                </select>
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsHqApiKey">API Key:</label>
+                                <div class="password-input-wrapper">
+                                    <input type="text" id="settingsHqApiKey" class="secure-input" placeholder="请输入API Key" autocomplete="off">
+                                    <button type="button" class="password-toggle-btn" tabindex="-1">
+                                        <span class="eye-icon">👁</span>
+                                        <span class="eye-off-icon">👁‍🗨</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsHqModelName">模型名称:</label>
+                            <div class="model-input-with-fetch">
+                                <input type="text" id="settingsHqModelName" placeholder="请输入模型名称">
+                                <button type="button" id="settingsHqFetchModelsBtn" class="fetch-models-btn" title="获取可用模型列表">
+                                    <span class="fetch-icon">🔍</span>
+                                    <span class="fetch-text">获取模型</span>
+                                </button>
+                            </div>
+                            <div id="settingsHqModelSelectDiv" class="model-select-container" style="display:none;">
+                                <select id="settingsHqModelSelect" class="model-select">
+                                    <option value="">-- 选择模型 --</option>
+                                </select>
+                                <span id="settingsHqModelCount" class="model-count"></span>
+                            </div>
+                        </div>
+                        <div class="settings-item" id="settingsHqCustomBaseUrlDiv" style="display:none;">
+                            <label for="settingsHqCustomBaseUrl">Base URL:</label>
+                            <input type="text" id="settingsHqCustomBaseUrl" placeholder="如 https://your-api-endpoint.com/v1">
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label for="settingsHqBatchSize">每批次图片数:</label>
+                                <input type="number" id="settingsHqBatchSize" min="1" value="5">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsHqSessionReset">会话重置频率:</label>
+                                <input type="number" id="settingsHqSessionReset" min="1" value="3">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsHqRpmLimit">RPM限制:</label>
+                                <input type="number" id="settingsHqRpmLimit" min="1" max="100" value="10">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settingsHqMaxRetries">重试次数:</label>
+                                <input type="number" id="settingsHqMaxRetries" min="0" max="10" value="2">
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-item">
+                                <label class="settings-checkbox">
+                                    <input type="checkbox" id="settingsHqLowReasoning">
+                                    <span>关闭思考功能</span>
+                                </label>
+                            </div>
+                            <div class="settings-item" id="settingsHqNoThinkingMethodDiv">
+                                <label for="settingsHqNoThinkingMethod">取消思考方法:</label>
+                                <select id="settingsHqNoThinkingMethod">
+                                    <option value="gemini">Gemini (reasoning_effort)</option>
+                                    <option value="volcano">火山引擎 (thinking: null)</option>
+                                </select>
+                            </div>
+                            <div class="settings-item">
+                                <label class="settings-checkbox">
+                                    <input type="checkbox" id="settingsHqForceJsonOutput">
+                                    <span>强制JSON输出</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsHqPrompt">翻译提示词:</label>
+                            <textarea id="settingsHqPrompt" rows="4">{{ default_hq_prompt }}</textarea>
+                            <!-- 已保存提示词选择器 -->
+                            <div class="saved-prompts-picker" data-target="settingsHqPrompt">
+                                <span class="picker-label">📑 快速选择:</span>
+                                <div class="prompts-chips-container" id="hqPromptsChips">
+                                    <!-- 由JS动态填充 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI校对设置 -->
+                <div class="settings-tab-pane" id="settings-proofreading">
+                    <div class="settings-group">
+                        <div class="settings-group-title">AI校对功能</div>
+                        <div class="settings-item">
+                            <label class="settings-checkbox">
+                                <input type="checkbox" id="settingsProofreadingEnabled" checked>
+                                <span>启用AI校对</span>
+                            </label>
+                            <div class="input-hint">启用后点击"AI校对"按钮将执行多轮校对</div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="settingsProofreadingMaxRetries">校对失败重试次数:</label>
+                            <input type="number" id="settingsProofreadingMaxRetries" value="2" min="0" max="10" step="1">
+                            <div class="input-hint">每个批次校对失败时的重试次数，0表示不重试</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-group">
+                        <div class="settings-group-title">
+                            校对轮次配置
+                            <button id="settingsAddRoundButton" class="settings-test-btn" style="margin-left: 15px;">+ 添加轮次</button>
+                        </div>
+                        <div id="settingsProofreadingRoundsContainer">
+                            <!-- 轮次内容将通过JS动态添加 -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 提示词管理 -->
+                <div class="settings-tab-pane" id="settings-prompt-library">
+                    <div class="settings-group">
+                        <div class="settings-group-title">
+                            我的提示词库
+                            <button id="addNewPromptBtn" class="settings-test-btn" style="margin-left: 15px;">+ 新建提示词</button>
+                        </div>
+                        <div class="input-hint" style="margin-bottom: 15px;">
+                            在这里管理您的提示词模板，保存后可在翻译服务、AI视觉OCR、高质量翻译、AI校对等各处快速选用。
+                        </div>
+                        
+                        <!-- 提示词列表 -->
+                        <div id="promptLibraryList" class="prompt-library-list">
+                            <!-- 由JS动态填充 -->
+                            <div class="empty-prompt-hint">暂无保存的提示词，点击上方按钮创建</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 新建/编辑提示词区域 -->
+                    <div class="settings-group" id="promptEditArea" style="display: none;">
+                        <div class="settings-group-title" id="promptEditTitle">新建提示词</div>
+                        <div class="settings-item">
+                            <label for="promptLibraryName">提示词名称:</label>
+                            <input type="text" id="promptLibraryName" placeholder="给这个提示词起个名字" maxlength="50">
+                        </div>
+                        <div class="settings-item">
+                            <label for="promptLibraryContent">提示词内容:</label>
+                            <textarea id="promptLibraryContent" rows="8" placeholder="在这里输入提示词内容..."></textarea>
+                        </div>
+                        <div class="prompt-edit-actions">
+                            <button id="cancelPromptEditBtn" class="settings-cancel-btn">取消</button>
+                            <button id="savePromptToLibraryBtn" class="settings-save-btn">保存提示词</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 底部按钮 -->
+            <div class="settings-modal-footer">
+                <button class="settings-cancel-btn" id="settingsCancelBtn">取消</button>
+                <button class="settings-save-btn" id="settingsSaveBtn">保存设置</button>
+            </div>
+        </div>
+    </div>
+    <!-- === 设置模态框结束 === -->
+
+    <!-- 使用 url_for 加载 JS 模块 -->
+    <script src="{{ url_for('static', filename='js/main.js') }}" type="module"></script>
+
+</body>
+</html>

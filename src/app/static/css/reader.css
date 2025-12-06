@@ -1,0 +1,626 @@
+/* 阅读页面样式 */
+
+/* ==================== 全局样式 ==================== */
+body {
+    margin: 0;
+    padding: 0;
+    background: var(--reader-bg, #1a1a2e);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* ==================== 头部样式 ==================== */
+.reader-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.header-left,
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.header-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.header-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.header-btn.primary {
+    background: rgba(255, 255, 255, 0.9);
+    color: #667eea;
+}
+
+.header-btn.primary:hover {
+    background: white;
+}
+
+.btn-icon {
+    font-size: 16px;
+}
+
+.book-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+    font-size: 14px;
+}
+
+.book-title {
+    font-weight: 600;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.separator {
+    opacity: 0.6;
+}
+
+.chapter-title {
+    opacity: 0.9;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.page-info {
+    color: white;
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* 查看模式切换 */
+.view-mode-toggle {
+    display: flex;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.mode-btn {
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mode-btn:hover {
+    color: white;
+}
+
+.mode-btn.active {
+    background: rgba(255, 255, 255, 0.9);
+    color: #667eea;
+    font-weight: 500;
+}
+
+/* ==================== 主内容区 ==================== */
+.reader-main {
+    padding-top: 56px;
+    min-height: calc(100vh - 56px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* 加载状态 */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 56px);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-state p {
+    margin-top: 16px;
+    font-size: 14px;
+}
+
+/* 空状态 */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 56px);
+    color: rgba(255, 255, 255, 0.7);
+    text-align: center;
+    padding: 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h2 {
+    margin: 0 0 8px 0;
+    color: white;
+    font-weight: 500;
+}
+
+.empty-state p {
+    margin: 0 0 24px 0;
+    font-size: 14px;
+}
+
+/* 图片容器 */
+.images-container {
+    width: 100%;
+    max-width: var(--reader-max-width, 100%);
+    padding: 16px 0 80px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--reader-gap, 8px);
+}
+
+.reader-image-wrapper {
+    width: var(--reader-image-width, 100%);
+    max-width: 1200px;
+    position: relative;
+}
+
+.reader-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.reader-image.loading {
+    min-height: 300px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-index {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.reader-image-wrapper:hover .image-index {
+    opacity: 1;
+}
+
+/* ==================== 章节导航 ==================== */
+.chapter-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(to top, rgba(26, 26, 46, 0.95), rgba(26, 26, 46, 0.8));
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 0 16px;
+}
+
+.nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.nav-icon {
+    font-size: 12px;
+}
+
+/* ==================== 回到顶部按钮 ==================== */
+.scroll-top-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 80px;
+    width: 48px;
+    height: 48px;
+    background: var(--primary-color, #667eea);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    transition: all 0.3s;
+    z-index: 100;
+}
+
+.scroll-top-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+}
+
+/* ==================== 设置面板 ==================== */
+.settings-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+    display: none;
+}
+
+.settings-panel.active {
+    display: block;
+}
+
+.settings-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.settings-content {
+    position: absolute;
+    top: 56px;
+    right: 16px;
+    width: 300px;
+    background: var(--card-bg, #2d2d44);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.close-btn {
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.settings-body {
+    padding: 16px;
+}
+
+.setting-item {
+    margin-bottom: 20px;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.setting-item label {
+    display: block;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.setting-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.setting-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    outline: none;
+}
+
+.setting-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #667eea;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.setting-control span {
+    color: white;
+    font-size: 13px;
+    min-width: 45px;
+    text-align: right;
+}
+
+.bg-options {
+    display: flex;
+    gap: 8px;
+}
+
+.bg-option {
+    width: 32px;
+    height: 32px;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.bg-option:hover {
+    transform: scale(1.1);
+}
+
+.bg-option.active {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+
+/* ==================== Toast 通知 ==================== */
+.toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    padding: 12px 24px;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 99999; /* 最高层级，确保在编辑模式等所有元素之上 */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.toast.success {
+    background: rgba(82, 196, 26, 0.85);
+}
+
+.toast.error {
+    background: rgba(255, 77, 79, 0.85);
+}
+
+.toast.info {
+    background: rgba(24, 144, 255, 0.85);
+}
+
+.toast.warning {
+    background: rgba(250, 173, 20, 0.85);
+}
+
+/* ==================== 按钮样式 ==================== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* ==================== 响应式设计 ==================== */
+@media (max-width: 768px) {
+    .header-btn .btn-text {
+        display: none;
+    }
+    
+    .book-title {
+        max-width: 120px;
+    }
+    
+    .chapter-title {
+        max-width: 80px;
+    }
+    
+    .header-center {
+        display: none;
+    }
+    
+    .mode-btn {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+    
+    .settings-content {
+        right: 8px;
+        left: 8px;
+        width: auto;
+    }
+    
+    .nav-btn {
+        padding: 10px 16px;
+        font-size: 13px;
+    }
+    
+    .scroll-top-btn {
+        right: 16px;
+        bottom: 72px;
+        width: 40px;
+        height: 40px;
+    }
+}
+
+@media (max-width: 480px) {
+    .reader-header {
+        padding: 0 8px;
+    }
+    
+    .book-info {
+        display: none;
+    }
+    
+    .view-mode-toggle {
+        gap: 0;
+    }
+}
+
+/* ==================== 暗色模式适配 ==================== */
+[data-theme="light"] body {
+    --reader-bg: #f5f5f5;
+}
+
+[data-theme="light"] .loading-state,
+[data-theme="light"] .empty-state {
+    color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .empty-state h2 {
+    color: #333;
+}
+
+[data-theme="light"] .chapter-nav {
+    background: linear-gradient(to top, rgba(245, 245, 245, 0.95), rgba(245, 245, 245, 0.8));
+}
+
+[data-theme="light"] .nav-btn {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+[data-theme="light"] .nav-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .settings-content {
+    background: white;
+}
+
+[data-theme="light"] .settings-header {
+    border-bottom-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .settings-header h3 {
+    color: #333;
+}
+
+[data-theme="light"] .close-btn {
+    background: rgba(0, 0, 0, 0.05);
+    color: #333;
+}
+
+[data-theme="light"] .setting-item label {
+    color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .setting-control span {
+    color: #333;
+}
+

@@ -1,0 +1,49 @@
+# ============================================
+# Saber-Translator 依赖文件 (GPU 版本 - CUDA 13.0)
+# ============================================
+# 安装命令:
+# 1. 先安装非 PyTorch 依赖:
+#    pip install -r requirements-gpu.txt
+# 
+# 2. 然后单独安装 GPU 版 PyTorch:
+#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# ============================================
+
+# Flask 相关
+flask
+flask-cors
+
+# 基础工具
+pyyaml
+pillow
+opencv-python
+requests
+networkx
+shapely
+pyclipper
+pandas
+
+# AI/OCR 相关
+openai
+manga-ocr
+# 注意: rapidocr 需要 onnxruntime-gpu，安装顺序很重要
+# 先装 onnxruntime-gpu，再用 --no-deps 装 rapidocr
+# pip install onnxruntime-gpu
+# pip install rapidocr-onnxruntime --no-deps
+rapidocr-onnxruntime
+onnxruntime-gpu
+
+# 深度学习 (不包含 torch/torchvision，需单独安装 GPU 版本)
+# torch        # 请使用上述命令单独安装 GPU 版本
+# torchvision  # 请使用上述命令单独安装 GPU 版本
+einops
+ultralytics
+seaborn
+litelama
+
+# 其他
+PyPDF2
+dill
+
+# 打包
+pyinstaller

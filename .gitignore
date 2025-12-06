@@ -1,0 +1,68 @@
+# ============================================
+# Saber-Translator .gitignore
+# ============================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- 虚拟环境 ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# --- 日志 ---
+logs/
+*.log
+
+# --- 模型文件 ---
+models/
+
+# --- 用户数据 ---
+data/
+
+# --- 配置文件 ---
+config/
+
+# --- PyInstaller ---
+*.manifest
+*.exe
+
+# --- 临时文件 ---
+*.tmp
+*.bak
+*.cache
+Thumbs.db
+.DS_Store
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints/

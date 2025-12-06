@@ -1,0 +1,40 @@
+# ============================================
+# Saber-Translator 依赖文件 (CPU 版本)
+# ============================================
+# 安装命令:
+# pip install -r requirements-cpu.txt
+# ============================================
+
+# Flask 相关
+flask
+flask-cors
+
+# 基础工具
+pyyaml
+pillow
+opencv-python
+requests
+networkx
+shapely
+pyclipper
+pandas
+
+# AI/OCR 相关
+openai
+manga-ocr
+rapidocr-onnxruntime
+
+# 深度学习 (CPU 版本)
+torch
+torchvision
+einops
+ultralytics
+seaborn
+litelama
+
+# 其他
+PyPDF2
+dill
+
+# 打包
+pyinstaller

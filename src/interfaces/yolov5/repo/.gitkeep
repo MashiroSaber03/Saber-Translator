@@ -1,0 +1,5 @@
+# 请将 ultralytics_yolov5_master 的内容复制到此目录
+# 
+# 步骤：
+# 1. 复制 老版本/ultralytics_yolov5_master/ 中的所有文件到这里
+# 2. 确保 hubconf.py 在这个目录下
