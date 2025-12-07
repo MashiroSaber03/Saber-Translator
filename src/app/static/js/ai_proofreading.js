@@ -655,12 +655,19 @@ async function importProofreadingResult(importedData) {
                         const newStates = [];
                         for (let i = 0; i < image.bubbleCoords.length; i++) {
                             const bubbleTextDirection = (i === bubbleIndex) ? textDirection : currentTextDirection;
+                            // 计算自动排版方向
+                            let autoDir = bubbleTextDirection;
+                            if (image.bubbleCoords[i] && image.bubbleCoords[i].length >= 4) {
+                                const [x1, y1, x2, y2] = image.bubbleCoords[i];
+                                autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+                            }
                             newStates.push({
                                 translatedText: image.bubbleTexts[i] || "",
                                 fontSize: currentFontSize,
                                 autoFontSize: currentAutoFontSize,
                                 fontFamily: currentFontFamily,
                                 textDirection: bubbleTextDirection,
+                                autoTextDirection: autoDir,  // 自动检测的排版方向
                                 position: { x: 0, y: 0 },
                                 textColor: currentTextColor,
                                 rotationAngle: detectedAngles[i] || currentRotationAngle,
@@ -675,12 +682,19 @@ async function importProofreadingResult(importedData) {
                         // 更新现有bubbleStates中的textDirection，保持其他设置不变
                         if (!image.bubbleStates[bubbleIndex]) {
                             const bubbleDetectedAngle = (image.bubbleAngles && image.bubbleAngles[bubbleIndex]) || currentRotationAngle;
+                            // 计算自动排版方向
+                            let autoDir = textDirection;
+                            if (image.bubbleCoords[bubbleIndex] && image.bubbleCoords[bubbleIndex].length >= 4) {
+                                const [x1, y1, x2, y2] = image.bubbleCoords[bubbleIndex];
+                                autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+                            }
                             image.bubbleStates[bubbleIndex] = {
                                 translatedText: image.bubbleTexts[bubbleIndex] || "",
                                 fontSize: currentFontSize,
                                 autoFontSize: currentAutoFontSize,
                                 fontFamily: currentFontFamily,
                                 textDirection: textDirection,
+                                autoTextDirection: autoDir,  // 自动检测的排版方向
                                 position: { x: 0, y: 0 },
                                 textColor: currentTextColor,
                                 rotationAngle: bubbleDetectedAngle,

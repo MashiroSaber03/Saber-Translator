@@ -253,50 +253,30 @@ def process_image_translation(
                     raw_text_mask = None
         else:
             # 自动检测逻辑
+            # 【重要】始终使用 get_bubble_detection_result_with_auto_directions 获取 auto_directions
+            # 这样无论用户是否选择自动排版，都会保存检测到的排版方向到 auto_text_direction 字段
             logger.info(f"步骤 1: 检测气泡坐标 (检测器: {detector_type}, 自动排版: {auto_text_direction})...")
             start_time = time.time()
             
-            if auto_text_direction:
-                # 自动排版模式：使用增强检测函数获取每个气泡的方向
-                detection_result = get_bubble_detection_result_with_auto_directions(
-                    image_pil, 
-                    conf_threshold=yolo_conf_threshold, 
-                    detector_type=detector_type,
-                    expand_ratio=box_expand_ratio,
-                    expand_top=box_expand_top,
-                    expand_bottom=box_expand_bottom,
-                    expand_left=box_expand_left,
-                    expand_right=box_expand_right
-                )
-                bubble_coords = detection_result.get('coords', [])
-                bubble_angles = detection_result.get('angles', [])
-                bubble_polygons = detection_result.get('polygons', [])
-                auto_directions = detection_result.get('auto_directions', [])
-                textlines_per_bubble = detection_result.get('textlines_per_bubble', [])
-                raw_text_mask = detection_result.get('raw_mask')  # 获取精确文字掩膜
-                raw_lines = detection_result.get('raw_lines', [])  # 获取原始文本行（debug用）
-                logger.info(f"自动排版检测完成: {auto_directions}")
-            else:
-                # 普通模式：使用原有检测函数
-                from src.core.detection import get_bubble_detection_result
-                detection_result = get_bubble_detection_result(
-                    image_pil, 
-                    conf_threshold=yolo_conf_threshold, 
-                    detector_type=detector_type,
-                    expand_ratio=box_expand_ratio,
-                    expand_top=box_expand_top,
-                    expand_bottom=box_expand_bottom,
-                    expand_left=box_expand_left,
-                    expand_right=box_expand_right
-                )
-                bubble_coords = detection_result.get('coords', [])
-                bubble_angles = detection_result.get('angles', [])
-                bubble_polygons = detection_result.get('polygons', [])
-                raw_text_mask = detection_result.get('raw_mask')  # 获取精确文字掩膜
-                raw_lines = detection_result.get('raw_lines', [])  # 获取原始文本行（debug用）
-                # 普通模式下，所有气泡使用全局 text_direction
-                auto_directions = []
-                textlines_per_bubble = []
+            # 始终使用增强检测函数获取每个气泡的自动方向
+            detection_result = get_bubble_detection_result_with_auto_directions(
+                image_pil, 
+                conf_threshold=yolo_conf_threshold, 
+                detector_type=detector_type,
+                expand_ratio=box_expand_ratio,
+                expand_top=box_expand_top,
+                expand_bottom=box_expand_bottom,
+                expand_left=box_expand_left,
+                expand_right=box_expand_right
+            )
+            bubble_coords = detection_result.get('coords', [])
+            bubble_angles = detection_result.get('angles', [])
+            bubble_polygons = detection_result.get('polygons', [])
+            auto_directions = detection_result.get('auto_directions', [])
+            textlines_per_bubble = detection_result.get('textlines_per_bubble', [])
+            raw_text_mask = detection_result.get('raw_mask')  # 获取精确文字掩膜
+            raw_lines = detection_result.get('raw_lines', [])  # 获取原始文本行（debug用）
+            logger.info(f"自动排版检测完成: {auto_directions}")
             
             logger.info(f"气泡检测完成，找到 {len(bubble_coords)} 个气泡 (耗时: {time.time() - start_time:.2f}s)")
         # ------------------------------------
@@ -546,19 +526,28 @@ def process_image_translation(
             # 使用检测到的角度（如果有），否则使用全局旋转角度
             detected_angle = bubble_angles[i] if i < len(bubble_angles) else rotation_angle
             
-            # 确定排版方向：自动排版模式使用检测结果，否则使用全局设置
-            if auto_text_direction and i < len(auto_directions):
-                bubble_direction = 'vertical' if auto_directions[i] == 'v' else 'horizontal'
+            # 获取坐标信息
+            x1, y1, x2, y2 = bubble_coords[i]
+            bubble_width = x2 - x1
+            bubble_height = y2 - y1
+            
+            # 【重要】始终计算自动检测的排版方向（保存到 auto_text_direction）
+            if i < len(auto_directions):
+                auto_bubble_direction = 'vertical' if auto_directions[i] == 'v' else 'horizontal'
+            else:
+                # 没有自动检测结果时，根据宽高比判断
+                auto_bubble_direction = 'vertical' if bubble_height > bubble_width else 'horizontal'
+            
+            # 确定实际使用的排版方向：自动排版模式使用检测结果，否则使用全局设置
+            if auto_text_direction:
+                bubble_direction = auto_bubble_direction
             else:
                 bubble_direction = text_direction
             
             # 获取多边形信息
             polygon = bubble_polygons[i] if i < len(bubble_polygons) else []
             
-            # 计算字号：如果用户选择了自动字号，则计算最佳字号；否则使用全局设置
-            x1, y1, x2, y2 = bubble_coords[i]
-            bubble_width = x2 - x1
-            bubble_height = y2 - y1
+            # 计算字号
             text_to_render = translated_bubble_texts[i] if i < len(translated_bubble_texts) else ""
             
             if is_auto_font_size_global and text_to_render:
@@ -583,6 +572,7 @@ def process_image_translation(
                 font_size=bubble_font_size,  # 使用计算后的字号
                 font_family=font_family_rel,
                 text_direction=bubble_direction,
+                auto_text_direction=auto_bubble_direction,  # 始终保存自动检测的方向
                 text_color=text_color,
                 fill_color=fill_color,
                 rotation_angle=detected_angle,

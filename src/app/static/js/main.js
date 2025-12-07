@@ -544,7 +544,8 @@ export function switchImage(index) {
             fontSelect.val(state.defaultFontFamily);
         }
         
-        $('#layoutDirection').val(s.textDirection || state.defaultLayoutDirection);
+        // 【重要】优先使用图片保存的用户选择（包括 'auto'），否则使用气泡状态的方向
+        $('#layoutDirection').val(imageData.userLayoutDirection || s.textDirection || state.defaultLayoutDirection);
         $('#textColor').val(s.textColor || state.defaultTextColor);
         $('#fillColor').val(s.fillColor || state.defaultFillColor);
         
@@ -740,6 +741,9 @@ export function translateCurrentImage() {
                 });
                 state.updateCurrentImageProperty('bubbleStates', bubbleStates);
                 state.updateCurrentImageProperty('bubbleTexts', bubbleStates.map(s => s.translatedText || ""));
+                
+                // 【重要】保存用户选择的排版方向（包括 'auto'），以便切换图片时恢复
+                state.updateCurrentImageProperty('userLayoutDirection', $('#layoutDirection').val());
 
                 // 如果使用了已有坐标，保留状态
                 if (usedExistingCoords) {
@@ -1022,6 +1026,9 @@ export function translateAllImages() {
                 });
                 state.updateImagePropertyByIndex(currentIndex, 'bubbleStates', batchBubbleStates);
                 state.updateImagePropertyByIndex(currentIndex, 'bubbleTexts', batchBubbleStates.map(s => s.translatedText || ""));
+                
+                // 【重要】保存用户选择的排版方向（包括 'auto'）
+                state.updateImagePropertyByIndex(currentIndex, 'userLayoutDirection', layoutDirectionValue);
 
                 if (usedExistingCoordsThisImage) {
                     state.updateImagePropertyByIndex(currentIndex, 'hasUnsavedChanges', false);
@@ -1489,6 +1496,9 @@ export function removeBubbleTextOnly() {
                 currentImage.bubbleStates = bubbleStates;
                 currentImage.bubbleTexts = bubbleStates.map(s => s.translatedText || "");
                 
+                // 【重要】保存用户选择的排版方向（包括 'auto'）
+                currentImage.userLayoutDirection = layoutDir;
+                
                 if (usedExistingCoords) {
                     ui.renderThumbnails();
                 }
@@ -1716,6 +1726,9 @@ export function removeAllBubblesText() {
                 });
                 state.updateImagePropertyByIndex(currentIndex, 'bubbleStates', removeBubbleStates);
                 state.updateImagePropertyByIndex(currentIndex, 'bubbleTexts', removeBubbleStates.map(s => s.translatedText || ""));
+                
+                // 【重要】保存用户选择的排版方向（包括 'auto'）
+                state.updateImagePropertyByIndex(currentIndex, 'userLayoutDirection', layoutDirectionValue);
 
                 if (usedExistingCoordsThisImage) {
                     state.updateImagePropertyByIndex(currentIndex, 'hasUnsavedChanges', false);
@@ -1922,11 +1935,18 @@ export function importText(jsonFile) {
                     if (!image.bubbleStates[bubbleIndex]) {
                         // 优先使用检测到的角度
                         const detectedAngle = (image.bubbleAngles && image.bubbleAngles[bubbleIndex]) || currentRotationAngle;
+                        // 计算自动排版方向
+                        let autoDir = textDirection;
+                        if (image.bubbleCoords && image.bubbleCoords[bubbleIndex] && image.bubbleCoords[bubbleIndex].length >= 4) {
+                            const [x1, y1, x2, y2] = image.bubbleCoords[bubbleIndex];
+                            autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+                        }
                         image.bubbleStates[bubbleIndex] = {
                             translatedText: translated || "",
                             fontSize: currentFontSize,
                             fontFamily: currentFontFamily,
                             textDirection: textDirection,
+                            autoTextDirection: autoDir,  // 自动检测的排版方向
                             textColor: currentTextColor,
                             fillColor: currentFillColor,
                             rotationAngle: detectedAngle

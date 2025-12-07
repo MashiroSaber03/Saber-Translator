@@ -40,6 +40,7 @@ class BubbleState:
     font_size: int = constants.DEFAULT_FONT_SIZE
     font_family: str = constants.DEFAULT_FONT_RELATIVE_PATH
     text_direction: str = constants.DEFAULT_TEXT_DIRECTION  # "vertical" | "horizontal"
+    auto_text_direction: str = constants.DEFAULT_TEXT_DIRECTION  # 自动检测的排版方向（始终在检测时计算，不受用户选择影响）
     text_color: str = constants.DEFAULT_TEXT_COLOR
     fill_color: str = constants.DEFAULT_FILL_COLOR       # 单个气泡的填充色
     rotation_angle: float = constants.DEFAULT_ROTATION_ANGLE  # 旋转角度（度）
@@ -70,6 +71,7 @@ class BubbleState:
             "fontSize": self.font_size,
             "fontFamily": self.font_family,
             "textDirection": self.text_direction,
+            "autoTextDirection": self.auto_text_direction,  # 自动检测的排版方向
             "textColor": self.text_color,
             "fillColor": self.fill_color,
             "rotationAngle": self.rotation_angle,
@@ -125,6 +127,8 @@ class BubbleState:
             "fontFamily": "font_family",
             "textDirection": "text_direction",
             "text_direction": "text_direction",  # 兼容后端命名
+            "autoTextDirection": "auto_text_direction",  # 自动检测的排版方向
+            "auto_text_direction": "auto_text_direction",  # 兼容后端命名
             "textColor": "text_color",
             "text_color": "text_color",  # 兼容后端命名
             "fillColor": "fill_color",
@@ -208,11 +212,16 @@ def create_bubble_states_from_response(
     """
     states = []
     for i in range(len(bubble_coords)):
-        # 确定排版方向
+        # 确定自动检测的排版方向（始终计算并保存）
         if auto_directions and i < len(auto_directions):
-            direction = "vertical" if auto_directions[i] == "v" else "horizontal"
+            auto_direction = "vertical" if auto_directions[i] == "v" else "horizontal"
         else:
-            direction = global_config.text_direction
+            # 没有自动检测结果时，根据宽高比判断
+            x1, y1, x2, y2 = bubble_coords[i]
+            auto_direction = "vertical" if (y2 - y1) > (x2 - x1) else "horizontal"
+        
+        # 实际使用的排版方向：跟随全局设置（用户选择）
+        direction = global_config.text_direction
         
         # 确定旋转角度
         angle = bubble_angles[i] if i < len(bubble_angles) else global_config.rotation_angle
@@ -224,6 +233,7 @@ def create_bubble_states_from_response(
             font_size=global_config.font_size,
             font_family=global_config.font_family,
             text_direction=direction,
+            auto_text_direction=auto_direction,  # 保存自动检测的方向
             text_color=global_config.text_color,
             rotation_angle=angle,
             stroke_enabled=global_config.stroke_enabled,

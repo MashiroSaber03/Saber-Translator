@@ -502,9 +502,17 @@ function handleGlobalSettingChange(e) {
     
     const stateProperty = propertyMap[settingId];
     if (stateProperty) {
-        bubbleStates.forEach(bs => {
-            bs[stateProperty] = newValue;
-        });
+        // 【重要】特殊处理 layoutDirection
+        // 当用户选择 'auto' 时，不修改 textDirection（保持原值）
+        // reRenderFullImage 会根据 autoTextDirection 来决定实际渲染方向
+        if (settingId === 'layoutDirection' && newValue === 'auto') {
+            console.log("排版方向设置为 'auto'，不修改气泡的 textDirection，使用 autoTextDirection 渲染");
+            // 不修改 textDirection，让 reRenderFullImage 使用 autoTextDirection
+        } else {
+            bubbleStates.forEach(bs => {
+                bs[stateProperty] = newValue;
+            });
+        }
     }
 
     // 5. 保存更新后的状态

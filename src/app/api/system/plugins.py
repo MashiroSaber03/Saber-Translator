@@ -226,7 +226,9 @@ def detect_boxes_api():
 
     try:
         img_pil = base64_to_image(image_data)
-        detection_result = get_bubble_detection_result(
+        # 【重要】始终使用带自动方向检测的函数，确保返回 auto_directions
+        from src.core.detection import get_bubble_detection_result_with_auto_directions
+        detection_result = get_bubble_detection_result_with_auto_directions(
             img_pil, 
             conf_threshold=conf_threshold, 
             detector_type=detector_type,
@@ -238,8 +240,14 @@ def detect_boxes_api():
         )
         coords = detection_result.get('coords', [])
         angles = detection_result.get('angles', [])
-        logger.info(f"检测完成 (检测器: {detector_type})，找到 {len(coords)} 个气泡")
-        return jsonify({'success': True, 'bubble_coords': coords, 'bubble_angles': angles})
+        auto_directions = detection_result.get('auto_directions', [])
+        logger.info(f"检测完成 (检测器: {detector_type})，找到 {len(coords)} 个气泡，自动方向: {auto_directions}")
+        return jsonify({
+            'success': True, 
+            'bubble_coords': coords, 
+            'bubble_angles': angles,
+            'auto_directions': auto_directions  # 返回自动检测的排版方向
+        })
     except Exception as e:
         logger.error(f"仅检测坐标时出错 (检测器: {detector_type}): {e}", exc_info=True)
         return jsonify({'success': False, 'error': f'检测坐标失败: {str(e)}'}), 500

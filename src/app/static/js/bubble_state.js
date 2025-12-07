@@ -28,6 +28,7 @@ export function createBubbleState(overrides = {}) {
         fontSize: constants.DEFAULT_FONT_SIZE || 25,
         fontFamily: constants.DEFAULT_FONT_RELATIVE_PATH || "fonts/STSONG.TTF",
         textDirection: constants.DEFAULT_TEXT_DIRECTION || "vertical",
+        autoTextDirection: constants.DEFAULT_TEXT_DIRECTION || "vertical",  // 自动检测的排版方向
         textColor: constants.DEFAULT_TEXT_COLOR || "#000000",
         fillColor: constants.DEFAULT_FILL_COLOR || "#FFFFFF",
         rotationAngle: constants.DEFAULT_ROTATION_ANGLE || 0,
@@ -82,23 +83,33 @@ export function createBubbleStatesFromResponse(response, globalDefaults = {}) {
     }
     
     // 否则从分散的数据创建
-    return bubble_coords.map((coords, i) => createBubbleState({
-        coords: coords,
-        originalText: original_texts[i] || "",
-        translatedText: bubble_texts[i] || "",
-        textboxText: textbox_texts[i] || "",
-        rotationAngle: bubble_angles[i] || 0,
-        // 应用全局默认值
-        fontSize: globalDefaults.fontSize || constants.DEFAULT_FONT_SIZE,
-        fontFamily: globalDefaults.fontFamily || constants.DEFAULT_FONT_RELATIVE_PATH,
-        textDirection: globalDefaults.textDirection || constants.DEFAULT_TEXT_DIRECTION,
-        textColor: globalDefaults.textColor || constants.DEFAULT_TEXT_COLOR,
-        fillColor: globalDefaults.fillColor || constants.DEFAULT_FILL_COLOR,
-        inpaintMethod: globalDefaults.inpaintMethod || 'solid',
-        strokeEnabled: globalDefaults.strokeEnabled !== undefined ? globalDefaults.strokeEnabled : constants.DEFAULT_STROKE_ENABLED,
-        strokeColor: globalDefaults.strokeColor || constants.DEFAULT_STROKE_COLOR,
-        strokeWidth: globalDefaults.strokeWidth || constants.DEFAULT_STROKE_WIDTH,
-    }));
+    return bubble_coords.map((coords, i) => {
+        // 【重要】如果没有后端返回的 autoTextDirection，根据宽高比计算
+        let autoDir = globalDefaults.textDirection || constants.DEFAULT_TEXT_DIRECTION;
+        if (coords && coords.length >= 4) {
+            const [x1, y1, x2, y2] = coords;
+            autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+        }
+        
+        return createBubbleState({
+            coords: coords,
+            originalText: original_texts[i] || "",
+            translatedText: bubble_texts[i] || "",
+            textboxText: textbox_texts[i] || "",
+            rotationAngle: bubble_angles[i] || 0,
+            // 应用全局默认值
+            fontSize: globalDefaults.fontSize || constants.DEFAULT_FONT_SIZE,
+            fontFamily: globalDefaults.fontFamily || constants.DEFAULT_FONT_RELATIVE_PATH,
+            textDirection: globalDefaults.textDirection || constants.DEFAULT_TEXT_DIRECTION,
+            autoTextDirection: autoDir,  // 自动计算的排版方向
+            textColor: globalDefaults.textColor || constants.DEFAULT_TEXT_COLOR,
+            fillColor: globalDefaults.fillColor || constants.DEFAULT_FILL_COLOR,
+            inpaintMethod: globalDefaults.inpaintMethod || 'solid',
+            strokeEnabled: globalDefaults.strokeEnabled !== undefined ? globalDefaults.strokeEnabled : constants.DEFAULT_STROKE_ENABLED,
+            strokeColor: globalDefaults.strokeColor || constants.DEFAULT_STROKE_COLOR,
+            strokeWidth: globalDefaults.strokeWidth || constants.DEFAULT_STROKE_WIDTH,
+        });
+    });
 }
 
 /**

@@ -124,8 +124,9 @@ export function toggleEditMode() {
 /**
  * 初始化或加载当前图片的气泡状态
  * 简化版：直接从 currentImage.bubbleStates 加载，如果不存在则创建默认状态
+ * @param {Array} autoDirections - 可选，自动检测的排版方向数组 ('v' 或 'h')
  */
-export function initBubbleStates() {
+export function initBubbleStates(autoDirections = null) {
     const currentImage = state.getCurrentImage();
     if (!currentImage) {
         console.warn("无法初始化气泡状态：无有效图像");
@@ -150,15 +151,29 @@ export function initBubbleStates() {
     // 否则创建默认状态
     console.log("创建新的默认气泡状态");
     const defaults = getDefaultBubbleSettings();
-    const newStates = currentImage.bubbleCoords.map((coords, i) => 
-        bubbleStateModule.createBubbleState({
+    const newStates = currentImage.bubbleCoords.map((coords, i) => {
+        // 【重要】计算每个气泡的自动排版方向
+        let autoDir;
+        if (autoDirections && i < autoDirections.length) {
+            autoDir = autoDirections[i] === 'v' ? 'vertical' : 'horizontal';
+        } else {
+            // 没有自动检测结果时，根据宽高比判断
+            const [x1, y1, x2, y2] = coords;
+            autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+        }
+        
+        return bubbleStateModule.createBubbleState({
             translatedText: currentImage.bubbleTexts?.[i] || "",
             coords: coords,
             ...defaults,
+            autoTextDirection: autoDir,  // 保存自动检测的方向
             rotationAngle: currentImage.bubbleAngles?.[i] || 0
-        })
-    );
+        });
+    });
     state.setBubbleStates(newStates);
+    
+    // 同时保存到图片对象
+    currentImage.bubbleStates = JSON.parse(JSON.stringify(newStates));
 }
 
 /**
@@ -341,14 +356,39 @@ export function reRenderFullImage(fromAutoToManual = false, silentMode = false, 
         }
 
         // 直接从 bubbleStates 构建 API 请求数据，不需要中间转换
-        const ensureValidDirection = (dir) => (dir && dir !== 'auto') ? dir : 'vertical';
+        const layoutDir = $('#layoutDirection').val();
+        const isAutoLayout = layoutDir === 'auto';
+        
+        // 【重要】当用户选择 'auto' 时，使用每个气泡的 autoTextDirection
+        // 否则使用用户选择的全局方向
+        const getEffectiveDirection = (s, index) => {
+            if (isAutoLayout) {
+                // 自动模式：优先使用气泡自己检测到的方向
+                // 回退逻辑：autoTextDirection → textDirection → 根据宽高比计算 → 默认 'vertical'
+                if (s.autoTextDirection && s.autoTextDirection !== '') {
+                    return s.autoTextDirection;
+                }
+                if (s.textDirection && s.textDirection !== '' && s.textDirection !== 'auto') {
+                    return s.textDirection;
+                }
+                // 最后根据坐标宽高比计算
+                if (currentImage.bubbleCoords && currentImage.bubbleCoords[index]) {
+                    const [x1, y1, x2, y2] = currentImage.bubbleCoords[index];
+                    return (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+                }
+                return 'vertical';
+            } else {
+                // 手动模式：使用用户选择的全局方向
+                return layoutDir;
+            }
+        };
         
         const bubbleStatesForApi = bubbleStates.map((s, i) => ({
             translatedText: s.translatedText || s.text || "",
             coords: currentImage.bubbleCoords[i],
             fontSize: s.fontSize || state.defaultFontSize,
             fontFamily: s.fontFamily || state.defaultFontFamily,
-            textDirection: ensureValidDirection(s.textDirection),
+            textDirection: getEffectiveDirection(s, i),  // 传入索引以支持宽高比回退计算
             textColor: s.textColor || state.defaultTextColor,
             rotationAngle: s.rotationAngle || 0,
             position: s.position || { x: 0, y: 0 },
@@ -358,7 +398,6 @@ export function reRenderFullImage(fromAutoToManual = false, silentMode = false, 
         }));
 
         const currentTexts = bubbleStatesForApi.map(s => s.translatedText);
-        const layoutDir = $('#layoutDirection').val();
 
         const data = {
             clean_image: preFilledBackgroundBase64,
@@ -2837,11 +2876,18 @@ function syncBubbleArraysLength(currentImage) {
     while (state.bubbleStates.length < targetLen) {
         const idx = state.bubbleStates.length;
         const detectedAngle = (currentImage.bubbleAngles && currentImage.bubbleAngles[idx]) || 0;
+        // 计算自动排版方向
+        let autoDir = 'vertical';
+        if (currentImage.bubbleCoords && currentImage.bubbleCoords[idx] && currentImage.bubbleCoords[idx].length >= 4) {
+            const [x1, y1, x2, y2] = currentImage.bubbleCoords[idx];
+            autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+        }
         state.bubbleStates.push({
             translatedText: '',
             fontSize: state.defaultFontSize || 24,
             fontFamily: state.defaultFontFamily,
             textDirection: 'vertical',
+            autoTextDirection: autoDir,  // 自动检测的排版方向
             position: { x: 0, y: 0 },
             textColor: state.defaultTextColor,
             rotationAngle: detectedAngle,
@@ -2880,11 +2926,15 @@ function addNewBubble(coords) {
     // 处理自动排版：如果选择"auto"，回退到默认的 'vertical'
     const newBubbleLayoutDirection = $('#layoutDirection').val();
     const newBubbleTextDirection = newBubbleLayoutDirection === 'auto' ? 'vertical' : (newBubbleLayoutDirection || 'vertical');
+    // 根据坐标计算自动排版方向
+    const [x1, y1, x2, y2] = coords;
+    const autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
     const newSetting = {
         translatedText: '',
         fontSize: parseInt($('#fontSize').val()) || 24,
         fontFamily: $('#fontFamily').val() || state.defaultFontFamily,
         textDirection: newBubbleTextDirection,
+        autoTextDirection: autoDir,  // 根据宽高比计算的自动方向
         position: { x: 0, y: 0 },
         textColor: $('#textColor').val() || state.defaultTextColor,
         rotationAngle: 0,
@@ -4194,6 +4244,9 @@ export async function autoDetectBubbles() {
             currentImage.bubbleCoords = response.bubble_coords;
             currentImage.bubbleAngles = response.bubble_angles || [];
             
+            // 【重要】保存自动检测的排版方向
+            const autoDirections = response.auto_directions || [];
+            
             // 初始化空的文本数组
             if (!currentImage.bubbleTexts) currentImage.bubbleTexts = [];
             if (!currentImage.originalTexts) currentImage.originalTexts = [];
@@ -4206,8 +4259,8 @@ export async function autoDetectBubbles() {
                 currentImage.originalTexts.push('');
             }
             
-            // 重新初始化气泡状态
-            initBubbleStates();
+            // 重新初始化气泡状态，并传入自动方向
+            initBubbleStates(autoDirections);
             
             // 更新高亮框显示
             updateBubbleHighlightsNew();
@@ -4335,6 +4388,9 @@ export async function detectAllImages() {
                 image.bubbleCoords = response.bubble_coords;
                 image.bubbleAngles = response.bubble_angles || [];
                 
+                // 【重要】保存自动检测的排版方向
+                const autoDirections = response.auto_directions || [];
+                
                 // 初始化空的文本数组
                 if (!image.bubbleTexts) image.bubbleTexts = [];
                 if (!image.originalTexts) image.originalTexts = [];
@@ -4345,11 +4401,30 @@ export async function detectAllImages() {
                     image.originalTexts.push('');
                 }
                 
+                // 创建包含 autoTextDirection 的 bubbleStates
+                const defaults = getDefaultBubbleSettings();
+                image.bubbleStates = image.bubbleCoords.map((coords, i) => {
+                    let autoDir;
+                    if (autoDirections && i < autoDirections.length) {
+                        autoDir = autoDirections[i] === 'v' ? 'vertical' : 'horizontal';
+                    } else {
+                        const [x1, y1, x2, y2] = coords;
+                        autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
+                    }
+                    return bubbleStateModule.createBubbleState({
+                        translatedText: image.bubbleTexts[i] || "",
+                        coords: coords,
+                        ...defaults,
+                        autoTextDirection: autoDir,
+                        rotationAngle: image.bubbleAngles[i] || 0
+                    });
+                });
+                
                 totalDetected += response.bubble_coords.length;
                 
                 // 如果是当前图片，同时更新显示
                 if (index === state.currentImageIndex) {
-                    initBubbleStates();
+                    initBubbleStates(autoDirections);
                     updateBubbleHighlightsNew();
                     updateBubbleNavigator();
                 }
