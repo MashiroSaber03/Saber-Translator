@@ -119,7 +119,24 @@
                                 <input type="color" id="fillColor" value="#FFFFFF"><!-- 白色填充 -->
                             </div>
                         </div>
-                        <button id="applyFontSettingsToAllButton" type="button" class="settings-button">应用到全部图片</button>
+                        <div class="apply-settings-group">
+                            <button id="applyFontSettingsToAllButton" type="button" class="settings-button">应用到全部</button>
+                            <button id="applySettingsOptionsBtn" type="button" class="settings-gear-btn" title="选择要应用的参数">⚙️</button>
+                            <!-- 参数选择下拉面板 -->
+                            <div id="applySettingsDropdown" class="apply-settings-dropdown">
+                                <div class="dropdown-title">选择要应用的参数:</div>
+                                <label class="select-all-option"><input type="checkbox" id="apply_selectAll"> 全选</label>
+                                <div class="dropdown-divider"></div>
+                                <label><input type="checkbox" id="apply_fontSize"> 字号</label>
+                                <label><input type="checkbox" id="apply_fontFamily" checked> 字体</label>
+                                <label><input type="checkbox" id="apply_textDirection"> 排版方向</label>
+                                <label><input type="checkbox" id="apply_textColor" checked> 文字颜色</label>
+                                <label><input type="checkbox" id="apply_fillColor"> 填充颜色</label>
+                                <label><input type="checkbox" id="apply_strokeEnabled" checked> 描边开关</label>
+                                <label><input type="checkbox" id="apply_strokeColor" checked> 描边颜色</label>
+                                <label><input type="checkbox" id="apply_strokeWidth" checked> 描边宽度</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- OCR和检测器设置已移至顶部设置模态框，此处保留隐藏元素用于数据同步 -->

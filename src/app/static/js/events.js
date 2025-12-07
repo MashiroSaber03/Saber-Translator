@@ -45,6 +45,16 @@ export function bindEventListeners() {
     $("#deleteCurrentImageButton").on('click', handleDeleteCurrent);
     $("#clearAllImagesButton").on('click', handleClearAll);
     $("#applyFontSettingsToAllButton").on('click', handleApplySettingsToAll); // 应用设置到全部
+    $("#applySettingsOptionsBtn").on('click', handleToggleApplySettingsDropdown); // 齿轮按钮切换下拉菜单
+    $("#apply_selectAll").on('change', handleApplySelectAllToggle); // 全选切换
+    // 单个复选框变化时更新全选状态
+    $("#applySettingsDropdown input[type='checkbox']:not(#apply_selectAll)").on('change', updateSelectAllState);
+    // 点击外部关闭下拉菜单
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.apply-settings-group').length) {
+            $("#applySettingsDropdown").removeClass('show');
+        }
+    });
 
     // --- 导航与显示 ---
     $("#prevImageButton").on('click', handlePrevImage);
@@ -372,6 +382,23 @@ function handleApplySettingsToAll() {
     import('./main.js').then(main => main.applySettingsToAll());
 }
 
+function handleToggleApplySettingsDropdown(e) {
+    e.stopPropagation(); // 阻止冒泡，防止触发document点击关闭
+    $("#applySettingsDropdown").toggleClass('show');
+}
+
+function handleApplySelectAllToggle() {
+    const isChecked = $("#apply_selectAll").is(':checked');
+    // 设置所有参数复选框的状态
+    $("#applySettingsDropdown input[type='checkbox']:not(#apply_selectAll)").prop('checked', isChecked);
+}
+
+function updateSelectAllState() {
+    // 检查是否所有参数复选框都被选中
+    const allCheckboxes = $("#applySettingsDropdown input[type='checkbox']:not(#apply_selectAll)");
+    const allChecked = allCheckboxes.length === allCheckboxes.filter(':checked').length;
+    $("#apply_selectAll").prop('checked', allChecked);
+}
 
 function handlePrevImage() {
     if (state.currentImageIndex > 0) {

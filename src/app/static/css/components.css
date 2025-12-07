@@ -75,6 +75,105 @@
   cursor: not-allowed;
 }
 
+/* 应用设置按钮组 */
+.apply-settings-group {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 10px;
+  position: relative;
+}
+
+.apply-settings-group .settings-button {
+  flex: 1;
+  margin-top: 0 !important;
+  border-radius: 5px 0 0 5px !important;
+}
+
+.settings-gear-btn {
+  padding: 8px 12px;
+  background-color: #0056b3;
+  color: white;
+  border: none;
+  border-left: 1px solid rgba(255,255,255,0.3);
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-gear-btn:hover {
+  background-color: #004494;
+}
+
+.settings-gear-btn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* 参数选择下拉面板 */
+.apply-settings-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 5px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  padding: 10px;
+  margin-bottom: 5px;
+}
+
+.apply-settings-dropdown.show {
+  display: block;
+}
+
+.apply-settings-dropdown .dropdown-title {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: var(--text-color, #333);
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.apply-settings-dropdown label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 0.85em;
+  color: var(--text-color, #555);
+  cursor: pointer;
+}
+
+.apply-settings-dropdown label:hover {
+  color: var(--primary-color, #007bff);
+}
+
+.apply-settings-dropdown input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.apply-settings-dropdown .select-all-option {
+  font-weight: bold;
+  color: var(--primary-color, #007bff);
+}
+
+.apply-settings-dropdown .dropdown-divider {
+  height: 1px;
+  background: var(--border-color, #eee);
+  margin: 6px 0;
+}
+
 /* 翻译按钮 - 绿色 */
 #settings-sidebar button#translateButton,
 #settings-sidebar button#translateAllButton {

@@ -208,6 +208,11 @@ export function updateButtonStates() {
     } else {
         console.warn("#applyFontSettingsToAllButton 未找到!");
     }
+    // 同步更新齿轮按钮状态
+    const applySettingsOptionsBtn = $("#applySettingsOptionsBtn");
+    if (applySettingsOptionsBtn.length > 0) {
+        applySettingsOptionsBtn.prop('disabled', !hasImages || isLoading);
+    }
     
     // 校对按钮状态更新
     proofreadButton.prop('disabled', !hasImages || isLoading || state.isBatchTranslationInProgress);

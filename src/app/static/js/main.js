@@ -1314,16 +1314,39 @@ export async function applySettingsToAll() {
 
     // 从当前图片的第一个气泡读取设置
     const source = currentImage.bubbleStates[0];
-    const settingsToApply = {
-        fontSize: source.fontSize,
-        fontFamily: source.fontFamily,
-        textDirection: source.textDirection === 'auto' ? 'vertical' : source.textDirection,
-        textColor: source.textColor,
-        fillColor: source.fillColor,
-        strokeEnabled: source.strokeEnabled,
-        strokeColor: source.strokeColor,
-        strokeWidth: source.strokeWidth
-    };
+    
+    // 根据复选框选择要应用的参数
+    const settingsToApply = {};
+    if ($('#apply_fontSize').is(':checked')) {
+        settingsToApply.fontSize = source.fontSize;
+    }
+    if ($('#apply_fontFamily').is(':checked')) {
+        settingsToApply.fontFamily = source.fontFamily;
+    }
+    if ($('#apply_textDirection').is(':checked')) {
+        settingsToApply.textDirection = source.textDirection === 'auto' ? 'vertical' : source.textDirection;
+    }
+    if ($('#apply_textColor').is(':checked')) {
+        settingsToApply.textColor = source.textColor;
+    }
+    if ($('#apply_fillColor').is(':checked')) {
+        settingsToApply.fillColor = source.fillColor;
+    }
+    if ($('#apply_strokeEnabled').is(':checked')) {
+        settingsToApply.strokeEnabled = source.strokeEnabled;
+    }
+    if ($('#apply_strokeColor').is(':checked')) {
+        settingsToApply.strokeColor = source.strokeColor;
+    }
+    if ($('#apply_strokeWidth').is(':checked')) {
+        settingsToApply.strokeWidth = source.strokeWidth;
+    }
+    
+    // 检查是否至少选择了一个参数
+    if (Object.keys(settingsToApply).length === 0) {
+        ui.showGeneralMessage("请至少选择一个要应用的参数", "warning");
+        return;
+    }
 
     ui.showLoading("应用设置到所有图片...");
     const originalImageIndex = state.currentImageIndex;
@@ -1352,10 +1375,12 @@ export async function applySettingsToAll() {
         
         switchImage(originalImageIndex);
         ui.hideLoading();
+        $("#applySettingsDropdown").removeClass('show'); // 关闭下拉菜单
         ui.showGeneralMessage("设置已应用到所有图片", "success");
     } catch (error) {
         console.error("应用设置时出错:", error);
         ui.hideLoading();
+        $("#applySettingsDropdown").removeClass('show'); // 关闭下拉菜单
         ui.showGeneralMessage("应用设置时出错: " + error.message, "error");
         switchImage(originalImageIndex);
     }
