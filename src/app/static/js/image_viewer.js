@@ -66,6 +66,10 @@ export class ImageViewer {
                 if (document.querySelector('.annotation-mode-active')) {
                     return;
                 }
+                // 检查是否处于绘制模式（编辑模式下的添加气泡功能）
+                if (document.querySelector('.drawing-mode')) {
+                    return;
+                }
                 this.isDragging = true;
                 this.lastX = e.clientX;
                 this.lastY = e.clientY;
