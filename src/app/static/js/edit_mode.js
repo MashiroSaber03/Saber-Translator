@@ -455,7 +455,19 @@ export function reRenderFullImage(fromAutoToManual = false, silentMode = false, 
                                     latestImageForStyles.bubbleStates[i].fontSize = serverState.fontSize;
                                 }
                             });
+                            // 同步到编辑模式的实时状态
+                            if (state.editModeActive && state.bubbleStates) {
+                                response.bubble_states.forEach((serverState, i) => {
+                                    if (state.bubbleStates[i] && serverState.fontSize) {
+                                        state.bubbleStates[i].fontSize = serverState.fontSize;
+                                    }
+                                });
+                            }
                             console.log(`[reRenderFullImage] 自动字号: 已更新 ${response.bubble_states.length} 个气泡的字号`);
+                            // 刷新编辑面板显示当前选中气泡的字号
+                            if (state.editModeActive && state.selectedBubbleIndex >= 0) {
+                                selectBubbleNew(state.selectedBubbleIndex);
+                            }
                         }
                     }
                     

@@ -64,7 +64,9 @@ export function bindEventListeners() {
 
     // --- 设置项变更 ---
     $("#fontSize").on('change', handleGlobalSettingChange);
-    $("#autoFontSize").on('change', handleGlobalSettingChange); // 自动字号也触发
+    $("#autoFontSize").on('change', handleAutoFontSizeChange); // 自动字号切换
+    // 初始化时设置字号输入框状态
+    toggleFontSizeInput();
     $("#layoutDirection").on('change', handleGlobalSettingChange);
     $("#textColor").on('input', handleGlobalSettingChange); // 颜色实时变化
     $("#useInpainting").on('change', handleInpaintingMethodChange);
@@ -492,12 +494,6 @@ function handleGlobalSettingChange(e) {
         'fillColor': 'fillColor'
     };
     
-    // autoFontSize 只影响首次翻译，不需要更新已有气泡状态
-    if (settingId === 'autoFontSize') {
-        console.log(`自动字号设置变更: ${newValue} (仅影响下次翻译)`);
-        return; // 不触发重渲染
-    }
-    
     const stateProperty = propertyMap[settingId];
     if (stateProperty) {
         // 【重要】特殊处理 layoutDirection
@@ -538,6 +534,76 @@ function handleInpaintingMethodChange() {
 // 已移至设置模态框(settings_modal.js)处理
 
 // handleSavePrompt 和 handleSaveTextboxPrompt 已移至设置模态框的提示词管理功能
+
+/**
+ * 切换字号输入框的禁用状态
+ * 当勾选"自动计算初始字号"时，禁用字号输入框
+ */
+function toggleFontSizeInput() {
+    const isAutoFontSize = $('#autoFontSize').is(':checked');
+    const fontSizeInput = $('#fontSize');
+    
+    fontSizeInput.prop('disabled', isAutoFontSize);
+    
+    // 视觉反馈：禁用时降低透明度
+    if (isAutoFontSize) {
+        fontSizeInput.css('opacity', '0.5');
+        fontSizeInput.attr('title', '已启用自动字号，首次翻译时将自动计算');
+    } else {
+        fontSizeInput.css('opacity', '1');
+        fontSizeInput.attr('title', '');
+    }
+}
+
+/**
+ * 处理自动字号复选框变更
+ * 开启/关闭自动字号都会触发重渲染
+ */
+function handleAutoFontSizeChange(e) {
+    const isAutoFontSize = $('#autoFontSize').is(':checked');
+    
+    // 更新字号输入框状态
+    toggleFontSizeInput();
+    
+    // 如果是切换图片时触发的变更，跳过重渲染
+    if (window._isChangingFromSwitchImage) {
+        console.log("检测到来自切换图片的自动字号变更，跳过重渲染");
+        return;
+    }
+    
+    // 如果有已翻译的图片，触发重渲染
+    const currentImage = state.getCurrentImage();
+    if (currentImage && currentImage.translatedDataURL) {
+        const bubbleStates = state.editModeActive ? state.bubbleStates : currentImage.bubbleStates;
+        if (bubbleStates && Array.isArray(bubbleStates) && bubbleStates.length > 0) {
+            if (isAutoFontSize) {
+                // 开启自动字号：重新计算每个气泡的字号
+                console.log('自动字号已开启，重新计算字号并渲染...');
+                editMode.reRenderFullImage(false, false, true);
+            } else {
+                // 关闭自动字号：将所有气泡设为输入框中的固定字号
+                const fixedFontSize = parseInt($('#fontSize').val()) || state.defaultFontSize;
+                console.log(`自动字号已关闭，使用固定字号 ${fixedFontSize} 渲染...`);
+                bubbleStates.forEach(bs => {
+                    bs.fontSize = fixedFontSize;
+                });
+                // 同步状态
+                if (state.editModeActive) {
+                    state.setBubbleStates([...bubbleStates]);
+                    // 刷新编辑面板显示
+                    if (state.selectedBubbleIndex >= 0) {
+                        editMode.selectBubbleNew(state.selectedBubbleIndex);
+                    }
+                }
+                currentImage.bubbleStates = JSON.parse(JSON.stringify(bubbleStates));
+                editMode.reRenderFullImage(false, false, false);
+            }
+            return;
+        }
+    }
+    
+    console.log(`自动字号设置变更: ${isAutoFontSize} (仅影响下次翻译)`);
+}
 
 function handleEnableTextboxPromptChange(e) {
     const use = e.target.checked;
