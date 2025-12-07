@@ -46,11 +46,6 @@ export function initializeApp() {
     state.setDefaultTextColor($('#textColor').val() || '#000000');
     state.setDefaultFillColor($('#fillColor').val() || constants.DEFAULT_FILL_COLOR);
     state.setUseTextboxPrompt($('#enableTextboxPrompt').is(':checked'));
-    
-    // 初始化翻译语言设置
-    state.setSourceLanguage($('#sourceLanguage').val() || 'auto');
-    state.setTargetLanguage($('#targetLanguage').val() || 'zh-CN');
-    state.setOcrEngine($('#ocrEngine').val() || 'manga_ocr');
 
     // 1.1 加载动态字体列表
     ui.loadFontList(state.defaultFontFamily);

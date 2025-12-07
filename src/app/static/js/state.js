@@ -65,11 +65,7 @@ export let maskDilateSize = 10;     // 掩膜膨胀大小（像素）
 export let maskBoxExpandRatio = 20; // 标注框区域扩大比例（%）
 
 // --- OCR 引擎状态 ---
-export let ocrEngine = 'auto';
-export let baiduOcrVersion = 'standard';
 export let baiduOcrSourceLanguage = 'auto_detect';
-export let aiVisionProvider = 'siliconflow';
-export let aiVisionModelName = '';
 export let aiVisionOcrPrompt = constants.DEFAULT_AI_VISION_OCR_PROMPT;
 export let defaultAiVisionOcrJsonPrompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT;
 export let isAiVisionOcrJsonMode = false;
@@ -107,10 +103,6 @@ export let hqTranslationMaxRetries = constants.DEFAULT_HQ_TRANSLATION_MAX_RETRIE
 export let proofreadingMaxRetries = constants.DEFAULT_PROOFREADING_MAX_RETRIES;
 
 // --------------------
-
-// 源语言和目标语言
-export let sourceLanguage = 'auto'; // 默认为自动检测
-export let targetLanguage = 'zh-CN'; // 默认为简体中文
 
 export let strokeEnabled = defaultStrokeEnabled;
 export let strokeColor = defaultStrokeColor;
@@ -504,22 +496,6 @@ export function setMaskBoxExpandRatio(ratio) {
 }
 
 /**
- * 设置OCR引擎
- * @param {string} engine - OCR引擎('auto', 'manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision')
- */
-export function setOcrEngine(engine) {
-    ocrEngine = engine;
-}
-
-/**
- * 设置百度OCR版本
- * @param {string} version - 百度OCR版本 ('standard' 或 'high_precision')
- */
-export function setBaiduVersion(version) {
-    baiduOcrVersion = version;
-}
-
-/**
  * 设置百度OCR源语言
  * @param {string} language - 百度OCR源语言代码
  */
@@ -533,22 +509,6 @@ export function setBaiduOcrSourceLanguage(language) {
  */
 export function getBaiduOcrSourceLanguage() {
     return baiduOcrSourceLanguage;
-}
-
-/**
- * 设置AI视觉OCR提供商
- * @param {string} provider - 服务提供商(如'siliconflow')
- */
-export function setAiVisionProvider(provider) {
-    aiVisionProvider = provider;
-}
-
-/**
- * 设置AI视觉OCR模型名称
- * @param {string} modelName - 模型名称
- */
-export function setAiVisionModelName(modelName) {
-    aiVisionModelName = modelName;
 }
 
 /**
@@ -842,22 +802,6 @@ export function setHqPrompt(prompt) {
 export function setHqForceJsonOutput(force) {
     hqForceJsonOutput = force;
     console.log(`状态更新: 高质量翻译强制JSON输出 -> ${force ? '启用' : '禁用'}`);
-}
-
-/**
- * 设置源语言
- * @param {string} lang - 语言代码
- */
-export function setSourceLanguage(lang) {
-    sourceLanguage = lang;
-}
-
-/**
- * 设置目标语言
- * @param {string} lang - 语言代码
- */
-export function setTargetLanguage(lang) {
-    targetLanguage = lang;
 }
 
 export function setDefaultStrokeSettings(enabled, color, width) {

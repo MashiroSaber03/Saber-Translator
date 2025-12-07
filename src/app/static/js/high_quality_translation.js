@@ -172,9 +172,9 @@ async function removeAllImagesText() {
         // 更新进度条（不需要显示进度条，因为在startHqTranslation中已经显示了）
         ui.updateProgressBar(0, `消除文字: 0/${totalImages}`);
         
-        // 从state获取全局设置
-        const sourceLanguage = state.sourceLanguage || $('#sourceLanguage').val();
-        const ocr_engine = state.ocrEngine || $('#ocrEngine').val();
+        // 从DOM获取全局设置（与普通翻译保持一致）
+        const sourceLanguage = $('#sourceLanguage').val();
+        const ocr_engine = $('#ocrEngine').val();
         // 使用保存的文本样式设置，保持与普通翻译一致的逻辑
         const fontSize = savedFontSize || parseInt($('#fontSize').val()) || state.defaultFontSize;
         const isAutoFontSize = savedAutoFontSize !== null ? savedAutoFontSize : $('#autoFontSize').prop('checked');
@@ -188,7 +188,7 @@ async function removeAllImagesText() {
         const textColor = savedTextColor || $('#textColor').val();
         const rotationAngle = savedRotationAngle || 0;  // 全局角度已移除
         
-        // 从state获取OCR相关参数
+        // 从DOM获取OCR相关参数
         let baiduApiKey = null;
         let baiduSecretKey = null;
         let baiduVersion = 'standard';
@@ -198,9 +198,9 @@ async function removeAllImagesText() {
         let aiVisionOcrPrompt = null;
         
         if (ocr_engine === 'baidu_ocr') {
-            baiduApiKey = state.baiduApiKey || $('#baiduApiKey').val();
-            baiduSecretKey = state.baiduSecretKey || $('#baiduSecretKey').val();
-            baiduVersion = state.baiduVersion || $('#baiduVersion').val() || 'standard';
+            baiduApiKey = $('#baiduApiKey').val();
+            baiduSecretKey = $('#baiduSecretKey').val();
+            baiduVersion = $('#baiduVersion').val() || 'standard';
             // 检查百度OCR源语言设置，如果为"无"或空值，则使用所选的源语言
             const baiduOcrLang = state.getBaiduOcrSourceLanguage ? state.getBaiduOcrSourceLanguage() : $('#baiduOcrSourceLanguage').val();
             if (baiduOcrLang === '无' || !baiduOcrLang || baiduOcrLang === '') {
@@ -208,9 +208,9 @@ async function removeAllImagesText() {
                 state.setBaiduOcrSourceLanguage(sourceLanguage);
             }
         } else if (ocr_engine === 'ai_vision') {
-            aiVisionProvider = state.aiVisionProvider || $('#aiVisionProvider').val();
-            aiVisionApiKey = state.aiVisionApiKey || $('#aiVisionApiKey').val();
-            aiVisionModelName = state.aiVisionModelName || $('#aiVisionModelName').val();
+            aiVisionProvider = $('#aiVisionProvider').val();
+            aiVisionApiKey = $('#aiVisionApiKey').val();
+            aiVisionModelName = $('#aiVisionModelName').val();
             aiVisionOcrPrompt = state.aiVisionOcrPrompt;
         }
         
@@ -256,7 +256,7 @@ async function removeAllImagesText() {
             const params = {
                 image: imageData.originalDataURL.split(',')[1],
                 source_language: sourceLanguage,
-                target_language: state.targetLanguage || $('#targetLanguage').val(),
+                target_language: $('#targetLanguage').val(),
                 fontSize: fontSize, 
                 autoFontSize: isAutoFontSize,
                 fontFamily: fontFamily, 

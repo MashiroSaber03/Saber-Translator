@@ -449,8 +449,6 @@ function handleGlobalSettingChange(e) {
         'layoutDirection': () => state.setDefaultLayoutDirection(newValue),
         'textColor': () => state.setDefaultTextColor(newValue),
         'fillColor': () => state.setDefaultFillColor(newValue),
-        'aiVisionProvider': () => state.setAiVisionProvider(newValue),
-        'aiVisionModelName': () => state.setAiVisionModelName(newValue),
         'aiVisionOcrPrompt': () => state.setAiVisionOcrPrompt(newValue),
     };
     if (globalSetters[settingId]) globalSetters[settingId]();
