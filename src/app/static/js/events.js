@@ -37,6 +37,8 @@ export function bindEventListeners() {
     // --- 主要操作按钮 ---
     $("#translateButton").on('click', handleTranslateCurrent);
     $("#translateAllButton").on('click', handleTranslateAll);
+    $("#translateButtonMerge").on('click', handleTranslateCurrentMerge);
+    $("#translateAllButtonMerge").on('click', handleTranslateAllMerge);
     $("#pauseTranslationButton").on('click', handlePauseTranslation); // 暂停/继续按钮
     $("#proofreadButton").on('click', handleProofread);
     $("#proofreadSettingsButton").on('click', handleProofreadSettings);
@@ -251,6 +253,61 @@ export function bindEventListeners() {
     $("#strokeWidth").on('input', handleStrokeSettingChange);
 
     // 侧边栏OCR设置事件已移至设置模态框(settings_modal.js)处理
+
+    // 图片选择数据变更处理
+    $("#pageStart").on('change', pageSelectChangeHandler)
+    $("#pageEnd").on('change', pageSelectChangeHandler)
+}
+
+function pageSelectChangeHandler() {
+  const $input = $(this);
+  const isStart = $input.hasClass('pageStart');
+  const isEnd = $input.hasClass('pageEnd');
+  const $otherInput = isStart ? $('#pageEnd') : $('#pageStart');
+
+  const min = parseFloat($input.attr('min') || 1);
+  const max = parseFloat($input.attr('max') || 1);
+  const step = parseFloat($input.attr('step')) || 1;
+  let value = parseFloat($input.val());
+
+  // 处理空值
+  if ($input.val() === '' || isNaN(value)) {
+      $input.val(min || 0);
+      return;
+  }
+
+  // 限制范围
+  if (!isNaN(min) && value < min) {
+      $input.val(min);
+  } else if (!isNaN(max) && value > max) {
+      $input.val(max);
+  }
+
+  // 确保符合step
+  if (step > 0) {
+      var remainder = (value - (min || 0)) % step;
+      if (remainder !== 0) {
+          $input.val(value - remainder);
+      }
+  }
+
+  // 更新value
+  value = parseFloat($input.val());
+
+  // 处理inputStart和inputEnd的关联关系
+  if (isStart || isEnd) {
+    const otherValue = parseFloat($otherInput.val());
+
+    if (!isNaN(otherValue)) {
+      if (isStart && value > otherValue) {
+        $input.val(otherValue);
+        $input.trigger('input');
+      } else if (isEnd && value < otherValue) {
+        $input.val(otherValue);
+        $input.trigger('input');
+      }
+    }
+  }
 }
 
 // --- 事件处理函数 ---
@@ -275,7 +332,7 @@ function handleFileSelect(e) {
 // 这里假设它在 main.js 中定义并导出
 import { handleFiles } from './main.js';
 
-function handleTranslateCurrent() {
+function handleTranslateCurrent(e, config) {
     if (state.currentImageIndex === -1) {
         ui.showGeneralMessage("请先选择要翻译的图片", "warning");
         return;
@@ -284,8 +341,12 @@ function handleTranslateCurrent() {
     ui.showGeneralMessage("翻译中...", "info", false, 0);
     // translateCurrentImage 函数需要在 main.js 或 api.js 中定义并导出
     import('./main.js').then(main => {
-        main.translateCurrentImage();
+        main.translateCurrentImage(config);
     });
+}
+
+function handleTranslateCurrentMerge(e) {
+  handleTranslateCurrent(e, {translate_merge: true})
 }
 
 function handleRemoveTextOnly() {
@@ -309,13 +370,20 @@ function handleRemoveAllText() {
     import('./main.js').then(main => main.removeAllBubblesText());
 }
 
-function handleTranslateAll() {
+function handleTranslateAll(e, config) {
     if (state.images.length === 0) {
         ui.showGeneralMessage("请先添加图片", "warning");
         return;
     }
     // translateAllImages 函数需要在 main.js 或 api.js 中定义并导出
-    import('./main.js').then(main => main.translateAllImages());
+    import('./main.js').then(main => main.translateAllImages(config));
+}
+
+function handleTranslateAllMerge(e) {
+  handleTranslateAll(e, {
+    translate_merge: true,
+    chat_session: window.crypto.randomUUID()
+  })
 }
 
 /**

@@ -289,14 +289,15 @@ function initializeCollapsiblePanels() { // 私有辅助函数
         const icon = header.find(".toggle-icon");
         icon.text(header.hasClass("collapsed") ? "▶" : "▼");
     });
-    collapsibleHeaders.each(function(index) {
-        if (index > 0) {
-            const header = $(this);
-            header.addClass("collapsed");
-            header.next(".collapsible-content").addClass("collapsed");
-            header.find(".toggle-icon").text("▶");
-        }
-    });
+    // 默认所有配置都展开
+    // collapsibleHeaders.each(function(index) {
+    //     if (index > 0) {
+    //         const header = $(this);
+    //         header.addClass("collapsed");
+    //         header.next(".collapsible-content").addClass("collapsed");
+    //         header.find(".toggle-icon").text("▶");
+    //     }
+    // });
 }
 
 /**
@@ -766,7 +767,10 @@ export function switchImage(index) {
 /**
  * 翻译当前图片
  */
-export function translateCurrentImage() {
+export function translateCurrentImage(config) {
+    const translateMerge = config.translate_merge || false
+    const chatSession = config.chat_session || null
+
     const currentImage = state.getCurrentImage();
     if (!currentImage) return Promise.reject("No current image"); // 返回一个被拒绝的Promise
 
@@ -865,7 +869,11 @@ export function translateCurrentImage() {
         use_json_format_ai_vision_ocr: state.isAiVisionOcrJsonMode,
         
         // 调试选项
-        showDetectionDebug: state.showDetectionDebug
+        showDetectionDebug: state.showDetectionDebug,
+
+        // 合并多轮翻译
+        translate_merge: translateMerge,
+        chat_session: chatSession
     };
 
     // --- 新增：如果选择自定义服务商，添加 custom_base_url ---
@@ -965,10 +973,26 @@ export function translateCurrentImage() {
 }
 
 /**
+ * 获取页数选择器中选取的张数
+ * @returns {number}
+ */
+function getPageSelectCount() {
+  const $pageStart = $("#pageStart")
+  const $pageEnd = $("#pageEnd")
+
+  const start = parseFloat($pageStart.val() || 1)
+  const end = parseFloat($pageEnd.val() || $pageEnd.attr('max'))
+  return end - start + 1
+}
+
+/**
  * 翻译所有已加载的图片
  * 按照每张图片的当前状态（包括手动标注框）批量翻译
  */
-export function translateAllImages() {
+export function translateAllImages(config) {
+    const translateMerge = config.translate_merge || false
+    const chatSession = config.chat_session || false
+
     if (state.images.length === 0) {
         ui.showGeneralMessage("请先添加图片", "warning");
         return;
@@ -1056,7 +1080,8 @@ export function translateAllImages() {
     const aktuellenTranslateJsonMode = state.isTranslateJsonMode;
     const aktuellenAiVisionOcrJsonMode = state.isAiVisionOcrJsonMode;
 
-    let currentIndex = 0;
+    // let currentIndex = 0;
+    let currentIndex = translateMerge ? parseFloat($('#pageStart').val() || 1) - 1 : 0;
     const totalImages = state.images.length;
     let failCount = 0; // 记录失败数量
 
@@ -1108,7 +1133,9 @@ export function translateAllImages() {
             state.setBatchTranslationInProgress(false);
             
             // 批量翻译完成后，刷新当前显示的图片
-            const originalImageIndex = state.currentImageIndex; // 获取当前显示的图片索引
+            // const originalImageIndex = state.currentImageIndex; // 获取当前显示的图片索引
+            // 如果选择合并翻译，使用图片选择器的数据，否则使用当前的图片索引
+            const originalImageIndex = translateMerge ? parseFloat($("pageStart").val() || 1) - 1 : state.currentImageIndex;
             if (originalImageIndex >= 0) {
                 // 重新显示当前图片，触发UI刷新显示最新渲染结果
                 switchImage(originalImageIndex);
@@ -1179,7 +1206,11 @@ export function translateAllImages() {
             use_json_format_ai_vision_ocr: aktuellenAiVisionOcrJsonMode,
             
             // 调试选项
-            showDetectionDebug: state.showDetectionDebug
+            showDetectionDebug: state.showDetectionDebug,
+
+            // 合并多轮翻译
+            translate_merge: translateMerge,
+            chat_session: chatSession,
         };
 
         // --- 核心修改：直接调用 API，而不是 translateCurrentImage ---

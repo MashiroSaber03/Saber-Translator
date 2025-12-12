@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from src.core.detection import get_bubble_coordinates, get_bubble_detection_result_with_auto_directions
 from src.core.ocr import recognize_text_in_bubbles
 from src.core.translation import translate_text_list
+from src.core.translation_merge import translate_text_list as translate_text_list_merge
 from src.core.inpainting import inpaint_bubbles
 from src.core.rendering import render_bubbles_unified, calculate_auto_font_size, get_font  # 使用新的统一渲染
 
@@ -84,7 +85,9 @@ def process_image_translation(
     rpm_limit_translation = config.translation_config.rpm_limit
     max_retries = config.translation_config.max_retries
     skip_translation = config.translation_config.skip_translation
-    
+    translate_merge = config.translation_config.translate_merge
+    chat_session = config.translation_config.chat_session
+
     ocr_engine = config.ocr_config.engine
     skip_ocr = config.ocr_config.skip_ocr
     baidu_api_key = config.ocr_config.baidu_api_key
@@ -404,13 +407,23 @@ def process_image_translation(
             # 漫画气泡翻译
             try:
                 logger.info(f"调用 translate_text_list 开始 - 模型: {model_provider}, 模型名: {model_name}, API密钥长度: {len(api_key) if api_key else 0}, 自定义BaseURL: {custom_base_url if custom_base_url else '无'}")
-                translated_bubble_texts = translate_text_list(
-                    original_texts, target_language, model_provider, api_key, model_name, prompt_content,
-                    use_json_format=use_json_format_translation,
-                    custom_base_url=custom_base_url,
-                    rpm_limit_translation=rpm_limit_translation,
-                    max_retries=max_retries
-                )
+                if translate_merge:
+                    translated_bubble_texts = translate_text_list_merge(
+                        original_texts, target_language, model_provider, api_key, model_name, prompt_content,
+                        use_json_format=use_json_format_translation,
+                        custom_base_url=custom_base_url,
+                        rpm_limit_translation=rpm_limit_translation,
+                        max_retries=max_retries,
+                        chat_session=chat_session,
+                    )
+                else:
+                    translated_bubble_texts = translate_text_list(
+                        original_texts, target_language, model_provider, api_key, model_name, prompt_content,
+                        use_json_format=use_json_format_translation,
+                        custom_base_url=custom_base_url,
+                        rpm_limit_translation=rpm_limit_translation,
+                        max_retries=max_retries
+                    )
                 logger.info(f"translate_text_list 调用完成，返回结果数量: {len(translated_bubble_texts)}")
                 
                 # 输出翻译结果
@@ -421,13 +434,24 @@ def process_image_translation(
                 
                 # 文本框翻译 (如果启用)
                 if use_textbox_prompt and textbox_prompt_content:
-                    translated_textbox_texts = translate_text_list(
-                        original_texts, target_language, model_provider, api_key, model_name, textbox_prompt_content,
-                        use_json_format=False,
-                        custom_base_url=custom_base_url,
-                        rpm_limit_translation=rpm_limit_translation,
-                        max_retries=max_retries
-                    )
+                    if translate_merge:
+                        translated_textbox_texts = translate_text_list_merge(
+                            original_texts, target_language, model_provider, api_key, model_name,
+                            textbox_prompt_content,
+                            use_json_format=False,
+                            custom_base_url=custom_base_url,
+                            rpm_limit_translation=rpm_limit_translation,
+                            max_retries=max_retries,
+                            chat_session=chat_session,
+                        )
+                    else:
+                        translated_textbox_texts = translate_text_list(
+                            original_texts, target_language, model_provider, api_key, model_name, textbox_prompt_content,
+                            use_json_format=False,
+                            custom_base_url=custom_base_url,
+                            rpm_limit_translation=rpm_limit_translation,
+                            max_retries=max_retries
+                        )
                 else:
                     translated_textbox_texts = translated_bubble_texts
                 logger.info(f"翻译完成 (耗时: {time.time() - start_time:.2f}s)")

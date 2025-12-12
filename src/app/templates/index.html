@@ -145,6 +145,26 @@
                         </div>
                     </div>
                 </div>
+
+                <div id="page-settings" class="settings-card">
+                    <h3 class="collapsible-header">图片选择 <span class="toggle-icon">▼</span></h3>
+                    <div class="collapsible-content">
+                        <div class="settings-form">
+                            <div>
+                                <label for="pageStart">翻译开始页数:</label>
+                                <div class="pageInput-control">
+                                    <input type="number" id="pageStart" class="pageStart" value="1">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="pageEnd">翻译结束页数:</label>
+                                <div class="pageInput-control">
+                                    <input type="number" id="pageEnd" class="pageEnd" value="">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <!-- OCR和检测器设置已移至顶部设置模态框，此处保留隐藏元素用于数据同步 -->
                 <div id="ocr-detection-settings" class="sidebar-hidden-config" style="display: none;">
                     <!-- 检测器设置 -->
@@ -267,6 +287,8 @@
                 </div>
                 <button id="translateButton" disabled>翻译当前图片</button>
                 <button id="translateAllButton" disabled>翻译所有图片</button>
+                <button id="translateButtonMerge" disabled>合并翻译当前图片</button>
+                <button id="translateAllButtonMerge" disabled>合并多轮翻译所有图片</button>
                 <button id="startHqTranslationBtn" class="settings-button purple-button" disabled title="使用高质量翻译模式（需在设置中配置）">高质量翻译</button>
                 <button id="proofreadButton" disabled>AI校对</button>
                 <button id="removeTextOnlyButton" disabled title="消除图片中的气泡文字，无需填写翻译服务商和API Key">仅消除文字</button>

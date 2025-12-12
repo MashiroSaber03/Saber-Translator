@@ -333,6 +333,10 @@ class TranslationConfig:
     # 其他选项
     skip_translation: bool = False
 
+    # 是否启用合并多轮翻译 仅deepseek支持
+    translate_merge: bool = False
+    chat_session: Optional[str] = None
+
 
 @dataclass
 class InpaintingConfig:
@@ -447,6 +451,8 @@ class TranslationRequest:
             rpm_limit=int(data.get('rpm_limit_translation', constants.DEFAULT_rpm_TRANSLATION)),
             max_retries=int(data.get('max_retries', constants.DEFAULT_TRANSLATION_MAX_RETRIES)),
             skip_translation=data.get('skip_translation', False),
+            translate_merge=data.get('translate_merge', False),
+            chat_session=data.get('chat_session', None),
         )
         
         # 修复配置
@@ -514,6 +520,8 @@ class TranslationRequest:
                 'source_language': self.translation_config.source_language,
                 'model_provider': self.translation_config.model_provider,
                 'skip_translation': self.translation_config.skip_translation,
+                'translate_merge': self.translation_config.translate_merge,
+                'chat_session': self.translation_config.chat_session,
             },
             'inpainting_config': {
                 'use_inpainting': self.inpainting_config.use_inpainting,

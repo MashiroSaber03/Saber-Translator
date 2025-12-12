@@ -218,6 +218,50 @@
   left: 100%;
 }
 
+/* 合并翻译按钮 - 深绿 */
+#settings-sidebar button#translateButtonMerge,
+#settings-sidebar button#translateAllButtonMerge {
+  width: 100%;
+  padding: 14px 25px;
+  background: linear-gradient(135deg, #086308 0%, #138113 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+#settings-sidebar button#translateButtonMerge:hover,
+#settings-sidebar button#translateAllButtonMerge:hover {
+  background: linear-gradient(135deg, #086308 0%, #138113 100%);
+  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
+  transform: translateY(-2px);
+}
+
+#settings-sidebar button#translateButtonMerge:before,
+#settings-sidebar button#translateAllButtonMerge:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+#settings-sidebar button#translateButtonMerge:hover:before,
+#settings-sidebar button#translateAllButtonMerge:hover:before {
+  left: 100%;
+}
+
 /* 消除文字按钮 - 蓝色 */
 #settings-sidebar button#removeTextOnlyButton,
 #settings-sidebar button#removeAllTextButton {

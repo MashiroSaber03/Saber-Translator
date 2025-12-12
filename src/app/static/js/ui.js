@@ -102,9 +102,14 @@ export function renderThumbnails() {
     const thumbnailList = $("#thumbnail-sidebar #thumbnailList");
     thumbnailList.empty();
     state.images.forEach((imageData, index) => {
+        const thumbnailWrapper = $("<div class='thumbnail-wrapper'></div>")
         const thumbnailItem = $("<div class='thumbnail-item' data-index='" + index + "'></div>");
         const thumbnailImage = $("<img class='thumbnail-image'>").attr('src', imageData.originalDataURL);
+        const thumbnailNumber = $(`<div class='thumbnail-number'>第${index + 1}张</div>`);
         thumbnailItem.append(thumbnailImage);
+
+        thumbnailWrapper.append(thumbnailItem)
+        thumbnailWrapper.append(thumbnailNumber)
 
         // 清除旧标记
         thumbnailItem.find('.translation-failed-indicator, .labeled-indicator').remove();
@@ -128,7 +133,7 @@ export function renderThumbnails() {
         // -------------------------------------
 
         thumbnailItem.data('index', index);
-        thumbnailList.append(thumbnailItem);
+        thumbnailList.append(thumbnailWrapper);
     });
     scrollToActiveThumbnail(); // 保持滚动逻辑
 }
@@ -177,9 +182,11 @@ export function updateNavigationButtons() {
  */
 export function updateButtonStates() {
     const translateButton = $("#translateButton"); // 在函数内获取
+    const translateButtonMerge = $("#translateButtonMerge");
     const removeTextOnlyButton = $("#removeTextOnlyButton");
     const removeAllTextButton = $("#removeAllTextButton");
     const translateAllButton = $("#translateAllButton");
+    const translateAllButtonMerge = $("#translateAllButtonMerge");
     const clearAllImagesButton = $("#clearAllImagesButton");
     const deleteCurrentImageButton = $("#deleteCurrentImageButton");
     const applyFontSettingsToAllButton = $("#applyFontSettingsToAllButton"); // 在函数内获取
@@ -196,9 +203,11 @@ export function updateButtonStates() {
     const isLoading = $("#loadingAnimation").is(":visible");
 
     translateButton.prop('disabled', !hasCurrentImage || isLoading);
+    translateButtonMerge.prop('disabled', !hasCurrentImage || isLoading);
     removeTextOnlyButton.prop('disabled', !hasCurrentImage || isLoading);
     removeAllTextButton.prop('disabled', !hasImages || isLoading);
     translateAllButton.prop('disabled', !hasImages || isLoading);
+    translateAllButtonMerge.prop('disabled', !hasImages || isLoading);
     clearAllImagesButton.prop('disabled', !hasImages || isLoading);
     deleteCurrentImageButton.prop('disabled', !hasCurrentImage || isLoading);
     // 修复 TypeError: applyFontSettingsToAllButton.prop is not a function
