@@ -91,6 +91,7 @@ export let hqLowReasoning = false;
 export let hqNoThinkingMethod = 'gemini'; // 取消思考的方法: 'gemini' 或 'volcano'
 export let hqPrompt = constants.DEFAULT_HQ_TRANSLATE_PROMPT;
 export let hqForceJsonOutput = true;
+export let hqUseStream = false; // 流式调用开关
 
 // --- AI校对功能状态 ---
 export let isProofreadingEnabled = true;
@@ -802,6 +803,15 @@ export function setHqPrompt(prompt) {
 export function setHqForceJsonOutput(force) {
     hqForceJsonOutput = force;
     console.log(`状态更新: 高质量翻译强制JSON输出 -> ${force ? '启用' : '禁用'}`);
+}
+
+/**
+ * 设置高质量翻译流式调用选项
+ * @param {boolean} useStream - 是否启用流式调用
+ */
+export function setHqUseStream(useStream) {
+    hqUseStream = useStream;
+    console.log(`状态更新: 高质量翻译流式调用 -> ${useStream ? '启用' : '禁用'}`);
 }
 
 export function setDefaultStrokeSettings(enabled, color, width) {

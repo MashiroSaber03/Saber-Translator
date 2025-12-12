@@ -1,19 +1,19 @@
 # ============================================
-# Saber-Translator 依赖文件 (GPU 版本 - CUDA 13.0)
+# Saber-Translator Dependencies (GPU Version - CUDA 13.0)
 # ============================================
-# 安装命令:
-# 1. 先安装非 PyTorch 依赖:
+# Installation:
+# 1. Install non-PyTorch dependencies first:
 #    pip install -r requirements-gpu.txt
 # 
-# 2. 然后单独安装 GPU 版 PyTorch:
+# 2. Then install GPU version of PyTorch separately:
 #    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 # ============================================
 
-# Flask 相关
+# Flask related
 flask
 flask-cors
 
-# 基础工具
+# Base tools
 pyyaml
 pillow
 opencv-python
@@ -23,27 +23,32 @@ shapely
 pyclipper
 pandas
 
-# AI/OCR 相关
+# AI/OCR related
 openai
 manga-ocr
-# 注意: rapidocr 需要 onnxruntime-gpu，安装顺序很重要
-# 先装 onnxruntime-gpu，再用 --no-deps 装 rapidocr
+# Note: rapidocr requires onnxruntime-gpu, installation order matters
+# First install onnxruntime-gpu, then use --no-deps for rapidocr
 # pip install onnxruntime-gpu
 # pip install rapidocr-onnxruntime --no-deps
 rapidocr-onnxruntime
 onnxruntime-gpu
 
-# 深度学习 (不包含 torch/torchvision，需单独安装 GPU 版本)
-# torch        # 请使用上述命令单独安装 GPU 版本
-# torchvision  # 请使用上述命令单独安装 GPU 版本
+# Deep Learning (torch/torchvision not included, install GPU version separately)
+# torch        # Please use the command above to install GPU version
+# torchvision  # Please use the command above to install GPU version
 einops
 ultralytics
 seaborn
 litelama
 
-# 其他
-PyPDF2
+# Other
 dill
+mobi>=0.4.0
 
-# 打包
+# Manga Insight
+chromadb>=0.4.0
+edge-tts>=6.1.0
+httpx>=0.25.0
+
+# Build
 pyinstaller

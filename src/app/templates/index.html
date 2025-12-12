@@ -9,10 +9,16 @@
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/settings-modal.css') }}">
     <!-- 添加 Favicon -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <!-- 预加载 jQuery, JSZip, jsPDF -->
+    <!-- 预加载 jQuery, JSZip, jsPDF, PDF.js -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- PDF.js 用于浏览器端解析 PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // 设置 PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
 </head>
 <body>
     <!-- 页面头部横幅 -->
@@ -279,8 +285,8 @@
         <main id="image-display-area">
             <section id="upload-section" class="card upload-card">
                 <div id="drop-area">
-                    <p>拖拽图片或PDF文件到这里，或 <span id="select-file-link">点击选择文件</span></p>
-                    <input type="file" id="imageUpload" accept="image/*, application/pdf" multiple style="display: none;">
+                    <p>拖拽图片、PDF或MOBI文件到这里，或 <span id="select-file-link">点击选择文件</span></p>
+                    <input type="file" id="imageUpload" accept="image/*,application/pdf,.mobi,.azw,.azw3" multiple style="display: none;">
                 </div>
                 <div id="errorMessage" class="error-message" style="display: none;"></div>
                 <div id="loadingAnimation" class="loading-animation" style="display: none;">
@@ -1457,6 +1463,13 @@
                                     <input type="checkbox" id="settingsHqForceJsonOutput">
                                     <span>强制JSON输出</span>
                                 </label>
+                            </div>
+                            <div class="settings-item">
+                                <label class="settings-checkbox">
+                                    <input type="checkbox" id="settingsHqUseStream">
+                                    <span>流式调用</span>
+                                </label>
+                                <div class="input-hint">启用后可避免长时间请求超时，并在终端实时显示输出</div>
                             </div>
                         </div>
                         <div class="settings-item">

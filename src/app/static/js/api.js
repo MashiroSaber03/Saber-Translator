@@ -270,16 +270,6 @@ export function deleteTextboxPromptApi(name) {
 // --- 系统管理 API ---
 
 /**
- * 上传 PDF 文件进行处理
- * @param {FormData} formData - 包含 PDF 文件的 FormData 对象
- * @returns {Promise<object>} - 包含提取图像数据的 Promise
- */
-export function uploadPdfApi(formData) {
-    // FormData 请求不需要设置 contentType 为 JSON
-    return makeApiRequest('/api/upload_pdf', 'POST', formData, 'json', false);
-}
-
-/**
  * 请求清理调试文件
  * @returns {Promise<object>}
  */

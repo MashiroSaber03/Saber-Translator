@@ -50,5 +50,6 @@ from . import fonts
 from . import downloads
 from . import tests
 from . import files
+from . import mobi_handler  # MOBI/AZW 电子书解析
 
 __all__ = ['system_bp']

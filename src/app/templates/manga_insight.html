@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#6366f1">
+    <title>漫画分析 - Saber-Translator</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/variables.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/base.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/manga-insight.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <!-- 页面头部 -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo-container">
+                <a href="/" title="书架首页">
+                    <img src="{{ url_for('static', filename='pic/logo.png') }}" alt="Saber-Translator Logo" class="app-logo">
+                    <span class="app-name">Saber-Translator</span>
+                </a>
+            </div>
+            <div class="header-links">
+                <a href="/" class="nav-link">📚 书架</a>
+                <a href="javascript:void(0)" class="nav-link" id="translateNavBtn" onclick="goToTranslate()">🌐 翻译</a>
+                <span class="nav-link active">🔍 分析</span>
+                <button id="settingsBtn" class="btn btn-icon" title="设置">⚙️</button>
+                <button id="themeToggle" class="theme-toggle" title="切换亮暗模式">
+                    <span class="theme-icon light-icon">☀️</span>
+                    <span class="theme-icon dark-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="insight-main">
+        <!-- 左侧边栏 -->
+        <aside class="insight-sidebar">
+            <!-- 书籍信息 -->
+            <div class="sidebar-section book-info-section">
+                <div class="book-cover-wrapper">
+                    <img id="bookCover" src="" alt="封面" class="book-cover">
+                    <div class="book-cover-placeholder" id="coverPlaceholder">
+                        <span>📖</span>
+                    </div>
+                </div>
+                <h2 class="book-title" id="bookTitle">选择书籍</h2>
+                <div class="book-meta" id="bookMeta">
+                    <span class="meta-item"><span class="meta-icon">📄</span> <span id="totalPages">0</span> 页</span>
+                    <span class="meta-item"><span class="meta-icon">📊</span> <span id="analyzedPages">0</span> 已分析</span>
+                </div>
+            </div>
+
+            <!-- 分析控制（紧凑版） -->
+            <div class="sidebar-section analysis-control-compact">
+                <!-- 状态栏 -->
+                <div class="analysis-status-bar">
+                    <div class="status-left">
+                        <span class="status-dot" id="statusDot"></span>
+                        <span class="status-label" id="statusLabel">未分析</span>
+                    </div>
+                    <div class="status-right">
+                        <span class="status-progress" id="statusProgress"></span>
+                    </div>
+                </div>
+                
+                <!-- 进度条（分析中时显示） -->
+                <div class="progress-bar-slim" id="progressContainer" style="display: none;">
+                    <div class="progress-fill-slim" id="progressFill"></div>
+                </div>
+                
+                <!-- 控制按钮组 -->
+                <div class="analysis-btn-group">
+                    <!-- 初始/完成状态 -->
+                    <div class="btn-group-idle" id="btnGroupIdle">
+                        <select id="analysisModeSelect" class="analysis-mode-select" onchange="onAnalysisModeChange()">
+                            <option value="full">全书</option>
+                            <option value="chapter">章节</option>
+                            <option value="page">单页</option>
+                        </select>
+                        <button id="startAnalysisBtn" class="btn-analysis-start" onclick="startAnalysis()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            <span>开始分析</span>
+                        </button>
+                    </div>
+                    
+                    <!-- 运行中状态 -->
+                    <div class="btn-group-running" id="btnGroupRunning" style="display: none;">
+                        <button id="pauseAnalysisBtn" class="btn-control btn-pause" onclick="pauseAnalysis()" title="暂停">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                        </button>
+                        <button id="cancelAnalysisBtn" class="btn-control btn-cancel" onclick="cancelAnalysis()" title="取消">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                        </button>
+                    </div>
+                    
+                    <!-- 暂停状态 -->
+                    <div class="btn-group-paused" id="btnGroupPaused" style="display: none;">
+                        <button id="resumeAnalysisBtn" class="btn-control btn-resume" onclick="resumeAnalysis()" title="继续">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        </button>
+                        <button class="btn-control btn-cancel" onclick="cancelAnalysis()" title="取消">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 章节选择（单章节模式时显示） -->
+                <select id="chapterSelect" class="form-select-compact" style="display: none;">
+                    <option value="">选择章节...</option>
+                </select>
+                
+                <!-- 页码输入（单页模式时显示） -->
+                <input type="number" id="pageNumInput" class="form-input-compact" placeholder="输入页码" min="1" style="display: none;">
+                
+                <!-- 选项行 -->
+                <div class="analysis-options-row">
+                    <label class="checkbox-compact">
+                        <input type="checkbox" id="incrementalMode" checked>
+                        <span>增量模式</span>
+                    </label>
+                    <button class="btn-icon-sm" onclick="exportAnalysis()" title="导出报告">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 章节与页面（树状结构） -->
+            <div class="sidebar-section pages-tree-section">
+                <div class="section-header">
+                    <h3 class="section-title">内容导航</h3>
+                    <span class="page-count-badge" id="pageCount">0页</span>
+                </div>
+                <div class="pages-tree" id="pagesTree">
+                    <!-- 由 JS 动态生成 -->
+                    <div class="empty-hint">加载中...</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <div class="insight-content">
+            <!-- 选择书籍提示 -->
+            <div class="select-book-prompt" id="selectBookPrompt">
+                <div class="prompt-icon">📚</div>
+                <h2>选择要分析的书籍</h2>
+                <p>从下方列表中选择一本书籍开始智能分析</p>
+                <div class="book-selector">
+                    <select id="bookSelector" class="book-select" onchange="loadBook(this.value)">
+                        <option value="">-- 选择书籍 --</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 标签页导航 -->
+            <div class="content-tabs" id="contentTabs" style="display: none;">
+                <button class="mobile-nav-btn" id="mobileNavBtn" onclick="toggleMobileSidebar()" aria-label="打开导航">
+                    📚
+                </button>
+                <div class="tabs-wrapper">
+                    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+                        <span class="tab-icon">📊</span> 概览
+                    </button>
+                    <button class="tab-btn" data-tab="qa" onclick="switchTab('qa')">
+                        <span class="tab-icon">💬</span> 智能问答
+                    </button>
+                    <button class="tab-btn" data-tab="timeline" onclick="switchTab('timeline')">
+                        <span class="tab-icon">📈</span> 时间线
+                    </button>
+                </div>
+                <button class="mobile-nav-btn" id="mobileWorkspaceBtn" onclick="toggleMobileWorkspace()" aria-label="打开笔记">
+                    📝
+                </button>
+            </div>
+
+            <!-- 概览标签页 -->
+            <div class="tab-content active" id="tab-overview">
+                <div class="overview-grid">
+                    <!-- 摘要卡片 -->
+                    <div class="overview-card summary-card">
+                        <div class="card-header">
+                            <h3 class="card-title">📖 故事概要</h3>
+                            <button class="btn-icon" onclick="regenerateOverview()" title="重新生成概述">🔄</button>
+                        </div>
+                        <div class="card-content" id="storySummary">
+                            <div class="placeholder-text">完成分析后将显示故事概要</div>
+                        </div>
+                    </div>
+
+                    <!-- 统计卡片 -->
+                    <div class="overview-card stats-card">
+                        <h3 class="card-title">📊 分析统计</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-value" id="statPages">0</span>
+                                <span class="stat-label">已分析页面</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value" id="statChapters">0</span>
+                                <span class="stat-label">章节数</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 最近分析卡片 -->
+                    <div class="overview-card recent-card">
+                        <h3 class="card-title">🕐 最近分析</h3>
+                        <div class="recent-pages" id="recentPages">
+                            <div class="placeholder-text">暂无分析记录</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 智能问答标签页 -->
+            <div class="tab-content" id="tab-qa">
+                <div class="qa-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="welcome-message">
+                            <div class="welcome-icon">💬</div>
+                            <h3>智能问答</h3>
+                            <p>针对已分析的漫画内容提问，获取精准回答</p>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <div class="chat-options">
+                            <label class="checkbox-label compact" title="启用后，检索到某页时会返回该页所属批次的完整内容作为上下文，提供更丰富的信息">
+                                <input type="checkbox" id="useParentChild" checked>
+                                <span>父子块模式</span>
+                            </label>
+                            <label class="checkbox-label compact" title="启用后，会先将复杂问题分解为多个子问题，分别检索后整合答案，适合回答需要综合多处信息的问题">
+                                <input type="checkbox" id="useReasoning" checked>
+                                <span>推理检索</span>
+                            </label>
+                            <label class="checkbox-label compact" title="启用后，对检索结果进行二次精排，提高相关性（需在设置中配置重排序模型）">
+                                <input type="checkbox" id="useReranker" checked>
+                                <span>重排序</span>
+                            </label>
+                            <span class="chat-option-divider">|</span>
+                            <label class="input-label compact" title="返回的最大结果数（1-20）">
+                                <span>Top K:</span>
+                                <input type="number" id="topK" value="5" min="1" max="20" class="input-small">
+                            </label>
+                            <label class="input-label compact" title="相关性阈值，低于此值的结果将被过滤（0-1，0表示不过滤）">
+                                <span>阈值:</span>
+                                <input type="number" id="threshold" value="0" min="0" max="1" step="0.1" class="input-small">
+                            </label>
+                            <span class="chat-option-divider">|</span>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="rebuildEmbeddings()" title="删除现有向量数据并重新构建，用于更新检索索引">
+                                🔄 重建向量
+                            </button>
+                        </div>
+                        <div class="chat-input-wrapper">
+                            <textarea id="questionInput" placeholder="输入你的问题..." rows="1" onkeydown="handleQuestionKeydown(event)"></textarea>
+                            <button class="send-btn" onclick="sendQuestion()" id="sendBtn">
+                                <span>发送</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 时间线标签页 -->
+            <div class="tab-content" id="tab-timeline">
+                <div class="timeline-header">
+                    <h3>📈 剧情时间线</h3>
+                    <button class="btn btn-secondary btn-sm" onclick="regenerateTimeline()">🔄 重新生成</button>
+                </div>
+                <div class="timeline-container" id="timelineContainer">
+                    <div class="placeholder-text">完成分析后将显示剧情时间线</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右侧工作区 -->
+        <aside class="insight-workspace">
+            <!-- 页面详情 -->
+            <div class="workspace-section page-detail-section">
+                <h3 class="section-title">📄 页面详情</h3>
+                <div class="page-detail" id="pageDetail">
+                    <div class="placeholder-text">点击页面查看详情</div>
+                </div>
+            </div>
+
+            <!-- 笔记 -->
+            <div class="workspace-section notes-section">
+                <div class="section-header-with-actions">
+                    <h3 class="section-title">📝 笔记</h3>
+                    <div class="notes-filter">
+                        <select id="notesFilter" class="notes-filter-select" onchange="filterNotes()">
+                            <option value="all">全部</option>
+                            <option value="text">文本笔记</option>
+                            <option value="qa">问答笔记</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="notes-list" id="notesList">
+                    <div class="placeholder-text">暂无笔记</div>
+                </div>
+                <button class="btn btn-secondary btn-block btn-sm" onclick="openNoteModal()">
+                    + 添加笔记
+                </button>
+            </div>
+        </aside>
+    </main>
+
+    <!-- 设置模态框 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-overlay" onclick="closeSettingsModal()"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2>漫画分析设置</h2>
+                <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-tabs">
+                    <button class="settings-tab active" data-tab="vlm" onclick="switchSettingsTab('vlm')">VLM 多模态模型</button>
+                    <button class="settings-tab" data-tab="llm" onclick="switchSettingsTab('llm')">LLM 对话模型</button>
+                    <button class="settings-tab" data-tab="batch" onclick="switchSettingsTab('batch')">批量分析</button>
+                    <button class="settings-tab" data-tab="embedding" onclick="switchSettingsTab('embedding')">向量模型</button>
+                    <button class="settings-tab" data-tab="reranker" onclick="switchSettingsTab('reranker')">重排序模型</button>
+                    <button class="settings-tab" data-tab="prompts" onclick="switchSettingsTab('prompts')">📝 提示词</button>
+                </div>
+
+                <!-- VLM 设置 -->
+                <div class="settings-content active" id="settings-vlm">
+                    <div class="form-group">
+                        <label>服务商</label>
+                        <select id="vlmProvider" onchange="onVlmProviderChange()">
+                            <option value="gemini">Google Gemini</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="qwen">阿里通义千问</option>
+                            <option value="siliconflow">SiliconFlow</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="volcano">火山引擎</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="vlmApiKey" placeholder="输入 API Key">
+                    </div>
+                    <div class="form-group">
+                        <label>模型</label>
+                        <div class="model-input-row">
+                            <input type="text" id="vlmModel" placeholder="例如: gemini-2.0-flash">
+                            <button type="button" class="btn btn-sm fetch-models-btn" id="vlmFetchModelsBtn" onclick="fetchModelsFor('vlm')">
+                                🔍 获取模型
+                            </button>
+                        </div>
+                        <div class="model-select-container" id="vlmModelSelectDiv" style="display: none;">
+                            <select id="vlmModelSelect" onchange="onModelSelected('vlm')">
+                                <option value="">-- 选择模型 --</option>
+                            </select>
+                            <span class="model-count" id="vlmModelCount"></span>
+                        </div>
+                    </div>
+                    <div class="form-group" id="vlmBaseUrlGroup" style="display: none;">
+                        <label>Base URL</label>
+                        <input type="text" id="vlmBaseUrl" placeholder="自定义 API 地址">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>RPM 限制</label>
+                            <input type="number" id="vlmRpm" value="10" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>温度</label>
+                            <input type="number" id="vlmTemperature" value="0.3" min="0" max="1" step="0.1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="vlmForceJson">
+                            <span>强制 JSON 输出</span>
+                        </label>
+                        <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object，确保返回有效 JSON</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="vlmUseStream" checked>
+                            <span>使用流式请求</span>
+                        </label>
+                        <p class="form-hint">流式请求可避免长时间等待导致的超时问题，建议开启</p>
+                    </div>
+                    <div class="form-group">
+                        <label>图片压缩（最大边长）</label>
+                        <input type="number" id="vlmImageMaxSize" value="0" min="0" max="4096" step="128" placeholder="0 表示不压缩">
+                        <p class="form-hint">发送前将图片等比例缩放到指定最大边长（像素），减少 Token 消耗。0 表示不压缩，推荐值：768-1280</p>
+                    </div>
+                    <button class="btn btn-secondary" onclick="testVlmConnection()">测试连接</button>
+                </div>
+
+                <!-- LLM 对话模型设置 -->
+                <div class="settings-content" id="settings-llm">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="llmUseSameAsVlm" checked onchange="onLlmUseSameChange()">
+                            <span>使用与 VLM 相同的配置</span>
+                        </label>
+                        <p class="form-hint">用于生成故事概要、智能问答等文本生成任务</p>
+                    </div>
+                    <div id="llmCustomConfig" style="display: none;">
+                        <div class="form-group">
+                            <label>服务商</label>
+                            <select id="llmProvider" onchange="onLlmProviderChange()">
+                                <option value="gemini">Google Gemini</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="qwen">阿里通义千问</option>
+                                <option value="siliconflow">SiliconFlow</option>
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="volcano">火山引擎</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="llmApiKey" placeholder="输入 API Key">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
+                            <div class="model-input-row">
+                                <input type="text" id="llmModel" placeholder="例如: gpt-4o-mini">
+                                <button type="button" class="btn btn-sm fetch-models-btn" id="llmFetchModelsBtn" onclick="fetchModelsFor('llm')">
+                                    🔍 获取模型
+                                </button>
+                            </div>
+                            <div class="model-select-container" id="llmModelSelectDiv" style="display: none;">
+                                <select id="llmModelSelect" onchange="onModelSelected('llm')">
+                                    <option value="">-- 选择模型 --</option>
+                                </select>
+                                <span class="model-count" id="llmModelCount"></span>
+                            </div>
+                        </div>
+                        <div class="form-group" id="llmBaseUrlGroup" style="display: none;">
+                            <label>Base URL</label>
+                            <input type="text" id="llmBaseUrl" placeholder="自定义 API 地址">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 批量分析设置 -->
+                <div class="settings-content" id="settings-batch">
+                    <div class="form-group">
+                        <label>每批次分析页数</label>
+                        <input type="number" id="pagesPerBatch" value="5" min="1" max="10" onchange="onPagesPerBatchChange(this.value)">
+                        <p class="form-hint">每次发送给 VLM 的图片数量，建议 3-5 张。图片越多，上下文越连贯，但可能超出模型限制。</p>
+                    </div>
+                    <div class="form-group">
+                        <label>上文参考批次数</label>
+                        <input type="number" id="contextBatchCount" value="1" min="0" max="5">
+                        <p class="form-hint">每批分析时参考前几批的结果作为上下文。0=不参考，1-5=参考更多前文。</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>分析架构</label>
+                        <select id="architecturePreset" onchange="onArchitectureChange()">
+                            <option value="simple">简洁模式 - 批量分析 → 全书总结（短篇）</option>
+                            <option value="standard" selected>标准模式 - 批量分析 → 段落总结 → 全书总结</option>
+                            <option value="chapter_based">章节模式 - 批量分析 → 章节总结 → 全书总结</option>
+                            <option value="full">完整模式 - 批量分析 → 小总结 → 章节总结 → 全书总结</option>
+                            <option value="custom">自定义模式 - 完全自定义层级架构</option>
+                        </select>
+                        <p class="form-hint" id="architectureDescription">根据漫画类型选择合适的分析架构</p>
+                    </div>
+                    
+                    <!-- 自定义层级编辑器 -->
+                    <div id="customLayersEditor" style="display: none;">
+                        <div class="form-group">
+                            <label>自定义层级</label>
+                            <div id="customLayersList"></div>
+                            <button type="button" class="btn btn-sm" onclick="addCustomLayer()" style="margin-top: 8px;">
+                                + 添加层级
+                            </button>
+                            <p class="form-hint">第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。</p>
+                        </div>
+                    </div>
+                    
+                    <div class="batch-info-box" id="architecturePreview">
+                        <h4>当前架构预览</h4>
+                        <div id="layersList"></div>
+                    </div>
+                    
+                    <div class="batch-estimate" id="batchEstimate">
+                        <p>当前配置：每 <span id="estPagesPerBatch">5</span> 页一批</p>
+                    </div>
+                </div>
+
+                <!-- Embedding 设置 -->
+                <div class="settings-content" id="settings-embedding">
+                    <div class="form-group">
+                        <label>服务商</label>
+                        <select id="embeddingProvider" onchange="onEmbeddingProviderChange()">
+                            <option value="gemini">Google Gemini</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="qwen">阿里通义千问</option>
+                            <option value="siliconflow">SiliconFlow</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="volcano">火山引擎</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="embeddingApiKey" placeholder="输入 API Key">
+                    </div>
+                    <div class="form-group">
+                        <label>模型</label>
+                        <div class="model-input-row">
+                            <input type="text" id="embeddingModel" placeholder="例如: text-embedding-3-small">
+                            <button type="button" class="btn btn-sm fetch-models-btn" id="embeddingFetchModelsBtn" onclick="fetchModelsFor('embedding')">
+                                🔍 获取模型
+                            </button>
+                        </div>
+                        <div class="model-select-container" id="embeddingModelSelectDiv" style="display: none;">
+                            <select id="embeddingModelSelect" onchange="onModelSelected('embedding')">
+                                <option value="">-- 选择模型 --</option>
+                            </select>
+                            <span class="model-count" id="embeddingModelCount"></span>
+                        </div>
+                    </div>
+                    <div class="form-group" id="embeddingBaseUrlGroup" style="display: none;">
+                        <label>Base URL</label>
+                        <input type="text" id="embeddingBaseUrl" placeholder="自定义 API 地址">
+                    </div>
+                    <div class="form-group">
+                        <label>RPM 限制</label>
+                        <input type="number" id="embeddingRpmLimit" value="0" min="0" max="1000">
+                        <p class="form-hint">每分钟最大请求数，0 表示不限制。</p>
+                    </div>
+                    <button class="btn btn-secondary" onclick="testEmbeddingConnection()">测试连接</button>
+                </div>
+
+                <!-- Reranker 设置 -->
+                <div class="settings-content" id="settings-reranker">
+                    <p class="form-hint" style="margin-bottom: 16px;">配置重排序模型后，在智能问答中勾选"重排序"开关即可启用</p>
+                    <div class="form-group">
+                        <label>服务商</label>
+                        <select id="rerankerProvider" onchange="onRerankerProviderChange()">
+                            <option value="gemini">Google Gemini</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="qwen">阿里通义千问</option>
+                            <option value="siliconflow">SiliconFlow</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="volcano">火山引擎</option>
+                            <option value="jina">Jina AI</option>
+                            <option value="cohere">Cohere</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="rerankerApiKey" placeholder="输入 API Key">
+                    </div>
+                    <div class="form-group">
+                        <label>模型</label>
+                        <input type="text" id="rerankerModel" placeholder="例如: BAAI/bge-reranker-v2-m3">
+                    </div>
+                    <div class="form-group" id="rerankerBaseUrlGroup" style="display: none;">
+                        <label>Base URL</label>
+                        <input type="text" id="rerankerBaseUrl" placeholder="自定义 API 地址">
+                    </div>
+                    <div class="form-group">
+                        <label>返回数量 (Top K)</label>
+                        <input type="number" id="rerankerTopK" value="5" min="1" max="20">
+                    </div>
+                </div>
+
+                <!-- 提示词设置 -->
+                <div class="settings-content" id="settings-prompts">
+                    <div class="prompts-header">
+                        <h3>分析提示词配置</h3>
+                        <p class="form-hint">自定义各类分析任务使用的提示词模板。留空则使用默认提示词。</p>
+                    </div>
+                    
+                    <!-- 提示词选择器 -->
+                    <div class="form-group">
+                        <label>选择要编辑的提示词</label>
+                        <select id="promptSelector" onchange="onPromptSelectorChange()">
+                            <option value="batch_analysis">📄 批量分析提示词</option>
+                            <option value="segment_summary">📑 段落总结提示词</option>
+                            <option value="chapter_summary">📖 章节总结提示词</option>
+                            <option value="qa_response">💬 问答响应提示词</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 提示词编辑区 -->
+                    <div class="form-group">
+                        <div class="prompt-editor-header">
+                            <label id="currentPromptLabel">批量分析提示词</label>
+                            <div class="prompt-actions">
+                                <button class="btn btn-sm" onclick="resetCurrentPrompt()" title="重置为默认">🔄 重置</button>
+                                <button class="btn btn-sm" onclick="copyPromptToClipboard()" title="复制">📋 复制</button>
+                            </div>
+                        </div>
+                        <textarea id="promptEditor" rows="15" placeholder="在此编辑提示词..."></textarea>
+                        <p class="form-hint" id="promptHint">此提示词用于批量分析多个页面时的 VLM 调用。支持变量：{page_count}, {start_page}, {end_page}</p>
+                    </div>
+                    
+                    <!-- 提示词库管理 -->
+                    <div class="prompts-library-section">
+                        <div class="section-header">
+                            <h4>📚 我的提示词库</h4>
+                            <button class="btn btn-sm btn-primary" onclick="savePromptToLibrary()">+ 保存到库</button>
+                        </div>
+                        <div class="saved-prompts-list" id="savedPromptsList">
+                            <div class="placeholder-text">暂无保存的提示词</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 导入导出 -->
+                    <div class="prompts-io-section">
+                        <button class="btn btn-secondary btn-sm" onclick="exportAllPrompts()">📤 导出所有提示词</button>
+                        <button class="btn btn-secondary btn-sm" onclick="importPromptsFromFile()">📥 导入提示词</button>
+                        <input type="file" id="promptsFileInput" accept=".json" style="display:none" onchange="handlePromptsFileImport(event)">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettingsModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 章节选择模态框 (用于跳转翻译页面) -->
+    <div id="chapterSelectModal" class="modal">
+        <div class="modal-overlay" onclick="closeChapterSelectModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>选择章节</h2>
+                <button class="modal-close" onclick="closeChapterSelectModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="chapter-select-hint">请选择要翻译的章节：</p>
+                <div id="chapterSelectList" class="chapter-select-list">
+                    <!-- 章节列表将通过 JS 动态填充 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeChapterSelectModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 笔记模态框 -->
+    <div id="noteModal" class="modal note-modal">
+        <div class="modal-overlay" onclick="closeNoteModal()"></div>
+        <div class="modal-content note-modal-content">
+            <div class="modal-header">
+                <h2 id="noteModalTitle">📝 添加笔记</h2>
+                <button class="modal-close" onclick="closeNoteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 笔记类型选择 -->
+                <div class="note-type-selector" id="noteTypeSelector">
+                    <button class="note-type-btn active" data-type="text" onclick="selectNoteType('text')">
+                        <span class="note-type-icon">✏️</span>
+                        <span>文本笔记</span>
+                    </button>
+                    <button class="note-type-btn" data-type="qa" onclick="selectNoteType('qa')">
+                        <span class="note-type-icon">💬</span>
+                        <span>问答笔记</span>
+                    </button>
+                </div>
+
+                <!-- 文本笔记表单 -->
+                <div class="note-form" id="textNoteForm">
+                    <div class="form-group">
+                        <label for="noteTitle">标题 <span class="optional">(可选)</span></label>
+                        <input type="text" id="noteTitle" class="form-input" placeholder="给笔记起个标题...">
+                    </div>
+                    <div class="form-group">
+                        <label for="noteContent">内容 <span class="required">*</span></label>
+                        <textarea id="noteContent" class="form-textarea" rows="6" placeholder="写下你的想法..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="notePageRef">关联页码 <span class="optional">(可选)</span></label>
+                        <input type="number" id="notePageRef" class="form-input" placeholder="输入页码" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="noteTags">标签 <span class="optional">(可选)</span></label>
+                        <input type="text" id="noteTags" class="form-input" placeholder="多个标签用逗号分隔，如: 角色, 剧情">
+                    </div>
+                </div>
+
+                <!-- 问答笔记表单（从问答保存时使用） -->
+                <div class="note-form" id="qaNoteForm" style="display: none;">
+                    <div class="qa-preview">
+                        <div class="qa-preview-section">
+                            <label>问题</label>
+                            <div class="qa-preview-content" id="qaPreviewQuestion"></div>
+                        </div>
+                        <div class="qa-preview-section">
+                            <label>回答</label>
+                            <div class="qa-preview-content" id="qaPreviewAnswer"></div>
+                        </div>
+                        <div class="qa-preview-section" id="qaPreviewCitationsSection" style="display: none;">
+                            <label>引用页码</label>
+                            <div class="qa-preview-citations" id="qaPreviewCitations"></div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="qaNoteTitle">笔记标题 <span class="optional">(可选)</span></label>
+                        <input type="text" id="qaNoteTitle" class="form-input" placeholder="默认使用问题作为标题...">
+                    </div>
+                    <div class="form-group">
+                        <label for="qaNoteComment">补充说明 <span class="optional">(可选)</span></label>
+                        <textarea id="qaNoteComment" class="form-textarea" rows="3" placeholder="添加你的评论或补充..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeNoteModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveNote()" id="saveNoteBtn">保存笔记</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 笔记详情模态框 -->
+    <div id="noteDetailModal" class="modal note-modal">
+        <div class="modal-overlay" onclick="closeNoteDetailModal()"></div>
+        <div class="modal-content note-modal-content">
+            <div class="modal-header">
+                <h2 id="noteDetailTitle">📝 笔记详情</h2>
+                <button class="modal-close" onclick="closeNoteDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="note-detail-content" id="noteDetailContent">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="deleteCurrentNote()" id="deleteNoteBtn">🗑️ 删除</button>
+                <button class="btn btn-secondary" onclick="closeNoteDetailModal()">关闭</button>
+                <button class="btn btn-primary" onclick="editCurrentNote()">✏️ 编辑</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">加载中...</div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- 移动端遮罩层 -->
+    <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobilePanels()"></div>
+
+    <script src="{{ url_for('static', filename='js/manga-insight.js') }}"></script>
+    <script>
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            initMangaInsight();
+            initMobileNavigation();
+        });
+
+        // 移动端导航初始化
+        function initMobileNavigation() {
+            // 监听窗口大小变化，在大屏幕时自动关闭移动端面板
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) {
+                    closeMobilePanels();
+                }
+            });
+
+            // 监听 ESC 键关闭面板
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    closeMobilePanels();
+                }
+            });
+
+            // 在侧边栏内点击某些元素后自动关闭（如选择页面）
+            const sidebar = document.querySelector('.insight-sidebar');
+            if (sidebar) {
+                sidebar.addEventListener('click', function(e) {
+                    // 如果点击的是页面缩略图，自动关闭侧边栏
+                    if (e.target.closest('.tree-page-item')) {
+                        setTimeout(closeMobileSidebar, 200);
+                    }
+                });
+            }
+            
+            // 在右侧工作区点击某些元素后自动关闭
+            const workspace = document.querySelector('.insight-workspace');
+            if (workspace) {
+                workspace.addEventListener('click', function(e) {
+                    // 如果点击的是页面链接，自动关闭工作区
+                    if (e.target.closest('.note-page-ref') || e.target.closest('.note-detail-page-link')) {
+                        setTimeout(closeMobileWorkspace, 200);
+                    }
+                });
+            }
+        }
+
+        // 切换移动端侧边栏
+        function toggleMobileSidebar() {
+            const sidebar = document.querySelector('.insight-sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            const toggleBtn = document.getElementById('mobileNavBtn');
+            
+            if (sidebar && overlay) {
+                const isOpen = sidebar.classList.contains('mobile-open');
+                
+                if (isOpen) {
+                    closeMobileSidebar();
+                } else {
+                    // 先关闭右侧工作区
+                    closeMobileWorkspace();
+                    sidebar.classList.add('mobile-open');
+                    overlay.classList.add('active');
+                    if (toggleBtn) {
+                        toggleBtn.innerHTML = '✕';
+                        toggleBtn.classList.add('active');
+                    }
+                    document.body.style.overflow = 'hidden';
+                }
+            }
+        }
+
+        // 关闭移动端侧边栏
+        function closeMobileSidebar() {
+            const sidebar = document.querySelector('.insight-sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            const toggleBtn = document.getElementById('mobileNavBtn');
+            
+            if (sidebar) {
+                sidebar.classList.remove('mobile-open');
+            }
+            if (overlay && !document.querySelector('.insight-workspace.mobile-open')) {
+                overlay.classList.remove('active');
+            }
+            if (toggleBtn) {
+                toggleBtn.innerHTML = '📚';
+                toggleBtn.classList.remove('active');
+            }
+            if (!document.querySelector('.insight-workspace.mobile-open')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        // 切换移动端右侧工作区
+        function toggleMobileWorkspace() {
+            const workspace = document.querySelector('.insight-workspace');
+            const overlay = document.getElementById('mobileOverlay');
+            const toggleBtn = document.getElementById('mobileWorkspaceBtn');
+            
+            if (workspace && overlay) {
+                const isOpen = workspace.classList.contains('mobile-open');
+                
+                if (isOpen) {
+                    closeMobileWorkspace();
+                } else {
+                    // 先关闭左侧边栏
+                    closeMobileSidebar();
+                    workspace.classList.add('mobile-open');
+                    overlay.classList.add('active');
+                    if (toggleBtn) {
+                        toggleBtn.innerHTML = '✕';
+                        toggleBtn.classList.add('active');
+                    }
+                    document.body.style.overflow = 'hidden';
+                }
+            }
+        }
+
+        // 关闭移动端右侧工作区
+        function closeMobileWorkspace() {
+            const workspace = document.querySelector('.insight-workspace');
+            const overlay = document.getElementById('mobileOverlay');
+            const toggleBtn = document.getElementById('mobileWorkspaceBtn');
+            
+            if (workspace) {
+                workspace.classList.remove('mobile-open');
+            }
+            if (overlay && !document.querySelector('.insight-sidebar.mobile-open')) {
+                overlay.classList.remove('active');
+            }
+            if (toggleBtn) {
+                toggleBtn.innerHTML = '📝';
+                toggleBtn.classList.remove('active');
+            }
+            if (!document.querySelector('.insight-sidebar.mobile-open')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        // 关闭所有移动端面板
+        function closeMobilePanels() {
+            closeMobileSidebar();
+            closeMobileWorkspace();
+        }
+
+        // ==================== 翻译页面跳转 ====================
+        
+        // 点击翻译按钮
+        function goToTranslate() {
+            // 检查是否已选择书籍
+            if (!window.MangaInsight || !window.MangaInsight.currentBookId) {
+                // 没有选择书籍，跳转到快速翻译页面
+                window.location.href = '/translate';
+                return;
+            }
+            
+            const bookId = window.MangaInsight.currentBookId;
+            const chapters = window.MangaInsight.bookInfo?.chapters || [];
+            
+            if (chapters.length === 0) {
+                // 没有章节信息，直接跳转到书籍翻译页面（不指定章节）
+                window.location.href = `/translate?book=${bookId}`;
+            } else if (chapters.length === 1) {
+                // 只有一章，直接跳转
+                const chapterId = chapters[0].id || chapters[0].chapter_id || 'ch_1';
+                window.location.href = `/translate?book=${bookId}&chapter=${chapterId}`;
+            } else {
+                // 多章节，弹出选择器
+                showChapterSelectModal(bookId, chapters);
+            }
+        }
+        
+        // 显示章节选择模态框
+        function showChapterSelectModal(bookId, chapters) {
+            const modal = document.getElementById('chapterSelectModal');
+            const listContainer = document.getElementById('chapterSelectList');
+            
+            if (!modal || !listContainer) return;
+            
+            // 生成章节列表
+            if (chapters.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="chapter-select-empty">
+                        <div class="empty-icon">📭</div>
+                        <p>暂无章节信息</p>
+                    </div>
+                `;
+            } else {
+                let html = '';
+                chapters.forEach((ch, idx) => {
+                    const chId = ch.id || ch.chapter_id || `ch_${idx + 1}`;
+                    const chTitle = ch.title || `第 ${idx + 1} 章`;
+                    const pageCount = ch.page_count || ch.pages?.length || 0;
+                    
+                    html += `
+                        <div class="chapter-select-item" onclick="selectChapterAndGo('${bookId}', '${chId}')">
+                            <span class="chapter-icon">📖</span>
+                            <div class="chapter-info">
+                                <div class="chapter-name">${chTitle}</div>
+                                <div class="chapter-meta">${pageCount} 页</div>
+                            </div>
+                            <span class="chapter-arrow">→</span>
+                        </div>
+                    `;
+                });
+                listContainer.innerHTML = html;
+            }
+            
+            // 显示模态框
+            modal.classList.add('show');
+        }
+        
+        // 关闭章节选择模态框
+        function closeChapterSelectModal() {
+            const modal = document.getElementById('chapterSelectModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+        }
+        
+        // 选择章节并跳转
+        function selectChapterAndGo(bookId, chapterId) {
+            closeChapterSelectModal();
+            window.location.href = `/translate?book=${bookId}&chapter=${chapterId}`;
+        }
+    </script>
+</body>
+</html>

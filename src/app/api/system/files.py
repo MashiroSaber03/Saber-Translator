@@ -2,75 +2,19 @@
 文件处理相关API
 
 包含所有与文件处理相关的API端点：
-- PDF上传和处理
 - 清理调试文件
 - 参数测试
 """
 
 import os
 import shutil
-import io
-import base64
 import logging
-from typing import List, Dict, Any
 from flask import request, jsonify
-from PIL import Image
 
 from . import system_bp
-from src.core.pdf_processor import extract_images_from_pdf
 from src.shared.path_helpers import get_debug_dir, resource_path
 
 logger = logging.getLogger("SystemAPI.Files")
-
-
-@system_bp.route('/upload_pdf', methods=['POST'])
-def upload_pdf_api():
-    """
-    上传并解析PDF文件，提取其中的图像
-    
-    表单数据:
-        pdfFile: PDF文件
-    
-    返回:
-        {
-            'images': [base64_image_data, ...]
-        }
-    """
-    if 'pdfFile' not in request.files:
-        return jsonify({'error': '没有上传文件'}), 400
-
-    pdf_file = request.files['pdfFile']
-    if pdf_file.filename == '':
-        return jsonify({'error': '文件名为空'}), 400
-
-    if pdf_file:
-        try:
-            logger.info(f"开始处理PDF文件: {pdf_file.filename}")
-            
-            pdf_bytes = pdf_file.read()
-            pdf_stream = io.BytesIO(pdf_bytes)
-            
-            images = extract_images_from_pdf(pdf_stream)
-            logger.info(f"从PDF中提取了 {len(images)} 张图片")
-            
-            image_data_list = []
-            for i, image in enumerate(images):
-                try:
-                    buffered = io.BytesIO()
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-                    image.save(buffered, format="PNG")
-                    img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    image_data_list.append(img_str)
-                except Exception as save_e:
-                    logger.warning(f"保存图片 {i+1} 失败: {save_e}")
-
-            return jsonify({'images': image_data_list}), 200
-        except Exception as e:
-            logger.error(f"处理 PDF 文件时出错: {e}", exc_info=True)
-            return jsonify({'error': f"处理 PDF 文件时出错: {str(e)}"}), 500
-
-    return jsonify({'error': '上传失败'}), 500
 
 
 @system_bp.route('/clean_debug_files', methods=['POST'])

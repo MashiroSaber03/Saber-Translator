@@ -970,7 +970,11 @@ def hq_translate_batch():
     """
     高质量翻译模式的批量翻译接口
     该接口作为后端代理，将请求转发到各 AI 服务商，避免前端直接调用时的 CORS 问题
+    支持流式调用以避免长时间请求超时
     """
+    import json as json_module
+    import httpx
+    
     try:
         data = request.get_json()
         
@@ -985,8 +989,9 @@ def hq_translate_batch():
         low_reasoning = data.get('low_reasoning', False)
         force_json_output = data.get('force_json_output', False)
         no_thinking_method = data.get('no_thinking_method', 'gemini')
+        use_stream = data.get('use_stream', False)
         
-        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}")
+        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}")
         
         # 参数验证
         if not provider or not api_key or not model_name:
@@ -997,10 +1002,6 @@ def hq_translate_batch():
         
         if provider == constants.CUSTOM_OPENAI_PROVIDER_ID and not custom_base_url:
             return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
-        
-        # 导入 OpenAI SDK
-        from openai import OpenAI
-        import requests as http_requests
         
         # 根据服务商设置 base_url
         base_url_map = {
@@ -1018,46 +1019,65 @@ def hq_translate_batch():
         logger.info(f"使用 base_url: {base_url}")
         
         try:
-            # 创建 OpenAI 客户端
-            client = OpenAI(api_key=api_key, base_url=base_url)
-            
             # 构建请求参数
-            api_params = {
+            request_body = {
                 'model': model_name,
                 'messages': messages
             }
             
             # 如果强制 JSON 输出
             if force_json_output:
-                api_params['response_format'] = {'type': 'json_object'}
+                request_body['response_format'] = {'type': 'json_object'}
                 logger.info("已启用强制 JSON 输出模式")
             
             # 根据取消思考方法添加参数
             if low_reasoning:
                 if no_thinking_method == 'gemini':
-                    api_params['extra_body'] = {'reasoning_effort': 'low'}
+                    request_body['reasoning_effort'] = 'low'
                     logger.info("使用 Gemini 方式取消思考: reasoning_effort=low")
                 elif no_thinking_method == 'volcano' and provider == 'volcano':
-                    api_params['extra_body'] = {'thinking': None}
+                    request_body['thinking'] = None
                     logger.info("使用火山引擎方式取消思考: thinking=null")
                 else:
-                    api_params['extra_body'] = {'reasoning_effort': 'low'}
+                    request_body['reasoning_effort'] = 'low'
                     logger.info("使用默认方式取消思考: reasoning_effort=low")
             
-            # 调用 API
-            response = client.chat.completions.create(**api_params)
-            
-            if response and response.choices and len(response.choices) > 0:
-                content = response.choices[0].message.content
-                logger.info(f"高质量翻译 API 调用成功，返回内容长度: {len(content) if content else 0}")
-                
-                return jsonify({
-                    'success': True,
-                    'content': content
-                })
+            # 流式调用
+            if use_stream:
+                content = _hq_translate_stream(base_url, api_key, model_name, request_body)
             else:
-                logger.error(f"API 响应格式异常: {response}")
-                return jsonify({'error': 'AI 未返回有效内容'}), 500
+                # 非流式调用，使用 OpenAI SDK
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                
+                api_params = {
+                    'model': model_name,
+                    'messages': messages
+                }
+                if force_json_output:
+                    api_params['response_format'] = {'type': 'json_object'}
+                if low_reasoning:
+                    if no_thinking_method == 'gemini':
+                        api_params['extra_body'] = {'reasoning_effort': 'low'}
+                    elif no_thinking_method == 'volcano' and provider == 'volcano':
+                        api_params['extra_body'] = {'thinking': None}
+                    else:
+                        api_params['extra_body'] = {'reasoning_effort': 'low'}
+                
+                response = client.chat.completions.create(**api_params)
+                
+                if response and response.choices and len(response.choices) > 0:
+                    content = response.choices[0].message.content
+                else:
+                    logger.error(f"API 响应格式异常: {response}")
+                    return jsonify({'error': 'AI 未返回有效内容'}), 500
+            
+            logger.info(f"高质量翻译 API 调用成功，返回内容长度: {len(content) if content else 0}")
+            
+            return jsonify({
+                'success': True,
+                'content': content
+            })
                 
         except Exception as api_error:
             error_msg = str(api_error)
@@ -1077,6 +1097,56 @@ def hq_translate_batch():
     except Exception as e:
         logger.error(f"处理高质量翻译批量请求时出错: {e}", exc_info=True)
         return jsonify({'error': f'请求处理失败: {str(e)}'}), 500
+
+
+def _hq_translate_stream(base_url: str, api_key: str, model_name: str, request_body: dict) -> str:
+    """
+    高质量翻译流式调用（同步版本）
+    参考漫画分析功能的流式实现，实时在终端显示输出
+    """
+    import json as json_module
+    import httpx
+    
+    request_body["stream"] = True
+    full_text = ""
+    chunk_count = 0
+    
+    # 确保 base_url 末尾没有斜杠，避免双斜杠问题
+    base_url = base_url.rstrip('/')
+    url = f"{base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    print(f"\n[高质量翻译-流式输出] {model_name}: ", end="", flush=True)
+    
+    # 使用同步的 httpx 客户端，设置较长的超时时间
+    with httpx.Client(timeout=300.0) as client:
+        with client.stream("POST", url, headers=headers, json=request_body) as response:
+            if response.status_code != 200:
+                error_text = response.read().decode('utf-8', errors='ignore')[:500]
+                raise Exception(f"API 错误 {response.status_code}: {error_text}")
+            
+            for line in response.iter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json_module.loads(data_str)
+                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        if "content" in delta and delta["content"]:
+                            chunk_count += 1
+                            chunk_text = delta["content"]
+                            full_text += chunk_text
+                            # 实时打印到终端
+                            print(chunk_text, end="", flush=True)
+                    except json_module.JSONDecodeError:
+                        continue
+    
+    print(f"\n[高质量翻译-完成] 共 {chunk_count} 块, {len(full_text)} 字符\n")
+    return full_text
 
 
 @translate_bp.route('/ocr_single_bubble', methods=['POST'])

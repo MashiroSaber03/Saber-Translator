@@ -186,7 +186,7 @@ hiddenimports += [
     
     # 其他
     'litelama', 'openai', 'httpx', 'yaml', 'colorama', 'loguru', 'requests', 'urllib3', 'certifi',
-    'tqdm', 'regex', 'filelock', 'packaging', 'psutil', 'PyPDF2',
+    'tqdm', 'regex', 'filelock', 'packaging', 'psutil',
     'fugashi', 'unidic_lite', 'jaconv', 'einops', 'kornia', 'omegaconf', 'polars',
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
     

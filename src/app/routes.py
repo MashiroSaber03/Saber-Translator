@@ -84,6 +84,12 @@ def translate():
                            default_hq_prompt=default_hq_prompt, default_ai_vision_ocr_prompt=default_ai_vision_ocr_prompt)
 
 
+@main_bp.route('/insight')
+def manga_insight():
+    """漫画分析页面 - 智能分析漫画内容"""
+    return render_template('manga_insight.html')
+
+
 @main_bp.route('/pic/<path:filename>')
 def serve_pic(filename):
     pic_dir = resource_path('pic')

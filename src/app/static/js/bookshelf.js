@@ -309,6 +309,11 @@ function closeBookDetailModal() {
     currentBookId = null;
 }
 
+function goToInsight() {
+    if (!currentBookId) return;
+    window.location.href = `/insight?book=${currentBookId}`;
+}
+
 async function editCurrentBook() {
     if (!currentBookId) return;
     
@@ -1024,6 +1029,7 @@ window.closeBookModal = closeBookModal;
 window.saveBook = saveBook;
 window.openBookDetail = openBookDetail;
 window.closeBookDetailModal = closeBookDetailModal;
+window.goToInsight = goToInsight;
 window.editCurrentBook = editCurrentBook;
 window.deleteCurrentBook = deleteCurrentBook;
 window.showCreateChapterModal = showCreateChapterModal;

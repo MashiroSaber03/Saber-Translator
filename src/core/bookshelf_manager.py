@@ -259,11 +259,37 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
         if "tags" not in book_meta:
             book_meta["tags"] = []
         
-        # 确保每个章节都有 session_path
+        # 确保每个章节都有 session_path 和 page_count
         chapters = book_meta.get("chapters", [])
+        total_pages = 0
+        sessions_base = resource_path("data/sessions")
+        
         for chapter in chapters:
             if "session_path" not in chapter:
                 chapter["session_path"] = get_chapter_session_path(book_id, chapter["id"])
+            
+            # 计算章节页数
+            chapter_id = chapter.get("id")
+            if chapter_id:
+                # 构建绝对路径: data/sessions/bookshelf/{book_id}/{chapter_id}
+                session_abs_path = os.path.join(sessions_base, "bookshelf", book_id, chapter_id)
+                session_meta_path = os.path.join(session_abs_path, "session_meta.json")
+                
+                if os.path.exists(session_meta_path):
+                    try:
+                        with open(session_meta_path, "r", encoding="utf-8") as f:
+                            session_data = json.load(f)
+                        page_count = len(session_data.get("images_meta", []))
+                        chapter["page_count"] = page_count
+                        total_pages += page_count
+                    except Exception:
+                        chapter["page_count"] = 0
+                else:
+                    chapter["page_count"] = 0
+            else:
+                chapter["page_count"] = 0
+        
+        book_meta["total_pages"] = total_pages
     
     return book_meta
 

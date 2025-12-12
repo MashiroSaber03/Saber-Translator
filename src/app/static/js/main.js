@@ -338,13 +338,19 @@ export function handleFiles(files) { // 导出
 
     const imagePromises = [];
     const pdfFiles = [];
+    const mobiFiles = [];  // MOBI/AZW 电子书文件
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        const ext = file.name.split('.').pop().toLowerCase();
+        
         if (file.type.startsWith('image/')) {
             imagePromises.push(processImageFile(file));
         } else if (file.type === 'application/pdf') {
             pdfFiles.push(file);
+        } else if (['mobi', 'azw', 'azw3'].includes(ext)) {
+            // MOBI/AZW 电子书格式
+            mobiFiles.push(file);
         } else {
             console.warn(`不支持的文件类型: ${file.name} (${file.type})`);
         }
@@ -354,6 +360,11 @@ export function handleFiles(files) { // 导出
         .then(() => {
             if (pdfFiles.length > 0) {
                 return processPDFFiles(pdfFiles);
+            }
+        })
+        .then(() => {
+            if (mobiFiles.length > 0) {
+                return processMobiFiles(mobiFiles);
             }
         })
         .then(() => {
@@ -402,42 +413,223 @@ function processImageFile(file) { // 私有
 }
 
 /**
- * 处理 PDF 文件列表
+ * 处理 PDF 文件列表 (浏览器端解析，无需服务器)
  * @param {Array<File>} pdfFiles - PDF 文件数组
  * @returns {Promise<void>}
  */
-function processPDFFiles(pdfFiles) { // 私有
-    return pdfFiles.reduce((promiseChain, file) => {
-        return promiseChain.then(() => {
-            ui.showLoading(`处理 PDF: ${file.name}...`);
-            const formData = new FormData();
-            formData.append('pdfFile', file);
-            return api.uploadPdfApi(formData)
-                .then(response => {
-                    if (response.images && response.images.length > 0) {
-                        response.images.forEach((imageData, idx) => {
-                            const originalDataURL = "data:image/png;base64," + imageData;
-                            const pdfFileName = `${file.name}_页面${idx+1}`;
-                            state.addImage({
-                                originalDataURL: originalDataURL,
-                                translatedDataURL: null, cleanImageData: null,
-                                bubbleTexts: [], bubbleCoords: [], originalTexts: [], textboxTexts: [],
-                                bubbleStates: null, fileName: pdfFileName,
-                                fontSize: state.defaultFontSize, autoFontSize: $('#autoFontSize').is(':checked'),
-                                fontFamily: state.defaultFontFamily, layoutDirection: state.defaultLayoutDirection,
-                                showOriginal: false, translationFailed: false,
-                            });
-                        });
+async function processPDFFiles(pdfFiles) { // 私有
+    for (const file of pdfFiles) {
+        try {
+            ui.showLoading(`正在解析 PDF: ${file.name}...`);
+            
+            // 读取文件为 ArrayBuffer
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // 使用 pdf.js 加载 PDF（浏览器端解析）
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const numPages = pdf.numPages;
+            
+            console.log(`PDF ${file.name} 共 ${numPages} 页，开始本地渲染...`);
+            
+            // 检测是否支持 OffscreenCanvas（后台渲染不受页面可见性影响）
+            const useOffscreen = typeof OffscreenCanvas !== 'undefined';
+            if (useOffscreen) {
+                console.log('使用 OffscreenCanvas 后台渲染模式');
+            }
+            
+            // 逐页渲染为图片
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+                ui.showLoading(`处理 PDF: ${file.name} (${pageNum}/${numPages})...`);
+                
+                try {
+                    const page = await pdf.getPage(pageNum);
+                    
+                    // 设置渲染比例，2.0 可以获得较高清晰度
+                    const scale = 2.0;
+                    const viewport = page.getViewport({ scale });
+                    
+                    let originalDataURL;
+                    
+                    if (useOffscreen) {
+                        // 使用 OffscreenCanvas - 后台也能继续渲染
+                        const offscreen = new OffscreenCanvas(viewport.width, viewport.height);
+                        const context = offscreen.getContext('2d');
+                        
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport
+                        }).promise;
+                        
+                        // OffscreenCanvas 转 Blob 再转 DataURL (JPEG 最高质量)
+                        const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 1.0 });
+                        originalDataURL = await blobToDataURL(blob);
                     } else {
-                        ui.showGeneralMessage(`PDF文件 ${file.name} 中没有检测到图片`, "warning");
+                        // 回退：使用普通 Canvas
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport
+                        }).promise;
+                        
+                        originalDataURL = canvas.toDataURL('image/jpeg', 1.0);
                     }
-                })
-                .catch(error => {
-                    console.error(`处理PDF文件 ${file.name} 失败:`, error);
-                    ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+                    
+                    const pdfFileName = `${file.name}_页面${pageNum}`;
+                    
+                    // 添加到状态（跟图片上传一样）
+                    state.addImage({
+                        originalDataURL: originalDataURL,
+                        translatedDataURL: null, 
+                        cleanImageData: null,
+                        bubbleTexts: [], 
+                        bubbleCoords: [], 
+                        originalTexts: [], 
+                        textboxTexts: [],
+                        bubbleStates: null, 
+                        fileName: pdfFileName,
+                        fontSize: state.defaultFontSize, 
+                        autoFontSize: $('#autoFontSize').is(':checked'),
+                        fontFamily: state.defaultFontFamily, 
+                        layoutDirection: state.defaultLayoutDirection,
+                        showOriginal: false, 
+                        translationFailed: false,
+                    });
+                    
+                    console.log(`  页面 ${pageNum}/${numPages} 处理完成`);
+                    
+                } catch (pageError) {
+                    console.warn(`PDF ${file.name} 第 ${pageNum} 页渲染失败:`, pageError);
+                }
+            }
+            
+            console.log(`PDF ${file.name} 全部 ${numPages} 页处理完成`);
+            
+        } catch (error) {
+            console.error(`处理PDF文件 ${file.name} 失败:`, error);
+            ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+        }
+    }
+}
+
+/**
+ * 处理 MOBI/AZW 电子书文件（上传到后端解析，分批获取图片）
+ * @param {Array<File>} mobiFiles - MOBI 文件数组
+ * @returns {Promise<void>}
+ */
+async function processMobiFiles(mobiFiles) {
+    const BATCH_SIZE = 5;  // 每批获取的页数
+    
+    for (const file of mobiFiles) {
+        let sessionId = null;
+        
+        try {
+            ui.showLoading(`正在解析电子书: ${file.name}...`);
+            
+            // 步骤1: 上传文件并创建解析会话
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const startResponse = await fetch('/api/parse_mobi_start', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const startResult = await startResponse.json();
+            
+            if (!startResult.success) {
+                throw new Error(startResult.error || '解析失败');
+            }
+            
+            sessionId = startResult.session_id;
+            const totalPages = startResult.total_pages;
+            
+            console.log(`MOBI ${file.name} 共 ${totalPages} 页，开始分批获取...`);
+            
+            // 步骤2: 分批获取图片
+            let loadedCount = 0;
+            
+            for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE) {
+                ui.showLoading(`处理电子书: ${file.name} (${Math.min(startIndex + BATCH_SIZE, totalPages)}/${totalPages})...`);
+                
+                const batchResponse = await fetch('/api/parse_mobi_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_index: startIndex,
+                        count: BATCH_SIZE
+                    })
                 });
-        });
-    }, Promise.resolve());
+                
+                const batchResult = await batchResponse.json();
+                
+                if (!batchResult.success) {
+                    console.warn(`批次 ${startIndex} 获取失败:`, batchResult.error);
+                    continue;
+                }
+                
+                // 将本批图片添加到状态
+                for (const imgData of batchResult.images) {
+                    const mobiFileName = `${file.name}_页面${String(imgData.page_index + 1).padStart(4, '0')}`;
+                    
+                    state.addImage({
+                        originalDataURL: imgData.data_url,
+                        translatedDataURL: null,
+                        cleanImageData: null,
+                        bubbleTexts: [],
+                        bubbleCoords: [],
+                        originalTexts: [],
+                        textboxTexts: [],
+                        bubbleStates: null,
+                        fileName: mobiFileName,
+                        fontSize: state.defaultFontSize,
+                        autoFontSize: $('#autoFontSize').is(':checked'),
+                        fontFamily: state.defaultFontFamily,
+                        layoutDirection: state.defaultLayoutDirection,
+                        showOriginal: false,
+                        translationFailed: false,
+                    });
+                    
+                    loadedCount++;
+                }
+                
+                console.log(`  已加载 ${loadedCount}/${totalPages} 页`);
+            }
+            
+            console.log(`MOBI ${file.name} 全部 ${loadedCount} 页处理完成`);
+            
+        } catch (error) {
+            console.error(`处理MOBI文件 ${file.name} 失败:`, error);
+            ui.showGeneralMessage(`处理电子书 ${file.name} 失败: ${error.message}`, "error");
+        } finally {
+            // 步骤3: 清理会话
+            if (sessionId) {
+                try {
+                    await fetch(`/api/parse_mobi_cleanup/${sessionId}`, { method: 'POST' });
+                } catch (e) {
+                    console.warn('清理 MOBI 会话失败:', e);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 将 Blob 转换为 DataURL
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
 }
 
 

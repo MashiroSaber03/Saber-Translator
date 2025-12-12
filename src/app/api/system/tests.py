@@ -753,6 +753,10 @@ def fetch_models():
             models = fetch_openai_compatible_models(api_key, 'https://ark.cn-beijing.volces.com/api/v3')
         elif provider == 'gemini':
             models = fetch_gemini_models(api_key)
+        elif provider == 'openai':
+            models = fetch_openai_compatible_models(api_key, 'https://api.openai.com/v1')
+        elif provider == 'qwen':
+            models = fetch_openai_compatible_models(api_key, 'https://dashscope.aliyuncs.com/compatible-mode/v1')
         elif provider == 'custom_openai':
             if not base_url:
                 return jsonify({

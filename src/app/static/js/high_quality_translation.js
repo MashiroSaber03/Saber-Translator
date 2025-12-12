@@ -118,6 +118,7 @@ export async function startHqTranslation() {
         const lowReasoning = state.hqLowReasoning;
         const prompt = state.hqPrompt;
         const forceJsonOutput = state.hqForceJsonOutput;
+        const useStream = state.hqUseStream;
         
         // 重置批次结果
         allBatchResults = [];
@@ -135,7 +136,8 @@ export async function startHqTranslation() {
             rpmLimit,
             lowReasoning,
             prompt,
-            forceJsonOutput
+            forceJsonOutput,
+            useStream
         );
         
         // 5. 解析合并的JSON结果并导入
@@ -407,7 +409,7 @@ function collectAllImageBase64() {
 /**
  * 分批处理翻译
  */
-async function processBatchTranslation(jsonData, imageBase64Array, batchSize, sessionResetFrequency, provider, apiKey, modelName, customBaseUrl, rpmLimit, lowReasoning, prompt, forceJsonOutput) {
+async function processBatchTranslation(jsonData, imageBase64Array, batchSize, sessionResetFrequency, provider, apiKey, modelName, customBaseUrl, rpmLimit, lowReasoning, prompt, forceJsonOutput, useStream) {
     const totalImages = imageBase64Array.length;
     const totalBatches = Math.ceil(totalImages / batchSize);
     
@@ -439,7 +441,8 @@ async function processBatchTranslation(jsonData, imageBase64Array, batchSize, se
         const batchJsonData = filterJsonForBatch(jsonData, startIdx, endIdx);
         
         // 重试逻辑
-        const maxRetries = state.hqTranslationMaxRetries || 2;
+        // 使用 null 合并运算符，确保 0 被视为有效值（0 表示不重试）
+        const maxRetries = state.hqTranslationMaxRetries ?? 2;
         let retryCount = 0;
         let success = false;
         
@@ -459,7 +462,8 @@ async function processBatchTranslation(jsonData, imageBase64Array, batchSize, se
                     lowReasoning,
                     prompt,
                     sessionId,
-                    forceJsonOutput
+                    forceJsonOutput,
+                    useStream
                 );
                 
                 // 解析并保存结果
@@ -537,7 +541,7 @@ function generateSessionId() {
 /**
  * 调用AI进行翻译 - 通过后端代理，避免 CORS 问题
  */
-async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey, modelName, customBaseUrl, lowReasoning, prompt, sessionId, forceJsonOutput) {
+async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey, modelName, customBaseUrl, lowReasoning, prompt, sessionId, forceJsonOutput, useStream) {
     // 构建提示词和图片
     const jsonString = JSON.stringify(jsonData, null, 2);
     const messages = [
@@ -581,7 +585,8 @@ async function callAiForTranslation(imageBase64Array, jsonData, provider, apiKey
             messages: messages,
             low_reasoning: lowReasoning,
             force_json_output: forceJsonOutput,
-            no_thinking_method: noThinkingMethod
+            no_thinking_method: noThinkingMethod,
+            use_stream: useStream
         });
         
         if (!response.success) {

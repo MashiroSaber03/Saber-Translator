@@ -31,7 +31,6 @@ REDIRECT_MAPPING = {
     '/translate_single_text': '/api/translate_single_text',
     
     # 系统API
-    '/upload_pdf': '/api/upload_pdf',
     '/clean_debug_files': '/api/clean_debug_files',
     '/test_ollama_connection': '/api/test_ollama_connection',
     '/test_lama_repair': '/api/test_lama_repair',

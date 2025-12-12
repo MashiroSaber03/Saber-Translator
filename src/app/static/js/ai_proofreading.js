@@ -289,7 +289,8 @@ async function processBatchProofreading(jsonData, imageBase64Array, batchSize, s
         const batchJsonData = filterJsonForBatch(jsonData, startIdx, endIdx);
         
         // 重试逻辑
-        const maxRetries = state.proofreadingMaxRetries || 2;
+        // 使用 null 合并运算符，确保 0 被视为有效值（0 表示不重试）
+        const maxRetries = state.proofreadingMaxRetries ?? 2;
         let retryCount = 0;
         let success = false;
         

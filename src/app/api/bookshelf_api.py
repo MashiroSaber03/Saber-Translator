@@ -126,6 +126,14 @@ def get_book_cover(book_id):
         if cover_data:
             # 解码Base64并返回图片
             try:
+                # 移除可能的 data URL 前缀
+                if ',' in cover_data:
+                    cover_data = cover_data.split(',', 1)[1]
+                
+                # 修复 Base64 padding
+                missing_padding = len(cover_data) % 4
+                if missing_padding:
+                    cover_data += '=' * (4 - missing_padding)
                 image_data = base64.b64decode(cover_data)
                 # 尝试检测图片格式
                 content_type = 'image/png'

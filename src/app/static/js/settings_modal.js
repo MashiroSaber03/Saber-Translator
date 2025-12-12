@@ -61,6 +61,7 @@ const SETTINGS_FIELD_MAPPING = {
     'settingsHqLowReasoning': 'hqLowReasoning',
     'settingsHqNoThinkingMethod': 'hqNoThinkingMethod',  // 取消思考方法
     'settingsHqForceJsonOutput': 'hqForceJsonOutput',
+    'settingsHqUseStream': 'hqUseStream',  // 流式调用
     'settingsHqPrompt': 'hqPrompt',
     
     // AI校对设置
@@ -103,11 +104,11 @@ const PROVIDER_FIELD_GROUPS = {
     },
     // 高质量翻译服务商选择器（包含所有参数）
     'hqTranslateProvider': {
-        'siliconflow': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqPrompt'],
-        'deepseek': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqPrompt'],
-        'volcano': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqPrompt'],
-        'gemini': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqPrompt'],
-        'custom_openai': ['hqApiKey', 'hqCustomBaseUrl', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqPrompt']
+        'siliconflow': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqUseStream', 'hqPrompt'],
+        'deepseek': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqUseStream', 'hqPrompt'],
+        'volcano': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqUseStream', 'hqPrompt'],
+        'gemini': ['hqApiKey', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqUseStream', 'hqPrompt'],
+        'custom_openai': ['hqApiKey', 'hqCustomBaseUrl', 'hqModelName', 'hqBatchSize', 'hqSessionReset', 'hqRpmLimit', 'hqMaxRetries', 'hqLowReasoning', 'hqForceJsonOutput', 'hqUseStream', 'hqPrompt']
     }
 };
 
@@ -809,7 +810,8 @@ async function saveSettings() {
     }
     const hqMaxRetriesEl = document.getElementById('settingsHqMaxRetries');
     if (hqMaxRetriesEl) {
-        state.setHqTranslationMaxRetries(parseInt(hqMaxRetriesEl.value) || 2);
+        const value = parseInt(hqMaxRetriesEl.value);
+        state.setHqTranslationMaxRetries(value);
     }
     const hqLowReasoningEl = document.getElementById('settingsHqLowReasoning');
     if (hqLowReasoningEl) {
@@ -822,6 +824,10 @@ async function saveSettings() {
     const hqForceJsonOutputEl = document.getElementById('settingsHqForceJsonOutput');
     if (hqForceJsonOutputEl) {
         state.setHqForceJsonOutput(hqForceJsonOutputEl.checked);
+    }
+    const hqUseStreamEl = document.getElementById('settingsHqUseStream');
+    if (hqUseStreamEl) {
+        state.setHqUseStream(hqUseStreamEl.checked);
     }
     const hqPromptEl = document.getElementById('settingsHqPrompt');
     if (hqPromptEl) {
@@ -1131,7 +1137,8 @@ function applySettingsToUI(settings) {
         state.setHqRpmLimit(parseInt(settings.hqRpmLimit) || 7);
     }
     if (settings.hqMaxRetries !== undefined) {
-        state.setHqTranslationMaxRetries(parseInt(settings.hqMaxRetries) || 2);
+        const value = parseInt(settings.hqMaxRetries);
+        state.setHqTranslationMaxRetries(value);
     }
     if (settings.hqLowReasoning !== undefined) {
         state.setHqLowReasoning(settings.hqLowReasoning);
@@ -1141,6 +1148,9 @@ function applySettingsToUI(settings) {
     }
     if (settings.hqForceJsonOutput !== undefined) {
         state.setHqForceJsonOutput(settings.hqForceJsonOutput);
+    }
+    if (settings.hqUseStream !== undefined) {
+        state.setHqUseStream(settings.hqUseStream);
     }
     // 高质量翻译提示词：空字符串时使用默认值
     if (settings.hqPrompt !== undefined && settings.hqPrompt.trim() !== '') {

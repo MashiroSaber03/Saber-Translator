@@ -187,23 +187,36 @@ export function bindEventListeners() {
     $("#aiVisionPromptModeSelect").on('change', handleAiVisionPromptModeChange);
 
     // 字体家族下拉框变更事件 - 主界面和编辑模式字体选择
-    $(document).on('change', "#fontFamily, #bubbleFontFamily", function() {
+    $(document).on('change', "#fontFamily, #bubbleFontFamily, #fontFamilyNew", function() {
         const selectedValue = $(this).val();
         const isEditMode = this.id === 'bubbleFontFamily';
+        const isNewEditMode = this.id === 'fontFamilyNew';
         
         if (selectedValue === 'custom-font') {
             // 触发文件选择对话框
             $('#fontUpload').click();
             
-            // 重新选择之前的值，因为"自定义字体..."不是真正的字体选项
-            const previousValue = $(this).data('previous-value') || 'fonts/msyh.ttc'; // 默认微软雅黑
-            $(this).val(previousValue);
+            // 恢复字体值
+            let restoreValue;
+            if (isNewEditMode) {
+                // 编辑模式：从当前气泡状态读取，保持与气泡状态的一致性
+                const bubbleState = state.bubbleStates?.[state.selectedBubbleIndex];
+                restoreValue = bubbleState?.fontFamily || state.defaultFontFamily;
+            } else {
+                // 其他选择器：使用 previous-value 机制
+                restoreValue = $(this).data('previous-value') || 'fonts/msyh.ttc';
+            }
+            $(this).val(restoreValue);
         } else {
-            // 保存当前选择的值，以便"自定义字体"选项后可以恢复
-            $(this).data('previous-value', selectedValue);
+            // 保存当前选择的值，以便"自定义字体"选项后可以恢复（非编辑模式使用）
+            if (!isNewEditMode) {
+                $(this).data('previous-value', selectedValue);
+            }
             
-            // 如果是编辑模式，调用编辑模式的处理函数，否则调用全局设置处理函数
-            if (isEditMode) {
+            // 根据选择器类型调用不同的处理函数
+            if (isNewEditMode) {
+                // 新版编辑模式：不需要额外处理，edit_mode.js 的 bindEditModeEvent 会处理
+            } else if (isEditMode) {
                 handleBubbleSettingChange({ target: this });
             } else {
                 handleGlobalSettingChange({ target: this });

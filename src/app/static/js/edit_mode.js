@@ -2063,8 +2063,14 @@ function handleStyleChange() {
     const index = state.selectedBubbleIndex;
     if (index < 0) return;
     
+    // 检查字体值，如果是 'custom-font' 则跳过（由 events.js 处理文件选择）
+    const fontValue = $('#fontFamilyNew').val();
+    if (fontValue === 'custom-font') {
+        return;
+    }
+    
     const setting = {
-        fontFamily: $('#fontFamilyNew').val(),
+        fontFamily: fontValue,
         textColor: $('#textColorNew').val(),
         textDirection: $('#textDirectionNew').val(),
         rotationAngle: parseInt($('#rotationAngleNew').val()) || 0,
