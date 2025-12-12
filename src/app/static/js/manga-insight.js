@@ -686,13 +686,21 @@ function renderTimeline(data) {
     const container = document.getElementById('timelineContainer');
     if (!container) return;
     
-    const groups = data.groups || [];
+    const mode = data.mode || 'simple';
     const stats = data.stats || {};
     const cached = data.cached;
     
+    // 增强模式
+    if (mode === 'enhanced') {
+        renderEnhancedTimeline(data, container);
+        return;
+    }
+    
+    // 简单模式
+    const groups = data.groups || [];
+    
     if (groups.length === 0) {
         if (cached === false) {
-            // 没有缓存，提示用户生成
             container.innerHTML = `
                 <div class="timeline-empty-state">
                     <div class="empty-icon">📈</div>
@@ -709,7 +717,7 @@ function renderTimeline(data) {
         return;
     }
     
-    // 构建时间线 HTML
+    // 构建简单时间线 HTML
     let html = `
         <div class="timeline-stats">
             <span class="stat-badge">📊 ${stats.total_events || 0} 个事件</span>
@@ -757,6 +765,157 @@ function renderTimeline(data) {
     
     html += '</div>';
     container.innerHTML = html;
+}
+
+function renderEnhancedTimeline(data, container) {
+    const stats = data.stats || {};
+    const storyArcs = data.story_arcs || [];
+    const events = data.events || [];
+    const characters = data.characters || [];
+    const plotThreads = data.plot_threads || [];
+    const summary = data.summary || {};
+    
+    // 检查是否有数据
+    if (storyArcs.length === 0 && events.length === 0) {
+        container.innerHTML = '<div class="placeholder-text">暂无时间线数据，请先完成漫画分析</div>';
+        return;
+    }
+    
+    // 构建事件映射
+    const eventMap = {};
+    events.forEach(e => { if (e.id) eventMap[e.id] = e; });
+    
+    let html = `
+        <div class="enhanced-timeline">
+            <!-- 统计信息 -->
+            <div class="timeline-stats enhanced">
+                <span class="stat-badge">🎭 ${stats.total_arcs || 0} 个剧情弧</span>
+                <span class="stat-badge">📊 ${stats.total_events || 0} 个事件</span>
+                <span class="stat-badge">👥 ${stats.total_characters || 0} 个角色</span>
+                <span class="stat-badge">🔗 ${stats.total_threads || 0} 条线索</span>
+                <span class="stat-badge">📄 ${stats.total_pages || 0} 页</span>
+            </div>
+            
+            <!-- 故事摘要 -->
+            ${summary.one_sentence ? `
+                <div class="timeline-summary-card">
+                    <h4>📖 故事概要</h4>
+                    <p class="one-sentence">${summary.one_sentence}</p>
+                    ${summary.main_conflict ? `<p class="main-conflict"><strong>主要冲突：</strong>${summary.main_conflict}</p>` : ''}
+                    ${summary.themes && summary.themes.length > 0 ? `
+                        <div class="themes">
+                            <strong>主题：</strong>
+                            ${summary.themes.map(t => `<span class="theme-tag">${t}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            ` : ''}
+            
+            <!-- 剧情弧 -->
+            ${storyArcs.length > 0 ? `
+                <div class="timeline-section">
+                    <h4>🎭 剧情发展</h4>
+                    <div class="story-arcs-track">
+                        ${storyArcs.map((arc, idx) => {
+                            const pageRange = arc.page_range || {};
+                            const arcEvents = (arc.event_ids || []).map(id => eventMap[id]).filter(e => e);
+                            return `
+                                <div class="story-arc-card ${arc.mood ? 'mood-' + arc.mood : ''}" data-arc-id="${arc.id || idx}">
+                                    <div class="arc-header">
+                                        <span class="arc-name">${arc.name || '未命名阶段'}</span>
+                                        <span class="arc-pages">第 ${pageRange.start || '?'}-${pageRange.end || '?'} 页</span>
+                                    </div>
+                                    ${arc.description ? `<p class="arc-description">${arc.description}</p>` : ''}
+                                    ${arc.mood ? `<span class="arc-mood">${arc.mood}</span>` : ''}
+                                    ${arcEvents.length > 0 ? `
+                                        <div class="arc-events">
+                                            <strong>关键事件：</strong>
+                                            <ul>
+                                                ${arcEvents.slice(0, 5).map(e => `<li>${e.event || e.description || ''}</li>`).join('')}
+                                                ${arcEvents.length > 5 ? `<li class="more">...还有 ${arcEvents.length - 5} 个事件</li>` : ''}
+                                            </ul>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- 角色追踪 -->
+            ${characters.length > 0 ? `
+                <div class="timeline-section">
+                    <h4>👥 主要角色</h4>
+                    <div class="characters-grid">
+                        ${characters.map(char => `
+                            <div class="character-card">
+                                <div class="character-name">${char.name || '未知角色'}</div>
+                                ${char.description ? `<p class="character-desc">${char.description}</p>` : ''}
+                                ${char.arc ? `<p class="character-arc"><strong>角色弧光：</strong>${char.arc}</p>` : ''}
+                                ${char.first_appearance ? `<span class="first-appear">首次出场：第 ${char.first_appearance} 页</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- 线索追踪 -->
+            ${plotThreads.length > 0 ? `
+                <div class="timeline-section">
+                    <h4>🔗 伏笔与线索</h4>
+                    <div class="plot-threads-list">
+                        ${plotThreads.map(thread => `
+                            <div class="plot-thread-item ${thread.status === '已解决' ? 'resolved' : 'pending'}">
+                                <div class="thread-header">
+                                    <span class="thread-name">${thread.name || '未命名线索'}</span>
+                                    <span class="thread-status ${thread.status === '已解决' ? 'resolved' : ''}">${thread.status || '进行中'}</span>
+                                </div>
+                                ${thread.description ? `<p class="thread-desc">${thread.description}</p>` : ''}
+                                ${thread.introduced_at ? `<span class="thread-intro">第 ${thread.introduced_at} 页引入</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- 事件列表（折叠） -->
+            ${events.length > 0 ? `
+                <div class="timeline-section">
+                    <h4 class="collapsible" onclick="toggleEventsSection(this)">
+                        📊 全部事件 <span class="collapse-icon">▼</span>
+                    </h4>
+                    <div class="events-list-section collapsed">
+                        ${events.map(event => {
+                            const pageRange = event.page_range || {};
+                            return `
+                                <div class="event-item importance-${event.importance || 'normal'}">
+                                    <span class="event-pages">第 ${pageRange.start || '?'}-${pageRange.end || '?'} 页</span>
+                                    <span class="event-text">${event.event || event.description || ''}</span>
+                                    ${event.involved_characters && event.involved_characters.length > 0 ? 
+                                        `<span class="event-chars">${event.involved_characters.join(', ')}</span>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function toggleEventsSection(header) {
+    const section = header.nextElementSibling;
+    const icon = header.querySelector('.collapse-icon');
+    if (section.classList.contains('collapsed')) {
+        section.classList.remove('collapsed');
+        icon.textContent = '▲';
+    } else {
+        section.classList.add('collapsed');
+        icon.textContent = '▼';
+    }
 }
 
 // ==================== 重新生成功能 ====================

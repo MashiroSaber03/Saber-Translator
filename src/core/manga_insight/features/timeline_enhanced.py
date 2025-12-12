@@ -217,9 +217,20 @@ class EnhancedTimelineBuilder:
             result["fallback_reason"] = str(e)
             return result
     
+    # 配置常量
+    MAX_SECTIONS_BEFORE_MERGE = 15  # 超过此数量时进行合并
+    MAX_EVENTS_PER_BATCH = 10       # 每批次最多保留的关键事件数
+    MAX_TOTAL_EVENTS = 80           # 全书最多保留的关键事件数
+    MERGE_GROUP_SIZE = 3            # 合并时每组包含的段落数
+    
     async def _collect_analysis_data(self) -> str:
         """
         收集所有分析数据，格式化为 LLM 输入
+        
+        优先级（仿照概述生成逻辑）：
+        1. 优先使用章节总结（最精炼）
+        2. 次优先使用段落总结
+        3. 降级使用批量分析（会压缩）
         
         Returns:
             str: 格式化的分析数据文本
@@ -236,63 +247,229 @@ class EnhancedTimelineBuilder:
             if book_summary:
                 parts.append(f"【全书概述】\n{book_summary}\n")
         
-        # 加载批量分析
-        batches = await self.storage.list_batches()
+        # 方案1：优先使用章节总结
+        chapters = await self.storage.list_chapters()
+        if chapters:
+            logger.info(f"时间线数据收集：使用 {len(chapters)} 个章节总结")
+            chapter_data = await self._collect_from_chapters(chapters)
+            if chapter_data:
+                parts.append(chapter_data["content"])
+                total_pages = chapter_data["total_pages"]
+                parts.insert(0, f"【基本信息】\n总页数: {total_pages}\n")
+                return "\n\n".join(parts)
         
-        if not batches:
-            return ""
+        # 方案2：使用段落总结
+        segments = await self.storage.list_segments()
+        if segments:
+            logger.info(f"时间线数据收集：使用 {len(segments)} 个段落总结")
+            segment_data = await self._collect_from_segments(segments)
+            if segment_data:
+                parts.append(segment_data["content"])
+                total_pages = segment_data["total_pages"]
+                parts.insert(0, f"【基本信息】\n总页数: {total_pages}\n")
+                return "\n\n".join(parts)
+        
+        # 方案3：使用批量分析（压缩处理）
+        batches = await self.storage.list_batches()
+        if batches:
+            logger.info(f"时间线数据收集：使用 {len(batches)} 个批量分析")
+            batch_data = await self._collect_from_batches(batches)
+            if batch_data:
+                parts.append(batch_data["content"])
+                total_pages = batch_data["total_pages"]
+                parts.insert(0, f"【基本信息】\n总页数: {total_pages}\n")
+                return "\n\n".join(parts)
+        
+        return ""
+    
+    async def _collect_from_chapters(self, chapters: List[Dict]) -> Optional[Dict]:
+        """从章节总结收集数据"""
+        chapter_parts = ["【章节剧情】"]
+        total_pages = 0
+        all_events = []
+        
+        for ch in chapters:
+            ch_id = ch.get("id", "")
+            analysis = await self.storage.load_chapter_analysis(ch_id)
+            if not analysis:
+                continue
+            
+            page_range = analysis.get("page_range", {})
+            start = page_range.get("start", 0)
+            end = page_range.get("end", 0)
+            total_pages = max(total_pages, end)
+            
+            title = analysis.get("title", f"章节{ch_id}")
+            summary = analysis.get("summary", "")
+            events = analysis.get("plot_events", [])[:self.MAX_EVENTS_PER_BATCH]
+            
+            if summary:
+                chapter_parts.append(f"\n{title}（第{start}-{end}页）:\n{summary}")
+                if events:
+                    all_events.extend([(start, e) for e in events if e])
+        
+        if len(chapter_parts) <= 1:
+            return None
+        
+        # 添加关键事件汇总
+        if all_events:
+            chapter_parts.append("\n【关键事件汇总】")
+            # 按页码排序，限制总数
+            all_events.sort(key=lambda x: x[0])
+            for page, event in all_events[:self.MAX_TOTAL_EVENTS]:
+                chapter_parts.append(f"- 第{page}页: {event}")
+        
+        return {
+            "content": "\n".join(chapter_parts),
+            "total_pages": total_pages
+        }
+    
+    async def _collect_from_segments(self, segments: List[Dict]) -> Optional[Dict]:
+        """从段落总结收集数据"""
+        segment_items = []
+        total_pages = 0
+        
+        for seg_info in segments:
+            seg_id = seg_info.get("segment_id", "")
+            seg_data = await self.storage.load_segment_summary(seg_id)
+            if not seg_data:
+                continue
+            
+            page_range = seg_data.get("page_range", {})
+            start = page_range.get("start", 0)
+            end = page_range.get("end", 0)
+            total_pages = max(total_pages, end)
+            
+            summary = seg_data.get("summary", "")
+            events = seg_data.get("key_events", [])[:self.MAX_EVENTS_PER_BATCH]
+            
+            if summary:
+                segment_items.append({
+                    "start": start,
+                    "end": end,
+                    "summary": summary,
+                    "events": events
+                })
+        
+        if not segment_items:
+            return None
+        
+        # 如果段落过多，进行合并
+        if len(segment_items) > self.MAX_SECTIONS_BEFORE_MERGE:
+            segment_items = self._merge_items(segment_items)
+            logger.info(f"段落过多，合并后剩余 {len(segment_items)} 个")
+        
+        # 构建输出
+        segment_parts = ["【段落剧情】"]
+        all_events = []
+        
+        for item in segment_items:
+            segment_parts.append(
+                f"\n第{item['start']}-{item['end']}页:\n{item['summary']}"
+            )
+            all_events.extend([(item['start'], e) for e in item.get('events', []) if e])
+        
+        # 添加关键事件汇总
+        if all_events:
+            segment_parts.append("\n【关键事件汇总】")
+            all_events.sort(key=lambda x: x[0])
+            for page, event in all_events[:self.MAX_TOTAL_EVENTS]:
+                segment_parts.append(f"- 第{page}页: {event}")
+        
+        return {
+            "content": "\n".join(segment_parts),
+            "total_pages": total_pages
+        }
+    
+    async def _collect_from_batches(self, batches: List[Dict]) -> Optional[Dict]:
+        """从批量分析收集数据（会压缩）"""
+        batch_items = []
+        total_pages = 0
         
         for batch_info in batches:
-            start_page = batch_info.get("start_page", 0)
-            end_page = batch_info.get("end_page", 0)
-            total_pages = max(total_pages, end_page)
+            start = batch_info.get("start_page", 0)
+            end = batch_info.get("end_page", 0)
+            total_pages = max(total_pages, end)
             
-            batch = await self.storage.load_batch_analysis(start_page, end_page)
+            batch = await self.storage.load_batch_analysis(start, end)
             if not batch:
                 continue
             
-            batch_parts = [f"【第{start_page}-{end_page}页】"]
+            summary = batch.get("batch_summary", "")
+            events = batch.get("key_events", [])[:self.MAX_EVENTS_PER_BATCH]
             
-            # 批次摘要
-            batch_summary = batch.get("batch_summary", "")
-            if batch_summary:
-                batch_parts.append(f"剧情概述: {batch_summary}")
-            
-            # 关键事件
-            events = batch.get("key_events", [])
-            if events:
-                valid_events = [str(e) for e in events if e]
-                if valid_events:
-                    batch_parts.append(f"关键事件: {'; '.join(valid_events)}")
-            
-            # 衔接说明
-            notes = batch.get("continuity_notes", "")
-            if notes:
-                batch_parts.append(f"衔接说明: {notes}")
-            
-            parts.append("\n".join(batch_parts))
+            if summary:
+                batch_items.append({
+                    "start": start,
+                    "end": end,
+                    "summary": summary,
+                    "events": [str(e) for e in events if e]
+                })
         
-        # 加载段落总结（如有）
-        segments = await self.storage.list_segments()
-        if segments:
-            segment_parts = ["\n【段落总结】"]
-            for seg_info in segments:
-                seg_id = seg_info.get("segment_id", "")
-                seg_data = await self.storage.load_segment_summary(seg_id)
-                if seg_data:
-                    page_range = seg_data.get("page_range", {})
-                    summary = seg_data.get("summary", "")
-                    if summary:
-                        segment_parts.append(
-                            f"第{page_range.get('start', 0)}-{page_range.get('end', 0)}页: {summary}"
-                        )
-            if len(segment_parts) > 1:
-                parts.append("\n".join(segment_parts))
+        if not batch_items:
+            return None
         
-        # 添加页数信息
-        parts.insert(0, f"【基本信息】\n总页数: {total_pages}\n")
+        # 如果批次过多，进行合并
+        if len(batch_items) > self.MAX_SECTIONS_BEFORE_MERGE:
+            batch_items = self._merge_items(batch_items)
+            logger.info(f"批次过多，合并后剩余 {len(batch_items)} 个")
         
-        return "\n\n".join(parts)
+        # 构建输出
+        batch_parts = ["【剧情发展】"]
+        all_events = []
+        
+        for item in batch_items:
+            batch_parts.append(
+                f"\n第{item['start']}-{item['end']}页:\n{item['summary']}"
+            )
+            all_events.extend([(item['start'], e) for e in item.get('events', []) if e])
+        
+        # 添加关键事件汇总（限制数量）
+        if all_events:
+            batch_parts.append("\n【关键事件汇总】")
+            all_events.sort(key=lambda x: x[0])
+            for page, event in all_events[:self.MAX_TOTAL_EVENTS]:
+                batch_parts.append(f"- 第{page}页: {event}")
+        
+        return {
+            "content": "\n".join(batch_parts),
+            "total_pages": total_pages
+        }
+    
+    def _merge_items(self, items: List[Dict]) -> List[Dict]:
+        """
+        合并过多的段落/批次
+        
+        每 MERGE_GROUP_SIZE 个合并为一个
+        """
+        merged = []
+        
+        for i in range(0, len(items), self.MERGE_GROUP_SIZE):
+            group = items[i:i + self.MERGE_GROUP_SIZE]
+            if not group:
+                continue
+            
+            # 合并页码范围
+            start = group[0]["start"]
+            end = group[-1]["end"]
+            
+            # 合并摘要
+            summaries = [item["summary"] for item in group if item.get("summary")]
+            merged_summary = " ".join(summaries)
+            
+            # 合并事件（每组只取前几个）
+            merged_events = []
+            for item in group:
+                merged_events.extend(item.get("events", [])[:2])
+            
+            merged.append({
+                "start": start,
+                "end": end,
+                "summary": merged_summary,
+                "events": merged_events[:self.MAX_EVENTS_PER_BATCH]
+            })
+        
+        return merged
     
     async def _synthesize_timeline(self, analysis_data: str) -> Optional[Dict]:
         """
