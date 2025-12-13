@@ -83,6 +83,34 @@
     font-size: 0.75rem;
 }
 
+#thumbnail-sidebar .thumbnail-wrapper .thumbnail-mark-line {
+  width: 4.5rem;
+  display: flex;
+  flex-direction: row;
+  font-size: 0.75rem;
+  justify-content: space-between;
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* IE10+/Edge */
+  user-select: none;         /* 标准语法 */
+}
+
+#thumbnail-sidebar .thumbnail-wrapper .thumbnail-mark-line .thumbnail-mark {
+  cursor: pointer;
+  color: white;
+  /*-webkit-text-stroke: 1px black;*/
+  text-shadow: 
+    0px 0px 1px #000,
+    0px 0px 1px #000;
+}
+#thumbnail-sidebar .thumbnail-wrapper .thumbnail-mark-line .thumbnail-mark.mark-left.active {
+  color: green;
+}
+
+#thumbnail-sidebar .thumbnail-wrapper .thumbnail-mark-line .thumbnail-mark.mark-right.active {
+  color: red;
+}
+
 #thumbnail-sidebar .thumbnail-item {
   /*margin-bottom: 10px;*/
   cursor: pointer;

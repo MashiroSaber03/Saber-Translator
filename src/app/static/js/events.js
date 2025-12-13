@@ -64,6 +64,8 @@ export function bindEventListeners() {
     $("#toggleImageButton").on('click', handleToggleImageDisplay);
     $("#imageSize").on('input', handleImageSizeChange);
     $("#thumbnail-sidebar #thumbnailList").on('click', '.thumbnail-item', handleThumbnailClick); // 事件委托
+    // 章节标记按钮监听事件
+    $("#thumbnail-sidebar #thumbnailList").on('click', '.thumbnail-mark', chapterMarkClickHandler)
 
     // --- 下载 ---
     $("#downloadButton").on('click', handleDownloadCurrent);
@@ -259,6 +261,9 @@ export function bindEventListeners() {
     $("#pageEnd").on('change', pageSelectChangeHandler)
 }
 
+/**
+ * 图片选择器处理事件
+ */
 function pageSelectChangeHandler() {
   const $input = $(this);
   const isStart = $input.hasClass('pageStart');
@@ -300,8 +305,8 @@ function pageSelectChangeHandler() {
 
     if (!isNaN(otherValue)) {
       if (isStart && value > otherValue) {
-        $input.val(otherValue);
-        $input.trigger('input');
+        $otherInput.val(value);
+        $otherInput.trigger('input');
       } else if (isEnd && value < otherValue) {
         $input.val(otherValue);
         $input.trigger('input');
@@ -381,8 +386,7 @@ function handleTranslateAll(e, config) {
 
 function handleTranslateAllMerge(e) {
   handleTranslateAll(e, {
-    translate_merge: true,
-    chat_session: window.crypto.randomUUID()
+    translate_merge: true
   })
 }
 
@@ -518,6 +522,31 @@ function handleThumbnailClick(e) {
         // switchImage 函数需要在 main.js 中定义并导出
         import('./main.js').then(main => main.switchImage(index));
     }
+}
+
+/**
+ * 章节标记按钮处理事件
+ */
+function chapterMarkClickHandler(e) {
+    const $mark = $(this);
+    const index = $mark.data('index')
+    const markData = state.capterMark[String(index)] || {}
+    if ($mark.hasClass('active')) {
+        $mark.removeClass('active')
+        if ($mark.hasClass('mark-left')) {
+            markData.left = false
+        } else {
+            markData.right = false
+        }
+    } else {
+        $mark.addClass('active')
+        if ($mark.hasClass('mark-left')) {
+            markData.left = true
+        } else {
+            markData.right = true
+        }
+    }
+    state.capterMark[String(index)] = markData
 }
 
 function handleDownloadCurrent() {

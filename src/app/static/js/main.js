@@ -384,7 +384,11 @@ export function handleFiles(files) { // 导出
             console.error("处理文件失败:", error);
             ui.showError(`处理文件时出错: ${error.message || error}`);
             ui.updateButtonStates();
-        });
+        }).finally(() => {
+            // 最后配置页数选择上下限
+            $("#pageStart").attr('min', 1).attr('max', state.images.length)
+            $("#pageEnd").attr('min', 1).attr('max', state.images.length)
+        })
 }
 
 /**
@@ -768,8 +772,8 @@ export function switchImage(index) {
  * 翻译当前图片
  */
 export function translateCurrentImage(config) {
-    const translateMerge = config.translate_merge || false
-    const chatSession = config.chat_session || null
+    const translateMerge = config?.translate_merge || false
+    const chatSession = config?.chat_session || null
 
     const currentImage = state.getCurrentImage();
     if (!currentImage) return Promise.reject("No current image"); // 返回一个被拒绝的Promise
@@ -990,8 +994,8 @@ function getPageSelectCount() {
  * 按照每张图片的当前状态（包括手动标注框）批量翻译
  */
 export function translateAllImages(config) {
-    const translateMerge = config.translate_merge || false
-    const chatSession = config.chat_session || false
+    const translateMerge = config?.translate_merge || false
+    let chatSession = config?.translate_merge ? window.crypto.randomUUID() : null
 
     if (state.images.length === 0) {
         ui.showGeneralMessage("请先添加图片", "warning");
@@ -1082,7 +1086,7 @@ export function translateAllImages(config) {
 
     // let currentIndex = 0;
     let currentIndex = translateMerge ? parseFloat($('#pageStart').val() || 1) - 1 : 0;
-    const totalImages = state.images.length;
+    const totalImages = translateMerge ? parseFloat($('#pageEnd').val() || state.images.length) : state.images.length;
     let failCount = 0; // 记录失败数量
 
     let customBaseUrlForAll = null;
@@ -1167,6 +1171,11 @@ export function translateAllImages(config) {
             console.log(`批量翻译图片 ${currentIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
         } else {
             console.log(`批量翻译图片 ${currentIndex}: 未找到已有文本框，将进行自动检测。`);
+        }
+        // --- 调用api配置查章节chat_session
+        if (chapterCheckIndexHasStartActive(currentIndex)) {
+            chatSession = window.crypto.randomUUID()
+            console.log('刷新会话Session,新Session -> ', chatSession)
         }
         // ----------------------------------------------
 
@@ -1272,12 +1281,42 @@ export function translateAllImages(config) {
                 ui.renderThumbnails(); // 更新缩略图显示失败标记
             })
             .finally(() => {
+                // 章节检查结束标志
+                if (chapterCheckIndexHasEndActive(currentIndex)) {
+                    chatSession = null
+                }
                 currentIndex++;
                 processNextImage(); // 处理下一张图片
             });
         // --- 结束核心修改 ---
     }
     processNextImage(); // 开始处理第一张图片
+}
+
+/**
+ * 检查索引图像章节开始标记是否激活
+ * @param index
+ * @returns boolean
+ */
+function chapterCheckIndexHasStartActive(index) {
+    const wrapper = $('.thumbnail-wrapper')[index]
+    if (!wrapper) return false
+    const mark = $(wrapper).find('.mark-left')[0]
+    if (!mark) return false
+    return $(mark).hasClass('active')
+}
+
+/**
+ * 检查索引图像章节结束标记是否激活
+ * @param index
+ * @returns boolean
+ */
+function chapterCheckIndexHasEndActive(index) {
+    const wrapper = $('.thumbnail-wrapper')[index]
+    if (!wrapper) return false
+    const mark = $(wrapper).find('.mark-right')[0]
+    if (!mark) return false
+    return $(mark).hasClass('active')
 }
 
 // --- 其他需要导出的函数 ---

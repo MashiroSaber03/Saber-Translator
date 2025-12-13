@@ -105,11 +105,29 @@ export function renderThumbnails() {
         const thumbnailWrapper = $("<div class='thumbnail-wrapper'></div>")
         const thumbnailItem = $("<div class='thumbnail-item' data-index='" + index + "'></div>");
         const thumbnailImage = $("<img class='thumbnail-image'>").attr('src', imageData.originalDataURL);
-        const thumbnailNumber = $(`<div class='thumbnail-number'>第${index + 1}张</div>`);
         thumbnailItem.append(thumbnailImage);
+        
+        const thumbnailMarkLine = $("<div class='thumbnail-mark-line' ></div>")
+        const thumbnailMarkLeft = $(`<div class='thumbnail-mark mark-left' data-index="${index}" title='点击后标记章节开始位置'>▶</div>`)
+        const thumbnailMarkRight = $(`<div class='thumbnail-mark mark-right' data-index="${index}" title='点击后标记章节结束位置'>◀</div>`)
+        const thumbnailNumber = $(`<div class='thumbnail-number'>第${index + 1}张</div>`);
+        // 添加是否激活标记
+        const markData = state.capterMark[String(index)]
+        if (markData) {
+            if (markData.left) {
+                thumbnailMarkLeft.addClass('active')
+            }
+            if (markData.right) {
+                thumbnailMarkRight.addClass('active')
+            }
+        }
+
+        thumbnailMarkLine.append(thumbnailMarkLeft)
+        thumbnailMarkLine.append(thumbnailNumber)
+        thumbnailMarkLine.append(thumbnailMarkRight)
 
         thumbnailWrapper.append(thumbnailItem)
-        thumbnailWrapper.append(thumbnailNumber)
+        thumbnailWrapper.append(thumbnailMarkLine)
 
         // 清除旧标记
         thumbnailItem.find('.translation-failed-indicator, .labeled-indicator').remove();

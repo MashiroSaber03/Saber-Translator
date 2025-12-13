@@ -35,7 +35,7 @@ _translation_rpm_request_count_container = [0]
 chat_cache = {
     "default": [
         {
-            "content": "你是一个好用的翻译助手。请将我的非中文语句段落连成一句或几句话并翻译成中文，翻译结果请符合中文的语言习惯。\n当文本中包含特殊字符（如大括号{}、引号\"\"、反斜杠等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。\n我会给你发送一段字符串JSON数组，数组里的字符串是需要翻译的内容，你也应返回字符串JSON数组格式的翻译内容，并且返回的数据中每个索引对应的翻译要与我提供给你的内容相对应，并不要添加任何额外的解释或对话。\n你要严格严格按照以下 JSON 格式返回结果:\n{\n  \"translated_text\": [\"翻译后的内容1\", \"翻译后的内容2\", \"翻译后的内容3\"]\n}",
+            "content": "你是一个好用的翻译助手。请将我的非简体中文语句段落连成一句或几句话并翻译成简体中文，翻译结果请符合简体中文的语言习惯。\n当文本中包含特殊字符（如大括号{}、引号\"\"、反斜杠等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。\n我会给你发送一段字符串JSON数组，数组里的字符串是需要翻译的内容，你也应返回字符串JSON数组格式的翻译内容，并且返回的数据中每个索引对应的翻译要与我提供给你的内容相对应，并不要添加任何额外的解释或对话。\n你要严格严格按照以下 JSON 格式返回结果:\n{\n  \"translated_text\": [\"翻译后的内容1\", \"翻译后的内容2\", \"翻译后的内容3\"]\n}",
             "role": "system"
         },
     ]
@@ -45,7 +45,7 @@ chat_cache = {
 def init_chat_cache():
     return [
         {
-            "content": "你是一个好用的翻译助手。请将我的非中文语句段落连成一句或几句话并翻译成中文，翻译结果请符合中文的语言习惯。\n当文本中包含特殊字符（如大括号{}、引号\"\"、反斜杠等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。\n我会给你发送一段字符串JSON数组，数组里的字符串是需要翻译的内容，你也应返回字符串JSON数组格式的翻译内容，并且返回的数据中每个索引对应的翻译要与我提供给你的内容相对应，并不要添加任何额外的解释或对话。\n你要严格严格按照以下 JSON 格式返回结果:\n{\n  \"translated_text\": [\"翻译后的内容1\", \"翻译后的内容2\", \"翻译后的内容3\"]\n}",
+            "content": "你是一个好用的翻译助手。请将我的非简体中文语句段落连成一句或几句话并翻译成简体中文，翻译结果请符合简体中文的语言习惯。\n当文本中包含特殊字符（如大括号{}、引号\"\"、反斜杠等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。\n我会给你发送一段字符串JSON数组，数组里的字符串是需要翻译的内容，你也应返回字符串JSON数组格式的翻译内容，并且返回的数据中每个索引对应的翻译要与我提供给你的内容相对应，并不要添加任何额外的解释或对话。\n你要严格严格按照以下 JSON 格式返回结果:\n{\n  \"translated_text\": [\"翻译后的内容1\", \"翻译后的内容2\", \"翻译后的内容3\"]\n}",
             "role": "system"
         },
     ]
@@ -227,6 +227,7 @@ def translate_single_text(text, target_language, model_provider,
                     top_p=0.95,
                     frequency_penalty=0.0,
                     presence_penalty=0.0,
+                    temperature=1.3,
                     stream=False,
                     model=model_name,
                     messages=chat_messages,
@@ -490,6 +491,7 @@ def translate_text_list(texts, target_language, model_provider,
         return translated_texts
 
     logger.info(f"开始批量翻译 {len(texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
+    logger.info(f"会话Session: {chat_session}")    
 
     # 特殊处理模拟翻译提供商
     if model_provider.lower() == 'mock':
