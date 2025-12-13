@@ -142,11 +142,52 @@ def _save_book_metadata(book_id: str, metadata: Dict[str, Any]) -> bool:
         return False
 
 
+def _update_book_summary(book_id: str, book_meta: Dict[str, Any]) -> bool:
+    """
+    更新 books.json 中指定书籍的摘要信息
+    
+    Args:
+        book_id: 书籍ID
+        book_meta: 书籍的完整元数据
+    
+    Returns:
+        是否更新成功
+    """
+    books_metadata = _load_books_metadata()
+    
+    for i, book_summary in enumerate(books_metadata.get("books", [])):
+        if book_summary.get("id") == book_id:
+            # 更新摘要信息
+            books_metadata["books"][i] = {
+                "id": book_id,
+                "title": book_meta.get("title", "未命名"),
+                "cover": book_meta.get("cover"),
+                "chapter_count": len(book_meta.get("chapters", [])),
+                "tags": book_meta.get("tags", []),
+                "created_at": book_meta.get("created_at"),
+                "updated_at": book_meta.get("updated_at")
+            }
+            return _save_books_metadata(books_metadata)
+    
+    # 如果书籍不在列表中，添加它（兼容旧数据）
+    book_summary = {
+        "id": book_id,
+        "title": book_meta.get("title", "未命名"),
+        "cover": book_meta.get("cover"),
+        "chapter_count": len(book_meta.get("chapters", [])),
+        "tags": book_meta.get("tags", []),
+        "created_at": book_meta.get("created_at"),
+        "updated_at": book_meta.get("updated_at")
+    }
+    books_metadata["books"].append(book_summary)
+    return _save_books_metadata(books_metadata)
+
+
 # ==================== 书籍管理 ====================
 
 def get_all_books(search: Optional[str] = None, tags: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
-    获取所有书籍列表
+    获取所有书籍列表（优化版：直接从books.json缓存读取摘要）
     
     Args:
         search: 搜索关键词（可选）
@@ -162,36 +203,34 @@ def get_all_books(search: Optional[str] = None, tags: Optional[List[str]] = None
         book_id = book_summary.get("id")
         if not book_id:
             continue
-            
-        # 加载完整的书籍元数据以获取最新信息
-        book_meta = _load_book_metadata(book_id)
-        if book_meta:
-            book_tags = book_meta.get("tags", [])
-            title = book_meta.get("title", "未命名")
-            
-            # 搜索过滤
-            if search:
-                search_lower = search.lower()
-                if search_lower not in title.lower():
-                    # 也搜索标签
-                    tag_match = any(search_lower in tag.lower() for tag in book_tags)
-                    if not tag_match:
-                        continue
-            
-            # 标签过滤
-            if tags:
-                if not any(tag in book_tags for tag in tags):
+        
+        # 直接从摘要获取信息（优化：无需读取每本书的元数据文件）
+        title = book_summary.get("title", "未命名")
+        book_tags = book_summary.get("tags", [])
+        
+        # 搜索过滤
+        if search:
+            search_lower = search.lower()
+            if search_lower not in title.lower():
+                # 也搜索标签
+                tag_match = any(search_lower in tag.lower() for tag in book_tags)
+                if not tag_match:
                     continue
-            
-            books.append({
-                "id": book_id,
-                "title": title,
-                "cover": book_meta.get("cover"),
-                "chapter_count": len(book_meta.get("chapters", [])),
-                "tags": book_tags,
-                "created_at": book_meta.get("created_at"),
-                "updated_at": book_meta.get("updated_at")
-            })
+        
+        # 标签过滤
+        if tags:
+            if not any(tag in book_tags for tag in tags):
+                continue
+        
+        books.append({
+            "id": book_id,
+            "title": title,
+            "cover": book_summary.get("cover"),
+            "chapter_count": book_summary.get("chapter_count", 0),
+            "tags": book_tags,
+            "created_at": book_summary.get("created_at"),
+            "updated_at": book_summary.get("updated_at")
+        })
     
     # 按更新时间倒序排列
     books.sort(key=lambda x: x.get("updated_at", 0), reverse=True)
@@ -238,9 +277,18 @@ def create_book(title: str, cover_data: Optional[str] = None, tags: Optional[Lis
     if not _save_book_metadata(book_id, book_meta):
         return None
     
-    # 更新书籍列表
+    # 更新书籍列表（保存完整摘要到 books.json）
     books_metadata = _load_books_metadata()
-    books_metadata["books"].append({"id": book_id})
+    book_summary = {
+        "id": book_id,
+        "title": title,
+        "cover": book_meta.get("cover"),
+        "chapter_count": 0,
+        "tags": tags or [],
+        "created_at": current_time,
+        "updated_at": current_time
+    }
+    books_metadata["books"].append(book_summary)
     _save_books_metadata(books_metadata)
     
     logger.info(f"创建书籍成功: {title} (ID: {book_id})")
@@ -327,6 +375,8 @@ def update_book(book_id: str, title: Optional[str] = None,
     book_meta["updated_at"] = int(time.time() * 1000)
     
     if _save_book_metadata(book_id, book_meta):
+        # 同步更新 books.json 中的摘要
+        _update_book_summary(book_id, book_meta)
         logger.info(f"更新书籍成功: {book_id}")
         return book_meta
     return None
@@ -456,6 +506,8 @@ def create_chapter(book_id: str, title: str, order: Optional[int] = None) -> Opt
     book_meta["updated_at"] = current_time
     
     if _save_book_metadata(book_id, book_meta):
+        # 同步更新 books.json 中的章节数
+        _update_book_summary(book_id, book_meta)
         logger.info(f"创建章节成功: {title} (书籍: {book_id}, 章节: {chapter_id})")
         return chapter_info
     return None
@@ -492,6 +544,8 @@ def update_chapter(book_id: str, chapter_id: str, title: Optional[str] = None) -
     
     book_meta["updated_at"] = int(time.time() * 1000)
     _save_book_metadata(book_id, book_meta)
+    # 同步更新 books.json 中的摘要（更新时间戳）
+    _update_book_summary(book_id, book_meta)
     
     # 更新章节自身的元数据
     chapter_meta = get_chapter(book_id, chapter_id)
@@ -534,6 +588,8 @@ def delete_chapter(book_id: str, chapter_id: str) -> bool:
             logger.warning(f"删除章节会话目录失败（非致命）: {e}")
     
     _save_book_metadata(book_id, book_meta)
+    # 同步更新 books.json 中的章节数
+    _update_book_summary(book_id, book_meta)
     logger.info(f"删除章节成功: {chapter_id} (书籍: {book_id})")
     return True
 
@@ -561,7 +617,11 @@ def reorder_chapters(book_id: str, chapter_ids: List[str]) -> bool:
     book_meta["chapters"] = new_chapters
     book_meta["updated_at"] = int(time.time() * 1000)
     
-    return _save_book_metadata(book_id, book_meta)
+    if _save_book_metadata(book_id, book_meta):
+        # 同步更新 books.json 中的摘要（更新时间戳）
+        _update_book_summary(book_id, book_meta)
+        return True
+    return False
 
 
 def _save_chapter_metadata(book_id: str, chapter_id: str, metadata: Dict[str, Any]) -> bool:
@@ -591,7 +651,11 @@ def update_chapter_image_count(book_id: str, chapter_id: str, count: int) -> boo
             break
     
     book_meta["updated_at"] = int(time.time() * 1000)
-    return _save_book_metadata(book_id, book_meta)
+    if _save_book_metadata(book_id, book_meta):
+        # 同步更新 books.json 中的摘要（更新时间戳）
+        _update_book_summary(book_id, book_meta)
+        return True
+    return False
 
 
 def get_chapter_session_path(book_id: str, chapter_id: str) -> str:
@@ -607,7 +671,7 @@ def get_chapter_session_path(book_id: str, chapter_id: str) -> str:
 
 def get_all_tags() -> List[Dict[str, Any]]:
     """
-    获取所有标签
+    获取所有标签（优化版：直接从 books.json 摘要统计）
     
     Returns:
         标签列表，每个标签包含: name, color, book_count
@@ -615,11 +679,11 @@ def get_all_tags() -> List[Dict[str, Any]]:
     tags_meta = _load_tags_metadata()
     tags = tags_meta.get("tags", [])
     
-    # 统计每个标签的书籍数量
-    books = get_all_books()
+    # 直接从 books.json 摘要统计标签数量（无需调用 get_all_books）
+    books_metadata = _load_books_metadata()
     tag_counts = {}
-    for book in books:
-        for tag in book.get("tags", []):
+    for book_summary in books_metadata.get("books", []):
+        for tag in book_summary.get("tags", []):
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
     
     # 更新标签计数
@@ -754,6 +818,8 @@ def _update_tag_in_books(old_name: str, new_name: str) -> None:
                 book_tags = [new_name if t == old_name else t for t in book_tags]
                 book_meta["tags"] = book_tags
                 _save_book_metadata(book_id, book_meta)
+                # 同步更新 books.json 中的摘要
+                _update_book_summary(book_id, book_meta)
 
 
 def _remove_tag_from_books(tag_name: str) -> None:
@@ -772,6 +838,8 @@ def _remove_tag_from_books(tag_name: str) -> None:
                 book_tags = [t for t in book_tags if t != tag_name]
                 book_meta["tags"] = book_tags
                 _save_book_metadata(book_id, book_meta)
+                # 同步更新 books.json 中的摘要
+                _update_book_summary(book_id, book_meta)
 
 
 # ==================== 批量操作 ====================
@@ -828,6 +896,8 @@ def add_tags_to_books_batch(book_ids: List[str], tags: List[str]) -> Dict[str, A
             book_meta["tags"] = current_tags
             book_meta["updated_at"] = int(time.time() * 1000)
             if _save_book_metadata(book_id, book_meta):
+                # 同步更新 books.json 中的摘要
+                _update_book_summary(book_id, book_meta)
                 success_count += 1
     
     logger.info(f"批量添加标签完成: {success_count}/{len(book_ids)}")
@@ -859,10 +929,92 @@ def remove_tags_from_books_batch(book_ids: List[str], tags: List[str]) -> Dict[s
             book_meta["tags"] = current_tags
             book_meta["updated_at"] = int(time.time() * 1000)
             if _save_book_metadata(book_id, book_meta):
+                # 同步更新 books.json 中的摘要
+                _update_book_summary(book_id, book_meta)
                 success_count += 1
     
     logger.info(f"批量移除标签完成: {success_count}/{len(book_ids)}")
     return {
         "success_count": success_count,
         "total_count": len(book_ids)
+    }
+
+
+# ==================== 数据迁移 ====================
+
+def migrate_books_metadata() -> Dict[str, Any]:
+    """
+    迁移旧版数据：将所有书籍的摘要信息更新到 books.json
+    
+    旧版 books.json 只存储书籍ID，新版需要存储完整摘要信息。
+    此函数会遍历所有书籍，读取其元数据，并更新 books.json。
+    
+    Returns:
+        迁移结果，包含成功和失败数量
+    """
+    books_metadata = _load_books_metadata()
+    old_books = books_metadata.get("books", [])
+    
+    # 如果没有书籍，无需迁移
+    if not old_books:
+        return {
+            "migrated": False,
+            "message": "书架为空，无需迁移",
+            "success_count": 0,
+            "failed_count": 0
+        }
+    
+    # 检查是否需要迁移（如果第一本书已有 title 字段，说明已迁移）
+    if old_books[0].get("title"):
+        return {
+            "migrated": False,
+            "message": "数据已是新版格式，无需迁移",
+            "success_count": 0,
+            "failed_count": 0
+        }
+    
+    logger.info("检测到旧版书架数据，开始自动迁移...")
+    
+    new_books = []
+    success_count = 0
+    failed_count = 0
+    failed_ids = []
+    
+    for book_entry in old_books:
+        book_id = book_entry.get("id") if isinstance(book_entry, dict) else book_entry
+        if not book_id:
+            continue
+        
+        book_meta = _load_book_metadata(book_id)
+        if book_meta:
+            # 构建完整摘要
+            book_summary = {
+                "id": book_id,
+                "title": book_meta.get("title", "未命名"),
+                "cover": book_meta.get("cover"),
+                "chapter_count": len(book_meta.get("chapters", [])),
+                "tags": book_meta.get("tags", []),
+                "created_at": book_meta.get("created_at"),
+                "updated_at": book_meta.get("updated_at")
+            }
+            new_books.append(book_summary)
+            success_count += 1
+        else:
+            failed_count += 1
+            failed_ids.append(book_id)
+            logger.warning(f"迁移书籍失败，无法读取元数据: {book_id}")
+    
+    # 保存新格式的 books.json
+    books_metadata["books"] = new_books
+    if _save_books_metadata(books_metadata):
+        logger.info(f"书架数据迁移完成: 成功 {success_count} 本" + (f", 失败 {failed_count} 本" if failed_count > 0 else ""))
+    else:
+        logger.error("保存迁移后的数据失败")
+    
+    return {
+        "migrated": True,
+        "message": f"迁移完成: 成功 {success_count} 本，失败 {failed_count} 本",
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "failed_ids": failed_ids
     }

@@ -570,3 +570,22 @@ def batch_remove_tags():
     except Exception as e:
         logger.error(f"批量移除标签失败: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ==================== 数据迁移 API ====================
+
+@bookshelf_bp.route('/migrate', methods=['POST'])
+def migrate_data():
+    """
+    迁移旧版书架数据到新格式
+    将 books.json 从只存储ID升级为存储完整摘要信息
+    """
+    try:
+        result = bookshelf_manager.migrate_books_metadata()
+        return jsonify({
+            "success": True,
+            **result
+        })
+    except Exception as e:
+        logger.error(f"数据迁移失败: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500

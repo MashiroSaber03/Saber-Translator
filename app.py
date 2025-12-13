@@ -238,6 +238,20 @@ def create_required_directories():
 # 在应用启动时调用
 create_required_directories()
 
+# 自动迁移书架数据（从旧格式升级到新格式）
+def auto_migrate_bookshelf_data():
+    """自动检测并迁移书架数据到新格式"""
+    try:
+        from src.core import bookshelf_manager
+        result = bookshelf_manager.migrate_books_metadata()
+        if result.get("migrated"):
+            logger.info(f"📚 书架数据迁移完成: {result.get('message')}")
+        # 如果已是新格式则不输出日志，静默跳过
+    except Exception as e:
+        logger.warning(f"书架数据迁移检查失败: {e}")
+
+auto_migrate_bookshelf_data()
+
 if __name__ == '__main__':
     # 禁用Flask的默认日志处理
     app.logger.handlers.clear()
