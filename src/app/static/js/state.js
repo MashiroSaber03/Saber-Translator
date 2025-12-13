@@ -12,6 +12,7 @@ export let selectedBubbleIndex = -1;
 export let bubbleStates = [];    // 统一状态：BubbleState 对象数组
 export let initialBubbleStates = [];  // 初始状态备份
 export let currentSessionName = null;
+export let capterMark = {}
 
 // --- 书籍/章节状态 ---
 export let currentBookId = null;      // 当前书籍ID

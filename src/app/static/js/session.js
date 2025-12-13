@@ -220,7 +220,11 @@ export async function loadSessionByPath(sessionPath) {
             // 恢复 UI 设置
             restoreUiSettings(uiSettings);
             ui.updateButtonStates();
-            
+
+            // 最后配置页数选择上下限
+            $("#pageStart").attr('min', 1).attr('max', state.images.length)
+            $("#pageEnd").attr('min', 1).attr('max', state.images.length)
+
             return true;
         } else {
             console.warn("按路径加载会话失败:", response.error);
