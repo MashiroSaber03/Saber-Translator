@@ -240,18 +240,32 @@ async function removeAllImagesText() {
             
             // --- 检查并使用已有的坐标和角度（优先级：savedManualCoords > bubbleCoords > 自动检测）---
             // 角度优先从 bubbleStates 提取（唯一状态来源），回退到 bubbleAngles（检测结果）
+            // 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+            //   - bubbleCoords 为数组（包括空数组）：曾经检测过，使用已有坐标（不重新检测）
+            //   - bubbleCoords 为 undefined/null：从未检测过，需要自动检测
             let coordsToUse = null;
             let anglesToUse = null;
             const extractAngles = (states) => states && states.length > 0 ? states.map(s => s.rotationAngle || 0) : null;
+            
+            // 检查是否曾经处理过（bubbleStates 是数组即表示处理过，即使是空数组）
+            // 【方案B】用 bubbleStates 而非 bubbleCoords 作为"是否曾处理"的判断依据
+            // 【兼容旧数据】如果 bubbleStates 为空但 bubbleCoords 非空，也视为已处理过
+            const hasDetectedBefore = Array.isArray(imageData.bubbleStates) || 
+                (Array.isArray(imageData.bubbleCoords) && imageData.bubbleCoords.length > 0);
             
             if (imageData.savedManualCoords && imageData.savedManualCoords.length > 0) {
                 coordsToUse = imageData.savedManualCoords;
                 anglesToUse = imageData.savedManualAngles || null;
                 console.log(`高质量翻译[${currentIndex}]: 使用手动标注框 ${coordsToUse.length} 个`);
-            } else if (imageData.bubbleCoords && imageData.bubbleCoords.length > 0) {
-                coordsToUse = imageData.bubbleCoords;
+            } else if (hasDetectedBefore) {
+                // 曾经检测过，使用已有坐标（即使是空数组，也不重新检测，避免被删除的框"复活"）
+                coordsToUse = imageData.bubbleCoords || [];  // 防御性检查，避免 undefined
                 anglesToUse = extractAngles(imageData.bubbleStates) || imageData.bubbleAngles || null;
-                console.log(`高质量翻译[${currentIndex}]: 使用已有文本框 ${coordsToUse.length} 个`);
+                if (coordsToUse.length > 0) {
+                    console.log(`高质量翻译[${currentIndex}]: 使用已有文本框 ${coordsToUse.length} 个`);
+                } else {
+                    console.log(`高质量翻译[${currentIndex}]: 文本框已被用户清空，跳过此图片`);
+                }
             }
             
             // 准备API请求参数

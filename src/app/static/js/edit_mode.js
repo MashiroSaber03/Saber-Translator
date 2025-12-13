@@ -106,10 +106,18 @@ export function toggleEditMode() {
         
         // 保存 state.bubbleStates 到 currentImage（switchImage 会从 bubbleStates[0] 读取设置）
         const currentImage = state.getCurrentImage();
-        if (currentImage && state.bubbleStates.length > 0) {
-            currentImage.bubbleStates = JSON.parse(JSON.stringify(state.bubbleStates));
-            currentImage.bubbleTexts = state.bubbleStates.map(s => s.translatedText || s.text || "");
-            console.log("退出编辑模式，已保存气泡状态");
+        if (currentImage) {
+            if (state.bubbleStates.length > 0) {
+                currentImage.bubbleStates = JSON.parse(JSON.stringify(state.bubbleStates));
+                currentImage.bubbleTexts = state.bubbleStates.map(s => s.translatedText || s.text || "");
+                console.log("退出编辑模式，已保存气泡状态");
+            } else if (Array.isArray(currentImage.bubbleStates) && currentImage.bubbleStates.length > 0) {
+                // 用户删除了所有气泡，需要同步更新为空数组（保持"已处理过"的语义）
+                currentImage.bubbleStates = [];
+                currentImage.bubbleTexts = [];
+                console.log("退出编辑模式，用户已删除所有气泡，bubbleStates 更新为空数组");
+            }
+            // 如果 currentImage.bubbleStates 原本就是 null/undefined，不改变（保持"从未处理过"的语义）
         }
         
         // 清理状态
@@ -137,7 +145,11 @@ export function initBubbleStates(autoDirections = null) {
     // 如果没有气泡坐标，初始化为空数组（允许无气泡进入编辑模式）
     if (!currentImage.bubbleCoords || currentImage.bubbleCoords.length === 0) {
         console.log("当前图片没有气泡坐标，初始化为空状态");
+        const shouldPreserveNullBubbleStates = currentImage.bubbleStates === null || currentImage.bubbleStates === undefined;
         state.setBubbleStates([]);
+        if (shouldPreserveNullBubbleStates) {
+            currentImage.bubbleStates = null;
+        }
         return;
     }
 
@@ -702,9 +714,16 @@ export function exitEditModeWithoutRender() {
     
     // 保存气泡状态（switchImage 会从 bubbleStates[0] 读取设置）
     const currentImage = state.getCurrentImage();
-    if (currentImage && state.bubbleStates.length > 0) {
-        currentImage.bubbleStates = JSON.parse(JSON.stringify(state.bubbleStates));
-        currentImage.bubbleTexts = state.bubbleStates.map(s => s.translatedText || s.text || "");
+    if (currentImage) {
+        if (state.bubbleStates.length > 0) {
+            currentImage.bubbleStates = JSON.parse(JSON.stringify(state.bubbleStates));
+            currentImage.bubbleTexts = state.bubbleStates.map(s => s.translatedText || s.text || "");
+        } else if (Array.isArray(currentImage.bubbleStates) && currentImage.bubbleStates.length > 0) {
+            // 用户删除了所有气泡，需要同步更新为空数组（保持"已处理过"的语义）
+            currentImage.bubbleStates = [];
+            currentImage.bubbleTexts = [];
+            console.log("退出编辑模式（无重渲染），用户已删除所有气泡");
+        }
     }
     
     cleanupNewEditMode();

@@ -3808,6 +3808,57 @@ img {
     opacity: 0.9;
 }
 
+/* ==================== 页面详情导航按钮 ==================== */
+.page-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.page-detail-header h4 {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.page-nav-buttons {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.btn-page-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-page-nav:hover:not(.disabled) {
+    color: var(--primary-color);
+    background: var(--bg-secondary);
+    border-color: var(--primary-color);
+}
+
+.btn-page-nav:active:not(.disabled) {
+    transform: scale(0.96);
+}
+
+.btn-page-nav.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* 图片预览模态框 */
 .image-preview-modal {
     position: fixed;

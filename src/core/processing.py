@@ -176,7 +176,11 @@ def process_image_translation(
         raw_text_mask = None  # 模型生成的精确文字掩膜（仅 CTD/Default 支持）
         raw_lines = []  # 原始文本行（合并前的单行框，用于 debug 显示）
         
-        if provided_coords and isinstance(provided_coords, list) and len(provided_coords) > 0:
+        # 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+        #   - provided_coords 是列表（包括空列表）：前端已处理过，使用已有坐标（不重新检测）
+        #   - provided_coords 为 None：从未检测过，需要自动检测
+        if provided_coords is not None and isinstance(provided_coords, list):
+            # 前端传递了坐标（即使是空数组，也表示用户已处理过，不应重新检测）
             bubble_coords = provided_coords
             # 使用前端提供的角度（如果有），否则默认全0
             if provided_angles and isinstance(provided_angles, list) and len(provided_angles) == len(bubble_coords):
