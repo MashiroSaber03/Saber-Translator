@@ -74,7 +74,8 @@ class MangaQA:
         use_reasoning: bool = False,
         use_reranker: bool = None,  # 改为 None，默认从配置读取
         top_k: int = 5,
-        threshold: float = 0.0
+        threshold: float = 0.0,
+        use_global_context: bool = False  # 新增：全局摘要模式
     ) -> QAResponse:
         """
         回答用户问题（单轮对话模式）
@@ -86,10 +87,15 @@ class MangaQA:
             use_reranker: 是否使用重排序 (None=使用配置默认值)
             top_k: 返回的最大结果数
             threshold: 相关性阈值（0-1），低于此值的结果将被过滤
+            use_global_context: 是否使用全局摘要模式（适合总结性问题）
         
         Returns:
             QAResponse: 回答结果
         """
+        
+        # 全局摘要模式：使用压缩后的全文摘要作为上下文
+        if use_global_context:
+            return await self._answer_with_global_context(question)
         
         # 默认启用 Reranker（如果配置了）
         if use_reranker is None:
@@ -630,3 +636,93 @@ class MangaQA:
         ]
         
         return suggestions[:3]
+    
+    # ============================================================
+    # 全局摘要模式
+    # ============================================================
+    
+    async def _answer_with_global_context(self, question: str) -> QAResponse:
+        """
+        使用全局摘要模式回答问题
+        
+        该模式使用生成概述时保存的压缩全文摘要作为上下文，
+        适合回答需要全局视角的问题，如：
+        - "故事的主题是什么？"
+        - "主角的性格有什么变化？"
+        - "结局是好是坏？"
+        - "这本漫画讲了什么？"
+        
+        Args:
+            question: 用户问题
+        
+        Returns:
+            QAResponse: 回答结果
+        """
+        logger.info(f"全局摘要模式问答: '{question}'")
+        
+        # 1. 加载压缩摘要
+        compressed_data = await self.storage.load_compressed_context()
+        
+        if not compressed_data or not compressed_data.get("context"):
+            # 没有压缩摘要，尝试降级到概述
+            overview = await self.storage.load_overview()
+            if overview and overview.get("summary"):
+                context = overview.get("summary", "")
+                source_info = "概述"
+            else:
+                return QAResponse(
+                    text="抱歉，尚未生成全书概述。请先在「概述」页面生成概述后再使用全局模式。",
+                    citations=[],
+                    suggested_questions=["这本漫画讲了什么故事？"]
+                )
+        else:
+            context = compressed_data.get("context", "")
+            source_info = f"压缩摘要（{compressed_data.get('char_count', 0)}字）"
+        
+        logger.info(f"全局模式上下文: {source_info}")
+        
+        # 2. 构建提示词
+        prompt = self._build_global_qa_prompt(question, context)
+        
+        # 3. 生成回答
+        system = self.config.prompts.qa_response if self.config.prompts.qa_response else DEFAULT_QA_SYSTEM_PROMPT
+        # 为全局模式添加额外指导
+        global_system = system + "\n\n【全局模式说明】当前使用的是全书摘要作为上下文，请基于整体剧情回答问题。如果问题涉及具体细节，可以建议用户切换到精确模式获取更详细的信息。"
+        
+        answer_text = await self.chat_client.generate(prompt, global_system)
+        
+        # 4. 生成推荐问题（全局模式专用）
+        follow_ups = [
+            "主角最后怎么样了？",
+            "故事中有哪些重要转折？",
+            "这个故事想表达什么？"
+        ]
+        
+        return QAResponse(
+            text=answer_text,
+            citations=[],  # 全局模式不提供具体页码引用
+            suggested_questions=follow_ups
+        )
+    
+    def _build_global_qa_prompt(self, question: str, context: str) -> str:
+        """构建全局模式的问答提示词"""
+        return f"""【全书剧情摘要】
+{context}
+
+【用户问题】
+{question}
+
+请基于以上全书剧情摘要回答问题。
+- 如果是总结性问题（如主题、结局、角色发展），请给出完整的回答
+- 如果问题涉及非常具体的细节（如某一页发生了什么），请说明摘要中可能没有这么细的信息，建议用户切换到精确模式
+- 回答要准确、有条理，避免编造摘要中没有的内容"""
+    
+    async def has_global_context(self) -> bool:
+        """检查是否有可用的全局摘要上下文"""
+        has_compressed = await self.storage.has_compressed_context()
+        if has_compressed:
+            return True
+        
+        # 降级检查概述
+        overview = await self.storage.load_overview()
+        return bool(overview and overview.get("summary"))

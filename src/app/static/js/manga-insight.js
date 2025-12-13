@@ -1054,6 +1054,64 @@ function handleQuestionKeydown(event) {
     }
 }
 
+// 当前问答模式：'precise' 或 'global'
+let currentQAMode = 'precise';
+
+// 切换问答模式
+function setQAMode(mode) {
+    currentQAMode = mode;
+    
+    // 更新按钮状态
+    const preciseBtn = document.getElementById('qaPreciseMode');
+    const globalBtn = document.getElementById('qaGlobalMode');
+    const preciseOptions = document.getElementById('preciseModeOptions');
+    const globalHint = document.getElementById('globalModeHint');
+    
+    if (mode === 'precise') {
+        preciseBtn?.classList.add('active');
+        globalBtn?.classList.remove('active');
+        if (preciseOptions) preciseOptions.style.display = '';
+        if (globalHint) globalHint.style.display = 'none';
+    } else {
+        preciseBtn?.classList.remove('active');
+        globalBtn?.classList.add('active');
+        if (preciseOptions) preciseOptions.style.display = 'none';
+        if (globalHint) globalHint.style.display = '';
+    }
+    
+    // 更新欢迎消息
+    updateWelcomeMessage();
+}
+
+// 获取欢迎消息 HTML
+function getWelcomeMessageHTML() {
+    if (currentQAMode === 'global') {
+        return `
+            <div class="welcome-icon">🌐</div>
+            <h3>全局模式</h3>
+            <p>基于全文摘要回答问题，适合总结性问题</p>
+            <div class="welcome-examples">
+                <span class="example-tag" onclick="askQuestion('故事的主题是什么？')">故事的主题是什么？</span>
+                <span class="example-tag" onclick="askQuestion('主角的性格有什么变化？')">主角的性格有什么变化？</span>
+                <span class="example-tag" onclick="askQuestion('结局是怎样的？')">结局是怎样的？</span>
+            </div>
+        `;
+    } else {
+        return `
+            <div class="welcome-icon">💬</div>
+            <h3>智能问答</h3>
+            <p>针对已分析的漫画内容提问，获取精准回答</p>
+        `;
+    }
+}
+
+// 更新欢迎消息
+function updateWelcomeMessage() {
+    const welcome = document.querySelector('#chatMessages .welcome-message');
+    if (!welcome) return;
+    welcome.innerHTML = getWelcomeMessageHTML();
+}
+
 async function sendQuestion() {
     const input = document.getElementById('questionInput');
     const question = input.value.trim();
@@ -1074,14 +1132,18 @@ async function sendQuestion() {
     addChatMessage('user', question);
     
     // 添加加载消息
-    addChatMessage('assistant', '<div class="loading-dots">思考中...</div>');
+    const loadingText = currentQAMode === 'global' ? '正在分析全文...' : '思考中...';
+    addChatMessage('assistant', `<div class="loading-dots">${loadingText}</div>`);
     
-    // 获取检索模式开关状态
+    // 获取检索模式开关状态（仅精确模式使用）
     const useParentChild = document.getElementById('useParentChild')?.checked || false;
     const useReasoning = document.getElementById('useReasoning')?.checked || false;
     const useReranker = document.getElementById('useReranker')?.checked || false;
     const topK = parseInt(document.getElementById('topK')?.value) || 5;
     const threshold = parseFloat(document.getElementById('threshold')?.value) || 0;
+    
+    // 是否使用全局模式
+    const useGlobalContext = currentQAMode === 'global';
     
     try {
         const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/chat`, {
@@ -1093,7 +1155,8 @@ async function sendQuestion() {
                 use_reasoning: useReasoning,
                 use_reranker: useReranker,
                 top_k: topK,
-                threshold: threshold
+                threshold: threshold,
+                use_global_context: useGlobalContext  // 新增：全局模式参数
             })
         });
         
@@ -1106,7 +1169,11 @@ async function sendQuestion() {
             // 添加回答
             let answerHtml = data.answer;
             
-            // 添加引用
+            // 添加模式标识
+            const modeLabel = data.mode === 'global' ? '🌐 全局模式' : '🎯 精确模式';
+            answerHtml = `<div class="answer-mode-badge">${modeLabel}</div>` + answerHtml;
+            
+            // 添加引用（仅精确模式有引用）
             if (data.citations && data.citations.length > 0) {
                 answerHtml += `
                     <div class="message-citations">
@@ -1133,7 +1200,8 @@ async function sendQuestion() {
                 id: qaId,
                 question: question,
                 answer: data.answer,
-                citations: data.citations || []
+                citations: data.citations || [],
+                mode: data.mode
             };
             
             addChatMessage('assistant', answerHtml);
@@ -1151,14 +1219,8 @@ function clearChatMessages() {
     const container = document.getElementById('chatMessages');
     if (!container) return;
     
-    // 清空所有消息，恢复欢迎消息
-    container.innerHTML = `
-        <div class="welcome-message">
-            <div class="welcome-icon">💬</div>
-            <h3>智能问答</h3>
-            <p>针对已分析的漫画内容提问，获取精准回答</p>
-        </div>
-    `;
+    // 清空所有消息，恢复欢迎消息（根据当前模式显示不同内容）
+    container.innerHTML = `<div class="welcome-message">${getWelcomeMessageHTML()}</div>`;
 }
 
 function removeLoadingMessages() {
@@ -1237,11 +1299,13 @@ function populateSettingsForm(config) {
         const llmApiKey = config.chat_llm.api_key || (config.vlm?.api_key || '');
         const llmModel = config.chat_llm.model || (config.vlm?.model || '');
         const llmBaseUrl = config.chat_llm.base_url || (config.vlm?.base_url || '');
+        const llmUseStream = config.chat_llm.use_stream !== false;  // 默认 true
         
         document.getElementById('llmProvider').value = llmProvider;
         document.getElementById('llmApiKey').value = llmApiKey;
         document.getElementById('llmModel').value = llmModel;
         document.getElementById('llmBaseUrl').value = llmBaseUrl;
+        document.getElementById('llmUseStream').checked = llmUseStream;
         
         // 初始化 Base URL 显示状态
         const llmBaseUrlGroup = document.getElementById('llmBaseUrlGroup');
@@ -1597,7 +1661,8 @@ async function saveSettings() {
             provider: llmUseSame ? '' : document.getElementById('llmProvider').value,
             api_key: llmUseSame ? '' : document.getElementById('llmApiKey').value,
             model: llmUseSame ? '' : document.getElementById('llmModel').value,
-            base_url: llmUseSame ? '' : (document.getElementById('llmBaseUrl').value || null)
+            base_url: llmUseSame ? '' : (document.getElementById('llmBaseUrl').value || null),
+            use_stream: llmUseSame ? true : document.getElementById('llmUseStream').checked
         },
         embedding: {
             provider: document.getElementById('embeddingProvider').value,

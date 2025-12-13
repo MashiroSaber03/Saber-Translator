@@ -115,8 +115,14 @@ class HierarchicalSummaryGenerator:
         if not chapter_texts:
             return self._empty_result()
         
+        # 压缩后的全文摘要（发给 LLM 的输入）
+        compressed_context = "\n\n".join(chapter_texts)
+        
         # 生成全书概要
-        book_summary = await self._generate_book_summary("\n\n".join(chapter_texts))
+        book_summary = await self._generate_book_summary(compressed_context)
+        
+        # 保存压缩摘要供问答使用
+        await self._save_compressed_context(compressed_context, "chapters", len(chapters))
         
         return {
             "book_summary": book_summary,
@@ -152,8 +158,14 @@ class HierarchicalSummaryGenerator:
         if not segment_texts:
             return self._empty_result()
         
+        # 压缩后的全文摘要（发给 LLM 的输入）
+        compressed_context = "\n\n".join(segment_texts)
+        
         # 生成全书概要
-        book_summary = await self._generate_book_summary("\n\n".join(segment_texts))
+        book_summary = await self._generate_book_summary(compressed_context)
+        
+        # 保存压缩摘要供问答使用
+        await self._save_compressed_context(compressed_context, "segments", len(segments))
         
         return {
             "book_summary": book_summary,
@@ -193,7 +205,13 @@ class HierarchicalSummaryGenerator:
                 for s in section_summaries
             ]
         
-        book_summary = await self._generate_book_summary("\n\n".join(batch_texts))
+        # 压缩后的全文摘要（发给 LLM 的输入）
+        compressed_context = "\n\n".join(batch_texts)
+        
+        book_summary = await self._generate_book_summary(compressed_context)
+        
+        # 保存压缩摘要供问答使用
+        await self._save_compressed_context(compressed_context, "batches", len(section_summaries))
         
         return {
             "book_summary": book_summary,
@@ -224,7 +242,12 @@ class HierarchicalSummaryGenerator:
             # 少量页面：直接生成
             sorted_pages = sorted(page_summaries.keys())
             texts = [f"第{p}页: {page_summaries[p]}" for p in sorted_pages]
-            book_summary = await self._generate_book_summary("\n".join(texts))
+            compressed_context = "\n".join(texts)
+            book_summary = await self._generate_book_summary(compressed_context)
+            
+            # 保存压缩摘要供问答使用
+            await self._save_compressed_context(compressed_context, "pages_direct", page_count)
+            
             return {
                 "book_summary": book_summary,
                 "section_summaries": [],
@@ -245,7 +268,13 @@ class HierarchicalSummaryGenerator:
             f"第{s['start_page']}-{s['end_page']}页: {s['summary']}" 
             for s in section_summaries
         ]
-        book_summary = await self._generate_book_summary("\n\n".join(section_texts))
+        
+        # 压缩后的全文摘要（发给 LLM 的输入）
+        compressed_context = "\n\n".join(section_texts)
+        book_summary = await self._generate_book_summary(compressed_context)
+        
+        # 保存压缩摘要供问答使用
+        await self._save_compressed_context(compressed_context, "pages_grouped", len(section_summaries))
         
         return {
             "book_summary": book_summary,
@@ -352,6 +381,28 @@ class HierarchicalSummaryGenerator:
         if not sections:
             return 0
         return max(s.get("end_page", 0) for s in sections)
+    
+    async def _save_compressed_context(self, context: str, source: str, group_count: int):
+        """
+        保存压缩后的全文摘要，供问答系统的全局模式使用
+        
+        Args:
+            context: 压缩后的全文摘要（发给 LLM 生成概述的输入）
+            source: 数据来源（chapters/segments/batches/pages_grouped/pages_direct）
+            group_count: 分组数量
+        """
+        try:
+            compressed_data = {
+                "context": context,
+                "source": source,
+                "group_count": group_count,
+                "char_count": len(context),
+                "generated_at": datetime.now().isoformat()
+            }
+            await self.storage.save_compressed_context(compressed_data)
+            logger.info(f"已保存压缩摘要: {len(context)} 字, 来源: {source}")
+        except Exception as e:
+            logger.warning(f"保存压缩摘要失败: {e}")
     
     def _empty_result(self) -> Dict:
         """返回空结果"""

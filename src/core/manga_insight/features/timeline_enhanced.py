@@ -100,7 +100,7 @@ TIMELINE_SYNTHESIS_PROMPT = """你是一位专业的漫画剧情分析师。基�
 要求：
 1. 剧情弧应反映故事的起承转合结构，通常2-5个阶段
 2. 事件之间要建立因果关系（causes/effects 使用事件ID关联）
-3. 识别3-5个主要角色并追踪其发展
+3. 识别主要角色并追踪其发展
 4. 识别未解决的悬念和伏笔
 5. 所有内容使用中文输出
 6. 确保 page_range 的页码与原始数据一致
@@ -152,6 +152,11 @@ class EnhancedTimelineBuilder:
         """
         构建时间线
         
+        降级策略（三级）：
+        1. 增强模式：从章节/段落/批量分析收集数据，LLM 智能整合
+        2. 压缩摘要模式：使用生成概述时保存的压缩摘要，LLM 智能整合（数据量更小）
+        3. 简单模式：直接从批量分析提取事件，不调用 LLM
+        
         Args:
             mode: 
                 - "simple": 简单模式（使用原有 TimelineBuilder 逻辑）
@@ -175,32 +180,20 @@ class EnhancedTimelineBuilder:
             analysis_data = await self._collect_analysis_data()
             
             if not analysis_data:
-                logger.warning("没有可用的分析数据，降级到简单模式")
-                simple_builder = TimelineBuilder(self.book_id)
-                result = await simple_builder.build_timeline_grouped()
-                result["mode"] = "simple"
-                result["fallback_reason"] = "no_analysis_data"
-                return result
+                logger.warning("没有可用的分析数据，尝试使用压缩摘要")
+                return await self._build_with_fallback("no_analysis_data")
             
             # 2. 检查 LLM 是否可用
             if not self.llm:
                 logger.warning("LLM 不可用，降级到简单模式")
-                simple_builder = TimelineBuilder(self.book_id)
-                result = await simple_builder.build_timeline_grouped()
-                result["mode"] = "simple"
-                result["fallback_reason"] = "llm_unavailable"
-                return result
+                return await self._fallback_to_simple("llm_unavailable")
             
             # 3. LLM 智能整合
             enhanced_data = await self._synthesize_timeline(analysis_data)
             
             if not enhanced_data:
-                logger.warning("LLM 整合失败，降级到简单模式")
-                simple_builder = TimelineBuilder(self.book_id)
-                result = await simple_builder.build_timeline_grouped()
-                result["mode"] = "simple"
-                result["fallback_reason"] = "llm_synthesis_failed"
-                return result
+                logger.warning("LLM 整合失败（可能是数据过多），尝试使用压缩摘要")
+                return await self._build_with_fallback("llm_synthesis_failed")
             
             # 4. 后处理
             result = self._post_process(enhanced_data)
@@ -210,12 +203,91 @@ class EnhancedTimelineBuilder:
             
         except Exception as e:
             logger.error(f"增强时间线构建失败: {e}", exc_info=True)
-            # 降级到简单模式
-            simple_builder = TimelineBuilder(self.book_id)
-            result = await simple_builder.build_timeline_grouped()
-            result["mode"] = "simple"
-            result["fallback_reason"] = str(e)
+            # 尝试使用压缩摘要降级
+            return await self._build_with_fallback(str(e))
+    
+    async def _build_with_fallback(self, original_error: str) -> Dict:
+        """
+        中间降级：使用压缩摘要构建时间线
+        
+        当原始数据过多导致 LLM 调用失败时，尝试使用生成概述时保存的压缩摘要。
+        压缩摘要通常在 2000-5000 字，更容易被 LLM 处理。
+        
+        Args:
+            original_error: 原始错误原因
+        
+        Returns:
+            Dict: 时间线数据
+        """
+        logger.info("尝试使用压缩摘要构建时间线（中间降级）")
+        
+        try:
+            # 1. 加载压缩摘要
+            compressed_data = await self.storage.load_compressed_context()
+            
+            if not compressed_data or not compressed_data.get("context"):
+                logger.warning("没有压缩摘要，降级到简单模式")
+                return await self._fallback_to_simple(f"{original_error} -> no_compressed_context")
+            
+            context = compressed_data.get("context", "")
+            char_count = compressed_data.get("char_count", len(context))
+            source = compressed_data.get("source", "unknown")
+            
+            logger.info(f"使用压缩摘要: {char_count} 字, 来源: {source}")
+            
+            # 2. 检查 LLM 是否可用（可能需要重新初始化）
+            if not self.llm and self.config:
+                try:
+                    if self.config.chat_llm and not self.config.chat_llm.use_same_as_vlm:
+                        if self.config.chat_llm.api_key:
+                            self.llm = ChatClient(self.config.chat_llm)
+                    elif self.config.vlm and self.config.vlm.api_key:
+                        self.llm = ChatClient(self.config.vlm)
+                except Exception as e:
+                    logger.warning(f"重新初始化 LLM 失败: {e}")
+            
+            if not self.llm:
+                logger.warning("LLM 不可用，降级到简单模式")
+                return await self._fallback_to_simple(f"{original_error} -> llm_unavailable")
+            
+            # 3. 构建简化的分析数据（基于压缩摘要）
+            analysis_data = f"【基本信息】\n来源: {source}\n字数: {char_count}\n\n【全书剧情摘要】\n{context}"
+            
+            # 4. LLM 智能整合
+            enhanced_data = await self._synthesize_timeline(analysis_data)
+            
+            if not enhanced_data:
+                logger.warning("压缩摘要模式 LLM 整合也失败，降级到简单模式")
+                return await self._fallback_to_simple(f"{original_error} -> compressed_synthesis_failed")
+            
+            # 5. 后处理
+            result = self._post_process(enhanced_data)
+            result["mode"] = "compressed"  # 标记为压缩摘要模式
+            result["fallback_reason"] = original_error
+            
+            logger.info(f"压缩摘要模式时间线构建完成: {result.get('stats', {})}")
             return result
+            
+        except Exception as e:
+            logger.error(f"压缩摘要模式构建失败: {e}", exc_info=True)
+            return await self._fallback_to_simple(f"{original_error} -> {str(e)}")
+    
+    async def _fallback_to_simple(self, reason: str) -> Dict:
+        """
+        最终降级：使用简单模式
+        
+        Args:
+            reason: 降级原因
+        
+        Returns:
+            Dict: 简单模式时间线数据
+        """
+        logger.info(f"降级到简单模式，原因: {reason}")
+        simple_builder = TimelineBuilder(self.book_id)
+        result = await simple_builder.build_timeline_grouped()
+        result["mode"] = "simple"
+        result["fallback_reason"] = reason
+        return result
     
     # 配置常量
     MAX_SECTIONS_BEFORE_MERGE = 15  # 超过此数量时进行合并

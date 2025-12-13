@@ -207,16 +207,57 @@ class ChatClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         
-        response = await self.client.post(
-            f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
-            json={
-                "model": self.config.model,
-                "messages": messages,
-                "temperature": temperature
-            }
-        )
-        response.raise_for_status()
+        url = f"{base_url}/chat/completions"
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        request_body = {
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": temperature
+        }
         
+        # 检查是否使用流式请求（默认启用，避免超时）
+        use_stream = getattr(self.config, 'use_stream', True)
+        logger.info(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
+        
+        if use_stream:
+            return await self._generate_stream(url, headers, request_body)
+        else:
+            return await self._generate_normal(url, headers, request_body)
+    
+    async def _generate_normal(self, url: str, headers: dict, request_body: dict) -> str:
+        """普通请求"""
+        response = await self.client.post(url, headers=headers, json=request_body)
+        response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
+    
+    async def _generate_stream(self, url: str, headers: dict, request_body: dict) -> str:
+        """流式请求（避免超时）"""
+        import json as json_module
+        
+        request_body["stream"] = True
+        full_text = ""
+        model_name = request_body.get('model', 'unknown')
+        logger.info(f"[ChatClient 流式请求] 模型: {model_name}")
+        
+        async with self.client.stream("POST", url, headers=headers, json=request_body) as response:
+            if response.status_code != 200:
+                error_bytes = await response.aread()
+                error_text = error_bytes.decode('utf-8', errors='ignore')[:500]
+                raise Exception(f"API 错误 {response.status_code}: {error_text}")
+            
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json_module.loads(data_str)
+                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        if "content" in delta and delta["content"]:
+                            full_text += delta["content"]
+                    except json_module.JSONDecodeError:
+                        continue
+        
+        logger.info(f"[ChatClient 流式完成] {len(full_text)} 字符")
+        return full_text

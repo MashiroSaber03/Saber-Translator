@@ -228,31 +228,48 @@
                     </div>
                     <div class="chat-input-container">
                         <div class="chat-options">
-                            <label class="checkbox-label compact" title="启用后，检索到某页时会返回该页所属批次的完整内容作为上下文，提供更丰富的信息">
-                                <input type="checkbox" id="useParentChild" checked>
-                                <span>父子块模式</span>
-                            </label>
-                            <label class="checkbox-label compact" title="启用后，会先将复杂问题分解为多个子问题，分别检索后整合答案，适合回答需要综合多处信息的问题">
-                                <input type="checkbox" id="useReasoning" checked>
-                                <span>推理检索</span>
-                            </label>
-                            <label class="checkbox-label compact" title="启用后，对检索结果进行二次精排，提高相关性（需在设置中配置重排序模型）">
-                                <input type="checkbox" id="useReranker" checked>
-                                <span>重排序</span>
-                            </label>
+                            <!-- 问答模式切换 -->
+                            <div class="qa-mode-toggle" title="精确模式：使用RAG检索相关片段，适合具体问题；全局模式：使用全文摘要，适合总结性问题">
+                                <button type="button" class="qa-mode-btn active" id="qaPreciseMode" onclick="setQAMode('precise')">
+                                    🎯 精确模式
+                                </button>
+                                <button type="button" class="qa-mode-btn" id="qaGlobalMode" onclick="setQAMode('global')">
+                                    🌐 全局模式
+                                </button>
+                            </div>
                             <span class="chat-option-divider">|</span>
-                            <label class="input-label compact" title="返回的最大结果数（1-20）">
-                                <span>Top K:</span>
-                                <input type="number" id="topK" value="5" min="1" max="20" class="input-small">
-                            </label>
-                            <label class="input-label compact" title="相关性阈值，低于此值的结果将被过滤（0-1，0表示不过滤）">
-                                <span>阈值:</span>
-                                <input type="number" id="threshold" value="0" min="0" max="1" step="0.1" class="input-small">
-                            </label>
-                            <span class="chat-option-divider">|</span>
-                            <button type="button" class="btn btn-sm btn-secondary" onclick="rebuildEmbeddings()" title="删除现有向量数据并重新构建，用于更新检索索引">
-                                🔄 重建向量
-                            </button>
+                            <!-- 精确模式选项（全局模式时隐藏） -->
+                            <div class="precise-mode-options" id="preciseModeOptions">
+                                <label class="checkbox-label compact" title="启用后，检索到某页时会返回该页所属批次的完整内容作为上下文，提供更丰富的信息">
+                                    <input type="checkbox" id="useParentChild" checked>
+                                    <span>父子块模式</span>
+                                </label>
+                                <label class="checkbox-label compact" title="启用后，会先将复杂问题分解为多个子问题，分别检索后整合答案，适合回答需要综合多处信息的问题">
+                                    <input type="checkbox" id="useReasoning" checked>
+                                    <span>推理检索</span>
+                                </label>
+                                <label class="checkbox-label compact" title="启用后，对检索结果进行二次精排，提高相关性（需在设置中配置重排序模型）">
+                                    <input type="checkbox" id="useReranker" checked>
+                                    <span>重排序</span>
+                                </label>
+                                <span class="chat-option-divider">|</span>
+                                <label class="input-label compact" title="返回的最大结果数（1-20）">
+                                    <span>Top K:</span>
+                                    <input type="number" id="topK" value="5" min="1" max="20" class="input-small">
+                                </label>
+                                <label class="input-label compact" title="相关性阈值，低于此值的结果将被过滤（0-1，0表示不过滤）">
+                                    <span>阈值:</span>
+                                    <input type="number" id="threshold" value="0" min="0" max="1" step="0.1" class="input-small">
+                                </label>
+                                <span class="chat-option-divider">|</span>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="rebuildEmbeddings()" title="删除现有向量数据并重新构建，用于更新检索索引">
+                                    🔄 重建向量
+                                </button>
+                            </div>
+                            <!-- 全局模式提示（精确模式时隐藏） -->
+                            <div class="global-mode-hint" id="globalModeHint" style="display: none;">
+                                <span class="hint-text">💡 全局模式使用全文摘要回答，适合"故事主题是什么"、"结局如何"等总结性问题</span>
+                            </div>
                         </div>
                         <div class="chat-input-wrapper">
                             <textarea id="questionInput" placeholder="输入你的问题..." rows="1" onkeydown="handleQuestionKeydown(event)"></textarea>
@@ -440,6 +457,13 @@
                         <div class="form-group" id="llmBaseUrlGroup" style="display: none;">
                             <label>Base URL</label>
                             <input type="text" id="llmBaseUrl" placeholder="自定义 API 地址">
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="llmUseStream" checked>
+                                <span>使用流式请求</span>
+                            </label>
+                            <p class="form-hint">流式请求可避免长时间等待导致的超时问题，建议开启</p>
                         </div>
                     </div>
                 </div>

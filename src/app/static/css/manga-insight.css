@@ -652,6 +652,93 @@ img {
     margin: 0 4px;
 }
 
+/* 问答模式切换按钮 */
+.qa-mode-toggle {
+    display: flex;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.qa-mode-btn {
+    padding: 6px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.qa-mode-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.qa-mode-btn.active {
+    background: var(--primary-color);
+    color: white;
+    font-weight: 500;
+}
+
+/* 精确模式选项容器 */
+.precise-mode-options {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+/* 全局模式提示 */
+.global-mode-hint {
+    display: flex;
+    align-items: center;
+}
+
+.global-mode-hint .hint-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* 回答中的模式标识 */
+.answer-mode-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+/* 欢迎消息中的示例标签 */
+.welcome-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+}
+
+.example-tag {
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.example-tag:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
 .chat-options .input-label.compact {
     font-size: 13px;
     color: var(--text-secondary);

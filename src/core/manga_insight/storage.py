@@ -134,6 +134,46 @@ class AnalysisStorage:
         return self._save_json("overview.json", overview)
     
     # ============================================================
+    # 压缩摘要存储方法（供问答全局模式使用）
+    # ============================================================
+    
+    async def load_compressed_context(self) -> Optional[Dict]:
+        """
+        加载压缩后的全文摘要
+        
+        Returns:
+            Dict: {
+                "context": str,      # 压缩后的全文摘要
+                "source": str,       # 数据来源
+                "group_count": int,  # 分组数量
+                "char_count": int,   # 字符数
+                "generated_at": str  # 生成时间
+            }
+        """
+        return self._load_json("compressed_context.json", None)
+    
+    async def save_compressed_context(self, data: Dict) -> bool:
+        """保存压缩后的全文摘要"""
+        data["saved_at"] = datetime.now().isoformat()
+        return self._save_json("compressed_context.json", data)
+    
+    async def has_compressed_context(self) -> bool:
+        """检查是否存在压缩摘要"""
+        filepath = os.path.join(self.base_path, "compressed_context.json")
+        return os.path.exists(filepath)
+    
+    async def delete_compressed_context(self) -> bool:
+        """删除压缩摘要"""
+        filepath = os.path.join(self.base_path, "compressed_context.json")
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return True
+        except Exception as e:
+            logger.error(f"删除压缩摘要失败: {e}")
+            return False
+    
+    # ============================================================
     # 批量分析存储方法
     # ============================================================
     

@@ -101,6 +101,7 @@ class ChatLLMConfig:
     base_url: Optional[str] = None
     rpm_limit: int = 10
     max_retries: int = 3
+    use_stream: bool = True  # 使用流式请求（避免超时）
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -110,7 +111,8 @@ class ChatLLMConfig:
             "model": self.model,
             "base_url": self.base_url,
             "rpm_limit": self.rpm_limit,
-            "max_retries": self.max_retries
+            "max_retries": self.max_retries,
+            "use_stream": self.use_stream
         }
     
     @classmethod
@@ -122,7 +124,8 @@ class ChatLLMConfig:
             model=data.get("model", "gemini-2.0-flash"),
             base_url=data.get("base_url"),
             rpm_limit=data.get("rpm_limit", 10),
-            max_retries=data.get("max_retries", 3)
+            max_retries=data.get("max_retries", 3),
+            use_stream=data.get("use_stream", True)
         )
 
 
