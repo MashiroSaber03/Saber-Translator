@@ -413,11 +413,27 @@ function processImageFile(file) { // 私有
 }
 
 /**
- * 处理 PDF 文件列表 (浏览器端解析，无需服务器)
+ * 处理 PDF 文件列表
+ * 根据 state.pdfProcessingMethod 选择前端或后端处理方式
  * @param {Array<File>} pdfFiles - PDF 文件数组
  * @returns {Promise<void>}
  */
 async function processPDFFiles(pdfFiles) { // 私有
+    if (state.pdfProcessingMethod === 'frontend') {
+        // 前端处理（使用 pdf.js）
+        await processPDFFilesFrontend(pdfFiles);
+    } else {
+        // 后端处理（使用 PyMuPDF）
+        await processPDFFilesBackend(pdfFiles);
+    }
+}
+
+/**
+ * 处理 PDF 文件列表 - 前端方式 (浏览器端解析，使用 pdf.js)
+ * @param {Array<File>} pdfFiles - PDF 文件数组
+ * @returns {Promise<void>}
+ */
+async function processPDFFilesFrontend(pdfFiles) {
     for (const file of pdfFiles) {
         try {
             ui.showLoading(`正在解析 PDF: ${file.name}...`);
@@ -511,6 +527,109 @@ async function processPDFFiles(pdfFiles) { // 私有
         } catch (error) {
             console.error(`处理PDF文件 ${file.name} 失败:`, error);
             ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+        }
+    }
+}
+
+/**
+ * 处理 PDF 文件列表 - 后端方式 (上传到后端解析，使用 PyMuPDF，分批获取图片)
+ * @param {Array<File>} pdfFiles - PDF 文件数组
+ * @returns {Promise<void>}
+ */
+async function processPDFFilesBackend(pdfFiles) {
+    const BATCH_SIZE = 5;  // 每批获取的页数
+    
+    for (const file of pdfFiles) {
+        let sessionId = null;
+        
+        try {
+            ui.showLoading(`正在上传 PDF: ${file.name}...`);
+            
+            // 步骤1: 上传文件并创建解析会话
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const startResponse = await fetch('/api/parse_pdf_start', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const startResult = await startResponse.json();
+            
+            if (!startResult.success) {
+                throw new Error(startResult.error || '解析失败');
+            }
+            
+            sessionId = startResult.session_id;
+            const totalPages = startResult.total_pages;
+            
+            console.log(`PDF ${file.name} 共 ${totalPages} 页，开始分批获取...`);
+            
+            // 步骤2: 分批获取图片
+            let loadedCount = 0;
+            
+            for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE) {
+                ui.showLoading(`处理 PDF: ${file.name} (${Math.min(startIndex + BATCH_SIZE, totalPages)}/${totalPages})...`);
+                
+                const batchResponse = await fetch('/api/parse_pdf_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_index: startIndex,
+                        count: BATCH_SIZE
+                    })
+                });
+                
+                const batchResult = await batchResponse.json();
+                
+                if (!batchResult.success) {
+                    console.warn(`批次 ${startIndex} 获取失败:`, batchResult.error);
+                    continue;
+                }
+                
+                // 将本批图片添加到状态
+                for (const imgData of batchResult.images) {
+                    const pdfFileName = `${file.name}_页面${String(imgData.page_index + 1).padStart(4, '0')}`;
+                    
+                    state.addImage({
+                        originalDataURL: imgData.data_url,
+                        translatedDataURL: null,
+                        cleanImageData: null,
+                        bubbleTexts: [],
+                        bubbleCoords: [],
+                        originalTexts: [],
+                        textboxTexts: [],
+                        bubbleStates: null,
+                        fileName: pdfFileName,
+                        fontSize: state.defaultFontSize,
+                        autoFontSize: $('#autoFontSize').is(':checked'),
+                        fontFamily: state.defaultFontFamily,
+                        layoutDirection: state.defaultLayoutDirection,
+                        showOriginal: false,
+                        translationFailed: false,
+                    });
+                    
+                    loadedCount++;
+                }
+                
+                console.log(`  已加载 ${loadedCount}/${totalPages} 页`);
+            }
+            
+            console.log(`PDF ${file.name} 全部 ${loadedCount} 页处理完成`);
+            
+        } catch (error) {
+            console.error(`处理PDF文件 ${file.name} 失败:`, error);
+            ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+        } finally {
+            // 步骤3: 清理会话
+            if (sessionId) {
+                try {
+                    await fetch(`/api/parse_pdf_cleanup/${sessionId}`, { method: 'POST' });
+                } catch (e) {
+                    console.warn('清理 PDF 会话失败:', e);
+                }
+            }
         }
     }
 }

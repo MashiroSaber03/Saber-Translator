@@ -1008,6 +1008,7 @@
                 <button class="settings-tab" data-tab="hq">高质量翻译</button>
                 <button class="settings-tab" data-tab="proofreading">AI校对</button>
                 <button class="settings-tab" data-tab="prompt-library">提示词管理</button>
+                <button class="settings-tab" data-tab="more">更多</button>
             </div>
             
             <!-- Tab 内容 -->
@@ -1547,6 +1548,21 @@
                         <div class="prompt-edit-actions">
                             <button id="cancelPromptEditBtn" class="settings-cancel-btn">取消</button>
                             <button id="savePromptToLibraryBtn" class="settings-save-btn">保存提示词</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 更多设置 -->
+                <div class="settings-tab-pane" id="settings-more">
+                    <div class="settings-group">
+                        <div class="settings-group-title">文件处理设置</div>
+                        <div class="settings-item">
+                            <label for="settingsPdfProcessingMethod">PDF处理方式:</label>
+                            <select id="settingsPdfProcessingMethod">
+                                <option value="backend" selected>后端处理 (PyMuPDF，推荐)</option>
+                                <option value="frontend">前端处理 (pdf.js)</option>
+                            </select>
+                            <div class="input-hint">后端处理速度更快、更稳定；前端处理无需服务器支持但较慢</div>
                         </div>
                     </div>
                 </div>

@@ -31,6 +31,7 @@ litelama
 # Other
 dill
 mobi>=0.4.0
+PyMuPDF>=1.23.0
 
 # Manga Insight
 chromadb>=0.4.0
