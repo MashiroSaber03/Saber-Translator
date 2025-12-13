@@ -174,6 +174,76 @@ class AnalysisStorage:
             return False
     
     # ============================================================
+    # 模板概要存储方法（多种概要类型）
+    # ============================================================
+    
+    async def load_template_overview(self, template_key: str) -> Optional[Dict]:
+        """
+        加载指定模板的概要
+        
+        Args:
+            template_key: 模板键名（如 story_summary, recap, no_spoiler 等）
+        
+        Returns:
+            Dict: 模板概要数据
+        """
+        filename = f"overview_{template_key}.json"
+        return self._load_json(filename, None)
+    
+    async def save_template_overview(self, template_key: str, data: Dict) -> bool:
+        """
+        保存指定模板的概要
+        
+        Args:
+            template_key: 模板键名
+            data: 概要数据
+        """
+        filename = f"overview_{template_key}.json"
+        data["saved_at"] = datetime.now().isoformat()
+        data["template_key"] = template_key
+        return self._save_json(filename, data)
+    
+    async def delete_template_overview(self, template_key: str) -> bool:
+        """删除指定模板的概要缓存"""
+        filepath = os.path.join(self.base_path, f"overview_{template_key}.json")
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return True
+        except Exception as e:
+            logger.error(f"删除模板概要失败: {e}")
+            return False
+    
+    async def list_template_overviews(self) -> List[Dict]:
+        """列出所有已生成的模板概要"""
+        overviews = []
+        for filename in os.listdir(self.base_path):
+            if filename.startswith("overview_") and filename.endswith(".json"):
+                template_key = filename[9:-5]  # 去掉 "overview_" 和 ".json"
+                data = await self.load_template_overview(template_key)
+                if data:
+                    overviews.append({
+                        "template_key": template_key,
+                        "template_name": data.get("template_name", template_key),
+                        "template_icon": data.get("template_icon", "📄"),
+                        "generated_at": data.get("generated_at"),
+                        "has_content": bool(data.get("content"))
+                    })
+        return overviews
+    
+    async def clear_all_template_overviews(self) -> bool:
+        """清除所有模板概要缓存"""
+        try:
+            for filename in os.listdir(self.base_path):
+                if filename.startswith("overview_") and filename.endswith(".json"):
+                    filepath = os.path.join(self.base_path, filename)
+                    os.remove(filepath)
+            return True
+        except Exception as e:
+            logger.error(f"清除模板概要失败: {e}")
+            return False
+    
+    # ============================================================
     # 批量分析存储方法
     # ============================================================
     

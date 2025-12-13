@@ -180,14 +180,30 @@
             <!-- 概览标签页 -->
             <div class="tab-content active" id="tab-overview">
                 <div class="overview-grid">
-                    <!-- 摘要卡片 -->
+                    <!-- 摘要卡片（支持多模板） -->
                     <div class="overview-card summary-card">
                         <div class="card-header">
-                            <h3 class="card-title">📖 故事概要</h3>
-                            <button class="btn-icon" onclick="regenerateOverview()" title="重新生成概述">🔄</button>
+                            <div class="card-title-with-selector">
+                                <span class="card-title-icon" id="overviewTemplateIcon">🎁</span>
+                                <select id="overviewTemplateSelect" class="template-select" onchange="onOverviewTemplateChange()">
+                                    <option value="no_spoiler">无剧透简介</option>
+                                    <option value="story_summary">故事概要</option>
+                                    <option value="recap">前情回顾</option>
+                                    <option value="character_guide">角色图鉴</option>
+                                    <option value="world_setting">世界观设定</option>
+                                    <option value="highlights">名场面盘点</option>
+                                    <option value="reading_notes">阅读笔记</option>
+                                </select>
+                            </div>
+                            <div class="card-header-actions">
+                                <span class="template-status" id="templateStatus"></span>
+                                <button class="btn-icon" onclick="generateOverviewWithTemplate(false)" title="生成/加载">📄</button>
+                                <button class="btn-icon" onclick="generateOverviewWithTemplate(true)" title="重新生成">🔄</button>
+                            </div>
                         </div>
-                        <div class="card-content" id="storySummary">
-                            <div class="placeholder-text">完成分析后将显示故事概要</div>
+                        <p class="template-description" id="templateDescription">完整的剧情回顾，包含所有剧透，适合回顾整个故事</p>
+                        <div class="card-content markdown-content" id="storySummary">
+                            <div class="placeholder-text">选择模板类型，点击生成按钮</div>
                         </div>
                     </div>
 
@@ -779,6 +795,8 @@
     <!-- 移动端遮罩层 -->
     <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobilePanels()"></div>
 
+    <!-- Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="{{ url_for('static', filename='js/manga-insight.js') }}"></script>
     <script>
         // 初始化页面

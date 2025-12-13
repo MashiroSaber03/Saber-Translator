@@ -419,11 +419,102 @@ img {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 .card-header .card-title {
     margin-bottom: 0;
+}
+
+/* 模板选择器样式 */
+.card-title-with-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-title-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.template-select {
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    min-width: 140px;
+    transition: all 0.2s;
+}
+
+.template-select:hover {
+    border-color: var(--primary-color);
+}
+
+.template-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.card-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.template-status {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.template-status.status-cached {
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+}
+
+.template-status.status-empty {
+    background: rgba(156, 163, 175, 0.1);
+    color: var(--text-tertiary);
+}
+
+.template-status.status-generating {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--primary-color);
+    animation: pulse 1.5s infinite;
+}
+
+.template-status.status-error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.template-description {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin: 0 0 12px 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.placeholder-text.generating {
+    color: var(--primary-color);
+    animation: pulse 1.5s infinite;
+}
+
+.placeholder-text.error {
+    color: #ef4444;
 }
 
 .card-title {
@@ -475,6 +566,75 @@ img {
 .card-content {
     color: var(--text-secondary);
     line-height: 1.6;
+}
+
+/* Markdown 渲染样式 */
+.markdown-content {
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.markdown-content h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 16px 0 8px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-content h2:first-child {
+    margin-top: 0;
+}
+
+.markdown-content h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 12px 0 6px 0;
+}
+
+.markdown-content p {
+    margin: 8px 0;
+    color: var(--text-secondary);
+}
+
+.markdown-content ul, .markdown-content ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.markdown-content li {
+    margin: 4px 0;
+    color: var(--text-secondary);
+}
+
+.markdown-content strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.markdown-content em {
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+.markdown-content blockquote {
+    margin: 12px 0;
+    padding: 8px 12px;
+    border-left: 3px solid var(--primary-color);
+    background: var(--bg-tertiary);
+    border-radius: 0 6px 6px 0;
+}
+
+.markdown-content blockquote p {
+    margin: 0;
+}
+
+.markdown-content hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 16px 0;
 }
 
 .stats-grid {
@@ -611,6 +771,51 @@ img {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-bottom-left-radius: 4px;
+}
+
+/* 问答消息中的 Markdown 样式 */
+.chat-message.assistant .message-content.markdown-content {
+    max-width: 70%;
+}
+
+.chat-message.assistant .answer-text {
+    line-height: 1.7;
+}
+
+.chat-message.assistant .answer-text p {
+    margin: 0 0 8px 0;
+}
+
+.chat-message.assistant .answer-text p:last-child {
+    margin-bottom: 0;
+}
+
+.chat-message.assistant .answer-text ul,
+.chat-message.assistant .answer-text ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.chat-message.assistant .answer-text li {
+    margin: 4px 0;
+}
+
+.chat-message.assistant .answer-text strong {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.chat-message.assistant .answer-text blockquote {
+    margin: 8px 0;
+    padding: 6px 12px;
+    border-left: 3px solid var(--primary-color);
+    background: var(--bg-tertiary);
+    border-radius: 0 6px 6px 0;
+    font-style: italic;
+}
+
+.chat-message.assistant .answer-text blockquote p {
+    margin: 0;
 }
 
 .chat-input-container {

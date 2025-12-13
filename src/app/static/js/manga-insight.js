@@ -129,6 +129,9 @@ async function loadBook(bookId) {
         // 保存书籍信息
         MangaInsight.bookInfo = book;
         
+        // 初始化模板选择器
+        initOverviewTemplateSelector();
+        
         // 加载概览数据
         await loadOverviewData();
         
@@ -613,22 +616,18 @@ async function loadOverviewData() {
     if (!MangaInsight.currentBookId) return;
     
     try {
-        // 加载概述
-        const overviewResponse = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/overview`);
-        const overviewData = await overviewResponse.json();
+        // 加载当前选中模板的概要
+        await loadTemplateOverview(currentOverviewTemplate);
         
-        if (overviewData.success && overviewData.overview) {
-            const overview = overviewData.overview;
-            const storySummaryEl = document.getElementById('storySummary');
-            if (storySummaryEl) {
-                storySummaryEl.innerHTML = overview.summary || '<div class="placeholder-text">暂无概要</div>';
+        // 加载已生成的模板列表（更新状态）
+        try {
+            const templatesResponse = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/overview/templates`);
+            const templatesData = await templatesResponse.json();
+            if (templatesData.success) {
+                updateTemplateSelectStatus(templatesData.generated || []);
             }
-            
-            // 显示章节数
-            if (overview.total_chapters !== undefined) {
-                const statChaptersEl = document.getElementById('statChapters');
-                if (statChaptersEl) statChaptersEl.textContent = overview.total_chapters;
-            }
+        } catch (e) {
+            console.warn('加载模板列表失败:', e);
         }
         
         // 加载统计
@@ -918,38 +917,200 @@ function toggleEventsSection(header) {
     }
 }
 
-// ==================== 重新生成功能 ====================
+// ==================== 多模板概要系统 ====================
 
-async function regenerateOverview() {
+// 模板元信息（与后端保持同步）
+const OVERVIEW_TEMPLATES = {
+    no_spoiler: { name: "无剧透简介", icon: "🎁", description: "不含关键剧透的故事简介，适合推荐给朋友" },
+    story_summary: { name: "故事概要", icon: "📖", description: "完整的剧情回顾，包含所有剧透，适合回顾整个故事" },
+    recap: { name: "前情回顾", icon: "⏪", description: "精炼版剧情回顾，适合接续阅读前快速回忆" },
+    character_guide: { name: "角色图鉴", icon: "👥", description: "详细的人物介绍和关系梳理" },
+    world_setting: { name: "世界观设定", icon: "🌍", description: "故事的世界观、势力、规则等背景设定" },
+    highlights: { name: "名场面盘点", icon: "✨", description: "精彩场景和高光时刻回顾，附页码定位" },
+    reading_notes: { name: "阅读笔记", icon: "📝", description: "结构化的阅读笔记，包含要点和思考" }
+};
+
+// 当前选中的模板
+let currentOverviewTemplate = 'no_spoiler';
+
+// 模板选择变化
+function onOverviewTemplateChange() {
+    const select = document.getElementById('overviewTemplateSelect');
+    const templateKey = select.value;
+    currentOverviewTemplate = templateKey;
+    
+    // 更新图标
+    const iconEl = document.getElementById('overviewTemplateIcon');
+    if (iconEl && OVERVIEW_TEMPLATES[templateKey]) {
+        iconEl.textContent = OVERVIEW_TEMPLATES[templateKey].icon;
+    }
+    
+    // 更新描述
+    const descEl = document.getElementById('templateDescription');
+    if (descEl && OVERVIEW_TEMPLATES[templateKey]) {
+        descEl.textContent = OVERVIEW_TEMPLATES[templateKey].description;
+    }
+    
+    // 尝试加载缓存的内容
+    loadTemplateOverview(templateKey);
+}
+
+// 加载指定模板的概要（从缓存）
+async function loadTemplateOverview(templateKey) {
+    if (!MangaInsight.currentBookId) return;
+    
+    const storySummaryEl = document.getElementById('storySummary');
+    const statusEl = document.getElementById('templateStatus');
+    
+    if (storySummaryEl) {
+        storySummaryEl.innerHTML = '<div class="placeholder-text">加载中...</div>';
+    }
+    
+    try {
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/overview/${templateKey}`);
+        const data = await response.json();
+        
+        if (data.success && data.content) {
+            // 有缓存内容
+            if (storySummaryEl) {
+                if (typeof marked !== 'undefined') {
+                    storySummaryEl.innerHTML = marked.parse(data.content);
+                } else {
+                    storySummaryEl.innerHTML = data.content;
+                }
+            }
+            if (statusEl) {
+                statusEl.textContent = '✓ 已生成';
+                statusEl.className = 'template-status status-cached';
+            }
+        } else {
+            // 无缓存
+            if (storySummaryEl) {
+                storySummaryEl.innerHTML = '<div class="placeholder-text">尚未生成此类型概要，点击 📄 按钮生成</div>';
+            }
+            if (statusEl) {
+                statusEl.textContent = '未生成';
+                statusEl.className = 'template-status status-empty';
+            }
+        }
+    } catch (error) {
+        console.error('加载模板概要失败:', error);
+        if (storySummaryEl) {
+            storySummaryEl.innerHTML = '<div class="placeholder-text">加载失败</div>';
+        }
+    }
+}
+
+// 生成概要（使用当前选中的模板）
+async function generateOverviewWithTemplate(force = false) {
     if (!MangaInsight.currentBookId) {
         showToast('请先选择书籍', 'error');
         return;
     }
     
-    if (!confirm('确定要重新生成故事概述吗？这可能需要一些时间。')) {
+    const templateKey = currentOverviewTemplate;
+    const templateInfo = OVERVIEW_TEMPLATES[templateKey];
+    
+    if (force && !confirm(`确定要重新生成「${templateInfo.name}」吗？这可能需要一些时间。`)) {
         return;
     }
     
-    showToast('正在重新生成概述...', 'info');
     const storySummaryEl = document.getElementById('storySummary');
-    if (storySummaryEl) storySummaryEl.innerHTML = '<div class="placeholder-text">正在生成中...</div>';
+    const statusEl = document.getElementById('templateStatus');
+    
+    showToast(`正在生成「${templateInfo.name}」...`, 'info');
+    if (storySummaryEl) {
+        storySummaryEl.innerHTML = '<div class="placeholder-text generating">🔄 正在生成中，请稍候...</div>';
+    }
+    if (statusEl) {
+        statusEl.textContent = '生成中...';
+        statusEl.className = 'template-status status-generating';
+    }
     
     try {
-        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/regenerate/overview`, {
-            method: 'POST'
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/overview/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                template: templateKey,
+                force: force
+            })
         });
         const data = await response.json();
         
         if (data.success) {
-            showToast('概述生成完成', 'success');
-            await loadOverviewData();
+            showToast(`「${templateInfo.name}」生成完成`, 'success');
+            
+            if (storySummaryEl && data.content) {
+                if (typeof marked !== 'undefined') {
+                    storySummaryEl.innerHTML = marked.parse(data.content);
+                } else {
+                    storySummaryEl.innerHTML = data.content;
+                }
+            }
+            if (statusEl) {
+                statusEl.textContent = data.cached ? '✓ 已缓存' : '✓ 已生成';
+                statusEl.className = 'template-status status-cached';
+            }
         } else {
             showToast(data.error || '生成失败', 'error');
+            if (storySummaryEl) {
+                storySummaryEl.innerHTML = `<div class="placeholder-text error">生成失败: ${data.error || '未知错误'}</div>`;
+            }
+            if (statusEl) {
+                statusEl.textContent = '生成失败';
+                statusEl.className = 'template-status status-error';
+            }
         }
     } catch (error) {
-        console.error('重新生成概述失败:', error);
-        showToast('重新生成失败', 'error');
+        console.error('生成模板概要失败:', error);
+        showToast('生成失败', 'error');
+        if (storySummaryEl) {
+            storySummaryEl.innerHTML = '<div class="placeholder-text error">生成失败，请检查网络连接</div>';
+        }
     }
+}
+
+// 兼容旧的 regenerateOverview 函数
+async function regenerateOverview() {
+    await generateOverviewWithTemplate(true);
+}
+
+// 更新模板选择器的状态标记（显示哪些已生成）
+function updateTemplateSelectStatus(generatedKeys) {
+    const select = document.getElementById('overviewTemplateSelect');
+    if (!select) return;
+    
+    // 更新选项文本，标记已生成的模板
+    Array.from(select.options).forEach(option => {
+        const key = option.value;
+        const template = OVERVIEW_TEMPLATES[key];
+        if (template) {
+            const isGenerated = generatedKeys.includes(key);
+            option.textContent = `${template.icon} ${template.name}${isGenerated ? ' ✓' : ''}`;
+        }
+    });
+}
+
+// 初始化模板选择器
+function initOverviewTemplateSelector() {
+    const select = document.getElementById('overviewTemplateSelect');
+    if (!select) return;
+    
+    // 清空并重新填充选项
+    select.innerHTML = '';
+    Object.entries(OVERVIEW_TEMPLATES).forEach(([key, template]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = `${template.icon} ${template.name}`;
+        select.appendChild(option);
+    });
+    
+    // 设置默认选中
+    select.value = currentOverviewTemplate;
+    
+    // 触发一次变化以更新UI
+    onOverviewTemplateChange();
 }
 
 async function regenerateTimeline() {
@@ -1133,7 +1294,7 @@ async function sendQuestion() {
     
     // 添加加载消息
     const loadingText = currentQAMode === 'global' ? '正在分析全文...' : '思考中...';
-    addChatMessage('assistant', `<div class="loading-dots">${loadingText}</div>`);
+    addChatMessage('assistant', `<div class="loading-dots">${loadingText}</div>`, false);
     
     // 获取检索模式开关状态（仅精确模式使用）
     const useParentChild = document.getElementById('useParentChild')?.checked || false;
@@ -1166,12 +1327,21 @@ async function sendQuestion() {
         removeLoadingMessages();
         
         if (data.success) {
-            // 添加回答
-            let answerHtml = data.answer;
+            // 使用 Markdown 渲染回答内容
+            let answerContent = data.answer;
+            if (typeof marked !== 'undefined') {
+                answerContent = marked.parse(data.answer);
+            }
+            
+            // 构建完整的回答 HTML
+            let answerHtml = '';
             
             // 添加模式标识
             const modeLabel = data.mode === 'global' ? '🌐 全局模式' : '🎯 精确模式';
-            answerHtml = `<div class="answer-mode-badge">${modeLabel}</div>` + answerHtml;
+            answerHtml += `<div class="answer-mode-badge">${modeLabel}</div>`;
+            
+            // 添加渲染后的回答内容
+            answerHtml += `<div class="answer-text">${answerContent}</div>`;
             
             // 添加引用（仅精确模式有引用）
             if (data.citations && data.citations.length > 0) {
@@ -1204,14 +1374,15 @@ async function sendQuestion() {
                 mode: data.mode
             };
             
-            addChatMessage('assistant', answerHtml);
+            // 使用 useMarkdown=false 因为我们已经手动渲染了
+            addChatMessage('assistant', answerHtml, false);
         } else {
-            addChatMessage('assistant', '抱歉，处理问题时出错: ' + data.error);
+            addChatMessage('assistant', '抱歉，处理问题时出错: ' + data.error, false);
         }
     } catch (error) {
         console.error('发送问题失败:', error);
         removeLoadingMessages();
-        addChatMessage('assistant', '抱歉，网络请求失败，请稍后重试。');
+        addChatMessage('assistant', '抱歉，网络请求失败，请稍后重试。', false);
     }
 }
 
@@ -1231,7 +1402,7 @@ function removeLoadingMessages() {
     });
 }
 
-function addChatMessage(role, content) {
+function addChatMessage(role, content, useMarkdown = true) {
     const container = document.getElementById('chatMessages');
     
     // 移除欢迎消息
@@ -1246,9 +1417,18 @@ function addChatMessage(role, content) {
         ? '<img src="/pic/logo.png" alt="用户" class="avatar-img">'
         : '🤖';
     
+    // 助手消息使用 Markdown 渲染（除非内容包含 HTML 标签如加载动画）
+    let renderedContent = content;
+    if (role === 'assistant' && useMarkdown && typeof marked !== 'undefined') {
+        // 检查是否是纯文本回答（不包含 HTML 标签）
+        if (!content.includes('<div') && !content.includes('<button') && !content.includes('<span class="citation')) {
+            renderedContent = marked.parse(content);
+        }
+    }
+    
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatar}</div>
-        <div class="message-content">${content}</div>
+        <div class="message-content markdown-content">${renderedContent}</div>
     `;
     
     container.appendChild(messageDiv);

@@ -455,6 +455,221 @@ def regenerate_overview(book_id: str):
         }), 500
 
 
+# ==================== 多模板概要 API ====================
+
+@manga_insight_bp.route('/<book_id>/overview/templates', methods=['GET'])
+def get_overview_templates(book_id: str):
+    """
+    获取可用的概要模板列表
+    
+    Returns:
+        {
+            "success": true,
+            "templates": {
+                "story_summary": {"name": "故事概要", "icon": "📖", "description": "..."},
+                ...
+            },
+            "generated": ["story_summary", "recap"]  // 已生成的模板
+        }
+    """
+    try:
+        from src.core.manga_insight.config_models import get_overview_templates
+        
+        storage = AnalysisStorage(book_id)
+        
+        # 获取所有模板定义
+        templates = get_overview_templates()
+        
+        # 获取已生成的模板列表
+        generated_list = run_async(storage.list_template_overviews())
+        generated_keys = [item["template_key"] for item in generated_list]
+        
+        return jsonify({
+            "success": True,
+            "templates": templates,
+            "generated": generated_keys,
+            "generated_details": generated_list
+        })
+        
+    except Exception as e:
+        logger.error(f"获取概要模板列表失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/overview/generate', methods=['POST'])
+def generate_template_overview(book_id: str):
+    """
+    使用指定模板生成概要
+    
+    Request Body:
+        {
+            "template": "story_summary",  // 模板键名
+            "force": false                // 是否强制重新生成
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "template_key": "story_summary",
+            "template_name": "故事概要",
+            "template_icon": "📖",
+            "content": "...",
+            "cached": false
+        }
+    """
+    try:
+        from src.core.manga_insight.features.hierarchical_summary import HierarchicalSummaryGenerator
+        from src.core.manga_insight.embedding_client import ChatClient
+        from src.core.manga_insight.config_utils import load_insight_config
+        from src.core.manga_insight.config_models import OVERVIEW_TEMPLATES
+        
+        data = request.json or {}
+        template_key = data.get("template", "story_summary")
+        force = data.get("force", False)
+        
+        # 验证模板
+        if template_key not in OVERVIEW_TEMPLATES:
+            return jsonify({
+                "success": False,
+                "error": f"未知的模板类型: {template_key}"
+            }), 400
+        
+        storage = AnalysisStorage(book_id)
+        config = load_insight_config()
+        
+        # 检查缓存（非强制模式）
+        if not force:
+            cached = run_async(storage.load_template_overview(template_key))
+            if cached and cached.get("content"):
+                return jsonify({
+                    "success": True,
+                    "cached": True,
+                    **cached
+                })
+        
+        # 强制重新生成时，先删除缓存
+        if force:
+            run_async(storage.delete_template_overview(template_key))
+        
+        # 初始化 LLM 客户端
+        llm_client = None
+        if config.chat_llm.use_same_as_vlm:
+            if config.vlm.api_key:
+                llm_client = ChatClient(config.vlm)
+        else:
+            if config.chat_llm.api_key:
+                llm_client = ChatClient(config.chat_llm)
+        
+        if not llm_client:
+            return jsonify({
+                "success": False,
+                "error": "未配置 LLM，请先在设置中配置 VLM 或对话模型"
+            }), 400
+        
+        # 生成概要
+        generator = HierarchicalSummaryGenerator(
+            book_id=book_id,
+            storage=storage,
+            llm_client=llm_client,
+            prompts_config=config.prompts
+        )
+        
+        # skip_cache=True 因为 API 层已经处理了缓存检查
+        result = run_async(generator.generate_with_template(template_key, skip_cache=True))
+        
+        # 关闭 LLM 客户端
+        run_async(llm_client.close())
+        
+        return jsonify({
+            "success": True,
+            "cached": False,
+            **result
+        })
+        
+    except Exception as e:
+        logger.error(f"生成模板概要失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/overview/<template_key>', methods=['GET'])
+def get_template_overview(book_id: str, template_key: str):
+    """
+    获取指定模板的概要（仅从缓存读取）
+    
+    Returns:
+        {
+            "success": true,
+            "cached": true,
+            "template_key": "story_summary",
+            "content": "..."
+        }
+    """
+    try:
+        from src.core.manga_insight.config_models import OVERVIEW_TEMPLATES
+        
+        storage = AnalysisStorage(book_id)
+        
+        # 验证模板
+        if template_key not in OVERVIEW_TEMPLATES:
+            return jsonify({
+                "success": False,
+                "error": f"未知的模板类型: {template_key}"
+            }), 400
+        
+        cached = run_async(storage.load_template_overview(template_key))
+        
+        if cached and cached.get("content"):
+            return jsonify({
+                "success": True,
+                "cached": True,
+                **cached
+            })
+        else:
+            template_info = OVERVIEW_TEMPLATES[template_key]
+            return jsonify({
+                "success": True,
+                "cached": False,
+                "template_key": template_key,
+                "template_name": template_info["name"],
+                "template_icon": template_info["icon"],
+                "content": None,
+                "message": "尚未生成，请点击生成按钮"
+            })
+        
+    except Exception as e:
+        logger.error(f"获取模板概要失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/overview/<template_key>', methods=['DELETE'])
+def delete_template_overview(book_id: str, template_key: str):
+    """删除指定模板的概要缓存"""
+    try:
+        storage = AnalysisStorage(book_id)
+        success = run_async(storage.delete_template_overview(template_key))
+        
+        return jsonify({
+            "success": success,
+            "message": "缓存已删除" if success else "删除失败"
+        })
+        
+    except Exception as e:
+        logger.error(f"删除模板概要失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @manga_insight_bp.route('/<book_id>/rebuild-embeddings', methods=['POST'])
 def rebuild_embeddings(book_id: str):
     """重新构建向量嵌入"""

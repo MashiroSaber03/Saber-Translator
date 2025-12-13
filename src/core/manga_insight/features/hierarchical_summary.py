@@ -4,7 +4,8 @@ Manga Insight 层级式摘要生成器（重构版）
 统一的概要生成逻辑：
 1. 优先使用分析过程产生的数据（segment/chapter 总结）
 2. 降级方案：从页面摘要自动分组生成
-3. 所有提示词从配置中读取
+3. 支持多种概要模板（故事概要、前情回顾、无剧透简介等）
+4. 所有提示词从配置中读取
 """
 
 import logging
@@ -14,7 +15,9 @@ from datetime import datetime
 from ..config_models import (
     PromptsConfig, 
     DEFAULT_GROUP_SUMMARY_PROMPT, 
-    DEFAULT_BOOK_OVERVIEW_PROMPT
+    DEFAULT_BOOK_OVERVIEW_PROMPT,
+    OVERVIEW_TEMPLATES,
+    get_overview_template_prompt
 )
 
 logger = logging.getLogger("MangaInsight.HierarchicalSummary")
@@ -46,6 +49,114 @@ class HierarchicalSummaryGenerator:
         self.llm = llm_client
         self.book_info = book_info or {}
         self.prompts = prompts_config or PromptsConfig()
+    
+    async def generate_with_template(self, template_key: str = "story_summary", skip_cache: bool = False) -> Dict:
+        """
+        使用指定模板生成概要
+        
+        Args:
+            template_key: 模板键名，可选值：
+                - story_summary: 故事概要（默认）
+                - recap: 前情回顾
+                - no_spoiler: 无剧透简介
+                - character_guide: 角色图鉴
+                - world_setting: 世界观设定
+                - highlights: 名场面盘点
+                - reading_notes: 阅读笔记
+            skip_cache: 是否跳过缓存检查（由调用方控制）
+        
+        Returns:
+            Dict: 包含生成内容的结果
+        """
+        logger.info(f"使用模板生成概要: {self.book_id}, template={template_key}")
+        
+        # 检查模板是否存在
+        if template_key not in OVERVIEW_TEMPLATES:
+            logger.warning(f"未知模板: {template_key}，使用默认模板")
+            template_key = "story_summary"
+        
+        template_info = OVERVIEW_TEMPLATES[template_key]
+        
+        # 尝试从缓存加载（除非调用方要求跳过）
+        if not skip_cache:
+            cached = await self.storage.load_template_overview(template_key)
+            if cached and cached.get("content"):
+                logger.info(f"使用缓存的模板概要: {template_key}")
+                return cached
+        
+        # 收集压缩摘要（复用现有逻辑）
+        compressed_context = await self._get_or_build_compressed_context()
+        
+        if not compressed_context:
+            return {
+                "template_key": template_key,
+                "template_name": template_info["name"],
+                "template_icon": template_info["icon"],
+                "content": "暂无分析数据，请先完成漫画分析。",
+                "source": "none",
+                "generated_at": datetime.now().isoformat()
+            }
+        
+        # 使用模板提示词生成内容
+        content = await self._generate_with_template_prompt(
+            compressed_context, 
+            template_key
+        )
+        
+        result = {
+            "template_key": template_key,
+            "template_name": template_info["name"],
+            "template_icon": template_info["icon"],
+            "content": content,
+            "source": "llm",
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        # 保存到缓存
+        await self.storage.save_template_overview(template_key, result)
+        
+        return result
+    
+    async def _get_or_build_compressed_context(self) -> str:
+        """获取或构建压缩摘要"""
+        # 先尝试加载已有的压缩摘要
+        compressed_data = await self.storage.load_compressed_context()
+        if compressed_data and compressed_data.get("context"):
+            return compressed_data.get("context")
+        
+        # 没有压缩摘要，需要先生成层级概述来构建
+        logger.info("没有压缩摘要，先生成层级概述")
+        await self.generate_hierarchical_overview()
+        
+        # 再次尝试加载
+        compressed_data = await self.storage.load_compressed_context()
+        if compressed_data and compressed_data.get("context"):
+            return compressed_data.get("context")
+        
+        return ""
+    
+    async def _generate_with_template_prompt(
+        self, 
+        compressed_context: str, 
+        template_key: str
+    ) -> str:
+        """使用模板提示词生成内容"""
+        if not self.llm:
+            return f"LLM 未配置，无法生成 {OVERVIEW_TEMPLATES[template_key]['name']}"
+        
+        # 获取模板提示词
+        prompt_template = get_overview_template_prompt(template_key)
+        prompt = prompt_template.format(section_summaries=compressed_context)
+        
+        try:
+            response = await self.llm.generate(
+                prompt=prompt,
+                temperature=0.3
+            )
+            return response.strip()
+        except Exception as e:
+            logger.error(f"模板生成失败: {e}")
+            return f"生成失败: {str(e)}"
     
     async def generate_hierarchical_overview(self) -> Dict:
         """

@@ -965,6 +965,8 @@ class MangaAnalyzer:
         2. 从段落总结生成（如果有 segment 分析结果）
         3. 从批量分析生成（如果有 batch 分析结果）
         4. 从页面摘要生成（降级方案）
+        
+        同时会自动生成默认的「故事概要」模板。
         """
         from .features.hierarchical_summary import HierarchicalSummaryGenerator
         from .embedding_client import ChatClient
@@ -992,12 +994,24 @@ class MangaAnalyzer:
         )
         
         summary_source = "none"
+        book_summary = ""
+        section_summaries = []
+        
         try:
+            # 先生成层级概述（会构建压缩摘要）
             hierarchical_result = await summary_generator.generate_hierarchical_overview()
             book_summary = hierarchical_result.get("book_summary", "")
             section_summaries = hierarchical_result.get("section_summaries", [])
             summary_source = hierarchical_result.get("source", "unknown")
             logger.info(f"概要生成完成，数据来源: {summary_source}")
+            
+            # 自动生成默认的「故事概要」模板
+            try:
+                template_result = await summary_generator.generate_with_template("story_summary")
+                logger.info(f"故事概要模板生成完成")
+            except Exception as e:
+                logger.warning(f"故事概要模板生成失败: {e}")
+                
         except Exception as e:
             logger.error(f"层级摘要生成失败: {e}", exc_info=True)
             book_summary = "概要生成失败，请重试。"
