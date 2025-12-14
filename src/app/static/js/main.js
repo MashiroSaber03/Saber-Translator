@@ -418,11 +418,27 @@ function processImageFile(file) { // 私有
 }
 
 /**
- * 处理 PDF 文件列表 (浏览器端解析，无需服务器)
+ * 处理 PDF 文件列表
+ * 根据 state.pdfProcessingMethod 选择前端或后端处理方式
  * @param {Array<File>} pdfFiles - PDF 文件数组
  * @returns {Promise<void>}
  */
 async function processPDFFiles(pdfFiles) { // 私有
+    if (state.pdfProcessingMethod === 'frontend') {
+        // 前端处理（使用 pdf.js）
+        await processPDFFilesFrontend(pdfFiles);
+    } else {
+        // 后端处理（使用 PyMuPDF）
+        await processPDFFilesBackend(pdfFiles);
+    }
+}
+
+/**
+ * 处理 PDF 文件列表 - 前端方式 (浏览器端解析，使用 pdf.js)
+ * @param {Array<File>} pdfFiles - PDF 文件数组
+ * @returns {Promise<void>}
+ */
+async function processPDFFilesFrontend(pdfFiles) {
     for (const file of pdfFiles) {
         try {
             ui.showLoading(`正在解析 PDF: ${file.name}...`);
@@ -516,6 +532,109 @@ async function processPDFFiles(pdfFiles) { // 私有
         } catch (error) {
             console.error(`处理PDF文件 ${file.name} 失败:`, error);
             ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+        }
+    }
+}
+
+/**
+ * 处理 PDF 文件列表 - 后端方式 (上传到后端解析，使用 PyMuPDF，分批获取图片)
+ * @param {Array<File>} pdfFiles - PDF 文件数组
+ * @returns {Promise<void>}
+ */
+async function processPDFFilesBackend(pdfFiles) {
+    const BATCH_SIZE = 5;  // 每批获取的页数
+    
+    for (const file of pdfFiles) {
+        let sessionId = null;
+        
+        try {
+            ui.showLoading(`正在上传 PDF: ${file.name}...`);
+            
+            // 步骤1: 上传文件并创建解析会话
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const startResponse = await fetch('/api/parse_pdf_start', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const startResult = await startResponse.json();
+            
+            if (!startResult.success) {
+                throw new Error(startResult.error || '解析失败');
+            }
+            
+            sessionId = startResult.session_id;
+            const totalPages = startResult.total_pages;
+            
+            console.log(`PDF ${file.name} 共 ${totalPages} 页，开始分批获取...`);
+            
+            // 步骤2: 分批获取图片
+            let loadedCount = 0;
+            
+            for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE) {
+                ui.showLoading(`处理 PDF: ${file.name} (${Math.min(startIndex + BATCH_SIZE, totalPages)}/${totalPages})...`);
+                
+                const batchResponse = await fetch('/api/parse_pdf_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_index: startIndex,
+                        count: BATCH_SIZE
+                    })
+                });
+                
+                const batchResult = await batchResponse.json();
+                
+                if (!batchResult.success) {
+                    console.warn(`批次 ${startIndex} 获取失败:`, batchResult.error);
+                    continue;
+                }
+                
+                // 将本批图片添加到状态
+                for (const imgData of batchResult.images) {
+                    const pdfFileName = `${file.name}_页面${String(imgData.page_index + 1).padStart(4, '0')}`;
+                    
+                    state.addImage({
+                        originalDataURL: imgData.data_url,
+                        translatedDataURL: null,
+                        cleanImageData: null,
+                        bubbleTexts: [],
+                        bubbleCoords: [],
+                        originalTexts: [],
+                        textboxTexts: [],
+                        bubbleStates: null,
+                        fileName: pdfFileName,
+                        fontSize: state.defaultFontSize,
+                        autoFontSize: $('#autoFontSize').is(':checked'),
+                        fontFamily: state.defaultFontFamily,
+                        layoutDirection: state.defaultLayoutDirection,
+                        showOriginal: false,
+                        translationFailed: false,
+                    });
+                    
+                    loadedCount++;
+                }
+                
+                console.log(`  已加载 ${loadedCount}/${totalPages} 页`);
+            }
+            
+            console.log(`PDF ${file.name} 全部 ${loadedCount} 页处理完成`);
+            
+        } catch (error) {
+            console.error(`处理PDF文件 ${file.name} 失败:`, error);
+            ui.showGeneralMessage(`处理PDF文件 ${file.name} 失败: ${error.message}`, "error");
+        } finally {
+            // 步骤3: 清理会话
+            if (sessionId) {
+                try {
+                    await fetch(`/api/parse_pdf_cleanup/${sessionId}`, { method: 'POST' });
+                } catch (e) {
+                    console.warn('清理 PDF 会话失败:', e);
+                }
+            }
         }
     }
 }
@@ -794,6 +913,9 @@ export function translateCurrentImage(config) {
 
     // --- 关键修改：检查并使用已有的坐标和角度（优先级：savedManualCoords > bubbleCoords > 自动检测）---
     // 角度优先从 bubbleStates 提取（唯一状态来源），回退到 bubbleAngles（检测结果）
+    // 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+    //   - bubbleCoords 为数组（包括空数组）：曾经检测过，使用已有坐标（不重新检测）
+    //   - bubbleCoords 为 undefined/null：从未检测过，需要自动检测
     let coordsToUse = null;
     let anglesToUse = null;
     let usedExistingCoords = false;
@@ -801,19 +923,31 @@ export function translateCurrentImage(config) {
     // 辅助函数：从 bubbleStates 提取角度
     const extractAngles = (states) => states && states.length > 0 ? states.map(s => s.rotationAngle || 0) : null;
     
+    // 检查是否曾经处理过（bubbleStates 是数组即表示处理过，即使是空数组）
+    // 【方案B】用 bubbleStates 而非 bubbleCoords 作为"是否曾处理"的判断依据
+    // 【兼容旧数据】如果 bubbleStates 为空但 bubbleCoords 非空，也视为已处理过
+    const hasDetectedBefore = Array.isArray(currentImage.bubbleStates) || 
+        (Array.isArray(currentImage.bubbleCoords) && currentImage.bubbleCoords.length > 0);
+    
     if (currentImage.savedManualCoords && currentImage.savedManualCoords.length > 0) {
         coordsToUse = currentImage.savedManualCoords;
         anglesToUse = currentImage.savedManualAngles || null;
         usedExistingCoords = true;
         console.log(`翻译当前图片 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已保存的手动标注框。`);
         ui.showGeneralMessage("检测到手动标注框，将优先使用...", "info", false, 3000);
-    } else if (currentImage.bubbleCoords && currentImage.bubbleCoords.length > 0) {
-        coordsToUse = currentImage.bubbleCoords;
+    } else if (hasDetectedBefore) {
+        // 曾经检测过，使用已有坐标（即使是空数组，也不重新检测，避免被删除的框"复活"）
+        coordsToUse = currentImage.bubbleCoords || [];  // 防御性检查，避免 undefined
         // 优先从 bubbleStates 提取角度（用户可能已调整），回退到 bubbleAngles（检测结果）
         anglesToUse = extractAngles(currentImage.bubbleStates) || currentImage.bubbleAngles || null;
         usedExistingCoords = true;
-        console.log(`翻译当前图片 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已有的文本框，角度来源: ${currentImage.bubbleStates ? 'bubbleStates' : 'bubbleAngles'}`);
-        ui.showGeneralMessage("使用已有的文本框进行翻译...", "info", false, 3000);
+        if (coordsToUse.length > 0) {
+            console.log(`翻译当前图片 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已有的文本框，角度来源: ${currentImage.bubbleStates ? 'bubbleStates' : 'bubbleAngles'}`);
+            ui.showGeneralMessage("使用已有的文本框进行翻译...", "info", false, 3000);
+        } else {
+            console.log(`翻译当前图片 ${state.currentImageIndex}: 文本框已被用户清空，将跳过翻译。`);
+            ui.showGeneralMessage("该图片无文本框，跳过翻译", "info", false, 3000);
+        }
     } else {
         console.log(`翻译当前图片 ${state.currentImageIndex}: 未找到已有文本框，将进行自动检测。`);
     }
@@ -1153,22 +1287,36 @@ export function translateAllImages(config) {
 
         // --- 关键修改：检查并使用已有的坐标和角度（优先级：savedManualCoords > bubbleCoords > 自动检测）---
         // 角度优先从 bubbleStates 提取（唯一状态来源），回退到 bubbleAngles（检测结果）
+        // 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+        //   - bubbleCoords 为数组（包括空数组）：曾经检测过，使用已有坐标（不重新检测）
+        //   - bubbleCoords 为 undefined/null：从未检测过，需要自动检测
         let coordsToUse = null;
         let anglesToUse = null;
         let usedExistingCoordsThisImage = false;
         
         const extractAngles = (states) => states && states.length > 0 ? states.map(s => s.rotationAngle || 0) : null;
         
+        // 检查是否曾经处理过（bubbleStates 是数组即表示处理过，即使是空数组）
+        // 【方案B】用 bubbleStates 而非 bubbleCoords 作为"是否曾处理"的判断依据
+        // 【兼容旧数据】如果 bubbleStates 为空但 bubbleCoords 非空，也视为已处理过
+        const hasDetectedBefore = Array.isArray(imageData.bubbleStates) || 
+            (Array.isArray(imageData.bubbleCoords) && imageData.bubbleCoords.length > 0);
+        
         if (imageData.savedManualCoords && imageData.savedManualCoords.length > 0) {
             coordsToUse = imageData.savedManualCoords;
             anglesToUse = imageData.savedManualAngles || null;
             usedExistingCoordsThisImage = true;
             console.log(`批量翻译图片 ${currentIndex}: 将使用 ${coordsToUse.length} 个已保存的手动标注框。`);
-        } else if (imageData.bubbleCoords && imageData.bubbleCoords.length > 0) {
-            coordsToUse = imageData.bubbleCoords;
+        } else if (hasDetectedBefore) {
+            // 曾经检测过，使用已有坐标（即使是空数组，也不重新检测，避免被删除的框"复活"）
+            coordsToUse = imageData.bubbleCoords || [];  // 防御性检查，避免 undefined
             anglesToUse = extractAngles(imageData.bubbleStates) || imageData.bubbleAngles || null;
             usedExistingCoordsThisImage = true;
-            console.log(`批量翻译图片 ${currentIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
+            if (coordsToUse.length > 0) {
+                console.log(`批量翻译图片 ${currentIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
+            } else {
+                console.log(`批量翻译图片 ${currentIndex}: 文本框已被用户清空，跳过此图片的翻译。`);
+            }
         } else {
             console.log(`批量翻译图片 ${currentIndex}: 未找到已有文本框，将进行自动检测。`);
         }
@@ -1667,7 +1815,16 @@ export function removeBubbleTextOnly() {
     let usedExistingCoords = false;
     // --- 关键修改：检查并使用已有的坐标和角度（优先级：savedManualCoords > bubbleCoords > 自动检测）---
     // 角度优先从 bubbleStates 提取（唯一状态来源），回退到 bubbleAngles（检测结果）
+    // 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+    //   - bubbleCoords 为数组（包括空数组）：曾经检测过，使用已有坐标（不重新检测）
+    //   - bubbleCoords 为 undefined/null：从未检测过，需要自动检测
     const extractAngles = (states) => states && states.length > 0 ? states.map(s => s.rotationAngle || 0) : null;
+    
+    // 检查是否曾经处理过（bubbleStates 是数组即表示处理过，即使是空数组）
+    // 【方案B】用 bubbleStates 而非 bubbleCoords 作为"是否曾处理"的判断依据
+    // 【兼容旧数据】如果 bubbleStates 为空但 bubbleCoords 非空，也视为已处理过
+    const hasDetectedBefore = Array.isArray(currentImage.bubbleStates) || 
+        (Array.isArray(currentImage.bubbleCoords) && currentImage.bubbleCoords.length > 0);
     
     if (currentImage.savedManualCoords && currentImage.savedManualCoords.length > 0) {
         coordsToUse = currentImage.savedManualCoords;
@@ -1675,12 +1832,18 @@ export function removeBubbleTextOnly() {
         usedExistingCoords = true;
         console.log(`消除文字 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已保存的手动标注框。`);
         ui.showGeneralMessage("检测到手动标注框，将优先使用...", "info", false, 3000);
-    } else if (currentImage.bubbleCoords && currentImage.bubbleCoords.length > 0) {
-        coordsToUse = currentImage.bubbleCoords;
+    } else if (hasDetectedBefore) {
+        // 曾经检测过，使用已有坐标（即使是空数组，也不重新检测，避免被删除的框"复活"）
+        coordsToUse = currentImage.bubbleCoords || [];  // 防御性检查，避免 undefined
         anglesToUse = extractAngles(currentImage.bubbleStates) || currentImage.bubbleAngles || null;
         usedExistingCoords = true;
-        console.log(`消除文字 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
-        ui.showGeneralMessage("使用已有的文本框消除文字...", "info", false, 3000);
+        if (coordsToUse.length > 0) {
+            console.log(`消除文字 ${state.currentImageIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
+            ui.showGeneralMessage("使用已有的文本框消除文字...", "info", false, 3000);
+        } else {
+            console.log(`消除文字 ${state.currentImageIndex}: 文本框已被用户清空，跳过消除。`);
+            ui.showGeneralMessage("该图片无文本框，跳过消除", "info", false, 3000);
+        }
     } else {
         console.log(`消除文字 ${state.currentImageIndex}: 未找到已有文本框，将进行自动检测。`);
     }
@@ -1913,22 +2076,36 @@ export function removeAllBubblesText() {
 
         // --- 检查并使用已有的坐标和角度（优先级：savedManualCoords > bubbleCoords > 自动检测）---
         // 角度优先从 bubbleStates 提取（唯一状态来源），回退到 bubbleAngles（检测结果）
+        // 【修复】区分"用户主动删除所有文本框"和"从未检测过"：
+        //   - bubbleCoords 为数组（包括空数组）：曾经检测过，使用已有坐标（不重新检测）
+        //   - bubbleCoords 为 undefined/null：从未检测过，需要自动检测
         let coordsToUse = null;
         let anglesToUse = null;
         let usedExistingCoordsThisImage = false;
         
         const extractAngles = (states) => states && states.length > 0 ? states.map(s => s.rotationAngle || 0) : null;
         
+        // 检查是否曾经处理过（bubbleStates 是数组即表示处理过，即使是空数组）
+        // 【方案B】用 bubbleStates 而非 bubbleCoords 作为"是否曾处理"的判断依据
+        // 【兼容旧数据】如果 bubbleStates 为空但 bubbleCoords 非空，也视为已处理过
+        const hasDetectedBefore = Array.isArray(imageData.bubbleStates) || 
+            (Array.isArray(imageData.bubbleCoords) && imageData.bubbleCoords.length > 0);
+        
         if (imageData.savedManualCoords && imageData.savedManualCoords.length > 0) {
             coordsToUse = imageData.savedManualCoords;
             anglesToUse = imageData.savedManualAngles || null;
             usedExistingCoordsThisImage = true;
             console.log(`批量消除文字 ${currentIndex}: 将使用 ${coordsToUse.length} 个已保存的手动标注框。`);
-        } else if (imageData.bubbleCoords && imageData.bubbleCoords.length > 0) {
-            coordsToUse = imageData.bubbleCoords;
+        } else if (hasDetectedBefore) {
+            // 曾经检测过，使用已有坐标（即使是空数组，也不重新检测，避免被删除的框"复活"）
+            coordsToUse = imageData.bubbleCoords || [];  // 防御性检查，避免 undefined
             anglesToUse = extractAngles(imageData.bubbleStates) || imageData.bubbleAngles || null;
             usedExistingCoordsThisImage = true;
-            console.log(`批量消除文字 ${currentIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
+            if (coordsToUse.length > 0) {
+                console.log(`批量消除文字 ${currentIndex}: 将使用 ${coordsToUse.length} 个已有的文本框。`);
+            } else {
+                console.log(`批量消除文字 ${currentIndex}: 文本框已被用户清空，跳过此图片的文字消除。`);
+            }
         } else {
             console.log(`批量消除文字 ${currentIndex}: 未找到已有文本框，将进行自动检测。`);
         }

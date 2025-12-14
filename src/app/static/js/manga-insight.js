@@ -305,6 +305,29 @@ async function loadPageDetail(pageNum) {
     // 构建图片 URL
     const imageUrl = `/api/manga-insight/${MangaInsight.currentBookId}/page-image/${pageNum}`;
     
+    // 获取总页数用于导航按钮
+    const totalPages = MangaInsight.bookInfo?.total_pages || 0;
+    const hasPrev = pageNum > 1;
+    const hasNext = pageNum < totalPages;
+    
+    // 构建导航按钮 HTML
+    const navButtonsHtml = `
+        <div class="page-nav-buttons">
+            <button class="btn-page-nav ${!hasPrev ? 'disabled' : ''}" 
+                    onclick="navigatePage(${pageNum - 1})" 
+                    ${!hasPrev ? 'disabled' : ''} 
+                    title="上一页">
+                ◀ 上一张
+            </button>
+            <button class="btn-page-nav ${!hasNext ? 'disabled' : ''}" 
+                    onclick="navigatePage(${pageNum + 1})" 
+                    ${!hasNext ? 'disabled' : ''} 
+                    title="下一页">
+                下一张 ▶
+            </button>
+        </div>
+    `;
+    
     try {
         const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/pages/${pageNum}`);
         const data = await response.json();
@@ -312,7 +335,10 @@ async function loadPageDetail(pageNum) {
         if (!data.success || !data.analysis) {
             container.innerHTML = `
                 <div class="page-detail-content">
-                    <h4>📄 第 ${pageNum} 页</h4>
+                    <div class="page-detail-header">
+                        <h4>📄 第 ${pageNum} 页</h4>
+                        ${navButtonsHtml}
+                    </div>
                     <div class="page-detail-image">
                         <img src="${imageUrl}" alt="第${pageNum}页" onclick="openImagePreview('${imageUrl}')" onerror="this.parentElement.style.display='none'">
                     </div>
@@ -328,7 +354,12 @@ async function loadPageDetail(pageNum) {
         const analysis = data.analysis;
         
         let html = `<div class="page-detail-content">`;
-        html += `<h4>📄 第 ${pageNum} 页</h4>`;
+        html += `
+            <div class="page-detail-header">
+                <h4>📄 第 ${pageNum} 页</h4>
+                ${navButtonsHtml}
+            </div>
+        `;
         
         // 显示页面图片
         html += `
@@ -378,6 +409,17 @@ async function loadPageDetail(pageNum) {
         console.error('加载页面详情失败:', error);
         container.innerHTML = '<div class="placeholder-text">加载失败</div>';
     }
+}
+
+/**
+ * 导航到指定页面
+ * @param {number} pageNum - 目标页码
+ */
+function navigatePage(pageNum) {
+    const totalPages = MangaInsight.bookInfo?.total_pages || 0;
+    if (pageNum < 1 || pageNum > totalPages) return;
+    
+    selectPage(pageNum);
 }
 
 // ==================== 分析控制 ====================

@@ -60,6 +60,9 @@ export let boxExpandRight = 0;      // 右边额外扩展 (%)
 // --- 检测调试选项 ---
 export let showDetectionDebug = false;  // 是否显示检测框调试
 
+// --- PDF处理方式 ---
+export let pdfProcessingMethod = 'backend';  // 'backend' 或 'frontend'
+
 // --- 精确文字掩膜选项 ---
 export let usePreciseMask = true;  // 是否使用模型生成的精确文字掩膜（仅 CTD/Default 支持），默认开启
 export let maskDilateSize = 10;     // 掩膜膨胀大小（像素）
@@ -468,6 +471,15 @@ export function setBoxExpandRight(ratio) {
 export function setShowDetectionDebug(enabled) {
     showDetectionDebug = !!enabled;
     console.log(`状态更新: 检测框调试 -> ${showDetectionDebug}`);
+}
+
+/**
+ * 设置PDF处理方式
+ * @param {string} method - 处理方式 ('backend' 或 'frontend')
+ */
+export function setPdfProcessingMethod(method) {
+    pdfProcessingMethod = (method === 'frontend') ? 'frontend' : 'backend';
+    console.log(`状态更新: PDF处理方式 -> ${pdfProcessingMethod}`);
 }
 
 /**

@@ -67,6 +67,9 @@ const SETTINGS_FIELD_MAPPING = {
     // AI校对设置
     'settingsProofreadingEnabled': 'proofreadingEnabled',  // AI校对启用状态
     'settingsProofreadingMaxRetries': 'proofreadingMaxRetries',  // AI校对重试次数
+    
+    // 更多设置
+    'settingsPdfProcessingMethod': 'pdfProcessingMethod',  // PDF处理方式
 };
 
 // 本地存储键名
@@ -834,6 +837,12 @@ async function saveSettings() {
         state.setHqPrompt(hqPromptEl.value || '');
     }
     
+    // 同步 PDF 处理方式到 state
+    const pdfProcessingMethodEl = document.getElementById('settingsPdfProcessingMethod');
+    if (pdfProcessingMethodEl) {
+        state.setPdfProcessingMethod(pdfProcessingMethodEl.value || 'backend');
+    }
+    
     // 保存到后端
     await saveSettingsToStorage();
     
@@ -1158,6 +1167,11 @@ function applySettingsToUI(settings) {
     } else if (settings.hqPrompt === '' || settings.hqPrompt === undefined) {
         // 确保使用默认值
         state.setHqPrompt(constants.DEFAULT_HQ_TRANSLATE_PROMPT);
+    }
+    
+    // 应用 PDF 处理方式到 state
+    if (settings.pdfProcessingMethod !== undefined) {
+        state.setPdfProcessingMethod(settings.pdfProcessingMethod);
     }
     
     // ===== 初始化当前服务商值的记录 =====
