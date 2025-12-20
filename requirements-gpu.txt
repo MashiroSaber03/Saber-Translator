@@ -23,15 +23,10 @@ shapely
 pyclipper
 pandas
 
-# AI/OCR related
+# AI/OCR
 openai
 manga-ocr
-# Note: rapidocr requires onnxruntime-gpu, installation order matters
-# First install onnxruntime-gpu, then use --no-deps for rapidocr
-# pip install onnxruntime-gpu
-# pip install rapidocr-onnxruntime --no-deps
 rapidocr-onnxruntime
-onnxruntime-gpu
 
 # Deep Learning (torch/torchvision not included, install GPU version separately)
 # torch        # Please use the command above to install GPU version

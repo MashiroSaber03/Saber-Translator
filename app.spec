@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 Saber-Translator PyInstaller Spec 文件
-打包命令: pyinstaller app.spec --noconfirm
+打包命令: .\venv\Scripts\Activate; pyinstaller app.spec --noconfirm
 """
 
 import os
@@ -72,6 +72,8 @@ critical_packages = [
     'rapidocr_onnxruntime',  # PaddleOCR ONNX 版本
     'onnxruntime',           # ONNX 推理引擎 (GPU/CPU 模块名相同)
     'ultralytics',           # YOLO 检测器
+    'chromadb',              # 向量数据库 (manga_insight)
+    'edge_tts',              # TTS (manga_insight)
 ]
 
 for pkg in critical_packages:
@@ -113,20 +115,38 @@ hiddenimports += [
     'src.app.api.bookshelf_api', 'src.app.api.api_docs',
     
     # app.api.system (完整)
-    'src.app.api.system', 'src.app.api.system.tests', 'src.app.api.system.cleanup',
+    'src.app.api.system', 'src.app.api.system.tests',
     'src.app.api.system.downloads', 'src.app.api.system.files', 
     'src.app.api.system.fonts', 'src.app.api.system.plugins',
+    'src.app.api.system.mobi_handler', 'src.app.api.system.pdf_handler',
     
     # app.api.translation (完整)
     'src.app.api.translation', 'src.app.api.translation.routes',
-    'src.app.api.translation.translate_api', 'src.app.api.translation.high_quality_api',
+    
+    # app.api.manga_insight (漫画分析 API)
+    'src.app.api.manga_insight', 'src.app.api.manga_insight.analysis_routes',
+    'src.app.api.manga_insight.chat_routes', 'src.app.api.manga_insight.config_routes',
+    'src.app.api.manga_insight.data_routes', 'src.app.api.manga_insight.reanalyze_routes',
     
     'src.app.error_handlers', 'src.app.route_redirects',
     
     # core (完整)
     'src.core', 'src.core.detection', 'src.core.ocr', 'src.core.translation', 'src.core.inpainting',
     'src.core.rendering', 'src.core.processing', 'src.core.session_manager', 'src.core.bookshelf_manager',
-    'src.core.pdf_processor', 'src.core.config_models', 'src.core.types_enhanced',
+    'src.core.config_models', 'src.core.types_enhanced', 'src.core.quadrilateral',
+    
+    # core.manga_insight (漫画分析核心模块)
+    'src.core.manga_insight', 'src.core.manga_insight.analyzer', 'src.core.manga_insight.change_detector',
+    'src.core.manga_insight.config_models', 'src.core.manga_insight.config_utils',
+    'src.core.manga_insight.embedding_client', 'src.core.manga_insight.incremental_analyzer',
+    'src.core.manga_insight.progress_broadcaster', 'src.core.manga_insight.qa',
+    'src.core.manga_insight.query_preprocessor', 'src.core.manga_insight.reranker_client',
+    'src.core.manga_insight.storage', 'src.core.manga_insight.task_manager',
+    'src.core.manga_insight.task_models', 'src.core.manga_insight.vector_store', 'src.core.manga_insight.vlm_client',
+    # core.manga_insight.features
+    'src.core.manga_insight.features', 'src.core.manga_insight.features.hierarchical_summary',
+    'src.core.manga_insight.features.timeline', 'src.core.manga_insight.features.timeline_enhanced',
+    'src.core.manga_insight.features.timeline_models',
     
     # core.detector (关键 - 检测器框架)
     'src.core.detector', 'src.core.detector.registry', 'src.core.detector.base',
@@ -146,16 +166,13 @@ hiddenimports += [
     'src.interfaces.default.DBNet_resnet34', 'src.interfaces.default.imgproc',
     
     # interfaces.yolov5
-    'src.interfaces.yolov5', 'src.interfaces.yolov5.detector',
+    'src.interfaces.yolov5',
     
     # interfaces.lama_mpe
     'src.interfaces.lama_mpe_interface',
     
     # interfaces.ctd (完整 - 包含所有子模块)
-    'src.interfaces.ctd', 'src.interfaces.ctd.detector', 'src.interfaces.ctd.basemodel', 'src.interfaces.ctd.textmask',
-    # ctd.core 子模块
-    'src.interfaces.ctd.core', 'src.interfaces.ctd.core.generic', 'src.interfaces.ctd.core.generic2',
-    'src.interfaces.ctd.core.textblock', 'src.interfaces.ctd.core.textline_merge',
+    'src.interfaces.ctd', 'src.interfaces.ctd.detector', 'src.interfaces.ctd.basemodel',
     # ctd.utils 子模块
     'src.interfaces.ctd.utils', 'src.interfaces.ctd.utils.db_utils', 'src.interfaces.ctd.utils.imgproc_utils',
     'src.interfaces.ctd.utils.weight_init', 'src.interfaces.ctd.utils.yolov5_utils',
@@ -190,6 +207,9 @@ hiddenimports += [
     'fugashi', 'unidic_lite', 'jaconv', 'einops', 'kornia', 'omegaconf', 'polars',
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
     
+    # manga_insight 依赖
+    'chromadb', 'edge_tts',
+    
     # ultralytics/YOLO 相关
     'ultralytics', 'pandas', 'dill',
     
@@ -198,6 +218,9 @@ hiddenimports += [
     
     # YOLOv5 repo 依赖
     'matplotlib', 'seaborn',
+    
+    # 电子书处理
+    'mobi', 'fitz', 'pymupdf',
 ]
 
 # 收集子模块
