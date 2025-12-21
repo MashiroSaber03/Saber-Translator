@@ -369,38 +369,13 @@ export function reRenderFullImage(fromAutoToManual = false, silentMode = false, 
 
         // 直接从 bubbleStates 构建 API 请求数据，不需要中间转换
         const layoutDir = $('#layoutDirection').val();
-        const isAutoLayout = layoutDir === 'auto';
-        
-        // 【重要】当用户选择 'auto' 时，使用每个气泡的 autoTextDirection
-        // 否则使用用户选择的全局方向
-        const getEffectiveDirection = (s, index) => {
-            if (isAutoLayout) {
-                // 自动模式：优先使用气泡自己检测到的方向
-                // 回退逻辑：autoTextDirection → textDirection → 根据宽高比计算 → 默认 'vertical'
-                if (s.autoTextDirection && s.autoTextDirection !== '') {
-                    return s.autoTextDirection;
-                }
-                if (s.textDirection && s.textDirection !== '' && s.textDirection !== 'auto') {
-                    return s.textDirection;
-                }
-                // 最后根据坐标宽高比计算
-                if (currentImage.bubbleCoords && currentImage.bubbleCoords[index]) {
-                    const [x1, y1, x2, y2] = currentImage.bubbleCoords[index];
-                    return (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal';
-                }
-                return 'vertical';
-            } else {
-                // 手动模式：使用用户选择的全局方向
-                return layoutDir;
-            }
-        };
         
         const bubbleStatesForApi = bubbleStates.map((s, i) => ({
             translatedText: s.translatedText || s.text || "",
             coords: currentImage.bubbleCoords[i],
             fontSize: s.fontSize || state.defaultFontSize,
             fontFamily: s.fontFamily || state.defaultFontFamily,
-            textDirection: getEffectiveDirection(s, i),  // 传入索引以支持宽高比回退计算
+            textDirection: s.textDirection || 'vertical',  // 直接使用气泡的 textDirection
             textColor: s.textColor || state.defaultTextColor,
             rotationAngle: s.rotationAngle || 0,
             position: s.position || { x: 0, y: 0 },
