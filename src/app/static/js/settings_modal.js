@@ -75,6 +75,16 @@ const SETTINGS_FIELD_MAPPING = {
 // 本地存储键名
 const SETTINGS_STORAGE_KEY = 'saber_translator_settings';
 
+// 不触发change事件的元素列表（这些元素的change事件会导致提示词被覆盖）
+const SKIP_CHANGE_EVENT_IDS = [
+    'translatePromptModeSelect',  // 会触发 handleTranslatePromptModeChange 覆盖提示词
+    'aiVisionPromptModeSelect',   // 会触发 handleAiVisionPromptModeChange 覆盖提示词
+    'promptContent',              // 提示词本身不需要触发change
+    'textboxPromptContent',       // 文本框提示词不需要触发change
+    'aiVisionOcrPrompt',          // AI视觉OCR提示词不需要触发change
+    'hqPrompt',                   // 高质量翻译提示词不需要触发change
+];
+
 // ===== 服务商分组配置 =====
 // 定义每个服务商选择器对应的字段分组（涵盖所有相关参数）
 const PROVIDER_FIELD_GROUPS = {
@@ -709,8 +719,10 @@ function syncToSidebar() {
                 sidebarEl.value = modalEl.value;
             }
             
-            // 触发change事件以更新相关UI
-            sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
+            // 只对不在跳过列表中的元素触发change事件
+            if (!SKIP_CHANGE_EVENT_IDS.includes(sidebarId)) {
+                sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
     }
 }
@@ -722,8 +734,39 @@ async function saveSettings() {
     // 保存当前所有服务商的配置到缓存
     saveAllCurrentProviderSettings();
     
+    // 同步提示词到 state
+    const promptContentEl = document.getElementById('settingsPromptContent');
+    if (promptContentEl) {
+        const newPromptValue = promptContentEl.value || '';
+        state.setPromptState(newPromptValue, state.defaultPromptContent, state.savedPromptNames, state.defaultTranslateJsonPrompt);
+    }
+    const textboxPromptContentEl = document.getElementById('settingsTextboxPromptContent');
+    if (textboxPromptContentEl && textboxPromptContentEl.value) {
+        state.setTextboxPromptState(textboxPromptContentEl.value, state.defaultTextboxPromptContent, state.savedTextboxPromptNames);
+    }
+    const aiVisionOcrPromptEl = document.getElementById('settingsAiVisionOcrPrompt');
+    if (aiVisionOcrPromptEl && aiVisionOcrPromptEl.value) {
+        state.setAiVisionOcrPrompt(aiVisionOcrPromptEl.value);
+    }
+    
     // 同步到侧边栏
     syncToSidebar();
+    
+    // 同步RPM限制到 state
+    const rpmTranslationEl = document.getElementById('settingsRpmTranslation');
+    if (rpmTranslationEl) {
+        state.setrpmLimitTranslation(parseInt(rpmTranslationEl.value) || 0);
+    }
+    const rpmAiVisionOcrEl = document.getElementById('settingsRpmAiVisionOcr');
+    if (rpmAiVisionOcrEl) {
+        state.setrpmLimitAiVisionOcr(parseInt(rpmAiVisionOcrEl.value) || 0);
+    }
+    
+    // 同步重试次数到 state
+    const translationMaxRetriesEl = document.getElementById('settingsTranslationMaxRetries');
+    if (translationMaxRetriesEl) {
+        state.setTranslationMaxRetries(parseInt(translationMaxRetriesEl.value) || 3);
+    }
     
     // 同步检测设置到 state（直接更新 state）
     const textDetectorEl = document.getElementById('settingsTextDetector');
@@ -1043,7 +1086,12 @@ function applySettingsToUI(settings) {
             }
         }
         
-        // 2. 同时设置侧边栏元素（无论是否被隐藏，都要设置值，这样打开模态框时能正确同步）
+        // 2. 同步提示词到 state
+        if (sidebarId === 'promptContent' && value) {
+            state.setPromptState(value, state.defaultPromptContent, state.savedPromptNames, state.defaultTranslateJsonPrompt);
+        }
+        
+        // 3. 设置侧边栏元素
         const sidebarEl = document.getElementById(sidebarId);
         if (sidebarEl) {
             if (sidebarEl.type === 'checkbox') {
@@ -1052,9 +1100,74 @@ function applySettingsToUI(settings) {
                 sidebarEl.value = value;
             }
             
-            // 无论元素是否被隐藏，都需要触发change事件来更新state
-            // 这确保了从后端加载的设置能正确同步到state模块
-            sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
+            // 只对不在跳过列表中的元素触发change事件
+            if (!SKIP_CHANGE_EVENT_IDS.includes(sidebarId)) {
+                sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        
+        // 4. 其他设置同步到 state
+        // 提示词相关（promptContent 已在上面处理）
+        if (sidebarId === 'textboxPromptContent' && value) {
+            state.setTextboxPromptState(value, state.defaultTextboxPromptContent, state.savedTextboxPromptNames);
+        }
+        if (sidebarId === 'aiVisionOcrPrompt' && value) {
+            state.setAiVisionOcrPrompt(value);
+        }
+        // 高质量翻译相关
+        if (sidebarId === 'hqPrompt' && value) {
+            state.setHqPrompt(value);
+        }
+        if (sidebarId === 'hqTranslateProvider' && value) {
+            state.setHqTranslateProvider(value);
+        }
+        if (sidebarId === 'hqApiKey') {
+            state.setHqApiKey(value || '');
+        }
+        if (sidebarId === 'hqModelName') {
+            state.setHqModelName(value || '');
+        }
+        if (sidebarId === 'hqCustomBaseUrl') {
+            state.setHqCustomBaseUrl(value || '');
+        }
+        if (sidebarId === 'hqBatchSize' && value) {
+            state.setHqBatchSize(value);
+        }
+        if (sidebarId === 'hqSessionReset' && value) {
+            state.setHqSessionReset(value);
+        }
+        if (sidebarId === 'hqRpmLimit' && value) {
+            state.setHqRpmLimit(value);
+        }
+        if (sidebarId === 'hqLowReasoning') {
+            state.setHqLowReasoning(!!value);
+        }
+        if (sidebarId === 'hqNoThinkingMethod' && value) {
+            state.setHqNoThinkingMethod(value);
+        }
+        if (sidebarId === 'hqForceJsonOutput') {
+            state.setHqForceJsonOutput(!!value);
+        }
+        if (sidebarId === 'hqUseStream') {
+            state.setHqUseStream(!!value);
+        }
+        if (sidebarId === 'hqMaxRetries' && value) {
+            state.setHqTranslationMaxRetries(value);
+        }
+        // RPM限制
+        if (sidebarId === 'rpmTranslation' && value) {
+            state.setrpmLimitTranslation(value);
+        }
+        if (sidebarId === 'rpmAiVisionOcr' && value) {
+            state.setrpmLimitAiVisionOcr(value);
+        }
+        // 重试次数
+        if (sidebarId === 'translationMaxRetries' && value) {
+            state.setTranslationMaxRetries(value);
+        }
+        // PDF处理方式
+        if (sidebarId === 'pdfProcessingMethod' && value) {
+            state.setPdfProcessingMethod(value);
         }
     }
     

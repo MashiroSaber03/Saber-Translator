@@ -162,7 +162,11 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 
 ### 快速上手
 
-1.  **下载最新版本**: 前往 [Releases](https://github.com/MashiroSaber03/Saber-Translator/releases) 页面，下载对应你操作系统的最新版本压缩包。
+1.  **下载最新版本**: 前往 [Releases](https://github.com/MashiroSaber03/Saber-Translator/releases) 页面，或加入 QQ 群下载对应你操作系统的最新版本压缩包。
+    - 1群: 1041505784
+    - 2群: 1047553423
+    - 3群: 536706173
+    - 4群: 1074032394
 2.  **解压**: 将下载的压缩包解压到你希望存放程序的目录。
 3.  **运行程序**: 在解压后的目录中，找到 `Saber-Translator.exe` (Windows) 或对应名称的可执行文件，双击运行。
 4.  **开始翻译**: 程序启动后，通常会自动在你的默认浏览器中打开 Saber-Translator 的 Web 界面 (默认地址为 `http://127.0.0.1:5000/`)。如果未自动打开，请手动访问该地址。
