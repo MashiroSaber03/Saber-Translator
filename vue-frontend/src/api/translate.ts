@@ -66,10 +66,10 @@ export interface TranslateImageParams {
   box_expand_left?: number
   box_expand_right?: number
 
-  // 精确文字掩膜设置
-  use_precise_mask?: boolean
-  mask_dilate_size?: number
-  mask_box_expand_ratio?: number
+  // 精确文字掩膜设置（后端使用驼峰命名）
+  usePreciseMask?: boolean
+  maskDilateSize?: number
+  maskBoxExpandRatio?: number
 
   // 文字样式设置（后端使用驼峰命名）
   fontSize?: number | 'auto'
@@ -162,7 +162,7 @@ export interface HqTranslateParams {
   api_key: string
   model_name: string  // 后端期望 model_name 而不是 model
   custom_base_url?: string
-  
+
   // 消息数组（包含系统提示、用户消息+图片）
   messages: Array<{
     role: 'system' | 'user' | 'assistant'

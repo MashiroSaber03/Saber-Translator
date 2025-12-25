@@ -201,10 +201,10 @@ export function useTranslation() {
       box_expand_left: boxExpand.left,
       box_expand_right: boxExpand.right,
 
-      // 精确文字掩膜设置
-      use_precise_mask: preciseMask.enabled,
-      mask_dilate_size: preciseMask.dilateSize,
-      mask_box_expand_ratio: preciseMask.boxExpandRatio,
+      // 精确文字掩膜设置（后端使用驼峰命名：usePreciseMask, maskDilateSize, maskBoxExpandRatio）
+      usePreciseMask: preciseMask.enabled,
+      maskDilateSize: preciseMask.dilateSize,
+      maskBoxExpandRatio: preciseMask.boxExpandRatio,
 
       // 文字样式设置（后端使用驼峰命名）
       fontSize: textStyle.autoFontSize ? 'auto' : textStyle.fontSize,
@@ -294,7 +294,7 @@ export function useTranslation() {
         bubble_angles: response.bubble_angles,
         auto_directions: response.auto_directions  // 后端基于文本行分析的排版方向
       }
-      
+
       // 构建全局默认设置
       const globalDefaults = {
         fontSize: textStyle.fontSize,
@@ -307,7 +307,7 @@ export function useTranslation() {
         strokeWidth: textStyle.strokeWidth,
         inpaintMethod: textStyle.inpaintMethod
       }
-      
+
       bubbleStates = createBubbleStatesFromResponse(apiResponse, globalDefaults)
     }
 
@@ -386,18 +386,18 @@ export function useTranslation() {
       // --- 关键逻辑：检查并使用已有的坐标（与原版 main.js 一致）---
       // 优先级：options.existingBubbleCoords > bubbleStates中的坐标 > bubbleCoords > 自动检测
       const translationOptions = { ...options }
-      
+
       // 【修复5】检查是否曾经处理过（bubbleStates 或 bubbleCoords 是数组即表示处理过，包括空数组）
       // 空数组表示用户主动清空了文本框，不应重新自动检测
       const hasBubbleStatesArray = Array.isArray(currentImage.bubbleStates)
       const hasBubbleCoordsArray = Array.isArray(currentImage.bubbleCoords)
       const hasDetectedBefore = hasBubbleStatesArray || hasBubbleCoordsArray
-      
+
       if (!translationOptions.existingBubbleCoords && hasDetectedBefore) {
         // 从 bubbleStates 或 bubbleCoords 提取已有坐标
         let coordsToUse: typeof currentImage.bubbleCoords = undefined
         let anglesToUse: number[] | undefined = undefined
-        
+
         if (hasBubbleStatesArray && currentImage.bubbleStates!.length > 0) {
           // 优先从 bubbleStates 提取坐标和角度
           coordsToUse = currentImage.bubbleStates!.map(s => s.coords)
@@ -419,7 +419,7 @@ export function useTranslation() {
           anglesToUse = []
           console.log('翻译当前图片: 检测到用户清空了气泡坐标')
         }
-        
+
         if (coordsToUse && coordsToUse.length > 0) {
           translationOptions.existingBubbleCoords = coordsToUse
           translationOptions.existingBubbleAngles = anglesToUse
@@ -491,15 +491,15 @@ export function useTranslation() {
       // --- 【修复5】关键逻辑：检查并使用已有的坐标（与原版批量翻译一致）---
       // 空数组表示用户主动清空了文本框，不应重新自动检测
       const translationOptions = { ...options }
-      
+
       const hasBubbleStatesArray = Array.isArray(image.bubbleStates)
       const hasBubbleCoordsArray = Array.isArray(image.bubbleCoords)
       const hasDetectedBefore = hasBubbleStatesArray || hasBubbleCoordsArray
-      
+
       if (!translationOptions.existingBubbleCoords && hasDetectedBefore) {
         let coordsToUse: typeof image.bubbleCoords = undefined
         let anglesToUse: number[] | undefined = undefined
-        
+
         if (hasBubbleStatesArray && image.bubbleStates!.length > 0) {
           coordsToUse = image.bubbleStates!.map(s => s.coords)
           anglesToUse = image.bubbleStates!.map(s => s.rotationAngle || 0)
@@ -515,7 +515,7 @@ export function useTranslation() {
           coordsToUse = []
           anglesToUse = []
         }
-        
+
         if (coordsToUse && coordsToUse.length > 0) {
           translationOptions.existingBubbleCoords = coordsToUse
           translationOptions.existingBubbleAngles = anglesToUse
@@ -612,8 +612,8 @@ export function useTranslation() {
 
         progress.value.current = i + 1
         // 更新进度标签和百分比 - 复刻原版
-        progress.value.label = isRemoveTextMode 
-          ? `消除文字: ${i + 1}/${images.length}` 
+        progress.value.label = isRemoveTextMode
+          ? `消除文字: ${i + 1}/${images.length}`
           : `${i + 1}/${images.length}`
         progress.value.percentage = Math.round(((i + 1) / images.length) * 100)
 
@@ -637,7 +637,7 @@ export function useTranslation() {
 
       // 完成 - 复刻原版
       if (progress.value.failed > 0) {
-        toast.warning(isRemoveTextMode 
+        toast.warning(isRemoveTextMode
           ? `消除文字完成，${progress.value.failed} 张图片失败`
           : `翻译完成，${progress.value.failed} 张图片失败`)
       } else {
@@ -651,7 +651,11 @@ export function useTranslation() {
       return false
     } finally {
       imageStore.setBatchTranslationInProgress(false)
-      progress.value.isInProgress = false
+      // 【复刻原版】完成后延迟1秒再隐藏进度条，让用户看清完成状态
+      // 参考原版 ui.js 中的 setTimeout(() => translationProgressBar.hide(), 1000)
+      setTimeout(() => {
+        progress.value.isInProgress = false
+      }, 1000)
     }
   }
 
@@ -764,7 +768,7 @@ export function useTranslation() {
 
         progress.value.current = i + 1
         const imageIndex = failedIndices[i]
-        
+
         if (imageIndex === undefined) continue
 
         const success = await translateImageByIndex(imageIndex, options)
@@ -790,7 +794,10 @@ export function useTranslation() {
       return false
     } finally {
       imageStore.setBatchTranslationInProgress(false)
-      progress.value.isInProgress = false
+      // 【复刻原版】完成后延迟1秒再隐藏进度条
+      setTimeout(() => {
+        progress.value.isInProgress = false
+      }, 1000)
     }
   }
 
@@ -827,7 +834,7 @@ export function useTranslation() {
 
   /** 所有批次结果（复刻原版） */
   let allBatchResults: HqJsonData[][] = []
-  
+
   /** 保存的文本样式（复刻原版） */
   let savedTextStyles: SavedTextStyles | null = null
 
@@ -850,7 +857,7 @@ export function useTranslation() {
     for (let imageIndex = 0; imageIndex < allImages.length; imageIndex++) {
       const image = allImages[imageIndex]
       if (!image) continue
-      
+
       const originalTexts = image.originalTexts || []
       const imageTextData: HqJsonData = {
         imageIndex: imageIndex,
@@ -1273,21 +1280,21 @@ export function useTranslation() {
         if (response.translated_image) {
           // 使用统一的 bubbleStates 保存所有设置
           const savedDir = savedTextStyles?.textDirection
-          const textDir = (savedDir === 'vertical' || savedDir === 'horizontal' || savedDir === 'auto') 
-            ? savedDir 
+          const textDir = (savedDir === 'vertical' || savedDir === 'horizontal' || savedDir === 'auto')
+            ? savedDir
             : 'vertical'
           const bubbleStates = response.bubble_coords
             ? createBubbleStatesFromResponse(response, {
-                fontSize: savedTextStyles?.fontSize || settingsStore.settings.textStyle.fontSize,
-                fontFamily: savedTextStyles?.fontFamily || settingsStore.settings.textStyle.fontFamily,
-                textDirection: textDir as TextDirection,
-                textColor: savedTextStyles?.textColor || settingsStore.settings.textStyle.textColor,
-                fillColor: savedTextStyles?.fillColor || settingsStore.settings.textStyle.fillColor,
-                strokeEnabled: savedTextStyles?.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
-                strokeColor: savedTextStyles?.strokeColor || settingsStore.settings.textStyle.strokeColor,
-                strokeWidth: savedTextStyles?.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
-                inpaintMethod: settingsStore.settings.textStyle.inpaintMethod
-              })
+              fontSize: savedTextStyles?.fontSize || settingsStore.settings.textStyle.fontSize,
+              fontFamily: savedTextStyles?.fontFamily || settingsStore.settings.textStyle.fontFamily,
+              textDirection: textDir as TextDirection,
+              textColor: savedTextStyles?.textColor || settingsStore.settings.textStyle.textColor,
+              fillColor: savedTextStyles?.fillColor || settingsStore.settings.textStyle.fillColor,
+              strokeEnabled: savedTextStyles?.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
+              strokeColor: savedTextStyles?.strokeColor || settingsStore.settings.textStyle.strokeColor,
+              strokeWidth: savedTextStyles?.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+              inpaintMethod: settingsStore.settings.textStyle.inpaintMethod
+            })
             : []
 
           imageStore.updateImageByIndex(currentIndex, {
@@ -1385,8 +1392,8 @@ export function useTranslation() {
         }
 
         bubbleTexts[bubbleIndex] = translatedText
-        const effectiveTextDirection: TextDirection = (textDirection === 'vertical' || textDirection === 'horizontal') 
-          ? textDirection 
+        const effectiveTextDirection: TextDirection = (textDirection === 'vertical' || textDirection === 'horizontal')
+          ? textDirection
           : (currentTextDirection as TextDirection)
 
         // 更新 bubbleStates
@@ -1777,8 +1784,8 @@ export function useTranslation() {
 
         // 更新 bubbleStates
         if (textDirection && textDirection !== 'auto') {
-          const effectiveDir: TextDirection = (textDirection === 'vertical' || textDirection === 'horizontal') 
-            ? textDirection 
+          const effectiveDir: TextDirection = (textDirection === 'vertical' || textDirection === 'horizontal')
+            ? textDirection
             : (currentTextDirection as TextDirection)
 
           if (!image.bubbleStates || !Array.isArray(image.bubbleStates) || image.bubbleStates.length !== bubbleCoords.length) {
@@ -2082,7 +2089,7 @@ export function useTranslation() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'AI 校对失败'
       toast.error(`校对失败: ${errorMessage}`)
-      
+
       // 重置进度条 - 复刻原版
       progress.value.label = '校对已取消'
       progress.value.percentage = 0
