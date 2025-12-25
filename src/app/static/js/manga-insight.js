@@ -2045,18 +2045,77 @@ const NoteManager = {
     editMode: false           // 是否为编辑模式
 };
 
-// 获取所有笔记
-function getNotes() {
+// 获取所有笔记（从后端API）
+async function getNotes() {
     if (!MangaInsight.currentBookId) return [];
-    const key = `manga_notes_${MangaInsight.currentBookId}`;
-    return JSON.parse(localStorage.getItem(key) || '[]');
+    try {
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/notes`);
+        const data = await response.json();
+        if (data.success && data.notes) {
+            return data.notes;
+        }
+    } catch (e) {
+        console.error('获取笔记失败:', e);
+    }
+    return [];
 }
 
-// 保存笔记列表
-function saveNotes(notes) {
+// 保存笔记列表（到后端API）
+async function saveNotes(notes) {
     if (!MangaInsight.currentBookId) return;
-    const key = `manga_notes_${MangaInsight.currentBookId}`;
-    localStorage.setItem(key, JSON.stringify(notes));
+    // 保存整个笔记列表到后端
+    // 由于后端API是单条操作，这里我们需要同步整个列表
+    // 暂时使用简单方案：清空后重新添加
+    // 注意：这里只在本地使用，实际保存由addNote/updateNote/deleteNote处理
+}
+
+// 添加单条笔记到后端
+async function addNoteToAPI(note) {
+    if (!MangaInsight.currentBookId) return false;
+    try {
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/notes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(note)
+        });
+        const data = await response.json();
+        return data.success;
+    } catch (e) {
+        console.error('添加笔记失败:', e);
+        return false;
+    }
+}
+
+// 更新笔记到后端
+async function updateNoteToAPI(noteId, updates) {
+    if (!MangaInsight.currentBookId) return false;
+    try {
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/notes/${noteId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+        const data = await response.json();
+        return data.success;
+    } catch (e) {
+        console.error('更新笔记失败:', e);
+        return false;
+    }
+}
+
+// 从后端删除笔记
+async function deleteNoteFromAPI(noteId) {
+    if (!MangaInsight.currentBookId) return false;
+    try {
+        const response = await fetch(`/api/manga-insight/${MangaInsight.currentBookId}/notes/${noteId}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        return data.success;
+    } catch (e) {
+        console.error('删除笔记失败:', e);
+        return false;
+    }
 }
 
 // 打开笔记模态框（添加新笔记）
@@ -2160,8 +2219,7 @@ function clearNoteForm() {
 }
 
 // 保存笔记
-function saveNote() {
-    const notes = getNotes();
+async function saveNote() {
     const now = new Date().toISOString();
     
     let noteData;
@@ -2177,7 +2235,7 @@ function saveNote() {
         const comment = document.getElementById('qaNoteComment').value.trim();
         
         noteData = {
-            id: NoteManager.editMode ? NoteManager.currentNoteId : Date.now(),
+            id: NoteManager.editMode ? NoteManager.currentNoteId : String(Date.now()),
             type: 'qa',
             title: customTitle || NoteManager.pendingQAData.question.substring(0, 50),
             question: NoteManager.pendingQAData.question,
@@ -2185,7 +2243,7 @@ function saveNote() {
             citations: NoteManager.pendingQAData.citations || [],
             comment: comment,
             pageNum: NoteManager.pendingQAData.citations?.[0]?.page || null,
-            createdAt: NoteManager.editMode ? (notes.find(n => n.id === NoteManager.currentNoteId)?.createdAt || now) : now,
+            createdAt: now,
             updatedAt: now
         };
     } else {
@@ -2203,43 +2261,50 @@ function saveNote() {
         const tags = tagsInput ? tagsInput.split(/[,，]/).map(t => t.trim()).filter(t => t) : [];
         
         noteData = {
-            id: NoteManager.editMode ? NoteManager.currentNoteId : Date.now(),
+            id: NoteManager.editMode ? NoteManager.currentNoteId : String(Date.now()),
             type: 'text',
             title: title || content.substring(0, 30),
             content: content,
             pageNum: pageRef ? parseInt(pageRef) : null,
             tags: tags,
-            createdAt: NoteManager.editMode ? (notes.find(n => n.id === NoteManager.currentNoteId)?.createdAt || now) : now,
+            createdAt: now,
             updatedAt: now
         };
     }
     
+    let success = false;
     if (NoteManager.editMode) {
         // 更新现有笔记
-        const index = notes.findIndex(n => n.id === NoteManager.currentNoteId);
-        if (index !== -1) {
-            notes[index] = noteData;
+        success = await updateNoteToAPI(NoteManager.currentNoteId, noteData);
+        if (success) {
+            showToast('笔记已更新', 'success');
+        } else {
+            showToast('更新笔记失败', 'error');
         }
-        showToast('笔记已更新', 'success');
     } else {
         // 添加新笔记
-        notes.unshift(noteData);
-        showToast('笔记已保存', 'success');
+        success = await addNoteToAPI(noteData);
+        if (success) {
+            showToast('笔记已保存', 'success');
+        } else {
+            showToast('保存笔记失败', 'error');
+        }
     }
     
-    saveNotes(notes);
-    // 保持当前筛选状态
-    const currentFilter = document.getElementById('notesFilter')?.value || 'all';
-    renderNotes(currentFilter);
-    closeNoteModal();
+    if (success) {
+        // 保持当前筛选状态
+        const currentFilter = document.getElementById('notesFilter')?.value || 'all';
+        await renderNotes(currentFilter);
+        closeNoteModal();
+    }
 }
 
 // 渲染笔记列表
-function renderNotes(filter = 'all') {
+async function renderNotes(filter = 'all') {
     const container = document.getElementById('notesList');
     if (!container) return;
     
-    let notes = getNotes();
+    let notes = await getNotes();
     
     // 应用筛选
     if (filter !== 'all') {
@@ -2287,15 +2352,15 @@ function renderNotes(filter = 'all') {
 }
 
 // 筛选笔记
-function filterNotes() {
+async function filterNotes() {
     const filter = document.getElementById('notesFilter')?.value || 'all';
-    renderNotes(filter);
+    await renderNotes(filter);
 }
 
 // 打开笔记详情
-function openNoteDetail(noteId) {
-    const notes = getNotes();
-    const note = notes.find(n => n.id === noteId);
+async function openNoteDetail(noteId) {
+    const notes = await getNotes();
+    const note = notes.find(n => n.id == noteId);
     if (!note) return;
     
     NoteManager.currentNoteId = noteId;
@@ -2403,9 +2468,9 @@ function closeNoteDetailModal() {
 }
 
 // 编辑当前笔记
-function editCurrentNote() {
-    const notes = getNotes();
-    const note = notes.find(n => n.id === NoteManager.currentNoteId);
+async function editCurrentNote() {
+    const notes = await getNotes();
+    const note = notes.find(n => n.id == NoteManager.currentNoteId);
     if (!note) return;
     
     closeNoteDetailModal();
@@ -2444,23 +2509,26 @@ function editCurrentNote() {
 }
 
 // 删除当前查看的笔记
-function deleteCurrentNote() {
+async function deleteCurrentNote() {
     if (!NoteManager.currentNoteId) return;
     
     if (confirm('确定要删除这条笔记吗？')) {
-        deleteNote(NoteManager.currentNoteId);
+        await deleteNote(NoteManager.currentNoteId);
         closeNoteDetailModal();
     }
 }
 
 // 删除笔记
-function deleteNote(noteId) {
-    const notes = getNotes().filter(n => n.id !== noteId);
-    saveNotes(notes);
-    // 保持当前筛选状态
-    const currentFilter = document.getElementById('notesFilter')?.value || 'all';
-    renderNotes(currentFilter);
-    showToast('笔记已删除', 'success');
+async function deleteNote(noteId) {
+    const success = await deleteNoteFromAPI(noteId);
+    if (success) {
+        // 保持当前筛选状态
+        const currentFilter = document.getElementById('notesFilter')?.value || 'all';
+        await renderNotes(currentFilter);
+        showToast('笔记已删除', 'success');
+    } else {
+        showToast('删除笔记失败', 'error');
+    }
 }
 
 // 从问答保存笔记（供问答功能调用）
@@ -2862,7 +2930,7 @@ async function searchDialogues(query) {
 
 
 MangaInsight.afterBookLoaded = async function() {
-    renderNotes();
+    await renderNotes();
 }
 
 // ==================== 获取模型功能 ====================

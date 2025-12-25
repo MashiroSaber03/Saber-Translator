@@ -1,0 +1,163 @@
+/* ===================================
+   全局样式 - 仅包含CSS变量和基础reset
+   =================================== */
+
+/* ===================================
+   CSS 变量定义
+   =================================== */
+
+:root {
+  /* 主题色 */
+  --color-primary: #3498db;
+  --color-primary-dark: #2980b9;
+  --color-primary-light: #5dade2;
+  
+  --color-success: #5cb85c;
+  --color-success-dark: #4cae4c;
+  --color-success-darker: #449d44;
+  
+  --color-danger: #d9534f;
+  --color-danger-dark: #d43f3a;
+  --color-danger-darker: #c9302c;
+  
+  --color-warning: #f0ad4e;
+  --color-warning-dark: #eb9316;
+  
+  --color-info: #17a2b8;
+  --color-info-dark: #149ddd;
+  
+  --color-purple: #9b59b6;
+  --color-purple-dark: #8e44ad;
+  
+  /* 灰色系 */
+  --color-gray-100: #f8fafc;
+  --color-gray-200: #f4f7f9;
+  --color-gray-300: #e2e8f0;
+  --color-gray-400: #cbd5e0;
+  --color-gray-500: #a0aec0;
+  --color-gray-600: #718096;
+  --color-gray-700: #4a5568;
+  --color-gray-800: #2d3748;
+  --color-gray-900: #1a202c;
+  
+  /* 文本色 */
+  --text-primary: #333;
+  --text-secondary: #777;
+  --text-heading: #2c3e50;
+  --text-muted: #aaa;
+  
+  /* 间距 */
+  --spacing-xs: 5px;
+  --spacing-sm: 10px;
+  --spacing-md: 15px;
+  --spacing-lg: 20px;
+  --spacing-xl: 25px;
+  
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-full: 50%;
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 16px rgba(0,0,0,0.12);
+  
+  /* 过渡 */
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s ease;
+  --transition-slow: 0.5s ease;
+}
+
+/* 亮色主题变量（默认） */
+body {
+  --text-color: #1a202c;
+  --bg-color: #f8fafc;
+  --card-bg-color: #ffffff;
+  --shadow-color: rgba(0,0,0,0.08);
+  --border-color: #e2e8f0;
+  --input-bg-color: #f9fafc;
+  --input-border-color: #e0e6ed;
+  --button-primary-bg: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
+  --button-hover-bg: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
+}
+
+/* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择器 */
+[data-theme="dark"] body,
+[data-theme="dark"] {
+  --text-color: #e2e8f0;
+  --bg-color: #1a202c;
+  --card-bg-color: #2d3748;
+  --shadow-color: rgba(0,0,0,0.3);
+  --border-color: #4a5568;
+  --input-bg-color: #2d3748;
+  --input-border-color: #4a5568;
+  --button-primary-bg: linear-gradient(135deg, #38a169 0%, #48bb78 100%);
+  --button-hover-bg: linear-gradient(135deg, #2f855a 0%, #48bb78 100%);
+  color: var(--text-color);
+  background-color: var(--bg-color);
+}
+
+/* ===================================
+   基础 Reset 样式
+   =================================== */
+
+/* 全局盒模型修复 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 确保所有输入框使用 border-box */
+input, textarea, select, button {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Arial', sans-serif;
+  margin: 0;
+  padding-left: 20px;
+  padding-right: 20px;
+  background-color: #f4f7f9;
+  color: #333;
+  line-height: 1.6;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Vue 应用根元素 */
+#app {
+  min-height: 100vh;
+}
+
+/* 关键帧动画 */
+@keyframes fadeIn {
+  from {opacity: 0}
+  to {opacity: 1}
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(53, 152, 219, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0); }
+}
+
+@keyframes move {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 30px 30px;
+  }
+}

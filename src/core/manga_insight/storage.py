@@ -110,6 +110,14 @@ class AnalysisStorage:
         timeline_data["saved_at"] = datetime.now().isoformat()
         return self._save_json("timeline.json", timeline_data)
     
+    async def load_notes(self) -> Optional[List]:
+        """加载笔记列表"""
+        return self._load_json("notes.json", [])
+    
+    async def save_notes(self, notes: List) -> bool:
+        """保存笔记列表"""
+        return self._save_json("notes.json", notes)
+    
     async def has_timeline_cache(self) -> bool:
         """检查是否存在时间线缓存"""
         filepath = os.path.join(self.base_path, "timeline.json")

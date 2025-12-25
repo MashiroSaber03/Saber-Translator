@@ -1,0 +1,36 @@
+﻿/* ===================================
+   Saber-Translator 主样式文件
+   
+   重构后的模块化CSS架构
+   通过 @import 导入各模块
+   =================================== */
+
+/* CSS变量定义 */
+@import url('variables.css');
+
+/* 基础布局样式 */
+@import url('base.css');
+
+/* 通用组件样式 */
+@import url('components.css');
+
+/* 设置侧边栏样式 */
+@import url('sidebar.css');
+
+/* 缩略图侧边栏样式 */
+@import url('thumbnail.css');
+
+/* 图像展示区样式 */
+@import url('image-display.css');
+
+/* 模态窗口样式 */
+@import url('modals.css');
+
+/* 设置模态框样式 */
+@import url('settings-modal.css');
+
+/* 编辑模式样式 */
+@import url('edit-mode.css');
+
+/* 头部和页脚样式 */
+@import url('header-footer.css');

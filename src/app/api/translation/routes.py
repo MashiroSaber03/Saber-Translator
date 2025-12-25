@@ -1074,10 +1074,53 @@ def hq_translate_batch():
             
             logger.info(f"高质量翻译 API 调用成功，返回内容长度: {len(content) if content else 0}")
             
-            return jsonify({
-                'success': True,
-                'content': content
-            })
+            # 解析LLM返回的content为结构化的results
+            # content应该是JSON格式的翻译结果
+            try:
+                import json as json_module
+                # 尝试解析JSON
+                if force_json_output:
+                    parsed_content = json_module.loads(content)
+                else:
+                    # 非JSON模式，尝试从文本中提取JSON
+                    # 查找第一个 { 和最后一个 }
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}')
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = content[start_idx:end_idx+1]
+                        parsed_content = json_module.loads(json_str)
+                    else:
+                        # 无法解析，返回原始content
+                        return jsonify({
+                            'success': True,
+                            'content': content
+                        })
+                
+                # 将解析后的内容转换为results格式
+                # 期望parsed_content是: { "images": [{ "index": 0, "translations": [...] }] }
+                if isinstance(parsed_content, dict) and 'images' in parsed_content:
+                    results = parsed_content['images']
+                elif isinstance(parsed_content, list):
+                    results = parsed_content
+                else:
+                    # 无法识别的格式，返回原始content
+                    return jsonify({
+                        'success': True,
+                        'content': content
+                    })
+                
+                return jsonify({
+                    'success': True,
+                    'results': results
+                })
+                
+            except (json_module.JSONDecodeError, ValueError) as parse_error:
+                logger.warning(f"无法解析LLM返回的JSON: {parse_error}")
+                # 解析失败，返回原始content
+                return jsonify({
+                    'success': True,
+                    'content': content
+                })
                 
         except Exception as api_error:
             error_msg = str(api_error)

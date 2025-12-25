@@ -777,3 +777,135 @@ def regenerate_timeline(book_id: str):
         }), 500
 
 
+# ==================== 笔记 API ====================
+
+@manga_insight_bp.route('/<book_id>/notes', methods=['GET'])
+def get_notes(book_id: str):
+    """获取书籍的所有笔记"""
+    try:
+        storage = AnalysisStorage(book_id)
+        notes = run_async(storage.load_notes())
+        
+        return jsonify({
+            "success": True,
+            "notes": notes or [],
+            "count": len(notes) if notes else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"获取笔记失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/notes', methods=['POST'])
+def add_note(book_id: str):
+    """添加新笔记"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "请求体为空"
+            }), 400
+        
+        storage = AnalysisStorage(book_id)
+        notes = run_async(storage.load_notes()) or []
+        
+        # 添加新笔记
+        notes.insert(0, data)
+        
+        # 保存笔记
+        run_async(storage.save_notes(notes))
+        
+        return jsonify({
+            "success": True,
+            "message": "笔记已保存",
+            "note": data
+        })
+        
+    except Exception as e:
+        logger.error(f"添加笔记失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/notes/<note_id>', methods=['PUT'])
+def update_note(book_id: str, note_id: str):
+    """更新笔记"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "请求体为空"
+            }), 400
+        
+        storage = AnalysisStorage(book_id)
+        notes = run_async(storage.load_notes()) or []
+        
+        # 查找并更新笔记
+        found = False
+        for i, note in enumerate(notes):
+            if note.get('id') == note_id:
+                notes[i] = {**note, **data}
+                found = True
+                break
+        
+        if not found:
+            return jsonify({
+                "success": False,
+                "error": "笔记不存在"
+            }), 404
+        
+        # 保存笔记
+        run_async(storage.save_notes(notes))
+        
+        return jsonify({
+            "success": True,
+            "message": "笔记已更新"
+        })
+        
+    except Exception as e:
+        logger.error(f"更新笔记失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/notes/<note_id>', methods=['DELETE'])
+def delete_note(book_id: str, note_id: str):
+    """删除笔记"""
+    try:
+        storage = AnalysisStorage(book_id)
+        notes = run_async(storage.load_notes()) or []
+        
+        # 过滤掉要删除的笔记
+        original_count = len(notes)
+        notes = [n for n in notes if n.get('id') != note_id]
+        
+        if len(notes) == original_count:
+            return jsonify({
+                "success": False,
+                "error": "笔记不存在"
+            }), 404
+        
+        # 保存笔记
+        run_async(storage.save_notes(notes))
+        
+        return jsonify({
+            "success": True,
+            "message": "笔记已删除"
+        })
+        
+    except Exception as e:
+        logger.error(f"删除笔记失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

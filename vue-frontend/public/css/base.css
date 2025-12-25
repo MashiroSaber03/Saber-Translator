@@ -1,0 +1,172 @@
+/* ===================================
+   基础布局样式
+   =================================== */
+
+/* 全局盒模型修�?- 确保 padding �?border 包含�?width �?*/
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 确保所有输入框使用 border-box */
+input, textarea, select, button {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Arial', sans-serif;
+  margin: 0;
+  padding-left: 20px;
+  padding-right: 20px;
+  background-color: #f4f7f9;
+  color: #333;
+  line-height: 1.6;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.container {
+  display: flex;
+  max-width: 1400px;
+  margin: 20px auto;
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: 10px;
+}
+
+aside {
+  width: 200px;
+  padding: 20px;
+}
+
+/* 禁用的输入框样式 */
+input:disabled {
+  background-color: #f5f5f5;
+  color: #aaa;
+  cursor: not-allowed;
+  border: 1px solid #ddd;
+}
+
+input[type="text"]:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: #f2f2f2 !important;
+  color: #999 !important;
+  cursor: not-allowed !important;
+}
+
+/* 页脚样式 */
+footer {
+  text-align: center;
+  padding: 1em 0;
+  background-color: #eee;
+  color: #777;
+  border-top: 1px solid #ddd;
+  margin-top: 20px;
+  clear: both;
+}
+
+/* 加载动画 */
+.loading-animation {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px auto;
+}
+
+.spinner {
+  display: none;
+}
+
+/* 链接样式 */
+#select-file-link {
+  color: #3498db !important;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: bold;
+  transition: color 0.3s;
+}
+
+#select-file-link:hover {
+  color: #2572a4 !important;
+}
+
+/* 通用卡片样式 */
+.card {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  padding: 25px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+}
+
+/* 图像容器基础样式 */
+.image-container {
+  position: relative;
+  margin: 0 auto;
+  max-width: 100%;
+  text-align: center;
+}
+
+.image-container img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+/* 字幕列表样式 */
+.subtitle-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.subtitle-list li {
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+}
+
+.subtitle-list li:hover {
+  background-color: #e0e0e0;
+}
+
+.subtitle-list li.active {
+  background-color: #d0d0d0;
+  font-weight: bold;
+}
+
+/* 关键帧动�?*/
+@keyframes fadeIn {
+  from {opacity: 0}
+  to {opacity: 1}
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(53, 152, 219, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0); }
+}
+
+@keyframes move {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 30px 30px;
+  }
+}

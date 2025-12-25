@@ -1,0 +1,801 @@
+/* ===================================
+   模态窗口样式
+   =================================== */
+
+/* ============ 赞助模态窗口 ============ */
+
+.donate-modal {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.6);
+  animation: fadeIn 0.3s;
+}
+
+.donate-modal-content {
+  background-color: #fefefe;
+  margin: 10% auto;
+  padding: 25px;
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+  width: 90%;
+  max-width: 500px;
+  text-align: center;
+  position: relative;
+}
+
+.dark-mode .donate-modal-content {
+  background-color: #2d3748;
+  color: #f7fafc;
+}
+
+.donate-close {
+  position: absolute;
+  right: 15px;
+  top: 10px;
+  color: #aaa;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.donate-close:hover {
+  color: #000;
+}
+
+.dark-mode .donate-close:hover {
+  color: #fff;
+}
+
+.donate-modal-content h3 {
+  margin-top: 5px;
+  margin-bottom: 10px;
+  color: #e91e63;
+  font-size: 1.6em;
+}
+
+.donate-modal-content p {
+  margin-bottom: 20px;
+  font-size: 1.1em;
+  color: #666;
+}
+
+.dark-mode .donate-modal-content p {
+  color: #cbd5e0;
+}
+
+.donate-qrcodes {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+.donate-qrcode-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.donate-qrcode-item img {
+  width: 180px;
+  height: 180px;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+
+.donate-qrcode-item p {
+  margin-top: 10px;
+  font-weight: bold;
+  color: #333;
+  font-size: 0.9em;
+}
+
+.dark-mode .donate-qrcode-item p {
+  color: #e2e8f0;
+}
+
+/* ============ 插件管理模态窗口 ============ */
+
+.plugin-modal {
+  display: none;
+  position: fixed;
+  z-index: 10000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.5);
+  animation: fadeIn 0.3s;
+}
+
+.plugin-modal-content {
+  background-color: var(--card-bg-color);
+  color: var(--text-color);
+  margin: 10% auto;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 5px 15px var(--shadow-color);
+  width: 90%;
+  max-width: 600px;
+  position: relative;
+}
+
+.plugin-modal-close {
+  position: absolute;
+  right: 15px;
+  top: 10px;
+  color: #aaa;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.plugin-modal-close:hover {
+  color: var(--text-color);
+}
+
+.plugin-modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+#pluginListContainer {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.plugin-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  background-color: var(--input-bg-color);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plugin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.plugin-name {
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+.plugin-version {
+  font-size: 0.9em;
+  color: #888;
+  background-color: rgba(128, 128, 128, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+body.dark-mode .plugin-version {
+  color: #a0aec0;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.plugin-author {
+  font-size: 0.9em;
+  font-style: italic;
+  color: #777;
+}
+
+body.dark-mode .plugin-author {
+  color: #a0aec0;
+}
+
+.plugin-description {
+  font-size: 0.95em;
+  margin-top: 5px;
+  color: var(--text-color);
+  opacity: 0.9;
+}
+
+.plugin-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.plugin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.plugin-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.plugin-delete-button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s;
+}
+
+.plugin-delete-button:hover {
+  background-color: #c82333;
+}
+
+.plugin-delete-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.plugin-settings-button {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s;
+  margin-left: auto;
+}
+
+.plugin-settings-button:hover {
+  background-color: #5a6268;
+}
+
+/* 插件配置项样式 */
+.plugin-config-item {
+  margin-bottom: 15px;
+  text-align: left;
+}
+
+.plugin-config-item label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.plugin-config-item input[type="text"],
+.plugin-config-item input[type="number"],
+.plugin-config-item select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+}
+
+.plugin-config-item input[type="checkbox"] {
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.plugin-config-item label:has(input[type="checkbox"]) {
+  display: inline-flex;
+  align-items: center;
+  font-weight: normal;
+}
+
+.plugin-config-description {
+  font-size: 0.85em;
+  color: #777;
+  margin-top: 5px;
+}
+
+body.dark-mode .plugin-config-description {
+  color: #a0aec0;
+}
+
+.plugin-config-save {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px 15px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.2s;
+}
+
+.plugin-config-save:hover {
+  background-color: #218838;
+}
+
+/* 插件管理按钮 */
+#managePluginsButton {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  box-shadow: 0 4px 6px rgba(0, 123, 255, 0.2);
+  margin-bottom: 15px;
+}
+
+#managePluginsButton:hover {
+  background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
+  box-shadow: 0 6px 10px rgba(0, 123, 255, 0.3);
+}
+
+/* ============ 会话管理模态窗口 ============ */
+
+.session-modal {
+  display: none;
+  position: fixed;
+  z-index: 10001;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.5);
+  animation: fadeIn 0.3s;
+}
+
+.session-modal-content {
+  background-color: var(--card-bg-color);
+  color: var(--text-color);
+  margin: 10% auto;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 5px 15px var(--shadow-color);
+  width: 90%;
+  max-width: 700px;
+  position: relative;
+}
+
+.session-modal-close {
+  position: absolute;
+  right: 15px;
+  top: 10px;
+  color: #aaa;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.session-modal-close:hover {
+  color: var(--text-color);
+}
+
+.session-modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+#sessionListContainer {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 10px;
+  margin-top: 15px;
+}
+
+.session-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 15px;
+  margin-bottom: 12px;
+  background-color: var(--input-bg-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.session-item:hover {
+  background-color: var(--bg-color);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+body.dark-mode .session-item:hover {
+  background-color: #3b485f;
+}
+
+.session-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  margin-right: 15px;
+}
+
+.session-name {
+  font-weight: bold;
+  font-size: 1.1em;
+  margin-bottom: 3px;
+  word-break: break-all;
+}
+
+.session-details {
+  font-size: 0.85em;
+  color: #777;
+}
+
+body.dark-mode .session-details {
+  color: #a0aec0;
+}
+
+.session-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.session-load-button,
+.session-delete-button,
+.session-rename-button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.session-load-button {
+  background-color: #28a745;
+  color: white;
+}
+
+.session-load-button:hover {
+  background-color: #218838;
+  transform: translateY(-1px);
+}
+
+.session-rename-button {
+  background-color: #ffc107;
+  color: #333;
+}
+
+.session-rename-button:hover {
+  background-color: #e0a800;
+  transform: translateY(-1px);
+}
+
+.session-delete-button {
+  background-color: #dc3545;
+  color: white;
+}
+
+.session-delete-button:hover {
+  background-color: #c82333;
+  transform: translateY(-1px);
+}
+
+#sessionListContainer p {
+  text-align: center;
+  color: #888;
+  padding: 20px;
+}
+
+/* 自动存档样式 */
+.session-item.autosave-item {
+  background-color: rgba(0, 123, 255, 0.05);
+  border-left: 3px solid #007bff;
+}
+
+.dark-mode .session-item.autosave-item {
+  background-color: rgba(52, 152, 219, 0.1);
+  border-left-color: #3498db;
+}
+
+.autosave-item .session-rename-button,
+.autosave-item .session-delete-button {
+  display: none;
+}
+
+.disabled-item {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.session-name .fa-save {
+  margin-right: 5px;
+}
+
+/* ============ AI校对设置模态窗口 ============ */
+
+#proofreadingSettingsModal .modal-content {
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.proofreading-settings-container {
+  padding: 10px;
+}
+
+.proofreading-enable-section {
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #f5f8fa;
+  border-radius: 8px;
+}
+
+#proofreadingRoundsContainer {
+  margin-bottom: 20px;
+}
+
+.proofreading-round {
+  margin-bottom: 15px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.round-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.round-name {
+  flex: 1;
+  font-weight: bold;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.remove-round-button {
+  background-color: #ff4d4d;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.round-settings > div {
+  margin-bottom: 10px;
+}
+
+.round-settings label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.round-settings select,
+.round-settings input[type="text"],
+.round-settings input[type="number"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.round-settings textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.proofreading-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+#addRoundButton {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#saveProofreadingSettingsButton {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* ============ Ollama测试结果样式 ============ */
+
+.ollama-test-result {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.ollama-test-result h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 18px;
+}
+
+.ollama-test-result h4 {
+  margin-top: 15px;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.ollama-test-result p {
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.ollama-test-result code {
+  background-color: rgba(0,0,0,0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: Consolas, monospace;
+}
+
+.ollama-test-result .model-list {
+  margin-top: 15px;
+  background-color: rgba(0,0,0,0.03);
+  padding: 10px;
+  border-radius: 5px;
+}
+
+.ollama-test-result .model-list ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.ollama-test-result .model-list li {
+  margin-bottom: 5px;
+  font-family: Consolas, monospace;
+}
+
+.ollama-test-result .warning {
+  background-color: #fffbe6;
+  border-left: 3px solid #faad14;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.ollama-test-result .error-suggestion {
+  background-color: rgba(0,0,0,0.03);
+  padding: 10px;
+  border-radius: 5px;
+  margin: 10px 0;
+}
+
+.ollama-test-result .error-suggestion ol {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.ollama-test-result .error-suggestion li {
+  margin-bottom: 5px;
+}
+
+/* Ollama模型列表样式 */
+.ollama-models-list {
+  margin-top: 15px;
+  background-color: #f7fafc;
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.ollama-models-list h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 15px;
+  color: #2d3748;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 8px;
+  text-align: center;
+}
+
+.model-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+  justify-content: center;
+}
+
+.model-button {
+  background-color: #fff;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: #4a5568;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.model-button:hover {
+  background-color: #ebf8ff;
+  border-color: #90cdf4;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+}
+
+.model-button.selected {
+  background-color: #ebf8ff;
+  border-color: #3498db;
+  color: #2b6cb0;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.3);
+}
+
+.ollama-models-list .no-models,
+.ollama-models-list .error-message {
+  color: #e53e3e;
+  font-size: 14px;
+  margin: 15px 0;
+  text-align: center;
+  padding: 10px;
+  background-color: #fff5f5;
+  border-radius: 8px;
+  border-left: 3px solid #fc8181;
+}
+
+.ollama-models-list code {
+  background-color: #edf2f7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  color: #2c5282;
+  border: 1px solid #e2e8f0;
+}
+
+/* Ollama测试按钮 */
+#ollamaTestBtn {
+  background-color: #6772e5;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.3em;
+  font-size: 0.7em;
+  cursor: pointer;
+  margin-left: 5px;
+  transition: background-color 0.3s;
+  display: none;
+}
+
+#ollamaTestBtn:hover {
+  background-color: #555cb2;
+}

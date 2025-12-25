@@ -1,0 +1,1006 @@
+/* ===================================
+   通用组件样式
+   =================================== */
+
+/* ============ 按钮基础样式 ============ */
+
+/* 通用侧边栏按钮基础样式 */
+.sidebar-btn {
+  width: 100%;
+  padding: 14px 25px;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-btn:hover {
+  transform: translateY(-2px);
+}
+
+.sidebar-btn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+.sidebar-btn:hover:before {
+  left: 100%;
+}
+
+/* 设置按钮样式 */
+#settings-sidebar button.settings-button {
+  width: 100%;
+  padding: 12px 25px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: background-color 0.3s;
+  margin-top: 10px;
+  box-shadow: none;
+  transform: none;
+  font-weight: normal;
+  text-align: center;
+  white-space: nowrap;
+}
+
+#settings-sidebar button#startHqTranslation {
+  text-align: center;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+}
+
+#settings-sidebar button.settings-button:hover {
+  background-color: #0056b3;
+}
+
+#settings-sidebar button.settings-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* 应用设置按钮组 */
+.apply-settings-group {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 10px;
+  position: relative;
+}
+
+.apply-settings-group .settings-button {
+  flex: 1;
+  margin-top: 0 !important;
+  border-radius: 5px 0 0 5px !important;
+}
+
+.settings-gear-btn {
+  padding: 8px 12px;
+  background-color: #0056b3;
+  color: white;
+  border: none;
+  border-left: 1px solid rgba(255,255,255,0.3);
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-gear-btn:hover {
+  background-color: #004494;
+}
+
+.settings-gear-btn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* 参数选择下拉面板 */
+.apply-settings-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 5px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  padding: 10px;
+  margin-bottom: 5px;
+}
+
+.apply-settings-dropdown.show {
+  display: block;
+}
+
+.apply-settings-dropdown .dropdown-title {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: var(--text-color, #333);
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.apply-settings-dropdown label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 0.85em;
+  color: var(--text-color, #555);
+  cursor: pointer;
+}
+
+.apply-settings-dropdown label:hover {
+  color: var(--primary-color, #007bff);
+}
+
+.apply-settings-dropdown input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.apply-settings-dropdown .select-all-option {
+  font-weight: bold;
+  color: var(--primary-color, #007bff);
+}
+
+.apply-settings-dropdown .dropdown-divider {
+  height: 1px;
+  background: var(--border-color, #eee);
+  margin: 6px 0;
+}
+
+/* 翻译按钮 - 绿色 */
+#settings-sidebar button#translateButton,
+#settings-sidebar button#translateAllButton {
+  width: 100%;
+  padding: 14px 25px;
+  background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+#settings-sidebar button#translateButton:hover,
+#settings-sidebar button#translateAllButton:hover {
+  background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
+  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
+  transform: translateY(-2px);
+}
+
+#settings-sidebar button#translateButton:before,
+#settings-sidebar button#translateAllButton:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+#settings-sidebar button#translateButton:hover:before,
+#settings-sidebar button#translateAllButton:hover:before {
+  left: 100%;
+}
+
+/* 消除文字按钮 - 蓝色 */
+#settings-sidebar button#removeTextOnlyButton,
+#settings-sidebar button#removeAllTextButton {
+  width: 100%;
+  padding: 14px 25px;
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+#settings-sidebar button#removeTextOnlyButton:hover,
+#settings-sidebar button#removeAllTextButton:hover {
+  background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
+  box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
+  transform: translateY(-2px);
+}
+
+#settings-sidebar button#removeTextOnlyButton:before,
+#settings-sidebar button#removeAllTextButton:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+#settings-sidebar button#removeTextOnlyButton:hover:before,
+#settings-sidebar button#removeAllTextButton:hover:before {
+  left: 100%;
+}
+
+/* 删除按钮 - 红色 */
+#settings-sidebar button#clearAllImagesButton,
+#settings-sidebar button#deleteCurrentImageButton {
+  width: 100%;
+  padding: 14px 25px;
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+#settings-sidebar button#clearAllImagesButton:hover,
+#settings-sidebar button#deleteCurrentImageButton:hover {
+  background: linear-gradient(135deg, #bd2130 0%, #c82333 100%);
+  box-shadow: 0 6px 10px rgba(220, 53, 69, 0.3);
+  transform: translateY(-2px);
+}
+
+#settings-sidebar button#clearAllImagesButton:before,
+#settings-sidebar button#deleteCurrentImageButton:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+#settings-sidebar button#clearAllImagesButton:hover:before,
+#settings-sidebar button#deleteCurrentImageButton:hover:before {
+  left: 100%;
+}
+
+/* 校对按钮和高质量翻译按钮 - 紫色 */
+#proofreadButton,
+#startHqTranslationBtn {
+  width: 100%;
+  padding: 14px 25px;
+  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s;
+  margin-top: 15px;
+  box-shadow: 0 4px 6px rgba(142, 68, 173, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+#proofreadButton:hover,
+#startHqTranslationBtn:hover {
+  background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%);
+  box-shadow: 0 6px 10px rgba(142, 68, 173, 0.3);
+  transform: translateY(-2px);
+}
+
+#proofreadButton:before,
+#startHqTranslationBtn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.7s;
+}
+
+#proofreadButton:hover:before,
+#startHqTranslationBtn:hover:before {
+  left: 100%;
+}
+
+/* 按钮颜色变体类 */
+#settings-sidebar button.red-button {
+  background: linear-gradient(135deg, #d43f3a 0%, #d9534f 100%);
+  box-shadow: 0 4px 6px rgba(217, 83, 79, 0.2);
+}
+
+#settings-sidebar button.red-button:hover {
+  background: linear-gradient(135deg, #c9302c 0%, #d9534f 100%);
+  box-shadow: 0 6px 10px rgba(217, 83, 79, 0.3);
+}
+
+#settings-sidebar button.orange-button {
+  background: linear-gradient(135deg, #eb9316 0%, #f0ad4e 100%);
+  box-shadow: 0 4px 6px rgba(240, 173, 78, 0.2);
+}
+
+#settings-sidebar button.orange-button:hover {
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+  box-shadow: 0 6px 10px rgba(211, 84, 0, 0.3);
+}
+
+#settings-sidebar button.green-button {
+  background: linear-gradient(135deg, #5cb85c 0%, #4cae4c 100%);
+  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
+}
+
+#settings-sidebar button.green-button:hover {
+  background: linear-gradient(135deg, #4cae4c 0%, #449d44 100%);
+  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
+}
+
+/* 重试失败按钮 */
+#retranslateFailedButton {
+  padding: 8px 15px;
+  background-color: #f39c12;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+#retranslateFailedButton:hover {
+  background-color: #e67e22;
+}
+
+#retranslateFailedButton:disabled {
+  background-color: #f9d6a5;
+  cursor: not-allowed;
+}
+
+/* 图像控制按钮 */
+#toggleImageButton, #toggleEditModeButton {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #149ddd 0%, #17a2b8 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 6px rgba(23, 162, 184, 0.2);
+}
+
+#toggleImageButton:hover, #toggleEditModeButton:hover {
+  background: linear-gradient(135deg, #117a8b 0%, #17a2b8 100%);
+  box-shadow: 0 6px 10px rgba(23, 162, 184, 0.3);
+  transform: translateY(-2px);
+}
+
+#toggleEditModeButton {
+  margin-left: 10px;
+  background-color: #ff9800;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+#toggleEditModeButton:hover {
+  background-color: #e68a00;
+}
+
+#toggleEditModeButton.active {
+  background-color: #4caf50;
+}
+
+#toggleEditModeButton.active:hover {
+  background-color: #45a049;
+}
+
+/* ============ 进度条 ============ */
+
+#translationProgressBar {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  padding: 20px;
+  border: none;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  text-align: center;
+  width: 85%;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.progress-bar-label {
+  margin-bottom: 15px;
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #2c3e50;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 25px;
+  background-color: #edf2f7;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.progress-bar .progress {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #4cae4c 0%, #5cb85c 100%);
+  transition: width 0.3s ease;
+  border-radius: 20px;
+  position: relative;
+}
+
+.progress-bar .progress:after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background-image: linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, .2) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, .2) 50%,
+      rgba(255, 255, 255, .2) 75%,
+      transparent 75%,
+      transparent
+  );
+  background-size: 30px 30px;
+  animation: move 2s linear infinite;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+/* 暂停/继续按钮样式 */
+.pause-btn {
+  margin-top: 12px;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pause-btn:not(.paused) {
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  color: white;
+}
+
+.pause-btn:not(.paused):hover {
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(243, 156, 18, 0.4);
+}
+
+.pause-btn.paused {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  color: white;
+}
+
+.pause-btn.paused:hover {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
+}
+
+.pause-icon {
+  font-size: 14px;
+}
+
+/* 暂停状态下进度条颜色变化 */
+.progress-bar.paused .progress {
+  background: linear-gradient(90deg, #f39c12 0%, #e67e22 100%);
+}
+
+/* ============ 消息组件 (底部居中 Toast 样式) ============ */
+
+.message-container {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999; /* 最高层级，确保在编辑模式等所有元素之上 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 80%;
+  pointer-events: none;
+}
+
+.message {
+  background-color: rgba(0, 0, 0, 0.75);
+  border-radius: 8px;
+  padding: 12px 24px;
+  padding-right: 36px; /* 为关闭按钮留出空间 */
+  margin-bottom: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: toastSlideUp 0.3s ease-out forwards;
+  position: relative;
+  max-width: 100%;
+  pointer-events: auto;
+  word-break: break-word;
+  border-left: none;
+  color: white;
+  text-align: center;
+  font-size: 14px;
+}
+
+.message.info {
+  background-color: rgba(24, 144, 255, 0.85);
+  border-left: none;
+  color: white;
+}
+
+.message.success {
+  background-color: rgba(82, 196, 26, 0.85);
+  border-left: none;
+  color: white;
+}
+
+.message.warning {
+  background-color: rgba(250, 173, 20, 0.85);
+  border-left: none;
+  color: white;
+}
+
+.message.error {
+  background-color: rgba(255, 77, 79, 0.85);
+  border-left: none;
+  color: white;
+}
+
+.close-message {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-message:hover {
+  color: white;
+}
+
+/* Toast 从下往上滑入动画 */
+@keyframes toastSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============ 可折叠面板 ============ */
+
+.collapsible-header {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  margin: 0;
+  user-select: none;
+}
+
+.collapsible-header:hover {
+  color: #3498db;
+}
+
+.collapsible-header .toggle-icon {
+  transition: transform 0.3s ease;
+}
+
+.collapsible-header.collapsed .toggle-icon {
+  transform: rotate(-90deg);
+}
+
+.collapsible-content {
+  overflow: visible;
+  max-height: none;
+  transition: max-height 0.3s ease;
+}
+
+.collapsible-content.collapsed {
+  max-height: 0;
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* ============ 图像控制 ============ */
+
+.image-controls {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  width: 100%;
+}
+
+.image-size-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.image-size-control label {
+  font-weight: bold;
+  margin-bottom: 0;
+}
+
+.image-size-control .slider {
+  width: 150px;
+  margin: 0;
+}
+
+.image-size-control span {
+  min-width: 50px;
+  text-align: left;
+}
+
+/* ============ 开关样式 ============ */
+
+.switch-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.switch-container input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-container .slider {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  background-color: #ccc;
+  transition: .4s;
+  margin-right: 10px;
+}
+
+.switch-container .slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+.switch-label {
+  font-weight: bold;
+  font-size: 14px;
+  color: #333;
+}
+
+body.dark-mode .switch-label {
+  color: #e2e8f0;
+}
+
+/* ============ 范围滑块 ============ */
+
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #ccc;
+  border-radius: 3px;
+  outline: none;
+  transition: .2s;
+  position: relative;
+}
+
+input[type="range"].slider:before {
+  content: none !important;
+  display: none !important;
+}
+
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+}
+
+input[type="range"].slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+}
+
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  background: #ddd;
+  border-radius: 4px;
+  outline: none;
+  opacity: 0.7;
+  transition: opacity .2s;
+  border: none;
+}
+
+.range-slider:hover {
+  opacity: 1;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+.range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2196F3;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+.range-slider:before {
+  content: none !important;
+  display: none !important;
+}
+
+/* 覆盖全局.slider:before，确保它不会影响范围滑块 */
+.slider:not(.switch-container .slider):before {
+  content: none !important;
+  display: none !important;
+}
+
+/* ============ 自动存档开关 ============ */
+
+.auto-save-toggle {
+  margin-bottom: 15px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #2196F3;
+}
+
+body.dark-mode .auto-save-toggle {
+  background-color: #2d3748;
+  border-left-color: #3498db;
+}
+
+/* ============ 亮暗模式切换按钮 ============ */
+
+.theme-toggle {
+  background-color: #f0f2f5;
+  border: 1px solid #dcdfe6;
+  border-radius: 20px;
+  cursor: pointer;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 70px;
+  transition: background-color 0.3s;
+}
+
+.theme-toggle:hover {
+  background-color: #e6e8eb;
+}
+
+.theme-icon {
+  font-size: 16px;
+}
+
+body.light-mode .light-icon {
+  display: inline;
+}
+
+body.light-mode .dark-icon {
+  display: none;
+}
+
+body.dark-mode .light-icon {
+  display: none;
+}
+
+body.dark-mode .dark-icon {
+  display: inline;
+}
+
+/* ============ 提示词格式相关 ============ */
+
+.prompt-format-toggle {
+  margin: 10px 0;
+}
+
+.format-toggle-button {
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s;
+  box-shadow: 0 2px 4px rgba(41, 128, 185, 0.2);
+  font-weight: 600;
+}
+
+.format-toggle-button:hover {
+  background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+  box-shadow: 0 4px 6px rgba(41, 128, 185, 0.3);
+}
+
+.format-toggle-button.active {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  box-shadow: 0 2px 4px rgba(46, 204, 113, 0.2);
+}
+
+.format-toggle-button.active:hover {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  box-shadow: 0 4px 6px rgba(46, 204, 113, 0.3);
+}
+
+.dark-mode .format-toggle-button {
+  background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.dark-mode .format-toggle-button:hover {
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+}
+
+.dark-mode .format-toggle-button.active {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+}
+
+.dark-mode .format-toggle-button.active:hover {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+}
+
+.prompt-mode-select {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: #f8f8f8;
+  font-size: 14px;
+  min-width: 150px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.prompt-mode-select:hover {
+  background-color: #eaeaea;
+  border-color: #aaa;
+}
+
+body.dark-mode .prompt-mode-select {
+  background-color: #333;
+  border-color: #555;
+  color: #eee;
+}
+
+body.dark-mode .prompt-mode-select:hover {
+  background-color: #444;
+  border-color: #777;
+}

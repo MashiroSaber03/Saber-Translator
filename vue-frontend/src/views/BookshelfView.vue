@@ -1,0 +1,929 @@
+<script setup lang="ts">
+/**
+ * 书架页面视图组件
+ * 显示用户的书籍收藏，支持搜索、标签筛选和批量操作
+ */
+
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { getServerInfo } from '@/api'
+import BookCard from '@/components/bookshelf/BookCard.vue'
+import BookSearch from '@/components/bookshelf/BookSearch.vue'
+import BookModal from '@/components/bookshelf/BookModal.vue'
+import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
+import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
+import BookContextMenu from '@/components/bookshelf/BookContextMenu.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { showToast } from '@/utils/toast'
+
+const router = useRouter()
+const bookshelfStore = useBookshelfStore()
+const settingsStore = useSettingsStore()
+
+// 局域网地址
+const lanUrl = ref<string>('获取中...')
+
+// 模态框状态
+const showBookModal = ref(false)
+const showDetailModal = ref(false)
+const showTagManageModal = ref(false)
+const showConfirmModal = ref(false)
+const editingBookId = ref<string | null>(null)
+const confirmMessage = ref('')
+const confirmCallback = ref<(() => void) | null>(null)
+
+// 右键菜单状态
+const showContextMenu = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuBookId = ref<string | null>(null)
+
+// 计算属性
+const filteredBooks = computed(() => bookshelfStore.filteredBooks)
+const allTags = computed(() => bookshelfStore.tags)
+const selectedBooks = computed(() => bookshelfStore.selectedBooks)
+const isBatchMode = computed(() => bookshelfStore.batchMode)
+const isEmpty = computed(() => filteredBooks.value.length === 0 && !bookshelfStore.searchQuery)
+
+// 初始化
+onMounted(async () => {
+  // 加载书籍和标签
+  await Promise.all([
+    bookshelfStore.loadBooks(),
+    bookshelfStore.loadTags(),
+  ])
+  
+  // 获取局域网地址
+  try {
+    const response = await getServerInfo()
+    if (response.success && response.lan_address) {
+      lanUrl.value = response.lan_address
+    }
+  } catch (error) {
+    console.error('获取服务器信息失败:', error)
+    lanUrl.value = '获取失败'
+  }
+})
+
+// 复制局域网地址
+async function copyLanUrl() {
+  try {
+    await navigator.clipboard.writeText(lanUrl.value)
+    showToast('局域网地址已复制！', 'success')
+  } catch {
+    // 降级方案
+    const textArea = document.createElement('textarea')
+    textArea.value = lanUrl.value
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+    showToast('局域网地址已复制！', 'success')
+  }
+}
+
+// 打开新建书籍模态框
+function openCreateBookModal() {
+  editingBookId.value = null
+  showBookModal.value = true
+}
+
+// 打开编辑书籍模态框
+function openEditBookModal(bookId: string) {
+  editingBookId.value = bookId
+  showBookModal.value = true
+}
+
+// 打开书籍详情模态框 - 调用API获取完整数据（包括章节）
+async function openBookDetail(bookId: string) {
+  try {
+    // 先调用API获取完整书籍数据（包括章节）
+    const response = await fetch(`/api/bookshelf/books/${bookId}`)
+    const result = await response.json()
+    if (result.success && result.book) {
+      // 更新store中的书籍数据
+      bookshelfStore.updateBook(bookId, result.book)
+    }
+  } catch (error) {
+    console.error('加载书籍详情失败:', error)
+  }
+  bookshelfStore.setCurrentBook(bookId)
+  showDetailModal.value = true
+}
+
+// 打开标签管理模态框
+function openTagManageModal() {
+  showTagManageModal.value = true
+}
+
+// 进入批量操作模式
+function enterBatchMode() {
+  bookshelfStore.enterBatchMode()
+}
+
+// 退出批量操作模式
+function exitBatchMode() {
+  bookshelfStore.exitBatchMode()
+}
+
+// 全选/取消全选
+function toggleSelectAll() {
+  if (selectedBooks.value.size === filteredBooks.value.length) {
+    bookshelfStore.clearSelection()
+  } else {
+    filteredBooks.value.forEach(book => {
+      bookshelfStore.selectBook(book.id)
+    })
+  }
+}
+
+// 批量删除
+function batchDelete() {
+  if (selectedBooks.value.size === 0) {
+    showToast('请先选择要删除的书籍', 'warning')
+    return
+  }
+  
+  confirmMessage.value = `确定要删除选中的 ${selectedBooks.value.size} 本书籍吗？此操作不可恢复。`
+  confirmCallback.value = async () => {
+    try {
+      await bookshelfStore.batchDeleteBooks(Array.from(selectedBooks.value))
+      showToast('批量删除成功', 'success')
+      exitBatchMode()
+    } catch (error) {
+      showToast('批量删除失败', 'error')
+    }
+  }
+  showConfirmModal.value = true
+}
+
+// 跳转到快速翻译
+function goToTranslate() {
+  router.push('/translate')
+}
+
+// 处理书籍右键菜单
+function handleBookContextMenu(event: MouseEvent, bookId: string) {
+  event.preventDefault()
+  contextMenuX.value = event.clientX
+  contextMenuY.value = event.clientY
+  contextMenuBookId.value = bookId
+  showContextMenu.value = true
+}
+
+// 关闭右键菜单
+function closeContextMenu() {
+  showContextMenu.value = false
+  contextMenuBookId.value = null
+}
+
+// 从右键菜单删除书籍
+function deleteBookFromMenu(bookId: string) {
+  confirmMessage.value = '确定要删除这本书籍吗？此操作不可恢复。'
+  confirmCallback.value = async () => {
+    try {
+      await bookshelfStore.deleteBookApi(bookId)
+      showToast('删除成功', 'success')
+    } catch (error) {
+      showToast('删除失败', 'error')
+    }
+  }
+  showConfirmModal.value = true
+}
+
+// 批量添加标签模态框状态
+const showBatchTagModal = ref(false)
+const batchTagMode = ref<'add' | 'remove'>('add')
+const selectedTagsForBatch = ref<string[]>([])
+
+// 打开批量添加标签模态框
+function openBatchAddTagModal() {
+  if (selectedBooks.value.size === 0) {
+    showToast('请先选择要操作的书籍', 'warning')
+    return
+  }
+  batchTagMode.value = 'add'
+  selectedTagsForBatch.value = []
+  showBatchTagModal.value = true
+}
+
+// 打开批量移除标签模态框
+function openBatchRemoveTagModal() {
+  if (selectedBooks.value.size === 0) {
+    showToast('请先选择要操作的书籍', 'warning')
+    return
+  }
+  batchTagMode.value = 'remove'
+  selectedTagsForBatch.value = []
+  showBatchTagModal.value = true
+}
+
+// 切换批量标签选择
+function toggleBatchTag(tagName: string) {
+  const index = selectedTagsForBatch.value.indexOf(tagName)
+  if (index >= 0) {
+    selectedTagsForBatch.value.splice(index, 1)
+  } else {
+    selectedTagsForBatch.value.push(tagName)
+  }
+}
+
+// 执行批量标签操作
+async function executeBatchTagOperation() {
+  if (selectedTagsForBatch.value.length === 0) {
+    showToast('请选择至少一个标签', 'warning')
+    return
+  }
+
+  const bookIds = Array.from(selectedBooks.value)
+  
+  try {
+    const { batchAddTags, batchRemoveTags } = await import('@/api/bookshelf')
+    
+    if (batchTagMode.value === 'add') {
+      const response = await batchAddTags(bookIds, selectedTagsForBatch.value)
+      if (response.success) {
+        // 更新本地状态
+        for (const bookId of bookIds) {
+          for (const tagName of selectedTagsForBatch.value) {
+            bookshelfStore.addTagToBook(bookId, tagName)
+          }
+        }
+        showToast(`已为 ${bookIds.length} 本书添加标签`, 'success')
+      } else {
+        showToast('添加标签失败', 'error')
+      }
+    } else {
+      const response = await batchRemoveTags(bookIds, selectedTagsForBatch.value)
+      if (response.success) {
+        // 更新本地状态
+        for (const bookId of bookIds) {
+          for (const tagName of selectedTagsForBatch.value) {
+            bookshelfStore.removeTagFromBook(bookId, tagName)
+          }
+        }
+        showToast(`已从 ${bookIds.length} 本书移除标签`, 'success')
+      } else {
+        showToast('移除标签失败', 'error')
+      }
+    }
+    
+    showBatchTagModal.value = false
+    exitBatchMode()
+  } catch (error) {
+    showToast('操作失败', 'error')
+    console.error('批量标签操作失败:', error)
+  }
+}
+</script>
+
+<template>
+  <div class="bookshelf-page">
+    <!-- 页面头部 -->
+    <header class="app-header">
+      <div class="header-content">
+        <div class="logo-container">
+          <router-link to="/" title="书架首页">
+            <img src="/pic/logo.png" alt="Saber-Translator Logo" class="app-logo">
+            <span class="app-name">Saber-Translator</span>
+          </router-link>
+        </div>
+        <div class="header-links">
+          <span class="lan-access-info" title="其他设备可通过此地址访问">
+            <span class="lan-icon">🌐局域网设备可通过该网址访问</span>
+            <span id="lanUrl">{{ lanUrl }}</span>
+            <button class="copy-btn" title="复制地址" @click="copyLanUrl">📋</button>
+          </span>
+          <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
+          <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
+            <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
+          </a>
+          <button class="theme-toggle" title="切换亮暗模式" @click="settingsStore.toggleTheme">
+            <span class="theme-icon light-icon">☀️</span>
+            <span class="theme-icon dark-icon">🌙</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="bookshelf-main">
+      <!-- 工具栏 -->
+      <div class="bookshelf-toolbar">
+        <h1 class="page-title">我的书架</h1>
+        <div class="toolbar-actions">
+          <button class="btn btn-primary" @click="openCreateBookModal">
+            <span class="btn-icon">+</span>
+            <span>新建书籍</span>
+          </button>
+          <button class="btn btn-secondary" @click="openTagManageModal">
+            <span>🏷️ 管理标签</span>
+          </button>
+          <button class="btn btn-secondary" @click="goToTranslate">
+            <span>快速翻译</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 搜索和筛选栏 -->
+      <BookSearch
+        :tags="allTags"
+        @search="bookshelfStore.setSearchQuery"
+        @filter-tag="bookshelfStore.toggleTagFilter"
+      />
+
+      <!-- 批量操作栏 -->
+      <div v-if="isBatchMode" class="batch-toolbar">
+        <div class="batch-info">
+          <input
+            type="checkbox"
+            :checked="selectedBooks.size === filteredBooks.length && filteredBooks.length > 0"
+            @change="toggleSelectAll"
+          >
+          <span>{{ selectedBooks.size }}</span> 本已选中
+        </div>
+        <div class="batch-actions">
+          <button class="btn btn-sm btn-secondary" @click="openBatchAddTagModal">🏷️ 添加标签</button>
+          <button class="btn btn-sm btn-secondary" @click="openBatchRemoveTagModal">➖ 移除标签</button>
+          <button class="btn btn-sm btn-danger" @click="batchDelete">🗑️ 批量删除</button>
+          <button class="btn btn-sm btn-secondary" @click="exitBatchMode">取消</button>
+        </div>
+      </div>
+
+      <!-- 书籍网格 -->
+      <div class="books-container">
+        <div v-if="filteredBooks.length > 0" class="books-grid">
+          <BookCard
+            v-for="book in filteredBooks"
+            :key="book.id"
+            :book="book"
+            :selected="selectedBooks.has(book.id)"
+            :batch-mode="isBatchMode"
+            @click="openBookDetail(book.id)"
+            @edit="openEditBookModal(book.id)"
+            @select="bookshelfStore.toggleBookSelection(book.id)"
+            @contextmenu="handleBookContextMenu($event, book.id)"
+          />
+        </div>
+        
+        <!-- 空状态提示 -->
+        <div v-else-if="isEmpty" class="empty-state">
+          <div class="empty-icon">📚</div>
+          <h2>书架空空如也</h2>
+          <p>点击"新建书籍"开始你的翻译之旅</p>
+          <button class="btn btn-primary" @click="openCreateBookModal">
+            <span class="btn-icon">+</span>
+            <span>新建第一本书</span>
+          </button>
+        </div>
+        
+        <!-- 搜索无结果 -->
+        <div v-else class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <h2>未找到匹配的书籍</h2>
+          <p>尝试调整搜索条件或标签筛选</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- 模态框 -->
+    <BookModal
+      v-if="showBookModal"
+      :book-id="editingBookId"
+      @close="showBookModal = false"
+      @saved="showBookModal = false"
+    />
+
+    <BookDetailModal
+      v-if="showDetailModal"
+      @close="showDetailModal = false"
+      @edit="openEditBookModal"
+    />
+
+    <TagManageModal
+      v-if="showTagManageModal"
+      @close="showTagManageModal = false"
+    />
+
+    <ConfirmModal
+      v-if="showConfirmModal"
+      :message="confirmMessage"
+      @confirm="confirmCallback?.(); showConfirmModal = false"
+      @cancel="showConfirmModal = false"
+    />
+
+    <!-- 右键上下文菜单 -->
+    <BookContextMenu
+      v-if="showContextMenu && contextMenuBookId"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :book-id="contextMenuBookId"
+      @close="closeContextMenu"
+      @open-detail="openBookDetail"
+      @edit="openEditBookModal"
+      @delete="deleteBookFromMenu"
+      @manage-tags="openTagManageModal"
+      @enter-batch-mode="enterBatchMode"
+    />
+
+    <!-- 批量标签操作模态框 -->
+    <Teleport to="body">
+      <div v-if="showBatchTagModal" class="modal active">
+        <div class="modal-overlay" @click="showBatchTagModal = false"></div>
+        <div class="modal-content modal-small">
+          <div class="modal-header">
+            <h2>{{ batchTagMode === 'add' ? '批量添加标签' : '批量移除标签' }}</h2>
+            <button class="modal-close" @click="showBatchTagModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="batch-tag-hint">
+              {{ batchTagMode === 'add' ? '选择要添加到选中书籍的标签：' : '选择要从选中书籍移除的标签：' }}
+            </p>
+            <div v-if="allTags.length > 0" class="tag-select-list">
+              <div
+                v-for="tag in allTags"
+                :key="tag.id"
+                class="tag-select-item"
+                :class="{ selected: selectedTagsForBatch.includes(tag.name) }"
+                @click="toggleBatchTag(tag.name)"
+              >
+                <span class="tag-color" :style="{ background: tag.color || '#667eea' }"></span>
+                <span class="tag-name">{{ tag.name }}</span>
+                <span v-if="selectedTagsForBatch.includes(tag.name)" class="tag-check">✓</span>
+              </div>
+            </div>
+            <div v-else class="empty-state-small">
+              <p>暂无标签，请先在"管理标签"中创建</p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showBatchTagModal = false">取消</button>
+            <button 
+              type="button" 
+              class="btn btn-primary" 
+              :disabled="selectedTagsForBatch.length === 0"
+              @click="executeBatchTagOperation"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+/* ==================== 书架页面完整样式 - 完整迁移自 bookshelf.css ==================== */
+
+/* 页面头部样式 */
+.bookshelf-page :deep(.app-header) {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    padding: 0 24px !important;
+    height: 64px !important;
+    box-shadow: 0 2px 20px rgba(102, 126, 234, 0.3) !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    display: flex !important;
+    align-items: center !important;
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+}
+
+.bookshelf-page :deep(.header-content) {
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+}
+
+.bookshelf-page :deep(.logo-container a) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: white !important;
+}
+
+.bookshelf-page :deep(.app-logo) {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    margin-right: 0 !important;
+}
+
+.bookshelf-page :deep(.app-name) {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: white !important;
+    letter-spacing: -0.5px;
+}
+
+.bookshelf-page :deep(.header-links) {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.bookshelf-page :deep(.lan-access-info) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.85rem;
+    background: rgba(255, 255, 255, 0.18);
+    padding: 6px 12px;
+    border-radius: 20px;
+    backdrop-filter: blur(4px);
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.bookshelf-page :deep(.theme-toggle) {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.bookshelf-page :deep(.theme-toggle:hover) {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(15deg);
+}
+
+/* 主内容区 */
+.bookshelf-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    min-height: calc(100vh - 64px);
+}
+
+.bookshelf-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.page-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-title::before {
+    content: '📚';
+    font-size: 1.5rem;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* 按钮样式 */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.btn:active {
+    transform: scale(0.97);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--hover-bg);
+    border-color: var(--text-secondary);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #e04555 0%, #d63343 100%);
+    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
+}
+
+.btn-sm {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+}
+
+.btn-icon {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* 书籍网格容器 */
+.books-container {
+    min-height: 400px;
+}
+
+.books-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 24px;
+}
+
+/* 空状态 */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 16px;
+}
+
+.empty-state h2 {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin: 0 0 24px 0;
+}
+
+/* 批量操作栏 */
+.batch-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    color: white;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.batch-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.95rem;
+}
+
+.batch-info input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.batch-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* 模态框通用样式 */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.modal.active {
+    display: flex;
+    animation: modalFadeIn 0.25s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--card-bg);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 480px;
+    max-height: calc(100vh - 32px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.25);
+    animation: modalSlideUp 0.3s ease;
+}
+
+@keyframes modalSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-content.modal-large {
+    max-width: 800px;
+}
+
+.modal-content.modal-small {
+    max-width: 400px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: var(--hover-bg);
+    border: none;
+    font-size: 1.3rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+    background: var(--border-color);
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+/* 表单样式 */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.form-group label .required {
+    color: #dc3545;
+}
+
+.form-group input[type="text"] {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Toast通知样式 */
+.toast {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 3000;
+    padding: 12px 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+}
+
+.toast.success {
+    border-color: var(--success-color);
+}
+
+.toast.error {
+    border-color: var(--error-color);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+</style>

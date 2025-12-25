@@ -1,9 +1,13 @@
 """
 包含所有 Flask 路由定义的模块
 用于处理 Web 界面路由和基本页面渲染
+
+支持两种前端模式：
+1. 传统模式（Jinja2 模板）- 默认
+2. Vue SPA 模式 - 通过环境变量 USE_VUE_FRONTEND=true 启用
 """
 
-from flask import render_template, send_from_directory
+from flask import render_template, send_from_directory, request
 import os
 # 导入配置加载函数和常量 (用于加载提示词列表)
 from src.shared.config_loader import load_json_config
@@ -12,6 +16,10 @@ from src.shared import constants
 from src.shared.path_helpers import resource_path
 # 导入蓝图实例
 from . import main_bp
+
+# 检查是否启用 Vue 前端模式
+# 可通过环境变量 USE_VUE_FRONTEND=true 启用
+USE_VUE_FRONTEND = os.environ.get('USE_VUE_FRONTEND', 'false').lower() == 'true'
 
 # 辅助函数
 def load_prompts():
@@ -55,21 +63,36 @@ def get_default_textbox_prompt_content():
 
 # 路由处理函数
 
+def serve_vue_app():
+    """
+    服务 Vue SPA 应用
+    返回 Vue 构建的 index.html，由 Vue Router 处理前端路由
+    """
+    vue_dist_path = resource_path('src/app/static/vue')
+    return send_from_directory(vue_dist_path, 'index.html')
+
+
 @main_bp.route('/')
 def bookshelf():
     """书架首页 - 显示所有书籍"""
+    if USE_VUE_FRONTEND:
+        return serve_vue_app()
     return render_template('bookshelf.html')
 
 
 @main_bp.route('/reader')
 def reader():
     """阅读页面 - 竖向流式阅读漫画"""
+    if USE_VUE_FRONTEND:
+        return serve_vue_app()
     return render_template('reader.html')
 
 
 @main_bp.route('/translate')
 def translate():
     """翻译页面 - 支持书籍/章节参数"""
+    if USE_VUE_FRONTEND:
+        return serve_vue_app()
     prompts = load_prompts()
     prompt_names = [prompt['name'] for prompt in prompts['saved_prompts']]
     default_prompt_content = get_default_prompt_content()
@@ -87,10 +110,51 @@ def translate():
 @main_bp.route('/insight')
 def manga_insight():
     """漫画分析页面 - 智能分析漫画内容"""
+    if USE_VUE_FRONTEND:
+        return serve_vue_app()
     return render_template('manga_insight.html')
 
 
 @main_bp.route('/pic/<path:filename>')
 def serve_pic(filename):
+    """服务 pic 目录下的图片资源"""
     pic_dir = resource_path('pic')
     return send_from_directory(pic_dir, filename)
+
+
+# Vue SPA 静态资源路由
+@main_bp.route('/static/vue/<path:filename>')
+def serve_vue_static(filename):
+    """
+    服务 Vue 构建的静态资源
+    包括 JS、CSS、图片等资源文件
+    """
+    vue_dist_path = resource_path('src/app/static/vue')
+    return send_from_directory(vue_dist_path, filename)
+
+
+# Vue SPA 通配路由 - 处理所有未匹配的前端路由
+# 注意：此路由优先级较低，只有在其他路由都不匹配时才会触发
+@main_bp.route('/<path:path>')
+def catch_all(path):
+    """
+    通配路由 - 用于 Vue SPA 的客户端路由支持
+    
+    当启用 Vue 前端时，所有未匹配的路由都返回 Vue 的 index.html
+    由 Vue Router 在客户端处理路由
+    
+    注意：API 路由（/api/*）不会被此路由捕获，因为它们有更高的优先级
+    """
+    # 排除 API 路由和静态资源路由
+    if path.startswith('api/') or path.startswith('static/'):
+        # 返回 404，让 Flask 处理
+        from flask import abort
+        abort(404)
+    
+    # 如果启用了 Vue 前端，返回 Vue 应用
+    if USE_VUE_FRONTEND:
+        return serve_vue_app()
+    
+    # 否则返回 404
+    from flask import abort
+    abort(404)
