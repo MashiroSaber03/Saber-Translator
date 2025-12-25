@@ -25,17 +25,35 @@
     </div>
     
     <!-- 下拉选项列表 -->
-    <div v-if="isOpen" class="custom-select-dropdown">
-      <div class="custom-select-options">
-        <template v-if="hasGroups">
-          <div 
-            v-for="group in groupedOptions" 
-            :key="group.label" 
-            class="custom-select-group"
-          >
-            <div class="custom-select-group-label">{{ group.label }}</div>
+    <Teleport to="body">
+      <div 
+        v-if="isOpen"
+        ref="dropdownRef" 
+        class="custom-select-dropdown"
+        :style="dropdownStyle"
+      >
+        <div class="custom-select-options">
+          <template v-if="hasGroups">
+            <div 
+              v-for="group in groupedOptions" 
+              :key="group.label" 
+              class="custom-select-group"
+            >
+              <div class="custom-select-group-label">{{ group.label }}</div>
+              <div
+                v-for="option in group.options"
+                :key="option.value"
+                class="custom-select-option"
+                :class="{ selected: option.value === modelValue }"
+                @click="selectOption(option.value)"
+              >
+                {{ option.label }}
+              </div>
+            </div>
+          </template>
+          <template v-else>
             <div
-              v-for="option in group.options"
+              v-for="option in flatOptions"
               :key="option.value"
               class="custom-select-option"
               :class="{ selected: option.value === modelValue }"
@@ -43,21 +61,10 @@
             >
               {{ option.label }}
             </div>
-          </div>
-        </template>
-        <template v-else>
-          <div
-            v-for="option in flatOptions"
-            :key="option.value"
-            class="custom-select-option"
-            :class="{ selected: option.value === modelValue }"
-            @click="selectOption(option.value)"
-          >
-            {{ option.label }}
-          </div>
-        </template>
+          </template>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -65,9 +72,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // 类型定义
+type SelectValue = string | number | boolean
+
 interface SelectOption {
   label: string
-  value: string
+  value: SelectValue
 }
 
 interface SelectGroup {
@@ -78,7 +87,7 @@ interface SelectGroup {
 // Props
 const props = withDefaults(defineProps<{
   /** 当前选中的值 */
-  modelValue: string
+  modelValue: SelectValue
   /** 选项数组 (平铺模式) */
   options?: SelectOption[]
   /** 分组选项数组 (分组模式) */
@@ -99,13 +108,15 @@ const props = withDefaults(defineProps<{
 
 // Emits
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void
-  (e: 'change', value: string): void
+  (e: 'update:modelValue', value: SelectValue): void
+  (e: 'change', value: SelectValue): void
 }>()
 
 // 状态
 const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
+const dropdownStyle = ref<Record<string, string>>({})
 
 // 是否使用分组模式
 const hasGroups = computed(() => props.groups && props.groups.length > 0)
@@ -133,7 +144,27 @@ const displayValue = computed(() => {
 // 切换下拉框
 function toggleDropdown(): void {
   if (props.disabled) return
-  isOpen.value = !isOpen.value
+  
+  if (!isOpen.value) {
+    // 打开前计算位置
+    updatePosition()
+    isOpen.value = true
+  } else {
+    isOpen.value = false
+  }
+}
+
+// 更新下拉框位置
+function updatePosition() {
+  if (selectRef.value) {
+    const rect = selectRef.value.getBoundingClientRect()
+    dropdownStyle.value = {
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      minWidth: '160px' // 保持最小宽度
+    }
+  }
 }
 
 // 选择选项
@@ -145,18 +176,38 @@ function selectOption(value: string): void {
 
 // 点击外部关闭
 function handleClickOutside(event: MouseEvent): void {
-  if (selectRef.value && !selectRef.value.contains(event.target as Node)) {
-    isOpen.value = false
+  // 检查点击是否在触发器上
+  if (selectRef.value && selectRef.value.contains(event.target as Node)) {
+    return
+  }
+  
+  // 检查点击是否在下拉菜单内部
+  if (dropdownRef.value && dropdownRef.value.contains(event.target as Node)) {
+    return
+  }
+
+  isOpen.value = false
+}
+
+// 监听页面滚动和调整大小，更新位置或关闭
+function handleScrollOrResize() {
+  if (isOpen.value) {
+    // 简单起见，滚动时更新位置
+    updatePosition()
   }
 }
 
 // 生命周期
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('scroll', handleScrollOrResize, true) // 捕获模式以监听所有滚动
+  window.addEventListener('resize', handleScrollOrResize)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('scroll', handleScrollOrResize, true)
+  window.removeEventListener('resize', handleScrollOrResize)
 })
 </script>
 
@@ -216,16 +267,14 @@ onUnmounted(() => {
 }
 
 .custom-select-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
+  position: fixed; /* 改为 fixed 以配合 Teleport */
+  /* top, left, width 由 JS 动态计算 */
+  margin-top: 0; /* JS计算位置时已包含偏移 */
   background: #ffffff !important;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: 20000; /* 确保高于模态框 (10002) */
   max-height: 300px;
   overflow-y: auto;
   color: #1f2430 !important;

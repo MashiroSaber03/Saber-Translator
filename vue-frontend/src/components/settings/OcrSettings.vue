@@ -12,8 +12,8 @@
         />
       </div>
       
-      <!-- 通用源语言选择（PaddleOCR和其他需要源语言的引擎使用） -->
-      <div class="settings-item">
+      <!-- 通用源语言选择（仅PaddleOCR使用） -->
+      <div v-show="settings.ocrEngine === 'paddle_ocr'" class="settings-item">
         <label for="settingsSourceLanguage">源语言:</label>
         <CustomSelect
           :model-value="settings.sourceLanguage"
