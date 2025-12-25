@@ -1095,13 +1095,11 @@ function selectImage(index: number) {
             :label="sessionStore.loadingProgress.message"
           />
           
-          <!-- 翻译进度组件 -->
+          <!-- 翻译进度组件 - 复刻原版：只有暂停/继续 -->
+          <!-- 注意：组件内部已经直接调用 translation 方法，不需要外部事件处理 -->
           <TranslationProgress
             :progress="translation.progress.value"
             :show-controls="showProgressControls"
-            @pause="togglePauseTranslation"
-            @resume="togglePauseTranslation"
-            @cancel="cancelBatchTranslation"
           />
           
           <!-- 书架模式提示 -->

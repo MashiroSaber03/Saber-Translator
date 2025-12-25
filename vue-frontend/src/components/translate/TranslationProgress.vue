@@ -14,7 +14,7 @@
       <div class="progress" :style="{ width: `${progressPercent}%` }"></div>
     </div>
     
-    <!-- 控制按钮 -->
+    <!-- 控制按钮 - 复刻原版：只有暂停/继续，没有取消 -->
     <div v-if="props.showControls" class="progress-controls">
       <!-- 暂停/继续按钮 -->
       <button
@@ -25,15 +25,6 @@
       >
         <span class="pause-icon">{{ isPaused ? '▶' : '⏸' }}</span>
         {{ isPaused ? '继续' : '暂停' }}
-      </button>
-
-      <!-- 取消按钮 -->
-      <button
-        class="pause-btn cancel-btn"
-        @click="handleCancel"
-        title="取消翻译"
-      >
-        ✕ 取消
       </button>
     </div>
   </div>
@@ -74,8 +65,6 @@ const emit = defineEmits<{
   (e: 'pause'): void
   /** 继续事件 */
   (e: 'resume'): void
-  /** 取消事件 */
-  (e: 'cancel'): void
 }>()
 
 // ============================================================
@@ -148,14 +137,6 @@ function togglePause(): void {
     translation.pauseBatchTranslation()
     emit('pause')
   }
-}
-
-/**
- * 取消翻译
- */
-function handleCancel(): void {
-  translation.cancelBatchTranslation()
-  emit('cancel')
 }
 </script>
 

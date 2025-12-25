@@ -84,9 +84,12 @@ function setThumbnailRef(el: HTMLElement | null, index: number) {
  * 获取状态图标
  */
 function getStatusIcon(image: typeof images.value[0]): string | null {
-  if (image.translationFailed) return '❌'
+  // 复刻原版：失败显示 ! 感叹号
+  if (image.translationFailed) return '!'
   if (image.translationStatus === 'processing') return '⏳'
   if (image.translationStatus === 'completed') return '✓'
+  // 复刻原版：检查 savedManualCoords 而不是 isManualAnnotation
+  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return '✏️'
   if (image.isManualAnnotation) return '✏️'
   return null
 }
@@ -136,9 +139,10 @@ onMounted(() => {
           :title="image.fileName"
           @click="handleClick(index)"
         >
+          <!-- 复刻原版：缩略图永远显示原图 -->
           <img 
             v-if="image.originalDataURL"
-            :src="image.translatedDataURL || image.originalDataURL" 
+            :src="image.originalDataURL" 
             :alt="image.fileName"
             class="thumbnail-image"
           >

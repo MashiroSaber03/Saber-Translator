@@ -2,14 +2,16 @@
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "types": ["vite/client"],
-    
+    "types": [
+      "vite/client"
+    ],
     /* 路径别名 */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     },
-
     /* 严格模式 - TypeScript 类型检查 */
     "strict": true,
     "strictNullChecks": true,
@@ -20,5 +22,10 @@
     "noUncheckedSideEffectImports": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "tests/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "tests/**/*.ts"
+  ]
 }
