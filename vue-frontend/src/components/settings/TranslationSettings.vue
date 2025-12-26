@@ -53,13 +53,7 @@
             id="settingsModelName"
             v-model="localSettings.modelName"
             :placeholder="modelNamePlaceholder"
-            @blur="saveModelToHistory"
-            list="modelHistoryDatalist"
           />
-          <!-- 模型历史记录下拉建议 -->
-          <datalist id="modelHistoryDatalist">
-            <option v-for="model in modelHistoryList" :key="model" :value="model" />
-          </datalist>
           <button
             v-show="supportsFetchModels"
             type="button"
@@ -77,24 +71,9 @@
           <CustomSelect
             :model-value="localSettings.modelName"
             :options="modelListOptions"
-            @change="(v: any) => { localSettings.modelName = v; saveModelToHistory() }"
+            @change="(v: any) => { localSettings.modelName = v }"
           />
           <span class="model-count">共 {{ modelList.length }} 个模型</span>
-        </div>
-        <!-- 模型历史记录快捷选择 -->
-        <div v-if="modelHistoryList.length > 0 && modelList.length === 0" class="model-history-container">
-          <span class="history-label">历史记录:</span>
-          <div class="history-tags">
-            <span
-              v-for="model in modelHistoryList.slice(0, 5)"
-              :key="model"
-              class="history-tag"
-              @click="selectHistoryModel(model)"
-              :class="{ active: localSettings.modelName === model }"
-            >
-              {{ model }}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -171,15 +150,10 @@
           />
           <span class="input-hint">JSON格式输出更结构化</span>
         </div>
-      </div>
-
-      <!-- 目标语言 -->
-      <div class="settings-item">
-        <label for="settingsTargetLanguage">目标语言:</label>
-        <CustomSelect
-          :model-value="localSettings.targetLanguage"
-          :options="targetLanguageOptions"
-          @change="(v: any) => localSettings.targetLanguage = v"
+        <!-- 快速选择提示词 -->
+        <SavedPromptsPicker
+          prompt-type="translate"
+          @select="handleTranslatePromptSelect"
         />
       </div>
 
@@ -198,6 +172,11 @@
           rows="3"
           placeholder="文本框提示词"
         ></textarea>
+        <!-- 快速选择提示词 -->
+        <SavedPromptsPicker
+          prompt-type="textbox"
+          @select="handleTextboxPromptSelect"
+        />
       </div>
     </div>
   </div>
@@ -207,15 +186,16 @@
 /**
  * 翻译服务设置组件
  * 管理翻译服务商选择和配置
- * 支持服务商配置分组存储和模型历史记录
+ * 支持服务商配置分组存储
  */
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_JSON_PROMPT } from '@/constants'
 import type { TranslationProvider } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 翻译服务商选项 */
 const providerOptions = [
@@ -237,15 +217,6 @@ const promptModeOptions = [
   { label: 'JSON提示词', value: 'json' }
 ]
 
-/** 目标语言选项 - value 使用后端期望的语言代码 */
-const targetLanguageOptions = [
-  { label: '简体中文', value: 'zh' },
-  { label: '繁體中文', value: 'zh-CHT' },
-  { label: 'English', value: 'en' },
-  { label: '日本語', value: 'ja' },
-  { label: '한국어', value: 'ko' }
-]
-
 // Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
@@ -260,7 +231,6 @@ const localSettings = ref({
   translationMaxRetries: settingsStore.settings.translation.maxRetries,
   promptContent: settingsStore.settings.translatePrompt,
   translatePromptMode: settingsStore.settings.translation.isJsonMode ? 'json' : 'normal',
-  targetLanguage: settingsStore.settings.targetLanguage,
   enableTextboxPrompt: settingsStore.settings.useTextboxPrompt,
   textboxPromptContent: settingsStore.settings.textboxPrompt
 })
@@ -296,11 +266,6 @@ const sakuraModelOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   sakuraModels.value.forEach(model => options.push({ label: model, value: model }))
   return options
-})
-
-// 模型历史记录（用于下拉建议）
-const modelHistoryList = computed(() => {
-  return settingsStore.getModelHistory(localSettings.value.modelProvider)
 })
 
 // 计算属性：是否为本地服务商
@@ -435,10 +400,6 @@ watch(() => localSettings.value.promptContent, (newVal) => {
   settingsStore.setTranslatePrompt(newVal)
 })
 
-watch(() => localSettings.value.targetLanguage, (newVal) => {
-  settingsStore.updateSettings({ targetLanguage: newVal })
-})
-
 watch(() => localSettings.value.enableTextboxPrompt, (newVal) => {
   settingsStore.setUseTextboxPrompt(newVal)
 })
@@ -527,56 +488,17 @@ async function testLocalConnection() {
   }
 }
 
-// 保存模型到历史记录
-async function saveModelToHistory() {
-  const provider = localSettings.value.modelProvider
-  const modelName = localSettings.value.modelName
-  
-  if (!modelName || !provider) return
-  
-  // 本地保存
-  settingsStore.addModelToHistory(provider, modelName)
-  
-  // 同步到后端（非敏感服务商）
-  if (!['baidu_translate', 'youdao_translate'].includes(provider)) {
-    try {
-      await configApi.saveModelInfo(provider, modelName)
-      console.log(`[TranslationSettings] 模型历史已保存到后端: ${provider} -> ${modelName}`)
-    } catch (error) {
-      console.warn('保存模型历史到后端失败:', error)
-    }
-  }
+// 处理翻译提示词选择
+function handleTranslatePromptSelect(content: string, name: string) {
+  localSettings.value.promptContent = content
+  toast.success(`已应用提示词: ${name}`)
 }
 
-// 加载模型历史记录
-async function loadModelHistory() {
-  const provider = localSettings.value.modelProvider
-  
-  // 非敏感服务商从后端加载
-  if (!['baidu_translate', 'youdao_translate', 'ollama', 'sakura'].includes(provider)) {
-    try {
-      const result = await configApi.getUsedModels(provider)
-      if (result.models && result.models.length > 0) {
-        // 合并到本地历史
-        result.models.forEach(model => {
-          settingsStore.addModelToHistory(provider, model)
-        })
-      }
-    } catch (error) {
-      console.warn('从后端加载模型历史失败:', error)
-    }
-  }
+// 处理文本框提示词选择
+function handleTextboxPromptSelect(content: string, name: string) {
+  localSettings.value.textboxPromptContent = content
+  toast.success(`已应用提示词: ${name}`)
 }
-
-// 选择历史模型
-function selectHistoryModel(model: string) {
-  localSettings.value.modelName = model
-}
-
-// 组件挂载时加载模型历史
-onMounted(() => {
-  loadModelHistory()
-})
 </script>
 
 <style scoped>
@@ -595,47 +517,6 @@ onMounted(() => {
 
 .checkbox-label input[type='checkbox'] {
   width: auto;
-}
-
-/* 模型历史记录样式 */
-.model-history-container {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.history-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.history-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.history-tag {
-  padding: 2px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.history-tag:hover {
-  background: var(--bg-hover);
-  border-color: var(--primary-color);
-}
-
-.history-tag.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
 }
 
 /* 密码输入框包装器 */

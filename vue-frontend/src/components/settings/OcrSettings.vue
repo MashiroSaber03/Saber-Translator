@@ -171,6 +171,11 @@
           rows="3"
           placeholder="AI视觉OCR提示词"
         ></textarea>
+        <!-- 快速选择提示词 -->
+        <SavedPromptsPicker
+          prompt-type="ai_vision_ocr"
+          @select="handleAiVisionPromptSelect"
+        />
         <div class="prompt-format-selector">
           <CustomSelect
             :model-value="settings.aiVisionOcr.isJsonMode"
@@ -209,6 +214,7 @@ import {
   DEFAULT_AI_VISION_OCR_JSON_PROMPT
 } from '@/constants'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** OCR引擎选项 */
 const ocrEngineOptions = [
@@ -415,6 +421,12 @@ async function fetchAiVisionModels() {
   } finally {
     isFetchingModels.value = false
   }
+}
+
+// 处理 AI 视觉 OCR 提示词选择
+function handleAiVisionPromptSelect(content: string, name: string) {
+  settingsStore.updateAiVisionOcr({ prompt: content })
+  toast.success(`已应用提示词: ${name}`)
 }
 </script>
 

@@ -141,6 +141,11 @@
       <div class="settings-group-title">高质量翻译提示词</div>
       <div class="settings-item">
         <textarea id="settingsHqPrompt" v-model="hqSettings.prompt" rows="6" placeholder="高质量翻译提示词"></textarea>
+        <!-- 快速选择提示词 -->
+        <SavedPromptsPicker
+          prompt-type="hq_translate"
+          @select="handleHqPromptSelect"
+        />
         <button class="btn btn-secondary btn-sm" @click="resetHqPrompt">重置为默认</button>
       </div>
     </div>
@@ -158,6 +163,7 @@ import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
 const providerOptions = [
@@ -224,6 +230,12 @@ async function fetchModels() {
 function resetHqPrompt() {
   settingsStore.updateHqTranslation({ prompt: DEFAULT_HQ_TRANSLATE_PROMPT })
   toast.success('已重置为默认提示词')
+}
+
+// 处理高质量翻译提示词选择
+function handleHqPromptSelect(content: string, name: string) {
+  settingsStore.updateHqTranslation({ prompt: content })
+  toast.success(`已应用提示词: ${name}`)
 }
 </script>
 

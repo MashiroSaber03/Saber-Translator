@@ -128,6 +128,11 @@
           <div class="settings-item">
             <label>校对提示词:</label>
             <textarea v-model="round.prompt" rows="4" placeholder="校对提示词"></textarea>
+            <!-- 快速选择提示词 -->
+            <SavedPromptsPicker
+              prompt-type="proofreading"
+              @select="(content, name) => handleProofreadingPromptSelect(index, content, name)"
+            />
             <button class="btn btn-secondary btn-sm" @click="resetRoundPrompt(index)">重置为默认</button>
           </div>
         </div>
@@ -147,6 +152,7 @@ import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
 const providerOptions = [
@@ -213,6 +219,12 @@ function removeRound(index: number) {
 function resetRoundPrompt(index: number) {
   settingsStore.updateProofreadingRound(index, { prompt: DEFAULT_PROOFREADING_PROMPT })
   toast.success('已重置为默认提示词')
+}
+
+// 处理校对提示词选择
+function handleProofreadingPromptSelect(index: number, content: string, name: string) {
+  settingsStore.updateProofreadingRound(index, { prompt: content })
+  toast.success(`已应用提示词: ${name}`)
 }
 </script>
 

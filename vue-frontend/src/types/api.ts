@@ -52,7 +52,7 @@ export interface ReRenderResponse {
   success: boolean
   translated_image?: string
   rendered_image?: string  // 后端实际返回的字段名
-  bubble_states?: Array<{ fontSize?: number; [key: string]: any }>
+  bubble_states?: Array<{ fontSize?: number;[key: string]: any }>
   error?: string
 }
 
@@ -216,8 +216,7 @@ export interface FontListResponse {
  */
 export interface PromptListResponse {
   success?: boolean
-  prompts?: string[]
-  /** 提示词名称列表（后端返回格式） */
+  /** 提示词名称列表（后端实体字段） */
   prompt_names?: string[]
   /** 默认提示词内容 */
   default_prompt_content?: string

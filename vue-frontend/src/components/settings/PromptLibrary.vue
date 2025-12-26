@@ -30,11 +30,11 @@
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="promptList.length === 0" class="empty-hint">暂无保存的提示词</div>
       <div v-else class="prompt-list">
-        <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }">
-          <span class="prompt-name" @click="selectPrompt(prompt.name)">{{ prompt.name }}</span>
+        <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }" @click="selectPrompt(prompt.name)">
+          <span class="prompt-name">{{ prompt.name }}</span>
           <div class="prompt-actions">
-            <button class="btn btn-sm" @click="loadPrompt(prompt.name)" title="加载到编辑器">📥</button>
-            <button class="btn btn-sm btn-danger" @click="deletePrompt(prompt.name)" title="删除" :disabled="prompt.name === 'default'">
+            <button class="btn btn-sm" @click.stop="loadPrompt(prompt.name)" title="加载到编辑器">📥</button>
+            <button class="btn btn-sm btn-danger" @click.stop="deletePrompt(prompt.name)" title="删除" :disabled="prompt.name === 'default'">
               🗑️
             </button>
           </div>
@@ -54,8 +54,6 @@
         <textarea id="promptContent" v-model="editingContent" rows="8" placeholder="请输入提示词内容"></textarea>
       </div>
       <div class="prompt-editor-actions">
-        <button class="btn btn-secondary" @click="resetToDefault">重置为默认</button>
-        <button class="btn btn-primary" @click="applyToSettings" :disabled="!editingContent">应用到设置</button>
         <button class="btn btn-primary" @click="savePrompt" :disabled="!editingName || !editingContent">保存提示词</button>
       </div>
     </div>
@@ -68,7 +66,7 @@
  * 管理各类提示词的保存、加载和删除
  * 支持提示词模式切换（普通/JSON格式）
  */
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { configApi } from '@/api/config'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
@@ -128,32 +126,6 @@ const modeHint = computed(() => {
 })
 
 // ============================================================
-// 默认提示词获取
-// ============================================================
-
-/**
- * 获取默认提示词
- * @param type 提示词类型
- * @param jsonMode 是否为JSON模式
- */
-function getDefaultPrompt(type: string, jsonMode: boolean = false): string {
-  switch (type) {
-    case 'translate':
-      return jsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
-    case 'textbox':
-      return ''
-    case 'ai_vision_ocr':
-      return jsonMode ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT
-    case 'hq_translate':
-      return DEFAULT_HQ_TRANSLATE_PROMPT
-    case 'proofreading':
-      return DEFAULT_PROOFREADING_PROMPT
-    default:
-      return ''
-  }
-}
-
-// ============================================================
 // 提示词列表操作
 // ============================================================
 
@@ -167,7 +139,9 @@ async function loadPromptList() {
     } else {
       result = await configApi.getPrompts(selectedType.value)
     }
-    promptList.value = result.prompts || []
+    // 后端返回的是字符串数组，需要转换为对象数组以匹配类型定义
+    const names = result.prompt_names || []
+    promptList.value = (names as unknown as string[]).map(name => ({ name }))
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '加载提示词列表失败'
     toast.error(errorMessage)
@@ -192,7 +166,7 @@ async function loadPrompt(name: string) {
       result = await configApi.getPromptContent(selectedType.value, name)
     }
     editingName.value = name
-    editingContent.value = result.content || ''
+    editingContent.value = result.prompt_content || ''
     selectedPrompt.value = name
     toast.success('已加载提示词')
   } catch (error: unknown) {
@@ -214,6 +188,12 @@ async function savePrompt() {
       await configApi.savePrompt(selectedType.value, editingName.value, editingContent.value)
     }
     toast.success('提示词保存成功')
+    
+    // 清空编辑器内容
+    editingName.value = ''
+    editingContent.value = ''
+    
+    // 强制刷新列表
     await loadPromptList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '保存提示词失败'
@@ -246,16 +226,6 @@ async function deletePrompt(name: string) {
   }
 }
 
-/** 重置为默认 */
-function resetToDefault() {
-  editingContent.value = getDefaultPrompt(selectedType.value, isJsonMode.value)
-  toast.success('已重置为默认提示词')
-}
-
-// ============================================================
-// 模式切换处理
-// ============================================================
-
 /** 处理类型变化 */
 function handleTypeChange() {
   selectedPrompt.value = ''
@@ -279,66 +249,16 @@ function handleModeChange() {
   // 更新 store 中的模式状态
   if (selectedType.value === 'translate') {
     settingsStore.updateTranslationService({ isJsonMode: isJsonMode.value })
-    // 如果编辑器为空或是默认提示词，自动更新为对应模式的默认提示词
-    const defaultNormal = DEFAULT_TRANSLATE_PROMPT
-    const defaultJson = DEFAULT_TRANSLATE_JSON_PROMPT
-    if (!editingContent.value || editingContent.value === defaultNormal || editingContent.value === defaultJson) {
-      editingContent.value = getDefaultPrompt('translate', isJsonMode.value)
-    }
   } else if (selectedType.value === 'ai_vision_ocr') {
     settingsStore.updateAiVisionOcr({ isJsonMode: isJsonMode.value })
-    // 如果编辑器为空或是默认提示词，自动更新为对应模式的默认提示词
-    const defaultNormal = DEFAULT_AI_VISION_OCR_PROMPT
-    const defaultJson = DEFAULT_AI_VISION_OCR_JSON_PROMPT
-    if (!editingContent.value || editingContent.value === defaultNormal || editingContent.value === defaultJson) {
-      editingContent.value = getDefaultPrompt('ai_vision_ocr', isJsonMode.value)
-    }
   }
   
   toast.info(`已切换到${isJsonMode.value ? 'JSON格式' : '普通'}模式`)
 }
 
-/** 应用到设置 */
-function applyToSettings() {
-  if (!editingContent.value) {
-    toast.warning('请输入提示词内容')
-    return
-  }
-  
-  switch (selectedType.value) {
-    case 'translate':
-      settingsStore.setTranslatePrompt(editingContent.value)
-      toast.success('翻译提示词已应用到设置')
-      break
-    case 'textbox':
-      settingsStore.setTextboxPrompt(editingContent.value)
-      toast.success('文本框提示词已应用到设置')
-      break
-    case 'ai_vision_ocr':
-      settingsStore.updateAiVisionOcr({ prompt: editingContent.value })
-      toast.success('AI视觉OCR提示词已应用到设置')
-      break
-    case 'hq_translate':
-      settingsStore.updateHqTranslation({ prompt: editingContent.value })
-      toast.success('高质量翻译提示词已应用到设置')
-      break
-    case 'proofreading':
-      // 校对提示词需要应用到具体的轮次，这里只是提示
-      toast.info('校对提示词请在校对轮次配置中设置')
-      break
-    default:
-      toast.warning('未知的提示词类型')
-  }
-}
-
 // ============================================================
 // 监听和初始化
 // ============================================================
-
-// 监听类型变化（兼容旧逻辑）
-watch(selectedType, () => {
-  // handleTypeChange 已在 @change 中调用
-})
 
 // 初始化
 onMounted(() => {

@@ -18,8 +18,8 @@ import type {
  * 提示词内容响应
  */
 export interface PromptContentResponse {
-  success: boolean
-  content?: string
+  success?: boolean
+  prompt_content?: string
   error?: string
 }
 
@@ -41,7 +41,7 @@ export async function getPrompts(type?: string): Promise<PromptListResponse> {
  */
 export async function getPromptContent(type: string, name: string): Promise<PromptContentResponse> {
   return apiClient.get<PromptContentResponse>('/api/get_prompt_content', {
-    params: { type, name },
+    params: { type, prompt_name: name },
   })
 }
 
@@ -52,7 +52,12 @@ export async function getPromptContent(type: string, name: string): Promise<Prom
  * @param content 提示词内容
  */
 export async function savePrompt(type: string, name: string, content: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>('/api/save_prompt', { type, name, content })
+  // 后端期望 prompt_name 和 prompt_content
+  return apiClient.post<ApiResponse>('/api/save_prompt', {
+    type,
+    prompt_name: name,
+    prompt_content: content
+  })
 }
 
 /**
@@ -61,7 +66,10 @@ export async function savePrompt(type: string, name: string, content: string): P
  * @param name 提示词名称
  */
 export async function deletePrompt(type: string, name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>('/api/delete_prompt', { type, name })
+  return apiClient.post<ApiResponse>('/api/delete_prompt', {
+    type,
+    prompt_name: name
+  })
 }
 
 /**
@@ -69,7 +77,9 @@ export async function deletePrompt(type: string, name: string): Promise<ApiRespo
  * @param name 提示词名称
  */
 export async function resetPromptToDefault(name: string): Promise<PromptContentResponse> {
-  return apiClient.post<PromptContentResponse>('/api/reset_prompt_to_default', { name })
+  return apiClient.post<PromptContentResponse>('/api/reset_prompt_to_default', {
+    prompt_name: name
+  })
 }
 
 // ==================== 文本框提示词 API ====================
@@ -87,7 +97,7 @@ export async function getTextboxPrompts(): Promise<PromptListResponse> {
  */
 export async function getTextboxPromptContent(name: string): Promise<PromptContentResponse> {
   return apiClient.get<PromptContentResponse>('/api/get_textbox_prompt_content', {
-    params: { name },
+    params: { prompt_name: name },
   })
 }
 
@@ -97,7 +107,10 @@ export async function getTextboxPromptContent(name: string): Promise<PromptConte
  * @param content 提示词内容
  */
 export async function saveTextboxPrompt(name: string, content: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>('/api/save_textbox_prompt', { name, content })
+  return apiClient.post<ApiResponse>('/api/save_textbox_prompt', {
+    prompt_name: name,
+    prompt_content: content
+  })
 }
 
 /**
@@ -105,7 +118,9 @@ export async function saveTextboxPrompt(name: string, content: string): Promise<
  * @param name 提示词名称
  */
 export async function deleteTextboxPrompt(name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>('/api/delete_textbox_prompt', { name })
+  return apiClient.post<ApiResponse>('/api/delete_textbox_prompt', {
+    prompt_name: name
+  })
 }
 
 /**
@@ -113,7 +128,9 @@ export async function deleteTextboxPrompt(name: string): Promise<ApiResponse> {
  * @param name 提示词名称
  */
 export async function resetTextboxPromptToDefault(name: string): Promise<PromptContentResponse> {
-  return apiClient.post<PromptContentResponse>('/api/reset_textbox_prompt_to_default', { name })
+  return apiClient.post<PromptContentResponse>('/api/reset_textbox_prompt_to_default', {
+    prompt_name: name
+  })
 }
 
 // ==================== 模型信息 API ====================
@@ -303,35 +320,35 @@ export const configApi = {
   savePrompt,
   deletePrompt,
   resetPromptToDefault,
-  
+
   // 文本框提示词
   getTextboxPrompts,
   getTextboxPromptContent,
   saveTextboxPrompt,
   deleteTextboxPrompt,
   resetTextboxPromptToDefault,
-  
+
   // 模型信息
   getModelInfo,
   saveModelInfo,
   getUsedModels,
-  
+
   // 服务连接测试
   testOllamaConnection,
   testSakuraConnection,
   testBaiduOcrConnection,
   testLamaRepair,
   testAiVisionOcrConnection,
-  
+
   // 字体管理
   getFontList,
   uploadFont,
   getFontListApi,
   uploadFontApi,
-  
+
   // 参数测试
   testParams,
-  
+
   // 用户设置
   getUserSettings,
   saveUserSettings,
