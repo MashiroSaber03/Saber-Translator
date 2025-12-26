@@ -27,8 +27,6 @@ export interface Toast {
   isHTML: boolean
   /** 自动关闭定时器 */
   timer?: ReturnType<typeof setTimeout>
-  /** 安全超时定时器（防止消息永久显示） */
-  safetyTimer?: ReturnType<typeof setTimeout>
 }
 
 /**
@@ -65,21 +63,17 @@ const toasts = ref<Toast[]>([])
 // 消息 ID 计数器
 let toastId = 0
 
-// 安全超时时间（毫秒），即使是无限消息也会在此时间后自动消失
+// 安全超时时间（毫秒），复刻原版 ui.js 的逻辑：即使 duration=0 也会在 30 秒后自动消失
 const SAFETY_TIMEOUT = 30000
 
 /**
- * 清除 Toast 的所有定时器
+ * 清除 Toast 的定时器
  * @param toast - Toast 对象
  */
 const clearToastTimers = (toast: Toast): void => {
   if (toast.timer) {
     clearTimeout(toast.timer)
     toast.timer = undefined
-  }
-  if (toast.safetyTimer) {
-    clearTimeout(toast.safetyTimer)
-    toast.safetyTimer = undefined
   }
 }
 
@@ -100,11 +94,6 @@ const addToast = (message: string, type: ToastType = 'info', duration: number = 
     toast.timer = setTimeout(() => {
       removeToast(id)
     }, duration)
-  } else {
-    // 即使是无限消息，也添加安全超时
-    toast.safetyTimer = setTimeout(() => {
-      removeToast(id)
-    }, SAFETY_TIMEOUT)
   }
 
   toasts.value.push(toast)
@@ -167,12 +156,12 @@ const warning = (message: string, duration?: number): number => {
 }
 
 /**
- * 显示通用消息（兼容原版 showGeneralMessage API）
+ * 显示通用消息（完全复刻原版 ui.js showGeneralMessage API）
  * 队列模式：立即移除所有现有消息，只显示最新的一个
  * @param message - 消息内容（可以是 HTML）
  * @param type - 消息类型
  * @param isHTML - 消息内容是否为 HTML
- * @param duration - 自动消失时间（毫秒），0 表示不自动消失
+ * @param duration - 自动消失时间（毫秒），0 表示使用安全超时（30秒）
  * @param messageId - 消息唯一标识符，用于后续清除特定消息
  * @returns 消息ID
  */
@@ -185,21 +174,22 @@ const showGeneralMessage = (
 ): string => {
   // 生成唯一消息ID或使用提供的ID
   const msgId = messageId || `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-  
+
   // 队列模式：立即移除所有现有消息，只显示最新的一个
   clearAll()
-  
+
   const id = ++toastId
   const toast: Toast = { id, messageId: msgId, message, type, isHTML }
-  
-  // 计算实际超时时间
-  const actualDuration = duration > 0 ? duration : SAFETY_TIMEOUT
-  
-  // 设置定时消失
+
+  // 复刻原版 ui.js 逻辑：添加自动超时安全机制
+  // 即使是 duration=0 的无限消息，也在 30 秒后自动消失
+  const safetyTimeout = Math.max(duration, SAFETY_TIMEOUT)
+
+  // 设置定时消失：duration > 0 时使用 duration，否则使用 safetyTimeout
   toast.timer = setTimeout(() => {
     removeToast(id)
-  }, actualDuration)
-  
+  }, duration > 0 ? duration : safetyTimeout)
+
   toasts.value.push(toast)
   return msgId
 }
@@ -210,7 +200,7 @@ const showGeneralMessage = (
  */
 const clearGeneralMessageById = (messageId: string): void => {
   if (!messageId) return
-  
+
   const index = toasts.value.findIndex((t) => t.messageId === messageId)
   if (index !== -1) {
     const toast = toasts.value[index]

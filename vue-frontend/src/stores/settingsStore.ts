@@ -178,9 +178,9 @@ const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
 
 /** 默认精确文字掩膜设置 */
 const DEFAULT_PRECISE_MASK: PreciseMaskSettings = {
-  enabled: false,
-  dilateSize: 5,
-  boxExpandRatio: 0
+  enabled: true,
+  dilateSize: 10,
+  boxExpandRatio: 20
 }
 
 /** 创建默认翻译设置 */

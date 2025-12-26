@@ -17,28 +17,28 @@
     <div class="settings-group">
       <div class="settings-group-title">文本框扩展参数</div>
       <div class="settings-item">
-        <label for="settingsBoxExpandRatio">整体扩展 (像素):</label>
-        <input type="number" id="settingsBoxExpandRatio" v-model.number="settings.boxExpandRatio" min="0" step="1" />
-        <div class="input-hint">向四周均匀扩展的像素数</div>
+        <label for="settingsBoxExpandRatio">整体扩展 (%):</label>
+        <input type="number" id="settingsBoxExpandRatio" v-model.number="settings.boxExpandRatio" min="0" max="50" step="1" />
+        <div class="input-hint">向四周均匀扩展的百分比 (0-50%)</div>
       </div>
       <div class="settings-row">
         <div class="settings-item">
-          <label for="settingsBoxExpandTop">上方扩展:</label>
-          <input type="number" id="settingsBoxExpandTop" v-model.number="settings.boxExpandTop" min="0" step="1" />
+          <label for="settingsBoxExpandTop">上方扩展 (%):</label>
+          <input type="number" id="settingsBoxExpandTop" v-model.number="settings.boxExpandTop" min="0" max="50" step="1" />
         </div>
         <div class="settings-item">
-          <label for="settingsBoxExpandBottom">下方扩展:</label>
-          <input type="number" id="settingsBoxExpandBottom" v-model.number="settings.boxExpandBottom" min="0" step="1" />
+          <label for="settingsBoxExpandBottom">下方扩展 (%):</label>
+          <input type="number" id="settingsBoxExpandBottom" v-model.number="settings.boxExpandBottom" min="0" max="50" step="1" />
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-item">
-          <label for="settingsBoxExpandLeft">左侧扩展:</label>
-          <input type="number" id="settingsBoxExpandLeft" v-model.number="settings.boxExpandLeft" min="0" step="1" />
+          <label for="settingsBoxExpandLeft">左侧扩展 (%):</label>
+          <input type="number" id="settingsBoxExpandLeft" v-model.number="settings.boxExpandLeft" min="0" max="50" step="1" />
         </div>
         <div class="settings-item">
-          <label for="settingsBoxExpandRight">右侧扩展:</label>
-          <input type="number" id="settingsBoxExpandRight" v-model.number="settings.boxExpandRight" min="0" step="1" />
+          <label for="settingsBoxExpandRight">右侧扩展 (%):</label>
+          <input type="number" id="settingsBoxExpandRight" v-model.number="settings.boxExpandRight" min="0" max="50" step="1" />
         </div>
       </div>
     </div>
