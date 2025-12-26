@@ -34,8 +34,6 @@ const emit = defineEmits<{
   (e: 'removeText'): void
   /** 消除所有图片文字 */
   (e: 'removeAllText'): void
-  /** 重新翻译失败图片 */
-  (e: 'retryFailed'): void
   /** 删除当前图片 */
   (e: 'deleteCurrent'): void
   /** 清除所有图片 */
@@ -135,12 +133,6 @@ const canGoPrevious = computed(() => imageStore.canGoPrevious)
 
 /** 是否可以切换下一张 */
 const canGoNext = computed(() => imageStore.canGoNext)
-
-/** 是否有翻译失败的图片 */
-const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
-
-/** 失败图片数量 */
-const failedImageCount = computed(() => imageStore.failedImageCount)
 
 /** 文字样式设置 */
 const textStyle = computed(() => settingsStore.textStyle)
@@ -700,17 +692,6 @@ if (typeof window !== 'undefined') {
         >
           AI校对
         </button>
-        <!-- 重新翻译失败图片按钮 -->
-        <button 
-          v-if="hasFailedImages"
-          id="retryFailedButton" 
-          class="settings-button warning-button"
-          :disabled="!canTranslate"
-          title="重新翻译所有失败的图片"
-          @click="emit('retryFailed')"
-        >
-          重新翻译失败图片 ({{ failedImageCount }})
-        </button>
         <button 
           id="removeTextOnlyButton" 
           :disabled="!currentImage"
@@ -1259,13 +1240,11 @@ if (typeof window !== 'undefined') {
 }
 
 /* 重试失败按钮 - 橙色 */
-.action-buttons button#retryFailedButton,
 .action-buttons .warning-button {
   background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
   box-shadow: 0 4px 6px rgba(243, 156, 18, 0.2);
 }
 
-.action-buttons button#retryFailedButton:hover:not(:disabled),
 .action-buttons .warning-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important;
   box-shadow: 0 6px 10px rgba(243, 156, 18, 0.3);
@@ -1979,24 +1958,5 @@ if (typeof window !== 'undefined') {
 #settings-sidebar button.green-button:hover {
   background: linear-gradient(135deg, #4cae4c 0%, #449d44 100%);
   box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
-}
-
-#retranslateFailedButton {
-  padding: 8px 15px;
-  background-color: #f39c12;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-#retranslateFailedButton:hover {
-  background-color: #e67e22;
-}
-
-#retranslateFailedButton:disabled {
-  background-color: #f9d6a5;
-  cursor: not-allowed;
 }
 </style>

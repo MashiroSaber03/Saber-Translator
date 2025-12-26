@@ -237,13 +237,13 @@ const promptModeOptions = [
   { label: 'JSON提示词', value: 'json' }
 ]
 
-/** 目标语言选项 */
+/** 目标语言选项 - value 使用后端期望的语言代码 */
 const targetLanguageOptions = [
-  { label: '简体中文', value: '简体中文' },
-  { label: '繁體中文', value: '繁體中文' },
-  { label: 'English', value: 'English' },
-  { label: '日本語', value: '日本語' },
-  { label: '한국어', value: '한국어' }
+  { label: '简体中文', value: 'zh' },
+  { label: '繁體中文', value: 'zh-CHT' },
+  { label: 'English', value: 'en' },
+  { label: '日本語', value: 'ja' },
+  { label: '한국어', value: 'ko' }
 ]
 
 // Store

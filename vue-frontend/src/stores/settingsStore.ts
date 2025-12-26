@@ -193,7 +193,7 @@ function createDefaultSettings(): TranslationSettings {
     baiduOcr: { ...DEFAULT_BAIDU_OCR },
     aiVisionOcr: { ...DEFAULT_AI_VISION_OCR },
     translation: { ...DEFAULT_TRANSLATION_SERVICE },
-    targetLanguage: 'zh-CN',
+    targetLanguage: 'zh',
     translatePrompt: '',
     useTextboxPrompt: false,
     textboxPrompt: '',
@@ -339,16 +339,16 @@ export const useSettingsStore = defineStore('settings', () => {
   function setAiVisionOcrProvider(provider: string): void {
     const oldProvider = settings.value.aiVisionOcr.provider
     if (oldProvider === provider) return
-    
+
     // 保存当前服务商配置
     saveAiVisionOcrProviderConfig(oldProvider)
-    
+
     // 切换服务商
     settings.value.aiVisionOcr.provider = provider
-    
+
     // 恢复目标服务商配置（如果有）
     restoreAiVisionOcrProviderConfig(provider)
-    
+
     saveToStorage()
     console.log(`AI视觉OCR服务商已切换为: ${provider}`)
   }
@@ -364,16 +364,16 @@ export const useSettingsStore = defineStore('settings', () => {
   function setTranslationProvider(provider: TranslationProvider): void {
     const oldProvider = settings.value.translation.provider
     if (oldProvider === provider) return
-    
+
     // 保存当前服务商配置
     saveTranslationProviderConfig(oldProvider)
-    
+
     // 切换服务商
     settings.value.translation.provider = provider
-    
+
     // 恢复目标服务商配置（如果有）
     restoreTranslationProviderConfig(provider)
-    
+
     saveToStorage()
     console.log(`翻译服务商已切换为: ${provider}`)
   }
@@ -422,11 +422,11 @@ export const useSettingsStore = defineStore('settings', () => {
   function setTranslatePromptMode(isJsonMode: boolean): void {
     // 更新模式状态
     settings.value.translation.isJsonMode = isJsonMode
-    
+
     // 根据模式切换默认提示词
     const defaultPrompt = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
     settings.value.translatePrompt = defaultPrompt
-    
+
     saveToStorage()
     console.log(`翻译提示词模式已切换为: ${isJsonMode ? 'JSON格式' : '普通模式'}`)
   }
@@ -439,11 +439,11 @@ export const useSettingsStore = defineStore('settings', () => {
   function setAiVisionOcrPromptMode(isJsonMode: boolean): void {
     // 更新模式状态
     settings.value.aiVisionOcr.isJsonMode = isJsonMode
-    
+
     // 根据模式切换默认提示词
     const defaultPrompt = isJsonMode ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT
     settings.value.aiVisionOcr.prompt = defaultPrompt
-    
+
     saveToStorage()
     console.log(`AI视觉OCR提示词模式已切换为: ${isJsonMode ? 'JSON格式' : '普通模式'}`)
   }
@@ -459,16 +459,16 @@ export const useSettingsStore = defineStore('settings', () => {
   function setHqProvider(provider: HqTranslationProvider): void {
     const oldProvider = settings.value.hqTranslation.provider
     if (oldProvider === provider) return
-    
+
     // 保存当前服务商配置
     saveHqProviderConfig(oldProvider)
-    
+
     // 切换服务商
     settings.value.hqTranslation.provider = provider
-    
+
     // 恢复目标服务商配置（如果有）
     restoreHqProviderConfig(provider)
-    
+
     saveToStorage()
     console.log(`高质量翻译服务商已切换为: ${provider}`)
   }
@@ -659,7 +659,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveTranslationProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const config: TranslationProviderConfig = {
       apiKey: settings.value.translation.apiKey,
       modelName: settings.value.translation.modelName,
@@ -668,7 +668,7 @@ export const useSettingsStore = defineStore('settings', () => {
       maxRetries: settings.value.translation.maxRetries,
       isJsonMode: settings.value.translation.isJsonMode
     }
-    
+
     providerConfigs.value.translation[provider] = config
     saveProviderConfigsToStorage()
     console.log(`[Settings] 保存翻译服务商配置: ${provider}`, config)
@@ -680,7 +680,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function restoreTranslationProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const cached = providerConfigs.value.translation[provider]
     if (cached) {
       // 恢复缓存的配置
@@ -706,7 +706,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveHqProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const config: HqTranslationProviderConfig = {
       apiKey: settings.value.hqTranslation.apiKey,
       modelName: settings.value.hqTranslation.modelName,
@@ -721,7 +721,7 @@ export const useSettingsStore = defineStore('settings', () => {
       useStream: settings.value.hqTranslation.useStream,
       prompt: settings.value.hqTranslation.prompt
     }
-    
+
     providerConfigs.value.hqTranslation[provider] = config
     saveProviderConfigsToStorage()
     console.log(`[Settings] 保存高质量翻译服务商配置: ${provider}`, config)
@@ -733,7 +733,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function restoreHqProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const cached = providerConfigs.value.hqTranslation[provider]
     if (cached) {
       if (cached.apiKey !== undefined) settings.value.hqTranslation.apiKey = cached.apiKey
@@ -764,7 +764,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveAiVisionOcrProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const config: AiVisionOcrProviderConfig = {
       apiKey: settings.value.aiVisionOcr.apiKey,
       modelName: settings.value.aiVisionOcr.modelName,
@@ -773,7 +773,7 @@ export const useSettingsStore = defineStore('settings', () => {
       rpmLimit: settings.value.aiVisionOcr.rpmLimit,
       isJsonMode: settings.value.aiVisionOcr.isJsonMode
     }
-    
+
     providerConfigs.value.aiVisionOcr[provider] = config
     saveProviderConfigsToStorage()
     console.log(`[Settings] 保存AI视觉OCR服务商配置: ${provider}`, config)
@@ -785,7 +785,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function restoreAiVisionOcrProviderConfig(provider: string): void {
     if (!provider) return
-    
+
     const cached = providerConfigs.value.aiVisionOcr[provider]
     if (cached) {
       if (cached.apiKey !== undefined) settings.value.aiVisionOcr.apiKey = cached.apiKey
@@ -845,25 +845,25 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function addModelToHistory(provider: string, modelName: string): void {
     if (!provider || !modelName) return
-    
+
     if (!modelHistory.value[provider]) {
       modelHistory.value[provider] = []
     }
-    
+
     // 如果已存在，先移除
     const index = modelHistory.value[provider].indexOf(modelName)
     if (index !== -1) {
       modelHistory.value[provider].splice(index, 1)
     }
-    
+
     // 添加到开头（最近使用的在前）
     modelHistory.value[provider].unshift(modelName)
-    
+
     // 限制历史记录数量（最多保留20个）
     if (modelHistory.value[provider].length > 20) {
       modelHistory.value[provider] = modelHistory.value[provider].slice(0, 20)
     }
-    
+
     saveModelHistoryToStorage()
     console.log(`[Settings] 添加模型到历史: ${provider} -> ${modelName}`)
   }
@@ -963,31 +963,31 @@ export const useSettingsStore = defineStore('settings', () => {
     const ts = settings.value.textStyle
     ts.fontSize = Number(ts.fontSize) || 25
     ts.strokeWidth = Number(ts.strokeWidth) || 3
-    
+
     const be = settings.value.boxExpand
     be.ratio = Number(be.ratio) || 1.0
     be.top = Number(be.top) || 0
     be.bottom = Number(be.bottom) || 0
     be.left = Number(be.left) || 0
     be.right = Number(be.right) || 0
-    
+
     const pm = settings.value.preciseMask
     pm.dilateSize = Number(pm.dilateSize) || 5
     pm.boxExpandRatio = Number(pm.boxExpandRatio) || 1.0
-    
+
     const tr = settings.value.translation
     tr.rpmLimit = Number(tr.rpmLimit) || DEFAULT_RPM_TRANSLATION
     tr.maxRetries = Number(tr.maxRetries) || DEFAULT_TRANSLATION_MAX_RETRIES
-    
+
     const hq = settings.value.hqTranslation
     hq.batchSize = Number(hq.batchSize) || 10
     hq.sessionReset = Number(hq.sessionReset) || 50
     hq.rpmLimit = Number(hq.rpmLimit) || 60
     hq.maxRetries = Number(hq.maxRetries) || DEFAULT_HQ_TRANSLATION_MAX_RETRIES
-    
+
     const av = settings.value.aiVisionOcr
     av.rpmLimit = Number(av.rpmLimit) || DEFAULT_RPM_AI_VISION_OCR
-    
+
     const pr = settings.value.proofreading
     pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
   }
@@ -1126,21 +1126,21 @@ export const useSettingsStore = defineStore('settings', () => {
       console.log('[Settings] 开始从后端加载设置...')
       const { getUserSettings } = await import('@/api/config')
       const response = await getUserSettings()
-      
+
       console.log('[Settings] API 响应:', response)
-      
+
       if (response.success && response.settings) {
         const backendSettings = response.settings
         console.log('[Settings] 从后端加载设置:', backendSettings)
         console.log('[Settings] 设置字段数量:', Object.keys(backendSettings).length)
-        
+
         // 将后端设置映射到 Vue 版本的设置结构
         applyBackendSettings(backendSettings)
-        
+
         // 保存到 localStorage 以便下次快速加载
         saveToStorage()
         saveProviderConfigsToStorage()
-        
+
         console.log('[Settings] 后端设置已应用，当前翻译服务商:', settings.value.translation.provider)
         console.log('[Settings] 当前翻译 API Key:', settings.value.translation.apiKey ? '已设置' : '未设置')
         return true
@@ -1366,7 +1366,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // 服务商配置缓存（providerSettings）
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
-      
+
       // 翻译服务商配置
       if (providerSettings.modelProvider) {
         for (const [provider, config] of Object.entries(providerSettings.modelProvider)) {
@@ -1379,7 +1379,7 @@ export const useSettingsStore = defineStore('settings', () => {
           }
         }
       }
-      
+
       // 高质量翻译服务商配置
       if (providerSettings.hqTranslateProvider) {
         for (const [provider, config] of Object.entries(providerSettings.hqTranslateProvider)) {
@@ -1398,7 +1398,7 @@ export const useSettingsStore = defineStore('settings', () => {
           }
         }
       }
-      
+
       // AI 视觉 OCR 服务商配置
       if (providerSettings.aiVisionProvider) {
         for (const [provider, config] of Object.entries(providerSettings.aiVisionProvider)) {
@@ -1424,20 +1424,20 @@ export const useSettingsStore = defineStore('settings', () => {
   async function saveToBackend(): Promise<boolean> {
     try {
       const { saveUserSettings } = await import('@/api/config')
-      
+
       // 将 Vue 版本的设置转换为后端格式（使用原版字段名）
       const backendSettings: Record<string, unknown> = {
         // OCR 设置
         ocrEngine: settings.value.ocrEngine,
         sourceLanguage: settings.value.sourceLanguage,
         textDetector: settings.value.textDetector,
-        
+
         // 百度 OCR（原版字段名）
         baiduApiKey: settings.value.baiduOcr.apiKey,
         baiduSecretKey: settings.value.baiduOcr.secretKey,
         baiduVersion: settings.value.baiduOcr.version,
         baiduSourceLanguage: settings.value.baiduOcr.sourceLanguage,
-        
+
         // AI 视觉 OCR（原版字段名）
         aiVisionProvider: settings.value.aiVisionOcr.provider,
         aiVisionApiKey: settings.value.aiVisionOcr.apiKey,
@@ -1446,7 +1446,7 @@ export const useSettingsStore = defineStore('settings', () => {
         customAiVisionBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
         rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
         aiVisionPromptModeSelect: settings.value.aiVisionOcr.isJsonMode ? 'json' : 'normal',
-        
+
         // 翻译服务（原版字段名）
         modelProvider: settings.value.translation.provider,
         apiKey: settings.value.translation.apiKey,
@@ -1455,12 +1455,12 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmTranslation: String(settings.value.translation.rpmLimit),
         translationMaxRetries: String(settings.value.translation.maxRetries),
         translatePromptModeSelect: settings.value.translation.isJsonMode ? 'json' : 'normal',
-        
+
         // 翻译提示词（原版字段名）
         promptContent: settings.value.translatePrompt,
         enableTextboxPrompt: settings.value.useTextboxPrompt,
         textboxPromptContent: settings.value.textboxPrompt,
-        
+
         // 高质量翻译（原版字段名）
         hqTranslateProvider: settings.value.hqTranslation.provider,
         hqApiKey: settings.value.hqTranslation.apiKey,
@@ -1475,7 +1475,7 @@ export const useSettingsStore = defineStore('settings', () => {
         hqNoThinkingMethod: settings.value.hqTranslation.noThinkingMethod,
         hqForceJsonOutput: settings.value.hqTranslation.forceJsonOutput,
         hqUseStream: settings.value.hqTranslation.useStream,
-        
+
         // AI 校对（原版字段名）
         proofreadingEnabled: settings.value.proofreading.enabled,
         proofreadingMaxRetries: String(settings.value.proofreading.maxRetries),
@@ -1496,28 +1496,28 @@ export const useSettingsStore = defineStore('settings', () => {
             forceJsonOutput: round.forceJsonOutput
           }))
         },
-        
+
         // 文本框扩展（原版字段名）
         boxExpandRatio: String(settings.value.boxExpand.ratio),
         boxExpandTop: String(settings.value.boxExpand.top),
         boxExpandBottom: String(settings.value.boxExpand.bottom),
         boxExpandLeft: String(settings.value.boxExpand.left),
         boxExpandRight: String(settings.value.boxExpand.right),
-        
+
         // 精确掩膜（原版字段名）
         usePreciseMask: settings.value.preciseMask.enabled,
         maskDilateSize: String(settings.value.preciseMask.dilateSize),
         maskBoxExpandRatio: String(settings.value.preciseMask.boxExpandRatio || 0),
-        
+
         // PDF 处理方式
         pdfProcessingMethod: settings.value.pdfProcessingMethod,
-        
+
         // 调试
         showDetectionDebug: settings.value.showDetectionDebug,
       }
-      
+
       const response = await saveUserSettings(backendSettings)
-      
+
       if (response.success) {
         console.log('[Settings] 设置已保存到后端')
         return true
@@ -1570,12 +1570,12 @@ export const useSettingsStore = defineStore('settings', () => {
           !Array.isArray(targetValue)
         ) {
           // 对于嵌套对象，进行浅合并
-          ;(result as Record<string, unknown>)[k] = {
+          ; (result as Record<string, unknown>)[k] = {
             ...(targetValue as unknown as Record<string, unknown>),
             ...(sourceValue as unknown as Record<string, unknown>)
           }
         } else if (sourceValue !== undefined) {
-          ;(result as Record<string, unknown>)[k] = sourceValue
+          ; (result as Record<string, unknown>)[k] = sourceValue
         }
       }
     }
@@ -1674,7 +1674,7 @@ export const useSettingsStore = defineStore('settings', () => {
     loadThemeFromStorage,
     initSettings,
     resetToDefaults,
-    
+
     // 后端设置同步方法
     loadFromBackend,
     saveToBackend
