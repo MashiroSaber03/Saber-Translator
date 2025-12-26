@@ -201,7 +201,7 @@ function createDefaultSettings(): TranslationSettings {
     proofreading: { ...DEFAULT_PROOFREADING },
     boxExpand: { ...DEFAULT_BOX_EXPAND },
     preciseMask: { ...DEFAULT_PRECISE_MASK },
-    pdfProcessingMethod: 'frontend',
+    pdfProcessingMethod: 'backend',
     showDetectionDebug: false
   }
 }
@@ -990,6 +990,24 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const pr = settings.value.proofreading
     pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
+
+    // 迁移旧版服务商名称
+    if ((tr.provider as string) === 'baidu') {
+      tr.provider = 'baidu_translate'
+    }
+    if ((tr.provider as string) === 'youdao') {
+      tr.provider = 'youdao_translate'
+    }
+
+    // 迁移缓存的配置
+    if (providerConfigs.value.translation['baidu']) {
+      providerConfigs.value.translation['baidu_translate'] = { ...providerConfigs.value.translation['baidu'] }
+      delete providerConfigs.value.translation['baidu']
+    }
+    if (providerConfigs.value.translation['youdao']) {
+      providerConfigs.value.translation['youdao_translate'] = { ...providerConfigs.value.translation['youdao'] }
+      delete providerConfigs.value.translation['youdao']
+    }
   }
 
   /**

@@ -8,7 +8,7 @@
         <CustomSelect
           :model-value="settings.ocrEngine"
           :options="ocrEngineOptions"
-          @change="(v: string) => { settings.ocrEngine = v; handleOcrEngineChange() }"
+          @change="(v: any) => { settings.ocrEngine = v; handleOcrEngineChange() }"
         />
       </div>
       
@@ -18,7 +18,7 @@
         <CustomSelect
           :model-value="settings.sourceLanguage"
           :groups="sourceLanguageGroups"
-          @change="(v: string) => { settings.sourceLanguage = v; handleSourceLanguageChange() }"
+          @change="(v: any) => { settings.sourceLanguage = v; handleSourceLanguageChange() }"
         />
         <div class="input-hint">
           {{ getSourceLanguageHint() }}
@@ -71,7 +71,7 @@
           <CustomSelect
             :model-value="settings.baiduOcr.version"
             :options="baiduVersionOptions"
-            @change="(v: string) => settings.baiduOcr.version = v"
+            @change="(v: any) => settings.baiduOcr.version = v"
           />
         </div>
         <div class="settings-item">
@@ -79,7 +79,7 @@
           <CustomSelect
             :model-value="settings.baiduOcr.sourceLanguage"
             :options="baiduSourceLanguageOptions"
-            @change="(v: string) => settings.baiduOcr.sourceLanguage = v"
+            @change="(v: any) => settings.baiduOcr.sourceLanguage = v"
           />
         </div>
       </div>
@@ -97,7 +97,7 @@
           <CustomSelect
             :model-value="settings.aiVisionOcr.provider"
             :options="aiVisionProviderOptions"
-            @change="(v: string) => { settings.aiVisionOcr.provider = v; handleAiVisionProviderChange() }"
+            @change="(v: any) => { settings.aiVisionOcr.provider = v; handleAiVisionProviderChange() }"
           />
         </div>
         <div class="settings-item">
@@ -156,7 +156,7 @@
           <CustomSelect
             :model-value="settings.aiVisionOcr.modelName"
             :options="aiVisionModelOptions"
-            @change="(v: string) => settings.aiVisionOcr.modelName = v"
+            @change="(v: any) => settings.aiVisionOcr.modelName = v"
           />
           <span class="model-count">共 {{ aiVisionModels.length }} 个模型</span>
         </div>

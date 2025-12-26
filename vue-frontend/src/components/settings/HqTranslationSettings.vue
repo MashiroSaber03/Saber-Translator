@@ -9,7 +9,7 @@
           <CustomSelect
             :model-value="hqSettings.provider"
             :options="providerOptions"
-            @change="(v: string) => { hqSettings.provider = v; handleProviderChange() }"
+            @change="(v: any) => { hqSettings.provider = v; handleProviderChange() }"
           />
         </div>
         <div class="settings-item">
@@ -63,7 +63,7 @@
           <CustomSelect
             :model-value="hqSettings.modelName"
             :options="modelListOptions"
-            @change="(v: string) => hqSettings.modelName = v"
+            @change="(v: any) => hqSettings.modelName = v"
           />
           <span class="model-count">共 {{ modelList.length }} 个模型</span>
         </div>
@@ -114,7 +114,7 @@
           <CustomSelect
             :model-value="hqSettings.noThinkingMethod"
             :options="noThinkingMethodOptions"
-            @change="(v: string) => hqSettings.noThinkingMethod = v"
+            @change="(v: any) => hqSettings.noThinkingMethod = v"
           />
         </div>
       </div>

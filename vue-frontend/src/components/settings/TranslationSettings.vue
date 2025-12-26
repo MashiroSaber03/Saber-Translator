@@ -9,7 +9,7 @@
           <CustomSelect
             :model-value="localSettings.modelProvider"
             :options="providerOptions"
-            @change="(v: string) => { localSettings.modelProvider = v; handleProviderChange() }"
+            @change="(v: any) => { localSettings.modelProvider = v; handleProviderChange() }"
           />
         </div>
 
@@ -77,7 +77,7 @@
           <CustomSelect
             :model-value="localSettings.modelName"
             :options="modelListOptions"
-            @change="(v: string) => { localSettings.modelName = v; saveModelToHistory() }"
+            @change="(v: any) => { localSettings.modelName = v; saveModelToHistory() }"
           />
           <span class="model-count">共 {{ modelList.length }} 个模型</span>
         </div>
@@ -110,7 +110,7 @@
               v-if="ollamaModels.length > 0"
               :model-value="localSettings.modelName"
               :options="ollamaModelOptions"
-              @change="(v: string) => localSettings.modelName = v"
+              @change="(v: any) => localSettings.modelName = v"
             />
             <p v-else class="model-hint">点击刷新获取可用模型</p>
           </div>
@@ -122,7 +122,7 @@
               v-if="sakuraModels.length > 0"
               :model-value="localSettings.modelName"
               :options="sakuraModelOptions"
-              @change="(v: string) => localSettings.modelName = v"
+              @change="(v: any) => localSettings.modelName = v"
             />
             <p v-else class="model-hint">点击刷新获取可用模型</p>
           </div>
@@ -167,7 +167,7 @@
           <CustomSelect
             :model-value="localSettings.translatePromptMode"
             :options="promptModeOptions"
-            @change="(v: string) => { localSettings.translatePromptMode = v; handlePromptModeChange() }"
+            @change="(v: any) => { localSettings.translatePromptMode = v; handlePromptModeChange() }"
           />
           <span class="input-hint">JSON格式输出更结构化</span>
         </div>
@@ -179,7 +179,7 @@
         <CustomSelect
           :model-value="localSettings.targetLanguage"
           :options="targetLanguageOptions"
-          @change="(v: string) => localSettings.targetLanguage = v"
+          @change="(v: any) => localSettings.targetLanguage = v"
         />
       </div>
 

@@ -27,8 +27,8 @@ const PROVIDERS_REQUIRING_API_KEY: TranslationProvider[] = [
   'deepseek',
   'volcano',
   'caiyun',
-  'baidu',
-  'youdao',
+  'baidu_translate',
+  'youdao_translate',
   'gemini',
   'custom_openai'
 ]
@@ -56,8 +56,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   deepseek: 'DeepSeek',
   volcano: '火山引擎',
   caiyun: '彩云小译',
-  baidu: '百度翻译',
-  youdao: '有道翻译',
+  baidu_translate: '百度翻译',
+  youdao_translate: '有道翻译',
   gemini: 'Google Gemini',
   custom_openai: '自定义 OpenAI',
   ollama: 'Ollama',
@@ -359,7 +359,7 @@ export function useValidation() {
     for (let i = 0; i < rounds.length; i++) {
       const round = rounds[i]
       if (!round) continue
-      
+
       const roundName = round.name || `轮次${i + 1}`
 
       if (!round.provider) {
