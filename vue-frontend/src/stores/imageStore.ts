@@ -243,6 +243,18 @@ export const useImageStore = defineStore('image', () => {
     console.log('所有图片已清除')
   }
 
+  /**
+   * 按文件名对所有图片进行自然排序
+   * 复刻原版 main.js 中的 sortImagesByName 函数
+   * 使用 localeCompare 的 numeric 选项实现自然排序（如 1, 2, 10 而非 1, 10, 2）
+   */
+  function sortImagesByFileName(): void {
+    images.value.sort((a, b) => {
+      return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' })
+    })
+    console.log('图片已按文件名排序')
+  }
+
   // ============================================================
   // 图片切换方法
   // ============================================================
@@ -510,6 +522,7 @@ export const useImageStore = defineStore('image', () => {
     deleteImage,
     deleteCurrentImage,
     clearImages,
+    sortImagesByFileName,
 
     // 图片切换方法
     setCurrentImageIndex,

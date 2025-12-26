@@ -151,14 +151,12 @@ async function processFiles(files: File[]) {
   emit('uploadStart')
   
   try {
-    // 按文件名自然排序
-    const sortedFiles = naturalSortFiles(files)
-    
+    // 复刻原版：不在此处预排序，由 TranslateView.handleUploadComplete 统一排序
     let processedCount = 0
-    const totalFiles = sortedFiles.length
+    const totalFiles = files.length
     
-    for (let i = 0; i < sortedFiles.length; i++) {
-      const file = sortedFiles[i]
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
       if (!file) continue
       
       currentFileName.value = file.name
@@ -202,16 +200,6 @@ async function processFiles(files: File[]) {
     showProgress.value = false
     currentFileName.value = ''
   }
-}
-
-/**
- * 文件名自然排序
- * @param files 文件列表
- */
-function naturalSortFiles(files: File[]): File[] {
-  return [...files].sort((a, b) => 
-    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
-  )
 }
 
 /**

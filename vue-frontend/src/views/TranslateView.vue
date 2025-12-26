@@ -263,11 +263,22 @@ function handleUploadStart() {
 
 /**
  * 处理上传完成事件
+ * 复刻原版 main.js handleFiles 完成逻辑：
+ * 1. 对所有图片按文件名进行自然排序
+ * 2. 跳转显示第一张图片
  */
 function handleUploadComplete(count: number) {
   isLoading.value = false
   loadingMessage.value = ''
   console.log(`上传完成，共 ${count} 张图片`)
+  
+  // 复刻原版逻辑：如果有图片，先排序再跳转到第一张
+  if (imageStore.hasImages) {
+    // 按文件名自然排序（复刻 sortImagesByName）
+    imageStore.sortImagesByFileName()
+    // 跳转到第一张图片（复刻 switchImage(0)）
+    translateInit.switchImage(0)
+  }
 }
 
 /**
