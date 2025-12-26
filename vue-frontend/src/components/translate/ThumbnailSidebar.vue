@@ -81,28 +81,45 @@ function setThumbnailRef(el: HTMLElement | null, index: number) {
 }
 
 /**
- * 获取状态图标
+ * 获取状态指示器类型（复刻原版 ui.js renderThumbnails 逻辑）
+ * 优先级：失败 > 手动标注 > 处理中
  */
-function getStatusIcon(image: typeof images.value[0]): string | null {
-  // 复刻原版：失败显示 ! 感叹号
-  if (image.translationFailed) return '!'
-  if (image.translationStatus === 'processing') return '⏳'
-  if (image.translationStatus === 'completed') return '✓'
-  // 复刻原版：检查 savedManualCoords 而不是 isManualAnnotation
-  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return '✏️'
-  if (image.isManualAnnotation) return '✏️'
+function getStatusType(image: typeof images.value[0]): 'failed' | 'labeled' | 'processing' | null {
+  // 复刻原版：优先显示失败标记
+  if (image.translationFailed) return 'failed'
+  // 复刻原版：检查 savedManualCoords（原版 imageData.savedManualCoords）
+  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return 'labeled'
+  // 处理中状态
+  if (image.translationStatus === 'processing') return 'processing'
   return null
 }
 
 /**
- * 获取状态类名
+ * 获取缩略图项的额外类名（复刻原版）
  */
-function getStatusClass(image: typeof images.value[0]): string {
-  if (image.translationFailed) return 'failed'
-  if (image.translationStatus === 'processing') return 'processing'
-  if (image.translationStatus === 'completed') return 'completed'
-  if (image.isManualAnnotation) return 'annotated'
-  return ''
+function getThumbnailClasses(image: typeof images.value[0]): string[] {
+  const classes: string[] = []
+  // 复刻原版：失败时添加 translation-failed 类
+  if (image.translationFailed) {
+    classes.push('translation-failed')
+  }
+  // 复刻原版：有手动标注时添加 has-manual-labels 类
+  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) {
+    classes.push('has-manual-labels')
+  }
+  return classes
+}
+
+/**
+ * 获取缩略图的 title 提示文本（复刻原版）
+ */
+function getThumbnailTitle(image: typeof images.value[0]): string {
+  // 复刻原版：失败时显示特定提示
+  if (image.translationFailed) return '翻译失败，点击可重试'
+  // 复刻原版：有手动标注时显示特定提示
+  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return '包含手动标注框'
+  // 默认显示文件名
+  return image.fileName || ''
 }
 
 // 监听当前索引变化
@@ -134,9 +151,10 @@ onMounted(() => {
           class="thumbnail-item"
           :class="[
             { active: index === currentIndex },
-            getStatusClass(image)
+            ...getThumbnailClasses(image)
           ]"
-          :title="image.fileName"
+          :title="getThumbnailTitle(image)"
+          :data-index="index"
           @click="handleClick(index)"
         >
           <!-- 复刻原版：缩略图永远显示原图 -->
@@ -146,16 +164,21 @@ onMounted(() => {
             :alt="image.fileName"
             class="thumbnail-image"
           >
-          <!-- 序号 -->
-          <span class="thumbnail-index">{{ index + 1 }}</span>
-          <!-- 状态图标 -->
+          <!-- 复刻原版：失败标记（右下角红色感叹号） -->
           <span 
-            v-if="getStatusIcon(image)"
-            class="status-indicator"
-            :class="getStatusClass(image)"
-          >
-            {{ getStatusIcon(image) }}
-          </span>
+            v-if="getStatusType(image) === 'failed'"
+            class="translation-failed-indicator"
+          >!</span>
+          <!-- 复刻原版：手动标注标记（右下角蓝色铅笔） -->
+          <span 
+            v-else-if="getStatusType(image) === 'labeled'"
+            class="labeled-indicator"
+          >✏️</span>
+          <!-- 复刻原版：处理中标记（右上角旋转图标） -->
+          <div 
+            v-if="getStatusType(image) === 'processing'"
+            class="thumbnail-processing-indicator"
+          >⟳</div>
         </li>
       </ul>
       <div v-else class="empty-state">
@@ -167,7 +190,7 @@ onMounted(() => {
 
 <style scoped>
 /* ===================================
-   缩略图侧边栏样式 - 完整迁移自 thumbnail.css
+   缩略图侧边栏样式 - 复刻自 thumbnail.css
    =================================== */
 
 #thumbnail-sidebar {
@@ -230,17 +253,7 @@ onMounted(() => {
   gap: 15px;
 }
 
-#thumbnail-sidebar ul#thumbnailList li {
-  margin-bottom: 10px;
-  cursor: pointer;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 5px;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
+/* 缩略图项基础样式 */
 #thumbnail-sidebar .thumbnail-item {
   margin-bottom: 10px;
   cursor: pointer;
@@ -252,23 +265,16 @@ onMounted(() => {
   overflow: hidden;
 }
 
-#thumbnail-sidebar ul#thumbnailList li.active,
-#thumbnail-sidebar ul#thumbnailList li:hover {
-  border-color: #3498db;
-  position: relative;
-  box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
-  transform: translateY(-2px);
-}
-
+/* 激活和悬停状态 */
 #thumbnail-sidebar .thumbnail-item.active,
 #thumbnail-sidebar .thumbnail-item:hover {
   border-color: #3498db;
-  position: relative;
   box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
   transform: translateY(-2px);
 }
 
-#thumbnail-sidebar ul#thumbnailList li.active:before {
+/* 激活状态的左上角圆点标记 */
+#thumbnail-sidebar .thumbnail-item.active:before {
   content: '●';
   position: absolute;
   top: 5px;
@@ -280,7 +286,8 @@ onMounted(() => {
   font-weight: bold;
 }
 
-#thumbnail-sidebar ul#thumbnailList li.active:after {
+/* 激活状态的边框叠加 */
+#thumbnail-sidebar .thumbnail-item.active:after {
   content: '';
   position: absolute;
   top: 0;
@@ -290,16 +297,10 @@ onMounted(() => {
   border: 3px solid #3498db;
   border-radius: 4px;
   box-sizing: border-box;
+  pointer-events: none;
 }
 
-#thumbnail-sidebar ul#thumbnailList li img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 4px;
-}
-
-#thumbnail-sidebar .thumbnail-item img,
+/* 缩略图图片 */
 #thumbnail-sidebar .thumbnail-image {
   max-width: 100%;
   height: auto;
@@ -307,19 +308,7 @@ onMounted(() => {
   border-radius: 4px;
 }
 
-.translating-message {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 5px;
-  font-size: 12px;
-  text-align: center;
-  border-radius: 0 0 4px 4px;
-}
-
+/* 处理中指示器（右上角旋转图标） */
 .thumbnail-processing-indicator {
   position: absolute;
   top: 5px;
@@ -337,23 +326,7 @@ onMounted(() => {
   animation: pulse 1.5s infinite;
 }
 
-.error-indicator {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  background-color: #f44336;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  text-align: center;
-  line-height: 20px;
-  font-weight: bold;
-  font-size: 14px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  z-index: 2;
-}
-
+/* 翻译失败标记（右下角红色感叹号） */
 .translation-failed-indicator {
   position: absolute;
   bottom: 3px;
@@ -372,6 +345,7 @@ onMounted(() => {
   box-shadow: 0 0 3px black;
 }
 
+/* 手动标注指示器（右下角蓝色铅笔） */
 .labeled-indicator {
   position: absolute;
   bottom: 3px;
@@ -389,10 +363,7 @@ onMounted(() => {
   box-shadow: 0 0 3px black;
 }
 
-.thumbnail-item.has-manual-labels {
-  border: 2px solid #4caf50;
-}
-
+/* 手动标注项的左侧蓝条 */
 #thumbnail-sidebar .thumbnail-item.has-manual-labels {
   border-left: 4px solid #007bff;
 }

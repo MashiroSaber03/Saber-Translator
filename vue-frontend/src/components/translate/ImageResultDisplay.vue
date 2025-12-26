@@ -492,9 +492,9 @@ watch(imageSize, () => {
           @load="handleImageLoad"
         >
         
-        <!-- 气泡高亮框组件（调试模式或编辑模式） -->
+        <!-- 复刻原版：气泡高亮框仅在编辑模式下显示 -->
         <BubbleHighlight
-          v-if="showDetectionDebug || showHighlight || isEditMode"
+          v-if="isEditMode"
           :bubble-coords="bubbleCoords"
           :bubble-polygons="bubblePolygons"
           :bubble-rotations="bubbleRotations"
