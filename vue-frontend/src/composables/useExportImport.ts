@@ -14,7 +14,9 @@ import {
   getDownloadFileUrl,
   cleanTempFiles
 } from '@/api/system'
+import { reRenderImage } from '@/api/translate'
 import type { BubbleState } from '@/types/bubble'
+import { getEffectiveDirection } from '@/types/bubble'
 
 /**
  * 导出文本数据结构
@@ -211,13 +213,10 @@ export function useExportImport() {
 
   /**
    * 导入 JSON 文本文件并应用到当前图片集
+   * 【复刻原版】导入后自动重新渲染已翻译的图片
    * @param jsonFile - 用户选择的 JSON 文件
-   * @param onReRender - 重新渲染图片的回调函数（可选）
    */
-  async function importText(
-    jsonFile: File,
-    onReRender?: (imageIndex: number) => Promise<void>
-  ): Promise<void> {
+  async function importText(jsonFile: File): Promise<void> {
     if (!jsonFile) {
       toast.warning('未选择文件')
       return
@@ -283,9 +282,15 @@ export function useExportImport() {
 
         let imageUpdated = false
 
-        // 确保气泡状态数组存在
+        // 【复刻原版】确保必要的数组存在
         if (!image.bubbleStates) {
           image.bubbleStates = []
+        }
+        if (!image.bubbleTexts) {
+          image.bubbleTexts = []
+        }
+        if (!image.originalTexts) {
+          image.originalTexts = []
         }
 
         // 遍历气泡数据
@@ -293,8 +298,22 @@ export function useExportImport() {
           const bubbleIndex = bubbleData.bubbleIndex
           const original = bubbleData.original
           const translated = bubbleData.translated
-          // 获取排版方向
-          const textDirection = bubbleData.textDirection || 'vertical'
+          // 获取排版方向，确保不是 'auto'（复刻原版）
+          const rawDir = bubbleData.textDirection as string | undefined
+          const textDirection: 'vertical' | 'horizontal' =
+            (rawDir === 'vertical' || rawDir === 'horizontal') ? rawDir : 'vertical'
+
+          // 【复刻原版】确保数组索引存在
+          while (image.bubbleTexts.length <= bubbleIndex) {
+            image.bubbleTexts.push('')
+          }
+          while (image.originalTexts.length <= bubbleIndex) {
+            image.originalTexts.push('')
+          }
+
+          // 【复刻原版】更新文本数组
+          if (original) image.originalTexts[bubbleIndex] = original
+          if (translated) image.bubbleTexts[bubbleIndex] = translated
 
           // 确保气泡状态数组索引存在
           while (image.bubbleStates.length <= bubbleIndex) {
@@ -322,29 +341,104 @@ export function useExportImport() {
           }
         }
 
+        // 【复刻原版】确保 bubbleTexts 与 bubbleStates 同步
+        if (imageUpdated && image.bubbleStates) {
+          image.bubbleTexts = image.bubbleStates.map(bs => bs.translatedText || '')
+        }
+
         if (imageUpdated) {
           updatedImages++
           image.hasUnsavedChanges = true
 
-          // 如果图片已翻译，添加到重新渲染列表
-          if (image.translatedDataURL && onReRender) {
+          // 如果图片已翻译且有气泡，添加到重新渲染列表
+          if (image.translatedDataURL && image.bubbleStates && image.bubbleStates.length > 0) {
             imagesToReRender.push(imageIndex)
           }
         }
       }
 
-      // 重新渲染需要更新的图片
-      if (imagesToReRender.length > 0 && onReRender) {
+      // 【复刻原版】重新渲染需要更新的图片
+      if (imagesToReRender.length > 0) {
         importProgress.value = 80
         importProgressText.value = '开始渲染图片...'
         toast.info('正在渲染图片，请稍候...', 0)
 
+        const textStyle = settingsStore.settings.textStyle
+        const layoutDir = textStyle.layoutDirection
+        const isAutoLayout = layoutDir === 'auto'
+
         for (let i = 0; i < imagesToReRender.length; i++) {
           const imageIndex = imagesToReRender[i]
-          if (imageIndex !== undefined) {
-            importProgress.value = 80 + (i / imagesToReRender.length) * 20
-            importProgressText.value = `渲染图片 ${i + 1}/${imagesToReRender.length}`
-            await onReRender(imageIndex)
+          if (imageIndex === undefined) continue
+
+          const img = imageStore.images[imageIndex]
+          if (!img || !img.bubbleStates) continue
+
+          importProgress.value = 80 + (i / imagesToReRender.length) * 20
+          importProgressText.value = `渲染图片 ${i + 1}/${imagesToReRender.length}`
+
+          try {
+            // 【复刻原版】背景兜底策略：clean → original
+            let cleanImageBase64 = ''
+            if (img.cleanImageData) {
+              cleanImageBase64 = img.cleanImageData.includes('base64,')
+                ? (img.cleanImageData.split('base64,')[1] || '')
+                : img.cleanImageData
+            } else if (img.originalDataURL) {
+              // 兜底：使用原图作为背景
+              cleanImageBase64 = img.originalDataURL.includes('base64,')
+                ? (img.originalDataURL.split('base64,')[1] || '')
+                : img.originalDataURL
+              console.log(`importText: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
+            }
+
+            if (!cleanImageBase64) {
+              console.log(`importText: 图片 ${imageIndex} 没有可用的背景图，跳过`)
+              continue
+            }
+
+            // 构建 API 参数
+            const bubbleStatesForApi = img.bubbleStates.map(bs => ({
+              translatedText: bs.translatedText || '',
+              coords: bs.coords,
+              fontSize: bs.fontSize || textStyle.fontSize,
+              fontFamily: bs.fontFamily || textStyle.fontFamily,
+              textDirection: getEffectiveDirection(bs),
+              textColor: bs.textColor || textStyle.textColor,
+              rotationAngle: bs.rotationAngle || 0,
+              position: bs.position || { x: 0, y: 0 },
+              strokeEnabled: bs.strokeEnabled ?? textStyle.strokeEnabled,
+              strokeColor: bs.strokeColor || textStyle.strokeColor,
+              strokeWidth: bs.strokeWidth ?? textStyle.strokeWidth,
+            }))
+
+            const response = await reRenderImage({
+              clean_image: cleanImageBase64,
+              bubble_texts: bubbleStatesForApi.map(s => s.translatedText),
+              bubble_coords: bubbleStatesForApi.map(s => s.coords),
+              fontSize: textStyle.fontSize,
+              fontFamily: textStyle.fontFamily,
+              textDirection: isAutoLayout ? 'vertical' : layoutDir,
+              textColor: textStyle.textColor,
+              bubble_states: bubbleStatesForApi,
+              use_individual_styles: true,
+              use_inpainting: false,
+              use_lama: false,
+              is_font_style_change: true,
+              strokeEnabled: textStyle.strokeEnabled,
+              strokeColor: textStyle.strokeColor,
+              strokeWidth: textStyle.strokeWidth,
+            })
+
+            if (response.rendered_image) {
+              imageStore.updateImageByIndex(imageIndex, {
+                translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+                hasUnsavedChanges: true
+              })
+              console.log(`importText: 图片 ${imageIndex} 渲染成功`)
+            }
+          } catch (err) {
+            console.error(`importText: 重渲染图片 ${imageIndex} 失败:`, err)
           }
         }
       }
@@ -353,7 +447,11 @@ export function useExportImport() {
       importProgressText.value = '导入完成'
 
       // 显示导入结果
-      toast.success(`导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`)
+      const reRenderedCount = imagesToReRender.length
+      const message = reRenderedCount > 0
+        ? `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本，重渲染了 ${reRenderedCount} 张图片`
+        : `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`
+      toast.success(message)
     } catch (error) {
       console.error('导入文本出错:', error)
       toast.error(`导入失败: ${error instanceof Error ? error.message : String(error)}`)
