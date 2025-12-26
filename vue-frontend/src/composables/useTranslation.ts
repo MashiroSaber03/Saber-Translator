@@ -619,14 +619,6 @@ export function useTranslation() {
 
         // 【复刻原版】不跳过已完成的图片，点击"翻译所有图片"应重新翻译所有内容
         // 原版 main.js 中是没有 check completion logic 的，每次都是重头开始翻译
-        // 下面的代码已注释掉以恢复原版行为
-        /* 
-        const image = images[i]
-        if (image && image.translationStatus === 'completed' && !image.translationFailed) {
-          progress.value.completed++
-          continue
-        }
-        */
 
         // 翻译图片
         const success = await translateImageByIndex(i, options)
