@@ -1125,10 +1125,8 @@ function selectImage(index: number) {
         <ImageResultDisplay
           ref="imageResultRef"
           :is-edit-mode="isEditMode"
-          :show-highlight="settingsStore.settings.showDetectionDebug"
           @toggle-edit-mode="toggleEditMode"
           @retry-failed="handleRetryFailed"
-          @select-bubble="handleSelectBubble"
         />
       </main>
 

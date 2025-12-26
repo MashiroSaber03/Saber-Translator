@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 图片结果显示组件
- * 显示翻译后的图片，支持原图/翻译图切换、图片大小调整、气泡高亮框
+ * 显示翻译后的图片，支持原图/翻译图切换、图片大小调整
  * 
  * 功能：
  * - 翻译后图片显示
@@ -9,21 +9,17 @@
  * - 切换编辑模式按钮
  * - 图片大小滑块（50%-200%）
  * - 重新翻译失败按钮
- * - 气泡高亮框显示（调试模式）
- * - 点击高亮框选中对应气泡
  * - 检测文本信息显示（原文 → 译文对照）
+ * - 导出/导入文本功能
+ * - 下载图片功能
  */
 
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useBubbleStore } from '@/stores/bubbleStore'
-import { calculateImageDisplayMetrics, type ImageDisplayMetrics } from '@/utils/imageMetrics'
 import { useExportImport, type DownloadFormat } from '@/composables/useExportImport'
-import BubbleHighlight from './BubbleHighlight.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
-import type { BubbleCoords } from '@/types/bubble'
 
 /** 下载格式选项 */
 const downloadFormatOptions = [
@@ -36,13 +32,10 @@ const downloadFormatOptions = [
 interface Props {
   /** 是否处于编辑模式 */
   isEditMode?: boolean
-  /** 是否显示高亮框（调试模式） */
-  showHighlight?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isEditMode: false,
-  showHighlight: false
+  isEditMode: false
 })
 
 // Emits 定义
@@ -51,14 +44,11 @@ const emit = defineEmits<{
   (e: 'toggle-edit-mode'): void
   /** 重新翻译失败图片 */
   (e: 'retry-failed'): void
-  /** 选中气泡 */
-  (e: 'select-bubble', index: number): void
 }>()
 
 // Stores
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
-const bubbleStore = useBubbleStore()
 
 // 导出导入功能
 const exportImport = useExportImport()
@@ -79,15 +69,6 @@ const showOriginal = computed({
     }
   }
 })
-
-/** 图片元素引用 */
-const imageRef = ref<HTMLImageElement | null>(null)
-
-/** 图片容器引用 */
-const containerRef = ref<HTMLDivElement | null>(null)
-
-/** 图片显示指标 */
-const imageMetrics = ref<ImageDisplayMetrics | null>(null)
 
 /** 下载格式 */
 const downloadFormat = ref<DownloadFormat>('zip')
@@ -134,41 +115,6 @@ const displayImageUrl = computed(() => {
 /** 是否有翻译失败的图片 */
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
 
-/** 是否显示检测调试框 */
-const showDetectionDebug = computed(() => settingsStore.settings.showDetectionDebug)
-
-/** 气泡坐标数组 */
-const bubbleCoords = computed<BubbleCoords[]>(() => {
-  if (!currentImage.value) return []
-  
-  // 优先使用 bubbleStates 中的坐标
-  if (currentImage.value.bubbleStates && currentImage.value.bubbleStates.length > 0) {
-    return currentImage.value.bubbleStates.map(state => state.coords)
-  }
-  
-  // 兼容旧数据格式
-  if (currentImage.value.bubbleCoords) {
-    return currentImage.value.bubbleCoords
-  }
-  
-  return []
-})
-
-/** 气泡多边形数组 */
-const bubblePolygons = computed<(number[][] | null)[]>(() => {
-  if (!currentImage.value?.bubbleStates) return []
-  return currentImage.value.bubbleStates.map(state => state.polygon || null)
-})
-
-/** 气泡旋转角度数组 */
-const bubbleRotations = computed<number[]>(() => {
-  if (!currentImage.value?.bubbleStates) return []
-  return currentImage.value.bubbleStates.map(state => state.rotationAngle || 0)
-})
-
-/** 当前选中的气泡索引 */
-const selectedBubbleIndex = computed(() => bubbleStore.selectedIndex)
-
 /** 图片样式 */
 const imageStyle = computed(() => ({
   width: `${imageSize.value}%`
@@ -207,11 +153,6 @@ const detectedTexts = computed<Array<{ original: string; translated: string }>>(
 
 /** 是否有检测到的文本 */
 const hasDetectedTexts = computed(() => detectedTexts.value.length > 0)
-
-/** 是否显示检测文本信息区域（有翻译结果时显示） */
-const showDetectedTextInfo = computed(() => {
-  return hasTranslatedImage.value && hasDetectedTexts.value && !props.isEditMode
-})
 
 // ============================================================
 // 常量
@@ -294,13 +235,6 @@ function isTranslationError(text: string): boolean {
 }
 
 /**
- * 更新图片显示指标
- */
-function updateImageMetrics(): void {
-  imageMetrics.value = calculateImageDisplayMetrics(imageRef.value)
-}
-
-/**
  * 切换原图/翻译图
  */
 function toggleImageView(): void {
@@ -320,10 +254,6 @@ function toggleEditMode(): void {
 function updateImageSize(event: Event): void {
   const input = event.target as HTMLInputElement
   imageSize.value = parseInt(input.value, 10)
-  // 更新后重新计算指标
-  nextTick(() => {
-    updateImageMetrics()
-  })
 }
 
 /**
@@ -331,27 +261,6 @@ function updateImageSize(event: Event): void {
  */
 function retryFailed(): void {
   emit('retry-failed')
-}
-
-/**
- * 点击高亮框选中气泡
- */
-function handleHighlightClick(index: number): void {
-  emit('select-bubble', index)
-}
-
-/**
- * 图片加载完成处理
- */
-function handleImageLoad(): void {
-  updateImageMetrics()
-}
-
-/**
- * 窗口大小改变处理
- */
-function handleResize(): void {
-  updateImageMetrics()
 }
 
 /**
@@ -395,34 +304,6 @@ async function handleImportFile(event: Event): Promise<void> {
   }
 }
 
-// ============================================================
-// 生命周期
-// ============================================================
-
-onMounted(() => {
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-})
-
-// 监听图片变化，重新计算指标
-watch(
-  () => currentImage.value?.id,
-  () => {
-    nextTick(() => {
-      updateImageMetrics()
-    })
-  }
-)
-
-// 监听图片大小变化
-watch(imageSize, () => {
-  nextTick(() => {
-    updateImageMetrics()
-  })
-})
 </script>
 
 <template>
@@ -478,32 +359,14 @@ watch(imageSize, () => {
     
     <!-- 图片内容区域 -->
     <div class="content-container">
-      <div 
-        ref="containerRef"
-        class="image-container"
-      >
+      <div class="image-container">
         <!-- 翻译后图片 -->
         <img 
-          ref="imageRef"
           id="translatedImageDisplay" 
           :src="displayImageUrl" 
           alt="翻译后图片"
           :style="imageStyle"
-          @load="handleImageLoad"
         >
-        
-        <!-- 复刻原版：气泡高亮框仅在编辑模式下显示 -->
-        <BubbleHighlight
-          v-if="isEditMode"
-          :bubble-coords="bubbleCoords"
-          :bubble-polygons="bubblePolygons"
-          :bubble-rotations="bubbleRotations"
-          :selected-index="selectedBubbleIndex"
-          :image-metrics="imageMetrics"
-          :visible="true"
-          :show-index="true"
-          @select="handleHighlightClick"
-        />
       </div>
     </div>
     
