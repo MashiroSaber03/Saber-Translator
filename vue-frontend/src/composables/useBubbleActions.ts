@@ -293,7 +293,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       }
       console.log('触发延迟渲染预览')
       isRenderingPreview = true
-      
+
       try {
         // 【修复问题5】优先使用延迟预览回调，否则使用重新渲染回调
         // 等待Promise完成后才释放锁
@@ -354,7 +354,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
     try {
       console.log(`开始修复气泡 #${index + 1} 背景，方法: ${inpaintMethod}`)
-      
+
       // 获取基础图像数据（优先使用cleanImageData保留之前的修复效果）
       let baseImageData: string
       if (image.cleanImageData) {
@@ -369,14 +369,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       }
 
       const isLamaMethod = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
-      
+
       if (isLamaMethod) {
         // 确定 LAMA 模型类型（与原版逻辑一致）
         const lamaModel = inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe'
-        
+
         // 确保坐标为整数（后端 OpenCV 需要）
         const coords = normalizeCoords(bubble.coords)
-        
+
         // 使用LAMA修复（传递完整参数）
         const response = await inpaintSingleBubbleApi(
           baseImageData,
@@ -517,12 +517,17 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         settings.ocrEngine || 'manga_ocr',
         {
           source_language: settings.sourceLanguage,
+          // 百度 OCR 参数（复刻原版 edit_mode.js）
           baidu_ocr_api_key: settings.baiduOcr.apiKey,
           baidu_ocr_secret_key: settings.baiduOcr.secretKey,
+          baidu_version: settings.baiduOcr.version,
+          baidu_source_language: settings.baiduOcr.sourceLanguage,
+          // AI 视觉 OCR 参数（复刻原版 edit_mode.js）
           ai_vision_provider: settings.aiVisionOcr.provider,
           ai_vision_api_key: settings.aiVisionOcr.apiKey,
           ai_vision_model_name: settings.aiVisionOcr.modelName,
-          ai_vision_ocr_prompt: settings.aiVisionOcr.prompt
+          ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
+          custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl
         }
       )
 

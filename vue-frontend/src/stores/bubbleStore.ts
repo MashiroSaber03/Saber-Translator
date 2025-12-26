@@ -11,6 +11,7 @@ import type {
   BubbleStateUpdates
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 // 从 bubbleFactory 统一导入 store 内部使用的工厂函数
 import {
@@ -145,6 +146,7 @@ export const useBubbleStore = defineStore('bubble', () => {
 
   /**
    * 添加气泡
+   * 【复刻原版】从 settingsStore 读取当前 UI 设置作为新气泡的默认值
    * @param coords - 气泡坐标
    * @param overrides - 可选的覆盖属性
    * @returns 新添加的气泡
@@ -152,9 +154,32 @@ export const useBubbleStore = defineStore('bubble', () => {
   function addBubble(coords: BubbleCoords, overrides?: Partial<BubbleState>): BubbleState {
     // 自动计算排版方向
     const autoDirection = detectTextDirection(coords)
+
+    // 【复刻原版 edit_mode.js addNewBubble】从 settingsStore 读取当前 UI 设置
+    const settingsStore = useSettingsStore()
+    const textStyle = settingsStore.settings.textStyle
+
+    // 处理自动排版：如果选择"auto"，回退到默认的 'vertical'
+    const layoutDirection = textStyle.layoutDirection
+    const bubbleTextDirection = layoutDirection === 'auto' ? 'vertical' : (layoutDirection || 'vertical')
+
     const newBubble = createBubbleState({
       coords,
+      translatedText: '',
       autoTextDirection: autoDirection,
+      // 从当前 UI 设置读取默认值
+      fontSize: textStyle.fontSize,
+      fontFamily: textStyle.fontFamily,
+      textDirection: bubbleTextDirection as 'vertical' | 'horizontal' | 'auto',
+      textColor: textStyle.textColor,
+      fillColor: textStyle.fillColor,
+      inpaintMethod: textStyle.inpaintMethod,
+      strokeEnabled: textStyle.strokeEnabled,
+      strokeColor: textStyle.strokeColor,
+      strokeWidth: textStyle.strokeWidth,
+      rotationAngle: 0,
+      position: { x: 0, y: 0 },
+      // 允许 overrides 覆盖上述默认值
       ...overrides
     })
     bubbles.value.push(newBubble)
@@ -365,10 +390,10 @@ export const useBubbleStore = defineStore('bubble', () => {
    * @param updates - 要更新的属性
    */
   function updateAllSelected(updates: BubbleStateUpdates): void {
-    const indices = selectedIndices.value.length > 0 
-      ? selectedIndices.value 
+    const indices = selectedIndices.value.length > 0
+      ? selectedIndices.value
       : (selectedIndex.value >= 0 ? [selectedIndex.value] : [])
-    
+
     for (const index of indices) {
       const bubble = bubbles.value[index]
       if (bubble) {
@@ -404,14 +429,14 @@ export const useBubbleStore = defineStore('bubble', () => {
     if (bubbles.value.length !== initialStates.value.length) {
       return true
     }
-    
+
     for (let i = 0; i < bubbles.value.length; i++) {
       const current = bubbles.value[i]
       const initial = initialStates.value[i]
-      
+
       // 跳过无效的状态
       if (!current || !initial) continue
-      
+
       // 检查关键属性是否变更
       if (
         current.translatedText !== initial.translatedText ||
@@ -431,7 +456,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         return true
       }
     }
-    
+
     return false
   }
 
@@ -517,7 +542,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         console.error('反序列化失败: 数据不是数组')
         return false
       }
-      
+
       // 验证每个气泡状态
       const validStates: BubbleState[] = []
       for (const item of parsed) {
@@ -527,7 +552,7 @@ export const useBubbleStore = defineStore('bubble', () => {
           console.warn('跳过无效的气泡状态:', item)
         }
       }
-      
+
       setBubbles(validStates)
       return true
     } catch (error) {
@@ -546,7 +571,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     selectedIndex,
     selectedIndices,
     initialStates,
-    
+
     // 拖动状态（共享）
     isDragging,
     draggingIndex,
@@ -560,7 +585,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     isRotating,
     rotatingIndex,
     rotateCurrentAngle,
-    
+
     // 计算属性
     selectedBubble,
     bubbleCount,
@@ -568,7 +593,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     hasSelection,
     isMultiSelect,
     selectedBubbles,
-    
+
     // 气泡管理
     setBubbles,
     addBubble,
@@ -576,7 +601,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     deleteSelected,
     clearBubbles,
     clearBubblesLocal,
-    
+
     // 选择管理
     selectBubble,
     toggleMultiSelect,
@@ -584,18 +609,18 @@ export const useBubbleStore = defineStore('bubble', () => {
     clearMultiSelect,
     selectNext,
     selectPrevious,
-    
+
     // 气泡更新
     updateBubble,
     updateSelectedBubble,
     updateAllSelected,
     updateAllBubbles,
-    
+
     // 状态检测
     hasChanges,
     resetToInitial,
     saveAsInitial,
-    
+
     // 序列化
     toApiRequest,
     serialize,

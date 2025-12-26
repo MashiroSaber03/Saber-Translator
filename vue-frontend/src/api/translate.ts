@@ -322,12 +322,17 @@ export async function ocrSingleBubble(
   ocrEngine: string,
   ocrParams?: {
     source_language?: string
+    // 百度 OCR 参数
     baidu_ocr_api_key?: string
     baidu_ocr_secret_key?: string
+    baidu_version?: string
+    baidu_source_language?: string
+    // AI 视觉 OCR 参数
     ai_vision_provider?: string
     ai_vision_api_key?: string
     ai_vision_model_name?: string
     ai_vision_ocr_prompt?: string
+    custom_ai_vision_base_url?: string
   }
 ): Promise<OcrSingleBubbleResponse> {
   return apiClient.post<OcrSingleBubbleResponse>('/api/ocr_single_bubble', {
