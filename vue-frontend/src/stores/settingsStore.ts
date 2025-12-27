@@ -1407,6 +1407,7 @@ export const useSettingsStore = defineStore('settings', () => {
             rpmLimit: parseNum(config.hqRpmLimit, 7),
             maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES),
             lowReasoning: config.hqLowReasoning as boolean,
+            noThinkingMethod: (config.hqNoThinkingMethod as NoThinkingMethod) || 'gemini',
             forceJsonOutput: config.hqForceJsonOutput as boolean,
             useStream: config.hqUseStream as boolean,
             prompt: config.hqPrompt as string
@@ -1420,6 +1421,7 @@ export const useSettingsStore = defineStore('settings', () => {
           providerConfigs.value.aiVisionOcr[provider] = {
             apiKey: config.aiVisionApiKey as string,
             modelName: config.aiVisionModelName as string,
+            customBaseUrl: config.customAiVisionBaseUrl as string,
             prompt: config.aiVisionOcrPrompt as string,
             rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
             isJsonMode: config.aiVisionPromptModeSelect === 'json'
@@ -1432,6 +1434,66 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
+   * 构建服务商分组配置用于保存到后端
+   * 复刻原版 providerSettingsCache 的结构
+   * 使用原版字段名以保持兼容性
+   */
+  function buildProviderSettingsForBackend(): Record<string, Record<string, Record<string, unknown>>> {
+    // 初始化结果对象
+    const modelProviderConfigs: Record<string, Record<string, unknown>> = {}
+    const hqTranslateProviderConfigs: Record<string, Record<string, unknown>> = {}
+    const aiVisionProviderConfigs: Record<string, Record<string, unknown>> = {}
+
+    // 翻译服务商配置（modelProvider）
+    for (const [provider, config] of Object.entries(providerConfigs.value.translation)) {
+      modelProviderConfigs[provider] = {
+        apiKey: config.apiKey || '',
+        modelName: config.modelName || '',
+        customBaseUrl: config.customBaseUrl || '',
+        rpmTranslation: String(config.rpmLimit || 0),
+        translationMaxRetries: String(config.maxRetries || 3)
+      }
+    }
+
+    // 高质量翻译服务商配置（hqTranslateProvider）
+    for (const [provider, config] of Object.entries(providerConfigs.value.hqTranslation)) {
+      hqTranslateProviderConfigs[provider] = {
+        hqApiKey: config.apiKey || '',
+        hqModelName: config.modelName || '',
+        hqCustomBaseUrl: config.customBaseUrl || '',
+        hqBatchSize: String(config.batchSize || 3),
+        hqSessionReset: String(config.sessionReset || 20),
+        hqRpmLimit: String(config.rpmLimit || 7),
+        hqMaxRetries: String(config.maxRetries || 2),
+        hqLowReasoning: config.lowReasoning || false,
+        hqNoThinkingMethod: config.noThinkingMethod || 'gemini',
+        hqForceJsonOutput: config.forceJsonOutput ?? true,
+        hqUseStream: config.useStream || false,
+        hqPrompt: config.prompt || ''
+      }
+    }
+
+    // AI 视觉 OCR 服务商配置（aiVisionProvider）
+    for (const [provider, config] of Object.entries(providerConfigs.value.aiVisionOcr)) {
+      aiVisionProviderConfigs[provider] = {
+        aiVisionApiKey: config.apiKey || '',
+        aiVisionModelName: config.modelName || '',
+        customAiVisionBaseUrl: config.customBaseUrl || '',
+        aiVisionOcrPrompt: config.prompt || '',
+        rpmAiVisionOcr: String(config.rpmLimit || 0),
+        aiVisionPromptModeSelect: config.isJsonMode ? 'json' : 'normal'
+      }
+    }
+
+    return {
+      ocrEngine: {},
+      aiVisionProvider: aiVisionProviderConfigs,
+      modelProvider: modelProviderConfigs,
+      hqTranslateProvider: hqTranslateProviderConfigs
+    }
+  }
+
+  /**
    * 保存设置到后端
    * 将当前设置转换为后端格式并保存到 config/user_settings.json
    * 使用与原版前端相同的字段名
@@ -1439,6 +1501,12 @@ export const useSettingsStore = defineStore('settings', () => {
   async function saveToBackend(): Promise<boolean> {
     try {
       const { saveUserSettings } = await import('@/api/config')
+
+      // 复刻原版 saveAllCurrentProviderSettings：保存当前所有服务商的配置到缓存
+      // 确保当前选中的服务商配置也被保存
+      saveTranslationProviderConfig(settings.value.translation.provider)
+      saveHqProviderConfig(settings.value.hqTranslation.provider)
+      saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
 
       // 将 Vue 版本的设置转换为后端格式（使用原版字段名）
       const backendSettings: Record<string, unknown> = {
@@ -1529,6 +1597,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
         // 调试
         showDetectionDebug: settings.value.showDetectionDebug,
+
+        // ===== 服务商分组配置缓存（复刻原版 providerSettingsCache）=====
+        // 保存所有服务商的配置，实现切换服务商时的配置记忆
+        providerSettings: buildProviderSettingsForBackend(),
       }
 
       const response = await saveUserSettings(backendSettings)
