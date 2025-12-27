@@ -359,6 +359,8 @@ class MangaInsightConfig:
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
     analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
+    # 服务商配置缓存（用于切换服务商时保存/恢复配置）
+    provider_settings: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -367,7 +369,9 @@ class MangaInsightConfig:
             "embedding": self.embedding.to_dict(),
             "reranker": self.reranker.to_dict(),
             "analysis": self.analysis.to_dict(),
-            "prompts": self.prompts.to_dict()
+            "prompts": self.prompts.to_dict(),
+            # 保存服务商配置缓存
+            "providerSettings": self.provider_settings
         }
     
     @classmethod
@@ -378,7 +382,9 @@ class MangaInsightConfig:
             embedding=EmbeddingConfig.from_dict(data.get("embedding", {})),
             reranker=RerankerConfig.from_dict(data.get("reranker", {})),
             analysis=AnalysisSettings.from_dict(data.get("analysis", {})),
-            prompts=PromptsConfig.from_dict(data.get("prompts", {}))
+            prompts=PromptsConfig.from_dict(data.get("prompts", {})),
+            # 恢复服务商配置缓存
+            provider_settings=data.get("providerSettings", {})
         )
 
 

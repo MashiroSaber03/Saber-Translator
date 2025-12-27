@@ -23,7 +23,7 @@ export type AnalysisMode = 'full' | 'chapter' | 'page'
 /**
  * 概览模板类型
  */
-export type OverviewTemplateType = 
+export type OverviewTemplateType =
   | 'no_spoiler'      // 无剧透简介
   | 'story_summary'   // 故事概要
   | 'recap'           // 前情回顾
@@ -191,6 +191,57 @@ export interface BatchConfig {
   }>
 }
 
+// ============================================================
+// 服务商配置缓存类型定义
+// ============================================================
+
+/** VLM 服务商配置缓存项 */
+interface VlmProviderConfig {
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  rpmLimit?: number
+  temperature?: number
+  forceJson?: boolean
+  useStream?: boolean
+  imageMaxSize?: number
+}
+
+/** LLM 服务商配置缓存项 */
+interface LlmProviderConfig {
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  useStream?: boolean
+}
+
+/** Embedding 服务商配置缓存项 */
+interface EmbeddingProviderConfig {
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  rpmLimit?: number
+}
+
+/** Reranker 服务商配置缓存项 */
+interface RerankerProviderConfig {
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  topK?: number
+}
+
+/** Insight 服务商配置缓存结构 */
+interface InsightProviderConfigsCache {
+  vlm: Record<string, VlmProviderConfig>
+  llm: Record<string, LlmProviderConfig>
+  embedding: Record<string, EmbeddingProviderConfig>
+  reranker: Record<string, RerankerProviderConfig>
+}
+
+/** localStorage 存储键 */
+const STORAGE_KEY_INSIGHT_PROVIDER_CONFIGS = 'insight_provider_configs'
+
 /**
  * 分析配置
  */
@@ -313,6 +364,14 @@ export const useInsightStore = defineStore('insight', () => {
       architecturePreset: 'standard',
       customLayers: []
     }
+  })
+
+  /** 服务商配置分组存储（用于切换服务商时保存/恢复配置） */
+  const providerConfigs = ref<InsightProviderConfigsCache>({
+    vlm: {},
+    llm: {},
+    embedding: {},
+    reranker: {}
   })
 
   // ============================================================
@@ -639,12 +698,12 @@ export const useInsightStore = defineStore('insight', () => {
   async function loadNotesFromAPI(): Promise<void> {
     console.log('loadNotesFromAPI 被调用, bookId:', currentBookId.value)
     if (!currentBookId.value) return
-    
+
     try {
       const response = await fetch(`/api/manga-insight/${currentBookId.value}/notes`)
       const data = await response.json()
       console.log('笔记API响应:', data)
-      
+
       if (data.success && data.notes) {
         notes.value = data.notes
         console.log(`已从API加载 ${notes.value.length} 条笔记`)
@@ -663,7 +722,7 @@ export const useInsightStore = defineStore('insight', () => {
    */
   async function saveNoteToAPI(note: NoteData): Promise<boolean> {
     if (!currentBookId.value) return false
-    
+
     try {
       const response = await fetch(`/api/manga-insight/${currentBookId.value}/notes`, {
         method: 'POST',
@@ -683,7 +742,7 @@ export const useInsightStore = defineStore('insight', () => {
    */
   async function updateNoteToAPI(noteId: string, updates: Partial<NoteData>): Promise<boolean> {
     if (!currentBookId.value) return false
-    
+
     try {
       const response = await fetch(`/api/manga-insight/${currentBookId.value}/notes/${noteId}`, {
         method: 'PUT',
@@ -703,7 +762,7 @@ export const useInsightStore = defineStore('insight', () => {
    */
   async function deleteNoteFromAPI(noteId: string): Promise<boolean> {
     if (!currentBookId.value) return false
-    
+
     try {
       const response = await fetch(`/api/manga-insight/${currentBookId.value}/notes/${noteId}`, {
         method: 'DELETE'
@@ -746,6 +805,8 @@ export const useInsightStore = defineStore('insight', () => {
    */
   function updateVlmConfig(vlmConfig: Partial<VlmConfig>): void {
     config.value.vlm = { ...config.value.vlm, ...vlmConfig }
+    // 同时保存当前服务商配置到缓存
+    saveVlmProviderConfig(config.value.vlm.provider)
     saveConfigToStorage()
   }
 
@@ -755,6 +816,8 @@ export const useInsightStore = defineStore('insight', () => {
    */
   function updateLlmConfig(llmConfig: Partial<LlmConfig>): void {
     config.value.llm = { ...config.value.llm, ...llmConfig }
+    // 同时保存当前服务商配置到缓存
+    saveLlmProviderConfig(config.value.llm.provider)
     saveConfigToStorage()
   }
 
@@ -764,6 +827,8 @@ export const useInsightStore = defineStore('insight', () => {
    */
   function updateEmbeddingConfig(embeddingConfig: Partial<EmbeddingConfig>): void {
     config.value.embedding = { ...config.value.embedding, ...embeddingConfig }
+    // 同时保存当前服务商配置到缓存
+    saveEmbeddingProviderConfig(config.value.embedding.provider)
     saveConfigToStorage()
   }
 
@@ -773,6 +838,8 @@ export const useInsightStore = defineStore('insight', () => {
    */
   function updateRerankerConfig(rerankerConfig: Partial<RerankerConfig>): void {
     config.value.reranker = { ...config.value.reranker, ...rerankerConfig }
+    // 同时保存当前服务商配置到缓存
+    saveRerankerProviderConfig(config.value.reranker.provider)
     saveConfigToStorage()
   }
 
@@ -783,6 +850,259 @@ export const useInsightStore = defineStore('insight', () => {
   function updateBatchConfig(batchConfig: Partial<BatchConfig>): void {
     config.value.batch = { ...config.value.batch, ...batchConfig }
     saveConfigToStorage()
+  }
+
+  // ============================================================
+  // 服务商切换方法（支持多服务商配置持久化）
+  // ============================================================
+
+  /**
+   * 设置 VLM 服务商（自动保存旧配置并恢复新配置）
+   * @param provider - 新服务商名称
+   */
+  function setVlmProvider(provider: string): void {
+    const oldProvider = config.value.vlm.provider
+    if (oldProvider === provider) return
+
+    // 保存当前服务商配置
+    saveVlmProviderConfig(oldProvider)
+
+    // 切换服务商
+    config.value.vlm.provider = provider
+
+    // 恢复目标服务商配置（如果有）
+    restoreVlmProviderConfig(provider)
+
+    saveConfigToStorage()
+    console.log(`[Insight] VLM 服务商已切换为: ${provider}`)
+  }
+
+  /**
+   * 设置 LLM 服务商（自动保存旧配置并恢复新配置）
+   * @param provider - 新服务商名称
+   */
+  function setLlmProvider(provider: string): void {
+    const oldProvider = config.value.llm.provider
+    if (oldProvider === provider) return
+
+    // 保存当前服务商配置
+    saveLlmProviderConfig(oldProvider)
+
+    // 切换服务商
+    config.value.llm.provider = provider
+
+    // 恢复目标服务商配置（如果有）
+    restoreLlmProviderConfig(provider)
+
+    saveConfigToStorage()
+    console.log(`[Insight] LLM 服务商已切换为: ${provider}`)
+  }
+
+  /**
+   * 设置 Embedding 服务商（自动保存旧配置并恢复新配置）
+   * @param provider - 新服务商名称
+   */
+  function setEmbeddingProvider(provider: string): void {
+    const oldProvider = config.value.embedding.provider
+    if (oldProvider === provider) return
+
+    // 保存当前服务商配置
+    saveEmbeddingProviderConfig(oldProvider)
+
+    // 切换服务商
+    config.value.embedding.provider = provider
+
+    // 恢复目标服务商配置（如果有）
+    restoreEmbeddingProviderConfig(provider)
+
+    saveConfigToStorage()
+    console.log(`[Insight] Embedding 服务商已切换为: ${provider}`)
+  }
+
+  /**
+   * 设置 Reranker 服务商（自动保存旧配置并恢复新配置）
+   * @param provider - 新服务商名称
+   */
+  function setRerankerProvider(provider: string): void {
+    const oldProvider = config.value.reranker.provider
+    if (oldProvider === provider) return
+
+    // 保存当前服务商配置
+    saveRerankerProviderConfig(oldProvider)
+
+    // 切换服务商
+    config.value.reranker.provider = provider
+
+    // 恢复目标服务商配置（如果有）
+    restoreRerankerProviderConfig(provider)
+
+    saveConfigToStorage()
+    console.log(`[Insight] Reranker 服务商已切换为: ${provider}`)
+  }
+
+  // ============================================================
+  // 服务商配置保存/恢复方法
+  // ============================================================
+
+  /**
+   * 保存服务商配置缓存到 localStorage
+   */
+  function saveProviderConfigsToStorage(): void {
+    localStorage.setItem(STORAGE_KEY_INSIGHT_PROVIDER_CONFIGS, JSON.stringify(providerConfigs.value))
+  }
+
+  /**
+   * 从 localStorage 加载服务商配置缓存
+   */
+  function loadProviderConfigsFromStorage(): void {
+    const stored = localStorage.getItem(STORAGE_KEY_INSIGHT_PROVIDER_CONFIGS)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        providerConfigs.value = {
+          vlm: parsed.vlm || {},
+          llm: parsed.llm || {},
+          embedding: parsed.embedding || {},
+          reranker: parsed.reranker || {}
+        }
+        console.log('[Insight] 已加载服务商配置缓存')
+      } catch (e) {
+        console.error('[Insight] 加载服务商配置缓存失败:', e)
+      }
+    }
+  }
+
+  /** 保存 VLM 服务商配置到缓存 */
+  function saveVlmProviderConfig(provider: string): void {
+    if (!provider) return
+    providerConfigs.value.vlm[provider] = {
+      apiKey: config.value.vlm.apiKey,
+      model: config.value.vlm.model,
+      baseUrl: config.value.vlm.baseUrl,
+      rpmLimit: config.value.vlm.rpmLimit,
+      temperature: config.value.vlm.temperature,
+      forceJson: config.value.vlm.forceJson,
+      useStream: config.value.vlm.useStream,
+      imageMaxSize: config.value.vlm.imageMaxSize
+    }
+    saveProviderConfigsToStorage()
+    console.log(`[Insight] 保存 VLM 服务商配置: ${provider}`)
+  }
+
+  /** 恢复 VLM 服务商配置从缓存 */
+  function restoreVlmProviderConfig(provider: string): void {
+    if (!provider) return
+    const cached = providerConfigs.value.vlm[provider]
+    if (cached) {
+      if (cached.apiKey !== undefined) config.value.vlm.apiKey = cached.apiKey
+      if (cached.model !== undefined) config.value.vlm.model = cached.model
+      if (cached.baseUrl !== undefined) config.value.vlm.baseUrl = cached.baseUrl
+      if (cached.rpmLimit !== undefined) config.value.vlm.rpmLimit = cached.rpmLimit
+      if (cached.temperature !== undefined) config.value.vlm.temperature = cached.temperature
+      if (cached.forceJson !== undefined) config.value.vlm.forceJson = cached.forceJson
+      if (cached.useStream !== undefined) config.value.vlm.useStream = cached.useStream
+      if (cached.imageMaxSize !== undefined) config.value.vlm.imageMaxSize = cached.imageMaxSize
+      console.log(`[Insight] 恢复 VLM 服务商配置: ${provider}`)
+    } else {
+      // 无缓存时清空配置
+      config.value.vlm.apiKey = ''
+      config.value.vlm.model = ''
+      config.value.vlm.baseUrl = ''
+      console.log(`[Insight] ${provider} 无缓存配置，使用默认值`)
+    }
+  }
+
+  /** 保存 LLM 服务商配置到缓存 */
+  function saveLlmProviderConfig(provider: string): void {
+    if (!provider) return
+    providerConfigs.value.llm[provider] = {
+      apiKey: config.value.llm.apiKey,
+      model: config.value.llm.model,
+      baseUrl: config.value.llm.baseUrl,
+      useStream: config.value.llm.useStream
+    }
+    saveProviderConfigsToStorage()
+    console.log(`[Insight] 保存 LLM 服务商配置: ${provider}`)
+  }
+
+  /** 恢复 LLM 服务商配置从缓存 */
+  function restoreLlmProviderConfig(provider: string): void {
+    if (!provider) return
+    const cached = providerConfigs.value.llm[provider]
+    if (cached) {
+      if (cached.apiKey !== undefined) config.value.llm.apiKey = cached.apiKey
+      if (cached.model !== undefined) config.value.llm.model = cached.model
+      if (cached.baseUrl !== undefined) config.value.llm.baseUrl = cached.baseUrl
+      if (cached.useStream !== undefined) config.value.llm.useStream = cached.useStream
+      console.log(`[Insight] 恢复 LLM 服务商配置: ${provider}`)
+    } else {
+      config.value.llm.apiKey = ''
+      config.value.llm.model = ''
+      config.value.llm.baseUrl = ''
+      console.log(`[Insight] ${provider} 无缓存配置，使用默认值`)
+    }
+  }
+
+  /** 保存 Embedding 服务商配置到缓存 */
+  function saveEmbeddingProviderConfig(provider: string): void {
+    if (!provider) return
+    providerConfigs.value.embedding[provider] = {
+      apiKey: config.value.embedding.apiKey,
+      model: config.value.embedding.model,
+      baseUrl: config.value.embedding.baseUrl,
+      rpmLimit: config.value.embedding.rpmLimit
+    }
+    saveProviderConfigsToStorage()
+    console.log(`[Insight] 保存 Embedding 服务商配置: ${provider}`)
+  }
+
+  /** 恢复 Embedding 服务商配置从缓存 */
+  function restoreEmbeddingProviderConfig(provider: string): void {
+    if (!provider) return
+    const cached = providerConfigs.value.embedding[provider]
+    if (cached) {
+      if (cached.apiKey !== undefined) config.value.embedding.apiKey = cached.apiKey
+      if (cached.model !== undefined) config.value.embedding.model = cached.model
+      if (cached.baseUrl !== undefined) config.value.embedding.baseUrl = cached.baseUrl
+      if (cached.rpmLimit !== undefined) config.value.embedding.rpmLimit = cached.rpmLimit
+      console.log(`[Insight] 恢复 Embedding 服务商配置: ${provider}`)
+    } else {
+      config.value.embedding.apiKey = ''
+      config.value.embedding.model = ''
+      config.value.embedding.baseUrl = ''
+      console.log(`[Insight] ${provider} 无缓存配置，使用默认值`)
+    }
+  }
+
+  /** 保存 Reranker 服务商配置到缓存 */
+  function saveRerankerProviderConfig(provider: string): void {
+    if (!provider) return
+    providerConfigs.value.reranker[provider] = {
+      apiKey: config.value.reranker.apiKey,
+      model: config.value.reranker.model,
+      baseUrl: config.value.reranker.baseUrl,
+      topK: config.value.reranker.topK
+    }
+    saveProviderConfigsToStorage()
+    console.log(`[Insight] 保存 Reranker 服务商配置: ${provider}`)
+  }
+
+  /** 恢复 Reranker 服务商配置从缓存 */
+  function restoreRerankerProviderConfig(provider: string): void {
+    if (!provider) return
+    const cached = providerConfigs.value.reranker[provider]
+    if (cached) {
+      if (cached.apiKey !== undefined) config.value.reranker.apiKey = cached.apiKey
+      if (cached.model !== undefined) config.value.reranker.model = cached.model
+      if (cached.baseUrl !== undefined) config.value.reranker.baseUrl = cached.baseUrl
+      if (cached.topK !== undefined) config.value.reranker.topK = cached.topK
+      console.log(`[Insight] 恢复 Reranker 服务商配置: ${provider}`)
+    } else {
+      config.value.reranker.apiKey = ''
+      config.value.reranker.model = ''
+      config.value.reranker.baseUrl = ''
+      console.log(`[Insight] ${provider} 无缓存配置，使用默认值`)
+    }
   }
 
   /**
@@ -806,6 +1126,9 @@ export const useInsightStore = defineStore('insight', () => {
    * 从 localStorage 加载配置
    */
   function loadConfigFromStorage(): void {
+    // 先加载服务商配置缓存
+    loadProviderConfigsFromStorage()
+
     const key = 'manga_insight_config'
     const stored = localStorage.getItem(key)
     if (stored) {
@@ -875,7 +1198,73 @@ export const useInsightStore = defineStore('insight', () => {
             align_to_chapter: l.align
           }))
         }
+      },
+      // ===== 服务商分组配置缓存（复刻翻译设置页面的 providerSettings）=====
+      // 保存所有服务商的配置，实现切换服务商时的配置记忆
+      providerSettings: buildProviderSettingsForBackend()
+    }
+  }
+
+  /**
+   * 构建服务商分组配置用于保存到后端
+   * 复刻翻译设置页面的 buildProviderSettingsForBackend 结构
+   */
+  function buildProviderSettingsForBackend(): Record<string, Record<string, Record<string, unknown>>> {
+    // 初始化结果对象
+    const vlmProviderConfigs: Record<string, Record<string, unknown>> = {}
+    const llmProviderConfigs: Record<string, Record<string, unknown>> = {}
+    const embeddingProviderConfigs: Record<string, Record<string, unknown>> = {}
+    const rerankerProviderConfigs: Record<string, Record<string, unknown>> = {}
+
+    // VLM 服务商配置
+    for (const [provider, cfg] of Object.entries(providerConfigs.value.vlm)) {
+      vlmProviderConfigs[provider] = {
+        api_key: cfg.apiKey || '',
+        model: cfg.model || '',
+        base_url: cfg.baseUrl || '',
+        rpm_limit: cfg.rpmLimit ?? 10,
+        temperature: cfg.temperature ?? 0.3,
+        force_json: cfg.forceJson ?? false,
+        use_stream: cfg.useStream ?? true,
+        image_max_size: cfg.imageMaxSize ?? 0
       }
+    }
+
+    // LLM 服务商配置
+    for (const [provider, cfg] of Object.entries(providerConfigs.value.llm)) {
+      llmProviderConfigs[provider] = {
+        api_key: cfg.apiKey || '',
+        model: cfg.model || '',
+        base_url: cfg.baseUrl || '',
+        use_stream: cfg.useStream ?? true
+      }
+    }
+
+    // Embedding 服务商配置
+    for (const [provider, cfg] of Object.entries(providerConfigs.value.embedding)) {
+      embeddingProviderConfigs[provider] = {
+        api_key: cfg.apiKey || '',
+        model: cfg.model || '',
+        base_url: cfg.baseUrl || '',
+        rpm_limit: cfg.rpmLimit ?? 0
+      }
+    }
+
+    // Reranker 服务商配置
+    for (const [provider, cfg] of Object.entries(providerConfigs.value.reranker)) {
+      rerankerProviderConfigs[provider] = {
+        api_key: cfg.apiKey || '',
+        model: cfg.model || '',
+        base_url: cfg.baseUrl || '',
+        top_k: cfg.topK ?? 5
+      }
+    }
+
+    return {
+      vlmProvider: vlmProviderConfigs,
+      llmProvider: llmProviderConfigs,
+      embeddingProvider: embeddingProviderConfigs,
+      rerankerProvider: rerankerProviderConfigs
     }
   }
 
@@ -950,8 +1339,75 @@ export const useInsightStore = defineStore('insight', () => {
       }
     }
 
+    // ===== 解析并恢复后端保存的服务商配置缓存（复刻翻译设置页面逻辑）=====
+    const providerSettings = apiConfig.providerSettings as Record<string, Record<string, Record<string, unknown>>> | undefined
+    if (providerSettings) {
+      // VLM 服务商配置
+      if (providerSettings.vlmProvider) {
+        for (const [provider, cfg] of Object.entries(providerSettings.vlmProvider)) {
+          providerConfigs.value.vlm[provider] = {
+            apiKey: (cfg.api_key as string) || '',
+            model: (cfg.model as string) || '',
+            baseUrl: (cfg.base_url as string) || '',
+            rpmLimit: (cfg.rpm_limit as number) ?? 10,
+            temperature: (cfg.temperature as number) ?? 0.3,
+            forceJson: (cfg.force_json as boolean) ?? false,
+            useStream: (cfg.use_stream as boolean) ?? true,
+            imageMaxSize: (cfg.image_max_size as number) ?? 0
+          }
+        }
+      }
+
+      // LLM 服务商配置
+      if (providerSettings.llmProvider) {
+        for (const [provider, cfg] of Object.entries(providerSettings.llmProvider)) {
+          providerConfigs.value.llm[provider] = {
+            apiKey: (cfg.api_key as string) || '',
+            model: (cfg.model as string) || '',
+            baseUrl: (cfg.base_url as string) || '',
+            useStream: (cfg.use_stream as boolean) ?? true
+          }
+        }
+      }
+
+      // Embedding 服务商配置
+      if (providerSettings.embeddingProvider) {
+        for (const [provider, cfg] of Object.entries(providerSettings.embeddingProvider)) {
+          providerConfigs.value.embedding[provider] = {
+            apiKey: (cfg.api_key as string) || '',
+            model: (cfg.model as string) || '',
+            baseUrl: (cfg.base_url as string) || '',
+            rpmLimit: (cfg.rpm_limit as number) ?? 0
+          }
+        }
+      }
+
+      // Reranker 服务商配置
+      if (providerSettings.rerankerProvider) {
+        for (const [provider, cfg] of Object.entries(providerSettings.rerankerProvider)) {
+          providerConfigs.value.reranker[provider] = {
+            apiKey: (cfg.api_key as string) || '',
+            model: (cfg.model as string) || '',
+            baseUrl: (cfg.base_url as string) || '',
+            topK: (cfg.top_k as number) ?? 5
+          }
+        }
+      }
+
+      console.log('[Insight] 已从后端恢复服务商配置缓存')
+      // 保存到 localStorage
+      saveProviderConfigsToStorage()
+    }
+
     saveConfigToStorage()
-    console.log('已从 API 加载配置')
+
+    // 同时将当前激活的服务商配置保存到缓存中
+    saveVlmProviderConfig(config.value.vlm.provider)
+    saveLlmProviderConfig(config.value.llm.provider)
+    saveEmbeddingProviderConfig(config.value.embedding.provider)
+    saveRerankerProviderConfig(config.value.reranker.provider)
+
+    console.log('[Insight] 已从 API 加载配置')
   }
 
   // ============================================================
@@ -1090,6 +1546,12 @@ export const useInsightStore = defineStore('insight', () => {
     loadConfigFromStorage,
     getConfigForApi,
     setConfigFromApi,
+
+    // 服务商切换（多服务商配置持久化）
+    setVlmProvider,
+    setLlmProvider,
+    setEmbeddingProvider,
+    setRerankerProvider,
 
     // 重置
     resetAnalysis,

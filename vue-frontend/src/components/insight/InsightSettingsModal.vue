@@ -381,10 +381,41 @@ function getLayerUnitsTitle(idx: number): string {
  * VLM服务商变更处理
  */
 function onVlmProviderChange(): void {
-  // 设置默认模型
-  const defaultModel = vlmDefaultModels[vlmProvider.value]
-  if (defaultModel) {
-    vlmModel.value = defaultModel
+  const newProvider = vlmProvider.value
+  const oldProvider = insightStore.config.vlm.provider
+  
+  // 【关键】在切换服务商之前，先将当前本地 ref 的值同步到 store
+  // 这样 setVlmProvider 才能正确保存旧服务商的配置
+  if (oldProvider !== newProvider) {
+    insightStore.config.vlm.apiKey = vlmApiKey.value
+    insightStore.config.vlm.model = vlmModel.value
+    insightStore.config.vlm.baseUrl = vlmBaseUrl.value
+    insightStore.config.vlm.rpmLimit = vlmRpm.value
+    insightStore.config.vlm.temperature = vlmTemperature.value
+    insightStore.config.vlm.forceJson = vlmForceJson.value
+    insightStore.config.vlm.useStream = vlmUseStream.value
+    insightStore.config.vlm.imageMaxSize = vlmImageMaxSize.value
+  }
+  
+  // 调用 store 方法切换服务商（自动保存旧配置并恢复新配置）
+  insightStore.setVlmProvider(newProvider)
+  
+  // 从 store 同步恢复的配置到本地状态
+  vlmApiKey.value = insightStore.config.vlm.apiKey
+  vlmModel.value = insightStore.config.vlm.model
+  vlmBaseUrl.value = insightStore.config.vlm.baseUrl
+  vlmRpm.value = insightStore.config.vlm.rpmLimit
+  vlmTemperature.value = insightStore.config.vlm.temperature
+  vlmForceJson.value = insightStore.config.vlm.forceJson
+  vlmUseStream.value = insightStore.config.vlm.useStream
+  vlmImageMaxSize.value = insightStore.config.vlm.imageMaxSize
+  
+  // 如果恢复的配置没有模型名称，设置默认模型
+  if (!vlmModel.value) {
+    const defaultModel = vlmDefaultModels[newProvider]
+    if (defaultModel) {
+      vlmModel.value = defaultModel
+    }
   }
 }
 
@@ -392,10 +423,32 @@ function onVlmProviderChange(): void {
  * LLM服务商变更处理
  */
 function onLlmProviderChange(): void {
-  // 设置默认模型
-  const defaultModel = llmDefaultModels[llmProvider.value]
-  if (defaultModel) {
-    llmModel.value = defaultModel
+  const newProvider = llmProvider.value
+  const oldProvider = insightStore.config.llm.provider
+  
+  // 【关键】在切换服务商之前，先将当前本地 ref 的值同步到 store
+  if (oldProvider !== newProvider) {
+    insightStore.config.llm.apiKey = llmApiKey.value
+    insightStore.config.llm.model = llmModel.value
+    insightStore.config.llm.baseUrl = llmBaseUrl.value
+    insightStore.config.llm.useStream = llmUseStream.value
+  }
+  
+  // 调用 store 方法切换服务商（自动保存旧配置并恢复新配置）
+  insightStore.setLlmProvider(newProvider)
+  
+  // 从 store 同步恢复的配置到本地状态
+  llmApiKey.value = insightStore.config.llm.apiKey
+  llmModel.value = insightStore.config.llm.model
+  llmBaseUrl.value = insightStore.config.llm.baseUrl
+  llmUseStream.value = insightStore.config.llm.useStream
+  
+  // 如果恢复的配置没有模型名称，设置默认模型
+  if (!llmModel.value) {
+    const defaultModel = llmDefaultModels[newProvider]
+    if (defaultModel) {
+      llmModel.value = defaultModel
+    }
   }
 }
 
@@ -404,7 +457,7 @@ function onLlmProviderChange(): void {
  */
 function onLlmUseSameChange(): void {
   if (!llmUseSameAsVlm.value) {
-    // 取消勾选时，从 VLM 配置复制值到 LLM 字段
+    // 取消勾选时，从 VLM 配置复制值到 LLM 字段（仅当 LLM 配置为空时）
     if (!llmApiKey.value) {
       llmProvider.value = vlmProvider.value
       llmApiKey.value = vlmApiKey.value
@@ -418,10 +471,32 @@ function onLlmUseSameChange(): void {
  * Embedding服务商变更处理
  */
 function onEmbeddingProviderChange(): void {
-  // 设置默认模型
-  const defaultModel = embeddingDefaultModels[embeddingProvider.value]
-  if (defaultModel) {
-    embeddingModel.value = defaultModel
+  const newProvider = embeddingProvider.value
+  const oldProvider = insightStore.config.embedding.provider
+  
+  // 【关键】在切换服务商之前，先将当前本地 ref 的值同步到 store
+  if (oldProvider !== newProvider) {
+    insightStore.config.embedding.apiKey = embeddingApiKey.value
+    insightStore.config.embedding.model = embeddingModel.value
+    insightStore.config.embedding.baseUrl = embeddingBaseUrl.value
+    insightStore.config.embedding.rpmLimit = embeddingRpmLimit.value
+  }
+  
+  // 调用 store 方法切换服务商（自动保存旧配置并恢复新配置）
+  insightStore.setEmbeddingProvider(newProvider)
+  
+  // 从 store 同步恢复的配置到本地状态
+  embeddingApiKey.value = insightStore.config.embedding.apiKey
+  embeddingModel.value = insightStore.config.embedding.model
+  embeddingBaseUrl.value = insightStore.config.embedding.baseUrl
+  embeddingRpmLimit.value = insightStore.config.embedding.rpmLimit
+  
+  // 如果恢复的配置没有模型名称，设置默认模型
+  if (!embeddingModel.value) {
+    const defaultModel = embeddingDefaultModels[newProvider]
+    if (defaultModel) {
+      embeddingModel.value = defaultModel
+    }
   }
 }
 
@@ -429,10 +504,32 @@ function onEmbeddingProviderChange(): void {
  * Reranker服务商变更处理
  */
 function onRerankerProviderChange(): void {
-  // 设置默认模型
-  const defaultModel = rerankerDefaultModels[rerankerProvider.value]
-  if (defaultModel) {
-    rerankerModel.value = defaultModel
+  const newProvider = rerankerProvider.value
+  const oldProvider = insightStore.config.reranker.provider
+  
+  // 【关键】在切换服务商之前，先将当前本地 ref 的值同步到 store
+  if (oldProvider !== newProvider) {
+    insightStore.config.reranker.apiKey = rerankerApiKey.value
+    insightStore.config.reranker.model = rerankerModel.value
+    insightStore.config.reranker.baseUrl = rerankerBaseUrl.value
+    insightStore.config.reranker.topK = rerankerTopK.value
+  }
+  
+  // 调用 store 方法切换服务商（自动保存旧配置并恢复新配置）
+  insightStore.setRerankerProvider(newProvider)
+  
+  // 从 store 同步恢复的配置到本地状态
+  rerankerApiKey.value = insightStore.config.reranker.apiKey
+  rerankerModel.value = insightStore.config.reranker.model
+  rerankerBaseUrl.value = insightStore.config.reranker.baseUrl
+  rerankerTopK.value = insightStore.config.reranker.topK
+  
+  // 如果恢复的配置没有模型名称，设置默认模型
+  if (!rerankerModel.value) {
+    const defaultModel = rerankerDefaultModels[newProvider]
+    if (defaultModel) {
+      rerankerModel.value = defaultModel
+    }
   }
 }
 
