@@ -97,7 +97,7 @@
           <CustomSelect
             :model-value="settings.aiVisionOcr.provider"
             :options="aiVisionProviderOptions"
-            @change="(v: any) => { settings.aiVisionOcr.provider = v; handleAiVisionProviderChange() }"
+            @change="(v: any) => handleAiVisionProviderChange(v)"
           />
         </div>
         <div class="settings-item">
@@ -343,11 +343,12 @@ function getSourceLanguageHint(): string {
   }
 }
 
-// 处理AI视觉服务商切换
-function handleAiVisionProviderChange() {
+// 处理AI视觉服务商切换（复刻原版逻辑：独立保存每个服务商的配置）
+function handleAiVisionProviderChange(newProvider: string) {
+  // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
+  settingsStore.setAiVisionOcrProvider(newProvider)
   // 清空模型列表
   aiVisionModels.value = []
-  settingsStore.saveToStorage()
 }
 
 // 处理AI视觉提示词模式切换

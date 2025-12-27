@@ -9,7 +9,7 @@
           <CustomSelect
             :model-value="hqSettings.provider"
             :options="providerOptions"
-            @change="(v: any) => { hqSettings.provider = v; handleProviderChange() }"
+            @change="(v: any) => handleProviderChange(v)"
           />
         </div>
         <div class="settings-item">
@@ -210,11 +210,12 @@ const modelListOptions = computed(() => {
   return options
 })
 
-// 处理服务商切换
-function handleProviderChange() {
+// 处理服务商切换（复刻原版逻辑：独立保存每个服务商的配置）
+function handleProviderChange(newProvider: string) {
+  // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
+  settingsStore.setHqProvider(newProvider as import('@/types/settings').HqTranslationProvider)
   // 清空模型列表
   modelList.value = []
-  settingsStore.saveToStorage()
 }
 
 // 获取服务商显示名称（与原版一致）
