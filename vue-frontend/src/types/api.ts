@@ -224,11 +224,23 @@ export interface PromptListResponse {
 }
 
 /**
- * 模型信息响应
+ * 模型信息项
  */
-export interface ModelInfoResponse {
+export interface ModelInfoItem {
+  id: string
+  name: string
+}
+
+
+
+/**
+ * 获取模型列表响应（/api/fetch_models）
+ * 后端返回的 models 是对象数组 [{id, name}]
+ */
+export interface FetchModelsResponse {
   success: boolean
-  models?: string[]
+  models?: ModelInfoItem[]
+  message?: string
   error?: string
 }
 

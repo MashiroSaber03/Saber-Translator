@@ -68,6 +68,13 @@
           <span class="model-count">共 {{ modelList.length }} 个模型</span>
         </div>
       </div>
+
+      <!-- 测试连接按钮 -->
+      <div class="settings-item">
+        <button class="settings-test-btn" @click="testConnection" :disabled="isTesting">
+          {{ isTesting ? '测试中...' : '🔗 测试连接' }}
+        </button>
+      </div>
     </div>
 
     <!-- 批处理设置 -->
@@ -193,6 +200,9 @@ const showApiKey = ref(false)
 const isFetchingModels = ref(false)
 const modelList = ref<string[]>([])
 
+// 测试状态
+const isTesting = ref(false)
+
 /** 模型列表选项（用于CustomSelect） */
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
@@ -207,22 +217,106 @@ function handleProviderChange() {
   settingsStore.saveToStorage()
 }
 
-// 获取模型列表
+// 获取服务商显示名称（与原版一致）
+function getProviderDisplayName(provider: string): string {
+  const names: Record<string, string> = {
+    'siliconflow': 'SiliconFlow',
+    'deepseek': 'DeepSeek',
+    'volcano': '火山引擎',
+    'gemini': 'Google Gemini',
+    'custom_openai': '自定义OpenAI'
+  }
+  return names[provider] || provider
+}
+
+// 获取模型列表（复刻原版 doFetchModels 逻辑）
 async function fetchModels() {
+  const provider = hqSettings.value.provider
+  const apiKey = hqSettings.value.apiKey?.trim()
+  const baseUrl = hqSettings.value.customBaseUrl?.trim()
+
+  // 验证（与原版一致）
+  if (!apiKey) {
+    toast.warning('请先填写 API Key')
+    return
+  }
+
+  // 检查是否支持模型获取
+  const supportedProviders = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai']
+  if (!supportedProviders.includes(provider)) {
+    toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
+    return
+  }
+
+  // 自定义服务需要 base_url
+  if (provider === 'custom_openai' && !baseUrl) {
+    toast.warning('自定义服务需要先填写 Base URL')
+    return
+  }
+
   isFetchingModels.value = true
   try {
-    const result = await configApi.getModelInfo(hqSettings.value.provider, hqSettings.value.apiKey)
-    if (result.models && result.models.length > 0) {
-      modelList.value = result.models
+    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (result.success && result.models && result.models.length > 0) {
+      // 后端返回的是 {id, name} 对象数组，提取 id 作为模型列表
+      modelList.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
-      toast.warning('未获取到可用模型')
+      toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
     toast.error(errorMessage)
   } finally {
     isFetchingModels.value = false
+  }
+}
+
+// 测试高质量翻译服务连接（复刻原版逻辑）
+async function testConnection() {
+  const provider = hqSettings.value.provider
+  const apiKey = hqSettings.value.apiKey?.trim()
+  const modelName = hqSettings.value.modelName?.trim()
+  const baseUrl = hqSettings.value.customBaseUrl?.trim()
+
+  // 验证必填字段
+  if (!apiKey) {
+    toast.warning('请先填写 API Key')
+    return
+  }
+
+  if (!modelName) {
+    toast.warning('请填写模型名称')
+    return
+  }
+
+  // 自定义服务需要 base_url
+  if (provider === 'custom_openai' && !baseUrl) {
+    toast.warning('自定义服务需要填写 Base URL')
+    return
+  }
+
+  isTesting.value = true
+  toast.info('正在测试连接...')
+
+  try {
+    const result = await configApi.testAiTranslateConnection({
+      provider,
+      apiKey,
+      modelName,
+      baseUrl
+    })
+
+    if (result.success) {
+      toast.success(result.message || `${getProviderDisplayName(provider)} 连接成功!`)
+    } else {
+      toast.error(result.message || result.error || '连接失败')
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '连接测试失败'
+    toast.error(errorMessage)
+  } finally {
+    isTesting.value = false
   }
 }
 

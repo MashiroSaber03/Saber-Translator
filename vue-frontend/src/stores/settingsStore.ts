@@ -270,7 +270,6 @@ export const useSettingsStore = defineStore('settings', () => {
   function updateSettings(updates: TranslationSettingsUpdates): void {
     Object.assign(settings.value, updates)
     saveToStorage()
-    console.log('翻译设置已更新:', Object.keys(updates))
   }
 
   /**
@@ -280,7 +279,6 @@ export const useSettingsStore = defineStore('settings', () => {
   function updateTextStyle(updates: Partial<TextStyleSettings>): void {
     Object.assign(settings.value.textStyle, updates)
     saveToStorage()
-    console.log('文字样式已更新:', Object.keys(updates))
   }
 
 
@@ -375,7 +373,6 @@ export const useSettingsStore = defineStore('settings', () => {
     restoreTranslationProviderConfig(provider)
 
     saveToStorage()
-    console.log(`翻译服务商已切换为: ${provider}`)
   }
 
   /**

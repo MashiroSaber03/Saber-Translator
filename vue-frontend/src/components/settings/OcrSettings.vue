@@ -361,15 +361,26 @@ function handleAiVisionPromptModeChange() {
   settingsStore.saveToStorage()
 }
 
-// 测试百度OCR连接
+// 测试百度OCR连接（复刻原版逻辑）
 async function testBaiduOcr() {
+  const apiKey = settings.value.baiduOcr.apiKey?.trim()
+  const secretKey = settings.value.baiduOcr.secretKey?.trim()
+
+  // 验证必填字段
+  if (!apiKey || !secretKey) {
+    toast.warning('请填写百度OCR的API Key和Secret Key')
+    return
+  }
+
   isTesting.value = true
+  toast.info('正在测试百度OCR连接...')
+
   try {
-    const result = await configApi.testBaiduOcrConnection()
+    const result = await configApi.testBaiduOcrConnection(apiKey, secretKey)
     if (result.success) {
-      toast.success('百度OCR连接成功')
+      toast.success(result.message || '百度OCR连接成功!')
     } else {
-      toast.error(`百度OCR连接失败: ${result.error || '未知错误'}`)
+      toast.error(result.message || result.error || '百度OCR连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
@@ -388,7 +399,8 @@ async function testAiVisionOcr() {
       provider: aiVisionOcr.provider,
       apiKey: aiVisionOcr.apiKey,
       modelName: aiVisionOcr.modelName,
-      customBaseUrl: aiVisionOcr.customBaseUrl
+      customBaseUrl: aiVisionOcr.customBaseUrl,
+      prompt: aiVisionOcr.prompt  // 新增：传递提示词参数
     })
     if (result.success) {
       toast.success('AI视觉OCR连接成功')
@@ -403,17 +415,41 @@ async function testAiVisionOcr() {
   }
 }
 
-// 获取AI视觉模型列表
+// 获取AI视觉模型列表（复刻原版 doFetchModels 逻辑）
 async function fetchAiVisionModels() {
+  const aiVisionOcr = settingsStore.settings.aiVisionOcr
+  const provider = aiVisionOcr.provider
+  const apiKey = aiVisionOcr.apiKey?.trim()
+  const baseUrl = aiVisionOcr.customBaseUrl?.trim()
+
+  // 验证（与原版一致）
+  if (!apiKey) {
+    toast.warning('请先填写 API Key')
+    return
+  }
+
+  // 检查是否支持模型获取
+  const supportedProviders = ['siliconflow', 'volcano', 'gemini', 'custom_openai_vision']
+  if (!supportedProviders.includes(provider)) {
+    toast.warning('当前服务商不支持自动获取模型列表')
+    return
+  }
+
+  // 自定义服务需要 base_url
+  if (provider === 'custom_openai_vision' && !baseUrl) {
+    toast.warning('自定义服务需要先填写 Base URL')
+    return
+  }
+
   isFetchingModels.value = true
   try {
-    const aiVisionOcr = settingsStore.settings.aiVisionOcr
-    const result = await configApi.getModelInfo(aiVisionOcr.provider, aiVisionOcr.apiKey)
-    if (result.models && result.models.length > 0) {
-      aiVisionModels.value = result.models
+    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (result.success && result.models && result.models.length > 0) {
+      // 后端返回的是 {id, name} 对象数组，提取 id 作为模型列表
+      aiVisionModels.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
-      toast.warning('未获取到可用模型')
+      toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
@@ -431,5 +467,59 @@ function handleAiVisionPromptSelect(content: string, name: string) {
 </script>
 
 <style scoped>
-/* 使用现有CSS样式 */
+.settings-test-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.settings-test-btn:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.settings-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-input-with-fetch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.fetch-models-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  height: 38px;
+}
+
+.fetch-models-btn:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  border-color: var(--primary-color);
+}
 </style>

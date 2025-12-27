@@ -134,6 +134,13 @@
           {{ isTesting ? '测试中...' : '🔗 测试连接' }}
         </button>
       </div>
+
+      <!-- 云服务商测试按钮（复刻原版） -->
+      <div v-show="!isLocalProvider" class="settings-item">
+        <button class="settings-test-btn" @click="testCloudConnection" :disabled="isTesting">
+          {{ isTesting ? '测试中...' : '🔗 测试连接' }}
+        </button>
+      </div>
     </div>
 
     <!-- 提示词设置 -->
@@ -356,7 +363,7 @@ function handleProviderChange() {
   // 清空模型列表
   modelList.value = []
   
-  console.log(`[TranslationSettings] 服务商已切换为: ${newProvider}`)
+
 }
 
 // 处理提示词模式切换
@@ -408,16 +415,40 @@ watch(() => localSettings.value.textboxPromptContent, (newVal) => {
   settingsStore.setTextboxPrompt(newVal)
 })
 
-// 获取模型列表
+// 获取模型列表（复刻原版 doFetchModels 逻辑）
 async function fetchModels() {
+  const provider = localSettings.value.modelProvider
+  const apiKey = localSettings.value.apiKey?.trim()
+  const baseUrl = localSettings.value.customBaseUrl?.trim()
+
+  // 验证（与原版一致）
+  if (!apiKey) {
+    toast.warning('请先填写 API Key')
+    return
+  }
+
+  // 检查是否支持模型获取（与原版一致）
+  const supportedProviders = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai']
+  if (!supportedProviders.includes(provider)) {
+    toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
+    return
+  }
+
+  // 自定义服务需要 base_url（与原版一致）
+  if (provider === 'custom_openai' && !baseUrl) {
+    toast.warning('自定义服务需要先填写 Base URL')
+    return
+  }
+
   isFetchingModels.value = true
   try {
-    const result = await configApi.getModelInfo(localSettings.value.modelProvider, localSettings.value.apiKey)
-    if (result.models && result.models.length > 0) {
-      modelList.value = result.models
+    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (result.success && result.models && result.models.length > 0) {
+      // 后端返回的是 {id, name} 对象数组，提取 id 作为模型列表
+      modelList.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
-      toast.warning('未获取到可用模型')
+      toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
@@ -425,6 +456,23 @@ async function fetchModels() {
   } finally {
     isFetchingModels.value = false
   }
+}
+
+// 获取服务商显示名称（与原版一致）
+function getProviderDisplayName(provider: string): string {
+  const names: Record<string, string> = {
+    'siliconflow': 'SiliconFlow',
+    'deepseek': 'DeepSeek',
+    'volcano': '火山引擎',
+    'gemini': 'Google Gemini',
+    'custom_openai': '自定义OpenAI',
+    'ollama': 'Ollama',
+    'sakura': 'Sakura',
+    'caiyun': '彩云小译',
+    'baidu_translate': '百度翻译',
+    'youdao_translate': '有道翻译'
+  }
+  return names[provider] || provider
 }
 
 // 获取Ollama模型列表
@@ -479,6 +527,70 @@ async function testLocalConnection() {
       toast.success(`${localSettings.value.modelProvider === 'ollama' ? 'Ollama' : 'Sakura'} 连接成功`)
     } else {
       toast.error(result.error || '连接失败')
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '连接测试失败'
+    toast.error(errorMessage)
+  } finally {
+    isTesting.value = false
+  }
+}
+
+// 测试云服务商连接（复刻原版 testTranslationConnection 逻辑）
+async function testCloudConnection() {
+  const provider = localSettings.value.modelProvider
+  const apiKey = localSettings.value.apiKey?.trim()
+  const modelName = localSettings.value.modelName?.trim()
+  const baseUrl = localSettings.value.customBaseUrl?.trim()
+
+  // 验证必填字段（与原版一致）
+  if (!apiKey) {
+    toast.warning('请先填写 API Key')
+    return
+  }
+
+  // 非彩云小译需要模型名称
+  if (provider !== 'caiyun' && !modelName) {
+    toast.warning('请填写模型名称')
+    return
+  }
+
+  // 自定义服务需要 base_url
+  if (provider === 'custom_openai' && !baseUrl) {
+    toast.warning('自定义服务需要填写 Base URL')
+    return
+  }
+
+  isTesting.value = true
+  toast.info('正在测试连接...')
+
+  try {
+    let result
+
+    // 根据服务商类型分发到不同的测试函数（与原版一致）
+    switch (provider) {
+      case 'baidu_translate':
+        // 百度翻译使用 apiKey 作为 App ID，modelName 作为 App Key
+        result = await configApi.testBaiduTranslateConnection(apiKey, modelName)
+        break
+      case 'youdao_translate':
+        // 有道翻译使用 apiKey 作为 App Key，modelName 作为 App Secret
+        result = await configApi.testYoudaoTranslateConnection(apiKey, modelName)
+        break
+      default:
+        // 其他 AI 服务商使用通用接口
+        result = await configApi.testAiTranslateConnection({
+          provider,
+          apiKey,
+          modelName,
+          baseUrl
+        })
+    }
+
+    if (result.success) {
+      toast.success(result.message || `${getProviderDisplayName(provider)} 连接成功!`)
+    } else {
+      toast.error(result.message || result.error || '连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'

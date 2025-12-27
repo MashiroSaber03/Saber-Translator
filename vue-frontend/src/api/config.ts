@@ -8,7 +8,7 @@ import type {
   ApiResponse,
   FontListResponse,
   PromptListResponse,
-  ModelInfoResponse,
+  FetchModelsResponse,
   ConnectionTestResponse,
 } from '@/types'
 
@@ -135,37 +135,32 @@ export async function resetTextboxPromptToDefault(name: string): Promise<PromptC
 
 // ==================== 模型信息 API ====================
 
-/**
- * 获取模型信息/模型列表
- * @param provider 服务商
- * @param apiKey API Key（可选，用于获取云服务商的模型列表）
- */
-export async function getModelInfo(provider: string, apiKey?: string): Promise<ModelInfoResponse> {
-  const params: Record<string, string> = { provider }
-  if (apiKey) {
-    params.api_key = apiKey
-  }
-  return apiClient.get<ModelInfoResponse>('/api/get_model_info', { params })
-}
+
+
 
 /**
- * 保存模型信息
- * @param provider 服务商
- * @param model 模型名称
+ * 获取模型列表响应类型（/api/fetch_models）
  */
-export async function saveModelInfo(provider: string, model: string): Promise<ApiResponse> {
-  // 后端期望 camelCase: modelProvider, modelName
-  return apiClient.post<ApiResponse>('/api/save_model_info', { modelProvider: provider, modelName: model })
-}
+
 
 /**
- * 获取已使用的模型列表
- * @param provider 服务商
+ * 从云服务商获取可用模型列表（复刻原版 doFetchModels 逻辑）
+ * @param provider 服务商 (siliconflow, deepseek, volcano, gemini, custom_openai 等)
+ * @param apiKey API Key
+ * @param baseUrl 自定义服务的 Base URL（仅 custom_openai 需要）
  */
-export async function getUsedModels(provider: string): Promise<ModelInfoResponse> {
-  // 后端期望 snake_case: model_provider
-  return apiClient.get<ModelInfoResponse>('/api/get_used_models', {
-    params: { model_provider: provider },
+export async function fetchModels(
+  provider: string,
+  apiKey: string,
+  baseUrl?: string
+): Promise<FetchModelsResponse> {
+  // 将 custom_openai_vision 映射为 custom_openai 发送给后端（与原版一致）
+  const apiProvider = provider === 'custom_openai_vision' ? 'custom_openai' : provider
+
+  return apiClient.post<FetchModelsResponse>('/api/fetch_models', {
+    provider: apiProvider,
+    api_key: apiKey,
+    base_url: baseUrl || ''
   })
 }
 
@@ -193,10 +188,17 @@ export async function testSakuraConnection(baseUrl?: string): Promise<Connection
 
 /**
  * 测试百度 OCR 连接
- * 使用当前设置中的 API Key 和 Secret Key
+ * @param apiKey 百度OCR API Key
+ * @param secretKey 百度OCR Secret Key
  */
-export async function testBaiduOcrConnection(): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>('/api/test_baidu_ocr_connection')
+export async function testBaiduOcrConnection(
+  apiKey: string,
+  secretKey: string
+): Promise<ConnectionTestResponse> {
+  return apiClient.post<ConnectionTestResponse>('/api/test_baidu_ocr_connection', {
+    api_key: apiKey,
+    secret_key: secretKey
+  })
 }
 
 /**
@@ -214,6 +216,7 @@ export interface AiVisionOcrTestParams {
   apiKey: string
   modelName: string
   customBaseUrl?: string
+  prompt?: string
 }
 
 /**
@@ -226,8 +229,66 @@ export async function testAiVisionOcrConnection(
   return apiClient.post<ConnectionTestResponse>('/api/test_ai_vision_ocr', {
     provider: params.provider,
     api_key: params.apiKey,
-    model: params.modelName,
-    custom_base_url: params.customBaseUrl,
+    model_name: params.modelName,  // 后端期望 model_name
+    custom_ai_vision_base_url: params.customBaseUrl,  // 后端期望 custom_ai_vision_base_url
+    prompt: params.prompt || '', // 增加：将提示词发送到后端
+  })
+}
+
+/**
+ * AI翻译服务连接测试参数
+ */
+export interface AiTranslateTestParams {
+  provider: string
+  apiKey: string
+  modelName?: string
+  baseUrl?: string
+}
+
+/**
+ * 测试 AI 翻译服务连接（通用接口）
+ * 支持: SiliconFlow, DeepSeek, 火山引擎, Gemini, 彩云小译, 自定义OpenAI兼容服务
+ * 复刻原版 testTranslationConnection 逻辑
+ * @param params 测试参数
+ */
+export async function testAiTranslateConnection(
+  params: AiTranslateTestParams
+): Promise<ConnectionTestResponse> {
+  return apiClient.post<ConnectionTestResponse>('/api/test_ai_translate_connection', {
+    provider: params.provider,
+    api_key: params.apiKey,
+    model_name: params.modelName || '',
+    base_url: params.baseUrl || ''
+  })
+}
+
+/**
+ * 测试百度翻译连接
+ * @param appId 应用ID
+ * @param appKey 应用密钥
+ */
+export async function testBaiduTranslateConnection(
+  appId: string,
+  appKey: string
+): Promise<ConnectionTestResponse> {
+  return apiClient.post<ConnectionTestResponse>('/api/test_baidu_translate_connection', {
+    app_id: appId,
+    app_key: appKey
+  })
+}
+
+/**
+ * 测试有道翻译连接
+ * @param appKey 应用Key
+ * @param appSecret 应用密钥
+ */
+export async function testYoudaoTranslateConnection(
+  appKey: string,
+  appSecret: string
+): Promise<ConnectionTestResponse> {
+  return apiClient.post<ConnectionTestResponse>('/api/test_youdao_translate', {
+    appKey: appKey,
+    appSecret: appSecret
   })
 }
 
@@ -329,9 +390,7 @@ export const configApi = {
   resetTextboxPromptToDefault,
 
   // 模型信息
-  getModelInfo,
-  saveModelInfo,
-  getUsedModels,
+  fetchModels,  // 新增：获取云服务商模型列表
 
   // 服务连接测试
   testOllamaConnection,
@@ -339,6 +398,9 @@ export const configApi = {
   testBaiduOcrConnection,
   testLamaRepair,
   testAiVisionOcrConnection,
+  testAiTranslateConnection,        // 新增：测试AI翻译服务连接
+  testBaiduTranslateConnection,     // 新增：测试百度翻译连接
+  testYoudaoTranslateConnection,    // 新增：测试有道翻译连接
 
   // 字体管理
   getFontList,
