@@ -363,6 +363,17 @@ export async function regenerateTimeline(bookId: string): Promise<InsightTimelin
 // ==================== 问答 API ====================
 
 /**
+ * 问答响应类型
+ */
+export interface ChatResponse {
+  success: boolean
+  answer?: string
+  mode?: string
+  citations?: Array<{ page: number }>
+  error?: string
+}
+
+/**
  * 发送问答请求（返回 EventSource URL，用于 SSE 流式响应）
  * @param bookId 书籍 ID
  */
@@ -374,21 +385,47 @@ export function getChatStreamUrl(bookId: string): string {
  * 发送问答请求（非流式）
  * @param bookId 书籍 ID
  * @param question 问题
- * @param context 上下文（可选）
+ * @param options 问答选项
  */
-export async function sendChatMessage(
+export async function sendChat(
   bookId: string,
   question: string,
-  context?: {
-    page_num?: number
-    chapter_id?: string
+  options?: {
+    use_parent_child?: boolean
+    use_reasoning?: boolean
+    use_reranker?: boolean
+    top_k?: number
+    threshold?: number
+    use_global_context?: boolean
   }
-): Promise<ApiResponse<{ answer: string }>> {
-  return apiClient.post(`/api/manga-insight/${bookId}/chat`, {
+): Promise<ChatResponse> {
+  return apiClient.post<ChatResponse>(`/api/manga-insight/${bookId}/chat`, {
     question,
-    stream: false,
-    ...context,
+    ...options,
   })
+}
+
+/**
+ * 重建向量索引响应类型
+ */
+export interface RebuildEmbeddingsResponse {
+  success: boolean
+  stats?: {
+    pages_count?: number
+    dialogues_count?: number
+  }
+  error?: string
+}
+
+/**
+ * 重建向量索引
+ * @param bookId 书籍 ID
+ */
+export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddingsResponse> {
+  return apiClient.post<RebuildEmbeddingsResponse>(
+    `/api/manga-insight/${bookId}/rebuild-embeddings`,
+    {}
+  )
 }
 
 // ==================== 笔记 API ====================

@@ -7,6 +7,7 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { marked } from 'marked'
+import * as insightApi from '@/api/insight'
 
 // ============================================================
 // 状态
@@ -94,46 +95,37 @@ async function sendQuestion(): Promise<void> {
   insightStore.setStreaming(true)
 
   try {
-    // 使用普通POST请求（与原版一致）
-    const response = await fetch(`/api/manga-insight/${insightStore.currentBookId}/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        question,
-        use_parent_child: useParentChild.value,
-        use_reasoning: useReasoning.value,
-        use_reranker: useReranker.value,
-        top_k: topK.value,
-        threshold: threshold.value,
-        use_global_context: qaMode.value === 'global'
-      })
+    // 使用API封装
+    const response = await insightApi.sendChat(insightStore.currentBookId, question, {
+      use_parent_child: useParentChild.value,
+      use_reasoning: useReasoning.value,
+      use_reranker: useReranker.value,
+      top_k: topK.value,
+      threshold: threshold.value,
+      use_global_context: qaMode.value === 'global'
     })
-
-    const data = await response.json()
 
     // 移除加载消息
     insightStore.removeLoadingMessages()
 
-    if (data.success) {
+    if (response.success) {
       // 构建回答内容
-      const modeLabel = data.mode === 'global' ? '🌐 全局模式' : '🎯 精确模式'
+      const modeLabel = response.mode === 'global' ? '🌐 全局模式' : '🎯 精确模式'
       
       // 添加助手回答
       insightStore.addQAMessage({
         id: (Date.now() + 2).toString(),
         role: 'assistant',
-        content: data.answer || '',
+        content: response.answer || '',
         timestamp: new Date().toISOString(),
         mode: modeLabel,
-        citations: data.citations || []
+        citations: response.citations || []
       })
     } else {
       insightStore.addQAMessage({
         id: (Date.now() + 2).toString(),
         role: 'assistant',
-        content: '抱歉，处理问题时出错: ' + (data.error || '未知错误'),
+        content: '抱歉，处理问题时出错: ' + (response.error || '未知错误'),
         timestamp: new Date().toISOString()
       })
     }
@@ -179,10 +171,31 @@ function scrollToBottom(): void {
  */
 async function rebuildEmbeddings(): Promise<void> {
   if (!insightStore.currentBookId) return
-  if (!confirm('确定要重建向量索引吗？这可能需要一些时间。')) return
+  if (!confirm('确定要重建向量索引吗？\n\n这将删除现有的向量数据并重新构建，可能需要一些时间。')) return
 
-  // TODO: 实现重建向量索引功能
-  console.log('重建向量索引')
+  insightStore.setLoading(true)
+
+  try {
+    const response = await insightApi.rebuildEmbeddings(insightStore.currentBookId)
+    
+    if (response.success) {
+      let message = '向量索引重建完成'
+      if (response.stats) {
+        message += `\n页面向量: ${response.stats.pages_count || 0} 条`
+        if (response.stats.dialogues_count) {
+          message += `\n对话向量: ${response.stats.dialogues_count} 条`
+        }
+      }
+      alert(message)
+    } else {
+      alert('重建失败: ' + (response.error || '未知错误'))
+    }
+  } catch (error) {
+    console.error('重建向量索引失败:', error)
+    alert('重建向量索引失败')
+  } finally {
+    insightStore.setLoading(false)
+  }
 }
 
 /**
@@ -200,6 +213,24 @@ function renderMarkdown(content: string): string {
  */
 function selectPage(pageNum: number): void {
   insightStore.setCurrentPage(pageNum)
+}
+
+/**
+ * 示例问题列表（全局模式）
+ */
+const globalModeExamples = [
+  '故事的主题是什么？',
+  '主角的性格有什么变化？',
+  '结局是怎样的？'
+]
+
+/**
+ * 点击示例问题
+ * @param question - 示例问题
+ */
+function askExampleQuestion(question: string): void {
+  questionInput.value = question
+  sendQuestion()
 }
 
 // ============================================================
@@ -429,6 +460,16 @@ onMounted(() => {
         <!-- 全局模式提示 -->
         <div v-else class="global-mode-hint">
           <span class="hint-text">💡 全局模式使用全文摘要回答，适合总结性问题</span>
+          <div class="welcome-examples">
+            <span 
+              v-for="(example, index) in globalModeExamples" 
+              :key="index"
+              class="example-tag" 
+              @click="askExampleQuestion(example)"
+            >
+              {{ example }}
+            </span>
+          </div>
         </div>
       </div>
       
@@ -782,7 +823,8 @@ onMounted(() => {
 
 .global-mode-hint {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .global-mode-hint .hint-text {

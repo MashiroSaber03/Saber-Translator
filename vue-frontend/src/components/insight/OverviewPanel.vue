@@ -28,6 +28,13 @@ const isLoading = ref(false)
 /** 已生成的模板列表 */
 const generatedTemplates = ref<OverviewTemplateType[]>([])
 
+/** 最近分析的页面 */
+const recentAnalyzedPages = ref<Array<{
+  page_num: number
+  summary?: string
+  analyzed_at?: string
+}>>([])
+
 // ============================================================
 // 模板配置
 // ============================================================
@@ -229,12 +236,55 @@ function exportCurrentOverview(): void {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * 加载最近分析的页面
+ */
+async function loadRecentAnalyzedPages(): Promise<void> {
+  if (!insightStore.currentBookId) return
+
+  try {
+    // 获取最近分析的页面 (显示最多5个)
+    const stats = await insightApi.getAnalysisStatus(insightStore.currentBookId)
+    if (stats.success && insightStore.analyzedPageCount > 0) {
+      // 从已分析页数倒推获取最近的几页
+      const totalPages = insightStore.totalPageCount
+      const analyzedCount = insightStore.analyzedPageCount
+      const recentPages: Array<{ page_num: number; summary?: string }> = []
+      
+      // 简单实现：显示最后分析的5页
+      const startPage = Math.max(1, analyzedCount - 4)
+      for (let i = 0; i < Math.min(5, analyzedCount); i++) {
+        const pageNum = startPage + i
+        if (pageNum <= totalPages) {
+          recentPages.push({
+            page_num: pageNum,
+            summary: `第 ${pageNum} 页`
+          })
+        }
+      }
+      
+      recentAnalyzedPages.value = recentPages.reverse() // 最新的在前
+    }
+  } catch (error) {
+    console.error('加载最近分析页面失败:', error)
+  }
+}
+
+/**
+ * 跳转到指定页面
+ * @param pageNum - 页码
+ */
+function goToPage(pageNum: number): void {
+  insightStore.selectPage(pageNum)
+}
+
 // ============================================================
 // 生命周期
 // ============================================================
 
 onMounted(async () => {
   await loadGeneratedTemplates()
+  await loadRecentAnalyzedPages()
   // 如果当前模板已生成，自动加载
   if (generatedTemplates.value.includes(currentTemplate.value)) {
     await loadTemplateOverview(false)
@@ -246,7 +296,9 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
   if (newBookId) {
     overviewContent.value = ''
     generatedTemplates.value = []
+    recentAnalyzedPages.value = []
     await loadGeneratedTemplates()
+    await loadRecentAnalyzedPages()
     // 如果当前模板已生成，自动加载
     if (generatedTemplates.value.includes(currentTemplate.value)) {
       await loadTemplateOverview(false)
@@ -333,7 +385,16 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
     <div class="overview-card recent-card">
       <h3 class="card-title">🕐 最近分析</h3>
       <div class="recent-pages">
-        <div class="placeholder-text">暂无分析记录</div>
+        <div v-if="recentAnalyzedPages.length === 0" class="placeholder-text">暂无分析记录</div>
+        <div 
+          v-for="page in recentAnalyzedPages" 
+          :key="page.page_num"
+          class="recent-page-item"
+          @click="goToPage(page.page_num)"
+        >
+          <span class="page-number">第 {{ page.page_num }} 页</span>
+          <span v-if="page.summary" class="page-summary">{{ page.summary }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -634,5 +695,43 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
 .btn-sm {
   padding: 6px 12px;
   font-size: 12px;
+}
+
+/* 最近分析页面项 */
+.recent-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent-page-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.recent-page-item:hover {
+  background: var(--bg-hover, rgba(99, 102, 241, 0.1));
+  transform: translateX(4px);
+}
+
+.recent-page-item .page-number {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.recent-page-item .page-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
 }
 </style>
