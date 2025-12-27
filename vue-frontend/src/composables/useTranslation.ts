@@ -402,37 +402,33 @@ export function useTranslation() {
           // 优先从 bubbleStates 提取坐标和角度
           coordsToUse = currentImage.bubbleStates!.map(s => s.coords)
           anglesToUse = currentImage.bubbleStates!.map(s => s.rotationAngle || 0)
-          console.log(`翻译当前图片: 使用 ${coordsToUse.length} 个已有气泡状态中的坐标`)
         } else if (hasBubbleStatesArray && currentImage.bubbleStates!.length === 0) {
-          // 用户清空了气泡，设置空数组以触发跳过逻辑
+          // 用户清空了气泡，设置空数组
           coordsToUse = []
           anglesToUse = []
-          console.log('翻译当前图片: 检测到用户清空了气泡状态')
         } else if (hasBubbleCoordsArray && currentImage.bubbleCoords!.length > 0) {
           // 回退到 bubbleCoords 和 bubbleAngles
           coordsToUse = currentImage.bubbleCoords
           anglesToUse = currentImage.bubbleAngles
-          console.log(`翻译当前图片: 使用 ${coordsToUse!.length} 个已有的气泡坐标`)
         } else if (hasBubbleCoordsArray && currentImage.bubbleCoords!.length === 0) {
           // 用户清空了坐标
           coordsToUse = []
           anglesToUse = []
-          console.log('翻译当前图片: 检测到用户清空了气泡坐标')
         }
 
         if (coordsToUse && coordsToUse.length > 0) {
           translationOptions.existingBubbleCoords = coordsToUse
           translationOptions.existingBubbleAngles = anglesToUse
           translationOptions.useExistingBubbles = true
+          console.log(`翻译当前图片: 使用 ${coordsToUse.length} 个已有的文本框`)
           toast.info('使用已有的文本框进行翻译...', 3000)
         } else if (coordsToUse && coordsToUse.length === 0) {
-          // 文本框已被用户清空，跳过翻译（与原版一致，避免框"复活"）
-          console.log('文本框已被用户清空，跳过翻译')
+          // 【复刻原版】文本框已被用户清空，显示消息但仍传递空数组给后端
+          console.log('翻译当前图片: 文本框已被用户清空，将跳过翻译')
           toast.info('该图片无文本框，跳过翻译', 3000)
-          toast.clearGeneralMessageById(translatingMsgId)
-          isTranslatingSingle.value = false
-          imageStore.setTranslationStatus(imageStore.currentImageIndex, 'completed')
-          return true
+          translationOptions.existingBubbleCoords = []
+          translationOptions.existingBubbleAngles = []
+          translationOptions.useExistingBubbles = true
         }
       }
       // ------------------------------------------
@@ -520,10 +516,13 @@ export function useTranslation() {
           translationOptions.existingBubbleCoords = coordsToUse
           translationOptions.existingBubbleAngles = anglesToUse
           translationOptions.useExistingBubbles = true
+          console.log(`批量翻译图片 ${index}: 将使用 ${coordsToUse.length} 个已有的文本框`)
         } else if (coordsToUse && coordsToUse.length === 0) {
-          // 文本框已被用户清空，标记为完成（避免框"复活"）
-          imageStore.setTranslationStatus(index, 'completed')
-          return true
+          // 【复刻原版】文本框已被用户清空，传递空数组给后端
+          console.log(`批量翻译图片 ${index}: 文本框已被用户清空，跳过此图片的翻译`)
+          translationOptions.existingBubbleCoords = []
+          translationOptions.existingBubbleAngles = []
+          translationOptions.useExistingBubbles = true
         }
       }
       // ------------------------------------------
@@ -647,6 +646,23 @@ export function useTranslation() {
       return false
     } finally {
       imageStore.setBatchTranslationInProgress(false)
+
+      // 【复刻原版】批量翻译完成后，刷新当前显示的图片
+      // 参考原版 main.js 行 1244-1249：重新显示当前图片，触发 UI 刷新显示最新渲染结果
+      const currentIndex = imageStore.currentImageIndex
+      if (currentIndex >= 0 && currentIndex < imageStore.images.length) {
+        // 刷新当前图片的 bubbleStore 和 imageStore
+        const currentImage = imageStore.images[currentIndex]
+        if (currentImage) {
+          // 更新 bubbleStore 以刷新气泡显示
+          if (currentImage.bubbleStates && currentImage.bubbleStates.length > 0) {
+            bubbleStore.setBubbles(currentImage.bubbleStates)
+          }
+          // 触发 imageStore 的响应式更新（通过重新设置当前索引）
+          imageStore.setCurrentImageIndex(currentIndex)
+        }
+      }
+
       // 【复刻原版】完成后延迟1秒再隐藏进度条，让用户看清完成状态
       // 参考原版 ui.js 中的 setTimeout(() => translationProgressBar.hide(), 1000)
       setTimeout(() => {

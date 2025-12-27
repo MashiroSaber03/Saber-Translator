@@ -33,10 +33,18 @@ export async function parsePdfStart(
 /**
  * 获取 PDF 解析批次
  * @param sessionId 解析会话 ID
+ * @param startIndex 起始索引（复刻原版）
+ * @param count 批次数量（复刻原版）
  */
-export async function parsePdfBatch(sessionId: string): Promise<PdfParseBatchResponse> {
+export async function parsePdfBatch(
+  sessionId: string,
+  startIndex: number,
+  count: number
+): Promise<PdfParseBatchResponse> {
   return apiClient.post<PdfParseBatchResponse>('/api/parse_pdf_batch', {
     session_id: sessionId,
+    start_index: startIndex,
+    count: count,
   })
 }
 

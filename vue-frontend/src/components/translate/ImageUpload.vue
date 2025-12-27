@@ -237,7 +237,24 @@ async function processPdfFile(file: File): Promise<number> {
 }
 
 /**
+ * 将 Blob 转换为 DataURL（复刻原版 blobToDataURL）
+ * @param blob - Blob 对象
+ * @returns DataURL 字符串
+ */
+function blobToDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+/**
  * 前端 pdf.js 解析 PDF
+ * 复刻原版 main.js processPDFFilesFrontend 逻辑：
+ * - 使用 OffscreenCanvas 后台渲染（页面不可见时也能继续渲染）
+ * - 输出 JPEG 格式（quality 1.0），与原版保持一致
  * @param file PDF 文件
  * @returns 处理的图片数量
  */
@@ -256,7 +273,14 @@ async function processPdfFrontend(file: File): Promise<number> {
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     const numPages = pdf.numPages
     
+    console.log(`PDF ${file.name} 共 ${numPages} 页，开始本地渲染...`)
     showToast(`正在解析 PDF，共 ${numPages} 页...`, 'info')
+    
+    // 检测是否支持 OffscreenCanvas（后台渲染不受页面可见性影响）
+    const useOffscreen = typeof OffscreenCanvas !== 'undefined'
+    if (useOffscreen) {
+      console.log('使用 OffscreenCanvas 后台渲染模式')
+    }
     
     let processedCount = 0
     
@@ -264,32 +288,57 @@ async function processPdfFrontend(file: File): Promise<number> {
       currentFileName.value = `${file.name} - 第 ${pageNum}/${numPages} 页`
       uploadProgress.value = Math.round((pageNum / numPages) * 100)
       
-      const page = await pdf.getPage(pageNum)
-      
-      // 设置渲染比例（2x 以获得更好的质量）
-      const scale = 2
-      const viewport = page.getViewport({ scale })
-      
-      // 创建 Canvas
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')!
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-      
-      // 渲染页面到 Canvas
-      await page.render({
-        canvasContext: context,
-        viewport: viewport,
-      }).promise
-      
-      // 转换为 DataURL
-      const dataURL = canvas.toDataURL('image/png')
-      const pageName = `${file.name.replace('.pdf', '')}_page_${String(pageNum).padStart(3, '0')}.png`
-      
-      imageStore.addImage(pageName, dataURL)
-      processedCount++
+      try {
+        const page = await pdf.getPage(pageNum)
+        
+        // 设置渲染比例（2.0 可以获得较高清晰度，与原版一致）
+        const scale = 2.0
+        const viewport = page.getViewport({ scale })
+        
+        let dataURL: string
+        
+        if (useOffscreen) {
+          // 使用 OffscreenCanvas - 后台也能继续渲染（复刻原版）
+          const offscreen = new OffscreenCanvas(viewport.width, viewport.height)
+          const context = offscreen.getContext('2d')
+          
+          await page.render({
+            canvasContext: context as unknown as CanvasRenderingContext2D,
+            viewport: viewport
+          }).promise
+          
+          // OffscreenCanvas 转 Blob 再转 DataURL (JPEG 最高质量，复刻原版)
+          const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 1.0 })
+          dataURL = await blobToDataURL(blob)
+        } else {
+          // 回退：使用普通 Canvas（复刻原版）
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')!
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          
+          await page.render({
+            canvasContext: context,
+            viewport: viewport
+          }).promise
+          
+          // 输出 JPEG 格式（与原版一致）
+          dataURL = canvas.toDataURL('image/jpeg', 1.0)
+        }
+        
+        // 文件名格式与原版一致
+        const pageName = `${file.name}_页面${pageNum}`
+        
+        imageStore.addImage(pageName, dataURL)
+        processedCount++
+        
+        console.log(`  页面 ${pageNum}/${numPages} 处理完成`)
+      } catch (pageError) {
+        console.warn(`PDF ${file.name} 第 ${pageNum} 页渲染失败:`, pageError)
+      }
     }
     
+    console.log(`PDF ${file.name} 全部 ${numPages} 页处理完成`)
     return processedCount
   } catch (error) {
     console.error('前端 PDF 解析失败:', error)
@@ -301,16 +350,18 @@ async function processPdfFrontend(file: File): Promise<number> {
 
 /**
  * 后端 PyMuPDF 分批解析 PDF
+ * 复刻原版 main.js processPDFFilesBackend 逻辑
  * @param file PDF 文件
  * @returns 处理的图片数量
  */
 async function processPdfBackend(file: File): Promise<number> {
+  const BATCH_SIZE = 5
   let sessionId: string | null = null
   
   try {
-    // 开始解析会话
+    // 步骤1: 开始解析会话
     showToast(`正在上传 PDF 文件...`, 'info')
-    const startResponse = await parsePdfStart(file, 5)
+    const startResponse = await parsePdfStart(file, BATCH_SIZE)
     
     if (!startResponse.success || !startResponse.session_id) {
       throw new Error(startResponse.error || 'PDF 解析启动失败')
@@ -319,47 +370,46 @@ async function processPdfBackend(file: File): Promise<number> {
     sessionId = startResponse.session_id
     const totalPages = startResponse.total_pages || 0
     
+    console.log(`PDF ${file.name} 共 ${totalPages} 页，开始后端分批解析...`)
     showToast(`正在解析 PDF，共 ${totalPages} 页...`, 'info')
     
-    let processedCount = 0
-    let hasMore = true
+    let loadedCount = 0
     
-    // 分批获取页面
-    while (hasMore) {
-      currentFileName.value = `${file.name} - 已处理 ${processedCount}/${totalPages} 页`
-      uploadProgress.value = totalPages > 0 ? Math.round((processedCount / totalPages) * 100) : 0
+    // 步骤2: 分批获取页面（复刻原版的 for 循环方式）
+    for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE) {
+      currentFileName.value = `${file.name} - 处理中 ${Math.min(startIndex + BATCH_SIZE, totalPages)}/${totalPages} 页`
+      uploadProgress.value = totalPages > 0 ? Math.round((startIndex / totalPages) * 100) : 0
       
-      const batchResponse = await parsePdfBatch(sessionId)
+      const batchResponse = await parsePdfBatch(sessionId, startIndex, BATCH_SIZE)
       
       if (!batchResponse.success) {
-        throw new Error(batchResponse.error || 'PDF 批次解析失败')
+        console.warn(`批次 ${startIndex} 获取失败:`, batchResponse.error)
+        continue
       }
       
-      // 处理返回的图片
+      // 处理返回的图片（复刻原版：images 是对象数组 {page_index, data_url}）
       if (batchResponse.images && batchResponse.images.length > 0) {
-        for (let i = 0; i < batchResponse.images.length; i++) {
-          const imageData = batchResponse.images[i]
-          if (!imageData) continue
+        for (const imgData of batchResponse.images) {
+          if (!imgData || !imgData.data_url) continue
           
-          const pageNum = processedCount + i + 1
-          const pageName = `${file.name.replace('.pdf', '')}_page_${String(pageNum).padStart(3, '0')}.png`
+          // 文件名格式与原版一致
+          const pageName = `${file.name}_页面${String(imgData.page_index + 1).padStart(4, '0')}`
           
-          // 确保是完整的 DataURL
-          const dataURL = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
-          imageStore.addImage(pageName, dataURL)
+          imageStore.addImage(pageName, imgData.data_url)
+          loadedCount++
         }
-        processedCount += batchResponse.images.length
       }
       
-      hasMore = batchResponse.has_more ?? false
+      console.log(`  已加载 ${loadedCount}/${totalPages} 页`)
     }
     
-    return processedCount
+    console.log(`PDF ${file.name} 全部 ${loadedCount} 页处理完成`)
+    return loadedCount
   } catch (error) {
     console.error('后端 PDF 解析失败:', error)
     throw error
   } finally {
-    // 清理会话
+    // 步骤3: 清理会话
     if (sessionId) {
       try {
         await parsePdfCleanup(sessionId)

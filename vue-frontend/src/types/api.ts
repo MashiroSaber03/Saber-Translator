@@ -294,10 +294,14 @@ export interface PdfParseStartResponse {
 
 /**
  * PDF 解析批次响应
+ * 注意：images 是对象数组，每个对象包含 page_index 和 data_url（复刻原版）
  */
 export interface PdfParseBatchResponse {
   success: boolean
-  images?: string[]
+  images?: Array<{
+    page_index: number
+    data_url: string
+  }>
   has_more?: boolean
   error?: string
 }
