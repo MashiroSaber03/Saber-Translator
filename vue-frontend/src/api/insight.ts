@@ -588,6 +588,23 @@ export async function testRerankerConnection(config: {
   return apiClient.post<ConnectionTestResponse>('/api/manga-insight/config/test/reranker', config)
 }
 
+/**
+ * 测试 LLM 连接
+ * @param config LLM 配置
+ */
+export async function testLlmConnection(config: {
+  provider: string
+  api_key: string
+  model: string
+  base_url?: string
+}): Promise<ConnectionTestResponse> {
+  return apiClient.post<ConnectionTestResponse>('/api/manga-insight/config/test/llm', config)
+}
+
+// ==================== 模型获取 API ====================
+
+// 从 config.ts 重新导出 fetchModels，避免重复定义
+export { fetchModels } from './config'
 
 // ==================== 提示词管理 API ====================
 

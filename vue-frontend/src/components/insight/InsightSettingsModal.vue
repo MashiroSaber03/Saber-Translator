@@ -45,6 +45,31 @@ const testMessage = ref('')
 /** 测试结果类型 */
 const testMessageType = ref<'success' | 'error' | ''>('')
 
+// ============================================================
+// 模型获取状态
+// ============================================================
+
+/** 模型列表 */
+const vlmModels = ref<Array<{ id: string; name: string }>>([])
+const llmModels = ref<Array<{ id: string; name: string }>>([])
+const embeddingModels = ref<Array<{ id: string; name: string }>>([])
+const rerankerModels = ref<Array<{ id: string; name: string }>>([])
+
+/** 模型下拉框是否可见 */
+const vlmModelSelectVisible = ref(false)
+const llmModelSelectVisible = ref(false)
+const embeddingModelSelectVisible = ref(false)
+const rerankerModelSelectVisible = ref(false)
+
+/** 是否正在获取模型 */
+const isFetchingVlmModels = ref(false)
+const isFetchingLlmModels = ref(false)
+const isFetchingEmbeddingModels = ref(false)
+const isFetchingRerankerModels = ref(false)
+
+/** 是否正在测试 LLM 连接 */
+const isTestingLlm = ref(false)
+
 // VLM 设置（从 store 同步）
 const vlmProvider = ref(insightStore.config.vlm.provider)
 const vlmApiKey = ref(insightStore.config.vlm.apiKey)
@@ -622,6 +647,156 @@ async function testRerankerConnection(): Promise<void> {
   }
 }
 
+/**
+ * 测试LLM连接
+ */
+async function testLlmConnection(): Promise<void> {
+  if (isTestingLlm.value) return
+  
+  isTestingLlm.value = true
+  testMessage.value = ''
+  
+  try {
+    const response = await insightApi.testLlmConnection({
+      provider: llmProvider.value,
+      api_key: llmApiKey.value,
+      model: llmModel.value,
+      base_url: llmBaseUrl.value || undefined
+    })
+    
+    if (response.success) {
+      showTestMessage('LLM 连接成功', 'success')
+    } else {
+      showTestMessage('连接失败: ' + (response.error || '未知错误'), 'error')
+    }
+  } catch (error) {
+    showTestMessage('测试失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+  } finally {
+    isTestingLlm.value = false
+  }
+}
+
+// ============================================================
+// 模型获取方法
+// ============================================================
+
+/** 支持获取模型列表的服务商 */
+const SUPPORTED_FETCH_PROVIDERS = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'qwen', 'openai', 'custom']
+
+/**
+ * 获取模型列表
+ * @param type 模型类型
+ */
+async function fetchModelsFor(type: 'vlm' | 'llm' | 'embedding' | 'reranker'): Promise<void> {
+  // 获取对应类型的配置
+  let provider: string
+  let apiKey: string
+  let baseUrl: string
+  let setFetching: (v: boolean) => void
+  let setModels: (models: Array<{ id: string; name: string }>) => void
+  let setVisible: (v: boolean) => void
+  
+  switch (type) {
+    case 'vlm':
+      provider = vlmProvider.value
+      apiKey = vlmApiKey.value
+      baseUrl = vlmBaseUrl.value
+      setFetching = (v) => { isFetchingVlmModels.value = v }
+      setModels = (models) => { vlmModels.value = models }
+      setVisible = (v) => { vlmModelSelectVisible.value = v }
+      break
+    case 'llm':
+      provider = llmProvider.value
+      apiKey = llmApiKey.value
+      baseUrl = llmBaseUrl.value
+      setFetching = (v) => { isFetchingLlmModels.value = v }
+      setModels = (models) => { llmModels.value = models }
+      setVisible = (v) => { llmModelSelectVisible.value = v }
+      break
+    case 'embedding':
+      provider = embeddingProvider.value
+      apiKey = embeddingApiKey.value
+      baseUrl = embeddingBaseUrl.value
+      setFetching = (v) => { isFetchingEmbeddingModels.value = v }
+      setModels = (models) => { embeddingModels.value = models }
+      setVisible = (v) => { embeddingModelSelectVisible.value = v }
+      break
+    case 'reranker':
+      provider = rerankerProvider.value
+      apiKey = rerankerApiKey.value
+      baseUrl = rerankerBaseUrl.value
+      setFetching = (v) => { isFetchingRerankerModels.value = v }
+      setModels = (models) => { rerankerModels.value = models }
+      setVisible = (v) => { rerankerModelSelectVisible.value = v }
+      break
+  }
+  
+  // 验证
+  if (!apiKey) {
+    showTestMessage('请先填写 API Key', 'error')
+    return
+  }
+  
+  // 检查是否支持模型获取
+  if (!SUPPORTED_FETCH_PROVIDERS.includes(provider)) {
+    showTestMessage(`${provider} 不支持自动获取模型列表`, 'error')
+    return
+  }
+  
+  // 自定义服务需要 base_url
+  if (provider === 'custom' && !baseUrl) {
+    showTestMessage('自定义服务需要先填写 Base URL', 'error')
+    return
+  }
+  
+  // 映射服务商名称
+  const apiProvider = provider === 'custom' ? 'custom_openai' : provider
+  
+  setFetching(true)
+  
+  try {
+    const response = await insightApi.fetchModels(apiProvider, apiKey, baseUrl || undefined)
+    
+    if (response.success && response.models && response.models.length > 0) {
+      setModels(response.models)
+      setVisible(true)
+      showTestMessage(`获取到 ${response.models.length} 个模型`, 'success')
+    } else {
+      showTestMessage(response.message || '未获取到模型列表', 'error')
+      setVisible(false)
+    }
+  } catch (error) {
+    showTestMessage('获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    setVisible(false)
+  } finally {
+    setFetching(false)
+  }
+}
+
+/**
+ * 模型选择事件
+ * @param type 模型类型
+ * @param modelId 选中的模型 ID
+ */
+function onModelSelected(type: 'vlm' | 'llm' | 'embedding' | 'reranker', modelId: string): void {
+  if (!modelId) return
+  
+  switch (type) {
+    case 'vlm':
+      vlmModel.value = modelId
+      break
+    case 'llm':
+      llmModel.value = modelId
+      break
+    case 'embedding':
+      embeddingModel.value = modelId
+      break
+    case 'reranker':
+      rerankerModel.value = modelId
+      break
+  }
+}
+
 // ============================================================
 // 提示词管理方法
 // ============================================================
@@ -1055,7 +1230,30 @@ onMounted(async () => {
       
       <div class="form-group">
         <label>模型</label>
-        <input v-model="vlmModel" type="text" placeholder="例如: gemini-2.0-flash">
+        <div class="model-input-row">
+          <input v-model="vlmModel" type="text" placeholder="例如: gemini-2.0-flash">
+          <button 
+            class="btn btn-secondary btn-sm fetch-btn" 
+            :disabled="isFetchingVlmModels"
+            @click="fetchModelsFor('vlm')"
+          >
+            {{ isFetchingVlmModels ? '获取中...' : '🔍 获取模型' }}
+          </button>
+        </div>
+        <!-- 模型下拉选择 -->
+        <div v-if="vlmModelSelectVisible && vlmModels.length > 0" class="model-select-container">
+          <select 
+            class="model-select"
+            :value="vlmModel"
+            @change="onModelSelected('vlm', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">-- 选择模型 --</option>
+            <option v-for="model in vlmModels" :key="model.id" :value="model.id">
+              {{ model.name || model.id }}
+            </option>
+          </select>
+          <span class="model-count">共 {{ vlmModels.length }} 个模型</span>
+        </div>
       </div>
       
       <div v-if="showVlmBaseUrl" class="form-group">
@@ -1123,7 +1321,30 @@ onMounted(async () => {
       
       <div class="form-group">
         <label>模型</label>
-        <input v-model="llmModel" type="text" placeholder="例如: gpt-4o-mini">
+        <div class="model-input-row">
+          <input v-model="llmModel" type="text" placeholder="例如: gpt-4o-mini">
+          <button 
+            class="btn btn-secondary btn-sm fetch-btn" 
+            :disabled="isFetchingLlmModels"
+            @click="fetchModelsFor('llm')"
+          >
+            {{ isFetchingLlmModels ? '获取中...' : '🔍 获取模型' }}
+          </button>
+        </div>
+        <!-- 模型下拉选择 -->
+        <div v-if="llmModelSelectVisible && llmModels.length > 0" class="model-select-container">
+          <select 
+            class="model-select"
+            :value="llmModel"
+            @change="onModelSelected('llm', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">-- 选择模型 --</option>
+            <option v-for="model in llmModels" :key="model.id" :value="model.id">
+              {{ model.name || model.id }}
+            </option>
+          </select>
+          <span class="model-count">共 {{ llmModels.length }} 个模型</span>
+        </div>
       </div>
       
       <div v-if="showLlmBaseUrl" class="form-group">
@@ -1137,6 +1358,10 @@ onMounted(async () => {
           <span>使用流式请求</span>
         </label>
       </div>
+      
+      <button class="btn btn-secondary" :disabled="isTestingLlm" @click="testLlmConnection">
+        {{ isTestingLlm ? '测试中...' : '测试连接' }}
+      </button>
     </div>
 
     <!-- 批量分析设置 -->
@@ -1255,7 +1480,30 @@ onMounted(async () => {
       
       <div class="form-group">
         <label>模型</label>
-        <input v-model="embeddingModel" type="text" placeholder="例如: text-embedding-3-small">
+        <div class="model-input-row">
+          <input v-model="embeddingModel" type="text" placeholder="例如: text-embedding-3-small">
+          <button 
+            class="btn btn-secondary btn-sm fetch-btn" 
+            :disabled="isFetchingEmbeddingModels"
+            @click="fetchModelsFor('embedding')"
+          >
+            {{ isFetchingEmbeddingModels ? '获取中...' : '🔍 获取模型' }}
+          </button>
+        </div>
+        <!-- 模型下拉选择 -->
+        <div v-if="embeddingModelSelectVisible && embeddingModels.length > 0" class="model-select-container">
+          <select 
+            class="model-select"
+            :value="embeddingModel"
+            @change="onModelSelected('embedding', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">-- 选择模型 --</option>
+            <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
+              {{ model.name || model.id }}
+            </option>
+          </select>
+          <span class="model-count">共 {{ embeddingModels.length }} 个模型</span>
+        </div>
       </div>
       
       <div v-if="showEmbeddingBaseUrl" class="form-group">
@@ -1294,7 +1542,30 @@ onMounted(async () => {
       
       <div class="form-group">
         <label>模型</label>
-        <input v-model="rerankerModel" type="text" placeholder="例如: jina-reranker-v2-base-multilingual">
+        <div class="model-input-row">
+          <input v-model="rerankerModel" type="text" placeholder="例如: jina-reranker-v2-base-multilingual">
+          <button 
+            class="btn btn-secondary btn-sm fetch-btn" 
+            :disabled="isFetchingRerankerModels"
+            @click="fetchModelsFor('reranker')"
+          >
+            {{ isFetchingRerankerModels ? '获取中...' : '🔍 获取模型' }}
+          </button>
+        </div>
+        <!-- 模型下拉选择 -->
+        <div v-if="rerankerModelSelectVisible && rerankerModels.length > 0" class="model-select-container">
+          <select 
+            class="model-select"
+            :value="rerankerModel"
+            @change="onModelSelected('reranker', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">-- 选择模型 --</option>
+            <option v-for="model in rerankerModels" :key="model.id" :value="model.id">
+              {{ model.name || model.id }}
+            </option>
+          </select>
+          <span class="model-count">共 {{ rerankerModels.length }} 个模型</span>
+        </div>
       </div>
       
       <div v-if="showRerankerBaseUrl" class="form-group">
@@ -1769,5 +2040,55 @@ onMounted(async () => {
 .insight-settings-modal .btn-sm {
   padding: 6px 12px;
   font-size: 13px;
+}
+
+/* 模型输入行样式 */
+.insight-settings-modal .model-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.insight-settings-modal .model-input-row input {
+  flex: 1;
+}
+
+.insight-settings-modal .fetch-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 模型下拉选择容器 */
+.insight-settings-modal .model-select-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #f5f5f5);
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.insight-settings-modal .model-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--input-bg-color, #fff);
+  color: var(--text-primary, #333);
+  cursor: pointer;
+}
+
+.insight-settings-modal .model-select:focus {
+  outline: none;
+  border-color: var(--primary, #6366f1);
+}
+
+.insight-settings-modal .model-count {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  white-space: nowrap;
 }
 </style>
