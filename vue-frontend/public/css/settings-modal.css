@@ -3,9 +3,8 @@
    =================================== */
 
 /* 设置模态框容器 */
-/* 注意：Vue 版本使用 v-if 控制显示，不需�?display: none */
+/* 注意：Vue 版本使用 v-if 控制显示 */
 .settings-modal {
-  /* display: none; -- 原版 jQuery 使用，Vue 版本�?v-if 控制 */
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -16,7 +15,7 @@
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: rgba(0,0,0,0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   animation: fadeIn 0.3s;
 }
 
@@ -54,7 +53,7 @@
 }
 
 .settings-modal-close {
-  color: rgba(255,255,255,0.8);
+  color: rgba(255, 255, 255, 0.8);
   font-size: 28px;
   font-weight: bold;
   cursor: pointer;
@@ -94,11 +93,11 @@
 
 .settings-tab:hover {
   opacity: 1;
-  background-color: rgba(0,0,0,0.03);
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 [data-theme="dark"] .settings-tab:hover {
-  background-color: rgba(255,255,255,0.05);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .settings-tab.active {
@@ -124,9 +123,9 @@
   padding: 25px;
 }
 
-/* 注意：Vue 版本使用 v-show 控制显示，不需�?display: none */
+/* 注意：Vue 版本使用 v-show 控制显示，不需�?display: none */
 .settings-tab-pane {
-  /* display: none; -- 原版 jQuery 使用，Vue 版本�?v-show 控制 */
+  /* display: none; -- 原版 jQuery 使用，Vue 版本�?v-show 控制 */
   display: block;
 }
 
@@ -153,7 +152,7 @@
   color: var(--color-primary);
 }
 
-/* 设置项样�?*/
+/* 设置项样�?*/
 .settings-item {
   margin-bottom: 15px;
 }
@@ -336,7 +335,7 @@
   background: var(--input-bg-color);
 }
 
-/* 响应式调�?*/
+/* 响应式调�?*/
 @media (max-width: 768px) {
   .settings-modal-content {
     margin: 0;
@@ -344,20 +343,20 @@
     border-radius: 0;
     width: 100%;
   }
-  
+
   .settings-tabs {
     padding: 0 10px;
   }
-  
+
   .settings-tab {
     padding: 12px 14px;
     font-size: 0.9em;
   }
-  
+
   .settings-tab-content {
     padding: 15px;
   }
-  
+
   .settings-row {
     grid-template-columns: 1fr;
   }
@@ -365,8 +364,13 @@
 
 /* 淡入动画 */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* 已保存提示词下拉 */
@@ -429,7 +433,7 @@
   cursor: pointer;
 }
 
-/* 分隔�?*/
+/* 分隔�?*/
 .settings-divider {
   height: 1px;
   background: var(--border-color);
@@ -468,12 +472,12 @@
   display: none !important;
 }
 
-/* 隐藏校对设置按钮（功能已移到设置模态框�?*/
+/* 隐藏校对设置按钮（功能已移到设置模态框�?*/
 #proofreadSettingsButton {
   display: none !important;
 }
 
-/* 隐藏原来的AI校对设置弹窗（功能已整合到设置模态框�?*/
+/* 隐藏原来的AI校对设置弹窗（功能已整合到设置模态框�?*/
 #proofreadingSettingsModal {
   display: none !important;
 }
@@ -550,9 +554,10 @@
   border-radius: 8px;
   color: white;
   font-size: 0.95em;
-  z-index: 99999; /* 最高层级，确保在编辑模式等所有元素之�?*/
+  z-index: 99999;
+  /* 最高层级，确保在编辑模式等所有元素之*/
   animation: toastFadeIn 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .settings-toast.success {
@@ -576,6 +581,7 @@
     opacity: 0;
     transform: translateX(-50%) translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
@@ -583,8 +589,8 @@
 }
 
 /* ===================================
-   提示词选择器样�?
-   用于快速选择已保存的提示�?
+   提示词选择器样
+   用于快速选择已保存的提示
    =================================== */
 
 .saved-prompts-picker {
@@ -642,7 +648,7 @@
 }
 
 /* ===================================
-   提示词管理页面样�?
+   提示词管理页面样
    =================================== */
 
 .prompt-library-list {
@@ -674,7 +680,7 @@
 
 .prompt-library-item:hover {
   border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .prompt-library-item .prompt-info {
@@ -733,7 +739,7 @@
   border-color: #ff4d4f;
 }
 
-/* 提示词编辑区�?*/
+/* 提示词编辑区*/
 .prompt-edit-actions {
   display: flex;
   justify-content: flex-end;
@@ -743,7 +749,7 @@
   border-top: 1px solid var(--border-color);
 }
 
-/* AI校对轮次内的提示词选择器样式调�?*/
+/* AI校对轮次内的提示词选择器样式调*/
 .settings-proofreading-round .saved-prompts-picker {
   margin-top: 8px;
   padding: 8px 10px;
@@ -760,7 +766,7 @@
 }
 
 /* ===================================
-   密码输入框眼睛切换按�?
+   密码输入框眼睛切换按
    =================================== */
 .password-input-wrapper {
   position: relative;
@@ -815,7 +821,7 @@
 }
 
 /* ===================================
-   模型获取按钮和选择器样�?
+   模型获取按钮和选择器样
    =================================== */
 .model-input-with-fetch {
   display: flex;
@@ -866,8 +872,13 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .fetch-icon {
@@ -905,7 +916,7 @@
 }
 
 /* ===================================
-   安全文本输入�?(避免浏览器密码警�?
+   安全文本输入(避免浏览器密码警告)
    =================================== */
 input.secure-input {
   -webkit-text-security: disc;

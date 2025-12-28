@@ -1,7 +1,7 @@
 /* ===================================
-   模态窗口样�?   =================================== */
+   模态窗口样式   =================================== */
 
-/* ============ 赞助模态窗�?============ */
+/* ============ 赞助模态窗============ */
 
 .donate-modal {
   display: none;
@@ -12,7 +12,7 @@
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: rgba(0,0,0,0.6);
+  background-color: rgba(0, 0, 0, 0.6);
   animation: fadeIn 0.3s;
 }
 
@@ -21,7 +21,7 @@
   margin: 10% auto;
   padding: 25px;
   border-radius: 15px;
-  box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
   width: 90%;
   max-width: 500px;
   text-align: center;
@@ -86,7 +86,7 @@
   width: 180px;
   height: 180px;
   border-radius: 10px;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
 }
 
 .donate-qrcode-item p {
@@ -100,7 +100,7 @@
   color: #e2e8f0;
 }
 
-/* ============ 插件管理模态窗�?============ */
+/* ============ 插件管理模态窗============ */
 
 .plugin-modal {
   display: none;
@@ -111,7 +111,7 @@
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: rgba(0,0,0,0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   animation: fadeIn 0.3s;
 }
 
@@ -269,7 +269,7 @@
   background-color: #5a6268;
 }
 
-/* 插件配置项样�?*/
+/* 插件配置项样式*/
 .plugin-config-item {
   margin-bottom: 15px;
   text-align: left;
@@ -344,7 +344,7 @@
   box-shadow: 0 6px 10px rgba(0, 123, 255, 0.3);
 }
 
-/* ============ 会话管理模态窗�?============ */
+/* ============ 会话管理模态窗============ */
 
 .session-modal {
   display: none;
@@ -355,7 +355,7 @@
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: rgba(0,0,0,0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   animation: fadeIn 0.3s;
 }
 
@@ -417,7 +417,7 @@
 
 .session-item:hover {
   background-color: var(--bg-color);
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] .session-item:hover {
@@ -526,7 +526,7 @@
   margin-right: 5px;
 }
 
-/* ============ AI校对设置模态窗�?============ */
+/* ============ AI校对设置模态窗============ */
 
 #proofreadingSettingsModal .modal-content {
   max-width: 800px;
@@ -582,7 +582,7 @@
   margin-left: 10px;
 }
 
-.round-settings > div {
+.round-settings>div {
   margin-bottom: 10px;
 }
 
@@ -657,7 +657,7 @@
 }
 
 .ollama-test-result code {
-  background-color: rgba(0,0,0,0.05);
+  background-color: rgba(0, 0, 0, 0.05);
   padding: 2px 4px;
   border-radius: 3px;
   font-family: Consolas, monospace;
@@ -665,7 +665,7 @@
 
 .ollama-test-result .model-list {
   margin-top: 15px;
-  background-color: rgba(0,0,0,0.03);
+  background-color: rgba(0, 0, 0, 0.03);
   padding: 10px;
   border-radius: 5px;
 }
@@ -688,7 +688,7 @@
 }
 
 .ollama-test-result .error-suggestion {
-  background-color: rgba(0,0,0,0.03);
+  background-color: rgba(0, 0, 0, 0.03);
   padding: 10px;
   border-radius: 5px;
   margin: 10px 0;
@@ -710,7 +710,7 @@
   border-radius: 12px;
   padding: 15px;
   margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   border: 1px solid #e2e8f0;
 }
 
@@ -741,14 +741,14 @@
   cursor: pointer;
   transition: all 0.3s ease;
   color: #4a5568;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .model-button:hover {
   background-color: #ebf8ff;
   border-color: #90cdf4;
   transform: translateY(-2px);
-  box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
 }
 
 .model-button.selected {

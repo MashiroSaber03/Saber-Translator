@@ -35,13 +35,13 @@
 #thumbnail-sidebar .thumbnail-card {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   padding: 25px;
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
 #thumbnail-sidebar .thumbnail-card:hover {
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
 #thumbnail-sidebar .thumbnail-card h2 {
@@ -101,8 +101,8 @@
 }
 
 #thumbnail-sidebar ul#thumbnailList li.active:before {
-  content: '�?;
-  position: absolute;
+  content: '�?;
+ position: absolute;
   top: 5px;
   left: 5px;
   color: #3498db;
@@ -139,7 +139,7 @@
   border-radius: 4px;
 }
 
-/* 翻译中消息样�?*/
+/* 翻译中消息样*/
 .translating-message {
   position: absolute;
   bottom: 0;
@@ -171,7 +171,7 @@
   animation: pulse 1.5s infinite;
 }
 
-/* 错误指示�?*/
+/* 错误指示*/
 .error-indicator {
   position: absolute;
   top: 5px;
@@ -185,7 +185,7 @@
   line-height: 20px;
   font-weight: bold;
   font-size: 14px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   z-index: 2;
 }
 
@@ -208,7 +208,7 @@
   box-shadow: 0 0 3px black;
 }
 
-/* 手动标注指示�?*/
+/* 手动标注指示*/
 .labeled-indicator {
   position: absolute;
   bottom: 3px;

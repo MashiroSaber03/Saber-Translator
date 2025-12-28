@@ -1,5 +1,5 @@
 /* ===================================
-   设置侧边栏样�?
+   设置侧边栏样
    =================================== */
 
 #settings-sidebar {
@@ -20,14 +20,14 @@
   direction: rtl;
 }
 
-#settings-sidebar > * {
+#settings-sidebar>* {
   direction: ltr;
 }
 
 #settings-sidebar .settings-card {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   padding: 25px;
   margin-bottom: 15px;
   transition: box-shadow 0.2s;
@@ -35,7 +35,7 @@
 
 #settings-sidebar .settings-card:hover {
   transform: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 #settings-sidebar .settings-card h2 {
@@ -69,7 +69,7 @@
   content: none;
 }
 
-#settings-sidebar .settings-form > div {
+#settings-sidebar .settings-form>div {
   margin-bottom: 15px;
   position: relative;
 }
@@ -159,7 +159,7 @@
 
 #settings-sidebar #font-settings:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
 #settings-sidebar #font-settings h3 {
@@ -173,7 +173,7 @@
   margin-top: 10px;
 }
 
-#settings-sidebar #font-settings + div {
+#settings-sidebar #font-settings+div {
   margin-top: 20px;
 }
 
@@ -188,7 +188,7 @@
 
 #settings-sidebar #font-settings:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
 /* section间距重置 */
@@ -220,7 +220,8 @@
 /* 百度OCR和其他OCR选项样式已移除（这些设置现在在设置模态框中） */
 
 /* 填充方式设置 */
-#solidColorOptions, #inpaintingOptions {
+#solidColorOptions,
+#inpaintingOptions {
   margin-top: 10px;
   margin-bottom: 10px;
   overflow: visible;

@@ -1,6 +1,6 @@
 /* ===================================
    编辑模式样式 - 全新设计
-   支持双图对照、可拖拽缩放、原文译文对�?   =================================== */
+   支持双图对照、可拖拽缩放、原文译文对照   =================================== */
 
 /* ============ 基础内容容器布局（正常模式） ============ */
 
@@ -41,7 +41,7 @@
   display: none !important;
 }
 
-/* 编辑模式�?body 禁止滚动 */
+/* 编辑模式下 body 禁止滚动 */
 body.edit-mode-active {
   overflow: hidden !important;
 }
@@ -60,10 +60,10 @@ body.edit-mode-active {
   height: 100vh !important;
 }
 
-/* 编辑工作�?- 全屏覆盖 */
-/* 注意：Vue 版本使用 v-if 控制显示，不需�?display: none */
+/* 编辑工作区 - 全屏覆盖 */
+/* 注意：Vue 版本使用 v-if 控制显示 */
 .edit-workspace {
-  /* display: none; -- 原版 jQuery 使用，Vue 版本�?v-if 控制 */
+  /* display: none; -- 原版 jQuery 使用，Vue 版本 v-if 控制 */
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -78,17 +78,17 @@ body.edit-mode-active {
   border-radius: 0;
 }
 
-/* 原版 jQuery 使用的类切换方式，Vue 版本不需�?*/
+/* 原版 jQuery 使用的类切换方式，Vue 版本不需 */
 .edit-mode-active .edit-workspace {
   display: flex;
 }
 
-/* ============ 顶部工具�?- 双行布局 ============ */
+/* ============ 顶部工具栏 - 双行布局 ============ */
 
 .edit-toolbar-wrapper {
   flex-shrink: 0;
   background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .edit-toolbar {
@@ -99,14 +99,14 @@ body.edit-mode-active {
 }
 
 .toolbar-row-1 {
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .toolbar-row-2 {
-  background: rgba(0,0,0,0.15);
+  background: rgba(0, 0, 0, 0.15);
 }
 
-/* 工具栏弹性填�?*/
+/* 工具栏弹性*/
 .toolbar-spacer {
   flex: 1;
 }
@@ -115,7 +115,7 @@ body.edit-mode-active {
 .toolbar-divider {
   width: 1px;
   height: 24px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   margin: 0 5px;
 }
 
@@ -171,7 +171,7 @@ body.edit-mode-active {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   font-size: 16px;
@@ -179,14 +179,14 @@ body.edit-mode-active {
 }
 
 .thumb-toggle-btn:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .thumb-toggle-btn.active {
   background: rgba(102, 126, 234, 0.5);
 }
 
-/* 编辑模式缩略图面�?*/
+/* 编辑模式缩略图面板*/
 .edit-thumbnails-panel {
   position: relative;
   top: auto;
@@ -195,9 +195,9 @@ body.edit-mode-active {
   left: auto;
   width: auto;
   max-height: none;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 10px 15px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
@@ -216,12 +216,12 @@ body.edit-mode-active {
 }
 
 .thumbnails-scroll::-webkit-scrollbar-track {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
 .thumbnails-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.3);
+  background: rgba(255, 255, 255, 0.3);
   border-radius: 3px;
 }
 
@@ -238,7 +238,7 @@ body.edit-mode-active {
 }
 
 .edit-thumbnail-item:hover {
-  border-color: rgba(255,255,255,0.5);
+  border-color: rgba(255, 255, 255, 0.5);
   transform: scale(1.05);
 }
 
@@ -257,7 +257,7 @@ body.edit-mode-active {
   position: absolute;
   bottom: 2px;
   right: 2px;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0, 0, 0, 0.7);
   color: #fff;
   font-size: 10px;
   padding: 1px 4px;
@@ -275,7 +275,7 @@ body.edit-mode-active {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   font-size: 14px;
@@ -283,7 +283,7 @@ body.edit-mode-active {
 }
 
 .bubble-navigator .nav-btn:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .bubble-navigator .nav-btn:disabled {
@@ -295,7 +295,7 @@ body.edit-mode-active {
   color: #fff;
   font-size: 14px;
   padding: 6px 12px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
 }
 
@@ -304,7 +304,7 @@ body.edit-mode-active {
   color: #00ff88;
 }
 
-/* 视图控制按钮�?*/
+/* 视图控制按钮*/
 .view-controls {
   display: flex;
   align-items: center;
@@ -316,7 +316,7 @@ body.edit-mode-active {
   height: 36px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   font-size: 16px;
@@ -324,7 +324,7 @@ body.edit-mode-active {
 }
 
 .view-controls button:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .view-controls #zoomLevel {
@@ -373,7 +373,7 @@ body.edit-mode-active {
 .edit-toolbar .secondary-btn,
 .quick-actions .secondary-btn {
   padding: 8px 16px;
-  border: 1px solid rgba(255,255,255,0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 6px;
   background: transparent;
   color: #fff;
@@ -384,8 +384,8 @@ body.edit-mode-active {
 
 .edit-toolbar .secondary-btn:hover,
 .quick-actions .secondary-btn:hover {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* ============ 双图对照区域 ============ */
@@ -434,8 +434,8 @@ body.edit-mode-active {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: rgba(0,0,0,0.3);
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .panel-title {
@@ -457,7 +457,7 @@ body.edit-mode-active {
   height: 24px;
   border: none;
   border-radius: 4px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   font-size: 14px;
@@ -465,7 +465,7 @@ body.edit-mode-active {
 }
 
 .panel-toggle:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* 图片视口 - 核心交互区域 */
@@ -476,7 +476,7 @@ body.edit-mode-active {
   cursor: grab;
   /* 透明网格背景 */
   background-color: #0d1b2a;
-  background-image: 
+  background-image:
     linear-gradient(45deg, #1a1a2e 25%, transparent 25%),
     linear-gradient(-45deg, #1a1a2e 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, #1a1a2e 75%),
@@ -494,7 +494,7 @@ body.edit-mode-active {
   outline-offset: -2px;
 }
 
-/* 图片画布包装�?*/
+/* 图片画布包装器*/
 .image-canvas-wrapper {
   position: absolute;
   top: 0;
@@ -511,7 +511,7 @@ body.edit-mode-active {
   pointer-events: none;
 }
 
-/* 气泡高亮�?*/
+/* 气泡高亮区域*/
 .bubble-highlight-layer {
   position: absolute;
   top: 0;
@@ -547,14 +547,14 @@ body.edit-mode-active {
   position: absolute;
   top: -20px;
   left: 0;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0, 0, 0, 0.7);
   color: #fff;
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 3px;
 }
 
-/* 分隔�?*/
+/* 分隔条*/
 .panel-divider {
   width: 8px;
   background: #0f0f23;
@@ -658,7 +658,8 @@ body.edit-mode-active {
   color: #27ae60;
 }
 
-.re-ocr-btn, .re-translate-btn {
+.re-ocr-btn,
+.re-translate-btn {
   width: 28px;
   height: 28px;
   border: none;
@@ -669,7 +670,8 @@ body.edit-mode-active {
   transition: all 0.2s;
 }
 
-.re-ocr-btn:hover, .re-translate-btn:hover {
+.re-ocr-btn:hover,
+.re-translate-btn:hover {
   background: #3498db;
   color: #fff;
 }
@@ -736,7 +738,7 @@ body.edit-mode-active {
   background: #219a52 !important;
 }
 
-/* ============ 样式设置�?============ */
+/* ============ 样式设置区域============ */
 
 .style-settings-section {
   width: 100%;
@@ -748,7 +750,7 @@ body.edit-mode-active {
   box-sizing: border-box;
 }
 
-/* ============ Office风格工具�?============ */
+/* ============ Office风格工具栏============ */
 
 .office-toolbar {
   display: flex;
@@ -820,7 +822,7 @@ body.edit-mode-active {
   gap: 6px;
 }
 
-/* 字体选择�?*/
+/* 字体选择*/
 .toolbar-font-select {
   min-width: 160px;
   height: 36px;
@@ -844,7 +846,7 @@ body.edit-mode-active {
   box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
 }
 
-/* 字号输入�?*/
+/* 字号输入框*/
 .toolbar-fontsize-group,
 .toolbar-fontsize-input {
   width: 60px;
@@ -912,7 +914,7 @@ body.edit-mode-active {
   box-shadow: 0 0 0 2px rgba(127, 151, 255, 0.18);
 }
 
-/* 工具栏按�?*/
+/* 工具栏按钮*/
 .toolbar-btn {
   width: 34px;
   height: 34px;
@@ -926,7 +928,7 @@ body.edit-mode-active {
   justify-content: center;
   transition: all 0.12s;
   padding: 0;
-  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.03);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03);
 }
 
 .toolbar-btn:hover {
@@ -940,7 +942,7 @@ body.edit-mode-active {
   background: linear-gradient(135deg, #e8edff, #d9e2ff);
   border-color: #5670ff;
   color: #3040c2;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .toolbar-btn:active {
@@ -958,7 +960,7 @@ body.edit-mode-active {
   font-weight: 600;
 }
 
-/* 颜色选择�?*/
+/* 颜色选择*/
 .toolbar-color-picker {
   position: relative;
   display: inline-flex;
@@ -975,7 +977,7 @@ body.edit-mode-active {
   width: 26px;
   height: 6px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.2);
+  border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
 .hidden-color-input {
@@ -985,7 +987,7 @@ body.edit-mode-active {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0,0,0,0);
+  clip: rect(0, 0, 0, 0);
   border: 0;
 }
 
@@ -999,7 +1001,7 @@ body.edit-mode-active {
   pointer-events: none;
 }
 
-/* 背景修复方式选择�?*/
+/* 背景修复方式选择*/
 .toolbar-inpaint-group {
   display: flex;
   align-items: center;
@@ -1067,7 +1069,7 @@ body.edit-mode-active {
   color: #596071;
 }
 
-/* 旋转控制�?*/
+/* 旋转控制*/
 .toolbar-rotation-group {
   display: flex;
   align-items: center;
@@ -1079,7 +1081,7 @@ body.edit-mode-active {
   width: 58px;
 }
 
-/* 位置控制�?*/
+/* 位置控制*/
 .toolbar-position-group {
   display: flex;
   align-items: center;
@@ -1117,12 +1119,12 @@ body.edit-mode-active {
 }
 
 .fontsize-presets-panel summary::before {
-  content: "�?";
+  content: "�?";
   font-size: 9px;
 }
 
 .fontsize-presets-panel[open] summary::before {
-  content: "�?";
+  content: "�?";
 }
 
 .fontsize-presets-panel summary:hover {
@@ -1195,7 +1197,7 @@ body.edit-mode-active {
   background: rgba(52, 152, 219, 0.1);
 }
 
-/* 旧的设置组样式保留兼�?*/
+/* 旧的设置组样式保留兼容*/
 .setting-group {
   margin-bottom: 15px;
 }
@@ -1261,7 +1263,7 @@ body.edit-mode-active {
   color: var(--text-color, #333);
 }
 
-/* ============ 操作按钮�?============ */
+/* ============ 操作按钮============ */
 
 .edit-action-buttons {
   display: flex;
@@ -1362,7 +1364,7 @@ body.edit-mode-active {
   color: #e2e8f0;
 }
 
-/* Office工具栏暗色模�?*/
+/* Office工具栏暗色模式适配*/
 [data-theme="dark"] .office-toolbar {
   background: #2d3748;
   border-color: #4a5568;
@@ -1458,7 +1460,7 @@ body.edit-mode-active {
   color: #9ca3af;
 }
 
-/* ============ 兼容性：保留旧的highlight-bubble�?============ */
+/* ============ 兼容性：保留旧的highlight-bubble============ */
 
 .highlight-bubble {
   position: absolute;
@@ -1483,7 +1485,7 @@ body.edit-mode-active {
   z-index: 10;
 }
 
-/* ============ 响应式调�?============ */
+/* ============ 响应式调整============ */
 
 @media (max-width: 1200px) {
   .style-settings-section {
@@ -1497,21 +1499,21 @@ body.edit-mode-active {
   .image-comparison-container {
     flex-direction: column;
   }
-  
+
   .panel-divider {
     width: 100%;
     height: 8px;
     cursor: ns-resize;
   }
-  
+
   .divider-handle {
     writing-mode: horizontal-tb;
   }
 }
 
-/* ============ 气泡操作工具�?============ */
+/* ============ 气泡操作工具组============ */
 
-/* 工具组容�?*/
+/* 工具组容器 */
 .annotation-tools {
   display: flex;
   align-items: center;
@@ -1554,9 +1556,9 @@ body.edit-mode-active {
   flex-shrink: 0;
 }
 
-/* ============ 高亮框样式（融合标注+编辑模式�?============ */
+/* ============ 高亮框样式（融合标注+编辑模式）============ */
 
-/* 高亮�?- 始终可交�?*/
+/* 高亮框 - 始终可交互 */
 .bubble-highlight-box {
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -1573,7 +1575,7 @@ body.edit-mode-active {
   cursor: move;
 }
 
-/* 调整大小手柄 - 选中时显�?*/
+/* 调整大小手柄 - 选中时显示 */
 .bubble-highlight-box .resize-handle {
   position: absolute;
   width: 12px;
@@ -1608,7 +1610,7 @@ body.middle-button-drawing * {
   cursor: crosshair !important;
 }
 
-/* 多选高亮样�?- 使用醒目的红�?*/
+/* 多选高亮样式- 使用醒目的红色*/
 .bubble-highlight-box.multi-selected {
   border: 3px solid #ff1744 !important;
   background: rgba(255, 23, 68, 0.25) !important;
@@ -1648,7 +1650,7 @@ body.middle-button-drawing * {
 
 /* ============ 旋转手柄样式 ============ */
 
-/* 旋转连接�?- 从上边框中点向上延伸 */
+/* 旋转连接线- 从上边框中点向上延伸 */
 .rotate-line {
   position: absolute;
   top: -25px;
@@ -1705,7 +1707,7 @@ body.rotating-box * {
   cursor: grabbing !important;
 }
 
-/* 带角度的高亮框保�?transform-origin 居中 */
+/* 带角度的高亮框保持 transform-origin 居中 */
 .bubble-highlight-box {
   transform-origin: center center;
 }
@@ -1720,7 +1722,7 @@ body.rotating-box * {
   z-index: 25;
 }
 
-/* 绘制模式提示�?*/
+/* 绘制模式提示*/
 .drawing-mode-hint {
   position: absolute;
   bottom: 10px;
@@ -1737,7 +1739,7 @@ body.rotating-box * {
   white-space: nowrap;
 }
 
-/* ============ 帮助提示框样�?============ */
+/* ============ 帮助提示框样式============ */
 
 .help-tooltip-container {
   position: relative;
@@ -1834,7 +1836,7 @@ body.rotating-box * {
   color: #374151;
 }
 
-/* 暗色模式帮助提示�?*/
+/* 暗色模式帮助提示*/
 [data-theme="dark"] .help-tooltip-btn {
   background: rgba(45, 55, 72, 0.9);
   border-color: #4a5568;
@@ -1899,7 +1901,7 @@ body.rotating-box * {
   background: var(--card-bg-color, #fff);
   border: 1px solid var(--border-color, #e0e0e0);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   margin-top: 10px;
   overflow: hidden;
 }
@@ -1927,7 +1929,7 @@ body.rotating-box * {
   padding: 4px 10px;
   border: none;
   border-radius: 4px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   color: #fff;
   font-size: 11px;
   cursor: pointer;
@@ -1935,7 +1937,7 @@ body.rotating-box * {
 }
 
 .kana-tab:hover {
-  background: rgba(255,255,255,0.3);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .kana-tab.active {
@@ -1949,7 +1951,7 @@ body.rotating-box * {
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -1957,7 +1959,7 @@ body.rotating-box * {
 }
 
 .kana-keyboard-close:hover {
-  background: rgba(255,255,255,0.4);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .kana-tab-content {
@@ -2066,7 +2068,7 @@ body.rotating-box * {
   min-width: 50px;
 }
 
-/* 键盘底部控制�?*/
+/* 键盘底部控制*/
 .kana-keyboard-footer {
   display: flex;
   align-items: center;
@@ -2099,7 +2101,7 @@ body.rotating-box * {
   transition: color 0.2s;
 }
 
-.kana-mode-label input[type="radio"]:checked + span {
+.kana-mode-label input[type="radio"]:checked+span {
   color: #e74c3c;
   font-weight: 600;
 }
@@ -2151,7 +2153,7 @@ body.rotating-box * {
 }
 
 [data-theme="dark"] .kana-tab {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 [data-theme="dark"] .kana-tab.active {
@@ -2208,22 +2210,22 @@ body.rotating-box * {
   background: #4a5568;
 }
 
-/* 响应式调�?*/
+/* 响应式调整*/
 @media (max-width: 1200px) {
   .kana-keyboard {
     font-size: 11px;
   }
-  
+
   .kana-key {
     width: 36px;
     height: 36px;
     font-size: 11px;
   }
-  
+
   .kana-keyboard-tabs {
     flex-wrap: wrap;
   }
-  
+
   .kana-tab {
     font-size: 10px;
     padding: 3px 6px;
@@ -2305,6 +2307,7 @@ body.rotating-box * {
     opacity: 0;
     transform: translateX(-50%) translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
@@ -2334,7 +2337,7 @@ body.rotating-box * {
   height: 36px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -2344,7 +2347,7 @@ body.rotating-box * {
 }
 
 .layout-toggle-btn:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .layout-toggle-btn.active {
@@ -2353,12 +2356,12 @@ body.rotating-box * {
 
 /* ============ 上下布局模式 ============ */
 
-/* 上下布局：主容器�?row �?column */
+/* 上下布局：主容器row column */
 .edit-workspace.layout-vertical .edit-main-layout {
   flex-direction: column;
 }
 
-/* 上下布局：图片对比区�?*/
+/* 上下布局：图片对比区*/
 .edit-workspace.layout-vertical .image-comparison-container {
   flex: 1;
   min-height: 0;
@@ -2374,7 +2377,7 @@ body.rotating-box * {
   width: 80px;
   max-height: calc(100% - 100px - 45%);
   padding: 8px;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0, 0, 0, 0.7);
   border-radius: 10px;
   z-index: 100;
   border-bottom: none;
@@ -2417,7 +2420,7 @@ body.rotating-box * {
   padding: 12px 15px;
 }
 
-/* 上下布局：文本区域横�?*/
+/* 上下布局：文本区域横置*/
 .edit-workspace.layout-vertical .text-block {
   flex: 1 1 300px;
   min-width: 280px;
@@ -2429,7 +2432,7 @@ body.rotating-box * {
   max-height: 150px;
 }
 
-/* 上下布局：样式设置区�?*/
+/* 上下布局：样式设置区*/
 .edit-workspace.layout-vertical .style-settings-section {
   flex: 1 1 350px;
   min-width: 320px;
@@ -2438,7 +2441,7 @@ body.rotating-box * {
   overflow-y: visible;
 }
 
-/* 上下布局：调整手柄变为水�?*/
+/* 上下布局：调整手柄变为水平*/
 .edit-workspace.layout-vertical .panel-resize-handle.vertical {
   width: 100%;
   height: 10px;
@@ -2446,12 +2449,12 @@ body.rotating-box * {
   writing-mode: horizontal-tb;
 }
 
-/* 上下布局：给缩略图面板留出空�?*/
+/* 上下布局：给缩略图面板留出空隙*/
 .edit-workspace.layout-vertical.thumbnails-visible .image-comparison-container {
   margin-right: 95px;
 }
 
-/* 上下布局：Office 工具栏横向排列优�?*/
+/* 上下布局：Office 工具栏横向排列优化*/
 .edit-workspace.layout-vertical .office-toolbar {
   flex-direction: row;
   flex-wrap: wrap;
@@ -2462,7 +2465,7 @@ body.rotating-box * {
   flex-wrap: nowrap;
 }
 
-/* 上下布局：操作按钮横向排�?*/
+/* 上下布局：操作按钮横向排列优化*/
 .edit-workspace.layout-vertical .edit-action-buttons {
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -2495,7 +2498,7 @@ body.rotating-box * {
   transition: all 0.3s ease;
 }
 
-/* ============ 编辑模式进度�?============ */
+/* ============ 编辑模式进度条============ */
 .edit-progress-container {
   display: flex;
   align-items: center;
@@ -2513,6 +2516,7 @@ body.rotating-box * {
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -2557,7 +2561,7 @@ body.rotating-box * {
   box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
 }
 
-/* 进度条动画效�?*/
+/* 进度条动画效果*/
 .edit-progress-fill.animating {
   background: linear-gradient(90deg, #00ff88, #00d4ff, #00ff88);
   background-size: 200% 100%;
@@ -2568,12 +2572,13 @@ body.rotating-box * {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
 }
 
-/* 完成状�?*/
+/* 完成状态下的进度条*/
 .edit-progress-container.completed .edit-progress-fill {
   background: #00ff88;
 }

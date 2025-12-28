@@ -75,7 +75,7 @@
   cursor: not-allowed;
 }
 
-/* 应用设置按钮�?*/
+/* 应用设置按钮�?*/
 .apply-settings-group {
   display: flex;
   align-items: stretch;
@@ -95,7 +95,7 @@
   background-color: #0056b3;
   color: white;
   border: none;
-  border-left: 1px solid rgba(255,255,255,0.3);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 0 5px 5px 0;
   cursor: pointer;
   font-size: 1em;
@@ -124,7 +124,7 @@
   background: var(--card-bg, #fff);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 5px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 9999;
   padding: 10px;
   margin-bottom: 5px;
@@ -350,7 +350,7 @@
   left: 100%;
 }
 
-/* 按钮颜色变体�?*/
+/* 按钮颜色变体�?*/
 #settings-sidebar button.red-button {
   background: linear-gradient(135deg, #d43f3a 0%, #d9534f 100%);
   box-shadow: 0 4px 6px rgba(217, 83, 79, 0.2);
@@ -402,7 +402,8 @@
 }
 
 /* 图像控制按钮 */
-#toggleImageButton, #toggleEditModeButton {
+#toggleImageButton,
+#toggleEditModeButton {
   padding: 10px 20px;
   background: linear-gradient(135deg, #149ddd 0%, #17a2b8 100%);
   color: white;
@@ -416,7 +417,8 @@
   box-shadow: 0 4px 6px rgba(23, 162, 184, 0.2);
 }
 
-#toggleImageButton:hover, #toggleEditModeButton:hover {
+#toggleImageButton:hover,
+#toggleEditModeButton:hover {
   background: linear-gradient(135deg, #117a8b 0%, #17a2b8 100%);
   box-shadow: 0 6px 10px rgba(23, 162, 184, 0.3);
   transform: translateY(-2px);
@@ -445,7 +447,7 @@
   background-color: #45a049;
 }
 
-/* ============ 进度�?============ */
+/* ============ 进度�?============ */
 
 #translationProgressBar {
   margin-top: 20px;
@@ -458,7 +460,7 @@
   width: 85%;
   margin-left: auto;
   margin-right: auto;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .progress-bar-label {
@@ -474,7 +476,7 @@
   background-color: #edf2f7;
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .progress-bar .progress {
@@ -493,16 +495,14 @@
   left: 0;
   bottom: 0;
   right: 0;
-  background-image: linear-gradient(
-      -45deg,
+  background-image: linear-gradient(-45deg,
       rgba(255, 255, 255, .2) 25%,
       transparent 25%,
       transparent 50%,
       rgba(255, 255, 255, .2) 50%,
       rgba(255, 255, 255, .2) 75%,
       transparent 75%,
-      transparent
-  );
+      transparent);
   background-size: 30px 30px;
   animation: move 2s linear infinite;
   border-radius: 20px;
@@ -550,7 +550,7 @@
   font-size: 14px;
 }
 
-/* 暂停状态下进度条颜色变�?*/
+/* 暂停状态下进度条颜色变化*/
 .progress-bar.paused .progress {
   background: linear-gradient(90deg, #f39c12 0%, #e67e22 100%);
 }
@@ -562,7 +562,8 @@
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 99999; /* 最高层级，确保在编辑模式等所有元素之�?*/
+  z-index: 99999;
+  /* 最高层级，确保在编辑模式等所有元素之上*/
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -575,7 +576,8 @@
   background-color: rgba(0, 0, 0, 0.75);
   border-radius: 8px;
   padding: 12px 24px;
-  padding-right: 36px; /* 为关闭按钮留出空�?*/
+  padding-right: 36px;
+  /* 为关闭按钮留出空隙*/
   margin-bottom: 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   animation: toastSlideUp 0.3s ease-out forwards;
@@ -636,19 +638,20 @@
   color: white;
 }
 
-/* Toast 从下往上滑入动�?*/
+/* Toast 从下往上滑入动画*/
 @keyframes toastSlideUp {
   from {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-/* ============ 可折叠面�?============ */
+/* ============ 可折叠面板============ */
 
 .collapsible-header {
   cursor: pointer;
@@ -720,7 +723,7 @@
   text-align: left;
 }
 
-/* ============ 开关样�?============ */
+/* ============ 开关样式============ */
 
 .switch-container {
   position: relative;
@@ -756,15 +759,15 @@
   transition: .4s;
 }
 
-input:checked + .slider {
+input:checked+.slider {
   background-color: #2196F3;
 }
 
-input:focus + .slider {
+input:focus+.slider {
   box-shadow: 0 0 1px #2196F3;
 }
 
-input:checked + .slider:before {
+input:checked+.slider:before {
   transform: translateX(24px);
 }
 
@@ -849,7 +852,7 @@ input[type="range"].slider::-moz-range-thumb {
   background: #2196F3;
   cursor: pointer;
   border: none;
-  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
 }
 
 .range-slider::-moz-range-thumb {
@@ -859,7 +862,7 @@ input[type="range"].slider::-moz-range-thumb {
   background: #2196F3;
   cursor: pointer;
   border: none;
-  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
 }
 
 .range-slider:before {
@@ -873,7 +876,7 @@ input[type="range"].slider::-moz-range-thumb {
   display: none !important;
 }
 
-/* ============ 自动存档开�?============ */
+/* ============ 自动存档开�?============ */
 
 .auto-save-toggle {
   margin-bottom: 15px;
@@ -927,7 +930,7 @@ input[type="range"].slider::-moz-range-thumb {
   display: inline;
 }
 
-/* ============ 提示词格式相�?============ */
+/* ============ 提示词格式切换按钮============ */
 
 .prompt-format-toggle {
   margin: 10px 0;

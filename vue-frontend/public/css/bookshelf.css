@@ -1,4 +1,4 @@
-/* 书架页面样式 - 优化�?*/
+/* 书架页面样式 - 优化灵动岛样式 */
 
 /* ==================== CSS变量扩展 ==================== */
 :root {
@@ -19,7 +19,7 @@
 }
 
 /* ==================== 页面头部 ==================== */
-/* 使用 .bookshelf-page 前缀限定作用域，避免影响翻译页面�?灵动�?样式 */
+/* 使用 .bookshelf-page 前缀限定作用域，避免影响翻译页面灵动岛样式 */
 .bookshelf-page .app-header {
     background: var(--header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
     padding: 0 var(--spacing-lg);
@@ -43,7 +43,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    /* 重置翻译页面的样�?*/
+    /* 重置翻译页面的灵动岛样式 */
     padding: 0;
     background: transparent;
     border-radius: 0;
@@ -421,7 +421,7 @@
     margin: 0;
 }
 
-/* ==================== 空状�?==================== */
+/* ==================== 空状态样式 ===================== */
 .empty-state {
     display: flex;
     flex-direction: column;
@@ -477,6 +477,7 @@
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -487,6 +488,7 @@
         opacity: 0;
         transform: translateY(20px) scale(0.95);
     }
+
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
@@ -898,7 +900,8 @@
     font-size: 0.95rem;
     opacity: 0;
     transition: all 0.3s;
-    z-index: 99999; /* 最高层级，确保在编辑模式等所有元素之�?*/
+    z-index: 99999;
+    /* 最高层级，确保在编辑模式等所有元素之上*/
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -927,7 +930,7 @@
     color: white;
 }
 
-/* ==================== 响应式设�?==================== */
+/* ==================== 响应式设计 ===================== */
 
 /* 平板设备 */
 @media (max-width: 1024px) {
@@ -1266,7 +1269,8 @@ body {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.search-btn, .clear-search-btn {
+.search-btn,
+.clear-search-btn {
     padding: 10px 14px;
     border: none;
     border-radius: var(--border-radius-sm);
@@ -1356,7 +1360,7 @@ body {
     font-style: italic;
 }
 
-/* ==================== 批量操作�?==================== */
+/* ==================== 批量操作工具栏 ===================== */
 .batch-toolbar {
     display: flex;
     justify-content: space-between;
@@ -1615,7 +1619,8 @@ body {
     color: var(--text-secondary);
 }
 
-.tag-edit-btn, .tag-delete-btn {
+.tag-edit-btn,
+.tag-delete-btn {
     padding: 4px 10px;
     border: none;
     border-radius: 4px;
@@ -1853,42 +1858,42 @@ body {
     font-size: 1.1rem;
 }
 
-/* ==================== 响应式补�?==================== */
+/* ==================== 响应式补�?==================== */
 @media (max-width: 768px) {
     .filter-bar {
         padding: var(--spacing-sm);
     }
-    
+
     .search-box {
         flex-wrap: wrap;
     }
-    
+
     .search-box input {
         width: 100%;
     }
-    
+
     .tag-filter {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .batch-toolbar {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .batch-actions {
         justify-content: center;
     }
-    
+
     .form-row {
         flex-wrap: wrap;
     }
-    
+
     .form-row input[type="text"] {
         flex: 1 1 100%;
     }
-    
+
     .detail-tags-section {
         flex-direction: column;
         align-items: flex-start;

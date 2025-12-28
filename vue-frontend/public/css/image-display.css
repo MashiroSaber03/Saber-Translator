@@ -1,5 +1,5 @@
 /* ===================================
-   图像展示区样�?
+   图像展示区样式
    =================================== */
 
 #image-display-area {
@@ -16,7 +16,7 @@
 #image-display-area .card {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   padding: 25px;
   text-align: center;
   flex-grow: 0;
@@ -25,7 +25,7 @@
 }
 
 #image-display-area .card:hover {
-  box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
 }
 
 /* 上传区域 */
@@ -95,7 +95,7 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   text-align: center;
 }
 
@@ -119,7 +119,7 @@
   width: 100%;
 }
 
-/* 文本信息�?*/
+/* 文本信息 */
 #image-display-area #result-section .text-info {
   width: 100%;
   margin-top: 20px;
@@ -136,7 +136,7 @@
   overflow-y: auto;
 }
 
-/* 下载按钮�?*/
+/* 下载按钮 */
 #image-display-area #result-section .download-buttons {
   display: flex;
   justify-content: center;
@@ -217,17 +217,19 @@
 }
 
 /* 导出/导入文本按钮样式 */
-#exportTextButton, #importTextButton {
+#exportTextButton,
+#importTextButton {
   background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%) !important;
   box-shadow: 0 4px 6px rgba(46, 204, 113, 0.2) !important;
 }
 
-#exportTextButton:hover, #importTextButton:hover {
+#exportTextButton:hover,
+#importTextButton:hover {
   background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%) !important;
   box-shadow: 0 6px 10px rgba(46, 204, 113, 0.3) !important;
 }
 
-/* 加载和错误消�?*/
+/* 加载和错误消息 */
 #image-display-area #upload-section #loadingMessage,
 #image-display-area #upload-section .error-message {
   margin-top: 15px;
@@ -238,7 +240,7 @@
 }
 
 #image-display-area #upload-section #loadingMessage:before {
-  content: '处理�?..';
+  content: '处理�?..';
 }
 
 #image-display-area #upload-section .error-message {
@@ -253,7 +255,8 @@
 }
 
 /* 翻译/下载消息（隐藏） */
-#translatingMessage, #downloadingMessage {
+#translatingMessage,
+#downloadingMessage {
   display: none !important;
 }
 
@@ -290,7 +293,15 @@
 }
 
 @keyframes pulse-border {
-  0% { border-color: #e74c3c; }
-  50% { border-color: #ff6b6b; }
-  100% { border-color: #e74c3c; }
+  0% {
+    border-color: #e74c3c;
+  }
+
+  50% {
+    border-color: #ff6b6b;
+  }
+
+  100% {
+    border-color: #e74c3c;
+  }
 }
