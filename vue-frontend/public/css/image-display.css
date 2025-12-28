@@ -240,7 +240,7 @@
 }
 
 #image-display-area #upload-section #loadingMessage:before {
-  content: '处理�?..';
+  content: '处理中...';
 }
 
 #image-display-area #upload-section .error-message {

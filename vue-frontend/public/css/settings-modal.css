@@ -123,9 +123,9 @@
   padding: 25px;
 }
 
-/* 注意：Vue 版本使用 v-show 控制显示，不需�?display: none */
+/* 注意：Vue 版本使用 v-show 控制显示，不需要 display: none */
 .settings-tab-pane {
-  /* display: none; -- 原版 jQuery 使用，Vue 版本�?v-show 控制 */
+  /* display: none; -- 原版 jQuery 使用，Vue 版本用 v-show 控制 */
   display: block;
 }
 
@@ -152,7 +152,7 @@
   color: var(--color-primary);
 }
 
-/* 设置项样�?*/
+/* 设置项样式 */
 .settings-item {
   margin-bottom: 15px;
 }
@@ -335,7 +335,7 @@
   background: var(--input-bg-color);
 }
 
-/* 响应式调�?*/
+/* 响应式调整 */
 @media (max-width: 768px) {
   .settings-modal-content {
     margin: 0;
@@ -433,7 +433,7 @@
   cursor: pointer;
 }
 
-/* 分隔�?*/
+/* 分隔线 */
 .settings-divider {
   height: 1px;
   background: var(--border-color);
@@ -472,12 +472,12 @@
   display: none !important;
 }
 
-/* 隐藏校对设置按钮（功能已移到设置模态框�?*/
+/* 隐藏校对设置按钮（功能已移到设置模态框） */
 #proofreadSettingsButton {
   display: none !important;
 }
 
-/* 隐藏原来的AI校对设置弹窗（功能已整合到设置模态框�?*/
+/* 隐藏原来的AI校对设置弹窗（功能已整合到设置模态框） */
 #proofreadingSettingsModal {
   display: none !important;
 }
@@ -555,7 +555,7 @@
   color: white;
   font-size: 0.95em;
   z-index: 99999;
-  /* 最高层级，确保在编辑模式等所有元素之*/
+  /* 最高层级，确保在编辑模式等所有元素之上 */
   animation: toastFadeIn 0.3s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -589,8 +589,8 @@
 }
 
 /* ===================================
-   提示词选择器样
-   用于快速选择已保存的提示
+   提示词选择器样式
+   用于快速选择已保存的提示词
    =================================== */
 
 .saved-prompts-picker {
@@ -648,7 +648,7 @@
 }
 
 /* ===================================
-   提示词管理页面样
+   提示词管理页面样式
    =================================== */
 
 .prompt-library-list {
@@ -749,7 +749,7 @@
   border-top: 1px solid var(--border-color);
 }
 
-/* AI校对轮次内的提示词选择器样式调*/
+/* AI校对轮次内的提示词选择器样式调整 */
 .settings-proofreading-round .saved-prompts-picker {
   margin-top: 8px;
   padding: 8px 10px;
@@ -766,7 +766,7 @@
 }
 
 /* ===================================
-   密码输入框眼睛切换按
+   密码输入框眼睛切换按钮
    =================================== */
 .password-input-wrapper {
   position: relative;

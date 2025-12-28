@@ -75,7 +75,7 @@
   cursor: not-allowed;
 }
 
-/* 应用设置按钮�?*/
+/* 应用设置按钮*/
 .apply-settings-group {
   display: flex;
   align-items: stretch;
@@ -350,7 +350,7 @@
   left: 100%;
 }
 
-/* 按钮颜色变体�?*/
+/* 按钮颜色变体 */
 #settings-sidebar button.red-button {
   background: linear-gradient(135deg, #d43f3a 0%, #d9534f 100%);
   box-shadow: 0 4px 6px rgba(217, 83, 79, 0.2);
@@ -447,7 +447,7 @@
   background-color: #45a049;
 }
 
-/* ============ 进度�?============ */
+/* ============ 进度条 ============ */
 
 #translationProgressBar {
   margin-top: 20px;
@@ -876,7 +876,7 @@ input[type="range"].slider::-moz-range-thumb {
   display: none !important;
 }
 
-/* ============ 自动存档开�?============ */
+/* ============ 自动存档开关 ============ */
 
 .auto-save-toggle {
   margin-bottom: 15px;

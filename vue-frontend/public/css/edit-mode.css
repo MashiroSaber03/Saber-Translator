@@ -1119,12 +1119,12 @@ body.edit-mode-active {
 }
 
 .fontsize-presets-panel summary::before {
-  content: "�?";
+  content: "▶";
   font-size: 9px;
 }
 
 .fontsize-presets-panel[open] summary::before {
-  content: "�?";
+  content: "▼";
 }
 
 .fontsize-presets-panel summary:hover {

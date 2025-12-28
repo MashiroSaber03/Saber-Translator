@@ -80,7 +80,7 @@ body {
   --button-hover-bg: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
 }
 
-/* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择�?*/
+/* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择器 */
 [data-theme="dark"] body,
 [data-theme="dark"] {
   --text-color: #e2e8f0;

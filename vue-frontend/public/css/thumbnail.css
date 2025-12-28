@@ -101,8 +101,8 @@
 }
 
 #thumbnail-sidebar ul#thumbnailList li.active:before {
-  content: '�?;
- position: absolute;
+  content: '✓';
+  position: absolute;
   top: 5px;
   left: 5px;
   color: #3498db;
@@ -139,7 +139,7 @@
   border-radius: 4px;
 }
 
-/* 翻译中消息样*/
+/* 翻译中消息样式 */
 .translating-message {
   position: absolute;
   bottom: 0;
@@ -171,7 +171,7 @@
   animation: pulse 1.5s infinite;
 }
 
-/* 错误指示*/
+/* 错误指示器 */
 .error-indicator {
   position: absolute;
   top: 5px;
@@ -208,7 +208,7 @@
   box-shadow: 0 0 3px black;
 }
 
-/* 手动标注指示*/
+/* 手动标注指示器 */
 .labeled-indicator {
   position: absolute;
   bottom: 3px;
