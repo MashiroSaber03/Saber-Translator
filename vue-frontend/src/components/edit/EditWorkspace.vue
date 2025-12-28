@@ -1549,7 +1549,1152 @@ watch(selectedBubble, (bubble) => {
 }, { immediate: true })
 </script>
 
-<!-- 
-  编辑工作区样式完全由全局 public/css/edit-mode.css 控制
-  不在此处添加任何 scoped 样式，以避免覆盖全局布局样式
--->
+<style scoped>
+/* ===================================
+   编辑模式样式 - 完整迁移自 edit-mode.css
+   =================================== */
+
+/* ============ 编辑工作区 - 全屏覆盖 ============ */
+.edit-workspace {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #1a1a2e;
+  z-index: 9999;
+  overflow: hidden;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* ============ 顶部工具栏 - 双行布局 ============ */
+.edit-toolbar-wrapper {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.edit-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 15px;
+  gap: 10px;
+}
+
+.toolbar-row-1 {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.toolbar-row-2 {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 5px;
+}
+
+/* 图片导航 */
+.image-navigator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-navigator .nav-btn {
+  width: 36px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(102, 126, 234, 0.3);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.image-navigator .nav-btn:hover {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+.image-navigator .nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.image-indicator {
+  color: #fff;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: rgba(102, 126, 234, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.image-indicator:hover {
+  background: rgba(102, 126, 234, 0.4);
+}
+
+.image-indicator span {
+  font-weight: bold;
+  color: #667eea;
+}
+
+.thumb-toggle-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.thumb-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.thumb-toggle-btn.active {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+/* 编辑模式缩略图面板 */
+.edit-thumbnails-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: auto;
+  max-height: none;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.thumbnails-scroll {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: auto;
+  padding: 5px 0;
+}
+
+.thumbnails-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.thumbnails-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.thumbnails-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.edit-thumbnail-item {
+  flex-shrink: 0;
+  width: 60px;
+  height: 80px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.edit-thumbnail-item:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.05);
+}
+
+.edit-thumbnail-item.active {
+  border-color: #667eea;
+  box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+}
+
+.edit-thumbnail-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.edit-thumbnail-item .thumb-index {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.bubble-navigator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bubble-navigator .nav-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.bubble-navigator .nav-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.bubble-navigator .nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.bubble-indicator {
+  color: #fff;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.bubble-indicator span {
+  font-weight: bold;
+  color: #00ff88;
+}
+
+/* 视图控制按钮 */
+.view-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.view-controls button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.view-controls button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.view-controls #zoomLevel {
+  min-width: 50px;
+  text-align: center;
+  color: #fff;
+  font-size: 13px;
+  padding: 0 8px;
+}
+
+.view-mode-btn {
+  font-size: 18px !important;
+}
+
+.view-mode-btn.single-mode .dual-icon {
+  opacity: 0.5;
+}
+
+/* 快捷操作 */
+.quick-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* 主要按钮 */
+.edit-toolbar .primary-btn,
+.quick-actions .primary-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+  color: #1a1a2e;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.edit-toolbar .primary-btn:hover,
+.quick-actions .primary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+}
+
+/* 次要按钮 */
+.edit-toolbar .secondary-btn,
+.quick-actions .secondary-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.edit-toolbar .secondary-btn:hover,
+.quick-actions .secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* ============ 双图对照区域 ============ */
+.edit-main-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  min-height: 0;
+}
+
+.image-comparison-container {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+  gap: 0;
+  min-width: 0;
+}
+
+/* 图片面板 */
+.image-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  background: #16213e;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: flex 0.3s ease;
+}
+
+.image-panel.collapsed {
+  flex: 0 0 40px;
+  min-width: 40px;
+}
+
+.image-panel.collapsed .image-viewport {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel-title {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.original-panel .panel-title {
+  color: #ff6b6b;
+}
+
+.translated-panel .panel-title {
+  color: #00ff88;
+}
+
+.panel-toggle {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.panel-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 图片视口 */
+.image-viewport {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  background-color: #0d1b2a;
+  background-image:
+    linear-gradient(45deg, #1a1a2e 25%, transparent 25%),
+    linear-gradient(-45deg, #1a1a2e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1a1a2e 75%),
+    linear-gradient(-45deg, transparent 75%, #1a1a2e 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.image-viewport:active {
+  cursor: grabbing;
+}
+
+.image-viewport:focus {
+  outline: 2px solid #3498db;
+  outline-offset: -2px;
+}
+
+/* 图片画布包装器 */
+.image-canvas-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.image-canvas-wrapper img {
+  display: block;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/* 分隔条 */
+.panel-divider {
+  width: 8px;
+  background: #0f0f23;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.panel-divider:hover {
+  background: #3498db;
+}
+
+.divider-handle {
+  color: #444;
+  font-size: 12px;
+  writing-mode: vertical-lr;
+  user-select: none;
+}
+
+.panel-divider:hover .divider-handle {
+  color: #fff;
+}
+
+/* ============ 底部编辑面板 ============ */
+.edit-panel-container {
+  background: var(--card-bg-color, #fff);
+  border-left: 1px solid var(--border-color, #e0e0e0);
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 600px;
+  min-width: 520px;
+  max-width: 65%;
+  overflow: hidden;
+}
+
+.panel-resize-handle {
+  background: var(--bg-color, #f0f0f0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 10px;
+  letter-spacing: 3px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.panel-resize-handle.vertical {
+  width: 10px;
+  cursor: ew-resize;
+  writing-mode: vertical-rl;
+}
+
+.panel-resize-handle:hover {
+  background: #3498db;
+  color: #fff;
+}
+
+.edit-panel-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 15px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.text-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border-color, #e9ecef);
+}
+
+.column-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-color, #495057);
+}
+
+.original-text-column .column-title {
+  color: #e74c3c;
+}
+
+.translated-text-column .column-title {
+  color: #27ae60;
+}
+
+.re-ocr-btn,
+.re-translate-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: var(--bg-color, #f8f9fa);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.re-ocr-btn:hover,
+.re-translate-btn:hover {
+  background: #3498db;
+  color: #fff;
+}
+
+.text-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 60px;
+  padding: 12px;
+  border: 2px solid var(--border-color, #e9ecef);
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.text-editor:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+}
+
+.original-editor {
+  background: #fff8f8;
+  font-family: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
+}
+
+.translated-editor {
+  background: #f8fff8;
+}
+
+.text-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.text-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  background: var(--card-bg-color, white);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.text-actions button:hover {
+  background: var(--bg-color, #f8f9fa);
+  border-color: #adb5bd;
+}
+
+.apply-text-btn {
+  background: #27ae60 !important;
+  color: white !important;
+  border-color: #27ae60 !important;
+}
+
+.apply-text-btn:hover {
+  background: #219a52 !important;
+}
+
+/* ============ 样式设置区域 ============ */
+.style-settings-section {
+  width: 100%;
+  padding: 16px;
+  background: #f5f6fb;
+  border-radius: 10px;
+  border: 1px solid rgba(82, 92, 105, 0.12);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* ============ 操作按钮 ============ */
+.edit-action-buttons {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e9ecef);
+  margin-top: 12px;
+}
+
+.edit-action-buttons button {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-apply {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  color: white;
+}
+
+.btn-apply:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+}
+
+.btn-apply-all {
+  background: linear-gradient(135deg, #3498db 0%, #5dade2 100%);
+  color: white;
+}
+
+.btn-apply-all:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.btn-reset {
+  background: var(--bg-color, #f0f0f0);
+  color: #6c757d;
+  border: 1px solid var(--border-color, #dee2e6);
+}
+
+.btn-reset:hover {
+  background: #e9ecef;
+}
+
+/* ============ 暗色模式适配 ============ */
+[data-theme="dark"] .edit-toolbar {
+  background: linear-gradient(135deg, #0d1b2a 0%, #1a1a2e 100%);
+}
+
+[data-theme="dark"] .edit-panel-container {
+  background: #2d3748;
+  border-color: #4a5568;
+}
+
+[data-theme="dark"] .panel-resize-handle {
+  background: #1a202c;
+}
+
+[data-theme="dark"] .text-editor {
+  background: #1a202c;
+  border-color: #4a5568;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .original-editor {
+  background: #2d1f1f;
+}
+
+[data-theme="dark"] .translated-editor {
+  background: #1f2d1f;
+}
+
+[data-theme="dark"] .style-settings-section {
+  background: #1a202c;
+  border-color: #4a5568;
+}
+
+/* ============ 气泡操作工具组 ============ */
+.annotation-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.annotation-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 193, 7, 0.5);
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.annotation-btn:hover {
+  background: rgba(255, 193, 7, 0.3);
+  border-color: #ffc107;
+}
+
+.annotation-btn.active {
+  background: rgba(255, 193, 7, 0.5);
+  border-color: #ffc107;
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.4);
+}
+
+.annotation-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============ 绘制模式 ============ */
+.drawing-mode .image-viewport {
+  cursor: crosshair !important;
+}
+
+.drawing-mode .image-canvas-wrapper {
+  cursor: crosshair !important;
+}
+
+body.middle-button-drawing,
+body.middle-button-drawing * {
+  cursor: crosshair !important;
+}
+
+.drawing-rect-edit {
+  position: absolute;
+  border: 2px dashed #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.drawing-mode-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  background: rgba(255, 193, 7, 0.9);
+  color: #000;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 30;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ============ 笔刷工具样式 ============ */
+.brush-btn {
+  position: relative;
+}
+
+.brush-btn.active {
+  background: rgba(76, 175, 80, 0.3) !important;
+  border-color: #4CAF50 !important;
+  color: #4CAF50 !important;
+}
+
+#restoreBrushBtn.active {
+  background: rgba(33, 150, 243, 0.3) !important;
+  border-color: #2196F3 !important;
+  color: #2196F3 !important;
+}
+
+.brush-size-display {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  margin-left: 5px;
+}
+
+.edit-workspace.brush-mode-active .image-viewport {
+  cursor: none !important;
+}
+
+.edit-workspace.brush-mode-active[data-brush-mode="repair"] .image-viewport {
+  background: rgba(76, 175, 80, 0.05);
+}
+
+.edit-workspace.brush-mode-active[data-brush-mode="restore"] .image-viewport {
+  background: rgba(33, 150, 243, 0.05);
+}
+
+.edit-workspace.brush-mode-active::before {
+  content: '';
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 10000;
+  pointer-events: none;
+  animation: brushModeHint 0.3s ease;
+}
+
+.edit-workspace.brush-mode-active[data-brush-mode="repair"]::before {
+  content: '修复笔刷 - 滚轮调整大小';
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+}
+
+.edit-workspace.brush-mode-active[data-brush-mode="restore"]::before {
+  content: '还原笔刷 - 滚轮调整大小';
+  background: rgba(33, 150, 243, 0.9);
+  color: white;
+}
+
+@keyframes brushModeHint {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.brush-cursor {
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
+.edit-workspace.brush-mode-active .image-canvas-wrapper {
+  pointer-events: auto;
+}
+
+[data-theme="dark"] .brush-size-display {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ============ 布局切换按钮 ============ */
+.layout-toggle-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.layout-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.layout-toggle-btn.active {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+/* ============ 上下布局模式 ============ */
+.edit-workspace.layout-vertical .edit-main-layout {
+  flex-direction: column;
+}
+
+.edit-workspace.layout-vertical .image-comparison-container {
+  flex: 1;
+  min-height: 0;
+}
+
+.edit-workspace.layout-vertical .edit-thumbnails-panel {
+  position: absolute;
+  top: 90px;
+  right: 10px;
+  bottom: auto;
+  left: auto;
+  width: 80px;
+  max-height: calc(100% - 100px - 45%);
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 10px;
+  z-index: 100;
+  border-bottom: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.edit-workspace.layout-vertical .thumbnails-scroll {
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  gap: 8px;
+}
+
+.edit-workspace.layout-vertical .edit-thumbnail-item {
+  width: 64px;
+  height: 85px;
+}
+
+.edit-workspace.layout-vertical .edit-panel-container {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 100%;
+  max-height: 45%;
+  min-height: 200px;
+  border-left: none;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+  flex-direction: column;
+}
+
+.edit-workspace.layout-vertical .edit-panel-content {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 15px;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 12px 15px;
+}
+
+.edit-workspace.layout-vertical .text-block {
+  flex: 1 1 300px;
+  min-width: 280px;
+  max-width: 450px;
+}
+
+.edit-workspace.layout-vertical .text-editor {
+  min-height: 80px;
+  max-height: 150px;
+}
+
+.edit-workspace.layout-vertical .style-settings-section {
+  flex: 1 1 350px;
+  min-width: 320px;
+  max-width: 600px;
+  max-height: none;
+  overflow-y: visible;
+}
+
+.edit-workspace.layout-vertical .panel-resize-handle.vertical {
+  width: 100%;
+  height: 10px;
+  cursor: ns-resize;
+  writing-mode: horizontal-tb;
+}
+
+.edit-workspace.layout-vertical.thumbnails-visible .image-comparison-container {
+  margin-right: 95px;
+}
+
+.edit-workspace.layout-vertical .office-toolbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.edit-workspace.layout-vertical .toolbar-row {
+  flex-wrap: nowrap;
+}
+
+.edit-workspace.layout-vertical .edit-action-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.edit-workspace.layout-vertical .edit-action-buttons button {
+  flex: 0 0 auto;
+  min-width: 100px;
+}
+
+[data-theme="dark"] .edit-workspace.layout-vertical .edit-panel-container {
+  border-top-color: #4a5568;
+}
+
+/* 过渡动画 */
+.edit-workspace {
+  transition: none;
+}
+
+.edit-main-layout {
+  transition: flex-direction 0.3s ease;
+}
+
+.edit-panel-container {
+  transition: flex 0.3s ease, max-height 0.3s ease, border 0.3s ease;
+}
+
+.edit-thumbnails-panel {
+  transition: all 0.3s ease;
+}
+
+/* ============ 编辑模式进度条 ============ */
+.edit-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 20px;
+  min-width: 200px;
+  max-width: 350px;
+  animation: progressFadeIn 0.3s ease;
+}
+
+@keyframes progressFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.edit-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.edit-progress-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.edit-progress-count {
+  font-size: 12px;
+  color: #00ff88;
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.edit-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 80px;
+}
+
+.edit-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #00ff88, #00d4ff);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
+}
+
+.edit-progress-fill.animating {
+  background: linear-gradient(90deg, #00ff88, #00d4ff, #00ff88);
+  background-size: 200% 100%;
+  animation: progressShine 1.5s ease-in-out infinite;
+}
+
+@keyframes progressShine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.edit-progress-container.completed .edit-progress-fill {
+  background: #00ff88;
+}
+
+.edit-progress-container.completed .edit-progress-text {
+  color: #00ff88;
+}
+
+/* ============ 响应式调整 ============ */
+@media (max-width: 1200px) {
+  .style-settings-section {
+    flex: none;
+    max-width: none;
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .image-comparison-container {
+    flex-direction: column;
+  }
+
+  .panel-divider {
+    width: 100%;
+    height: 8px;
+    cursor: ns-resize;
+  }
+
+  .divider-handle {
+    writing-mode: horizontal-tb;
+  }
+}
+</style>

@@ -1,5 +1,5 @@
 /* ===================================
-   全局样式 - 仅包含CSS变量和基础reset
+   全局样式 - CSS变量、基础reset、通用组件
    =================================== */
 
 /* ===================================
@@ -46,6 +46,14 @@
   --text-heading: #2c3e50;
   --text-muted: #aaa;
   
+  /* ===================================
+     变量别名层 - 确保兼容性
+     =================================== */
+  --primary-color: var(--color-primary);
+  --error-color: var(--color-danger);
+  --success-color: var(--color-success);
+  --warning-color: var(--color-warning);
+  
   /* 间距 */
   --spacing-xs: 5px;
   --spacing-sm: 10px;
@@ -69,6 +77,15 @@
   --transition-fast: 0.2s ease;
   --transition-normal: 0.3s ease;
   --transition-slow: 0.5s ease;
+  
+  /* 书架页面变量 */
+  --header-height: 64px;
+  --header-height-mobile: 56px;
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --card-shadow-hover: 0 12px 32px rgba(0, 0, 0, 0.15);
+  --border-radius-sm: 8px;
+  --border-radius-md: 12px;
+  --border-radius-lg: 16px;
 }
 
 /* 亮色主题变量（默认） */
@@ -82,6 +99,11 @@ body {
   --input-border-color: #e0e6ed;
   --button-primary-bg: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
   --button-hover-bg: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
+  
+  /* 变量别名 - 兼容旧代码 */
+  --card-bg: var(--card-bg-color);
+  --hover-bg: #f0f4f8;
+  --input-bg: var(--input-bg-color);
 }
 
 /* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择器 */
@@ -98,6 +120,11 @@ body {
   --button-hover-bg: linear-gradient(135deg, #2f855a 0%, #48bb78 100%);
   color: var(--text-color);
   background-color: var(--bg-color);
+  
+  /* 变量别名 - 兼容旧代码 */
+  --card-bg: var(--card-bg-color);
+  --hover-bg: #3d4852;
+  --input-bg: var(--input-bg-color);
 }
 
 /* ===================================
@@ -160,4 +187,652 @@ body {
   100% {
     background-position: 30px 30px;
   }
+}
+
+/* ===================================
+   通用按钮样式 (.btn 体系)
+   迁移自 bookshelf.css / components.css
+   =================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--border-radius-sm, 8px);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+  background: var(--hover-bg, #f0f4f8);
+  color: var(--text-primary, #333);
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--border-color, #e2e8f0);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(238, 90, 90, 0.3);
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(238, 90, 90, 0.4);
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.btn-icon {
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+/* 暗色模式按钮适配 */
+[data-theme="dark"] .btn-secondary {
+  background: var(--hover-bg, #3d4852);
+  color: var(--text-color, #e2e8f0);
+  border-color: var(--border-color, #4a5568);
+}
+
+[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
+  background: var(--border-color, #4a5568);
+}
+
+/* ===================================
+   通用模态框样式 (.modal 体系)
+   迁移自 bookshelf.css / modals.css
+   =================================== */
+
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+}
+
+.modal.active {
+  display: block;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+
+.modal-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--border-radius-lg, 16px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 1001;
+  animation: modalSlideIn 0.3s ease;
+}
+
+.modal-large {
+  max-width: 700px;
+}
+
+.modal-small {
+  max-width: 400px;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-secondary, #777);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: var(--hover-bg, #f0f4f8);
+  color: var(--text-primary, #333);
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  flex-shrink: 0;
+}
+
+/* 暗色模式模态框适配 */
+[data-theme="dark"] .modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="dark"] .modal-content {
+  background: var(--card-bg, #2d3748);
+}
+
+[data-theme="dark"] .modal-header {
+  border-color: var(--border-color, #4a5568);
+}
+
+[data-theme="dark"] .modal-header h2 {
+  color: var(--text-color, #e2e8f0);
+}
+
+[data-theme="dark"] .modal-close {
+  color: var(--text-secondary, #a0aec0);
+}
+
+[data-theme="dark"] .modal-close:hover {
+  background: var(--hover-bg, #3d4852);
+  color: var(--text-color, #e2e8f0);
+}
+
+[data-theme="dark"] .modal-footer {
+  border-color: var(--border-color, #4a5568);
+}
+
+/* ===================================
+   通用表单样式
+   迁移自 bookshelf.css
+   =================================== */
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--text-primary, #333);
+  font-size: 0.9rem;
+}
+
+.form-group .required {
+  color: #dc3545;
+  margin-left: 2px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--border-radius-sm, 8px);
+  font-size: 0.95rem;
+  background: var(--input-bg, #f9fafc);
+  color: var(--text-primary, #333);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* 暗色模式表单适配 */
+[data-theme="dark"] .form-group label {
+  color: var(--text-color, #e2e8f0);
+}
+
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group textarea,
+[data-theme="dark"] .form-group select {
+  background: var(--input-bg, #2d3748);
+  border-color: var(--border-color, #4a5568);
+  color: var(--text-color, #e2e8f0);
+}
+
+[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group textarea:focus,
+[data-theme="dark"] .form-group select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* ===================================
+   章节拖拽排序样式
+   迁移自 bookshelf.css
+   =================================== */
+
+.chapter-drag-handle {
+  cursor: grab;
+  padding: 4px 8px;
+  color: var(--text-secondary, #777);
+  font-size: 1.2rem;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.chapter-drag-handle:hover {
+  color: var(--text-primary, #333);
+}
+
+.chapter-item.dragging {
+  opacity: 0.5;
+  background: var(--border-color, #e2e8f0);
+}
+
+.chapter-item.drag-over {
+  border-top: 2px solid #667eea;
+}
+
+/* ===================================
+   标签相关样式
+   迁移自 bookshelf.css
+   =================================== */
+
+.detail-tag .remove-detail-tag {
+  cursor: pointer;
+  font-weight: bold;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  margin-left: 2px;
+}
+
+.detail-tag .remove-detail-tag:hover {
+  opacity: 1;
+}
+
+/* ===================================
+   设置模态框子组件全局样式
+   解决 scoped 样式无法穿透到子组件的问题
+   =================================== */
+
+.settings-group {
+  margin-bottom: 25px;
+  padding: 20px;
+  background-color: var(--input-bg-color, #f9fafc);
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.settings-group-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  color: var(--color-primary, #3498db);
+}
+
+.settings-item {
+  margin-bottom: 15px;
+}
+
+.settings-item:last-child {
+  margin-bottom: 0;
+}
+
+.settings-item label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 0.95em;
+}
+
+.settings-item input[type="text"],
+.settings-item input[type="number"],
+.settings-item input[type="password"],
+.settings-item select,
+.settings-item textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  background-color: var(--card-bg-color, #ffffff);
+  color: var(--text-color, #1a202c);
+  font-size: 0.95em;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.settings-item input:focus,
+.settings-item select:focus,
+.settings-item textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #3498db);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+}
+
+.settings-item textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.settings-item .input-hint {
+  font-size: 0.85em;
+  color: var(--text-secondary, #777);
+  margin-top: 5px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.settings-test-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: var(--color-info, #17a2b8);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s, transform 0.1s;
+  margin-top: 10px;
+}
+
+.settings-test-btn:hover {
+  background-color: var(--color-info-dark, #149ddd);
+  transform: translateY(-1px);
+}
+
+/* 模型输入框带获取按钮 */
+.model-input-with-fetch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.model-input-with-fetch input {
+  flex: 1;
+}
+
+.fetch-models-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--color-primary, #3498db);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.fetch-models-btn:hover {
+  background: var(--color-primary-dark, #2980b9);
+}
+
+/* 密码输入框包装器 */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  flex: 1;
+  padding-right: 40px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-secondary, #777);
+  font-size: 1.1em;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text-primary, #333);
+}
+
+/* 提示词格式选择器 */
+.prompt-format-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-format-selector select {
+  width: 100%;
+}
+
+/* 暗色模式设置样式 */
+[data-theme="dark"] .settings-group {
+  background-color: var(--input-bg-color, #2d3748);
+  border-color: var(--border-color, #4a5568);
+}
+
+[data-theme="dark"] .settings-group-title {
+  border-color: var(--border-color, #4a5568);
+}
+
+[data-theme="dark"] .settings-item input,
+[data-theme="dark"] .settings-item select,
+[data-theme="dark"] .settings-item textarea {
+  background-color: var(--card-bg-color, #2d3748);
+  border-color: var(--border-color, #4a5568);
+  color: var(--text-color, #e2e8f0);
+}
+
+[data-theme="dark"] .password-toggle-btn {
+  color: var(--text-secondary, #a0aec0);
+}
+
+[data-theme="dark"] .password-toggle-btn:hover {
+  color: var(--text-color, #e2e8f0);
+}
+
+/* ===================================
+   书架页面头部全局样式
+   注意：使用 .bookshelf-page 限定作用域，避免影响其他页面
+   =================================== */
+
+.bookshelf-page .app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 0 24px;
+  height: 64px;
+  box-shadow: 0 2px 20px rgba(102, 126, 234, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+}
+
+.bookshelf-page .header-content {
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.bookshelf-page .logo-container a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: white;
+}
+
+.bookshelf-page .app-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  margin-right: 0;
+}
+
+.bookshelf-page .app-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.5px;
+}
+
+.bookshelf-page .header-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bookshelf-page .lan-access-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 6px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.bookshelf-page .tutorial-link,
+.bookshelf-page .github-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  font-size: 0.9rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  background-color: transparent;
+}
+
+.bookshelf-page .tutorial-link:hover,
+.bookshelf-page .github-link:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.bookshelf-page .github-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.bookshelf-page .theme-toggle {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.2rem;
+}
+
+.bookshelf-page .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(15deg);
 }

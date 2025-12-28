@@ -1,32 +1,20 @@
 /* ==========================================================================
    Saber-Translator 主样式文件 (Main Style File)
-   该文件作为应用的基础入口，用于汇集全局变量和通用基础样式。
+   保留的基础样式引用（其他样式已迁移到Vue组件）
    ========================================================================== */
 
-/* 汇集全局基础样式 */
+/* 基础样式 - 保留 */
 @import url('variables.css');
-/* 全局 CSS 变量 */
 @import url('base.css');
-/* 基础 Reset 和通用样式 */
-@import url('components.css');
-/* 通用 UI 组件基础样式 */
 
-/* 按原版顺序引用功能模块样式 */
-@import url('sidebar.css');
-/* 设置侧边栏 */
-@import url('thumbnail.css');
-/* 缩略图侧边栏 */
-@import url('image-display.css');
-/* 图片显示和处理区域 */
-@import url('modals.css');
-/* 通用模态框基础 */
-@import url('settings-modal.css');
-/* 设置详情模态框 */
-@import url('edit-mode.css');
-/* 翻译编辑模式专用样式 */
-@import url('header-footer.css');
-/* 页头页脚 */
-@import url('bookshelf.css');
-/* 书架管理页面 */
-
-/* 注意：reader.css 和 manga-insight.css 已完全迁移至对应的 Vue 组件内部 */
+/* 以下样式已迁移到 Vue 组件的 scoped 样式中：
+   - components.css -> global.css + Vue组件
+   - sidebar.css -> SettingsSidebar.vue
+   - thumbnail.css -> ThumbnailSidebar.vue
+   - image-display.css -> ImageResultDisplay.vue
+   - modals.css -> global.css
+   - settings-modal.css -> SettingsModal.vue
+   - edit-mode.css -> EditWorkspace.vue
+   - header-footer.css -> Vue组件
+   - bookshelf.css -> BookshelfView.vue + global.css
+*/

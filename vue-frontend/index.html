@@ -7,20 +7,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saber-Translator</title>
     
-    <!-- CSS 文件从 public 目录加载，Vite会自动添加base路径 -->
+    <!-- 基础 CSS 文件 -->
     <link rel="stylesheet" href="css/variables.css" />
     <link rel="stylesheet" href="css/base.css" />
-    <link rel="stylesheet" href="css/style.css" />
-    <link rel="stylesheet" href="css/components.css" />
-    <link rel="stylesheet" href="css/header-footer.css" />
-    <link rel="stylesheet" href="css/sidebar.css" />
-    <link rel="stylesheet" href="css/image-display.css" />
-    <link rel="stylesheet" href="css/modals.css" />
-    <link rel="stylesheet" href="css/settings-modal.css" />
-    <link rel="stylesheet" href="css/edit-mode.css" />
-    <link rel="stylesheet" href="css/thumbnail.css" />
-    <link rel="stylesheet" href="css/bookshelf.css" />
-    <!-- reader.css 和 manga-insight.css 已迁移到 Vue 组件中 -->
+    <!-- style.css 只包含对上述两个文件的@import，已冗余 -->
+    <!-- <link rel="stylesheet" href="css/style.css" /> -->
+    <!-- 其他样式已迁移到 src/styles/global.css 和 Vue 组件 scoped 样式中 -->
   </head>
   <body>
     <div id="app"></div>

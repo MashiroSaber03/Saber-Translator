@@ -65,10 +65,8 @@
   --transition-fast: 0.2s ease;
   --transition-normal: 0.3s ease;
   --transition-slow: 0.5s ease;
-}
-
-/* 亮色主题变量（默认） */
-body {
+  
+  /* 亮色主题默认值 - 放在 :root 确保全局可用 */
   --text-color: #1a202c;
   --bg-color: #f8fafc;
   --card-bg-color: #ffffff;
@@ -78,6 +76,17 @@ body {
   --input-border-color: #e0e6ed;
   --button-primary-bg: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
   --button-hover-bg: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
+  
+  /* 变量别名 - Vue组件使用 */
+  --card-bg: var(--card-bg-color);
+  --hover-bg: #f0f4f8;
+  --input-bg: var(--input-bg-color);
+}
+
+/* 亮色主题 body 样式 */
+body {
+  color: var(--text-color);
+  background-color: var(--bg-color);
 }
 
 /* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择器 */
@@ -94,4 +103,9 @@ body {
   --button-hover-bg: linear-gradient(135deg, #2f855a 0%, #48bb78 100%);
   color: var(--text-color);
   background-color: var(--bg-color);
+  
+  /* 变量别名 - Vue组件使用 */
+  --card-bg: var(--card-bg-color);
+  --hover-bg: #3d4852;
+  --input-bg: var(--input-bg-color);
 }
