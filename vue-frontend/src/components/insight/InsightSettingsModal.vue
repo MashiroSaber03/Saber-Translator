@@ -4,7 +4,7 @@
  * 配置VLM、LLM、Embedding、Reranker等模型参数
  */
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
@@ -821,13 +821,10 @@ async function loadPromptsLibrary(): Promise<void> {
 
 /**
  * 提示词类型变更处理
+ * 注意：由于 v-model 的双向绑定，在 @change 触发时 currentPromptType 已经是新值
+ * 因此我们需要使用 watch 来监听变化，以便获取旧值
  */
 function onPromptTypeChange(): void {
-  // 先保存当前编辑的内容
-  if (currentPromptContent.value) {
-    customPrompts.value[currentPromptType.value] = currentPromptContent.value
-  }
-  
   // 加载新类型的提示词（优先使用自定义的，否则使用默认）
   const promptType = currentPromptType.value
   currentPromptContent.value = customPrompts.value[promptType] || insightApi.DEFAULT_PROMPTS[promptType] || ''
@@ -1060,6 +1057,14 @@ async function saveSettings(): Promise<void> {
       architecturePreset: architecturePreset.value
     })
     
+    // 保存当前编辑的提示词
+    if (currentPromptContent.value) {
+      customPrompts.value[currentPromptType.value] = currentPromptContent.value
+    }
+    
+    // 保存提示词配置
+    insightStore.updatePrompts(customPrompts.value)
+    
     // 保存到后端
     const apiConfig = insightStore.getConfigForApi()
     const response = await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
@@ -1142,7 +1147,39 @@ function syncFromStore(): void {
   pagesPerBatch.value = insightStore.config.batch.pagesPerBatch
   contextBatchCount.value = insightStore.config.batch.contextBatchCount
   architecturePreset.value = insightStore.config.batch.architecturePreset
+  
+  // Prompts（提示词配置）
+  if (insightStore.config.prompts) {
+    customPrompts.value = { ...insightStore.config.prompts }
+    // 加载当前类型的提示词到编辑器
+    const promptType = currentPromptType.value
+    currentPromptContent.value = customPrompts.value[promptType] || insightApi.DEFAULT_PROMPTS[promptType] || ''
+  } else {
+    // 使用默认提示词
+    customPrompts.value = {}
+    currentPromptContent.value = insightApi.DEFAULT_PROMPTS[currentPromptType.value] || ''
+  }
 }
+
+// ============================================================
+// 监听器
+// ============================================================
+
+/**
+ * 监听提示词类型变化
+ * 在类型切换时自动保存旧类型的内容并加载新类型的内容
+ */
+watch(currentPromptType, (newType, oldType) => {
+  // 保存旧类型的内容（如果有修改）
+  if (oldType && currentPromptContent.value) {
+    customPrompts.value[oldType] = currentPromptContent.value
+  }
+  
+  // 加载新类型的内容
+  if (newType) {
+    currentPromptContent.value = customPrompts.value[newType] || insightApi.DEFAULT_PROMPTS[newType] || ''
+  }
+})
 
 // ============================================================
 // 生命周期

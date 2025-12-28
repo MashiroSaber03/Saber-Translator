@@ -18,6 +18,7 @@ import NotesPanel from '@/components/insight/NotesPanel.vue'
 import PageDetail from '@/components/insight/PageDetail.vue'
 import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
+import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import * as insightApi from '@/api/insight'
 
 // ============================================================
@@ -56,6 +57,9 @@ const loadedBookDetail = ref<{
   cover?: string
   total_pages: number
 } | null>(null)
+
+/** 是否显示章节选择弹窗 */
+const showChapterSelectModal = ref(false)
 
 // ============================================================
 // 计算属性
@@ -346,13 +350,56 @@ function toggleMobileWorkspace(): void {
 
 /**
  * 跳转到翻译页面
+ * 复刻原版逻辑：根据章节情况决定是否弹窗选择
  */
 function goToTranslate(): void {
-  if (insightStore.currentBookId) {
-    router.push({ path: '/translate', query: { book: insightStore.currentBookId } })
-  } else {
+  if (!insightStore.currentBookId) {
+    // 未选书：直接跳转
     router.push('/translate')
+    return
   }
+
+  // 获取书籍的章节信息
+  const chapters = insightStore.chapters
+  
+  if (!chapters || chapters.length === 0) {
+    // 无章节：只带 book 参数跳转
+    router.push({ path: '/translate', query: { book: insightStore.currentBookId } })
+  } else if (chapters.length === 1) {
+    // 只有 1 章：直接跳转，带上章节参数
+    router.push({ 
+      path: '/translate', 
+      query: { 
+        book: insightStore.currentBookId,
+        chapter: chapters[0]!.id
+      } 
+    })
+  } else {
+    // 多章：弹窗让用户选择
+    showChapterSelectModal.value = true
+  }
+}
+
+/**
+ * 处理章节选择
+ * @param chapterId - 选中的章节ID
+ */
+function handleChapterSelect(chapterId: string): void {
+  showChapterSelectModal.value = false
+  router.push({ 
+    path: '/translate', 
+    query: { 
+      book: insightStore.currentBookId!,
+      chapter: chapterId
+    } 
+  })
+}
+
+/**
+ * 关闭章节选择弹窗
+ */
+function closeChapterSelectModal(): void {
+  showChapterSelectModal.value = false
 }
 
 
@@ -535,6 +582,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     <InsightSettingsModal 
       v-if="showSettingsModal"
       @close="closeSettingsModal"
+    />
+    
+    <!-- 章节选择弹窗 -->
+    <ChapterSelectModal
+      v-if="showChapterSelectModal && insightStore.currentBookId"
+      :chapters="insightStore.chapters"
+      @select="handleChapterSelect"
+      @close="closeChapterSelectModal"
     />
   </div>
 </template>

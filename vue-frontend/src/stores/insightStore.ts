@@ -251,6 +251,7 @@ export interface InsightConfig {
   embedding: EmbeddingConfig
   reranker: RerankerConfig
   batch: BatchConfig
+  prompts: Record<string, string>
 }
 
 // ============================================================
@@ -366,7 +367,8 @@ export const useInsightStore = defineStore('insight', () => {
       contextBatchCount: 1,
       architecturePreset: 'standard',
       customLayers: []
-    }
+    },
+    prompts: {}
   })
 
   /** 服务商配置分组存储（用于切换服务商时保存/恢复配置） */
@@ -863,6 +865,15 @@ export const useInsightStore = defineStore('insight', () => {
     saveConfigToStorage()
   }
 
+  /**
+   * 更新提示词配置
+   * @param prompts - 提示词配置（部分或全部）
+   */
+  function updatePrompts(prompts: Record<string, string>): void {
+    config.value.prompts = { ...config.value.prompts, ...prompts }
+    saveConfigToStorage()
+  }
+
   // ============================================================
   // 服务商切换方法（支持多服务商配置持久化）
   // ============================================================
@@ -1151,7 +1162,8 @@ export const useInsightStore = defineStore('insight', () => {
           llm: { ...config.value.llm, ...parsed.llm },
           embedding: { ...config.value.embedding, ...parsed.embedding },
           reranker: { ...config.value.reranker, ...parsed.reranker },
-          batch: { ...config.value.batch, ...parsed.batch }
+          batch: { ...config.value.batch, ...parsed.batch },
+          prompts: parsed.prompts || {}
         }
         console.log('已加载漫画分析配置')
       } catch (e) {
@@ -1210,6 +1222,7 @@ export const useInsightStore = defineStore('insight', () => {
           }))
         }
       },
+      prompts: config.value.prompts,
       // ===== 服务商分组配置缓存（复刻翻译设置页面的 providerSettings）=====
       // 保存所有服务商的配置，实现切换服务商时的配置记忆
       providerSettings: buildProviderSettingsForBackend()
@@ -1410,6 +1423,12 @@ export const useInsightStore = defineStore('insight', () => {
       saveProviderConfigsToStorage()
     }
 
+    // ===== 解析提示词配置 =====
+    const prompts = apiConfig.prompts as Record<string, string> | undefined
+    if (prompts) {
+      config.value.prompts = prompts
+    }
+
     saveConfigToStorage()
 
     // 同时将当前激活的服务商配置保存到缓存中
@@ -1554,6 +1573,7 @@ export const useInsightStore = defineStore('insight', () => {
     updateEmbeddingConfig,
     updateRerankerConfig,
     updateBatchConfig,
+    updatePrompts,
     setConfig,
     saveConfigToStorage,
     loadConfigFromStorage,
