@@ -201,23 +201,30 @@ async function startAnalysis(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const options: Parameters<typeof insightApi.startAnalysis>[1] = {
-      incremental: insightStore.incrementalAnalysis
-    }
+    // 构建符合后端 API 协议的参数
+    // 后端期望: mode = 'full' | 'incremental' | 'chapters' | 'pages'
+    const options: Parameters<typeof insightApi.startAnalysis>[1] = {}
 
     if (analysisMode.value === 'chapter' && selectedChapterId.value) {
-      options.mode = 'chapter'
-      options.chapter_id = selectedChapterId.value
+      // 章节模式：mode='chapters', chapters=[id]
+      options.mode = 'chapters'
+      options.chapters = [selectedChapterId.value]
     } else if (analysisMode.value === 'page' && inputPageNum.value) {
-      options.mode = 'page'
-      options.page_num = inputPageNum.value
+      // 单页模式：mode='pages', pages=[num]
+      options.mode = 'pages'
+      options.pages = [inputPageNum.value]
     } else {
-      options.mode = 'full'
+      // 全书模式：根据增量开关决定是 'incremental' 还是 'full'
+      options.mode = insightStore.incrementalAnalysis ? 'incremental' : 'full'
     }
 
-    const response = await insightApi.startAnalysis(insightStore.currentBookId, options)
+    const response = await insightApi.startAnalysis(insightStore.currentBookId, options) as any
     
     if (response.success) {
+      // 保存任务ID（用于后续暂停/恢复/取消操作）
+      if (response.task_id) {
+        insightStore.setCurrentTaskId(response.task_id)
+      }
       insightStore.setAnalysisStatus('running')
       emit('start-polling')
     } else {
@@ -234,12 +241,16 @@ async function startAnalysis(): Promise<void> {
 
 /**
  * 暂停分析
+ * 与原版 JS 一致：传递 task_id 参数
  */
 async function pauseAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
 
   try {
-    const response = await insightApi.pauseAnalysis(insightStore.currentBookId)
+    const response = await insightApi.pauseAnalysis(
+      insightStore.currentBookId,
+      insightStore.currentTaskId || undefined
+    )
     if (response.success) {
       insightStore.setAnalysisStatus('paused')
     }
@@ -250,12 +261,16 @@ async function pauseAnalysis(): Promise<void> {
 
 /**
  * 继续分析
+ * 与原版 JS 一致：传递 task_id 参数
  */
 async function resumeAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
 
   try {
-    const response = await insightApi.resumeAnalysis(insightStore.currentBookId)
+    const response = await insightApi.resumeAnalysis(
+      insightStore.currentBookId,
+      insightStore.currentTaskId || undefined
+    )
     if (response.success) {
       insightStore.setAnalysisStatus('running')
       emit('start-polling')
@@ -267,15 +282,20 @@ async function resumeAnalysis(): Promise<void> {
 
 /**
  * 取消分析
+ * 与原版 JS 一致：传递 task_id 参数
  */
 async function cancelAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
   if (!confirm('确定要取消分析吗？')) return
 
   try {
-    const response = await insightApi.cancelAnalysis(insightStore.currentBookId)
+    const response = await insightApi.cancelAnalysis(
+      insightStore.currentBookId,
+      insightStore.currentTaskId || undefined
+    )
     if (response.success) {
       insightStore.setAnalysisStatus('idle')
+      insightStore.setCurrentTaskId(null)
       emit('stop-polling')
     }
   } catch (error) {

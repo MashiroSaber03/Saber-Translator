@@ -230,14 +230,28 @@ async function loadAnalysisStatus(): Promise<void> {
 
 /**
  * 启动状态轮询
+ * 与原版 JS 的 startProgressPolling 保持一致：
+ * 分析完成后自动刷新概览数据和目录树
  */
 function startStatusPolling(): void {
   stopStatusPolling()
   statusPollingTimer = setInterval(async () => {
     await loadAnalysisStatus()
-    // 如果分析完成或失败，停止轮询
-    if (!insightStore.isAnalyzing) {
+    
+    // 检查分析状态变化
+    const status = insightStore.analysisStatus
+    if (status === 'completed' || status === 'failed' || status === 'idle') {
+      // 停止轮询
       stopStatusPolling()
+      
+      // 分析完成后，刷新概览数据（与原版 JS 一致）
+      if (status === 'completed') {
+        console.log('分析完成，自动刷新概览数据')
+        await loadOverviewData()
+        // 触发目录树刷新（通过更新 store 状态让 PagesTree 组件响应）
+        // 重新加载分析状态会更新 analyzedPagesCount，PagesTree 会自动响应
+        await loadAnalysisStatus()
+      }
     }
   }, 3000)
 }

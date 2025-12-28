@@ -56,8 +56,7 @@ const vlmForceJson = ref(insightStore.config.vlm.forceJson)
 const vlmUseStream = ref(insightStore.config.vlm.useStream)
 const vlmImageMaxSize = ref(insightStore.config.vlm.imageMaxSize)
 
-// LLM 设置
-const llmUseSameAsVlm = ref(insightStore.config.llm.useSameAsVlm)
+// LLM 设置（独立配置，不再支持 "使用与 VLM 相同的配置"）
 const llmProvider = ref(insightStore.config.llm.provider)
 const llmApiKey = ref(insightStore.config.llm.apiKey)
 const llmModel = ref(insightStore.config.llm.model)
@@ -452,20 +451,8 @@ function onLlmProviderChange(): void {
   }
 }
 
-/**
- * LLM使用相同配置变更处理
- */
-function onLlmUseSameChange(): void {
-  if (!llmUseSameAsVlm.value) {
-    // 取消勾选时，从 VLM 配置复制值到 LLM 字段（仅当 LLM 配置为空时）
-    if (!llmApiKey.value) {
-      llmProvider.value = vlmProvider.value
-      llmApiKey.value = vlmApiKey.value
-      llmModel.value = vlmModel.value
-      llmBaseUrl.value = vlmBaseUrl.value
-    }
-  }
-}
+// 已移除: onLlmUseSameChange 函数
+// 用户必须手动配置 LLM，避免从 VLM 复制错误的 baseUrl
 
 /**
  * Embedding服务商变更处理
@@ -854,11 +841,12 @@ async function saveSettings(): Promise<void> {
   
   try {
     // 更新 Store 中的配置
+    // 注意：仅在 custom 服务商时保存 baseUrl，其他服务商使用预设地址
     insightStore.updateVlmConfig({
       provider: vlmProvider.value,
       apiKey: vlmApiKey.value,
       model: vlmModel.value,
-      baseUrl: vlmBaseUrl.value,
+      baseUrl: vlmProvider.value === 'custom' ? vlmBaseUrl.value : '',
       rpmLimit: vlmRpm.value,
       temperature: vlmTemperature.value,
       forceJson: vlmForceJson.value,
@@ -867,11 +855,11 @@ async function saveSettings(): Promise<void> {
     })
     
     insightStore.updateLlmConfig({
-      useSameAsVlm: llmUseSameAsVlm.value,
+      useSameAsVlm: false, // 始终独立配置
       provider: llmProvider.value,
       apiKey: llmApiKey.value,
       model: llmModel.value,
-      baseUrl: llmBaseUrl.value,
+      baseUrl: llmProvider.value === 'custom' ? llmBaseUrl.value : '',
       useStream: llmUseStream.value
     })
 
@@ -879,7 +867,7 @@ async function saveSettings(): Promise<void> {
       provider: embeddingProvider.value,
       apiKey: embeddingApiKey.value,
       model: embeddingModel.value,
-      baseUrl: embeddingBaseUrl.value,
+      baseUrl: embeddingProvider.value === 'custom' ? embeddingBaseUrl.value : '',
       rpmLimit: embeddingRpmLimit.value
     })
     
@@ -887,7 +875,7 @@ async function saveSettings(): Promise<void> {
       provider: rerankerProvider.value,
       apiKey: rerankerApiKey.value,
       model: rerankerModel.value,
-      baseUrl: rerankerBaseUrl.value,
+      baseUrl: rerankerProvider.value === 'custom' ? rerankerBaseUrl.value : '',
       topK: rerankerTopK.value
     })
     
@@ -954,8 +942,7 @@ function syncFromStore(): void {
   vlmUseStream.value = insightStore.config.vlm.useStream
   vlmImageMaxSize.value = insightStore.config.vlm.imageMaxSize
   
-  // LLM
-  llmUseSameAsVlm.value = insightStore.config.llm.useSameAsVlm
+  // LLM（独立配置）
   llmProvider.value = insightStore.config.llm.provider
   llmApiKey.value = insightStore.config.llm.apiKey
   llmModel.value = insightStore.config.llm.model
@@ -1121,44 +1108,35 @@ onMounted(async () => {
       <p class="settings-hint">LLM（对话模型）用于生成故事概要、智能问答等文本生成任务。</p>
       
       <div class="form-group">
-        <label class="checkbox-label">
-          <input v-model="llmUseSameAsVlm" type="checkbox" @change="onLlmUseSameChange">
-          <span>使用与 VLM 相同的配置</span>
-        </label>
+        <label>服务商</label>
+        <CustomSelect
+          v-model="llmProvider"
+          :options="vlmProviderOptions"
+          @change="onLlmProviderChange"
+        />
       </div>
       
-      <template v-if="!llmUseSameAsVlm">
-        <div class="form-group">
-          <label>服务商</label>
-          <CustomSelect
-            v-model="llmProvider"
-            :options="vlmProviderOptions"
-            @change="onLlmProviderChange"
-          />
-        </div>
-        
-        <div class="form-group">
-          <label>API Key</label>
-          <input v-model="llmApiKey" type="password" placeholder="输入 API Key">
-        </div>
-        
-        <div class="form-group">
-          <label>模型</label>
-          <input v-model="llmModel" type="text" placeholder="例如: gpt-4o-mini">
-        </div>
-        
-        <div v-if="showLlmBaseUrl" class="form-group">
-          <label>Base URL</label>
-          <input v-model="llmBaseUrl" type="text" placeholder="自定义 API 地址">
-        </div>
-        
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input v-model="llmUseStream" type="checkbox">
-            <span>使用流式请求</span>
-          </label>
-        </div>
-      </template>
+      <div class="form-group">
+        <label>API Key</label>
+        <input v-model="llmApiKey" type="password" placeholder="输入 API Key">
+      </div>
+      
+      <div class="form-group">
+        <label>模型</label>
+        <input v-model="llmModel" type="text" placeholder="例如: gpt-4o-mini">
+      </div>
+      
+      <div v-if="showLlmBaseUrl" class="form-group">
+        <label>Base URL</label>
+        <input v-model="llmBaseUrl" type="text" placeholder="自定义 API 地址">
+      </div>
+      
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input v-model="llmUseStream" type="checkbox">
+          <span>使用流式请求</span>
+        </label>
+      </div>
     </div>
 
     <!-- 批量分析设置 -->

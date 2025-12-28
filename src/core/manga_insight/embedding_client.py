@@ -199,6 +199,9 @@ class ChatClient:
         provider = self.config.provider.lower() if hasattr(self.config, 'provider') else "openai"
         base_url = self.config.base_url if hasattr(self.config, 'base_url') and self.config.base_url else self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
         
+        # 调试日志（debug 级别，仅开发时可见）
+        logger.debug(f"[ChatClient] provider={provider}, base_url={base_url}, model={self.config.model}")
+        
         if not base_url:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
         
@@ -217,7 +220,7 @@ class ChatClient:
         
         # 检查是否使用流式请求（默认启用，避免超时）
         use_stream = getattr(self.config, 'use_stream', True)
-        logger.info(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
+        logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
         
         if use_stream:
             return await self._generate_stream(url, headers, request_body)

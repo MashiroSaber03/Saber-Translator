@@ -196,14 +196,20 @@ export interface ConnectionTestResponse {
  * 开始分析
  * @param bookId 书籍 ID
  * @param options 分析选项
+ * 
+ * 后端期望的 mode 为：
+ * - 'full': 全书分析（强制重新分析所有页面）
+ * - 'incremental': 增量分析（仅分析未分析的页面）
+ * - 'chapters': 章节分析，需要配合 chapters 数组
+ * - 'pages': 页面分析，需要配合 pages 数组
  */
 export async function startAnalysis(
   bookId: string,
   options?: {
-    mode?: 'full' | 'chapter' | 'page'
-    chapter_id?: string
-    page_num?: number
-    incremental?: boolean
+    mode?: 'full' | 'incremental' | 'chapters' | 'pages'
+    chapters?: string[]   // 章节ID数组（chapters模式）
+    pages?: number[]      // 页码数组（pages模式）
+    force?: boolean       // 是否强制重新分析
   }
 ): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/start`, options)
@@ -212,25 +218,34 @@ export async function startAnalysis(
 /**
  * 暂停分析
  * @param bookId 书籍 ID
+ * @param taskId 任务 ID（可选，不传则后端取最新任务）
  */
-export async function pauseAnalysis(bookId: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/pause`)
+export async function pauseAnalysis(bookId: string, taskId?: string): Promise<ApiResponse> {
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/pause`, {
+    task_id: taskId
+  })
 }
 
 /**
  * 继续分析
  * @param bookId 书籍 ID
+ * @param taskId 任务 ID（可选，不传则后端取最新任务）
  */
-export async function resumeAnalysis(bookId: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/resume`)
+export async function resumeAnalysis(bookId: string, taskId?: string): Promise<ApiResponse> {
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/resume`, {
+    task_id: taskId
+  })
 }
 
 /**
  * 取消分析
  * @param bookId 书籍 ID
+ * @param taskId 任务 ID（可选，不传则后端取最新任务）
  */
-export async function cancelAnalysis(bookId: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/cancel`)
+export async function cancelAnalysis(bookId: string, taskId?: string): Promise<ApiResponse> {
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/cancel`, {
+    task_id: taskId
+  })
 }
 
 /**

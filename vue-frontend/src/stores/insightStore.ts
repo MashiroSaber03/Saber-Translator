@@ -265,6 +265,9 @@ export const useInsightStore = defineStore('insight', () => {
   /** 当前书籍ID */
   const currentBookId = ref<string | null>(null)
 
+  /** 当前分析任务ID（用于暂停/恢复/取消操作） */
+  const currentTaskId = ref<string | null>(null)
+
   /** 分析状态 */
   const analysisStatus = ref<AnalysisStatus>('idle')
 
@@ -449,6 +452,14 @@ export const useInsightStore = defineStore('insight', () => {
     analysisStatus.value = status
     progress.value.status = status
     console.log(`分析状态: ${status}`)
+  }
+
+  /**
+   * 设置当前任务ID
+   * @param taskId - 任务ID，传 null 清除
+   */
+  function setCurrentTaskId(taskId: string | null): void {
+    currentTaskId.value = taskId
   }
 
   /**
@@ -1465,6 +1476,7 @@ export const useInsightStore = defineStore('insight', () => {
   return {
     // 状态
     currentBookId,
+    currentTaskId,
     analysisStatus,
     progress,
     analysisMode,
@@ -1494,6 +1506,7 @@ export const useInsightStore = defineStore('insight', () => {
 
     // 书籍和分析管理
     setCurrentBook,
+    setCurrentTaskId,
     setAnalysisStatus,
     updateProgress,
     setAnalysisMode,

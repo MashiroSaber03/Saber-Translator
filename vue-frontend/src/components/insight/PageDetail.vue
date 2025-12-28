@@ -243,6 +243,64 @@ function goToPage(pageNum: number): void {
   }
 }
 
+/** 是否正在导出 */
+const isExporting = ref(false)
+
+/**
+ * 导出当前页面分析数据为 Markdown 文件
+ */
+async function exportPageData(): Promise<void> {
+  if (!insightStore.currentBookId || !selectedPageNum.value || !pageAnalysis.value) {
+    return
+  }
+
+  isExporting.value = true
+
+  try {
+    // 构建 Markdown 内容
+    let markdown = `# 第 ${selectedPageNum.value} 页分析数据\n\n`
+    
+    // 页面摘要
+    if (pageAnalysis.value.page_summary) {
+      markdown += `## 📝 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
+    }
+    
+    // 场景和氛围
+    if (pageAnalysis.value.scene) {
+      markdown += `## 🎬 场景\n\n${pageAnalysis.value.scene}\n\n`
+    }
+    if (pageAnalysis.value.mood) {
+      markdown += `## 🎭 氛围\n\n${pageAnalysis.value.mood}\n\n`
+    }
+    
+    // 对话内容
+    if (dialogues.value.length > 0) {
+      markdown += `## 💬 对话内容\n\n`
+      for (const d of dialogues.value) {
+        markdown += `**${d.speaker}**: ${d.text}\n\n`
+        if (d.originalText) {
+          markdown += `> 原文: ${d.originalText}\n\n`
+        }
+      }
+    }
+
+    // 下载文件
+    const blob = new Blob([markdown], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+
+  } catch (error) {
+    console.error('导出页面数据失败:', error)
+    errorMessage.value = '导出失败'
+  } finally {
+    isExporting.value = false
+  }
+}
+
 // ============================================================
 // 监听
 // ============================================================
@@ -373,6 +431,14 @@ watch(selectedPageNum, () => {
           >
             <span v-if="isReanalyzing" class="btn-spinner"></span>
             {{ isReanalyzing ? '分析中...' : '🔄 重新分析' }}
+          </button>
+          <button 
+            v-if="isPageAnalyzed"
+            class="btn btn-secondary btn-sm" 
+            :disabled="isExporting"
+            @click="exportPageData"
+          >
+            {{ isExporting ? '导出中...' : '📄 导出此页' }}
           </button>
         </div>
       </div>

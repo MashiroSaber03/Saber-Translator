@@ -154,6 +154,7 @@ async function generateOverview(regenerate: boolean): Promise<void> {
 
 /**
  * 加载已生成的模板列表
+ * 与原版 JS 一致：如果默认模板未生成但有其他已生成模板，则自动切换到第一个已生成的模板
  */
 async function loadGeneratedTemplates(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -162,10 +163,18 @@ async function loadGeneratedTemplates(): Promise<void> {
     const response = await insightApi.getGeneratedTemplates(insightStore.currentBookId)
     if (response.success) {
       // API返回的是generated字段，不是templates
+      let templates: OverviewTemplateType[] = []
       if (response.generated) {
-        generatedTemplates.value = response.generated as OverviewTemplateType[]
+        templates = response.generated as OverviewTemplateType[]
       } else if (response.templates && Array.isArray(response.templates)) {
-        generatedTemplates.value = response.templates as OverviewTemplateType[]
+        templates = response.templates as OverviewTemplateType[]
+      }
+      generatedTemplates.value = templates
+      
+      // 与原版 JS 一致：如果当前模板未生成，但有其他已生成的模板，则自动切换
+      if (templates.length > 0 && !templates.includes(currentTemplate.value)) {
+        currentTemplate.value = templates[0]!
+        console.log(`默认模板未生成，自动切换到已生成的模板: ${templates[0]}`)
       }
     }
   } catch (error) {
