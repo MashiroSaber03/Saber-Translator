@@ -18,8 +18,8 @@ from src.shared.path_helpers import resource_path
 from . import main_bp
 
 # 检查是否启用 Vue 前端模式
-# 可通过环境变量 USE_VUE_FRONTEND=true 启用
-USE_VUE_FRONTEND = os.environ.get('USE_VUE_FRONTEND', 'false').lower() == 'true'
+# 默认启用 Vue 前端，可通过环境变量 USE_VUE_FRONTEND=false 禁用（切换回原版）
+USE_VUE_FRONTEND = os.environ.get('USE_VUE_FRONTEND', 'true').lower() == 'true'
 
 # 辅助函数
 def load_prompts():

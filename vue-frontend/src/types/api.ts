@@ -249,7 +249,10 @@ export interface FetchModelsResponse {
  */
 export interface ServerInfoResponse {
   success: boolean
-  lan_address?: string
+  local_url?: string
+  lan_url?: string
+  lan_ip?: string
+  port?: number
   error?: string
 }
 

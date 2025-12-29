@@ -58,8 +58,8 @@ onMounted(async () => {
   // 获取局域网地址
   try {
     const response = await getServerInfo()
-    if (response.success && response.lan_address) {
-      lanUrl.value = response.lan_address
+    if (response.success && response.lan_url) {
+      lanUrl.value = response.lan_url
     }
   } catch (error) {
     console.error('获取服务器信息失败:', error)
