@@ -304,7 +304,7 @@ const toast = useToast()
 // ============================================================
 
 /** 字体列表 */
-const fontList = ref<string[]>([])
+const fontList = ref<(string | import('@/types').FontInfo)[]>([])
 
 /** 字体上传输入框引用 */
 const fontUploadInput = ref<HTMLInputElement | null>(null)
@@ -338,10 +338,20 @@ const inpaintMethodOptions = [
 
 /** 字体选择选项（用于CustomSelect） */
 const fontSelectOptions = computed(() => {
-  return fontList.value.map(font => ({
-    label: getFontDisplayName(font),
-    value: font
-  }))
+  return fontList.value.map(font => {
+    // 兼容 FontInfo 对象和字符串两种格式
+    if (typeof font === 'string') {
+      return {
+        label: getFontDisplayName(font),
+        value: font
+      }
+    } else {
+      return {
+        label: font.display_name || font.file_name,
+        value: font.path || font.file_name
+      }
+    }
+  })
 })
 
 // ============================================================
@@ -489,22 +499,22 @@ function setFontSize(size: number): void {
 /**
  * 处理字体选择变化（CustomSelect）
  */
-function handleFontFamilySelectChange(value: string): void {
-  fontFamily.value = value
+function handleFontFamilySelectChange(value: string | number): void {
+  fontFamily.value = String(value)
 }
 
 /**
  * 处理排版方向变化（CustomSelect）
  */
-function handleLayoutDirectionSelectChange(value: string): void {
-  layoutDirection.value = value as TextDirection
+function handleLayoutDirectionSelectChange(value: string | number): void {
+  layoutDirection.value = String(value) as TextDirection
 }
 
 /**
  * 处理修复方式变化（CustomSelect）
  */
-function handleInpaintMethodSelectChange(value: string): void {
-  inpaintMethod.value = value as InpaintMethod
+function handleInpaintMethodSelectChange(value: string | number): void {
+  inpaintMethod.value = String(value) as InpaintMethod
 }
 
 /**

@@ -16,9 +16,9 @@
       <div v-if="supportsModeSwitch" class="settings-item">
         <label for="promptMode">提示词模式:</label>
         <CustomSelect
-          v-model="isJsonMode"
+          :model-value="isJsonMode ? 'true' : 'false'"
           :options="promptModeOptions"
-          @change="handleModeChange"
+          @change="(v: string | number) => { isJsonMode = v === 'true'; handleModeChange() }"
         />
         <span class="mode-hint">{{ modeHint }}</span>
       </div>
@@ -70,14 +70,6 @@ import { ref, computed, onMounted } from 'vue'
 import { configApi } from '@/api/config'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
-import {
-  DEFAULT_TRANSLATE_PROMPT,
-  DEFAULT_TRANSLATE_JSON_PROMPT,
-  DEFAULT_AI_VISION_OCR_PROMPT,
-  DEFAULT_AI_VISION_OCR_JSON_PROMPT,
-  DEFAULT_HQ_TRANSLATE_PROMPT,
-  DEFAULT_PROOFREADING_PROMPT
-} from '@/constants'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
 /** 提示词类型选项 */
@@ -91,8 +83,8 @@ const promptTypeOptions = [
 
 /** 提示词模式选项 */
 const promptModeOptions = [
-  { label: '普通模式', value: false },
-  { label: 'JSON格式模式', value: true }
+  { label: '普通模式', value: 'false' },
+  { label: 'JSON格式模式', value: 'true' }
 ]
 
 // Toast 和 Store
@@ -150,10 +142,12 @@ async function loadPromptList() {
   }
 }
 
-/** 选择提示词 */
-function selectPrompt(name: string) {
+/** 选择提示词（同时加载内容） */
+async function selectPrompt(name: string) {
   selectedPrompt.value = name
   editingName.value = name
+  // 自动加载提示词内容
+  await loadPrompt(name)
 }
 
 /** 加载提示词内容 */

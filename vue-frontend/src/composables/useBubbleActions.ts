@@ -471,9 +471,15 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           ])
 
           ctx.beginPath()
-          ctx.moveTo(corners[0][0], corners[0][1])
-          for (let i = 1; i < corners.length; i++) {
-            ctx.lineTo(corners[i][0], corners[i][1])
+          const firstCorner = corners[0]
+          if (firstCorner) {
+            ctx.moveTo(firstCorner[0], firstCorner[1])
+            for (let i = 1; i < corners.length; i++) {
+              const corner = corners[i]
+              if (corner) {
+                ctx.lineTo(corner[0], corner[1])
+              }
+            }
           }
           ctx.closePath()
           ctx.fill()
@@ -509,7 +515,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
     try {
       console.log(`开始 OCR 识别气泡 #${index + 1}`)
-      const imageData = image.originalDataURL.split(',')[1]
+      const imageData = image.originalDataURL.split(',')[1] || ''
       const settings = settingsStore.settings
       const response = await ocrSingleBubbleApi(
         imageData,

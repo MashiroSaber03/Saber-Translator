@@ -331,28 +331,31 @@ function getFontDisplayName(fontPath: string): string {
 /**
  * 处理字体选择变化（CustomSelect）
  */
-function handleFontSelectChange(value: string) {
-  if (value === 'custom-font') {
+function handleFontSelectChange(value: string | number) {
+  const strValue = String(value)
+  if (strValue === 'custom-font') {
     fontUploadInput.value?.click()
     return
   }
-  settingsStore.updateTextStyle({ fontFamily: value })
-  emit('textStyleChanged', 'fontFamily', value)
+  settingsStore.updateTextStyle({ fontFamily: strValue })
+  emit('textStyleChanged', 'fontFamily', strValue)
 }
 
 /**
  * 处理排版方向变化（CustomSelect）
  */
-function handleLayoutDirectionChange(value: string) {
-  settingsStore.updateTextStyle({ layoutDirection: value as TextDirection })
-  emit('textStyleChanged', 'layoutDirection', value)
+function handleLayoutDirectionChange(value: string | number) {
+  const strValue = String(value)
+  settingsStore.updateTextStyle({ layoutDirection: strValue as TextDirection })
+  emit('textStyleChanged', 'layoutDirection', strValue)
 }
 
 /**
  * 处理填充方式变化（CustomSelect）
  */
-function handleInpaintMethodChange(value: string) {
-  settingsStore.updateTextStyle({ inpaintMethod: value as InpaintMethod })
+function handleInpaintMethodChange(value: string | number) {
+  const strValue = String(value)
+  settingsStore.updateTextStyle({ inpaintMethod: strValue as InpaintMethod })
 }
 
 /**

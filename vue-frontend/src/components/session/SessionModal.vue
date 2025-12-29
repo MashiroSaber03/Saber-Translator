@@ -279,8 +279,8 @@ async function handleSave() {
     // 创建会话数据
     const sessionData = sessionStore.createSessionData(
       sessionName.value,
-      imageStore.images,
-      imageStore.currentIndex,
+      [...imageStore.images] as import('@/types/image').ImageData[],
+      imageStore.currentImageIndex,
       {} // UI 设置将从 settingsStore 获取
     )
 
@@ -355,8 +355,9 @@ async function handleRename() {
     if (response.success) {
       showToast('重命名成功', 'success')
       // 更新本地列表
-      const index = sessionList.value.findIndex(s => s.name === sessionToRename.value?.name)
-      if (index >= 0) {
+      const oldName = sessionToRename.value?.name
+      const index = sessionList.value.findIndex(s => s.name === oldName)
+      if (index >= 0 && sessionList.value[index]) {
         sessionList.value[index].name = newSessionName.value
       }
       // 如果当前选中的是被重命名的会话，更新选中状态

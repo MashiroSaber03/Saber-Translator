@@ -51,9 +51,10 @@ const selectedBookId = ref('')
 
 /**
  * 处理书籍选择
- * @param bookId - 选中的书籍ID
+ * @param value - 选中的值
  */
-function handleSelect(bookId: string): void {
+function handleSelect(value: string | number): void {
+  const bookId = String(value)
   selectedBookId.value = bookId
   if (bookId) {
     emit('select', bookId)

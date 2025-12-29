@@ -242,6 +242,7 @@ async function handleChapterDrop(event: DragEvent, targetIndex: number) {
   // 重新排序
   const newOrder = [...chapters.value]
   const [removed] = newOrder.splice(draggedChapterIndex.value, 1)
+  if (!removed) return
   newOrder.splice(targetIndex, 0, removed)
 
   // 发送新顺序到后端

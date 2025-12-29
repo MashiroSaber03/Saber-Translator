@@ -129,7 +129,9 @@ function navigateChapter(direction: 'prev' | 'next') {
   
   if (newIndex >= 0 && newIndex < chaptersData.value.length) {
     const newChapter = chaptersData.value[newIndex]
-    router.push(`/reader?book=${props.bookId}&chapter=${newChapter.id}`)
+    if (newChapter) {
+      router.push(`/reader?book=${props.bookId}&chapter=${newChapter.id}`)
+    }
   }
 }
 

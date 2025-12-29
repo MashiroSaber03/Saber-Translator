@@ -10,7 +10,7 @@
  */
 
 import { computed, provide, ref } from 'vue'
-import { useResponsive, type LayoutMode } from '@/composables/useResponsive'
+import { useResponsive } from '@/composables/useResponsive'
 
 // Props
 const props = withDefaults(defineProps<{

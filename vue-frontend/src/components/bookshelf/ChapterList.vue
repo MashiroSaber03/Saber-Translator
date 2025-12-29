@@ -61,6 +61,7 @@ function handleDrop(event: DragEvent, targetIndex: number) {
   // 重新排序
   const newOrder = [...props.chapters]
   const [removed] = newOrder.splice(draggedIndex.value, 1)
+  if (!removed) return
   newOrder.splice(targetIndex, 0, removed)
 
   // 发送新顺序

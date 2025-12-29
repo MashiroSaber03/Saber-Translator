@@ -72,7 +72,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // 类型定义
-type SelectValue = string | number | boolean
+// 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，boolean 不兼容
+type SelectValue = string | number
 
 interface SelectOption {
   label: string
@@ -168,7 +169,7 @@ function updatePosition() {
 }
 
 // 选择选项
-function selectOption(value: string): void {
+function selectOption(value: SelectValue): void {
   emit('update:modelValue', value)
   emit('change', value)
   isOpen.value = false

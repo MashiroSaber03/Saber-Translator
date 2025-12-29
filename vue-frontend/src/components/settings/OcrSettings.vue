@@ -178,9 +178,9 @@
         />
         <div class="prompt-format-selector">
           <CustomSelect
-            :model-value="settings.aiVisionOcr.isJsonMode"
+            :model-value="settings.aiVisionOcr.isJsonMode ? 'true' : 'false'"
             :options="promptModeOptions"
-            @change="(v: any) => { settings.aiVisionOcr.isJsonMode = v; handleAiVisionPromptModeChange() }"
+            @change="(v: string | number) => { settings.aiVisionOcr.isJsonMode = v === 'true'; handleAiVisionPromptModeChange() }"
           />
           <span class="input-hint">JSON格式输出更结构化</span>
         </div>
@@ -252,8 +252,8 @@ const aiVisionProviderOptions = [
 
 /** 提示词模式选项 */
 const promptModeOptions = [
-  { label: '普通提示词', value: false },
-  { label: 'JSON提示词', value: true }
+  { label: '普通提示词', value: 'false' },
+  { label: 'JSON提示词', value: 'true' }
 ]
 
 /** 源语言选项（分组） */

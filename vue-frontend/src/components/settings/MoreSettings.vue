@@ -123,7 +123,7 @@
  * 更多设置组件
  * 管理PDF处理、字体、缓存清理等杂项设置
  */
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
@@ -138,12 +138,12 @@ import { useToast } from '@/utils/toast'
 
 // Store
 const settingsStore = useSettingsStore()
-const settings = computed(() => settingsStore)
+// settings 计算属性已移除，直接使用 settingsStore
 const toast = useToast()
 
 // 状态
 const isLoadingFonts = ref(false)
-const fontList = ref<string[]>([])
+const fontList = ref<(string | import('@/types').FontInfo)[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<HTMLInputElement | null>(null)
 
@@ -227,7 +227,7 @@ async function handleFontUpload(event: Event) {
 async function cleanDebugFiles() {
   isCleaning.value = true
   try {
-    const result = await systemApi.cleanDebugFiles()
+    const result = await systemApi.cleanDebugFiles() as { success: boolean; deleted_count?: number; error?: string }
     if (result.success) {
       toast.success(`已清理 ${result.deleted_count || 0} 个调试文件`)
     } else {
@@ -245,7 +245,7 @@ async function cleanDebugFiles() {
 async function cleanTempFiles() {
   isCleaning.value = true
   try {
-    const result = await systemApi.cleanTempFiles()
+    const result = await systemApi.cleanTempFiles() as { success: boolean; deleted_count?: number; error?: string }
     if (result.success) {
       toast.success(`已清理 ${result.deleted_count || 0} 个临时文件`)
     } else {

@@ -178,7 +178,7 @@
  * 50音软键盘组件
  * 提供日语假名输入功能
  */
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
 // ============================================================

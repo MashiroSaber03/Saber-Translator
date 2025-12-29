@@ -159,7 +159,11 @@ export interface ChapterData {
   title: string
   order: number
   imageCount: number
+  /** 后端可能返回的 snake_case 格式 */
+  image_count?: number
   hasSession: boolean
+  /** 后端可能返回的 snake_case 格式 */
+  has_session?: boolean
   /** 会话文件路径（书架模式） */
   session_path?: string
 }

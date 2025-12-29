@@ -54,8 +54,9 @@
             </template>
             <template v-else-if="field.type === 'select'">
               <CustomSelect
-                v-model="configValues[key]"
+                :model-value="String(configValues[key] ?? '')"
                 :options="field.options || []"
+                @change="(v: string | number) => { configValues[key] = v }"
               />
             </template>
             <template v-else-if="field.type === 'number'">
@@ -185,7 +186,7 @@ async function openPluginConfig(plugin: Plugin) {
   try {
     // 获取配置规范
     const schemaResult = await pluginApi.getConfigSchema(plugin.name)
-    configSchema.value = schemaResult.schema || {}
+    configSchema.value = (schemaResult.schema || {}) as Record<string, ConfigField>
 
     // 获取当前配置
     const configResult = await pluginApi.getConfig(plugin.name)
