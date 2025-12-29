@@ -27,10 +27,34 @@ export interface BookDetailResponse {
 }
 
 /**
- * 获取书籍列表
+ * 获取书籍参数
  */
-export async function getBooks(): Promise<BookListResponse> {
-  return apiClient.get<BookListResponse>('/api/bookshelf/books')
+export interface GetBooksParams {
+  /** 搜索关键词 */
+  search?: string
+  /** 标签名称数组（逗号分隔） */
+  tags?: string[]
+}
+
+/**
+ * 获取书籍列表
+ * @param params 可选的搜索和标签筛选参数
+ */
+export async function getBooks(params?: GetBooksParams): Promise<BookListResponse> {
+  // 构建查询参数，与原版 bookshelf.js 保持一致
+  const queryParams = new URLSearchParams()
+
+  if (params?.search) {
+    queryParams.append('search', params.search)
+  }
+  if (params?.tags && params.tags.length > 0) {
+    queryParams.append('tags', params.tags.join(','))
+  }
+
+  const queryString = queryParams.toString()
+  const url = queryString ? `/api/bookshelf/books?${queryString}` : '/api/bookshelf/books'
+
+  return apiClient.get<BookListResponse>(url)
 }
 
 /**

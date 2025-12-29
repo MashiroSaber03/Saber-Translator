@@ -102,7 +102,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     // 应用排序
     result.sort((a, b) => {
       let comparison = 0
-      
+
       switch (sortBy.value) {
         case 'title':
           comparison = a.title.localeCompare(b.title)
@@ -423,7 +423,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 切换标签筛选
+   * 切换标签筛选并重新加载书籍
+   * 与原版 bookshelf.js 的 toggleTagFilter 逻辑保持一致
    * @param tagId - 标签ID
    */
   function toggleTagFilter(tagId: string): void {
@@ -433,6 +434,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     } else {
       selectedTagIds.value.push(tagId)
     }
+    // 与原版保持一致：每次标签变化都从后端重新加载数据
+    loadBooks()
   }
 
   /**
@@ -602,11 +605,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 设置搜索查询（兼容旧API）
+   * 设置搜索查询并重新加载书籍
+   * 与原版 bookshelf.js 的 handleSearch 逻辑保持一致
    * @param query - 搜索查询
    */
   function setSearchQuery(query: string): void {
     searchKeyword.value = query
+    // 与原版保持一致：每次搜索变化都从后端重新加载数据
+    loadBooks()
   }
 
   // ============================================================
@@ -615,12 +621,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 从服务器加载书籍列表
+   * 与原版 bookshelf.js 保持一致，将搜索和标签筛选参数传递给后端
    */
   async function loadBooks(): Promise<void> {
     setLoading(true)
     setError(null)
     try {
-      const response = await bookshelfApi.getBooks()
+      // 构建请求参数，与原版逻辑保持一致
+      const params: { search?: string; tags?: string[] } = {}
+
+      if (searchKeyword.value.trim()) {
+        params.search = searchKeyword.value.trim()
+      }
+      if (selectedTagIds.value.length > 0) {
+        // selectedTagIds 实际存储的是标签名称
+        params.tags = selectedTagIds.value
+      }
+
+      const response = await bookshelfApi.getBooks(params)
       if (response.success && response.books) {
         setBooks(response.books)
       } else {

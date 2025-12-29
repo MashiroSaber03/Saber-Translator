@@ -638,11 +638,14 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /**
    * 应用主题到DOM
-   * 统一使用 data-theme 属性
+   * 同时设置 html 和 body 的 data-theme 属性，确保与原版 CSS 兼容
+   * 原版（bookshelf.html）设置在 body 上，Vue 版使用 html，两者都设置以保证兼容性
    */
   function applyTheme(): void {
     if (typeof document !== 'undefined') {
+      // 同时设置 html 和 body，确保 CSS 选择器兼容
       document.documentElement.setAttribute('data-theme', theme.value)
+      document.body.setAttribute('data-theme', theme.value)
     }
   }
 
@@ -933,12 +936,31 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  /** 原版 localStorage 存储键（用于兼容迁移） */
+  const LEGACY_STORAGE_KEY = 'saber_translator_settings'
+
   /**
    * 从 localStorage 加载设置
+   * 优先读取新 Key，若不存在则尝试读取原版 Key 并迁移
    */
   function loadFromStorage(): void {
     try {
-      const data = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
+      let data = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
+
+      // 如果新 Key 不存在，尝试读取原版 Key（兼容迁移）
+      if (!data) {
+        const legacyData = localStorage.getItem(LEGACY_STORAGE_KEY)
+        if (legacyData) {
+          console.log('[Settings] 检测到原版设置，正在迁移...')
+          data = legacyData
+          // 迁移到新 Key
+          localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, legacyData)
+          // 可选：删除旧 Key（或保留作为备份）
+          // localStorage.removeItem(LEGACY_STORAGE_KEY)
+          console.log('[Settings] 原版设置已迁移到新存储键')
+        }
+      }
+
       if (data) {
         const parsed = JSON.parse(data)
         // 深度合并，确保新增的默认值不会丢失
