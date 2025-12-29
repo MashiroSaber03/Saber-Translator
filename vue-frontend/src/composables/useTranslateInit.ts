@@ -115,10 +115,16 @@ export function useTranslateInit() {
   /**
    * 初始化应用
    * 迁移自 main.js 的 initializeApp 函数
+   * 
+   * @param force - 是否强制重新初始化（用于 SPA 场景下重新进入页面）
    */
-  async function initializeApp(): Promise<void> {
-    if (isInitializing.value || isInitialized.value) {
-      console.log('[TranslateInit] 已经初始化或正在初始化中，跳过')
+  async function initializeApp(force: boolean = false): Promise<void> {
+    // 【修复】支持强制重新初始化
+    // SPA 场景：用户从书架返回翻译页，需要重新加载书籍/章节上下文
+    if (!force && (isInitializing.value || isInitialized.value)) {
+      console.log('[TranslateInit] 已经初始化，仅重新加载上下文')
+      // 即使跳过完整初始化，也需要重新处理 URL 参数（书架模式）
+      await initializeBookChapterContext()
       return
     }
 
@@ -158,10 +164,10 @@ export function useTranslateInit() {
    */
   async function initializeSettings(): Promise<void> {
     console.log('[TranslateInit] 初始化设置...')
-    
+
     // 先从 localStorage 加载（作为基础/备份）
     settingsStore.initSettings()
-    
+
     // 尝试从后端加载设置（会覆盖 localStorage 中的值）
     try {
       const loaded = await settingsStore.loadFromBackend()
@@ -173,7 +179,7 @@ export function useTranslateInit() {
     } catch (error) {
       console.warn('[TranslateInit] 从后端加载设置失败，使用 localStorage 数据:', error)
     }
-    
+
     console.log('[TranslateInit] 设置初始化完成')
   }
 
@@ -183,7 +189,7 @@ export function useTranslateInit() {
    */
   async function initializeFontList(): Promise<void> {
     console.log('[TranslateInit] 初始化字体列表...')
-    
+
     try {
       const response = await getFontList()
       // 后端 API 直接返回 { fonts: [...] }，不包含 success 字段
@@ -207,18 +213,18 @@ export function useTranslateInit() {
    */
   async function initializePromptSettings(): Promise<void> {
     console.log('[TranslateInit] 初始化翻译提示词设置...')
-    
+
     try {
       const response = await getPrompts()
       // 后端 API 直接返回 { prompt_names: [...], default_prompt_content: "..." }
       if (response.prompt_names !== undefined) {
         promptNames.value = response.prompt_names || []
-        
+
         // 如果当前没有设置提示词，使用默认提示词
         if (!settingsStore.settings.translatePrompt && response.default_prompt_content) {
           settingsStore.setTranslatePrompt(response.default_prompt_content)
         }
-        
+
         console.log(`[TranslateInit] 已加载 ${promptNames.value.length} 个翻译提示词`)
       } else if (response.error) {
         console.warn('[TranslateInit] 获取翻译提示词失败:', response.error)
@@ -235,18 +241,18 @@ export function useTranslateInit() {
    */
   async function initializeTextboxPromptSettings(): Promise<void> {
     console.log('[TranslateInit] 初始化文本框提示词设置...')
-    
+
     try {
       const response = await getTextboxPrompts()
       // 后端 API 直接返回 { prompt_names: [...], default_prompt_content: "..." }
       if (response.prompt_names !== undefined) {
         textboxPromptNames.value = response.prompt_names || []
-        
+
         // 如果当前没有设置文本框提示词，使用默认提示词
         if (!settingsStore.settings.textboxPrompt && response.default_prompt_content) {
           settingsStore.setTextboxPrompt(response.default_prompt_content)
         }
-        
+
         console.log(`[TranslateInit] 已加载 ${textboxPromptNames.value.length} 个文本框提示词`)
       } else if (response.error) {
         console.warn('[TranslateInit] 获取文本框提示词失败:', response.error)
@@ -269,6 +275,12 @@ export function useTranslateInit() {
     if (!bookId || !chapterId) {
       console.log('[TranslateInit] 未指定书籍/章节参数，使用独立模式')
       isBookshelfMode.value = false
+      // 【修复】清空书籍/章节上下文，避免残留旧数据
+      currentBookId.value = null
+      currentChapterId.value = null
+      currentBookTitle.value = null
+      currentChapterTitle.value = null
+      sessionStore.clearContext()
       return
     }
 
@@ -399,7 +411,7 @@ export function useTranslateInit() {
 
     // 如果图片有气泡状态，从第一个气泡读取设置
     const firstBubble = imageData.bubbleStates?.[0]
-    
+
     if (firstBubble) {
       // 更新文字样式设置
       settingsStore.updateTextStyle({

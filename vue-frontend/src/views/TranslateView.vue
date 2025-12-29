@@ -176,12 +176,12 @@ const pageTitle = computed(() => {
 // ============================================================
 
 onMounted(async () => {
-  // 关键修复：如果是书架模式，在任何操作之前先清空旧数据
-  // 复刻原版多页应用的行为：每次进入章节时页面是空白的
-  if (route.query.book && route.query.chapter) {
-    imageStore.clearImages()
-    bubbleStore.clearBubbles()
-  }
+  // 【关键修复】复刻原版多页应用的行为：每次进入翻译页面都是全新的空白状态
+  // 原版行为：每次访问 /translate 都是一个全新的 HTTP 请求，JS 状态从零开始
+  // Vue SPA 行为：Pinia store 状态在整个应用生命周期内持久存在
+  // 修复：无论是书架模式还是快速翻译模式，都清空旧数据
+  imageStore.clearImages()
+  bubbleStore.clearBubbles()
   
   // 使用 useTranslateInit 进行完整初始化
   // 包括：设置初始化、字体列表、提示词、主题、书架模式会话加载
@@ -202,14 +202,24 @@ onUnmounted(() => {
 // 监听路由参数变化
 watch(
   () => [route.query.book, route.query.chapter],
-  async ([newBook, newChapter]) => {
+  async ([newBook, newChapter], [oldBook, oldChapter]) => {
+    // 【修复】处理所有路由参数变化场景，复刻原版多页应用的行为
+    
     if (newBook && newChapter) {
+      // 场景1：进入书架模式（加载新章节）
       // 关键修复：在任何异步操作之前，立即同步清空旧数据
-      // 复刻原版多页应用的行为：每次进入章节时页面是空白的
       imageStore.clearImages()
       bubbleStore.clearBubbles()
       
       await loadChapterSession()
+    } else if (oldBook && oldChapter && !newBook && !newChapter) {
+      // 场景2：从书架模式切换到快速翻译模式（参数消失）
+      // 同样需要清空数据，复刻"全新页面"的行为
+      imageStore.clearImages()
+      bubbleStore.clearBubbles()
+      // 清空书籍/章节上下文
+      await translateInit.initializeBookChapterContext()
+      console.log('[TranslateView] 从书架模式切换到快速翻译模式，已清空数据')
     }
   }
 )
