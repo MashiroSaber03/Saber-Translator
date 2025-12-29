@@ -11,24 +11,24 @@
   --color-primary: #3498db;
   --color-primary-dark: #2980b9;
   --color-primary-light: #5dade2;
-  
+
   --color-success: #5cb85c;
   --color-success-dark: #4cae4c;
   --color-success-darker: #449d44;
-  
+
   --color-danger: #d9534f;
   --color-danger-dark: #d43f3a;
   --color-danger-darker: #c9302c;
-  
+
   --color-warning: #f0ad4e;
   --color-warning-dark: #eb9316;
-  
+
   --color-info: #17a2b8;
   --color-info-dark: #149ddd;
-  
+
   --color-purple: #9b59b6;
   --color-purple-dark: #8e44ad;
-  
+
   /* 灰色系 */
   --color-gray-100: #f8fafc;
   --color-gray-200: #f4f7f9;
@@ -39,13 +39,13 @@
   --color-gray-700: #4a5568;
   --color-gray-800: #2d3748;
   --color-gray-900: #1a202c;
-  
+
   /* 文本色 */
   --text-primary: #333;
   --text-secondary: #777;
   --text-heading: #2c3e50;
   --text-muted: #aaa;
-  
+
   /* ===================================
      变量别名层 - 确保兼容性
      =================================== */
@@ -53,31 +53,31 @@
   --error-color: var(--color-danger);
   --success-color: var(--color-success);
   --warning-color: var(--color-warning);
-  
+
   /* 间距 */
   --spacing-xs: 5px;
   --spacing-sm: 10px;
   --spacing-md: 15px;
   --spacing-lg: 20px;
   --spacing-xl: 25px;
-  
+
   /* 圆角 */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 20px;
   --radius-full: 50%;
-  
+
   /* 阴影 */
-  --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 16px rgba(0,0,0,0.12);
-  
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.12);
+
   /* 过渡 */
   --transition-fast: 0.2s ease;
   --transition-normal: 0.3s ease;
   --transition-slow: 0.5s ease;
-  
+
   /* 书架页面变量 */
   --header-height: 64px;
   --header-height-mobile: 56px;
@@ -93,13 +93,13 @@ body {
   --text-color: #1a202c;
   --bg-color: #f8fafc;
   --card-bg-color: #ffffff;
-  --shadow-color: rgba(0,0,0,0.08);
+  --shadow-color: rgba(0, 0, 0, 0.08);
   --border-color: #e2e8f0;
   --input-bg-color: #f9fafc;
   --input-border-color: #e0e6ed;
   --button-primary-bg: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
   --button-hover-bg: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
-  
+
   /* 变量别名 - 兼容旧代码 */
   --card-bg: var(--card-bg-color);
   --hover-bg: #f0f4f8;
@@ -112,7 +112,7 @@ body {
   --text-color: #e2e8f0;
   --bg-color: #1a202c;
   --card-bg-color: #2d3748;
-  --shadow-color: rgba(0,0,0,0.3);
+  --shadow-color: rgba(0, 0, 0, 0.3);
   --border-color: #4a5568;
   --input-bg-color: #2d3748;
   --input-border-color: #4a5568;
@@ -120,7 +120,7 @@ body {
   --button-hover-bg: linear-gradient(135deg, #2f855a 0%, #48bb78 100%);
   color: var(--text-color);
   background-color: var(--bg-color);
-  
+
   /* 变量别名 - 兼容旧代码 */
   --card-bg: var(--card-bg-color);
   --hover-bg: #3d4852;
@@ -132,12 +132,17 @@ body {
    =================================== */
 
 /* 全局盒模型修复 */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 /* 确保所有输入框使用 border-box */
-input, textarea, select, button {
+input,
+textarea,
+select,
+button {
   box-sizing: border-box;
 }
 
@@ -159,8 +164,13 @@ body {
 
 /* 关键帧动画 */
 @keyframes fadeIn {
-  from {opacity: 0}
-  to {opacity: 1}
+  from {
+    opacity: 0
+  }
+
+  to {
+    opacity: 1
+  }
 }
 
 @keyframes slideIn {
@@ -168,6 +178,7 @@ body {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -175,18 +186,192 @@ body {
 }
 
 @keyframes pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(53, 152, 219, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(53, 152, 219, 0); }
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(53, 152, 219, 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(53, 152, 219, 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(53, 152, 219, 0);
+  }
 }
 
 @keyframes move {
   0% {
     background-position: 0 0;
   }
+
   100% {
     background-position: 30px 30px;
   }
+}
+
+/* ===================================
+   基础布局样式
+   迁移自 base.css
+   =================================== */
+
+.container {
+  display: flex;
+  max-width: 1400px;
+  margin: 20px auto;
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: 10px;
+}
+
+aside {
+  width: 200px;
+  padding: 20px;
+}
+
+/* 禁用的输入框样式 */
+input:disabled {
+  background-color: #f5f5f5;
+  color: #aaa;
+  cursor: not-allowed;
+  border: 1px solid #ddd;
+}
+
+input[type="text"]:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: #f2f2f2 !important;
+  color: #999 !important;
+  cursor: not-allowed !important;
+}
+
+/* 页脚样式 */
+footer {
+  text-align: center;
+  padding: 1em 0;
+  background-color: #eee;
+  color: #777;
+  border-top: 1px solid #ddd;
+  margin-top: 20px;
+  clear: both;
+}
+
+/* 加载动画 */
+.loading-animation {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px auto;
+}
+
+.spinner {
+  display: none;
+}
+
+/* 链接样式 */
+#select-file-link {
+  color: #3498db !important;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: bold;
+  transition: color 0.3s;
+}
+
+#select-file-link:hover {
+  color: #2572a4 !important;
+}
+
+/* 通用卡片样式 */
+.card {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 25px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* 图像容器基础样式 */
+.image-container {
+  position: relative;
+  margin: 0 auto;
+  max-width: 100%;
+  text-align: center;
+}
+
+.image-container img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+/* 字幕列表样式 */
+.subtitle-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.subtitle-list li {
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+}
+
+.subtitle-list li:hover {
+  background-color: #e0e0e0;
+}
+
+.subtitle-list li.active {
+  background-color: #d0d0d0;
+  font-weight: bold;
+}
+
+/* 暗色模式基础布局适配 */
+[data-theme="dark"] input:disabled {
+  background-color: #3d4852;
+  color: #718096;
+  border-color: #4a5568;
+}
+
+[data-theme="dark"] input[type="text"]:disabled,
+[data-theme="dark"] select:disabled,
+[data-theme="dark"] textarea:disabled {
+  background-color: #3d4852 !important;
+  color: #718096 !important;
+}
+
+[data-theme="dark"] footer {
+  background-color: #2d3748;
+  color: #a0aec0;
+  border-top-color: #4a5568;
+}
+
+[data-theme="dark"] .card {
+  background-color: var(--card-bg-color, #2d3748);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .card:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .subtitle-list li {
+  background-color: #3d4852;
+}
+
+[data-theme="dark"] .subtitle-list li:hover {
+  background-color: #4a5568;
+}
+
+[data-theme="dark"] .subtitle-list li.active {
+  background-color: #4a5568;
 }
 
 /* ===================================
@@ -329,6 +514,7 @@ body {
     opacity: 0;
     transform: translate(-50%, -48%);
   }
+
   to {
     opacity: 1;
     transform: translate(-50%, -50%);
