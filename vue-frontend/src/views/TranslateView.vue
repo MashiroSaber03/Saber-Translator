@@ -306,12 +306,20 @@ interface ApplySettingsOptions {
 
 /**
  * 处理应用设置到全部
- * 将当前文字样式设置应用到所有图片的气泡状态
+ * 【复刻原版 main.js applySettingsToAll】
+ * 核心逻辑：从当前图片的 bubbleStates[0] 读取设置，应用到所有图片的 bubbleStates
  * @param options - 选择要应用的设置项
  */
 async function handleApplyToAll(options: ApplySettingsOptions) {
-  if (!hasImages.value) {
-    showToast('没有可应用的图片', 'warning')
+  // 【复刻原版】检查当前图片是否有 bubbleStates
+  const currentImg = currentImage.value
+  if (!currentImg || !currentImg.bubbleStates || currentImg.bubbleStates.length === 0) {
+    showToast('请先选择一张已翻译的图片', 'warning')
+    return
+  }
+  
+  if (imageStore.images.length <= 1) {
+    showToast('只有一张图片，无需应用到全部', 'info')
     return
   }
 
@@ -325,35 +333,67 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
   try {
     isLoading.value = true
     
-    // 获取当前文字样式设置
-    const textStyle = settingsStore.textStyle
+    // 【复刻原版】从当前图片的第一个气泡读取设置（而不是全局 settingsStore）
+    // 注：前面已经检查过 bubbleStates.length > 0，所以这里使用非空断言
+    const source = currentImg.bubbleStates![0]!
     
-    // 构建要应用的设置对象
+    // 构建要应用的设置对象（复刻原版逻辑）
     const settingsToApply: Record<string, unknown> = {}
     
     if (options.fontSize) {
-      settingsToApply.fontSize = textStyle.fontSize
+      settingsToApply.fontSize = source.fontSize
     }
     if (options.fontFamily) {
-      settingsToApply.fontFamily = textStyle.fontFamily
+      settingsToApply.fontFamily = source.fontFamily
     }
     if (options.layoutDirection) {
-      settingsToApply.textDirection = textStyle.layoutDirection
+      // 【复刻原版修复C】textDirection 如果是 'auto' 则转为 'vertical'
+      settingsToApply.textDirection = source.textDirection === 'auto' ? 'vertical' : source.textDirection
     }
     if (options.textColor) {
-      settingsToApply.textColor = textStyle.textColor
+      settingsToApply.textColor = source.textColor
     }
     if (options.fillColor) {
-      settingsToApply.fillColor = textStyle.fillColor
+      settingsToApply.fillColor = source.fillColor
     }
     if (options.strokeEnabled) {
-      settingsToApply.strokeEnabled = textStyle.strokeEnabled
+      settingsToApply.strokeEnabled = source.strokeEnabled
     }
     if (options.strokeColor) {
-      settingsToApply.strokeColor = textStyle.strokeColor
+      settingsToApply.strokeColor = source.strokeColor
     }
     if (options.strokeWidth) {
-      settingsToApply.strokeWidth = textStyle.strokeWidth
+      settingsToApply.strokeWidth = source.strokeWidth
+    }
+
+    // 辅助函数：应用设置到单个气泡
+    const applySettingsToBubble = (bubble: typeof bubbleStore.bubbles[0]) => {
+      const updatedBubble = { ...bubble }
+      if (options.fontSize && settingsToApply.fontSize !== undefined) {
+        updatedBubble.fontSize = settingsToApply.fontSize as number
+      }
+      if (options.fontFamily && settingsToApply.fontFamily !== undefined) {
+        updatedBubble.fontFamily = settingsToApply.fontFamily as string
+      }
+      if (options.layoutDirection && settingsToApply.textDirection !== undefined) {
+        updatedBubble.textDirection = settingsToApply.textDirection as 'auto' | 'vertical' | 'horizontal'
+      }
+      if (options.textColor && settingsToApply.textColor !== undefined) {
+        updatedBubble.textColor = settingsToApply.textColor as string
+      }
+      if (options.fillColor && settingsToApply.fillColor !== undefined) {
+        updatedBubble.fillColor = settingsToApply.fillColor as string
+      }
+      if (options.strokeEnabled && settingsToApply.strokeEnabled !== undefined) {
+        updatedBubble.strokeEnabled = settingsToApply.strokeEnabled as boolean
+      }
+      if (options.strokeColor && settingsToApply.strokeColor !== undefined) {
+        updatedBubble.strokeColor = settingsToApply.strokeColor as string
+      }
+      if (options.strokeWidth && settingsToApply.strokeWidth !== undefined) {
+        updatedBubble.strokeWidth = settingsToApply.strokeWidth as number
+      }
+      return updatedBubble
     }
 
     // 更新所有图片的气泡状态
@@ -364,37 +404,8 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
       const image = images[i]
       if (!image) continue
       if (image.bubbleStates && image.bubbleStates.length > 0) {
-        // 更新每个气泡的设置
-        const updatedBubbleStates = image.bubbleStates.map(bubble => {
-          const updatedBubble = { ...bubble }
-          
-          if (options.fontSize && settingsToApply.fontSize !== undefined) {
-            updatedBubble.fontSize = settingsToApply.fontSize as number
-          }
-          if (options.fontFamily && settingsToApply.fontFamily !== undefined) {
-            updatedBubble.fontFamily = settingsToApply.fontFamily as string
-          }
-          if (options.layoutDirection && settingsToApply.textDirection !== undefined) {
-            updatedBubble.textDirection = settingsToApply.textDirection as 'auto' | 'vertical' | 'horizontal'
-          }
-          if (options.textColor && settingsToApply.textColor !== undefined) {
-            updatedBubble.textColor = settingsToApply.textColor as string
-          }
-          if (options.fillColor && settingsToApply.fillColor !== undefined) {
-            updatedBubble.fillColor = settingsToApply.fillColor as string
-          }
-          if (options.strokeEnabled && settingsToApply.strokeEnabled !== undefined) {
-            updatedBubble.strokeEnabled = settingsToApply.strokeEnabled as boolean
-          }
-          if (options.strokeColor && settingsToApply.strokeColor !== undefined) {
-            updatedBubble.strokeColor = settingsToApply.strokeColor as string
-          }
-          if (options.strokeWidth && settingsToApply.strokeWidth !== undefined) {
-            updatedBubble.strokeWidth = settingsToApply.strokeWidth as number
-          }
-          
-          return updatedBubble
-        })
+        // 使用辅助函数更新每个气泡的设置
+        const updatedBubbleStates = image.bubbleStates.map(applySettingsToBubble)
         
         // 更新图片的气泡状态
         imageStore.updateImageByIndex(i, { bubbleStates: updatedBubbleStates })
@@ -404,37 +415,7 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
 
     // 同时更新当前气泡 store 中的气泡（如果有）
     if (bubbleStore.bubbles.length > 0) {
-      const updatedCurrentBubbles = bubbleStore.bubbles.map(bubble => {
-        const updatedBubble = { ...bubble }
-        
-        if (options.fontSize && settingsToApply.fontSize !== undefined) {
-          updatedBubble.fontSize = settingsToApply.fontSize as number
-        }
-        if (options.fontFamily && settingsToApply.fontFamily !== undefined) {
-          updatedBubble.fontFamily = settingsToApply.fontFamily as string
-        }
-        if (options.layoutDirection && settingsToApply.textDirection !== undefined) {
-          updatedBubble.textDirection = settingsToApply.textDirection as 'auto' | 'vertical' | 'horizontal'
-        }
-        if (options.textColor && settingsToApply.textColor !== undefined) {
-          updatedBubble.textColor = settingsToApply.textColor as string
-        }
-        if (options.fillColor && settingsToApply.fillColor !== undefined) {
-          updatedBubble.fillColor = settingsToApply.fillColor as string
-        }
-        if (options.strokeEnabled && settingsToApply.strokeEnabled !== undefined) {
-          updatedBubble.strokeEnabled = settingsToApply.strokeEnabled as boolean
-        }
-        if (options.strokeColor && settingsToApply.strokeColor !== undefined) {
-          updatedBubble.strokeColor = settingsToApply.strokeColor as string
-        }
-        if (options.strokeWidth && settingsToApply.strokeWidth !== undefined) {
-          updatedBubble.strokeWidth = settingsToApply.strokeWidth as number
-        }
-        
-        return updatedBubble
-      })
-      
+      const updatedCurrentBubbles = bubbleStore.bubbles.map(applySettingsToBubble)
       bubbleStore.setBubbles(updatedCurrentBubbles)
     }
 
@@ -810,11 +791,21 @@ function openSponsor() {
 
 /**
  * 处理键盘事件（非编辑模式）
- * 对齐原版 events.js handleGlobalKeyDown
+ * 【复刻原版 events.js handleGlobalKeyDown】
  */
 function handleKeydown(event: KeyboardEvent) {
-  // 如果在输入框中，不处理快捷键
-  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+  const target = event.target as HTMLElement
+  
+  // 【复刻原版修复D】检查是否在文本输入框中
+  // 原版豁免范围：input[type="text"], textarea, [contenteditable="true"], #bubbleTextEditor
+  const isInTextInput = 
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.getAttribute('contenteditable') === 'true' ||
+    target.id === 'bubbleTextEditor'
+  
+  // 如果在文本输入框中，不拦截键盘事件，让浏览器处理默认行为
+  if (isInTextInput) {
     return
   }
   
@@ -853,6 +844,144 @@ function handleKeydown(event: KeyboardEvent) {
         }
         break
     }
+  }
+}
+
+/**
+ * 处理自动字号开关变更
+ * 【复刻原版 events.js handleAutoFontSizeChange】
+ * 核心逻辑：
+ * - 开启自动字号：调用 reRenderFullImage(..., useAutoFontSize=true) 重新计算字号并渲染
+ * - 关闭自动字号：将所有气泡设为输入框中的固定字号，然后渲染
+ * @param isAutoFontSize - 自动字号是否启用
+ */
+async function handleAutoFontSizeChanged(isAutoFontSize: boolean) {
+  const image = currentImage.value
+  if (!image || !image.translatedDataURL) {
+    // 没有已翻译的图片，仅影响下次翻译（与原版一致）
+    console.log(`自动字号设置变更: ${isAutoFontSize} (仅影响下次翻译)`)
+    return
+  }
+
+  const bubbleStates = image.bubbleStates
+  if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
+    console.log('当前图片没有 bubbleStates，跳过重渲染')
+    return
+  }
+
+  console.log(`自动字号设置变更: ${isAutoFontSize}，将重新渲染...`)
+
+  if (isAutoFontSize) {
+    // 【复刻原版】开启自动字号：重新计算每个气泡的字号
+    // 原版调用 editMode.reRenderFullImage(false, false, true)
+    // 第三个参数 true 表示 useAutoFontSize，对应后端 autoFontSize 参数
+    console.log('自动字号已开启，重新计算字号并渲染...')
+    
+    try {
+      const { apiClient } = await import('@/api/client')
+      
+      // 提取 clean_image 的 base64 部分
+      let cleanImageBase64 = ''
+      if (image.cleanImageData) {
+        const cleanData = image.cleanImageData
+        cleanImageBase64 = cleanData.includes('base64,') 
+          ? (cleanData.split('base64,')[1] || '') 
+          : cleanData
+      } else if (image.originalDataURL) {
+        cleanImageBase64 = image.originalDataURL.includes('base64,')
+          ? (image.originalDataURL.split('base64,')[1] || '')
+          : image.originalDataURL
+      }
+      
+      if (!cleanImageBase64) {
+        console.log('没有可用的背景图，跳过重渲染')
+        return
+      }
+      
+      const bubbleStatesForApi = bubbleStates.map((bs) => ({
+        translatedText: bs.translatedText || '',
+        coords: bs.coords,
+        fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,  // 传递当前字号，后端会根据 autoFontSize=true 重新计算
+        fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
+        textDirection: getEffectiveDirection(bs),
+        textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
+        rotationAngle: bs.rotationAngle || 0,
+        position: bs.position || { x: 0, y: 0 },
+        strokeEnabled: bs.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
+        strokeColor: bs.strokeColor || settingsStore.settings.textStyle.strokeColor,
+        strokeWidth: bs.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+      }))
+
+      const bubbleTexts = bubbleStatesForApi.map(s => s.translatedText)
+      const bubbleCoords = bubbleStatesForApi.map(s => s.coords)
+
+      const response = await apiClient.post<{ rendered_image?: string; error?: string; bubble_states?: Array<{ fontSize?: number }> }>(
+        '/api/re_render_image',
+        {
+          clean_image: cleanImageBase64,
+          bubble_texts: bubbleTexts,
+          bubble_coords: bubbleCoords,
+          fontSize: settingsStore.settings.textStyle.fontSize,  // 后端需要数字类型
+          fontFamily: settingsStore.settings.textStyle.fontFamily,
+          textDirection: settingsStore.settings.textStyle.layoutDirection === 'auto' ? 'vertical' : settingsStore.settings.textStyle.layoutDirection,
+          textColor: settingsStore.settings.textStyle.textColor,
+          bubble_states: bubbleStatesForApi,
+          use_individual_styles: true,
+          use_inpainting: false,
+          use_lama: false,
+          fillColor: null,
+          is_font_style_change: true,
+          autoFontSize: true,  // 【修复】使用正确的参数名 autoFontSize（与原版 edit_mode.js 行 407 一致）
+          strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
+          strokeColor: settingsStore.settings.textStyle.strokeColor,
+          strokeWidth: settingsStore.settings.textStyle.strokeWidth,
+        }
+      )
+
+      if (response.rendered_image) {
+        // 【复刻原版】如果后端返回了更新后的 bubble_states，需要回写字号
+        if (response.bubble_states && Array.isArray(response.bubble_states)) {
+          const updatedBubbles = bubbleStates.map((bs, idx) => ({
+            ...bs,
+            fontSize: response.bubble_states![idx]?.fontSize ?? bs.fontSize
+          }))
+          imageStore.updateCurrentImage({
+            translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+            bubbleStates: updatedBubbles,
+            hasUnsavedChanges: true
+          })
+          bubbleStore.setBubbles(updatedBubbles)
+        } else {
+          imageStore.updateCurrentImage({
+            translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+            hasUnsavedChanges: true
+          })
+        }
+        console.log('自动字号渲染成功')
+      } else if (response.error) {
+        console.error('自动字号渲染失败:', response.error)
+        showToast('重新渲染失败: ' + response.error, 'error')
+      }
+    } catch (error) {
+      console.error('自动字号渲染出错:', error)
+    }
+  } else {
+    // 【复刻原版】关闭自动字号：将所有气泡设为输入框中的固定字号
+    const fixedFontSize = settingsStore.settings.textStyle.fontSize
+    console.log(`自动字号已关闭，使用固定字号 ${fixedFontSize} 渲染...`)
+    
+    // 更新所有气泡的字号
+    const updatedBubbles = bubbleStates.map(bs => ({
+      ...bs,
+      fontSize: fixedFontSize
+    }))
+    
+    // 更新状态
+    imageStore.updateCurrentImage({ bubbleStates: updatedBubbles })
+    bubbleStore.setBubbles(updatedBubbles)
+    
+    // 触发重渲染（复用 handleTextStyleChanged 的逻辑）
+    await handleTextStyleChanged('fontSize', fixedFontSize)
   }
 }
 
@@ -1082,6 +1211,7 @@ function selectImage(index: number) {
         @next="goToNext"
         @apply-to-all="handleApplyToAll"
         @text-style-changed="handleTextStyleChanged"
+        @auto-font-size-changed="handleAutoFontSizeChanged"
       />
 
       <!-- 主内容区 -->

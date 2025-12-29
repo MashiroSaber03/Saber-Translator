@@ -52,6 +52,8 @@ const emit = defineEmits<{
   (e: 'applyToAll', options: ApplySettingsOptions): void
   /** 文字样式设置变更（需要重新渲染） */
   (e: 'textStyleChanged', settingKey: string, newValue: unknown): void
+  /** 【复刻原版修复A】自动字号开关变更（需要特殊处理：重新计算字号或应用固定字号） */
+  (e: 'autoFontSizeChanged', isAutoFontSize: boolean): void
 }>()
 
 // ============================================================
@@ -232,11 +234,14 @@ function updateFontSize(event: Event) {
 
 /**
  * 更新自动字号
+ * 【复刻原版修复A】切换后触发 autoFontSizeChanged 事件
  */
 function updateAutoFontSize(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   settingsStore.updateTextStyle({ autoFontSize: checked })
-  console.log(`自动字号设置变更: ${checked} (仅影响下次翻译)`)
+  console.log(`自动字号设置变更: ${checked}`)
+  // 【复刻原版】触发事件，由父组件处理重新渲染逻辑
+  emit('autoFontSizeChanged', checked)
 }
 
 /**
