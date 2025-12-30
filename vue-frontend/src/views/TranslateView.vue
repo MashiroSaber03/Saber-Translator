@@ -13,7 +13,7 @@
  */
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -29,17 +29,14 @@ import { useTranslation } from '@/composables/useTranslation'
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import TranslationProgress from '@/components/translate/TranslationProgress.vue'
 import SponsorModal from '@/components/bookshelf/SponsorModal.vue'
-import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import ThumbnailSidebar from '@/components/translate/ThumbnailSidebar.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
-import { useExportImport } from '@/composables/useExportImport'
 import { getEffectiveDirection } from '@/types/bubble'
 
 // 路由
 const route = useRoute()
-const router = useRouter()
 
 // Stores
 const imageStore = useImageStore()
@@ -50,15 +47,13 @@ const bubbleStore = useBubbleStore()
 // 配置验证
 const { 
   validateBeforeTranslation, 
-  highlightSettingsButton,
   initValidation 
 } = useValidation()
 
 // 翻译功能
 const translation = useTranslation()
 
-// 导出导入功能
-const exportImport = useExportImport()
+// 导出导入功能已移至具体按钮事件处理函数中
 
 // 翻译页面初始化
 const translateInit = useTranslateInit()
@@ -75,15 +70,6 @@ const showSponsorModal = ref(false)
 
 /** 是否处于编辑模式 */
 const isEditMode = ref(false)
-
-/** 是否正在加载 */
-const isLoading = ref(false)
-
-/** 加载消息 */
-const loadingMessage = ref('')
-
-/** 错误消息 */
-const errorMessage = ref('')
 
 /** ImageUpload 组件引用 */
 const imageUploadRef = ref<InstanceType<typeof ImageUpload> | null>(null)
@@ -247,28 +233,13 @@ async function loadChapterSession() {
   if (!currentBookId.value || !currentChapterId.value) return
   
   try {
-    isLoading.value = true
-    loadingMessage.value = '正在加载章节会话...'
-    
     // 使用 translateInit 的初始化方法，它会正确调用 loadSessionByPath
     await translateInit.initializeBookChapterContext()
     
   } catch (error) {
     console.error('加载章节会话失败:', error)
     showToast('加载章节会话失败', 'error')
-  } finally {
-    isLoading.value = false
-    loadingMessage.value = ''
   }
-}
-
-/**
- * 处理上传开始事件
- */
-function handleUploadStart() {
-  isLoading.value = true
-  loadingMessage.value = '正在处理图片...'
-  errorMessage.value = ''
 }
 
 /**
@@ -278,8 +249,6 @@ function handleUploadStart() {
  * 2. 跳转显示第一张图片
  */
 function handleUploadComplete(count: number) {
-  isLoading.value = false
-  loadingMessage.value = ''
   console.log(`上传完成，共 ${count} 张图片`)
   
   // 复刻原版逻辑：如果有图片，先排序再跳转到第一张
@@ -289,15 +258,6 @@ function handleUploadComplete(count: number) {
     // 跳转到第一张图片（复刻 switchImage(0)）
     translateInit.switchImage(0)
   }
-}
-
-/**
- * 处理上传错误事件
- */
-function handleUploadError(error: string) {
-  isLoading.value = false
-  loadingMessage.value = ''
-  errorMessage.value = error
 }
 
 /**
@@ -341,7 +301,6 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
   }
 
   try {
-    isLoading.value = true
     
     // 【复刻原版】从当前图片的第一个气泡读取设置（而不是全局 settingsStore）
     // 注：前面已经检查过 bubbleStates.length > 0，所以这里使用非空断言
@@ -452,7 +411,6 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
     }
 
     if (imagesToReRender.length > 0) {
-      loadingMessage.value = `正在渲染图片 0/${imagesToReRender.length}...`
       const { apiClient } = await import('@/api/client')
       const layoutDir = settingsStore.settings.textStyle.layoutDirection
       const isAutoLayout = layoutDir === 'auto'
@@ -462,8 +420,6 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
         if (imageIndex === undefined) continue
         const img = imageStore.images[imageIndex]
         if (!img || !img.bubbleStates) continue
-
-        loadingMessage.value = `正在渲染图片 ${idx + 1}/${imagesToReRender.length}...`
 
         try {
           // 【修复P1】背景兜底策略：clean → original
@@ -533,15 +489,12 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
       }
     }
 
-    loadingMessage.value = ''
     showToast(`已将 ${appliedItems.join('、')} 应用到 ${updatedCount} 张图片`, 'success')
     console.log(`[TranslateView] 应用设置到全部完成，更新了 ${updatedCount} 张图片，重渲染了 ${imagesToReRender.length} 张`)
     
   } catch (error) {
     console.error('应用设置到全部失败:', error)
     showToast('应用设置失败', 'error')
-  } finally {
-    isLoading.value = false
   }
 }
 
@@ -617,23 +570,6 @@ async function removeAllText() {
   await translation.removeAllTexts()
 }
 
-/**
- * 暂停/继续批量翻译
- */
-function togglePauseTranslation() {
-  if (isBatchPaused.value) {
-    translation.resumeBatchTranslation()
-  } else {
-    translation.pauseBatchTranslation()
-  }
-}
-
-/**
- * 取消批量翻译
- */
-function cancelBatchTranslation() {
-  translation.cancelBatchTranslation()
-}
 
 /**
  * 删除当前图片
@@ -666,8 +602,6 @@ function clearAllImages() {
  */
 async function handleCleanTempFiles() {
   try {
-    isLoading.value = true
-    loadingMessage.value = '正在清理临时文件...'
     
     // 清理调试文件
     const debugResult = await cleanDebugFiles()
@@ -689,11 +623,7 @@ async function handleCleanTempFiles() {
       showToast(messages.join('，'), 'warning')
     }
   } catch (error) {
-    console.error('清理临时文件失败:', error)
     showToast('清理临时文件失败', 'error')
-  } finally {
-    isLoading.value = false
-    loadingMessage.value = ''
   }
 }
 
@@ -720,12 +650,6 @@ function toggleEditMode() {
   isEditMode.value = !isEditMode.value
 }
 
-/**
- * 处理选中气泡
- */
-function handleSelectBubble(index: number) {
-  bubbleStore.selectBubble(index)
-}
 
 /**
  * 处理重新翻译失败图片
@@ -771,12 +695,6 @@ async function saveCurrentSession() {
   }
 }
 
-/**
- * 返回书架
- */
-function goToBookshelf() {
-  router.push('/')
-}
 
 /**
  * 打开设置模态框
@@ -1231,9 +1149,7 @@ function selectImage(index: number) {
           <!-- 图片上传组件 -->
           <ImageUpload
             ref="imageUploadRef"
-            @upload-start="handleUploadStart"
             @upload-complete="handleUploadComplete"
-            @upload-error="handleUploadError"
           />
           
           <!-- 缩略图列表已移至右侧侧边栏 -->
@@ -1299,13 +1215,6 @@ function selectImage(index: number) {
     <SponsorModal 
       v-if="showSponsorModal" 
       @close="showSponsorModal = false" 
-    />
-    
-    <!-- 加载动画覆盖层 -->
-    <LoadingOverlay
-      :visible="isLoading"
-      :message="loadingMessage"
-      :fullscreen="false"
     />
   </div>
 </template>

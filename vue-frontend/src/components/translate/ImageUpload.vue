@@ -31,12 +31,8 @@ import {
 // ============================================================
 
 const emit = defineEmits<{
-  /** 上传开始 */
-  (e: 'uploadStart'): void
   /** 上传完成 */
   (e: 'uploadComplete', count: number): void
-  /** 上传错误 */
-  (e: 'uploadError', error: string): void
 }>()
 
 // ============================================================
@@ -148,8 +144,6 @@ async function processFiles(files: File[]) {
   showProgress.value = true
   uploadProgress.value = 0
   
-  emit('uploadStart')
-  
   try {
     // 复刻原版：不在此处预排序，由 TranslateView.handleUploadComplete 统一排序
     let processedCount = 0
@@ -194,7 +188,6 @@ async function processFiles(files: File[]) {
     const errMsg = error instanceof Error ? error.message : '处理文件失败，请重试'
     errorMessage.value = errMsg
     showToast(errMsg, 'error')
-    emit('uploadError', errMsg)
   } finally {
     isLoading.value = false
     showProgress.value = false
