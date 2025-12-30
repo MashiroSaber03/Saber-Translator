@@ -10,6 +10,7 @@ import time
 from io import BytesIO
 from PIL import Image
 from openai import OpenAI  # 添加OpenAI库导入，用于火山引擎调用
+from src.shared.openai_helpers import create_openai_client  # 导入辅助函数
 
 from src.shared import constants
 from src.shared.image_helpers import image_to_base64
@@ -28,7 +29,8 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
             logger.error(f"调用 {service_friendly_name} 失败：未提供 Base URL。")
             return ""
 
-        client = OpenAI(api_key=api_key, base_url=base_url_to_use) # 使用传入的 base_url_to_use
+        # 使用辅助函数创建客户端，自动处理代理问题
+        client = create_openai_client(api_key=api_key, base_url=base_url_to_use)
 
         payload_messages = [ # payload 结构保持一致
             {

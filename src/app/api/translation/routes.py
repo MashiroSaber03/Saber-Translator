@@ -1046,9 +1046,9 @@ def hq_translate_batch():
             if use_stream:
                 content = _hq_translate_stream(base_url, api_key, model_name, request_body)
             else:
-                # 非流式调用，使用 OpenAI SDK
-                from openai import OpenAI
-                client = OpenAI(api_key=api_key, base_url=base_url)
+                # 非流式调用，使用 OpenAI SDK（使用辅助函数处理代理问题）
+                from src.shared.openai_helpers import create_openai_client
+                client = create_openai_client(api_key=api_key, base_url=base_url)
                 
                 api_params = {
                     'model': model_name,

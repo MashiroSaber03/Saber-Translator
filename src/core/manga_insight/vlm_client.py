@@ -108,8 +108,19 @@ class VLMClient:
     def __init__(self, config: VLMConfig, prompts_config: Optional[PromptsConfig] = None):
         self.config = config
         self.prompts_config = prompts_config or PromptsConfig()
+        
+        # 检测是否为本地服务（使用共享函数）
+        from src.shared.openai_helpers import is_local_service
+        base_url = config.base_url or self.PROVIDER_CONFIGS.get(config.provider.lower(), {}).get("base_url", "")
+        
         # 批量分析需要更长超时时间（5分钟）
-        self.client = httpx.AsyncClient(timeout=300.0)
+        if is_local_service(base_url):
+            # 本地服务禁用代理
+            self.client = httpx.AsyncClient(timeout=300.0, trust_env=False)
+            logger.info(f"VLM客户端: 检测到本地服务 ({base_url})，禁用代理")
+        else:
+            self.client = httpx.AsyncClient(timeout=300.0)
+        
         self._rpm_last_reset = 0
         self._rpm_count = 0
     

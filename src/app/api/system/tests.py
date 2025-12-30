@@ -617,10 +617,10 @@ def test_ai_translate_connection():
                 'message': f'不支持的服务商: {provider}'
             }), 400
         
-        # 使用 OpenAI 兼容 API 进行测试
-        from openai import OpenAI
+        # 使用 OpenAI 兼容 API 进行测试（使用辅助函数自动处理代理问题）
+        from src.shared.openai_helpers import create_openai_client
         
-        client = OpenAI(api_key=api_key, base_url=api_base_url)
+        client = create_openai_client(api_key=api_key, base_url=api_base_url, timeout=30.0)
         
         # 发送简短翻译请求
         response = client.chat.completions.create(
@@ -826,11 +826,17 @@ def fetch_openai_compatible_models(api_key: str, base_url: str) -> List[Dict[str
         
         models_url = base_url.rstrip('/') + '/models'
         
-        response = requests.get(
-            models_url,
-            headers={'Authorization': f'Bearer {api_key}'},
-            timeout=15
-        )
+        # 检测是否为本地服务，如果是则禁用代理
+        is_local = any(indicator in base_url.lower() for indicator in ['localhost', '127.0.0.1', '0.0.0.0', '::1'])
+        request_kwargs = {
+            'headers': {'Authorization': f'Bearer {api_key}'},
+            'timeout': 15
+        }
+        if is_local:
+            logger.info(f"检测到本地服务 ({base_url})，禁用代理")
+            request_kwargs['proxies'] = None  # 禁用代理
+        
+        response = requests.get(models_url, **request_kwargs)
         
         if response.status_code == 200:
             data = response.json()
@@ -887,12 +893,13 @@ def fetch_gemini_models(api_key: str) -> List[Dict[str, str]]:
 def test_gemini_connection(api_key: str, model_name: str) -> tuple:
     """测试 Google Gemini 连接"""
     try:
-        # Gemini 使用 OpenAI 兼容模式
-        from openai import OpenAI
+        # Gemini 使用 OpenAI 兼容模式（使用辅助函数自动处理代理问题）
+        from src.shared.openai_helpers import create_openai_client
         
-        client = OpenAI(
+        client = create_openai_client(
             api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=30.0
         )
         
         response = client.chat.completions.create(

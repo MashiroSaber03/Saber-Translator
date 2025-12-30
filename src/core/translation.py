@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 from openai import OpenAI
+from src.shared.openai_helpers import create_openai_client
 
 # 添加项目根目录到 Python 路径
 root_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -179,7 +180,7 @@ def translate_single_text(text, target_language, model_provider,
                 # SiliconFlow (硅基流动) 使用 OpenAI 兼容 API
                 if not api_key:
                     raise ValueError("SiliconFlow需要API Key")
-                client = OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
+                client = create_openai_client(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[
@@ -193,7 +194,7 @@ def translate_single_text(text, target_language, model_provider,
                 # DeepSeek 也使用 OpenAI 兼容 API
                 if not api_key:
                     raise ValueError("DeepSeek需要API Key")
-                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+                client = create_openai_client(api_key=api_key, base_url="https://api.deepseek.com/v1")
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[
@@ -206,7 +207,7 @@ def translate_single_text(text, target_language, model_provider,
             elif model_provider == 'volcano':
                 # 火山引擎，也使用 OpenAI 兼容 API
                 if not api_key: raise ValueError("火山引擎需要 API Key")
-                client = OpenAI(api_key=api_key, base_url="https://ark.cn-beijing.volces.com/api/v3")
+                client = create_openai_client(api_key=api_key, base_url="https://ark.cn-beijing.volces.com/api/v3")
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[
@@ -325,9 +326,9 @@ def translate_single_text(text, target_language, model_provider,
                 if not model_name:
                     raise ValueError("Gemini 需要模型名称 (例如 gemini-1.5-flash-latest)")
 
-                client = OpenAI(
+                client = create_openai_client(
                     api_key=api_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/" # 根据教程
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"  # 根据教程
                 )
                 
                 gemini_messages = []
@@ -356,7 +357,7 @@ def translate_single_text(text, target_language, model_provider,
                     raise ValueError("自定义 OpenAI 兼容服务需要 Base URL")
 
                 logger.info(f"使用自定义 OpenAI 兼容服务: Base URL='{custom_base_url}', Model='{model_name}'")
-                client = OpenAI(api_key=api_key, base_url=custom_base_url) # 使用 custom_base_url
+                client = create_openai_client(api_key=api_key, base_url=custom_base_url)  # 使用辅助函数自动处理代理
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[

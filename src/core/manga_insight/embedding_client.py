@@ -49,7 +49,18 @@ class EmbeddingClient:
     
     def __init__(self, config: EmbeddingConfig):
         self.config = config
-        self.client = httpx.AsyncClient(timeout=60.0)
+        
+        # 检测是否为本地服务（使用共享函数）
+        from src.shared.openai_helpers import is_local_service
+        base_url = config.base_url or self.PROVIDER_CONFIGS.get(config.provider.lower(), {}).get("base_url", "")
+        
+        if is_local_service(base_url):
+            # 本地服务禁用代理
+            self.client = httpx.AsyncClient(timeout=60.0, trust_env=False)
+            logger.info(f"Embedding客户端: 检测到本地服务 ({base_url})，禁用代理")
+        else:
+            self.client = httpx.AsyncClient(timeout=60.0)
+        
         self._rpm_last_reset = 0
         self._rpm_count = 0
     
@@ -174,7 +185,18 @@ class ChatClient:
     
     def __init__(self, config):
         self.config = config
-        self.client = httpx.AsyncClient(timeout=120.0)
+        
+        # 检测是否为本地服务（使用共享函数）
+        from src.shared.openai_helpers import is_local_service
+        provider = config.provider.lower() if hasattr(config, 'provider') else "openai"
+        base_url = config.base_url if hasattr(config, 'base_url') and config.base_url else self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
+        
+        if is_local_service(base_url):
+            # 本地服务禁用代理
+            self.client = httpx.AsyncClient(timeout=120.0, trust_env=False)
+            logger.info(f"Chat客户端: 检测到本地服务 ({base_url})，禁用代理")
+        else:
+            self.client = httpx.AsyncClient(timeout=120.0)
     
     async def close(self):
         await self.client.aclose()
