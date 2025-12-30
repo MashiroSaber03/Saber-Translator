@@ -207,7 +207,9 @@ export function useTranslation() {
       maskBoxExpandRatio: preciseMask.boxExpandRatio,
 
       // 文字样式设置（后端使用驼峰命名）
-      fontSize: textStyle.autoFontSize ? 'auto' : textStyle.fontSize,
+      // 【修复Vue版逻辑】传递实际字号数字而非'auto'字符串（避免后端警告）
+      // 后端通过autoFontSize标记启用自动计算，会忽略fontSize数值
+      fontSize: textStyle.fontSize,  // 始终传递数字
       autoFontSize: textStyle.autoFontSize,
       fontFamily: textStyle.fontFamily,
       // 处理排版方向：如果是 "auto" 则启用自动排版，传递 'vertical' 作为默认值
@@ -1487,7 +1489,8 @@ export function useTranslation() {
                 clean_image: cleanImageBase64,
                 bubble_texts: newBubbleTexts,
                 bubble_coords: bubbleCoords,
-                fontSize: currentFontSize,
+                // 【修复】当启用自动字号时，传递 'auto' 字符串而不是数值，避免后端警告
+                fontSize: currentAutoFontSize ? 'auto' : currentFontSize,
                 autoFontSize: currentAutoFontSize,
                 fontFamily: currentFontFamily,
                 textDirection: currentTextDirection,
