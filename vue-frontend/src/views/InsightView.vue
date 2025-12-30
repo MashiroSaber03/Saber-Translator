@@ -407,7 +407,24 @@ function closeChapterSelectModal(): void {
 // 生命周期
 // ============================================================
 
+// 保存 body 原始样式（用于页面卸载时恢复）
+let originalBodyPadding = ''
+let originalBodyMargin = ''
+let originalBodyOverflow = ''
+
 onMounted(async () => {
+  // 【关键修复4】移除 global.css 中 body 的 20px 左右内边距
+  // 保存原始样式以便离开页面时恢复
+  const bodyStyle = document.body.style
+  originalBodyPadding = bodyStyle.padding
+  originalBodyMargin = bodyStyle.margin
+  originalBodyOverflow = bodyStyle.overflow
+  
+  // 强制移除 body 的内外边距，并禁止整体滚动
+  bodyStyle.padding = '0'
+  bodyStyle.margin = '0'
+  bodyStyle.overflow = 'hidden'
+  
   // 加载书籍列表
   await bookshelfStore.fetchBooks()
 
@@ -420,6 +437,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopStatusPolling()
+  
+  // 【关键修复4】恢复 body 的原始样式
+  const bodyStyle = document.body.style
+  bodyStyle.padding = originalBodyPadding
+  bodyStyle.margin = originalBodyMargin
+  bodyStyle.overflow = originalBodyOverflow
 })
 
 // 监听分析状态变化
@@ -447,6 +470,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           <router-link to="/" class="nav-link">📚 书架</router-link>
           <a href="javascript:void(0)" class="nav-link" @click="goToTranslate">🌐 翻译</a>
           <span class="nav-link active">🔍 分析</span>
+          <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
           <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
           <button id="themeToggle" class="theme-toggle" title="切换亮暗模式" @click="settingsStore.toggleTheme">
             <span class="theme-icon light-icon">☀️</span>
@@ -597,8 +621,29 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 <style scoped>
 /* ==================== 漫画分析页面完整样式 - 完整迁移自 manga-insight.css ==================== */
 
-/* CSS变量定义 */
+/* ==================== 页面根容器固定布局 - 复刻原版 ==================== */
+
+/* 
+ * 【关键修复1】建立 BFC 防止外边距折叠，强制固定高度
+ * 原版行为：整个页面框架固定在视口内，所有滚动发生在内部容器
+ * 
+ * 【优化】使用 padding-top 而不是子元素的 margin-top，避免亚像素渲染问题
+ */
 .insight-page {
+  /* 固定高度为视口高度，防止内容撑开 */
+  height: 100vh;
+  /* 隐藏溢出，确保不出现整体滚动条 */
+  overflow: hidden;
+  /* 清除外边距，防止折叠到父元素 */
+  margin: 0;
+  /* 【修复3 + 优化】覆盖 global.css，并为 fixed header 预留空间 */
+  /* 合并 padding 声明：top 56px（为 header 预留空间），left/right/bottom 0（覆盖 global.css） */
+  padding: 56px 0 0 0 !important;
+  /* 使用 Flex 布局以支持子元素的高度计算 */
+  display: flex;
+  flex-direction: column;
+  
+  /* CSS变量定义 */
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
@@ -711,11 +756,18 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 /* 布局 */
+/* 
+ * 【关键修复2】主内容区使用固定高度，用 margin-top 为 fixed header 预留空间
+ * 原版行为：主内容区严格占据 "100vh - header高度" 的空间，不会随内容撑开
+ * 高度计算：margin-top (56px) + height (calc(100vh - 56px)) = 100vh（正好填满）
+ */
 .insight-main {
     display: flex;
-    min-height: calc(100vh - 56px);
-    margin-top: 56px;
+    /* 使用 flex: 1 自动填充父容器剩余空间（100vh - 56px padding-top） */
+    flex: 1;
     background: var(--bg-primary);
+    /* 确保内部溢出不影响外层 */
+    overflow: hidden;
 }
 
 .insight-sidebar {
@@ -726,7 +778,8 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    max-height: calc(100vh - 60px);
+    /* 高度填满父容器，内容溢出时滚动 */
+    max-height: 100%;
 }
 
 .insight-content {
@@ -745,7 +798,8 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    max-height: calc(100vh - 60px);
+    /* 高度填满父容器，内容溢出时滚动 */
+    max-height: 100%;
 }
 
 /* 标签页 */
@@ -817,15 +871,18 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .tab-content {
-    display: none;
+    /* 注意：display 由 v-show 控制，不在 CSS 中设置 */
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    /* 【关键修复5】移除内边距，让内容完全填满可用空间 */
+    padding: 0;
 }
 
+/* 原版兼容：如果不使用 v-show，可通过 active 类控制显示
 .tab-content.active {
     display: block;
 }
+*/
 
 /* 表单元素 */
 .form-select,
