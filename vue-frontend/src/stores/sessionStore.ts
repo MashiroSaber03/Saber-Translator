@@ -314,9 +314,8 @@ export const useSessionStore = defineStore('session', () => {
         translatedDataURL: img.translatedDataURL || undefined,
         cleanImageData: img.cleanImageData || undefined,
         bubbleStates: img.bubbleStates || undefined,
-        // 【修复A补充】保存手动标注框信息
-        savedManualCoords: img.savedManualCoords || undefined,
-        savedManualAngles: img.savedManualAngles || undefined,
+        // 保存手动标注标记
+        isManuallyAnnotated: img.isManuallyAnnotated || undefined,
         fileName: img.fileName,
         fontSize: img.fontSize,
         autoFontSize: img.autoFontSize,
@@ -463,9 +462,8 @@ export const useSessionStore = defineStore('session', () => {
           bubbleStates: (img.bubbleStates !== undefined && img.bubbleStates !== null)
             ? (img.bubbleStates as import('@/types/bubble').BubbleState[])
             : null,
-          // 【修复A补充】恢复手动标注框信息（复刻原版 state.js setImages 逻辑）
-          savedManualCoords: (img.savedManualCoords as import('@/types/bubble').BubbleCoords[]) || null,
-          savedManualAngles: (img.savedManualAngles as number[]) || null,
+          // 恢复手动标注标记
+          isManuallyAnnotated: Boolean(img.isManuallyAnnotated),
           fileName: img.fileName || `image-${index + 1}.png`,
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),

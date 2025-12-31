@@ -360,6 +360,18 @@ export const useImageStore = defineStore('image', () => {
   }
 
   /**
+   * 设置当前图片的手动标注标记
+   * @param isManual - 是否经过手动标注
+   */
+  function setManuallyAnnotated(isManual: boolean): void {
+    if (!currentImage.value) return
+
+    currentImage.value.isManuallyAnnotated = isManual
+    currentImage.value.hasUnsavedChanges = true
+    console.log(`手动标注标记已设置为: ${isManual}`)
+  }
+
+  /**
    * 更新当前图片的单个属性
    * 迁移自 main.js 的 state.updateCurrentImageProperty
    * @param key - 属性名
@@ -550,6 +562,7 @@ export const useImageStore = defineStore('image', () => {
     updateCurrentImage,
     updateImageByIndex,
     updateCurrentBubbleStates,
+    setManuallyAnnotated,
     updateCurrentImageProperty,
     updateCurrentTranslationResult,
 

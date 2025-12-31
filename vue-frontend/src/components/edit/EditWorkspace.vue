@@ -575,11 +575,15 @@ function saveBubbleStatesToImage(): void {
   if (bubbles.value.length > 0) {
     // 有气泡，保存当前状态
     imageStore.updateCurrentBubbleStates([...bubbles.value])
-    console.log('已保存气泡状态到当前图片')
+    // 设置手动标注标记，使缩略图显示标记
+    imageStore.setManuallyAnnotated(true)
+    console.log('已保存气泡状态到当前图片，标记为手动标注')
   } else if (hadBubbleStates) {
     // 用户删光了气泡，保存空数组（保持"处理过"的语义）
     imageStore.updateCurrentBubbleStates([])
-    console.log('已保存空气泡状态到当前图片（用户清空）')
+    // 删空也是手动操作，保持标记为 true，翻译时会跳过而不是重新检测
+    imageStore.setManuallyAnnotated(true)
+    console.log('已保存空气泡状态到当前图片（用户主动清空，标记为手动标注）')
   }
   // 如果 bubbleStates 从未是数组且当前也没有气泡，不做任何操作（保持 null 语义）
 }

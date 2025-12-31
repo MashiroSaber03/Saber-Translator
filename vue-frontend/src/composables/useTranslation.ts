@@ -164,79 +164,52 @@ export function useTranslation() {
 
   /**
    * 从图片数据中提取已有的气泡坐标和角度
-   * 统一处理优先级逻辑，消除重复代码
    * 
-   * 优先级：savedManualCoords > bubbleStates > bubbleCoords > null（自动检测）
+   * 简化逻辑：
+   * - isManuallyAnnotated = true → 用户手动操作过（使用 bubbleStates，跳过自动检测）
+   * - isManuallyAnnotated = false/undefined → 未手动操作（可能有自动检测结果或需要检测）
    * 
    * @param image - 图片数据
-   * @returns { coords, angles, source, isEmpty } 或 null（表示需要自动检测）
+   * @returns { coords, angles, isEmpty, isManual } 或 null（表示需要自动检测）
    */
   function extractExistingBubbleData(image: AppImageData): {
     coords: BubbleCoords[]
     angles: number[] | undefined
-    source: 'savedManualCoords' | 'bubbleStates' | 'bubbleCoords'
     isEmpty: boolean
+    isManual: boolean
   } | null {
-    // 1. 首先检查手动标注框（优先级最高）
-    if (image.savedManualCoords && image.savedManualCoords.length > 0) {
+    // 1. 如果用户手动操作过，优先使用 bubbleStates（包括空数组）
+    if (image.isManuallyAnnotated) {
+      const bubbles = image.bubbleStates || []
       return {
-        coords: image.savedManualCoords,
-        angles: image.savedManualAngles || undefined,
-        source: 'savedManualCoords',
-        isEmpty: false
+        coords: bubbles.map(s => s.coords),
+        angles: bubbles.map(s => s.rotationAngle || 0),
+        isEmpty: bubbles.length === 0,
+        isManual: true
       }
     }
 
-    // 2. 检查是否曾经处理过（bubbleStates 或 bubbleCoords 是数组即表示处理过）
-    const hasBubbleStatesArray = Array.isArray(image.bubbleStates)
-    const hasBubbleCoordsArray = Array.isArray(image.bubbleCoords)
-    const hasDetectedBefore = hasBubbleStatesArray || hasBubbleCoordsArray
-
-    if (!hasDetectedBefore) {
-      // 从未处理过，返回 null 表示需要自动检测
-      return null
-    }
-
-    // 3. 优先从 bubbleStates 提取
-    if (hasBubbleStatesArray && image.bubbleStates!.length > 0) {
+    // 2. 如果有 bubbleStates（自动检测结果）
+    if (Array.isArray(image.bubbleStates) && image.bubbleStates.length > 0) {
       return {
-        coords: image.bubbleStates!.map(s => s.coords),
-        angles: image.bubbleStates!.map(s => s.rotationAngle || 0),
-        source: 'bubbleStates',
-        isEmpty: false
+        coords: image.bubbleStates.map(s => s.coords),
+        angles: image.bubbleStates.map(s => s.rotationAngle || 0),
+        isEmpty: false,
+        isManual: false
       }
     }
 
-    // 4. 用户清空了 bubbleStates
-    if (hasBubbleStatesArray && image.bubbleStates!.length === 0) {
+    // 3. 兼容旧数据：回退到 bubbleCoords
+    if (Array.isArray(image.bubbleCoords) && image.bubbleCoords.length > 0) {
       return {
-        coords: [],
-        angles: [],
-        source: 'bubbleStates',
-        isEmpty: true
-      }
-    }
-
-    // 5. 回退到 bubbleCoords
-    if (hasBubbleCoordsArray && image.bubbleCoords!.length > 0) {
-      return {
-        coords: image.bubbleCoords!,
+        coords: image.bubbleCoords,
         angles: image.bubbleAngles,
-        source: 'bubbleCoords',
-        isEmpty: false
+        isEmpty: false,
+        isManual: false
       }
     }
 
-    // 6. 用户清空了 bubbleCoords
-    if (hasBubbleCoordsArray && image.bubbleCoords!.length === 0) {
-      return {
-        coords: [],
-        angles: [],
-        source: 'bubbleCoords',
-        isEmpty: true
-      }
-    }
-
+    // 4. 没有任何已有数据，需要自动检测
     return null
   }
 
@@ -498,9 +471,9 @@ export function useTranslation() {
             translationOptions.existingBubbleCoords = existingData.coords
             translationOptions.existingBubbleAngles = existingData.angles
             translationOptions.useExistingBubbles = true
-            const sourceLabel = existingData.source === 'savedManualCoords' ? '手动标注框' : '已有的文本框'
+            const sourceLabel = existingData.isManual ? '手动标注框' : '已有的文本框'
             console.log(`翻译当前图片: 使用 ${existingData.coords.length} 个${sourceLabel}`)
-            toast.info(existingData.source === 'savedManualCoords'
+            toast.info(existingData.isManual
               ? '检测到手动标注框，将优先使用...'
               : '使用已有的文本框进行翻译...', 3000)
           } else {
@@ -577,7 +550,7 @@ export function useTranslation() {
             translationOptions.existingBubbleCoords = existingData.coords
             translationOptions.existingBubbleAngles = existingData.angles
             translationOptions.useExistingBubbles = true
-            const sourceLabel = existingData.source === 'savedManualCoords' ? '手动标注框' : '已有的文本框'
+            const sourceLabel = existingData.isManual ? '手动标注框' : '已有的文本框'
             console.log(`批量翻译图片 ${index}: 使用 ${existingData.coords.length} 个${sourceLabel}`)
           } else {
             // 用户清空了文本框
@@ -1331,7 +1304,7 @@ export function useTranslation() {
 
       // 日志
       if (existingData) {
-        const sourceLabel = existingData.source === 'savedManualCoords' ? '手动标注框' : '已有文本框'
+        const sourceLabel = existingData.isManual ? '手动标注框' : '已有文本框'
         console.log(`高质量翻译[${currentIndex}]: 使用${sourceLabel} ${existingData.coords.length} 个`)
       }
 

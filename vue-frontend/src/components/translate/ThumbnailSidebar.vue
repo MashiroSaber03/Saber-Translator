@@ -87,8 +87,8 @@ function setThumbnailRef(el: HTMLElement | null, index: number) {
 function getStatusType(image: typeof images.value[0]): 'failed' | 'labeled' | 'processing' | null {
   // 复刻原版：优先显示失败标记
   if (image.translationFailed) return 'failed'
-  // 复刻原版：检查 savedManualCoords（原版 imageData.savedManualCoords）
-  if (image.savedManualCoords && image.savedManualCoords.length > 0) return 'labeled'
+  // 检查是否经过手动标注
+  if (image.isManuallyAnnotated) return 'labeled'
   // 处理中状态
   if (image.translationStatus === 'processing') return 'processing'
   return null
@@ -103,8 +103,8 @@ function getThumbnailClasses(image: typeof images.value[0]): string[] {
   if (image.translationFailed) {
     classes.push('translation-failed')
   }
-  // 复刻原版：有手动标注时添加 has-manual-labels 类
-  if (image.savedManualCoords && image.savedManualCoords.length > 0) {
+  // 有手动标注时添加 has-manual-labels 类
+  if (image.isManuallyAnnotated) {
     classes.push('has-manual-labels')
   }
   return classes
@@ -116,8 +116,8 @@ function getThumbnailClasses(image: typeof images.value[0]): string[] {
 function getThumbnailTitle(image: typeof images.value[0]): string {
   // 复刻原版：失败时显示特定提示
   if (image.translationFailed) return '翻译失败，点击可重试'
-  // 复刻原版：有手动标注时显示特定提示
-  if (image.savedManualCoords && image.savedManualCoords.length > 0) return '包含手动标注框'
+  // 有手动标注时显示特定提示
+  if (image.isManuallyAnnotated) return '包含手动标注'
   // 默认显示文件名
   return image.fileName || ''
 }
