@@ -692,23 +692,4 @@ defineExpose({
   color: var(--text-secondary, #666);
 }
 
-/* 暗色主题适配 */
-[data-theme="dark"] .drop-area {
-  background-color: #2d3748;
-  border-color: #4a5568;
-  color: #a0aec0;
-}
-
-[data-theme="dark"] .drop-area:hover {
-  border-color: #4a90d9;
-  background-color: rgba(74, 144, 217, 0.1);
-}
-
-[data-theme="dark"] .drop-text {
-  color: #a0aec0;
-}
-
-[data-theme="dark"] .drop-hint {
-  color: #718096;
-}
 </style>

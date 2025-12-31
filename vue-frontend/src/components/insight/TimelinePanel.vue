@@ -519,18 +519,6 @@ watch(() => insightStore.currentBookId, (newBookId) => {
   --danger: #ef4444;
 }
 
-:global(body.dark-theme) .timeline-tab,
-.timeline-tab.dark-theme {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --bg-hover: rgba(99, 102, 241, 0.2);
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border-color: #334155;
-}
-
 /* ==================== 按钮样式 ==================== */
 .btn {
   display: inline-flex;

@@ -134,7 +134,6 @@ export function useTranslateInit() {
 
     try {
       // 1. 初始化设置（优先从后端加载，备选 localStorage）
-      // 注意：initSettings() 内部会调用 loadThemeFromStorage() 并应用主题
       await initializeSettings()
 
       // 2. 初始化字体列表

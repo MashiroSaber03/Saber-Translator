@@ -270,10 +270,6 @@ onUnmounted(() => {
   background-color: rgba(0,0,0,0.03);
 }
 
-[data-theme="dark"] .settings-tab:hover {
-  background-color: rgba(255,255,255,0.05);
-}
-
 .settings-tab.active {
   opacity: 1;
   color: var(--color-primary);

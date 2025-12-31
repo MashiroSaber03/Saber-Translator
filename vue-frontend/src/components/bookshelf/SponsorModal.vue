@@ -126,11 +126,6 @@ const emit = defineEmits<{
   position: relative;
 }
 
-[data-theme="dark"] .donate-modal-content {
-  background-color: #2d3748;
-  color: #f7fafc;
-}
-
 .donate-close {
   position: absolute;
   right: 15px;
@@ -146,10 +141,6 @@ const emit = defineEmits<{
   color: #000;
 }
 
-[data-theme="dark"] .donate-close:hover {
-  color: #fff;
-}
-
 .donate-modal-content h3 {
   margin-top: 5px;
   margin-bottom: 10px;
@@ -161,10 +152,6 @@ const emit = defineEmits<{
   margin-bottom: 20px;
   font-size: 1.1em;
   color: #666;
-}
-
-[data-theme="dark"] .donate-modal-content p {
-  color: #cbd5e0;
 }
 
 .donate-qrcodes {
@@ -192,10 +179,6 @@ const emit = defineEmits<{
   font-weight: bold;
   color: #333;
   font-size: 0.9em;
-}
-
-[data-theme="dark"] .donate-qrcode-item p {
-  color: #e2e8f0;
 }
 
 @keyframes fadeIn {

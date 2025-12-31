@@ -539,18 +539,6 @@ watch(analysisMode, () => {
   --danger: #ef4444;
 }
 
-:global(body.dark-theme) .analysis-control-compact,
-.analysis-control-compact.dark-theme {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --bg-hover: rgba(99, 102, 241, 0.2);
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border-color: #334155;
-}
-
 /* ==================== 组件特定样式 ==================== */
 
 /* 进度条暂停状态 */

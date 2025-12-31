@@ -1,7 +1,7 @@
 /**
  * 设置状态管理 Store
  * 管理翻译设置、OCR设置、高质量翻译设置、AI校对设置等
- * 支持 localStorage 持久化和主题切换
+ * 支持 localStorage 持久化
  */
 
 import { defineStore } from 'pinia'
@@ -23,8 +23,7 @@ import type {
   TranslationProvider,
   HqTranslationProvider,
   NoThinkingMethod,
-  PdfProcessingMethod,
-  Theme
+  PdfProcessingMethod
 } from '@/types/settings'
 import {
   DEFAULT_FILL_COLOR,
@@ -42,7 +41,6 @@ import {
   DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   DEFAULT_PROOFREADING_MAX_RETRIES,
   STORAGE_KEY_TRANSLATION_SETTINGS,
-  STORAGE_KEY_THEME,
   STORAGE_KEY_PROVIDER_CONFIGS,
   STORAGE_KEY_MODEL_HISTORY
 } from '@/constants'
@@ -218,9 +216,6 @@ export const useSettingsStore = defineStore('settings', () => {
   /** 翻译设置 */
   const settings = ref<TranslationSettings>(createDefaultSettings())
 
-  /** 当前主题 */
-  const theme = ref<Theme>('light')
-
   /** 服务商配置分组存储（用于切换服务商时保存/恢复配置） */
   const providerConfigs = ref<ProviderConfigsCache>({
     translation: {},
@@ -255,9 +250,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /** AI校对是否启用 */
   const isProofreadingEnabled = computed(() => settings.value.proofreading.enabled)
-
-  /** 是否为深色主题 */
-  const isDarkTheme = computed(() => theme.value === 'dark')
 
   // ============================================================
   // 设置更新方法
@@ -610,43 +602,6 @@ export const useSettingsStore = defineStore('settings', () => {
   function setShowDetectionDebug(show: boolean): void {
     settings.value.showDetectionDebug = show
     saveToStorage()
-  }
-
-  // ============================================================
-  // 主题切换方法
-  // ============================================================
-
-  /**
-   * 切换主题
-   */
-  function toggleTheme(): void {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
-    applyTheme()
-    saveThemeToStorage()
-    console.log(`主题已切换为: ${theme.value}`)
-  }
-
-  /**
-   * 设置主题
-   * @param newTheme - 新主题
-   */
-  function setTheme(newTheme: Theme): void {
-    theme.value = newTheme
-    applyTheme()
-    saveThemeToStorage()
-  }
-
-  /**
-   * 应用主题到DOM
-   * 同时设置 html 和 body 的 data-theme 属性，确保与原版 CSS 兼容
-   * 原版（bookshelf.html）设置在 body 上，Vue 版使用 html，两者都设置以保证兼容性
-   */
-  function applyTheme(): void {
-    if (typeof document !== 'undefined') {
-      // 同时设置 html 和 body，确保 CSS 选择器兼容
-      document.documentElement.setAttribute('data-theme', theme.value)
-      document.body.setAttribute('data-theme', theme.value)
-    }
   }
 
   // ============================================================
@@ -1030,33 +985,6 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 保存主题到 localStorage
-   */
-  function saveThemeToStorage(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_THEME, theme.value)
-    } catch (error) {
-      console.error('保存主题到 localStorage 失败:', error)
-    }
-  }
-
-  /**
-   * 从 localStorage 加载主题
-   */
-  function loadThemeFromStorage(): void {
-    try {
-      const savedTheme = localStorage.getItem(STORAGE_KEY_THEME)
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        theme.value = savedTheme
-        applyTheme()
-        console.log(`已从 localStorage 加载主题: ${theme.value}`)
-      }
-    } catch (error) {
-      console.error('从 localStorage 加载主题失败:', error)
-    }
-  }
-
-  /**
    * 保存自定义字号预设到 localStorage
    */
   function saveCustomFontPresetsToStorage(): void {
@@ -1146,11 +1074,33 @@ export const useSettingsStore = defineStore('settings', () => {
    * 初始化设置（从 localStorage 加载）
    */
   function initSettings(): void {
+    // 兼容性处理：清除旧版本的主题设置，强制使用亮色模式
+    cleanupLegacyThemeSettings()
+    
     loadFromStorage()
-    loadThemeFromStorage()
     loadCustomFontPresetsFromStorage()
     loadProviderConfigsFromStorage()
     loadModelHistoryFromStorage()
+  }
+
+  /**
+   * 清理旧版本的主题设置（兼容性处理）
+   * 旧版本可能在 localStorage 中保存了 'theme' 设置，
+   * 并在 HTML/body 上设置了 data-theme="dark" 属性
+   */
+  function cleanupLegacyThemeSettings(): void {
+    try {
+      // 清除 localStorage 中的旧主题设置
+      localStorage.removeItem('theme')
+      
+      // 强制设置为亮色模式
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', 'light')
+        document.body.setAttribute('data-theme', 'light')
+      }
+    } catch (error) {
+      console.warn('清理旧版主题设置失败:', error)
+    }
   }
 
   /**
@@ -1698,7 +1648,6 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     // 状态
     settings,
-    theme,
     providerConfigs,
     customFontPresets,
 
@@ -1709,7 +1658,6 @@ export const useSettingsStore = defineStore('settings', () => {
     translationProvider,
     hqProvider,
     isProofreadingEnabled,
-    isDarkTheme,
 
     // 设置更新方法
     updateSettings,
@@ -1751,11 +1699,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setPdfProcessingMethod,
     setShowDetectionDebug,
 
-    // 主题切换方法
-    toggleTheme,
-    setTheme,
-    applyTheme,
-
     // 服务商配置分组存储方法
     saveProviderConfig,
     restoreProviderConfig,
@@ -1780,7 +1723,6 @@ export const useSettingsStore = defineStore('settings', () => {
     // localStorage 持久化方法
     saveToStorage,
     loadFromStorage,
-    loadThemeFromStorage,
     initSettings,
     resetToDefaults,
 

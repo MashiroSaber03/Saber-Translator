@@ -270,7 +270,7 @@ watch(
 .reader-page {
     margin: 0;
     padding: 0;
-    /* 优先使用阅读器设置的背景色，否则使用默认暗色 */
+    /* 优先使用阅读器设置的背景色 */
     background: var(--reader-bg-color, #1a1a2e);
     min-height: 100vh;
     overflow-x: hidden;

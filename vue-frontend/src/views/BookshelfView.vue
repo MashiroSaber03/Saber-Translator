@@ -7,7 +7,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import { useSettingsStore } from '@/stores/settingsStore'
 import { getServerInfo } from '@/api'
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import BookSearch from '@/components/bookshelf/BookSearch.vue'
@@ -20,7 +19,6 @@ import { showToast } from '@/utils/toast'
 
 const router = useRouter()
 const bookshelfStore = useBookshelfStore()
-const settingsStore = useSettingsStore()
 
 // 局域网地址
 const lanUrl = ref<string>('获取中...')
@@ -204,6 +202,11 @@ function goToTranslate() {
   router.push('/translate')
 }
 
+// 显示功能开发中提示
+function showFeatureNotice() {
+  showToast('🌙 该功能正在开发中，敬请期待！', 'info')
+}
+
 // 处理书籍右键菜单
 function handleBookContextMenu(event: MouseEvent, bookId: string) {
   event.preventDefault()
@@ -340,9 +343,8 @@ async function executeBatchTagOperation() {
           <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
             <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
           </a>
-          <button class="theme-toggle" title="切换亮暗模式" @click="settingsStore.toggleTheme">
-            <span class="theme-icon light-icon">☀️</span>
-            <span class="theme-icon dark-icon">🌙</span>
+          <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+            <span class="theme-icon">☀️</span>
           </button>
         </div>
       </div>

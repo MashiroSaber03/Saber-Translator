@@ -737,48 +737,6 @@ async function handleImportFile(event: Event): Promise<void> {
   box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
 }
 
-/* 深色主题适配 */
-[data-theme="dark"] .result-section {
-  background-color: #2d3748;
-}
-
-[data-theme="dark"] .download-section {
-  background-color: #1a202c;
-  border-color: #4a5568;
-}
-
-[data-theme="dark"] .download-format-selector select {
-  background-color: #2d3748;
-  border-color: #4a5568;
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .image-controls {
-  background: #1a202c;
-}
-
-[data-theme="dark"] .content-container {
-  background-color: #1a202c;
-  border-color: #4a5568;
-}
-
-[data-theme="dark"] .text-info {
-  background-color: #1a202c;
-  border-color: #4a5568;
-}
-
-[data-theme="dark"] .text-info h3 {
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .original-text {
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .separator {
-  color: #4a5568;
-}
-
 /* ===================================
    图像展示区样式 - 完整迁移自 image-display.css
    =================================== */
@@ -1065,9 +1023,5 @@ async function handleImportFile(event: Event): Promise<void> {
   0% { border-color: #e74c3c; }
   50% { border-color: #ff6b6b; }
   100% { border-color: #e74c3c; }
-}
-
-[data-theme="dark"] .separator {
-  color: #718096;
 }
 </style>

@@ -51,11 +51,6 @@ export type NoThinkingMethod = 'gemini' | 'volcano'
 export type PdfProcessingMethod = 'frontend' | 'backend'
 
 /**
- * 主题类型
- */
-export type Theme = 'light' | 'dark'
-
-/**
  * 百度 OCR 设置
  */
 export interface BaiduOcrSettings {

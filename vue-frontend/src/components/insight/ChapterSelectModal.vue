@@ -128,17 +128,6 @@ function close(): void {
   --success-color: #22c55e;
 }
 
-:global(body.dark-theme) .chapter-select-modal,
-.chapter-select-modal.dark-theme {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border-color: #334155;
-}
-
 /* 模态框基础样式 */
 .modal {
   position: fixed;

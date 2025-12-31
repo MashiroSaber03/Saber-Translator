@@ -63,10 +63,8 @@
           GitHub
         </a>
 
-        <!-- 主题切换按钮 -->
-        <button class="theme-toggle" title="切换亮暗模式" @click="settingsStore.toggleTheme">
-          <span class="theme-icon light-icon">☀️</span>
-          <span class="theme-icon dark-icon">🌙</span>
+        <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <span class="theme-icon">☀️</span>
         </button>
       </div>
     </div>
@@ -76,7 +74,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { showToast } from '@/utils/toast'
 
 // Props 定义
 interface Props {
@@ -106,12 +104,16 @@ defineEmits<{
 
 // 路由和状态
 const route = useRoute()
-const settingsStore = useSettingsStore()
 
 // 计算属性：是否显示返回书架按钮
 const showBackToShelf = computed(() => {
   return route.path !== '/'
 })
+
+// 显示功能开发中提示
+function showFeatureNotice(): void {
+  showToast('🌙 该功能正在开发中，敬请期待！', 'info')
+}
 
 </script>
 
@@ -294,8 +296,6 @@ const showBackToShelf = computed(() => {
   }
 }
 
-/* ============ 亮暗模式切换按钮 ============ */
-
 .theme-toggle {
   background-color: #f0f2f5;
   border: 1px solid #dcdfe6;
@@ -304,8 +304,8 @@ const showBackToShelf = computed(() => {
   padding: 6px 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 70px;
+  justify-content: center;
+  width: 42px;
   transition: background-color 0.3s;
 }
 
@@ -315,21 +315,5 @@ const showBackToShelf = computed(() => {
 
 .theme-icon {
   font-size: 16px;
-}
-
-[data-theme="light"] .light-icon {
-  display: inline;
-}
-
-[data-theme="light"] .dark-icon {
-  display: none;
-}
-
-[data-theme="dark"] .light-icon {
-  display: none;
-}
-
-[data-theme="dark"] .dark-icon {
-  display: inline;
 }
 </style>

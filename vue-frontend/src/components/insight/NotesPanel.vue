@@ -402,17 +402,6 @@ function getNoteTypeIcon(type: NoteType): string {
   --error-color: #ef4444;
 }
 
-:global(body.dark-theme) .workspace-section,
-.workspace-section.dark-theme {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border-color: #334155;
-}
-
 /* ==================== 工作区通用样式 ==================== */
 .workspace-section {
   padding: 16px;

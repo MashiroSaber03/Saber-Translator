@@ -951,29 +951,4 @@ onMounted(() => {
   background: var(--success-color-dark, #449d44);
 }
 
-/* 深色主题适配 */
-[data-theme="dark"] .setting-label {
-  color: var(--text-primary, #eee);
-}
-
-[data-theme="dark"] .font-size-input,
-[data-theme="dark"] .font-select,
-[data-theme="dark"] .color-input {
-  background: var(--bg-secondary, #2a2a2a);
-  border-color: var(--border-color, #444);
-  color: var(--text-primary, #eee);
-}
-
-[data-theme="dark"] .preset-btn,
-[data-theme="dark"] .upload-font-btn,
-[data-theme="dark"] .apply-options-btn,
-[data-theme="dark"] .select-all-btn {
-  background: var(--bg-secondary, #2a2a2a);
-  border-color: var(--border-color, #444);
-  color: var(--text-primary, #eee);
-}
-
-[data-theme="dark"] .apply-options-panel {
-  background: var(--bg-tertiary, #333);
-}
 </style>

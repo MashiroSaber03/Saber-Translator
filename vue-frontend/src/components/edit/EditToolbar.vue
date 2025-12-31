@@ -902,39 +902,6 @@ const brushCursorStyle = computed(() => {
   color: #374151;
 }
 
-/* 暗色模式帮助提示框 */
-:global([data-theme="dark"]) .help-tooltip-btn {
-  background: rgba(45, 55, 72, 0.9);
-  border-color: #4a5568;
-  color: #a0aec0;
-}
-
-:global([data-theme="dark"]) .help-tooltip-btn:hover {
-  background: #2d3748;
-  border-color: #63b3ed;
-  color: #63b3ed;
-}
-
-:global([data-theme="dark"]) .help-tooltip-popup {
-  background: #2d3748;
-  border-color: #4a5568;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-:global([data-theme="dark"]) .help-title {
-  color: #e2e8f0;
-  border-color: #4a5568;
-}
-
-:global([data-theme="dark"]) .help-key {
-  background: #1a202c;
-  color: #a0aec0;
-}
-
-:global([data-theme="dark"]) .help-desc {
-  color: #cbd5e0;
-}
-
 /* annotation-tools 样式 */
 .annotation-tools {
   display: flex;

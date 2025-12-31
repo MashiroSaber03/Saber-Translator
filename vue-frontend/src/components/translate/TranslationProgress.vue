@@ -287,16 +287,4 @@ function togglePause(): void {
   font-weight: 500;
 }
 
-/* 暗色主题适配 */
-[data-theme="dark"] .translation-progress-bar {
-  background-color: #2d3748;
-}
-
-[data-theme="dark"] .progress-bar-label {
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .progress-bar {
-  background-color: #1a202c;
-}
 </style>

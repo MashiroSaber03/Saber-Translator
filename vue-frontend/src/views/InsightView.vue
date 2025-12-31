@@ -8,7 +8,6 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useInsightStore } from '@/stores/insightStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import { useSettingsStore } from '@/stores/settingsStore'
 import BookSelector from '@/components/insight/BookSelector.vue'
 import AnalysisProgress from '@/components/insight/AnalysisProgress.vue'
 import OverviewPanel from '@/components/insight/OverviewPanel.vue'
@@ -20,6 +19,7 @@ import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import * as insightApi from '@/api/insight'
+import { showToast } from '@/utils/toast'
 
 // ============================================================
 // 路由和状态
@@ -29,7 +29,6 @@ const route = useRoute()
 const router = useRouter()
 const insightStore = useInsightStore()
 const bookshelfStore = useBookshelfStore()
-const settingsStore = useSettingsStore()
 
 // ============================================================
 // 响应式状态
@@ -322,6 +321,13 @@ function openSettingsModal(): void {
 }
 
 /**
+ * 显示功能开发中提示
+ */
+function showFeatureNotice(): void {
+  showToast('🌙 该功能正在开发中，敬请期待！', 'info')
+}
+
+/**
  * 关闭设置模态框
  */
 function closeSettingsModal(): void {
@@ -472,9 +478,8 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           <span class="nav-link active">🔍 分析</span>
           <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
           <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
-          <button id="themeToggle" class="theme-toggle" title="切换亮暗模式" @click="settingsStore.toggleTheme">
-            <span class="theme-icon light-icon">☀️</span>
-            <span class="theme-icon dark-icon">🌙</span>
+          <button id="themeToggle" class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+            <span class="theme-icon">☀️</span>
           </button>
         </div>
       </div>
@@ -659,19 +664,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   --warning-color: #f59e0b;
   --error-color: #ef4444;
   --bg-hover: rgba(99, 102, 241, 0.1);
-}
-
-/* 暗色主题 */
-:global(body.dark-theme) .insight-page,
-.insight-page.dark-theme {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-tertiary: #64748b;
-  --border-color: #334155;
 }
 
 /* Header样式 */

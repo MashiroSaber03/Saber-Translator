@@ -2241,39 +2241,6 @@ watch(selectedBubble, (bubble) => {
   background: #e9ecef;
 }
 
-/* ============ 暗色模式适配 ============ */
-[data-theme="dark"] .edit-toolbar {
-  background: linear-gradient(135deg, #0d1b2a 0%, #1a1a2e 100%);
-}
-
-[data-theme="dark"] .edit-panel-container {
-  background: #2d3748;
-  border-color: #4a5568;
-}
-
-[data-theme="dark"] .panel-resize-handle {
-  background: #1a202c;
-}
-
-[data-theme="dark"] .text-editor {
-  background: #1a202c;
-  border-color: #4a5568;
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .original-editor {
-  background: #2d1f1f;
-}
-
-[data-theme="dark"] .translated-editor {
-  background: #1f2d1f;
-}
-
-[data-theme="dark"] .style-settings-section {
-  background: #1a202c;
-  border-color: #4a5568;
-}
-
 /* ============ 气泡操作工具组 ============ */
 .annotation-tools {
   display: flex;
@@ -2436,11 +2403,6 @@ body.middle-button-drawing * {
   pointer-events: auto;
 }
 
-[data-theme="dark"] .brush-size-display {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-}
-
 /* ============ 布局切换按钮 ============ */
 .layout-toggle-btn {
   width: 36px;
@@ -2573,10 +2535,6 @@ body.middle-button-drawing * {
 .edit-workspace.layout-vertical .edit-action-buttons button {
   flex: 0 0 auto;
   min-width: 100px;
-}
-
-[data-theme="dark"] .edit-workspace.layout-vertical .edit-panel-container {
-  border-top-color: #4a5568;
 }
 
 /* 过渡动画 */

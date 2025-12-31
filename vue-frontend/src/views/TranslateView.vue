@@ -718,6 +718,13 @@ function openSponsor() {
 }
 
 /**
+ * 显示功能开发中提示
+ */
+function showFeatureNotice() {
+  showToast('🌙 该功能正在开发中，敬请期待！', 'info')
+}
+
+/**
  * 处理键盘事件（非编辑模式）
  * 【复刻原版 events.js handleGlobalKeyDown】
  */
@@ -1110,11 +1117,10 @@ function selectImage(index: number) {
           </a>
           <button 
             class="theme-toggle" 
-            title="切换亮暗模式"
-            @click="settingsStore.toggleTheme"
+            title="功能开发中"
+            @click="showFeatureNotice"
           >
-            <span class="theme-icon light-icon">☀️</span>
-            <span class="theme-icon dark-icon">🌙</span>
+            <span class="theme-icon">☀️</span>
           </button>
         </div>
       </div>
@@ -1610,7 +1616,6 @@ function selectImage(index: number) {
   transform: translateY(-2px);
 }
 
-/* 主题切换按钮 */
 .theme-toggle {
   display: flex;
   align-items: center;
@@ -1632,15 +1637,6 @@ function selectImage(index: number) {
   font-size: 1.1em;
 }
 
-/* 暗色主题下隐藏太阳图标，显示月亮图标 */
-[data-theme="dark"] .light-icon {
-  display: none;
-}
-
-[data-theme="light"] .dark-icon {
-  display: none;
-}
-
 /* 书架模式提示 */
 .bookshelf-mode-hint {
   margin-top: 10px;
@@ -1649,35 +1645,6 @@ function selectImage(index: number) {
 
 /* 编辑工作区 - 不添加任何额外样式，使用全局 edit-mode.css 中的样式 */
 /* .edit-workspace 样式由全局 edit-mode.css 控制，确保全屏覆盖 */
-
-/* 暗色主题适配 */
-[data-theme="dark"] .translate-page {
-  background-color: #1a202c;
-}
-
-[data-theme="dark"] .upload-card {
-  background-color: #2d3748;
-}
-
-[data-theme="dark"] .header-content {
-  background: rgba(45, 55, 72, 0.9);
-}
-
-[data-theme="dark"] .logo-container a,
-[data-theme="dark"] .settings-header-btn {
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .tutorial-link,
-[data-theme="dark"] .github-link,
-[data-theme="dark"] .theme-toggle {
-  background-color: rgba(255,255,255,0.1);
-  color: #e2e8f0;
-}
-
-[data-theme="dark"] .open-source-notice {
-  background-color: rgba(255,255,255,0.1);
-}
 
 /* ============ 编辑模式激活时隐藏其他元素 ============ */
 

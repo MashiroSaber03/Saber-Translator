@@ -1,6 +1,6 @@
 <!--
   自定义下拉选择器组件
-  替代原生select，解决暗色模式下option颜色问题
+  替代原生select，提供更好的样式控制
 -->
 <template>
   <div 

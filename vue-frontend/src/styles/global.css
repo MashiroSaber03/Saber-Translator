@@ -106,27 +106,6 @@ body {
   --input-bg: var(--input-bg-color);
 }
 
-/* 暗色主题变量 - 统一使用 [data-theme="dark"] 选择器 */
-[data-theme="dark"] body,
-[data-theme="dark"] {
-  --text-color: #e2e8f0;
-  --bg-color: #1a202c;
-  --card-bg-color: #2d3748;
-  --shadow-color: rgba(0, 0, 0, 0.3);
-  --border-color: #4a5568;
-  --input-bg-color: #2d3748;
-  --input-border-color: #4a5568;
-  --button-primary-bg: linear-gradient(135deg, #38a169 0%, #48bb78 100%);
-  --button-hover-bg: linear-gradient(135deg, #2f855a 0%, #48bb78 100%);
-  color: var(--text-color);
-  background-color: var(--bg-color);
-
-  /* 变量别名 - 兼容旧代码 */
-  --card-bg: var(--card-bg-color);
-  --hover-bg: #3d4852;
-  --input-bg: var(--input-bg-color);
-}
-
 /* ===================================
    基础 Reset 样式
    =================================== */
@@ -333,47 +312,6 @@ footer {
   font-weight: bold;
 }
 
-/* 暗色模式基础布局适配 */
-[data-theme="dark"] input:disabled {
-  background-color: #3d4852;
-  color: #718096;
-  border-color: #4a5568;
-}
-
-[data-theme="dark"] input[type="text"]:disabled,
-[data-theme="dark"] select:disabled,
-[data-theme="dark"] textarea:disabled {
-  background-color: #3d4852 !important;
-  color: #718096 !important;
-}
-
-[data-theme="dark"] footer {
-  background-color: #2d3748;
-  color: #a0aec0;
-  border-top-color: #4a5568;
-}
-
-[data-theme="dark"] .card {
-  background-color: var(--card-bg-color, #2d3748);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-[data-theme="dark"] .card:hover {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
-}
-
-[data-theme="dark"] .subtitle-list li {
-  background-color: #3d4852;
-}
-
-[data-theme="dark"] .subtitle-list li:hover {
-  background-color: #4a5568;
-}
-
-[data-theme="dark"] .subtitle-list li.active {
-  background-color: #4a5568;
-}
-
 /* ===================================
    通用按钮样式 (.btn 体系)
    迁移自 bookshelf.css / components.css
@@ -440,17 +378,6 @@ footer {
 .btn-icon {
   font-size: 1.2em;
   line-height: 1;
-}
-
-/* 暗色模式按钮适配 */
-[data-theme="dark"] .btn-secondary {
-  background: var(--hover-bg, #3d4852);
-  color: var(--text-color, #e2e8f0);
-  border-color: var(--border-color, #4a5568);
-}
-
-[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
-  background: var(--border-color, #4a5568);
 }
 
 /* ===================================
@@ -573,36 +500,6 @@ footer {
   flex-shrink: 0;
 }
 
-/* 暗色模式模态框适配 */
-[data-theme="dark"] .modal-overlay {
-  background: rgba(0, 0, 0, 0.7);
-}
-
-[data-theme="dark"] .modal-content {
-  background: var(--card-bg, #2d3748);
-}
-
-[data-theme="dark"] .modal-header {
-  border-color: var(--border-color, #4a5568);
-}
-
-[data-theme="dark"] .modal-header h2 {
-  color: var(--text-color, #e2e8f0);
-}
-
-[data-theme="dark"] .modal-close {
-  color: var(--text-secondary, #a0aec0);
-}
-
-[data-theme="dark"] .modal-close:hover {
-  background: var(--hover-bg, #3d4852);
-  color: var(--text-color, #e2e8f0);
-}
-
-[data-theme="dark"] .modal-footer {
-  border-color: var(--border-color, #4a5568);
-}
-
 /* ===================================
    通用表单样式
    迁移自 bookshelf.css
@@ -647,26 +544,6 @@ footer {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-/* 暗色模式表单适配 */
-[data-theme="dark"] .form-group label {
-  color: var(--text-color, #e2e8f0);
-}
-
-[data-theme="dark"] .form-group input,
-[data-theme="dark"] .form-group textarea,
-[data-theme="dark"] .form-group select {
-  background: var(--input-bg, #2d3748);
-  border-color: var(--border-color, #4a5568);
-  color: var(--text-color, #e2e8f0);
-}
-
-[data-theme="dark"] .form-group input:focus,
-[data-theme="dark"] .form-group textarea:focus,
-[data-theme="dark"] .form-group select:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
 }
 
 /* ===================================
@@ -876,32 +753,6 @@ footer {
 
 .prompt-format-selector select {
   width: 100%;
-}
-
-/* 暗色模式设置样式 */
-[data-theme="dark"] .settings-group {
-  background-color: var(--input-bg-color, #2d3748);
-  border-color: var(--border-color, #4a5568);
-}
-
-[data-theme="dark"] .settings-group-title {
-  border-color: var(--border-color, #4a5568);
-}
-
-[data-theme="dark"] .settings-item input,
-[data-theme="dark"] .settings-item select,
-[data-theme="dark"] .settings-item textarea {
-  background-color: var(--card-bg-color, #2d3748);
-  border-color: var(--border-color, #4a5568);
-  color: var(--text-color, #e2e8f0);
-}
-
-[data-theme="dark"] .password-toggle-btn {
-  color: var(--text-secondary, #a0aec0);
-}
-
-[data-theme="dark"] .password-toggle-btn:hover {
-  color: var(--text-color, #e2e8f0);
 }
 
 /* ===================================
