@@ -179,7 +179,7 @@ export const useSessionStore = defineStore('session', () => {
   function parseContextFromUrl(searchParams: URLSearchParams): void {
     const bookId = searchParams.get('book')
     const chapterId = searchParams.get('chapter')
-    
+
     if (bookId && chapterId) {
       setContext(bookId, chapterId)
     }
@@ -368,11 +368,11 @@ export const useSessionStore = defineStore('session', () => {
     if (url.startsWith('data:')) return url
     // 如果不是 API URL，返回 null
     if (!url.startsWith('/api/')) return null
-    
+
     try {
       const response = await fetch(url)
       if (!response.ok) return null
-      
+
       const blob = await response.blob()
       return new Promise((resolve) => {
         const reader = new FileReader()
@@ -395,24 +395,24 @@ export const useSessionStore = defineStore('session', () => {
     progressCallback?: (current: number, total: number) => void
   ): Promise<void> {
     const total = images.length
-    
+
     for (let i = 0; i < total; i++) {
       const img = images[i]
       if (!img) continue
       if (progressCallback) progressCallback(i + 1, total)
-      
+
       // 转换原图
       if (img.originalDataURL && img.originalDataURL.startsWith('/api/')) {
         const base64 = await imageUrlToBase64(img.originalDataURL)
         if (base64) img.originalDataURL = base64
       }
-      
+
       // 转换翻译图
       if (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) {
         const base64 = await imageUrlToBase64(img.translatedDataURL)
         if (base64) img.translatedDataURL = base64
       }
-      
+
       // 转换干净背景（cleanImageData 存储的是纯 Base64，不带 data: 前缀）
       if (img.cleanImageData && img.cleanImageData.startsWith('/api/')) {
         const base64 = await imageUrlToBase64(img.cleanImageData)
@@ -428,7 +428,7 @@ export const useSessionStore = defineStore('session', () => {
     setLoading(true)
     setError(null)
     loadingProgress.value = { current: 0, total: 0, message: '正在加载...' }
-    
+
     try {
       // 获取 store 实例
       const { useImageStore } = await import('@/stores/imageStore')
@@ -437,17 +437,17 @@ export const useSessionStore = defineStore('session', () => {
       const imageStore = useImageStore()
       const settingsStore = useSettingsStore()
       const bubbleStore = useBubbleStore()
-      
+
       // 调用 API 按路径加载会话
       const { loadSessionByPathApi } = await import('@/api/session')
       const response = await loadSessionByPathApi(sessionPath)
-      
+
       if (!response.success || !response.session) {
         throw new Error(response.error || '加载会话失败')
       }
-      
+
       const sessionData = response.session
-      
+
       // 转换会话数据为 ImageData 格式
       if (sessionData.images && sessionData.images.length > 0) {
         const images: ImageData[] = sessionData.images.map((img, index) => ({
@@ -471,31 +471,31 @@ export const useSessionStore = defineStore('session', () => {
           strokeColor: (img.strokeColor as string) || '#FFFFFF',
           strokeWidth: (img.strokeWidth as number) || 2,
         }))
-        
+
         // 将图片 URL 转换为 Base64（用于 Canvas 操作和翻译功能）
         // 复刻原版逻辑：显示进度并逐张转换
         if (images.length > 0) {
           console.log('正在加载图片...')
           loadingProgress.value = { current: 0, total: images.length, message: '正在加载图片...' }
-          
+
           await convertImagesToBase64(images, (current, total) => {
             const progress = (current / total) * 100
             loadingProgress.value = { current, total, message: `加载图片 ${current}/${total}...` }
             console.log(`加载图片 ${current}/${total}... (${progress.toFixed(0)}%)`)
           })
-          
+
           loadingProgress.value = { current: images.length, total: images.length, message: '加载完成' }
           console.log('图片加载完成，已转换为 Base64')
-          
+
           // 延迟清除进度信息
           setTimeout(() => {
             loadingProgress.value = { current: 0, total: 0, message: '' }
           }, 500)
         }
-        
+
         // 设置图片到 imageStore
         imageStore.setImages(images)
-        
+
         // 设置当前图片索引
         let newIndex = 0
         if (typeof sessionData.currentImageIndex === 'number') {
@@ -505,7 +505,7 @@ export const useSessionStore = defineStore('session', () => {
           }
         }
         imageStore.setCurrentImageIndex(newIndex)
-        
+
         // 恢复当前图片的气泡状态到 bubbleStore（skipSync=true 避免冗余同步）
         // 【修复】使用 clearBubblesLocal 保持 null 和 [] 的语义区分
         const currentImage = images[newIndex]
@@ -514,10 +514,10 @@ export const useSessionStore = defineStore('session', () => {
         } else {
           bubbleStore.clearBubblesLocal()
         }
-        
+
         console.log(`按路径加载会话成功: ${sessionPath}, 共 ${images.length} 张图片`)
       }
-      
+
       // 恢复 UI 设置到 settingsStore
       const uiSettings = sessionData.ui_settings
       if (uiSettings) {
@@ -528,7 +528,7 @@ export const useSessionStore = defineStore('session', () => {
             sourceLanguage: (uiSettings.sourceLanguage as string) || undefined,
           })
         }
-        
+
         // 恢复文字样式设置
         const inpaintValue = uiSettings.useInpaintingMethod as string
         type ValidInpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
@@ -536,7 +536,7 @@ export const useSessionStore = defineStore('session', () => {
         const inpaintMethod: ValidInpaintMethod = validInpaintMethods.includes(inpaintValue as ValidInpaintMethod)
           ? (inpaintValue as ValidInpaintMethod)
           : settingsStore.settings.textStyle.inpaintMethod
-        
+
         settingsStore.updateTextStyle({
           fontSize: (uiSettings.fontSize as number) || settingsStore.settings.textStyle.fontSize,
           autoFontSize: (uiSettings.autoFontSize as boolean) ?? settingsStore.settings.textStyle.autoFontSize,
@@ -549,13 +549,13 @@ export const useSessionStore = defineStore('session', () => {
           strokeColor: (uiSettings.strokeColor as string) || settingsStore.settings.textStyle.strokeColor,
           strokeWidth: (uiSettings.strokeWidth as number) || settingsStore.settings.textStyle.strokeWidth,
         })
-        
+
         console.log('UI 设置已恢复')
       }
-      
+
       // 设置当前会话名称
       setSessionName(sessionPath)
-      
+
       return true
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '加载会话失败'
@@ -590,7 +590,7 @@ export const useSessionStore = defineStore('session', () => {
 
     // 检查是否有图片数据
     const allImages = Array.isArray(imageStore.images) ? imageStore.images : []
-    
+
     if (!allImages || allImages.length === 0) {
       console.log('没有图片数据可保存')
       return false
@@ -610,6 +610,33 @@ export const useSessionStore = defineStore('session', () => {
       const { batchSaveStartApi, batchSaveImageApi, batchSaveCompleteApi } = await import('@/api/session')
 
       const totalImages = allImages.length
+
+      // 【复刻原版修复】步骤0: 在保存前，将所有 /api/... URL 格式的图片转换为 Base64
+      // 原版 session.js 会确保所有图片都是 Base64 格式后再保存
+      // 如果图片是从书架加载的，可能仍是 /api/... URL 格式，需要先转换
+      const hasApiUrls = allImages.some(img =>
+        (img.originalDataURL && img.originalDataURL.startsWith('/api/')) ||
+        (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) ||
+        (img.cleanImageData && img.cleanImageData.startsWith('/api/'))
+      )
+
+      if (hasApiUrls) {
+        console.log('[saveChapterSession] 检测到 /api/ URL 格式图片，开始转换为 Base64...')
+        loadingProgress.value = { current: 2, total: 100, message: '转换图片格式...' }
+
+        // convertImagesToBase64 会直接修改 allImages（实际是 imageStore.images 的引用）中的数据
+        // 转换完成后 imageStore 中的数据已自动更新
+        await convertImagesToBase64(allImages, (current, total) => {
+          const progress = 2 + (current / total) * 3  // 2% ~ 5%
+          loadingProgress.value = {
+            current: Math.round(progress),
+            total: 100,
+            message: `转换图片 ${current}/${total}...`
+          }
+        })
+
+        console.log('[saveChapterSession] 图片格式转换完成')
+      }
 
       // 步骤1: 收集元数据（仅渲染相关设置，AI设置使用全局配置）
       loadingProgress.value = { current: 5, total: 100, message: '收集元数据...' }
@@ -675,12 +702,12 @@ export const useSessionStore = defineStore('session', () => {
       for (let i = 0; i < totalImages; i++) {
         const img = allImages[i]
         if (!img) continue
-        
+
         const progress = 10 + (i / totalImages) * 80
-        loadingProgress.value = { 
-          current: Math.round(progress), 
-          total: 100, 
-          message: `保存图片 ${i + 1}/${totalImages}...` 
+        loadingProgress.value = {
+          current: Math.round(progress),
+          total: 100,
+          message: `保存图片 ${i + 1}/${totalImages}...`
         }
 
         if (isBase64Data(img.originalDataURL)) {

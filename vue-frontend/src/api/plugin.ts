@@ -1,6 +1,9 @@
 /**
  * 插件 API
  * 包含插件列表、启用/禁用、配置管理等功能
+ * 
+ * 【复刻原版 api.js】所有涉及插件名拼接 URL 的函数都使用 encodeURIComponent 编码，
+ * 以防止插件名包含空格、#、/ 等特殊字符时请求失败。
  */
 
 import { apiClient } from './client'
@@ -67,7 +70,8 @@ export async function getPlugins(): Promise<PluginListResponse> {
  * @param name 插件名称
  */
 export async function getPluginDetail(name: string): Promise<PluginDetailResponse> {
-  return apiClient.get<PluginDetailResponse>(`/api/plugins/${name}`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.get<PluginDetailResponse>(`/api/plugins/${safeName}`)
 }
 
 // ==================== 插件启用/禁用 API ====================
@@ -77,7 +81,8 @@ export async function getPluginDetail(name: string): Promise<PluginDetailRespons
  * @param name 插件名称
  */
 export async function enablePlugin(name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/plugins/${name}/enable`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.post<ApiResponse>(`/api/plugins/${safeName}/enable`)
 }
 
 /**
@@ -85,7 +90,8 @@ export async function enablePlugin(name: string): Promise<ApiResponse> {
  * @param name 插件名称
  */
 export async function disablePlugin(name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/plugins/${name}/disable`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.post<ApiResponse>(`/api/plugins/${safeName}/disable`)
 }
 
 /**
@@ -93,7 +99,8 @@ export async function disablePlugin(name: string): Promise<ApiResponse> {
  * @param name 插件名称
  */
 export async function deletePlugin(name: string): Promise<ApiResponse> {
-  return apiClient.delete<ApiResponse>(`/api/plugins/${name}`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.delete<ApiResponse>(`/api/plugins/${safeName}`)
 }
 
 // ==================== 插件配置 API ====================
@@ -103,7 +110,8 @@ export async function deletePlugin(name: string): Promise<ApiResponse> {
  * @param name 插件名称
  */
 export async function getPluginConfigSchema(name: string): Promise<PluginConfigSchemaResponse> {
-  return apiClient.get<PluginConfigSchemaResponse>(`/api/plugins/${name}/config_schema`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.get<PluginConfigSchemaResponse>(`/api/plugins/${safeName}/config_schema`)
 }
 
 /**
@@ -111,7 +119,8 @@ export async function getPluginConfigSchema(name: string): Promise<PluginConfigS
  * @param name 插件名称
  */
 export async function getPluginConfig(name: string): Promise<PluginConfigResponse> {
-  return apiClient.get<PluginConfigResponse>(`/api/plugins/${name}/config`)
+  const safeName = encodeURIComponent(name)
+  return apiClient.get<PluginConfigResponse>(`/api/plugins/${safeName}/config`)
 }
 
 /**
@@ -123,7 +132,8 @@ export async function savePluginConfig(
   name: string,
   config: Record<string, unknown>
 ): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/plugins/${name}/config`, config)
+  const safeName = encodeURIComponent(name)
+  return apiClient.post<ApiResponse>(`/api/plugins/${safeName}/config`, config)
 }
 
 // ==================== 插件默认状态 API ====================
@@ -141,7 +151,8 @@ export async function getPluginDefaultStates(): Promise<PluginDefaultStatesRespo
  * @param enabled 是否默认启用
  */
 export async function setPluginDefaultState(name: string, enabled: boolean): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/plugins/${name}/set_default_state`, {
+  const safeName = encodeURIComponent(name)
+  return apiClient.post<ApiResponse>(`/api/plugins/${safeName}/set_default_state`, {
     enabled,
   })
 }

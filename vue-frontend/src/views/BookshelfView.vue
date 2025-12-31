@@ -4,7 +4,7 @@
  * 显示用户的书籍收藏，支持搜索、标签筛选和批量操作
  */
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -47,6 +47,20 @@ const selectedBooks = computed(() => bookshelfStore.selectedBooks)
 const isBatchMode = computed(() => bookshelfStore.batchMode)
 const isEmpty = computed(() => filteredBooks.value.length === 0 && !bookshelfStore.searchQuery)
 
+// 【复刻原版 bookshelf.js】pageshow 事件处理函数
+// 当从翻译页面返回时（通过浏览器后退按钮），如果页面被 BFCache 缓存，自动刷新数据
+function handlePageShow(event: PageTransitionEvent) {
+  if (event.persisted) {
+    console.log('[BookshelfView] 页面从 BFCache 恢复，刷新数据')
+    bookshelfStore.loadBooks()
+    bookshelfStore.loadTags()
+    // 如果详情模态框已打开，刷新当前书籍详情
+    if (showDetailModal.value && bookshelfStore.currentBook) {
+      openBookDetail(bookshelfStore.currentBook.id)
+    }
+  }
+}
+
 // 初始化
 onMounted(async () => {
   // 加载书籍和标签
@@ -65,6 +79,14 @@ onMounted(async () => {
     console.error('获取服务器信息失败:', error)
     lanUrl.value = '获取失败'
   }
+  
+  // 【复刻原版】添加 pageshow 事件监听，处理浏览器 BFCache
+  window.addEventListener('pageshow', handlePageShow)
+})
+
+// 清理事件监听器
+onUnmounted(() => {
+  window.removeEventListener('pageshow', handlePageShow)
 })
 
 // 复制局域网地址
@@ -97,20 +119,38 @@ function openEditBookModal(bookId: string) {
 }
 
 // 打开书籍详情模态框 - 调用API获取完整数据（包括章节）
+// 【复刻原版 bookshelf.js openBookDetail】失败时显示 toast，不打开不完整的模态框
 async function openBookDetail(bookId: string) {
   try {
     // 先调用API获取完整书籍数据（包括章节）
     const response = await fetch(`/api/bookshelf/books/${bookId}`)
+    
+    // 【复刻原版】检查 HTTP 响应状态
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
     const result = await response.json()
-    if (result.success && result.book) {
+    
+    if (!result.success) {
+      throw new Error(result.error || '加载失败')
+    }
+    
+    if (result.book) {
       // 更新store中的书籍数据
       bookshelfStore.updateBook(bookId, result.book)
     }
+    
+    // 只有成功时才设置当前书籍并打开模态框
+    bookshelfStore.setCurrentBook(bookId)
+    showDetailModal.value = true
+    
   } catch (error) {
+    // 【复刻原版】失败时显示 toast 提示
+    const errorMsg = error instanceof Error ? error.message : '未知错误'
     console.error('加载书籍详情失败:', error)
+    showToast(`加载书籍详情失败: ${errorMsg}`, 'error')
   }
-  bookshelfStore.setCurrentBook(bookId)
-  showDetailModal.value = true
 }
 
 // 打开标签管理模态框
