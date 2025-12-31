@@ -376,25 +376,11 @@ async function handleImportFile(event: Event): Promise<void> {
       class="text-info"
     >
       <h3>检测到的文本（原文 → 译文）</h3>
-      <pre id="detectedTextList">
-        <template v-if="hasDetectedTexts">
-          <span 
-            v-for="(item, index) in detectedTexts" 
-            :key="index"
-            class="text-item"
-          >
-            <span class="original-text">{{ formatOriginalText(item.original) }}</span>
-            <br />
-            <span 
-              :class="['translated-text', { 'translation-error': isTranslationError(item.translated) }]"
-            >{{ formatTranslatedText(item.translated) }}</span>
-            <br />
-            <span class="separator">──────────────────────────</span>
-            <br /><br />
-          </span>
-        </template>
-        <template v-else>未检测到文本或尚未翻译</template>
-      </pre>
+      <pre id="detectedTextList"><template v-if="hasDetectedTexts"><span v-for="(item, index) in detectedTexts" :key="index" class="text-item"><span class="original-text">{{ formatOriginalText(item.original) }}</span>
+<span :class="['translated-text', { 'translation-error': isTranslationError(item.translated) }]">{{ formatTranslatedText(item.translated) }}</span>
+<span class="separator">──────────────────────────</span>
+
+</span></template><template v-else>未检测到文本或尚未翻译</template></pre>
     </div>
     
     <!-- 下载和导出按钮区域 -->
