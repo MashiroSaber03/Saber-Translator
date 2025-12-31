@@ -42,6 +42,12 @@ export interface ImageData {
   /** 文本框文本数组（兼容旧数据） */
   textboxTexts?: string[]
 
+  // 手动标注框（优先级最高）
+  /** 手动标注的气泡坐标（优先级高于 bubbleCoords） */
+  savedManualCoords?: BubbleCoords[] | null
+  /** 手动标注的气泡角度 */
+  savedManualAngles?: number[] | null
+
   // 翻译状态
   /** 翻译状态 */
   translationStatus: TranslationStatus

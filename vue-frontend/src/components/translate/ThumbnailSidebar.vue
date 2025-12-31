@@ -88,7 +88,7 @@ function getStatusType(image: typeof images.value[0]): 'failed' | 'labeled' | 'p
   // 复刻原版：优先显示失败标记
   if (image.translationFailed) return 'failed'
   // 复刻原版：检查 savedManualCoords（原版 imageData.savedManualCoords）
-  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return 'labeled'
+  if (image.savedManualCoords && image.savedManualCoords.length > 0) return 'labeled'
   // 处理中状态
   if (image.translationStatus === 'processing') return 'processing'
   return null
@@ -104,7 +104,7 @@ function getThumbnailClasses(image: typeof images.value[0]): string[] {
     classes.push('translation-failed')
   }
   // 复刻原版：有手动标注时添加 has-manual-labels 类
-  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) {
+  if (image.savedManualCoords && image.savedManualCoords.length > 0) {
     classes.push('has-manual-labels')
   }
   return classes
@@ -117,7 +117,7 @@ function getThumbnailTitle(image: typeof images.value[0]): string {
   // 复刻原版：失败时显示特定提示
   if (image.translationFailed) return '翻译失败，点击可重试'
   // 复刻原版：有手动标注时显示特定提示
-  if ((image as any).savedManualCoords && (image as any).savedManualCoords.length > 0) return '包含手动标注框'
+  if (image.savedManualCoords && image.savedManualCoords.length > 0) return '包含手动标注框'
   // 默认显示文件名
   return image.fileName || ''
 }
