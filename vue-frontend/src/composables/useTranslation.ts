@@ -1046,27 +1046,24 @@ export function useTranslation() {
 
     try {
       console.log(`高质量翻译: 通过后端代理调用 ${hqTranslation.provider} API...`)
+
       const response = await hqTranslateBatchApi(params)
 
       if (!response.success) {
         throw new Error(response.error || 'API 调用失败')
       }
 
-      // 如果后端已解析为 results，直接返回
-      if (response.results) {
-        // 将 results 格式转换为 HqJsonData 格式
-        return response.results.map(r => ({
-          imageIndex: r.index,
-          bubbles: r.translations.map((t, idx) => ({
-            bubbleIndex: idx,
-            original: '',
-            translated: t,
-            textDirection: 'vertical'
-          }))
-        }))
+      // 优先使用后端已解析的 results（后端会尝试解析 LLM 返回的 JSON）
+      // 格式为: [{ imageIndex, bubbles: [{ bubbleIndex, original, translated, textDirection }] }]
+      if (response.results && response.results.length > 0) {
+        const firstItem = response.results[0]
+        // 验证结构正确性
+        if (firstItem && 'imageIndex' in firstItem && 'bubbles' in firstItem) {
+          return response.results as unknown as HqJsonData[]
+        }
       }
 
-      // 如果返回的是 content，需要解析 JSON
+      // 如果 results 不存在或格式不对，使用 content（复刻原版逻辑）
       const content = (response as any).content
       if (content) {
         if (hqTranslation.forceJsonOutput) {
@@ -1077,6 +1074,7 @@ export function useTranslation() {
             throw new Error('解析AI返回的JSON结果失败')
           }
         } else {
+          // 从 markdown 代码块中提取 JSON
           const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
           if (jsonMatch && jsonMatch[1]) {
             try {
@@ -1233,6 +1231,14 @@ export function useTranslation() {
             if (result) {
               allBatchResults.push(result)
               success = true
+            } else {
+              // 如果返回 null，也应该视为失败并增加重试计数
+              retryCount++
+              if (retryCount > maxRetries) {
+                break
+              }
+              await new Promise(r => setTimeout(r, 1000))
+              continue
             }
 
             batchCount++
