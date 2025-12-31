@@ -1290,8 +1290,15 @@ export function useTranslation() {
       progress.value.label = `消除文字: ${currentIndex + 1}/${totalImages}`
       progress.value.percentage = progressPercent
 
+      // 【修复】设置处理中状态，显示缩略图指示器（复刻原版 ui.showTranslatingIndicator）
+      imageStore.setTranslationStatus(currentIndex, 'processing')
+
       const image = imageStore.images[currentIndex]
-      if (!image || !image.originalDataURL) continue
+      if (!image || !image.originalDataURL) {
+        // 跳过时重置状态，避免指示器残留
+        imageStore.setTranslationStatus(currentIndex, 'pending')
+        continue
+      }
 
       // --- 使用统一的函数提取已有坐标（复刻原版 high_quality_translation.js）---
       const existingData = extractExistingBubbleData(image)
@@ -1299,6 +1306,8 @@ export function useTranslation() {
       // 如果用户清空了文本框，跳过
       if (existingData?.isEmpty) {
         console.log(`高质量翻译[${currentIndex}]: 文本框已被用户清空，跳过此图片`)
+        // 跳过时重置状态，避免指示器残留
+        imageStore.setTranslationStatus(currentIndex, 'pending')
         continue
       }
 
@@ -1349,6 +1358,7 @@ export function useTranslation() {
             bubbleTexts: bubbleStates.map(s => s.translatedText || ''),
             translationFailed: false,
             translationStatus: 'completed',
+            showOriginal: false,  // 【修复】复刻原版：确保显示翻译结果而非原图
             hasUnsavedChanges: true
           })
 
@@ -1458,7 +1468,9 @@ export function useTranslation() {
             newSettings.push({
               translatedText: bubbleTexts[i] || '',
               originalText: image.originalTexts?.[i] || '',
+              textboxText: '',  // 【修复】添加缺失字段
               coords: coords as [number, number, number, number],
+              polygon: [],  // 【修复】添加缺失字段
               fontSize: currentFontSize,
               fontFamily: currentFontFamily,
               textDirection: bubbleTextDirection,
@@ -1469,14 +1481,46 @@ export function useTranslation() {
               fillColor: currentFillColor,
               strokeEnabled: currentStrokeEnabled,
               strokeColor: currentStrokeColor,
-              strokeWidth: currentStrokeWidth
-            } as BubbleState)
+              strokeWidth: currentStrokeWidth,
+              inpaintMethod: settingsStore.settings.textStyle.inpaintMethod  // 【修复】添加缺失字段
+            })
           }
           image.bubbleStates = newSettings
         } else if (image.bubbleStates[bubbleIndex]) {
+          // 更新现有的 bubbleState
           image.bubbleStates[bubbleIndex].translatedText = translatedText
           if (textDirection && textDirection !== 'auto') {
             image.bubbleStates[bubbleIndex].textDirection = effectiveTextDirection
+          }
+        } else {
+          // 【修复】第三分支：创建新的 bubbleState（当 bubbleStates[bubbleIndex] 不存在时）
+          const imgAngles = image.bubbleAngles || []
+          const bubbleDetectedAngle = imgAngles[bubbleIndex] || 0
+          const coords = bubbleCoords[bubbleIndex]
+          // 计算自动排版方向
+          let autoDir: TextDirection = effectiveTextDirection
+          if (coords && coords.length >= 4) {
+            const [x1, y1, x2, y2] = coords
+            autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal'
+          }
+          image.bubbleStates[bubbleIndex] = {
+            translatedText: translatedText,
+            originalText: image.originalTexts?.[bubbleIndex] || '',
+            textboxText: '',
+            coords: coords as [number, number, number, number],
+            polygon: [],
+            fontSize: currentFontSize,
+            fontFamily: currentFontFamily,
+            textDirection: effectiveTextDirection,
+            autoTextDirection: autoDir,
+            position: { x: 0, y: 0 },
+            textColor: currentTextColor,
+            rotationAngle: bubbleDetectedAngle,
+            fillColor: currentFillColor,
+            strokeEnabled: currentStrokeEnabled,
+            strokeColor: currentStrokeColor,
+            strokeWidth: currentStrokeWidth,
+            inpaintMethod: settingsStore.settings.textStyle.inpaintMethod
           }
         }
 
