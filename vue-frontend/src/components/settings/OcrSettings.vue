@@ -36,7 +36,7 @@
             <input
               :type="showBaiduApiKey ? 'text' : 'password'"
               id="settingsBaiduApiKey"
-              v-model="settings.baiduOcr.apiKey"
+              v-model="localBaiduOcr.apiKey"
               class="secure-input"
               placeholder="请输入百度OCR API Key"
               autocomplete="off"
@@ -53,7 +53,7 @@
             <input
               :type="showBaiduSecretKey ? 'text' : 'password'"
               id="settingsBaiduSecretKey"
-              v-model="settings.baiduOcr.secretKey"
+              v-model="localBaiduOcr.secretKey"
               class="secure-input"
               placeholder="请输入Secret Key"
               autocomplete="off"
@@ -69,17 +69,15 @@
         <div class="settings-item">
           <label for="settingsBaiduVersion">识别版本:</label>
           <CustomSelect
-            :model-value="settings.baiduOcr.version"
+            v-model="localBaiduOcr.version"
             :options="baiduVersionOptions"
-            @change="(v: any) => settings.baiduOcr.version = v"
           />
         </div>
         <div class="settings-item">
           <label for="settingsBaiduSourceLanguage">源语言:</label>
           <CustomSelect
-            :model-value="settings.baiduOcr.sourceLanguage"
+            v-model="localBaiduOcr.sourceLanguage"
             :options="baiduSourceLanguageOptions"
-            @change="(v: any) => settings.baiduOcr.sourceLanguage = v"
           />
         </div>
       </div>
@@ -106,7 +104,7 @@
             <input
               :type="showAiVisionApiKey ? 'text' : 'password'"
               id="settingsAiVisionApiKey"
-              v-model="settings.aiVisionOcr.apiKey"
+              v-model="localAiVisionOcr.apiKey"
               class="secure-input"
               placeholder="请输入API Key"
               autocomplete="off"
@@ -125,7 +123,7 @@
         <input
           type="text"
           id="settingsCustomAiVisionBaseUrl"
-          v-model="settings.aiVisionOcr.customBaseUrl"
+          v-model="localAiVisionOcr.customBaseUrl"
           placeholder="例如: https://api.example.com/v1"
         />
       </div>
@@ -137,7 +135,7 @@
           <input
             type="text"
             id="settingsAiVisionModelName"
-            v-model="settings.aiVisionOcr.modelName"
+            v-model="localAiVisionOcr.modelName"
             placeholder="如: silicon-llava2-34b"
           />
           <button
@@ -154,9 +152,8 @@
         <!-- 模型选择下拉框 -->
         <div v-if="aiVisionModels.length > 0" class="model-select-container">
           <CustomSelect
-            :model-value="settings.aiVisionOcr.modelName"
+            v-model="localAiVisionOcr.modelName"
             :options="aiVisionModelOptions"
-            @change="(v: any) => settings.aiVisionOcr.modelName = v"
           />
           <span class="model-count">共 {{ aiVisionModels.length }} 个模型</span>
         </div>
@@ -167,7 +164,7 @@
         <label for="settingsAiVisionOcrPrompt">OCR提示词:</label>
         <textarea
           id="settingsAiVisionOcrPrompt"
-          v-model="settings.aiVisionOcr.prompt"
+          v-model="localAiVisionOcr.prompt"
           rows="3"
           placeholder="AI视觉OCR提示词"
         ></textarea>
@@ -189,7 +186,7 @@
       <!-- RPM限制 -->
       <div class="settings-item">
         <label for="settingsRpmAiVisionOcr">RPM限制 (每分钟请求数):</label>
-        <input type="number" id="settingsRpmAiVisionOcr" v-model.number="settings.aiVisionOcr.rpmLimit" min="0" step="1" />
+        <input type="number" id="settingsRpmAiVisionOcr" v-model.number="localAiVisionOcr.rpmLimit" min="0" step="1" />
         <div class="input-hint">0 表示无限制</div>
       </div>
 
@@ -205,7 +202,7 @@
  * OCR设置组件
  * 管理OCR引擎选择和各引擎的配置
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -288,9 +285,61 @@ const sourceLanguageGroups = [
 
 // Store
 const settingsStore = useSettingsStore()
-// 直接访问 settingsStore.settings 以便 v-model 可以正确工作
-const settings = computed(() => settingsStore.settings)
 const toast = useToast()
+
+// 本地设置状态（用于双向绑定，修改后自动同步到 store）
+const localBaiduOcr = ref({
+  apiKey: settingsStore.settings.baiduOcr.apiKey,
+  secretKey: settingsStore.settings.baiduOcr.secretKey,
+  version: settingsStore.settings.baiduOcr.version,
+  sourceLanguage: settingsStore.settings.baiduOcr.sourceLanguage
+})
+
+const localAiVisionOcr = ref({
+  apiKey: settingsStore.settings.aiVisionOcr.apiKey,
+  modelName: settingsStore.settings.aiVisionOcr.modelName,
+  customBaseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
+  prompt: settingsStore.settings.aiVisionOcr.prompt,
+  rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit
+})
+
+// 直接访问 store 的只读设置（用于显示条件判断）
+const settings = computed(() => settingsStore.settings)
+
+// ============================================================
+// Watch 同步：本地状态变化时自动保存到 store
+// ============================================================
+
+// 百度OCR设置同步
+watch(() => localBaiduOcr.value.apiKey, (val) => {
+  settingsStore.updateBaiduOcr({ apiKey: val })
+})
+watch(() => localBaiduOcr.value.secretKey, (val) => {
+  settingsStore.updateBaiduOcr({ secretKey: val })
+})
+watch(() => localBaiduOcr.value.version, (val) => {
+  settingsStore.updateBaiduOcr({ version: val })
+})
+watch(() => localBaiduOcr.value.sourceLanguage, (val) => {
+  settingsStore.updateBaiduOcr({ sourceLanguage: val })
+})
+
+// AI视觉OCR设置同步
+watch(() => localAiVisionOcr.value.apiKey, (val) => {
+  settingsStore.updateAiVisionOcr({ apiKey: val })
+})
+watch(() => localAiVisionOcr.value.modelName, (val) => {
+  settingsStore.updateAiVisionOcr({ modelName: val })
+})
+watch(() => localAiVisionOcr.value.customBaseUrl, (val) => {
+  settingsStore.updateAiVisionOcr({ customBaseUrl: val })
+})
+watch(() => localAiVisionOcr.value.prompt, (val) => {
+  settingsStore.updateAiVisionOcr({ prompt: val })
+})
+watch(() => localAiVisionOcr.value.rpmLimit, (val) => {
+  settingsStore.updateAiVisionOcr({ rpmLimit: val })
+})
 
 // 密码显示状态
 const showBaiduApiKey = ref(false)
@@ -315,15 +364,12 @@ const aiVisionModelOptions = computed(() => {
 
 // 处理OCR引擎切换
 function handleOcrEngineChange() {
-  // 保存当前服务商配置（如果需要）
   settingsStore.saveToStorage()
 }
 
 // 处理源语言切换
 function handleSourceLanguageChange() {
-  // 保存设置
   settingsStore.saveToStorage()
-  console.log(`源语言已切换为: ${settingsStore.settings.sourceLanguage}`)
 }
 
 // 获取源语言提示信息
@@ -349,23 +395,34 @@ function handleAiVisionProviderChange(newProvider: string) {
   settingsStore.setAiVisionOcrProvider(newProvider)
   // 清空模型列表
   aiVisionModels.value = []
+  // 同步本地状态（服务商切换后 store 会恢复新服务商的配置）
+  syncLocalAiVisionOcr()
+}
+
+// 同步本地 AI 视觉 OCR 状态
+function syncLocalAiVisionOcr() {
+  localAiVisionOcr.value.apiKey = settingsStore.settings.aiVisionOcr.apiKey
+  localAiVisionOcr.value.modelName = settingsStore.settings.aiVisionOcr.modelName
+  localAiVisionOcr.value.customBaseUrl = settingsStore.settings.aiVisionOcr.customBaseUrl
+  localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
+  localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
 }
 
 // 处理AI视觉提示词模式切换
 function handleAiVisionPromptModeChange() {
   // 切换模式时更新默认提示词
-  if (settingsStore.settings.aiVisionOcr.isJsonMode) {
-    settingsStore.settings.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
-  } else {
-    settingsStore.settings.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_PROMPT
-  }
-  settingsStore.saveToStorage()
+  const newPrompt = settingsStore.settings.aiVisionOcr.isJsonMode 
+    ? DEFAULT_AI_VISION_OCR_JSON_PROMPT 
+    : DEFAULT_AI_VISION_OCR_PROMPT
+  settingsStore.updateAiVisionOcr({ prompt: newPrompt })
+  // 同步本地状态
+  localAiVisionOcr.value.prompt = newPrompt
 }
 
 // 测试百度OCR连接（复刻原版逻辑）
 async function testBaiduOcr() {
-  const apiKey = settings.value.baiduOcr.apiKey?.trim()
-  const secretKey = settings.value.baiduOcr.secretKey?.trim()
+  const apiKey = localBaiduOcr.value.apiKey?.trim()
+  const secretKey = localBaiduOcr.value.secretKey?.trim()
 
   // 验证必填字段
   if (!apiKey || !secretKey) {
@@ -395,13 +452,12 @@ async function testBaiduOcr() {
 async function testAiVisionOcr() {
   isTesting.value = true
   try {
-    const aiVisionOcr = settingsStore.settings.aiVisionOcr
     const result = await configApi.testAiVisionOcrConnection({
-      provider: aiVisionOcr.provider,
-      apiKey: aiVisionOcr.apiKey,
-      modelName: aiVisionOcr.modelName,
-      customBaseUrl: aiVisionOcr.customBaseUrl,
-      prompt: aiVisionOcr.prompt  // 新增：传递提示词参数
+      provider: settingsStore.settings.aiVisionOcr.provider,
+      apiKey: localAiVisionOcr.value.apiKey,
+      modelName: localAiVisionOcr.value.modelName,
+      customBaseUrl: localAiVisionOcr.value.customBaseUrl,
+      prompt: localAiVisionOcr.value.prompt
     })
     if (result.success) {
       toast.success('AI视觉OCR连接成功')
@@ -418,10 +474,9 @@ async function testAiVisionOcr() {
 
 // 获取AI视觉模型列表（复刻原版 doFetchModels 逻辑）
 async function fetchAiVisionModels() {
-  const aiVisionOcr = settingsStore.settings.aiVisionOcr
-  const provider = aiVisionOcr.provider
-  const apiKey = aiVisionOcr.apiKey?.trim()
-  const baseUrl = aiVisionOcr.customBaseUrl?.trim()
+  const provider = settingsStore.settings.aiVisionOcr.provider
+  const apiKey = localAiVisionOcr.value.apiKey?.trim()
+  const baseUrl = localAiVisionOcr.value.customBaseUrl?.trim()
 
   // 验证（与原版一致）
   if (!apiKey) {
@@ -463,6 +518,8 @@ async function fetchAiVisionModels() {
 // 处理 AI 视觉 OCR 提示词选择
 function handleAiVisionPromptSelect(content: string, name: string) {
   settingsStore.updateAiVisionOcr({ prompt: content })
+  // 同步本地状态
+  localAiVisionOcr.value.prompt = content
   toast.success(`已应用提示词: ${name}`)
 }
 </script>

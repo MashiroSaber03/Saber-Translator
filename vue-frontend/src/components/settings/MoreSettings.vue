@@ -6,7 +6,7 @@
       <div class="settings-item">
         <label for="settingsPdfProcessingMethod">PDF处理方式:</label>
         <CustomSelect
-          v-model="settingsStore.settings.pdfProcessingMethod"
+          v-model="localSettings.pdfProcessingMethod"
           :options="pdfMethodOptions"
         />
         <div class="input-hint">前端处理速度更快，后端处理兼容性更好</div>
@@ -35,7 +35,7 @@
       <div class="settings-group-title">调试选项</div>
       <div class="settings-item">
         <label class="checkbox-label">
-          <input type="checkbox" v-model="localSettings.showDetectionDebug" @change="saveSettings" />
+          <input type="checkbox" v-model="localSettings.showDetectionDebug" />
           显示检测框调试信息
         </label>
         <div class="input-hint">开启后会在翻译结果中显示气泡检测框</div>
@@ -53,7 +53,6 @@
           v-model.number="localSettings.translationMaxRetries" 
           min="0" 
           max="10"
-          @change="saveSettings"
         />
         <div class="input-hint">翻译失败时的最大重试次数（0-10）</div>
       </div>
@@ -65,7 +64,6 @@
           v-model.number="localSettings.hqTranslationMaxRetries" 
           min="0" 
           max="10"
-          @change="saveSettings"
         />
         <div class="input-hint">高质量翻译失败时的最大重试次数（0-10）</div>
       </div>
@@ -77,7 +75,6 @@
           v-model.number="localSettings.proofreadingMaxRetries" 
           min="0" 
           max="10"
-          @change="saveSettings"
         />
         <div class="input-hint">AI校对失败时的最大重试次数（0-10）</div>
       </div>
@@ -123,7 +120,7 @@
  * 更多设置组件
  * 管理PDF处理、字体、缓存清理等杂项设置
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
@@ -138,7 +135,6 @@ import { useToast } from '@/utils/toast'
 
 // Store
 const settingsStore = useSettingsStore()
-// settings 计算属性已移除，直接使用 settingsStore
 const toast = useToast()
 
 // 状态
@@ -147,32 +143,33 @@ const fontList = ref<(string | import('@/types').FontInfo)[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<HTMLInputElement | null>(null)
 
-// 本地设置状态
+// 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
+  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
   showDetectionDebug: settingsStore.settings.showDetectionDebug || false,
   translationMaxRetries: settingsStore.settings.translation?.maxRetries || 2,
   hqTranslationMaxRetries: settingsStore.settings.hqTranslation?.maxRetries || 2,
   proofreadingMaxRetries: settingsStore.settings.proofreading?.maxRetries || 2
 })
 
-// 保存设置
-function saveSettings() {
-  // 更新调试设置
-  settingsStore.setShowDetectionDebug(localSettings.value.showDetectionDebug)
-  
-  // 更新翻译重试次数
-  if (settingsStore.settings.translation) {
-    settingsStore.settings.translation.maxRetries = localSettings.value.translationMaxRetries
-  }
-  
-  // 更新高质量翻译重试次数
-  if (settingsStore.settings.hqTranslation) {
-    settingsStore.settings.hqTranslation.maxRetries = localSettings.value.hqTranslationMaxRetries
-  }
-  
-  // 更新校对重试次数
-  settingsStore.setProofreadingMaxRetries(localSettings.value.proofreadingMaxRetries)
-}
+// ============================================================
+// Watch 同步：本地状态变化时自动保存到 store
+// ============================================================
+watch(() => localSettings.value.pdfProcessingMethod, (val) => {
+  settingsStore.setPdfProcessingMethod(val as 'frontend' | 'backend')
+})
+watch(() => localSettings.value.showDetectionDebug, (val) => {
+  settingsStore.setShowDetectionDebug(val)
+})
+watch(() => localSettings.value.translationMaxRetries, (val) => {
+  settingsStore.updateTranslationService({ maxRetries: val })
+})
+watch(() => localSettings.value.hqTranslationMaxRetries, (val) => {
+  settingsStore.updateHqTranslation({ maxRetries: val })
+})
+watch(() => localSettings.value.proofreadingMaxRetries, (val) => {
+  settingsStore.setProofreadingMaxRetries(val)
+})
 
 // 刷新字体列表
 async function refreshFontList() {

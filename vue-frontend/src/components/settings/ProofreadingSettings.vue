@@ -177,7 +177,7 @@
  * AI校对设置组件
  * 管理多轮AI校对配置
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -221,6 +221,18 @@ const isProofreadingEnabled = computed({
   get: () => settingsStore.settings.proofreading.enabled,
   set: (val: boolean) => settingsStore.setProofreadingEnabled(val)
 })
+
+// ============================================================
+// Watch 同步：轮次设置变化时自动保存到 localStorage
+// ============================================================
+watch(
+  () => settingsStore.settings.proofreading.rounds,
+  () => {
+    // 轮次内的任何字段变化时自动保存
+    settingsStore.saveToStorage()
+  },
+  { deep: true }
+)
 
 // ---- 新增函数 ----
 
