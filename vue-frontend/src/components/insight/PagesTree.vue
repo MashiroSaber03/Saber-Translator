@@ -4,7 +4,7 @@
  * 显示章节和页面的树状结构，支持展开/折叠和页面选择
  */
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 
@@ -162,42 +162,6 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
 }
 
 /**
- * 显示右键菜单
- * @param event - 鼠标事件
- * @param pageNum - 页码
- */
-function showContextMenu(_event: MouseEvent, pageNum: number): void {
-  // 暂时使用简单的操作菜单（后续可实现真正的右键菜单）
-  const action = prompt(`第 ${pageNum} 页操作:\n1. 查看详情\n2. 重新分析\n3. 添加笔记\n\n请输入数字:`)
-  if (action === '1') {
-    selectPage(pageNum)
-  } else if (action === '2') {
-    reanalyzeSinglePage(pageNum)
-  } else if (action === '3') {
-    // TODO: 添加笔记功能
-    alert('笔记功能开发中')
-  }
-}
-
-/**
- * 重新分析单个页面
- * @param pageNum - 页码
- */
-async function reanalyzeSinglePage(pageNum: number): Promise<void> {
-  try {
-    const response = await insightApi.reanalyzePage(insightStore.currentBookId!, pageNum)
-    if (response.success) {
-      alert(`第 ${pageNum} 页分析已启动`)
-    } else {
-      alert('分析失败: ' + (response.error || '未知错误'))
-    }
-  } catch (error) {
-    console.error('重新分析页面失败:', error)
-    alert('重新分析失败')
-  }
-}
-
-/**
  * 加载已分析页面列表
  */
 async function loadAnalyzedPages(): Promise<void> {
@@ -230,6 +194,24 @@ onMounted(async () => {
     expandedChapters.value.add(chapters.value[0].id)
   }
 })
+
+/**
+ * 监听分析进度变化，自动刷新已分析页面标记
+ * 【修复】原版在分析完成后会调用 renderPagesTree 重新渲染
+ * Vue 版通过监听 analyzedPageCount 变化自动刷新
+ */
+watch(
+  () => insightStore.analyzedPageCount,
+  async (newCount, oldCount) => {
+    // 当已分析页数变化时，重新加载页面分析状态
+    if (newCount !== oldCount && newCount > 0) {
+      console.log(`已分析页数变化: ${oldCount} -> ${newCount}，刷新页面标记`)
+      // 清空现有标记并重新加载
+      pageAnalyzedMap.value.clear()
+      await loadAnalyzedPages()
+    }
+  }
+)
 </script>
 
 <template>
@@ -321,7 +303,6 @@ onMounted(async () => {
               }"
               :data-page="pageNum"
               @click="selectPage(pageNum)"
-              @contextmenu.prevent="showContextMenu($event, pageNum)"
             >
               <img 
                 :src="getThumbnailUrl(pageNum)" 
