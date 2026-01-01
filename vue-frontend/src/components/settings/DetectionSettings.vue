@@ -85,14 +85,6 @@
         <div class="input-hint">在翻译结果中显示气泡检测框，用于调试</div>
       </div>
     </div>
-
-    <!-- LAMA修复测试 -->
-    <div class="settings-group">
-      <div class="settings-group-title">修复功能测试</div>
-      <button class="settings-test-btn" @click="testLamaRepair" :disabled="isTesting">
-        {{ isTesting ? '测试中...' : '🔗 测试LAMA修复' }}
-      </button>
-    </div>
   </div>
 </template>
 
@@ -101,10 +93,8 @@
  * 检测设置组件
  * 管理文字检测器和相关参数配置
  */
-import { ref, reactive, computed, watch } from 'vue'
+import { reactive, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { configApi } from '@/api/config'
-import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
 /** 检测器类型选项 */
@@ -117,7 +107,6 @@ const detectorOptions = [
 
 // Store
 const settingsStore = useSettingsStore()
-const toast = useToast()
 
 // 本地设置状态（用于双向绑定）
 const settings = reactive({
@@ -132,9 +121,6 @@ const settings = reactive({
   maskBoxExpandRatio: settingsStore.settings.preciseMask.boxExpandRatio,
   showDetectionDebug: settingsStore.settings.showDetectionDebug
 })
-
-// 测试状态
-const isTesting = ref(false)
 
 // 计算属性：是否支持精确掩膜
 const supportsPreciseMask = computed(() => {
@@ -187,24 +173,6 @@ function handleDetectorChange() {
   // 如果切换到不支持精确掩膜的检测器，自动关闭该选项
   if (!supportsPreciseMask.value) {
     settings.usePreciseMask = false
-  }
-}
-
-// 测试LAMA修复
-async function testLamaRepair() {
-  isTesting.value = true
-  try {
-    const result = await configApi.testLamaRepair()
-    if (result.success) {
-      toast.success('LAMA修复功能正常')
-    } else {
-      toast.error(`LAMA修复测试失败: ${result.error || '未知错误'}`)
-    }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '测试失败'
-    toast.error(errorMessage)
-  } finally {
-    isTesting.value = false
   }
 }
 </script>

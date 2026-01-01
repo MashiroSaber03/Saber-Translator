@@ -30,56 +30,6 @@
       </div>
     </div>
 
-    <!-- 调试选项 -->
-    <div class="settings-group">
-      <div class="settings-group-title">调试选项</div>
-      <div class="settings-item">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="localSettings.showDetectionDebug" />
-          显示检测框调试信息
-        </label>
-        <div class="input-hint">开启后会在翻译结果中显示气泡检测框</div>
-      </div>
-    </div>
-
-    <!-- 重试次数配置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">重试次数配置</div>
-      <div class="settings-item">
-        <label for="settingsTranslationMaxRetries">普通翻译重试次数:</label>
-        <input 
-          type="number" 
-          id="settingsTranslationMaxRetries" 
-          v-model.number="localSettings.translationMaxRetries" 
-          min="0" 
-          max="10"
-        />
-        <div class="input-hint">翻译失败时的最大重试次数（0-10）</div>
-      </div>
-      <div class="settings-item">
-        <label for="settingsHqTranslationMaxRetries">高质量翻译重试次数:</label>
-        <input 
-          type="number" 
-          id="settingsHqTranslationMaxRetries" 
-          v-model.number="localSettings.hqTranslationMaxRetries" 
-          min="0" 
-          max="10"
-        />
-        <div class="input-hint">高质量翻译失败时的最大重试次数（0-10）</div>
-      </div>
-      <div class="settings-item">
-        <label for="settingsProofreadingMaxRetries">AI校对重试次数:</label>
-        <input 
-          type="number" 
-          id="settingsProofreadingMaxRetries" 
-          v-model.number="localSettings.proofreadingMaxRetries" 
-          min="0" 
-          max="10"
-        />
-        <div class="input-hint">AI校对失败时的最大重试次数（0-10）</div>
-      </div>
-    </div>
-
     <!-- 缓存清理 -->
     <div class="settings-group">
       <div class="settings-group-title">缓存清理</div>
@@ -124,6 +74,7 @@ import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
+import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
 /** PDF处理方式选项 */
@@ -131,7 +82,6 @@ const pdfMethodOptions = [
   { label: '前端 pdf.js (推荐)', value: 'frontend' },
   { label: '后端 PyMuPDF', value: 'backend' }
 ]
-import { useToast } from '@/utils/toast'
 
 // Store
 const settingsStore = useSettingsStore()
@@ -145,11 +95,7 @@ const fontInput = ref<HTMLInputElement | null>(null)
 
 // 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
-  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
-  showDetectionDebug: settingsStore.settings.showDetectionDebug || false,
-  translationMaxRetries: settingsStore.settings.translation?.maxRetries || 2,
-  hqTranslationMaxRetries: settingsStore.settings.hqTranslation?.maxRetries || 2,
-  proofreadingMaxRetries: settingsStore.settings.proofreading?.maxRetries || 2
+  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend'
 })
 
 // ============================================================
@@ -157,18 +103,6 @@ const localSettings = ref({
 // ============================================================
 watch(() => localSettings.value.pdfProcessingMethod, (val) => {
   settingsStore.setPdfProcessingMethod(val as 'frontend' | 'backend')
-})
-watch(() => localSettings.value.showDetectionDebug, (val) => {
-  settingsStore.setShowDetectionDebug(val)
-})
-watch(() => localSettings.value.translationMaxRetries, (val) => {
-  settingsStore.updateTranslationService({ maxRetries: val })
-})
-watch(() => localSettings.value.hqTranslationMaxRetries, (val) => {
-  settingsStore.updateHqTranslation({ maxRetries: val })
-})
-watch(() => localSettings.value.proofreadingMaxRetries, (val) => {
-  settingsStore.setProofreadingMaxRetries(val)
 })
 
 // 刷新字体列表
