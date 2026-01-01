@@ -175,6 +175,8 @@ export interface TagData {
   id: string
   name: string
   color?: string
+  /** 使用该标签的书籍数量（后端返回） */
+  book_count?: number
 }
 
 /**

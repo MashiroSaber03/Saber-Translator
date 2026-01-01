@@ -780,6 +780,30 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
+   * 更新标签（调用API）
+   * 【复刻原版 bookshelf.js editTag】
+   * 更新成功后刷新标签列表和书籍列表
+   * @param tagId - 标签ID（原标签名称）
+   * @param name - 新标签名称
+   * @param color - 新标签颜色
+   */
+  async function updateTagApi(tagId: string, name: string, color: string): Promise<boolean> {
+    try {
+      const response = await bookshelfApi.updateTag(tagId, name, color)
+      if (response.success) {
+        // 【复刻原版】更新成功后重新加载标签和书籍列表
+        await loadTags()
+        await loadBooks()
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('更新标签失败:', err)
+      return false
+    }
+  }
+
+  /**
    * 创建章节（调用API）
    * @param bookId - 书籍ID
    * @param title - 章节标题
@@ -1022,6 +1046,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     batchDeleteBooks,
     createTag,
     deleteTagApi,
+    updateTagApi,
     createChapterApi,
     updateChapterApi,
     deleteChapterApi,

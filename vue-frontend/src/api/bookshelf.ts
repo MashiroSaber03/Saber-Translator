@@ -263,10 +263,30 @@ export async function createTag(name: string, color?: string): Promise<TagDetail
 
 /**
  * 删除标签
- * @param tagId 标签 ID
+ * @param tagId 标签 ID（标签名称）
  */
 export async function deleteTag(tagId: string): Promise<ApiResponse> {
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${tagId}`)
+  // 与原版 bookshelf.js 一致，使用 encodeURIComponent 编码名称
+  return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${encodeURIComponent(tagId)}`)
+}
+
+/**
+ * 更新标签
+ * 【复刻原版 bookshelf.js editTag】
+ * @param tagId 标签 ID（原标签名称）
+ * @param name 新标签名称
+ * @param color 新标签颜色
+ */
+export async function updateTag(
+  tagId: string,
+  name: string,
+  color: string
+): Promise<TagDetailResponse> {
+  // 原版 API 使用标签名称作为 URL 路径参数
+  return apiClient.put<TagDetailResponse>(
+    `/api/bookshelf/tags/${encodeURIComponent(tagId)}`,
+    { name, color }
+  )
 }
 
 /**
