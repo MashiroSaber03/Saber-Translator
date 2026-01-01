@@ -644,72 +644,6 @@ export const PROMPT_METADATA: Record<PromptType, PromptMetadata> = {
 }
 
 /**
- * 默认提示词
- */
-export const DEFAULT_PROMPTS: Record<PromptType, string> = {
-  batch_analysis: `【输出中文】分析以下 {page_count} 页漫画内容（第 {start_page} 页到第 {end_page} 页）。
-
-请提取以下信息，以 JSON 格式输出：
-{
-    "pages": [
-        {
-            "page_num": <页码>,
-            "summary": "<该页内容概述，2-3句话>",
-            "dialogues": [
-                {"character": "<角色名或'旁白'>", "text": "<对话内容>"}
-            ],
-            "scene": "<场景描述>",
-            "mood": "<氛围/情绪>"
-        }
-    ],
-    "batch_summary": "<这几页的整体概述，3-5句话>",
-    "key_events": ["<关键事件1>", "<关键事件2>"]
-}
-
-要求：
-1. 准确识别对话内容和说话者
-2. 注意画面中的文字、音效
-3. 描述重要的视觉元素和表情`,
-
-  segment_summary: `【输出中文】基于以下批次分析结果，生成段落总结。
-
-请生成段落总结，JSON 格式：
-{
-    "summary": "<段落整体概述，3-5句话>",
-    "plot_points": ["<剧情要点1>", "<剧情要点2>"],
-    "character_developments": ["<角色发展1>"],
-    "themes": ["<主题1>"]
-}
-
-要求：
-1. 综合多个批次的信息
-2. 突出重要角色和关键事件
-3. 注意剧情的因果关系`,
-
-  chapter_summary: `【输出中文】基于以下内容，生成完整的章节总结。
-
-请生成章节总结，JSON 格式：
-{
-    "summary": "<章节整体概述，5-8句话>",
-    "main_plot": "<主要剧情线描述>",
-    "key_events": ["<章节关键事件，按顺序>"],
-    "themes": ["<本章主题>"],
-    "atmosphere": "<整体氛围>"
-}
-
-要求：
-1. 综合所有内容，形成完整的章节叙述
-2. 理清人物关系和剧情脉络
-3. 提炼章节主题和核心冲突`,
-
-  qa_response: `【输出中文】根据分析结果回答用户问题，引用相关页面。
-回答时请：
-1. 基于提供的漫画内容回答
-2. 引用具体页码作为依据
-3. 如果问题超出已分析内容，请诚实说明`,
-}
-
-/**
  * 保存的提示词项
  */
 export interface SavedPromptItem {
@@ -730,12 +664,19 @@ export interface PromptsLibraryResponse {
 }
 
 /**
- * 提示词配置响应
+ * 默认提示词响应
  */
-export interface PromptsConfigResponse {
+export interface DefaultPromptsResponse {
   success: boolean
-  prompts?: Record<string, string>
+  prompts?: Record<PromptType, string>
   error?: string
+}
+
+/**
+ * 获取默认提示词（从后端）
+ */
+export async function getDefaultPrompts(): Promise<DefaultPromptsResponse> {
+  return apiClient.get<DefaultPromptsResponse>('/api/manga-insight/prompts/defaults')
 }
 
 /**

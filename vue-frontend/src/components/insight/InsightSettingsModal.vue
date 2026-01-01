@@ -180,6 +180,13 @@ const customPrompts = ref<Record<string, string>>({})
 const savedPromptsLibrary = ref<SavedPromptItem[]>([])
 /** 是否正在加载提示词库 */
 const isLoadingPrompts = ref(false)
+/** 默认提示词（从后端获取） */
+const defaultPrompts = ref<Record<PromptType, string>>({
+  batch_analysis: '',
+  segment_summary: '',
+  chapter_summary: '',
+  qa_response: ''
+})
 
 // ============================================================
 // 服务商选项
@@ -802,6 +809,24 @@ function onModelSelected(type: 'vlm' | 'llm' | 'embedding' | 'reranker', modelId
 // ============================================================
 
 /**
+ * 加载默认提示词
+ */
+async function loadDefaultPrompts(): Promise<void> {
+  try {
+    const response = await insightApi.getDefaultPrompts()
+    if (response.success && response.prompts) {
+      defaultPrompts.value = response.prompts
+    } else {
+      console.warn('获取默认提示词失败，将使用空白提示词')
+    }
+  } catch (error) {
+    console.error('加载默认提示词失败:', error)
+    // 失败时提示用户（可选）
+    // showTestMessage('加载默认提示词失败，请检查网络连接', 'error')
+  }
+}
+
+/**
  * 加载提示词库
  */
 async function loadPromptsLibrary(): Promise<void> {
@@ -819,16 +844,6 @@ async function loadPromptsLibrary(): Promise<void> {
   }
 }
 
-/**
- * 提示词类型变更处理
- * 注意：由于 v-model 的双向绑定，在 @change 触发时 currentPromptType 已经是新值
- * 因此我们需要使用 watch 来监听变化，以便获取旧值
- */
-function onPromptTypeChange(): void {
-  // 加载新类型的提示词（优先使用自定义的，否则使用默认）
-  const promptType = currentPromptType.value
-  currentPromptContent.value = customPrompts.value[promptType] || insightApi.DEFAULT_PROMPTS[promptType] || ''
-}
 
 /**
  * 重置当前提示词为默认值
@@ -836,7 +851,7 @@ function onPromptTypeChange(): void {
 function resetCurrentPrompt(): void {
   if (confirm('确定要重置为默认提示词吗？当前编辑的内容将丢失。')) {
     const promptType = currentPromptType.value
-    currentPromptContent.value = insightApi.DEFAULT_PROMPTS[promptType] || ''
+    currentPromptContent.value = defaultPrompts.value[promptType] || ''
     // 清空自定义，使用默认
     delete customPrompts.value[promptType]
     showTestMessage('已重置为默认提示词', 'success')
@@ -989,9 +1004,6 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
       // 保存到服务器
       await insightApi.importPromptsLibrary(savedPromptsLibrary.value)
     }
-    
-    // 刷新显示
-    onPromptTypeChange()
     
     showTestMessage('提示词导入成功', 'success')
   } catch (error) {
@@ -1151,14 +1163,13 @@ function syncFromStore(): void {
   // Prompts（提示词配置）
   if (insightStore.config.prompts) {
     customPrompts.value = { ...insightStore.config.prompts }
-    // 加载当前类型的提示词到编辑器
-    const promptType = currentPromptType.value
-    currentPromptContent.value = customPrompts.value[promptType] || insightApi.DEFAULT_PROMPTS[promptType] || ''
   } else {
-    // 使用默认提示词
     customPrompts.value = {}
-    currentPromptContent.value = insightApi.DEFAULT_PROMPTS[currentPromptType.value] || ''
   }
+  
+  // 加载当前类型的提示词到编辑器（统一处理）
+  const promptType = currentPromptType.value
+  currentPromptContent.value = customPrompts.value[promptType] || defaultPrompts.value[promptType] || ''
 }
 
 // ============================================================
@@ -1177,7 +1188,7 @@ watch(currentPromptType, (newType, oldType) => {
   
   // 加载新类型的内容
   if (newType) {
-    currentPromptContent.value = customPrompts.value[newType] || insightApi.DEFAULT_PROMPTS[newType] || ''
+    currentPromptContent.value = customPrompts.value[newType] || defaultPrompts.value[newType] || ''
   }
 })
 
@@ -1186,11 +1197,12 @@ watch(currentPromptType, (newType, oldType) => {
 // ============================================================
 
 onMounted(async () => {
+  // 先加载默认提示词（从后端获取），确保 syncFromStore 时有默认值可用
+  await loadDefaultPrompts()
+  // 加载配置并同步到本地状态（内部会调用 syncFromStore，已包含提示词初始化）
   await loadConfig()
   // 加载提示词库
   await loadPromptsLibrary()
-  // 初始化提示词编辑器
-  currentPromptContent.value = customPrompts.value[currentPromptType.value] || insightApi.DEFAULT_PROMPTS[currentPromptType.value] || ''
 })
 </script>
 
@@ -1631,7 +1643,6 @@ onMounted(async () => {
         <CustomSelect
           v-model="currentPromptType"
           :options="promptTypeOptions"
-          @change="onPromptTypeChange"
         />
         <p class="form-hint">{{ insightApi.PROMPT_METADATA[currentPromptType]?.hint }}</p>
       </div>

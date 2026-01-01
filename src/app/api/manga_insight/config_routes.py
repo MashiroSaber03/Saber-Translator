@@ -17,7 +17,14 @@ from src.core.manga_insight.config_utils import (
     update_provider_config,
     set_current_provider
 )
-from src.core.manga_insight.config_models import MangaInsightConfig, ARCHITECTURE_PRESETS
+from src.core.manga_insight.config_models import (
+    MangaInsightConfig, 
+    ARCHITECTURE_PRESETS,
+    DEFAULT_BATCH_ANALYSIS_PROMPT,
+    DEFAULT_SEGMENT_SUMMARY_PROMPT,
+    DEFAULT_CHAPTER_FROM_SEGMENTS_PROMPT,
+    DEFAULT_QA_SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger("MangaInsight.API.Config")
 
@@ -341,6 +348,27 @@ def import_prompts_library():
         })
     except Exception as e:
         logger.error(f"导入提示词库失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/prompts/defaults', methods=['GET'])
+def get_default_prompts():
+    """获取默认提示词"""
+    try:
+        return jsonify({
+            "success": True,
+            "prompts": {
+                "batch_analysis": DEFAULT_BATCH_ANALYSIS_PROMPT,
+                "segment_summary": DEFAULT_SEGMENT_SUMMARY_PROMPT,
+                "chapter_summary": DEFAULT_CHAPTER_FROM_SEGMENTS_PROMPT,
+                "qa_response": DEFAULT_QA_SYSTEM_PROMPT,
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取默认提示词失败: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)
