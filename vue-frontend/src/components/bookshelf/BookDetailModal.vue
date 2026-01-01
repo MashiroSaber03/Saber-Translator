@@ -7,6 +7,7 @@
 import { ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 
 const emit = defineEmits<{
@@ -188,17 +189,38 @@ function goToInsight() {
 }
 
 // 处理章节排序
-async function handleChapterReorder(chapterIds: string[]) {
-  if (!currentBook.value) return
+// 【复刻原版 bookshelf.js handleChapterDrop】
+async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
+  if (!currentBook.value) return false
   try {
     const success = await bookshelfStore.reorderChaptersApi(currentBook.value.id, chapterIds)
     if (success) {
       showToast('章节排序已更新', 'success')
+      return true
     } else {
-      showToast('排序失败', 'error')
+      showToast('排序保存失败', 'error')
+      // 【复刻原版】刷新以恢复原始顺序
+      await refreshBookDetail()
+      return false
     }
   } catch (error) {
-    showToast('排序失败', 'error')
+    showToast('排序保存失败', 'error')
+    // 【复刻原版】刷新以恢复原始顺序
+    await refreshBookDetail()
+    return false
+  }
+}
+
+// 【复刻原版】刷新当前书籍详情（用于排序失败后恢复原顺序）
+async function refreshBookDetail() {
+  if (!currentBook.value) return
+  try {
+    const response = await getBookDetail(currentBook.value.id)
+    if (response.success && response.book) {
+      bookshelfStore.updateBook(currentBook.value.id, response.book)
+    }
+  } catch (error) {
+    console.error('刷新书籍详情失败:', error)
   }
 }
 

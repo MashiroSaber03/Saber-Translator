@@ -76,49 +76,22 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   // 计算属性
   // ============================================================
 
-  /** 过滤后的书籍列表（应用搜索和标签筛选） */
+  /** 
+   * 过滤后的书籍列表
+   * 【复刻原版】搜索完全交给后端处理，前端不做二次过滤
+   * 排序也依赖后端返回顺序，前端不强制排序（与原版 bookshelf.js 一致）
+   */
   const filteredBooks = computed(() => {
-    let result = [...books.value]
+    // 【复刻原版】直接返回后端结果，不做本地搜索过滤
+    // 原版 bookshelf.js 的 loadBooks() 将 search 和 tags 参数传给后端
+    // 后端按 title/description/tags 过滤后返回结果
+    // 前端 renderBooks() 只负责渲染，不做额外过滤
 
-    // 应用搜索过滤
-    if (searchKeyword.value.trim()) {
-      const keyword = searchKeyword.value.toLowerCase().trim()
-      result = result.filter(book => {
-        const titleMatch = book.title.toLowerCase().includes(keyword)
-        const descMatch = book.description?.toLowerCase().includes(keyword) || false
-        return titleMatch || descMatch
-      })
-    }
+    // 标签筛选已在 loadBooks() 时传给后端，这里不需要再过滤
+    // 但为了支持实时标签切换显示效果，保留本地标签筛选作为视觉预览
+    // （实际数据会在 toggleTagFilter 中重新从后端加载）
 
-    // 应用标签筛选（selectedTagIds 实际存储的是标签名称）
-    if (selectedTagIds.value.length > 0) {
-      result = result.filter(book => {
-        if (!book.tags || book.tags.length === 0) return false
-        // 书籍必须包含所有选中的标签名称
-        return selectedTagIds.value.every(tagName => book.tags?.includes(tagName))
-      })
-    }
-
-    // 应用排序
-    result.sort((a, b) => {
-      let comparison = 0
-
-      switch (sortBy.value) {
-        case 'title':
-          comparison = a.title.localeCompare(b.title)
-          break
-        case 'createdAt':
-          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          break
-        case 'updatedAt':
-          comparison = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-          break
-      }
-
-      return sortOrder.value === 'asc' ? comparison : -comparison
-    })
-
-    return result
+    return books.value
   })
 
   /** 书籍总数 */
@@ -726,19 +699,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 批量删除书籍
+   * 【复刻原版 bookshelf.js batchDeleteBooks】使用单次请求删除多本书籍
    * @param bookIds - 书籍ID列表
+   * @returns 成功删除的数量（返回-1表示失败）
    */
-  async function batchDeleteBooks(bookIds: string[]): Promise<boolean> {
+  async function batchDeleteBooksApi(bookIds: string[]): Promise<number> {
     try {
-      // 逐个删除书籍
-      for (const bookId of bookIds) {
-        await bookshelfApi.deleteBook(bookId)
-        deleteBook(bookId)
+      const response = await bookshelfApi.batchDeleteBooks(bookIds)
+      if (response.success) {
+        // 更新本地状态
+        for (const bookId of bookIds) {
+          deleteBook(bookId)
+        }
+        return response.success_count ?? bookIds.length
       }
-      return true
+      return -1
     } catch (err) {
       console.error('批量删除书籍失败:', err)
-      return false
+      return -1
     }
   }
 
@@ -1043,7 +1021,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     createBook,
     updateBookApi,
     deleteBookApi,
-    batchDeleteBooks,
+    batchDeleteBooksApi,
     createTag,
     deleteTagApi,
     updateTagApi,

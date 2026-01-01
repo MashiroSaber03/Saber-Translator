@@ -178,6 +178,7 @@ function toggleSelectAll() {
 }
 
 // 批量删除
+// 【复刻原版 bookshelf.js batchDeleteBooks】
 function batchDelete() {
   if (selectedBooks.value.size === 0) {
     showToast('请先选择要删除的书籍', 'warning')
@@ -187,11 +188,19 @@ function batchDelete() {
   confirmMessage.value = `确定要删除选中的 ${selectedBooks.value.size} 本书籍吗？此操作不可恢复。`
   confirmCallback.value = async () => {
     try {
-      await bookshelfStore.batchDeleteBooks(Array.from(selectedBooks.value))
-      showToast('批量删除成功', 'success')
-      exitBatchMode()
+      const successCount = await bookshelfStore.batchDeleteBooksApi(Array.from(selectedBooks.value))
+      if (successCount >= 0) {
+        // 【复刻原版】显示成功删除的数量
+        showToast(`成功删除 ${successCount} 本书籍`, 'success')
+        exitBatchMode()
+        // 【复刻原版】删除后刷新书籍列表和标签列表
+        await bookshelfStore.loadBooks()
+        await bookshelfStore.loadTags()
+      } else {
+        showToast('删除失败', 'error')
+      }
     } catch (error) {
-      showToast('批量删除失败', 'error')
+      showToast('删除失败', 'error')
     }
   }
   showConfirmModal.value = true
@@ -208,12 +217,23 @@ function showFeatureNotice() {
 }
 
 // 处理书籍右键菜单
+// 【复刻原版 bookshelf.js handleBookContextMenu】
+// 右键直接进入批量模式并勾选当前书籍（优先原版行为）
+// 右键菜单作为扩展功能在已进入批量模式时显示
 function handleBookContextMenu(event: MouseEvent, bookId: string) {
   event.preventDefault()
-  contextMenuX.value = event.clientX
-  contextMenuY.value = event.clientY
-  contextMenuBookId.value = bookId
-  showContextMenu.value = true
+  
+  // 【复刻原版】如果未进入批量模式，右键直接进入批量模式并勾选当前书
+  if (!isBatchMode.value) {
+    enterBatchMode()
+    bookshelfStore.toggleBookSelection(bookId)
+  } else {
+    // 已在批量模式中，显示右键菜单
+    contextMenuX.value = event.clientX
+    contextMenuY.value = event.clientY
+    contextMenuBookId.value = bookId
+    showContextMenu.value = true
+  }
 }
 
 // 关闭右键菜单

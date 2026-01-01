@@ -340,3 +340,23 @@ export async function batchRemoveTags(
     tags: tagNames,
   })
 }
+
+/**
+ * 批量删除响应
+ */
+export interface BatchDeleteResponse extends ApiResponse {
+  /** 成功删除的数量 */
+  success_count?: number
+}
+
+/**
+ * 批量删除书籍
+ * 【复刻原版 bookshelf.js batchDeleteBooks】使用单次请求删除多本书籍
+ * @param bookIds 书籍 ID 数组
+ */
+export async function batchDeleteBooks(bookIds: string[]): Promise<BatchDeleteResponse> {
+  return apiClient.post<BatchDeleteResponse>('/api/bookshelf/books/batch/delete', {
+    book_ids: bookIds,
+  })
+}
+
