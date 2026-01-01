@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 书架页面视图组件
- * 显示用户的书籍收藏，支持搜索、标签筛选和批量操作
+ * 显示用户的书籍收藏，支持搜索和标签筛选
  */
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
@@ -34,8 +34,6 @@ const confirmCallback = ref<(() => void) | null>(null)
 // 计算属性
 const filteredBooks = computed(() => bookshelfStore.filteredBooks)
 const allTags = computed(() => bookshelfStore.tags)
-const selectedBooks = computed(() => bookshelfStore.selectedBooks)
-const isBatchMode = computed(() => bookshelfStore.batchMode)
 const isEmpty = computed(() => filteredBooks.value.length === 0 && !bookshelfStore.searchQuery)
 
 // 【复刻原版 bookshelf.js】pageshow 事件处理函数
@@ -149,51 +147,6 @@ function openTagManageModal() {
   showTagManageModal.value = true
 }
 
-// 退出批量操作模式
-function exitBatchMode() {
-  bookshelfStore.exitBatchMode()
-}
-
-// 全选/取消全选
-function toggleSelectAll() {
-  if (selectedBooks.value.size === filteredBooks.value.length) {
-    bookshelfStore.clearSelection()
-  } else {
-    filteredBooks.value.forEach(book => {
-      bookshelfStore.selectBook(book.id)
-    })
-  }
-}
-
-// 批量删除
-// 【复刻原版 bookshelf.js batchDeleteBooks】
-function batchDelete() {
-  if (selectedBooks.value.size === 0) {
-    showToast('请先选择要删除的书籍', 'warning')
-    return
-  }
-  
-  confirmMessage.value = `确定要删除选中的 ${selectedBooks.value.size} 本书籍吗？此操作不可恢复。`
-  confirmCallback.value = async () => {
-    try {
-      const successCount = await bookshelfStore.batchDeleteBooksApi(Array.from(selectedBooks.value))
-      if (successCount >= 0) {
-        // 【复刻原版】显示成功删除的数量
-        showToast(`成功删除 ${successCount} 本书籍`, 'success')
-        exitBatchMode()
-        // 【复刻原版】删除后刷新书籍列表和标签列表
-        await bookshelfStore.loadBooks()
-        await bookshelfStore.loadTags()
-      } else {
-        showToast('删除失败', 'error')
-      }
-    } catch (error) {
-      showToast('删除失败', 'error')
-    }
-  }
-  showConfirmModal.value = true
-}
-
 // 跳转到快速翻译
 function goToTranslate() {
   router.push('/translate')
@@ -202,91 +155,6 @@ function goToTranslate() {
 // 显示功能开发中提示
 function showFeatureNotice() {
   showToast('🌙 该功能正在开发中，敬请期待！', 'info')
-}
-
-// 批量添加标签模态框状态
-const showBatchTagModal = ref(false)
-const batchTagMode = ref<'add' | 'remove'>('add')
-const selectedTagsForBatch = ref<string[]>([])
-
-// 打开批量添加标签模态框
-function openBatchAddTagModal() {
-  if (selectedBooks.value.size === 0) {
-    showToast('请先选择要操作的书籍', 'warning')
-    return
-  }
-  batchTagMode.value = 'add'
-  selectedTagsForBatch.value = []
-  showBatchTagModal.value = true
-}
-
-// 打开批量移除标签模态框
-function openBatchRemoveTagModal() {
-  if (selectedBooks.value.size === 0) {
-    showToast('请先选择要操作的书籍', 'warning')
-    return
-  }
-  batchTagMode.value = 'remove'
-  selectedTagsForBatch.value = []
-  showBatchTagModal.value = true
-}
-
-// 切换批量标签选择
-function toggleBatchTag(tagName: string) {
-  const index = selectedTagsForBatch.value.indexOf(tagName)
-  if (index >= 0) {
-    selectedTagsForBatch.value.splice(index, 1)
-  } else {
-    selectedTagsForBatch.value.push(tagName)
-  }
-}
-
-// 执行批量标签操作
-async function executeBatchTagOperation() {
-  if (selectedTagsForBatch.value.length === 0) {
-    showToast('请选择至少一个标签', 'warning')
-    return
-  }
-
-  const bookIds = Array.from(selectedBooks.value)
-  
-  try {
-    const { batchAddTags, batchRemoveTags } = await import('@/api/bookshelf')
-    
-    if (batchTagMode.value === 'add') {
-      const response = await batchAddTags(bookIds, selectedTagsForBatch.value)
-      if (response.success) {
-        // 更新本地状态
-        for (const bookId of bookIds) {
-          for (const tagName of selectedTagsForBatch.value) {
-            bookshelfStore.addTagToBook(bookId, tagName)
-          }
-        }
-        showToast(`已为 ${bookIds.length} 本书添加标签`, 'success')
-      } else {
-        showToast('添加标签失败', 'error')
-      }
-    } else {
-      const response = await batchRemoveTags(bookIds, selectedTagsForBatch.value)
-      if (response.success) {
-        // 更新本地状态
-        for (const bookId of bookIds) {
-          for (const tagName of selectedTagsForBatch.value) {
-            bookshelfStore.removeTagFromBook(bookId, tagName)
-          }
-        }
-        showToast(`已从 ${bookIds.length} 本书移除标签`, 'success')
-      } else {
-        showToast('移除标签失败', 'error')
-      }
-    }
-    
-    showBatchTagModal.value = false
-    exitBatchMode()
-  } catch (error) {
-    showToast('操作失败', 'error')
-    console.error('批量标签操作失败:', error)
-  }
 }
 </script>
 
@@ -344,24 +212,6 @@ async function executeBatchTagOperation() {
         @filter-tag="bookshelfStore.toggleTagFilter"
       />
 
-      <!-- 批量操作栏 -->
-      <div v-if="isBatchMode" class="batch-toolbar">
-        <div class="batch-info">
-          <input
-            type="checkbox"
-            :checked="selectedBooks.size === filteredBooks.length && filteredBooks.length > 0"
-            @change="toggleSelectAll"
-          >
-          <span>{{ selectedBooks.size }}</span> 本已选中
-        </div>
-        <div class="batch-actions">
-          <button class="btn btn-sm btn-secondary" @click="openBatchAddTagModal">🏷️ 添加标签</button>
-          <button class="btn btn-sm btn-secondary" @click="openBatchRemoveTagModal">➖ 移除标签</button>
-          <button class="btn btn-sm btn-danger" @click="batchDelete">🗑️ 批量删除</button>
-          <button class="btn btn-sm btn-secondary" @click="exitBatchMode">取消</button>
-        </div>
-      </div>
-
       <!-- 书籍网格 -->
       <div class="books-container">
         <div v-if="filteredBooks.length > 0" class="books-grid">
@@ -369,11 +219,7 @@ async function executeBatchTagOperation() {
             v-for="book in filteredBooks"
             :key="book.id"
             :book="book"
-            :selected="selectedBooks.has(book.id)"
-            :batch-mode="isBatchMode"
-                        @click="openBookDetail(book.id)"
-            @edit="openEditBookModal(book.id)"
-            @select="bookshelfStore.toggleBookSelection(book.id)"
+            @click="openBookDetail(book.id)"
           />
         </div>
         
@@ -423,51 +269,6 @@ async function executeBatchTagOperation() {
       @cancel="showConfirmModal = false"
     />
 
-
-    <!-- 批量标签操作模态框 -->
-    <Teleport to="body">
-      <div v-if="showBatchTagModal" class="modal active">
-        <div class="modal-overlay" @click="showBatchTagModal = false"></div>
-        <div class="modal-content modal-small">
-          <div class="modal-header">
-            <h2>{{ batchTagMode === 'add' ? '批量添加标签' : '批量移除标签' }}</h2>
-            <button class="modal-close" @click="showBatchTagModal = false">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p class="batch-tag-hint">
-              {{ batchTagMode === 'add' ? '选择要添加到选中书籍的标签：' : '选择要从选中书籍移除的标签：' }}
-            </p>
-            <div v-if="allTags.length > 0" class="tag-select-list">
-              <div
-                v-for="tag in allTags"
-                :key="tag.id"
-                class="tag-select-item"
-                :class="{ selected: selectedTagsForBatch.includes(tag.name) }"
-                @click="toggleBatchTag(tag.name)"
-              >
-                <span class="tag-color" :style="{ background: tag.color || '#667eea' }"></span>
-                <span class="tag-name">{{ tag.name }}</span>
-                <span v-if="selectedTagsForBatch.includes(tag.name)" class="tag-check">✓</span>
-              </div>
-            </div>
-            <div v-else class="empty-state-small">
-              <p>暂无标签，请先在"管理标签"中创建</p>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="showBatchTagModal = false">取消</button>
-            <button 
-              type="button" 
-              class="btn btn-primary" 
-              :disabled="selectedTagsForBatch.length === 0"
-              @click="executeBatchTagOperation"
-            >
-              确定
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -701,39 +502,6 @@ async function executeBatchTagOperation() {
 .empty-state p {
     color: var(--text-secondary);
     margin: 0 0 24px 0;
-}
-
-/* 批量操作栏 */
-.batch-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 12px;
-    margin-bottom: 24px;
-    color: white;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.batch-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 0.95rem;
-}
-
-.batch-info input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-}
-
-.batch-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
 }
 
 /* 模态框通用样式 */

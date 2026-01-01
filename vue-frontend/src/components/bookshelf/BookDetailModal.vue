@@ -342,9 +342,9 @@ async function removeTag(tagName: string) {
   isTagLoading.value = true
   
   try {
-    // 使用批量移除标签 API（后端只支持批量操作）
-    const { batchRemoveTags } = await import('@/api/bookshelf')
-    const response = await batchRemoveTags([currentBook.value.id], [tagName])
+    // 使用单本书籍标签操作 API
+    const { removeTagsFromBook } = await import('@/api/bookshelf')
+    const response = await removeTagsFromBook(currentBook.value.id, [tagName])
     if (response.success) {
       bookshelfStore.removeTagFromBook(currentBook.value.id, tagName)
       showToast('标签已移除', 'success')
@@ -372,7 +372,7 @@ async function quickAddTagToBook(tagName: string) {
   isTagLoading.value = true
   
   try {
-    const { createTag, batchAddTags } = await import('@/api/bookshelf')
+    const { createTag, addTagsToBook } = await import('@/api/bookshelf')
     
     // 如果是新标签，先创建
     if (!allTags.value.some(t => t.name === tagName)) {
@@ -387,7 +387,7 @@ async function quickAddTagToBook(tagName: string) {
     }
     
     // 添加标签到书籍
-    const response = await batchAddTags([currentBook.value.id], [tagName])
+    const response = await addTagsToBook(currentBook.value.id, [tagName])
     if (response.success) {
       bookshelfStore.addTagToBook(currentBook.value.id, tagName)
       showToast('标签已添加', 'success')
