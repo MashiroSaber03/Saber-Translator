@@ -53,17 +53,8 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
-      // 注意：CSS文件从public目录加载，不需要代理
-      // '/css' 已移除，使用 public/css 目录
-      '/fonts': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-      },
-      // 图片资源代理
-      '/pic': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-      },
+      // 注意：静态资源（fonts, pic, css）从 public/ 目录加载，不需要代理
+      // 只有 API 请求需要代理到后端
     },
   },
 
