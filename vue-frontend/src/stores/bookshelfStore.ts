@@ -78,21 +78,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 
    * 过滤后的书籍列表
-   * 【复刻原版】搜索完全交给后端处理，前端不做二次过滤
-   * 排序也依赖后端返回顺序，前端不强制排序（与原版 bookshelf.js 一致）
+   * 【复刻原版】搜索和标签筛选完全交给后端处理，前端直接返回后端结果
    */
-  const filteredBooks = computed(() => {
-    // 【复刻原版】直接返回后端结果，不做本地搜索过滤
-    // 原版 bookshelf.js 的 loadBooks() 将 search 和 tags 参数传给后端
-    // 后端按 title/description/tags 过滤后返回结果
-    // 前端 renderBooks() 只负责渲染，不做额外过滤
-
-    // 标签筛选已在 loadBooks() 时传给后端，这里不需要再过滤
-    // 但为了支持实时标签切换显示效果，保留本地标签筛选作为视觉预览
-    // （实际数据会在 toggleTagFilter 中重新从后端加载）
-
-    return books.value
-  })
+  const filteredBooks = computed(() => books.value)
 
   /** 书籍总数 */
   const bookCount = computed(() => books.value.length)

@@ -13,7 +13,6 @@ import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
 import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
-import BookContextMenu from '@/components/bookshelf/BookContextMenu.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import { showToast } from '@/utils/toast'
 
@@ -31,12 +30,6 @@ const showConfirmModal = ref(false)
 const editingBookId = ref<string | null>(null)
 const confirmMessage = ref('')
 const confirmCallback = ref<(() => void) | null>(null)
-
-// 右键菜单状态
-const showContextMenu = ref(false)
-const contextMenuX = ref(0)
-const contextMenuY = ref(0)
-const contextMenuBookId = ref<string | null>(null)
 
 // 计算属性
 const filteredBooks = computed(() => bookshelfStore.filteredBooks)
@@ -156,11 +149,6 @@ function openTagManageModal() {
   showTagManageModal.value = true
 }
 
-// 进入批量操作模式
-function enterBatchMode() {
-  bookshelfStore.enterBatchMode()
-}
-
 // 退出批量操作模式
 function exitBatchMode() {
   bookshelfStore.exitBatchMode()
@@ -214,46 +202,6 @@ function goToTranslate() {
 // 显示功能开发中提示
 function showFeatureNotice() {
   showToast('🌙 该功能正在开发中，敬请期待！', 'info')
-}
-
-// 处理书籍右键菜单
-// 【复刻原版 bookshelf.js handleBookContextMenu】
-// 右键直接进入批量模式并勾选当前书籍（优先原版行为）
-// 右键菜单作为扩展功能在已进入批量模式时显示
-function handleBookContextMenu(event: MouseEvent, bookId: string) {
-  event.preventDefault()
-  
-  // 【复刻原版】如果未进入批量模式，右键直接进入批量模式并勾选当前书
-  if (!isBatchMode.value) {
-    enterBatchMode()
-    bookshelfStore.toggleBookSelection(bookId)
-  } else {
-    // 已在批量模式中，显示右键菜单
-    contextMenuX.value = event.clientX
-    contextMenuY.value = event.clientY
-    contextMenuBookId.value = bookId
-    showContextMenu.value = true
-  }
-}
-
-// 关闭右键菜单
-function closeContextMenu() {
-  showContextMenu.value = false
-  contextMenuBookId.value = null
-}
-
-// 从右键菜单删除书籍
-function deleteBookFromMenu(bookId: string) {
-  confirmMessage.value = '确定要删除这本书籍吗？此操作不可恢复。'
-  confirmCallback.value = async () => {
-    try {
-      await bookshelfStore.deleteBookApi(bookId)
-      showToast('删除成功', 'success')
-    } catch (error) {
-      showToast('删除失败', 'error')
-    }
-  }
-  showConfirmModal.value = true
 }
 
 // 批量添加标签模态框状态
@@ -423,10 +371,9 @@ async function executeBatchTagOperation() {
             :book="book"
             :selected="selectedBooks.has(book.id)"
             :batch-mode="isBatchMode"
-            @click="openBookDetail(book.id)"
+                        @click="openBookDetail(book.id)"
             @edit="openEditBookModal(book.id)"
             @select="bookshelfStore.toggleBookSelection(book.id)"
-            @contextmenu="handleBookContextMenu($event, book.id)"
           />
         </div>
         
@@ -476,19 +423,6 @@ async function executeBatchTagOperation() {
       @cancel="showConfirmModal = false"
     />
 
-    <!-- 右键上下文菜单 -->
-    <BookContextMenu
-      v-if="showContextMenu && contextMenuBookId"
-      :x="contextMenuX"
-      :y="contextMenuY"
-      :book-id="contextMenuBookId"
-      @close="closeContextMenu"
-      @open-detail="openBookDetail"
-      @edit="openEditBookModal"
-      @delete="deleteBookFromMenu"
-      @manage-tags="openTagManageModal"
-      @enter-batch-mode="enterBatchMode"
-    />
 
     <!-- 批量标签操作模态框 -->
     <Teleport to="body">

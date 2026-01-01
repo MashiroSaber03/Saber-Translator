@@ -23,7 +23,6 @@ const emit = defineEmits<{
   click: []
   edit: []
   select: []
-  contextMenu: [event: MouseEvent]
 }>()
 
 const bookshelfStore = useBookshelfStore()
@@ -36,12 +35,6 @@ function handleClick() {
   } else {
     emit('click')
   }
-}
-
-// 处理右键菜单
-function handleContextMenu(event: MouseEvent) {
-  event.preventDefault()
-  emit('contextMenu', event)
 }
 
 // 获取标签颜色
@@ -75,7 +68,6 @@ function handleImageError(event: Event) {
     class="book-card"
     :class="{ selected: selected, 'batch-mode': batchMode }"
     @click="handleClick"
-    @contextmenu="handleContextMenu"
   >
     <!-- 选择框（批量模式） -->
     <div v-if="batchMode" class="book-checkbox" @click.stop="emit('select')">

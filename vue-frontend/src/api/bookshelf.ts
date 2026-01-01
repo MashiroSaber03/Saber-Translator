@@ -359,4 +359,3 @@ export async function batchDeleteBooks(bookIds: string[]): Promise<BatchDeleteRe
     book_ids: bookIds,
   })
 }
-
