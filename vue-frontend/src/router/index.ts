@@ -61,7 +61,7 @@ const routes: RouteRecordRaw[] = [
 
 // 创建路由实例
 const router = createRouter({
-  history: createWebHistory('/static/vue/'),
+  history: createWebHistory('/'),
   routes
 })
 

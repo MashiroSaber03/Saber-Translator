@@ -122,14 +122,18 @@ def serve_pic(filename):
     return send_from_directory(pic_dir, filename)
 
 
-# Vue SPA 静态资源路由
-@main_bp.route('/static/vue/<path:filename>')
-def serve_vue_static(filename):
-    """
-    服务 Vue 构建的静态资源
-    包括 JS、CSS、图片等资源文件
-    """
-    vue_dist_path = resource_path('src/app/static/vue')
+# Vue SPA 静态资源路由（base='/'）
+@main_bp.route('/js/<path:filename>')
+def serve_vue_js(filename):
+    """服务 Vue 构建的 JS 文件"""
+    vue_dist_path = resource_path('src/app/static/vue/js')
+    return send_from_directory(vue_dist_path, filename)
+
+
+@main_bp.route('/assets/<path:filename>')
+def serve_vue_assets(filename):
+    """服务 Vue 构建的资源文件（CSS、图片等）"""
+    vue_dist_path = resource_path('src/app/static/vue/assets')
     return send_from_directory(vue_dist_path, filename)
 
 

@@ -65,6 +65,9 @@ const translateInit = useTranslateInit()
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
 
+/** 设置模态框初始Tab（用于插件管理直接跳转） */
+const settingsInitialTab = ref<string | undefined>(undefined)
+
 /** 是否显示赞助模态框 */
 const showSponsorModal = ref(false)
 
@@ -698,9 +701,19 @@ async function saveCurrentSession() {
 
 /**
  * 打开设置模态框
+ * @param initialTab - 可选的初始Tab，如 'plugins'
  */
-function openSettings() {
+function openSettings(initialTab?: string) {
+  settingsInitialTab.value = initialTab
   showSettingsModal.value = true
+}
+
+/**
+ * 打开插件管理
+ * 【修复问题2】复刻原版：点击插件管理按钮直接进入插件管理界面
+ */
+function openPlugins() {
+  openSettings('plugins')
 }
 
 /**
@@ -1090,7 +1103,7 @@ function selectImage(index: number) {
           </router-link>
         </div>
         <div class="header-links">
-          <a href="/" class="back-to-shelf" title="返回书架">📚</a>
+          <router-link to="/" class="back-to-shelf" title="返回书架">📚</router-link>
           <button 
             v-if="isBookshelfMode"
             class="save-header-btn" 
@@ -1103,7 +1116,7 @@ function selectImage(index: number) {
             id="openSettingsBtn"
             class="settings-header-btn" 
             title="打开设置"
-            @click="openSettings"
+            @click="openSettings()"
           >
             <span class="icon">⚙️</span>
             <span>设置</span>
@@ -1139,7 +1152,7 @@ function selectImage(index: number) {
         @delete-current="deleteCurrentImage"
         @clear-all="clearAllImages"
         @clean-temp="handleCleanTempFiles"
-        @open-plugins="openSettings"
+        @open-plugins="openPlugins"
         @open-settings="openSettings"
         @previous="goToPrevious"
         @next="goToNext"
@@ -1214,6 +1227,7 @@ function selectImage(index: number) {
     <!-- 设置模态框 -->
     <SettingsModal 
       v-model="showSettingsModal"
+      :initial-tab="settingsInitialTab"
       @save="handleSettingsSave"
     />
     

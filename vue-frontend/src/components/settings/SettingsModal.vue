@@ -92,6 +92,8 @@ import MoreSettings from './MoreSettings.vue'
 // Props
 const props = defineProps<{
   modelValue: boolean
+  /** 初始Tab（可选），用于直接打开到指定Tab，如'plugins' */
+  initialTab?: string
 }>()
 
 // Emits
@@ -127,8 +129,14 @@ watch(
     if (newVal) {
       // 打开时禁止背景滚动
       document.body.style.overflow = 'hidden'
+      // 【修复问题2】如果指定了初始Tab，则跳转到该Tab
+      if (props.initialTab && tabs.some(t => t.id === props.initialTab)) {
+        activeTab.value = props.initialTab
+      }
     } else {
       document.body.style.overflow = ''
+      // 关闭时重置为默认Tab，以便下次打开时可以正常响应initialTab
+      activeTab.value = 'ocr'
     }
   }
 )

@@ -5,14 +5,14 @@ import { resolve } from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  
+
   // 路径别名配置
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
     },
   },
-  
+
   // 构建配置 - 输出到 Flask 静态目录
   build: {
     outDir: '../src/app/static/vue',
@@ -37,10 +37,10 @@ export default defineConfig({
     // 设置 chunk 大小警告阈值
     chunkSizeWarningLimit: 1000,
   },
-  
-  // 基础路径 - 用于 Flask 静态文件服务
-  base: '/static/vue/',
-  
+
+  // 基础路径 - 改为根路径，Vue前端将作为主前端
+  base: '/',
+
   // 开发服务器配置
   server: {
     port: 5173,
@@ -66,7 +66,7 @@ export default defineConfig({
       },
     },
   },
-  
+
   // 预览服务器配置（用于预览构建结果）
   preview: {
     port: 4173,
