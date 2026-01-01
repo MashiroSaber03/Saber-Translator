@@ -4,7 +4,7 @@
  * 使用与原版bookshelf.html完全相同的HTML结构和CSS类名
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { showToast } from '@/utils/toast'
@@ -261,10 +261,53 @@ function handleChapterDragEnd() {
 
 // 添加标签弹窗状态
 const showAddTagModal = ref(false)
+const quickTagFilter = ref('')
+const quickTagInputRef = ref<HTMLInputElement | null>(null)
 
-// 打开添加标签弹窗
+// 【复刻原版】过滤后的可用标签列表（排除已添加的标签）
+const filteredAvailableTags = computed(() => {
+  const currentTags = currentBook.value?.tags || []
+  const filter = quickTagFilter.value.trim().toLowerCase()
+  
+  return allTags.value.filter(t => 
+    !currentTags.includes(t.name) &&
+    (filter === '' || t.name.toLowerCase().includes(filter))
+  )
+})
+
+// 【复刻原版】是否显示创建新标签选项
+const showCreateNewTagOption = computed(() => {
+  const filter = quickTagFilter.value.trim()
+  if (!filter) return false
+  
+  // 如果过滤词不完全匹配任何已有标签，则显示创建选项
+  return !allTags.value.some(t => t.name.toLowerCase() === filter.toLowerCase())
+})
+
+// 【复刻原版】打开添加标签弹窗
 function openAddTagModal() {
+  quickTagFilter.value = ''
   showAddTagModal.value = true
+  
+  // 聚焦输入框
+  nextTick(() => {
+    quickTagInputRef.value?.focus()
+  })
+}
+
+// 【复刻原版】关闭添加标签弹窗
+function closeAddTagModal() {
+  showAddTagModal.value = false
+  quickTagFilter.value = ''
+}
+
+// 【复刻原版】处理输入框回车事件
+async function handleQuickTagInputEnter() {
+  const tagName = quickTagFilter.value.trim()
+  if (tagName) {
+    await quickAddTagToBook(tagName)
+    quickTagFilter.value = ''
+  }
 }
 
 // 标签操作加载状态
@@ -294,39 +337,46 @@ async function removeTag(tagName: string) {
   }
 }
 
-// 添加或移除标签（用于标签选择弹窗）
-async function toggleTagOnBook(tagName: string) {
-  if (!currentBook.value || isTagLoading.value) return
+// 【复刻原版】快速添加标签到书籍（支持创建新标签）
+async function quickAddTagToBook(tagName: string) {
+  if (!currentBook.value || !tagName || isTagLoading.value) return
   
-  const isAlreadyAdded = currentBook.value.tags?.includes(tagName)
+  // 检查是否已存在
+  if (currentBook.value.tags?.includes(tagName)) {
+    showToast('该标签已存在', 'info')
+    return
+  }
+  
   isTagLoading.value = true
   
   try {
-    // 使用批量 API（后端只支持批量操作，传入标签名称而非 ID）
-    const { batchAddTags, batchRemoveTags } = await import('@/api/bookshelf')
+    const { createTag, batchAddTags } = await import('@/api/bookshelf')
     
-    if (isAlreadyAdded) {
-      // 移除标签
-      const response = await batchRemoveTags([currentBook.value.id], [tagName])
-      if (response.success) {
-        bookshelfStore.removeTagFromBook(currentBook.value.id, tagName)
-        showToast('标签已移除', 'success')
+    // 如果是新标签，先创建
+    if (!allTags.value.some(t => t.name === tagName)) {
+      const createResponse = await createTag(tagName)
+      if (createResponse.success) {
+        // 刷新标签列表
+        await bookshelfStore.loadTags()
       } else {
-        showToast('移除标签失败', 'error')
+        showToast('创建标签失败', 'error')
+        return
       }
+    }
+    
+    // 添加标签到书籍
+    const response = await batchAddTags([currentBook.value.id], [tagName])
+    if (response.success) {
+      bookshelfStore.addTagToBook(currentBook.value.id, tagName)
+      showToast('标签已添加', 'success')
+      // 刷新书籍列表以更新标签计数
+      await bookshelfStore.loadBooks()
     } else {
-      // 添加标签
-      const response = await batchAddTags([currentBook.value.id], [tagName])
-      if (response.success) {
-        bookshelfStore.addTagToBook(currentBook.value.id, tagName)
-        showToast('标签已添加', 'success')
-      } else {
-        showToast('添加标签失败', 'error')
-      }
+      showToast('添加标签失败', 'error')
     }
   } catch (error) {
     showToast('操作失败', 'error')
-    console.error('标签操作失败:', error)
+    console.error('快速添加标签失败:', error)
   } finally {
     isTagLoading.value = false
   }
@@ -471,35 +521,63 @@ async function toggleTagOnBook(tagName: string) {
     </div>
   </Teleport>
 
-  <!-- 添加标签模态框 -->
+  <!-- 【复刻原版】快速添加标签模态框 -->
   <Teleport to="body">
     <div v-if="showAddTagModal" class="modal active">
-      <div class="modal-overlay" @click="showAddTagModal = false"></div>
+      <div class="modal-overlay" @click="closeAddTagModal"></div>
       <div class="modal-content modal-small">
         <div class="modal-header">
-          <h2>添加标签</h2>
-          <button class="modal-close" @click="showAddTagModal = false">&times;</button>
+          <h2>快速添加标签</h2>
+          <button class="modal-close" @click="closeAddTagModal">&times;</button>
         </div>
         <div class="modal-body">
-          <div v-if="allTags.length > 0" class="tag-select-list">
-            <div
-              v-for="tag in allTags"
-              :key="tag.id"
-              class="tag-select-item"
-              :class="{ selected: currentBook?.tags?.includes(tag.name) }"
-              @click="toggleTagOnBook(tag.name)"
+          <!-- 【复刻原版】搜索/创建输入框 -->
+          <div class="quick-tag-input-wrapper">
+            <input
+              ref="quickTagInputRef"
+              v-model="quickTagFilter"
+              type="text"
+              class="quick-tag-input"
+              placeholder="输入标签名称进行搜索或创建..."
+              @keypress.enter="handleQuickTagInputEnter"
             >
-              <span class="tag-color" :style="{ background: tag.color || '#667eea' }"></span>
-              <span class="tag-name">{{ tag.name }}</span>
-              <span v-if="currentBook?.tags?.includes(tag.name)" class="tag-check">✓</span>
-            </div>
           </div>
-          <div v-else class="empty-state-small">
-            <p>暂无标签，请先在"管理标签"中创建</p>
+          
+          <!-- 【复刻原版】过滤后的可用标签列表 -->
+          <div class="quick-tag-list">
+            <!-- 可用标签 -->
+            <div
+              v-for="tag in filteredAvailableTags"
+              :key="tag.id || tag.name"
+              class="quick-tag-item"
+              @click="quickAddTagToBook(tag.name)"
+            >
+              <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
+              <span class="quick-tag-name">{{ tag.name }}</span>
+              <span class="tag-add-icon">+</span>
+            </div>
+            
+            <!-- 创建新标签选项 -->
+            <div
+              v-if="showCreateNewTagOption"
+              class="quick-tag-item new-tag"
+              @click="quickAddTagToBook(quickTagFilter.trim())"
+            >
+              <span class="tag-icon">+</span>
+              <span>创建并添加 "{{ quickTagFilter.trim() }}"</span>
+            </div>
+            
+            <!-- 无可用标签提示 -->
+            <p 
+              v-if="filteredAvailableTags.length === 0 && !showCreateNewTagOption" 
+              class="no-tags-hint"
+            >
+              {{ quickTagFilter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
+            </p>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showAddTagModal = false">关闭</button>
+          <button type="button" class="btn btn-secondary" @click="closeAddTagModal">关闭</button>
         </div>
       </div>
     </div>
@@ -800,16 +878,52 @@ async function toggleTagOnBook(tagName: string) {
     opacity: 0.6;
 }
 
-/* 标签选择列表 */
-.tag-select-list {
+/* 空状态 */
+.empty-state-small {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+/* ==================== 【复刻原版】快速添加标签样式 ==================== */
+
+/* 快速标签输入框包装 */
+.quick-tag-input-wrapper {
+    margin-bottom: 16px;
+}
+
+.quick-tag-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    transition: all 0.2s;
+}
+
+.quick-tag-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.quick-tag-input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* 快速标签列表 */
+.quick-tag-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 300px;
+    max-height: 260px;
     overflow-y: auto;
 }
 
-.tag-select-item {
+/* 快速标签项 */
+.quick-tag-item {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -820,37 +934,64 @@ async function toggleTagOnBook(tagName: string) {
     transition: all 0.2s;
 }
 
-.tag-select-item:hover {
+.quick-tag-item:hover {
     background: var(--border-color);
+    transform: translateX(4px);
 }
 
-.tag-select-item.selected {
-    background: rgba(102, 126, 234, 0.15);
-    border: 1px solid rgba(102, 126, 234, 0.3);
-}
-
-.tag-select-item .tag-color {
-    width: 16px;
-    height: 16px;
+.quick-tag-item .tag-color-dot {
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     flex-shrink: 0;
 }
 
-.tag-select-item .tag-name {
+.quick-tag-item .quick-tag-name {
     flex: 1;
     font-weight: 500;
     color: var(--text-primary);
 }
 
-.tag-select-item .tag-check {
+.quick-tag-item .tag-add-icon {
+    font-size: 1.2rem;
+    font-weight: 600;
     color: #667eea;
-    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.2s;
 }
 
-/* 空状态 */
-.empty-state-small {
-    padding: 40px 20px;
+.quick-tag-item:hover .tag-add-icon {
+    opacity: 1;
+}
+
+/* 创建新标签选项 */
+.quick-tag-item.new-tag {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border: 1px dashed rgba(102, 126, 234, 0.4);
+}
+
+.quick-tag-item.new-tag:hover {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+    border-color: rgba(102, 126, 234, 0.6);
+}
+
+.quick-tag-item .tag-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #667eea;
+}
+
+/* 无标签提示 */
+.no-tags-hint {
     text-align: center;
     color: var(--text-secondary);
+    font-style: italic;
+    padding: 24px 16px;
+    margin: 0;
 }
 </style>
