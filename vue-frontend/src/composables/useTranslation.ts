@@ -1772,7 +1772,16 @@ export function useTranslation() {
         throw new Error(response.error || 'API 调用失败')
       }
 
-      // 如果返回的是 content，需要解析 JSON
+      // 优先使用后端已解析的 results（与 callAiForTranslation 保持一致）
+      if (response.results && response.results.length > 0) {
+        const firstItem = response.results[0]
+        // 验证结构正确性（ProofreadingJsonData 与 HqJsonData 结构相同）
+        if (firstItem && 'imageIndex' in firstItem && 'bubbles' in firstItem) {
+          return response.results as unknown as ProofreadingJsonData[]
+        }
+      }
+
+      // 如果 results 不存在或格式不对，使用 content
       const content = (response as any).content
       if (content) {
         if (round.forceJsonOutput) {
@@ -1783,6 +1792,7 @@ export function useTranslation() {
             throw new Error('解析AI返回的JSON结果失败')
           }
         } else {
+          // 从 markdown 代码块中提取 JSON
           const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
           if (jsonMatch && jsonMatch[1]) {
             try {
