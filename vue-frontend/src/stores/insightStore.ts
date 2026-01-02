@@ -327,6 +327,9 @@ export const useInsightStore = defineStore('insight', () => {
   /** 错误信息 */
   const error = ref<string | null>(null)
 
+  /** 数据刷新触发器（时间戳，用于通知面板组件重新加载数据） */
+  const dataRefreshKey = ref(0)
+
   /** 分析配置 */
   const config = ref<InsightConfig>({
     vlm: {
@@ -786,6 +789,20 @@ export const useInsightStore = defineStore('insight', () => {
       console.error('从API删除笔记失败:', e)
       return false
     }
+  }
+
+  // ============================================================
+  // 数据刷新触发器
+  // ============================================================
+
+  /**
+   * 触发数据刷新
+   * 更新 dataRefreshKey 以通知面板组件重新加载数据
+   * 用于分析完成后自动刷新概览和时间线
+   */
+  function triggerDataRefresh(): void {
+    dataRefreshKey.value = Date.now()
+    console.log('触发数据刷新，key:', dataRefreshKey.value)
   }
 
   // ============================================================
@@ -1547,6 +1564,10 @@ export const useInsightStore = defineStore('insight', () => {
 
     // 时间线管理
     setTimeline,
+
+    // 数据刷新触发器
+    dataRefreshKey,
+    triggerDataRefresh,
 
     // 问答管理
     addQAMessage,

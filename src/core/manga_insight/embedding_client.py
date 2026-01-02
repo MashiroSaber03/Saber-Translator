@@ -257,13 +257,14 @@ class ChatClient:
         return data["choices"][0]["message"]["content"]
     
     async def _generate_stream(self, url: str, headers: dict, request_body: dict) -> str:
-        """流式请求（避免超时）"""
+        """流式请求（避免超时，同时实时输出到终端）"""
         import json as json_module
         
         request_body["stream"] = True
         full_text = ""
+        chunk_count = 0
         model_name = request_body.get('model', 'unknown')
-        logger.info(f"[ChatClient 流式请求] 模型: {model_name}")
+        print(f"\n[流式输出] {model_name}: ", end="", flush=True)
         
         async with self.client.stream("POST", url, headers=headers, json=request_body) as response:
             if response.status_code != 200:
@@ -280,9 +281,13 @@ class ChatClient:
                         data = json_module.loads(data_str)
                         delta = data.get("choices", [{}])[0].get("delta", {})
                         if "content" in delta and delta["content"]:
-                            full_text += delta["content"]
+                            chunk_count += 1
+                            chunk_text = delta["content"]
+                            full_text += chunk_text
+                            # 实时打印到终端
+                            print(chunk_text, end="", flush=True)
                     except json_module.JSONDecodeError:
                         continue
         
-        logger.info(f"[ChatClient 流式完成] {len(full_text)} 字符")
+        print(f"\n[完成] 共 {chunk_count} 块, {len(full_text)} 字符\n")
         return full_text

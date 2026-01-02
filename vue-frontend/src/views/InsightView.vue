@@ -165,10 +165,8 @@ async function loadBook(bookId: string): Promise<void> {
     // 加载笔记（通过API）
     await insightStore.loadNotesFromAPI()
 
-    // 加载概览数据（如果已分析）
-    if (insightStore.analyzedPageCount > 0) {
-      await loadOverviewData()
-    }
+    // 注：概览和时间线数据由 OverviewPanel 和 TimelinePanel 组件在 onMounted 时自行加载
+    // triggerDataRefresh 仅在分析完成后由轮询逻辑调用
 
     // 更新URL参数
     router.replace({ query: { book: bookId } })
@@ -247,17 +245,21 @@ function startStatusPolling(): void {
       // 停止轮询
       stopStatusPolling()
       
-      // 分析完成后，刷新概览数据（与原版 JS 一致）
+      // 分析完成后，延迟1秒再刷新数据
+      // 延迟是为了确保后端的汇总任务（概览、时间线生成）完成
       if (status === 'completed') {
-        console.log('分析完成，自动刷新概览数据')
-        await loadOverviewData()
-        // 触发目录树刷新（通过更新 store 状态让 PagesTree 组件响应）
-        // 重新加载分析状态会更新 analyzedPagesCount，PagesTree 会自动响应
-        await loadAnalysisStatus()
+        console.log('分析完成，等待1秒后刷新数据...')
+        setTimeout(async () => {
+          console.log('开始刷新概览和时间线数据')
+          await loadAnalysisStatus()
+          // 触发面板组件刷新（通过 Store 的 dataRefreshKey）
+          insightStore.triggerDataRefresh()
+        }, 1000)
       }
     }
   }, 3000)
 }
+
 
 /**
  * 停止状态轮询
@@ -266,50 +268,6 @@ function stopStatusPolling(): void {
   if (statusPollingTimer) {
     clearInterval(statusPollingTimer)
     statusPollingTimer = null
-  }
-}
-
-/**
- * 加载概览数据（概览、时间线等）
- * 仿照原版JS的loadOverviewData实现
- */
-async function loadOverviewData(): Promise<void> {
-  if (!insightStore.currentBookId) return
-
-  try {
-    // 加载已生成的模板列表，获取第一个已生成的模板作为默认显示
-    const templatesResponse = await insightApi.getGeneratedTemplates(insightStore.currentBookId) as any
-    let templateToLoad = 'no_spoiler' // 【修复】默认使用无剧透简介，与原版一致
-    
-    if (templatesResponse.success && templatesResponse.generated && templatesResponse.generated.length > 0) {
-      // 使用第一个已生成的模板
-      templateToLoad = templatesResponse.generated[0]
-      insightStore.setGeneratedTemplates(templatesResponse.generated as any)
-    }
-
-    // 加载概览内容（使用已生成的模板）
-    try {
-      const overviewResponse = await insightApi.getOverview(insightStore.currentBookId, templateToLoad) as any
-      if (overviewResponse.success && overviewResponse.content) {
-        insightStore.setOverview({
-          type: templateToLoad,
-          content: overviewResponse.content
-        } as any)
-      }
-    } catch (overviewError) {
-      // 概览加载失败不影响其他数据加载
-      console.warn('加载概览失败:', overviewError)
-    }
-
-    // 加载时间线
-    const timelineResponse = await insightApi.getTimeline(insightStore.currentBookId) as any
-    if (timelineResponse.success) {
-      // 时间线数据结构较复杂，直接传递给store处理
-      insightStore.setTimeline(timelineResponse)
-    }
-
-  } catch (error) {
-    console.error('加载概览数据失败:', error)
   }
 }
 

@@ -314,6 +314,19 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
     }
   }
 })
+
+// 监听数据刷新触发器（分析完成后自动刷新）
+watch(() => insightStore.dataRefreshKey, async (newKey) => {
+  if (newKey > 0 && insightStore.currentBookId) {
+    console.log('OverviewPanel: 收到刷新信号，重新加载数据')
+    await loadGeneratedTemplates()
+    await loadRecentAnalyzedPages()
+    // 自动加载已生成的模板内容
+    if (generatedTemplates.value.includes(currentTemplate.value)) {
+      await loadTemplateOverview(false)
+    }
+  }
+})
 </script>
 
 <template>

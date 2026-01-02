@@ -281,6 +281,14 @@ watch(() => insightStore.currentBookId, (newBookId) => {
     loadTimeline()
   }
 })
+
+// 监听数据刷新触发器（分析完成后自动刷新）
+watch(() => insightStore.dataRefreshKey, (newKey) => {
+  if (newKey > 0 && insightStore.currentBookId) {
+    console.log('TimelinePanel: 收到刷新信号，重新加载数据')
+    loadTimeline()
+  }
+})
 </script>
 
 <template>
