@@ -34,7 +34,7 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import { getEffectiveDirection } from '@/types/bubble'
-import WebImportButton from '@/components/translate/WebImportButton.vue'
+
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 
 // 路由
@@ -1173,7 +1173,7 @@ function selectImage(index: number) {
               ref="imageUploadRef"
               @upload-complete="handleUploadComplete"
             />
-            <WebImportButton />
+
           </div>
           
           <!-- 缩略图列表已移至右侧侧边栏 -->

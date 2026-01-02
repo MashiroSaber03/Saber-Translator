@@ -16,6 +16,7 @@ import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
+import { useWebImportStore } from '@/stores/webImportStore'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import {
   parsePdfStart,
@@ -41,6 +42,7 @@ const emit = defineEmits<{
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
+const webImportStore = useWebImportStore()
 
 // ============================================================
 // 状态定义
@@ -83,6 +85,13 @@ const pdfProcessingMethod = computed(() => settingsStore.settings.pdfProcessingM
  */
 function triggerFileSelect() {
   fileInputRef.value?.click()
+}
+
+/**
+ * 触发网页导入模态框
+ */
+function triggerWebImport() {
+  webImportStore.openModal()
 }
 
 /**
@@ -516,6 +525,10 @@ defineExpose({
           <span class="select-link" @click="triggerFileSelect">
             点击选择文件
           </span>
+          <span class="separator"> | </span>
+          <span class="select-link web-import-link" @click="triggerWebImport">
+            🌐 从网页导入
+          </span>
         </p>
       </div>
       
@@ -622,6 +635,17 @@ defineExpose({
 
 .select-link:hover {
   color: #2572a4 !important;
+}
+
+.separator {
+  margin: 0 4px;
+  color: #b0bec5;
+}
+
+.web-import-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 隐藏的文件输入框 */
