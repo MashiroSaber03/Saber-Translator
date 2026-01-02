@@ -34,6 +34,8 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import { getEffectiveDirection } from '@/types/bubble'
+import WebImportButton from '@/components/translate/WebImportButton.vue'
+import WebImportModal from '@/components/translate/WebImportModal.vue'
 
 // 路由
 const route = useRoute()
@@ -1166,10 +1168,13 @@ function selectImage(index: number) {
         <!-- 上传区域 -->
         <section id="upload-section" class="card upload-card">
           <!-- 图片上传组件 -->
-          <ImageUpload
-            ref="imageUploadRef"
-            @upload-complete="handleUploadComplete"
-          />
+          <div class="upload-actions">
+            <ImageUpload
+              ref="imageUploadRef"
+              @upload-complete="handleUploadComplete"
+            />
+            <WebImportButton />
+          </div>
           
           <!-- 缩略图列表已移至右侧侧边栏 -->
           
@@ -1236,6 +1241,9 @@ function selectImage(index: number) {
       v-if="showSponsorModal" 
       @close="showSponsorModal = false" 
     />
+    
+    <!-- 网页导入模态框 -->
+    <WebImportModal />
   </div>
 </template>
 
@@ -1289,6 +1297,14 @@ function selectImage(index: number) {
 
 .upload-card:hover {
   box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+}
+
+/* 上传操作按钮组 */
+.upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* 拖拽区域高亮 */

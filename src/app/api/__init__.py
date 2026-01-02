@@ -14,5 +14,8 @@ from .translation import translate_bp  # ✨ 模块化 translation API
 # 导入漫画分析蓝图
 from .manga_insight import manga_insight_bp  # ✨ 漫画智能分析 API
 
+# 导入网页导入蓝图
+from .web_import_api import web_import_bp  # ✨ 网页漫画导入 API
+
 # 这个列表将在应用初始化时被导入和注册
-all_blueprints = [translate_bp, config_bp, system_bp, session_bp, bookshelf_bp, manga_insight_bp]
+all_blueprints = [translate_bp, config_bp, system_bp, session_bp, bookshelf_bp, manga_insight_bp, web_import_bp]
