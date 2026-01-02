@@ -527,7 +527,7 @@ def generate_template_overview(book_id: str):
         from src.core.manga_insight.config_models import OVERVIEW_TEMPLATES
         
         data = request.json or {}
-        template_key = data.get("template", "story_summary")
+        template_key = data.get("template", "no_spoiler")  # 【修复】默认使用无剧透简介，与前端保持一致
         force = data.get("force", False)
         
         # 验证模板

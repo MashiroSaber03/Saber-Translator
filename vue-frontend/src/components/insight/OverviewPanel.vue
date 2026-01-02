@@ -91,50 +91,40 @@ const renderedContent = computed(() => {
 // ============================================================
 
 /**
- * 模板变更处理
+ * 模板变更处理 - 只读取缓存，不触发生成
+ * 与原版 JS 的 onOverviewTemplateChange 一致
  */
 async function onTemplateChange(): Promise<void> {
-  await loadTemplateOverview(false)
+  await loadCachedOverview()
 }
 
 /**
- * 加载模板概览
- * @param regenerate - 是否重新生成
+ * 加载缓存的概览内容（不触发生成）
+ * 与原版 JS 的 loadTemplateOverview 一致：GET /overview/{templateKey}
  */
-async function loadTemplateOverview(regenerate: boolean): Promise<void> {
+async function loadCachedOverview(): Promise<void> {
   if (!insightStore.currentBookId) return
 
   isLoading.value = true
   overviewContent.value = ''
 
   try {
-    let response: any
+    // 使用 GET API 只读取缓存
+    const response = await insightApi.getOverview(
+      insightStore.currentBookId, 
+      currentTemplate.value
+    ) as any
 
-    if (regenerate) {
-      response = await insightApi.regenerateOverview(
-        insightStore.currentBookId, 
-        currentTemplate.value,
-        true
-      )
-    } else {
-      response = await insightApi.getOverview(
-        insightStore.currentBookId, 
-        currentTemplate.value
-      )
-    }
-
-    if (response.success) {
-      // API返回格式: { success, content, cached, template_key, template_name }
-      if (response.content) {
-        overviewContent.value = response.content
-        // 更新已生成模板列表
-        if (!generatedTemplates.value.includes(currentTemplate.value)) {
-          generatedTemplates.value.push(currentTemplate.value)
-        }
-      } else if (!response.cached) {
-        // 没有缓存内容
-        overviewContent.value = ''
+    if (response.success && response.content) {
+      // 有缓存内容
+      overviewContent.value = response.content
+      // 更新已生成模板列表
+      if (!generatedTemplates.value.includes(currentTemplate.value)) {
+        generatedTemplates.value.push(currentTemplate.value)
       }
+    } else {
+      // 无缓存，显示提示
+      overviewContent.value = ''
     }
   } catch (error) {
     console.error('加载概览失败:', error)
@@ -145,16 +135,47 @@ async function loadTemplateOverview(regenerate: boolean): Promise<void> {
 }
 
 /**
- * 生成概览
- * @param regenerate - 是否重新生成
+ * 生成概览（点击按钮时调用）
+ * 与原版 JS 的 generateOverviewWithTemplate 一致：POST /overview/generate
+ * @param regenerate - 是否强制重新生成（🔄按钮为true，📄按钮为false）
  */
 async function generateOverview(regenerate: boolean): Promise<void> {
-  await loadTemplateOverview(regenerate)
+  if (!insightStore.currentBookId) return
+
+  isLoading.value = true
+  overviewContent.value = ''
+
+  try {
+    // 使用 POST API 生成概览
+    const response = await insightApi.regenerateOverview(
+      insightStore.currentBookId, 
+      currentTemplate.value,
+      regenerate  // force 参数
+    ) as any
+
+    if (response.success) {
+      if (response.content) {
+        overviewContent.value = response.content
+        // 更新已生成模板列表
+        if (!generatedTemplates.value.includes(currentTemplate.value)) {
+          generatedTemplates.value.push(currentTemplate.value)
+        }
+      }
+    } else {
+      overviewContent.value = `生成失败: ${response.error || '未知错误'}`
+    }
+  } catch (error) {
+    console.error('生成概览失败:', error)
+    overviewContent.value = '生成失败，请重试'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 /**
  * 加载已生成的模板列表
- * 与原版 JS 一致：如果默认模板未生成但有其他已生成模板，则自动切换到第一个已生成的模板
+ * 【修复】与原版 HTML 一致：默认选中 no_spoiler，不自动切换到其他已生成模板
+ * 原版 HTML 中 select 的第一个 option 是 no_spoiler，不会因为后端自动生成 story_summary 就切换
  */
 async function loadGeneratedTemplates(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -171,11 +192,8 @@ async function loadGeneratedTemplates(): Promise<void> {
       }
       generatedTemplates.value = templates
       
-      // 与原版 JS 一致：如果当前模板未生成，但有其他已生成的模板，则自动切换
-      if (templates.length > 0 && !templates.includes(currentTemplate.value)) {
-        currentTemplate.value = templates[0]!
-        console.log(`默认模板未生成，自动切换到已生成的模板: ${templates[0]}`)
-      }
+      // 【修复】不再自动切换模板，保持默认的 no_spoiler
+      // 用户可以在下拉框中自行选择其他已生成的模板
     }
   } catch (error) {
     console.error('加载模板列表失败:', error)
@@ -296,7 +314,7 @@ onMounted(async () => {
   await loadRecentAnalyzedPages()
   // 如果当前模板已生成，自动加载
   if (generatedTemplates.value.includes(currentTemplate.value)) {
-    await loadTemplateOverview(false)
+    await loadCachedOverview()
   }
 })
 
@@ -310,7 +328,7 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
     await loadRecentAnalyzedPages()
     // 如果当前模板已生成，自动加载
     if (generatedTemplates.value.includes(currentTemplate.value)) {
-      await loadTemplateOverview(false)
+      await loadCachedOverview()
     }
   }
 })
@@ -323,7 +341,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     await loadRecentAnalyzedPages()
     // 自动加载已生成的模板内容
     if (generatedTemplates.value.includes(currentTemplate.value)) {
-      await loadTemplateOverview(false)
+      await loadCachedOverview()
     }
   }
 })
