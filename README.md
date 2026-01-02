@@ -359,10 +359,10 @@ Manga Insight 是一个基于 AI 的漫画内容深度理解引擎，它能够�
 ## 🛠️ 技术栈 (Tech Stack)
 
 *   **后端:** Python 3.10+, Flask, Flask-CORS, PyTorch, PaddlePaddle-OCR, MangaOCR, Pillow, OpenCV, NumPy, `openai` (SDK), `litelama` / `lama-mpe`, PyPDF2, Requests, PyYAML, Colorama.
+*   **前端:** **Vue 3**, **Vite**, **TypeScript**, **Pinia**, Axios, Canvas API, JSZip, jsPDF.
 *   **文本检测:** CTD (Comic Text Detector), YOLOv5.
 *   **图像修复:** LAMA-MPE, LiteLAMA.
 *   **向量检索:** Embedding, Reranker (用于 Manga Insight).
-*   **前端:** HTML5, CSS3, JavaScript (ES6 Modules), jQuery, JSZip, jsPDF.
 *   **打包:** PyInstaller.
 
 ## ⚠️ 免责声明 (Disclaimer)
