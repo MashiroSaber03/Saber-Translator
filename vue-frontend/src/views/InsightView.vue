@@ -279,7 +279,7 @@ async function loadOverviewData(): Promise<void> {
   try {
     // 加载已生成的模板列表，获取第一个已生成的模板作为默认显示
     const templatesResponse = await insightApi.getGeneratedTemplates(insightStore.currentBookId) as any
-    let templateToLoad = 'story_summary' // 默认使用story_summary
+    let templateToLoad = 'no_spoiler' // 【修复】默认使用无剧透简介，与原版一致
     
     if (templatesResponse.success && templatesResponse.generated && templatesResponse.generated.length > 0) {
       // 使用第一个已生成的模板
