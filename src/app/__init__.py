@@ -10,9 +10,7 @@ logger = logging.getLogger("AppBlueprints")
 # 创建主蓝图实例
 main_bp = Blueprint(
     'main',
-    __name__,
-    template_folder='../../templates',  
-    static_folder='../../static'  
+    __name__
 )
 
 # 导入路由定义

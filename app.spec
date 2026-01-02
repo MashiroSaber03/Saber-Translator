@@ -18,33 +18,30 @@ binaries = []
 hiddenimports = []
 
 # ===================== 项目资源文件 =====================
-# 1. 静态资源 (CSS, JS, 字体, 图标)
+# 1. 静态资源 (Vue SPA 构建产物、字体、图标)
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'static'), os.path.join('src', 'app', 'static')))
 
-# 2. HTML 模板
-datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'templates'), os.path.join('src', 'app', 'templates')))
-
-# 3. 配置文件 - 不打包用户运行时配置
+# 2. 配置文件 - 不打包用户运行时配置
 # user_settings.json, prompts.json, model_history.json 等会在运行时自动生成
 # 不打包以避免泄露 API 密钥等敏感信息
 # config 目录会在运行时由程序自动创建
 
-# 4. 模型文件 - 包含所有模型
+# 3. 模型文件 - 包含所有模型
 models_path = os.path.join(PROJECT_ROOT, 'models')
 if os.path.exists(models_path):
     datas.append((models_path, 'models'))
 
-# 5. 插件目录
+# 4. 插件目录
 plugins_path = os.path.join(PROJECT_ROOT, 'plugins')
 if os.path.exists(plugins_path):
     datas.append((plugins_path, 'plugins'))
 
-# 6. src/plugins 目录 (内置插件)
+# 5. src/plugins 目录 (内置插件)
 src_plugins_path = os.path.join(PROJECT_ROOT, 'src', 'plugins')
 if os.path.exists(src_plugins_path):
     datas.append((src_plugins_path, os.path.join('src', 'plugins')))
 
-# 7. YOLOv5 接口目录 (模型和仓库)
+# 6. YOLOv5 接口目录 (模型和仓库)
 yolov5_path = os.path.join(PROJECT_ROOT, 'src', 'interfaces', 'yolov5')
 if os.path.exists(yolov5_path):
     # models 目录
@@ -56,7 +53,7 @@ if os.path.exists(yolov5_path):
     if os.path.exists(yolov5_repo):
         datas.append((yolov5_repo, os.path.join('src', 'interfaces', 'yolov5', 'repo')))
 
-# 8. 图片资源
+# 7. 图片资源
 pic_path = os.path.join(PROJECT_ROOT, 'pic')
 if os.path.exists(pic_path):
     datas.append((pic_path, 'pic'))

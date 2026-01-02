@@ -169,7 +169,6 @@ logger = setup_logging()
 app = Flask(__name__,
            # 相对于 app.py (项目根目录) 的路径
            static_folder=os.path.join('src', 'app', 'static'),
-           template_folder=os.path.join('src', 'app', 'templates'),
            static_url_path='') # 保持 static_url_path 为空，以便 URL 保持 /style.css 等形式
 CORS(app)
 
