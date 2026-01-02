@@ -41,7 +41,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /** 搜索关键词 */
   const searchKeyword = ref('')
 
-  /** 选中的标签ID列表（用于筛选） */
+  /** 【复刻原版】选中的标签名称列表(用于筛选) - 实际存储 name 而非 id */
   const selectedTagIds = ref<string[]>([])
 
   /** 排序方式 */
@@ -253,54 +253,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 删除标签
-   * @param tagId - 标签ID
+   * 【复刻原版】使用 name 作为唯一标识
+   * @param tagName - 标签名称(作为ID)
    */
-  function deleteTag(tagId: string): void {
-    const index = tags.value.findIndex(t => t.id === tagId)
+  function deleteTag(tagName: string): void {
+    const index = tags.value.findIndex(t => t.name === tagName)
     if (index >= 0) {
       tags.value.splice(index, 1)
       // 从选中列表中移除
-      const selectedIndex = selectedTagIds.value.indexOf(tagId)
+      const selectedIndex = selectedTagIds.value.indexOf(tagName)
       if (selectedIndex >= 0) {
         selectedTagIds.value.splice(selectedIndex, 1)
       }
-      console.log(`已删除标签: ${tagId}`)
+      console.log(`已删除标签: ${tagName}`)
     }
   }
 
-  /**
-   * 为书籍添加标签
-   * @param bookId - 书籍ID
-   * @param tagId - 标签ID
-   */
-  function addTagToBook(bookId: string, tagId: string): void {
-    const book = books.value.find(b => b.id === bookId)
-    if (book) {
-      if (!book.tags) {
-        book.tags = []
-      }
-      if (!book.tags.includes(tagId)) {
-        book.tags.push(tagId)
-        console.log(`已为书籍 ${bookId} 添加标签 ${tagId}`)
-      }
-    }
-  }
-
-  /**
-   * 从书籍移除标签
-   * @param bookId - 书籍ID
-   * @param tagId - 标签ID
-   */
-  function removeTagFromBook(bookId: string, tagId: string): void {
-    const book = books.value.find(b => b.id === bookId)
-    if (book && book.tags) {
-      const index = book.tags.indexOf(tagId)
-      if (index >= 0) {
-        book.tags.splice(index, 1)
-        console.log(`已从书籍 ${bookId} 移除标签 ${tagId}`)
-      }
-    }
-  }
+  // 【已删除冗余函数】addTagToBook 和 removeTagFromBook
+  // 原因: 现在所有标签操作都通过 updateBookApi 传递完整 tags 数组完成
 
   // ============================================================
   // 搜索和筛选方法
@@ -509,11 +479,17 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 更新书籍（调用API）
+   * 更新书籍(调用API)
+   * 【复刻原版 bookshelf.js saveBook】支持更新 title, cover, tags
    * @param bookId - 书籍ID
    * @param data - 更新数据
    */
-  async function updateBookApi(bookId: string, data: { title?: string; description?: string; cover?: string }): Promise<boolean> {
+  async function updateBookApi(bookId: string, data: {
+    title?: string;
+    description?: string;
+    cover?: string;
+    tags?: string[]  // 【复刻原版】支持更新 tags 数组
+  }): Promise<boolean> {
     try {
       const response = await bookshelfApi.updateBook(bookId, data)
       if (response.success && response.book) {
@@ -683,55 +659,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 为书籍添加标签（调用API）
-   * @param bookId - 书籍ID
-   * @param tagIds - 标签ID数组
-   */
-  async function addTagsToBookApi(bookId: string, tagIds: string[]): Promise<boolean> {
-    try {
-      const response = await bookshelfApi.addTagsToBook(bookId, tagIds)
-      if (response.success) {
-        // 更新本地状态 - 需要根据 tagId 找到 tagName
-        for (const tagId of tagIds) {
-          const tag = tags.value.find(t => t.id === tagId)
-          if (tag) {
-            addTagToBook(bookId, tag.name)
-          }
-        }
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error('添加标签失败:', err)
-      return false
-    }
-  }
-
-  /**
-   * 从书籍移除标签（调用API）
-   * @param bookId - 书籍ID
-   * @param tagIds - 标签ID数组
-   */
-  async function removeTagsFromBookApi(bookId: string, tagIds: string[]): Promise<boolean> {
-    try {
-      const response = await bookshelfApi.removeTagsFromBook(bookId, tagIds)
-      if (response.success) {
-        // 更新本地状态 - 需要根据 tagId 找到 tagName
-        for (const tagId of tagIds) {
-          const tag = tags.value.find(t => t.id === tagId)
-          if (tag) {
-            removeTagFromBook(bookId, tag.name)
-          }
-        }
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error('移除标签失败:', err)
-      return false
-    }
-  }
+  // 【复刻原版】标签的增删改为通过 updateBookApi 完成,传递完整 tags 数组
 
   // ============================================================
   // 重置方法
@@ -795,8 +723,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     setTags,
     addTag,
     deleteTag,
-    addTagToBook,
-    removeTagFromBook,
+    // 【已删除冗余】addTagToBook 和 removeTagFromBook - 现用 updateBookApi
 
     // 搜索和筛选
     setSearchKeyword,
@@ -833,8 +760,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     updateChapterApi,
     deleteChapterApi,
     reorderChaptersApi,
-    addTagsToBookApi,
-    removeTagsFromBookApi,
+    // 【已删除】addTagsToBookApi 和 removeTagsFromBookApi,改用 updateBookApi 传递完整 tags 数组
 
     // 重置
     reset

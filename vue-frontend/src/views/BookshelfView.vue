@@ -8,6 +8,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getServerInfo } from '@/api'
+import { getBookDetail } from '@/api/bookshelf'  // 【修复 P2】导入 bookshelf API
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
@@ -111,23 +112,16 @@ function openEditBookModal(bookId: string) {
 // 【复刻原版 bookshelf.js openBookDetail】失败时显示 toast，不打开不完整的模态框
 async function openBookDetail(bookId: string) {
   try {
-    // 先调用API获取完整书籍数据（包括章节）
-    const response = await fetch(`/api/bookshelf/books/${bookId}`)
+    // 【修复 P2】使用统一的 API 调用方式
+    const response = await getBookDetail(bookId)
     
-    // 【复刻原版】检查 HTTP 响应状态
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+    if (!response.success) {
+      throw new Error(response.error || '加载失败')
     }
     
-    const result = await response.json()
-    
-    if (!result.success) {
-      throw new Error(result.error || '加载失败')
-    }
-    
-    if (result.book) {
+    if (response.book) {
       // 更新store中的书籍数据
-      bookshelfStore.updateBook(bookId, result.book)
+      bookshelfStore.updateBook(bookId, response.book)
     }
     
     // 只有成功时才设置当前书籍并打开模态框

@@ -336,18 +336,29 @@ async function handleQuickTagInputEnter() {
 const isTagLoading = ref(false)
 
 // 从书籍移除标签（用于详情页面的标签删除按钮）
+// 【复刻原版 bookshelf.js removeTagFromCurrentBook】
+// 步骤: 1. 获取当前书籍 tags  2. 过滤掉要删除的标签  3. PUT 更新整个 tags 数组
 async function removeTag(tagName: string) {
   if (!currentBook.value || isTagLoading.value) return
   
   isTagLoading.value = true
   
   try {
-    // 使用单本书籍标签操作 API
-    const { removeTagsFromBook } = await import('@/api/bookshelf')
-    const response = await removeTagsFromBook(currentBook.value.id, [tagName])
-    if (response.success) {
-      bookshelfStore.removeTagFromBook(currentBook.value.id, tagName)
+    // 【复刻原版】获取当前的 tags 数组并过滤
+    const currentTags = currentBook.value.tags || []
+    const newTags = currentTags.filter(t => t !== tagName)
+    
+    // 【复刻原版】通过 updateBookApi 更新整个 tags 数组
+    const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
+      tags: newTags
+    })
+    
+    if (success) {
+      // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已移除', 'success')
+      // 【复刻原版】刷新书籍列表和标签列表
+      await bookshelfStore.loadBooks()
+      await bookshelfStore.loadTags()
     } else {
       showToast('移除标签失败', 'error')
     }
@@ -360,6 +371,7 @@ async function removeTag(tagName: string) {
 }
 
 // 【复刻原版】快速添加标签到书籍（支持创建新标签）
+// 步骤: 1. 如需创建新标签则创建  2. 获取当前 tags  3. 追加新标签  4. PUT 更新整个 tags 数组
 async function quickAddTagToBook(tagName: string) {
   if (!currentBook.value || !tagName || isTagLoading.value) return
   
@@ -372,7 +384,7 @@ async function quickAddTagToBook(tagName: string) {
   isTagLoading.value = true
   
   try {
-    const { createTag, addTagsToBook } = await import('@/api/bookshelf')
+    const { createTag } = await import('@/api/bookshelf')
     
     // 如果是新标签，先创建
     if (!allTags.value.some(t => t.name === tagName)) {
@@ -386,13 +398,21 @@ async function quickAddTagToBook(tagName: string) {
       }
     }
     
-    // 添加标签到书籍
-    const response = await addTagsToBook(currentBook.value.id, [tagName])
-    if (response.success) {
-      bookshelfStore.addTagToBook(currentBook.value.id, tagName)
+    // 【复刻原版】获取当前 tags 并追加新标签
+    const currentTags = currentBook.value.tags || []
+    const newTags = [...currentTags, tagName]
+    
+    // 【复刻原版】通过 updateBookApi 更新整个 tags 数组
+    const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
+      tags: newTags
+    })
+    
+    if (success) {
+      // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已添加', 'success')
-      // 刷新书籍列表以更新标签计数
+      // 【复刻原版】刷新书籍列表和标签列表
       await bookshelfStore.loadBooks()
+      await bookshelfStore.loadTags()
     } else {
       showToast('添加标签失败', 'error')
     }
@@ -570,7 +590,7 @@ async function quickAddTagToBook(tagName: string) {
             <!-- 可用标签 -->
             <div
               v-for="tag in filteredAvailableTags"
-              :key="tag.id || tag.name"
+              :key="tag.name"
               class="quick-tag-item"
               @click="quickAddTagToBook(tag.name)"
             >

@@ -88,6 +88,7 @@ export async function createBook(
 
 /**
  * 更新书籍
+ * 【复刻原版】支持更新 title, description, cover, tags
  * @param bookId 书籍 ID
  * @param data 更新数据
  */
@@ -97,6 +98,7 @@ export async function updateBook(
     title?: string
     description?: string
     cover?: string
+    tags?: string[]  // 【复刻原版】支持更新 tags 数组
   }
 ): Promise<BookDetailResponse> {
   return apiClient.put<BookDetailResponse>(`/api/bookshelf/books/${bookId}`, data)
@@ -289,27 +291,6 @@ export async function updateTag(
   )
 }
 
-/**
- * 为书籍添加标签
- * @param bookId 书籍 ID
- * @param tagIds 标签 ID 数组
- */
-export async function addTagsToBook(bookId: string, tagIds: string[]): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/bookshelf/books/${bookId}/tags`, {
-    tag_ids: tagIds,
-  })
-}
-
-/**
- * 从书籍移除标签
- * @param bookId 书籍 ID
- * @param tagIds 标签 ID 数组
- */
-export async function removeTagsFromBook(
-  bookId: string,
-  tagIds: string[]
-): Promise<ApiResponse> {
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/books/${bookId}/tags`, {
-    data: { tag_ids: tagIds },
-  })
-}
+// 【复刻原版 bookshelf.js】
+// 标签的增删通过 updateBook API 完成,传递完整的 tags 数组
+// 原版逻辑: GET 书籍 -> 修改 tags 数组 -> PUT 整个 tags 数组

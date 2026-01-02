@@ -170,12 +170,16 @@ export interface ChapterData {
 
 /**
  * 标签数据
+ * 【复刻原版】后端使用 name 作为唯一标识符,不返回独立的 id 字段
  */
 export interface TagData {
-  id: string
+  /** 标签ID(可选,后端不返回,应使用 name 作为唯一标识) */
+  id?: string
+  /** 标签名称(作为主键) */
   name: string
+  /** 标签颜色 */
   color?: string
-  /** 使用该标签的书籍数量（后端返回） */
+  /** 使用该标签的书籍数量(后端返回) */
   book_count?: number
 }
 

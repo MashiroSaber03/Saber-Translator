@@ -37,8 +37,9 @@ const availableTags = computed(() => bookshelfStore.tags)
 const filteredTagSuggestions = computed(() => {
   if (!tagInput.value) return availableTags.value
   const query = tagInput.value.toLowerCase()
+  // 【复刻原版】使用 tag.name 作为唯一标识
   return availableTags.value.filter(tag => 
-    tag.name.toLowerCase().includes(query) && !selectedTags.value.includes(tag.id)
+    tag.name.toLowerCase().includes(query) && !selectedTags.value.includes(tag.name)
   )
 })
 
@@ -49,14 +50,9 @@ onMounted(() => {
     if (book) {
       title.value = book.title
       coverData.value = book.cover || null
-      // book.tags 存储的是标签名称，需要转换为标签 ID
+      // 【复刻原版】book.tags 存储的是标签名称,直接使用即可
       if (book.tags && book.tags.length > 0) {
-        selectedTags.value = book.tags
-          .map(tagName => {
-            const tag = availableTags.value.find(t => t.name === tagName)
-            return tag?.id
-          })
-          .filter((id): id is string => !!id)
+        selectedTags.value = [...book.tags]
       }
     }
   }
@@ -95,10 +91,10 @@ function handleCoverDrop(event: DragEvent) {
   reader.readAsDataURL(file)
 }
 
-// 添加标签
-function addTag(tagId: string) {
-  if (!selectedTags.value.includes(tagId)) {
-    selectedTags.value.push(tagId)
+// 添加标签 - 【复刻原版】使用 name 作为标识
+function addTag(tagName: string) {
+  if (!selectedTags.value.includes(tagName)) {
+    selectedTags.value.push(tagName)
   }
   tagInput.value = ''
   showTagSuggestions.value = false
@@ -112,7 +108,7 @@ async function createAndAddTag() {
   // 检查是否已存在
   const existing = availableTags.value.find(t => t.name === name)
   if (existing) {
-    addTag(existing.id)
+    addTag(existing.name)  // 【复刻原版】使用 name
     return
   }
 
@@ -120,23 +116,19 @@ async function createAndAddTag() {
   try {
     const newTag = await bookshelfStore.createTag(name)
     if (newTag) {
-      addTag(newTag.id)
+      addTag(newTag.name)  // 【复刻原版】使用 name
     }
   } catch (error) {
     showToast('创建标签失败', 'error')
   }
 }
 
-// 移除标签
-function removeTag(tagId: string) {
-  selectedTags.value = selectedTags.value.filter(id => id !== tagId)
+// 移除标签 - 【复刻原版】使用 name 作为标识
+function removeTag(tagName: string) {
+  selectedTags.value = selectedTags.value.filter(name => name !== tagName)
 }
 
-// 获取标签名称
-function getTagName(tagId: string): string {
-  const tag = availableTags.value.find(t => t.id === tagId)
-  return tag?.name || tagId
-}
+// 【已删除】getTagName 函数不再需要,直接使用 name
 
 // 保存书籍
 async function saveBook() {
@@ -145,19 +137,18 @@ async function saveBook() {
     return
   }
 
-  // 将标签 ID 转换为标签名称
-  const tagNames = selectedTags.value.map(tagId => getTagName(tagId))
+  // 【复刻原版】selectedTags 已经是标签名称数组,直接使用
+  const tagNames = selectedTags.value
 
   try {
     if (isEditing.value && props.bookId) {
-      // 更新书籍
+      // 【复刻原版 bookshelf.js saveBook】更新书籍时一次性传递所有数据包括 tags
       const success = await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
         cover: coverData.value || undefined,
+        tags: tagNames  // 【复刻原版】一同传递 tags 数组
       })
       if (success) {
-        // 更新标签（存储标签名称而非 ID）
-        bookshelfStore.updateBook(props.bookId, { tags: tagNames })
         showToast('书籍更新成功', 'success')
         emit('saved')
       } else {
@@ -236,13 +227,14 @@ async function saveBook() {
         <div class="tag-input-container">
           <!-- 已选标签 -->
           <div class="selected-tags">
+            <!-- 【复刻原版】selectedTags 已经存储标签名称,直接使用 -->
             <span
-              v-for="tagId in selectedTags"
-              :key="tagId"
+              v-for="tagName in selectedTags"
+              :key="tagName"
               class="selected-tag"
             >
-              {{ getTagName(tagId) }}
-              <button type="button" class="remove-tag" @click="removeTag(tagId)">×</button>
+              {{ tagName }}
+              <button type="button" class="remove-tag" @click="removeTag(tagName)">×</button>
             </span>
           </div>
           <!-- 标签输入 -->
@@ -259,12 +251,13 @@ async function saveBook() {
               v-if="showTagSuggestions && filteredTagSuggestions.length > 0"
               class="tag-suggestions"
             >
+              <!-- 【复刻原版】使用 tag.name 作为 key 和参数 -->
               <button
                 v-for="tag in filteredTagSuggestions"
-                :key="tag.id"
+                :key="tag.name"
                 type="button"
                 class="tag-suggestion"
-                @click="addTag(tag.id)"
+                @click="addTag(tag.name)"
               >
                 {{ tag.name }}
               </button>
