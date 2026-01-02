@@ -1005,12 +1005,12 @@ class MangaAnalyzer:
             summary_source = hierarchical_result.get("source", "unknown")
             logger.info(f"概要生成完成，数据来源: {summary_source}")
             
-            # 自动生成默认的「故事概要」模板
+            # 自动生成默认的「无剧透简介」模板
             try:
-                template_result = await summary_generator.generate_with_template("story_summary")
-                logger.info(f"故事概要模板生成完成")
+                template_result = await summary_generator.generate_with_template("no_spoiler")  # 【修复】默认生成无剧透简介
+                logger.info(f"无剧透简介模板生成完成")
             except Exception as e:
-                logger.warning(f"故事概要模板生成失败: {e}")
+                logger.warning(f"无剧透简介模板生成失败: {e}")
                 
         except Exception as e:
             logger.error(f"层级摘要生成失败: {e}", exc_info=True)
