@@ -168,6 +168,8 @@ export interface TextStyleSettings {
   strokeColor: string
   strokeWidth: number
   inpaintMethod: InpaintMethod
+  // 智能颜色识别设置
+  useAutoTextColor: boolean  // 默认使用自动识别的文字颜色
 }
 
 /**

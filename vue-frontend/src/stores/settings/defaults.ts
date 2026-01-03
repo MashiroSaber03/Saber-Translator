@@ -43,7 +43,9 @@ export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   strokeEnabled: DEFAULT_STROKE_ENABLED,
   strokeColor: DEFAULT_STROKE_COLOR,
   strokeWidth: DEFAULT_STROKE_WIDTH,
-  inpaintMethod: 'solid'
+  inpaintMethod: 'solid',
+  // 智能颜色识别默认开启
+  useAutoTextColor: true
 }
 
 /** 默认百度OCR设置 */

@@ -368,6 +368,14 @@ function updateTextColor(event: Event) {
 }
 
 /**
+ * 更新是否使用自动文字颜色
+ */
+function updateUseAutoTextColor(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  settingsStore.updateTextStyle({ useAutoTextColor: checked })
+}
+
+/**
  * 更新描边启用状态
  */
 function updateStrokeEnabled(event: Event) {
@@ -528,12 +536,26 @@ if (typeof window !== 'undefined') {
             <!-- 文字颜色 -->
             <div class="form-group">
               <label for="textColor">文字颜色:</label>
-              <input 
-                type="color" 
-                id="textColor" 
-                :value="textStyle.textColor"
-                @input="updateTextColor"
-              >
+              <div class="color-with-auto">
+                <label class="auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
+                  <input 
+                    type="checkbox" 
+                    :checked="textStyle.useAutoTextColor"
+                    @change="updateUseAutoTextColor"
+                  >
+                  <span>自动</span>
+                </label>
+                <input 
+                  type="color" 
+                  id="textColor" 
+                  :value="textStyle.textColor"
+                  :disabled="textStyle.useAutoTextColor"
+                  @input="updateTextColor"
+                >
+              </div>
+              <div v-if="textStyle.useAutoTextColor" class="auto-color-hint">
+                💡 翻译时将自动使用识别到的文字颜色
+              </div>
             </div>
             
             <!-- 描边设置 -->
@@ -926,6 +948,58 @@ if (typeof window !== 'undefined') {
   border-radius: 4px;
   cursor: pointer;
   background-color: #f9fafc;
+}
+
+.form-group input[type="color"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 颜色选择器与自动开关容器 */
+.color-with-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 自动颜色开关 */
+.auto-color-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f5f5f5;
+  border: 1px solid #e0e6ed;
+  transition: all 0.2s ease;
+}
+
+.auto-color-toggle:hover {
+  border-color: #3498db;
+}
+
+.auto-color-toggle:has(input:checked) {
+  background: #e3f2fd;
+  border-color: #3498db;
+  color: #3498db;
+}
+
+.auto-color-toggle input {
+  cursor: pointer;
+}
+
+/* 自动颜色提示 */
+.auto-color-hint {
+  padding: 6px 10px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #3498db;
+  background: #e3f2fd;
+  border-radius: 4px;
+  border-left: 3px solid #3498db;
 }
 
 /* 填充颜色过渡动画 */

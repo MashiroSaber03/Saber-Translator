@@ -412,7 +412,7 @@ def re_render_image():
         
         if bubble_states_data and len(bubble_states_data) == len(bubble_coords):
             # 新格式：直接从 bubble_states 创建 BubbleState 列表
-            logger.info(f"使用新的 bubble_states 格式，共 {len(bubble_states_data)} 个")
+            print(f"使用新的 bubble_states 格式，共 {len(bubble_states_data)} 个")
             bubble_states = []
             for i, state_data in enumerate(bubble_states_data):
                 # 确保文本内容与 bubble_texts 同步
@@ -424,7 +424,7 @@ def re_render_image():
                 bubble_states.append(BubbleState.from_dict(state_data))
         elif all_bubble_states and len(all_bubble_states) == len(bubble_coords):
             # 旧格式：从 all_bubble_states 转换
-            logger.info(f"使用旧的 all_bubble_states 格式，共 {len(all_bubble_states)} 个")
+            print(f"使用旧的 all_bubble_states 格式，共 {len(all_bubble_states)} 个")
             bubble_states = []
             for i, style in enumerate(all_bubble_states):
                 font_path = get_font_path(style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH))

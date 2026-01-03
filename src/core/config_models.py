@@ -54,6 +54,11 @@ class BubbleState:
     # === 修复参数 ===
     inpaint_method: str = "solid"  # "solid" | "lama"
     
+    # === 自动颜色提取（48px OCR 模型） ===
+    auto_fg_color: Optional[Tuple[int, int, int]] = None  # 自动提取的前景色 RGB (0-255)
+    auto_bg_color: Optional[Tuple[int, int, int]] = None  # 自动提取的背景色 RGB (0-255)
+    color_confidence: float = 0.0  # 颜色提取置信度 0-1
+    
     def to_dict(self) -> Dict[str, Any]:
         """
         转换为字典（用于JSON序列化，发送到前端）。
@@ -82,6 +87,10 @@ class BubbleState:
             "strokeWidth": self.stroke_width,
             # 修复参数
             "inpaintMethod": self.inpaint_method,
+            # 自动颜色提取
+            "autoFgColor": list(self.auto_fg_color) if self.auto_fg_color else None,
+            "autoBgColor": list(self.auto_bg_color) if self.auto_bg_color else None,
+            "colorConfidence": self.color_confidence,
         }
     
     def to_render_dict(self) -> Dict[str, Any]:
@@ -145,6 +154,13 @@ class BubbleState:
             "stroke_width": "stroke_width",
             # 修复参数
             "inpaintMethod": "inpaint_method",
+            # 自动颜色提取
+            "autoFgColor": "auto_fg_color",
+            "auto_fg_color": "auto_fg_color",
+            "autoBgColor": "auto_bg_color",
+            "auto_bg_color": "auto_bg_color",
+            "colorConfidence": "color_confidence",
+            "color_confidence": "color_confidence",
         }
         
         # 转换字典键名
@@ -163,6 +179,12 @@ class BubbleState:
         # 处理 coords 可能是列表的情况
         if "coords" in filtered and isinstance(filtered["coords"], list):
             filtered["coords"] = tuple(filtered["coords"])
+        
+        # 处理颜色字段（列表转元组）
+        if "auto_fg_color" in filtered and isinstance(filtered["auto_fg_color"], list):
+            filtered["auto_fg_color"] = tuple(filtered["auto_fg_color"])
+        if "auto_bg_color" in filtered and isinstance(filtered["auto_bg_color"], list):
+            filtered["auto_bg_color"] = tuple(filtered["auto_bg_color"])
         
         return cls(**filtered)
     
@@ -361,6 +383,9 @@ class RenderConfig:
     stroke_enabled: bool = constants.DEFAULT_STROKE_ENABLED
     stroke_color: str = constants.DEFAULT_STROKE_COLOR
     stroke_width: int = constants.DEFAULT_STROKE_WIDTH
+    
+    # 智能颜色识别设置
+    use_auto_text_color: bool = True  # 是否使用自动识别的文字颜色
 
 
 @dataclass
@@ -473,6 +498,8 @@ class TranslationRequest:
             stroke_enabled=data.get('strokeEnabled', constants.DEFAULT_STROKE_ENABLED),
             stroke_color=data.get('strokeColor', constants.DEFAULT_STROKE_COLOR),
             stroke_width=int(data.get('strokeWidth', constants.DEFAULT_STROKE_WIDTH)),
+            # 智能颜色识别设置
+            use_auto_text_color=data.get('useAutoTextColor', True),  # 默认开启
         )
         
         return cls(

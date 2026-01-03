@@ -6,6 +6,7 @@ import cv2 # 需要 cv2
 import time
 import os
 import sys
+import torch  # 用于颜色提取时检测 CUDA
 from src.plugins.manager import get_plugin_manager
 from src.plugins.hooks import (
     ALL_HOOKS,
@@ -36,6 +37,8 @@ from src.core.config_models import (
     TranslationRequest, 
     BubbleState
 )  # 导入配置对象和 BubbleState
+
+from src.core.color_extractor import get_color_extractor, ColorExtractionResult
 
 logger = logging.getLogger("CoreProcessing")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -118,6 +121,7 @@ def process_image_translation(
     stroke_color = config.render_config.stroke_color
     stroke_width = config.render_config.stroke_width
     auto_text_direction = config.render_config.auto_text_direction  # 自动排版开关
+    use_auto_text_color = config.render_config.use_auto_text_color  # 是否使用自动识别的文字颜色
     
     yolo_conf_threshold = config.conf_threshold
     detector_type = config.detector_type
@@ -384,6 +388,33 @@ def process_image_translation(
             logger.info("步骤 2: 跳过 OCR。")
             original_texts = [""] * len(bubble_coords) # 创建占位符
 
+        # 2.5 强制提取颜色（设计原则：总是提取，开关只控制是否默认使用）
+        color_extraction_results = []
+        try:
+            logger.info("步骤 2.5: 提取文字颜色（强制执行）...")
+            start_time = time.time()
+            
+            color_extractor = get_color_extractor()
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            
+            if color_extractor.initialize(device):
+                color_extraction_results = color_extractor.extract_colors(
+                    image_pil,
+                    bubble_coords,
+                    textlines_per_bubble
+                )
+                success_count = sum(1 for r in color_extraction_results if r.fg_color)
+                logger.info(f"颜色提取完成，成功 {success_count} / {len(bubble_coords)} (耗时: {time.time() - start_time:.2f}s)")
+                # 详细输出每个气泡的提取结果
+                for idx, cr in enumerate(color_extraction_results):
+                    logger.info(f"  [颜色提取] 气泡 {idx}: fg={cr.fg_color}, bg={cr.bg_color}, conf={cr.confidence:.2f}")
+            else:
+                logger.warning("颜色提取器初始化失败，跳过颜色提取")
+                color_extraction_results = [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+        except Exception as color_e:
+            logger.warning(f"颜色提取失败: {color_e}")
+            color_extraction_results = [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+
         # 3. 翻译文本
         translated_bubble_texts = [""] * len(bubble_coords)
         translated_textbox_texts = [""] * len(bubble_coords)
@@ -518,14 +549,13 @@ def process_image_translation(
                 logger.warning(f"LAMA 修复出错，回退到纯色填充: {e}")
                 inpainted_image, _ = inpaint_bubbles(
                     image_pil, bubble_coords, method='solid', fill_color=fill_color,
-                    bubble_polygons=bubble_polygons,  # 传递多边形用于旋转区域修复
-                    precise_mask=precise_mask_to_use,  # 回退时也使用精确掩膜
-                    mask_dilate_size=mask_dilate_size,  # 掩膜膨胀大小
-                    mask_box_expand_ratio=mask_box_expand_ratio  # 标注框扩大比例
+                    bubble_polygons=bubble_polygons,
+                    precise_mask=precise_mask_to_use,
+                    mask_dilate_size=mask_dilate_size,
+                    mask_box_expand_ratio=mask_box_expand_ratio
                 )
                 logger.info("使用纯色填充完成背景处理")
             else:
-                # 如果不是高级修复方法出错或者不忽略错误，重新抛出异常
                 raise
 
         # 5. 渲染文本 - 使用统一的 BubbleState
@@ -576,6 +606,28 @@ def process_image_translation(
                 # 使用用户设置的字号
                 bubble_font_size = font_size_setting if isinstance(font_size_setting, int) and font_size_setting > 0 else constants.DEFAULT_FONT_SIZE
             
+            # 获取该气泡的颜色提取结果
+            color_result = color_extraction_results[i] if i < len(color_extraction_results) else ColorExtractionResult(None, None, 0.0)
+            
+            # 根据自动颜色设置决定实际使用的颜色
+            # RGB 元组转 Hex 字符串的辅助函数
+            def rgb_to_hex(rgb_tuple):
+                if rgb_tuple is None:
+                    return None
+                r, g, b = rgb_tuple
+                return f'#{r:02x}{g:02x}{b:02x}'
+            
+            # 决定实际使用的文字颜色
+            actual_text_color = text_color  # 默认使用用户设置
+            if use_auto_text_color and color_result.fg_color is not None:
+                actual_text_color = rgb_to_hex(color_result.fg_color)
+                logger.info(f"气泡 {i}: 🎨 使用自动文字颜色 {actual_text_color} (RGB: {color_result.fg_color}, 置信度: {color_result.confidence:.2f})")
+            else:
+                logger.info(f"气泡 {i}: 📝 使用默认文字颜色 {text_color} (自动开关: {use_auto_text_color}, 提取结果: {color_result.fg_color})")
+            
+            # 填充颜色始终使用用户设置（已移除自动填充颜色功能）
+            actual_fill_color = fill_color
+            
             # 创建统一的 BubbleState
             state = BubbleState(
                 original_text=original_texts[i] if i < len(original_texts) else "",
@@ -587,14 +639,18 @@ def process_image_translation(
                 font_family=font_family_rel,
                 text_direction=bubble_direction,
                 auto_text_direction=auto_bubble_direction,  # 始终保存自动检测的方向
-                text_color=text_color,
-                fill_color=fill_color,
+                text_color=actual_text_color,  # 使用决定后的颜色
+                fill_color=actual_fill_color,  # 使用决定后的颜色
                 rotation_angle=detected_angle,
                 position_offset={'x': 0, 'y': 0},
                 stroke_enabled=stroke_enabled,
                 stroke_color=stroke_color,
                 stroke_width=stroke_width,
-                inpaint_method=inpainting_method
+                inpaint_method=inpainting_method,
+                # 自动颜色提取结果（强制提取，始终保存）
+                auto_fg_color=color_result.fg_color,
+                auto_bg_color=color_result.bg_color,
+                color_confidence=color_result.confidence
             )
             bubble_states.append(state)
         

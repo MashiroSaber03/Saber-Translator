@@ -79,6 +79,14 @@ export interface BubbleState {
   // 修复参数
   /** 修复方式 */
   inpaintMethod: InpaintMethod
+
+  // 自动颜色提取（48px OCR 模型）
+  /** 自动提取的文字颜色 RGB [r, g, b]，值范围 0-255 */
+  autoFgColor?: [number, number, number] | null
+  /** 自动提取的背景颜色 RGB [r, g, b]，值范围 0-255 */
+  autoBgColor?: [number, number, number] | null
+  /** 颜色提取置信度 0-1 */
+  colorConfidence?: number
 }
 
 /**

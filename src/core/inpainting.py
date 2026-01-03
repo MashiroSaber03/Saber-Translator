@@ -129,7 +129,7 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
 
     Returns:
         PIL.Image.Image: 处理后的 PIL 图像。
-        PIL.Image.Image or None: 清理后的背景图像（如果修复成功），否则为 None。\
+        PIL.Image.Image or None: 清理后的背景图像（如果修复成功），否则为 None。
     """
     if not bubble_coords:
         logger.debug("无气泡坐标，跳过修复")

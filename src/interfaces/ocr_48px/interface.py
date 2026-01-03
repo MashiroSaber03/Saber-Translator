@@ -15,7 +15,7 @@
 
 import torch
 import numpy as np
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, NamedTuple
 from PIL import Image
 import logging
 import os
@@ -28,6 +28,13 @@ from src.shared import constants
 logger = logging.getLogger("Model48pxOCR")
 
 _model_48px_instance = None
+
+
+class ColorExtractionResult(NamedTuple):
+    """颜色提取结果"""
+    fg_color: Optional[Tuple[int, int, int]]  # 前景色 RGB (0-255)
+    bg_color: Optional[Tuple[int, int, int]]  # 背景色 RGB (0-255)
+    confidence: float  # 置信度 0-1
 
 
 def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, target_height: int = 48) -> np.ndarray:
@@ -267,9 +274,32 @@ class Model48pxOCR:
         return self._recognize_single_line(resized)
     
     def _recognize_single_line(self, line_img: np.ndarray) -> str:
-        """识别单行文本图像"""
+        """识别单行文本图像（仅返回文本）"""
+        text, _, _, _ = self._recognize_single_line_with_color(line_img)
+        return text
+    
+    def _recognize_single_line_with_color(
+        self, 
+        line_img: np.ndarray,
+        prob_threshold: float = 0.2
+    ) -> Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]], float]:
+        """
+        识别单行文本图像并提取颜色
+        
+        基于 manga-image-translator 的颜色提取逻辑：
+        - 模型为每个字符预测前景色和背景色
+        - 使用 fg_ind_pred/bg_ind_pred 判断颜色是否有效
+        - 对所有有效字符的颜色取平均值
+        
+        Returns:
+            (text, fg_color, bg_color, prob)
+            - text: 识别的文本
+            - fg_color: 前景色 RGB (0-255) 或 None
+            - bg_color: 背景色 RGB (0-255) 或 None
+            - prob: 置信度 0-1
+        """
         if line_img.shape[0] == 0 or line_img.shape[1] == 0:
-            return ""
+            return "", None, None, 0.0
         
         # 确保高度是48
         if line_img.shape[0] != 48:
@@ -298,13 +328,103 @@ class Model48pxOCR:
                 tensor, [width], beams_k=5, max_seq_length=255
             )
         
-        # 解码
-        if preds and len(preds) > 0:
-            pred_chars, prob, *_ = preds[0]
-            if prob >= 0.2:  # 置信度阈值
-                return self._decode(pred_chars)
+        if not preds or len(preds) == 0:
+            return "", None, None, 0.0
         
-        return ""
+        # 解析结果：(pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred)
+        pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = preds[0]
+        
+        if prob < prob_threshold:
+            return "", None, None, prob
+        
+        # 解码文本并聚合颜色
+        text, fg_color, bg_color = self._decode_with_colors(
+            pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
+        )
+        
+        return text, fg_color, bg_color, prob
+    
+    def _decode_with_colors(
+        self,
+        char_indices: torch.Tensor,
+        fg_pred: torch.Tensor,
+        bg_pred: torch.Tensor,
+        fg_ind_pred: torch.Tensor,
+        bg_ind_pred: torch.Tensor
+    ) -> Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]]]:
+        """
+        解码字符序列并聚合颜色
+        
+        按照 manga-image-translator 的颜色聚合逻辑：
+        - 对每个字符，检查 fg_ind_pred[:, 1] > fg_ind_pred[:, 0] 判断是否有前景色
+        - 对所有有效的颜色值取平均
+        """
+        seq = []
+        fg_sum = [0.0, 0.0, 0.0]
+        bg_sum = [0.0, 0.0, 0.0]
+        fg_count = 0
+        bg_count = 0
+        
+        # 判断每个字符是否有有效的前景/背景色
+        has_fg = (fg_ind_pred[:, 1] > fg_ind_pred[:, 0])
+        has_bg = (bg_ind_pred[:, 1] > bg_ind_pred[:, 0])
+        
+        for i, idx in enumerate(char_indices):
+            idx_val = idx.item() if isinstance(idx, torch.Tensor) else idx
+            if idx_val >= len(self.dictionary):
+                continue
+            ch = self.dictionary[idx_val]
+            
+            if ch == '<S>':
+                continue
+            if ch == '</S>':
+                break
+            if ch == '<SP>':
+                seq.append(' ')
+            else:
+                seq.append(ch)
+            
+            # 聚合颜色 (跳过特殊字符)
+            if ch not in ('<S>', '</S>', '<SP>') and i < len(has_fg):
+                if has_fg[i].item():
+                    fg_sum[0] += fg_pred[i, 0].item() * 255
+                    fg_sum[1] += fg_pred[i, 1].item() * 255
+                    fg_sum[2] += fg_pred[i, 2].item() * 255
+                    fg_count += 1
+                
+                if has_bg[i].item():
+                    bg_sum[0] += bg_pred[i, 0].item() * 255
+                    bg_sum[1] += bg_pred[i, 1].item() * 255
+                    bg_sum[2] += bg_pred[i, 2].item() * 255
+                    bg_count += 1
+                else:
+                    # 如果没有背景色，用前景色作为背景（manga-image-translator 的逻辑）
+                    bg_sum[0] += fg_pred[i, 0].item() * 255
+                    bg_sum[1] += fg_pred[i, 1].item() * 255
+                    bg_sum[2] += fg_pred[i, 2].item() * 255
+                    bg_count += 1
+        
+        text = ''.join(seq)
+        
+        # 计算平均颜色
+        fg_color = None
+        bg_color = None
+        
+        if fg_count > 0:
+            fg_color = (
+                min(max(int(fg_sum[0] / fg_count), 0), 255),
+                min(max(int(fg_sum[1] / fg_count), 0), 255),
+                min(max(int(fg_sum[2] / fg_count), 0), 255)
+            )
+        
+        if bg_count > 0:
+            bg_color = (
+                min(max(int(bg_sum[0] / bg_count), 0), 255),
+                min(max(int(bg_sum[1] / bg_count), 0), 255),
+                min(max(int(bg_sum[2] / bg_count), 0), 255)
+            )
+        
+        return text, fg_color, bg_color
     
     def _decode(self, char_indices: torch.Tensor) -> str:
         """解码字符序列"""
@@ -322,6 +442,124 @@ class Model48pxOCR:
             else:
                 seq.append(ch)
         return ''.join(seq)
+
+
+    def extract_colors_for_bubbles(
+        self,
+        image: Image.Image,
+        bubble_coords: List[Tuple[int, int, int, int]],
+        textlines_per_bubble: Optional[List[List[Dict]]] = None
+    ) -> List[ColorExtractionResult]:
+        """
+        为每个气泡提取颜色（强制提取，总是执行）
+        
+        这是设计文档中"强制提取"功能的核心实现。
+        无论用户是否启用"使用自动颜色"，翻译时总是调用此方法提取颜色。
+        
+        Args:
+            image: PIL Image
+            bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
+            textlines_per_bubble: 每个气泡对应的原始文本行列表（可选）
+        
+        Returns:
+            List[ColorExtractionResult]: 每个气泡的颜色提取结果
+        """
+        if not self.initialized or self.model is None:
+            logger.error("48px OCR 未初始化，无法提取颜色")
+            return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+        
+        if not bubble_coords:
+            return []
+        
+        logger.info(f"开始为 {len(bubble_coords)} 个气泡提取颜色...")
+        
+        try:
+            img_np = np.array(image.convert('RGB'))
+            results = []
+            
+            # 如果没有提供原始文本行，使用简单裁剪模式
+            if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
+                logger.info("使用简单裁剪模式提取颜色")
+                for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+                    bubble = img_np[y1:y2, x1:x2]
+                    result = self._extract_color_from_region(bubble)
+                    results.append(result)
+                    if result.fg_color:
+                        logger.debug(f"气泡 {i}: fg={result.fg_color}, bg={result.bg_color}, conf={result.confidence:.2f}")
+                return results
+            
+            # 使用原始文本行进行精确颜色提取
+            for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
+                if not textlines:
+                    # 该气泡没有文本行，使用简单裁剪
+                    x1, y1, x2, y2 = coords
+                    result = self._extract_color_from_region(img_np[y1:y2, x1:x2])
+                    results.append(result)
+                    continue
+                
+                # 对每个文本行提取颜色并聚合
+                all_fg = []
+                all_bg = []
+                all_probs = []
+                
+                for line_info in textlines:
+                    polygon = line_info.get('polygon', [])
+                    direction = line_info.get('direction', 'h')
+                    
+                    if not polygon or len(polygon) != 4:
+                        continue
+                    
+                    pts = np.array(polygon, dtype=np.float32)
+                    region_img = get_transformed_region(img_np, pts, direction, target_height=48)
+                    
+                    _, fg_color, bg_color, prob = self._recognize_single_line_with_color(region_img)
+                    
+                    if fg_color:
+                        all_fg.append(fg_color)
+                    if bg_color:
+                        all_bg.append(bg_color)
+                    if prob > 0:
+                        all_probs.append(prob)
+                
+                # 聚合所有文本行的颜色
+                final_fg = self._average_colors(all_fg) if all_fg else None
+                final_bg = self._average_colors(all_bg) if all_bg else None
+                final_prob = sum(all_probs) / len(all_probs) if all_probs else 0.0
+                
+                result = ColorExtractionResult(final_fg, final_bg, final_prob)
+                results.append(result)
+                
+                if final_fg:
+                    logger.debug(f"气泡 {bubble_idx}: fg={final_fg}, bg={final_bg}, conf={final_prob:.2f}")
+            
+            logger.info(f"颜色提取完成，成功 {sum(1 for r in results if r.fg_color)} / {len(results)}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"颜色提取失败: {e}", exc_info=True)
+            return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+    
+    def _extract_color_from_region(self, region: np.ndarray) -> ColorExtractionResult:
+        """从区域提取颜色（简单缩放模式）"""
+        if region.shape[0] == 0 or region.shape[1] == 0:
+            return ColorExtractionResult(None, None, 0.0)
+        
+        h, w = region.shape[:2]
+        scale = 48 / h
+        new_w = max(int(w * scale), 1)
+        resized = cv2.resize(region, (new_w, 48), interpolation=cv2.INTER_LINEAR)
+        
+        _, fg_color, bg_color, prob = self._recognize_single_line_with_color(resized)
+        return ColorExtractionResult(fg_color, bg_color, prob)
+    
+    def _average_colors(self, colors: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
+        """计算颜色平均值"""
+        if not colors:
+            return (0, 0, 0)
+        r = sum(c[0] for c in colors) // len(colors)
+        g = sum(c[1] for c in colors) // len(colors)
+        b = sum(c[2] for c in colors) // len(colors)
+        return (r, g, b)
 
 
 def get_48px_ocr_handler() -> Model48pxOCR:

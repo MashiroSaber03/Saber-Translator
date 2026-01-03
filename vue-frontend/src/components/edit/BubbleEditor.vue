@@ -156,6 +156,7 @@
                 type="color"
                 v-model="localTextColor"
                 class="hidden-color-input"
+                @input="handleTextColorChange"
                 @change="handleTextColorChange"
               />
             </div>

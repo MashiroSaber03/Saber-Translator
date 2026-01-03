@@ -82,6 +82,9 @@ export interface TranslateImageParams {
   strokeEnabled?: boolean
   strokeColor?: string
   strokeWidth?: number
+  
+  // 智能颜色识别设置
+  useAutoTextColor?: boolean  // 是否使用自动识别的文字颜色
 
   // 修复方式（后端使用 use_lama + lamaModel）
   use_inpainting?: boolean

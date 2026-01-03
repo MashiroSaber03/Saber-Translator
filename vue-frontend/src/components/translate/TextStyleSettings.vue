@@ -111,11 +111,21 @@
       <div class="setting-row">
         <label class="setting-label">文字颜色</label>
         <div class="setting-control color-control">
+          <!-- 自动颜色开关 -->
+          <label class="auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
+            <input
+              type="checkbox"
+              v-model="useAutoTextColor"
+              @change="handleUseAutoTextColorChange"
+            />
+            <span>自动</span>
+          </label>
           <input
             type="color"
             v-model="textColor"
             @input="handleTextColorChange"
             class="color-picker"
+            :disabled="useAutoTextColor"
           />
           <input
             type="text"
@@ -123,8 +133,12 @@
             @change="handleTextColorChange"
             class="color-input"
             maxlength="7"
+            :disabled="useAutoTextColor"
           />
         </div>
+      </div>
+      <div v-if="useAutoTextColor" class="auto-color-hint">
+        💡 翻译时将自动使用识别到的文字颜色
       </div>
     </div>
 
@@ -418,6 +432,12 @@ const inpaintMethod = computed({
   set: (value: InpaintMethod) => settingsStore.updateTextStyle({ inpaintMethod: value })
 })
 
+/** 使用自动文字颜色 */
+const useAutoTextColor = computed({
+  get: () => settingsStore.settings.textStyle.useAutoTextColor ?? true,
+  set: (value: boolean) => settingsStore.updateTextStyle({ useAutoTextColor: value })
+})
+
 /** 所有字号预设（内置 + 自定义） */
 const allFontPresets = computed(() => {
   const custom = settingsStore.customFontPresets
@@ -647,6 +667,11 @@ function handleStrokeColorChange(): void {
 
 function handleStrokeWidthChange(): void {
   // v-model 自动同步，此处可用于额外处理
+}
+
+function handleUseAutoTextColorChange(): void {
+  // v-model 自动同步，此处可用于额外处理
+  console.log('自动文字颜色设置已更改:', useAutoTextColor.value)
 }
 
 // ============================================================
@@ -949,6 +974,53 @@ onMounted(() => {
 
 .apply-confirm-btn:hover {
   background: var(--success-color-dark, #449d44);
+}
+
+/* 自动颜色开关 */
+.auto-color-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-color, #ddd);
+  transition: all 0.2s ease;
+}
+
+.auto-color-toggle:hover {
+  border-color: var(--primary-color, #4a90d9);
+}
+
+.auto-color-toggle:has(input:checked) {
+  background: var(--primary-color-light, #e3f2fd);
+  border-color: var(--primary-color, #4a90d9);
+  color: var(--primary-color, #4a90d9);
+}
+
+.auto-color-toggle input {
+  cursor: pointer;
+}
+
+/* 自动颜色提示 */
+.auto-color-hint {
+  padding: 6px 10px;
+  margin-left: 70px;
+  font-size: 11px;
+  color: var(--primary-color, #4a90d9);
+  background: var(--primary-color-light, #e3f2fd);
+  border-radius: 4px;
+  border-left: 3px solid var(--primary-color, #4a90d9);
+}
+
+/* 禁用状态的颜色选择器 */
+.color-picker:disabled,
+.color-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 </style>

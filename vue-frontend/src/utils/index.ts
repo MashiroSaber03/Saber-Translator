@@ -41,3 +41,19 @@ export {
   isPointInVisualContent,
   type ImageDisplayMetrics
 } from './imageMetrics'
+
+// 颜色工具函数
+export {
+  rgbArrayToHex,
+  hexToRgbArray,
+  isValidHex,
+  normalizeHex,
+  isSameColor,
+  isRgbEqualToHex,
+  colorDifference,
+  isDarkColor,
+  getContrastColor,
+  formatRgb,
+  formatConfidence,
+  type RgbArray
+} from './colorUtils'

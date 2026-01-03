@@ -137,6 +137,9 @@ export function buildTranslateParams(
     strokeEnabled: textStyle.strokeEnabled,
     strokeColor: textStyle.strokeColor,
     strokeWidth: textStyle.strokeWidth,
+    
+    // 智能颜色识别设置（仅文字颜色）
+    useAutoTextColor: textStyle.useAutoTextColor ?? true,
 
     // 修复方式（与原版 ui.getRepairSettings() 保持一致）
     // inpaintMethod: 'solid' | 'lama_mpe' | 'litelama'

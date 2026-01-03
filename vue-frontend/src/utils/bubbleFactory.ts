@@ -50,7 +50,12 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   strokeWidth: DEFAULT_STROKE_WIDTH,
 
   // 修复参数
-  inpaintMethod: 'solid'
+  inpaintMethod: 'solid',
+
+  // 自动颜色提取（可选字段，翻译时由后端填充）
+  autoFgColor: null,
+  autoBgColor: null,
+  colorConfidence: 0
 }
 
 /**
@@ -209,7 +214,10 @@ export function cloneBubbleStates(states: BubbleState[]): BubbleState[] {
     ...state,
     coords: [...state.coords] as BubbleCoords,
     polygon: state.polygon ? state.polygon.map((point) => [...point]) : [],
-    position: { ...state.position }
+    position: { ...state.position },
+    // 深拷贝颜色数组（如果存在）
+    autoFgColor: state.autoFgColor ? [...state.autoFgColor] as [number, number, number] : null,
+    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null
   }))
 }
 
@@ -223,7 +231,10 @@ export function cloneBubbleState(state: BubbleState): BubbleState {
     ...state,
     coords: [...state.coords] as BubbleCoords,
     polygon: state.polygon ? state.polygon.map((point) => [...point]) : [],
-    position: { ...state.position }
+    position: { ...state.position },
+    // 深拷贝颜色数组（如果存在）
+    autoFgColor: state.autoFgColor ? [...state.autoFgColor] as [number, number, number] : null,
+    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null
   }
 }
 
