@@ -2,9 +2,41 @@
  * 网页导入 API
  */
 
-import type { WebImportSettings, ExtractResult, DownloadResult, AgentLog, ComicPage } from '@/types/webImport'
+import type { WebImportSettings, ExtractResult, DownloadResult, AgentLog, ComicPage, WebImportEngine, GalleryDLSupportResult } from '@/types/webImport'
 
 const API_BASE = '/api/web-import'
+
+/**
+ * 检查 URL 是否支持 gallery-dl
+ */
+export async function checkGalleryDLSupport(url: string): Promise<GalleryDLSupportResult> {
+  const response = await fetch(`${API_BASE}/check-support?url=${encodeURIComponent(url)}`)
+  return response.json()
+}
+
+/**
+ * 获取代理图片 URL
+ */
+export function getProxyImageUrl(imageUrl: string, referer?: string): string {
+  const params = new URLSearchParams({ url: imageUrl })
+  if (referer) {
+    params.set('referer', referer)
+  }
+  return `${API_BASE}/proxy-image?${params.toString()}`
+}
+
+/**
+ * 获取 gallery-dl 临时目录中的图片（base64 格式）
+ */
+export async function getGalleryDLImages(): Promise<{
+  success: boolean
+  images: Array<{ filename: string; data: string }>
+  total: number
+  error?: string
+}> {
+  const response = await fetch(`${API_BASE}/gallery-dl-images`)
+  return response.json()
+}
 
 /**
  * 提取漫画图片 (SSE 流式)
@@ -14,14 +46,15 @@ export async function extractImages(
   config: WebImportSettings,
   onLog: (log: AgentLog) => void,
   onResult: (result: ExtractResult) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  engine: WebImportEngine = 'auto'
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/extract`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ url, config })
+    body: JSON.stringify({ url, config, engine })
   })
 
   if (!response.ok) {
@@ -88,14 +121,15 @@ export async function extractImages(
 export async function downloadImages(
   pages: ComicPage[],
   sourceUrl: string,
-  config: WebImportSettings
+  config: WebImportSettings,
+  engine: WebImportEngine = 'ai-agent'
 ): Promise<DownloadResult> {
   const response = await fetch(`${API_BASE}/download`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ pages, sourceUrl, config })
+    body: JSON.stringify({ pages, sourceUrl, config, engine })
   })
 
   if (!response.ok) {

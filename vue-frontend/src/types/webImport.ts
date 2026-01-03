@@ -4,6 +4,9 @@
 
 import type { TranslationProvider } from './settings'
 
+/** 导入引擎类型 */
+export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'
+
 /** 图片预处理设置 */
 export interface ImagePreprocessSettings {
     enabled: boolean
@@ -85,6 +88,15 @@ export interface ExtractResult {
     pages: ComicPage[]
     totalPages: number
     sourceUrl: string
+    referer?: string
+    engine?: WebImportEngine
+    error?: string
+}
+
+/** Gallery-DL 支持检查结果 */
+export interface GalleryDLSupportResult {
+    available: boolean
+    supported: boolean
     error?: string
 }
 
@@ -101,6 +113,7 @@ export interface DownloadResult {
     success: boolean
     images: DownloadedImage[]
     failedCount: number
+    error?: string
 }
 
 /** Agent 日志 */
@@ -114,6 +127,9 @@ export interface AgentLog {
 export interface WebImportState {
     status: 'idle' | 'extracting' | 'extracted' | 'downloading' | 'completed' | 'error'
     url: string
+    engine: WebImportEngine
+    currentEngine: WebImportEngine | null
+    referer: string
     logs: AgentLog[]
     extractResult: ExtractResult | null
     selectedPages: Set<number>

@@ -71,6 +71,7 @@ critical_packages = [
     'ultralytics',           # YOLO 检测器
     'chromadb',              # 向量数据库 (manga_insight)
     'edge_tts',              # TTS (manga_insight)
+    'gallery_dl',            # 网页导入 - Gallery-DL 引擎
 ]
 
 for pkg in critical_packages:

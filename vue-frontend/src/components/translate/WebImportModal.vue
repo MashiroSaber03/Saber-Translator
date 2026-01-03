@@ -2,12 +2,13 @@
 /**
  * 网页导入模态框
  * 核心功能界面：URL输入 → 提取 → 预览 → 下载 → 导入
+ * 支持双引擎：Gallery-DL (主流站点高速下载) 和 AI Agent (通用网站)
  */
 import { ref, computed, watch } from 'vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
-import { extractImages, downloadImages } from '@/api/webImport'
-import type { AgentLog, ExtractResult } from '@/types/webImport'
+import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages } from '@/api/webImport'
+import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 
 const webImportStore = useWebImportStore()
 const imageStore = useImageStore()
@@ -15,6 +16,10 @@ const imageStore = useImageStore()
 // 本地状态
 const urlInput = ref('')
 const logsExpanded = ref(true)
+const selectedEngine = ref<WebImportEngine>('auto')
+const galleryDLAvailable = ref(false)
+const galleryDLSupported = ref(false)
+const checkingSupport = ref(false)
 
 // 计算属性
 const isVisible = computed(() => webImportStore.modalVisible)
@@ -29,11 +34,62 @@ const error = computed(() => webImportStore.error)
 const isProcessing = computed(() => webImportStore.isProcessing)
 const showAgentLogs = computed(() => webImportStore.settings.ui.showAgentLogs)
 
+// 当前使用的引擎
+const currentEngine = computed(() => extractResult.value?.engine || null)
+
+// 引擎显示名称
+const engineDisplayName = computed(() => {
+  switch (currentEngine.value) {
+    case 'gallery-dl': return 'Gallery-DL'
+    case 'ai-agent': return 'AI Agent'
+    default: return ''
+  }
+})
+
 // 是否全选
 const isAllSelected = computed(() => {
   if (!extractResult.value?.pages) return false
   return selectedCount.value === extractResult.value.pages.length
 })
+
+// 获取预览图 URL（gallery-dl 引擎直接使用静态文件服务）
+function getPreviewUrl(originalUrl: string): string {
+  // gallery-dl 引擎的图片已在本地，直接使用静态服务路径
+  if (currentEngine.value === 'gallery-dl') {
+    // imageUrl 格式: /api/web-import/static/temp/gallery_dl/xxx.webp
+    // 直接返回，不需要代理
+    return originalUrl
+  }
+  return originalUrl
+}
+
+// 检查 URL 支持（防抖）
+let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
+async function checkUrlSupport(url: string) {
+  if (checkSupportTimeout) {
+    clearTimeout(checkSupportTimeout)
+  }
+  
+  if (!url.trim()) {
+    galleryDLAvailable.value = false
+    galleryDLSupported.value = false
+    return
+  }
+  
+  checkSupportTimeout = setTimeout(async () => {
+    checkingSupport.value = true
+    try {
+      const result = await checkGalleryDLSupport(url)
+      galleryDLAvailable.value = result.available
+      galleryDLSupported.value = result.supported
+    } catch {
+      galleryDLAvailable.value = false
+      galleryDLSupported.value = false
+    } finally {
+      checkingSupport.value = false
+    }
+  }, 500)
+}
 
 // 关闭模态框
 function handleClose() {
@@ -83,7 +139,8 @@ async function handleExtract() {
       },
       (errorMsg: string) => {
         webImportStore.setError(errorMsg)
-      }
+      },
+      selectedEngine.value
     )
   } catch (e) {
     webImportStore.setError(e instanceof Error ? e.message : '提取失败')
@@ -115,11 +172,42 @@ async function handleImport() {
   webImportStore.setStatus('downloading')
   webImportStore.updateDownloadProgress(0, selectedPagesList.length)
 
+  // 使用提取时使用的引擎
+  const engineToUse = currentEngine.value || 'ai-agent'
+
   try {
+    // gallery-dl 引擎：图片已下载到临时目录，直接获取
+    if (engineToUse === 'gallery-dl') {
+      const galleryResult = await getGalleryDLImages()
+      
+      if (galleryResult.success && galleryResult.images.length > 0) {
+        let importedCount = 0
+        const maxImport = Math.min(galleryResult.images.length, selectedPagesList.length)
+        
+        for (let i = 0; i < maxImport; i++) {
+          const img = galleryResult.images[i]
+          if (img && img.filename && img.data) {
+            imageStore.addImage(img.filename, img.data)
+            importedCount++
+            webImportStore.updateDownloadProgress(importedCount, maxImport)
+          }
+        }
+        
+        webImportStore.setStatus('completed')
+        alert(`成功导入 ${importedCount} 张图片`)
+        handleClose()
+        return
+      } else {
+        throw new Error(galleryResult.error || '获取图片失败')
+      }
+    }
+    
+    // AI Agent 引擎：调用下载接口
     const result = await downloadImages(
       selectedPagesList,
       extractResult.value.sourceUrl,
-      webImportStore.settings
+      webImportStore.settings,
+      engineToUse
     )
 
     if (result.success && result.images.length > 0) {
@@ -156,6 +244,11 @@ watch(isVisible, (visible) => {
     }, 100)
   }
 })
+
+// 监听 URL 输入变化，检查 gallery-dl 支持
+watch(urlInput, (newUrl) => {
+  checkUrlSupport(newUrl)
+})
 </script>
 
 <template>
@@ -183,6 +276,15 @@ watch(isVisible, (visible) => {
               :disabled="isProcessing"
               @keyup.enter="handleExtract"
             />
+            <select
+              v-model="selectedEngine"
+              class="engine-select"
+              :disabled="isProcessing"
+            >
+              <option value="auto">自动选择</option>
+              <option value="gallery-dl">Gallery-DL</option>
+              <option value="ai-agent">AI Agent</option>
+            </select>
             <button
               class="extract-btn"
               :disabled="isProcessing || !urlInput.trim()"
@@ -192,6 +294,13 @@ watch(isVisible, (visible) => {
               <span v-else>🔍</span>
               {{ status === 'extracting' ? '提取中...' : '开始提取' }}
             </button>
+          </div>
+
+          <!-- 引擎支持提示 -->
+          <div v-if="urlInput.trim() && !isProcessing" class="engine-hint">
+            <span v-if="checkingSupport" class="hint-checking">检查中...</span>
+            <span v-else-if="galleryDLSupported" class="hint-supported">✓ 该网站支持 Gallery-DL 高速下载</span>
+            <span v-else-if="galleryDLAvailable" class="hint-unsupported">该网站将使用 AI Agent 模式</span>
           </div>
 
           <!-- 使用须知 -->
@@ -231,7 +340,10 @@ watch(isVisible, (visible) => {
               <span class="result-title">
                 📖 《{{ extractResult.comicTitle }}》- {{ extractResult.chapterTitle }}
               </span>
-              <span class="result-count">共 {{ extractResult.totalPages }} 张</span>
+              <span class="result-meta">
+                <span class="result-count">共 {{ extractResult.totalPages }} 张</span>
+                <span v-if="engineDisplayName" class="result-engine">| 引擎: {{ engineDisplayName }}</span>
+              </span>
             </div>
 
             <!-- 选择控制 -->
@@ -265,7 +377,7 @@ watch(isVisible, (visible) => {
                   />
                 </div>
                 <div class="image-preview">
-                  <img :src="page.imageUrl" :alt="`第${page.pageNumber}页`" loading="lazy" />
+                  <img :src="getPreviewUrl(page.imageUrl)" :alt="`第${page.pageNumber}页`" loading="lazy" />
                 </div>
                 <div class="image-label">第 {{ page.pageNumber }} 页</div>
               </div>
@@ -394,6 +506,44 @@ watch(isVisible, (visible) => {
   border-color: var(--primary-color, #4a90d9);
 }
 
+.engine-select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background: var(--bg-primary, #fff);
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.engine-select:focus {
+  border-color: var(--primary-color, #4a90d9);
+}
+
+.engine-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.engine-hint {
+  font-size: 12px;
+  margin-bottom: 12px;
+  padding: 0 2px;
+}
+
+.hint-checking {
+  color: var(--text-secondary, #888);
+}
+
+.hint-supported {
+  color: #28a745;
+}
+
+.hint-unsupported {
+  color: var(--text-secondary, #888);
+}
+
 .extract-btn {
   display: flex;
   align-items: center;
@@ -513,9 +663,20 @@ watch(isVisible, (visible) => {
   color: var(--text-primary, #333);
 }
 
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .result-count {
   font-size: 13px;
   color: var(--text-secondary, #666);
+}
+
+.result-engine {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
 }
 
 .select-control {

@@ -38,5 +38,8 @@ chromadb>=0.4.0
 edge-tts>=6.1.0
 httpx[http2]>=0.25.0
 
+# Web Import
+gallery-dl>=1.26.0
+
 # Build
 pyinstaller
