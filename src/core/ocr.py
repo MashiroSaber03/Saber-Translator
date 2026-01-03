@@ -8,6 +8,7 @@ import numpy as np
 import io
 import json
 import re
+import torch  # 用于48px OCR设备检测
 
 # 导入接口和常量
 from src.interfaces.manga_ocr_interface import recognize_japanese_text, get_manga_ocr_instance
@@ -85,7 +86,8 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               custom_ai_vision_base_url=None,
                               use_json_format_for_ai_vision=False,
                               rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
-                              jsonPromptMode: str = 'normal'): # <--- 新增rpm参数
+                              jsonPromptMode: str = 'normal',
+                              textlines_per_bubble=None):  # 新增：每个气泡对应的原始文本行（48px OCR 使用）
     """
     根据源语言和引擎选择，使用指定的 OCR 引擎识别所有气泡内的文本。
 
@@ -126,6 +128,9 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
     elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID: # 使用常量
         ocr_engine_type = 'AIVision' # 内部使用的类型名
         logger.info(f"使用AI视觉OCR引擎: {ai_vision_provider}")
+    elif ocr_engine == constants.OCR_ENGINE_48PX:  # 新增
+        ocr_engine_type = '48pxOCR'
+        logger.info("使用 48px OCR 引擎")
     else:
         logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
         ocr_engine_type = 'PaddleOCR'
@@ -272,6 +277,21 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
             logger.info("MangaOCR 识别完成。")
         else:
             logger.error("无法初始化 MangaOCR，OCR 步骤跳过。")
+    
+    # --- 使用 48px OCR ---
+    elif ocr_engine_type == '48pxOCR':
+        from src.interfaces.ocr_48px import get_48px_ocr_handler
+        
+        ocr_handler = get_48px_ocr_handler()
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        if ocr_handler.initialize(device):
+            # 传递原始文本行信息以获得更好的识别效果
+            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble)
+            logger.info("48px OCR 识别完成")
+        else:
+            logger.error("48px OCR 初始化失败，OCR 步骤跳过")
+    
     elif ocr_engine_type == 'AIVision':
         if all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
             if ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:

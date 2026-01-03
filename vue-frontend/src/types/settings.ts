@@ -8,7 +8,7 @@ import type { TextDirection, InpaintMethod } from './bubble'
 /**
  * OCR 引擎类型
  */
-export type OcrEngine = 'manga_ocr' | 'paddle_ocr' | 'baidu_ocr' | 'ai_vision'
+export type OcrEngine = 'manga_ocr' | 'paddle_ocr' | 'baidu_ocr' | 'ai_vision' | '48px_ocr'
 
 /**
  * 文本检测器类型

@@ -218,6 +218,7 @@ const ocrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
   { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
   { label: '百度OCR', value: 'baidu_ocr' },
+  { label: '48px OCR', value: '48px_ocr' },
   { label: 'AI视觉OCR', value: 'ai_vision' }
 ]
 
@@ -384,6 +385,8 @@ function getSourceLanguageHint(): string {
       return '百度OCR 使用独立的源语言设置（见下方）'
     case 'ai_vision':
       return 'AI视觉OCR 通过提示词指定识别语言'
+    case '48px_ocr':
+      return '48px OCR 支持日中英韩等多语言，源语言设置不影响识别'
     default:
       return '选择要识别的原文语言'
   }

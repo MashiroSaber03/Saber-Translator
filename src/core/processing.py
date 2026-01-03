@@ -133,6 +133,13 @@ def process_image_translation(
     # 调试选项
     show_detection_debug = config.show_detection_debug  # 是否显示检测框调试
     
+    # 48px OCR 兼容性校验
+    if (ocr_engine == constants.OCR_ENGINE_48PX and 
+        detector_type in constants.OCR_48PX_INCOMPATIBLE_DETECTORS):
+        error_msg = f"48px OCR 不支持 {detector_type} 检测器（该检测器输出多行合并框）"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     logger.info(f"开始处理图像翻译流程: 源={source_language}, 目标={target_language}, 修复={inpainting_method}")
     start_time_total = time.time() # 记录总时间
 
@@ -354,8 +361,11 @@ def process_image_translation(
                     rpm_limit_ai_vision=rpm_limit_ai_vision_ocr
                 )
             else:
-                # 使用其他OCR引擎
-                original_texts = recognize_text_in_bubbles(image_pil, bubble_coords, source_language, ocr_engine)
+                # 使用其他OCR引擎（包括 48px OCR）
+                original_texts = recognize_text_in_bubbles(
+                    image_pil, bubble_coords, source_language, ocr_engine,
+                    textlines_per_bubble=textlines_per_bubble  # 传递原始文本行（48px OCR 需要）
+                )
                 
             logger.info(f"OCR 完成 (耗时: {time.time() - start_time:.2f}s)")
             # --- 触发 AFTER_OCR 钩子 ---
