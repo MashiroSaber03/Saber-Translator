@@ -331,3 +331,13 @@ DEFAULT_PROOFREADING_MAX_RETRIES = 2  # AI校对默认重试次数
 
 # --- 用户设置 ---
 USER_SETTINGS_FILE = 'user_settings.json'
+
+# --- 超长图片处理 (Large Image Rearrange) ---
+# 参考 manga-image-translator 的 det_rearrange_forward 实现
+# 当图片满足以下条件时自动启用切割检测:
+#   1. 缩放比 (down_scale_ratio) > LARGE_IMAGE_DOWNSCALE_THRESHOLD
+#   2. 长宽比 (aspect_ratio) > LARGE_IMAGE_ASPECT_THRESHOLD
+LARGE_IMAGE_ENABLED = True  # 是否启用超长图片自动切割
+LARGE_IMAGE_DOWNSCALE_THRESHOLD = 2.5  # 缩放比阈值
+LARGE_IMAGE_ASPECT_THRESHOLD = 3.0  # 长宽比阈值
+LARGE_IMAGE_TARGET_SIZE = 1536  # 切片目标尺寸（与检测器一致）

@@ -131,6 +131,7 @@ def detect(
     expand_bottom: float = 0,
     expand_left: float = 0,
     expand_right: float = 0,
+    enable_large_image: bool = None,
     **kwargs
 ) -> DetectionResult:
     """
@@ -143,13 +144,49 @@ def detect(
         edge_ratio_threshold: 边缘距离比例阈值
         expand_ratio: 整体扩展比例 (%)
         expand_top/bottom/left/right: 各边额外扩展 (%)
+        enable_large_image: 是否启用超长图片切割（None 时使用全局配置）
         **kwargs: 其他参数
         
     Returns:
         DetectionResult: 检测结果
     """
+    from src.shared import constants
+    
     detector = get_detector(detector_type)
     
+    # 判断是否启用大图检测
+    if enable_large_image is None:
+        enable_large_image = getattr(constants, 'LARGE_IMAGE_ENABLED', True)
+    
+    if enable_large_image:
+        # 使用大图检测包装器
+        try:
+            from src.core.large_image_detection import LargeImageDetectorWrapper
+            
+            target_size = getattr(constants, 'LARGE_IMAGE_TARGET_SIZE', 1536)
+            
+            wrapper = LargeImageDetectorWrapper(
+                detector=detector,
+                target_size=target_size
+            )
+            
+            return wrapper.detect(
+                image,
+                merge_lines=merge_lines,
+                edge_ratio_threshold=edge_ratio_threshold,
+                expand_ratio=expand_ratio,
+                expand_top=expand_top,
+                expand_bottom=expand_bottom,
+                expand_left=expand_left,
+                expand_right=expand_right,
+                **kwargs
+            )
+        except ImportError as e:
+            logger.warning(f"大图检测模块导入失败，回退到普通检测: {e}")
+        except Exception as e:
+            logger.warning(f"大图检测失败，回退到普通检测: {e}")
+    
+    # 普通检测
     return detector.detect(
         image,
         merge_lines=merge_lines,
