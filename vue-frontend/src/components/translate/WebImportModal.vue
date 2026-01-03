@@ -7,8 +7,9 @@
 import { ref, computed, watch } from 'vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
-import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages } from '@/api/webImport'
+import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
+import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
 
 const webImportStore = useWebImportStore()
 const imageStore = useImageStore()
@@ -20,6 +21,14 @@ const selectedEngine = ref<WebImportEngine>('auto')
 const galleryDLAvailable = ref(false)
 const galleryDLSupported = ref(false)
 const checkingSupport = ref(false)
+
+// 设置相关状态
+const settingsExpanded = ref(false)
+const activeSettingsTab = ref<'basic' | 'preprocess' | 'advanced'>('basic')
+const testingFirecrawl = ref(false)
+const testingAgent = ref(false)
+const showFirecrawlKey = ref(false)
+const showAgentKey = ref(false)
 
 // 计算属性
 const isVisible = computed(() => webImportStore.modalVisible)
@@ -249,6 +258,65 @@ watch(isVisible, (visible) => {
 watch(urlInput, (newUrl) => {
   checkUrlSupport(newUrl)
 })
+
+// 计算属性：是否显示自定义 URL
+const showCustomUrl = computed(() => webImportStore.settings.agent.provider === 'custom_openai')
+
+// 测试 Firecrawl 连接
+async function handleTestFirecrawl() {
+  if (!webImportStore.settings.firecrawl.apiKey) {
+    alert('请输入 Firecrawl API Key')
+    return
+  }
+
+  testingFirecrawl.value = true
+  try {
+    const result = await testFirecrawlConnection(webImportStore.settings.firecrawl.apiKey)
+    if (result.success) {
+      alert('✅ Firecrawl 连接成功')
+    } else {
+      alert(`❌ 连接失败: ${result.error}`)
+    }
+  } catch (e) {
+    alert(`❌ 连接失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    testingFirecrawl.value = false
+  }
+}
+
+// 测试 Agent 连接
+async function handleTestAgent() {
+  if (!webImportStore.settings.agent.apiKey) {
+    alert('请输入 AI Agent API Key')
+    return
+  }
+
+  testingAgent.value = true
+  try {
+    const result = await testAgentConnection(
+      webImportStore.settings.agent.provider,
+      webImportStore.settings.agent.apiKey,
+      webImportStore.settings.agent.customBaseUrl,
+      webImportStore.settings.agent.modelName
+    )
+    if (result.success) {
+      alert('✅ AI Agent 连接成功')
+    } else {
+      alert(`❌ 连接失败: ${result.error}`)
+    }
+  } catch (e) {
+    alert(`❌ 连接失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    testingAgent.value = false
+  }
+}
+
+// 重置提示词
+function handleResetPrompt() {
+  if (confirm('确定要重置为默认提示词吗？')) {
+    webImportStore.resetExtractionPrompt()
+  }
+}
 </script>
 
 <template>
@@ -306,6 +374,425 @@ watch(urlInput, (newUrl) => {
           <!-- 使用须知 -->
           <div class="notice">
             ⚠️ 请仅爬取您有权访问的内容，并遵守目标网站的使用条款。
+          </div>
+
+          <!-- 设置区域（可折叠） -->
+          <div class="settings-section">
+            <div class="settings-header" @click="settingsExpanded = !settingsExpanded">
+              <span class="settings-toggle">{{ settingsExpanded ? '▼' : '▶' }}</span>
+              <span class="settings-title">⚙️ 设置</span>
+              <span class="settings-hint">点击展开配置</span>
+            </div>
+            
+            <div v-if="settingsExpanded" class="settings-content">
+              <!-- 选项卡 -->
+              <div class="settings-tabs">
+                <button
+                  class="settings-tab"
+                  :class="{ active: activeSettingsTab === 'basic' }"
+                  @click="activeSettingsTab = 'basic'"
+                >
+                  基本设置
+                </button>
+                <button
+                  class="settings-tab"
+                  :class="{ active: activeSettingsTab === 'preprocess' }"
+                  @click="activeSettingsTab = 'preprocess'"
+                >
+                  图片预处理
+                </button>
+                <button
+                  class="settings-tab"
+                  :class="{ active: activeSettingsTab === 'advanced' }"
+                  @click="activeSettingsTab = 'advanced'"
+                >
+                  高级设置
+                </button>
+              </div>
+
+              <!-- 基本设置 -->
+              <div v-show="activeSettingsTab === 'basic'" class="settings-tab-content">
+                <!-- Firecrawl 配置 -->
+                <div class="settings-group">
+                  <h4 class="group-title">Firecrawl 配置</h4>
+                  <div class="form-row">
+                    <label class="form-label">API Key</label>
+                    <div class="input-group">
+                      <input
+                        :type="showFirecrawlKey ? 'text' : 'password'"
+                        class="form-input"
+                        :value="webImportStore.settings.firecrawl.apiKey"
+                        @input="webImportStore.setFirecrawlApiKey(($event.target as HTMLInputElement).value)"
+                        placeholder="fc-xxxxxxxxxxxxxxxx"
+                      />
+                      <button class="toggle-btn" @click="showFirecrawlKey = !showFirecrawlKey">
+                        {{ showFirecrawlKey ? '👁' : '👁‍🗨' }}
+                      </button>
+                      <button
+                        class="test-btn"
+                        :disabled="testingFirecrawl || !webImportStore.settings.firecrawl.apiKey"
+                        @click="handleTestFirecrawl"
+                      >
+                        {{ testingFirecrawl ? '测试中...' : '测试连接' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- AI Agent 配置 -->
+                <div class="settings-group">
+                  <h4 class="group-title">AI Agent 配置</h4>
+                  
+                  <div class="form-row">
+                    <label class="form-label">服务商</label>
+                    <select
+                      class="form-select"
+                      :value="webImportStore.settings.agent.provider"
+                      @change="webImportStore.setAgentProvider(($event.target as HTMLSelectElement).value)"
+                    >
+                      <option
+                        v-for="provider in WEB_IMPORT_AGENT_PROVIDERS"
+                        :key="provider.value"
+                        :value="provider.value"
+                      >
+                        {{ provider.label }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label">API Key</label>
+                    <div class="input-group">
+                      <input
+                        :type="showAgentKey ? 'text' : 'password'"
+                        class="form-input"
+                        :value="webImportStore.settings.agent.apiKey"
+                        @input="webImportStore.setAgentApiKey(($event.target as HTMLInputElement).value)"
+                        placeholder="sk-xxxxxxxxxxxxxxxx"
+                      />
+                      <button class="toggle-btn" @click="showAgentKey = !showAgentKey">
+                        {{ showAgentKey ? '👁' : '👁‍🗨' }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="showCustomUrl" class="form-row">
+                    <label class="form-label">自定义 API 地址</label>
+                    <input
+                      type="url"
+                      class="form-input"
+                      :value="webImportStore.settings.agent.customBaseUrl"
+                      @input="webImportStore.setAgentBaseUrl(($event.target as HTMLInputElement).value)"
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label">模型名称</label>
+                    <input
+                      type="text"
+                      class="form-input"
+                      :value="webImportStore.settings.agent.modelName"
+                      @input="webImportStore.setAgentModelName(($event.target as HTMLInputElement).value)"
+                      placeholder="gpt-4o-mini"
+                    />
+                  </div>
+
+                  <div class="form-row inline">
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.agent.forceJsonOutput"
+                        @change="webImportStore.setAgentForceJson(($event.target as HTMLInputElement).checked)"
+                      />
+                      强制 JSON 格式
+                    </label>
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.agent.useStream"
+                        @change="webImportStore.setAgentUseStream(($event.target as HTMLInputElement).checked)"
+                      />
+                      流式调用
+                    </label>
+                  </div>
+
+                  <div class="form-row">
+                    <button
+                      class="test-btn full"
+                      :disabled="testingAgent || !webImportStore.settings.agent.apiKey"
+                      @click="handleTestAgent"
+                    >
+                      {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 提取设置 -->
+                <div class="settings-group">
+                  <h4 class="group-title">
+                    提取设置
+                    <button class="reset-btn" @click="handleResetPrompt">重置为默认</button>
+                  </h4>
+
+                  <div class="form-row">
+                    <label class="form-label">提取提示词</label>
+                    <textarea
+                      class="form-textarea"
+                      :value="webImportStore.settings.extraction.prompt"
+                      @input="webImportStore.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"
+                      rows="6"
+                      placeholder="输入提取提示词..."
+                    ></textarea>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label">最大迭代次数</label>
+                    <input
+                      type="number"
+                      class="form-input small"
+                      :value="webImportStore.settings.extraction.maxIterations"
+                      @input="webImportStore.setExtractionMaxIterations(Number(($event.target as HTMLInputElement).value))"
+                      min="1"
+                      max="20"
+                    />
+                  </div>
+                </div>
+
+                <!-- 下载设置 -->
+                <div class="settings-group">
+                  <h4 class="group-title">下载设置</h4>
+
+                  <div class="form-grid">
+                    <div class="form-row">
+                      <label class="form-label">并发数</label>
+                      <input
+                        type="number"
+                        class="form-input small"
+                        :value="webImportStore.settings.download.concurrency"
+                        @input="webImportStore.setDownloadConcurrency(Number(($event.target as HTMLInputElement).value))"
+                        min="1"
+                        max="10"
+                      />
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-label">超时 (秒)</label>
+                      <input
+                        type="number"
+                        class="form-input small"
+                        :value="webImportStore.settings.download.timeout"
+                        @input="webImportStore.setDownloadTimeout(Number(($event.target as HTMLInputElement).value))"
+                        min="5"
+                        max="120"
+                      />
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-label">重试次数</label>
+                      <input
+                        type="number"
+                        class="form-input small"
+                        :value="webImportStore.settings.download.retries"
+                        @input="webImportStore.setDownloadRetries(Number(($event.target as HTMLInputElement).value))"
+                        min="0"
+                        max="5"
+                      />
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-label">下载间隔 (ms)</label>
+                      <input
+                        type="number"
+                        class="form-input small"
+                        :value="webImportStore.settings.download.delay"
+                        @input="webImportStore.setDownloadDelay(Number(($event.target as HTMLInputElement).value))"
+                        min="0"
+                        max="2000"
+                        step="100"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.download.useReferer"
+                        @change="webImportStore.setDownloadUseReferer(($event.target as HTMLInputElement).checked)"
+                      />
+                      自动添加 Referer
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 界面设置 -->
+                <div class="settings-group">
+                  <h4 class="group-title">界面设置</h4>
+                  <div class="form-row inline">
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.ui.showAgentLogs"
+                        @change="webImportStore.setShowAgentLogs(($event.target as HTMLInputElement).checked)"
+                      />
+                      显示 AI 工作日志
+                    </label>
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.ui.autoImport"
+                        @change="webImportStore.setAutoImport(($event.target as HTMLInputElement).checked)"
+                      />
+                      提取后自动导入
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 图片预处理 -->
+              <div v-show="activeSettingsTab === 'preprocess'" class="settings-tab-content">
+                <div class="settings-group">
+                  <div class="form-row">
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.imagePreprocess.enabled"
+                        @change="webImportStore.setImagePreprocessEnabled(($event.target as HTMLInputElement).checked)"
+                      />
+                      启用图片预处理
+                    </label>
+                  </div>
+
+                  <template v-if="webImportStore.settings.imagePreprocess.enabled">
+                    <div class="form-row">
+                      <label class="checkbox-label">
+                        <input
+                          type="checkbox"
+                          :checked="webImportStore.settings.imagePreprocess.autoRotate"
+                          @change="webImportStore.setImageAutoRotate(($event.target as HTMLInputElement).checked)"
+                        />
+                        根据 EXIF 自动旋转
+                      </label>
+                    </div>
+
+                    <h5 class="subsection-title">压缩设置</h5>
+                    <div class="form-row">
+                      <label class="checkbox-label">
+                        <input
+                          type="checkbox"
+                          :checked="webImportStore.settings.imagePreprocess.compression.enabled"
+                          @change="webImportStore.setImageCompressionEnabled(($event.target as HTMLInputElement).checked)"
+                        />
+                        启用压缩
+                      </label>
+                    </div>
+
+                    <template v-if="webImportStore.settings.imagePreprocess.compression.enabled">
+                      <div class="form-grid">
+                        <div class="form-row">
+                          <label class="form-label">质量 (0-100)</label>
+                          <input
+                            type="number"
+                            class="form-input small"
+                            :value="webImportStore.settings.imagePreprocess.compression.quality"
+                            @input="webImportStore.setImageCompressionQuality(Number(($event.target as HTMLInputElement).value))"
+                            min="1"
+                            max="100"
+                          />
+                        </div>
+                        <div class="form-row">
+                          <label class="form-label">最大宽度 (0=不限)</label>
+                          <input
+                            type="number"
+                            class="form-input small"
+                            :value="webImportStore.settings.imagePreprocess.compression.maxWidth"
+                            @input="webImportStore.setImageMaxWidth(Number(($event.target as HTMLInputElement).value))"
+                            min="0"
+                          />
+                        </div>
+                        <div class="form-row">
+                          <label class="form-label">最大高度 (0=不限)</label>
+                          <input
+                            type="number"
+                            class="form-input small"
+                            :value="webImportStore.settings.imagePreprocess.compression.maxHeight"
+                            @input="webImportStore.setImageMaxHeight(Number(($event.target as HTMLInputElement).value))"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    </template>
+
+                    <h5 class="subsection-title">格式转换</h5>
+                    <div class="form-row">
+                      <label class="checkbox-label">
+                        <input
+                          type="checkbox"
+                          :checked="webImportStore.settings.imagePreprocess.formatConvert.enabled"
+                          @change="webImportStore.setImageFormatConvertEnabled(($event.target as HTMLInputElement).checked)"
+                        />
+                        启用格式转换
+                      </label>
+                    </div>
+
+                    <div v-if="webImportStore.settings.imagePreprocess.formatConvert.enabled" class="form-row">
+                      <label class="form-label">目标格式</label>
+                      <select
+                        class="form-select"
+                        :value="webImportStore.settings.imagePreprocess.formatConvert.targetFormat"
+                        @change="webImportStore.setImageTargetFormat(($event.target as HTMLSelectElement).value as 'jpeg' | 'png' | 'webp' | 'original')"
+                      >
+                        <option value="original">保持原格式</option>
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                        <option value="webp">WebP</option>
+                      </select>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- 高级设置 -->
+              <div v-show="activeSettingsTab === 'advanced'" class="settings-tab-content">
+                <div class="settings-group">
+                  <h4 class="group-title">自定义请求头</h4>
+
+                  <div class="form-row">
+                    <label class="form-label">Cookie</label>
+                    <input
+                      type="text"
+                      class="form-input"
+                      :value="webImportStore.settings.advanced.customCookie"
+                      @input="webImportStore.setCustomCookie(($event.target as HTMLInputElement).value)"
+                      placeholder="name=value; name2=value2"
+                    />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label">Headers (JSON)</label>
+                    <textarea
+                      class="form-textarea"
+                      :value="webImportStore.settings.advanced.customHeaders"
+                      @input="webImportStore.setCustomHeaders(($event.target as HTMLTextAreaElement).value)"
+                      rows="3"
+                      placeholder='{"X-Custom-Header": "value"}'
+                    ></textarea>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        :checked="webImportStore.settings.advanced.bypassProxy"
+                        @change="webImportStore.setBypassProxy(($event.target as HTMLInputElement).checked)"
+                      />
+                      绕过系统代理 (连接本地服务时使用)
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- AI 工作日志 -->
@@ -577,6 +1064,241 @@ watch(urlInput, (newUrl) => {
   font-size: 13px;
   color: #856404;
   margin-bottom: 16px;
+}
+
+/* 设置区域样式 */
+.settings-section {
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color, #eee);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--bg-secondary, #f9f9f9);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.settings-header:hover {
+  background: var(--bg-hover, #efefef);
+}
+
+.settings-toggle {
+  font-size: 10px;
+  color: var(--text-secondary, #888);
+}
+
+.settings-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #333);
+}
+
+.settings-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+.settings-content {
+  padding: 16px;
+  background: var(--bg-primary, #fff);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color, #eee);
+  padding-bottom: 8px;
+}
+
+.settings-tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  transition: all 0.2s;
+}
+
+.settings-tab:hover {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.settings-tab.active {
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-primary, #333);
+  font-weight: 500;
+}
+
+.settings-tab-content {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.settings-group {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.settings-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.group-title {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.subsection-title {
+  margin: 12px 0 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary, #666);
+}
+
+.form-row {
+  margin-bottom: 12px;
+}
+
+.form-row.inline {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #333);
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--primary-color, #4a90d9);
+}
+
+.form-input.small {
+  width: 100px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.input-group .form-input {
+  flex: 1;
+}
+
+.toggle-btn {
+  padding: 8px 12px;
+  background: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle-btn:hover {
+  background: var(--bg-hover, #efefef);
+}
+
+.test-btn {
+  padding: 8px 14px;
+  background: var(--btn-secondary-bg, #f0f0f0);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.test-btn:hover:not(:disabled) {
+  background: var(--btn-secondary-hover-bg, #e5e5e5);
+}
+
+.test-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.test-btn.full {
+  width: 100%;
+}
+
+.reset-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  transition: background 0.2s;
+}
+
+.reset-btn:hover {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-primary, #333);
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .logs-section {

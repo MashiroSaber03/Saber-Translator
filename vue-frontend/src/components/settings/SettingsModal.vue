@@ -58,11 +58,6 @@
           <PluginManager />
         </div>
 
-        <!-- 网页导入设置 -->
-        <div v-show="activeTab === 'web-import'" class="settings-tab-pane">
-          <WebImportSettings />
-        </div>
-
         <!-- 更多设置 -->
         <div v-show="activeTab === 'more'" class="settings-tab-pane">
           <MoreSettings />
@@ -93,7 +88,6 @@ import ProofreadingSettings from './ProofreadingSettings.vue'
 import PromptLibrary from './PromptLibrary.vue'
 import PluginManager from './PluginManager.vue'
 import MoreSettings from './MoreSettings.vue'
-import WebImportSettings from './WebImportSettings.vue'
 
 // Props
 const props = defineProps<{
@@ -124,7 +118,6 @@ const tabs = [
   { id: 'proofreading', label: 'AI校对' },
   { id: 'prompt-library', label: '提示词管理' },
   { id: 'plugins', label: '插件管理' },
-  { id: 'web-import', label: '网页导入' },
   { id: 'more', label: '更多' }
 ]
 
