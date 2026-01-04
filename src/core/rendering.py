@@ -48,10 +48,6 @@ FALLBACK_FONTS = [
     os.path.join(FONTS_DIR, 'msgothic.ttc'),        # MS Gothic（日文哥特体）
 ]
 
-# --- 当前字体选择列表（FreeType）---
-FONT: Optional["freetype.Face"] = None
-FONT_SELECTION: List["freetype.Face"] = []
-
 # --- 特殊字符的字体路径（Pillow 回退用）---
 NOTOSANS_FONT_PATH = os.path.join(FONTS_DIR, 'NotoSans-Medium.ttf')
 
@@ -143,9 +139,6 @@ CJK_H2V = {
 # --- CJK 竖转横标点符号映射表 (反向映射) ---
 CJK_V2H = {v: k for k, v in CJK_H2V.items()}
 
-# --- 保留旧的映射表名称以保持向后兼容 ---
-VERTICAL_PUNCTUATION_MAP = CJK_H2V
-
 # --- 特殊组合标点映射 (保留用于组合符号处理) ---
 SPECIAL_PUNCTUATION_PATTERNS = [
     ('...', '…'),      # 连续三个点先转为省略号
@@ -225,38 +218,6 @@ def is_vertical_punctuation(ch: str) -> bool:
 # FreeType 字体回退系统
 # =============================================================================
 
-class _Namespace:
-    """简单的命名空间类，用于存储 Glyph 属性"""
-    pass
-
-
-class Glyph:
-    """
-    字形数据类
-    
-    封装 FreeType 字形的关键信息，用于字符渲染。
-    """
-    def __init__(self, glyph):
-        self.bitmap = _Namespace()
-        self.bitmap.buffer = glyph.bitmap.buffer
-        self.bitmap.rows = glyph.bitmap.rows
-        self.bitmap.width = glyph.bitmap.width
-        self.advance = _Namespace()
-        self.advance.x = glyph.advance.x
-        self.advance.y = glyph.advance.y
-        self.bitmap_left = glyph.bitmap_left
-        self.bitmap_top = glyph.bitmap_top
-        self.metrics = _Namespace()
-        self.metrics.width = glyph.metrics.width
-        self.metrics.height = glyph.metrics.height
-        self.metrics.vertBearingX = glyph.metrics.vertBearingX
-        self.metrics.vertBearingY = glyph.metrics.vertBearingY
-        self.metrics.horiBearingX = glyph.metrics.horiBearingX
-        self.metrics.horiBearingY = glyph.metrics.horiBearingY
-        self.metrics.horiAdvance = glyph.metrics.horiAdvance
-        self.metrics.vertAdvance = glyph.metrics.vertAdvance
-
-
 def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
     """
     获取缓存的 FreeType 字体
@@ -292,135 +253,6 @@ def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
             return None
     
     return _freetype_font_cache.get(path)
-
-
-def update_font_selection():
-    """
-    更新字体选择列表
-    
-    将主字体和回退字体加入选择列表。当渲染字符时，
-    会依次遍历这个列表，直到找到支持该字符的字体。
-    """
-    global FONT_SELECTION
-    FONT_SELECTION = []
-    
-    if not FREETYPE_AVAILABLE:
-        return
-    
-    # 添加主字体
-    if FONT is not None:
-        FONT_SELECTION.append(FONT)
-    
-    # 添加回退字体
-    for font_path in FALLBACK_FONTS:
-        try:
-            face = get_cached_freetype_font(font_path)
-            if face and face not in FONT_SELECTION:
-                FONT_SELECTION.append(face)
-        except Exception as e:
-            logger.error(f"回退字体加载失败: {font_path} - {e}")
-    
-    logger.debug(f"字体选择列表更新完成: {len(FONT_SELECTION)} 个字体")
-
-
-def set_font_for_rendering(path: str):
-    """
-    设置渲染用的主字体
-    
-    Args:
-        path: 字体文件路径
-    """
-    global FONT
-    
-    if not FREETYPE_AVAILABLE:
-        logger.warning("FreeType 不可用，跳过字体设置")
-        return
-    
-    # 处理相对路径
-    resolved_path = path
-    if path and not os.path.isabs(path) and not os.path.exists(path):
-        possible_paths = [
-            os.path.join(FONTS_DIR, os.path.basename(path)),
-            os.path.join(FONTS_DIR, path),
-            get_font_path(path),
-        ]
-        for p in possible_paths:
-            if os.path.exists(p):
-                resolved_path = p
-                break
-    
-    if not resolved_path or not os.path.exists(resolved_path):
-        if path:
-            logger.error(f'无法加载字体: {path}')
-        try:
-            FONT = get_cached_freetype_font(DEFAULT_FONT_PATH)
-        except Exception:
-            logger.critical("默认字体加载失败")
-            FONT = None
-        update_font_selection()
-        get_char_glyph.cache_clear()
-        return
-    
-    try:
-        FONT = get_cached_freetype_font(resolved_path)
-    except Exception:
-        logger.error(f'无法加载字体: {resolved_path}')
-        FONT = get_cached_freetype_font(DEFAULT_FONT_PATH)
-    
-    update_font_selection()
-    get_char_glyph.cache_clear()
-
-
-@functools.lru_cache(maxsize=1024, typed=True)
-def get_char_glyph(cdpt: str, font_size: int, direction: int) -> Optional[Glyph]:
-    """
-    获取字符的字形数据
-    
-    会遍历 FONT_SELECTION 中的所有字体，直到找到支持该字符的字体。
-    这是字体回退机制的核心函数。
-    
-    Args:
-        cdpt: 单个字符
-        font_size: 字体大小
-        direction: 排版方向，0 = 横排，1 = 竖排
-        
-    Returns:
-        Glyph 对象，如果所有字体都不支持该字符则返回占位符的 Glyph
-    """
-    if not FREETYPE_AVAILABLE or not FONT_SELECTION:
-        return None
-    
-    for i, face in enumerate(FONT_SELECTION):
-        char_index = face.get_char_index(cdpt)
-        if char_index != 0:
-            # 字符在当前字体中找到
-            if direction == 0:
-                face.set_pixel_sizes(0, font_size)
-            elif direction == 1:
-                face.set_pixel_sizes(font_size, 0)
-            face.load_char(cdpt)
-            return Glyph(face.glyph)
-        
-        # 记录回退尝试
-        if i == 0:
-            try:
-                font_name = face.family_name.decode('utf-8') if face.family_name else 'Unknown'
-                logger.debug(f"字符 '{cdpt}' 在主字体 '{font_name}' 中未找到，尝试回退字体")
-            except Exception:
-                pass
-    
-    # 所有字体都不支持该字符，使用占位符
-    logger.warning(f"字符 '{cdpt}' (U+{ord(cdpt):04X}) 在所有字体中都未找到，使用占位符")
-    
-    # 尝试使用占位符
-    for placeholder in ('?', '□', ' '):
-        if placeholder != cdpt:
-            try:
-                return get_char_glyph(placeholder, font_size, direction)
-            except Exception:
-                continue
-    
-    return None
 
 
 def font_supports_char(font_path: str, char: str) -> bool:
