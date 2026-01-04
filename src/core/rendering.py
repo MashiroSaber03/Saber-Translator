@@ -1,9 +1,21 @@
 import logging
 import math
 import os
-from typing import List, Optional, TYPE_CHECKING
+import re
+import functools
+from pathlib import Path
+from typing import List, Optional, Tuple, TYPE_CHECKING
 from PIL import Image, ImageDraw, ImageFont
 import cv2 # 导入 cv2 备用
+import numpy as np
+
+# FreeType 字体回退支持
+try:
+    import freetype
+    FREETYPE_AVAILABLE = True
+except ImportError:
+    FREETYPE_AVAILABLE = False
+    logging.warning("freetype-py 未安装，将使用简化的字体回退机制")
 
 # 导入常量和路径助手
 from src.shared import constants
@@ -16,72 +28,615 @@ if TYPE_CHECKING:
 logger = logging.getLogger("CoreRendering")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# --- 字体加载缓存 ---
-_font_cache = {}
+# =============================================================================
+# 字体回退系统
+# =============================================================================
 
-# --- 特殊字符的字体路径 ---
-NOTOSANS_FONT_PATH = os.path.join('src', 'app', 'static', 'fonts', 'NotoSans-Medium.ttf')
+# --- 字体缓存 ---
+_font_cache = {}  # Pillow 字体缓存
+_freetype_font_cache = {}  # FreeType 字体缓存
+_font_file_handles = {}  # 保存文件句柄，防止被垃圾回收
 
-# --- 需要使用特殊字体渲染的字符 ---
-SPECIAL_CHARS = {'‼', '⁉'}
+# --- 字体路径 ---
+FONTS_DIR = os.path.join('src', 'app', 'static', 'fonts')
+DEFAULT_FONT_PATH = os.path.join(FONTS_DIR, 'simkai.ttf')
 
-# --- 竖排标点符号映射表 ---
-VERTICAL_PUNCTUATION_MAP = {
-    # 中文标点
-     '（': '︵', '）': '︶', 
-    '【': '︻', '】': '︼', '「': '﹁', '」': '﹂', 
-    '『': '﹃', '』': '﹄', '〈': '︿', '〉': '﹀',
-    '"': '﹃', '"': '﹄', ''': '﹁', ''': '﹂',
-    '《': '︽', '》': '︾', '［': '︹', '］': '︺',
-    '｛': '︷', '｝': '︸', '〔': '︹', '〕': '︺',
-    '—': '︱', '…': '︙', '～': '︴',
+# --- 回退字体列表 ---
+FALLBACK_FONTS = [
+    os.path.join(FONTS_DIR, 'Arial_Unicode.ttf'),   # Unicode 全字符字体
+    os.path.join(FONTS_DIR, 'msyh.ttc'),            # 微软雅黑
+    os.path.join(FONTS_DIR, 'msgothic.ttc'),        # MS Gothic（日文哥特体）
+]
+
+# --- 当前字体选择列表（FreeType）---
+FONT: Optional["freetype.Face"] = None
+FONT_SELECTION: List["freetype.Face"] = []
+
+# --- 特殊字符的字体路径（Pillow 回退用）---
+NOTOSANS_FONT_PATH = os.path.join(FONTS_DIR, 'NotoSans-Medium.ttf')
+
+# --- 需要使用特殊字体渲染的字符（Pillow 回退用）---
+SPECIAL_CHARS = {'‼', '⁉', '︕', '︖', '︙', '⋮', '⋯'}
+
+# =============================================================================
+# 竖排标点符号处理系统
+# =============================================================================
+
+# --- CJK 横转竖标点符号映射表 ---
+CJK_H2V = {
+    # === 基础标点符号 ===
+    "‥": "︰",      # 两点省略号
+    "—": "︱",      # 破折号
+    "―": "|",       # 水平线
+    "–": "︲",      # 短破折号
+    "_": "︴",      # 下划线
     
-    # 英文标点
-    '(': '︵', ')': '︶',
-    '[': '︹', ']': '︺', '{': '︷', '}': '︸',
-    '<': '︿', '>': '﹀', '-': '︱', '~': '︴'
+    # === 括号类 - 基础 ===
+    "(": "︵",  ")": "︶",      # 英文圆括号
+    "（": "︵", "）": "︶",     # 中文圆括号
+    "{": "︷",  "}": "︸",      # 花括号
+    "〔": "︹", "〕": "︺",     # 龟甲括号
+    "【": "︻", "】": "︼",     # 方头括号
+    "《": "︽", "》": "︾",     # 书名号
+    "〈": "︿", "〉": "﹀",     # 单尖括号
+    "[": "﹇",  "]": "﹈",      # 英文方括号
+    
+    # === 括号类 - 扩展 Unicode ===
+    "⟨": "︿", "⟩": "﹀",       # 数学尖括号
+    "⟪": "︿", "⟫": "﹀",       # 数学双尖括号
+    "⦅": "︵", "⦆": "︶",       # 全角括号变体
+    "❨": "︵", "❩": "︶",       # 装饰圆括号
+    "❪": "︷", "❫": "︸",       # 装饰花括号
+    "❬": "﹇", "❭": "﹈",       # 装饰方括号
+    "❮": "︿", "❯": "﹀",       # 装饰尖括号
+    
+    # === 引号类 ===
+    "「": "﹁", "」": "﹂",     # 日式单引号
+    "『": "﹃", "』": "﹄",     # 日式双引号
+    "﹑": "﹅",                 # 顿号变体
+    "﹆": "﹆",                 # 保持不变
+    '"': "﹁", '"': "﹂",       # 弯双引号
+    "'": "﹁", "'": "﹂",       # 弯单引号
+    "″": "﹂", "‴": "﹂",       # Prime 符号
+    "‶": "﹁", "ⷷ": "﹁",       # Prime 变体
+    
+    # === 装饰线 ===
+    "﹉": "﹉", "﹊": "﹊",     # 虚线
+    "﹋": "﹋", "﹌": "﹌",     # 虚线
+    "﹍": "﹍", "﹎": "﹎",     # 虚线
+    "﹏": "﹏",                 # 波浪线
+    
+    # === 省略号类 ===
+    "…": "⋮",      # 水平省略号 → 竖向三点
+    "⋯": "︙",     # 居中省略号 → 竖向省略号
+    "⋰": "⋮",     # 对角省略号 → 竖向三点
+    "⋱": "⋮",     # 对角省略号 → 竖向三点
+    
+    # === 波浪线类 ===
+    "~": "︴",      # ASCII 波浪线
+    "〜": "︴",     # 日文波浪线
+    "～": "︴",     # 全角波浪线
+    "〰": "︴",     # 波浪破折号
+    
+    # === 感叹问号类（重要！专用竖排变体）===
+    "!": "︕",      # 英文感叹号
+    "?": "︖",      # 英文问号
+    "！": "︕",     # 中文全角感叹号
+    "？": "︖",     # 中文全角问号
+    "؟": "︖",     # 阿拉伯问号
+    "¿": "︖",     # 西班牙倒问号
+    "¡": "︕",     # 西班牙倒感叹号
+    
+    # === 句点类 ===
+    ".": "︒",      # 英文句点
+    "。": "︒",     # 中文句号
+    
+    # === 分隔符类 ===
+    ";": "︔",  "；": "︔",     # 分号
+    ":": "︓",  "：": "︓",     # 冒号
+    ",": "︐",  "，": "︐",     # 逗号
+    "‚": "︐",  "„": "︐",      # 低引号
+    "-": "︲",  "−": "︲",      # 连字符
+    "・": "·",                  # 中黑点
 }
 
-# 特殊组合标点映射
+# --- CJK 竖转横标点符号映射表 (反向映射) ---
+CJK_V2H = {v: k for k, v in CJK_H2V.items()}
+
+# --- 保留旧的映射表名称以保持向后兼容 ---
+VERTICAL_PUNCTUATION_MAP = CJK_H2V
+
+# --- 特殊组合标点映射 (保留用于组合符号处理) ---
 SPECIAL_PUNCTUATION_PATTERNS = [
-    ('...', '︙'),     # 连续三个点映射成竖直省略号
-    ('…', '︙'),       # Unicode省略号映射成竖直省略号
-    ('!!', '‼'),       # 连续两个感叹号映射成双感叹号
+    ('...', '…'),      # 连续三个点先转为省略号
+    ('..', '…'),       # 两个点也转为省略号
     ('!!!', '‼'),      # 连续三个感叹号映射成双感叹号
-    ('！！', '‼'),     # 中文连续两个感叹号
+    ('!!', '‼'),       # 连续两个感叹号映射成双感叹号
     ('！！！', '‼'),   # 中文连续三个感叹号
+    ('！！', '‼'),     # 中文连续两个感叹号
     ('!?', '⁉'),       # 感叹号加问号映射成感叹问号组合
     ('?!', '⁉'),       # 问号加感叹号映射成感叹问号组合
     ('！？', '⁉'),     # 中文感叹号加问号
     ('？！', '⁉'),     # 中文问号加感叹号
 ]
 
-def map_to_vertical_punctuation(text):
+# --- 需要垂直居中校正的竖排标点符号 ---
+# 这些是 CJK Compatibility Forms 的竖排标点，某些字体（如微软雅黑）对这些字符
+# 的垂直位置处理不正确（偏上），需要在渲染时进行手动校正
+VERTICAL_CENTER_PUNCTUATION = {
+    # 竖排句读标点
+    '︒', '︐', '︑', '︓', '︔', '︕', '︖', '︰',
+    # 竖排括号
+    '︵', '︶', '︷', '︸', '︹', '︺', '︻', '︼', '︽', '︾', '︿', '﹀',
+    # 竖排引号
+    '﹁', '﹂', '﹃', '﹄',
+    # 竖排线类
+    '︱', '︲', '︳', '︴',
+    # 竖排省略号
+    '︙', '⋮',
+    # 其他竖排符号
+    '﹅', '﹆', '﹇', '﹈',
+    # 特殊组合标点（双感叹号、感叹问号等）
+    '‼', '⁉',
+}
+
+
+def is_punctuation(ch: str) -> bool:
     """
-    将文本中的标点符号映射为竖排标点符号
+    检查字符是否为标点符号
     
     Args:
-        text (str): 原始文本
+        ch: 单个字符
         
     Returns:
-        str: 转换后的文本，标点符号已替换为竖排版本
+        是否为标点符号
     """
-    # 首先处理特殊组合标点
+    import unicodedata
+    
+    cp = ord(ch)
+    # ASCII 标点符号
+    if ((cp >= 33 and cp <= 47) or (cp >= 58 and cp <= 64) or
+        (cp >= 91 and cp <= 96) or (cp >= 123 and cp <= 126)):
+        return True
+    # Unicode 标点类别
+    cat = unicodedata.category(ch)
+    if cat.startswith("P"):
+        return True
+    return False
+
+
+def is_vertical_punctuation(ch: str) -> bool:
+    """
+    检查字符是否为竖排标点符号（需要垂直居中校正）
+    
+    某些字体（如微软雅黑）对 CJK Compatibility Forms 的竖排标点
+    处理不正确，导致标点位置偏上。此函数用于识别这些需要校正的字符。
+    
+    Args:
+        ch: 单个字符
+        
+    Returns:
+        是否为需要垂直居中校正的竖排标点
+    """
+    return ch in VERTICAL_CENTER_PUNCTUATION
+
+
+# =============================================================================
+# FreeType 字体回退系统
+# =============================================================================
+
+class _Namespace:
+    """简单的命名空间类，用于存储 Glyph 属性"""
+    pass
+
+
+class Glyph:
+    """
+    字形数据类
+    
+    封装 FreeType 字形的关键信息，用于字符渲染。
+    """
+    def __init__(self, glyph):
+        self.bitmap = _Namespace()
+        self.bitmap.buffer = glyph.bitmap.buffer
+        self.bitmap.rows = glyph.bitmap.rows
+        self.bitmap.width = glyph.bitmap.width
+        self.advance = _Namespace()
+        self.advance.x = glyph.advance.x
+        self.advance.y = glyph.advance.y
+        self.bitmap_left = glyph.bitmap_left
+        self.bitmap_top = glyph.bitmap_top
+        self.metrics = _Namespace()
+        self.metrics.width = glyph.metrics.width
+        self.metrics.height = glyph.metrics.height
+        self.metrics.vertBearingX = glyph.metrics.vertBearingX
+        self.metrics.vertBearingY = glyph.metrics.vertBearingY
+        self.metrics.horiBearingX = glyph.metrics.horiBearingX
+        self.metrics.horiBearingY = glyph.metrics.horiBearingY
+        self.metrics.horiAdvance = glyph.metrics.horiAdvance
+        self.metrics.vertAdvance = glyph.metrics.vertAdvance
+
+
+def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
+    """
+    获取缓存的 FreeType 字体
+    
+    Args:
+        path: 字体文件路径
+        
+    Returns:
+        FreeType Face 对象，失败返回 None
+    """
+    if not FREETYPE_AVAILABLE:
+        return None
+    
+    path = path.replace('\\', '/')
+    if path not in _freetype_font_cache:
+        try:
+            # 使用 resource_path 处理打包后的路径
+            abs_path = resource_path(path)
+            if not os.path.exists(abs_path):
+                abs_path = get_font_path(path)
+            
+            if os.path.exists(abs_path):
+                # 保存文件句柄引用，防止被关闭
+                file_handle = Path(abs_path).open('rb')
+                _font_file_handles[path] = file_handle
+                _freetype_font_cache[path] = freetype.Face(file_handle)
+                logger.debug(f"FreeType 字体加载成功: {abs_path}")
+            else:
+                logger.warning(f"FreeType 字体未找到: {path}")
+                return None
+        except Exception as e:
+            logger.error(f"FreeType 字体加载失败: {path} - {e}")
+            return None
+    
+    return _freetype_font_cache.get(path)
+
+
+def update_font_selection():
+    """
+    更新字体选择列表
+    
+    将主字体和回退字体加入选择列表。当渲染字符时，
+    会依次遍历这个列表，直到找到支持该字符的字体。
+    """
+    global FONT_SELECTION
+    FONT_SELECTION = []
+    
+    if not FREETYPE_AVAILABLE:
+        return
+    
+    # 添加主字体
+    if FONT is not None:
+        FONT_SELECTION.append(FONT)
+    
+    # 添加回退字体
+    for font_path in FALLBACK_FONTS:
+        try:
+            face = get_cached_freetype_font(font_path)
+            if face and face not in FONT_SELECTION:
+                FONT_SELECTION.append(face)
+        except Exception as e:
+            logger.error(f"回退字体加载失败: {font_path} - {e}")
+    
+    logger.debug(f"字体选择列表更新完成: {len(FONT_SELECTION)} 个字体")
+
+
+def set_font_for_rendering(path: str):
+    """
+    设置渲染用的主字体
+    
+    Args:
+        path: 字体文件路径
+    """
+    global FONT
+    
+    if not FREETYPE_AVAILABLE:
+        logger.warning("FreeType 不可用，跳过字体设置")
+        return
+    
+    # 处理相对路径
+    resolved_path = path
+    if path and not os.path.isabs(path) and not os.path.exists(path):
+        possible_paths = [
+            os.path.join(FONTS_DIR, os.path.basename(path)),
+            os.path.join(FONTS_DIR, path),
+            get_font_path(path),
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                resolved_path = p
+                break
+    
+    if not resolved_path or not os.path.exists(resolved_path):
+        if path:
+            logger.error(f'无法加载字体: {path}')
+        try:
+            FONT = get_cached_freetype_font(DEFAULT_FONT_PATH)
+        except Exception:
+            logger.critical("默认字体加载失败")
+            FONT = None
+        update_font_selection()
+        get_char_glyph.cache_clear()
+        return
+    
+    try:
+        FONT = get_cached_freetype_font(resolved_path)
+    except Exception:
+        logger.error(f'无法加载字体: {resolved_path}')
+        FONT = get_cached_freetype_font(DEFAULT_FONT_PATH)
+    
+    update_font_selection()
+    get_char_glyph.cache_clear()
+
+
+@functools.lru_cache(maxsize=1024, typed=True)
+def get_char_glyph(cdpt: str, font_size: int, direction: int) -> Optional[Glyph]:
+    """
+    获取字符的字形数据
+    
+    会遍历 FONT_SELECTION 中的所有字体，直到找到支持该字符的字体。
+    这是字体回退机制的核心函数。
+    
+    Args:
+        cdpt: 单个字符
+        font_size: 字体大小
+        direction: 排版方向，0 = 横排，1 = 竖排
+        
+    Returns:
+        Glyph 对象，如果所有字体都不支持该字符则返回占位符的 Glyph
+    """
+    if not FREETYPE_AVAILABLE or not FONT_SELECTION:
+        return None
+    
+    for i, face in enumerate(FONT_SELECTION):
+        char_index = face.get_char_index(cdpt)
+        if char_index != 0:
+            # 字符在当前字体中找到
+            if direction == 0:
+                face.set_pixel_sizes(0, font_size)
+            elif direction == 1:
+                face.set_pixel_sizes(font_size, 0)
+            face.load_char(cdpt)
+            return Glyph(face.glyph)
+        
+        # 记录回退尝试
+        if i == 0:
+            try:
+                font_name = face.family_name.decode('utf-8') if face.family_name else 'Unknown'
+                logger.debug(f"字符 '{cdpt}' 在主字体 '{font_name}' 中未找到，尝试回退字体")
+            except Exception:
+                pass
+    
+    # 所有字体都不支持该字符，使用占位符
+    logger.warning(f"字符 '{cdpt}' (U+{ord(cdpt):04X}) 在所有字体中都未找到，使用占位符")
+    
+    # 尝试使用占位符
+    for placeholder in ('?', '□', ' '):
+        if placeholder != cdpt:
+            try:
+                return get_char_glyph(placeholder, font_size, direction)
+            except Exception:
+                continue
+    
+    return None
+
+
+def font_supports_char(font_path: str, char: str) -> bool:
+    """
+    检查字体是否支持某个字符
+    
+    Args:
+        font_path: 字体文件路径
+        char: 要检查的字符
+        
+    Returns:
+        是否支持
+    """
+    if not FREETYPE_AVAILABLE:
+        return True  # 无法检查时假设支持
+    
+    face = get_cached_freetype_font(font_path)
+    if face is None:
+        return False
+    
+    return face.get_char_index(char) != 0
+
+
+def get_char_ink_offset(char: str, font: ImageFont.FreeTypeFont) -> Tuple[float, float]:
+    """
+    获取字符的墨水偏移量（实际墨水中心相对于边界框中心的偏移）
+    
+    Pillow 的 getbbox() 返回的是字符的度量边界，但实际墨水可能偏向一侧。
+    这个函数通过渲染字符并分析像素来找到实际墨水的范围和偏移。
+    
+    Args:
+        char: 要分析的字符
+        font: 字体对象
+        
+    Returns:
+        (x_offset, y_offset): 墨水中心相对于边界框中心的偏移
+    """
+    try:
+        bbox = font.getbbox(char)
+        bbox_width = bbox[2] - bbox[0]
+        bbox_height = bbox[3] - bbox[1]
+        
+        if bbox_width <= 0 or bbox_height <= 0:
+            return (0.0, 0.0)
+        
+        # 在临时图像上渲染字符
+        padding = 20
+        img_size = max(bbox_width, bbox_height) + padding * 2
+        img = Image.new('L', (img_size, img_size), 255)
+        draw = ImageDraw.Draw(img)
+        
+        # 在中心位置绘制
+        x = (img_size - bbox_width) // 2
+        y = (img_size - bbox_height) // 2
+        draw.text((x, y), char, font=font, fill=0)
+        
+        # 转换为 numpy 数组并找到实际墨水范围
+        arr = np.array(img)
+        non_white = np.where(arr < 250)  # 稍微放宽阈值
+        
+        if len(non_white[0]) == 0:
+            return (0.0, 0.0)
+        
+        min_y, max_y = non_white[0].min(), non_white[0].max()
+        min_x, max_x = non_white[1].min(), non_white[1].max()
+        
+        # 计算实际墨水中心
+        ink_center_x = (min_x + max_x) / 2.0
+        ink_center_y = (min_y + max_y) / 2.0
+        
+        # 边界框中心
+        bbox_center_x = x + bbox_width / 2.0
+        bbox_center_y = y + bbox_height / 2.0
+        
+        # 偏移量
+        offset_x = ink_center_x - bbox_center_x
+        offset_y = ink_center_y - bbox_center_y
+        
+        return (offset_x, offset_y)
+        
+    except Exception as e:
+        logger.debug(f"获取字符 '{char}' 墨水偏移时出错: {e}")
+        return (0.0, 0.0)
+
+
+def compact_special_symbols(text: str) -> str:
+    """
+    预处理特殊符号
+    
+    处理逻辑：
+    1. 替换半角省略号
+    2. 合并连续的省略号为一个
+    3. 将西文省略号(U+2026,贴底)替换为居中省略号(U+22EF)，解决横排省略号位置偏下的问题
+    4. 删除标点符号后的空格
+    
+    Args:
+        text: 原始文本
+        
+    Returns:
+        处理后的文本
+    """
+    if not text:
+        return text
+    
+    # 替换半角省略号
+    text = text.replace('...', '…')
+    text = text.replace('..', '…')
+    
+    # 合并连续的省略号为一个
+    text = re.sub(r'…+', '…', text)
+    
+    # 将西文省略号(U+2026,贴底)替换为居中省略号(U+22EF)
+    # 解决横排省略号位置偏下的问题
+    text = text.replace('…', '⋯')
+    
+    # 删除标点符号后的空格
+    # 只删除标点符号后的空格，不删除字母/数字后的空格
+    pattern = r'([。，、！？；：…—～「」『』【】（）《》〈〉.,!?;:\-])[ 　]+'
+    text = re.sub(pattern, r'\1', text)
+    
+    return text
+
+
+def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, int]:
+    """
+    CJK兼容形式标点符号转换
+    
+    根据排版方向将标点符号转换为对应的形式。
+    
+    Args:
+        cdpt: 单个字符
+        direction: 排版方向，0 = 横排，1 = 竖排
+        
+    Returns:
+        Tuple[str, int]: (转换后的字符, 旋转角度)
+        旋转角度通常为 0，特殊情况（如日文长音符号）可能为 90
+    """
+    # 特殊处理：日文长音符号在竖排时需要旋转 90 度
+    if cdpt == 'ー' and direction == 1:
+        return 'ー', 90
+    
+    # 竖→横 转换
+    if cdpt in CJK_V2H:
+        if direction == 0:
+            # 横排时，将竖排符号转为横排
+            return CJK_V2H[cdpt], 0
+        else:
+            # 竖排时，保持不变
+            return cdpt, 0
+    
+    # 横→竖 转换
+    elif cdpt in CJK_H2V:
+        if direction == 1:
+            # 竖排时，将横排符号转为竖排
+            return CJK_H2V[cdpt], 0
+        else:
+            # 横排时，保持不变
+            return cdpt, 0
+    
+    return cdpt, 0
+
+
+def process_text_for_vertical(text: str) -> str:
+    """
+    为竖排渲染预处理文本
+    
+    注意：这个函数只做预处理，不做字符转换！
+    字符转换（CJK_Compatibility_Forms_translate）在渲染函数中逐字符进行，
+    这样才能正确处理需要旋转的字符（如日文长音符号 ー）。
+    
+    处理流程：
+    1. 调用 compact_special_symbols 统一省略号格式
+    2. 处理特殊组合标点（如 !! → ‼）
+    3. 在竖排文本中，将省略号替换为竖排省略号符号
+    
+    Args:
+        text: 原始文本
+        
+    Returns:
+        预处理后的文本（尚未进行字符转换）
+    """
+    if not text:
+        return text
+    
+    # 步骤1: 预处理特殊符号
+    text = compact_special_symbols(text)
+    
+    # 步骤2: 处理特殊组合标点
     for pattern, replacement in SPECIAL_PUNCTUATION_PATTERNS:
         text = text.replace(pattern, replacement)
     
-    # 然后处理单个标点
-    result = ""
-    i = 0
-    while i < len(text):
-        char = text[i]
-        if char in VERTICAL_PUNCTUATION_MAP:
-            result += VERTICAL_PUNCTUATION_MAP[char]
-        else:
-            result += char
-        i += 1
+    # 步骤3: 在竖排文本中，将省略号替换为竖排省略号符号
+    text = text.replace('…', '︙')
+    text = text.replace('⋯', '︙')
     
-    return result
+    # 注意：不在此处进行字符转换！
+    # 字符转换将在渲染函数 draw_multiline_text_vertical 中逐字符进行，
+    # 这样才能正确获取和处理旋转角度。
+    
+    return text
+
+
+def map_to_vertical_punctuation(text: str) -> str:
+    """
+    将文本中的标点符号映射为竖排标点符号
+    
+    这是对外公开的主要接口函数，内部调用 process_text_for_vertical。
+    保持函数名不变以确保向后兼容。
+    
+    Args:
+        text: 原始文本
+        
+    Returns:
+        转换后的文本，标点符号已替换为竖排版本
+    """
+    return process_text_for_vertical(text)
 
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
@@ -197,22 +752,33 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
     logger.info(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{max_size})")
     return result
 
-# --- 竖排文本绘制函数（不含旋转，旋转在 render_all_bubbles 中统一处理） ---
+# --- 竖排文本绘制函数（支持单字符旋转）---
 def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  fill=constants.DEFAULT_TEXT_COLOR,
                                  stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
                                  stroke_color=constants.DEFAULT_STROKE_COLOR,
                                  stroke_width=constants.DEFAULT_STROKE_WIDTH,
-                                 bubble_width=None):
+                                 bubble_width=None,
+                                 font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
-    在指定位置绘制竖排多行文本（不含旋转）。
-    旋转逻辑已移至 render_all_bubbles 函数中统一处理，使用外接圆方案优化性能。
+    在指定位置绘制竖排多行文本。
+    
+    关键特性：
+    1. 逐字符调用 CJK_Compatibility_Forms_translate 进行标点转换
+    2. 支持单字符旋转（如日文长音符号 ー 需要旋转90度）
+    3. 气泡级别的旋转在 render_all_bubbles 中统一处理
     """
     if not text:
         return
     
-    # 将标点符号转换为竖排样式
+    # 预处理文本（省略号等）
     text = map_to_vertical_punctuation(text)
+    
+    # 获取绘制的 Image 对象（用于单字符旋转时创建临时图像）
+    # draw 对象是 ImageDraw.Draw，其 _image 属性指向原始 Image
+    canvas_image = None
+    if hasattr(draw, '_image'):
+        canvas_image = draw._image
 
     lines = []
     current_line = ""
@@ -266,28 +832,77 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     special_font = None
     font_size = font.size
 
+    # ===== 预计算每列的实际最大字符宽度 =====
+    # 计算每列的最大字符实际宽度，用于精确居中对齐。
+    line_max_widths = []
+    for line in lines:
+        max_char_width = font_size  # 默认使用 font_size
+        for char in line:
+            converted_char, _ = CJK_Compatibility_Forms_translate(char, 1)
+            # 确定使用哪个字体
+            actual_font = font
+            if FREETYPE_AVAILABLE and not font_supports_char(font_family_path, converted_char):
+                for fallback_path in FALLBACK_FONTS:
+                    if font_supports_char(fallback_path, converted_char):
+                        actual_font = get_font(fallback_path, font_size)
+                        break
+            # 获取字符宽度
+            try:
+                bbox = actual_font.getbbox(converted_char)
+                char_width = bbox[2] - bbox[0]
+                if char_width > max_char_width:
+                    max_char_width = char_width
+            except:
+                pass
+        line_max_widths.append(max_char_width)
+
     current_x_col = current_x_base
     for line_idx, line in enumerate(lines):
         current_y_char = start_y_base
+        # 获取当前列的实际宽度
+        line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
+        
         for char_idx, char in enumerate(line):
-            # 检查是否为需要特殊字体的字符
+            # ===== 获取字符绘制参数 =====
+            
+            # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
+            converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
+            
+            # ===== 使用字体回退系统 =====
+            # 检查主字体是否支持该字符，如果不支持则遍历回退字体列表
             current_font = font
-            if char in SPECIAL_CHARS:
-                if special_font is None:
-                    try:
-                        special_font = get_font(NOTOSANS_FONT_PATH, font_size)
-                    except Exception as e:
-                        logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
-                        special_font = font
-                
-                if special_font is not None:
-                    current_font = special_font
             
-            bbox = current_font.getbbox(char)
-            char_width = bbox[2] - bbox[0]
-            
-            text_x_char = current_x_col - char_width
-            text_y_char = current_y_char
+            if FREETYPE_AVAILABLE:
+                # 使用 FreeType 检查字体是否支持该字符
+                if not font_supports_char(font_family_path, converted_char):
+                    # 主字体不支持，遍历回退字体列表
+                    fallback_found = False
+                    for fallback_path in FALLBACK_FONTS:
+                        if font_supports_char(fallback_path, converted_char):
+                            # 找到支持该字符的回退字体
+                            try:
+                                current_font = get_font(fallback_path, font_size)
+                                fallback_found = True
+                                logger.debug(f"字符 '{converted_char}' 使用回退字体: {os.path.basename(fallback_path)}")
+                                break
+                            except Exception as e:
+                                logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                continue
+                    
+                    if not fallback_found:
+                        logger.warning(f"字符 '{converted_char}' 在所有字体中都不支持")
+            else:
+                # FreeType 不可用时，回退到使用 SPECIAL_CHARS 硬编码检查
+                if converted_char in SPECIAL_CHARS:
+                    if special_font is None:
+                        try:
+                            special_font = get_font(NOTOSANS_FONT_PATH, font_size)
+                        except Exception as e:
+                            logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                            special_font = font
+                    
+                    if special_font is not None:
+                        current_font = special_font
             
             # 准备绘制参数
             text_draw_params = {
@@ -298,8 +913,99 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                 text_draw_params["stroke_width"] = int(stroke_width)
                 text_draw_params["stroke_fill"] = stroke_color
             
-            # 直接绘制（旋转在外层处理）
-            draw.text((text_x_char, text_y_char), char, **text_draw_params)
+            # ===== 处理需要旋转的字符（如日文长音符号 ー）=====
+            if rot_degree != 0 and canvas_image is not None:
+                # 创建临时图像来渲染并旋转单个字符
+                # 计算字符边界框
+                bbox = current_font.getbbox(converted_char)
+                char_width = bbox[2] - bbox[0]
+                char_height = bbox[3] - bbox[1]
+                
+                # 创建足够大的临时图像（带边距以避免裁剪）
+                padding = max(char_width, char_height)
+                temp_size = max(char_width, char_height) * 2 + padding * 2
+                temp_size = max(temp_size, font_size * 3)  # 确保足够大
+                temp_size = int(temp_size)
+                
+                # 创建 RGBA 透明临时图像
+                temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                
+                # 在临时图像中心绘制字符
+                temp_x = temp_size // 2 - char_width // 2
+                temp_y = temp_size // 2 - char_height // 2
+                
+                # 绘制到临时图像
+                temp_text_params = {
+                    "font": current_font,
+                    "fill": fill if canvas_image.mode == 'RGBA' else fill
+                }
+                if stroke_enabled:
+                    temp_text_params["stroke_width"] = int(stroke_width)
+                    temp_text_params["stroke_fill"] = stroke_color
+                
+                temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
+                
+                # 旋转临时图像（顺时针旋转 90 度）
+                # PIL 的 rotate 是逆时针，所以 -90 度 = 顺时针 90 度
+                rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
+                
+                # 计算粘贴位置（水平居中）
+                # 使用预计算的 line_width（该列实际最大字符宽度）
+                paste_x = int((current_x_col - line_width) + round((line_width - temp_size) / 2.0))
+                paste_y = int(current_y_char)
+                
+                # 粘贴到主画布
+                try:
+                    if canvas_image.mode == 'RGBA':
+                        canvas_image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                    else:
+                        # 如果主画布不是 RGBA，转换后粘贴
+                        rgb_rotated = rotated_img.convert('RGB')
+                        canvas_image.paste(rgb_rotated, (paste_x, paste_y))
+                except Exception as e:
+                    logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
+                    # 回退：直接绘制（不旋转）
+                    text_x_char = current_x_col - char_width
+                    draw.text((text_x_char, current_y_char), converted_char, **text_draw_params)
+            else:
+                # ===== 常规绘制（不需要旋转）=====
+                bbox = current_font.getbbox(converted_char)
+                char_width = bbox[2] - bbox[0]
+                char_height = bbox[3] - bbox[1]
+                
+                # ===== 水平居中计算 =====
+                # 计算字符在当前列中的水平居中位置，line_width 为该列的最大字符宽度。
+                # 使用预计算的 line_width（该列实际最大字符宽度）
+                text_x_char = (current_x_col - line_width) + round((line_width - char_width) / 2.0)
+                text_y_char = current_y_char
+                
+                # ===== 墨水偏移校正（水平+垂直）=====
+                # Pillow 的 getbbox() 返回的边界框可能不等于实际墨水区域
+                # 对于某些字符（如竖排标点），实际墨水可能偏向边界框的一侧
+                # 需要校正以实现真正的视觉居中
+                ink_offset_x, ink_offset_y = get_char_ink_offset(converted_char, current_font)
+                text_x_char -= ink_offset_x  # 反向补偿水平墨水偏移
+                
+                # ===== 竖排标点符号垂直居中校正（使用墨水偏移）=====
+                # 获取参考汉字（如"我"）的墨水 y 偏移作为基准
+                # 所有标点的墨水中心应该与汉字的墨水中心对齐
+                if is_vertical_punctuation(converted_char):
+                    # 计算参考汉字的墨水偏移（使用缓存避免重复计算）
+                    if not hasattr(get_char_ink_offset, '_ref_y_offset'):
+                        ref_font = get_font(font_family_path, font_size) if font_family_path else current_font
+                        _, ref_y = get_char_ink_offset('我', ref_font)
+                        get_char_ink_offset._ref_y_offset = ref_y
+                    ref_y_offset = get_char_ink_offset._ref_y_offset
+                    
+                    # 垂直对齐：将标点的墨水中心与汉字的墨水中心对齐
+                    # 如果 ink_offset_y > ref_y_offset，说明标点偏下，需要上移
+                    # 如果 ink_offset_y < ref_y_offset，说明标点偏上，需要下移
+                    vertical_correction = ref_y_offset - ink_offset_y
+                    text_y_char += vertical_correction
+                
+                # 直接绘制
+                draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
                 
             current_y_char += line_height_approx
         current_x_col -= column_width_approx
@@ -311,7 +1017,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   stroke_color=constants.DEFAULT_STROKE_COLOR,
                                   stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                   bubble_width=None,
-                                  bubble_height=None):
+                                  bubble_height=None,
+                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
     在指定位置绘制横排多行文本（不含旋转）。
     旋转逻辑已移至 render_all_bubbles 函数中统一处理，使用外接圆方案优化性能。
@@ -393,23 +1100,41 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
         
         char_widths = line_char_widths[line_idx]
         for char_idx, char in enumerate(line):
-            # 检查是否为需要特殊字体的字符
+            # ===== 使用字体回退系统 =====
             current_font = font
             char_width = char_widths[char_idx]  # 使用缓存的宽度
             
-            if char in SPECIAL_CHARS:
-                if special_font is None:
-                    try:
-                        special_font = get_font(NOTOSANS_FONT_PATH, font_size)
-                    except Exception as e:
-                        logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
-                        special_font = font
-                
-                if special_font is not None:
-                    current_font = special_font
-                    # 特殊字符用特殊字体，需要重新计算宽度
-                    bbox = current_font.getbbox(char)
-                    char_width = bbox[2] - bbox[0]
+            if FREETYPE_AVAILABLE:
+                # 使用 FreeType 检查字体是否支持该字符
+                if not font_supports_char(font_family_path, char):
+                    # 主字体不支持，遍历回退字体列表
+                    for fallback_path in FALLBACK_FONTS:
+                        if font_supports_char(fallback_path, char):
+                            try:
+                                current_font = get_font(fallback_path, font_size)
+                                # 使用回退字体时需要重新计算宽度
+                                bbox = current_font.getbbox(char)
+                                char_width = bbox[2] - bbox[0]
+                                logger.debug(f"字符 '{char}' 使用回退字体: {os.path.basename(fallback_path)}")
+                                break
+                            except Exception as e:
+                                logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                continue
+            else:
+                # FreeType 不可用时，回退到使用 SPECIAL_CHARS 检查
+                if char in SPECIAL_CHARS:
+                    if special_font is None:
+                        try:
+                            special_font = get_font(NOTOSANS_FONT_PATH, font_size)
+                        except Exception as e:
+                            logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                            special_font = font
+                    
+                    if special_font is not None:
+                        current_font = special_font
+                        # 特殊字符用特殊字体，需要重新计算宽度
+                        bbox = current_font.getbbox(char)
+                        char_width = bbox[2] - bbox[0]
             
             text_draw_params = {
                 "font": current_font,
@@ -521,7 +1246,8 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_enabled=stroke_enabled,
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
-                        bubble_width=max_text_width
+                        bubble_width=max_text_width,
+                        font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
                     draw_multiline_text_horizontal(
@@ -532,7 +1258,8 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height
+                        bubble_height=max_text_height,
+                        font_family_path=font_family_rel
                     )
                 else:
                     logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
@@ -570,7 +1297,8 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_enabled=stroke_enabled,
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
-                        bubble_width=max_text_width
+                        bubble_width=max_text_width,
+                        font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
                     draw_multiline_text_horizontal(
@@ -580,7 +1308,8 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height
+                        bubble_height=max_text_height,
+                        font_family_path=font_family_rel
                     )
                 else:
                     logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
@@ -914,7 +1643,8 @@ def render_bubbles_unified(
                         stroke_enabled=state.stroke_enabled,
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
-                        bubble_width=max_text_width
+                        bubble_width=max_text_width,
+                        font_family_path=state.font_family
                     )
                 else:
                     draw_multiline_text_horizontal(
@@ -925,7 +1655,8 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height
+                        bubble_height=max_text_height,
+                        font_family_path=state.font_family
                     )
                 
                 temp_center = temp_size // 2
@@ -956,7 +1687,8 @@ def render_bubbles_unified(
                         stroke_enabled=state.stroke_enabled,
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
-                        bubble_width=max_text_width
+                        bubble_width=max_text_width,
+                        font_family_path=state.font_family
                     )
                 else:
                     draw_multiline_text_horizontal(
@@ -966,7 +1698,8 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height
+                        bubble_height=max_text_height,
+                        font_family_path=state.font_family
                     )
                     
         except Exception as render_e:
