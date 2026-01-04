@@ -111,7 +111,12 @@ class VLMClient:
         
         # 检测是否为本地服务（使用共享函数）
         from src.shared.openai_helpers import is_local_service
-        base_url = config.base_url or self.PROVIDER_CONFIGS.get(config.provider.lower(), {}).get("base_url", "")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        provider_lower = config.provider.lower()
+        if provider_lower == 'custom':
+            base_url = config.base_url or ""
+        else:
+            base_url = self.PROVIDER_CONFIGS.get(provider_lower, {}).get("base_url", "")
         
         # 批量分析需要更长超时时间（5分钟）
         if is_local_service(base_url):
@@ -289,7 +294,11 @@ class VLMClient:
     async def _call_openai_compatible(self, images: List[bytes], prompt: str) -> str:
         """调用 OpenAI 兼容 API（统一格式，支持所有服务商）"""
         provider = self.config.provider.lower()
-        base_url = self.config.base_url or self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        if provider == 'custom':
+            base_url = self.config.base_url or ""
+        else:
+            base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
         
         content = []
         for img in images:
@@ -520,7 +529,11 @@ class VLMClient:
         try:
             test_prompt = "请回复'连接成功'"
             provider = self.config.provider.lower()
-            base_url = self.config.base_url or self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
+            # 修复：只有 custom 服务商才使用自定义 URL
+            if provider == 'custom':
+                base_url = self.config.base_url or ""
+            else:
+                base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
             
             if not base_url:
                 logger.error(f"服务商 '{provider}' 未配置 base_url")

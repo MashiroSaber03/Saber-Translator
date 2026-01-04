@@ -98,19 +98,19 @@ class MangaScraperAgent:
     
     def _get_base_url(self) -> Optional[str]:
         """根据服务商获取 API 地址"""
-        if self.base_url:
-            return self.base_url
-        
         provider_urls = {
             'openai': None,  # 使用默认
             'siliconflow': 'https://api.siliconflow.cn/v1',
             'deepseek': 'https://api.deepseek.com/v1',
             'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            'custom_openai': self.base_url or None
+            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/'
         }
         
-        return provider_urls.get(self.provider)
+        # 只有选择 custom_openai 时才使用自定义 URL
+        if self.provider == 'custom_openai':
+            return self.base_url if self.base_url else None
+        else:
+            return provider_urls.get(self.provider)
     
     def _create_log(self, log_type: str, message: str) -> AgentLog:
         """创建日志对象"""

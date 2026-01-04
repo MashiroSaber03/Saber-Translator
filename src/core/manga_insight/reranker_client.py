@@ -57,7 +57,11 @@ class RerankerClient:
         self.config = config
         provider = config.provider.lower() if isinstance(config.provider, str) else config.provider.value
         self.provider_config = self.PROVIDER_CONFIGS.get(provider, {})
-        self.base_url = config.base_url or self.provider_config.get("base_url", "")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        if provider == 'custom':
+            self.base_url = config.base_url or ""
+        else:
+            self.base_url = self.provider_config.get("base_url", "")
         self.model = config.model or self.provider_config.get("default_model", "")
         self.client = httpx.AsyncClient(timeout=30.0)
     

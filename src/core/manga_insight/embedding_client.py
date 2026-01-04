@@ -52,7 +52,12 @@ class EmbeddingClient:
         
         # 检测是否为本地服务（使用共享函数）
         from src.shared.openai_helpers import is_local_service
-        base_url = config.base_url or self.PROVIDER_CONFIGS.get(config.provider.lower(), {}).get("base_url", "")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        provider_lower = config.provider.lower()
+        if provider_lower == 'custom':
+            base_url = config.base_url or ""
+        else:
+            base_url = self.PROVIDER_CONFIGS.get(provider_lower, {}).get("base_url", "")
         
         if is_local_service(base_url):
             # 本地服务禁用代理
@@ -118,7 +123,11 @@ class EmbeddingClient:
         await self._enforce_rpm_limit()
         
         provider = self.config.provider.lower()
-        base_url = self.config.base_url or self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        if provider == 'custom':
+            base_url = self.config.base_url or ""
+        else:
+            base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
         
         if not base_url:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
@@ -219,7 +228,11 @@ class ChatClient:
             str: 生成的文本
         """
         provider = self.config.provider.lower() if hasattr(self.config, 'provider') else "openai"
-        base_url = self.config.base_url if hasattr(self.config, 'base_url') and self.config.base_url else self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
+        # 修复：只有 custom 服务商才使用自定义 URL
+        if provider == 'custom':
+            base_url = self.config.base_url if hasattr(self.config, 'base_url') and self.config.base_url else ""
+        else:
+            base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
         
         # 调试日志（debug 级别，仅开发时可见）
         logger.debug(f"[ChatClient] provider={provider}, base_url={base_url}, model={self.config.model}")

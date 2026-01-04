@@ -2,33 +2,45 @@
 网页漫画导入 - 提示词模板
 """
 
-# 默认提取提示词
-DEFAULT_EXTRACTION_PROMPT = """你是一个专业的漫画数据提取助手。请针对当前网页执行以下提取任务:
+# 默认提取提示词（简洁通用版）
+DEFAULT_EXTRACTION_PROMPT = """你是一个专业的网页漫画图片提取助手。请从给定的漫画阅读页面中提取所有漫画图片的URL。
 
-## 1. 交互行为
-- 请模拟用户行为，缓慢向下滚动页面至底部，以触发所有采用"懒加载"技术的漫画图片。
-- 在滚动过程中，请确保等待图片加载完成，识别并提取真实的漫画内容图片。
+## 提取规则
 
-## 2. 提取逻辑
-- **图片过滤**: 忽略所有加载占位图（如 loading.gif、spacer.gif）、广告图或图标，仅提取属于漫画正文的图片。
-- **属性识别**: 优先提取 `data-src`、`data-original`、`original` 或 `file` 等包含真实高清原图地址的属性。如果这些属性不存在，再提取 `src` 属性。
-- **元数据**: 提取漫画的名称（comic_title）和当前章节的名称（chapter_title）。
+### 1. 定位正文容器
+- 找到承载漫画内容的主容器（如 `reader-area`、`chapter-content` 等）
+- 忽略侧边栏、页脚、广告区、评论区、推荐区中的图片
 
-## 3. 数据结构
-- 必须按图片在页面中显示的先后顺序提取，并为每张图片分配一个从 1 开始的 `page_number`（页码序号）。
-- 最终结果以 JSON 格式输出，包含漫画名称、章节名以及包含序号和图片链接的列表。
+### 2. 处理懒加载
+- 优先提取 `data-src`、`data-lazy-src`、`data-original` 等属性中的真实URL
+- 如果 `src` 是占位符（如 `loading.gif`、base64小图），使用备用属性
+- **禁止提取 `blob:` 开头的URL**（这是浏览器临时对象，无法下载）
 
-## 4. 输出格式 (Valid JSON Only)
-严格按照以下 JSON 格式输出，不要包含 Markdown 代码块标记（如 ```json）：
+### 3. 处理 blob: 链接的情况
+如果所有 `<img>` 标签的 `src` 都是 `blob:` 链接，说明真实URL被JavaScript隐藏了：
+- 在HTML源码中搜索图片URL（通常在 `<script>` 标签或JSON数据中）
+- 使用正则匹配提取所有图片链接
+- 常见的图片URL模式：`https://.../*.jpg`、`https://.../*.png`、`https://.../*.webp`
+
+### 4. 保持顺序
+- 按图片在页面中的显示顺序提取
+- 第一张图是第1页，依此类推
+
+### 5. URL验证
+- 只提取以 `http://` 或 `https://` 开头的完整URL
+- 过滤掉广告图、图标、头像等非漫画内容
+
+## 输出格式
+严格输出以下JSON格式（不要加 ```json 标记）：
 
 {
   "comic_title": "漫画名称",
-  "chapter_title": "第X话 章节标题",
+  "chapter_title": "章节名称",
   "pages": [
     {"page_number": 1, "image_url": "https://..."},
     {"page_number": 2, "image_url": "https://..."}
   ],
-  "total_pages": 1
+  "total_pages": 2
 }"""
 
 # 系统提示词后缀 (强制 JSON 输出)

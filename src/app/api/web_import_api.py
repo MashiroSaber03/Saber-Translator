@@ -19,7 +19,7 @@ from pathlib import Path
 from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context, send_from_directory
 
-from src.core.web_import import MangaScraperAgent, ImageDownloader, GalleryDLRunner, check_gallery_dl_support
+from src.core.web_import import MangaScraperAgent, GalleryDLRunner, check_gallery_dl_support
 
 logger = logging.getLogger("WebImportAPI")
 
@@ -35,6 +35,15 @@ def serve_gallery_dl_temp(filename):
     提供 gallery-dl 临时文件的静态访问
     """
     temp_dir = PROJECT_ROOT / "data" / "temp" / "gallery_dl"
+    return send_from_directory(str(temp_dir), filename)
+
+
+@web_import_bp.route('/static/temp/ai_agent/<path:filename>', methods=['GET'])
+def serve_ai_agent_temp(filename):
+    """
+    提供 AI Agent 临时文件的静态访问
+    """
+    temp_dir = PROJECT_ROOT / "data" / "temp" / "ai_agent"
     return send_from_directory(str(temp_dir), filename)
 
 
@@ -343,6 +352,7 @@ def _extract_with_gallery_dl(url: str, config: dict):
 
 def _extract_with_ai_agent(url: str, config: dict):
     """使用 AI Agent 引擎提取"""
+    
     # 检查必要的配置
     firecrawl_key = config.get('firecrawl', {}).get('apiKey', '')
     agent_key = config.get('agent', {}).get('apiKey', '')
@@ -351,6 +361,17 @@ def _extract_with_ai_agent(url: str, config: dict):
         return jsonify({'success': False, 'error': '请配置 Firecrawl API Key'}), 400
     if not agent_key:
         return jsonify({'success': False, 'error': '请配置 AI Agent API Key'}), 400
+    
+    # 临时目录（与 gallery-dl 使用相同的结构，便于统一处理）
+    temp_dir = Path("data/temp/ai_agent")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 每次提取前清理旧文件
+    for old_file in temp_dir.glob("*"):
+        try:
+            old_file.unlink()
+        except:
+            pass
     
     def generate():
         try:
@@ -374,7 +395,91 @@ def _extract_with_ai_agent(url: str, config: dict):
                 }
                 yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
-            # 发送结果
+            # 如果提取成功，下载图片到临时目录
+            if result.success and result.pages:
+                yield f"event: log\ndata: {json.dumps({'timestamp': datetime.now().strftime('%H:%M:%S'), 'type': 'info', 'message': f'开始下载 {len(result.pages)} 张图片...'}, ensure_ascii=False)}\n\n"
+                
+                # 从原始 URL 提取 Referer
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                referer = f"{parsed.scheme}://{parsed.netloc}/"
+                
+                # 下载每张图片
+                downloaded_pages = []
+                for i, page in enumerate(result.pages):
+                    page_num = page.get('pageNumber', i + 1)
+                    image_url = page.get('imageUrl', '')
+                    
+                    if not image_url or image_url.startswith('blob:'):
+                        continue
+                    
+                    try:
+                        # 下载图片
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Referer': referer
+                        }
+                        
+                        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                            resp = client.get(image_url, headers=headers)
+                            resp.raise_for_status()
+                            
+                            # 确定文件扩展名
+                            content_type = resp.headers.get('content-type', '')
+                            if 'webp' in content_type:
+                                ext = '.webp'
+                            elif 'png' in content_type:
+                                ext = '.png'
+                            elif 'gif' in content_type:
+                                ext = '.gif'
+                            else:
+                                ext = '.jpg'
+                            
+                            # 保存到临时目录
+                            filename = f"{page_num:04d}{ext}"
+                            filepath = temp_dir / filename
+                            filepath.write_bytes(resp.content)
+                            
+                            # 更新页面数据，使用本地静态路径
+                            local_url = f"/api/web-import/static/temp/ai_agent/{filename}"
+                            downloaded_pages.append({
+                                'pageNumber': page_num,
+                                'imageUrl': local_url,
+                                'originalUrl': image_url  # 保留原始 URL 以备用
+                            })
+                            
+                            # 推送进度
+                            log_msg = {
+                                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                                'type': 'info',
+                                'message': f'📥 第 {page_num} 张图片已下载 ({i + 1}/{len(result.pages)})'
+                            }
+                            yield f"event: log\ndata: {json.dumps(log_msg, ensure_ascii=False)}\n\n"
+                            
+                            # 推送页面数据（与 gallery-dl 相同格式）
+                            page_data = {
+                                'pageNumber': page_num,
+                                'imageUrl': local_url,
+                                'originalUrl': image_url
+                            }
+                            yield f"event: page\ndata: {json.dumps(page_data, ensure_ascii=False)}\n\n"
+                            
+                    except Exception as e:
+                        logger.warning(f"下载图片失败 {image_url}: {e}")
+                        # 下载失败时使用原始 URL
+                        downloaded_pages.append({
+                            'pageNumber': page_num,
+                            'imageUrl': image_url
+                        })
+                
+                # 更新结果中的 pages
+                if downloaded_pages:
+                    result.pages = downloaded_pages
+                    result.total_pages = len(downloaded_pages)
+                
+                yield f"event: log\ndata: {json.dumps({'timestamp': datetime.now().strftime('%H:%M:%S'), 'type': 'tool_result', 'message': f'✅ 图片下载完成: {len(downloaded_pages)} 张'}, ensure_ascii=False)}\n\n"
+            
+            # 发送最终结果
             result_data = {
                 'success': result.success,
                 'comicTitle': result.comic_title,
@@ -442,46 +547,96 @@ def download_images():
             # 使用 Gallery-DL 托管下载
             return _download_with_gallery_dl(source_url, pages, config)
         else:
-            # 使用 ImageDownloader 下载
-            return _download_with_image_downloader(pages, source_url, config)
+            # AI Agent 模式：检查图片是否已在临时目录
+            # 如果 imageUrl 以 /api/web-import/static/temp/ai_agent/ 开头，说明已下载
+            return _download_with_ai_agent_cache(pages, source_url, config)
         
     except Exception as e:
         logger.exception("下载 API 错误")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-def _download_with_image_downloader(pages: list, source_url: str, config: dict):
-    """使用 ImageDownloader 下载图片"""
-    # 构建下载器配置
-    download_config = {
-        **config.get('download', {}),
-        'customCookie': config.get('advanced', {}).get('customCookie', ''),
-        'customHeaders': config.get('advanced', {}).get('customHeaders', ''),
-        'bypassProxy': config.get('advanced', {}).get('bypassProxy', False),
-        'imagePreprocess': config.get('imagePreprocess', {})
-    }
+def _download_with_ai_agent_cache(pages: list, source_url: str, config: dict):
+    """
+    使用 AI Agent 缓存下载图片
+    如果图片已在临时目录，直接读取；否则重新下载
+    """
+    import base64
     
-    # 创建下载器
-    downloader = ImageDownloader(download_config)
-    
-    # 执行下载
-    results = downloader.download_all_sync(pages, source_url)
-    
-    # 转换结果
+    temp_dir = Path("data/temp/ai_agent")
     images = []
     failed_count = 0
     
-    for result in results:
-        if result.success:
-            images.append({
-                'index': result.index,
-                'filename': result.filename,
-                'dataUrl': result.data_url,
-                'size': result.size
-            })
-        else:
+    # 获取图片预处理配置
+    preprocess = config.get('imagePreprocess', {})
+    
+    for i, page in enumerate(pages):
+        page_num = page.get('pageNumber', i + 1)
+        image_url = page.get('imageUrl', '')
+        original_url = page.get('originalUrl', '')  # 原始远程 URL
+        
+        try:
+            # 检查是否是本地缓存文件
+            if image_url.startswith('/api/web-import/static/temp/ai_agent/'):
+                # 从本地读取
+                filename = image_url.split('/')[-1]
+                filepath = temp_dir / filename
+                
+                if filepath.exists():
+                    # 读取本地文件
+                    image_data = filepath.read_bytes()
+                    
+                    # 应用图片预处理（如果需要）
+                    if preprocess.get('enabled'):
+                        from src.core.web_import.image_processor import ImageProcessor
+                        processor = ImageProcessor(preprocess)
+                        image_data = processor.process(image_data)
+                    
+                    # 转换为 base64
+                    ext = filepath.suffix.lower()
+                    mime_type = {
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.png': 'image/png',
+                        '.webp': 'image/webp',
+                        '.gif': 'image/gif'
+                    }.get(ext, 'image/jpeg')
+                    
+                    data_url = f"data:{mime_type};base64,{base64.b64encode(image_data).decode()}"
+                    
+                    images.append({
+                        'index': page_num - 1,
+                        'filename': f"page_{page_num:04d}{ext}",
+                        'dataUrl': data_url,
+                        'size': len(image_data)
+                    })
+                    logger.debug(f"从缓存读取图片: {filename}")
+                    continue
+            
+            # 不是本地缓存，使用 ImageDownloader 下载
+            # 这种情况一般是下载失败回退到原始 URL
+            download_url = original_url if original_url else image_url
+            if download_url and not download_url.startswith('blob:'):
+                from src.core.web_import.image_downloader import ImageDownloader
+                downloader = ImageDownloader(config.get('download', {}))
+                result = downloader.download_single_sync(download_url, source_url)
+                
+                if result.get('success'):
+                    images.append({
+                        'index': page_num - 1,
+                        'filename': f"page_{page_num:04d}.jpg",
+                        'dataUrl': result.get('dataUrl', ''),
+                        'size': result.get('size', 0)
+                    })
+                    continue
+            
+            # 下载失败
             failed_count += 1
-            logger.warning(f"下载失败: {result.error}")
+            logger.warning(f"图片下载失败: {image_url}")
+            
+        except Exception as e:
+            failed_count += 1
+            logger.warning(f"处理图片失败 {image_url}: {e}")
     
     return jsonify({
         'success': True,
@@ -602,6 +757,12 @@ def test_agent_connection():
         base_url = data.get('customBaseUrl', '').strip()
         model_name = data.get('modelName', 'gpt-4o-mini')
         
+        # 日志：接收到的参数
+        logger.info(f"[Agent测试] 服务商: {provider}")
+        logger.info(f"[Agent测试] 模型名称: {model_name}")
+        logger.info(f"[Agent测试] 自定义Base URL: {base_url if base_url else '(未设置)'}")
+        logger.info(f"[Agent测试] API Key前缀: {api_key[:15]}..." if len(api_key) > 15 else f"[Agent测试] API Key: {api_key}")
+        
         if not api_key:
             return jsonify({'success': False, 'error': '请输入 API Key'}), 400
         
@@ -613,11 +774,18 @@ def test_agent_connection():
             'siliconflow': 'https://api.siliconflow.cn/v1',
             'deepseek': 'https://api.deepseek.com/v1',
             'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            'custom_openai': base_url or None
+            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/'
         }
         
-        final_base_url = base_url if base_url else provider_urls.get(provider)
+        # 只有选择 custom_openai 时才使用自定义 URL
+        if provider == 'custom_openai':
+            final_base_url = base_url if base_url else None
+        else:
+            final_base_url = provider_urls.get(provider)
+        
+        # 日志：最终使用的配置
+        logger.info(f"[Agent测试] 最终Base URL: {final_base_url if final_base_url else '(使用OpenAI默认)'}")
+        logger.info(f"[Agent测试] 开始调用 {model_name} 模型...")
         
         # 创建客户端
         client = OpenAI(
@@ -633,11 +801,30 @@ def test_agent_connection():
             max_tokens=5
         )
         
+        logger.info(f"[Agent测试] ✅ 连接成功！响应: {response.choices[0].message.content if response.choices else '(无内容)'}")
         return jsonify({'success': True, 'message': '连接成功'})
         
     except Exception as e:
         error_msg = str(e)
+        error_type = type(e).__name__
+        
+        # 详细的错误日志
+        logger.error(f"[Agent测试] ❌ 连接失败")
+        logger.error(f"[Agent测试] 错误类型: {error_type}")
+        logger.error(f"[Agent测试] 错误信息: {error_msg}")
+        
+        # 如果有更多错误细节
+        if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+            logger.error(f"[Agent测试] HTTP状态码: {e.response.status_code}")
+            logger.error(f"[Agent测试] 响应体: {e.response.text if hasattr(e.response, 'text') else '(无)'}")
+        
+        # 解析具体错误
         if 'authentication' in error_msg.lower() or '401' in error_msg:
             return jsonify({'success': False, 'error': 'API Key 无效'}), 400
+        elif '403' in error_msg or 'permission' in error_msg.lower():
+            return jsonify({'success': False, 'error': f'权限错误(403): {error_msg}'}), 400
+        elif 'not found' in error_msg.lower() or '404' in error_msg:
+            return jsonify({'success': False, 'error': f'模型或端点不存在(404): {model_name}'}), 400
+        
         logger.exception("测试 Agent 连接失败")
         return jsonify({'success': False, 'error': error_msg}), 500
