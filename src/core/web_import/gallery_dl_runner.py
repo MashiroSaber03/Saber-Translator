@@ -139,30 +139,36 @@ class GalleryDLRunner:
             logger.debug(f"检查 URL 支持失败: {e}")
             return False
     
-    def extract_metadata(self, url: str) -> GalleryDLExtractResult:
+    def extract_metadata(
+        self,
+        url: str,
+        on_progress: Callable[[Dict[str, Any]], None] = None
+    ) -> GalleryDLExtractResult:
         """
-        提取元数据（直接下载模式）
+        提取元数据（分片推送模式）
         
-        gallery-dl 的 --dump-json 对某些站点不适用，
-        改为直接下载到临时目录，然后返回文件列表作为预览
+        实时监听下载进度，每下载一张图片就通过回调推送给前端
         
         Args:
             url: 漫画页面 URL
+            on_progress: 进度回调函数，每发现一张新图片就调用
+                参数: {"pageNumber": 1, "imageUrl": "...", "localPath": "..."}
         
         Returns:
             GalleryDLExtractResult: 提取结果
         """
         from urllib.parse import urlparse
+        import threading
+        import time
         
         # 从 URL 提取标题
         parsed = urlparse(url)
         comic_title = parsed.path.strip('/').split('/')[-1] or "Gallery"
         
-        logger.info(f"执行 gallery-dl 提取: {url}")
+        logger.info(f"执行 gallery-dl 分片提取: {url}")
         
         # 使用项目的临时目录
-        import os
-        project_root = Path(__file__).parent.parent.parent.parent  # src/core/web_import -> 项目根目录
+        project_root = Path(__file__).parent.parent.parent.parent
         project_temp_dir = project_root / "data" / "temp" / "gallery_dl"
         project_temp_dir.mkdir(parents=True, exist_ok=True)
         
@@ -179,39 +185,118 @@ class GalleryDLRunner:
         
         temp_dir = str(project_temp_dir)
         
+        # 用于线程间通信
+        download_complete = threading.Event()
+        download_error = None
+        sent_files = set()  # 记录已推送的文件
+        
+        def download_task():
+            """后台下载任务"""
+            nonlocal download_error
+            try:
+                from gallery_dl import job, config
+                
+                config.clear()
+                config.set((), "base-directory", temp_dir)
+                config.set((), "directory", ["."])
+                config.set((), "filename", "{num:>03}.{extension}")
+                
+                # 移除 range 限制，下载全部图片
+                # config.set(("extractor",), "range", "1-20")
+                
+                logger.info(f"后台线程开始下载: {url}")
+                djob = job.DownloadJob(url)
+                djob.run()
+                logger.info("后台下载完成")
+                
+            except Exception as e:
+                logger.exception("后台下载异常")
+                download_error = e
+            finally:
+                download_complete.set()
+        
         try:
-            # 使用 gallery-dl Python API 直接下载
-            from gallery_dl import job, config
+            # 启动后台下载线程
+            download_thread = threading.Thread(target=download_task, daemon=True)
+            download_thread.start()
             
-            # 清空之前的配置
-            config.clear()
-            
-            # 配置输出目录和文件命名
-            config.set((), "base-directory", temp_dir)
-            config.set((), "directory", ["."])
-            config.set((), "filename", "{num:>03}.{extension}")
-            
-            # 设置范围限制 - 只下载前20张用于预览
-            config.set(("extractor",), "range", "1-20")
-            
-            logger.info(f"使用 gallery-dl Python API 下载到: {temp_dir}")
-            
-            # 执行下载
-            djob = job.DownloadJob(url)
-            djob.run()
-            logger.info("gallery-dl 下载完成")
-            
-            # 查找下载的图片
+            # 主线程定期扫描临时目录，发现新文件就推送
             all_images = []
-            for file_path in Path(temp_dir).rglob('*'):
-                if file_path.is_file() and file_path.suffix.lower() in [
-                    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
-                ]:
-                    all_images.append(file_path)
+            scan_interval = 0.5  # 每 0.5 秒扫描一次
+            max_wait_time = self.timeout  # 使用配置的超时时间
+            start_time = time.time()
             
-            # 按文件名排序
-            all_images.sort(key=lambda p: p.name)
+            while True:
+                # 检查超时
+                if time.time() - start_time > max_wait_time:
+                    logger.error("扫描超时")
+                    raise TimeoutError("下载超时")
+                
+                # 扫描新文件
+                current_files = []
+                for file_path in Path(temp_dir).rglob('*'):
+                    if file_path.is_file() and file_path.suffix.lower() in [
+                        '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
+                    ]:
+                        current_files.append(file_path)
+                
+                # 立即排序，确保 pageNumber 按文件名顺序分配
+                current_files.sort(key=lambda p: p.name)
+                
+                # 找出新增的文件
+                for file_path in current_files:
+                    if file_path not in sent_files:
+                        sent_files.add(file_path)
+                        all_images.append(file_path)
+                        
+                        # 立即推送给前端（pageNumber 已经是按文件名排序后的位置）
+                        if on_progress:
+                            page_num = len(all_images)
+                            page_data = {
+                                "pageNumber": page_num,
+                                "imageUrl": f"/api/web-import/static/temp/gallery_dl/{file_path.name}",
+                                "localPath": str(file_path)
+                            }
+                            on_progress(page_data)
+                            logger.debug(f"推送第 {page_num} 张图片: {file_path.name}")
+                
+                # 检查下载是否完成
+                if download_complete.is_set():
+                    logger.info("下载线程已完成")
+                    # 最后再扫描一次，确保没有遗漏
+                    time.sleep(0.2)
+                    final_files = []
+                    for file_path in Path(temp_dir).rglob('*'):
+                        if file_path.is_file() and file_path.suffix.lower() in [
+                            '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
+                        ]:
+                            final_files.append(file_path)
+                    
+                    # 排序后检查遗漏
+                    final_files.sort(key=lambda p: p.name)
+                    for file_path in final_files:
+                        if file_path not in sent_files:
+                            sent_files.add(file_path)
+                            all_images.append(file_path)
+                            if on_progress:
+                                page_num = len(all_images)
+                                page_data = {
+                                    "pageNumber": page_num,
+                                    "imageUrl": f"/api/web-import/static/temp/gallery_dl/{file_path.name}",
+                                    "localPath": str(file_path)
+                                }
+                                on_progress(page_data)
+                                logger.debug(f"推送遗漏的第 {page_num} 张图片: {file_path.name}")
+                    break
+                
+                # 等待一段时间再扫描
+                time.sleep(scan_interval)
             
+            # 检查是否有错误
+            if download_error:
+                raise download_error
+            
+            # all_images 已经按文件名排序（在扫描时即排序）
             if not all_images:
                 return GalleryDLExtractResult(
                     success=False,
@@ -219,7 +304,7 @@ class GalleryDLRunner:
                     error="未能下载到任何图片，请检查URL是否正确"
                 )
             
-            # 构建页面列表
+            # 构建最终的页面列表
             pages = []
             for i, file_path in enumerate(all_images):
                 page_num = i + 1
@@ -234,7 +319,7 @@ class GalleryDLRunner:
             return GalleryDLExtractResult(
                 success=True,
                 comic_title=comic_title,
-                chapter_title=f"共 {len(pages)} 张（预览前20张）",
+                chapter_title=f"共 {len(pages)} 张",
                 pages=pages,
                 total_pages=len(pages),
                 source_url=url,

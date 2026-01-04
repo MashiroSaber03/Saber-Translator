@@ -13,7 +13,10 @@
 import logging
 import json
 import httpx
+import threading
+import time
 from pathlib import Path
+from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context, send_from_directory
 
 from src.core.web_import import MangaScraperAgent, ImageDownloader, GalleryDLRunner, check_gallery_dl_support
@@ -191,10 +194,9 @@ def extract_images():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+
 def _extract_with_gallery_dl(url: str, config: dict):
     """使用 Gallery-DL 引擎提取"""
-    from datetime import datetime
-    import sys
     
     def generate():
         try:
@@ -206,10 +208,10 @@ def _extract_with_gallery_dl(url: str, config: dict):
             }
             yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
-            # 创建运行器 - gallery-dl 元数据提取需要较长时间
+            # 创建运行器
             runner_config = {
                 **config,
-                'timeout': 600  # 固定10分钟超时，某些站点需要很长时间
+                'timeout': 600  # 固定10分钟超时
             }
             runner = GalleryDLRunner(runner_config)
             
@@ -217,7 +219,7 @@ def _extract_with_gallery_dl(url: str, config: dict):
             log_data = {
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'type': 'tool_call',
-                'message': '调用 gallery-dl 下载预览图片（前20张）...'
+                'message': '调用 gallery-dl 开始下载图片...'
             }
             yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
@@ -225,21 +227,70 @@ def _extract_with_gallery_dl(url: str, config: dict):
             log_data = {
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'type': 'info',
-                'message': '⏳ 正在下载预览图片，请稍候...'
+                'message': '⏳ 开始下载，图片将实时显示...'
             }
             yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
-            # 执行提取
+            # 定义进度回调：每下载一张图片就推送
+            pages_yielded = []  # 用于收集已推送的页面
+            
+            def on_page_downloaded(page_data):
+                """每发现一张新图片的回调"""
+                pages_yielded.append(page_data)
+            
+            # 执行提取（带进度回调）
             logger.info(f"开始 gallery-dl 提取: {url}")
-            result = runner.extract_metadata(url)
+            
+            # 由于回调无法直接在生成器中 yield，我们需要使用轮询方式
+            result_container = {'result': None, 'error': None}
+            
+            def extraction_thread():
+                try:
+                    result_container['result'] = runner.extract_metadata(url, on_progress=on_page_downloaded)
+                except Exception as e:
+                    result_container['error'] = e
+            
+            # 启动提取线程
+            thread = threading.Thread(target=extraction_thread, daemon=True)
+            thread.start()
+            
+            # 轮询检查新页面并推送
+            last_count = 0
+            while thread.is_alive() or last_count < len(pages_yielded):
+                # 推送新发现的页面
+                while last_count < len(pages_yielded):
+                    page_data = pages_yielded[last_count]
+                    page_event = {
+                        'timestamp': datetime.now().strftime('%H:%M:%S'),
+                        'type': 'info',
+                        'message': f'📥 第 {page_data["pageNumber"]} 张图片已下载'
+                    }
+                    yield f"event: log\ndata: {json.dumps(page_event, ensure_ascii=False)}\n\n"
+                    
+                    # 推送图片数据
+                    yield f"event: page\ndata: {json.dumps(page_data, ensure_ascii=False)}\n\n"
+                    
+                    last_count += 1
+                
+                # 等待一小段时间再检查
+                time.sleep(0.1)
+            
+            # 等待线程完成
+            thread.join(timeout=1)
+            
+            # 检查是否有错误
+            if result_container['error']:
+                raise result_container['error']
+            
+            result = result_container['result']
             logger.info(f"gallery-dl 提取完成: success={result.success}, pages={result.total_pages}")
             
-            # 发送结果日志
+            # 发送完成日志
             if result.success:
                 log_data = {
                     'timestamp': datetime.now().strftime('%H:%M:%S'),
                     'type': 'tool_result',
-                    'message': f'提取成功: 发现 {result.total_pages} 张图片'
+                    'message': f'✅ 提取完成: 共 {result.total_pages} 张图片'
                 }
             else:
                 log_data = {
@@ -249,7 +300,7 @@ def _extract_with_gallery_dl(url: str, config: dict):
                 }
             yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
-            # 发送结果
+            # 发送最终结果
             result_data = {
                 'success': result.success,
                 'comicTitle': result.comic_title,

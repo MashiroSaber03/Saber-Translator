@@ -47,7 +47,8 @@ export async function extractImages(
   onLog: (log: AgentLog) => void,
   onResult: (result: ExtractResult) => void,
   onError: (error: string) => void,
-  engine: WebImportEngine = 'auto'
+  engine: WebImportEngine = 'auto',
+  onPage?: (page: ComicPage) => void  // 新增：每下载一张图片就回调
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/extract`, {
     method: 'POST',
@@ -97,6 +98,11 @@ export async function extractImages(
             const data = JSON.parse(eventData)
             if (eventType === 'log') {
               onLog(data as AgentLog)
+            } else if (eventType === 'page') {
+              // 处理单张图片数据（分片推送）
+              if (onPage) {
+                onPage(data as ComicPage)
+              }
             } else if (eventType === 'result') {
               onResult(data as ExtractResult)
             } else if (eventType === 'error') {

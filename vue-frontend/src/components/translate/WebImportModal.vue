@@ -149,7 +149,11 @@ async function handleExtract() {
       (errorMsg: string) => {
         webImportStore.setError(errorMsg)
       },
-      selectedEngine.value
+      selectedEngine.value,
+      // 新增：每收到一张图片就增量添加
+      (page) => {
+        webImportStore.addPageIncremental(page)
+      }
     )
   } catch (e) {
     webImportStore.setError(e instanceof Error ? e.message : '提取失败')

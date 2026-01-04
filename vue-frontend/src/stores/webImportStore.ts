@@ -167,10 +167,24 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   /** 设置提取结果 */
   function setExtractResult(result: ExtractResult): void {
-    extractResult.value = result
-    if (result.success && result.pages) {
-      // 默认全选
-      selectedPages.value = new Set(result.pages.map((p) => p.pageNumber))
+    // 兼容分片推送模式：如果已经有增量添加的页面，不覆盖
+    if (extractResult.value && extractResult.value.pages.length > 0) {
+      // 只更新元数据，保留现有的 pages
+      extractResult.value.comicTitle = result.comicTitle
+      extractResult.value.chapterTitle = result.chapterTitle
+      extractResult.value.totalPages = result.totalPages
+      extractResult.value.sourceUrl = result.sourceUrl
+      extractResult.value.referer = result.referer
+      extractResult.value.engine = result.engine
+      extractResult.value.success = result.success
+      extractResult.value.error = result.error
+    } else {
+      // 首次设置，直接覆盖
+      extractResult.value = result
+      if (result.success && result.pages) {
+        // 默认全选
+        selectedPages.value = new Set(result.pages.map((p) => p.pageNumber))
+      }
     }
   }
 
@@ -217,6 +231,31 @@ export const useWebImportStore = defineStore('webImport', () => {
   /** 设置下载结果 */
   function setDownloadedImages(images: DownloadedImage[]): void {
     downloadedImages.value = images
+  }
+
+  /** 增量添加页面（分片推送模式） */
+  function addPageIncremental(page: { pageNumber: number; imageUrl: string; localPath?: string }): void {
+    if (!extractResult.value) {
+      // 如果还没有提取结果，先创建一个
+      extractResult.value = {
+        success: true,
+        comicTitle: '',
+        chapterTitle: '',
+        pages: [],
+        totalPages: 0,
+        sourceUrl: url.value,
+        referer: '',
+        engine: 'gallery-dl'
+      }
+    }
+
+    // 添加新页面
+    extractResult.value.pages.push(page)
+    extractResult.value.totalPages = extractResult.value.pages.length
+
+    // 自动选中新页面
+    selectedPages.value.add(page.pageNumber)
+    selectedPages.value = new Set(selectedPages.value)  // 触发响应式更新
   }
 
   // ============================================================
@@ -271,6 +310,7 @@ export const useWebImportStore = defineStore('webImport', () => {
     setError,
     updateDownloadProgress,
     setDownloadedImages,
+    addPageIncremental,
     // 设置方法
     ...settingsMethods
   }
