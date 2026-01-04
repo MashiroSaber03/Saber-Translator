@@ -217,10 +217,10 @@ def _extract_with_gallery_dl(url: str, config: dict):
             }
             yield f"event: log\ndata: {json.dumps(log_data, ensure_ascii=False)}\n\n"
             
-            # 创建运行器
+            # 创建运行器 - 无超时限制，等待下载完成
             runner_config = {
                 **config,
-                'timeout': 600  # 固定10分钟超时
+                'timeout': 0  # 0 表示无超时限制
             }
             runner = GalleryDLRunner(runner_config)
             

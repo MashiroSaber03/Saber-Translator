@@ -10,6 +10,8 @@
 import sys
 import subprocess
 import logging
+import time
+import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
@@ -50,14 +52,18 @@ class GalleryDLRunner:
                 - imagePreprocess: 图片预处理配置
         """
         self.config = config or {}
-        # 直接从配置获取 timeout，如果没有则使用默认值
-        # 注意：不要使用嵌套的 download.timeout，因为那是给下载器用的
+        # 直接从配置获取 timeout
+        # timeout <= 0 表示无限制（仅等待下载完成）
         raw_timeout = self.config.get('timeout')
-        if isinstance(raw_timeout, (int, float)) and raw_timeout > 0:
-            self.timeout = raw_timeout
+        if isinstance(raw_timeout, (int, float)):
+            self.timeout = raw_timeout if raw_timeout > 0 else 0
         else:
-            self.timeout = 600  # 默认10分钟
-        logger.info(f"GalleryDLRunner 初始化，超时设置: {self.timeout} 秒")
+            self.timeout = 0  # 默认无限制
+        
+        if self.timeout > 0:
+            logger.info(f"GalleryDLRunner 初始化，超时设置: {self.timeout} 秒")
+        else:
+            logger.info("GalleryDLRunner 初始化，无超时限制")
         
         # 图片预处理器
         preprocess_config = self.config.get('imagePreprocess', {})
@@ -223,12 +229,12 @@ class GalleryDLRunner:
             # 主线程定期扫描临时目录，发现新文件就推送
             all_images = []
             scan_interval = 0.5  # 每 0.5 秒扫描一次
-            max_wait_time = self.timeout  # 使用配置的超时时间
+            max_wait_time = self.timeout  # 使用配置的超时时间（0表示无限制）
             start_time = time.time()
             
             while True:
-                # 检查超时
-                if time.time() - start_time > max_wait_time:
+                # 检查超时（仅当设置了超时时间时）
+                if max_wait_time > 0 and time.time() - start_time > max_wait_time:
                     logger.error("扫描超时")
                     raise TimeoutError("下载超时")
                 
