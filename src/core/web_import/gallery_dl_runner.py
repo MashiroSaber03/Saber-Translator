@@ -7,6 +7,8 @@
 - 自动处理防盗链
 """
 
+import sys
+import subprocess
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
@@ -15,6 +17,7 @@ from dataclasses import dataclass
 from .image_processor import ImageProcessor
 
 logger = logging.getLogger("WebImport.GalleryDL")
+
 
 
 @dataclass
@@ -69,15 +72,23 @@ class GalleryDLRunner:
             bool: 是否可用
         """
         try:
+            logger.info(f"检查 gallery-dl 可用性，使用 Python: {sys.executable}")
             result = subprocess.run(
                 [sys.executable, "-m", "gallery_dl", "--version"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            return result.returncode == 0
+            logger.info(f"gallery-dl --version 返回码: {result.returncode}")
+            logger.info(f"gallery-dl --version 输出: {result.stdout.strip()}")
+            if result.stderr:
+                logger.warning(f"gallery-dl --version 错误输出: {result.stderr.strip()}")
+            
+            is_avail = result.returncode == 0
+            logger.info(f"gallery-dl 可用性检查结果: {is_avail}")
+            return is_avail
         except Exception as e:
-            logger.debug(f"gallery-dl 不可用: {e}")
+            logger.error(f"gallery-dl 不可用: {e}")
             return False
     
     @staticmethod
