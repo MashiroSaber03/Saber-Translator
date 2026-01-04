@@ -583,6 +583,63 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
     return cdpt, 0
 
 
+def auto_add_horizontal_tags(text: str) -> str:
+    """
+    自动为竖排文本中的短英文单词或连续符号添加<H>标签，使其横向显示。
+    
+    处理规则：
+    - 多词英文词组（如 "Tik Tok"）：整体横排显示
+    - 独立的短英文单词（2个及以上字符）：添加<H>标签
+    - 连续符号（!?）2-4个：横排显示
+    
+    渲染规则（在渲染时根据长度决定）：
+    - 2个字符：横排显示
+    - 3个及以上字符：竖排显示但每个字符旋转90度
+    
+    Args:
+        text: 原始文本
+        
+    Returns:
+        添加了<H>标签的文本
+    """
+    if not text:
+        return text
+    
+    # 如果文本中已有<H>标签，则不进行处理，以尊重手动设置
+    if '<H>' in text or '<h>' in text.lower():
+        return text
+    
+    # 步骤1：为多词英文词组添加<H>标签（至少2个单词，用空格分隔）
+    # 匹配：字母/数字 + 空格 + 字母/数字（可以重复多次）
+    # 注意：移除了点号(.)以避免匹配省略号
+    multi_word_pattern = r'[a-zA-Z0-9\uff21-\uff3a\uff41-\uff5a\uff10-\uff19_-]+(?:\s+[a-zA-Z0-9\uff21-\uff3a\uff41-\uff5a\uff10-\uff19_-]+)+'
+    text = re.sub(multi_word_pattern, r'<H>\g<0></H>', text)
+    
+    # 步骤2：对剩余的独立英文单词添加<H>标签
+    # 匹配2个及以上字符，排除已经在<H>标签内的内容
+    word_pattern = r'(?<![a-zA-Z0-9\uff21-\uff3a\uff41-\uff5a\uff10-\uff19_-])([a-zA-Z0-9\uff21-\uff3a\uff41-\uff5a\uff10-\uff19_-]{2,})(?![a-zA-Z0-9\uff21-\uff3a\uff41-\uff5a\uff10-\uff19_-])'
+    
+    # 只替换不在<H>标签内的匹配
+    def replace_word(match):
+        # 检查匹配位置是否在<H>...</H>之间
+        start_pos = match.start()
+        # 简单检查：查找前面最近的<H>和</H>
+        text_before = text[:start_pos]
+        last_open = text_before.rfind('<H>')
+        last_close = text_before.rfind('</H>')
+        if last_open > last_close:
+            # 在<H>标签内，不替换
+            return match.group(0)
+        return f'<H>{match.group(1)}</H>'
+    
+    text = re.sub(word_pattern, replace_word, text)
+    
+    # 步骤3：匹配连续符号（2-4个，同时支持半角和全角）
+    symbol_pattern = r'[!?！？]{2,4}'
+    text = re.sub(symbol_pattern, r'<H>\g<0></H>', text)
+    
+    return text
+
 def process_text_for_vertical(text: str) -> str:
     """
     为竖排渲染预处理文本
@@ -595,6 +652,7 @@ def process_text_for_vertical(text: str) -> str:
     1. 调用 compact_special_symbols 统一省略号格式
     2. 处理特殊组合标点（如 !! → ‼）
     3. 在竖排文本中，将省略号替换为竖排省略号符号
+    4. 自动为英文/数字添加 <H> 横排标签
     
     Args:
         text: 原始文本
@@ -615,6 +673,9 @@ def process_text_for_vertical(text: str) -> str:
     # 步骤3: 在竖排文本中，将省略号替换为竖排省略号符号
     text = text.replace('…', '︙')
     text = text.replace('⋯', '︙')
+    
+    # 步骤4: 自动为英文/数字添加 <H> 横排标签
+    text = auto_add_horizontal_tags(text)
     
     # 注意：不在此处进行字符转换！
     # 字符转换将在渲染函数 draw_multiline_text_vertical 中逐字符进行，
@@ -752,6 +813,187 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
     logger.info(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{max_size})")
     return result
 
+
+def render_horizontal_block(content: str, font, font_size: int, 
+                           fill, stroke_enabled: bool, stroke_color, stroke_width: int,
+                           canvas_image: Image.Image, current_x_col: int, current_y: int,
+                           line_width: int, line_height_unit: int = None) -> int:
+    """
+    在竖排文本中渲染横排块（<H></H> 标签内的内容）
+    
+    使用"单位"系统：
+    - 以中文字符高度为一个"单位"
+    - 计算英文块需要多少个单位
+    - 分配整数单位的空间
+    - 在分配空间内垂直居中显示
+    
+    渲染规则：
+    - 2个字符：横排显示
+    - 3个及以上字符：竖排显示但每个字符旋转90度
+    
+    Args:
+        line_height_unit: 一个"单位"的高度（中文字符高度），默认为 font_size + 1
+        
+    Returns:
+        占用的总高度（整数个单位）
+    """
+    if not content or canvas_image is None:
+        return font_size
+    
+    # 单位高度（中文字符高度）
+    if line_height_unit is None:
+        line_height_unit = font_size + 1
+    
+    # 全角→半角转换
+    content = content.replace('！', '!').replace('？', '?')
+    
+    # 创建临时画布渲染横排内容
+    h_width = int(font_size * len(content) * 1.5) + font_size * 2
+    h_height = font_size * 3
+    
+    temp_img = Image.new('RGBA', (h_width, h_height), (0, 0, 0, 0))
+    temp_draw = ImageDraw.Draw(temp_img)
+    
+    # 横排渲染每个字符
+    pen_x = font_size // 2
+    pen_y = font_size
+    
+    text_params = {"font": font, "fill": fill}
+    if stroke_enabled:
+        text_params["stroke_width"] = int(stroke_width)
+        text_params["stroke_fill"] = stroke_color
+    
+    for char in content:
+        # 横排模式，使用方向 0
+        cdpt, _ = CJK_Compatibility_Forms_translate(char, 0)
+        bbox = font.getbbox(cdpt)
+        char_width = bbox[2] - bbox[0]
+        
+        temp_draw.text((pen_x, pen_y), cdpt, **text_params)
+        pen_x += char_width
+    
+    # 获取实际渲染区域
+    temp_arr = np.array(temp_img)
+    alpha = temp_arr[:, :, 3]
+    non_zero = np.where(alpha > 0)
+    
+    if len(non_zero[0]) == 0:
+        return line_height_unit  # 返回一个单位
+    
+    min_y, max_y = non_zero[0].min(), non_zero[0].max()
+    min_x, max_x = non_zero[1].min(), non_zero[1].max()
+    
+    # 裁剪有效区域
+    cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
+    
+    # 根据字符数决定是否旋转
+    if len(content) >= 3:
+        # 3个及以上字符：旋转90度（顺时针）
+        rotated = cropped.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
+        
+        # 旋转后重新获取墨水边界（旋转可能会引入空白边缘）
+        rotated_arr = np.array(rotated)
+        rotated_alpha = rotated_arr[:, :, 3]
+        rot_non_zero = np.where(rotated_alpha > 10)  # 阈值稍高以忽略抗锯齿产生的半透明像素
+        
+        if len(rot_non_zero[0]) > 0:
+            rot_min_y, rot_max_y = rot_non_zero[0].min(), rot_non_zero[0].max()
+            rot_min_x, rot_max_x = rot_non_zero[1].min(), rot_non_zero[1].max()
+            final_block = rotated.crop((rot_min_x, rot_min_y, rot_max_x + 1, rot_max_y + 1))
+        else:
+            final_block = rotated
+    else:
+        # 2个字符：直接横排显示
+        final_block = cropped
+    
+    block_width, block_height = final_block.size
+    
+    # ===== 单位系统计算 =====
+    # 计算需要多少个"单位"才能容纳这个英文块
+    units_needed = math.ceil(block_height / line_height_unit)
+    units_needed = max(1, units_needed)  # 至少1个单位
+    
+    # 分配的总空间
+    allocated_height = units_needed * line_height_unit
+    
+    # ===== 基于中文字符墨水中心的垂直居中 =====
+    # 获取参考中文字符的墨水偏移
+    _, ref_ink_offset_y = get_char_ink_offset('我', font)
+    
+    # 中文字符的墨水中心位置（相对于单元格顶部）
+    # 对于一个单元格，中文的墨水中心 = 单元格高度/2 + 墨水偏移
+    cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
+    
+    # 对于分配的 N 个单位空间，计算"视觉中心"
+    # 视觉中心 = 中间单位的墨水中心位置
+    # 例如：3个单位，中间是第2个单位(索引1)，其墨水中心在 1*unit + cjk_ink_center_in_unit
+    mid_unit_index = (units_needed - 1) / 2  # 0.5, 1, 1.5, 2, ...
+    visual_center = mid_unit_index * line_height_unit + cjk_ink_center_in_unit
+    
+    # 英文块的墨水中心（相对于块顶部）
+    block_ink_center = block_height / 2
+    
+    # 让英文块墨水中心对齐到视觉中心
+    vertical_offset = visual_center - block_ink_center
+    
+    # 水平居中
+    paste_x = int(current_x_col - line_width + (line_width - block_width) / 2)
+    # 垂直位置
+    paste_y = int(current_y + vertical_offset)
+    
+    # 使用正确的透明度混合
+    _paste_with_alpha(canvas_image, final_block, paste_x, paste_y)
+    
+    # 返回分配的空间高度（整数个单位），确保后续文本位置正确
+    return allocated_height
+
+
+def _paste_with_alpha(canvas: Image.Image, overlay: Image.Image, x: int, y: int):
+    """
+    将带透明通道的图像正确粘贴到画布上
+    """
+    try:
+        # 确保 overlay 是 RGBA
+        if overlay.mode != 'RGBA':
+            overlay = overlay.convert('RGBA')
+        
+        # 获取画布尺寸
+        canvas_w, canvas_h = canvas.size
+        overlay_w, overlay_h = overlay.size
+        
+        # 边界检查
+        if x >= canvas_w or y >= canvas_h or x + overlay_w <= 0 or y + overlay_h <= 0:
+            return
+        
+        # 计算有效粘贴区域
+        src_x1 = max(0, -x)
+        src_y1 = max(0, -y)
+        src_x2 = min(overlay_w, canvas_w - x)
+        src_y2 = min(overlay_h, canvas_h - y)
+        
+        dst_x = max(0, x)
+        dst_y = max(0, y)
+        
+        if src_x2 <= src_x1 or src_y2 <= src_y1:
+            return
+        
+        # 裁剪 overlay 到有效区域
+        cropped_overlay = overlay.crop((src_x1, src_y1, src_x2, src_y2))
+        
+        if canvas.mode == 'RGBA':
+            # RGBA 画布：使用 alpha_composite
+            # 先提取目标区域
+            target_region = canvas.crop((dst_x, dst_y, dst_x + cropped_overlay.width, dst_y + cropped_overlay.height))
+            # 合成
+            composited = Image.alpha_composite(target_region, cropped_overlay)
+            # 粘贴回去
+            canvas.paste(composited, (dst_x, dst_y))
+        else:
+            # RGB 画布：使用 overlay 的 alpha 作为遮罩
+            canvas.paste(cropped_overlay, (dst_x, dst_y), cropped_overlay)
+    except Exception as e:
+        logger.warning(f"粘贴带透明度图像失败: {e}")
+
 # --- 竖排文本绘制函数（支持单字符旋转）---
 def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  fill=constants.DEFAULT_TEXT_COLOR,
@@ -785,23 +1027,71 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     current_column_height = 0
     line_height_approx = font.size + 1  # 字间距为1像素
 
-    for char in text:
-        # 处理换行符：强制换列
-        if char == '\n':
+    # ===== 处理 <H></H> 标签的智能换行 =====
+    # 先按 \n 分割段落，然后在每个段落内处理
+    paragraphs = text.split('\n')
+    
+    for para_idx, paragraph in enumerate(paragraphs):
+        if not paragraph:
+            # 空段落，换列
             if current_line:
                 lines.append(current_line)
                 current_line = ""
                 current_column_height = 0
             continue
         
-        if current_column_height + line_height_approx <= max_height:
-            current_line += char
-            current_column_height += line_height_approx
-        else:
-            lines.append(current_line)
-            current_line = char
-            current_column_height = line_height_approx
-    lines.append(current_line)
+        # 分割段落为普通文本和横排块
+        parts = re.split(r'(<H>.*?</H>)', paragraph, flags=re.IGNORECASE | re.DOTALL)
+        
+        for part in parts:
+            if not part:
+                continue
+            
+            is_h_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
+            
+            if is_h_block:
+                # 横排块：计算其高度并作为整体处理
+                content = part[3:-4]  # 去除 <H> 和 </H>
+                if not content:
+                    continue
+                
+                # 估算横排块的高度（使用单位系统）
+                if len(content) >= 3:
+                    # 3+ 字符旋转后变成竖排，高度 = 字符宽度之和
+                    raw_height = sum(font.getbbox(c)[2] - font.getbbox(c)[0] for c in content)
+                else:
+                    # 2 字符横排，高度 = 字体高度
+                    raw_height = font.size
+                
+                # 按单位计算占用高度（向上取整）
+                units_needed = math.ceil(raw_height / line_height_approx)
+                units_needed = max(1, units_needed)
+                block_height = units_needed * line_height_approx
+                
+                # 检查是否能放入当前列
+                if current_column_height + block_height <= max_height:
+                    current_line += part  # 保持标签完整
+                    current_column_height += block_height
+                else:
+                    # 需要换列
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = part
+                    current_column_height = block_height
+            else:
+                # 普通文本：逐字符处理
+                for char in part:
+                    if current_column_height + line_height_approx <= max_height:
+                        current_line += char
+                        current_column_height += line_height_approx
+                    else:
+                        lines.append(current_line)
+                        current_line = char
+                        current_column_height = line_height_approx
+    
+    # 添加最后一行
+    if current_line:
+        lines.append(current_line)
 
     # 列宽基于字体大小估算
     column_width_approx = font.size + 3
@@ -862,152 +1152,161 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         # 获取当前列的实际宽度
         line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
         
-        for char_idx, char in enumerate(line):
-            # ===== 获取字符绘制参数 =====
+        # ===== 分割行内容为普通文本和横排块 =====
+        # 使用正则表达式分割 <H>...</H> 标签
+        parts = re.split(r'(<H>.*?</H>)', line, flags=re.IGNORECASE | re.DOTALL)
+        
+        for part in parts:
+            if not part:
+                continue
             
-            # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
-            converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
+            # 检查是否为横排块
+            is_horizontal_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
             
-            # ===== 使用字体回退系统 =====
-            # 检查主字体是否支持该字符，如果不支持则遍历回退字体列表
-            current_font = font
-            
-            if FREETYPE_AVAILABLE:
-                # 使用 FreeType 检查字体是否支持该字符
-                if not font_supports_char(font_family_path, converted_char):
-                    # 主字体不支持，遍历回退字体列表
-                    fallback_found = False
-                    for fallback_path in FALLBACK_FONTS:
-                        if font_supports_char(fallback_path, converted_char):
-                            # 找到支持该字符的回退字体
-                            try:
-                                current_font = get_font(fallback_path, font_size)
-                                fallback_found = True
-                                logger.debug(f"字符 '{converted_char}' 使用回退字体: {os.path.basename(fallback_path)}")
-                                break
-                            except Exception as e:
-                                logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
-                                continue
-                    
-                    if not fallback_found:
-                        logger.warning(f"字符 '{converted_char}' 在所有字体中都不支持")
+            if is_horizontal_block:
+                # ===== 渲染横排块 =====
+                content = part[3:-4]  # 去除 <H> 和 </H>
+                if content:
+                    block_height = render_horizontal_block(
+                        content=content,
+                        font=font,
+                        font_size=font_size,
+                        fill=fill,
+                        stroke_enabled=stroke_enabled,
+                        stroke_color=stroke_color,
+                        stroke_width=stroke_width,
+                        canvas_image=canvas_image,
+                        current_x_col=current_x_col,
+                        current_y=current_y_char,
+                        line_width=line_width,
+                        line_height_unit=line_height_approx  # 传递单位高度
+                    )
+                    current_y_char += block_height
             else:
-                # FreeType 不可用时，回退到使用 SPECIAL_CHARS 硬编码检查
-                if converted_char in SPECIAL_CHARS:
-                    if special_font is None:
-                        try:
-                            special_font = get_font(NOTOSANS_FONT_PATH, font_size)
-                        except Exception as e:
-                            logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
-                            special_font = font
+                # ===== 渲染普通竖排字符 =====
+                for char in part:
+                    # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
+                    converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
                     
-                    if special_font is not None:
-                        current_font = special_font
-            
-            # 准备绘制参数
-            text_draw_params = {
-                "font": current_font,
-                "fill": fill
-            }
-            if stroke_enabled:
-                text_draw_params["stroke_width"] = int(stroke_width)
-                text_draw_params["stroke_fill"] = stroke_color
-            
-            # ===== 处理需要旋转的字符（如日文长音符号 ー）=====
-            if rot_degree != 0 and canvas_image is not None:
-                # 创建临时图像来渲染并旋转单个字符
-                # 计算字符边界框
-                bbox = current_font.getbbox(converted_char)
-                char_width = bbox[2] - bbox[0]
-                char_height = bbox[3] - bbox[1]
-                
-                # 创建足够大的临时图像（带边距以避免裁剪）
-                padding = max(char_width, char_height)
-                temp_size = max(char_width, char_height) * 2 + padding * 2
-                temp_size = max(temp_size, font_size * 3)  # 确保足够大
-                temp_size = int(temp_size)
-                
-                # 创建 RGBA 透明临时图像
-                temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-                temp_draw = ImageDraw.Draw(temp_img)
-                
-                # 在临时图像中心绘制字符
-                temp_x = temp_size // 2 - char_width // 2
-                temp_y = temp_size // 2 - char_height // 2
-                
-                # 绘制到临时图像
-                temp_text_params = {
-                    "font": current_font,
-                    "fill": fill if canvas_image.mode == 'RGBA' else fill
-                }
-                if stroke_enabled:
-                    temp_text_params["stroke_width"] = int(stroke_width)
-                    temp_text_params["stroke_fill"] = stroke_color
-                
-                temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
-                
-                # 旋转临时图像（顺时针旋转 90 度）
-                # PIL 的 rotate 是逆时针，所以 -90 度 = 顺时针 90 度
-                rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
-                
-                # 计算粘贴位置（水平居中）
-                # 使用预计算的 line_width（该列实际最大字符宽度）
-                paste_x = int((current_x_col - line_width) + round((line_width - temp_size) / 2.0))
-                paste_y = int(current_y_char)
-                
-                # 粘贴到主画布
-                try:
-                    if canvas_image.mode == 'RGBA':
-                        canvas_image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                    # ===== 使用字体回退系统 =====
+                    current_font = font
+                    
+                    if FREETYPE_AVAILABLE:
+                        if not font_supports_char(font_family_path, converted_char):
+                            for fallback_path in FALLBACK_FONTS:
+                                if font_supports_char(fallback_path, converted_char):
+                                    try:
+                                        current_font = get_font(fallback_path, font_size)
+                                        logger.debug(f"字符 '{converted_char}' 使用回退字体: {os.path.basename(fallback_path)}")
+                                        break
+                                    except Exception as e:
+                                        logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                        continue
                     else:
-                        # 如果主画布不是 RGBA，转换后粘贴
-                        rgb_rotated = rotated_img.convert('RGB')
-                        canvas_image.paste(rgb_rotated, (paste_x, paste_y))
-                except Exception as e:
-                    logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
-                    # 回退：直接绘制（不旋转）
-                    text_x_char = current_x_col - char_width
-                    draw.text((text_x_char, current_y_char), converted_char, **text_draw_params)
-            else:
-                # ===== 常规绘制（不需要旋转）=====
-                bbox = current_font.getbbox(converted_char)
-                char_width = bbox[2] - bbox[0]
-                char_height = bbox[3] - bbox[1]
-                
-                # ===== 水平居中计算 =====
-                # 计算字符在当前列中的水平居中位置，line_width 为该列的最大字符宽度。
-                # 使用预计算的 line_width（该列实际最大字符宽度）
-                text_x_char = (current_x_col - line_width) + round((line_width - char_width) / 2.0)
-                text_y_char = current_y_char
-                
-                # ===== 墨水偏移校正（水平+垂直）=====
-                # Pillow 的 getbbox() 返回的边界框可能不等于实际墨水区域
-                # 对于某些字符（如竖排标点），实际墨水可能偏向边界框的一侧
-                # 需要校正以实现真正的视觉居中
-                ink_offset_x, ink_offset_y = get_char_ink_offset(converted_char, current_font)
-                text_x_char -= ink_offset_x  # 反向补偿水平墨水偏移
-                
-                # ===== 竖排标点符号垂直居中校正（使用墨水偏移）=====
-                # 获取参考汉字（如"我"）的墨水 y 偏移作为基准
-                # 所有标点的墨水中心应该与汉字的墨水中心对齐
-                if is_vertical_punctuation(converted_char):
-                    # 计算参考汉字的墨水偏移（使用缓存避免重复计算）
-                    if not hasattr(get_char_ink_offset, '_ref_y_offset'):
-                        ref_font = get_font(font_family_path, font_size) if font_family_path else current_font
-                        _, ref_y = get_char_ink_offset('我', ref_font)
-                        get_char_ink_offset._ref_y_offset = ref_y
-                    ref_y_offset = get_char_ink_offset._ref_y_offset
+                        if converted_char in SPECIAL_CHARS:
+                            if special_font is None:
+                                try:
+                                    special_font = get_font(NOTOSANS_FONT_PATH, font_size)
+                                except Exception as e:
+                                    logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                                    special_font = font
+                            if special_font is not None:
+                                current_font = special_font
                     
-                    # 垂直对齐：将标点的墨水中心与汉字的墨水中心对齐
-                    # 如果 ink_offset_y > ref_y_offset，说明标点偏下，需要上移
-                    # 如果 ink_offset_y < ref_y_offset，说明标点偏上，需要下移
-                    vertical_correction = ref_y_offset - ink_offset_y
-                    text_y_char += vertical_correction
-                
-                # 直接绘制
-                draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
-                
-            current_y_char += line_height_approx
+                    # 准备绘制参数
+                    text_draw_params = {
+                        "font": current_font,
+                        "fill": fill
+                    }
+                    if stroke_enabled:
+                        text_draw_params["stroke_width"] = int(stroke_width)
+                        text_draw_params["stroke_fill"] = stroke_color
+                    
+                    # 获取字符尺寸
+                    bbox = current_font.getbbox(converted_char)
+                    char_width = bbox[2] - bbox[0]
+                    char_height = bbox[3] - bbox[1]
+                    
+                    if rot_degree != 0 and canvas_image is not None:
+                        # ===== 需要旋转的字符 =====
+                        # 创建足够大的临时图像（带边距以避免裁剪）
+                        padding = max(char_width, char_height)
+                        temp_size = max(char_width, char_height) * 2 + padding * 2
+                        temp_size = max(temp_size, font_size * 3)  # 确保足够大
+                        temp_size = int(temp_size)
+                        
+                        temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
+                        temp_draw = ImageDraw.Draw(temp_img)
+                        
+                        temp_x = temp_size // 2 - char_width // 2
+                        temp_y = temp_size // 2 - char_height // 2
+                        
+                        temp_text_params = {
+                            "font": current_font,
+                            "fill": fill if canvas_image.mode == 'RGBA' else fill
+                        }
+                        if stroke_enabled:
+                            temp_text_params["stroke_width"] = int(stroke_width)
+                            temp_text_params["stroke_fill"] = stroke_color
+                        
+                        temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
+                        
+                        rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
+                        
+                        # 计算粘贴位置（水平居中）
+                        # 使用预计算的 line_width（该列实际最大字符宽度）
+                        paste_x = int((current_x_col - line_width) + round((line_width - temp_size) / 2.0))
+                        paste_y = int(current_y_char)
+                        
+                        try:
+                            if canvas_image.mode == 'RGBA':
+                                canvas_image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                            else:
+                                # 如果主画布不是 RGBA，转换后粘贴
+                                rgb_rotated = rotated_img.convert('RGB')
+                                canvas_image.paste(rgb_rotated, (paste_x, paste_y))
+                        except Exception as e:
+                            logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
+                            # 回退：直接绘制（不旋转）
+                            text_x_char = current_x_col - char_width
+                            draw.text((text_x_char, current_y_char), converted_char, **text_draw_params)
+                    else:
+                        # ===== 常规绘制（不需要旋转） =====
+                        # ===== 水平居中计算 =====
+                        # 计算字符在当前列中的水平居中位置，line_width 为该列的最大字符宽度。
+                        # 使用预计算的 line_width（该列实际最大字符宽度）
+                        text_x_char = (current_x_col - line_width) + round((line_width - char_width) / 2.0)
+                        text_y_char = current_y_char
+                        
+                        # ===== 墨水偏移校正（水平+垂直）=====
+                        # Pillow 的 getbbox() 返回的边界框可能不等于实际墨水区域
+                        # 对于某些字符（如竖排标点），实际墨水可能偏向边界框的一侧
+                        # 需要校正以实现真正的视觉居中
+                        ink_offset_x, ink_offset_y = get_char_ink_offset(converted_char, current_font)
+                        text_x_char -= ink_offset_x  # 反向补偿水平墨水偏移
+                        
+                        # ===== 竖排标点符号垂直居中校正（使用墨水偏移）=====
+                        # 获取参考汉字（如"我"）的墨水 y 偏移作为基准
+                        # 所有标点的墨水中心应该与汉字的墨水中心对齐
+                        if is_vertical_punctuation(converted_char):
+                            # 计算参考汉字的墨水偏移（使用缓存避免重复计算）
+                            if not hasattr(get_char_ink_offset, '_ref_y_offset'):
+                                ref_font = get_font(font_family_path, font_size) if font_family_path else current_font
+                                _, ref_y = get_char_ink_offset('我', ref_font)
+                                get_char_ink_offset._ref_y_offset = ref_y
+                            ref_y_offset = get_char_ink_offset._ref_y_offset
+                            
+                            # 垂直对齐：将标点的墨水中心与汉字的墨水中心对齐
+                            # 如果 ink_offset_y > ref_y_offset，说明标点偏下，需要上移
+                            # 如果 ink_offset_y < ref_y_offset，说明标点偏上，需要下移
+                            vertical_correction = ref_y_offset - ink_offset_y
+                            text_y_char += vertical_correction
+                        
+                        # 直接绘制
+                        draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
+                    
+                    current_y_char += line_height_approx
+        
         current_x_col -= column_width_approx
 
 # --- 横排文本绘制函数（不含旋转，旋转在 render_all_bubbles 中统一处理） ---
