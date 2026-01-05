@@ -20,6 +20,8 @@ from .image_processor import ImageProcessor
 
 logger = logging.getLogger("WebImport.GalleryDL")
 
+# 支持的图片扩展名
+SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}
 
 
 @dataclass
@@ -241,9 +243,7 @@ class GalleryDLRunner:
                 # 扫描新文件
                 current_files = []
                 for file_path in Path(temp_dir).rglob('*'):
-                    if file_path.is_file() and file_path.suffix.lower() in [
-                        '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
-                    ]:
+                    if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
                         current_files.append(file_path)
                 
                 # 立即排序，确保 pageNumber 按文件名顺序分配
@@ -273,9 +273,7 @@ class GalleryDLRunner:
                     time.sleep(0.2)
                     final_files = []
                     for file_path in Path(temp_dir).rglob('*'):
-                        if file_path.is_file() and file_path.suffix.lower() in [
-                            '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
-                        ]:
+                        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
                             final_files.append(file_path)
                     
                     # 排序后检查遗漏
@@ -406,9 +404,7 @@ class GalleryDLRunner:
         # 使用 rglob 递归查找所有图片
         all_images = []
         for file_path in Path(temp_dir).rglob('*'):
-            if file_path.is_file() and file_path.suffix.lower() in [
-                '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
-            ]:
+            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
                 all_images.append(file_path)
         
         # 按文件名排序
