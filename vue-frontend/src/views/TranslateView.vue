@@ -112,15 +112,6 @@ const canGoNext = computed(() => imageStore.canGoNext)
 /** 批量翻译是否进行中 */
 const isBatchTranslating = computed(() => imageStore.isBatchTranslationInProgress)
 
-/** 批量翻译是否暂停 */
-const isBatchPaused = computed(() => imageStore.isBatchTranslationPaused)
-
-/** 是否显示进度条控制按钮（暂停/取消）- 复刻原版：只有批量翻译有暂停功能 */
-// TODO: 以后开发高质量翻译、AI校对的暂停功能时，修改此处逻辑
-const showProgressControls = computed(() => {
-  return isBatchTranslating.value && !translation.isHqTranslating.value && !translation.isProofreading.value
-})
-
 /** 翻译进度百分比 */
 const translationProgress = computed(() => {
   if (!isBatchTranslating.value) return 0
@@ -1186,11 +1177,9 @@ function selectImage(index: number) {
             :label="sessionStore.loadingProgress.message"
           />
           
-          <!-- 翻译进度组件 - 复刻原版：只有暂停/继续 -->
-          <!-- 注意：组件内部已经直接调用 translation 方法，不需要外部事件处理 -->
+          <!-- 翻译进度组件 -->
           <TranslationProgress
             :progress="translation.progress.value"
-            :show-controls="showProgressControls"
           />
           
           <!-- 书架模式提示 -->
@@ -1393,22 +1382,6 @@ function selectImage(index: number) {
   height: 100%;
   background: var(--primary-color, #4a90d9);
   transition: width 0.3s ease;
-}
-
-/* 暂停按钮 */
-.pause-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: var(--secondary-bg, #f5f5f5);
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.pause-btn:hover {
-  background: var(--hover-bg, #e8e8e8);
 }
 
 /* 设置按钮高亮引导动画 */

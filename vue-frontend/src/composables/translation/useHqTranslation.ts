@@ -58,8 +58,7 @@ export function useHqTranslation() {
     total: 0,
     completed: 0,
     failed: 0,
-    isInProgress: false,
-    isPaused: false
+    isInProgress: false
   })
 
   /** 所有批次结果（复刻原版） */
@@ -617,7 +616,6 @@ export function useHqTranslation() {
       completed: 0,
       failed: 0,
       isInProgress: true,
-      isPaused: false,
       label: '准备翻译...',
       percentage: 0
     }

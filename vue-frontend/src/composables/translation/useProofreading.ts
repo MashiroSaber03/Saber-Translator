@@ -53,8 +53,7 @@ export function useProofreading() {
     total: 0,
     completed: 0,
     failed: 0,
-    isInProgress: false,
-    isPaused: false
+    isInProgress: false
   })
 
   /** 校对批次结果 */
@@ -468,7 +467,6 @@ export function useProofreading() {
       completed: 0,
       failed: 0,
       isInProgress: true,
-      isPaused: false,
       label: '准备校对...',
       percentage: 0
     }

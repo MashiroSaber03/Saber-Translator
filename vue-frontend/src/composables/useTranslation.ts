@@ -66,8 +66,7 @@ export function useTranslation() {
     total: 0,
     completed: 0,
     failed: 0,
-    isInProgress: false,
-    isPaused: false
+    isInProgress: false
   })
 
   /** 是否正在翻译单张图片 */
@@ -326,7 +325,6 @@ export function useTranslation() {
       completed: 0,
       failed: 0,
       isInProgress: true,
-      isPaused: false,
       label: isRemoveTextMode ? `消除文字: 0/${images.length}` : `0/${images.length}`,
       percentage: 0
     }
@@ -340,13 +338,6 @@ export function useTranslation() {
 
     try {
       for (let i = 0; i < images.length; i++) {
-        // 检查是否暂停
-        if (imageStore.isBatchTranslationPaused) {
-          await new Promise<void>((resolve) => {
-            imageStore.setBatchTranslationResumeCallback(resolve)
-          })
-        }
-
         // 检查是否已取消
         if (!imageStore.isBatchTranslationInProgress) {
           console.log('批量翻译已取消')
@@ -404,35 +395,10 @@ export function useTranslation() {
   }
 
   /**
-   * 暂停批量翻译
-   */
-  function pauseBatchTranslation(): void {
-    if (imageStore.isBatchTranslationInProgress && !imageStore.isBatchTranslationPaused) {
-      imageStore.setBatchTranslationPaused(true)
-      progress.value.isPaused = true
-      toast.info('批量翻译已暂停')
-    }
-  }
-
-  /**
-   * 继续批量翻译
-   */
-  function resumeBatchTranslation(): void {
-    if (imageStore.isBatchTranslationInProgress && imageStore.isBatchTranslationPaused) {
-      imageStore.resumeBatchTranslation()
-      progress.value.isPaused = false
-      toast.info('批量翻译继续中')
-    }
-  }
-
-  /**
    * 取消批量翻译
    */
   function cancelBatchTranslation(): void {
     if (imageStore.isBatchTranslationInProgress) {
-      if (imageStore.isBatchTranslationPaused) {
-        imageStore.resumeBatchTranslation()
-      }
       imageStore.setBatchTranslationInProgress(false)
       progress.value.isInProgress = false
       toast.info('批量翻译已取消')
@@ -480,8 +446,7 @@ export function useTranslation() {
       total: failedIndices.length,
       completed: 0,
       failed: 0,
-      isInProgress: true,
-      isPaused: false
+      isInProgress: true
     }
 
     imageStore.setBatchTranslationInProgress(true)
@@ -491,12 +456,6 @@ export function useTranslation() {
 
     try {
       for (let i = 0; i < failedIndices.length; i++) {
-        if (imageStore.isBatchTranslationPaused) {
-          await new Promise<void>((resolve) => {
-            imageStore.setBatchTranslationResumeCallback(resolve)
-          })
-        }
-
         if (!imageStore.isBatchTranslationInProgress) {
           break
         }
@@ -582,8 +541,6 @@ export function useTranslation() {
 
     // 批量翻译
     translateAllImages,
-    pauseBatchTranslation,
-    resumeBatchTranslation,
     cancelBatchTranslation,
 
     // 仅消除文字

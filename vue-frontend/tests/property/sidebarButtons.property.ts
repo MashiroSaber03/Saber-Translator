@@ -39,8 +39,6 @@ interface SidebarState {
   currentImageIndex: number
   /** 批量翻译是否进行中 */
   isBatchTranslationInProgress: boolean
-  /** 批量翻译是否暂停 */
-  isBatchTranslationPaused: boolean
 }
 
 /**
@@ -167,13 +165,11 @@ describe('侧边栏按钮禁用状态属性测试', () => {
     fc.assert(
       fc.property(
         fc.boolean(),
-        fc.boolean(),
-        (isBatchInProgress, isPaused) => {
+        (isBatchInProgress) => {
           const state: SidebarState = {
             images: [],
             currentImageIndex: -1,
-            isBatchTranslationInProgress: isBatchInProgress,
-            isBatchTranslationPaused: isBatchInProgress ? isPaused : false
+            isBatchTranslationInProgress: isBatchInProgress
           }
 
           const buttonState = calculateButtonDisabledState(state)
@@ -208,8 +204,7 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           const state: SidebarState = {
             images,
             currentImageIndex: 0,
-            isBatchTranslationInProgress: false,
-            isBatchTranslationPaused: false
+            isBatchTranslationInProgress: false
           }
 
           const buttonState = calculateButtonDisabledState(state)
@@ -238,13 +233,11 @@ describe('侧边栏按钮禁用状态属性测试', () => {
     fc.assert(
       fc.property(
         fc.array(imageStateArb, { minLength: 1, maxLength: 10 }),
-        fc.boolean(),
-        (images, isPaused) => {
+        (images) => {
           const state: SidebarState = {
             images,
             currentImageIndex: 0,
-            isBatchTranslationInProgress: true,
-            isBatchTranslationPaused: isPaused
+            isBatchTranslationInProgress: true
           }
 
           const buttonState = calculateButtonDisabledState(state)
@@ -281,8 +274,7 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           const state: SidebarState = {
             images,
             currentImageIndex: currentIndex,
-            isBatchTranslationInProgress: false,
-            isBatchTranslationPaused: false
+            isBatchTranslationInProgress: false
           }
 
           const buttonState = calculateButtonDisabledState(state)
@@ -320,8 +312,7 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           const state: SidebarState = {
             images,
             currentImageIndex: 0,
-            isBatchTranslationInProgress: isBatchInProgress,
-            isBatchTranslationPaused: false
+            isBatchTranslationInProgress: isBatchInProgress
           }
 
           const hasFailed = hasFailedImages(state)
@@ -355,8 +346,7 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           const state: SidebarState = {
             images,
             currentImageIndex: images.length > 0 ? 0 : -1,
-            isBatchTranslationInProgress: false,
-            isBatchTranslationPaused: false
+            isBatchTranslationInProgress: false
           }
 
           const failedCount = getFailedImageCount(state)
@@ -382,8 +372,7 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           const state: SidebarState = {
             images: [image],
             currentImageIndex: 0,
-            isBatchTranslationInProgress: false,
-            isBatchTranslationPaused: false
+            isBatchTranslationInProgress: false
           }
 
           const buttonState = calculateButtonDisabledState(state)
@@ -391,45 +380,6 @@ describe('侧边栏按钮禁用状态属性测试', () => {
           // 只有一张图片时，上一张和下一张都应禁用
           expect(buttonState.previous).toBe(true)
           expect(buttonState.next).toBe(true)
-
-          return true
-        }
-      ),
-      { numRuns: 100 }
-    )
-  })
-
-  /**
-   * Property 48.8: 批量翻译暂停状态不影响按钮禁用逻辑
-   */
-  it('Property 48.8: 批量翻译暂停状态不影响按钮禁用逻辑', () => {
-    fc.assert(
-      fc.property(
-        fc.array(imageStateArb, { minLength: 1, maxLength: 10 }),
-        (images) => {
-          // 创建两个状态：一个暂停，一个未暂停
-          const statePaused: SidebarState = {
-            images,
-            currentImageIndex: 0,
-            isBatchTranslationInProgress: true,
-            isBatchTranslationPaused: true
-          }
-
-          const stateNotPaused: SidebarState = {
-            images,
-            currentImageIndex: 0,
-            isBatchTranslationInProgress: true,
-            isBatchTranslationPaused: false
-          }
-
-          const buttonStatePaused = calculateButtonDisabledState(statePaused)
-          const buttonStateNotPaused = calculateButtonDisabledState(stateNotPaused)
-
-          // 暂停状态不应影响按钮禁用逻辑
-          expect(buttonStatePaused.translateCurrent).toBe(buttonStateNotPaused.translateCurrent)
-          expect(buttonStatePaused.translateAll).toBe(buttonStateNotPaused.translateAll)
-          expect(buttonStatePaused.hqTranslate).toBe(buttonStateNotPaused.hqTranslate)
-          expect(buttonStatePaused.proofread).toBe(buttonStateNotPaused.proofread)
 
           return true
         }

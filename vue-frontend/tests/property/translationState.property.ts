@@ -5,11 +5,11 @@
  * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
  * Validates: Requirements 4.4, 4.5
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
-import type { TranslationStatus } from '@/types/bubble'
+import type { TranslationStatus } from '@/types/image'
 
 describe('翻译状态管理属性测试', () => {
   // 模拟 localStorage
@@ -151,74 +151,6 @@ describe('翻译状态管理属性测试', () => {
           )
         }
       ),
-      { numRuns: 100 }
-    )
-  })
-
-  /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 批量翻译暂停/继续状态应正确切换
-   */
-  it('批量翻译暂停/继续状态一致性', () => {
-    fc.assert(
-      fc.property(fc.boolean(), (initialPaused) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
-
-        const store = useImageStore()
-
-        // 设置批量翻译进行中
-        store.setBatchTranslationInProgress(true)
-
-        // 验证初始状态
-        if (!store.isBatchTranslationInProgress) return false
-
-        // 设置暂停状态
-        store.setBatchTranslationPaused(initialPaused)
-
-        // 验证暂停状态
-        if (store.isBatchTranslationPaused !== initialPaused) return false
-
-        // 切换暂停状态
-        store.setBatchTranslationPaused(!initialPaused)
-
-        // 验证状态已切换
-        return store.isBatchTranslationPaused === !initialPaused
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 批量翻译结束后，进行中状态应正确重置
-   */
-  it('批量翻译结束后状态重置一致性', () => {
-    fc.assert(
-      fc.property(fc.boolean(), (wasPaused) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
-
-        const store = useImageStore()
-
-        // 设置批量翻译进行中
-        store.setBatchTranslationInProgress(true)
-        store.setBatchTranslationPaused(wasPaused)
-
-        // 验证状态
-        if (!store.isBatchTranslationInProgress) return false
-        if (store.isBatchTranslationPaused !== wasPaused) return false
-
-        // 结束批量翻译
-        store.setBatchTranslationInProgress(false)
-
-        // 验证状态已重置
-        return store.isBatchTranslationInProgress === false
-      }),
       { numRuns: 100 }
     )
   })

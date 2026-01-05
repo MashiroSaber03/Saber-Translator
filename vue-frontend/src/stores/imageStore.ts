@@ -67,12 +67,6 @@ export const useImageStore = defineStore('image', () => {
   /** 批量翻译是否正在进行 */
   const isBatchTranslationInProgress = ref<boolean>(false)
 
-  /** 批量翻译是否暂停 */
-  const isBatchTranslationPaused = ref<boolean>(false)
-
-  /** 继续翻译的回调函数 */
-  const batchTranslationResumeCallback = ref<(() => void) | null>(null)
-
   // ============================================================
   // 计算属性
   // ============================================================
@@ -238,8 +232,6 @@ export const useImageStore = defineStore('image', () => {
     images.value = []
     currentImageIndex.value = -1
     isBatchTranslationInProgress.value = false
-    isBatchTranslationPaused.value = false
-    batchTranslationResumeCallback.value = null
     console.log('所有图片已清除')
   }
 
@@ -474,42 +466,7 @@ export const useImageStore = defineStore('image', () => {
    */
   function setBatchTranslationInProgress(isInProgress: boolean): void {
     isBatchTranslationInProgress.value = isInProgress
-    if (!isInProgress) {
-      // 结束批量翻译时重置暂停状态
-      isBatchTranslationPaused.value = false
-      batchTranslationResumeCallback.value = null
-    }
     console.log(`批量翻译状态: ${isInProgress ? '进行中' : '已完成'}`)
-  }
-
-  /**
-   * 设置批量翻译暂停状态
-   * @param isPaused - 是否暂停
-   */
-  function setBatchTranslationPaused(isPaused: boolean): void {
-    isBatchTranslationPaused.value = isPaused
-    console.log(`批量翻译暂停状态: ${isPaused ? '已暂停' : '继续中'}`)
-  }
-
-  /**
-   * 设置继续翻译的回调函数
-   * @param callback - 回调函数
-   */
-  function setBatchTranslationResumeCallback(callback: (() => void) | null): void {
-    batchTranslationResumeCallback.value = callback
-  }
-
-  /**
-   * 继续批量翻译
-   */
-  function resumeBatchTranslation(): void {
-    if (isBatchTranslationPaused.value && batchTranslationResumeCallback.value) {
-      isBatchTranslationPaused.value = false
-      const callback = batchTranslationResumeCallback.value
-      batchTranslationResumeCallback.value = null
-      callback()
-      console.log('批量翻译已继续')
-    }
   }
 
   /**
@@ -531,8 +488,6 @@ export const useImageStore = defineStore('image', () => {
     images,
     currentImageIndex,
     isBatchTranslationInProgress,
-    isBatchTranslationPaused,
-    batchTranslationResumeCallback,
 
     // 计算属性
     currentImage,
@@ -573,9 +528,6 @@ export const useImageStore = defineStore('image', () => {
 
     // 批量翻译状态管理方法
     setBatchTranslationInProgress,
-    setBatchTranslationPaused,
-    setBatchTranslationResumeCallback,
-    resumeBatchTranslation,
     getFailedImageIndices
   }
 })

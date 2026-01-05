@@ -20,8 +20,6 @@ export interface TranslationProgress {
   failed: number
   /** 是否正在进行 */
   isInProgress: boolean
-  /** 是否暂停 */
-  isPaused: boolean
   /** 自定义进度标签（复刻原版） */
   label?: string
   /** 进度百分比（0-100，用于精确控制进度条） */
