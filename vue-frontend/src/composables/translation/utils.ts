@@ -7,7 +7,7 @@ import { createBubbleStatesFromResponse } from '@/utils/bubbleFactory'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import type { TranslateImageResponse } from '@/types/api'
 import type { ImageData as AppImageData } from '@/types/image'
-import type { ExistingBubbleData, TranslationOptions } from './types'
+import type { ExistingBubbleData, TranslationOptions } from './core/types'
 
 // ============================================================
 // 工具函数
@@ -137,7 +137,7 @@ export function buildTranslateParams(
     strokeEnabled: textStyle.strokeEnabled,
     strokeColor: textStyle.strokeColor,
     strokeWidth: textStyle.strokeWidth,
-    
+
     // 智能颜色识别设置（仅文字颜色）
     useAutoTextColor: textStyle.useAutoTextColor ?? true,
 

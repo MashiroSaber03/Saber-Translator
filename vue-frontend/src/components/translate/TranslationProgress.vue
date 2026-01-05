@@ -25,7 +25,7 @@
 
 import { computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useTranslation, type TranslationProgress } from '@/composables/useTranslation'
+import { useTranslation, type TranslationProgress } from '@/composables/useTranslationPipeline'
 
 // ============================================================
 // Props 定义
