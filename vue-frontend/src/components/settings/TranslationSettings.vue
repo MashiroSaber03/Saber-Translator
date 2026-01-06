@@ -162,6 +162,10 @@
           prompt-type="translate"
           @select="handleTranslatePromptSelect"
         />
+        <!-- 重置为默认按钮 -->
+        <button type="button" class="reset-btn" @click="resetTranslatePromptToDefault">
+          重置为默认
+        </button>
       </div>
 
       <!-- 文本框提示词 -->
@@ -611,6 +615,17 @@ function handleTextboxPromptSelect(content: string, name: string) {
   localSettings.value.textboxPromptContent = content
   toast.success(`已应用提示词: ${name}`)
 }
+
+// 重置翻译提示词为默认值
+function resetTranslatePromptToDefault() {
+  const isJsonMode = localSettings.value.translatePromptMode === 'json'
+  if (isJsonMode) {
+    localSettings.value.promptContent = DEFAULT_TRANSLATE_JSON_PROMPT
+  } else {
+    localSettings.value.promptContent = DEFAULT_TRANSLATE_PROMPT
+  }
+  toast.success('已重置为默认提示词')
+}
 </script>
 
 <style scoped>
@@ -666,5 +681,24 @@ function handleTextboxPromptSelect(content: string, name: string) {
 .eye-off-icon {
   display: inline-block;
   line-height: 1;
+}
+
+/* 重置为默认按钮 */
+.reset-btn {
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  background: transparent;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reset-btn:hover {
+  color: var(--primary-color, #4a90d9);
+  border-color: var(--primary-color, #4a90d9);
+  background: rgba(74, 144, 217, 0.05);
 }
 </style>

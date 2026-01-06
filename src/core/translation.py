@@ -76,71 +76,25 @@ def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: l
     request_count_ref[0] += 1
     logger.debug(f"rpm: {service_name} - 当前窗口请求计数: {request_count_ref[0]}/{rpm_limit if rpm_limit > 0 else '无限制'}")
 
-# 添加安全JSON解析函数
-def _safely_extract_from_json(json_str, field_name):
-    """
-    安全地从JSON字符串中提取特定字段，处理各种异常情况。
-    
-    Args:
-        json_str (str): JSON格式的字符串
-        field_name (str): 要提取的字段名
-        
-    Returns:
-        str: 提取的文本，如果失败则返回简化处理的原始文本
-    """
-    # 尝试直接解析
-    try:
-        data = json.loads(json_str)
-        if field_name in data:
-            return data[field_name]
-    except (json.JSONDecodeError, TypeError, KeyError):
-        pass
-    
-    # 解析失败，尝试使用正则表达式提取
-    try:
-        # 匹配 "field_name": "内容" 或 "field_name":"内容" 的模式
-        pattern = r'"' + re.escape(field_name) + r'"\s*:\s*"(.+?)"'
-        # 多行模式，使用DOTALL
-        match = re.search(pattern, json_str, re.DOTALL)
-        if match:
-            # 反转义提取的文本
-            extracted = match.group(1)
-            # 处理转义字符
-            extracted = extracted.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
-            return extracted
-    except Exception:
-        pass
-    
-    # 如果依然失败，尝试清理明显的JSON结构，仅保留文本内容
-    try:
-        # 删除常见JSON结构字符
-        cleaned = re.sub(r'[{}"\[\]]', '', json_str)
-        # 删除字段名和冒号
-        cleaned = re.sub(fr'{field_name}\s*:', '', cleaned)
-        # 删除多余空白
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        return cleaned
-    except Exception:
-        # 所有方法都失败，返回原始文本
-        return json_str
-
 def translate_single_text(text, target_language, model_provider, 
                           api_key=None, model_name=None, prompt_content=None, 
                           use_json_format=False, custom_base_url=None,
                           rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
-                          jsonPromptMode: str = 'normal',
                           max_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES):
     """
     使用指定的大模型翻译单段文本。
+    
+    注意：此函数用于非 LLM 提供商（如百度翻译）和编辑模式的单气泡重翻译。
+    批量翻译请使用 translate_text_list() 函数。
 
     Args:
         text (str): 需要翻译的原始文本。
         target_language (str): 目标语言代码 (例如 'zh')。
-        model_provider (str): 模型提供商 ('siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'caiyun', 'baidu_translate', 'youdao_translate')。
+        model_provider (str): 模型提供商。
         api_key (str, optional): API 密钥 (对于非本地部署是必需的)。
         model_name (str, optional): 模型名称。
         prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
-        use_json_format (bool): 是否期望并解析JSON格式的响应。
+        use_json_format (bool): [已弃用] 此参数不再使用，保留仅为向后兼容。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
         rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
         max_retries (int): 翻译失败时的最大重试次数。
@@ -151,13 +105,8 @@ def translate_single_text(text, target_language, model_provider,
         return ""
 
     if prompt_content is None:
-        # 根据是否使用 JSON 格式选择默认提示词
-        if use_json_format:
-            prompt_content = constants.DEFAULT_TRANSLATE_JSON_PROMPT
-        else:
-            prompt_content = constants.DEFAULT_PROMPT
-    elif use_json_format and '"translated_text"' not in prompt_content: # 如果用户传入了自定义提示词但不是JSON格式
-        logger.warning("期望JSON格式输出，但提供的翻译提示词可能不是JSON格式。")
+        prompt_content = constants.DEFAULT_PROMPT
+
 
     logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, 重试: {max_retries})")
 
@@ -368,15 +317,6 @@ def translate_single_text(text, target_language, model_provider,
                 translated_text = response.choices[0].message.content.strip()
             else:
                 raise ValueError(f"不支持的翻译服务提供商: {model_provider}")
-                
-            if use_json_format:
-                try:
-                    extracted_text = _safely_extract_from_json(translated_text, "translated_text")
-                    logger.info(f"成功从JSON响应中提取翻译文本: '{extracted_text}'")
-                    return extracted_text
-                except Exception as e:
-                    logger.warning(f"无法将翻译结果解析为JSON，将尝试提取文本。原始响应: {translated_text}")
-                    return _safely_extract_from_json(translated_text, "translated_text")
             
             break
             
@@ -426,38 +366,408 @@ def translate_with_mock(text, target_language, api_key=None, model_name=None, pr
     return translated
 
 
+def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_format: bool = False) -> tuple:
+    """
+    将多个文本组装成批量翻译的 prompt (复刻自 manga-image-translator)
+    
+    Args:
+        texts: 待翻译的文本列表
+        custom_prompt: 自定义提示词 (如果为 None，使用默认批量翻译模板)
+        use_json_format: 是否使用 JSON 输出格式
+        
+    Returns:
+        tuple: (messages_list, batch_size) - 消息列表和批次大小
+    """
+    # 构建消息列表
+    messages = []
+    
+    if use_json_format:
+        # --- JSON 模式 ---
+        # 1. System prompt
+        if custom_prompt:
+            system_prompt = custom_prompt
+        else:
+            system_prompt = constants.BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE
+        messages.append({"role": "system", "content": system_prompt})
+        
+        # 2. Few-shot learning: JSON 格式示例
+        if hasattr(constants, 'BATCH_TRANSLATE_JSON_SAMPLE_INPUT') and hasattr(constants, 'BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT'):
+            messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_INPUT})
+            messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT})
+            logger.debug("已添加 JSON 模式翻译示例")
+        
+        # 3. User prompt：构建 JSON 格式的输入
+        import json
+        texts_json = {"texts": [{"id": i+1, "text": text} for i, text in enumerate(texts)]}
+        user_prompt = constants.BATCH_TRANSLATE_JSON_USER_TEMPLATE + "\n" + json.dumps(texts_json, ensure_ascii=False, indent=2)
+        messages.append({"role": "user", "content": user_prompt})
+    else:
+        # --- 纯文本模式 (默认) ---
+        # 1. System prompt
+        if custom_prompt:
+            system_prompt = custom_prompt
+        else:
+            system_prompt = constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
+        messages.append({"role": "system", "content": system_prompt})
+        
+        # 2. Few-shot learning: 添加翻译示例 (日译中)
+        if hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_INPUT') and hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_OUTPUT'):
+            messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_SAMPLE_INPUT})
+            messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_SAMPLE_OUTPUT})
+            logger.debug("已添加日译中翻译示例")
+        
+        # 3. User prompt：将所有文本编号并合并
+        user_prompt = constants.BATCH_TRANSLATE_USER_TEMPLATE
+        for i, text in enumerate(texts):
+            user_prompt += f"\n<|{i+1}|>{text}"
+        messages.append({"role": "user", "content": user_prompt})
+    
+    return messages, len(texts)
+
+
+
+
+def _parse_batch_response(response_text: str, expected_count: int) -> list:
+    """
+    解析批量翻译的响应 (复刻自 manga-image-translator)
+    
+    Args:
+        response_text: LLM 返回的响应文本
+        expected_count: 期望的翻译数量
+        
+    Returns:
+        list: 解析后的翻译列表
+    """
+    # --- 响应清理 (复刻自 manga-image-translator) ---
+    
+    # 1. 去除 <think>...</think> 标签及内容 (某些模型的思考过程)
+    cleaned_text = re.sub(r'(</think>)?<think>.*?</think>', '', response_text, flags=re.DOTALL)
+    
+    # 2. 删除多余的空行
+    cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text).strip()
+    
+    # 3. 仅保留 <|1|> 到 <|max|> 范围内的行，删除前后的解释性文字
+    lines = cleaned_text.splitlines()
+    min_index_line = -1
+    max_index_line = -1
+    has_numeric_prefix = False
+    
+    for index, line in enumerate(lines):
+        match = re.search(r'<\|(\d+)\|>', line)
+        if match:
+            has_numeric_prefix = True
+            current_index = int(match.group(1))
+            if current_index == 1:
+                min_index_line = index
+            if max_index_line == -1:
+                max_index_line = index
+            else:
+                prev_match = re.search(r'<\|(\d+)\|>', lines[max_index_line])
+                if prev_match and current_index > int(prev_match.group(1)):
+                    max_index_line = index
+    
+    if has_numeric_prefix and min_index_line != -1:
+        # 只保留从 <|1|> 开始到最大编号行的内容
+        modified_lines = lines[min_index_line:max_index_line + 1]
+        cleaned_text = "\n".join(modified_lines)
+    
+    # 4. 修复前缀和翻译内容之间的空格问题
+    fixed_lines = []
+    for line in cleaned_text.strip().split('\n'):
+        # 匹配 <|数字|> 前缀格式，去除前缀后的多余空格
+        match = re.match(r'^(<\|\d+\|>)\s+(.*)$', line.strip())
+        if match:
+            prefix = match.group(1)
+            content = match.group(2)
+            fixed_lines.append(f"{prefix}{content}")
+        else:
+            fixed_lines.append(line)
+    cleaned_text = '\n'.join(fixed_lines)
+    
+    # --- 分割解析 ---
+    
+    # 特殊情况：单个查询但响应可能被分成多段 (在分割前检查)
+    if expected_count == 1:
+        # 检查是否存在多个编号
+        all_indices = re.findall(r'<\|(\d+)\|>', cleaned_text)
+        if len(all_indices) > 1:
+            # 检查是否有超过 1 的索引（说明模型错误地分割了单个翻译）
+            has_invalid = any(int(idx) > 1 for idx in all_indices)
+            if has_invalid:
+                # 合并所有翻译，移除所有编号
+                merged = re.sub(r'<\|\d+\|>', '', cleaned_text).strip()
+                logger.warning("检测到单查询被分割，已合并翻译结果")
+                return [merged]
+    
+    # 使用正则表达式分割响应：<|1|>...<|2|>...
+    translations = re.split(r'<\|\d+\|>', cleaned_text)
+    
+    # 清理每个翻译的前后空格
+    translations = [t.strip() for t in translations]
+    
+    # 移除第一个空元素（如果存在）
+    if translations and not translations[0]:
+        translations = translations[1:]
+    
+    return translations
+
+
+def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
+    """
+    解析 JSON 格式的批量翻译响应
+    
+    Args:
+        response_text: LLM 返回的响应文本 (应为 JSON 格式)
+        expected_count: 期望的翻译数量
+        
+    Returns:
+        list: 解析后的翻译列表
+    """
+    import json
+    
+    # 1. 去除 <think>...</think> 标签及内容
+    cleaned_text = re.sub(r'(</think>)?<think>.*?</think>', '', response_text, flags=re.DOTALL)
+    
+    # 2. 尝试提取 JSON 部分（可能被包裹在 ```json ... ``` 中）
+    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', cleaned_text)
+    if json_match:
+        json_str = json_match.group(1)
+    else:
+        # 尝试直接找到 JSON 对象
+        json_match = re.search(r'\{[\s\S]*\}', cleaned_text)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            logger.warning("无法从响应中提取 JSON，回退到纯文本解析")
+            return _parse_batch_response(response_text, expected_count)
+    
+    # 3. 解析 JSON
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON 解析失败: {e}，回退到纯文本解析")
+        return _parse_batch_response(response_text, expected_count)
+    
+    # 4. 提取翻译结果
+    translations = []
+    
+    # 支持两种格式:
+    # 格式1: {"translations": [{"id": 1, "text": "..."}, ...]}
+    # 格式2: {"TextList": [{"ID": 1, "text": "..."}, ...]} (manga-translator-ui 格式)
+    
+    if 'translations' in data:
+        items = data['translations']
+    elif 'TextList' in data:
+        items = data['TextList']
+    else:
+        logger.warning("JSON 格式不正确，找不到 translations 或 TextList 字段")
+        return _parse_batch_response(response_text, expected_count)
+    
+    # 按 id 排序并提取文本
+    try:
+        # 统一 id 字段名称 (支持 'id' 和 'ID')
+        for item in items:
+            item_id = item.get('id') or item.get('ID')
+            item_text = item.get('text', '')
+            translations.append((item_id, item_text))
+        
+        # 按 id 排序
+        translations.sort(key=lambda x: x[0] if x[0] else 0)
+        translations = [t[1] for t in translations]
+        
+    except Exception as e:
+        logger.warning(f"提取翻译结果失败: {e}，回退到纯文本解析")
+        return _parse_batch_response(response_text, expected_count)
+    
+    logger.debug(f"JSON 模式解析成功: {len(translations)} 条翻译")
+    return translations
+
+
+def _translate_batch_with_llm(texts: list, model_provider: str,
+                               api_key: str, model_name: str, custom_prompt: str = None,
+                               custom_base_url: str = None, max_retries: int = 2,
+                               use_json_format: bool = False) -> list:
+    """
+    使用 LLM 进行批量翻译 (复刻自 manga-image-translator)
+    
+    Args:
+        texts: 待翻译的文本列表
+        model_provider: 模型提供商
+        api_key: API 密钥
+        model_name: 模型名称
+        custom_prompt: 自定义提示词
+        custom_base_url: 自定义 API Base URL
+        max_retries: 最大重试次数
+        use_json_format: 是否使用 JSON 输出格式
+        
+    Returns:
+        list: 翻译结果列表
+    """
+    if not texts:
+        return []
+    
+    # 初始化结果列表
+    results = [''] * len(texts)
+    
+    # 组装消息列表 (包含 system prompt、few-shot 示例、user prompt)
+    messages, batch_size = _assemble_batch_prompt(texts, custom_prompt, use_json_format)
+    
+    logger.info(f"批量翻译请求: {batch_size} 个文本片段 (消息数: {len(messages)})")
+    
+    # 确定 API 客户端配置
+    base_url_map = {
+        'siliconflow': 'https://api.siliconflow.cn/v1',
+        'deepseek': 'https://api.deepseek.com/v1',
+        'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
+        constants.CUSTOM_OPENAI_PROVIDER_ID: custom_base_url,
+    }
+    
+    # Gemini 使用特殊的 base_url
+    if model_provider.lower() == 'gemini':
+        base_url = 'https://generativelanguage.googleapis.com/v1beta/openai/'
+    else:
+        base_url = base_url_map.get(model_provider, custom_base_url)
+    
+    if not base_url and model_provider not in ['ollama', 'sakura']:
+        logger.error(f"未知的模型提供商: {model_provider}")
+        return texts  # 返回原文
+    
+    # 重试循环
+    for attempt in range(max_retries + 1):
+        try:
+            if model_provider == 'ollama':
+                # Ollama 特殊处理
+                url = "http://localhost:11434/api/chat"
+                payload = {
+                    "model": model_name,
+                    "messages": messages,
+                    "stream": False
+                }
+                response = requests.post(url, json=payload, timeout=120)
+                response.raise_for_status()
+                result = response.json()
+                response_text = result.get("message", {}).get("content", "").strip()
+                
+            elif model_provider == 'sakura':
+                # Sakura 特殊处理
+                url = "http://localhost:8080/v1/chat/completions"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "model": model_name,
+                    "messages": messages
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=120)
+                response.raise_for_status()
+                result = response.json()
+                response_text = result['choices'][0]['message']['content'].strip()
+                
+            else:
+                # OpenAI 兼容 API
+                client = create_openai_client(api_key=api_key, base_url=base_url)
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    timeout=120
+                )
+                response_text = response.choices[0].message.content.strip()
+            
+            logger.debug(f"批量翻译响应:\n{response_text[:500]}...")
+            
+            # 解析响应 (根据模式选择解析函数)
+            if use_json_format:
+                translations = _parse_batch_json_response(response_text, len(texts))
+            else:
+                translations = _parse_batch_response(response_text, len(texts))
+            
+            # 验证响应数量
+            if len(translations) != len(texts):
+                logger.warning(f"[尝试 {attempt+1}/{max_retries+1}] 翻译数量不匹配: 期望 {len(texts)}, 实际 {len(translations)}")
+                
+                # 如果翻译数量少于期望，填充原文
+                if len(translations) < len(texts):
+                    translations.extend(texts[len(translations):])
+                # 如果翻译数量多于期望，截断
+                elif len(translations) > len(texts):
+                    translations = translations[:len(texts)]
+            
+            # 验证非空翻译
+            empty_count = sum(1 for src, trans in zip(texts, translations) 
+                             if src.strip() and not trans.strip())
+            if empty_count > 0:
+                logger.warning(f"[尝试 {attempt+1}/{max_retries+1}] 检测到 {empty_count} 个空翻译")
+                if attempt < max_retries:
+                    continue  # 重试
+            
+            # 返回结果
+            for i, trans in enumerate(translations):
+                results[i] = trans if trans else texts[i]
+            
+            logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
+            return results
+            
+        except Exception as e:
+            logger.error(f"[尝试 {attempt+1}/{max_retries+1}] 批量翻译失败: {e}", exc_info=True)
+            if attempt < max_retries:
+                time.sleep(1)
+                continue
+    
+    # 所有重试都失败，返回原文
+    logger.error("批量翻译所有重试都失败，返回原文")
+    return texts
+
+
 def translate_text_list(texts, target_language, model_provider, 
                         api_key=None, model_name=None, prompt_content=None, 
                         use_json_format=False, custom_base_url=None,
                         rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
                         max_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES):
     """
-    翻译文本列表中的每一项。
+    翻译文本列表 - 使用批量翻译策略 (复刻自 manga-image-translator)
+    
+    将一页内所有气泡的文本合并为一个请求发送给 LLM，使用 <|n|> 格式编号，
+    一次 API 调用翻译整页内容，大幅提升效率和翻译一致性。
+    
+    注意：目标语言现在由提示词控制（默认翻译为中文），如需修改请编辑 
+    constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE 中的提示词。
 
     Args:
         texts (list): 包含待翻译文本字符串的列表。
-        target_language (str): 目标语言代码。
+        target_language (str): [已弃用] 目标语言代码，现由提示词控制。
         model_provider (str): 模型提供商。
         api_key (str, optional): API 密钥。
         model_name (str, optional): 模型名称。
-        prompt_content (str, optional): 自定义提示词。
-        use_json_format (bool): 是否期望并解析JSON格式的响应。
+        prompt_content (str, optional): 自定义提示词，可覆盖默认提示词。
+        use_json_format (bool): 是否使用 JSON 格式输出。True 时使用结构化 JSON 格式，False 时使用 <|n|> 编号格式。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
         rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
         max_retries (int): 翻译失败时的最大重试次数。
     Returns:
         list: 包含翻译后文本的列表，顺序与输入列表一致。失败的项包含错误信息。
     """
-    translated_texts = []
     if not texts:
-        return translated_texts
-
-    logger.info(f"开始批量翻译 {len(texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
+        return []
+    
+    # 过滤空文本，记录索引
+    non_empty_indices = []
+    non_empty_texts = []
+    final_translations = [''] * len(texts)
+    
+    for i, text in enumerate(texts):
+        if text and text.strip():
+            non_empty_indices.append(i)
+            non_empty_texts.append(text)
+        else:
+            final_translations[i] = ''
+    
+    if not non_empty_texts:
+        return final_translations
+    
+    logger.info(f"开始批量翻译 {len(non_empty_texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
     
     # 特殊处理模拟翻译提供商
     if model_provider.lower() == 'mock':
         logger.info("使用模拟翻译提供商")
-        for i, text in enumerate(texts):
+        for i, text in enumerate(non_empty_texts):
             translated = translate_with_mock(
                 text,
                 target_language,
@@ -465,10 +775,74 @@ def translate_text_list(texts, target_language, model_provider,
                 model_name=model_name,
                 prompt_content=prompt_content
             )
-            translated_texts.append(translated)
-    else:    
-        # 正常翻译流程
-        for i, text in enumerate(texts):
+            final_translations[non_empty_indices[i]] = translated
+        logger.info("批量翻译完成。")
+        return final_translations
+    
+    # 检查是否为支持批量翻译的提供商 (LLM)
+    llm_providers = {'siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'gemini', 
+                     'custom_openai'}  # 使用字符串而不是常量，便于 .lower() 比较
+    
+    if model_provider.lower() in llm_providers:
+        # --- rpm 限制 ---
+        _enforce_rpm_limit(
+            rpm_limit_translation,
+            f"BatchTranslation ({model_provider})",
+            _translation_rpm_last_reset_time_container,
+            _translation_rpm_request_count_container
+        )
+        
+        # 使用批量翻译
+        # 将文本按字符数分批，避免超过 token 限制
+        max_chars = constants.BATCH_TRANSLATE_MAX_CHARS_PER_REQUEST
+        batches = []
+        current_batch = []
+        current_chars = 0
+        
+        for text in non_empty_texts:
+            text_len = len(text) + 10  # +10 用于 <|n|> 标记
+            if current_chars + text_len > max_chars and current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_chars = 0
+            current_batch.append(text)
+            current_chars += text_len
+        
+        if current_batch:
+            batches.append(current_batch)
+        
+        logger.info(f"文本已分为 {len(batches)} 个批次进行翻译")
+        
+        # 翻译每个批次
+        all_translations = []
+        for batch_idx, batch in enumerate(batches):
+            logger.info(f"正在翻译批次 {batch_idx + 1}/{len(batches)} ({len(batch)} 个文本)...")
+            
+            batch_translations = _translate_batch_with_llm(
+                batch,
+                model_provider,
+                api_key,
+                model_name,
+                custom_prompt=prompt_content,
+                custom_base_url=custom_base_url,
+                max_retries=max_retries,
+                use_json_format=use_json_format
+            )
+            all_translations.extend(batch_translations)
+            
+            # 如果有多个批次，在批次之间稍微等待
+            if len(batches) > 1 and batch_idx < len(batches) - 1:
+                time.sleep(0.5)
+        
+        # 将翻译结果写回最终列表
+        for i, trans in enumerate(all_translations):
+            if i < len(non_empty_indices):
+                final_translations[non_empty_indices[i]] = trans
+        
+    else:
+        # 非 LLM 提供商 (如百度翻译、有道翻译)，使用原有的逐个翻译逻辑
+        logger.info(f"提供商 {model_provider} 不支持批量翻译，使用逐个翻译模式")
+        for i, text in enumerate(non_empty_texts):
             translated = translate_single_text(
                 text,
                 target_language,
@@ -481,10 +855,10 @@ def translate_text_list(texts, target_language, model_provider,
                 rpm_limit_translation=rpm_limit_translation,
                 max_retries=max_retries
             )
-            translated_texts.append(translated)
+            final_translations[non_empty_indices[i]] = translated
     
-    logger.info("批量翻译完成。")
-    return translated_texts
+    logger.info(f"批量翻译完成。成功 {len([t for t in final_translations if t])} / {len(texts)}")
+    return final_translations
 
 # --- 测试代码 ---
 if __name__ == '__main__':
