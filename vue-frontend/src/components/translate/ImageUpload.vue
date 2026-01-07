@@ -16,6 +16,7 @@ import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
+import { naturalSort } from '@/utils'
 import { useWebImportStore } from '@/stores/webImportStore'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import {
@@ -50,6 +51,9 @@ const webImportStore = useWebImportStore()
 
 /** 文件输入框引用 */
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+/** 文件夹输入框引用 */
+const folderInputRef = ref<HTMLInputElement | null>(null)
 
 /** 是否正在加载 */
 const isLoading = ref(false)
@@ -92,6 +96,101 @@ function triggerFileSelect() {
  */
 function triggerWebImport() {
   webImportStore.openModal()
+}
+
+/**
+ * 触发文件夹选择对话框
+ */
+function triggerFolderSelect() {
+  folderInputRef.value?.click()
+}
+
+/**
+ * 处理文件夹选择
+ */
+async function handleFolderSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+
+  const allFiles = Array.from(input.files)
+  const imageFiles = allFiles.filter(file => file.type.startsWith('image/'))
+
+  if (imageFiles.length === 0) {
+    showToast('所选文件夹中没有找到图片文件', 'warning')
+    input.value = ''
+    return
+  }
+
+  // 按相对路径进行自然排序
+  const sortedFiles = naturalSort(imageFiles, (file) => file.webkitRelativePath)
+  
+  console.log(`从文件夹导入 ${sortedFiles.length} 张图片`)
+  
+  // 处理文件并保留文件夹信息
+  await processFilesWithFolderInfo(sortedFiles)
+  
+  input.value = ''
+}
+
+/**
+ * 处理文件并保留文件夹信息
+ */
+async function processFilesWithFolderInfo(files: File[]) {
+  if (files.length === 0) return
+  
+  isLoading.value = true
+  showProgress.value = true
+  uploadProgress.value = 0
+  
+  try {
+    let processedCount = 0
+    const totalFiles = files.length
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!file || !file.type.startsWith('image/')) continue
+      
+      currentFileName.value = file.name
+      
+      // 获取相对路径信息
+      const relativePath = file.webkitRelativePath || ''
+      // 提取文件夹路径（去掉文件名）
+      const folderPath = relativePath.includes('/')
+        ? relativePath.substring(0, relativePath.lastIndexOf('/'))
+        : ''
+      
+      // 读取图片并添加
+      await new Promise<void>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataURL = e.target?.result as string
+          // 使用带文件夹信息的方式添加
+          imageStore.addImage(file.name, dataURL, {
+            relativePath,
+            folderPath
+          })
+          resolve()
+        }
+        reader.onerror = () => reject(new Error(`读取图片失败: ${file.name}`))
+        reader.readAsDataURL(file)
+      })
+      
+      processedCount++
+      uploadProgress.value = Math.round(((i + 1) / totalFiles) * 100)
+    }
+    
+    if (processedCount > 0) {
+      showToast(`已添加 ${processedCount} 张图片`, 'success')
+      emit('uploadComplete', processedCount)
+    }
+  } catch (error) {
+    console.error('处理文件失败:', error)
+    const errMsg = error instanceof Error ? error.message : '处理文件失败'
+    showToast(errMsg, 'error')
+  } finally {
+    isLoading.value = false
+    showProgress.value = false
+  }
 }
 
 /**
@@ -503,6 +602,7 @@ function clearError() {
 // 暴露方法供父组件调用
 defineExpose({
   triggerFileSelect,
+  triggerFolderSelect,
   processFiles,
   clearError,
 })
@@ -523,7 +623,11 @@ defineExpose({
         <p class="drop-text">
           拖拽图片、PDF或MOBI文件到这里，或 
           <span class="select-link" @click="triggerFileSelect">
-            点击选择文件
+            选择文件
+          </span>
+          <span class="separator"> | </span>
+          <span class="select-link folder-link" @click="triggerFolderSelect">
+            📁 选择文件夹
           </span>
           <span class="separator"> | </span>
           <span class="select-link web-import-link" @click="triggerWebImport">
@@ -541,6 +645,14 @@ defineExpose({
         multiple 
         class="file-input"
         @change="handleFileSelect"
+      >
+      <!-- 隐藏的文件夹输入框 -->
+      <input 
+        ref="folderInputRef"
+        type="file" 
+        webkitdirectory
+        class="file-input"
+        @change="handleFolderSelect"
       >
     </div>
     
@@ -643,6 +755,12 @@ defineExpose({
 }
 
 .web-import-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folder-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;

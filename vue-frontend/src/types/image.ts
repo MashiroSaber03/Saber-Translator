@@ -85,7 +85,14 @@ export interface ImageData {
   isManualAnnotation?: boolean
   /** 【修复6】是否显示原图（按图片持久化，切换图片时保留状态） */
   showOriginal?: boolean
+
+  // 文件夹导入信息
+  /** 文件的原始路径（用于文件夹分组） */
+  relativePath?: string
+  /** 所属文件夹路径 */
+  folderPath?: string
 }
+
 
 /**
  * 创建图片数据时的可选参数

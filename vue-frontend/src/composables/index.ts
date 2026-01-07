@@ -26,3 +26,5 @@ export {
   type ImageConvertResult,
   type BatchConvertProgress
 } from './useImageConverter'
+
+export { useFolderTree } from './useFolderTree'

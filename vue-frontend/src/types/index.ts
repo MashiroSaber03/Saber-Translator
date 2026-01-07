@@ -14,3 +14,6 @@ export * from './settings'
 
 // API 响应类型
 export * from './api'
+
+// 文件夹类型
+export * from './folder'

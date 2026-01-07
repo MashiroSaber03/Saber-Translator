@@ -57,3 +57,10 @@ export {
   formatConfidence,
   type RgbArray
 } from './colorUtils'
+
+// 自然排序工具函数
+export {
+  naturalSortKey,
+  naturalSortCompare,
+  naturalSort
+} from './naturalSort'
