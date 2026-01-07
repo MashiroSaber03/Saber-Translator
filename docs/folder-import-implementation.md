@@ -825,16 +825,15 @@ function getImageCount(node: FolderNode): number {
 - [x] 修改 `vue-frontend/src/types/image.ts` 添加字段
 - [x] 创建 `vue-frontend/src/types/folder.ts`
 - [x] 更新 `vue-frontend/src/types/index.ts` 导出 folder
-- [x] 创建 `vue-frontend/src/composables/useFolderTree.ts`
+- [x] 创建 `vue-frontend/src/composables/useFolderTree.ts`（面包屑导航模式）
 - [x] 更新 `vue-frontend/src/composables/index.ts` 导出 useFolderTree
 - [x] 修改 `ImageUpload.vue` (添加文件夹选择 + 路径传递)
-- [x] 创建 `FolderTreeNode.vue`
-- [x] 重构 `ThumbnailSidebar.vue` (双模式渲染)
-- [ ] 测试：选择包含图片的文件夹
-- [ ] 测试：选择包含子文件夹的文件夹
-- [ ] 测试：验证排序是否正确
-- [ ] 测试：验证文件夹分组显示
-- [ ] 测试：验证折叠/展开功能
+- [x] 重构 `ThumbnailSidebar.vue` (面包屑导航 + 扁平列表模式)
+- [x] 测试：选择包含图片的文件夹
+- [x] 测试：选择包含子文件夹的文件夹
+- [x] 测试：验证排序是否正确
+- [x] 测试：验证文件夹分组显示
+- [x] 测试：验证导航功能（进入/返回/面包屑点击）
 
 ---
 

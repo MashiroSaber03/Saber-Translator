@@ -34,7 +34,6 @@ export function useFolderTree(images: Ref<ImageData[]>) {
         const root: FolderNode = {
             name: '根目录',
             path: '',
-            isExpanded: true,
             images: [],
             subfolders: []
         }
@@ -59,7 +58,6 @@ export function useFolderTree(images: Ref<ImageData[]>) {
                         const newFolder: FolderNode = {
                             name: part,
                             path: currentPath,
-                            isExpanded: true,
                             images: [],
                             subfolders: []
                         }

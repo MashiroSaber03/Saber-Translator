@@ -219,8 +219,10 @@ onMounted(() => {
             @click="handleFolderClick(subfolder)"
           >
             <span class="folder-icon">📁</span>
-            <span class="folder-name" :title="subfolder.name">{{ subfolder.name }}</span>
-            <span class="folder-count">({{ getFolderImageCount(subfolder) }})</span>
+            <div class="folder-info">
+              <span class="folder-name" :title="subfolder.name">{{ subfolder.name }}</span>
+              <span class="folder-count">({{ getFolderImageCount(subfolder) }})</span>
+            </div>
           </div>
           
           <!-- 当前文件夹的图片 -->
@@ -294,14 +296,15 @@ onMounted(() => {
           <div 
             v-if="getStatusType(image) === 'processing'"
             class="thumbnail-processing-indicator"
-          >⟳</div>
+          >
+            ⟳
+          </div>
         </li>
       </ul>
       
       <div v-else class="empty-state">
         <p>暂无图片</p>
       </div>
-      
     </div>
   </aside>
 </template>
@@ -315,7 +318,7 @@ onMounted(() => {
   position: fixed;
   top: 20px;
   right: 20px;
-  width: 200px;
+  width: 230px;
   height: calc(100vh - 40px);
   overflow-y: auto;
   padding-top: 20px;
@@ -382,10 +385,7 @@ onMounted(() => {
 .breadcrumb-item {
   color: #3498db;
   cursor: pointer;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .breadcrumb-item:hover:not(.active) {
@@ -444,10 +444,9 @@ onMounted(() => {
 
 /* 文件夹项样式 */
 .folder-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  position: relative;
   padding: 10px 12px;
+  padding-left: 10px; /* 不需要为图标留空间了 */
   background: linear-gradient(135deg, #fff8e6 0%, #fff3d4 100%);
   border: 1px solid #f0d78c;
   border-radius: 8px;
@@ -462,25 +461,35 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(240, 215, 140, 0.4);
 }
 
+/* 文件夹图标作为右上角角标 */
 .folder-item .folder-icon {
-  font-size: 18px;
-  flex-shrink: 0;
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 14px;
+  background: #fff;
+  border-radius: 4px;
+  padding: 1px 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+}
+
+.folder-item .folder-info {
+  width: 100%;
 }
 
 .folder-item .folder-name {
-  flex: 1;
   font-size: 13px;
   font-weight: 500;
   color: #5a4a00;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .folder-item .folder-count {
   font-size: 11px;
   color: #8a7a30;
-  flex-shrink: 0;
+  margin-left: 4px;
 }
 
 /* 空文件夹提示 */
