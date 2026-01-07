@@ -1,40 +1,73 @@
 <template>
   <!-- 翻译进度组件 -->
   <div v-if="showProgress" id="translationProgressBar" class="translation-progress-bar">
-    <!-- 并行模式：多进度条 -->
+    <!-- 并行模式：新版多进度条 -->
     <template v-if="isParallelMode && parallelProgress">
-      <div class="parallel-progress-header">
-        <span class="progress-title">🚀 并行翻译进度</span>
-        <span class="progress-overall">{{ parallelOverallPercent }}%</span>
+      <!-- 标题行 -->
+      <div class="parallel-header">
+        <span class="header-title">🚀 并行翻译中：{{ parallelProgress.totalCompleted }}/{{ parallelProgress.totalPages }}</span>
       </div>
       
-      <!-- 总体进度条 -->
-      <div class="progress-bar overall-bar">
-        <div class="progress" :style="{ width: `${parallelOverallPercent}%` }"></div>
-      </div>
-      
-      <!-- 统计信息 -->
-      <div class="parallel-stats">
-        <span>✅ {{ parallelProgress.totalCompleted }}/{{ parallelProgress.totalPages }}</span>
-        <span v-if="parallelProgress.totalFailed > 0" class="failed-count">❌ {{ parallelProgress.totalFailed }} 失败</span>
-      </div>
-      
-      <!-- 各池子进度 -->
-      <div class="pools-grid">
+      <!-- 各池子进度条 -->
+      <div class="pools-list">
         <div 
           v-for="pool in parallelProgress.pools" 
           :key="pool.name"
-          class="pool-item"
+          class="pool-row"
           :class="{ 
             'pool-processing': pool.processing,
             'pool-waiting-lock': pool.isWaitingLock 
           }"
         >
-          <span class="pool-icon">{{ pool.icon }}</span>
-          <span class="pool-name">{{ pool.name }}</span>
-          <span class="pool-status">
-            {{ pool.isWaitingLock ? '等锁' : pool.processing ? `#${pool.currentPage}` : pool.completed > 0 ? `✓${pool.completed}` : '-' }}
+          <!-- 图标 + 名称 -->
+          <div class="pool-label">
+            <span class="pool-icon">{{ pool.icon }}</span>
+            <span class="pool-name">{{ pool.name }}</span>
+          </div>
+          
+          <!-- 进度条 -->
+          <div class="pool-progress-bar">
+            <!-- 完成部分（绿色） -->
+            <div 
+              class="progress-completed" 
+              :style="{ width: getPoolCompletedPercent(pool) + '%' }"
+            ></div>
+            <!-- 处理中部分（蓝色，仅当正在处理时显示） -->
+            <div 
+              v-if="pool.processing"
+              class="progress-processing" 
+              :style="{ 
+                left: getPoolCompletedPercent(pool) + '%',
+                width: getPoolProcessingWidth() + '%'
+              }"
+            ></div>
+          </div>
+          
+          <!-- 完成数/总数 -->
+          <div class="pool-stats">
+            <span class="completed-count">{{ pool.completed }}</span>
+            <span class="total-count">/ {{ parallelProgress.totalPages }}</span>
+            <!-- 等待徽章 -->
+            <span v-if="pool.waiting > 0" class="waiting-badge">+{{ pool.waiting }}</span>
+            <!-- 锁止指示器 -->
+            <span v-if="pool.isWaitingLock" class="lock-indicator" title="等待深度学习锁">🔒</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 分隔线 -->
+      <div class="divider"></div>
+      
+      <!-- 总体进度 -->
+      <div class="overall-section">
+        <div class="overall-label">
+          总进度：{{ parallelOverallPercent }}%
+          <span v-if="parallelProgress.totalFailed > 0" class="failed-text">
+            （{{ parallelProgress.totalFailed }} 失败）
           </span>
+        </div>
+        <div class="overall-progress-bar">
+          <div class="overall-progress-fill" :style="{ width: parallelOverallPercent + '%' }"></div>
         </div>
       </div>
     </template>
@@ -67,6 +100,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useTranslation, type TranslationProgress } from '@/composables/useTranslationPipeline'
 import { useParallelTranslation } from '@/composables/translation/parallel'
+import type { PoolStatus } from '@/composables/translation/parallel/types'
 
 // ============================================================
 // Props 定义
@@ -106,6 +140,21 @@ const parallelOverallPercent = computed(() => {
   if (!progress || progress.totalPages === 0) return 0
   return Math.round((progress.totalCompleted / progress.totalPages) * 100)
 })
+
+/** 获取池子完成百分比 */
+function getPoolCompletedPercent(pool: PoolStatus): number {
+  const total = parallelProgress.value?.totalPages || 0
+  if (total === 0) return 0
+  return Math.round((pool.completed / total) * 100)
+}
+
+/** 获取池子处理中部分宽度（固定一小段） */
+function getPoolProcessingWidth(): number {
+  const total = parallelProgress.value?.totalPages || 0
+  if (total === 0) return 0
+  // 处理中显示一个任务的宽度
+  return Math.max(3, Math.round((1 / total) * 100))
+}
 
 /** 当前进度数据 */
 const currentProgress = computed(() => {
@@ -149,28 +198,228 @@ const progressLabel = computed(() => {
 
 <style scoped>
 /* ===================================
-   进度条样式 - 完整复刻原版 components.css
+   进度条样式 - 新版并行进度条设计
    =================================== */
 
 .translation-progress-bar {
   margin-top: 20px;
   margin-bottom: 20px;
-  padding: 20px;
+  padding: 20px 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   background-color: #f8fafc;
-  text-align: center;
   width: 85%;
   margin-left: auto;
   margin-right: auto;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
+
+/* ===================================
+   并行模式 - 新版样式
+   =================================== */
+
+.parallel-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.header-title {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+/* 池子列表 */
+.pools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pool-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+/* 池子标签 */
+.pool-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pool-icon {
+  font-size: 16px;
+}
+
+.pool-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4a5568;
+}
+
+/* 池子进度条 */
+.pool-progress-bar {
+  position: relative;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-completed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #48bb78, #38a169);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.progress-processing {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #4299e1, #3182ce);
+  border-radius: 6px;
+  transition: left 0.3s ease, width 0.3s ease;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* 池子统计 */
+.pool-stats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.completed-count {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.total-count {
+  color: #a0aec0;
+}
+
+.waiting-badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  background: #ffc107;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lock-indicator {
+  margin-left: 4px;
+  font-size: 14px;
+  animation: lockPulse 1s ease-in-out infinite;
+}
+
+@keyframes lockPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 处理中状态 */
+.pool-processing .pool-name {
+  color: #3182ce;
+}
+
+/* 等待锁状态 */
+.pool-waiting-lock .pool-name {
+  color: #d69e2e;
+}
+
+/* 分隔线 */
+.divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 20px 0;
+}
+
+/* 总体进度 */
+.overall-section {
+  margin-top: 8px;
+}
+
+.overall-label {
+  font-size: 14px;
+  color: #4a5568;
+  margin-bottom: 8px;
+}
+
+.failed-text {
+  color: #e53e3e;
+  font-weight: 500;
+}
+
+.overall-progress-bar {
+  height: 20px;
+  background: #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.overall-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #48bb78 0%, #68d391 100%);
+  border-radius: 10px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+/* 条纹动画 */
+.overall-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.2) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.2) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 30px 30px;
+  animation: stripeMove 1s linear infinite;
+  border-radius: 10px;
+}
+
+@keyframes stripeMove {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 30px; }
+}
+
+/* ===================================
+   普通模式样式 - 保持原有
+   =================================== */
 
 .progress-bar-label {
   margin-bottom: 15px;
   font-weight: bold;
   font-size: 1.1em;
   color: #2c3e50;
+  text-align: center;
 }
 
 .progress-bar {
@@ -228,97 +477,4 @@ const progressLabel = computed(() => {
   color: #e74c3c;
   font-weight: 500;
 }
-
-/* ===================================
-   并行模式样式
-   =================================== */
-
-.parallel-progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.progress-title {
-  font-weight: bold;
-  font-size: 1.1em;
-  color: #2c3e50;
-}
-
-.progress-overall {
-  font-size: 1.5em;
-  font-weight: bold;
-  color: #4a9eff;
-}
-
-.overall-bar {
-  margin-bottom: 12px;
-}
-
-.overall-bar .progress {
-  background: linear-gradient(90deg, #4a9eff 0%, #00d4aa 100%);
-}
-
-.parallel-stats {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  font-size: 0.9em;
-  color: #666;
-  margin-bottom: 16px;
-}
-
-.pools-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.pool-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 8px;
-  background: #f0f4f8;
-  border-radius: 8px;
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.pool-icon {
-  font-size: 20px;
-  margin-bottom: 4px;
-}
-
-.pool-name {
-  font-weight: 500;
-  color: #2c3e50;
-  margin-bottom: 2px;
-}
-
-.pool-status {
-  color: #888;
-  font-size: 11px;
-}
-
-.pool-processing {
-  background: rgba(74, 158, 255, 0.15);
-  border: 1px solid rgba(74, 158, 255, 0.3);
-}
-
-.pool-processing .pool-status {
-  color: #4a9eff;
-  font-weight: 500;
-}
-
-.pool-waiting-lock {
-  background: rgba(255, 193, 7, 0.15);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-}
-
-.pool-waiting-lock .pool-status {
-  color: #ffc107;
-}
-
 </style>

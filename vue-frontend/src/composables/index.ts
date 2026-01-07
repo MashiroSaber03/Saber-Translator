@@ -13,7 +13,7 @@ export {
   useTranslation,
   type TranslationProgress,
   type TranslationOptions
-} from './useTranslation'
+} from './useTranslationPipeline'
 
 export {
   useExportImport,
