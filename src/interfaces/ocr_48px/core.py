@@ -370,4 +370,7 @@ class OCR(nn.Module):
                 self.color_pred_bg_ind(color_feats)
             result.append((final_idx[1:], prob, fg_pred[0], bg_pred[0], fg_ind_pred[0], bg_ind_pred[0]))
 
+        # 清理 beam search 的大张量（参考 manga-translator-ui）
+        del memory, input_mask, cached_activations, finished_hypos, out_idx, log_probs, batch_index
+
         return result

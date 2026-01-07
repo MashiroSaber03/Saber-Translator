@@ -425,41 +425,26 @@ class Model48pxOCR:
             )
         
         return text, fg_color, bg_color
-    
-    def _decode(self, char_indices: torch.Tensor) -> str:
-        """解码字符序列"""
-        seq = []
-        for idx in char_indices:
-            if idx >= len(self.dictionary):
-                continue
-            ch = self.dictionary[idx]
-            if ch == '<S>':
-                continue
-            if ch == '</S>':
-                break
-            if ch == '<SP>':
-                seq.append(' ')
-            else:
-                seq.append(ch)
-        return ''.join(seq)
 
 
     def extract_colors_for_bubbles(
         self,
         image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
-        textlines_per_bubble: Optional[List[List[Dict]]] = None
+        textlines_per_bubble: Optional[List[List[Dict]]] = None,
+        max_chunk_size: int = 16
     ) -> List[ColorExtractionResult]:
         """
-        为每个气泡提取颜色（强制提取，总是执行）
+        为每个气泡提取颜色（批量处理优化版）
         
-        这是设计文档中"强制提取"功能的核心实现。
-        无论用户是否启用"使用自动颜色"，翻译时总是调用此方法提取颜色。
+        参考 manga-image-translator 项目的实现，使用批量推理大幅提升 GPU 性能。
+        将 N 个文本行分批处理，每批最多 max_chunk_size 个，减少 GPU 数据传输开销。
         
         Args:
             image: PIL Image
             bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
             textlines_per_bubble: 每个气泡对应的原始文本行列表（可选）
+            max_chunk_size: 每批处理的最大样本数（默认 16）
         
         Returns:
             List[ColorExtractionResult]: 每个气泡的颜色提取结果
@@ -471,66 +456,153 @@ class Model48pxOCR:
         if not bubble_coords:
             return []
         
-        logger.info(f"开始为 {len(bubble_coords)} 个气泡提取颜色...")
+        logger.info(f"开始为 {len(bubble_coords)} 个气泡提取颜色（批量模式）...")
         
         try:
             img_np = np.array(image.convert('RGB'))
-            results = []
+            
+            # ========== 第1步：收集所有文本行区域 ==========
+            all_regions = []       # 所有文本行图像
+            all_widths = []        # 对应宽度
+            region_to_bubble = []  # 映射到气泡索引
             
             # 如果没有提供原始文本行，使用简单裁剪模式
             if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
                 logger.info("使用简单裁剪模式提取颜色")
-                for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+                for bubble_idx, (x1, y1, x2, y2) in enumerate(bubble_coords):
                     bubble = img_np[y1:y2, x1:x2]
-                    result = self._extract_color_from_region(bubble)
-                    results.append(result)
-                    if result.fg_color:
-                        logger.debug(f"气泡 {i}: fg={result.fg_color}, bg={result.bg_color}, conf={result.confidence:.2f}")
-                return results
+                    region = self._prepare_region_for_batch(bubble)
+                    if region is not None:
+                        all_regions.append(region)
+                        all_widths.append(region.shape[1])
+                        region_to_bubble.append(bubble_idx)
+            else:
+                # 使用原始文本行进行精确颜色提取
+                for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
+                    if not textlines:
+                        # 该气泡没有文本行，使用简单裁剪
+                        x1, y1, x2, y2 = coords
+                        bubble = img_np[y1:y2, x1:x2]
+                        region = self._prepare_region_for_batch(bubble)
+                        if region is not None:
+                            all_regions.append(region)
+                            all_widths.append(region.shape[1])
+                            region_to_bubble.append(bubble_idx)
+                    else:
+                        # 对每个文本行
+                        for line_info in textlines:
+                            polygon = line_info.get('polygon', [])
+                            direction = line_info.get('direction', 'h')
+                            
+                            if not polygon or len(polygon) != 4:
+                                continue
+                            
+                            pts = np.array(polygon, dtype=np.float32)
+                            region = get_transformed_region(img_np, pts, direction, target_height=48)
+                            
+                            if region is not None and region.shape[0] > 0 and region.shape[1] > 0:
+                                all_regions.append(region)
+                                all_widths.append(region.shape[1])
+                                region_to_bubble.append(bubble_idx)
             
-            # 使用原始文本行进行精确颜色提取
-            for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
-                if not textlines:
-                    # 该气泡没有文本行，使用简单裁剪
-                    x1, y1, x2, y2 = coords
-                    result = self._extract_color_from_region(img_np[y1:y2, x1:x2])
-                    results.append(result)
-                    continue
+            # 如果没有有效区域，返回空结果
+            if not all_regions:
+                logger.warning("没有有效的文本区域可提取颜色")
+                return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+            
+            logger.info(f"收集到 {len(all_regions)} 个文本区域，开始批量推理...")
+            
+            # ========== 第2步：按宽度排序（减少padding浪费） ==========
+            perm = sorted(range(len(all_regions)), key=lambda x: all_widths[x])
+            
+            # ========== 第3步：分批推理 ==========
+            all_colors = [None] * len(all_regions)  # 存储每个区域的颜色结果
+            
+            for chunk_start in range(0, len(perm), max_chunk_size):
+                chunk_indices = perm[chunk_start:chunk_start + max_chunk_size]
+                N = len(chunk_indices)
+                widths = [all_widths[i] for i in chunk_indices]
+                max_w = 4 * (max(widths) + 7) // 4  # 对齐到4的倍数
                 
-                # 对每个文本行提取颜色并聚合
-                all_fg = []
-                all_bg = []
-                all_probs = []
+                # 创建批量 Tensor（一次内存分配）
+                batch = np.zeros((N, 48, max_w, 3), dtype=np.uint8)
+                for i, idx in enumerate(chunk_indices):
+                    w = all_widths[idx]
+                    region = all_regions[idx]
+                    # 确保区域高度是48
+                    if region.shape[0] != 48:
+                        h, rw = region.shape[:2]
+                        scale = 48 / h
+                        new_w = max(int(rw * scale), 1)
+                        region = cv2.resize(region, (new_w, 48), interpolation=cv2.INTER_LINEAR)
+                        w = new_w
+                    batch[i, :, :w, :] = region[:, :w, :]
                 
-                for line_info in textlines:
-                    polygon = line_info.get('polygon', [])
-                    direction = line_info.get('direction', 'h')
-                    
-                    if not polygon or len(polygon) != 4:
+                # 归一化并传输到设备（只传输一次！）
+                tensor = (torch.from_numpy(batch).float() - 127.5) / 127.5
+                tensor = einops.rearrange(tensor, 'N H W C -> N C H W')
+                if self.device in ('cuda', 'mps'):
+                    tensor = tensor.to(self.device)
+                
+                # 批量推理
+                with torch.no_grad():
+                    preds = self.model.infer_beam_batch_tensor(
+                        tensor, widths, beams_k=5, max_seq_length=255
+                    )
+                
+                # 提取每个样本的颜色
+                for i, pred in enumerate(preds):
+                    if pred is None or len(pred) < 6:
+                        all_colors[chunk_indices[i]] = (None, None, 0.0)
                         continue
                     
-                    pts = np.array(polygon, dtype=np.float32)
-                    region_img = get_transformed_region(img_np, pts, direction, target_height=48)
+                    pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = pred
                     
-                    _, fg_color, bg_color, prob = self._recognize_single_line_with_color(region_img)
+                    if prob < 0.2:
+                        all_colors[chunk_indices[i]] = (None, None, prob)
+                        continue
                     
-                    if fg_color:
-                        all_fg.append(fg_color)
-                    if bg_color:
-                        all_bg.append(bg_color)
-                    if prob > 0:
-                        all_probs.append(prob)
+                    # 解码颜色
+                    _, fg_color, bg_color = self._decode_with_colors(
+                        pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
+                    )
+                    all_colors[chunk_indices[i]] = (fg_color, bg_color, prob)
                 
-                # 聚合所有文本行的颜色
-                final_fg = self._average_colors(all_fg) if all_fg else None
-                final_bg = self._average_colors(all_bg) if all_bg else None
-                final_prob = sum(all_probs) / len(all_probs) if all_probs else 0.0
+                # 清理 GPU 内存
+                del tensor, batch, preds
+            
+            # ========== 第4步：聚合每个气泡的颜色 ==========
+            results = []
+            for bubble_idx in range(len(bubble_coords)):
+                # 找到属于该气泡的所有区域
+                bubble_color_data = []
+                for region_idx, mapped_bubble in enumerate(region_to_bubble):
+                    if mapped_bubble == bubble_idx and all_colors[region_idx] is not None:
+                        fg, bg, prob = all_colors[region_idx]
+                        if fg is not None or bg is not None:
+                            bubble_color_data.append((fg, bg, prob))
                 
-                result = ColorExtractionResult(final_fg, final_bg, final_prob)
+                if bubble_color_data:
+                    # 聚合颜色
+                    fg_colors = [c[0] for c in bubble_color_data if c[0] is not None]
+                    bg_colors = [c[1] for c in bubble_color_data if c[1] is not None]
+                    probs = [c[2] for c in bubble_color_data if c[2] > 0]
+                    
+                    final_fg = self._average_colors(fg_colors) if fg_colors else None
+                    final_bg = self._average_colors(bg_colors) if bg_colors else None
+                    final_prob = sum(probs) / len(probs) if probs else 0.0
+                    
+                    result = ColorExtractionResult(final_fg, final_bg, final_prob)
+                    if final_fg:
+                        logger.debug(f"气泡 {bubble_idx}: fg={final_fg}, bg={final_bg}, conf={final_prob:.2f}")
+                else:
+                    result = ColorExtractionResult(None, None, 0.0)
+                
                 results.append(result)
-                
-                if final_fg:
-                    logger.debug(f"气泡 {bubble_idx}: fg={final_fg}, bg={final_bg}, conf={final_prob:.2f}")
+            
+            # 清理 GPU 缓存
+            if self.device == 'cuda':
+                torch.cuda.empty_cache()
             
             logger.info(f"颜色提取完成，成功 {sum(1 for r in results if r.fg_color)} / {len(results)}")
             return results
@@ -539,18 +611,16 @@ class Model48pxOCR:
             logger.error(f"颜色提取失败: {e}", exc_info=True)
             return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
     
-    def _extract_color_from_region(self, region: np.ndarray) -> ColorExtractionResult:
-        """从区域提取颜色（简单缩放模式）"""
-        if region.shape[0] == 0 or region.shape[1] == 0:
-            return ColorExtractionResult(None, None, 0.0)
+    def _prepare_region_for_batch(self, region: np.ndarray) -> Optional[np.ndarray]:
+        """准备区域图像用于批量处理（缩放到48px高度）"""
+        if region is None or region.shape[0] == 0 or region.shape[1] == 0:
+            return None
         
         h, w = region.shape[:2]
         scale = 48 / h
         new_w = max(int(w * scale), 1)
         resized = cv2.resize(region, (new_w, 48), interpolation=cv2.INTER_LINEAR)
-        
-        _, fg_color, bg_color, prob = self._recognize_single_line_with_color(resized)
-        return ColorExtractionResult(fg_color, bg_color, prob)
+        return resized
     
     def _average_colors(self, colors: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
         """计算颜色平均值"""
