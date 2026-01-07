@@ -3,7 +3,7 @@
  */
 
 import type { ImageData } from '@/types/image'
-import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import type { BubbleState } from '@/types/bubble'
 
 /**
  * 翻译模式
@@ -27,7 +27,7 @@ export interface PipelineTask {
   
   // 检测结果
   detectionResult?: {
-    bubbleCoords: BubbleCoords[]
+    bubbleCoords: number[][]  // [[x1, y1, x2, y2], ...]
     bubbleAngles: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]

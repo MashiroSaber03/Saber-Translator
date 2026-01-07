@@ -29,7 +29,8 @@ export class DetectionPool extends TaskPool {
     // 提取Base64
     const base64 = this.extractBase64(imageData.originalDataURL)
 
-    // 调用后端检测API（与串行模式使用相同的参数）
+    // 调用后端检测API
+    // 注意：精准掩膜参数(usePreciseMask等)只在修复阶段使用，检测阶段不需要
     const response = await parallelDetect({
       image: base64,
       detector_type: settings.textDetector,
@@ -37,10 +38,7 @@ export class DetectionPool extends TaskPool {
       box_expand_top: settings.boxExpand.top,
       box_expand_bottom: settings.boxExpand.bottom,
       box_expand_left: settings.boxExpand.left,
-      box_expand_right: settings.boxExpand.right,
-      usePreciseMask: settings.preciseMask.enabled,
-      maskDilateSize: settings.preciseMask.dilateSize,
-      maskBoxExpandRatio: settings.preciseMask.boxExpandRatio
+      box_expand_right: settings.boxExpand.right
     })
 
     if (!response.success) {

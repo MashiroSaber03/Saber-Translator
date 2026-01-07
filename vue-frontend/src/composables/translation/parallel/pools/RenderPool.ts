@@ -104,11 +104,16 @@ export class RenderPool extends TaskPool {
     const imageIndex = task.imageIndex
 
     // 1. 更新 imageStore
+    // 转换bubbleCoords为正确的类型
+    const bubbleCoords = (task.detectionResult?.bubbleCoords || []).map(coord => 
+      (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords
+    )
+    
     imageStore.updateImageByIndex(imageIndex, {
       translatedDataURL: `data:image/png;base64,${task.renderResult!.finalImage}`,
       cleanImageData: task.inpaintResult?.cleanImage || null,
       bubbleStates: task.renderResult!.bubbleStates,
-      bubbleCoords: task.detectionResult?.bubbleCoords || [],
+      bubbleCoords: bubbleCoords,
       bubbleAngles: task.detectionResult?.bubbleAngles || [],
       originalTexts: task.ocrResult?.originalTexts || [],
       bubbleTexts: task.translateResult?.translatedTexts || [],
@@ -173,7 +178,7 @@ export class RenderPool extends TaskPool {
         originalText: originals[idx] || '',
         translatedText: texts[idx] || '',
         textboxText: '',
-        coords: coord as BubbleCoords,
+        coords: (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords,
         polygon: polygons[idx] || [],
         fontSize: settings.textStyle.fontSize,
         fontFamily: settings.textStyle.fontFamily,
