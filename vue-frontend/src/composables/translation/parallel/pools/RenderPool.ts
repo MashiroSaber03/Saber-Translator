@@ -40,7 +40,7 @@ export class RenderPool extends TaskPool {
     // 如果没有气泡或没有译文，跳过渲染（消除文字模式会走这里）
     if (bubbleStates.length === 0) {
       // 获取最终图片：优先使用修复后的干净图片
-      const finalImage = task.inpaintResult?.cleanImage 
+      const finalImage = task.inpaintResult?.cleanImage
         || task.imageData.cleanImageData
         || this.extractBase64(task.imageData.originalDataURL)
       task.renderResult = {
@@ -54,8 +54,8 @@ export class RenderPool extends TaskPool {
     }
 
     // 获取干净背景图：优先使用inpaintResult，其次使用已有的cleanImageData
-    const cleanImage = task.inpaintResult?.cleanImage 
-      || task.imageData.cleanImageData 
+    const cleanImage = task.inpaintResult?.cleanImage
+      || task.imageData.cleanImageData
       || this.extractBase64(task.imageData.translatedDataURL || task.imageData.originalDataURL)
 
     // 调用后端渲染 API
@@ -105,10 +105,10 @@ export class RenderPool extends TaskPool {
 
     // 1. 更新 imageStore
     // 转换bubbleCoords为正确的类型
-    const bubbleCoords = (task.detectionResult?.bubbleCoords || []).map(coord => 
+    const bubbleCoords = (task.detectionResult?.bubbleCoords || []).map(coord =>
       (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords
     )
-    
+
     imageStore.updateImageByIndex(imageIndex, {
       translatedDataURL: `data:image/png;base64,${task.renderResult!.finalImage}`,
       cleanImageData: task.inpaintResult?.cleanImage || null,
@@ -151,6 +151,13 @@ export class RenderPool extends TaskPool {
       }))
     }
 
+    // removeText模式检测：有检测结果但没有翻译结果，返回空数组跳过渲染
+    // 这样会让 process() 方法直接使用干净背景图作为最终图片
+    if (task.detectionResult && !task.translateResult) {
+      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译结果），跳过渲染`)
+      return []
+    }
+
     const coords = task.detectionResult?.bubbleCoords || []
     const texts = task.translateResult?.translatedTexts || []
     const originals = task.ocrResult?.originalTexts || []
@@ -163,12 +170,12 @@ export class RenderPool extends TaskPool {
     return coords.map((coord, idx) => {
       const autoDir = directions[idx]
       const mappedDirection: TextDirection = autoDir === 'v' ? 'vertical' : autoDir === 'h' ? 'horizontal' : 'vertical'
-      
+
       // 颜色处理：优先使用自动提取的颜色
       let textColor = settings.textStyle.textColor
       let fillColor = settings.textStyle.fillColor
       const colorInfo = colors[idx]
-      
+
       if (settings.textStyle.useAutoTextColor && colorInfo) {
         if (colorInfo.textColor) textColor = colorInfo.textColor
         if (colorInfo.bgColor) fillColor = colorInfo.bgColor

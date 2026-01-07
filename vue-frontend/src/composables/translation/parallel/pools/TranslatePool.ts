@@ -180,7 +180,7 @@ export class TranslatePool extends TaskPool {
         t.translateResult = { translatedTexts: [], textboxTexts: [] }
       }
       t.status = 'processing'
-      
+
       if (this.nextPool) {
         this.nextPool.enqueue(t)
       }
@@ -283,7 +283,7 @@ export class TranslatePool extends TaskPool {
         t.translateResult = { translatedTexts: [], textboxTexts: [] }
       }
       t.status = 'processing'
-      
+
       if (this.nextPool) {
         this.nextPool.enqueue(t)
       }
@@ -293,6 +293,9 @@ export class TranslatePool extends TaskPool {
   }
 
   // ==================== 仅消除文字 ====================
+  // 注意：当前 removeText 模式的池子链配置为 ['detection', 'inpaint', 'render']，
+  // 跳过了 translate 池子，因此此方法不会被调用。
+  // 保留此方法作为备用，以便将来如需恢复完整流程时使用。
   private async handleRemoveTextOnly(task: PipelineTask): Promise<PipelineTask> {
     task.translateResult = {
       translatedTexts: [],

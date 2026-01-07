@@ -26,14 +26,12 @@ import {
  * - 添加新模式：在此添加新的池子链配置
  * - 添加新池子：在ParallelPipeline中创建池子实例，并在配置中使用
  * - 修改流程：直接修改对应模式的池子链数组
- * 
- * 注意：removeText模式最后需要连接到render池以更新UI，但不渲染文字
  */
 export const POOL_CHAIN_CONFIGS: Record<ParallelTranslationMode, string[]> = {
   standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
   hq: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
   proofread: ['translate', 'render'],  // AI校对跳过检测/OCR/颜色/修复
-  removeText: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render']  // 最后连接render更新UI
+  removeText: ['detection', 'inpaint', 'render']  // 仅消除文字：跳过OCR/颜色/翻译，只检测+修复+更新UI
 }
 
 export class ParallelPipeline {
@@ -159,26 +157,26 @@ export class ParallelPipeline {
   private setupPoolChain(mode: ParallelTranslationMode, totalTasks: number): void {
     const chainConfig = POOL_CHAIN_CONFIGS[mode]
     const poolMap = this.getPoolMap()
-    
+
     // 根据配置动态设置池子链
     for (let i = 0; i < chainConfig.length - 1; i++) {
       const currentPoolName = chainConfig[i] as string
       const nextPoolName = chainConfig[i + 1] as string
       const currentPool = poolMap[currentPoolName]
       const nextPool = poolMap[nextPoolName]
-      
+
       if (currentPool && nextPool) {
         currentPool.setNextPool(nextPool)
       }
     }
-    
+
     // 最后一个池子不连接下一个
     const lastPoolName = chainConfig[chainConfig.length - 1] as string
     const lastPool = poolMap[lastPoolName]
     if (lastPool) {
       lastPool.setNextPool(null)
     }
-    
+
     // 设置翻译池的模式（批量处理需要知道总任务数）
     const translateIndex = chainConfig.indexOf('translate')
     if (translateIndex >= 0 && translateIndex < chainConfig.length - 1) {
@@ -188,7 +186,7 @@ export class ParallelPipeline {
       this.translatePool.setMode(mode, totalTasks, null)
     }
   }
-  
+
   /**
    * 获取池子名称到实例的映射
    * 

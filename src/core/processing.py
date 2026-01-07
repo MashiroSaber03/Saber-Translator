@@ -388,31 +388,36 @@ def process_image_translation(
             logger.info("步骤 2: 跳过 OCR。")
             original_texts = [""] * len(bubble_coords) # 创建占位符
 
-        # 2.5 强制提取颜色（设计原则：总是提取，开关只控制是否默认使用）
+        # 2.5 颜色提取（仅在需要翻译和渲染时执行）
+        # 优化：仅消除文字模式（skip_translation=True）不需要颜色信息，跳过以提升性能
         color_extraction_results = []
-        try:
-            logger.info("步骤 2.5: 提取文字颜色（强制执行）...")
-            start_time = time.time()
-            
-            color_extractor = get_color_extractor()
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            
-            if color_extractor.initialize(device):
-                color_extraction_results = color_extractor.extract_colors(
-                    image_pil,
-                    bubble_coords,
-                    textlines_per_bubble
-                )
-                success_count = sum(1 for r in color_extraction_results if r.fg_color)
-                logger.info(f"颜色提取完成，成功 {success_count} / {len(bubble_coords)} (耗时: {time.time() - start_time:.2f}s)")
-                # 详细输出每个气泡的提取结果
-                for idx, cr in enumerate(color_extraction_results):
-                    logger.info(f"  [颜色提取] 气泡 {idx}: fg={cr.fg_color}, bg={cr.bg_color}, conf={cr.confidence:.2f}")
-            else:
-                logger.warning("颜色提取器初始化失败，跳过颜色提取")
+        if not skip_translation:
+            try:
+                logger.info("步骤 2.5: 提取文字颜色...")
+                start_time = time.time()
+                
+                color_extractor = get_color_extractor()
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                
+                if color_extractor.initialize(device):
+                    color_extraction_results = color_extractor.extract_colors(
+                        image_pil,
+                        bubble_coords,
+                        textlines_per_bubble
+                    )
+                    success_count = sum(1 for r in color_extraction_results if r.fg_color)
+                    logger.info(f"颜色提取完成，成功 {success_count} / {len(bubble_coords)} (耗时: {time.time() - start_time:.2f}s)")
+                    # 详细输出每个气泡的提取结果
+                    for idx, cr in enumerate(color_extraction_results):
+                        logger.info(f"  [颜色提取] 气泡 {idx}: fg={cr.fg_color}, bg={cr.bg_color}, conf={cr.confidence:.2f}")
+                else:
+                    logger.warning("颜色提取器初始化失败，跳过颜色提取")
+                    color_extraction_results = [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+            except Exception as color_e:
+                logger.warning(f"颜色提取失败: {color_e}")
                 color_extraction_results = [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
-        except Exception as color_e:
-            logger.warning(f"颜色提取失败: {color_e}")
+        else:
+            logger.info("步骤 2.5: 跳过颜色提取（仅消除文字模式）")
             color_extraction_results = [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
 
         # 3. 翻译文本

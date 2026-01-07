@@ -164,7 +164,7 @@ export const POOL_CHAIN_CONFIGS: Record<ParallelTranslationMode, string[]> = {
   standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
   hq: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
   proofread: ['translate', 'render'],
-  removeText: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render']
+  removeText: ['detection', 'inpaint', 'render']  // 跳过OCR/颜色/翻译
 }
 ```
 
@@ -175,7 +175,7 @@ export const POOL_CHAIN_CONFIGS: Record<ParallelTranslationMode, string[]> = {
 | `standard` | 标准翻译 | 完整流程 |
 | `hq` | 高质量翻译 | 完整流程，翻译池使用批量处理 |
 | `proofread` | AI校对 | 跳过检测/OCR/颜色/修复，直接翻译+渲染 |
-| `removeText` | 消除文字 | 完整流程，翻译池跳过翻译 |
+| `removeText` | 消除文字 | 仅检测+修复+更新UI，跳过OCR/颜色/翻译 |
 
 ### 3.3 池子名称映射
 

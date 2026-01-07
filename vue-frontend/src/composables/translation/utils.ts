@@ -150,9 +150,10 @@ export function buildTranslateParams(
     // 调试选项（后端使用 camelCase: showDetectionDebug）
     showDetectionDebug: settings.showDetectionDebug,
 
-    // 特殊模式
+    // 特殊模式（仅消除文字时跳过翻译和OCR）
     remove_only: options.removeTextOnly,
-    skip_translation: options.removeTextOnly  // 仅消除文字时跳过翻译
+    skip_translation: options.removeTextOnly,  // 仅消除文字时跳过翻译
+    skip_ocr: options.removeTextOnly           // 仅消除文字时跳过OCR（不需要识别文字内容）
   }
 
   // 【优化】从 existingBubbleStates 自动提取坐标和角度（避免遗漏参数）
