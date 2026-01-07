@@ -210,6 +210,17 @@ export interface TranslationSettings {
 
   // 调试选项
   showDetectionDebug: boolean
+
+  // 并行翻译设置
+  parallel: ParallelSettings
+}
+
+/**
+ * 并行翻译设置
+ */
+export interface ParallelSettings {
+  enabled: boolean
+  deepLearningLockSize: number
 }
 
 /**

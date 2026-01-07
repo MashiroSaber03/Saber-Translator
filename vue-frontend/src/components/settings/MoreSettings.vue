@@ -1,5 +1,8 @@
 <template>
   <div class="more-settings">
+    <!-- 并行翻译设置 -->
+    <ParallelSettings />
+
     <!-- PDF处理方式 -->
     <div class="settings-group">
       <div class="settings-group-title">PDF处理设置</div>
@@ -76,6 +79,7 @@ import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import ParallelSettings from './ParallelSettings.vue'
 
 /** PDF处理方式选项 */
 const pdfMethodOptions = [

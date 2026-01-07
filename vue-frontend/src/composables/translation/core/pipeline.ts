@@ -25,6 +25,8 @@ import type {
     SavedTextStyles,
     PrepareStepOptions
 } from './types'
+import { useParallelTranslation } from '../parallel'
+import type { ParallelTranslationMode } from '../parallel/types'
 
 /**
  * 翻译管线 composable
@@ -408,6 +410,75 @@ export function usePipeline() {
     }
 
     /**
+     * 执行并行翻译模式
+     */
+    async function executeParallelMode(config: PipelineConfig): Promise<PipelineResult> {
+        const images = imageStore.images
+        if (images.length === 0) {
+            toast.warning('请先添加图片')
+            return { success: false, completed: 0, failed: 0, errors: ['没有图片'] }
+        }
+
+        isExecuting.value = true
+        imageStore.setBatchTranslationInProgress(true)
+
+        try {
+            const parallelTranslation = useParallelTranslation()
+            
+            // 根据config.mode确定并行模式
+            let parallelMode: ParallelTranslationMode = 'standard'
+            if (config.mode === 'hq') {
+                parallelMode = 'hq'
+            } else if (config.mode === 'proofread') {
+                parallelMode = 'proofread'
+            } else if (config.mode === 'removeText') {
+                parallelMode = 'removeText'
+            }
+
+            console.log(`🚀 启动并行翻译模式: ${parallelMode}`)
+            toast.info(`并行翻译开始，模式: ${parallelMode}`)
+
+            const result = await parallelTranslation.executeParallel(parallelMode)
+
+            if (result.success > 0 && result.failed === 0) {
+                toast.success(`并行翻译完成，成功处理 ${result.success} 张图片`)
+            } else if (result.success > 0 && result.failed > 0) {
+                toast.warning(`并行翻译完成，成功 ${result.success} 张，失败 ${result.failed} 张`)
+            } else {
+                toast.error('并行翻译失败')
+            }
+
+            return {
+                success: result.failed === 0,
+                completed: result.success,
+                failed: result.failed,
+                errors: result.errors
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : '并行翻译出错'
+            toast.error(errorMessage)
+            return {
+                success: false,
+                completed: 0,
+                failed: images.length,
+                errors: [errorMessage]
+            }
+        } finally {
+            isExecuting.value = false
+            imageStore.setBatchTranslationInProgress(false)
+
+            // 刷新当前显示的图片
+            const currentIndex = imageStore.currentImageIndex
+            if (currentIndex >= 0 && currentIndex < imageStore.images.length) {
+                const currentImage = imageStore.images[currentIndex]
+                if (currentImage?.bubbleStates && currentImage.bubbleStates.length > 0) {
+                    bubbleStore.setBubbles(currentImage.bubbleStates)
+                }
+            }
+        }
+    }
+
+    /**
      * 执行翻译管线
      */
     async function execute(config: PipelineConfig): Promise<PipelineResult> {
@@ -420,6 +491,12 @@ export function usePipeline() {
         if (imageStore.images.length === 0) {
             toast.error('请先上传图片')
             return { success: false, completed: 0, failed: 0, errors: ['没有图片'] }
+        }
+
+        // 检查是否启用并行模式
+        const parallelConfig = settingsStore.settings.parallel
+        if (parallelConfig?.enabled && config.scope === 'all') {
+            return executeParallelMode(config)
         }
 
         // 设置状态

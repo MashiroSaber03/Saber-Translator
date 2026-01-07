@@ -12,7 +12,8 @@ import type {
   ProofreadingSettings,
   BoxExpandSettings,
   PreciseMaskSettings,
-  TranslationSettings
+  TranslationSettings,
+  ParallelSettings
 } from '@/types/settings'
 import {
   DEFAULT_FILL_COLOR,
@@ -118,6 +119,12 @@ export const DEFAULT_PRECISE_MASK: PreciseMaskSettings = {
   boxExpandRatio: 20
 }
 
+/** 默认并行翻译设置 */
+export const DEFAULT_PARALLEL: ParallelSettings = {
+  enabled: false,
+  deepLearningLockSize: 1
+}
+
 /** 创建默认翻译设置 */
 export function createDefaultSettings(): TranslationSettings {
   return {
@@ -137,6 +144,7 @@ export function createDefaultSettings(): TranslationSettings {
     boxExpand: { ...DEFAULT_BOX_EXPAND },
     preciseMask: { ...DEFAULT_PRECISE_MASK },
     pdfProcessingMethod: 'backend',
-    showDetectionDebug: false
+    showDetectionDebug: false,
+    parallel: { ...DEFAULT_PARALLEL }
   }
 }
