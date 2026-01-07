@@ -316,6 +316,9 @@ export const useSessionStore = defineStore('session', () => {
         bubbleStates: img.bubbleStates || undefined,
         // 保存手动标注标记
         isManuallyAnnotated: img.isManuallyAnnotated || undefined,
+        // 保存文件夹路径信息
+        relativePath: img.relativePath || undefined,
+        folderPath: img.folderPath || undefined,
         fileName: img.fileName,
         fontSize: img.fontSize,
         autoFontSize: img.autoFontSize,
@@ -464,6 +467,9 @@ export const useSessionStore = defineStore('session', () => {
             : null,
           // 恢复手动标注标记
           isManuallyAnnotated: Boolean(img.isManuallyAnnotated),
+          // 恢复文件夹路径信息
+          relativePath: (img.relativePath as string) || undefined,
+          folderPath: (img.folderPath as string) || undefined,
           fileName: img.fileName || `image-${index + 1}.png`,
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),
