@@ -66,6 +66,8 @@ critical_packages = [
     'tokenizers',
     'huggingface_hub',
     'safetensors',
+    'accelerate',            # GPU device_map 必需
+    'sentencepiece',         # PaddleOCR-VL tokenizer 必需
     'rapidocr_onnxruntime',  # PaddleOCR ONNX 版本
     'onnxruntime',           # ONNX 推理引擎 (GPU/CPU 模块名相同)
     'ultralytics',           # YOLO 检测器
@@ -93,7 +95,7 @@ for pkg in ['rapidocr_onnxruntime', 'unidic_lite', 'fugashi', 'litelama']:
         print(f"[SPEC] collect_data_files({pkg}) 失败: {e}")
 
 # 收集元数据
-for pkg in ['transformers', 'tokenizers', 'huggingface_hub', 'safetensors', 'manga_ocr']:
+for pkg in ['transformers', 'tokenizers', 'huggingface_hub', 'safetensors', 'manga_ocr', 'accelerate', 'sentencepiece']:
     try:
         datas += copy_metadata(pkg)
     except:
@@ -169,6 +171,16 @@ hiddenimports += [
     # interfaces.lama_mpe
     'src.interfaces.lama_mpe_interface',
     
+    # interfaces.ocr_48px (48px OCR 和颜色提取)
+    'src.interfaces.ocr_48px', 'src.interfaces.ocr_48px.core',
+    'src.interfaces.ocr_48px.interface', 'src.interfaces.ocr_48px.xpos',
+    
+    # interfaces.paddleocr_vl (PaddleOCR-VL 日漫专用 OCR)
+    'src.interfaces.paddleocr_vl_interface',
+    
+    # core.color_extractor (颜色提取模块)
+    'src.core.color_extractor',
+    
     # interfaces.ctd (完整 - 包含所有子模块)
     'src.interfaces.ctd', 'src.interfaces.ctd.detector', 'src.interfaces.ctd.basemodel',
     # ctd.utils 子模块
@@ -204,6 +216,9 @@ hiddenimports += [
     'tqdm', 'regex', 'filelock', 'packaging', 'psutil',
     'fugashi', 'unidic_lite', 'jaconv', 'einops', 'kornia', 'omegaconf', 'polars',
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
+    
+    # PaddleOCR-VL / accelerate 依赖
+    'accelerate', 'sentencepiece',
     
     # manga_insight 依赖
     'chromadb', 'edge_tts',

@@ -2,7 +2,6 @@
 # Licensed under The MIT License [see LICENSE for details]
 # 
 # XPOS相对位置编码模块
-# 移植自 manga-image-translator 项目
 
 import einops
 import numpy as np

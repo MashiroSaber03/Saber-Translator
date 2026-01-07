@@ -1,8 +1,7 @@
 """
 统一的文本行合并模块
 
-基于 CTD (manga-image-translator) 的合并算法
-为所有文本检测器提供统一的合并接口
+基于 CTD 的合并算法，为所有文本检测器提供统一的合并接口
 """
 
 import logging

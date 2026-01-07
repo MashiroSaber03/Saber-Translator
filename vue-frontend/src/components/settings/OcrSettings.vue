@@ -217,6 +217,7 @@ import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 const ocrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
   { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
+  { label: 'PaddleOCR-VL (日漫专用)', value: 'paddleocr_vl' },
   { label: '百度OCR', value: 'baidu_ocr' },
   { label: '48px OCR', value: '48px_ocr' },
   { label: 'AI视觉OCR', value: 'ai_vision' }
@@ -381,6 +382,8 @@ function getSourceLanguageHint(): string {
       return 'MangaOCR 专为日语漫画优化，源语言设置不影响识别'
     case 'paddle_ocr':
       return 'PaddleOCR 会根据源语言加载对应的识别模型'
+    case 'paddleocr_vl':
+      return 'PaddleOCR-VL 基于 VLM 微调，专为日语漫画优化，准确率高达 70%'
     case 'baidu_ocr':
       return '百度OCR 使用独立的源语言设置（见下方）'
     case 'ai_vision':

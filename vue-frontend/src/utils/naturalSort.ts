@@ -4,9 +4,8 @@
  * 实现效果：
  * - file1.jpg, file2.jpg, file10.jpg → 按 1, 2, 10 排序
  * - 第1话/001.jpg, 第2话/001.jpg, 第10话/001.jpg → 按 1, 2, 10 排序
- * 
- * 参考: manga-translator-ui/file_service.py 的 _natural_sort_key
  */
+
 
 /**
  * 生成自然排序的键

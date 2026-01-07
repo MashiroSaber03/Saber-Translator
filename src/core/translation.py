@@ -368,7 +368,7 @@ def translate_with_mock(text, target_language, api_key=None, model_name=None, pr
 
 def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_format: bool = False) -> tuple:
     """
-    将多个文本组装成批量翻译的 prompt (复刻自 manga-image-translator)
+    将多个文本组装成批量翻译的 prompt
     
     Args:
         texts: 待翻译的文本列表
@@ -429,7 +429,7 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
 
 def _parse_batch_response(response_text: str, expected_count: int) -> list:
     """
-    解析批量翻译的响应 (复刻自 manga-image-translator)
+    解析批量翻译的响应
     
     Args:
         response_text: LLM 返回的响应文本
@@ -438,7 +438,7 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
     Returns:
         list: 解析后的翻译列表
     """
-    # --- 响应清理 (复刻自 manga-image-translator) ---
+    # --- 响应清理 ---
     
     # 1. 去除 <think>...</think> 标签及内容 (某些模型的思考过程)
     cleaned_text = re.sub(r'(</think>)?<think>.*?</think>', '', response_text, flags=re.DOTALL)
@@ -553,7 +553,7 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
     
     # 支持两种格式:
     # 格式1: {"translations": [{"id": 1, "text": "..."}, ...]}
-    # 格式2: {"TextList": [{"ID": 1, "text": "..."}, ...]} (manga-translator-ui 格式)
+    # 格式2: {"TextList": [{"ID": 1, "text": "..."}, ...]} (备用格式)
     
     if 'translations' in data:
         items = data['translations']
@@ -588,7 +588,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                                custom_base_url: str = None, max_retries: int = 2,
                                use_json_format: bool = False) -> list:
     """
-    使用 LLM 进行批量翻译 (复刻自 manga-image-translator)
+    使用 LLM 进行批量翻译
     
     Args:
         texts: 待翻译的文本列表
@@ -722,7 +722,7 @@ def translate_text_list(texts, target_language, model_provider,
                         rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
                         max_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES):
     """
-    翻译文本列表 - 使用批量翻译策略 (复刻自 manga-image-translator)
+    翻译文本列表 - 使用批量翻译策略
     
     将一页内所有气泡的文本合并为一个请求发送给 LLM，使用 <|n|> 格式编号，
     一次 API 调用翻译整页内容，大幅提升效率和翻译一致性。

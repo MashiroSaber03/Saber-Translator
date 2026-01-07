@@ -20,6 +20,8 @@ freetype-py
 openai
 manga-ocr
 rapidocr-onnxruntime
+sentencepiece  # for PaddleOCR-VL
+transformers==4.55.0  # PaddleOCR-VL compatibility
 
 # Deep Learning (CPU)
 torch

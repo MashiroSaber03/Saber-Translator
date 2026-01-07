@@ -1,6 +1,5 @@
 """
 TextDetection 模型 (ResNet34 + DBNet)
-来自 manga-image-translator detect-20241225.ckpt
 """
 
 import torch

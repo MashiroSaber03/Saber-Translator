@@ -1,6 +1,5 @@
 """
 图像预处理工具
-来自 manga-image-translator
 """
 
 import cv2

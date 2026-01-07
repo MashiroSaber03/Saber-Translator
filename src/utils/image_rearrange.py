@@ -1,7 +1,6 @@
 """
 超长图片切割与拼接模块
 
-复刻 manga-image-translator 的 det_rearrange_forward 实现
 用于处理极端长宽比的漫画图片（如长条漫画、双页漫画）
 """
 

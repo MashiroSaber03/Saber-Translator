@@ -1,7 +1,6 @@
 """
 Default (DBNet ResNet34) 后端
 
-使用 manga-image-translator 的 detect-20241225.ckpt 模型
 只保留模型推理核心逻辑，合并和后处理使用统一架构
 """
 
@@ -33,7 +32,6 @@ class DefaultBackend(BaseTextDetector):
     """
     Default (DBNet ResNet34) 检测后端
     
-    使用 manga-image-translator 的 detect-20241225.ckpt 模型
     输出文本行需要合并 (requires_merge = True)
     """
     
@@ -77,7 +75,7 @@ class DefaultBackend(BaseTextDetector):
         if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"模型文件未找到: {model_path}\n"
-                f"请从 https://github.com/zyddnys/manga-image-translator/releases 下载 detect-20241225.ckpt\n"
+                f"请下载 detect-20241225.ckpt\n"
                 f"并放置到 {self.model_dir} 目录"
             )
         

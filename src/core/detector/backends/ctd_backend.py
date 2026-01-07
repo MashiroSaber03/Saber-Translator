@@ -1,7 +1,6 @@
 """
 CTD (Comic Text Detector) 后端
 
-移植自 manga-image-translator 项目
 只保留模型推理核心逻辑
 """
 
@@ -30,8 +29,6 @@ DEFAULT_CONF_THRESH = 0.4
 class CTDBackend(BaseTextDetector):
     """
     CTD 检测后端
-    
-    100% 遵循 manga-image-translator 的实现
     """
     
     def __init__(self, 

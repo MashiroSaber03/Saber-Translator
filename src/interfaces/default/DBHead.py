@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 DBNet 检测头模块
-来自 manga-image-translator
 """
 
 import torch

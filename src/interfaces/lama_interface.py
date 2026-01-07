@@ -108,8 +108,8 @@ if LAMA_AVAILABLE:
     logger.info(f"LAMA 功能已启用，可用模型: {', '.join(available_models)}")
 else:
     logger.warning("✗ LAMA 功能不可用，请下载模型文件")
-    logger.warning("  LAMA MPE: https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/inpainting_lama_mpe.ckpt")
-    logger.warning("  litelama: https://huggingface.co/anyisalin/big-lama/resolve/main/big-lama.safetensors")
+    logger.warning("  LAMA MPE: inpainting_lama_mpe.ckpt -> models/lama/")
+    logger.warning("  litelama: big-lama.safetensors -> models/lama/")
 
 
 # ============================================================

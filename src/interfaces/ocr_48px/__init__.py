@@ -1,7 +1,6 @@
 """
 48px OCR 模块
 
-基于 manga-image-translator 的 48px OCR 模型
 支持日中英韩等多语言识别，并提供文本颜色提取功能
 
 使用方法:

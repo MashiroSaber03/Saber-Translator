@@ -28,6 +28,9 @@ freetype-py
 openai
 manga-ocr
 rapidocr-onnxruntime
+sentencepiece  # for PaddleOCR-VL
+transformers==4.55.0  # PaddleOCR-VL compatibility
+accelerate  # required for GPU device_map in transformers
 
 # Deep Learning (torch/torchvision not included, install GPU version separately)
 # torch        # Please use the command above to install GPU version

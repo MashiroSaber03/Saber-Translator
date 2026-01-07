@@ -128,9 +128,12 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
     elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID: # 使用常量
         ocr_engine_type = 'AIVision' # 内部使用的类型名
         logger.info(f"使用AI视觉OCR引擎: {ai_vision_provider}")
-    elif ocr_engine == constants.OCR_ENGINE_48PX:  # 新增
+    elif ocr_engine == constants.OCR_ENGINE_48PX:
         ocr_engine_type = '48pxOCR'
         logger.info("使用 48px OCR 引擎")
+    elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
+        ocr_engine_type = 'PaddleOCRVL'
+        logger.info("使用 PaddleOCR-VL 引擎 (日漫专用)")
     else:
         logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
         ocr_engine_type = 'PaddleOCR'
@@ -291,6 +294,20 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
             logger.info("48px OCR 识别完成")
         else:
             logger.error("48px OCR 初始化失败，OCR 步骤跳过")
+    
+    # --- 使用 PaddleOCR-VL (日漫专用) ---
+    elif ocr_engine_type == 'PaddleOCRVL':
+        from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
+        
+        ocr_handler = get_paddleocr_vl_handler()
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        # 如果模型未初始化，尝试初始化；否则重用已初始化的模型
+        if ocr_handler.initialize(device):
+            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble)
+            logger.info("PaddleOCR-VL 识别完成")
+        else:
+            logger.error("PaddleOCR-VL 初始化失败，OCR 步骤跳过")
     
     elif ocr_engine_type == 'AIVision':
         if all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):

@@ -8,7 +8,7 @@ DEFAULT_PROMPT = "你是一个好用的翻译助手。请将我的非中文语�
 DEFAULT_TEXTBOX_PROMPT = "你是一个专业的外语老师。请将我提供的非中文内容连成一句或几句话并翻译成中文。同时要告诉我为什么这么翻译，这句话有哪些知识点。"
 DEFAULT_PROMPT_NAME = "默认提示词"
 
-# --- 批量翻译提示词 (复刻自 manga-image-translator) ---
+# --- 批量翻译提示词 ---
 # 使用三步翻译法，支持多文本批量翻译
 # 注意：如需翻译为其他语言，请修改提示词中的"中文"为目标语言
 BATCH_TRANSLATE_SYSTEM_TEMPLATE = '''忽略之前的所有指令，仅遵循以下定义。
@@ -60,7 +60,7 @@ BATCH_TRANSLATE_SAMPLE_OUTPUT = (
     '<|3|>这家伙怎么看不懂气氛的…？'
 )
 
-# --- 批量翻译 JSON 模式 (参考 manga-translator-ui) ---
+# --- 批量翻译 JSON 模式 ---
 # JSON 模式使用结构化输出，更容易解析但 Token 消耗更高
 BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE = '''忽略之前的所有指令，仅遵循以下定义。
 
@@ -380,6 +380,11 @@ MODEL_48PX_DIR = 'models/ocr_48px'
 MODEL_48PX_CHECKPOINT = 'ocr_ar_48px.ckpt'
 MODEL_48PX_DICT = 'alphabet-all-v7.txt'
 
+# --- PaddleOCR-VL 相关 ---
+OCR_ENGINE_PADDLEOCR_VL = 'paddleocr_vl'
+PADDLEOCR_VL_MODEL_DIR = 'models/paddleocr_vl'
+PADDLEOCR_VL_HF_MODEL = 'jzhang533/PaddleOCR-VL-For-Manga'
+
 # --- 文本检测器相关 ---
 DETECTOR_CTD = 'ctd'
 DETECTOR_YOLO = 'yolo'
@@ -430,7 +435,6 @@ DEFAULT_PROOFREADING_MAX_RETRIES = 2  # AI校对默认重试次数
 USER_SETTINGS_FILE = 'user_settings.json'
 
 # --- 超长图片处理 (Large Image Rearrange) ---
-# 参考 manga-image-translator 的 det_rearrange_forward 实现
 # 当图片满足以下条件时自动启用切割检测:
 #   1. 缩放比 (down_scale_ratio) > LARGE_IMAGE_DOWNSCALE_THRESHOLD
 #   2. 长宽比 (aspect_ratio) > LARGE_IMAGE_ASPECT_THRESHOLD

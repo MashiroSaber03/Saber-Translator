@@ -1,6 +1,5 @@
 # LAMA MPE (Masking Positional Encoding) 模型实现
-# 移植自 manga-image-translator 项目
-# 原始实现: https://github.com/zyddnys/manga-image-translator
+# 基于 LAMA 论文实现，支持位置编码
 # 论文: https://arxiv.org/pdf/2203.00867.pdf (ZITS)
 
 import torch
@@ -647,7 +646,7 @@ class LamaMPEInpainter:
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(
                 f"LAMA MPE 模型文件不存在: {self.model_path}\n"
-                f"请下载模型文件: https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/inpainting_lama_mpe.ckpt\n"
+                f"请下载模型文件: inpainting_lama_mpe.ckpt\n"
                 f"并放置到: models/lama/inpainting_lama_mpe.ckpt"
             )
         

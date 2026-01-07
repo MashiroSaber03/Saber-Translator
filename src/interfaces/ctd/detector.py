@@ -15,7 +15,6 @@ logger = logging.getLogger("CTDDetector")
 def preprocess_img(img, input_size=(1024, 1024), device='cpu', bgr2rgb=True, half=False, to_tensor=True):
     """
     预处理图像用于CTD模型推理
-    与 manga-image-translator 完全一致
     """
     if bgr2rgb:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -33,7 +32,6 @@ def preprocess_img(img, input_size=(1024, 1024), device='cpu', bgr2rgb=True, hal
 def postprocess_mask(img, thresh=None):
     """
     后处理掩码输出
-    与 manga-image-translator 完全一致
     """
     if isinstance(img, torch.Tensor):
         img = img.squeeze_()

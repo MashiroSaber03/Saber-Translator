@@ -1,6 +1,5 @@
 """
 48px OCR 核心模型
-直接移植自 manga-image-translator 项目
 
 包含完整的模型定义和 Beam Search 推理
 """

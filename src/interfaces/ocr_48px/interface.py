@@ -41,7 +41,7 @@ def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, t
     """
     获取变换后的文本行区域，并缩放到目标高度
     
-    按照 manga-image-translator 原版逻辑实现:
+    实现逻辑:
     1. 计算文本行的宽高比
     2. 使用 findHomography 进行透视变换
     3. 如果是竖排，旋转90度
@@ -286,7 +286,7 @@ class Model48pxOCR:
         """
         识别单行文本图像并提取颜色
         
-        基于 manga-image-translator 的颜色提取逻辑：
+        颜色提取逻辑：
         - 模型为每个字符预测前景色和背景色
         - 使用 fg_ind_pred/bg_ind_pred 判断颜色是否有效
         - 对所有有效字符的颜色取平均值
@@ -355,7 +355,7 @@ class Model48pxOCR:
         """
         解码字符序列并聚合颜色
         
-        按照 manga-image-translator 的颜色聚合逻辑：
+        颜色聚合逻辑：
         - 对每个字符，检查 fg_ind_pred[:, 1] > fg_ind_pred[:, 0] 判断是否有前景色
         - 对所有有效的颜色值取平均
         """
@@ -398,7 +398,7 @@ class Model48pxOCR:
                     bg_sum[2] += bg_pred[i, 2].item() * 255
                     bg_count += 1
                 else:
-                    # 如果没有背景色，用前景色作为背景（manga-image-translator 的逻辑）
+                    # 如果没有背景色，用前景色作为背景
                     bg_sum[0] += fg_pred[i, 0].item() * 255
                     bg_sum[1] += fg_pred[i, 1].item() * 255
                     bg_sum[2] += fg_pred[i, 2].item() * 255
