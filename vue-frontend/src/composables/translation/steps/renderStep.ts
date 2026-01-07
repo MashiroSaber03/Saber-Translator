@@ -265,19 +265,25 @@ export async function renderAllImages(
     let successCount = 0
     let failCount = 0
 
+    // 初始进度回调：显示"已完成0张"
+    if (onProgress) {
+        onProgress(0, imagesToRender.length)
+    }
+
     for (let i = 0; i < imagesToRender.length; i++) {
         const imageIndex = imagesToRender[i]
         if (imageIndex === undefined) continue
-
-        if (onProgress) {
-            onProgress(i + 1, imagesToRender.length)
-        }
 
         const result = await renderSingleImage(imageIndex, savedStyles)
         if (result.success) {
             successCount++
         } else {
             failCount++
+        }
+
+        // 渲染完成后更新进度：显示"已完成/总数"
+        if (onProgress) {
+            onProgress(successCount + failCount, imagesToRender.length)
         }
     }
 

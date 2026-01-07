@@ -240,13 +240,11 @@ export async function executeProofreadingTranslation(
         let batchCount = 0
         let sessionId = generateSessionId()
 
-        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            // 更新进度
-            const roundBasePercentage = (roundIdx / proofreading.rounds.length) * 90
-            const batchPercentage = (batchIndex / totalBatches) * (90 / proofreading.rounds.length)
-            const percentage = Math.round(5 + roundBasePercentage + batchPercentage)
-            progress.setPercentage(percentage, `${roundLabel} ${batchIndex + 1}/${totalBatches}`)
+        // 初始进度：从0开始，表示"已完成0个批次"
+        const roundBasePercentage = (roundIdx / proofreading.rounds.length) * 90
+        progress.setPercentage(Math.round(5 + roundBasePercentage), `${roundLabel}: 0/${totalBatches}`)
 
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
             // 检查是否需要重置会话
             if (batchCount >= sessionResetFrequency) {
                 console.log('重置会话上下文')
@@ -291,6 +289,12 @@ export async function executeProofreadingTranslation(
                     }
                 }
             }
+
+            // 批次处理完成后更新进度：显示"已完成/总数"
+            const completedBatches = batchIndex + 1
+            const batchPercentage = (completedBatches / totalBatches) * (90 / proofreading.rounds.length)
+            const percentage = Math.round(5 + roundBasePercentage + batchPercentage)
+            progress.setPercentage(percentage, `${roundLabel}: ${completedBatches}/${totalBatches}`)
         }
     }
 

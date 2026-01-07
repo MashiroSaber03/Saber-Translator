@@ -135,6 +135,7 @@ export function usePipeline() {
         const isRemoveTextMode = config.mode === 'removeText'
         const modeLabel = isRemoveTextMode ? '消除文字' : '翻译'
 
+        // 初始化进度：从0开始，表示"已完成0张"
         reporter.init(imagesToProcess.length, `${modeLabel}: 0/${imagesToProcess.length}`)
         initRateLimiter()
 
@@ -156,8 +157,6 @@ export function usePipeline() {
                 console.log('管线: 批量操作已取消')
                 break
             }
-
-            reporter.update(i + 1, `${modeLabel}: ${i + 1}/${imagesToProcess.length}`)
 
             // 等待限速
             if (rateLimiter.value) {
@@ -183,6 +182,10 @@ export function usePipeline() {
                     errors.push(`图片 ${index}: ${result.error}`)
                 }
             }
+
+            // 处理完成后更新进度：显示"已完成/总数"
+            const processedCount = completed + failed
+            reporter.update(processedCount, `${modeLabel}: ${processedCount}/${imagesToProcess.length}`)
         }
 
         return {
@@ -214,16 +217,16 @@ export function usePipeline() {
         try {
             // Step 1: 消除所有图片文字（准备步骤）
             toast.info('步骤 1/4: 消除所有图片文字...')
-            reporter.setPercentage(0, '消除文字: 0/' + images.length)
+            // 初始进度：从0开始，表示"已完成0张"
+            reporter.setPercentage(0, `消除文字: 0/${images.length}`)
 
             let prepareFailCount = 0
+            let prepareSuccessCount = 0
             const prepareStep = getPrepareStepExecutor()
 
             for (let i = 0; i < images.length; i++) {
                 const image = images[i]
                 if (!image) continue
-
-                reporter.setPercentage(Math.floor((i / images.length) * 25), `消除文字: ${i + 1}/${images.length}`)
 
                 // 等待限速
                 if (rateLimiter.value) {
@@ -239,12 +242,18 @@ export function usePipeline() {
 
                 const result = await prepareStep.execute(context, { skipTranslation: true })
 
-                if (!result.success) {
+                if (result.success) {
+                    prepareSuccessCount++
+                } else {
                     prepareFailCount++
                     if (result.error) {
                         errors.push(`图片 ${i} 消除文字失败: ${result.error}`)
                     }
                 }
+
+                // 处理完成后更新进度：显示"已完成/总数"
+                const processedCount = prepareSuccessCount + prepareFailCount
+                reporter.setPercentage(Math.floor((processedCount / images.length) * 25), `消除文字: ${processedCount}/${images.length}`)
             }
 
             if (prepareFailCount > 0) {
@@ -424,7 +433,7 @@ export function usePipeline() {
 
         try {
             const parallelTranslation = useParallelTranslation()
-            
+
             // 根据config.mode确定并行模式
             let parallelMode: ParallelTranslationMode = 'standard'
             if (config.mode === 'hq') {

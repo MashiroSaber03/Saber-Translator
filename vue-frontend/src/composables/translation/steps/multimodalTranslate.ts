@@ -16,8 +16,7 @@ import { createRateLimiter } from '@/utils/rateLimiter'
 import type {
     TranslationJsonData,
     TranslateStepResult,
-    BatchExecutionContext,
-    ProgressReporter
+    BatchExecutionContext
 } from '../core/types'
 
 /**
@@ -217,11 +216,10 @@ export async function executeMultimodalTranslation(
     let batchCount = 0
     let sessionId = generateSessionId()
 
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-        // 更新进度
-        const percentage = Math.round(50 + (batchIndex / totalBatches) * 40)
-        progress.setPercentage(percentage, `翻译批次 ${batchIndex + 1}/${totalBatches}`)
+    // 初始进度：从0开始，表示"已完成0个批次"
+    progress.setPercentage(50, `翻译批次: 0/${totalBatches}`)
 
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
         // 检查是否需要重置会话
         if (batchCount >= sessionResetFrequency) {
             console.log('重置会话上下文')
@@ -266,6 +264,11 @@ export async function executeMultimodalTranslation(
                 }
             }
         }
+
+        // 批次处理完成后更新进度：显示"已完成/总数"
+        const completedBatches = batchIndex + 1
+        const percentage = Math.round(50 + (completedBatches / totalBatches) * 40)
+        progress.setPercentage(percentage, `翻译批次: ${completedBatches}/${totalBatches}`)
     }
 
     // 合并所有批次结果
