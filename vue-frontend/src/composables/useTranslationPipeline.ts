@@ -1,16 +1,12 @@
 /**
- * 翻译功能组合式函数（重构版）
+ * 翻译功能组合式函数
  * 
  * 使用统一的管线架构，提供所有翻译模式的统一入口
  * 
- * 新架构：
- * - usePipeline: 核心管线执行引擎
+ * 架构：
+ * - usePipeline: 核心管线执行引擎（自动选择顺序/并行模式）
  * - 模式配置: 通过配置区分不同翻译模式
- * - 步骤执行器: 独立的步骤模块
- * 
- * 向后兼容：
- * - 保留原有的 API 接口
- * - 内部使用管线执行
+ * - 原子步骤: detection, ocr, color, translate, aiTranslate, inpaint, render
  */
 
 import { computed } from 'vue'
@@ -28,7 +24,7 @@ import {
 } from './translation'
 
 // 重新导出类型供外部使用
-export type { TranslationProgress, TranslationOptions } from './translation/core/types'
+export type { TranslationProgress } from './translation/core/types'
 
 // ============================================================
 // 组合式函数

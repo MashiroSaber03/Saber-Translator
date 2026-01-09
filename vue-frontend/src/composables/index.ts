@@ -11,8 +11,7 @@ export {
 
 export {
   useTranslation,
-  type TranslationProgress,
-  type TranslationOptions
+  type TranslationProgress
 } from './useTranslationPipeline'
 
 export {
