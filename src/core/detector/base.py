@@ -94,6 +94,8 @@ class BaseTextDetector(ABC):
         expand_bottom: float = 0,
         expand_left: float = 0,
         expand_right: float = 0,
+        sort_method: str = 'smart',  # 排序方法
+        right_to_left: bool = True,  # 阅读方向
         **kwargs
     ) -> DetectionResult:
         """
@@ -103,7 +105,7 @@ class BaseTextDetector(ABC):
         1. 预处理图像
         2. 调用 _detect_raw() 获取原始文本行
         3. 文本行合并（根据 requires_merge 决定）
-        4. 后处理
+        4. 后处理（包括智能排序）
         
         Args:
             image: PIL 图像
@@ -111,6 +113,8 @@ class BaseTextDetector(ABC):
             edge_ratio_threshold: 边缘距离比例阈值
             expand_ratio: 整体扩展比例 (%)
             expand_top/bottom/left/right: 各边额外扩展 (%)
+            sort_method: 排序方法 ('smart', 'area', 'reading', 'none')
+            right_to_left: 是否从右到左阅读（日漫模式）
             
         Returns:
             DetectionResult: 检测结果
@@ -144,14 +148,17 @@ class BaseTextDetector(ABC):
             # 不合并时，每个 TextLine 创建一个 TextBlock
             blocks = [TextBlock(lines=[line]) for line in textlines]
         
-        # 4. 后处理
+        # 4. 后处理（包括智能排序）
         blocks = postprocess_blocks(
             blocks, im_w, im_h,
             expand_ratio=expand_ratio,
             expand_top=expand_top,
             expand_bottom=expand_bottom,
             expand_left=expand_left,
-            expand_right=expand_right
+            expand_right=expand_right,
+            sort_method=sort_method,
+            img=img_cv,  # 传递图像用于分镜检测
+            right_to_left=right_to_left
         )
         
         return DetectionResult(

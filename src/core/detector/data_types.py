@@ -229,6 +229,9 @@ class TextBlock:
     # 标签（用于 YOLO 分类）
     label: str = ""
     
+    # 分镜索引（用于智能排序）
+    panel_index: int = -1
+    
     def __post_init__(self):
         # 如果 lines 是 np.ndarray 列表，转换为 TextLine
         if self.lines and isinstance(self.lines[0], np.ndarray):

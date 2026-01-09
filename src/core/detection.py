@@ -87,17 +87,7 @@ def get_bubble_detection_result(
         # 保存原始文本行（合并前的单行框，用于 debug 显示）
         legacy['raw_lines'] = result.raw_lines
         
-        # 按面积降序排序
-        if legacy['coords']:
-            indices = list(range(len(legacy['coords'])))
-            indices.sort(
-                key=lambda i: (legacy['coords'][i][2] - legacy['coords'][i][0]) * 
-                              (legacy['coords'][i][3] - legacy['coords'][i][1]), 
-                reverse=True
-            )
-            legacy['coords'] = [legacy['coords'][i] for i in indices]
-            legacy['polygons'] = [legacy['polygons'][i] for i in indices] if legacy['polygons'] else []
-            legacy['angles'] = [legacy['angles'][i] for i in indices] if legacy['angles'] else []
+        # 智能排序已在检测器的后处理中完成，这里不再排序
         
         logger.debug(f"获取 {len(legacy['coords'])} 个文本区域")
         return legacy
@@ -398,22 +388,11 @@ def get_bubble_detection_result_with_auto_directions(
                 expand_right
             )
         
-        # 按面积排序
-        if result['coords']:
-            indices = list(range(len(result['coords'])))
-            indices.sort(
-                key=lambda i: (result['coords'][i][2] - result['coords'][i][0]) * 
-                              (result['coords'][i][3] - result['coords'][i][1]), 
-                reverse=True
-            )
-            result['coords'] = [result['coords'][i] for i in indices]
-            result['polygons'] = [result['polygons'][i] for i in indices]
-            result['angles'] = [result['angles'][i] for i in indices]
-            result['auto_directions'] = [result['auto_directions'][i] for i in indices]
-            result['textlines_per_bubble'] = [result['textlines_per_bubble'][i] for i in indices]
+        # 智能排序已在检测器的后处理中完成，这里不再排序
         
         logger.debug(f"检测完成: {len(result['coords'])} 个气泡")
         return result
+
     
     except Exception as e:
         logger.error(f"自动排版检测出错: {e}", exc_info=True)

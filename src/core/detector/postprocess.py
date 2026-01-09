@@ -150,9 +150,9 @@ def expand_blocks(blocks: List[TextBlock],
     return blocks
 
 
-def sort_blocks_by_reading_order(blocks: List[TextBlock], 
+def _simple_reading_order_sort(blocks: List[TextBlock], 
                                   right_to_left: bool = True) -> List[TextBlock]:
-    """按阅读顺序排序（日漫从右到左，从上到下）"""
+    """简单阅读顺序排序（日漫从右到左，从上到下）"""
     if not blocks:
         return blocks
     
@@ -180,7 +180,9 @@ def postprocess_blocks(blocks: List[TextBlock],
                        expand_left: float = 0,
                        expand_right: float = 0,
                        overlap_threshold: float = 0.7,
-                       sort_by_area: bool = True,
+                       sort_method: str = 'smart',  # 'smart', 'area', 'reading', 'none'
+                       img: np.ndarray = None,  # 用于分镜检测
+                       right_to_left: bool = True,  # 阅读方向
                        **kwargs) -> List[TextBlock]:
     """
     完整的后处理流程
@@ -189,6 +191,15 @@ def postprocess_blocks(blocks: List[TextBlock],
     2. 合并重叠度高的块
     3. 扩展边界
     4. 排序
+    
+    Args:
+        sort_method: 排序方法
+            - 'smart': 智能排序（分镜检测 + 标准差分析）
+            - 'area': 按面积排序（默认行为）
+            - 'reading': 按阅读顺序排序
+            - 'none': 不排序
+        img: 原始图像（用于分镜检测，仅 smart 模式需要）
+        right_to_left: 是否从右到左阅读（日漫模式）
     """
     if not blocks:
         return blocks
@@ -206,11 +217,23 @@ def postprocess_blocks(blocks: List[TextBlock],
     )
     
     # 4. 排序
-    if sort_by_area:
+    if sort_method == 'smart':
+        # 智能排序（需要导入）
+        try:
+            from .smart_sort import sort_blocks_by_reading_order
+            blocks = sort_blocks_by_reading_order(blocks, right_to_left=right_to_left, img=img)
+        except ImportError:
+            logger.warning("smart_sort 模块未找到，降级到面积排序")
+            blocks = sort_blocks_by_area(blocks)
+    elif sort_method == 'reading':
+        blocks = _simple_reading_order_sort(blocks, right_to_left=right_to_left)
+    elif sort_method == 'area':
         blocks = sort_blocks_by_area(blocks)
+    # 'none' 则不排序
     
-    logger.info(f"后处理完成: {len(blocks)} 个文本块")
+    logger.debug(f"后处理完成: {len(blocks)} 个文本块（排序: {sort_method}）")
     return blocks
+
 
 
 def postprocess_result(result: DetectionResult,
