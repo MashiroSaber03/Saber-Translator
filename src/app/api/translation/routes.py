@@ -974,6 +974,7 @@ def hq_translate_batch():
     """
     import json as json_module
     import httpx
+    import time  # 用于重试等待
     
     try:
         data = request.get_json()
@@ -991,7 +992,16 @@ def hq_translate_batch():
         no_thinking_method = data.get('no_thinking_method', 'gemini')
         use_stream = data.get('use_stream', False)
         
-        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}")
+        # 重试参数
+        max_retries = data.get('max_retries', 2)
+        try:
+            max_retries = int(max_retries)
+            if max_retries < 0: max_retries = 0
+            if max_retries > 10: max_retries = 10  # 最大限制10次
+        except (ValueError, TypeError):
+            max_retries = 2
+        
+        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, max_retries={max_retries}")
         
         # 参数验证
         if not provider or not api_key or not model_name:
@@ -1018,124 +1028,139 @@ def hq_translate_batch():
         
         logger.info(f"使用 base_url: {base_url}")
         
-        try:
-            # 构建请求参数
-            request_body = {
-                'model': model_name,
-                'messages': messages
-            }
-            
-            # 如果强制 JSON 输出
-            if force_json_output:
-                request_body['response_format'] = {'type': 'json_object'}
-                logger.info("已启用强制 JSON 输出模式")
-            
-            # 根据取消思考方法添加参数
-            if low_reasoning:
-                if no_thinking_method == 'gemini':
-                    request_body['reasoning_effort'] = 'low'
-                    logger.info("使用 Gemini 方式取消思考: reasoning_effort=low")
-                elif no_thinking_method == 'volcano' and provider == 'volcano':
-                    request_body['thinking'] = None
-                    logger.info("使用火山引擎方式取消思考: thinking=null")
-                else:
-                    request_body['reasoning_effort'] = 'low'
-                    logger.info("使用默认方式取消思考: reasoning_effort=low")
-            
-            # 流式调用
-            if use_stream:
-                content = _hq_translate_stream(base_url, api_key, model_name, request_body)
+        # 构建请求参数（在重试循环外部构建，避免重复）
+        api_params = {
+            'model': model_name,
+            'messages': messages
+        }
+        if force_json_output:
+            api_params['response_format'] = {'type': 'json_object'}
+            logger.info("已启用强制 JSON 输出模式")
+        if low_reasoning:
+            if no_thinking_method == 'gemini':
+                api_params['extra_body'] = {'reasoning_effort': 'low'}
+                logger.info("使用 Gemini 方式取消思考: reasoning_effort=low")
+            elif no_thinking_method == 'volcano' and provider == 'volcano':
+                api_params['extra_body'] = {'thinking': None}
+                logger.info("使用火山引擎方式取消思考: thinking=null")
             else:
-                # 非流式调用，使用 OpenAI SDK（使用辅助函数处理代理问题）
-                from src.shared.openai_helpers import create_openai_client
-                client = create_openai_client(api_key=api_key, base_url=base_url)
-                
-                api_params = {
-                    'model': model_name,
-                    'messages': messages
-                }
-                if force_json_output:
-                    api_params['response_format'] = {'type': 'json_object'}
-                if low_reasoning:
-                    if no_thinking_method == 'gemini':
-                        api_params['extra_body'] = {'reasoning_effort': 'low'}
-                    elif no_thinking_method == 'volcano' and provider == 'volcano':
-                        api_params['extra_body'] = {'thinking': None}
-                    else:
-                        api_params['extra_body'] = {'reasoning_effort': 'low'}
-                
-                response = client.chat.completions.create(**api_params)
-                
-                if response and response.choices and len(response.choices) > 0:
-                    content = response.choices[0].message.content
-                else:
-                    logger.error(f"API 响应格式异常: {response}")
-                    return jsonify({'error': 'AI 未返回有效内容'}), 500
-            
-            logger.info(f"高质量翻译 API 调用成功，返回内容长度: {len(content) if content else 0}")
-            
-            # 解析LLM返回的content为结构化的results
-            # content应该是JSON格式的翻译结果
+                api_params['extra_body'] = {'reasoning_effort': 'low'}
+                logger.info("使用默认方式取消思考: reasoning_effort=low")
+        
+        # 流式请求参数（用于 _hq_translate_stream）
+        request_body = {
+            'model': model_name,
+            'messages': messages
+        }
+        if force_json_output:
+            request_body['response_format'] = {'type': 'json_object'}
+        if low_reasoning:
+            if no_thinking_method == 'gemini':
+                request_body['reasoning_effort'] = 'low'
+            elif no_thinking_method == 'volcano' and provider == 'volcano':
+                request_body['thinking'] = None
+            else:
+                request_body['reasoning_effort'] = 'low'
+        
+        # === 重试循环 ===
+        last_error_msg = None
+        for attempt in range(max_retries + 1):
             try:
-                import json as json_module
-                # 尝试解析JSON
-                if force_json_output:
-                    parsed_content = json_module.loads(content)
+                content = None
+                
+                # 流式调用
+                if use_stream:
+                    content = _hq_translate_stream(base_url, api_key, model_name, request_body)
                 else:
-                    # 非JSON模式，尝试从文本中提取JSON
-                    # 查找第一个 { 和最后一个 }
-                    start_idx = content.find('{')
-                    end_idx = content.rfind('}')
-                    if start_idx != -1 and end_idx != -1:
-                        json_str = content[start_idx:end_idx+1]
-                        parsed_content = json_module.loads(json_str)
+                    # 非流式调用，使用 OpenAI SDK
+                    from src.shared.openai_helpers import create_openai_client
+                    client = create_openai_client(api_key=api_key, base_url=base_url)
+                    
+                    response = client.chat.completions.create(**api_params)
+                    
+                    if response and response.choices and len(response.choices) > 0:
+                        content = response.choices[0].message.content
                     else:
-                        # 无法解析，返回原始content
+                        raise ValueError("AI 未返回有效内容")
+                
+                if not content:
+                    raise ValueError("AI 返回内容为空")
+                
+                logger.info(f"高质量翻译 API 调用成功 (尝试 {attempt + 1}/{max_retries + 1})，返回内容长度: {len(content)}")
+                
+                # 解析LLM返回的content为结构化的results
+                try:
+                    # 尝试解析JSON
+                    if force_json_output:
+                        parsed_content = json_module.loads(content)
+                    else:
+                        # 非JSON模式，尝试从文本中提取JSON
+                        start_idx = content.find('{')
+                        end_idx = content.rfind('}')
+                        if start_idx != -1 and end_idx != -1:
+                            json_str = content[start_idx:end_idx+1]
+                            parsed_content = json_module.loads(json_str)
+                        else:
+                            # 无法解析，返回原始content
+                            return jsonify({
+                                'success': True,
+                                'content': content
+                            })
+                    
+                    # 将解析后的内容转换为results格式
+                    if isinstance(parsed_content, dict) and 'images' in parsed_content:
+                        results = parsed_content['images']
+                    elif isinstance(parsed_content, list):
+                        results = parsed_content
+                    else:
+                        # 无法识别的格式，返回原始content
                         return jsonify({
                             'success': True,
                             'content': content
                         })
-                
-                # 将解析后的内容转换为results格式
-                # 期望parsed_content是: { "images": [{ "index": 0, "translations": [...] }] }
-                if isinstance(parsed_content, dict) and 'images' in parsed_content:
-                    results = parsed_content['images']
-                elif isinstance(parsed_content, list):
-                    results = parsed_content
-                else:
-                    # 无法识别的格式，返回原始content
+                    
+                    return jsonify({
+                        'success': True,
+                        'results': results
+                    })
+                    
+                except (json_module.JSONDecodeError, ValueError) as parse_error:
+                    logger.warning(f"无法解析LLM返回的JSON: {parse_error}")
+                    # 解析失败，返回原始content
                     return jsonify({
                         'success': True,
                         'content': content
                     })
+                    
+            except Exception as api_error:
+                error_msg = str(api_error)
+                last_error_msg = error_msg
+                logger.error(f"[尝试 {attempt + 1}/{max_retries + 1}] 调用 AI API 失败: {error_msg}")
                 
-                return jsonify({
-                    'success': True,
-                    'results': results
-                })
+                # 尝试提取更详细的错误信息
+                if hasattr(api_error, 'response') and api_error.response is not None:
+                    try:
+                        error_detail = api_error.response.json()
+                        logger.error(f"API 错误详情: {error_detail}")
+                        last_error_msg = str(error_detail)
+                    except:
+                        pass
                 
-            except (json_module.JSONDecodeError, ValueError) as parse_error:
-                logger.warning(f"无法解析LLM返回的JSON: {parse_error}")
-                # 解析失败，返回原始content
-                return jsonify({
-                    'success': True,
-                    'content': content
-                })
+                # 检查是否为凭证/配置错误（不重试）
+                error_lower = error_msg.lower()
+                if any(keyword in error_lower for keyword in ['api key', 'authentication', 'unauthorized', 'invalid_api_key', 'base url']):
+                    logger.error("检测到凭证或配置错误，停止重试")
+                    break
                 
-        except Exception as api_error:
-            error_msg = str(api_error)
-            logger.error(f"调用 AI API 失败: {error_msg}", exc_info=True)
-            
-            # 尝试提取更详细的错误信息
-            if hasattr(api_error, 'response') and api_error.response is not None:
-                try:
-                    error_detail = api_error.response.json()
-                    logger.error(f"API 错误详情: {error_detail}")
-                    error_msg = str(error_detail)
-                except:
-                    pass
-            
-            return jsonify({'error': f'AI API 调用失败: {error_msg}'}), 500
+                # 如果还有重试次数，等待后继续
+                if attempt < max_retries:
+                    logger.info(f"等待 1 秒后重试...")
+                    time.sleep(1)
+                    continue
+        
+        # 所有重试都失败
+        logger.error(f"高质量翻译所有 {max_retries + 1} 次尝试都失败")
+        return jsonify({'error': f'AI API 调用失败: {last_error_msg}'}), 500
     
     except Exception as e:
         logger.error(f"处理高质量翻译批量请求时出错: {e}", exc_info=True)

@@ -117,6 +117,7 @@ export interface ProofreadingRound {
   batchSize: number
   sessionReset: number
   rpmLimit: number
+  maxRetries?: number  // 最大重试次数（可选，默认使用全局设置）
   lowReasoning: boolean
   noThinkingMethod: NoThinkingMethod
   forceJsonOutput: boolean
