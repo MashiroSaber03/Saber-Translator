@@ -6,7 +6,6 @@
 import { apiClient } from './client'
 import type {
   ApiResponse,
-  TranslateImageResponse,
   ReRenderResponse,
   DetectBoxesResponse,
   OcrSingleBubbleResponse,
@@ -16,90 +15,7 @@ import type {
   BubbleCoords,
 } from '@/types'
 
-// ==================== 翻译请求参数类型 ====================
-
-/**
- * 翻译图片请求参数
- * 字段命名与后端 TranslationRequest.from_dict() 保持一致
- */
-export interface TranslateImageParams {
-  // 图片数据
-  image: string // Base64 图片数据（纯 Base64，不含 DataURL 前缀）
-
-  // OCR 设置
-  ocr_engine: string // OCR 引擎: 'manga_ocr' | 'baidu_ocr' | 'ai_vision'
-  source_language?: string // 源语言
-
-  // 百度 OCR 设置（后端字段名）
-  baidu_api_key?: string
-  baidu_secret_key?: string
-  baidu_version?: string
-  baidu_ocr_language?: string
-
-  // AI 视觉 OCR 设置（后端字段名）
-  ai_vision_provider?: string
-  ai_vision_api_key?: string
-  ai_vision_model_name?: string
-  ai_vision_ocr_prompt?: string
-  rpm_limit_ai_vision_ocr?: number
-  custom_ai_vision_base_url?: string
-  use_json_format_ai_vision_ocr?: boolean
-
-  // 翻译服务设置（后端使用 model_provider, model_name, api_key）
-  model_provider: string
-  api_key?: string
-  model_name?: string
-  custom_base_url?: string
-  target_language: string
-  prompt_content?: string
-  textbox_prompt_content?: string
-  use_textbox_prompt?: boolean
-  rpm_limit_translation?: number
-  max_retries?: number
-  use_json_format_translation?: boolean
-
-  // 文字检测设置（后端使用 detector_type）
-  detector_type?: string
-  box_expand_ratio?: number
-  box_expand_top?: number
-  box_expand_bottom?: number
-  box_expand_left?: number
-  box_expand_right?: number
-
-  // 精确文字掩膜设置（后端使用驼峰命名）
-  usePreciseMask?: boolean
-  maskDilateSize?: number
-  maskBoxExpandRatio?: number
-
-  // 文字样式设置（后端使用驼峰命名）
-  fontSize?: number | 'auto'
-  autoFontSize?: boolean
-  fontFamily?: string
-  textDirection?: string
-  autoTextDirection?: boolean
-  textColor?: string
-  fillColor?: string
-  strokeEnabled?: boolean
-  strokeColor?: string
-  strokeWidth?: number
-
-  // 智能颜色识别设置
-  useAutoTextColor?: boolean  // 是否使用自动识别的文字颜色
-
-  // 修复方式（后端使用 use_lama + lamaModel）
-  use_inpainting?: boolean
-  use_lama?: boolean
-  lamaModel?: string // 'lama_mpe' | 'litelama'
-
-  // 调试选项（后端使用驼峰命名 showDetectionDebug）
-  showDetectionDebug?: boolean
-
-  // 特殊模式
-  remove_only?: boolean // 仅消除文字，不翻译
-  skip_translation?: boolean // 跳过翻译（仅消除文字时使用）
-  bubble_coords?: BubbleCoords[] // 已有气泡坐标（后端字段名）
-  bubble_angles?: number[] // 气泡旋转角度
-}
+// ==================== 请求参数类型 ====================
 
 /**
  * 重新渲染请求参数（匹配后端API格式）
@@ -200,17 +116,7 @@ export interface TranslateSingleTextParams {
   prompt_content?: string
 }
 
-// ==================== 翻译 API ====================
-
-/**
- * 翻译图片
- * @param params 翻译参数
- */
-export async function translateImage(
-  params: TranslateImageParams
-): Promise<TranslateImageResponse> {
-  return apiClient.post<TranslateImageResponse>('/api/translate_image', params)
-}
+// ==================== 渲染 API ====================
 
 /**
  * 重新渲染图片

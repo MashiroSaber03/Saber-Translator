@@ -244,61 +244,8 @@ class Validator:
         return True
 
 
-class TranslationRequestValidator:
-    """翻译请求验证器"""
-    
-    @staticmethod
-    def validate(data: dict) -> Tuple[bool, Optional[str]]:
-        """
-        验证翻译请求数据
-        
-        Args:
-            data: 请求数据字典
-            
-        Returns:
-            (是否有效, 错误消息)
-        """
-        try:
-            # 验证必需字段
-            required_fields = ['image', 'target_language', 'model_provider']
-            for field in required_fields:
-                if field not in data or not data[field]:
-                    return False, f"缺少必需字段: {field}"
-            
-            # 验证语言代码
-            target_lang = data.get('target_language')
-            if target_lang:
-                Validator.validate_language_code(target_lang)
-            
-            # 验证字体大小
-            font_size = data.get('fontSize')
-            if font_size:
-                Validator.validate_font_size(font_size)
-            
-            # 验证颜色
-            if 'text_color' in data:
-                Validator.validate_color(data['text_color'])
-            
-            if 'fill_color' in data:
-                Validator.validate_color(data['fill_color'])
-            
-            # 验证坐标
-            if 'bubble_coords' in data and data['bubble_coords']:
-                Validator.validate_coordinates(data['bubble_coords'])
-            
-            # 验证RPM限制
-            if 'rpm_limit_translation' in data:
-                Validator.validate_rpm_limit(int(data['rpm_limit_translation']))
-            
-            if 'rpm_limit_ai_vision_ocr' in data:
-                Validator.validate_rpm_limit(int(data['rpm_limit_ai_vision_ocr']))
-            
-            return True, None
-            
-        except ValidationException as e:
-            return False, str(e)
-        except Exception as e:
-            return False, f"验证时发生错误: {str(e)}"
+# TranslationRequestValidator 已删除（用于已废弃的 translate_image API）
+
 
 
 # 便捷函数

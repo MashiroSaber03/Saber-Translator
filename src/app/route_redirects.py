@@ -24,7 +24,6 @@ REDIRECT_MAPPING = {
     '/delete_textbox_prompt': '/api/delete_textbox_prompt',
     
     # 翻译API
-    '/translate_image': '/api/translate_image',
     '/re_render_image': '/api/re_render_image',
     '/re_render_single_bubble': '/api/re_render_single_bubble',
     '/apply_settings_to_all_images': '/api/apply_settings_to_all_images',

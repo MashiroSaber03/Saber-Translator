@@ -107,7 +107,6 @@ describe('路由路径解析属性测试', () => {
   it('API 路径应该被正确分类为 API 路由', () => {
     // 定义常见的 API 端点
     const apiEndpoints = [
-      'translate_image',
       'bookshelf/books',
       'sessions/save',
       'plugins',
@@ -200,7 +199,6 @@ describe('路由路径解析属性测试', () => {
       '/translate',
       '/reader',
       '/insight',
-      '/api/translate_image',
       '/api/bookshelf/books',
       '/static/css/style.css',
       '/js/main.abc123.js',     // Vue JS 资源

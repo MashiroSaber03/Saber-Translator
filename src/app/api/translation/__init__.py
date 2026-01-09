@@ -10,26 +10,21 @@ import base64
 import io
 import traceback
 import logging
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-# 导入核心处理函数
-from src.core.processing import process_image_translation
+# 导入核心处理函数（process_image_translation 已被删除，使用原子步骤代替）
 from src.core.rendering import (
     re_render_text_in_bubbles, 
     render_single_bubble,
-    render_bubbles_unified,
     re_render_with_states,
-    render_single_bubble_unified
 )
 from src.core.translation import translate_single_text
 from src.interfaces.lama_interface import LAMA_AVAILABLE
 
 # 导入统一状态模型
 from src.core.config_models import (
-    TranslationRequest,
     BubbleState,
     bubble_states_to_api_response,
-    bubble_states_from_api_request
 )
 
 # 导入共享模块

@@ -26,26 +26,6 @@ export interface ApiError {
 }
 
 /**
- * 翻译 API 响应
- * 后端成功时返回 translated_image 等字段，失败时返回 error
- * 注意：后端成功响应不包含 success 字段
- */
-export interface TranslateImageResponse {
-  success?: boolean
-  translated_image?: string
-  clean_image?: string
-  bubble_coords?: BubbleCoords[]
-  bubble_states?: BubbleState[]
-  original_texts?: string[]
-  bubble_texts?: string[]
-  textbox_texts?: string[]
-  bubble_angles?: number[]
-  /** 自动检测的排版方向数组（'v' 表示垂直，'h' 表示水平）- 后端基于文本行分析 */
-  auto_directions?: ('v' | 'h')[]
-  error?: string
-}
-
-/**
  * 重新渲染 API 响应
  */
 export interface ReRenderResponse {
