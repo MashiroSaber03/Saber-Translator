@@ -973,7 +973,8 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       model_name: settings.translation.modelName,
       custom_base_url: settings.translation.customBaseUrl,
       target_language: settings.targetLanguage,
-      prompt_content: settings.translatePrompt
+      // 单气泡翻译不使用批量翻译提示词，传undefined让后端使用DEFAULT_PROMPT
+      prompt_content: undefined
     })
 
     if (response.success && response.data?.translated_text) {
