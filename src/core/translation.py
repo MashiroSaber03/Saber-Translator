@@ -26,6 +26,11 @@ youdao_translate = YoudaoTranslateInterface()
 logger = logging.getLogger("CoreTranslation")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# --- 自定义异常 ---
+class TranslationParseException(Exception):
+    """批量翻译响应解析失败异常，触发重试"""
+    pass
+
 # --- rpm Limiting Globals for Translation ---
 _translation_rpm_last_reset_time_container = [0]
 _translation_rpm_request_count_container = [0]
@@ -437,6 +442,9 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
         
     Returns:
         list: 解析后的翻译列表
+        
+    Raises:
+        TranslationParseException: 当无法解析出有效内容时抛出，触发重试
     """
     # --- 响应清理 ---
     
@@ -465,6 +473,13 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
                 prev_match = re.search(r'<\|(\d+)\|>', lines[max_index_line])
                 if prev_match and current_index > int(prev_match.group(1)):
                     max_index_line = index
+    
+    # 🔍 新增：检测是否完全无法找到编号格式
+    if not has_numeric_prefix:
+        logger.warning(f"响应中未找到 <|n|> 格式的编号，无法解析。响应内容: {response_text[:200]}...")
+        raise TranslationParseException(
+            f"无法在响应中找到批量翻译的编号格式 <|n|>，AI 可能未按要求输出"
+        )
     
     if has_numeric_prefix and min_index_line != -1:
         # 只保留从 <|1|> 开始到最大编号行的内容
@@ -509,7 +524,13 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
     if translations and not translations[0]:
         translations = translations[1:]
     
+    # 🔍 新增：验证解析结果
+    if not translations:
+        logger.warning("解析后未获取到任何翻译内容")
+        raise TranslationParseException("解析后的翻译列表为空，AI 可能返回了无效内容")
+    
     return translations
+
 
 
 def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
@@ -522,6 +543,9 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
         
     Returns:
         list: 解析后的翻译列表
+        
+    Raises:
+        TranslationParseException: 当 JSON 解析失败时抛出，触发重试
     """
     import json
     
@@ -538,15 +562,17 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
         if json_match:
             json_str = json_match.group(0)
         else:
-            logger.warning("无法从响应中提取 JSON，回退到纯文本解析")
-            return _parse_batch_response(response_text, expected_count)
+            logger.warning("无法从响应中提取 JSON")
+            # 🔍 修改：不再降级，直接抛出异常
+            raise TranslationParseException("响应中未找到 JSON 格式的内容")
     
     # 3. 解析 JSON
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON 解析失败: {e}，回退到纯文本解析")
-        return _parse_batch_response(response_text, expected_count)
+        logger.warning(f"JSON 解析失败: {e}")
+        # 🔍 修改：不再降级，直接抛出异常
+        raise TranslationParseException(f"JSON 解析失败: {e}")
     
     # 4. 提取翻译结果
     translations = []
@@ -561,7 +587,10 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
         items = data['TextList']
     else:
         logger.warning("JSON 格式不正确，找不到 translations 或 TextList 字段")
-        return _parse_batch_response(response_text, expected_count)
+        # 🔍 修改：不再降级，直接抛出异常
+        raise TranslationParseException(
+            f"JSON 格式不正确，期望包含 'translations' 或 'TextList' 字段，实际收到: {list(data.keys())}"
+        )
     
     # 按 id 排序并提取文本
     try:
@@ -576,8 +605,9 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
         translations = [t[1] for t in translations]
         
     except Exception as e:
-        logger.warning(f"提取翻译结果失败: {e}，回退到纯文本解析")
-        return _parse_batch_response(response_text, expected_count)
+        logger.warning(f"提取翻译结果失败: {e}")
+        # 🔍 修改：不再降级，直接抛出异常
+        raise TranslationParseException(f"从 JSON 提取翻译结果失败: {e}")
     
     logger.debug(f"JSON 模式解析成功: {len(translations)} 条翻译")
     return translations
@@ -634,7 +664,10 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
     
     # 重试循环
     for attempt in range(max_retries + 1):
+        response_text = None  # 初始化响应文本
+        
         try:
+            # === API 调用阶段 ===
             if model_provider == 'ollama':
                 # Ollama 特殊处理
                 url = "http://localhost:11434/api/chat"
@@ -673,12 +706,14 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
             
             logger.debug(f"批量翻译响应:\n{response_text[:500]}...")
             
-            # 解析响应 (根据模式选择解析函数)
+            # === 解析阶段 ===
+            # 根据模式选择解析函数（可能抛出 TranslationParseException）
             if use_json_format:
                 translations = _parse_batch_json_response(response_text, len(texts))
             else:
                 translations = _parse_batch_response(response_text, len(texts))
             
+            # === 验证阶段 ===
             # 验证响应数量
             if len(translations) != len(texts):
                 logger.warning(f"[尝试 {attempt+1}/{max_retries+1}] 翻译数量不匹配: 期望 {len(texts)}, 实际 {len(translations)}")
@@ -696,20 +731,35 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
             if empty_count > 0:
                 logger.warning(f"[尝试 {attempt+1}/{max_retries+1}] 检测到 {empty_count} 个空翻译")
                 if attempt < max_retries:
+                    time.sleep(1)
                     continue  # 重试
             
+            # === 成功阶段 ===
             # 返回结果
             for i, trans in enumerate(translations):
                 results[i] = trans if trans else texts[i]
             
             logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
             return results
-            
+        
+        # 🔍 新增：专门捕获解析异常（优先级高，先捕获）
+        except TranslationParseException as parse_error:
+            logger.error(f"[尝试 {attempt+1}/{max_retries+1}] 批量翻译解析失败: {parse_error}")
+            if attempt < max_retries:
+                logger.info(f"解析失败，等待 1 秒后重试...")
+                time.sleep(1)
+                continue  # 重试整个流程
+            else:
+                # 重试用完，记录错误并返回原文
+                logger.error(f"所有重试都失败，解析错误: {parse_error}")
+                break
+        
+        # API 调用或其他异常
         except Exception as e:
             logger.error(f"[尝试 {attempt+1}/{max_retries+1}] 批量翻译失败: {e}", exc_info=True)
             if attempt < max_retries:
                 time.sleep(1)
-                continue
+                continue  # 重试
     
     # 所有重试都失败，返回原文
     logger.error("批量翻译所有重试都失败，返回原文")
