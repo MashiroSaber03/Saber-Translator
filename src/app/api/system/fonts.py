@@ -213,7 +213,7 @@ def upload_font():
             'success': True,
             'file_name': safe_filename,
             'display_name': display_name,
-            'path': f'fonts/{safe_filename}',
+            'fontPath': f'fonts/{safe_filename}',
             'message': f'字体 "{display_name}" 上传成功'
         })
         

@@ -172,7 +172,7 @@ def get_plugin_default_states():
     """获取所有插件的默认启用/禁用状态"""
     try:
         plugin_mgr = get_plugin_manager()
-        return jsonify({'success': True, 'states': plugin_mgr.plugin_default_states})
+        return jsonify({'success': True, 'default_states': plugin_mgr.plugin_default_states})
     except Exception as e:
         logger.error(f"获取插件默认状态失败: {e}", exc_info=True)
         return jsonify({'success': False, 'error': '无法获取插件默认状态'}), 500
