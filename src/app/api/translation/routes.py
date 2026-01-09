@@ -1064,10 +1064,13 @@ def hq_translate_batch():
         
         # === 重试循环 ===
         last_error_msg = None
+        last_raw_content = None  # 保存最后一次的原始内容（用于解析失败时返回）
+        
         for attempt in range(max_retries + 1):
+            content = None
+            
+            # === 第一阶段：API 调用 ===
             try:
-                content = None
-                
                 # 流式调用
                 if use_stream:
                     content = _hq_translate_stream(base_url, api_key, model_name, request_body)
@@ -1081,57 +1084,14 @@ def hq_translate_batch():
                     if response and response.choices and len(response.choices) > 0:
                         content = response.choices[0].message.content
                     else:
-                        raise ValueError("AI 未返回有效内容")
+                        raise Exception("AI 未返回有效内容")
                 
                 if not content:
-                    raise ValueError("AI 返回内容为空")
+                    raise Exception("AI 返回内容为空")
                 
+                last_raw_content = content  # 保存原始内容
                 logger.info(f"高质量翻译 API 调用成功 (尝试 {attempt + 1}/{max_retries + 1})，返回内容长度: {len(content)}")
                 
-                # 解析LLM返回的content为结构化的results
-                try:
-                    # 尝试解析JSON
-                    if force_json_output:
-                        parsed_content = json_module.loads(content)
-                    else:
-                        # 非JSON模式，尝试从文本中提取JSON
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}')
-                        if start_idx != -1 and end_idx != -1:
-                            json_str = content[start_idx:end_idx+1]
-                            parsed_content = json_module.loads(json_str)
-                        else:
-                            # 无法解析，返回原始content
-                            return jsonify({
-                                'success': True,
-                                'content': content
-                            })
-                    
-                    # 将解析后的内容转换为results格式
-                    if isinstance(parsed_content, dict) and 'images' in parsed_content:
-                        results = parsed_content['images']
-                    elif isinstance(parsed_content, list):
-                        results = parsed_content
-                    else:
-                        # 无法识别的格式，返回原始content
-                        return jsonify({
-                            'success': True,
-                            'content': content
-                        })
-                    
-                    return jsonify({
-                        'success': True,
-                        'results': results
-                    })
-                    
-                except (json_module.JSONDecodeError, ValueError) as parse_error:
-                    logger.warning(f"无法解析LLM返回的JSON: {parse_error}")
-                    # 解析失败，返回原始content
-                    return jsonify({
-                        'success': True,
-                        'content': content
-                    })
-                    
             except Exception as api_error:
                 error_msg = str(api_error)
                 last_error_msg = error_msg
@@ -1157,9 +1117,72 @@ def hq_translate_batch():
                     logger.info(f"等待 1 秒后重试...")
                     time.sleep(1)
                     continue
+                else:
+                    # 已用完重试次数，跳出循环
+                    break
+            
+            # === 第二阶段：JSON 解析（只有 API 调用成功才会执行到这里） ===
+            try:
+                parsed_content = None
+                
+                if force_json_output:
+                    # 强制 JSON 模式：必须解析成功
+                    parsed_content = json_module.loads(content)
+                else:
+                    # 非 JSON 模式：尝试从文本中提取 JSON
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}')
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = content[start_idx:end_idx+1]
+                        parsed_content = json_module.loads(json_str)
+                    else:
+                        # 找不到 JSON 块，也当作解析失败
+                        raise json_module.JSONDecodeError("返回内容中未找到有效的 JSON 块", content, 0)
+                
+                # 将解析后的内容转换为 results 格式
+                if isinstance(parsed_content, dict) and 'images' in parsed_content:
+                    results = parsed_content['images']
+                elif isinstance(parsed_content, list):
+                    results = parsed_content
+                else:
+                    # 格式不正确，抛出异常触发重试
+                    raise json_module.JSONDecodeError(f"JSON 格式不正确，期望包含 'images' 字段或数组，实际收到: {type(parsed_content)}", str(parsed_content), 0)
+                
+                # 验证 results 是列表
+                if not isinstance(results, list):
+                    raise json_module.JSONDecodeError(f"results 不是列表类型，实际收到: {type(results)}", str(results), 0)
+                
+                # 解析成功，返回结果
+                logger.info(f"JSON 解析成功，获取到 {len(results)} 条结果")
+                return jsonify({
+                    'success': True,
+                    'results': results
+                })
+                    
+            except json_module.JSONDecodeError as parse_error:
+                # JSON 解析失败，触发重试
+                error_msg = f"JSON 解析失败: {parse_error}"
+                last_error_msg = error_msg
+                logger.warning(f"[尝试 {attempt + 1}/{max_retries + 1}] {error_msg}")
+                
+                # 如果还有重试次数，等待后继续
+                if attempt < max_retries:
+                    logger.info(f"等待 1 秒后重试...")
+                    time.sleep(1)
+                    continue
         
         # 所有重试都失败
         logger.error(f"高质量翻译所有 {max_retries + 1} 次尝试都失败")
+        
+        # 如果有原始内容，返回原始内容作为降级方案
+        if last_raw_content:
+            logger.info("返回最后一次的原始内容作为降级方案")
+            return jsonify({
+                'success': True,
+                'content': last_raw_content,
+                'warning': f'JSON 解析失败，返回原始内容: {last_error_msg}'
+            })
+        
         return jsonify({'error': f'AI API 调用失败: {last_error_msg}'}), 500
     
     except Exception as e:
