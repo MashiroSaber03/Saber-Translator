@@ -37,7 +37,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   // 渲染参数
   fontSize: 25,
   fontFamily: 'fonts/STSONG.TTF',
-  textDirection: 'auto',
+  textDirection: 'vertical',  // 简化设计：不再使用 'auto'，始终是具体方向
   autoTextDirection: 'vertical',
   textColor: '#000000',
   fillColor: DEFAULT_FILL_COLOR,
@@ -128,8 +128,7 @@ export function createBubbleStatesFromResponse(
 
   // 否则根据坐标创建新的状态
   return bubble_coords.map((coords, index) => {
-    // 【复刻原版】优先使用后端返回的 auto_directions（基于文本行分析的多数投票结果）
-    // 只有在后端未返回时才降级为宽高比判断
+    // 【简化设计】获取后端检测的方向（备份）
     let autoDirection: TextDirection
     if (auto_directions[index]) {
       autoDirection = auto_directions[index] === 'v' ? 'vertical' : 'horizontal'
@@ -137,15 +136,26 @@ export function createBubbleStatesFromResponse(
       // 降级方案：根据合并后大框的宽高比判断
       autoDirection = detectTextDirection(coords)
     }
-    
+
+    // 【简化设计】textDirection 直接使用具体方向值：
+    // - 如果全局设置是 'auto'，使用检测结果
+    // - 否则使用全局设置的值
+    const globalTextDir = globalDefaults?.textDirection
+    const textDirection: TextDirection =
+      (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
+        ? globalTextDir
+        : autoDirection
+
     return createBubbleState({
       coords,
       originalText: original_texts[index] || '',
       translatedText: bubble_texts[index] || '',
       textboxText: textbox_texts[index] || '',
       rotationAngle: bubble_angles[index] || 0,
-      autoTextDirection: autoDirection,
-      ...globalDefaults
+      ...globalDefaults,
+      // 这两个必须在 globalDefaults 之后，确保不被覆盖
+      autoTextDirection: autoDirection,  // 备份检测结果
+      textDirection: textDirection,       // 渲染用的方向
     })
   })
 }
@@ -453,10 +463,19 @@ export function initBubbleStates(
   // 根据坐标创建新的状态
   return coords.map((coord) => {
     const autoDirection = detectTextDirection(coord)
+
+    // 【简化设计】textDirection 直接使用具体方向值
+    const globalTextDir = globalDefaults?.textDirection
+    const textDirection: TextDirection =
+      (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
+        ? globalTextDir
+        : autoDirection
+
     return createBubbleState({
       coords: coord,
+      ...globalDefaults,
       autoTextDirection: autoDirection,
-      ...globalDefaults
+      textDirection: textDirection,
     })
   })
 }

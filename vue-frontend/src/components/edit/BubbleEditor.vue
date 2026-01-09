@@ -425,7 +425,7 @@ const defaultBubble: BubbleState = {
   textboxText: '',
   fontSize: 24,
   fontFamily: 'fonts/STSONG.TTF',
-  textDirection: 'auto',
+  textDirection: 'vertical',  // 简化设计：不再使用 'auto'
   autoTextDirection: 'vertical',
   textColor: '#231816',
   fillColor: '#FFFFFF',
@@ -445,7 +445,7 @@ const localOriginalText = ref('')
 const localTranslatedText = ref('')
 const localFontSize = ref(24)
 const localFontFamily = ref('fonts/STSONG.TTF')
-const localTextDirection = ref<TextDirection>('auto')
+const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
 const localTextColor = ref('#231816')
 const localFillColor = ref('#FFFFFF')
 const localStrokeEnabled = ref(true)

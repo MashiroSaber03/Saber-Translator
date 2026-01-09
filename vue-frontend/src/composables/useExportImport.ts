@@ -333,8 +333,8 @@ export function useExportImport() {
               bubbleState.translatedText = translated
               bubbleState.textboxText = translated
             }
-            // 更新排版方向
-            bubbleState.textDirection = textDirection as 'vertical' | 'horizontal' | 'auto'
+            // 更新排版方向（已经是 'vertical' | 'horizontal'）
+            bubbleState.textDirection = textDirection
 
             imageUpdated = true
             updatedBubbles++

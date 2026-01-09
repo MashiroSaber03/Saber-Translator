@@ -337,9 +337,12 @@ export function useSequentialPipeline() {
                         translated: settings.useTextboxPrompt
                             ? (state.textboxText || state.translatedText || '')
                             : (state.translatedText || ''),
-                        textDirection: state.textDirection !== 'auto'
+                        // 【简化设计】直接使用 textDirection，它已经是具体方向值
+                        textDirection: (state.textDirection === 'vertical' || state.textDirection === 'horizontal')
                             ? state.textDirection
-                            : (state.autoTextDirection !== 'auto' ? state.autoTextDirection : 'vertical')
+                            : (state.autoTextDirection === 'vertical' || state.autoTextDirection === 'horizontal')
+                                ? state.autoTextDirection
+                                : 'vertical'
                     }))
                 }
             } else {
@@ -504,29 +507,50 @@ export function useSequentialPipeline() {
 
         const { textStyle } = settingsStore.settings
 
+        // 【简化设计】计算 textDirection：
+        // - 如果全局设置是 'auto'，使用检测结果
+        // - 否则使用全局设置的值
+        const globalTextDir = savedTextStyles?.autoTextDirection
+            ? 'auto'  // autoTextDirection 为 true 表示用户选择了 'auto'
+            : (savedTextStyles?.textDirection || textStyle.layoutDirection)
+
         // 构建 bubbleStates
-        const bubbleStates: BubbleState[] = task.bubbleCoords.map((coords, idx) => ({
-            coords,
-            polygon: [] as number[][],
-            position: { x: 0, y: 0 },
-            rotationAngle: task.bubbleAngles[idx] || 0,
-            originalText: task.originalTexts[idx] || '',
-            translatedText: task.translatedTexts[idx] || '',
-            textboxText: task.textboxTexts[idx] || '',
-            textDirection: (savedTextStyles?.textDirection || 'vertical') as 'vertical' | 'horizontal' | 'auto',
-            autoTextDirection: (task.autoDirections[idx] || 'vertical') as 'vertical' | 'horizontal' | 'auto',
-            fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
-            fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
-            autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
-            textColor: task.colors[idx]?.textColor || savedTextStyles?.textColor || textStyle.textColor,
-            fillColor: savedTextStyles?.fillColor || textStyle.fillColor,
-            strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-            strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
-            strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-            inpaintMethod: textStyle.inpaintMethod,
-            autoFgColor: task.colors[idx]?.autoFgColor || null,
-            autoBgColor: task.colors[idx]?.autoBgColor || null
-        }))
+        const bubbleStates: BubbleState[] = task.bubbleCoords.map((coords, idx) => {
+            const autoDir = task.autoDirections[idx] || 'vertical'
+            // 将后端返回的 'v'/'h' 格式转换为 'vertical'/'horizontal'
+            const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
+                : autoDir === 'h' ? 'horizontal'
+                    : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
+
+            // 【简化设计】textDirection 直接使用具体方向值
+            const textDirection =
+                (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
+                    ? globalTextDir
+                    : mappedAutoDir
+
+            return {
+                coords,
+                polygon: [] as number[][],
+                position: { x: 0, y: 0 },
+                rotationAngle: task.bubbleAngles[idx] || 0,
+                originalText: task.originalTexts[idx] || '',
+                translatedText: task.translatedTexts[idx] || '',
+                textboxText: task.textboxTexts[idx] || '',
+                textDirection: textDirection as 'vertical' | 'horizontal',  // 渲染用的具体方向
+                autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',  // 备份检测结果
+                fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
+                fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
+                autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+                textColor: task.colors[idx]?.textColor || savedTextStyles?.textColor || textStyle.textColor,
+                fillColor: savedTextStyles?.fillColor || textStyle.fillColor,
+                strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
+                strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
+                strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
+                inpaintMethod: textStyle.inpaintMethod,
+                autoFgColor: task.colors[idx]?.autoFgColor || null,
+                autoBgColor: task.colors[idx]?.autoBgColor || null
+            }
+        })
 
         const response: ParallelRenderResponse = await parallelRender({
             clean_image: task.cleanImage,

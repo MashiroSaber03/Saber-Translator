@@ -171,6 +171,15 @@ export class RenderPool extends TaskPool {
       const autoDir = directions[idx]
       const mappedDirection: TextDirection = autoDir === 'v' ? 'vertical' : autoDir === 'h' ? 'horizontal' : 'vertical'
 
+      // 【简化设计】textDirection 直接使用具体方向值
+      // - 如果全局设置是 'auto'，使用检测结果
+      // - 否则使用全局设置的值
+      const globalTextDir = settings.textStyle.layoutDirection
+      const textDirection: TextDirection =
+        (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
+          ? globalTextDir
+          : mappedDirection
+
       // 颜色处理：优先使用自动提取的颜色
       let textColor = settings.textStyle.textColor
       let fillColor = settings.textStyle.fillColor
@@ -189,8 +198,8 @@ export class RenderPool extends TaskPool {
         polygon: polygons[idx] || [],
         fontSize: settings.textStyle.fontSize,
         fontFamily: settings.textStyle.fontFamily,
-        textDirection: settings.textStyle.layoutDirection as TextDirection,
-        autoTextDirection: mappedDirection,
+        textDirection: textDirection,         // 渲染用的具体方向
+        autoTextDirection: mappedDirection,   // 备份检测结果
         textColor: textColor,
         fillColor: fillColor,
         rotationAngle: angles[idx] || 0,

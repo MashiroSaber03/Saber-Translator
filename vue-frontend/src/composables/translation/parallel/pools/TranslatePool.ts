@@ -219,9 +219,12 @@ export class TranslatePool extends TaskPool {
         translated: useTextboxPrompt
           ? (state.textboxText || state.translatedText || '')
           : (state.translatedText || ''),
-        textDirection: state.textDirection !== 'auto'
+        // 【简化设计】直接使用 textDirection，它已经是具体方向值
+        textDirection: (state.textDirection === 'vertical' || state.textDirection === 'horizontal')
           ? state.textDirection
-          : (state.autoTextDirection !== 'auto' ? state.autoTextDirection : 'vertical')
+          : (state.autoTextDirection === 'vertical' || state.autoTextDirection === 'horizontal')
+            ? state.autoTextDirection
+            : 'vertical'
       }))
     }))
 

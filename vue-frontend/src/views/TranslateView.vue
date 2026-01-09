@@ -341,7 +341,8 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
         updatedBubble.fontFamily = settingsToApply.fontFamily as string
       }
       if (options.layoutDirection && settingsToApply.textDirection !== undefined) {
-        updatedBubble.textDirection = settingsToApply.textDirection as 'auto' | 'vertical' | 'horizontal'
+        // settingsToApply.textDirection 已在第 316 行处理，确保不是 'auto'
+        updatedBubble.textDirection = settingsToApply.textDirection as 'vertical' | 'horizontal'
       }
       if (options.textColor && settingsToApply.textColor !== undefined) {
         updatedBubble.textColor = settingsToApply.textColor as string
@@ -966,11 +967,32 @@ async function handleTextStyleChanged(settingKey: string, newValue: unknown) {
 
   const stateProperty = propertyMap[settingKey]
   if (stateProperty && image.bubbleStates) {
-    // 特殊处理 layoutDirection：当用户选择 'auto' 时，不修改 textDirection
-    if (settingKey === 'layoutDirection' && newValue === 'auto') {
-      console.log("排版方向设置为 'auto'，不修改气泡的 textDirection，使用 autoTextDirection 渲染")
+    // 【简化设计】处理 layoutDirection 变更
+    if (settingKey === 'layoutDirection') {
+      if (newValue === 'auto') {
+        // 切换到"自动"：从备份的 autoTextDirection 恢复到 textDirection
+        console.log("排版方向设置为 'auto'，从 autoTextDirection 恢复每个气泡的排版方向")
+        const updatedBubbles = image.bubbleStates.map(bs => ({
+          ...bs,
+          // 直接用备份的检测结果，不再是 'auto'
+          textDirection: (bs.autoTextDirection === 'vertical' || bs.autoTextDirection === 'horizontal') 
+            ? bs.autoTextDirection 
+            : 'vertical'
+        }))
+        imageStore.updateCurrentImage({ bubbleStates: updatedBubbles })
+        bubbleStore.setBubbles(updatedBubbles)
+      } else {
+        // 切换到强制横排/竖排：直接赋值
+        console.log(`排版方向设置为 '${newValue}'，应用到所有气泡`)
+        const updatedBubbles = image.bubbleStates.map(bs => ({
+          ...bs,
+          textDirection: newValue as 'vertical' | 'horizontal'
+        }))
+        imageStore.updateCurrentImage({ bubbleStates: updatedBubbles })
+        bubbleStore.setBubbles(updatedBubbles)
+      }
     } else {
-      // 更新所有气泡的对应参数
+      // 其他设置项：正常更新
       const updatedBubbles = image.bubbleStates.map(bs => ({
         ...bs,
         [stateProperty]: newValue

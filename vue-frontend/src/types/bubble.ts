@@ -55,9 +55,9 @@ export interface BubbleState {
   fontSize: number
   /** 字体路径 */
   fontFamily: string
-  /** 用户设置的排版方向 */
+  /** 渲染使用的排版方向，只有 'vertical' | 'horizontal'，渲染时直接使用 */
   textDirection: TextDirection
-  /** 自动检测的排版方向（根据宽高比） */
+  /** 后端自动检测的排版方向（备份），用于切换回"自动"时恢复 */
   autoTextDirection: TextDirection
   /** 文字颜色 */
   textColor: string
@@ -133,25 +133,25 @@ export interface BubbleGlobalDefaults {
 // ============================================================
 
 /**
- * 获取气泡的有效渲染方向
- * 【原版设计】渲染时直接使用气泡的 textDirection 字段
- * - 翻译时：后端会根据自动检测结果同时设置 textDirection 和 autoTextDirection
- * - 用户修改时：只修改 textDirection
- * - 渲染时：直接用 textDirection，不需要复杂判断
+ * 获取气泡的渲染方向
+ * 【简化设计】直接返回 textDirection，不再需要复杂判断
+ * - textDirection 始终只有 'vertical' 或 'horizontal'
+ * - 翻译时/切换设置时，系统会自动填充正确的值
+ * - autoTextDirection 仅作为备份，用于切换回"自动"时恢复
  * 
- * @param bubble - 气泡状态（只需包含 textDirection, autoTextDirection, coords）
- * @returns 有效的渲染方向 'vertical' | 'horizontal'
+ * @param bubble - 气泡状态
+ * @returns 渲染方向 'vertical' | 'horizontal'
  */
 export function getEffectiveDirection(
   bubble: Pick<BubbleState, 'textDirection' | 'autoTextDirection' | 'coords'>
 ): 'vertical' | 'horizontal' {
-  // 直接使用气泡自己的 textDirection
-  if (bubble.textDirection && bubble.textDirection !== 'auto') {
-    return bubble.textDirection as 'vertical' | 'horizontal'
+  // 直接使用 textDirection（简化后不再包含 'auto' 值）
+  if (bubble.textDirection === 'vertical' || bubble.textDirection === 'horizontal') {
+    return bubble.textDirection
   }
-  // 回退：使用 autoTextDirection（后端检测结果）
-  if (bubble.autoTextDirection && bubble.autoTextDirection !== 'auto') {
-    return bubble.autoTextDirection as 'vertical' | 'horizontal'
+  // 兼容旧数据：如果 textDirection 是 'auto' 或无效，使用 autoTextDirection
+  if (bubble.autoTextDirection === 'vertical' || bubble.autoTextDirection === 'horizontal') {
+    return bubble.autoTextDirection
   }
   // 最后回退：根据宽高比判断
   if (bubble.coords) {

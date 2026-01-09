@@ -159,9 +159,16 @@ export const useBubbleStore = defineStore('bubble', () => {
     const settingsStore = useSettingsStore()
     const textStyle = settingsStore.settings.textStyle
 
-    // 处理自动排版：如果选择"auto"，回退到默认的 'vertical'
+    // 【简化设计】textDirection 直接使用具体方向值：
+    // - 如果全局设置是 'auto'，使用检测结果
+    // - 否则使用全局设置的值
     const layoutDirection = textStyle.layoutDirection
-    const bubbleTextDirection = layoutDirection === 'auto' ? 'vertical' : (layoutDirection || 'vertical')
+    const bubbleTextDirection =
+      (layoutDirection === 'vertical' || layoutDirection === 'horizontal')
+        ? layoutDirection
+        : (autoDirection === 'vertical' || autoDirection === 'horizontal')
+          ? autoDirection
+          : 'vertical' as const
 
     const newBubble = createBubbleState({
       coords,
@@ -170,7 +177,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       // 从当前 UI 设置读取默认值
       fontSize: textStyle.fontSize,
       fontFamily: textStyle.fontFamily,
-      textDirection: bubbleTextDirection as 'vertical' | 'horizontal' | 'auto',
+      textDirection: bubbleTextDirection,  // 直接使用具体方向
       textColor: textStyle.textColor,
       fillColor: textStyle.fillColor,
       inpaintMethod: textStyle.inpaintMethod,
@@ -507,10 +514,15 @@ export const useBubbleStore = defineStore('bubble', () => {
       font_sizes: bubbles.value.map(b => b.fontSize),
       font_families: bubbles.value.map(b => b.fontFamily),
       text_directions: bubbles.value.map(b => {
-        if (b.textDirection === 'auto') {
+        // 【简化设计】直接使用 textDirection，兼容可能存在的 'auto' 值
+        if (b.textDirection === 'vertical' || b.textDirection === 'horizontal') {
+          return b.textDirection === 'vertical' ? 'v' : 'h'
+        }
+        // 兼容旧数据：回退到 autoTextDirection
+        if (b.autoTextDirection === 'vertical' || b.autoTextDirection === 'horizontal') {
           return b.autoTextDirection === 'vertical' ? 'v' : 'h'
         }
-        return b.textDirection === 'vertical' ? 'v' : 'h'
+        return 'v' // 默认竖排
       }),
       text_colors: bubbles.value.map(b => b.textColor),
       fill_colors: bubbles.value.map(b => b.fillColor),
