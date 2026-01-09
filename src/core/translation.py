@@ -704,7 +704,8 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 )
                 response_text = response.choices[0].message.content.strip()
             
-            logger.debug(f"批量翻译响应:\n{response_text[:500]}...")
+            # 日志：输出原始响应（用于调试）
+            logger.info(f"批量翻译响应（前300字符）:\n{response_text[:300]}...")
             
             # === 解析阶段 ===
             # 根据模式选择解析函数（可能抛出 TranslationParseException）
@@ -712,6 +713,9 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 translations = _parse_batch_json_response(response_text, len(texts))
             else:
                 translations = _parse_batch_response(response_text, len(texts))
+            
+            # 日志：输出解析结果（用于调试）
+            logger.info(f"解析后的翻译结果: {translations}")
             
             # === 验证阶段 ===
             # 验证响应数量
