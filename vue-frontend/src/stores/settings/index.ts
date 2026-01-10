@@ -589,6 +589,14 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.showDetectionDebug = backendSettings.showDetectionDebug as boolean
     }
 
+    // 并行翻译设置
+    if (backendSettings.parallelEnabled !== undefined) {
+      settings.value.parallel.enabled = backendSettings.parallelEnabled as boolean
+    }
+    if (backendSettings.parallelDeepLearningLockSize !== undefined) {
+      settings.value.parallel.deepLearningLockSize = parseNum(backendSettings.parallelDeepLearningLockSize, 1)
+    }
+
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
@@ -773,7 +781,9 @@ export const useSettingsStore = defineStore('settings', () => {
             batchSize: round.batchSize,
             sessionReset: round.sessionReset,
             rpmLimit: round.rpmLimit,
+            maxRetries: round.maxRetries,
             lowReasoning: round.lowReasoning,
+            noThinkingMethod: round.noThinkingMethod,
             forceJsonOutput: round.forceJsonOutput
           }))
         },
@@ -795,6 +805,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
         // 调试
         showDetectionDebug: settings.value.showDetectionDebug,
+
+        // 并行翻译设置
+        parallelEnabled: settings.value.parallel.enabled,
+        parallelDeepLearningLockSize: settings.value.parallel.deepLearningLockSize,
 
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
