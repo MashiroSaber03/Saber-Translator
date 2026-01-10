@@ -548,7 +548,8 @@ defineExpose({
   top: 56px;
   right: 16px;
   width: 300px;
-  background: var(--card-bg, #2d2d44);
+  /* 修复：使用固定的深色背景，不依赖可能未定义的CSS变量 */
+  background: #2d2d44;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   overflow: hidden;
@@ -560,6 +561,8 @@ defineExpose({
   justify-content: space-between;
   padding: 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  /* 修复：确保头部背景也是深色 */
+  background: #2d2d44;
 }
 
 .settings-header h3 {
@@ -587,6 +590,8 @@ defineExpose({
 
 .settings-body {
   padding: 16px;
+  /* 修复：确保主体背景也是深色 */
+  background: #2d2d44;
 }
 
 .setting-item {
@@ -599,6 +604,7 @@ defineExpose({
 
 .setting-item label {
   display: block;
+  /* 修复：确保标签文字是淡白色，在深色背景上可见 */
   color: rgba(255, 255, 255, 0.7);
   font-size: 13px;
   margin-bottom: 8px;
