@@ -216,6 +216,7 @@ hiddenimports += [
     'tqdm', 'regex', 'filelock', 'packaging', 'psutil',
     'fugashi', 'unidic_lite', 'jaconv', 'einops', 'kornia', 'omegaconf', 'polars',
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
+    'freetype',  # 字体回退支持 (rendering.py)
     
     # PaddleOCR-VL / accelerate 依赖
     'accelerate', 'sentencepiece',
