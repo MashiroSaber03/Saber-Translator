@@ -9,8 +9,10 @@
     class="edit-workspace"
     :class="[
       `layout-${layoutMode}`,
-      { 'drawing-mode': isDrawingMode }
+      { 'drawing-mode': isDrawingMode },
+      { 'brush-mode-active': !!brushMode }
     ]"
+    :data-brush-mode="brushMode || undefined"
     tabindex="0"
     ref="workspaceRef"
   >
