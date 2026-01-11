@@ -102,6 +102,7 @@ export const useSettingsStore = defineStore('settings', () => {
   /**
    * 从 localStorage 加载设置
    * 优先读取新 Key，若不存在则尝试读取原版 Key 并迁移
+   * 【复刻原版】textStyle（左侧边栏文字设置）不从 localStorage 加载，始终使用默认值
    */
   function loadFromStorage(): void {
     try {
@@ -121,11 +122,16 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (data) {
         const parsed = JSON.parse(data)
+        const defaults = createDefaultSettings()
         // 深度合并，确保新增的默认值不会丢失
-        settings.value = deepMerge(createDefaultSettings(), parsed)
+        settings.value = deepMerge(defaults, parsed)
         // 确保数值类型正确
         ensureNumericTypes()
-        console.log('已从 localStorage 加载设置')
+
+        // 【复刻原版】左侧边栏文字设置始终使用默认值，不从 localStorage 恢复
+        settings.value.textStyle = { ...defaults.textStyle }
+
+        console.log('已从 localStorage 加载设置（textStyle 使用默认值）')
       }
     } catch (error) {
       console.error('从 localStorage 加载设置失败:', error)
@@ -155,12 +161,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /**
    * 确保设置中的数值类型正确
+   * 注意：textStyle 不在这里处理，因为它会被重置为默认值（复刻原版行为）
    */
   function ensureNumericTypes(): void {
-    const ts = settings.value.textStyle
-    ts.fontSize = Number(ts.fontSize) || 25
-    ts.strokeWidth = Number(ts.strokeWidth) || 3
-
     const be = settings.value.boxExpand
     be.ratio = Number(be.ratio) || 1.0
     be.top = Number(be.top) || 0
@@ -370,9 +373,14 @@ export const useSettingsStore = defineStore('settings', () => {
         const backendSettings = response.settings
         console.log('[Settings] 从后端加载设置:', backendSettings)
         applyBackendSettings(backendSettings)
+
+        // 【复刻原版】左侧边栏文字设置始终使用默认值，不从后端恢复
+        const defaults = createDefaultSettings()
+        settings.value.textStyle = { ...defaults.textStyle }
+
         saveToStorage()
         saveProviderConfigsToStorage()
-        console.log('[Settings] 后端设置已应用')
+        console.log('[Settings] 后端设置已应用（textStyle 使用默认值）')
         return true
       } else {
         console.warn('[Settings] 后端无设置数据，使用 localStorage 或默认值')

@@ -41,11 +41,12 @@ export function useMiscSettings(
 
   /**
    * 更新文字样式设置
+   * 【复刻原版】仅在内存中更新，不保存到 localStorage
+   * 原版行为：每次页面加载/新建书籍/快速翻译时都使用默认参数
    * @param updates - 要更新的样式
    */
   function updateTextStyle(updates: Partial<TextStyleSettings>): void {
     Object.assign(settings.value.textStyle, updates)
-    saveToStorage()
   }
 
   // ============================================================
