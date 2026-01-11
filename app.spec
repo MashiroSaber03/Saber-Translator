@@ -122,6 +122,7 @@ hiddenimports += [
     
     # app.api.translation (完整)
     'src.app.api.translation', 'src.app.api.translation.routes',
+    'src.app.api.translation.parallel_routes',  # 并行翻译 API
     
     # app.api.manga_insight (漫画分析 API)
     'src.app.api.manga_insight', 'src.app.api.manga_insight.analysis_routes',
@@ -132,8 +133,9 @@ hiddenimports += [
     
     # core (完整)
     'src.core', 'src.core.detection', 'src.core.ocr', 'src.core.translation', 'src.core.inpainting',
-    'src.core.rendering', 'src.core.processing', 'src.core.session_manager', 'src.core.bookshelf_manager',
+    'src.core.rendering', 'src.core.session_manager', 'src.core.bookshelf_manager',
     'src.core.config_models', 'src.core.types_enhanced', 'src.core.quadrilateral',
+    'src.core.large_image_detection',  # 大图片检测包装器
     
     # core.manga_insight (漫画分析核心模块)
     'src.core.manga_insight', 'src.core.manga_insight.analyzer', 'src.core.manga_insight.change_detector',
@@ -152,6 +154,7 @@ hiddenimports += [
     'src.core.detector', 'src.core.detector.registry', 'src.core.detector.base',
     'src.core.detector.data_types', 'src.core.detector.geometry', 'src.core.detector.postprocess',
     'src.core.detector.textline_merge',
+    'src.core.detector.panel_detector', 'src.core.detector.smart_sort',  # 面板检测和智能排序
     'src.core.detector.backends', 'src.core.detector.backends.ctd_backend',
     'src.core.detector.backends.default_backend', 'src.core.detector.backends.yolo_backend',
     'src.core.detector.backends.yolov5_backend',
@@ -194,6 +197,7 @@ hiddenimports += [
     # shared (完整)
     'src.shared', 'src.shared.constants', 'src.shared.path_helpers', 'src.shared.config_loader',
     'src.shared.exceptions', 'src.shared.image_helpers', 'src.shared.performance', 'src.shared.types', 'src.shared.validators',
+    'src.shared.openai_helpers',  # OpenAI 客户端辅助函数
     
     # plugins
     'src.plugins', 'src.plugins.base', 'src.plugins.manager', 'src.plugins.hooks',
@@ -235,6 +239,9 @@ hiddenimports += [
     
     # 电子书处理
     'mobi', 'fitz', 'pymupdf',
+    
+    # utils 模块
+    'src.utils', 'src.utils.image_rearrange', 'src.utils.performance_monitor',
 ]
 
 # 收集子模块
