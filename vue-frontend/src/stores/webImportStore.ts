@@ -9,6 +9,9 @@ import type { WebImportSettings, WebImportState, AgentLog, ExtractResult, Downlo
 import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
 import { createDefaultWebImportSettings, useWebImportSettings } from './settings/modules/webImport'
 
+// 免责声明存储键
+const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'webImportDisclaimerAccepted'
+
 // ============================================================
 // Store 定义
 // ============================================================
@@ -51,6 +54,12 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   /** 模态框是否可见 */
   const modalVisible = ref(false)
+
+  /** 免责声明是否已接受 */
+  const disclaimerAccepted = ref(false)
+
+  /** 免责声明弹窗是否可见 */
+  const disclaimerVisible = ref(false)
 
   // ============================================================
   // 计算属性
@@ -130,7 +139,40 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   /** 打开模态框 */
   function openModal(): void {
+    // 检查是否已接受免责声明
+    if (!disclaimerAccepted.value) {
+      disclaimerVisible.value = true
+    } else {
+      modalVisible.value = true
+    }
+  }
+
+  /** 接受免责声明 */
+  function acceptDisclaimer(): void {
+    disclaimerAccepted.value = true
+    disclaimerVisible.value = false
     modalVisible.value = true
+    // 保存到 localStorage
+    try {
+      localStorage.setItem(STORAGE_KEY_DISCLAIMER_ACCEPTED, 'true')
+    } catch (e) {
+      console.error('保存免责声明状态失败:', e)
+    }
+  }
+
+  /** 拒绝免责声明 */
+  function rejectDisclaimer(): void {
+    disclaimerVisible.value = false
+  }
+
+  /** 加载免责声明状态 */
+  function loadDisclaimerState(): void {
+    try {
+      const accepted = localStorage.getItem(STORAGE_KEY_DISCLAIMER_ACCEPTED)
+      disclaimerAccepted.value = accepted === 'true'
+    } catch (e) {
+      console.error('加载免责声明状态失败:', e)
+    }
   }
 
   /** 关闭模态框 */
@@ -269,6 +311,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   // ============================================================
 
   loadFromStorage()
+  loadDisclaimerState()
 
   // ============================================================
   // 返回
@@ -287,6 +330,9 @@ export const useWebImportStore = defineStore('webImport', () => {
     downloadedImages,
     error,
     modalVisible,
+    // 免责声明状态
+    disclaimerAccepted,
+    disclaimerVisible,
     // 计算属性
     isExtracting,
     isDownloading,
@@ -311,6 +357,9 @@ export const useWebImportStore = defineStore('webImport', () => {
     updateDownloadProgress,
     setDownloadedImages,
     addPageIncremental,
+    // 免责声明操作
+    acceptDisclaimer,
+    rejectDisclaimer,
     // 设置方法
     ...settingsMethods
   }

@@ -31,7 +31,8 @@ vue-frontend/src/
 ├── components/
 │   └── translate/
 │       ├── WebImportModal.vue          ❌ 删除 (1565行)
-│       └── WebImportButton.vue         ❌ 删除 (57行)
+│       ├── WebImportButton.vue         ❌ 删除 (57行)
+│       └── WebImportDisclaimer.vue     ❌ 删除 (免责声明弹窗)
 ├── api/
 │   └── webImport.ts                    ❌ 删除 (177行)
 ├── stores/
@@ -44,6 +45,7 @@ vue-frontend/src/
 
 **代码修改**：
 - `components/translate/ImageUpload.vue` - 删除4行
+- `views/TranslateView.vue` - 删除2行（WebImportDisclaimer 导入和使用）
 
 ### 后端文件 (1个目录 + 1个文件 + 1处代码修改)
 
@@ -80,6 +82,9 @@ Remove-Item -Path "vue-frontend\src\components\translate\WebImportModal.vue" -Fo
 
 # 删除网页导入按钮组件
 Remove-Item -Path "vue-frontend\src\components\translate\WebImportButton.vue" -Force
+
+# 删除网页导入免责声明弹窗
+Remove-Item -Path "vue-frontend\src\components\translate\WebImportDisclaimer.vue" -Force
 
 # 删除网页导入API
 Remove-Item -Path "vue-frontend\src\api\webImport.ts" -Force
@@ -304,6 +309,7 @@ Write-Host "`n🗑️  开始删除..." -ForegroundColor Cyan
 Write-Host "`n[1/3] 删除前端文件..." -ForegroundColor Yellow
 Remove-Item -Path "vue-frontend\src\components\translate\WebImportModal.vue" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "vue-frontend\src\components\translate\WebImportButton.vue" -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "vue-frontend\src\components\translate\WebImportDisclaimer.vue" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "vue-frontend\src\api\webImport.ts" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "vue-frontend\src\stores\webImportStore.ts" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "vue-frontend\src\stores\settings\modules\webImport.ts" -Force -ErrorAction SilentlyContinue
@@ -325,7 +331,10 @@ Write-Host "     - 删除第19行: import { useWebImportStore }..." -ForegroundC
 Write-Host "     - 删除第45行: const webImportStore = ..." -ForegroundColor Gray
 Write-Host "     - 删除第93-95行: function triggerWebImport() {...}" -ForegroundColor Gray
 Write-Host "     - 删除第528-531行: 网页导入链接" -ForegroundColor Gray
-Write-Host "`n  2. src\app\api\__init__.py" -ForegroundColor Cyan
+Write-Host "`n  2. vue-frontend\src\views\TranslateView.vue" -ForegroundColor Cyan
+Write-Host "     - 删除: import WebImportDisclaimer from '...'" -ForegroundColor Gray
+Write-Host "     - 删除: <WebImportDisclaimer />" -ForegroundColor Gray
+Write-Host "`n  3. src\app\api\__init__.py" -ForegroundColor Cyan
 Write-Host "     - 删除第18行: from .web_import_api import web_import_bp" -ForegroundColor Gray
 Write-Host "     - 修改第21行: 从 all_blueprints 中删除 web_import_bp" -ForegroundColor Gray
 

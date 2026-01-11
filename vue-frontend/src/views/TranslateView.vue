@@ -36,6 +36,7 @@ import ProgressBar from '@/components/common/ProgressBar.vue'
 import { getEffectiveDirection } from '@/types/bubble'
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
+import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 
 // 路由
 const route = useRoute()
@@ -1252,6 +1253,9 @@ function selectImage(index: number) {
       v-if="showSponsorModal" 
       @close="showSponsorModal = false" 
     />
+    
+    <!-- 网页导入免责声明弹窗 -->
+    <WebImportDisclaimer />
     
     <!-- 网页导入模态框 -->
     <WebImportModal />
