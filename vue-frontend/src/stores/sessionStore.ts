@@ -324,8 +324,6 @@ export const useSessionStore = defineStore('session', () => {
         autoFontSize: img.autoFontSize,
         fontFamily: img.fontFamily,
         layoutDirection: img.layoutDirection,
-        // 保存用户选择的设置（用于切换图片时恢复）
-        userLayoutDirection: img.userLayoutDirection,
         useAutoTextColor: img.useAutoTextColor,
         textColor: img.textColor,
         fillColor: img.fillColor,
@@ -481,8 +479,6 @@ export const useSessionStore = defineStore('session', () => {
           autoFontSize: (img.autoFontSize as boolean) ?? false,
           fontFamily: (img.fontFamily as string) || 'Microsoft YaHei',
           layoutDirection: (img.layoutDirection as 'vertical' | 'horizontal' | 'auto') || 'auto',
-          // 恢复用户选择的设置（用于切换图片时恢复）
-          userLayoutDirection: (img.userLayoutDirection as 'vertical' | 'horizontal' | 'auto') || undefined,
           useAutoTextColor: (img.useAutoTextColor as boolean) ?? undefined,
           textColor: (img.textColor as string) || '#000000',
           fillColor: (img.fillColor as string) || '#FFFFFF',

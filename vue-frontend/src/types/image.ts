@@ -61,10 +61,8 @@ export interface ImageData {
   autoFontSize: boolean
   /** 字体 */
   fontFamily: string
-  /** 排版方向 */
+  /** 排版方向（用户选择，包括 'auto'） */
   layoutDirection: TextDirection
-  /** 用户选择的排版方向（包括 'auto'，用于切换图片时恢复） */
-  userLayoutDirection?: TextDirection
   /** 文字颜色 */
   textColor: string
   /** 填充颜色 */

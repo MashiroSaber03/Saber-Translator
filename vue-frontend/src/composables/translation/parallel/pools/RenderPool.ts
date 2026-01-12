@@ -124,7 +124,7 @@ export class RenderPool extends TaskPool {
       showOriginal: false,
       hasUnsavedChanges: true,
       // 保存用户翻译时选择的设置（用于切换图片时恢复）
-      userLayoutDirection: settingsStore.settings.textStyle.layoutDirection,
+      layoutDirection: settingsStore.settings.textStyle.layoutDirection,
       autoFontSize: settingsStore.settings.textStyle.autoFontSize,
       useAutoTextColor: settingsStore.settings.textStyle.useAutoTextColor
     })

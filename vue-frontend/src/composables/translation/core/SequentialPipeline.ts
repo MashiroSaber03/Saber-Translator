@@ -651,7 +651,7 @@ export function useSequentialPipeline() {
             showOriginal: false,
             hasUnsavedChanges: true,
             // 保存用户翻译时选择的设置（用于切换图片时恢复）
-            userLayoutDirection: savedTextStyles?.layoutDirection,
+            layoutDirection: savedTextStyles?.layoutDirection,
             autoFontSize: savedTextStyles?.autoFontSize ?? false,
             useAutoTextColor: savedTextStyles?.useAutoTextColor ?? false
         })
