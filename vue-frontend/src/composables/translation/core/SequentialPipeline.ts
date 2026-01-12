@@ -792,7 +792,16 @@ export function useSequentialPipeline() {
 
     /**
      * 批次处理模式（高质量翻译/AI校对）
-     * 按批次分组，批次内保持按步骤批量处理
+     * 
+     * 处理流程：
+     * 1. 对每张图片逐张执行 aiTranslate 之前的步骤
+     * 2. 批量发送 aiTranslate（利用 AI 的多图上下文能力）
+     * 3. 对每张图片逐张执行 aiTranslate 之后的步骤
+     * 
+     * 这样设计的好处：
+     * - 除 aiTranslate 外，其他步骤都是逐张处理，代码简单
+     * - 未来添加新步骤更容易
+     * - aiTranslate 仍然保持批量发送，利用 AI 的上下文理解能力
      */
     async function executeBatchMode(
         tasks: TaskState[],
@@ -806,7 +815,14 @@ export function useSequentialPipeline() {
         const batchSize = getBatchSize(config.mode)
         const totalBatches = Math.ceil(tasks.length / batchSize)
 
+        // 找到 aiTranslate 步骤的位置
+        const aiTranslateIdx = stepChain.indexOf('aiTranslate')
+        const stepsBeforeAi = aiTranslateIdx >= 0 ? stepChain.slice(0, aiTranslateIdx) : stepChain
+        const stepsAfterAi = aiTranslateIdx >= 0 ? stepChain.slice(aiTranslateIdx + 1) : []
+
         console.log(`📦 批次处理模式：共 ${tasks.length} 张图片，每批 ${batchSize} 张，共 ${totalBatches} 批`)
+        console.log(`   AI翻译前步骤: [${stepsBeforeAi.join(' → ')}]`)
+        console.log(`   AI翻译后步骤: [${stepsAfterAi.join(' → ')}]`)
 
         for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
             // 检查是否取消
@@ -831,50 +847,46 @@ export function useSequentialPipeline() {
             // 跟踪批次内失败的任务索引
             const batchFailedIndices = new Set<number>()
 
-            // 批次内按步骤处理
-            for (let stepIdx = 0; stepIdx < stepChain.length; stepIdx++) {
-                const step = stepChain[stepIdx]!
-                const stepProgress = batchProgress + Math.floor((stepIdx / stepChain.length) * (90 / totalBatches))
-                reporter.setPercentage(stepProgress, `批次 ${batchIdx + 1}: ${STEP_LABELS[step]}`)
+            // ========== 阶段1：逐张执行 aiTranslate 之前的步骤 ==========
+            for (let i = 0; i < batchTasks.length; i++) {
+                const task = batchTasks[i]!
 
-                if (step === 'aiTranslate') {
-                    // AI翻译：整批发送
+                for (const step of stepsBeforeAi) {
+                    if (batchFailedIndices.has(task.imageIndex)) break
+
+                    if (rateLimiter.value) {
+                        await rateLimiter.value.acquire()
+                    }
+
                     try {
-                        // 只处理未失败的任务
-                        const validTasks = batchTasks.filter(t => !batchFailedIndices.has(t.imageIndex))
-                        if (validTasks.length > 0) {
-                            await executeAiTranslate(validTasks)
-                        }
+                        const stepProgress = batchProgress + Math.floor((i / batchTasks.length) * 30)
+                        reporter.setPercentage(stepProgress, `图片 ${batchStart + i + 1}: ${STEP_LABELS[step]}`)
+                        await executeStep(step, task)
                     } catch (err) {
                         const msg = err instanceof Error ? err.message : '未知错误'
-                        errors.push(`批次 ${batchIdx + 1} AI翻译失败: ${msg}`)
-                        // AI翻译失败，标记未失败的任务为失败
-                        for (const task of batchTasks) {
-                            if (!batchFailedIndices.has(task.imageIndex)) {
-                                imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
-                                batchFailedIndices.add(task.imageIndex)
-                            }
-                        }
+                        errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
+                        imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
+                        batchFailedIndices.add(task.imageIndex)
                     }
-                } else {
-                    // 其他步骤：逐张执行
-                    for (let i = 0; i < batchTasks.length; i++) {
-                        const task = batchTasks[i]!
+                }
+            }
 
-                        // 跳过已失败的任务
-                        if (batchFailedIndices.has(task.imageIndex)) {
-                            continue
-                        }
+            // ========== 阶段2：批量执行 aiTranslate ==========
+            if (aiTranslateIdx >= 0) {
+                const stepProgress = batchProgress + 40
+                reporter.setPercentage(stepProgress, `批次 ${batchIdx + 1}: ${STEP_LABELS['aiTranslate']}`)
 
-                        if (rateLimiter.value) {
-                            await rateLimiter.value.acquire()
-                        }
-
-                        try {
-                            await executeStep(step, task)
-                        } catch (err) {
-                            const msg = err instanceof Error ? err.message : '未知错误'
-                            errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
+                try {
+                    const validTasks = batchTasks.filter(t => !batchFailedIndices.has(t.imageIndex))
+                    if (validTasks.length > 0) {
+                        await executeAiTranslate(validTasks)
+                    }
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : '未知错误'
+                    errors.push(`批次 ${batchIdx + 1} AI翻译失败: ${msg}`)
+                    // AI翻译失败，标记所有未失败的任务为失败
+                    for (const task of batchTasks) {
+                        if (!batchFailedIndices.has(task.imageIndex)) {
                             imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
                             batchFailedIndices.add(task.imageIndex)
                         }
@@ -882,15 +894,41 @@ export function useSequentialPipeline() {
                 }
             }
 
-            // 批次处理完成，更新 store
-            for (const task of batchTasks) {
-                if (batchFailedIndices.has(task.imageIndex)) {
-                    failed++
-                } else {
+            // ========== 阶段3：逐张执行 aiTranslate 之后的步骤 ==========
+            for (let i = 0; i < batchTasks.length; i++) {
+                const task = batchTasks[i]!
+
+                if (batchFailedIndices.has(task.imageIndex)) continue
+
+                for (const step of stepsAfterAi) {
+                    if (batchFailedIndices.has(task.imageIndex)) break
+
+                    if (rateLimiter.value) {
+                        await rateLimiter.value.acquire()
+                    }
+
+                    try {
+                        const stepProgress = batchProgress + 50 + Math.floor((i / batchTasks.length) * 40)
+                        reporter.setPercentage(stepProgress, `图片 ${batchStart + i + 1}: ${STEP_LABELS[step]}`)
+                        await executeStep(step, task)
+                    } catch (err) {
+                        const msg = err instanceof Error ? err.message : '未知错误'
+                        errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
+                        imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
+                        batchFailedIndices.add(task.imageIndex)
+                    }
+                }
+
+                // 这张图片处理完成（aiTranslate 后的步骤都完成了），立即更新 store
+                if (!batchFailedIndices.has(task.imageIndex)) {
                     updateImageStore(task)
                     completed++
+                    console.log(`✅ 图片 ${batchStart + i + 1} 处理完成`)
                 }
             }
+
+            // 统计失败数量
+            failed += batchFailedIndices.size
 
             console.log(`✅ 批次 ${batchIdx + 1}/${totalBatches} 处理完成`)
         }
