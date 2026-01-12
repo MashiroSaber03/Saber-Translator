@@ -395,7 +395,7 @@ def parallel_render():
         
         # 获取全局样式参数
         font_size = data.get('fontSize', 25)
-        font_family = data.get('fontFamily', 'fonts/STSONG.TTF')
+        font_family = data.get('fontFamily', constants.DEFAULT_FONT_FAMILY)
         text_direction = data.get('textDirection', 'vertical')
         text_color = data.get('textColor', '#000000')
         stroke_enabled = data.get('strokeEnabled', False)

@@ -10,6 +10,9 @@
 /** 默认提示词名称 */
 export const DEFAULT_PROMPT_NAME = '默认提示词'
 
+/** 默认字体路径 */
+export const DEFAULT_FONT_FAMILY = 'fonts/思源黑体SourceHanSansK-Bold.TTF'
+
 /** 默认气泡填充颜色（白色） */
 export const DEFAULT_FILL_COLOR = '#FFFFFF'
 

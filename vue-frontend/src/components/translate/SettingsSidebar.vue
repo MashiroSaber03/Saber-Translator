@@ -14,6 +14,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
 import { showToast } from '@/utils/toast'
+import { DEFAULT_FONT_FAMILY } from '@/constants'
 import type { TextDirection, InpaintMethod } from '@/types/bubble'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
@@ -144,7 +145,7 @@ const fontList = ref<string[]>([])
 
 /** 内置字体列表（确保始终显示） */
 const BUILTIN_FONTS = [
-  'fonts/STSONG.TTF',
+  DEFAULT_FONT_FAMILY,
   'fonts/msyh.ttc',
   'fonts/simhei.ttf',
   'fonts/simsun.ttc'
@@ -294,6 +295,7 @@ function getFontDisplayName(fontPath: string): string {
     'fonts/STZHONGS.TTF': '华文中宋',
     'fonts/STKAITI.TTF': '楷体',
     'fonts/STLITI.TTF': '隶书',
+    'fonts/思源黑体SourceHanSansK-Bold.TTF': '思源黑体',
     'fonts/STSONG.TTF': '华文宋体',
     'fonts/msyh.ttc': '微软雅黑',
     'fonts/msyhbd.ttc': '微软雅黑粗体',

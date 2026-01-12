@@ -8,6 +8,7 @@ import { ref, computed } from 'vue'
 import type { ImageData, TranslationStatus, ImageDataUpdates } from '@/types/image'
 import type { BubbleState } from '@/types/bubble'
 import {
+  DEFAULT_FONT_FAMILY,
   DEFAULT_FILL_COLOR,
   DEFAULT_STROKE_ENABLED,
   DEFAULT_STROKE_COLOR,
@@ -40,7 +41,7 @@ function createDefaultImageData(
     translationFailed: false,
     fontSize: 25,
     autoFontSize: false,
-    fontFamily: 'fonts/STSONG.TTF',
+    fontFamily: DEFAULT_FONT_FAMILY,
     layoutDirection: 'auto',
     textColor: '#000000',
     fillColor: DEFAULT_FILL_COLOR,

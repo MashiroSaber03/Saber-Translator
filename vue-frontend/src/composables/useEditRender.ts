@@ -10,6 +10,7 @@ import { getEffectiveDirection } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { reRenderImage } from '@/api/translate'
+import { DEFAULT_FONT_FAMILY } from '@/constants'
 
 // ============================================================
 // 类型定义
@@ -99,7 +100,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     // 【Vue适配】将cleanImageData作为translatedDataURL显示，确保修复笔刷效果可见
     if (bubbles.value.length === 0) {
       console.log('reRenderFullImage: 没有气泡，跳过后端渲染')
-      
+
       // 将cleanImageData作为翻译图显示（修复笔刷场景）
       const cleanBase64 = getCleanImageBase64()
       if (cleanBase64) {
@@ -143,7 +144,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         translatedText: s.translatedText || '',
         coords: s.coords,  // 后端会用 bubble_coords 覆盖，这里无需整数化
         fontSize: Number(s.fontSize) || 24,
-        fontFamily: s.fontFamily || 'fonts/STSONG.TTF',
+        fontFamily: s.fontFamily || DEFAULT_FONT_FAMILY,
         textDirection: getEffectiveDirection(s),
         textColor: s.textColor || '#231816',
         rotationAngle: Math.round(Number(s.rotationAngle) || 0),
@@ -160,7 +161,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         bubble_coords: bubbleCoords,
         bubble_states: bubbleStatesForApi,
         fontSize: Number(bubbleStates[0]?.fontSize) || 24,
-        fontFamily: bubbleStates[0]?.fontFamily || 'fonts/STSONG.TTF',
+        fontFamily: bubbleStates[0]?.fontFamily || DEFAULT_FONT_FAMILY,
         textDirection: bubbleStates[0] ? getEffectiveDirection(bubbleStates[0]) : 'vertical',
         textColor: bubbleStates[0]?.textColor || '#231816',
         strokeEnabled: bubbleStates[0]?.strokeEnabled !== undefined ? bubbleStates[0].strokeEnabled : true,

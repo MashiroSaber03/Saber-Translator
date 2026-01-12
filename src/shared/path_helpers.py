@@ -7,6 +7,8 @@ import sys
 import tempfile
 import logging
 
+from src.shared.constants import DEFAULT_FONT_RELATIVE_PATH
+
 logger = logging.getLogger("PathHelpers")
 # 配置日志（如果需要独立测试或记录路径问题）
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -106,8 +108,7 @@ def get_font_path(font_path):
     """
     if not font_path:
         # 如果未提供字体，使用默认字体
-        default_font_rel_path = os.path.join('src', 'app', 'static', 'fonts', 'STSONG.TTF')
-        return resource_path(default_font_rel_path)
+        return resource_path(DEFAULT_FONT_RELATIVE_PATH)
     
     # 处理不同格式的字体路径
     if font_path.startswith('static/fonts/'):
@@ -143,8 +144,7 @@ def get_font_path(font_path):
     
     # 如果所有尝试都失败，返回默认字体
     logger.warning(f"未找到字体 {font_path}，使用默认字体")
-    default_font_rel_path = os.path.join('src', 'app', 'static', 'fonts', 'STSONG.TTF')
-    return resource_path(default_font_rel_path)
+    return resource_path(DEFAULT_FONT_RELATIVE_PATH)
 
 
 # 测试代码

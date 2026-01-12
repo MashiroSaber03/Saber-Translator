@@ -134,8 +134,9 @@ YOUDAO_TRANSLATE_ENGINE_ID = 'youdao_translate'
 
 # --- 文件与目录 ---
 # 默认字体路径现在指向 src/app/static/fonts/
-DEFAULT_FONT_RELATIVE_PATH = os.path.join('src', 'app', 'static', 'fonts', 'msyh.ttc')
-DEFAULT_FONT_PATH = "static/msyh.ttc"  # 保留旧变量以兼容现有代码
+DEFAULT_FONT_RELATIVE_PATH = os.path.join('src', 'app', 'static', 'fonts', '思源黑体SourceHanSansK-Bold.TTF')
+DEFAULT_FONT_PATH = "static/思源黑体SourceHanSansK-Bold.TTF"  # 保留旧变量以兼容现有代码
+DEFAULT_FONT_FAMILY = "fonts/思源黑体SourceHanSansK-Bold.TTF"  # 前端格式的字体路径（与前端常量保持一致）
 # 注意：
 # - 临时文件实际存储在 data/temp/ 目录
 # - PDF 上传直接处理为 base64，不保存到磁盘

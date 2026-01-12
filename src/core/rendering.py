@@ -39,7 +39,7 @@ _font_file_handles = {}  # 保存文件句柄，防止被垃圾回收
 
 # --- 字体路径 ---
 FONTS_DIR = os.path.join('src', 'app', 'static', 'fonts')
-DEFAULT_FONT_PATH = os.path.join(FONTS_DIR, 'simkai.ttf')
+DEFAULT_FONT_PATH = constants.DEFAULT_FONT_RELATIVE_PATH
 
 # --- 回退字体列表 ---
 FALLBACK_FONTS = [

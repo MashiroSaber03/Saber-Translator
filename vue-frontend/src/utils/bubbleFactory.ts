@@ -14,6 +14,7 @@ import type {
   InpaintMethod
 } from '@/types/bubble'
 import {
+  DEFAULT_FONT_FAMILY,
   DEFAULT_FILL_COLOR,
   DEFAULT_STROKE_ENABLED,
   DEFAULT_STROKE_COLOR,
@@ -36,7 +37,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
 
   // 渲染参数
   fontSize: 25,
-  fontFamily: 'fonts/STSONG.TTF',
+  fontFamily: DEFAULT_FONT_FAMILY,
   textDirection: 'vertical',  // 简化设计：不再使用 'auto'，始终是具体方向
   autoTextDirection: 'vertical',
   textColor: '#000000',
