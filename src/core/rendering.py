@@ -590,13 +590,27 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
                              min_size=12, max_size=60, padding_ratio=1.0):
     """
     使用二分法计算最佳字体大小。
+    
+    对于包含换行符的文本，会考虑换行符对布局的影响：
+    - 竖排模式：每个换行符代表一个新列
+    - 横排模式：每个换行符代表一个新行
     """
     if not text or not text.strip() or bubble_width <= 0 or bubble_height <= 0:
         return constants.DEFAULT_FONT_SIZE
 
     W = bubble_width * padding_ratio
     H = bubble_height * padding_ratio
-    N = len(text)
+    
+    # 处理换行符：分割成段落，计算每个段落的字符数
+    paragraphs = text.split('\n')
+    # 过滤空段落后计算实际字符数（不包含换行符）
+    paragraph_lengths = [len(p) for p in paragraphs if p]
+    N = sum(paragraph_lengths)  # 总字符数（不含换行符）
+    num_paragraphs = len(paragraph_lengths)  # 实际段落数
+    
+    if N == 0:
+        return constants.DEFAULT_FONT_SIZE
+    
     c_w = 1.0
     l_h = 1.05
 
@@ -621,13 +635,29 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
             avg_char_height = mid
 
             if text_direction == 'horizontal':
-                chars_per_line = max(1, int(W / avg_char_width)) if avg_char_width > 0 else N # 避免除零
-                lines_needed = math.ceil(N / chars_per_line) if chars_per_line > 0 else N
+                chars_per_line = max(1, int(W / avg_char_width)) if avg_char_width > 0 else N
+                # 考虑换行符：每个段落至少占一行
+                lines_needed = 0
+                for length in paragraph_lengths:
+                    if length > 0:
+                        lines_needed += math.ceil(length / chars_per_line)
+                    else:
+                        lines_needed += 1  # 空段落也占一行
+                # 至少需要 num_paragraphs 行（用户手动换行）
+                lines_needed = max(lines_needed, num_paragraphs)
                 total_height_needed = lines_needed * mid * l_h
                 fits = total_height_needed <= H
             else: # vertical
                 chars_per_column = max(1, int(H / avg_char_height)) if avg_char_height > 0 else N
-                columns_needed = math.ceil(N / chars_per_column) if chars_per_column > 0 else N
+                # 考虑换行符：每个段落至少占一列
+                columns_needed = 0
+                for length in paragraph_lengths:
+                    if length > 0:
+                        columns_needed += math.ceil(length / chars_per_column)
+                    else:
+                        columns_needed += 1  # 空段落也占一列
+                # 至少需要 num_paragraphs 列（用户手动换行）
+                columns_needed = max(columns_needed, num_paragraphs)
                 total_width_needed = columns_needed * mid * l_h
                 fits = total_width_needed <= W
 
@@ -864,12 +894,16 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     paragraphs = text.split('\n')
     
     for para_idx, paragraph in enumerate(paragraphs):
-        if not paragraph:
-            # 空段落，换列
+        # 非第一个段落时，先换列（实现回车换行效果）
+        # 在竖排模式下，回车符(\n)应该对应新的一列
+        if para_idx > 0:
             if current_line:
                 lines.append(current_line)
                 current_line = ""
                 current_column_height = 0
+        
+        if not paragraph:
+            # 空段落，跳过（换列已在上面处理）
             continue
         
         # 分割段落为普通文本和横排块
