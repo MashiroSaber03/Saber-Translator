@@ -84,6 +84,8 @@ export interface SavedTextStyles {
     autoFontSize: boolean
     textDirection: string
     autoTextDirection: boolean
+    /** 用户选择的排版方向（包括 'auto'） */
+    layoutDirection: 'auto' | 'vertical' | 'horizontal'
     fillColor: string
     textColor: string
     rotationAngle: number

@@ -64,7 +64,7 @@ export interface ImageData {
   /** 排版方向 */
   layoutDirection: TextDirection
   /** 用户选择的排版方向（包括 'auto'，用于切换图片时恢复） */
-  userLayoutDirection?: TextDirection | 'auto'
+  userLayoutDirection?: TextDirection
   /** 文字颜色 */
   textColor: string
   /** 填充颜色 */
@@ -77,6 +77,8 @@ export interface ImageData {
   strokeColor: string
   /** 描边宽度 */
   strokeWidth: number
+  /** 是否使用自动检测的文字颜色 */
+  useAutoTextColor?: boolean
 
   // 元数据
   /** 是否有未保存的更改 */

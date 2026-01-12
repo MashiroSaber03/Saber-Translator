@@ -324,6 +324,9 @@ export const useSessionStore = defineStore('session', () => {
         autoFontSize: img.autoFontSize,
         fontFamily: img.fontFamily,
         layoutDirection: img.layoutDirection,
+        // 保存用户选择的设置（用于切换图片时恢复）
+        userLayoutDirection: img.userLayoutDirection,
+        useAutoTextColor: img.useAutoTextColor,
         textColor: img.textColor,
         fillColor: img.fillColor,
         inpaintMethod: img.inpaintMethod,
@@ -475,9 +478,12 @@ export const useSessionStore = defineStore('session', () => {
           translationFailed: Boolean(img.translationFailed),
           hasUnsavedChanges: false,
           fontSize: (img.fontSize as number) || 24,
-          autoFontSize: (img.autoFontSize as boolean) ?? true,
+          autoFontSize: (img.autoFontSize as boolean) ?? false,
           fontFamily: (img.fontFamily as string) || 'Microsoft YaHei',
-          layoutDirection: (img.layoutDirection as 'vertical' | 'horizontal') || 'vertical',
+          layoutDirection: (img.layoutDirection as 'vertical' | 'horizontal' | 'auto') || 'auto',
+          // 恢复用户选择的设置（用于切换图片时恢复）
+          userLayoutDirection: (img.userLayoutDirection as 'vertical' | 'horizontal' | 'auto') || undefined,
+          useAutoTextColor: (img.useAutoTextColor as boolean) ?? undefined,
           textColor: (img.textColor as string) || '#000000',
           fillColor: (img.fillColor as string) || '#FFFFFF',
           inpaintMethod: (img.inpaintMethod as import('@/types/bubble').InpaintMethod) || 'litelama',
@@ -555,13 +561,14 @@ export const useSessionStore = defineStore('session', () => {
           fontSize: (uiSettings.fontSize as number) || settingsStore.settings.textStyle.fontSize,
           autoFontSize: (uiSettings.autoFontSize as boolean) ?? settingsStore.settings.textStyle.autoFontSize,
           fontFamily: (uiSettings.fontFamily as string) || settingsStore.settings.textStyle.fontFamily,
-          layoutDirection: (uiSettings.layoutDirection as 'vertical' | 'horizontal') || settingsStore.settings.textStyle.layoutDirection,
+          layoutDirection: (uiSettings.layoutDirection as 'vertical' | 'horizontal' | 'auto') || settingsStore.settings.textStyle.layoutDirection,
           textColor: (uiSettings.textColor as string) || settingsStore.settings.textStyle.textColor,
           fillColor: (uiSettings.fillColor as string) || settingsStore.settings.textStyle.fillColor,
           inpaintMethod,
           strokeEnabled: (uiSettings.strokeEnabled as boolean) ?? settingsStore.settings.textStyle.strokeEnabled,
           strokeColor: (uiSettings.strokeColor as string) || settingsStore.settings.textStyle.strokeColor,
           strokeWidth: (uiSettings.strokeWidth as number) || settingsStore.settings.textStyle.strokeWidth,
+          useAutoTextColor: (uiSettings.useAutoTextColor as boolean) ?? settingsStore.settings.textStyle.useAutoTextColor,
         })
 
         console.log('UI 设置已恢复')
@@ -669,6 +676,7 @@ export const useSessionStore = defineStore('session', () => {
         strokeEnabled: textStyle.strokeEnabled,
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
+        useAutoTextColor: textStyle.useAutoTextColor,
       }
 
       // 图片元数据（不含 Base64 数据）

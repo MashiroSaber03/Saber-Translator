@@ -398,7 +398,7 @@ def parallel_render():
         stroke_enabled = data.get('strokeEnabled', False)
         stroke_color = data.get('strokeColor', '#FFFFFF')
         stroke_width = data.get('strokeWidth', 2)
-        auto_font_size = data.get('autoFontSize', True)
+        auto_font_size = data.get('autoFontSize', False)
         use_individual_styles = data.get('use_individual_styles', True)
         
         # 转换为BubbleState对象

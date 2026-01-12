@@ -170,6 +170,7 @@ export function useSequentialPipeline() {
             autoFontSize: textStyle.autoFontSize,
             autoTextDirection: layoutDirectionValue === 'auto',
             textDirection: layoutDirectionValue === 'auto' ? 'vertical' : layoutDirectionValue,
+            layoutDirection: layoutDirectionValue,  // 保存用户原始选择（包括 'auto'）
             fillColor: textStyle.fillColor,
             textColor: textStyle.textColor,
             rotationAngle: 0,
@@ -648,7 +649,11 @@ export function useSequentialPipeline() {
             translationStatus: 'completed',
             translationFailed: false,
             showOriginal: false,
-            hasUnsavedChanges: true
+            hasUnsavedChanges: true,
+            // 保存用户翻译时选择的设置（用于切换图片时恢复）
+            userLayoutDirection: savedTextStyles?.layoutDirection,
+            autoFontSize: savedTextStyles?.autoFontSize ?? false,
+            useAutoTextColor: savedTextStyles?.useAutoTextColor ?? false
         })
 
         if (task.imageIndex === imageStore.currentImageIndex && task.bubbleStates) {

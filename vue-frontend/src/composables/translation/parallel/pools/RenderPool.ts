@@ -48,7 +48,7 @@ export class RenderPool extends TaskPool {
         bubbleStates: []
       }
       task.status = 'completed'
-      this.updateImageToUI(task, imageStore, bubbleStore)
+      this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
       this.resultCollector.add(task)
       return task
     }
@@ -85,7 +85,7 @@ export class RenderPool extends TaskPool {
     task.status = 'completed'
 
     // 实时更新到界面
-    this.updateImageToUI(task, imageStore, bubbleStore)
+    this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
 
     // 收集结果
     this.resultCollector.add(task)
@@ -99,7 +99,8 @@ export class RenderPool extends TaskPool {
   private updateImageToUI(
     task: PipelineTask,
     imageStore: ReturnType<typeof useImageStore>,
-    bubbleStore: ReturnType<typeof useBubbleStore>
+    bubbleStore: ReturnType<typeof useBubbleStore>,
+    settingsStore: ReturnType<typeof useSettingsStore>
   ): void {
     const imageIndex = task.imageIndex
 
@@ -121,7 +122,11 @@ export class RenderPool extends TaskPool {
       translationStatus: 'completed',
       translationFailed: false,
       showOriginal: false,
-      hasUnsavedChanges: true
+      hasUnsavedChanges: true,
+      // 保存用户翻译时选择的设置（用于切换图片时恢复）
+      userLayoutDirection: settingsStore.settings.textStyle.layoutDirection,
+      autoFontSize: settingsStore.settings.textStyle.autoFontSize,
+      useAutoTextColor: settingsStore.settings.textStyle.useAutoTextColor
     })
 
     // 2. 如果是当前显示的图片，同步更新 bubbleStore

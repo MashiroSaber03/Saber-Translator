@@ -413,17 +413,20 @@ export function useTranslateInit() {
 
     if (firstBubble) {
       // 更新文字样式设置
+      // 注意：layoutDirection 使用 userLayoutDirection（用户原始选择，包括 'auto'）
+      // 而不是从气泡读取（气泡只存具体方向 'vertical'/'horizontal'）
       settingsStore.updateTextStyle({
         fontSize: firstBubble.fontSize || settingsStore.settings.textStyle.fontSize,
         fontFamily: firstBubble.fontFamily || settingsStore.settings.textStyle.fontFamily,
-        layoutDirection: imageData.userLayoutDirection || firstBubble.textDirection || settingsStore.settings.textStyle.layoutDirection,
+        layoutDirection: imageData.userLayoutDirection || settingsStore.settings.textStyle.layoutDirection,
         textColor: firstBubble.textColor || settingsStore.settings.textStyle.textColor,
         fillColor: firstBubble.fillColor || settingsStore.settings.textStyle.fillColor,
         strokeEnabled: firstBubble.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
         strokeColor: firstBubble.strokeColor || settingsStore.settings.textStyle.strokeColor,
         strokeWidth: firstBubble.strokeWidth || settingsStore.settings.textStyle.strokeWidth,
         inpaintMethod: firstBubble.inpaintMethod || settingsStore.settings.textStyle.inpaintMethod,
-        autoFontSize: imageData.autoFontSize ?? settingsStore.settings.textStyle.autoFontSize
+        autoFontSize: imageData.autoFontSize ?? settingsStore.settings.textStyle.autoFontSize,
+        useAutoTextColor: imageData.useAutoTextColor ?? settingsStore.settings.textStyle.useAutoTextColor
       })
     }
   }
