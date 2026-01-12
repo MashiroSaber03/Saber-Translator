@@ -6,6 +6,7 @@
   <div
     class="bubble-overlay"
     :class="{ 'brush-mode': isBrushMode }"
+    :style="{ '--scale': scale || 1 }"
     ref="overlayRef"
     @mousedown="handleOverlayMouseDown"
   >
@@ -837,6 +838,11 @@ onUnmounted(() => {
 
 
 <style scoped>
+/*
+ * 【屏幕像素适配】使用 CSS 变量 --scale 实现反向缩放
+ * 这样边框、手柄等 UI 元素在屏幕上保持固定大小，不随图片缩放而变化
+ * 解决高分辨率图片缩小显示时手柄过小难以操作的问题
+ */
 .bubble-overlay {
   position: absolute;
   top: 0;
@@ -857,10 +863,11 @@ onUnmounted(() => {
   pointer-events: none !important;
 }
 
-/* 矩形气泡高亮框 - 与原版样式一致 */
+/* 矩形气泡高亮框 - 使用反向缩放保持边框在屏幕上的固定宽度 */
 .bubble-highlight-box {
   position: absolute;
-  border: 2px solid rgba(255, 200, 0, 0.8);
+  /* 边框宽度反向缩放：屏幕上始终显示为 2px */
+  border: calc(2px / var(--scale, 1)) solid rgba(255, 200, 0, 0.8);
   background: rgba(255, 200, 0, 0.1);
   cursor: pointer;
   pointer-events: auto;
@@ -874,9 +881,10 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box.selected {
-  border: 3px solid #00ff88;
+  /* 选中时边框稍粗：屏幕上始终显示为 3px */
+  border: calc(3px / var(--scale, 1)) solid #00ff88;
   background: rgba(0, 255, 136, 0.15);
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+  box-shadow: 0 0 calc(15px / var(--scale, 1)) rgba(0, 255, 136, 0.5);
   z-index: 10;
   cursor: grab;
 }
@@ -886,22 +894,25 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box.multi-selected {
-  border: 3px solid #ff1744 !important;
+  border: calc(3px / var(--scale, 1)) solid #ff1744 !important;
   background: rgba(255, 23, 68, 0.25) !important;
-  box-shadow: 0 0 12px rgba(255, 23, 68, 0.6);
+  box-shadow: 0 0 calc(12px / var(--scale, 1)) rgba(255, 23, 68, 0.6);
 }
 
-/* 气泡索引标签 */
+/* 气泡索引标签 - 反向缩放保持屏幕上固定大小 */
 .bubble-index {
   position: absolute;
-  top: -20px;
+  /* 位置也需要反向缩放 */
+  top: calc(-20px / var(--scale, 1));
   left: 0;
   background: rgba(0, 0, 0, 0.7);
   color: #fff;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
+  font-size: calc(11px / var(--scale, 1));
+  padding: calc(2px / var(--scale, 1)) calc(6px / var(--scale, 1));
+  border-radius: calc(3px / var(--scale, 1));
   pointer-events: none;
+  /* 使用 transform-origin 确保从左上角缩放 */
+  transform-origin: left top;
 }
 
 .bubble-highlight-box.selected .bubble-index {
@@ -909,71 +920,73 @@ onUnmounted(() => {
   color: #1a1a2e;
 }
 
-/* 调整手柄 - 覆盖全局CSS的display:none */
+/* 调整手柄 - 反向缩放保持屏幕上 10x10px */
 .resize-handle {
   display: block !important;
   position: absolute;
-  width: 12px;
-  height: 12px;
+  /* 尺寸反向缩放 */
+  width: calc(10px / var(--scale, 1));
+  height: calc(10px / var(--scale, 1));
   background: #00ff88;
-  border: 2px solid #fff;
-  border-radius: 3px;
+  border: calc(2px / var(--scale, 1)) solid #fff;
+  border-radius: calc(3px / var(--scale, 1));
   pointer-events: auto !important;
   z-index: 20;
   box-sizing: border-box;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 calc(3px / var(--scale, 1)) rgba(0, 0, 0, 0.3);
 }
 
 .resize-handle:hover {
   background: #00cc6a;
+  /* 悬停时放大效果仍然有效 */
   transform: scale(1.2);
 }
 
-/* 手柄位置（与原版一致） */
-.resize-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
-.resize-handle.n { top: -6px; left: 50%; margin-left: -6px; cursor: ns-resize; }
-.resize-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
-.resize-handle.e { top: 50%; right: -6px; margin-top: -6px; cursor: ew-resize; }
-.resize-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
-.resize-handle.s { bottom: -6px; left: 50%; margin-left: -6px; cursor: ns-resize; }
-.resize-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
-.resize-handle.w { top: 50%; left: -6px; margin-top: -6px; cursor: ew-resize; }
+/* 手柄位置 - 偏移量也需要反向缩放（手柄10px，偏移5px使其居中对齐边框） */
+.resize-handle.nw { top: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
+.resize-handle.n { top: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
+.resize-handle.ne { top: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
+.resize-handle.e { top: 50%; right: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
+.resize-handle.se { bottom: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
+.resize-handle.s { bottom: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
+.resize-handle.sw { bottom: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
+.resize-handle.w { top: 50%; left: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
 
-/* 旋转连接线 - 从上边框中点向上延伸 */
+/* 旋转连接线 - 反向缩放 */
 .rotate-line {
   display: block !important;
   position: absolute;
-  top: -25px;
+  top: calc(-25px / var(--scale, 1));
   left: 50%;
   transform: translateX(-50%);
-  width: 2px;
-  height: 20px;
+  width: calc(2px / var(--scale, 1));
+  height: calc(20px / var(--scale, 1));
   background: rgba(0, 255, 136, 0.6);
   pointer-events: none;
 }
 
-/* 旋转手柄 - 连接线顶端的圆点 */
+/* 旋转手柄 - 反向缩放保持屏幕上 12x12px */
 .rotate-handle {
   display: block !important;
   position: absolute;
-  top: -35px;
+  top: calc(-35px / var(--scale, 1));
   left: 50%;
   transform: translateX(-50%);
-  width: 14px;
-  height: 14px;
+  width: calc(12px / var(--scale, 1));
+  height: calc(12px / var(--scale, 1));
   background: #00ff88;
-  border: 2px solid #fff;
+  border: calc(2px / var(--scale, 1)) solid #fff;
   border-radius: 50%;
   cursor: grab;
   pointer-events: auto !important;
   z-index: 15;
-  box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
+  box-shadow: 0 0 calc(6px / var(--scale, 1)) rgba(0, 255, 136, 0.8);
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .rotate-handle:hover {
   transform: translateX(-50%) scale(1.2);
-  box-shadow: 0 0 10px rgba(0, 255, 136, 1);
+  box-shadow: 0 0 calc(10px / var(--scale, 1)) rgba(0, 255, 136, 1);
 }
 
 .rotate-handle:active {
@@ -981,10 +994,10 @@ onUnmounted(() => {
   background: #00cc6a;
 }
 
-/* 绘制中的矩形 */
+/* 绘制中的矩形 - 边框也反向缩放 */
 .drawing-rect {
   position: absolute;
-  border: 2px dashed #00ff88;
+  border: calc(2px / var(--scale, 1)) dashed #00ff88;
   background: rgba(0, 255, 136, 0.1);
   pointer-events: none;
 }
