@@ -122,6 +122,9 @@ export const DEFAULT_RPM_TRANSLATION = 0
 /** AI 视觉 OCR 默认 RPM 限制（0 表示无限制） */
 export const DEFAULT_RPM_AI_VISION_OCR = 0
 
+/** AI 视觉 OCR 默认最小图片尺寸（像素），VLM 模型通常要求 >= 28px */
+export const DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE = 32
+
 // ============================================================
 // 自定义服务商 ID 常量
 // ============================================================

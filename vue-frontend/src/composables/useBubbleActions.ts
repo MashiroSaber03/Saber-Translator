@@ -533,7 +533,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           ai_vision_api_key: settings.aiVisionOcr.apiKey,
           ai_vision_model_name: settings.aiVisionOcr.modelName,
           ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
-          custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl
+          custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl,
+          ai_vision_min_image_size: settings.aiVisionOcr.minImageSize
         }
       )
 

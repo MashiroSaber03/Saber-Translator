@@ -29,6 +29,7 @@ import {
   STORAGE_KEY_PROVIDER_CONFIGS,
   DEFAULT_RPM_TRANSLATION,
   DEFAULT_RPM_AI_VISION_OCR,
+  DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE,
   DEFAULT_TRANSLATION_MAX_RETRIES,
   DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   DEFAULT_PROOFREADING_MAX_RETRIES
@@ -187,6 +188,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const av = settings.value.aiVisionOcr
     av.rpmLimit = Number(av.rpmLimit) || DEFAULT_RPM_AI_VISION_OCR
+    // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
+    if (av.minImageSize === undefined || av.minImageSize === null || isNaN(Number(av.minImageSize))) {
+      av.minImageSize = DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
+    } else {
+      av.minImageSize = Number(av.minImageSize)
+    }
 
     const pr = settings.value.proofreading
     pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
@@ -449,6 +456,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.aiVisionPromptModeSelect === 'json') {
       settings.value.aiVisionOcr.isJsonMode = true
     }
+    if (backendSettings.aiVisionMinImageSize !== undefined) {
+      settings.value.aiVisionOcr.minImageSize = parseNum(backendSettings.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
+    }
 
     // 翻译服务设置
     if (backendSettings.modelProvider) {
@@ -648,7 +658,8 @@ export const useSettingsStore = defineStore('settings', () => {
             customBaseUrl: config.customAiVisionBaseUrl as string,
             prompt: config.aiVisionOcrPrompt as string,
             rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
-            isJsonMode: config.aiVisionPromptModeSelect === 'json'
+            isJsonMode: config.aiVisionPromptModeSelect === 'json',
+            minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
           }
         }
       }
@@ -699,7 +710,8 @@ export const useSettingsStore = defineStore('settings', () => {
         customAiVisionBaseUrl: config.customBaseUrl || '',
         aiVisionOcrPrompt: config.prompt || '',
         rpmAiVisionOcr: String(config.rpmLimit || 0),
-        aiVisionPromptModeSelect: config.isJsonMode ? 'json' : 'normal'
+        aiVisionPromptModeSelect: config.isJsonMode ? 'json' : 'normal',
+        aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
       }
     }
 
@@ -743,6 +755,7 @@ export const useSettingsStore = defineStore('settings', () => {
         customAiVisionBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
         rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
         aiVisionPromptModeSelect: settings.value.aiVisionOcr.isJsonMode ? 'json' : 'normal',
+        aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
 
         // 翻译服务
         modelProvider: settings.value.translation.provider,

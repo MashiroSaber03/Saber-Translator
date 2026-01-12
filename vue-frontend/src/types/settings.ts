@@ -71,6 +71,8 @@ export interface AiVisionOcrSettings {
   rpmLimit: number
   customBaseUrl: string
   isJsonMode: boolean
+  /** 最小图片尺寸 (VLM 模型通常要求 >= 28px) */
+  minImageSize: number
 }
 
 /**

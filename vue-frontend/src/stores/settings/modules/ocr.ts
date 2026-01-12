@@ -132,7 +132,8 @@ export function useOcrSettings(
       customBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
       prompt: settings.value.aiVisionOcr.prompt,
       rpmLimit: settings.value.aiVisionOcr.rpmLimit,
-      isJsonMode: settings.value.aiVisionOcr.isJsonMode
+      isJsonMode: settings.value.aiVisionOcr.isJsonMode,
+      minImageSize: settings.value.aiVisionOcr.minImageSize
     }
 
     providerConfigs.value.aiVisionOcr[provider] = config
@@ -155,6 +156,7 @@ export function useOcrSettings(
       if (cached.prompt !== undefined) settings.value.aiVisionOcr.prompt = cached.prompt
       if (cached.rpmLimit !== undefined) settings.value.aiVisionOcr.rpmLimit = cached.rpmLimit
       if (cached.isJsonMode !== undefined) settings.value.aiVisionOcr.isJsonMode = cached.isJsonMode
+      if (cached.minImageSize !== undefined) settings.value.aiVisionOcr.minImageSize = cached.minImageSize
       console.log(`[Settings] 恢复AI视觉OCR服务商配置: ${provider}`, cached)
     } else {
       // 无缓存时清空配置

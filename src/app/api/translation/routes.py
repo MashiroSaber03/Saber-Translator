@@ -1091,6 +1091,7 @@ def ocr_single_bubble():
                 ai_vision_model_name = data.get('ai_vision_model_name', '')
                 ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt', constants.DEFAULT_AI_VISION_OCR_PROMPT if hasattr(constants, 'DEFAULT_AI_VISION_OCR_PROMPT') else '')
                 custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
+                ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
                 
                 if not ai_vision_api_key:
                     return jsonify({'error': 'AI视觉OCR需要提供API Key'}), 400
@@ -1098,6 +1099,17 @@ def ocr_single_bubble():
                     return jsonify({'error': 'AI视觉OCR需要提供模型名称'}), 400
                 
                 logger.info(f"使用AI视觉OCR: provider={ai_vision_provider}, model={ai_vision_model_name}")
+                
+                # --- AI Vision OCR 最小尺寸保护 ---
+                # 许多 VLM 模型（如 Qwen 3 VL）要求图片尺寸至少 28x28
+                orig_w, orig_h = bubble_image.size
+                if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
+                    scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
+                    new_w = int(orig_w * scale)
+                    new_h = int(orig_h * scale)
+                    bubble_image = bubble_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    logger.info(f"气泡图像过小 ({orig_w}x{orig_h})，已放大至 {new_w}x{new_h}")
+                # -----------------------------------------
                 
                 recognized_text = call_ai_vision_ocr_service(
                     bubble_image,

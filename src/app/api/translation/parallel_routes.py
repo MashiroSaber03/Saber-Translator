@@ -23,6 +23,7 @@ from src.core.inpainting import inpaint_bubbles
 from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
 from src.core.config_models import BubbleState
 from src.core.color_extractor import extract_bubble_colors
+from src.shared import constants
 
 parallel_bp = Blueprint('parallel', __name__, url_prefix='/api')
 
@@ -155,6 +156,7 @@ def parallel_ocr():
         ai_vision_model_name = data.get('ai_vision_model_name')
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
+        ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
         
         # 转换为PIL图像
         img_pil = Image.fromarray(img)
@@ -174,7 +176,8 @@ def parallel_ocr():
             ai_vision_api_key=ai_vision_api_key,
             ai_vision_model_name=ai_vision_model_name,
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
-            custom_ai_vision_base_url=custom_ai_vision_base_url
+            custom_ai_vision_base_url=custom_ai_vision_base_url,
+            ai_vision_min_image_size=ai_vision_min_image_size
         )
         
         return jsonify({

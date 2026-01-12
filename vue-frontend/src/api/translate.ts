@@ -243,6 +243,7 @@ export async function ocrSingleBubble(
     ai_vision_model_name?: string
     ai_vision_ocr_prompt?: string
     custom_ai_vision_base_url?: string
+    ai_vision_min_image_size?: number
   }
 ): Promise<OcrSingleBubbleResponse> {
   return apiClient.post<OcrSingleBubbleResponse>('/api/ocr_single_bubble', {

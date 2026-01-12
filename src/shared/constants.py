@@ -369,6 +369,9 @@ DEFAULT_AI_VISION_OCR_JSON_PROMPT = """你是一个OCR助手。请将我发送�
 DEFAULT_rpm_TRANSLATION = 0  # 0 表示无限制
 DEFAULT_rpm_AI_VISION_OCR = 0 # 0 表示无限制
 
+# --- AI Vision OCR 图片尺寸限制 ---
+DEFAULT_AI_VISION_MIN_IMAGE_SIZE = 32  # VLM 模型通常要求 >= 28px
+
 # --- 文本描边 ---
 DEFAULT_STROKE_ENABLED = True
 DEFAULT_STROKE_COLOR = '#FFFFFF'

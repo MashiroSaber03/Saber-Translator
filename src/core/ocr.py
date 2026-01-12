@@ -86,6 +86,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               custom_ai_vision_base_url=None,
                               use_json_format_for_ai_vision=False,
                               rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+                              ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
                               jsonPromptMode: str = 'normal',
                               textlines_per_bubble=None):  # 新增：每个气泡对应的原始文本行（48px OCR 使用）
     """
@@ -107,6 +108,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的Base URL，仅当使用自定义服务时需要。
         use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
         rpm_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
+        ai_vision_min_image_size (int): AI视觉OCR最小图片尺寸(像素)。气泡图像小于此值时自动放大。设为0禁用自动放大。
 
     Returns:
         list: 包含每个气泡识别文本的列表，顺序与 bubble_coords 一致。
@@ -332,6 +334,19 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                         # 裁剪气泡图像
                         bubble_img_np = img_np[y1:y2, x1:x2]
                         bubble_img_pil = Image.fromarray(bubble_img_np)
+                        
+                        # --- AI Vision OCR 最小尺寸保护 ---
+                        # 许多 VLM 模型（如 Qwen 3 VL）要求图片尺寸至少 28x28
+                        # 使用用户配置的 ai_vision_min_image_size，0 表示禁用自动放大
+                        orig_w, orig_h = bubble_img_pil.size
+                        if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
+                            # 计算放大比例，确保最小边达到阈值
+                            scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
+                            new_w = int(orig_w * scale)
+                            new_h = int(orig_h * scale)
+                            bubble_img_pil = bubble_img_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                            logger.info(f"气泡 {i} 图像过小 ({orig_w}x{orig_h})，已放大至 {new_w}x{new_h}")
+                        # -----------------------------------------
                         
                         # 保存调试图像
                         try:

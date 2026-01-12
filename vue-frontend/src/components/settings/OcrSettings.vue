@@ -190,6 +190,13 @@
         <div class="input-hint">0 表示无限制</div>
       </div>
 
+      <!-- 最小图片尺寸 -->
+      <div class="settings-item">
+        <label for="settingsMinImageSize">最小图片尺寸 (像素):</label>
+        <input type="number" id="settingsMinImageSize" v-model.number="localAiVisionOcr.minImageSize" min="0" step="1" />
+        <div class="input-hint">VLM模型通常要求图片尺寸 ≥28px，设为0则不自动放大小图</div>
+      </div>
+
       <button class="settings-test-btn" @click="testAiVisionOcr" :disabled="isTesting">
         {{ isTesting ? '测试中...' : '🔗 测试连接' }}
       </button>
@@ -302,7 +309,8 @@ const localAiVisionOcr = ref({
   modelName: settingsStore.settings.aiVisionOcr.modelName,
   customBaseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
   prompt: settingsStore.settings.aiVisionOcr.prompt,
-  rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit
+  rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit,
+  minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
 
 // 直接访问 store 的只读设置（用于显示条件判断）
@@ -341,6 +349,9 @@ watch(() => localAiVisionOcr.value.prompt, (val) => {
 })
 watch(() => localAiVisionOcr.value.rpmLimit, (val) => {
   settingsStore.updateAiVisionOcr({ rpmLimit: val })
+})
+watch(() => localAiVisionOcr.value.minImageSize, (val) => {
+  settingsStore.updateAiVisionOcr({ minImageSize: val })
 })
 
 // 密码显示状态
@@ -412,6 +423,7 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.customBaseUrl = settingsStore.settings.aiVisionOcr.customBaseUrl
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
+  localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
 
 // 处理AI视觉提示词模式切换

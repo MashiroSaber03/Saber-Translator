@@ -43,6 +43,8 @@ export interface AiVisionOcrProviderConfig {
   prompt?: string
   rpmLimit?: number
   isJsonMode?: boolean
+  /** 最小图片尺寸 */
+  minImageSize?: number
 }
 
 /** 服务商配置缓存结构 */
