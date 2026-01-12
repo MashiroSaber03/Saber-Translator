@@ -36,7 +36,7 @@ import {
 /** 默认文字样式设置 */
 export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   fontSize: 25,
-  autoFontSize: true,
+  autoFontSize: false,
   fontFamily: 'fonts/STSONG.TTF',
   layoutDirection: 'auto',
   textColor: '#000000',

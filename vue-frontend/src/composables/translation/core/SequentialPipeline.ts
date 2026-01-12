@@ -175,7 +175,8 @@ export function useSequentialPipeline() {
             rotationAngle: 0,
             strokeEnabled: textStyle.strokeEnabled,
             strokeColor: textStyle.strokeColor,
-            strokeWidth: textStyle.strokeWidth
+            strokeWidth: textStyle.strokeWidth,
+            useAutoTextColor: textStyle.useAutoTextColor
         }
     }
 
@@ -528,6 +529,17 @@ export function useSequentialPipeline() {
                     ? globalTextDir
                     : mappedAutoDir
 
+            // 【修复】颜色处理：根据 useAutoTextColor 设置决定是否使用自动提取的颜色
+            const useAutoColor = savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
+            let finalTextColor = savedTextStyles?.textColor || textStyle.textColor
+            let finalFillColor = savedTextStyles?.fillColor || textStyle.fillColor
+            const colorInfo = task.colors[idx]
+
+            if (useAutoColor && colorInfo) {
+                if (colorInfo.textColor) finalTextColor = colorInfo.textColor
+                if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
+            }
+
             return {
                 coords,
                 polygon: [] as number[][],
@@ -541,8 +553,8 @@ export function useSequentialPipeline() {
                 fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
                 fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
                 autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
-                textColor: task.colors[idx]?.textColor || savedTextStyles?.textColor || textStyle.textColor,
-                fillColor: savedTextStyles?.fillColor || textStyle.fillColor,
+                textColor: finalTextColor,
+                fillColor: finalFillColor,
                 strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
                 strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
                 strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,

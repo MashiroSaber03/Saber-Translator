@@ -20,7 +20,7 @@ from src.core.detection import get_bubble_detection_result_with_auto_directions
 from src.core.ocr import recognize_text_in_bubbles
 from src.core.translation import translate_text_list
 from src.core.inpainting import inpaint_bubbles
-from src.core.rendering import render_bubbles_unified
+from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
 from src.core.config_models import BubbleState
 from src.core.color_extractor import extract_bubble_colors
 
@@ -437,6 +437,19 @@ def parallel_render():
         
         # 转换为PIL图像
         clean_image_pil = Image.fromarray(clean_image)
+        
+        # 如果启用自动字号，为每个气泡计算最佳字号
+        if auto_font_size:
+            for i, state in enumerate(bubble_states):
+                if state.translated_text:
+                    x1, y1, x2, y2 = state.coords
+                    bubble_width = x2 - x1
+                    bubble_height = y2 - y1
+                    calculated_size = calculate_auto_font_size(
+                        state.translated_text, bubble_width, bubble_height,
+                        state.text_direction, state.font_family
+                    )
+                    state.font_size = calculated_size
         
         # 执行渲染
         final_image_pil = render_bubbles_unified(clean_image_pil, bubble_states)

@@ -90,4 +90,5 @@ export interface SavedTextStyles {
     strokeEnabled: boolean
     strokeColor: string
     strokeWidth: number
+    useAutoTextColor: boolean
 }
