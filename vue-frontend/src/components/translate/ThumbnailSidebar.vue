@@ -99,6 +99,13 @@ function getStatusType(image: ImageData): 'failed' | 'labeled' | 'processing' | 
 }
 
 /**
+ * 判断图片是否已翻译完成
+ */
+function isTranslated(image: ImageData): boolean {
+  return image.translationStatus === 'completed'
+}
+
+/**
  * 点击缩略图
  */
 function handleClick(index: number) {
@@ -149,6 +156,7 @@ function setThumbnailRef(el: HTMLElement | null, index: number) {
 function getThumbnailTitle(image: ImageData): string {
   if (image.translationFailed) return '翻译失败，点击可重试'
   if (image.isManuallyAnnotated) return '包含手动标注'
+  if (image.translationStatus === 'completed') return '已完成翻译'
   return image.fileName || ''
 }
 
@@ -229,6 +237,8 @@ onMounted(() => {
             >
             <!-- 页码角标（左下角） -->
             <span class="page-number-indicator">{{ getImageGlobalIndex(image) + 1 }}</span>
+            <!-- 已翻译角标（左上角） -->
+            <span v-if="isTranslated(image)" class="translated-indicator">✓</span>
             <!-- 状态角标 -->
             <span v-if="getStatusType(image) === 'failed'" class="translation-failed-indicator">!</span>
             <span v-else-if="getStatusType(image) === 'labeled'" class="labeled-indicator">✏️</span>
@@ -270,6 +280,8 @@ onMounted(() => {
           >
           <!-- 页码角标（左下角） -->
           <span class="page-number-indicator">{{ index + 1 }}</span>
+          <!-- 已翻译角标（左上角） -->
+          <span v-if="isTranslated(image)" class="translated-indicator">✓</span>
           <!-- 状态角标 -->
           <span 
             v-if="getStatusType(image) === 'failed'"
@@ -608,6 +620,25 @@ onMounted(() => {
   z-index: 8;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* 已翻译角标（左上角绿色对勾） */
+.translated-indicator {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  background-color: rgba(34, 197, 94, 0.9);  /* 绿色 */
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 /* 空状态 */
