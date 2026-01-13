@@ -24,7 +24,7 @@ export interface PipelineTask {
   imageData: ImageData
   status: TaskStatus
   error?: string
-  
+
   // 检测结果
   detectionResult?: {
     bubbleCoords: number[][]  // [[x1, y1, x2, y2], ...]
@@ -34,13 +34,13 @@ export interface PipelineTask {
     rawMask?: string
     textlinesPerBubble?: any[]
   }
-  
+
   // OCR结果
   ocrResult?: {
     originalTexts: string[]
     textlinesPerBubble?: any[]
   }
-  
+
   // 颜色提取结果
   colorResult?: {
     colors: Array<{
@@ -50,18 +50,18 @@ export interface PipelineTask {
       autoBgColor?: [number, number, number] | null
     }>
   }
-  
+
   // 翻译结果
   translateResult?: {
     translatedTexts: string[]
     textboxTexts: string[]
   }
-  
+
   // 修复结果
   inpaintResult?: {
     cleanImage: string
   }
-  
+
   // 渲染结果
   renderResult?: {
     finalImage: string
@@ -91,6 +91,17 @@ export interface ParallelProgress {
   totalFailed: number
   totalPages: number
   estimatedTimeRemaining: number
+  // 预保存进度
+  preSave?: {
+    isRunning: boolean
+    current: number
+    total: number
+  }
+  // 保存进度（翻译过程中的保存）
+  save?: {
+    completed: number
+    total: number
+  }
 }
 
 /**

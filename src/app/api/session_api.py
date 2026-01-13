@@ -223,6 +223,22 @@ def batch_save_start_api():
     result = session_manager.start_batch_save(session_path, metadata)
     
     if result.get('success'):
+        # 在预保存开始时就更新章节图片数量
+        # 这样即使翻译中途取消，章节也会显示正确的图片数量
+        try:
+            path_parts = session_path.replace('\\', '/').split('/')
+            if 'bookshelf' in path_parts:
+                bookshelf_idx = path_parts.index('bookshelf')
+                if len(path_parts) > bookshelf_idx + 2:
+                    book_id = path_parts[bookshelf_idx + 1]
+                    chapter_id = path_parts[bookshelf_idx + 2]
+                    images_meta = metadata.get('images_meta', [])
+                    image_count = len(images_meta)
+                    bookshelf_manager.update_chapter_image_count(book_id, chapter_id, image_count)
+                    logger.info(f"预保存阶段更新章节 {book_id}/{chapter_id} 图片数量为 {image_count}")
+        except Exception as e:
+            logger.warning(f"预保存阶段更新章节图片数量时出错（非致命）: {e}")
+        
         return jsonify({
             'success': True,
             'session_folder': result.get('session_folder')

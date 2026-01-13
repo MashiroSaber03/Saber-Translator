@@ -148,6 +148,7 @@ export function createDefaultSettings(): TranslationSettings {
     preciseMask: { ...DEFAULT_PRECISE_MASK },
     pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
-    parallel: { ...DEFAULT_PARALLEL }
+    parallel: { ...DEFAULT_PARALLEL },
+    autoSaveInBookshelfMode: false
   }
 }

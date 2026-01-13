@@ -47,6 +47,15 @@ import {
 } from '@/api/parallelTranslate'
 import { hqTranslateBatch } from '@/api/translate'
 
+// 自动保存模块
+import {
+    shouldEnableAutoSave,
+    preSaveOriginalImages,
+    saveTranslatedImage,
+    finalizeSave,
+    resetSaveState
+} from './saveStep'
+
 // ============================================================
 // 原子步骤类型
 // ============================================================
@@ -59,6 +68,7 @@ export type AtomicStepType =
     | 'aiTranslate'   // AI翻译（高质量翻译 & 校对共用）
     | 'inpaint'       // 背景修复
     | 'render'        // 渲染
+    | 'save'          // 自动保存（书架模式）
 
 /**
  * 步骤链配置
@@ -78,7 +88,8 @@ const STEP_LABELS: Record<AtomicStepType, string> = {
     translate: '翻译',
     aiTranslate: 'AI翻译',
     inpaint: '背景修复',
-    render: '渲染'
+    render: '渲染',
+    save: '保存'
 }
 
 // ============================================================
@@ -619,6 +630,10 @@ export function useSequentialPipeline() {
             case 'render':
                 await executeRender(task)
                 break
+            case 'save':
+                // 保存步骤：保存当前已渲染的图片（仅书架模式）
+                await saveTranslatedImage(task.imageIndex)
+                break
             case 'aiTranslate':
                 // 此分支仅作为类型完整性保留，实际不会被调用
                 // aiTranslate 在 executeBatchMode 中有批量处理逻辑
@@ -948,13 +963,7 @@ export function useSequentialPipeline() {
         }
 
         currentMode = config.mode
-        const stepChain = STEP_CHAIN_CONFIGS[config.mode]
         const usePerImageMode = shouldUsePerImageMode(config.mode)
-
-        console.log(`🚀 顺序管线启动`)
-        console.log(`   模式: ${config.mode}`)
-        console.log(`   处理方式: ${usePerImageMode ? '逐张处理' : '批次处理'}`)
-        console.log(`   步骤链: [${stepChain.join(' → ')}]`)
 
         isExecuting.value = true
         if (config.scope === 'all' || config.scope === 'failed') {
@@ -965,6 +974,21 @@ export function useSequentialPipeline() {
 
         const imagesToProcess = getImagesToProcess(config)
         const errors: string[] = []
+
+        // 判断是否启用自动保存（书架模式 + 设置开启）
+        const enableAutoSave = shouldEnableAutoSave()
+
+        // 动态生成步骤链：如果启用自动保存，追加 save 步骤
+        const stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
+        if (enableAutoSave) {
+            stepChain.push('save')
+        }
+
+        console.log(`🚀 顺序管线启动`)
+        console.log(`   模式: ${config.mode}`)
+        console.log(`   处理方式: ${usePerImageMode ? '逐张处理' : '批次处理'}`)
+        console.log(`   步骤链: [${stepChain.join(' → ')}]`)
+        console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
 
         // 创建任务状态
         const tasks: TaskState[] = imagesToProcess.map(({ image, index }) => {
@@ -1008,6 +1032,16 @@ export function useSequentialPipeline() {
         try {
             reporter.init(imagesToProcess.length, `${config.mode} 模式启动...`)
 
+            // 如果启用自动保存，先执行预保存（保存所有原始图片）
+            if (enableAutoSave) {
+                reporter.setPercentage(2, '预保存原始图片...')
+                const preSaveSuccess = await preSaveOriginalImages()
+                if (!preSaveSuccess) {
+                    // 预保存失败，提示用户但不阻止翻译
+                    toast.warning('预保存失败，翻译完成后请手动保存')
+                }
+            }
+
             let result: { completed: number; failed: number }
 
             if (usePerImageMode) {
@@ -1050,6 +1084,11 @@ export function useSequentialPipeline() {
             isExecuting.value = false
             imageStore.setBatchTranslationInProgress(false)
 
+            // 如果启用了自动保存，完成保存会话
+            if (enableAutoSave) {
+                await finalizeSave()
+            }
+
             const currentIndex = imageStore.currentImageIndex
             const currentImage = imageStore.images[currentIndex]
             if (currentImage?.bubbleStates && currentImage.bubbleStates.length > 0) {
@@ -1063,6 +1102,8 @@ export function useSequentialPipeline() {
     function cancel(): void {
         if (imageStore.isBatchTranslationInProgress) {
             imageStore.setBatchTranslationInProgress(false)
+            // 重置自动保存状态
+            resetSaveState()
             toast.info('操作已取消')
         }
     }

@@ -23,7 +23,7 @@ export class ParallelProgressTracker {
   private poolStatuses: Map<string, PoolStatus> = new Map()
   private totalPages = 0
   private startTime = 0
-  
+
   // 响应式状态（用于Vue组件）
   public readonly progress = reactive<ParallelProgress>({
     pools: [],
@@ -31,6 +31,8 @@ export class ParallelProgressTracker {
     totalFailed: 0,
     totalPages: 0,
     estimatedTimeRemaining: 0
+    // 注意：preSave 和 save 字段由 pipeline.ts 直接在 globalProgress 上管理，
+    // 不在这里初始化
   })
 
   constructor() {
@@ -61,7 +63,7 @@ export class ParallelProgressTracker {
   init(totalPages: number): void {
     this.totalPages = totalPages
     this.startTime = Date.now()
-    
+
     // 重置所有池子状态
     for (const status of this.poolStatuses.values()) {
       status.waiting = 0
@@ -70,12 +72,12 @@ export class ParallelProgressTracker {
       status.completed = 0
       status.isWaitingLock = false
     }
-    
+
     this.progress.totalCompleted = 0
     this.progress.totalFailed = 0
     this.progress.totalPages = totalPages
     this.progress.estimatedTimeRemaining = 0
-    
+
     this.syncToReactive()
   }
 
@@ -169,10 +171,10 @@ export class ParallelProgressTracker {
   formatRemainingTime(): string {
     const seconds = this.progress.estimatedTimeRemaining
     if (seconds <= 0) return '--'
-    
+
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
-    
+
     if (minutes > 0) {
       return `${minutes}分${secs}秒`
     }

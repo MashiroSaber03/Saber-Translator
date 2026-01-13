@@ -483,6 +483,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.translation.isJsonMode = true
     }
 
+    // 目标语言
+    if (backendSettings.targetLanguage) {
+      settings.value.targetLanguage = backendSettings.targetLanguage as string
+    }
+
     // 翻译提示词
     if (backendSettings.promptContent) {
       settings.value.translatePrompt = backendSettings.promptContent as string
@@ -613,6 +618,11 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     if (backendSettings.parallelDeepLearningLockSize !== undefined) {
       settings.value.parallel.deepLearningLockSize = parseNum(backendSettings.parallelDeepLearningLockSize, 1)
+    }
+
+    // 书架模式自动保存
+    if (backendSettings.autoSaveInBookshelfMode !== undefined) {
+      settings.value.autoSaveInBookshelfMode = backendSettings.autoSaveInBookshelfMode as boolean
     }
 
     // 服务商配置缓存
@@ -766,6 +776,9 @@ export const useSettingsStore = defineStore('settings', () => {
         translationMaxRetries: String(settings.value.translation.maxRetries),
         translatePromptModeSelect: settings.value.translation.isJsonMode ? 'json' : 'normal',
 
+        // 目标语言
+        targetLanguage: settings.value.targetLanguage,
+
         // 翻译提示词
         promptContent: settings.value.translatePrompt,
         enableTextboxPrompt: settings.value.useTextboxPrompt,
@@ -830,6 +843,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 并行翻译设置
         parallelEnabled: settings.value.parallel.enabled,
         parallelDeepLearningLockSize: settings.value.parallel.deepLearningLockSize,
+
+        // 书架模式自动保存
+        autoSaveInBookshelfMode: settings.value.autoSaveInBookshelfMode,
 
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
@@ -914,6 +930,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateTextStyle: miscModule.updateTextStyle,
     setPdfProcessingMethod: miscModule.setPdfProcessingMethod,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
+    setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
 
     // 模型历史记录模块
     modelHistory: modelHistoryModule.modelHistory,

@@ -18,6 +18,12 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
 import { useSequentialPipeline } from './SequentialPipeline'
 import { useParallelTranslation } from '../parallel'
+import {
+    shouldEnableAutoSave,
+    preSaveOriginalImages,
+    finalizeSave,
+    resetSaveState
+} from './saveStep'
 import type { PipelineConfig, PipelineResult } from './types'
 import type { ParallelTranslationMode } from '../parallel/types'
 
@@ -87,12 +93,68 @@ export function usePipeline() {
     async function executeParallelMode(config: PipelineConfig): Promise<PipelineResult> {
         const images = imageStore.images
 
+        // 判断是否启用自动保存（书架模式 + 设置开启）
+        const enableAutoSave = shouldEnableAutoSave()
+
         try {
+            // 如果启用自动保存，先执行预保存（保存所有原始图片）
+            if (enableAutoSave) {
+                console.log('[ParallelPipeline] 执行预保存...')
+                toast.info('开始预保存原始图片...')
+
+                // 通过进度回调更新预保存进度
+                const preSaveSuccess = await preSaveOriginalImages({
+                    onStart: (total) => {
+                        // 更新全局进度的预保存状态
+                        const progress = parallelTranslation.progress.value
+                        progress.preSave = {
+                            isRunning: true,
+                            current: 0,
+                            total
+                        }
+                    },
+                    onProgress: (current, total) => {
+                        const progress = parallelTranslation.progress.value
+                        if (progress.preSave) {
+                            progress.preSave.current = current
+                            progress.preSave.total = total
+                        }
+                    },
+                    onComplete: () => {
+                        const progress = parallelTranslation.progress.value
+                        if (progress.preSave) {
+                            progress.preSave.isRunning = false
+                        }
+                        toast.success('预保存完成，开始翻译...')
+                    },
+                    onError: (error) => {
+                        const progress = parallelTranslation.progress.value
+                        progress.preSave = undefined
+                        toast.warning(`预保存失败：${error}，翻译完成后请手动保存`)
+                    }
+                })
+
+                if (!preSaveSuccess) {
+                    // 预保存失败，清除预保存进度状态
+                    const progress = parallelTranslation.progress.value
+                    progress.preSave = undefined
+                }
+            }
+
             // 映射模式
             const parallelMode: ParallelTranslationMode = config.mode as ParallelTranslationMode
 
             console.log(`🚀 启动并行翻译模式: ${parallelMode}`)
-            toast.info(`并行翻译开始，模式: ${parallelMode}`)
+            console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
+
+            // 初始化保存进度
+            if (enableAutoSave) {
+                const progress = parallelTranslation.progress.value
+                progress.save = {
+                    completed: 0,
+                    total: images.length
+                }
+            }
 
             const result = await parallelTranslation.executeParallel(parallelMode)
 
@@ -120,6 +182,17 @@ export function usePipeline() {
                 failed: images.length,
                 errors: [errorMessage]
             }
+        } finally {
+            // 清除预保存和保存进度状态
+            const progress = parallelTranslation.progress.value
+            progress.preSave = undefined
+            progress.save = undefined
+
+            // 如果启用了自动保存，完成保存会话
+            if (enableAutoSave) {
+                console.log('[ParallelPipeline] 完成保存...')
+                await finalizeSave()
+            }
         }
     }
 
@@ -129,6 +202,8 @@ export function usePipeline() {
     function cancel(): void {
         sequentialPipeline.cancel()
         parallelTranslation.cancel()
+        // 重置自动保存状态
+        resetSaveState()
     }
 
     return {

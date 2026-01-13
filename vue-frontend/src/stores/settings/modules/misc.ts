@@ -72,6 +72,16 @@ export function useMiscSettings(
     saveToStorage()
   }
 
+  /**
+   * 设置书架模式自动保存开关
+   * @param enabled - 是否启用
+   */
+  function setAutoSaveInBookshelfMode(enabled: boolean): void {
+    settings.value.autoSaveInBookshelfMode = enabled
+    saveToStorage()
+    console.log(`书架模式自动保存已${enabled ? '启用' : '禁用'}`)
+  }
+
   return {
     // 计算属性
     textStyle,
@@ -80,6 +90,7 @@ export function useMiscSettings(
     updateSettings,
     updateTextStyle,
     setPdfProcessingMethod,
-    setShowDetectionDebug
+    setShowDetectionDebug,
+    setAutoSaveInBookshelfMode
   }
 }

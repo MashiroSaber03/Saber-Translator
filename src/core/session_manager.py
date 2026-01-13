@@ -936,6 +936,9 @@ def start_batch_save(session_path, metadata):
 def save_single_image(session_folder, image_index, image_type, base64_data):
     """
     分批保存会话 - 第二步：保存单张图片。
+    
+    改进：保存 translated 或 clean 图片后立即更新元数据，
+    这样即使用户中途刷新页面，已保存的翻译图片也能被正确加载。
     """
     try:
         if not base64_data:
@@ -945,6 +948,10 @@ def save_single_image(session_folder, image_index, image_type, base64_data):
             base64_data = base64_data.split(',', 1)[1]
         
         if _save_image_data(session_folder, image_index, image_type, base64_data):
+            # 保存成功后，立即更新元数据中的 hasXxxData 标记
+            # 这样即使用户中途退出，已保存的图片也能被正确加载
+            if image_type in ('translated', 'clean'):
+                _update_image_meta_flag(session_folder, image_index, image_type)
             return {"success": True}
         else:
             return {"success": False, "error": f"保存图片 {image_index}_{image_type} 失败"}
@@ -952,6 +959,33 @@ def save_single_image(session_folder, image_index, image_type, base64_data):
     except Exception as e:
         logger.error(f"保存单张图片失败: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+
+def _update_image_meta_flag(session_folder, image_index, image_type):
+    """
+    更新元数据文件中指定图片的 hasTranslatedData 或 hasCleanData 标记。
+    """
+    metadata_filepath = os.path.join(session_folder, METADATA_FILENAME)
+    
+    if not os.path.exists(metadata_filepath):
+        logger.warning(f"元数据文件不存在，无法更新标记: {metadata_filepath}")
+        return
+    
+    try:
+        with open(metadata_filepath, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        images_meta = metadata.get("images_meta", [])
+        if image_index < len(images_meta):
+            flag_name = f"has{image_type.capitalize()}Data"  # hasTranslatedData 或 hasCleanData
+            images_meta[image_index][flag_name] = True
+            
+            with open(metadata_filepath, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            logger.debug(f"已更新图片 {image_index} 的 {flag_name} = True")
+    except Exception as e:
+        logger.warning(f"更新元数据标记失败 (非致命): {e}")
 
 
 def complete_batch_save(session_folder, images_meta):

@@ -8,6 +8,19 @@
         <span class="header-title">🚀 并行翻译中：{{ parallelProgress.totalCompleted }}/{{ parallelProgress.totalPages }}</span>
       </div>
       
+      <!-- 预保存进度（仅在预保存进行中显示） -->
+      <div v-if="parallelProgress.preSave?.isRunning" class="presave-section">
+        <div class="presave-label">
+          📥 预保存原始图片：{{ parallelProgress.preSave.current }}/{{ parallelProgress.preSave.total }}
+        </div>
+        <div class="presave-progress-bar">
+          <div 
+            class="presave-progress-fill" 
+            :style="{ width: getPreSavePercent() + '%' }"
+          ></div>
+        </div>
+      </div>
+      
       <!-- 各池子进度条 -->
       <div class="pools-list">
         <div 
@@ -51,6 +64,24 @@
             <span v-if="pool.waiting > 0" class="waiting-badge">+{{ pool.waiting }}</span>
             <!-- 锁止指示器 -->
             <span v-if="pool.isWaitingLock" class="lock-indicator" title="等待深度学习锁">🔒</span>
+          </div>
+        </div>
+        
+        <!-- 保存进度行（仅在启用自动保存时显示） -->
+        <div v-if="parallelProgress.save" class="pool-row save-row">
+          <div class="pool-label">
+            <span class="pool-icon">💾</span>
+            <span class="pool-name">保存</span>
+          </div>
+          <div class="pool-progress-bar">
+            <div 
+              class="progress-completed save-progress" 
+              :style="{ width: getSavePercent() + '%' }"
+            ></div>
+          </div>
+          <div class="pool-stats">
+            <span class="completed-count">{{ parallelProgress.save.completed }}</span>
+            <span class="total-count">/ {{ parallelProgress.save.total }}</span>
           </div>
         </div>
       </div>
@@ -154,6 +185,20 @@ function getPoolProcessingWidth(): number {
   if (total === 0) return 0
   // 处理中显示一个任务的宽度
   return Math.max(3, Math.round((1 / total) * 100))
+}
+
+/** 获取预保存百分比 */
+function getPreSavePercent(): number {
+  const preSave = parallelProgress.value?.preSave
+  if (!preSave || preSave.total === 0) return 0
+  return Math.round((preSave.current / preSave.total) * 100)
+}
+
+/** 获取保存百分比 */
+function getSavePercent(): number {
+  const save = parallelProgress.value?.save
+  if (!save || save.total === 0) return 0
+  return Math.round((save.completed / save.total) * 100)
 }
 
 /** 当前进度数据 */
@@ -342,6 +387,51 @@ const progressLabel = computed(() => {
 /* 等待锁状态 */
 .pool-waiting-lock .pool-name {
   color: #d69e2e;
+}
+
+/* 预保存进度 */
+.presave-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border-radius: 8px;
+  border: 1px solid #90caf9;
+}
+
+.presave-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1565c0;
+  margin-bottom: 8px;
+}
+
+.presave-progress-bar {
+  height: 10px;
+  background: #e3f2fd;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.presave-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #42a5f5, #1976d2);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+  animation: presavePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes presavePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+/* 保存进度行 */
+.save-row .pool-name {
+  color: #7c3aed;
+}
+
+.save-progress {
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed) !important;
 }
 
 /* 分隔线 */

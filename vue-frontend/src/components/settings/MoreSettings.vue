@@ -3,6 +3,25 @@
     <!-- 并行翻译设置 -->
     <ParallelSettings />
 
+    <!-- 书架模式自动保存 -->
+    <div class="settings-group">
+      <div class="settings-group-title">自动保存设置</div>
+      <div class="settings-item checkbox-item">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            v-model="localSettings.autoSaveInBookshelfMode"
+          />
+          <span class="checkbox-text">书架模式自动保存</span>
+        </label>
+        <div class="input-hint">
+          开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。
+          <br />
+          <span class="hint-note">注意：此功能仅在书架模式下生效，快速翻译模式不支持。</span>
+        </div>
+      </div>
+    </div>
+
     <!-- PDF处理方式 -->
     <div class="settings-group">
       <div class="settings-group-title">PDF处理设置</div>
@@ -99,7 +118,8 @@ const fontInput = ref<HTMLInputElement | null>(null)
 
 // 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
-  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend'
+  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
+  autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false
 })
 
 // ============================================================
@@ -107,6 +127,10 @@ const localSettings = ref({
 // ============================================================
 watch(() => localSettings.value.pdfProcessingMethod, (val) => {
   settingsStore.setPdfProcessingMethod(val as 'frontend' | 'backend')
+})
+
+watch(() => localSettings.value.autoSaveInBookshelfMode, (val) => {
+  settingsStore.setAutoSaveInBookshelfMode(val)
 })
 
 // 刷新字体列表
@@ -229,5 +253,36 @@ async function cleanTempFiles() {
 .about-info .disclaimer {
   color: var(--warning-color, #f0ad4e);
   font-weight: 500;
+}
+
+/* 复选框设置项样式 */
+.checkbox-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.checkbox-text {
+  color: var(--text-primary);
+}
+
+.hint-note {
+  color: var(--warning-color, #f0ad4e);
+  font-size: 12px;
 }
 </style>

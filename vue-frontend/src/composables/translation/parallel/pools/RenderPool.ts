@@ -13,6 +13,8 @@ import { parallelRender } from '@/api/parallelTranslate'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { shouldEnableAutoSave, saveTranslatedImage } from '../../core/saveStep'
+import { useParallelTranslation } from '../useParallelTranslation'
 import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from '@/types/bubble'
 
 export class RenderPool extends TaskPool {
@@ -137,7 +139,23 @@ export class RenderPool extends TaskPool {
     // 3. 更新进度
     this.progressTracker.incrementCompleted()
 
-    console.log(`✅ 图片 ${imageIndex + 1} 渲染完成并已更新到界面`)
+    // 4. 自动保存（书架模式下）
+    if (shouldEnableAutoSave()) {
+      saveTranslatedImage(imageIndex)
+        .catch(err => {
+          console.error(`[RenderPool] 自动保存图片 ${imageIndex + 1} 失败:`, err)
+        })
+        .finally(() => {
+          // 无论成功还是失败，都更新保存进度
+          const { progress } = useParallelTranslation()
+          const globalProgress = progress.value
+          if (globalProgress.save) {
+            globalProgress.save.completed = (globalProgress.save.completed || 0) + 1
+          }
+        })
+    }
+
+    console.log(`✅ 图片 ${imageIndex + 1} 渲染完成`)
   }
 
   /**

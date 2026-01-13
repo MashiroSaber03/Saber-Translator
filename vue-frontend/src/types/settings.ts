@@ -216,6 +216,9 @@ export interface TranslationSettings {
 
   // 并行翻译设置
   parallel: ParallelSettings
+
+  // 书架模式自动保存（翻译一张保存一张）
+  autoSaveInBookshelfMode: boolean
 }
 
 /**
