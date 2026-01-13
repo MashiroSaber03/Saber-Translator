@@ -144,20 +144,6 @@ function setThumbnailRef(el: HTMLElement | null, index: number) {
 }
 
 /**
- * 获取缩略图项的额外类名
- */
-function getThumbnailClasses(image: ImageData): string[] {
-  const classes: string[] = []
-  if (image.translationFailed) {
-    classes.push('translation-failed')
-  }
-  if (image.isManuallyAnnotated) {
-    classes.push('has-manual-labels')
-  }
-  return classes
-}
-
-/**
  * 获取缩略图的 title 提示文本
  */
 function getThumbnailTitle(image: ImageData): string {
@@ -231,10 +217,7 @@ onMounted(() => {
             :key="image.id"
             :ref="(el) => setThumbnailRef(el as HTMLElement | null, getImageGlobalIndex(image))"
             class="thumbnail-item"
-            :class="[
-              { active: getImageGlobalIndex(image) === currentIndex },
-              ...getThumbnailClasses(image)
-            ]"
+            :class="{ active: getImageGlobalIndex(image) === currentIndex }"
             :title="getThumbnailTitle(image)"
             @click="handleClick(getImageGlobalIndex(image))"
           >
@@ -244,6 +227,9 @@ onMounted(() => {
               :alt="image.fileName"
               class="thumbnail-image"
             >
+            <!-- 页码角标（左下角） -->
+            <span class="page-number-indicator">{{ getImageGlobalIndex(image) + 1 }}</span>
+            <!-- 状态角标 -->
             <span v-if="getStatusType(image) === 'failed'" class="translation-failed-indicator">!</span>
             <span v-else-if="getStatusType(image) === 'labeled'" class="labeled-indicator">✏️</span>
             <div v-if="getStatusType(image) === 'processing'" class="thumbnail-processing-indicator">⟳</div>
@@ -271,10 +257,7 @@ onMounted(() => {
           :key="image.id"
           :ref="(el) => setThumbnailRef(el as HTMLElement | null, index)"
           class="thumbnail-item"
-          :class="[
-            { active: index === currentIndex },
-            ...getThumbnailClasses(image)
-          ]"
+          :class="{ active: index === currentIndex }"
           :title="getThumbnailTitle(image)"
           :data-index="index"
           @click="handleClick(index)"
@@ -285,6 +268,9 @@ onMounted(() => {
             :alt="image.fileName"
             class="thumbnail-image"
           >
+          <!-- 页码角标（左下角） -->
+          <span class="page-number-indicator">{{ index + 1 }}</span>
+          <!-- 状态角标 -->
           <span 
             v-if="getStatusType(image) === 'failed'"
             class="translation-failed-indicator"
@@ -349,7 +335,7 @@ onMounted(() => {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   padding: 25px;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 
 #thumbnail-sidebar .thumbnail-card:hover {
@@ -446,7 +432,6 @@ onMounted(() => {
 .folder-item {
   position: relative;
   padding: 10px 12px;
-  padding-left: 10px; /* 不需要为图标留空间了 */
   background: linear-gradient(135deg, #fff8e6 0%, #fff3d4 100%);
   border: 1px solid #f0d78c;
   border-radius: 8px;
@@ -504,7 +489,7 @@ onMounted(() => {
    缩略图列表（扁平模式）
    =================================== */
 
-#thumbnail-sidebar ul#thumbnailList {
+#thumbnailList {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -538,35 +523,6 @@ onMounted(() => {
   border-color: #3498db;
   box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
   transform: translateY(-2px);
-}
-
-/* 激活状态的左上角圆点标记 */
-#thumbnail-sidebar .thumbnail-item.active::before,
-.folder-content-list .thumbnail-item.active::before {
-  content: '●';
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  color: #3498db;
-  font-size: 18px;
-  z-index: 10;
-  text-shadow: 0 0 3px white;
-  font-weight: bold;
-}
-
-/* 激活状态的边框叠加 */
-#thumbnail-sidebar .thumbnail-item.active::after,
-.folder-content-list .thumbnail-item.active::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  border: 3px solid #3498db;
-  border-radius: 4px;
-  box-sizing: border-box;
-  pointer-events: none;
 }
 
 /* 缩略图图片 */
@@ -633,9 +589,25 @@ onMounted(() => {
   box-shadow: 0 0 3px black;
 }
 
-/* 手动标注项的左侧蓝条 */
-#thumbnail-sidebar .thumbnail-item.has-manual-labels {
-  border-left: 4px solid #007bff;
+/* 页码角标（左下角灰色小角标） */
+.page-number-indicator {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  z-index: 8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 /* 空状态 */
