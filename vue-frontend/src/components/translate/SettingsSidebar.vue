@@ -27,14 +27,22 @@ const emit = defineEmits<{
   (e: 'translateCurrent'): void
   /** 翻译所有图片 */
   (e: 'translateAll'): void
+  /** 翻译指定范围图片 */
+  (e: 'translateRange', startPage: number, endPage: number): void
   /** 高质量翻译 */
   (e: 'hqTranslate'): void
+  /** 高质量翻译指定范围 */
+  (e: 'hqTranslateRange', startPage: number, endPage: number): void
   /** AI 校对 */
   (e: 'proofread'): void
+  /** AI 校对指定范围 */
+  (e: 'proofreadRange', startPage: number, endPage: number): void
   /** 仅消除文字 */
   (e: 'removeText'): void
   /** 消除所有图片文字 */
   (e: 'removeAllText'): void
+  /** 消除指定范围图片文字 */
+  (e: 'removeTextRange', startPage: number, endPage: number): void
   /** 删除当前图片 */
   (e: 'deleteCurrent'): void
   /** 清除所有图片 */
@@ -102,6 +110,18 @@ const applyOptions = ref<ApplySettingsOptions>({
   strokeWidth: true,
 })
 
+/** 页面范围设置面板是否展开 */
+const isPageRangeExpanded = ref(false)
+
+/** 是否启用范围限制 */
+const isRangeEnabled = ref(false)
+
+/** 页面范围起始页 */
+const pageRangeStart = ref(1)
+
+/** 页面范围结束页 */
+const pageRangeEnd = ref(1)
+
 /** 排版方向选项（用于CustomSelect） */
 const layoutDirectionOptions = [
   { label: '自动 (根据检测)', value: 'auto' },
@@ -125,6 +145,16 @@ const currentImage = computed(() => imageStore.currentImage)
 
 /** 是否有图片 */
 const hasImages = computed(() => imageStore.hasImages)
+
+/** 总图片数量 */
+const totalImages = computed(() => imageStore.images.length)
+
+/** 页面范围是否有效 */
+const isPageRangeValid = computed(() => {
+  return pageRangeStart.value >= 1 && 
+         pageRangeEnd.value <= totalImages.value && 
+         pageRangeStart.value <= pageRangeEnd.value
+})
 
 /** 是否可以翻译 */
 const canTranslate = computed(() => 
@@ -458,6 +488,90 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+/**
+ * 切换页面范围设置面板
+ */
+function togglePageRangeSettings() {
+  isPageRangeExpanded.value = !isPageRangeExpanded.value
+  // 展开时重置为有效范围
+  if (isPageRangeExpanded.value && totalImages.value > 0) {
+    pageRangeStart.value = 1
+    pageRangeEnd.value = totalImages.value
+  }
+}
+
+/**
+ * 更新页面范围起始页
+ */
+function updatePageRangeStart(event: Event) {
+  const value = parseInt((event.target as HTMLInputElement).value)
+  if (!isNaN(value)) {
+    pageRangeStart.value = Math.max(1, Math.min(value, totalImages.value))
+    // 确保起始页不超过结束页
+    if (pageRangeStart.value > pageRangeEnd.value) {
+      pageRangeEnd.value = pageRangeStart.value
+    }
+  }
+}
+
+/**
+ * 更新页面范围结束页
+ */
+function updatePageRangeEnd(event: Event) {
+  const value = parseInt((event.target as HTMLInputElement).value)
+  if (!isNaN(value)) {
+    pageRangeEnd.value = Math.max(1, Math.min(value, totalImages.value))
+    // 确保结束页不小于起始页
+    if (pageRangeEnd.value < pageRangeStart.value) {
+      pageRangeStart.value = pageRangeEnd.value
+    }
+  }
+}
+
+/**
+ * 处理翻译所有图片（根据范围设置）
+ */
+function handleTranslateAll() {
+  if (isRangeEnabled.value && isPageRangeValid.value) {
+    emit('translateRange', pageRangeStart.value, pageRangeEnd.value)
+  } else {
+    emit('translateAll')
+  }
+}
+
+/**
+ * 处理高质量翻译（根据范围设置）
+ */
+function handleHqTranslate() {
+  if (isRangeEnabled.value && isPageRangeValid.value) {
+    emit('hqTranslateRange', pageRangeStart.value, pageRangeEnd.value)
+  } else {
+    emit('hqTranslate')
+  }
+}
+
+/**
+ * 处理AI校对（根据范围设置）
+ */
+function handleProofread() {
+  if (isRangeEnabled.value && isPageRangeValid.value) {
+    emit('proofreadRange', pageRangeStart.value, pageRangeEnd.value)
+  } else {
+    emit('proofread')
+  }
+}
+
+/**
+ * 处理消除所有图片文字（根据范围设置）
+ */
+function handleRemoveAllText() {
+  if (isRangeEnabled.value && isPageRangeValid.value) {
+    emit('removeTextRange', pageRangeStart.value, pageRangeEnd.value)
+  } else {
+    emit('removeAllText')
+  }
+}
+
 // 监听点击外部事件
 if (typeof window !== 'undefined') {
   window.addEventListener('click', handleClickOutside)
@@ -692,6 +806,64 @@ if (typeof window !== 'undefined') {
         </div>
       </div>
 
+      <!-- 页面范围设置折叠面板 -->
+      <div id="page-range-settings" class="settings-card collapsible-panel page-range-panel">
+        <h3 
+          class="collapsible-header"
+          @click="togglePageRangeSettings"
+        >
+          指定范围 
+          <span v-if="isRangeEnabled" class="range-badge">{{ pageRangeStart }}-{{ pageRangeEnd }}</span>
+          <span class="toggle-icon">{{ isPageRangeExpanded ? '▼' : '▶' }}</span>
+        </h3>
+        
+        <div v-show="isPageRangeExpanded" class="collapsible-content">
+          <div class="settings-form page-range-form">
+            <!-- 启用开关 + 图片数 -->
+            <div class="range-header-row">
+              <label class="range-toggle-compact">
+                <input 
+                  type="checkbox" 
+                  v-model="isRangeEnabled"
+                  :disabled="totalImages === 0"
+                >
+                <span>启用</span>
+              </label>
+              <span class="total-count">共 {{ totalImages }} 张</span>
+            </div>
+            
+            <!-- 页面范围输入（启用时显示） -->
+            <div v-show="isRangeEnabled" class="page-range-inputs-compact">
+              <input 
+                type="number" 
+                id="pageRangeStart" 
+                :value="pageRangeStart"
+                min="1" 
+                :max="totalImages"
+                @input="updatePageRangeStart"
+                placeholder="起始"
+              >
+              <span class="range-sep">~</span>
+              <input 
+                type="number" 
+                id="pageRangeEnd" 
+                :value="pageRangeEnd"
+                min="1" 
+                :max="totalImages"
+                @input="updatePageRangeEnd"
+                placeholder="结束"
+              >
+              <span class="range-count">({{ pageRangeEnd - pageRangeStart + 1 }}张)</span>
+            </div>
+            
+            <!-- 范围错误提示 -->
+            <div v-if="isRangeEnabled && !isPageRangeValid && totalImages > 0" class="range-error-compact">
+              范围无效
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 操作按钮组 -->
       <div class="action-buttons">
         <button 
@@ -703,26 +875,28 @@ if (typeof window !== 'undefined') {
         </button>
         <button 
           id="translateAllButton" 
-          :disabled="!canTranslate"
-          @click="emit('translateAll')"
+          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
+          :title="isRangeEnabled ? `翻译第 ${pageRangeStart}-${pageRangeEnd} 页` : '翻译所有图片'"
+          @click="handleTranslateAll"
         >
-          翻译所有图片
+          {{ isRangeEnabled ? `翻译 ${pageRangeStart}-${pageRangeEnd} 页` : '翻译所有图片' }}
         </button>
         <button 
           id="startHqTranslationBtn" 
           class="settings-button purple-button" 
-          :disabled="!canTranslate"
-          title="使用高质量翻译模式（需在设置中配置）"
-          @click="emit('hqTranslate')"
+          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
+          :title="isRangeEnabled ? `高质量翻译第 ${pageRangeStart}-${pageRangeEnd} 页` : '使用高质量翻译模式（需在设置中配置）'"
+          @click="handleHqTranslate"
         >
-          高质量翻译
+          {{ isRangeEnabled ? `高质量翻译 ${pageRangeStart}-${pageRangeEnd}` : '高质量翻译' }}
         </button>
         <button 
           id="proofreadButton" 
-          :disabled="!canTranslate"
-          @click="emit('proofread')"
+          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
+          :title="isRangeEnabled ? `AI校对第 ${pageRangeStart}-${pageRangeEnd} 页` : 'AI校对'"
+          @click="handleProofread"
         >
-          AI校对
+          {{ isRangeEnabled ? `AI校对 ${pageRangeStart}-${pageRangeEnd}` : 'AI校对' }}
         </button>
         <button 
           id="removeTextOnlyButton" 
@@ -734,11 +908,11 @@ if (typeof window !== 'undefined') {
         </button>
         <button 
           id="removeAllTextButton" 
-          :disabled="!hasImages"
-          title="消除所有图片中的气泡文字，无需填写翻译服务商和API Key"
-          @click="emit('removeAllText')"
+          :disabled="!hasImages || (isRangeEnabled && !isPageRangeValid)"
+          :title="isRangeEnabled ? `消除第 ${pageRangeStart}-${pageRangeEnd} 页的文字` : '消除所有图片中的气泡文字'"
+          @click="handleRemoveAllText"
         >
-          消除所有图片文字
+          {{ isRangeEnabled ? `消除 ${pageRangeStart}-${pageRangeEnd} 页文字` : '消除所有图片文字' }}
         </button>
         <button 
           id="deleteCurrentImageButton" 
@@ -1970,5 +2144,118 @@ if (typeof window !== 'undefined') {
 #settings-sidebar button.green-button:hover {
   background: linear-gradient(135deg, #4cae4c 0%, #449d44 100%);
   box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
+}
+
+/* ============================================================ */
+/* 页面范围设置面板样式 */
+/* ============================================================ */
+
+/* ============================================================ */
+/* 页面范围设置 - 紧凑样式 */
+/* ============================================================ */
+
+.page-range-form {
+  padding: 8px 0 !important;
+}
+
+/* 标题中的范围徽章 */
+.range-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 6px;
+  background: linear-gradient(135deg, #5c6bc0 0%, #7986cb 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+/* 头部行：启用开关 + 图片数 */
+.range-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.range-toggle-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s ease;
+}
+
+.range-toggle-compact:hover {
+  border-color: #5c6bc0;
+}
+
+.range-toggle-compact:has(input:checked) {
+  background: #e8eaf6;
+  border-color: #5c6bc0;
+  color: #3f51b5;
+}
+
+.range-toggle-compact input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #5c6bc0;
+}
+
+.total-count {
+  font-size: 12px;
+  color: #888;
+}
+
+/* 紧凑的范围输入 */
+.page-range-inputs-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.page-range-inputs-compact input {
+  width: 52px !important;
+  padding: 6px 4px !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  text-align: center;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+}
+
+.page-range-inputs-compact input:focus {
+  border-color: #5c6bc0 !important;
+  outline: none;
+}
+
+.range-sep {
+  font-size: 14px;
+  color: #999;
+}
+
+.range-count {
+  font-size: 11px;
+  color: #888;
+  margin-left: 4px;
+}
+
+/* 紧凑的错误提示 */
+.range-error-compact {
+  padding: 4px 8px;
+  background: #ffebee;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #c62828;
+  text-align: center;
 }
 </style>

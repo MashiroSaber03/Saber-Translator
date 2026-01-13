@@ -10,7 +10,15 @@
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
 /** 执行范围 */
-export type ExecutionScope = 'current' | 'all' | 'failed'
+export type ExecutionScope = 'current' | 'all' | 'failed' | 'range'
+
+/** 页面范围配置（用于 scope = 'range' 时） */
+export interface PageRange {
+    /** 起始页码（从1开始） */
+    startPage: number
+    /** 结束页码（从1开始，包含） */
+    endPage: number
+}
 
 // ============================================================
 // 进度管理
@@ -58,6 +66,8 @@ export interface BatchOptions {
 export interface PipelineConfig {
     mode: TranslationMode
     scope: ExecutionScope
+    /** 页面范围（仅当 scope = 'range' 时使用） */
+    pageRange?: PageRange
     batchOptions?: BatchOptions
 }
 

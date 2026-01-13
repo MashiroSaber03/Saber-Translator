@@ -40,6 +40,18 @@
         <span v-if="imageCount > 0">当前有 {{ imageCount }} 张图片将被保存</span>
         <span v-else class="warning">没有图片可保存</span>
       </div>
+      
+      <!-- 保存进度条 -->
+      <div v-if="isSaving && saveProgress.total > 0" class="save-progress">
+        <div class="progress-text">保存图片 {{ saveProgress.current }}/{{ saveProgress.total }}...</div>
+        <div class="progress-bar">
+          <div 
+            class="progress-fill" 
+            :style="{ width: (saveProgress.current / saveProgress.total * 100) + '%' }"
+          ></div>
+        </div>
+      </div>
+      
       <div class="action-buttons">
         <button
           class="btn btn-primary"
@@ -158,11 +170,11 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useImageStore } from '@/stores/imageStore'
 import {
   getSessionList,
-  saveSession,
   loadSession,
   deleteSession,
   renameSession
 } from '@/api/session'
+import { useSettingsStore } from '@/stores/settingsStore'
 import type { SessionListItem } from '@/types/api'
 import { showToast } from '@/utils/toast'
 
@@ -190,6 +202,7 @@ const emit = defineEmits<{
 // Store
 const sessionStore = useSessionStore()
 const imageStore = useImageStore()
+const settingsStore = useSettingsStore()
 
 // 状态
 const activeTab = ref<'save' | 'load'>(props.defaultTab)
@@ -199,6 +212,7 @@ const selectedSession = ref<string | null>(null)
 const isLoadingList = ref(false)
 const isLoading = ref(false)
 const isSaving = ref(false)
+const saveProgress = ref<{ current: number; total: number }>({ current: 0, total: 0 })
 
 // 重命名相关
 const showRenameDialog = ref(false)
@@ -269,35 +283,65 @@ async function refreshList() {
 }
 
 /**
- * 保存会话
+ * 保存会话（逐页保存，显示进度）
  */
 async function handleSave() {
   if (!canSave.value) return
 
   isSaving.value = true
+  const totalImages = imageStore.images.length
+  saveProgress.value = { current: 0, total: totalImages }
+  
   try {
-    // 创建会话数据
-    const sessionData = sessionStore.createSessionData(
+    // 导入公共保存函数
+    const { saveAllPagesSequentially, saveSessionMeta } = await import('@/api/pageStorage')
+    
+    // 构建 UI 设置
+    const { textStyle, targetLanguage, sourceLanguage } = settingsStore.settings
+    const uiSettings: Record<string, unknown> = {
+      targetLanguage,
+      sourceLanguage,
+      fontSize: textStyle.fontSize,
+      autoFontSize: textStyle.autoFontSize,
+      fontFamily: textStyle.fontFamily,
+      layoutDirection: textStyle.layoutDirection,
+      textColor: textStyle.textColor,
+      fillColor: textStyle.fillColor,
+      useInpaintingMethod: textStyle.inpaintMethod,
+      strokeEnabled: textStyle.strokeEnabled,
+      strokeColor: textStyle.strokeColor,
+      strokeWidth: textStyle.strokeWidth,
+      useAutoTextColor: textStyle.useAutoTextColor,
+    }
+
+    // 使用公共函数逐页保存
+    const savedCount = await saveAllPagesSequentially(
       sessionName.value,
-      [...imageStore.images] as import('@/types/image').ImageData[],
-      imageStore.currentImageIndex,
-      {} // UI 设置将从 settingsStore 获取
+      imageStore.images as unknown as import('@/api/pageStorage').ImageDataForSave[],
+      {
+        onProgress: (current, total) => {
+          saveProgress.value = { current, total }
+        }
+      }
     )
 
-    const response = await saveSession(sessionName.value, sessionData)
-    if (response.success) {
-      showToast('会话保存成功', 'success')
-      sessionStore.setSessionName(sessionName.value)
-      emit('session-saved', sessionName.value)
-      handleClose()
-    } else {
-      showToast(response.error || '保存失败', 'error')
-    }
+    // 更新会话元数据
+    await saveSessionMeta(sessionName.value, {
+      ui_settings: uiSettings,
+      total_pages: totalImages,
+      currentImageIndex: imageStore.currentImageIndex
+    })
+
+    showToast(`会话保存成功 (${savedCount}/${totalImages})`, 'success')
+    sessionStore.setSessionName(sessionName.value)
+    emit('session-saved', sessionName.value)
+    handleClose()
   } catch (error) {
     console.error('保存会话失败:', error)
     showToast('保存会话失败', 'error')
   } finally {
     isSaving.value = false
+    saveProgress.value = { current: 0, total: 0 }
   }
 }
 
@@ -513,6 +557,35 @@ function formatDate(dateStr: string): string {
 
 .form-hint .warning {
   color: var(--warning-color, #f0ad4e);
+}
+
+/* 保存进度条 */
+.save-progress {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-secondary, #f5f7fa);
+  border-radius: 6px;
+}
+
+.save-progress .progress-text {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.save-progress .progress-bar {
+  height: 8px;
+  background: var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.save-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
 /* 会话列表 */

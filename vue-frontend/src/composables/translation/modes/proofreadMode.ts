@@ -4,21 +4,31 @@
  * 步骤链由 SequentialPipeline.ts 中的 STEP_CHAIN_CONFIGS 定义
  */
 
-import type { PipelineConfig } from '../core/types'
+import type { PipelineConfig, ExecutionScope, PageRange } from '../core/types'
 
-/**
- * 获取 AI 校对模式配置
- * @param options 可选的批量处理选项覆盖
- */
-export function getProofreadModeConfig(options?: {
+/** 校对模式配置选项 */
+export interface ProofreadModeOptions {
     batchSize?: number
     maxRetries?: number
     rpmLimit?: number
     sessionResetFrequency?: number
-}): PipelineConfig {
+    /** 页面范围（仅当 scope = 'range' 时使用） */
+    pageRange?: PageRange
+}
+
+/**
+ * 获取 AI 校对模式配置
+ * @param scope 执行范围：'all' | 'range'（校对默认处理多张图片）
+ * @param options 可选的批量处理选项覆盖
+ */
+export function getProofreadModeConfig(
+    scope: ExecutionScope = 'all',
+    options?: ProofreadModeOptions
+): PipelineConfig {
     return {
         mode: 'proofread',
-        scope: 'all',
+        scope,
+        pageRange: options?.pageRange,
         batchOptions: {
             batchSize: options?.batchSize ?? 3,
             maxRetries: options?.maxRetries ?? 2,

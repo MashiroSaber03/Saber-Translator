@@ -286,59 +286,6 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   // ============================================================
-  // 会话数据序列化
-  // ============================================================
-
-  /**
-   * 创建会话数据对象
-   * @param name - 会话名称
-   * @param images - 图片数据数组
-   * @param currentIndex - 当前图片索引
-   * @param uiSettings - UI 设置
-   * @returns 会话数据对象
-   */
-  function createSessionData(
-    name: string,
-    images: ImageData[],
-    currentIndex: number,
-    uiSettings: Record<string, unknown>
-  ): SessionData {
-    return {
-      name,
-      version: '2.0',
-      savedAt: new Date().toISOString(),
-      imageCount: images.length,
-      ui_settings: uiSettings,
-      images: images.map(img => ({
-        originalDataURL: img.originalDataURL,
-        translatedDataURL: img.translatedDataURL || undefined,
-        cleanImageData: img.cleanImageData || undefined,
-        bubbleStates: img.bubbleStates || undefined,
-        // 保存手动标注标记
-        isManuallyAnnotated: img.isManuallyAnnotated || undefined,
-        // 保存文件夹路径信息
-        relativePath: img.relativePath || undefined,
-        folderPath: img.folderPath || undefined,
-        fileName: img.fileName,
-        fontSize: img.fontSize,
-        autoFontSize: img.autoFontSize,
-        fontFamily: img.fontFamily,
-        layoutDirection: img.layoutDirection,
-        useAutoTextColor: img.useAutoTextColor,
-        textColor: img.textColor,
-        fillColor: img.fillColor,
-        inpaintMethod: img.inpaintMethod,
-        strokeEnabled: img.strokeEnabled,
-        strokeColor: img.strokeColor,
-        strokeWidth: img.strokeWidth,
-        translationStatus: img.translationStatus,
-        translationFailed: img.translationFailed
-      })),
-      currentImageIndex: currentIndex
-    }
-  }
-
-  // ============================================================
   // 重置方法
   // ============================================================
 
@@ -585,7 +532,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
-   * 保存章节会话（分批保存，复刻原版 session.js 的 saveChapterSession + saveSessionInBatches）
+   * 保存章节会话（使用新的单页存储 API，逐页保存）
    * @param bookId - 书籍 ID
    * @param chapterId - 章节 ID
    * @returns 是否保存成功
@@ -597,7 +544,7 @@ export const useSessionStore = defineStore('session', () => {
       return false
     }
 
-    console.log(`保存章节会话（分批）: book=${bookId}, chapter=${chapterId}`)
+    console.log(`保存章节会话: book=${bookId}, chapter=${chapterId}`)
 
     // 获取 imageStore 和 settingsStore
     const { useImageStore } = await import('@/stores/imageStore')
@@ -613,24 +560,17 @@ export const useSessionStore = defineStore('session', () => {
       return false
     }
 
-    // 构建会话路径（格式必须与后端 bookshelf_manager.get_chapter_session_path 一致）
+    // 构建会话路径
     const sessionPath = `bookshelf/${bookId}/${chapterId}`
 
     setSaving(true)
     setError(null)
 
-    // 更新进度显示
-    loadingProgress.value = { current: 0, total: 100, message: '准备保存...' }
+    const totalImages = allImages.length
+    loadingProgress.value = { current: 0, total: totalImages, message: `准备保存 ${totalImages} 张图片...` }
 
     try {
-      // 导入 API
-      const { batchSaveStartApi, batchSaveImageApi, batchSaveCompleteApi } = await import('@/api/session')
-
-      const totalImages = allImages.length
-
-      // 【复刻原版修复】步骤0: 在保存前，将所有 /api/... URL 格式的图片转换为 Base64
-      // 原版 session.js 会确保所有图片都是 Base64 格式后再保存
-      // 如果图片是从书架加载的，可能仍是 /api/... URL 格式，需要先转换
+      // 步骤0: 在保存前，将所有 /api/... URL 格式的图片转换为 Base64
       const hasApiUrls = allImages.some(img =>
         (img.originalDataURL && img.originalDataURL.startsWith('/api/')) ||
         (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) ||
@@ -639,15 +579,12 @@ export const useSessionStore = defineStore('session', () => {
 
       if (hasApiUrls) {
         console.log('[saveChapterSession] 检测到 /api/ URL 格式图片，开始转换为 Base64...')
-        loadingProgress.value = { current: 2, total: 100, message: '转换图片格式...' }
+        loadingProgress.value = { current: 0, total: totalImages, message: '转换图片格式...' }
 
-        // convertImagesToBase64 会直接修改 allImages（实际是 imageStore.images 的引用）中的数据
-        // 转换完成后 imageStore 中的数据已自动更新
         await convertImagesToBase64(allImages, (current, total) => {
-          const progress = 2 + (current / total) * 3  // 2% ~ 5%
           loadingProgress.value = {
-            current: Math.round(progress),
-            total: 100,
+            current: 0,
+            total: totalImages,
             message: `转换图片 ${current}/${total}...`
           }
         })
@@ -655,13 +592,9 @@ export const useSessionStore = defineStore('session', () => {
         console.log('[saveChapterSession] 图片格式转换完成')
       }
 
-      // 步骤1: 收集元数据（仅渲染相关设置，AI设置使用全局配置）
-      loadingProgress.value = { current: 5, total: 100, message: '收集元数据...' }
-
-      const { textStyle, targetLanguage, sourceLanguage } = settingsStore.settings
+      // 收集 UI 设置（仅保存文本样式设置）
+      const { textStyle } = settingsStore.settings
       const uiSettings: Record<string, unknown> = {
-        targetLanguage: targetLanguage,
-        sourceLanguage: sourceLanguage,
         fontSize: textStyle.fontSize,
         autoFontSize: textStyle.autoFontSize,
         fontFamily: textStyle.fontFamily,
@@ -675,111 +608,49 @@ export const useSessionStore = defineStore('session', () => {
         useAutoTextColor: textStyle.useAutoTextColor,
       }
 
-      // 图片元数据（不含 Base64 数据）
-      const imagesMeta = allImages.map((img) => {
-        const meta: Record<string, unknown> = {}
-        for (const key of Object.keys(img)) {
-          if (key !== 'originalDataURL' && key !== 'translatedDataURL' && key !== 'cleanImageData') {
-            meta[key] = img[key as keyof typeof img]
+      // 使用公共函数逐页保存
+      const { saveAllPagesSequentially, saveSessionMeta } = await import('@/api/pageStorage')
+
+      const savedCount = await saveAllPagesSequentially(
+        sessionPath,
+        allImages as unknown as import('@/api/pageStorage').ImageDataForSave[],
+        {
+          onProgress: (current, total) => {
+            loadingProgress.value = {
+              current,
+              total,
+              message: `保存图片 ${current}/${total}...`
+            }
           }
         }
-        meta.hasOriginalData = !!img.originalDataURL
-        meta.hasTranslatedData = !!img.translatedDataURL
-        meta.hasCleanData = !!img.cleanImageData
-        return meta
+      )
+
+      // 保存会话元数据
+      loadingProgress.value = {
+        current: totalImages,
+        total: totalImages,
+        message: '完成保存...'
+      }
+
+      await saveSessionMeta(sessionPath, {
+        ui_settings: uiSettings,
+        total_pages: totalImages,
+        currentImageIndex: imageStore.currentImageIndex
       })
 
-      const metadata = {
-        ui_settings: uiSettings,
-        images_meta: imagesMeta,
-        currentImageIndex: imageStore.currentImageIndex
+      console.log(`章节保存完成: ${savedCount}/${totalImages} 张图片`)
+
+      // 更新书架章节图片数量
+      try {
+        const { apiClient } = await import('@/api/client')
+        await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
+          count: totalImages
+        })
+      } catch (e) {
+        console.warn('更新章节图片数量失败（非致命）:', e)
       }
 
-      // 步骤2: 调用开始保存 API
-      loadingProgress.value = { current: 10, total: 100, message: '初始化保存...' }
-
-      const startResponse = await batchSaveStartApi(sessionPath, metadata)
-      if (!startResponse.success) {
-        throw new Error(startResponse.error || '初始化保存失败')
-      }
-
-      const sessionFolder = startResponse.session_folder
-      if (!sessionFolder) {
-        throw new Error('未获取到会话文件夹路径')
-      }
-      console.log(`会话文件夹: ${sessionFolder}`)
-
-      // 步骤3: 逐张保存图片
-      let savedCount = 0
-      let failedCount = 0
-
-      const isBase64Data = (data: string | null | undefined): boolean => {
-        return !!data && typeof data === 'string' && data.startsWith('data:')
-      }
-
-      for (let i = 0; i < totalImages; i++) {
-        const img = allImages[i]
-        if (!img) continue
-
-        const progress = 10 + (i / totalImages) * 80
-        loadingProgress.value = {
-          current: Math.round(progress),
-          total: 100,
-          message: `保存图片 ${i + 1}/${totalImages}...`
-        }
-
-        if (isBase64Data(img.originalDataURL)) {
-          try {
-            const resp = await batchSaveImageApi(sessionFolder, i, 'original', img.originalDataURL)
-            if (!resp.success) {
-              console.error(`保存图片 ${i} original 失败:`, resp.error)
-              failedCount++
-            }
-          } catch (e) {
-            console.error(`保存图片 ${i} original 出错:`, e)
-            failedCount++
-          }
-        }
-
-        if (isBase64Data(img.translatedDataURL)) {
-          try {
-            const resp = await batchSaveImageApi(sessionFolder, i, 'translated', img.translatedDataURL!)
-            if (!resp.success) {
-              console.error(`保存图片 ${i} translated 失败:`, resp.error)
-              failedCount++
-            }
-          } catch (e) {
-            console.error(`保存图片 ${i} translated 出错:`, e)
-            failedCount++
-          }
-        }
-
-        if (img.cleanImageData && typeof img.cleanImageData === 'string' && !img.cleanImageData.startsWith('/api/')) {
-          try {
-            const resp = await batchSaveImageApi(sessionFolder, i, 'clean', img.cleanImageData)
-            if (!resp.success) {
-              console.error(`保存图片 ${i} clean 失败:`, resp.error)
-              failedCount++
-            }
-          } catch (e) {
-            console.error(`保存图片 ${i} clean 出错:`, e)
-            failedCount++
-          }
-        }
-
-        savedCount++
-      }
-
-      // 步骤4: 完成保存
-      loadingProgress.value = { current: 95, total: 100, message: '完成保存...' }
-
-      const completeResponse = await batchSaveCompleteApi(sessionFolder, imagesMeta)
-      if (!completeResponse.success) {
-        throw new Error(completeResponse.error || '完成保存失败')
-      }
-
-      loadingProgress.value = { current: 100, total: 100, message: '保存完成' }
-      console.log(`分批保存完成: ${savedCount} 张图片, ${failedCount} 个失败`)
+      loadingProgress.value = { current: totalImages, total: totalImages, message: '保存完成' }
 
       setTimeout(() => {
         loadingProgress.value = { current: 0, total: 0, message: '' }
@@ -790,7 +661,7 @@ export const useSessionStore = defineStore('session', () => {
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '保存章节会话失败'
       setError(errorMsg)
-      console.error('分批保存失败:', e)
+      console.error('保存失败:', e)
       loadingProgress.value = { current: 0, total: 0, message: '' }
       return false
     } finally {
@@ -836,9 +707,6 @@ export const useSessionStore = defineStore('session', () => {
     setLoading,
     setSaving,
     setError,
-
-    // 会话数据
-    createSessionData,
 
     // 图片转换工具
     imageUrlToBase64,

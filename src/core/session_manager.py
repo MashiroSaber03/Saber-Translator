@@ -10,12 +10,13 @@ from src.shared.path_helpers import resource_path # 需要路径助手
 
 logger = logging.getLogger("SessionManager")
 
+# 注意：旧的保存相关的线程锁已移除，新的锁在 page_storage.py 中
+
 # --- 基础配置 ---
 SESSION_BASE_DIR_NAME = "sessions" # 会话保存的基础目录名
 METADATA_FILENAME = "session_meta.json" # 会话元数据文件名
 IMAGE_FILE_EXTENSION = ".png"  # 存储图片的文件扩展名（新格式）
 LEGACY_B64_EXTENSION = ".b64"  # 旧版 Base64 文件扩展名（向后兼容）
-IMAGE_DATA_EXTENSION = IMAGE_FILE_EXTENSION  # 当前使用的扩展名
 
 # --- 辅助函数 ---
 
@@ -46,45 +47,8 @@ def _get_session_path(session_name):
         return None
     return os.path.join(_get_session_base_dir(), safe_session_name)
 
-def _save_image_data(session_folder, image_index, image_type, base64_data):
-    """
-    将图像数据保存为真实的 PNG 图片文件。
+# 注意：旧的 _save_image_data 函数已移除，保存功能请使用 src/core/page_storage.py
 
-    Args:
-        session_folder (str): 此会话的文件夹路径。
-        image_index (int): 图像在其列表中的索引。
-        image_type (str): 图像类型 ('original', 'translated', 'clean')。
-        base64_data (str): Base64 编码的图像数据 (不含 'data:image/...' 前缀)。
-
-    Returns:
-        bool: 保存是否成功。
-    """
-    if not base64_data:
-        # logger.debug(f"图像 {image_index} 的 {image_type} 数据为空，跳过保存。")
-        return True # 认为是"成功"跳过
-
-    filename = f"image_{image_index}_{image_type}{IMAGE_FILE_EXTENSION}"
-    filepath = os.path.join(session_folder, filename)
-    try:
-        # 将 Base64 解码为二进制数据，保存为真实图片文件
-        image_bytes = base64.b64decode(base64_data)
-        with open(filepath, 'wb') as f:
-            f.write(image_bytes)
-        # logger.debug(f"成功保存图像文件: {filepath}")
-        
-        # 删除旧的 .b64 文件（如果存在）
-        legacy_filepath = os.path.join(session_folder, f"image_{image_index}_{image_type}{LEGACY_B64_EXTENSION}")
-        if os.path.exists(legacy_filepath):
-            try:
-                os.remove(legacy_filepath)
-                logger.debug(f"已删除旧版 .b64 文件: {legacy_filepath}")
-            except Exception:
-                pass  # 删除失败不影响主流程
-        
-        return True
-    except Exception as e:
-        logger.error(f"保存图像文件失败: {filepath} - {e}", exc_info=True)
-        return False
 
 def _load_image_data(session_folder, image_index, image_type):
     """
@@ -185,138 +149,9 @@ def get_image_url_path(session_name, image_index, image_type):
     return f"/api/sessions/image/{session_name}/{filename}"
 
 
-# --- 主要保存函数 ---
+# --- 主要加载函数 ---
+# 注意：旧的 save_session 函数已移除，保存功能请使用 src/core/page_storage.py
 
-def save_session(session_name, session_data):
-    """
-    保存完整的会话状态到磁盘。
-
-    Args:
-        session_name (str): 要保存的会话名称。
-        session_data (dict): 包含要保存的所有状态数据的字典，结构应类似：
-            {
-                "ui_settings": {...}, # 包含模型、字体、修复等设置
-                "images": [ # 图片列表
-                    {
-                        "fileName": "...",
-                        "originalDataURL": "data:image/...;base64,...", # 原始图 Base64
-                        "translatedDataURL": "data:image/...;base64,...", # 翻译图 Base64 (可能为 null)
-                        "cleanImageData": "...", # 干净背景 Base64 (可能为 null)
-                        "bubbleCoords": [[...], ...],
-                        "originalTexts": ["...", ...],
-                        "bubbleTexts": ["...", ...],
-                        "textboxTexts": ["...", ...],
-                        "bubbleStates": { # 气泡独立样式 (可能为 null)
-                            "0": {...}, "1": {...}
-                        },
-                        # 其他图片相关状态...
-                    },
-                    ...
-                ],
-                "currentImageIndex": index
-            }
-
-    Returns:
-        bool: 保存是否成功。
-    """
-    logger.info(f"开始保存会话: {session_name}")
-    session_folder = _get_session_path(session_name)
-    if not session_folder:
-        return False
-
-    try:
-        # 1. 创建会话文件夹 (如果已存在，先删除旧内容还是覆盖？这里选择覆盖)
-        if os.path.exists(session_folder):
-            logger.warning(f"会话 '{session_name}' 已存在，将覆盖。")
-            # 可以选择删除旧文件夹或只覆盖文件，这里简单覆盖
-            # shutil.rmtree(session_folder) # 如果需要完全清空
-        os.makedirs(session_folder, exist_ok=True)
-
-        # 2. 准备元数据 (排除大的 Base64 字符串)
-        metadata_to_save = {
-            "metadata": {
-                "name": session_name,
-                "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "translator_version": "2.1.3+" # 或者从某处获取版本号
-            },
-            "ui_settings": session_data.get("ui_settings", {}),
-            "images_meta": [], # 存储图片元数据，不含 Base64
-            "currentImageIndex": session_data.get("currentImageIndex", -1)
-        }
-
-        images_data = session_data.get("images", [])
-        all_image_data_saved = True
-
-        # 3. 遍历图片，保存 Base64 数据到文件，并准备图片元数据
-        for idx, img_state in enumerate(images_data):
-            image_meta = img_state.copy() # 复制一份元数据
-
-            # 提取并保存 Original Image Data
-            original_b64 = None
-            if img_state.get('originalDataURL'):
-                try:
-                    original_b64 = img_state['originalDataURL'].split(',', 1)[1]
-                except IndexError:
-                    logger.warning(f"图像 {idx} 的 originalDataURL 格式无效，跳过保存。")
-                if not _save_image_data(session_folder, idx, 'original', original_b64):
-                    all_image_data_saved = False
-            del image_meta['originalDataURL'] # 从元数据中移除
-
-            # 提取并保存 Translated Image Data
-            translated_b64 = None
-            if img_state.get('translatedDataURL'):
-                try:
-                    translated_b64 = img_state['translatedDataURL'].split(',', 1)[1]
-                except IndexError:
-                    logger.warning(f"图像 {idx} 的 translatedDataURL 格式无效，跳过保存。")
-                if not _save_image_data(session_folder, idx, 'translated', translated_b64):
-                    all_image_data_saved = False
-            del image_meta['translatedDataURL'] # 从元数据中移除
-
-            # 提取并保存 Clean Image Data
-            clean_b64 = img_state.get('cleanImageData') # 假设这个已经是纯 Base64
-            if not _save_image_data(session_folder, idx, 'clean', clean_b64):
-                all_image_data_saved = False
-            if 'cleanImageData' in image_meta:
-                 del image_meta['cleanImageData'] # 从元数据中移除
-
-            # (可选) 可以在 image_meta 中添加标记，指示哪些文件被保存了
-            image_meta['hasOriginalData'] = bool(original_b64)
-            image_meta['hasTranslatedData'] = bool(translated_b64)
-            image_meta['hasCleanData'] = bool(clean_b64)
-
-            metadata_to_save["images_meta"].append(image_meta)
-
-        if not all_image_data_saved:
-            logger.warning(f"会话 '{session_name}': 部分图像数据保存失败。元数据仍会保存。")
-            # 这里可以选择是否继续保存元数据，或者直接返回 False
-            # return False # 如果希望任何图像保存失败都导致整个会话保存失败
-
-        # 4. 保存元数据 JSON 文件
-        metadata_filepath = os.path.join(session_folder, METADATA_FILENAME)
-        try:
-            with open(metadata_filepath, 'w', encoding='utf-8') as f:
-                json.dump(metadata_to_save, f, indent=2, ensure_ascii=False)
-            logger.info(f"成功保存会话元数据: {metadata_filepath}")
-        except IOError as e:
-            logger.error(f"保存会话元数据文件失败: {metadata_filepath} - {e}", exc_info=True)
-            return False # 元数据保存失败，则整个会话保存失败
-        except Exception as e:
-             logger.error(f"写入会话元数据时发生未知错误: {metadata_filepath} - {e}", exc_info=True)
-             return False
-
-        logger.info(f"会话 '{session_name}' 已成功保存到: {session_folder}")
-        return True
-
-    except Exception as e:
-        logger.error(f"保存会话 '{session_name}' 时发生未知错误: {e}", exc_info=True)
-        # 尝试清理可能已创建的文件夹/文件
-        try:
-            if os.path.exists(session_folder):
-                shutil.rmtree(session_folder)
-        except Exception as cleanup_e:
-            logger.error(f"清理失败的会话文件夹时出错: {session_folder} - {cleanup_e}")
-        return False
 
 def load_session(session_name):
     """
@@ -588,6 +423,9 @@ def rename_session(old_name, new_name):
 def load_session_by_path(session_path):
     """
     按路径加载会话数据（用于书籍/章节功能）。
+    支持两种存储格式：
+    - 旧格式：image_N_type.png + images_meta
+    - 新格式：images/N/type.png + page meta.json
     
     Args:
         session_path (str): 会话路径，相对于 data/sessions 目录
@@ -625,392 +463,134 @@ def load_session_by_path(session_path):
         with open(metadata_filepath, 'r', encoding='utf-8') as f:
             session_meta_data = json.load(f)
         
-        session_data_to_return = {
-            "ui_settings": session_meta_data.get("ui_settings", {}),
-            "images": [],
-            "currentImageIndex": session_meta_data.get("currentImageIndex", -1)
-        }
+        # 检查是否是新格式（有 total_pages 字段和 images 子目录）
+        images_dir = os.path.join(full_path, "images")
+        is_new_format = "total_pages" in session_meta_data and os.path.isdir(images_dir)
         
-        images_meta = session_meta_data.get("images_meta", [])
-        
-        for idx, img_meta in enumerate(images_meta):
-            loaded_img_state = img_meta.copy()
-            
-            # 返回图片 URL 而不是 Base64 数据，避免大数据传输
-            if img_meta.get('hasOriginalData'):
-                loaded_img_state['originalDataURL'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_original.png"
-            else:
-                loaded_img_state['originalDataURL'] = None
-            
-            if img_meta.get('hasTranslatedData'):
-                loaded_img_state['translatedDataURL'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_translated.png"
-            else:
-                loaded_img_state['translatedDataURL'] = None
-            
-            if img_meta.get('hasCleanData'):
-                # cleanImageData 也改为 URL
-                loaded_img_state['cleanImageData'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_clean.png"
-            else:
-                loaded_img_state['cleanImageData'] = None
-            
-            loaded_img_state.pop('hasOriginalData', None)
-            loaded_img_state.pop('hasTranslatedData', None)
-            loaded_img_state.pop('hasCleanData', None)
-            
-            session_data_to_return["images"].append(loaded_img_state)
-        
-        logger.info(f"会话路径 '{session_path}' 加载完成")
-        return session_data_to_return
+        if is_new_format:
+            # === 新格式加载逻辑 ===
+            logger.info(f"检测到新格式存档: {session_path}")
+            return _load_new_format_session(session_path, full_path, session_meta_data)
+        else:
+            # === 旧格式加载逻辑 ===
+            logger.info(f"检测到旧格式存档: {session_path}")
+            return _load_old_format_session(session_path, session_meta_data)
         
     except Exception as e:
         logger.error(f"按路径加载会话时发生错误: {e}", exc_info=True)
         return None
 
 
-def save_session_by_path(session_path, session_data):
-    """按路径保存会话数据（用于书籍/章节功能）"""
-    logger.info(f"开始按路径保存会话: {session_path}")
-    
-    if not session_path:
-        return False
-    
-    base_dir = _get_session_base_dir()
-    full_path = os.path.join(base_dir, session_path)
-    
-    try:
-        os.makedirs(full_path, exist_ok=True)
-        
-        images_data = session_data.get("images", [])
-        images_meta = []
-        
-        for idx, img_state in enumerate(images_data):
-            img_meta = {}
-            
-            original_url = img_state.get("originalDataURL")
-            if original_url and isinstance(original_url, str) and "base64," in original_url:
-                _, base64_part = original_url.split(",", 1)
-                if _save_image_data(full_path, idx, 'original', base64_part):
-                    img_meta['hasOriginalData'] = True
-            
-            translated_url = img_state.get("translatedDataURL")
-            if translated_url and isinstance(translated_url, str) and "base64," in translated_url:
-                _, base64_part = translated_url.split(",", 1)
-                if _save_image_data(full_path, idx, 'translated', base64_part):
-                    img_meta['hasTranslatedData'] = True
-            
-            clean_data = img_state.get("cleanImageData")
-            if clean_data and isinstance(clean_data, str):
-                if _save_image_data(full_path, idx, 'clean', clean_data):
-                    img_meta['hasCleanData'] = True
-            
-            for key in img_state:
-                if key not in ('originalDataURL', 'translatedDataURL', 'cleanImageData'):
-                    img_meta[key] = img_state[key]
-            
-            images_meta.append(img_meta)
-        
-        metadata_to_save = {
-            "metadata": {"name": session_path, "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "image_count": len(images_meta)},
-            "ui_settings": session_data.get("ui_settings", {}),
-            "images_meta": images_meta,
-            "currentImageIndex": session_data.get("currentImageIndex", -1)
-        }
-        
-        with open(os.path.join(full_path, METADATA_FILENAME), 'w', encoding='utf-8') as f:
-            json.dump(metadata_to_save, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"会话路径 '{session_path}' 保存成功")
-        return True
-        
-    except Exception as e:
-        logger.error(f"按路径保存会话时发生错误: {e}", exc_info=True)
-        return False
-
-
-# --- 测试代码 (更新) ---
-if __name__ == '__main__':
-    # 创建一些模拟数据进行测试
-    print("--- 测试 Session Manager (保存功能) ---")
-    # 模拟前端发送的数据结构
-    mock_session_data = {
-        "ui_settings": {
-            "modelProvider": "ollama",
-            "modelName": "llama3",
-            "fontSize": 28,
-            "autoFontSize": False,
-            "fontFamily": "fonts/msyh.ttc",
-            "layoutDirection": "vertical",
-            "useInpainting": "lama",
-            "fillColor": "#EEEEEE",
-            "textColor": "#111111",
-            "rotationAngle": -5,
-        },
-        "images": [
-            {
-                "fileName": "page_01.png",
-                "originalDataURL": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", # 1x1 Red Pixel
-                "translatedDataURL": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", # 1x1 Red Pixel (mock)
-                "cleanImageData": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPgvAQAD_gGLKKs5MgAAAABJRU5ErkJggg==", # 1x1 Black Pixel (mock)
-                "bubbleCoords": [[10, 10, 50, 50]],
-                "originalTexts": ["Hello"],
-                "bubbleTexts": ["你好"],
-                "textboxTexts": ["你好 (解释...)"],
-                "bubbleStates": { "0": {"fontSize": 28, "autoFontSize": False, "fontFamily": "fonts/msyh.ttc", "textDirection": "vertical", "position_offset": {"x": 0,"y": 0}, "textColor": "#111111", "rotationAngle": -5}},
-                "translationFailed": False,
-                # ... 其他状态 ...
-            },
-            {
-                "fileName": "page_02.jpg",
-                "originalDataURL": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QAiRXhpZgAASUkqAAgAAAABABIBAwABAAAABgASAAAAAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKpgA//Z", # 1x1 White Pixel
-                "translatedDataURL": None, # 未翻译
-                "cleanImageData": None,
-                "bubbleCoords": [[20, 30, 80, 90]],
-                "originalTexts": ["World"],
-                "bubbleTexts": [""],
-                "textboxTexts": [""],
-                "bubbleStates": None,
-                "translationFailed": False,
-                # ... 其他状态 ...
-            }
-        ],
-        "currentImageIndex": 0
+def _load_new_format_session(session_path, full_path, session_meta_data):
+    """
+    加载新格式会话（images/{index}/ 子目录结构）
+    """
+    session_data_to_return = {
+        "ui_settings": session_meta_data.get("ui_settings", {}),
+        "images": [],
+        "currentImageIndex": session_meta_data.get("currentImageIndex", 0)
     }
-
-    test_session_name = "my_first_test_session"
-    print(f"尝试保存会话: {test_session_name}")
-    success = save_session(test_session_name, mock_session_data)
-
-    if success:
-        print("保存成功！请检查以下目录和文件：")
-        session_path = _get_session_path(test_session_name)
-        print(f"  - 文件夹: {session_path}")
-        print(f"  - 元数据文件: {os.path.join(session_path, METADATA_FILENAME)}")
-        print(f"  - 图像文件 (示例):")
-        print(f"    - {os.path.join(session_path, 'image_0_original' + IMAGE_DATA_EXTENSION)}")
-        print(f"    - {os.path.join(session_path, 'image_0_translated' + IMAGE_DATA_EXTENSION)}")
-        print(f"    - {os.path.join(session_path, 'image_0_clean' + IMAGE_DATA_EXTENSION)}")
-        print(f"    - {os.path.join(session_path, 'image_1_original' + IMAGE_DATA_EXTENSION)}")
-        # ... 应该没有 image_1_translated 和 image_1_clean
-    else:
-        print("保存失败。")
-
-    # 测试无效名称
-    print("\n尝试保存无效名称:")
-    save_session("invalid/name", mock_session_data)
-    save_session("", mock_session_data)
-
-    print("\n--- 测试 Session Manager (加载、列出、删除功能) ---")
-
-    # 1. 测试列出
-    print("\n测试列出所有会话:")
-    sessions = list_sessions()
-    if sessions:
-        print("找到以下会话:")
-        for s in sessions:
-            print(f"  - 名称: {s['name']}, 保存时间: {s['saved_at']}, 图片数: {s['image_count']}, 版本: {s['version']}")
-    else:
-        print("未找到任何已保存的会话。")
-
-    # 2. 测试加载 (使用之前保存的名称)
-    if test_session_name in [s['name'] for s in sessions]:
-        print(f"\n测试加载会话: {test_session_name}")
-        loaded_data = load_session(test_session_name)
-        if loaded_data:
-            print("加载成功！")
-            print("  UI 设置:", loaded_data.get("ui_settings"))
-            print(f"  图片数量: {len(loaded_data.get('images', []))}")
-            # 检查第一张图片的 DataURL 是否已恢复
-            if loaded_data.get('images') and loaded_data['images'][0].get('originalDataURL'):
-                print("  第一张图片的 originalDataURL 已恢复。")
-            else:
-                print("  警告：第一张图片的 originalDataURL 未恢复。")
-            print(f"  当前索引: {loaded_data.get('currentImageIndex')}")
+    
+    total_pages = session_meta_data.get("total_pages", 0)
+    images_dir = os.path.join(full_path, "images")
+    
+    for idx in range(total_pages):
+        page_dir = os.path.join(images_dir, str(idx))
+        page_meta_file = os.path.join(page_dir, "meta.json")
+        
+        # 加载页面元数据
+        loaded_img_state = {}
+        if os.path.exists(page_meta_file):
+            try:
+                with open(page_meta_file, 'r', encoding='utf-8') as f:
+                    loaded_img_state = json.load(f)
+            except Exception as e:
+                logger.warning(f"加载页面元数据失败: {page_meta_file} - {e}")
+        
+        # 检查并设置图片 URL（新格式路径）
+        original_file = os.path.join(page_dir, "original.png")
+        if os.path.exists(original_file):
+            loaded_img_state['originalDataURL'] = f"/api/sessions/page/{session_path}/{idx}/original"
         else:
-            print("加载失败。")
-    else:
-        print(f"\n跳过加载测试，因为未找到会话 '{test_session_name}'。")
+            loaded_img_state['originalDataURL'] = None
+        
+        translated_file = os.path.join(page_dir, "translated.png")
+        if os.path.exists(translated_file):
+            loaded_img_state['translatedDataURL'] = f"/api/sessions/page/{session_path}/{idx}/translated"
+        else:
+            loaded_img_state['translatedDataURL'] = None
+        
+        clean_file = os.path.join(page_dir, "clean.png")
+        if os.path.exists(clean_file):
+            loaded_img_state['cleanImageData'] = f"/api/sessions/page/{session_path}/{idx}/clean"
+        else:
+            loaded_img_state['cleanImageData'] = None
+        
+        # 移除存储标记（前端不需要）
+        loaded_img_state.pop('hasOriginal', None)
+        loaded_img_state.pop('hasTranslated', None)
+        loaded_img_state.pop('hasClean', None)
+        
+        session_data_to_return["images"].append(loaded_img_state)
+    
+    logger.info(f"新格式会话 '{session_path}' 加载完成，共 {total_pages} 页")
+    return session_data_to_return
 
-    # 3. 测试删除 (可选，会实际删除文件)
-    # print(f"\n测试删除会话: {test_session_name}")
-    # if test_session_name in [s['name'] for s in list_sessions()]: # 重新获取列表检查
-    #     delete_confirm = input(f"真的要删除会话 '{test_session_name}' 吗? (yes/no): ")
-    #     if delete_confirm.lower() == 'yes':
-    #         deleted = delete_session(test_session_name)
-    #         print(f"删除结果: {'成功' if deleted else '失败'}")
-    #         # 再次列出检查
-    #         print("\n删除后再次列出:")
-    #         sessions_after_delete = list_sessions()
-    #         if sessions_after_delete:
-    #              for s in sessions_after_delete: print(f"  - {s['name']}")
-    #         else: print("已无会话。")
-    #     else:
-    #         print("取消删除。")
-    # else:
-    #      print(f"无法删除，未找到会话 '{test_session_name}'。")
 
+def _load_old_format_session(session_path, session_meta_data):
+    """
+    加载旧格式会话（image_N_type.png 平铺结构）
+    """
+    session_data_to_return = {
+        "ui_settings": session_meta_data.get("ui_settings", {}),
+        "images": [],
+        "currentImageIndex": session_meta_data.get("currentImageIndex", -1)
+    }
+    
+    images_meta = session_meta_data.get("images_meta", [])
+    
+    for idx, img_meta in enumerate(images_meta):
+        loaded_img_state = img_meta.copy()
+        
+        # 返回图片 URL 而不是 Base64 数据，避免大数据传输
+        if img_meta.get('hasOriginalData'):
+            loaded_img_state['originalDataURL'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_original.png"
+        else:
+            loaded_img_state['originalDataURL'] = None
+        
+        if img_meta.get('hasTranslatedData'):
+            loaded_img_state['translatedDataURL'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_translated.png"
+        else:
+            loaded_img_state['translatedDataURL'] = None
+        
+        if img_meta.get('hasCleanData'):
+            # cleanImageData 也改为 URL
+            loaded_img_state['cleanImageData'] = f"/api/sessions/image_by_path/{session_path}/image_{idx}_clean.png"
+        else:
+            loaded_img_state['cleanImageData'] = None
+        
+        loaded_img_state.pop('hasOriginalData', None)
+        loaded_img_state.pop('hasTranslatedData', None)
+        loaded_img_state.pop('hasCleanData', None)
+        
+        session_data_to_return["images"].append(loaded_img_state)
+    
+    logger.info(f"旧格式会话 '{session_path}' 加载完成，共 {len(images_meta)} 页")
+    return session_data_to_return
+
+
+
+# 注意：旧的 save_session_by_path 函数已移除，保存功能请使用 src/core/page_storage.py
 
 # ============================================================
-# 分批保存功能 - 避免前端一次性传输大量 Base64 数据
+# 注意：旧的保存功能已移除
+# 新的单页保存逻辑请使用 src/core/page_storage.py
+# 以下函数仅保留加载功能用于兼容旧存档：
+# - load_session()
+# - load_session_by_path()
+# - _load_new_format_session()
+# - _load_old_format_session()
+# - _load_image_data()
+# - get_image_file_path()
+# - get_image_url_path()
 # ============================================================
-
-def _cleanup_orphan_image_files(session_folder, new_image_count):
-    """
-    清理超出当前图片数量的旧图片文件。
-    用于处理用户删除图片后再保存的情况，避免留下孤立文件。
-    
-    Args:
-        session_folder: 会话文件夹路径
-        new_image_count: 新保存的图片数量
-    """
-    if not os.path.isdir(session_folder):
-        return
-    
-    import re
-    # 匹配 image_N_type.png 或 image_N_type.b64 格式的文件
-    pattern = re.compile(r'^image_(\d+)_(original|translated|clean)\.(png|b64)$')
-    
-    deleted_count = 0
-    for filename in os.listdir(session_folder):
-        match = pattern.match(filename)
-        if match:
-            file_index = int(match.group(1))
-            # 删除索引 >= 新图片数量的文件
-            if file_index >= new_image_count:
-                filepath = os.path.join(session_folder, filename)
-                try:
-                    os.remove(filepath)
-                    deleted_count += 1
-                    logger.debug(f"已清理孤立图片文件: {filename}")
-                except Exception as e:
-                    logger.warning(f"清理孤立文件失败 {filename}: {e}")
-    
-    if deleted_count > 0:
-        logger.info(f"已清理 {deleted_count} 个孤立图片文件")
-
-
-def start_batch_save(session_path, metadata):
-    """
-    开始分批保存会话 - 第一步：创建目录并保存元数据（不含图片数据）。
-    """
-    logger.info(f"开始分批保存会话: {session_path}")
-    
-    try:
-        if "/" in str(session_path) or "\\" in str(session_path):
-            base_dir = _get_session_base_dir()
-            session_folder = os.path.join(base_dir, session_path)
-        else:
-            session_folder = _get_session_path(session_path)
-        
-        if not session_folder:
-            return {"success": False, "error": "无效的会话路径"}
-        
-        os.makedirs(session_folder, exist_ok=True)
-        
-        # 清理多余的旧图片文件（处理用户删除图片后再保存的情况）
-        new_image_count = len(metadata.get("images_meta", []))
-        _cleanup_orphan_image_files(session_folder, new_image_count)
-        
-        metadata_to_save = {
-            "metadata": {
-                "name": session_path,
-                "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "translator_version": "2.1.3+"
-            },
-            "ui_settings": metadata.get("ui_settings", {}),
-            "images_meta": metadata.get("images_meta", []),
-            "currentImageIndex": metadata.get("currentImageIndex", -1)
-        }
-        
-        metadata_filepath = os.path.join(session_folder, METADATA_FILENAME)
-        with open(metadata_filepath, 'w', encoding='utf-8') as f:
-            json.dump(metadata_to_save, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"分批保存初始化成功: {session_folder}")
-        return {"success": True, "session_folder": session_folder}
-        
-    except Exception as e:
-        logger.error(f"分批保存初始化失败: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-def save_single_image(session_folder, image_index, image_type, base64_data):
-    """
-    分批保存会话 - 第二步：保存单张图片。
-    
-    改进：保存 translated 或 clean 图片后立即更新元数据，
-    这样即使用户中途刷新页面，已保存的翻译图片也能被正确加载。
-    """
-    try:
-        if not base64_data:
-            return {"success": True}
-        
-        if isinstance(base64_data, str) and ',' in base64_data:
-            base64_data = base64_data.split(',', 1)[1]
-        
-        if _save_image_data(session_folder, image_index, image_type, base64_data):
-            # 保存成功后，立即更新元数据中的 hasXxxData 标记
-            # 这样即使用户中途退出，已保存的图片也能被正确加载
-            if image_type in ('translated', 'clean'):
-                _update_image_meta_flag(session_folder, image_index, image_type)
-            return {"success": True}
-        else:
-            return {"success": False, "error": f"保存图片 {image_index}_{image_type} 失败"}
-            
-    except Exception as e:
-        logger.error(f"保存单张图片失败: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-def _update_image_meta_flag(session_folder, image_index, image_type):
-    """
-    更新元数据文件中指定图片的 hasTranslatedData 或 hasCleanData 标记。
-    """
-    metadata_filepath = os.path.join(session_folder, METADATA_FILENAME)
-    
-    if not os.path.exists(metadata_filepath):
-        logger.warning(f"元数据文件不存在，无法更新标记: {metadata_filepath}")
-        return
-    
-    try:
-        with open(metadata_filepath, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-        
-        images_meta = metadata.get("images_meta", [])
-        if image_index < len(images_meta):
-            flag_name = f"has{image_type.capitalize()}Data"  # hasTranslatedData 或 hasCleanData
-            images_meta[image_index][flag_name] = True
-            
-            with open(metadata_filepath, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
-            logger.debug(f"已更新图片 {image_index} 的 {flag_name} = True")
-    except Exception as e:
-        logger.warning(f"更新元数据标记失败 (非致命): {e}")
-
-
-def complete_batch_save(session_folder, images_meta):
-    """
-    分批保存会话 - 第三步：完成保存，更新元数据。
-    """
-    try:
-        metadata_filepath = os.path.join(session_folder, METADATA_FILENAME)
-        
-        if not os.path.exists(metadata_filepath):
-            return {"success": False, "error": "元数据文件不存在"}
-        
-        with open(metadata_filepath, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-        
-        metadata["images_meta"] = images_meta
-        metadata["metadata"]["saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        metadata["metadata"]["image_count"] = len(images_meta)
-        
-        with open(metadata_filepath, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"分批保存完成: {session_folder}")
-        return {"success": True}
-        
-    except Exception as e:
-        logger.error(f"完成分批保存失败: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}

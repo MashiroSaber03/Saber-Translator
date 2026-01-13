@@ -111,10 +111,14 @@ export class ParallelPipeline {
 
   /**
    * 执行并行翻译
+   * @param images 要处理的图片数组
+   * @param mode 翻译模式
+   * @param startIndex 起始索引（用于范围翻译时保持原始索引）
    */
   async execute(
     images: ImageData[],
-    mode: ParallelTranslationMode
+    mode: ParallelTranslationMode,
+    startIndex: number = 0
   ): Promise<ParallelExecutionResult> {
     this.reset()
     this.progressTracker.init(images.length)
@@ -123,10 +127,10 @@ export class ParallelPipeline {
     // 根据模式配置池子链
     this.setupPoolChain(mode, images.length)
 
-    // 创建任务
-    const tasks: PipelineTask[] = images.map((imageData, index) => ({
-      id: `task-${index}`,
-      imageIndex: index,
+    // 创建任务 - 使用原始索引（startIndex + localIndex）
+    const tasks: PipelineTask[] = images.map((imageData, localIndex) => ({
+      id: `task-${startIndex + localIndex}`,
+      imageIndex: startIndex + localIndex,  // 使用原始索引
       imageData,
       status: 'pending'
     }))

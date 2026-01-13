@@ -157,9 +157,11 @@ const parallelTranslation = useParallelTranslation()
 // 计算属性
 // ============================================================
 
-/** 是否并行模式 */
+/** 是否并行模式（包括预保存阶段） */
 const isParallelMode = computed(() => {
-  return settingsStore.settings.parallel?.enabled && parallelTranslation.isRunning.value
+  // 如果并行模式启用且（正在运行 或 正在预保存）
+  const isPreSaving = parallelTranslation.progress.value?.preSave?.isRunning
+  return settingsStore.settings.parallel?.enabled && (parallelTranslation.isRunning.value || isPreSaving)
 })
 
 /** 并行进度数据 */

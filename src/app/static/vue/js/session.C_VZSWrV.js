@@ -1,0 +1,1 @@
+import{apiClient as e}from"./client.Bht704G-.js";import"./utils-vendor.B9ygI19o.js";async function t(o){const s=await e.post("/api/sessions/load_by_path",{path:o});return{success:s.success,session:s.session_data,error:s.error}}const n=t;export{t as loadSessionByPath,n as loadSessionByPathApi};

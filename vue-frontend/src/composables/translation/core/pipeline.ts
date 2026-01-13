@@ -74,11 +74,13 @@ export function usePipeline() {
         }
 
         // 检查是否使用并行模式
+        // 'all' 和 'range' 都是批量操作，都可以使用并行模式
         const parallelConfig = settingsStore.settings.parallel
-        const shouldUseParallel = parallelConfig?.enabled && config.scope === 'all'
+        const isBatchScope = config.scope === 'all' || config.scope === 'range'
+        const shouldUseParallel = parallelConfig?.enabled && isBatchScope
 
         if (shouldUseParallel) {
-            console.log(`🚀 使用并行管线，模式: ${config.mode}`)
+            console.log(`🚀 使用并行管线，模式: ${config.mode}, 范围: ${config.scope}`)
             return executeParallelMode(config)
         }
 
@@ -91,12 +93,34 @@ export function usePipeline() {
      * 执行并行模式
      */
     async function executeParallelMode(config: PipelineConfig): Promise<PipelineResult> {
-        const images = imageStore.images
+        // 根据 scope 和 pageRange 获取要处理的图片
+        let imagesToProcess = imageStore.images
+        let startIndex = 0  // 起始索引，用于保持原始索引
+
+        if (config.scope === 'range' && config.pageRange) {
+            // 页码从1开始，转换为0索引
+            startIndex = Math.max(0, config.pageRange.startPage - 1)
+            const endIndex = Math.min(imageStore.images.length - 1, config.pageRange.endPage - 1)
+
+            if (startIndex <= endIndex && startIndex < imageStore.images.length) {
+                imagesToProcess = imageStore.images.slice(startIndex, endIndex + 1)
+                console.log(`🎯 并行翻译范围: 第 ${config.pageRange.startPage} 至 ${config.pageRange.endPage} 页，共 ${imagesToProcess.length} 张，起始索引 ${startIndex}`)
+            } else {
+                toast.error('无效的页面范围')
+                return { success: false, completed: 0, failed: 0, errors: ['无效的页面范围'] }
+            }
+        }
 
         // 判断是否启用自动保存（书架模式 + 设置开启）
         const enableAutoSave = shouldEnableAutoSave()
 
         try {
+            // 初始化进度状态（用于显示预保存进度条）
+            // 注意：不设置 isRunning，避免与 executeParallel 冲突
+            parallelTranslation.progress.value.totalPages = imagesToProcess.length
+            parallelTranslation.progress.value.totalCompleted = 0
+            parallelTranslation.progress.value.totalFailed = 0
+
             // 如果启用自动保存，先执行预保存（保存所有原始图片）
             if (enableAutoSave) {
                 console.log('[ParallelPipeline] 执行预保存...')
@@ -145,6 +169,8 @@ export function usePipeline() {
             const parallelMode: ParallelTranslationMode = config.mode as ParallelTranslationMode
 
             console.log(`🚀 启动并行翻译模式: ${parallelMode}`)
+            console.log(`   图片数量: ${imagesToProcess.length}`)
+            console.log(`   起始索引: ${startIndex}`)
             console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
 
             // 初始化保存进度
@@ -152,11 +178,12 @@ export function usePipeline() {
                 const progress = parallelTranslation.progress.value
                 progress.save = {
                     completed: 0,
-                    total: images.length
+                    total: imagesToProcess.length
                 }
             }
 
-            const result = await parallelTranslation.executeParallel(parallelMode)
+            // 传入过滤后的图片数组和起始索引
+            const result = await parallelTranslation.executeParallel(parallelMode, imagesToProcess, startIndex)
 
             // 显示结果
             if (result.success > 0 && result.failed === 0) {
@@ -179,7 +206,7 @@ export function usePipeline() {
             return {
                 success: false,
                 completed: 0,
-                failed: images.length,
+                failed: imagesToProcess.length,
                 errors: [errorMessage]
             }
         } finally {

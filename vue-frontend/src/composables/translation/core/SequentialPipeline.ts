@@ -210,6 +210,19 @@ export function useSequentialPipeline() {
                 .map(index => ({ image: images[index]!, index }))
                 .filter(item => item.image !== undefined)
         }
+        if (config.scope === 'range' && config.pageRange) {
+            // 页码从1开始，转换为0索引
+            const startIndex = Math.max(0, config.pageRange.startPage - 1)
+            const endIndex = Math.min(images.length - 1, config.pageRange.endPage - 1)
+
+            if (startIndex > endIndex || startIndex >= images.length) {
+                return []
+            }
+
+            return images
+                .slice(startIndex, endIndex + 1)
+                .map((image, idx) => ({ image, index: startIndex + idx }))
+        }
         return images.map((image, index) => ({ image, index }))
     }
 
@@ -1034,8 +1047,22 @@ export function useSequentialPipeline() {
 
             // 如果启用自动保存，先执行预保存（保存所有原始图片）
             if (enableAutoSave) {
-                reporter.setPercentage(2, '预保存原始图片...')
-                const preSaveSuccess = await preSaveOriginalImages()
+                reporter.setPercentage(0, '预保存原始图片...')
+                const preSaveSuccess = await preSaveOriginalImages({
+                    onStart: (total) => {
+                        reporter.setPercentage(0, `预保存原始图片 0/${total}...`)
+                    },
+                    onProgress: (current, total) => {
+                        const percent = Math.round((current / total) * 10) // 预保存占 0-10%
+                        reporter.setPercentage(percent, `预保存原始图片 ${current}/${total}...`)
+                    },
+                    onComplete: () => {
+                        reporter.setPercentage(10, '预保存完成，开始翻译...')
+                    },
+                    onError: (error) => {
+                        reporter.setPercentage(0, `预保存失败: ${error}`)
+                    }
+                })
                 if (!preSaveSuccess) {
                     // 预保存失败，提示用户但不阻止翻译
                     toast.warning('预保存失败，翻译完成后请手动保存')

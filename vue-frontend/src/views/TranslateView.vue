@@ -568,6 +568,63 @@ async function removeAllText() {
   await translation.removeAllTexts()
 }
 
+/**
+ * 翻译指定范围的图片
+ * @param startPage 起始页（1开始）
+ * @param endPage 结束页（1开始）
+ */
+async function translateImageRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  
+  // 验证翻译配置
+  if (!validateBeforeTranslation('normal')) {
+    return
+  }
+  
+  await translation.translateImageRange({ startPage, endPage })
+}
+
+/**
+ * 高质量翻译指定范围
+ * @param startPage 起始页（1开始）
+ * @param endPage 结束页（1开始）
+ */
+async function startHqTranslationRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  
+  // 验证高质量翻译配置
+  if (!validateBeforeTranslation('hq')) {
+    return
+  }
+  
+  await translation.executeHqTranslation({ startPage, endPage })
+}
+
+/**
+ * AI校对指定范围
+ * @param startPage 起始页（1开始）
+ * @param endPage 结束页（1开始）
+ */
+async function startProofreadingRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  
+  // 验证 AI 校对配置
+  if (!validateBeforeTranslation('proofread')) {
+    return
+  }
+  
+  await translation.executeProofreading({ startPage, endPage })
+}
+
+/**
+ * 消除指定范围图片的文字
+ * @param startPage 起始页（1开始）
+ * @param endPage 结束页（1开始）
+ */
+async function removeTextRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  await translation.removeTextRange({ startPage, endPage })
+}
 
 /**
  * 删除当前图片
@@ -1160,10 +1217,14 @@ function selectImage(index: number) {
       <SettingsSidebar
         @translate-current="translateCurrentImage"
         @translate-all="translateAllImages"
+        @translate-range="translateImageRange"
         @hq-translate="startHqTranslation"
+        @hq-translate-range="startHqTranslationRange"
         @proofread="startProofreading"
+        @proofread-range="startProofreadingRange"
         @remove-text="removeTextOnly"
         @remove-all-text="removeAllText"
+        @remove-text-range="removeTextRange"
         @retry-failed="handleRetryFailed"
         @delete-current="deleteCurrentImage"
         @clear-all="clearAllImages"

@@ -378,8 +378,8 @@ def get_chapter_images(book_id, chapter_id):
 
 @bookshelf_bp.route('/save_chapter_session', methods=['POST'])
 def save_chapter_session():
-    """保存章节的会话数据"""
-    from src.core import session_manager
+    """保存章节的会话数据（使用新的单页存储 API）"""
+    from src.core import page_storage
     
     try:
         data = request.get_json()
@@ -401,15 +401,20 @@ def save_chapter_session():
         if not session_path:
             return jsonify({"success": False, "error": "无法获取章节会话路径"}), 500
         
-        # 保存会话数据
-        if session_manager.save_session_by_path(session_path, session_data):
+        # 使用新的 page_storage 保存
+        images = session_data.get('images', [])
+        ui_settings = session_data.get('ui_settings', {})
+        
+        result = page_storage.presave_all_pages(session_path, images, ui_settings)
+        
+        if result.get('success'):
             # 更新章节的图片数量
-            image_count = len(session_data.get('images', []))
+            image_count = len(images)
             bookshelf_manager.update_chapter_image_count(book_id, chapter_id, image_count)
             
             return jsonify({"success": True})
         else:
-            return jsonify({"success": False, "error": "保存会话数据失败"}), 500
+            return jsonify({"success": False, "error": result.get('error', '保存会话数据失败')}), 500
             
     except Exception as e:
         logger.error(f"保存章节会话失败: {e}", exc_info=True)
