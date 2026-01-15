@@ -807,13 +807,12 @@ if (typeof window !== 'undefined') {
       </div>
 
       <!-- 页面范围设置折叠面板 -->
-      <div id="page-range-settings" class="settings-card collapsible-panel page-range-panel">
+      <div id="page-range-settings" class="settings-card collapsible-panel">
         <h3 
           class="collapsible-header"
           @click="togglePageRangeSettings"
         >
           指定范围 
-          <span v-if="isRangeEnabled" class="range-badge">{{ pageRangeStart }}-{{ pageRangeEnd }}</span>
           <span class="toggle-icon">{{ isPageRangeExpanded ? '▼' : '▶' }}</span>
         </h3>
         
@@ -853,7 +852,6 @@ if (typeof window !== 'undefined') {
                 @input="updatePageRangeEnd"
                 placeholder="结束"
               >
-              <span class="range-count">({{ pageRangeEnd - pageRangeStart + 1 }}张)</span>
             </div>
             
             <!-- 范围错误提示 -->
@@ -1707,7 +1705,8 @@ if (typeof window !== 'undefined') {
   cursor: not-allowed;
 }
 
-#settings-sidebar #font-settings {
+#settings-sidebar #font-settings,
+#settings-sidebar #page-range-settings {
   margin-top: 20px;
   border-top: 1px solid #eee;
   padding-top: 15px;
@@ -1719,12 +1718,14 @@ if (typeof window !== 'undefined') {
   background-color: #f8fafc;
 }
 
-#settings-sidebar #font-settings:hover {
+#settings-sidebar #font-settings:hover,
+#settings-sidebar #page-range-settings:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
 }
 
-#settings-sidebar #font-settings h3 {
+#settings-sidebar #font-settings h3,
+#settings-sidebar #page-range-settings h3 {
   margin-bottom: 10px;
   margin-top: 0;
 }
@@ -2158,18 +2159,6 @@ if (typeof window !== 'undefined') {
   padding: 8px 0 !important;
 }
 
-/* 标题中的范围徽章 */
-.range-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  margin-left: 6px;
-  background: linear-gradient(135deg, #5c6bc0 0%, #7986cb 100%);
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 10px;
-}
-
 /* 头部行：启用开关 + 图片数 */
 .range-header-row {
   display: flex;
@@ -2241,12 +2230,6 @@ if (typeof window !== 'undefined') {
 .range-sep {
   font-size: 14px;
   color: #999;
-}
-
-.range-count {
-  font-size: 11px;
-  color: #888;
-  margin-left: 4px;
 }
 
 /* 紧凑的错误提示 */

@@ -77,12 +77,6 @@ const showSponsorModal = ref(false)
 /** 是否处于编辑模式 */
 const isEditMode = ref(false)
 
-/** ImageUpload 组件引用 */
-const imageUploadRef = ref<InstanceType<typeof ImageUpload> | null>(null)
-
-/** ImageResultDisplay 组件引用 */
-const imageResultRef = ref<InstanceType<typeof ImageResultDisplay> | null>(null)
-
 // ============================================================
 // 计算属性
 // ============================================================
@@ -93,38 +87,8 @@ const currentImage = computed(() => imageStore.currentImage)
 /** 是否有图片 */
 const hasImages = computed(() => imageStore.hasImages)
 
-/** 图片总数 */
-const imageCount = computed(() => imageStore.imageCount)
-
-/** 当前图片索引（从1开始显示） */
-const currentImageNum = computed(() => imageStore.currentImageIndex + 1)
-
-/** 是否可以翻译（有图片且不在批量翻译中） */
-const canTranslate = computed(() => 
-  hasImages.value && !imageStore.isBatchTranslationInProgress
-)
-
-/** 是否可以切换上一张 */
-const canGoPrevious = computed(() => imageStore.canGoPrevious)
-
-/** 是否可以切换下一张 */
-const canGoNext = computed(() => imageStore.canGoNext)
-
 /** 批量翻译是否进行中 */
 const isBatchTranslating = computed(() => imageStore.isBatchTranslationInProgress)
-
-/** 翻译进度百分比 */
-const translationProgress = computed(() => {
-  if (!isBatchTranslating.value) return 0
-  const completed = imageStore.completedImageCount
-  const total = imageStore.imageCount
-  return total > 0 ? Math.round((completed / total) * 100) : 0
-})
-
-/** 翻译进度文本 */
-const progressText = computed(() => {
-  return `${imageStore.completedImageCount}/${imageStore.imageCount}`
-})
 
 /** 是否有翻译失败的图片 */
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)

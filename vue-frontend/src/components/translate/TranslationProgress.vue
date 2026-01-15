@@ -98,7 +98,7 @@
           </span>
         </div>
         <div class="overall-progress-bar">
-          <div class="overall-progress-fill" :style="{ width: parallelOverallPercent + '%' }"></div>
+          <div class="overall-progress-fill progress-stripe" :style="{ width: parallelOverallPercent + '%' }"></div>
         </div>
       </div>
     </template>
@@ -112,7 +112,7 @@
         </template>
       </div>
       <div class="progress-bar">
-        <div class="progress" :style="{ width: `${progressPercent}%` }"></div>
+        <div class="progress progress-stripe" :style="{ width: `${progressPercent}%` }"></div>
       </div>
     </template>
   </div>
@@ -285,7 +285,7 @@ const progressLabel = computed(() => {
 
 .pool-row {
   display: grid;
-  grid-template-columns: 80px 1fr 100px;
+  grid-template-columns: 80px 1fr 120px;
   align-items: center;
   gap: 12px;
   padding: 4px 0;
@@ -347,33 +347,42 @@ const progressLabel = computed(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
+  gap: 4px;
   font-size: 14px;
+  font-variant-numeric: tabular-nums; /* 使用等宽数字 */
+  min-width: 120px; /* 固定最小宽度 */
+  flex-wrap: wrap; /* 允许换行，防止溢出 */
 }
 
 .completed-count {
   font-weight: 600;
   color: #2d3748;
+  text-align: right;
+  min-width: 28px; /* 为最多两位数预留空间 */
 }
 
 .total-count {
   color: #a0aec0;
+  min-width: 38px; /* 为"/ XX"格式预留空间 */
 }
 
 .waiting-badge {
-  margin-left: 6px;
-  padding: 2px 8px;
+  margin-left: 4px;
+  padding: 1px 6px;
   background: #ffc107;
   color: #fff;
-  border-radius: 10px;
-  font-size: 12px;
+  border-radius: 8px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .lock-indicator {
-  margin-left: 4px;
-  font-size: 14px;
+  margin-left: 2px;
+  font-size: 13px;
   animation: lockPulse 1s ease-in-out infinite;
+  line-height: 1;
 }
 
 @keyframes lockPulse {
@@ -474,8 +483,8 @@ const progressLabel = computed(() => {
   position: relative;
 }
 
-/* 条纹动画 */
-.overall-progress-fill::after {
+/* 公共条纹动画样式 */
+.progress-stripe::after {
   content: '';
   position: absolute;
   top: 0;
@@ -493,8 +502,9 @@ const progressLabel = computed(() => {
     transparent
   );
   background-size: 30px 30px;
-  animation: stripeMove 1s linear infinite;
-  border-radius: 10px;
+  animation: stripeMove 1.5s linear infinite;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 @keyframes stripeMove {
@@ -532,41 +542,111 @@ const progressLabel = computed(() => {
   position: relative;
 }
 
-.progress-bar .progress:after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background-image: linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, .2) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, .2) 50%,
-      rgba(255, 255, 255, .2) 75%,
-      transparent 75%,
-      transparent
-  );
-  background-size: 30px 30px;
-  animation: move 2s linear infinite;
-  border-radius: 20px;
-  overflow: hidden;
-}
-
-@keyframes move {
-  0% {
-    background-position: 0 0;
-  }
-  100% {
-    background-position: 30px 30px;
-  }
-}
-
 /* 失败数量 */
 .failed-count {
   color: #e74c3c;
   font-weight: 500;
 }
+
+/* ===================================
+   响应式设计 - 小屏幕适配
+   =================================== */
+
+/* 平板和小屏幕（宽度 < 768px） */
+@media (max-width: 768px) {
+  .translation-progress-bar {
+    width: 95%;
+    padding: 16px 20px;
+  }
+
+  .pool-row {
+    grid-template-columns: 70px 1fr 110px;
+    gap: 10px;
+  }
+
+  .pool-label {
+    gap: 4px;
+  }
+
+  .pool-icon {
+    font-size: 14px;
+  }
+
+  .pool-name {
+    font-size: 13px;
+  }
+
+  .pool-stats {
+    font-size: 13px;
+    min-width: 110px;
+  }
+
+  .completed-count {
+    min-width: 24px;
+  }
+
+  .total-count {
+    min-width: 34px;
+  }
+
+  .waiting-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+
+  .lock-indicator {
+    font-size: 12px;
+  }
+}
+
+/* 手机屏幕（宽度 < 480px） */
+@media (max-width: 480px) {
+  .translation-progress-bar {
+    width: 100%;
+    padding: 12px 16px;
+  }
+
+  .header-title {
+    font-size: 1em;
+  }
+
+  .pool-row {
+    grid-template-columns: 60px 1fr 100px;
+    gap: 8px;
+  }
+
+  .pool-label {
+    gap: 3px;
+  }
+
+  .pool-name {
+    font-size: 12px;
+  }
+
+  .pool-stats {
+    font-size: 12px;
+    min-width: 100px;
+    gap: 2px;
+  }
+
+  .completed-count {
+    min-width: 22px;
+  }
+
+  .total-count {
+    min-width: 32px;
+  }
+
+  .waiting-badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    margin-left: 2px;
+  }
+
+  .lock-indicator {
+    font-size: 11px;
+    margin-left: 1px;
+  }
+}
+
 </style>
