@@ -21,10 +21,11 @@ def load_model_info():
     return load_json_config(constants.MODEL_HISTORY_FILE, default_value={})
 
 def load_prompts():
-    default_data = {"default_prompt": constants.DEFAULT_PROMPT, "saved_prompts": []}
+    # 翻译设置使用批量翻译系统提示词作为默认值
+    default_data = {"default_prompt": constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE, "saved_prompts": []}
     prompt_data = load_json_config(constants.PROMPTS_FILE, default_value=default_data)
     if not isinstance(prompt_data, dict): return default_data
-    if 'default_prompt' not in prompt_data: prompt_data['default_prompt'] = constants.DEFAULT_PROMPT
+    if 'default_prompt' not in prompt_data: prompt_data['default_prompt'] = constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
     if 'saved_prompts' not in prompt_data or not isinstance(prompt_data['saved_prompts'], list): prompt_data['saved_prompts'] = []
     return prompt_data
 
@@ -88,7 +89,7 @@ def save_model_info_api():
 def get_prompts():
     prompts = load_prompts()
     prompt_names = [prompt['name'] for prompt in prompts['saved_prompts']]
-    default_prompt_content = prompts.get('default_prompt', constants.DEFAULT_PROMPT)
+    default_prompt_content = prompts.get('default_prompt', constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE)
     return jsonify({'prompt_names': prompt_names, 'default_prompt_content': default_prompt_content})
 
 @config_bp.route('/save_prompt', methods=['POST'])
@@ -118,7 +119,7 @@ def get_prompt_content():
 
     prompts = load_prompts()
     if prompt_name == constants.DEFAULT_PROMPT_NAME:
-        prompt_content = prompts.get('default_prompt', constants.DEFAULT_PROMPT)
+        prompt_content = prompts.get('default_prompt', constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE)
     else:
         saved_prompt = next((prompt for prompt in prompts['saved_prompts'] if prompt['name'] == prompt_name), None)
         prompt_content = saved_prompt['content'] if saved_prompt else None
@@ -131,7 +132,7 @@ def get_prompt_content():
 @config_bp.route('/reset_prompt_to_default', methods=['POST'])
 def reset_prompt_to_default():
     prompts = load_prompts()
-    prompts['default_prompt'] = constants.DEFAULT_PROMPT
+    prompts['default_prompt'] = constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
     save_prompts(prompts)
     return jsonify({'message': '提示词已重置为默认'})
 
