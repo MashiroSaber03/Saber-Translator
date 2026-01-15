@@ -595,12 +595,17 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
           }
 
           // 构建用于渲染的气泡状态，使用更新后的 bubbleStates
+          // 【关键修复】必须包含 originalText 和 textboxText，否则后端返回时这些字段会丢失
           const bubbleStatesForApi = img.bubbleStates.map(bs => ({
+            originalText: bs.originalText || '',
             translatedText: bs.translatedText || '',
+            textboxText: bs.textboxText || '',
             coords: bs.coords,
+            polygon: bs.polygon,
             fontSize: bs.fontSize,
             fontFamily: bs.fontFamily,
             textDirection: bs.textDirection,
+            autoTextDirection: bs.autoTextDirection,
             textColor: bs.textColor,
             fillColor: bs.fillColor,
             rotationAngle: bs.rotationAngle || 0,
@@ -608,6 +613,9 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
             strokeEnabled: bs.strokeEnabled,
             strokeColor: bs.strokeColor,
             strokeWidth: bs.strokeWidth,
+            inpaintMethod: bs.inpaintMethod,
+            autoFgColor: bs.autoFgColor,
+            autoBgColor: bs.autoBgColor,
           }))
 
           // 使用 parallelRender API，支持 autoFontSize 参数
