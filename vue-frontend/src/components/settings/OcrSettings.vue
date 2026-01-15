@@ -224,7 +224,7 @@ import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 const ocrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
   { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
-  { label: 'PaddleOCR-VL (日漫专用)', value: 'paddleocr_vl' },
+  { label: 'PaddleOCR-VL', value: 'paddleocr_vl' },
   { label: '百度OCR', value: 'baidu_ocr' },
   { label: '48px OCR', value: '48px_ocr' },
   { label: 'AI视觉OCR', value: 'ai_vision' }
