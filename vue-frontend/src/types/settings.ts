@@ -61,6 +61,13 @@ export interface BaiduOcrSettings {
 }
 
 /**
+ * PaddleOCR-VL 设置
+ */
+export interface PaddleOcrVlSettings {
+  sourceLanguage: string
+}
+
+/**
  * AI 视觉 OCR 设置
  */
 export interface AiVisionOcrSettings {
@@ -187,6 +194,7 @@ export interface TranslationSettings {
   sourceLanguage: string
   textDetector: TextDetector
   baiduOcr: BaiduOcrSettings
+  paddleOcrVl: PaddleOcrVlSettings
   aiVisionOcr: AiVisionOcrSettings
 
   // 翻译服务设置

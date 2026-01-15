@@ -517,12 +517,16 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       console.log(`开始 OCR 识别气泡 #${index + 1}`)
       const imageData = image.originalDataURL.split(',')[1] || ''
       const settings = settingsStore.settings
+      // PaddleOCR-VL 使用独立的源语言设置
+      const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
+        ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
+        : settings.sourceLanguage
       const response = await ocrSingleBubbleApi(
         imageData,
         bubble.coords,
         settings.ocrEngine || 'manga_ocr',
         {
-          source_language: settings.sourceLanguage,
+          source_language: ocrSourceLanguage,
           // 百度 OCR 参数（复刻原版 edit_mode.js）
           baidu_ocr_api_key: settings.baiduOcr.apiKey,
           baidu_ocr_secret_key: settings.baiduOcr.secretKey,

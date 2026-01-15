@@ -40,10 +40,15 @@ export class OcrPool extends TaskPool {
     const base64 = this.extractBase64(imageData.originalDataURL)
 
     // 调用后端OCR API
+    // PaddleOCR-VL 使用独立的源语言设置
+    const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl' 
+      ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
+      : settings.sourceLanguage
+    
     const response = await parallelOcr({
       image: base64,
       bubble_coords: detectionResult.bubbleCoords,
-      source_language: settings.sourceLanguage,
+      source_language: ocrSourceLanguage,
       ocr_engine: settings.ocrEngine,
       baidu_api_key: settings.baiduOcr?.apiKey,
       baidu_secret_key: settings.baiduOcr?.secretKey,

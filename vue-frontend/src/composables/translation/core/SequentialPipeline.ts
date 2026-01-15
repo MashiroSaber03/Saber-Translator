@@ -265,10 +265,15 @@ export function useSequentialPipeline() {
         const settings = settingsStore.settings
         const base64 = extractBase64(task.image.originalDataURL)
 
+        // PaddleOCR-VL 使用独立的源语言设置
+        const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
+            ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
+            : settings.sourceLanguage
+
         const response: ParallelOcrResponse = await parallelOcr({
             image: base64,
             bubble_coords: task.bubbleCoords,
-            source_language: settings.sourceLanguage,
+            source_language: ocrSourceLanguage,
             ocr_engine: settings.ocrEngine,
             baidu_api_key: settings.baiduOcr?.apiKey,
             baidu_secret_key: settings.baiduOcr?.secretKey,

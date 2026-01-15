@@ -434,6 +434,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.baiduOcr.sourceLanguage = backendSettings.baiduSourceLanguage as string
     }
 
+    // PaddleOCR-VL 设置
+    if (backendSettings.paddleOcrVlSourceLanguage) {
+      settings.value.paddleOcrVl.sourceLanguage = backendSettings.paddleOcrVlSourceLanguage as string
+    }
+
     // AI 视觉 OCR 设置
     if (backendSettings.aiVisionProvider) {
       settings.value.aiVisionOcr.provider = backendSettings.aiVisionProvider as string
@@ -757,6 +762,9 @@ export const useSettingsStore = defineStore('settings', () => {
         baiduVersion: settings.value.baiduOcr.version,
         baiduSourceLanguage: settings.value.baiduOcr.sourceLanguage,
 
+        // PaddleOCR-VL
+        paddleOcrVlSourceLanguage: settings.value.paddleOcrVl.sourceLanguage,
+
         // AI 视觉 OCR
         aiVisionProvider: settings.value.aiVisionOcr.provider,
         aiVisionApiKey: settings.value.aiVisionOcr.apiKey,
@@ -882,6 +890,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setOcrEngine: ocrModule.setOcrEngine,
     setSourceLanguage: ocrModule.setSourceLanguage,
     updateBaiduOcr: ocrModule.updateBaiduOcr,
+    updatePaddleOcrVl: ocrModule.updatePaddleOcrVl,
     updateAiVisionOcr: ocrModule.updateAiVisionOcr,
     setAiVisionOcrProvider: ocrModule.setAiVisionOcrProvider,
     setAiVisionOcrPromptMode: ocrModule.setAiVisionOcrPromptMode,

@@ -6,6 +6,7 @@
 import type {
   TextStyleSettings,
   BaiduOcrSettings,
+  PaddleOcrVlSettings,
   AiVisionOcrSettings,
   TranslationServiceSettings,
   HqTranslationSettings,
@@ -58,6 +59,11 @@ export const DEFAULT_BAIDU_OCR: BaiduOcrSettings = {
   secretKey: '',
   version: 'standard',
   sourceLanguage: 'JAP'
+}
+
+/** 默认PaddleOCR-VL设置 */
+export const DEFAULT_PADDLEOCR_VL: PaddleOcrVlSettings = {
+  sourceLanguage: 'japanese'
 }
 
 /** 默认AI视觉OCR设置 */
@@ -137,6 +143,7 @@ export function createDefaultSettings(): TranslationSettings {
     sourceLanguage: 'japanese',
     textDetector: 'default',
     baiduOcr: { ...DEFAULT_BAIDU_OCR },
+    paddleOcrVl: { ...DEFAULT_PADDLEOCR_VL },
     aiVisionOcr: { ...DEFAULT_AI_VISION_OCR },
     translation: { ...DEFAULT_TRANSLATION_SERVICE },
     targetLanguage: 'zh',

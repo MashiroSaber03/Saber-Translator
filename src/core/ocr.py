@@ -135,7 +135,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         logger.info("使用 48px OCR 引擎")
     elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
         ocr_engine_type = 'PaddleOCRVL'
-        logger.info("使用 PaddleOCR-VL 引擎 (日漫专用)")
+        logger.info("使用 PaddleOCR-VL 引擎")
     else:
         logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
         ocr_engine_type = 'PaddleOCR'
@@ -297,7 +297,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         else:
             logger.error("48px OCR 初始化失败，OCR 步骤跳过")
     
-    # --- 使用 PaddleOCR-VL (日漫专用) ---
+    # --- 使用 PaddleOCR-VL ---
     elif ocr_engine_type == 'PaddleOCRVL':
         from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
         
@@ -306,7 +306,7 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
         
         # 如果模型未初始化，尝试初始化；否则重用已初始化的模型
         if ocr_handler.initialize(device):
-            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble)
+            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble, source_language)
             logger.info("PaddleOCR-VL 识别完成")
         else:
             logger.error("PaddleOCR-VL 初始化失败，OCR 步骤跳过")

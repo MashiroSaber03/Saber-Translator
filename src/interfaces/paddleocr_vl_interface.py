@@ -25,6 +25,17 @@ from src.shared import constants
 
 logger = logging.getLogger("PaddleOCR_VL")
 
+# 源语言映射：前端语言代码 -> 显示名称
+PADDLEOCR_VL_LANG_MAP = {
+    'japanese': '日语',
+    'chinese': '简体中文',
+    'chinese_cht': '繁体中文',
+    'english': '英语',
+    'korean': '韩语',
+    'japan': '日语',  # 兼容旧代码
+    'en': '英语',      # 兼容旧代码
+}
+
 
 
 
@@ -169,12 +180,13 @@ class PaddleOCRVLHandler:
             return False
     
 
-    def _recognize_single(self, img: np.ndarray) -> str:
+    def _recognize_single(self, img: np.ndarray, source_language: str = 'japanese') -> str:
         """
         识别单个图像区域的文本
         
         Args:
             img: numpy 数组格式的图像 (RGB)
+            source_language: 源语言代码
         
         Returns:
             识别的文本
@@ -189,13 +201,17 @@ class PaddleOCRVLHandler:
         if pil_img.mode != 'RGB':
             pil_img = pil_img.convert('RGB')
         
+        # 根据源语言构建动态提示词
+        lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
+        ocr_prompt = f"对图中的{lang_name}进行OCR:"
+        
         # 构建对话消息 (VLM 格式)
         messages = [
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": pil_img},
-                    {"type": "text", "text": "OCR:"}
+                    {"type": "text", "text": ocr_prompt}
                 ]
             }
         ]
@@ -249,7 +265,8 @@ class PaddleOCRVLHandler:
         self, 
         image: Image.Image, 
         bubble_coords: List[Tuple[int, int, int, int]],
-        textlines_per_bubble: Optional[List[List[Dict]]] = None
+        textlines_per_bubble: Optional[List[List[Dict]]] = None,
+        source_language: str = 'japanese'
     ) -> List[str]:
         """
         识别文本
@@ -258,6 +275,7 @@ class PaddleOCRVLHandler:
             image: PIL Image
             bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
             textlines_per_bubble: 每个气泡对应的原始文本行列表（可选）
+            source_language: 源语言代码
         
         Returns:
             ['text1', 'text2', ...] - 每个气泡的识别结果
@@ -269,7 +287,8 @@ class PaddleOCRVLHandler:
         if not bubble_coords:
             return []
         
-        logger.info(f"使用 PaddleOCR-VL 识别 {len(bubble_coords)} 个气泡")
+        lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
+        logger.info(f"使用 PaddleOCR-VL 识别 {len(bubble_coords)} 个气泡，源语言: {lang_name}")
         
         try:
             img_np = np.array(image.convert('RGB'))
@@ -288,7 +307,7 @@ class PaddleOCRVLHandler:
                     logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，尺寸: {bubble.shape[1]}x{bubble.shape[0]}")
                     
                     # 识别文本
-                    text = self._recognize_single(bubble)
+                    text = self._recognize_single(bubble, source_language)
                     results.append(text)
                     
                     if text:

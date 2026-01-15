@@ -7,6 +7,7 @@ import { computed, type Ref } from 'vue'
 import type {
   TranslationSettings,
   BaiduOcrSettings,
+  PaddleOcrVlSettings,
   AiVisionOcrSettings,
   OcrEngine
 } from '@/types/settings'
@@ -65,6 +66,15 @@ export function useOcrSettings(
    */
   function updateBaiduOcr(updates: Partial<BaiduOcrSettings>): void {
     Object.assign(settings.value.baiduOcr, updates)
+    saveToStorage()
+  }
+
+  /**
+   * 更新PaddleOCR-VL设置
+   * @param updates - 要更新的设置
+   */
+  function updatePaddleOcrVl(updates: Partial<PaddleOcrVlSettings>): void {
+    Object.assign(settings.value.paddleOcrVl, updates)
     saveToStorage()
   }
 
@@ -176,6 +186,7 @@ export function useOcrSettings(
     setOcrEngine,
     setSourceLanguage,
     updateBaiduOcr,
+    updatePaddleOcrVl,
     updateAiVisionOcr,
     setAiVisionOcrProvider,
     setAiVisionOcrPromptMode,

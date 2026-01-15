@@ -26,6 +26,22 @@
       </div>
     </div>
 
+    <!-- PaddleOCR-VL 源语言选择 -->
+    <div v-show="settings.ocrEngine === 'paddleocr_vl'" class="settings-group">
+      <div class="settings-group-title">PaddleOCR-VL 设置</div>
+      <div class="settings-item">
+        <label for="settingsPaddleOcrVlSourceLanguage">源语言:</label>
+        <CustomSelect
+          :model-value="settings.paddleOcrVl.sourceLanguage"
+          :options="paddleOcrVlSourceLanguageOptions"
+          @change="(v: any) => handlePaddleOcrVlSourceLanguageChange(v)"
+        />
+        <div class="input-hint">
+          选择图像中的源语言，用于优化 OCR 识别效果
+        </div>
+      </div>
+    </div>
+
     <!-- 百度OCR设置 -->
     <div v-show="settings.ocrEngine === 'baidu_ocr'" class="settings-group">
       <div class="settings-group-title">百度OCR 设置</div>
@@ -256,6 +272,15 @@ const aiVisionProviderOptions = [
   { label: '自定义 OpenAI 兼容服务', value: 'custom_openai_vision' }
 ]
 
+/** PaddleOCR-VL 源语言选项 */
+const paddleOcrVlSourceLanguageOptions = [
+  { label: '日语', value: 'japanese' },
+  { label: '简体中文', value: 'chinese' },
+  { label: '繁体中文', value: 'chinese_cht' },
+  { label: '英语', value: 'english' },
+  { label: '韩语', value: 'korean' }
+]
+
 /** 提示词模式选项 */
 const promptModeOptions = [
   { label: '普通提示词', value: 'false' },
@@ -383,6 +408,11 @@ function handleOcrEngineChange() {
 // 处理源语言切换
 function handleSourceLanguageChange() {
   settingsStore.saveToStorage()
+}
+
+// 处理 PaddleOCR-VL 源语言切换
+function handlePaddleOcrVlSourceLanguageChange(value: string) {
+  settingsStore.updatePaddleOcrVl({ sourceLanguage: value })
 }
 
 // 获取源语言提示信息
