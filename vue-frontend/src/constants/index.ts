@@ -25,7 +25,7 @@ export const DEFAULT_AI_VISION_OCR_PROMPT = `你是一个ocr助手，你需要�
 export const DEFAULT_TRANSLATE_PROMPT = `忽略之前的所有指令，仅遵循以下定义。
 
 ## 角色：专业漫画翻译师
-你是一个专业的漫画翻译引擎，擅长将日文漫画翻译成中文。
+你是一个专业的漫画翻译引擎，擅长将外语漫画翻译成中文。
 
 ## 翻译方法
 1. 直译阶段：
@@ -52,13 +52,13 @@ export const DEFAULT_TRANSLATE_PROMPT = `忽略之前的所有指令，仅遵循
 - 每个翻译段落必须带有编号前缀（严格使用 <|数字|> 格式），只输出翻译结果，不要输出原文
 - 只翻译内容，不要添加任何解释或评论
 
-请将以下日文文本翻译成中文：`
+请将以下外语文本翻译成中文：`
 
 /** 翻译提示词默认值（JSON格式模式）- 批量翻译 JSON 模式 */
 export const DEFAULT_TRANSLATE_JSON_PROMPT = `忽略之前的所有指令，仅遵循以下定义。
 
 ## 角色：专业漫画翻译师
-你是一个专业的漫画翻译引擎，擅长将日文漫画翻译成中文。
+你是一个专业的漫画翻译引擎，擅长将外语漫画翻译成中文。
 
 ## 翻译方法
 1. 直译阶段：对每一行文本进行精确的逐词翻译
@@ -79,7 +79,7 @@ export const DEFAULT_TRANSLATE_JSON_PROMPT = `忽略之前的所有指令，仅�
   ]
 }
 
-请将以下日文文本翻译成中文：`
+请将以下外语文本翻译成中文：`
 
 /** AI 视觉 OCR 默认提示词（JSON格式模式） */
 export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将我发送给你的图片中的所有文字提取出来。

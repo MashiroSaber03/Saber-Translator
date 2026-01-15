@@ -415,11 +415,11 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
             system_prompt = constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
         messages.append({"role": "system", "content": system_prompt})
         
-        # 2. Few-shot learning: 添加翻译示例 (日译中)
+        # 2. Few-shot learning: 添加翻译示例
         if hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_INPUT') and hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_OUTPUT'):
             messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_SAMPLE_INPUT})
             messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_SAMPLE_OUTPUT})
-            logger.debug("已添加日译中翻译示例")
+            logger.debug("已添加翻译示例")
         
         # 3. User prompt：将所有文本编号并合并
         user_prompt = constants.BATCH_TRANSLATE_USER_TEMPLATE
