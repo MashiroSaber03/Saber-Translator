@@ -285,7 +285,7 @@ const progressLabel = computed(() => {
 
 .pool-row {
   display: grid;
-  grid-template-columns: 80px 1fr 120px;
+  grid-template-columns: 80px 1fr 150px; /* 增加第三列宽度以容纳所有统计元素 */
   align-items: center;
   gap: 12px;
   padding: 4px 0;
@@ -350,8 +350,8 @@ const progressLabel = computed(() => {
   gap: 4px;
   font-size: 14px;
   font-variant-numeric: tabular-nums; /* 使用等宽数字 */
-  min-width: 120px; /* 固定最小宽度 */
-  flex-wrap: wrap; /* 允许换行，防止溢出 */
+  min-width: 150px; /* 增加宽度以容纳数字+徽章+锁 */
+  flex-wrap: nowrap; /* 禁止换行，保持单行显示 */
 }
 
 .completed-count {
@@ -560,7 +560,7 @@ const progressLabel = computed(() => {
   }
 
   .pool-row {
-    grid-template-columns: 70px 1fr 110px;
+    grid-template-columns: 70px 1fr 130px; /* 平板：适当增加宽度 */
     gap: 10px;
   }
 
@@ -578,7 +578,7 @@ const progressLabel = computed(() => {
 
   .pool-stats {
     font-size: 13px;
-    min-width: 110px;
+    min-width: 130px; /* 平板：适当增加宽度 */
   }
 
   .completed-count {
@@ -611,7 +611,7 @@ const progressLabel = computed(() => {
   }
 
   .pool-row {
-    grid-template-columns: 60px 1fr 100px;
+    grid-template-columns: 60px 1fr 120px; /* 手机：适当增加宽度 */
     gap: 8px;
   }
 
@@ -625,7 +625,7 @@ const progressLabel = computed(() => {
 
   .pool-stats {
     font-size: 12px;
-    min-width: 100px;
+    min-width: 120px; /* 手机：适当增加宽度 */
     gap: 2px;
   }
 
