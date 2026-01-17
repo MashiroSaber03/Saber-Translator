@@ -363,7 +363,69 @@ watch(
 
 ### 核心原则
 
-编辑模式中修改单个气泡**只影响该气泡的 BubbleState**，不影响图片级别设置或其他气泡。
+1. 编辑模式中**修改单个气泡**只影响该气泡的 BubbleState，不影响图片级别设置或其他气泡
+2. 编辑模式中**添加新气泡**时，会从当前侧边栏读取所有样式设置
+
+### 添加新气泡
+
+新添加的气泡会自动继承当前侧边栏的所有样式设置：
+
+```typescript
+// bubbleStore.ts
+function addBubble(coords: BubbleCoords, overrides?: Partial<BubbleState>): BubbleState {
+  // 自动计算排版方向
+  const autoDirection = detectTextDirection(coords)
+
+  // 【复刻原版】从 settingsStore 读取当前 UI 设置
+  const settingsStore = useSettingsStore()
+  const textStyle = settingsStore.settings.textStyle
+
+  // 处理排版方向：如果是 'auto' 则使用检测结果
+  const layoutDirection = textStyle.layoutDirection
+  const bubbleTextDirection =
+    (layoutDirection === 'vertical' || layoutDirection === 'horizontal')
+      ? layoutDirection
+      : autoDirection
+
+  const newBubble = createBubbleState({
+    coords,
+    translatedText: '',
+    autoTextDirection: autoDirection,
+    // 从当前侧边栏读取所有样式设置
+    fontSize: textStyle.fontSize,
+    fontFamily: textStyle.fontFamily,
+    textDirection: bubbleTextDirection,
+    textColor: textStyle.textColor,
+    fillColor: textStyle.fillColor,
+    inpaintMethod: textStyle.inpaintMethod,
+    strokeEnabled: textStyle.strokeEnabled,
+    strokeColor: textStyle.strokeColor,
+    strokeWidth: textStyle.strokeWidth,
+    rotationAngle: 0,
+    position: { x: 0, y: 0 },
+    // 允许 overrides 覆盖
+    ...overrides
+  })
+
+  bubbles.value.push(newBubble)
+  syncToCurrentImage()  // 同步到 imageStore
+  return newBubble
+}
+```
+
+**继承的设置项：**
+
+| 设置项 | 来源 |
+|--------|------|
+| `fontSize` | `textStyle.fontSize` |
+| `fontFamily` | `textStyle.fontFamily` |
+| `textDirection` | 根据 `textStyle.layoutDirection` 和气泡宽高比自动计算 |
+| `textColor` | `textStyle.textColor` |
+| `fillColor` | `textStyle.fillColor` |
+| `strokeEnabled` | `textStyle.strokeEnabled` |
+| `strokeColor` | `textStyle.strokeColor` |
+| `strokeWidth` | `textStyle.strokeWidth` |
+| `inpaintMethod` | `textStyle.inpaintMethod` |
 
 ### 气泡更新流程
 
@@ -389,6 +451,7 @@ function syncToCurrentImage(): void {
   }
 }
 ```
+
 
 ---
 
@@ -458,7 +521,7 @@ const uiSettings = {
   strokeEnabled: textStyle.strokeEnabled,
   strokeColor: textStyle.strokeColor,
   strokeWidth: textStyle.strokeWidth,
-  inpaintMethod: textStyle.inpaintMethod,
+  useInpaintingMethod: textStyle.inpaintMethod,  // 注意：保存时键名为 useInpaintingMethod
   useAutoTextColor: textStyle.useAutoTextColor,
 }
 ```
@@ -476,7 +539,7 @@ const images = sessionData.images.map((img, index) => ({
   layoutDirection: img.layoutDirection || 'auto',
   textColor: img.textColor || '#000000',
   fillColor: img.fillColor || '#FFFFFF',
-  inpaintMethod: img.inpaintMethod || 'solid',
+  inpaintMethod: img.inpaintMethod || 'litelama',  // 加载时默认 litelama
   strokeEnabled: img.strokeEnabled ?? false,
   strokeColor: img.strokeColor || '#FFFFFF',
   strokeWidth: img.strokeWidth || 2,
@@ -502,9 +565,11 @@ settingsStore.updateTextStyle({
 | `stores/settings/defaults.ts` | 默认值定义 |
 | `stores/settings/modules/misc.ts` | updateTextStyle 方法 |
 | `stores/imageStore.ts` | ImageData 管理 |
-| `stores/bubbleStore.ts` | BubbleState 管理 |
+| `stores/bubbleStore.ts` | BubbleState 管理、addBubble 方法 |
+| `stores/sessionStore.ts` | 会话保存/加载逻辑 |
 | `types/image.ts` | ImageData 类型定义 |
 | `types/bubble.ts` | BubbleState 类型定义 |
+| `utils/bubbleFactory.ts` | 气泡状态工厂函数、createBubbleState |
 | `views/TranslateView.vue` | 同步逻辑、handleTextStyleChanged、handleApplyToAll |
 | `composables/translation/core/types.ts` | SavedTextStyles 类型定义 |
 | `composables/translation/core/SequentialPipeline.ts` | 翻译时的设置保存/应用逻辑 |
@@ -574,3 +639,4 @@ const response = await parallelRender({
 | 日期 | 版本 | 内容 |
 |------|------|------|
 | 2026-01-18 | v1.0 | 初始版本，描述文字设置的完整架构 |
+| 2026-01-18 | v1.1 | 添加"添加新气泡"章节；修正会话保存/加载代码示例；补充关键文件列表 |
