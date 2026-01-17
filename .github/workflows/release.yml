@@ -276,15 +276,17 @@ jobs:
       # --------------------------------------------------
       - name: Organize files
         run: |
-          echo "📁 Organizing release files..."
+          echo "Organizing release files..."
           mkdir -p release-files
           
-          # 移动所有压缩包到 release-files 目录
-          find artifacts/ -name "*.zip" -o -name "*.z[0-9]*" | while read f; do
-            cp "$f" release-files/
-          done
+          # 显示 artifacts 目录结构
+          echo "Artifacts directory structure:"
+          find artifacts/ -type f | head -50
           
-          echo "📋 Files to be released:"
+          # 复制所有 zip 和分卷文件到 release-files 目录
+          find artifacts/ -type f \( -name "*.zip" -o -name "*.z[0-9]*" \) -exec cp {} release-files/ \;
+          
+          echo "Files to be released:"
           ls -lh release-files/
 
       # --------------------------------------------------
