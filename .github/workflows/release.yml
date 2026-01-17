@@ -1,0 +1,329 @@
+# ============================================================================
+# Saber-Translator 自动构建与发布工作流
+# ============================================================================
+# 触发方式:
+#   1. 推送版本标签: git tag v3.4.0 && git push origin v3.4.0
+#   2. 手动触发: GitHub Actions 页面 -> Run workflow
+#
+# 流程:
+#   1. 并行构建 CPU 和 GPU 版本
+#   2. 从 models-storage Release 下载模型文件
+#   3. 使用 PyInstaller 打包
+#   4. ZIP 分卷压缩（最高压缩率）
+#   5. 创建 Draft Release，等待手动编辑更新日志后发布
+# ============================================================================
+
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (不带v前缀，如 3.4.0)'
+        required: true
+        default: '3.4.0'
+
+env:
+  MODELS_RELEASE_TAG: models-storage
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ============================================================================
+  # 构建 Job - CPU 和 GPU 并行构建
+  # ============================================================================
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            requirements: requirements-cpu.txt
+          - variant: gpu
+            requirements: requirements-gpu.txt
+
+    steps:
+      # --------------------------------------------------
+      # 1. 检出代码
+      # --------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. 从 models-storage Release 下载模型文件
+      # --------------------------------------------------
+      - name: Download models from storage release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Write-Host "📦 Downloading models from release: ${{ env.MODELS_RELEASE_TAG }}"
+          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.*" --dir .
+          
+          Write-Host "📋 Downloaded files:"
+          Get-ChildItem -Filter "models.*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+
+      # --------------------------------------------------
+      # 3. 解压模型文件
+      # --------------------------------------------------
+      - name: Extract models
+        run: |
+          Write-Host "📂 Extracting models..."
+          
+          # 使用 7z 解压分卷压缩（自动处理 .z01 + .zip）
+          7z x models.zip -omodels/ -y
+          
+          Write-Host "✅ Models extracted. Directory contents:"
+          Get-ChildItem -Path models/ | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+
+      # --------------------------------------------------
+      # 4. 设置 Python 环境
+      # --------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # --------------------------------------------------
+      # 5. 安装依赖 (CPU 和 GPU 流程不同)
+      # --------------------------------------------------
+      - name: Install dependencies (CPU)
+        if: matrix.variant == 'cpu'
+        run: |
+          Write-Host "🔧 Installing CPU dependencies..."
+          python -m pip install --upgrade pip
+          pip install -r ${{ matrix.requirements }}
+
+      - name: Install dependencies (GPU)
+        if: matrix.variant == 'gpu'
+        run: |
+          Write-Host "🔧 Installing GPU dependencies..."
+          python -m pip install --upgrade pip
+          
+          # 步骤1: 安装所有依赖（会自动装 CPU 版 torch）
+          pip install -r ${{ matrix.requirements }}
+          
+          # 步骤2: 卸载 CPU 版 PyTorch
+          Write-Host "🔄 Replacing CPU PyTorch with CUDA version..."
+          pip uninstall torch torchvision torchaudio -y
+          
+          # 步骤3: 安装 CUDA 13.0 版 PyTorch
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+
+      # --------------------------------------------------
+      # 6. 使用 PyInstaller 打包
+      # --------------------------------------------------
+      - name: Build with PyInstaller
+        run: |
+          Write-Host "🏗️ Building with PyInstaller..."
+          pyinstaller app.spec --noconfirm
+          
+          Write-Host "✅ Build completed. Output directory:"
+          Get-ChildItem -Path dist/ | Select-Object Name
+
+      # --------------------------------------------------
+      # 7. 获取版本号
+      # --------------------------------------------------
+      - name: Get version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            # 从 tag 中提取版本号 (去掉 v 前缀)
+            $version = "${{ github.ref_name }}" -replace '^v', ''
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "📌 Version: $version"
+
+      # --------------------------------------------------
+      # 8. ZIP 分卷压缩（最高压缩率）
+      # --------------------------------------------------
+      - name: Package with ZIP split (ultra compression)
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $variant = "${{ matrix.variant }}"
+          $outputName = "Saber-Translator-$version-$variant"
+          
+          Write-Host "📦 Compressing with maximum compression..."
+          Write-Host "   Output: $outputName.zip (split at 1900MB)"
+          
+          # 进入 dist 目录，压缩 Saber-Translator 文件夹内容
+          Push-Location dist
+          
+          # 使用 7z 创建 ZIP 分卷压缩
+          # -tzip: ZIP 格式
+          # -mx=9: 最高压缩级别
+          # -mfb=258: 最大 FastBytes (ZIP 最大支持 258)
+          # -mpass=15: 最大压缩轮数
+          # -v1900m: 每卷 1900MB (确保 < 2GB 限制)
+          7z a -tzip -mx=9 -mfb=258 -mpass=15 -v1900m "../$outputName.zip" "Saber-Translator/*"
+          
+          Pop-Location
+          
+          Write-Host "✅ Compression completed. Generated files:"
+          Get-ChildItem "$outputName.*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+
+      # --------------------------------------------------
+      # 9. 重命名分卷文件（.zip.001 -> .z01 等）
+      # --------------------------------------------------
+      - name: Rename split archives
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $variant = "${{ matrix.variant }}"
+          $baseName = "Saber-Translator-$version-$variant"
+          
+          Write-Host "📝 Renaming split archives..."
+          
+          # 获取所有分卷文件
+          $files = Get-ChildItem "$baseName.zip.*" | Sort-Object Name
+          
+          foreach ($file in $files) {
+            # 提取编号 (.zip.001 -> 001)
+            if ($file.Name -match '\.zip\.(\d+)$') {
+              $num = [int]$Matches[1]
+              
+              if ($num -eq $files.Count) {
+                # 最后一个分卷命名为 .zip
+                $newName = "$baseName.zip"
+              } else {
+                # 其他分卷命名为 .z01, .z02, ...
+                $newName = "$baseName.z{0:D2}" -f $num
+              }
+              
+              Rename-Item $file.FullName $newName
+              Write-Host "   $($file.Name) -> $newName"
+            }
+          }
+          
+          Write-Host "✅ Renamed files:"
+          Get-ChildItem "$baseName.*" | Where-Object { $_.Extension -match '\.(zip|z\d+)$' } | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+
+      # --------------------------------------------------
+      # 10. 上传构建产物
+      # --------------------------------------------------
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.variant }}
+          path: |
+            Saber-Translator-*.z*
+            Saber-Translator-*.zip
+          retention-days: 3
+
+      # --------------------------------------------------
+      # 11. 上传模型文件（仅在其中一个变体中上传，避免重复）
+      # --------------------------------------------------
+      - name: Upload models artifacts
+        if: matrix.variant == 'cpu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: models
+          path: |
+            models.z01
+            models.zip
+          retention-days: 3
+
+  # ============================================================================
+  # 发布 Job - 创建 Draft Release
+  # ============================================================================
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # --------------------------------------------------
+      # 1. 下载所有构建产物
+      # --------------------------------------------------
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: false
+
+      # --------------------------------------------------
+      # 2. 整理文件
+      # --------------------------------------------------
+      - name: Organize files
+        run: |
+          echo "📁 Organizing release files..."
+          mkdir -p release-files
+          
+          # 移动所有压缩包到 release-files 目录
+          find artifacts/ -name "*.zip" -o -name "*.z[0-9]*" | while read f; do
+            cp "$f" release-files/
+          done
+          
+          echo "📋 Files to be released:"
+          ls -lh release-files/
+
+      # --------------------------------------------------
+      # 3. 获取版本号
+      # --------------------------------------------------
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"  # 去掉 v 前缀
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "📌 Version: $VERSION"
+
+      # --------------------------------------------------
+      # 4. 创建 Draft Release
+      # --------------------------------------------------
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Saber-Translator v${{ steps.version.outputs.VERSION }}
+            
+            > ⚠️ **这是一个草稿 Release，请编辑更新日志后再发布。**
+            
+            ### 更新日志
+            
+            <!-- 请在此处填写更新日志 -->
+            
+            ---
+            
+            ### 下载说明
+            
+            📦 **普通用户（开箱即用）：**
+            - CPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-cpu.*` 文件
+            - GPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-gpu.*` 文件
+            - 将所有分卷放在同一目录，解压 `.zip` 文件即可
+            
+            🔧 **源码部署用户：**
+            - 下载 `models.z01` 和 `models.zip`
+            - 解压到项目根目录的 `models/` 文件夹
+            
+            > 采用分卷压缩的方式，需要下载对应版本的多个压缩文件，将其放在同一个目录下解压
+          files: release-files/*
+          draft: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --------------------------------------------------
+      # 5. 输出结果
+      # --------------------------------------------------
+      - name: Summary
+        run: |
+          echo "🎉 Draft Release created successfully!"
+          echo ""
+          echo "📝 Next steps:"
+          echo "   1. Go to GitHub Releases page"
+          echo "   2. Edit the draft release"
+          echo "   3. Write your changelog"
+          echo "   4. Click 'Publish release'"
+          echo ""
+          echo "🔗 https://github.com/${{ github.repository }}/releases"
