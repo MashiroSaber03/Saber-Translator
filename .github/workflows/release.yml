@@ -60,6 +60,11 @@ jobs:
           - variant: gpu
             requirements: requirements-gpu.txt
 
+    # 设置 UTF-8 编码，避免中文输出问题
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: 1
+
     steps:
       # --------------------------------------------------
       # 1. 检出代码（手动触发时使用指定分支）
@@ -134,10 +139,14 @@ jobs:
       # --------------------------------------------------
       - name: Build with PyInstaller
         run: |
-          Write-Host "🏗️ Building with PyInstaller..."
+          # 设置控制台编码为 UTF-8
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $env:PYTHONIOENCODING = "utf-8"
+          
+          Write-Host "Building with PyInstaller..."
           pyinstaller app.spec --noconfirm
           
-          Write-Host "✅ Build completed. Output directory:"
+          Write-Host "Build completed. Output directory:"
           Get-ChildItem -Path dist/ | Select-Object Name
 
       # --------------------------------------------------
