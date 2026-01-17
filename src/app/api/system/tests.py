@@ -12,6 +12,7 @@
 """
 
 import os
+import re
 import io
 import base64
 import time
@@ -819,7 +820,11 @@ def fetch_openai_compatible_models(api_key: str, base_url: str) -> List[Dict[str
     """获取 OpenAI 兼容服务的模型列表"""
     try:
         # 确保 base_url 格式正确
-        if not base_url.endswith('/v1') and not base_url.endswith('/v1/'):
+        # 注意：某些服务商（如火山引擎）使用 /api/v3 而非 /v1，不应追加 /v1
+        has_version_path = bool(re.search(r'/v\d+/?$', base_url) or re.search(r'/api/v\d+/?$', base_url))
+        
+        if not has_version_path:
+            # 只有当 URL 不包含版本路径时才添加 /v1
             if not base_url.endswith('/'):
                 base_url += '/'
             base_url += 'v1'
