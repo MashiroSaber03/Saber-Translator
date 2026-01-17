@@ -188,7 +188,8 @@ export function useSequentialPipeline() {
             strokeEnabled: textStyle.strokeEnabled,
             strokeColor: textStyle.strokeColor,
             strokeWidth: textStyle.strokeWidth,
-            useAutoTextColor: textStyle.useAutoTextColor
+            useAutoTextColor: textStyle.useAutoTextColor,
+            inpaintMethod: textStyle.inpaintMethod
         }
     }
 
@@ -592,7 +593,7 @@ export function useSequentialPipeline() {
                 strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
                 strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
                 strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-                inpaintMethod: textStyle.inpaintMethod,
+                inpaintMethod: savedTextStyles?.inpaintMethod || textStyle.inpaintMethod,
                 autoFgColor: task.colors[idx]?.autoFgColor || null,
                 autoBgColor: task.colors[idx]?.autoBgColor || null
             }
@@ -705,6 +706,8 @@ export function useSequentialPipeline() {
                 ? `data:image/png;base64,${task.cleanImage}`
                 : null
 
+        const { textStyle } = settingsStore.settings
+
         imageStore.updateImageByIndex(task.imageIndex, {
             translatedDataURL,
             cleanImageData: task.cleanImage || null,
@@ -719,9 +722,18 @@ export function useSequentialPipeline() {
             showOriginal: false,
             hasUnsavedChanges: true,
             // 保存用户翻译时选择的设置（用于切换图片时恢复）
-            layoutDirection: savedTextStyles?.layoutDirection,
-            autoFontSize: savedTextStyles?.autoFontSize ?? false,
-            useAutoTextColor: savedTextStyles?.useAutoTextColor ?? false
+            // 【修复】保存完整的文字设置，避免切换图片后侧边栏显示默认值
+            fontSize: savedTextStyles?.fontSize ?? textStyle.fontSize,
+            autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+            fontFamily: savedTextStyles?.fontFamily ?? textStyle.fontFamily,
+            layoutDirection: savedTextStyles?.layoutDirection ?? textStyle.layoutDirection,
+            textColor: savedTextStyles?.textColor ?? textStyle.textColor,
+            fillColor: savedTextStyles?.fillColor ?? textStyle.fillColor,
+            strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
+            strokeColor: savedTextStyles?.strokeColor ?? textStyle.strokeColor,
+            strokeWidth: savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
+            inpaintMethod: savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod,
+            useAutoTextColor: savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
         })
 
         if (task.imageIndex === imageStore.currentImageIndex && task.bubbleStates) {

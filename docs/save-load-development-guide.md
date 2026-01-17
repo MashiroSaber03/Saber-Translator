@@ -83,7 +83,7 @@ data/sessions/{session_path}/
     "strokeColor": "#FFFFFF",
     "strokeWidth": 2,
     "useAutoTextColor": false,
-    "useInpaintingMethod": "solid"
+    "inpaintMethod": "solid"
   },
   "total_pages": 52,
   "currentImageIndex": 0
@@ -120,7 +120,7 @@ data/sessions/{session_path}/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `useAutoTextColor` | boolean | 是否启用自动文字颜色（根据背景自动选择） |
-| `useInpaintingMethod` / `inpaintMethod` | string | 气泡填充方式：<br>• `solid` = 纯色填充<br>• `lama_mpe` = LAMA修复 (速度优化)<br>• `litelama` = LAMA修复 (通用) |
+| `inpaintMethod` | string | 气泡填充方式：<br>• `solid` = 纯色填充<br>• `lama_mpe` = LAMA修复 (速度优化)<br>• `litelama` = LAMA修复 (通用) |
 | `layoutDirection` | string | 文字排版方向：`auto` / `vertical` / `horizontal` |
 
 > **注意**：语言设置 (`targetLanguage`, `sourceLanguage`) 不保存在会话中，由设置菜单统一管理。

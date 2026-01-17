@@ -126,8 +126,17 @@ export class RenderPool extends TaskPool {
       showOriginal: false,
       hasUnsavedChanges: true,
       // 保存用户翻译时选择的设置（用于切换图片时恢复）
-      layoutDirection: settingsStore.settings.textStyle.layoutDirection,
+      // 【修复】保存完整的文字设置，避免切换图片后侧边栏显示默认值
+      fontSize: settingsStore.settings.textStyle.fontSize,
       autoFontSize: settingsStore.settings.textStyle.autoFontSize,
+      fontFamily: settingsStore.settings.textStyle.fontFamily,
+      layoutDirection: settingsStore.settings.textStyle.layoutDirection,
+      textColor: settingsStore.settings.textStyle.textColor,
+      fillColor: settingsStore.settings.textStyle.fillColor,
+      strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
+      strokeColor: settingsStore.settings.textStyle.strokeColor,
+      strokeWidth: settingsStore.settings.textStyle.strokeWidth,
+      inpaintMethod: settingsStore.settings.textStyle.inpaintMethod,
       useAutoTextColor: settingsStore.settings.textStyle.useAutoTextColor
     })
 

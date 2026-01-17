@@ -103,4 +103,6 @@ export interface SavedTextStyles {
     strokeColor: string
     strokeWidth: number
     useAutoTextColor: boolean
+    /** 修复方式 */
+    inpaintMethod: 'solid' | 'lama_mpe' | 'litelama'
 }

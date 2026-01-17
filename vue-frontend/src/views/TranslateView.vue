@@ -189,22 +189,25 @@ const isSyncingTextStyle = ref(false)
 /**
  * 辅助函数：从图片同步文字设置到侧边栏
  * @param image 源图片数据
+ * 【修复】只同步图片中有明确定义的设置，undefined 值回退到当前 settingsStore 设置
  */
 function syncImageToSidebar(image: typeof imageStore.currentImage) {
   if (!image) return
   
+  const currentStyle = settingsStore.settings.textStyle
+  
   settingsStore.updateTextStyle({
-    fontSize: image.fontSize,
-    autoFontSize: image.autoFontSize,
-    fontFamily: image.fontFamily,
-    layoutDirection: image.layoutDirection,
-    textColor: image.textColor,
-    fillColor: image.fillColor,
-    strokeEnabled: image.strokeEnabled,
-    strokeColor: image.strokeColor,
-    strokeWidth: image.strokeWidth,
-    inpaintMethod: image.inpaintMethod,
-    useAutoTextColor: image.useAutoTextColor
+    fontSize: image.fontSize ?? currentStyle.fontSize,
+    autoFontSize: image.autoFontSize ?? currentStyle.autoFontSize,
+    fontFamily: image.fontFamily ?? currentStyle.fontFamily,
+    layoutDirection: image.layoutDirection ?? currentStyle.layoutDirection,
+    textColor: image.textColor ?? currentStyle.textColor,
+    fillColor: image.fillColor ?? currentStyle.fillColor,
+    strokeEnabled: image.strokeEnabled ?? currentStyle.strokeEnabled,
+    strokeColor: image.strokeColor ?? currentStyle.strokeColor,
+    strokeWidth: image.strokeWidth ?? currentStyle.strokeWidth,
+    inpaintMethod: image.inpaintMethod ?? currentStyle.inpaintMethod,
+    useAutoTextColor: image.useAutoTextColor ?? currentStyle.useAutoTextColor
   })
 }
 

@@ -23,7 +23,7 @@ import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
 import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
 import { getBookDetail } from '@/api/bookshelf'
-import type { ImageData } from '@/types/image'
+
 import type { FontInfo } from '@/types/api'
 
 // ============================================================
@@ -391,44 +391,14 @@ export function useTranslateInit() {
       bubbleStore.clearBubblesLocal()
     }
 
-    // 加载新图片的设置到 settingsStore
-    loadImageSettingsToStore(newImage)
+    // 注意：图片设置同步由 TranslateView.vue 的 watch 自动处理
+    // 当 currentImage 变化时，watch 会调用 syncImageToSidebar
 
     // 重置切换图片操作的标记
     setTimeout(() => {
       window._isChangingFromSwitchImage = false
       console.log('[TranslateInit] 已重置切换图片操作标记')
     }, 100)
-  }
-
-  /**
-   * 加载图片设置到 settingsStore
-   * @param imageData - 图片数据
-   */
-  function loadImageSettingsToStore(imageData: ImageData | null): void {
-    if (!imageData) return
-
-    // 如果图片有气泡状态，从第一个气泡读取设置
-    const firstBubble = imageData.bubbleStates?.[0]
-
-    if (firstBubble) {
-      // 更新文字样式设置
-      // 注意：layoutDirection 直接从图片数据读取（用户原始选择，包括 'auto'）
-      // 而不是从气泡读取（气泡只存具体方向 'vertical'/'horizontal'）
-      settingsStore.updateTextStyle({
-        fontSize: firstBubble.fontSize || settingsStore.settings.textStyle.fontSize,
-        fontFamily: firstBubble.fontFamily || settingsStore.settings.textStyle.fontFamily,
-        layoutDirection: imageData.layoutDirection || settingsStore.settings.textStyle.layoutDirection,
-        textColor: firstBubble.textColor || settingsStore.settings.textStyle.textColor,
-        fillColor: firstBubble.fillColor || settingsStore.settings.textStyle.fillColor,
-        strokeEnabled: firstBubble.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
-        strokeColor: firstBubble.strokeColor || settingsStore.settings.textStyle.strokeColor,
-        strokeWidth: firstBubble.strokeWidth || settingsStore.settings.textStyle.strokeWidth,
-        inpaintMethod: firstBubble.inpaintMethod || settingsStore.settings.textStyle.inpaintMethod,
-        autoFontSize: imageData.autoFontSize ?? settingsStore.settings.textStyle.autoFontSize,
-        useAutoTextColor: imageData.useAutoTextColor ?? settingsStore.settings.textStyle.useAutoTextColor
-      })
-    }
   }
 
   /**
@@ -492,8 +462,6 @@ export function useTranslateInit() {
     switchImage,
     goToPrevious,
     goToNext,
-    loadImageSettingsToStore,
-
     // 编辑模式相关
     editMode,
 
