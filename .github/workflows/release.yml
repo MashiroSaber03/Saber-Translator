@@ -239,18 +239,7 @@ jobs:
             Saber-Translator-*.zip
           retention-days: 3
 
-      # --------------------------------------------------
-      # 11. 上传模型文件（仅在其中一个变体中上传，避免重复）
-      # --------------------------------------------------
-      - name: Upload models artifacts
-        if: matrix.variant == 'cpu'
-        uses: actions/upload-artifact@v4
-        with:
-          name: models
-          path: |
-            models.z01
-            models.zip
-          retention-days: 3
+      # 注意：模型文件不再上传到 artifacts，用户需要从 models-storage Release 下载
 
   # ============================================================================
   # 发布 Job - 创建 Draft Release
@@ -331,8 +320,8 @@ jobs:
             - 将所有分卷放在同一目录，解压 `.zip` 文件即可
             
             🔧 **源码部署用户：**
-            - 下载 `models.z01` 和 `models.zip`
-            - 解压到项目根目录的 `models/` 文件夹
+            - 请从 [Models Storage](https://github.com/${{ github.repository }}/releases/tag/models-storage) 下载模型文件
+            - 下载 `models.z01` 和 `models.zip`，解压到项目根目录的 `models/` 文件夹
             
             > 采用分卷压缩的方式，需要下载对应版本的多个压缩文件，将其放在同一个目录下解压
           files: release-files/*
