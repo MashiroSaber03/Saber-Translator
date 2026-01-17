@@ -161,8 +161,8 @@ export const FONT_SIZE_STEP = 2
 /** 字号最小值 */
 export const FONT_SIZE_MIN = 10
 
-/** 字号最大值 */
-export const FONT_SIZE_MAX = 100
+/** 字号最大值（设置为较大值以允许自由调整） */
+export const FONT_SIZE_MAX = 999
 
 /** 用户自定义字号预设存储键 */
 export const FONT_SIZE_CUSTOM_PRESETS_KEY = 'customFontSizePresets'

@@ -587,7 +587,7 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
 
 def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='vertical',
                              font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH,
-                             min_size=12, max_size=60, padding_ratio=1.0):
+                             min_size=12, max_size=80, padding_ratio=1.0):
     """
     使用二分法计算最佳字体大小。
     
