@@ -1,9 +1,16 @@
 # ============================================================================
 # Saber-Translator 自动构建与发布工作流
 # ============================================================================
+# 分支策略:
+#   - main 分支: 完整功能（包含网页导入等开发功能）
+#   - release 分支: 精简版（删除网页导入，用于打包发布）
+#
 # 触发方式:
-#   1. 推送版本标签: git tag v3.4.0 && git push origin v3.4.0
-#   2. 手动触发: GitHub Actions 页面 -> Run workflow
+#   1. 在 release 分支推送版本标签:
+#      git checkout release
+#      git tag v3.3.0
+#      git push origin v3.3.0
+#   2. 手动触发: GitHub Actions 页面 -> Run workflow -> 选择 release 分支
 #
 # 流程:
 #   1. 并行构建 CPU 和 GPU 版本
@@ -22,9 +29,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (不带v前缀，如 3.4.0)'
+        description: '版本号 (不带v前缀，如 3.3.0)'
         required: true
-        default: '3.4.0'
+        default: '3.3.0'
+      branch:
+        description: '要打包的分支'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - main
 
 env:
   MODELS_RELEASE_TAG: models-storage
@@ -47,10 +62,12 @@ jobs:
 
     steps:
       # --------------------------------------------------
-      # 1. 检出代码
+      # 1. 检出代码（手动触发时使用指定分支）
       # --------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
 
       # --------------------------------------------------
       # 2. 从 models-storage Release 下载模型文件
