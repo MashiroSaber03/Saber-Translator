@@ -94,7 +94,6 @@ jobs:
             - 将所有分卷放在同一目录，解压 `.zip` 文件即可
             
             🔧 **源码部署用户：**
-            - 请从 [Models Storage](https://github.com/${{ github.repository }}/releases/tag/models-storage) 下载模型文件
             - 下载 `models.z01` 和 `models.zip`，解压到项目根目录的 `models/` 文件夹
             
             > 采用分卷压缩的方式，需要下载对应版本的多个压缩文件，将其放在同一个目录下解压
@@ -286,6 +285,27 @@ jobs:
           }
           
           Write-Host "Upload completed for $variant version!"
+
+      # --------------------------------------------------
+      # 11. 上传模型文件到 Release（仅 CPU 构建执行）
+      # --------------------------------------------------
+      - name: Upload models to Release
+        if: matrix.variant == 'cpu'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagName = "${{ needs.prepare.outputs.tag_name }}"
+          
+          Write-Host "Downloading models for upload to Release..."
+          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.*" --dir .
+          
+          Write-Host "Uploading models to Release $tagName..."
+          Get-ChildItem "models.*" | ForEach-Object {
+            Write-Host "Uploading: $($_.Name) ($([math]::Round($_.Length/1MB, 0)) MB)"
+            gh release upload $tagName $_.FullName --clobber
+          }
+          
+          Write-Host "Models upload completed!"
 
   # ============================================================================
   # 完成 Job - 输出结果
