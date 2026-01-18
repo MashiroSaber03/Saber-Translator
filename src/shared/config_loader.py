@@ -33,7 +33,7 @@ def load_json_config(filename, default_value={}):
                 logger.debug(f"成功加载 JSON 配置文件: {config_path}")
                 return data
         else:
-            logger.warning(f"JSON 配置文件未找到: {config_path}，返回默认值。")
+            logger.debug(f"JSON 配置文件未找到: {config_path}，使用默认值（首次使用时正常）。")
             # 如果文件不存在，可以考虑创建一个空的默认文件
             # save_json_config(filename, default_value)
             return default_value
@@ -88,7 +88,7 @@ def load_yaml_config(filename, default_value={}):
                 # 如果加载结果为 None（空文件），返回默认值
                 return data if data is not None else default_value
         else:
-            logger.warning(f"YAML 配置文件未找到: {config_path}，返回默认值。")
+            logger.debug(f"YAML 配置文件未找到: {config_path}，使用默认值（首次使用时正常）。")
             # 如果文件不存在，可以考虑创建一个空的默认文件
             # save_yaml_config(filename, default_value)
             return default_value
