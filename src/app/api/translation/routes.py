@@ -1119,6 +1119,61 @@ def ocr_single_bubble():
                     prompt=ai_vision_ocr_prompt,
                     custom_base_url=custom_ai_vision_base_url
                 )
+            
+            elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
+                # 使用 PaddleOCR-VL (视觉语言模型)
+                from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
+                import torch
+                import numpy as np
+                
+                ocr_handler = get_paddleocr_vl_handler()
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                
+                # 获取源语言参数
+                source_language = data.get('source_language', 'japanese')
+                
+                if ocr_handler.initialize(device):
+                    # 确保图像是 RGB 格式
+                    if bubble_image.mode != 'RGB':
+                        bubble_image = bubble_image.convert('RGB')
+                    
+                    # 对于单气泡，创建一个虚拟的坐标列表（整个图像）
+                    bubble_w, bubble_h = bubble_image.size
+                    single_coords = [(0, 0, bubble_w, bubble_h)]
+                    
+                    # 调用识别（不传 textlines，使用简单模式）
+                    results = ocr_handler.recognize_text(bubble_image, single_coords, None, source_language)
+                    recognized_text = results[0] if results else ''
+                    logger.info(f"PaddleOCR-VL 单气泡识别完成")
+                else:
+                    logger.error("PaddleOCR-VL 初始化失败")
+                    return jsonify({'error': 'PaddleOCR-VL 初始化失败'}), 500
+            
+            elif ocr_engine == constants.OCR_ENGINE_48PX:
+                # 使用 48px OCR
+                from src.interfaces.ocr_48px import get_48px_ocr_handler
+                import torch
+                import numpy as np
+                
+                ocr_handler = get_48px_ocr_handler()
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                
+                if ocr_handler.initialize(device):
+                    # 确保图像是 RGB 格式
+                    if bubble_image.mode != 'RGB':
+                        bubble_image = bubble_image.convert('RGB')
+                    
+                    # 对于单气泡，创建一个虚拟的坐标列表（整个图像）
+                    bubble_w, bubble_h = bubble_image.size
+                    single_coords = [(0, 0, bubble_w, bubble_h)]
+                    
+                    # 调用识别（不传 textlines，使用简单模式）
+                    results = ocr_handler.recognize_text(bubble_image, single_coords, None)
+                    recognized_text = results[0] if results else ''
+                    logger.info(f"48px OCR 单气泡识别完成")
+                else:
+                    logger.error("48px OCR 初始化失败")
+                    return jsonify({'error': '48px OCR 初始化失败'}), 500
                 
             else:
                 return jsonify({'error': f'不支持的OCR引擎: {ocr_engine}'}), 400
