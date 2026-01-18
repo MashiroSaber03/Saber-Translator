@@ -26,6 +26,38 @@ export class DetectionPool extends TaskPool {
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
 
+    // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
+    // - bubbleStates === null/undefined: 从未处理过，需要自动检测
+    // - bubbleStates === []: 用户主动清空，跳过检测（避免"框复活"）
+    // - bubbleStates.length > 0: 有气泡数据，复用已有数据
+    const existingBubbles = imageData.bubbleStates
+    if (existingBubbles !== null && existingBubbles !== undefined) {
+      if (existingBubbles.length > 0) {
+        console.log(`[检测池] 图片 ${task.imageIndex + 1} 已有 ${existingBubbles.length} 个气泡，跳过检测`)
+        task.detectionResult = {
+          // 坐标需要转换为整数，后端 numpy 切片需要整数索引
+          bubbleCoords: existingBubbles.map(s => s.coords.map(c => Math.round(c))),
+          bubbleAngles: existingBubbles.map(s => s.rotationAngle || 0),
+          bubblePolygons: existingBubbles.map(s => s.polygon || []),
+          autoDirections: existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical'),
+          rawMask: undefined,
+          textlinesPerBubble: []
+        }
+      } else {
+        console.log(`[检测池] 图片 ${task.imageIndex + 1} 气泡已被清空，跳过检测`)
+        task.detectionResult = {
+          bubbleCoords: [],
+          bubbleAngles: [],
+          bubblePolygons: [],
+          autoDirections: [],
+          rawMask: undefined,
+          textlinesPerBubble: []
+        }
+      }
+      task.status = 'processing'
+      return task
+    }
+
     // 提取Base64
     const base64 = this.extractBase64(imageData.originalDataURL)
 

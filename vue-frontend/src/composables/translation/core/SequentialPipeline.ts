@@ -232,6 +232,35 @@ export function useSequentialPipeline() {
     // ============================================================
 
     async function executeDetection(task: TaskState): Promise<void> {
+        // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
+        // - bubbleStates === null/undefined: 从未处理过，需要自动检测
+        // - bubbleStates === []: 用户主动清空，跳过检测（避免"框复活"）
+        // - bubbleStates.length > 0: 有气泡数据，复用已有数据
+        const existingBubbles = task.image.bubbleStates
+        if (existingBubbles !== null && existingBubbles !== undefined) {
+            if (existingBubbles.length > 0) {
+                console.log(`图片 ${task.imageIndex + 1} 已有 ${existingBubbles.length} 个气泡，跳过检测`)
+                // 坐标需要转换为整数，后端 numpy 切片需要整数索引
+                task.bubbleCoords = existingBubbles.map(s =>
+                    s.coords.map(c => Math.round(c)) as BubbleCoords
+                )
+                task.bubbleAngles = existingBubbles.map(s => s.rotationAngle || 0)
+                task.bubblePolygons = existingBubbles.map(s => s.polygon || [])
+                task.autoDirections = existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical')
+                // 复用已有的原文（如果有）
+                task.originalTexts = existingBubbles.map(s => s.originalText || '')
+            } else {
+                console.log(`图片 ${task.imageIndex + 1} 气泡已被清空，跳过检测`)
+                // 用户主动清空了气泡，设置为空数组
+                task.bubbleCoords = []
+                task.bubbleAngles = []
+                task.bubblePolygons = []
+                task.autoDirections = []
+                task.originalTexts = []
+            }
+            return
+        }
+
         const settings = settingsStore.settings
         const base64 = extractBase64(task.image.originalDataURL)
 
