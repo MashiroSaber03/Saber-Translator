@@ -84,7 +84,7 @@ for pkg in critical_packages:
         hiddenimports += pkg_hiddenimports
         print(f"[SPEC] collect_all({pkg}): OK")
     except Exception as e:
-        print(f"[SPEC] collect_all({pkg}) 失败: {e}")
+        print(f"[SPEC] collect_all({pkg}) FAILED: {e}")
 
 # 其他库的数据文件
 for pkg in ['rapidocr_onnxruntime', 'unidic_lite', 'fugashi', 'litelama']:
@@ -92,7 +92,7 @@ for pkg in ['rapidocr_onnxruntime', 'unidic_lite', 'fugashi', 'litelama']:
         datas += collect_data_files(pkg)
         print(f"[SPEC] collect_data_files({pkg}): OK")
     except Exception as e:
-        print(f"[SPEC] collect_data_files({pkg}) 失败: {e}")
+        print(f"[SPEC] collect_data_files({pkg}) FAILED: {e}")
 
 # 收集元数据
 for pkg in ['transformers', 'tokenizers', 'huggingface_hub', 'safetensors', 'manga_ocr', 'accelerate', 'sentencepiece']:
@@ -244,8 +244,8 @@ hiddenimports += [
     'src.utils', 'src.utils.image_rearrange', 'src.utils.performance_monitor',
 ]
 
-# 收集子模块
-print("[SPEC] 收集子模块...")
+# Collect submodules
+print("[SPEC] Collecting submodules...")
 for mod in ['flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia']:
     try:
         hiddenimports += collect_submodules(mod)
@@ -263,8 +263,8 @@ excludes = [
     'torch.utils.tensorboard',   # 训练可视化不需要
 ]
 
-# ===================== 分析 =====================
-print("[SPEC] 开始分析...")
+# ===================== Analysis =====================
+print("[SPEC] Starting analysis...")
 a = Analysis(
     ['app.py'],
     pathex=[PROJECT_ROOT],
