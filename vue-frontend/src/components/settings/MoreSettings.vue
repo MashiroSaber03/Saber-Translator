@@ -22,6 +22,25 @@
       </div>
     </div>
 
+    <!-- 消除文字模式设置 -->
+    <div class="settings-group">
+      <div class="settings-group-title">消除文字模式</div>
+      <div class="settings-item checkbox-item">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            v-model="localSettings.removeTextWithOcr"
+          />
+          <span class="checkbox-text">同时执行OCR识别</span>
+        </label>
+        <div class="input-hint">
+          开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。
+          <br />
+          <span class="hint-note">适用于需要保留原文信息以便后续翻译或参考的场景。</span>
+        </div>
+      </div>
+    </div>
+
     <!-- PDF处理方式 -->
     <div class="settings-group">
       <div class="settings-group-title">PDF处理设置</div>
@@ -119,7 +138,8 @@ const fontInput = ref<HTMLInputElement | null>(null)
 // 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
   pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
-  autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false
+  autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false,
+  removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false
 })
 
 // ============================================================
@@ -131,6 +151,10 @@ watch(() => localSettings.value.pdfProcessingMethod, (val) => {
 
 watch(() => localSettings.value.autoSaveInBookshelfMode, (val) => {
   settingsStore.setAutoSaveInBookshelfMode(val)
+})
+
+watch(() => localSettings.value.removeTextWithOcr, (val) => {
+  settingsStore.setRemoveTextWithOcr(val)
 })
 
 // 刷新字体列表

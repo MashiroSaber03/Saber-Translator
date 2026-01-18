@@ -1122,8 +1122,19 @@ export function useSequentialPipeline() {
         // 判断是否启用自动保存（书架模式 + 设置开启）
         const enableAutoSave = shouldEnableAutoSave()
 
-        // 动态生成步骤链：如果启用自动保存，追加 save 步骤
-        const stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
+        // 动态生成步骤链
+        let stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
+
+        // 消除文字模式：根据设置决定是否包含 OCR 步骤
+        if (config.mode === 'removeText' && settingsStore.settings.removeTextWithOcr) {
+            // 在 detection 后插入 ocr 步骤: ['detection', 'ocr', 'inpaint', 'render']
+            const detectionIdx = stepChain.indexOf('detection')
+            if (detectionIdx !== -1) {
+                stepChain.splice(detectionIdx + 1, 0, 'ocr')
+            }
+        }
+
+        // 如果启用自动保存，追加 save 步骤
         if (enableAutoSave) {
             stepChain.push('save')
         }

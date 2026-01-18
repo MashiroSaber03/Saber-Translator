@@ -183,10 +183,10 @@ export class RenderPool extends TaskPool {
       }))
     }
 
-    // removeText模式检测：有检测结果但没有翻译结果，返回空数组跳过渲染
-    // 这样会让 process() 方法直接使用干净背景图作为最终图片
-    if (task.detectionResult && !task.translateResult) {
-      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译结果），跳过渲染`)
+    // removeText模式检测：有检测结果但没有翻译结果也没有OCR结果，返回空数组跳过渲染
+    // 注意：如果有 OCR 结果（removeText + OCR 模式），需要保留原文信息，不跳过
+    if (task.detectionResult && !task.translateResult && !task.ocrResult) {
+      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译和OCR结果），跳过渲染`)
       return []
     }
 

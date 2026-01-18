@@ -244,6 +244,9 @@ export interface TranslationSettings {
 
   // 书架模式自动保存（翻译一张保存一张）
   autoSaveInBookshelfMode: boolean
+
+  // 消除文字模式同时执行OCR（获取带原文的干净背景图）
+  removeTextWithOcr: boolean
 }
 
 /**

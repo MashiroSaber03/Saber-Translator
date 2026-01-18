@@ -82,6 +82,16 @@ export function useMiscSettings(
     console.log(`书架模式自动保存已${enabled ? '启用' : '禁用'}`)
   }
 
+  /**
+   * 设置消除文字模式是否同时执行OCR
+   * @param enabled - 是否启用
+   */
+  function setRemoveTextWithOcr(enabled: boolean): void {
+    settings.value.removeTextWithOcr = enabled
+    saveToStorage()
+    console.log(`消除文字模式OCR已${enabled ? '启用' : '禁用'}`)
+  }
+
   return {
     // 计算属性
     textStyle,
@@ -91,6 +101,8 @@ export function useMiscSettings(
     updateTextStyle,
     setPdfProcessingMethod,
     setShowDetectionDebug,
-    setAutoSaveInBookshelfMode
+    setAutoSaveInBookshelfMode,
+    setRemoveTextWithOcr
   }
 }
+

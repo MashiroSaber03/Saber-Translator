@@ -650,6 +650,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.autoSaveInBookshelfMode = backendSettings.autoSaveInBookshelfMode as boolean
     }
 
+    // 消除文字模式OCR
+    if (backendSettings.removeTextWithOcr !== undefined) {
+      settings.value.removeTextWithOcr = backendSettings.removeTextWithOcr as boolean
+    }
+
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
@@ -879,6 +884,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 书架模式自动保存
         autoSaveInBookshelfMode: settings.value.autoSaveInBookshelfMode,
 
+        // 消除文字模式OCR
+        removeTextWithOcr: settings.value.removeTextWithOcr,
+
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
       }
@@ -963,6 +971,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setPdfProcessingMethod: miscModule.setPdfProcessingMethod,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
+    setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
 
 
     // 兼容旧接口

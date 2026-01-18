@@ -166,6 +166,7 @@ export function createDefaultSettings(): TranslationSettings {
     pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
     parallel: { ...DEFAULT_PARALLEL },
-    autoSaveInBookshelfMode: false
+    autoSaveInBookshelfMode: false,
+    removeTextWithOcr: false
   }
 }

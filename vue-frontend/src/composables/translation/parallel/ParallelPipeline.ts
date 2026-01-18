@@ -18,6 +18,7 @@ import {
   InpaintPool,
   RenderPool
 } from './pools'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 /**
  * 池子链配置
@@ -159,7 +160,25 @@ export class ParallelPipeline {
    * 扩展性：通过POOL_CHAIN_CONFIGS配置不同模式的池子链
    */
   private setupPoolChain(mode: ParallelTranslationMode, totalTasks: number): void {
-    const chainConfig = POOL_CHAIN_CONFIGS[mode]
+    // 动态生成池子链配置
+    let chainConfig = [...POOL_CHAIN_CONFIGS[mode]]
+
+    // 消除文字模式：根据设置决定是否包含 OCR 步骤
+    if (mode === 'removeText') {
+      try {
+        const settingsStore = useSettingsStore()
+        if (settingsStore.settings.removeTextWithOcr) {
+          // 在 detection 后插入 ocr 步骤
+          const detectionIdx = chainConfig.indexOf('detection')
+          if (detectionIdx !== -1 && !chainConfig.includes('ocr')) {
+            chainConfig.splice(detectionIdx + 1, 0, 'ocr')
+          }
+        }
+      } catch {
+        // 忽略错误，使用默认配置
+      }
+    }
+
     const poolMap = this.getPoolMap()
 
     // 根据配置动态设置池子链
