@@ -33,7 +33,7 @@
         <label for="settingsPaddleOcrVlSourceLanguage">源语言:</label>
         <CustomSelect
           :model-value="settings.paddleOcrVl.sourceLanguage"
-          :options="paddleOcrVlSourceLanguageOptions"
+          :groups="paddleOcrVlSourceLanguageGroups"
           @change="(v: any) => handlePaddleOcrVlSourceLanguageChange(v)"
         />
         <div class="input-hint">
@@ -272,13 +272,50 @@ const aiVisionProviderOptions = [
   { label: '自定义 OpenAI 兼容服务', value: 'custom_openai_vision' }
 ]
 
-/** PaddleOCR-VL 源语言选项 */
-const paddleOcrVlSourceLanguageOptions = [
-  { label: '日语', value: 'japanese' },
-  { label: '简体中文', value: 'chinese' },
-  { label: '繁体中文', value: 'chinese_cht' },
-  { label: '英语', value: 'english' },
-  { label: '韩语', value: 'korean' }
+/** PaddleOCR-VL 源语言选项（分组） */
+const paddleOcrVlSourceLanguageGroups = [
+  {
+    label: '🎌 东亚语言',
+    options: [
+      { label: '日语', value: 'japanese' },
+      { label: '简体中文', value: 'chinese' },
+      { label: '繁体中文', value: 'chinese_cht' },
+      { label: '韩语', value: 'korean' }
+    ]
+  },
+  {
+    label: '🌍 拉丁语系',
+    options: [
+      { label: '英语', value: 'english' },
+      { label: '法语', value: 'french' },
+      { label: '德语', value: 'german' },
+      { label: '西班牙语', value: 'spanish' },
+      { label: '意大利语', value: 'italian' },
+      { label: '葡萄牙语', value: 'portuguese' },
+      { label: '荷兰语', value: 'dutch' },
+      { label: '波兰语', value: 'polish' }
+    ]
+  },
+  {
+    label: '🌏 东南亚语言',
+    options: [
+      { label: '泰语', value: 'thai' },
+      { label: '越南语', value: 'vietnamese' },
+      { label: '印尼语', value: 'indonesian' },
+      { label: '马来语', value: 'malay' }
+    ]
+  },
+  {
+    label: '🌐 其他语系',
+    options: [
+      { label: '俄语', value: 'russian' },
+      { label: '阿拉伯语', value: 'arabic' },
+      { label: '印地语', value: 'hindi' },
+      { label: '土耳其语', value: 'turkish' },
+      { label: '希腊语', value: 'greek' },
+      { label: '希伯来语', value: 'hebrew' }
+    ]
+  }
 ]
 
 /** 提示词模式选项 */

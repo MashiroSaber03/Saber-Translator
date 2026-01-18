@@ -25,15 +25,41 @@ from src.shared import constants
 
 logger = logging.getLogger("PaddleOCR_VL")
 
-# 源语言映射：前端语言代码 -> 显示名称
+# 源语言映射：前端语言代码 -> 显示名称（用于构建 OCR 提示词）
 PADDLEOCR_VL_LANG_MAP = {
+    # 东亚语言
     'japanese': '日语',
     'chinese': '简体中文',
     'chinese_cht': '繁体中文',
-    'english': '英语',
     'korean': '韩语',
-    'japan': '日语',  # 兼容旧代码
-    'en': '英语',      # 兼容旧代码
+    
+    # 拉丁语系
+    'english': '英语',
+    'french': '法语',
+    'german': '德语',
+    'spanish': '西班牙语',
+    'italian': '意大利语',
+    'portuguese': '葡萄牙语',
+    'dutch': '荷兰语',
+    'polish': '波兰语',
+    
+    # 东南亚语言
+    'thai': '泰语',
+    'vietnamese': '越南语',
+    'indonesian': '印尼语',
+    'malay': '马来语',
+    
+    # 其他语系
+    'russian': '俄语',
+    'arabic': '阿拉伯语',
+    'hindi': '印地语',
+    'turkish': '土耳其语',
+    'greek': '希腊语',
+    'hebrew': '希伯来语',
+    
+    # 兼容旧代码
+    'japan': '日语',
+    'en': '英语',
 }
 
 
