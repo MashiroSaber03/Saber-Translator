@@ -21,6 +21,19 @@ export const DEFAULT_AI_VISION_OCR_PROMPT = `你是一个ocr助手，你需要�
 1、完整识别：我发送给你的图片中的文字都是需要识别的内容
 2、非贪婪输出：不要返回任何其他解释和说明。`
 
+/** 单气泡翻译默认提示词 - 与后端 DEFAULT_PROMPT 保持一致 */
+export const DEFAULT_SINGLE_BUBBLE_PROMPT = `你是一个好用的翻译助手。请将我的非中文语句段落连成一句或几句话并翻译成中文，我发给你所有的话都是需要翻译的内容，你只需要回答翻译结果。特别注意：翻译结果字数不能超过原文字数！翻译结果请符合中文的语言习惯。`
+
+/** 单气泡翻译 JSON 模式默认提示词 - 与后端 DEFAULT_TRANSLATE_JSON_PROMPT 保持一致 */
+export const DEFAULT_SINGLE_BUBBLE_JSON_PROMPT = `你是一个专业的翻译引擎。请将用户提供的文本翻译成简体中文。
+
+当文本中包含特殊字符（如大括号{}、引号""、反斜杠\\等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。
+
+请严格按照以下 JSON 格式返回结果，不要添加任何额外的解释或对话:
+{
+  "translated_text": "[翻译后的文本放在这里]"
+}`
+
 /** 翻译提示词默认值（批量翻译模式）- 与后端 BATCH_TRANSLATE_SYSTEM_TEMPLATE 保持一致 */
 export const DEFAULT_TRANSLATE_PROMPT = `忽略之前的所有指令，仅遵循以下定义。
 
@@ -238,9 +251,6 @@ export const STORAGE_KEY_MANGA_NOTES_PREFIX = 'manga_notes_'
 
 /** 服务商配置缓存存储键 */
 export const STORAGE_KEY_PROVIDER_CONFIGS = 'providerConfigs'
-
-/** 模型使用历史存储键 */
-export const STORAGE_KEY_MODEL_HISTORY = 'modelHistory'
 
 // ============================================================
 // 翻译服务商常量

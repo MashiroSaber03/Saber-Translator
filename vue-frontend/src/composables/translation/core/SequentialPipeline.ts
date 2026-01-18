@@ -45,7 +45,7 @@ import {
     type ParallelInpaintResponse,
     type ParallelRenderResponse
 } from '@/api/parallelTranslate'
-import { hqTranslateBatch } from '@/api/translate'
+import { hqTranslateBatch, translateSingleText } from '@/api/translate'
 
 // 自动保存模块
 import {
@@ -353,29 +353,114 @@ export function useSequentialPipeline() {
         }
 
         const settings = settingsStore.settings
+        const translationMode = settings.translation.translationMode || 'batch'
 
-        const response: ParallelTranslateResponse = await parallelTranslate({
-            original_texts: task.originalTexts,
-            target_language: settings.targetLanguage,
-            source_language: settings.sourceLanguage,
-            model_provider: settings.translation.provider,
-            model_name: settings.translation.modelName,
-            api_key: settings.translation.apiKey,
-            custom_base_url: settings.translation.customBaseUrl,
-            prompt_content: settings.translatePrompt,
-            textbox_prompt_content: settings.textboxPrompt,
-            use_textbox_prompt: settings.useTextboxPrompt,
-            rpm_limit: settings.translation.rpmLimit,
-            max_retries: settings.translation.maxRetries,
-            use_json_format: settings.translation.isJsonMode
-        })
+        if (translationMode === 'single') {
+            // ==================== 逐气泡翻译模式 ====================
+            // 每个气泡单独调用翻译API，对模型要求较低，适合小模型
+            console.log(`[翻译] 使用逐气泡翻译模式，共 ${task.originalTexts.length} 个气泡`)
 
-        if (!response.success) {
-            throw new Error(response.error || '翻译失败')
+            task.translatedTexts = []
+            task.textboxTexts = []
+
+            for (let i = 0; i < task.originalTexts.length; i++) {
+                const originalText = task.originalTexts[i]
+
+                // 跳过空文本
+                if (!originalText || originalText.trim() === '') {
+                    task.translatedTexts.push('')
+                    if (settings.useTextboxPrompt) {
+                        task.textboxTexts.push('')
+                    }
+                    continue
+                }
+
+                try {
+                    // 调用单文本翻译API
+                    // 使用用户在设置界面配置的提示词（支持普通/JSON模式的单气泡提示词）
+                    const response = await translateSingleText({
+                        original_text: originalText,
+                        model_provider: settings.translation.provider,
+                        model_name: settings.translation.modelName,
+                        api_key: settings.translation.apiKey,
+                        custom_base_url: settings.translation.customBaseUrl,
+                        target_language: settings.targetLanguage,
+                        prompt_content: settings.translatePrompt,  // 使用用户配置的提示词
+                        use_json_format: settings.translation.isJsonMode,  // 传递 JSON 模式设置
+                        rpm_limit_translation: settings.translation.rpmLimit,  // 传递 RPM 限制
+                        max_retries: settings.translation.maxRetries  // 传递最大重试次数
+                    })
+
+                    if (response.success && response.data) {
+                        task.translatedTexts.push(response.data.translated_text || '')
+                    } else {
+                        console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
+                        task.translatedTexts.push(`[翻译失败]`)
+                    }
+
+                    // 如果启用了文本框提示词，需要再翻译一次
+                    if (settings.useTextboxPrompt && settings.textboxPrompt) {
+                        const textboxResponse = await translateSingleText({
+                            original_text: originalText,
+                            model_provider: settings.translation.provider,
+                            model_name: settings.translation.modelName,
+                            api_key: settings.translation.apiKey,
+                            custom_base_url: settings.translation.customBaseUrl,
+                            target_language: settings.targetLanguage,
+                            prompt_content: settings.textboxPrompt,
+                            rpm_limit_translation: settings.translation.rpmLimit,
+                            max_retries: settings.translation.maxRetries
+                        })
+
+                        if (textboxResponse.success && textboxResponse.data) {
+                            task.textboxTexts.push(textboxResponse.data.translated_text || '')
+                        } else {
+                            task.textboxTexts.push('')
+                        }
+                    }
+
+                    // RPM限制等待
+                    if (rateLimiter.value && i < task.originalTexts.length - 1) {
+                        await rateLimiter.value.acquire()
+                    }
+                } catch (error) {
+                    console.error(`[翻译] 气泡 ${i + 1} 翻译出错:`, error)
+                    task.translatedTexts.push(`[翻译出错]`)
+                    if (settings.useTextboxPrompt) {
+                        task.textboxTexts.push('')
+                    }
+                }
+            }
+
+            console.log(`[翻译] 逐气泡翻译完成，成功 ${task.translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${task.originalTexts.length}`)
+        } else {
+            // ==================== 整页批量翻译模式 ====================
+            // 一次发送全部气泡文本，效率更高，对模型要求较高
+            console.log(`[翻译] 使用整页批量翻译模式，共 ${task.originalTexts.length} 个气泡`)
+
+            const response: ParallelTranslateResponse = await parallelTranslate({
+                original_texts: task.originalTexts,
+                target_language: settings.targetLanguage,
+                source_language: settings.sourceLanguage,
+                model_provider: settings.translation.provider,
+                model_name: settings.translation.modelName,
+                api_key: settings.translation.apiKey,
+                custom_base_url: settings.translation.customBaseUrl,
+                prompt_content: settings.translatePrompt,
+                textbox_prompt_content: settings.textboxPrompt,
+                use_textbox_prompt: settings.useTextboxPrompt,
+                rpm_limit: settings.translation.rpmLimit,
+                max_retries: settings.translation.maxRetries,
+                use_json_format: settings.translation.isJsonMode
+            })
+
+            if (!response.success) {
+                throw new Error(response.error || '翻译失败')
+            }
+
+            task.translatedTexts = response.translated_texts || []
+            task.textboxTexts = response.textbox_texts || []
         }
-
-        task.translatedTexts = response.translated_texts || []
-        task.textboxTexts = response.textbox_texts || []
     }
 
     /**

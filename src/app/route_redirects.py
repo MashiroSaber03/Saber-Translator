@@ -11,9 +11,6 @@ REDIRECT_MAPPING = {
     # 配置API
     '/get_prompts': '/api/get_prompts',
     '/get_textbox_prompts': '/api/get_textbox_prompts',
-    '/get_used_models': '/api/get_used_models',
-    '/get_model_info': '/api/get_model_info',
-    '/save_model_info': '/api/save_model_info',
     '/get_prompt_content': '/api/get_prompt_content',
     '/save_prompt': '/api/save_prompt',
     '/reset_prompt_to_default': '/api/reset_prompt_to_default',

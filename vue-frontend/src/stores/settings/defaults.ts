@@ -24,6 +24,9 @@ import {
   DEFAULT_STROKE_WIDTH,
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
+  DEFAULT_TRANSLATE_JSON_PROMPT,
+  DEFAULT_SINGLE_BUBBLE_PROMPT,
+  DEFAULT_SINGLE_BUBBLE_JSON_PROMPT,
   DEFAULT_HQ_TRANSLATE_PROMPT,
   DEFAULT_RPM_TRANSLATION,
   DEFAULT_RPM_AI_VISION_OCR,
@@ -86,7 +89,13 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
   customBaseUrl: '',
   rpmLimit: DEFAULT_RPM_TRANSLATION,
   maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES,
-  isJsonMode: false
+  isJsonMode: false,
+  translationMode: 'batch',  // 默认使用整页批量翻译
+  // 4个独立的提示词存储
+  batchNormalPrompt: DEFAULT_TRANSLATE_PROMPT,
+  batchJsonPrompt: DEFAULT_TRANSLATE_JSON_PROMPT,
+  singleNormalPrompt: DEFAULT_SINGLE_BUBBLE_PROMPT,
+  singleJsonPrompt: DEFAULT_SINGLE_BUBBLE_JSON_PROMPT
 }
 
 /** 默认高质量翻译设置 */

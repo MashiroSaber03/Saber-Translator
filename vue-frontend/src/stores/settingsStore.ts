@@ -14,7 +14,6 @@
  * - settings/modules/proofreading.ts: AI校对设置
  * - settings/modules/prompts.ts: 提示词管理
  * - settings/modules/misc.ts: 更多设置
- * - settings/modules/modelHistory.ts: 模型历史记录
  * - settings/index.ts: 主入口
  */
 

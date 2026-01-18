@@ -975,8 +975,11 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       model_name: settings.translation.modelName,
       custom_base_url: settings.translation.customBaseUrl,
       target_language: settings.targetLanguage,
-      // 单气泡翻译不使用批量翻译提示词，传undefined让后端使用DEFAULT_PROMPT
-      prompt_content: undefined
+      // 使用用户在设置中配置的提示词和 JSON 模式
+      prompt_content: settings.translatePrompt,
+      use_json_format: settings.translation.isJsonMode,
+      rpm_limit_translation: settings.translation.rpmLimit,
+      max_retries: settings.translation.maxRetries
     })
 
     if (response.success && response.data?.translated_text) {

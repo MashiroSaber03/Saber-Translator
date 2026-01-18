@@ -128,6 +128,24 @@
         </div>
       </div>
 
+      <!-- 翻译模式选择 -->
+      <div class="settings-item">
+        <label for="settingsTranslationMode">翻译模式:</label>
+        <CustomSelect
+          :model-value="localSettings.translationMode"
+          :options="translationModeOptions"
+          @change="handleTranslationModeChange"
+        />
+        <div class="input-hint translation-mode-hint">
+          <span v-if="localSettings.translationMode === 'batch'">
+            💡 整页批量翻译：一次发送全部气泡，效率高，需要模型支持复杂指令
+          </span>
+          <span v-else>
+            💡 逐气泡翻译：每个气泡单独翻译，更稳定，适合小模型或格式敏感场景
+          </span>
+        </div>
+      </div>
+
       <!-- 本地服务测试按钮 -->
       <div v-show="isLocalProvider" class="settings-item">
         <button class="settings-test-btn" @click="testLocalConnection" :disabled="isTesting">
@@ -149,6 +167,8 @@
       <div class="settings-item">
         <label for="settingsPromptContent">翻译提示词:</label>
         <textarea id="settingsPromptContent" v-model="localSettings.promptContent" rows="4" placeholder="翻译提示词"></textarea>
+        
+        <!-- 提示词格式选择（两种翻译模式都支持） -->
         <div class="prompt-format-selector">
           <CustomSelect
             :model-value="localSettings.translatePromptMode"
@@ -157,11 +177,13 @@
           />
           <span class="input-hint">JSON格式输出更结构化</span>
         </div>
+        
         <!-- 快速选择提示词 -->
         <SavedPromptsPicker
           prompt-type="translate"
           @select="handleTranslatePromptSelect"
         />
+        
         <!-- 重置为默认按钮 -->
         <button type="button" class="reset-btn" @click="resetTranslatePromptToDefault">
           重置为默认
@@ -203,7 +225,7 @@ import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
-import { DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_JSON_PROMPT } from '@/constants'
+import { DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_JSON_PROMPT, DEFAULT_SINGLE_BUBBLE_PROMPT, DEFAULT_SINGLE_BUBBLE_JSON_PROMPT } from '@/constants'
 import type { TranslationProvider } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
@@ -228,11 +250,29 @@ const promptModeOptions = [
   { label: 'JSON提示词', value: 'json' }
 ]
 
+/** 翻译模式选项 */
+const translationModeOptions = [
+  { label: '整页批量翻译 (推荐)', value: 'batch' },
+  { label: '逐气泡翻译 (适合小模型)', value: 'single' }
+]
+
 // Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
 // 本地状态（双向绑定用）
+// 根据翻译模式和JSON模式选择对应的提示词（4个独立存储字段之一）
+const currentTranslationMode = settingsStore.settings.translation.translationMode || 'batch'
+const currentIsJsonMode = settingsStore.settings.translation.isJsonMode || false
+const getCurrentPrompt = (): string => {
+  const t = settingsStore.settings.translation
+  if (currentTranslationMode === 'single') {
+    return currentIsJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+  } else {
+    return currentIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+  }
+}
+
 const localSettings = ref({
   modelProvider: settingsStore.settings.translation.provider,
   apiKey: settingsStore.settings.translation.apiKey,
@@ -240,8 +280,9 @@ const localSettings = ref({
   customBaseUrl: settingsStore.settings.translation.customBaseUrl,
   rpmTranslation: settingsStore.settings.translation.rpmLimit,
   translationMaxRetries: settingsStore.settings.translation.maxRetries,
-  promptContent: settingsStore.settings.translatePrompt,
-  translatePromptMode: settingsStore.settings.translation.isJsonMode ? 'json' : 'normal',
+  translationMode: currentTranslationMode,
+  promptContent: getCurrentPrompt(),
+  translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
   enableTextboxPrompt: settingsStore.settings.useTextboxPrompt,
   textboxPromptContent: settingsStore.settings.textboxPrompt
 })
@@ -363,6 +404,7 @@ function handleProviderChange() {
   localSettings.value.customBaseUrl = settingsStore.settings.translation.customBaseUrl
   localSettings.value.rpmTranslation = settingsStore.settings.translation.rpmLimit
   localSettings.value.translationMaxRetries = settingsStore.settings.translation.maxRetries
+  localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
   // 清空模型列表
   modelList.value = []
@@ -370,20 +412,82 @@ function handleProviderChange() {
 
 }
 
-// 处理提示词模式切换
+// 处理提示词模式切换（普通 ↔ JSON）
 function handlePromptModeChange() {
-  const isJsonMode = localSettings.value.translatePromptMode === 'json'
+  const newIsJsonMode = localSettings.value.translatePromptMode === 'json'
+  const oldIsJsonMode = !newIsJsonMode  // 切换前的状态
+  const isSingleMode = localSettings.value.translationMode === 'single'
   
-  // 更新提示词内容
-  if (isJsonMode) {
-    localSettings.value.promptContent = DEFAULT_TRANSLATE_JSON_PROMPT
+  // 先保存当前提示词到对应的字段（切换前的字段）
+  if (isSingleMode) {
+    if (oldIsJsonMode) {
+      settingsStore.updateTranslationService({ singleJsonPrompt: localSettings.value.promptContent })
+    } else {
+      settingsStore.updateTranslationService({ singleNormalPrompt: localSettings.value.promptContent })
+    }
   } else {
-    localSettings.value.promptContent = DEFAULT_TRANSLATE_PROMPT
+    if (oldIsJsonMode) {
+      settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
+    } else {
+      settingsStore.updateTranslationService({ batchNormalPrompt: localSettings.value.promptContent })
+    }
   }
   
+  // 从新字段加载提示词
+  const t = settingsStore.settings.translation
+  let newPrompt: string
+  if (isSingleMode) {
+    newPrompt = newIsJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+  } else {
+    newPrompt = newIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+  }
+  localSettings.value.promptContent = newPrompt
+  
   // 同步到 store
-  settingsStore.updateTranslationService({ isJsonMode })
-  settingsStore.setTranslatePrompt(localSettings.value.promptContent)
+  settingsStore.updateTranslationService({ isJsonMode: newIsJsonMode })
+  settingsStore.setTranslatePrompt(newPrompt)
+}
+
+// 处理翻译模式切换
+function handleTranslationModeChange(value: any) {
+  const newMode = String(value) as 'batch' | 'single'
+  const oldMode = localSettings.value.translationMode
+  const isJsonMode = localSettings.value.translatePromptMode === 'json'
+  
+  // 如果模式没变，不做任何操作
+  if (newMode === oldMode) return
+  
+  // 先保存当前模式的提示词到对应字段（4个字段之一）
+  if (oldMode === 'batch') {
+    if (isJsonMode) {
+      settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
+    } else {
+      settingsStore.updateTranslationService({ batchNormalPrompt: localSettings.value.promptContent })
+    }
+  } else {
+    if (isJsonMode) {
+      settingsStore.updateTranslationService({ singleJsonPrompt: localSettings.value.promptContent })
+    } else {
+      settingsStore.updateTranslationService({ singleNormalPrompt: localSettings.value.promptContent })
+    }
+  }
+  
+  // 更新模式
+  localSettings.value.translationMode = newMode
+  settingsStore.updateTranslationService({ translationMode: newMode })
+  
+  // 加载新模式的已保存提示词（根据当前 JSON 模式选择对应字段）
+  const t = settingsStore.settings.translation
+  let savedPrompt: string
+  if (newMode === 'single') {
+    savedPrompt = isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+  } else {
+    savedPrompt = isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+  }
+  localSettings.value.promptContent = savedPrompt
+  settingsStore.setTranslatePrompt(savedPrompt)
+  
+  console.log(`翻译模式已切换为: ${newMode === 'batch' ? '整页批量翻译' : '逐气泡翻译'}`)
 }
 
 // 监听本地设置变化，同步到 store
@@ -409,6 +513,22 @@ watch(() => localSettings.value.translationMaxRetries, (newVal) => {
 
 watch(() => localSettings.value.promptContent, (newVal) => {
   settingsStore.setTranslatePrompt(newVal)
+  // 同时保存到当前模式和 JSON 模式对应的字段（4个字段之一）
+  const isBatch = localSettings.value.translationMode === 'batch'
+  const isJson = localSettings.value.translatePromptMode === 'json'
+  if (isBatch) {
+    if (isJson) {
+      settingsStore.updateTranslationService({ batchJsonPrompt: newVal })
+    } else {
+      settingsStore.updateTranslationService({ batchNormalPrompt: newVal })
+    }
+  } else {
+    if (isJson) {
+      settingsStore.updateTranslationService({ singleJsonPrompt: newVal })
+    } else {
+      settingsStore.updateTranslationService({ singleNormalPrompt: newVal })
+    }
+  }
 })
 
 watch(() => localSettings.value.enableTextboxPrompt, (newVal) => {
@@ -418,6 +538,8 @@ watch(() => localSettings.value.enableTextboxPrompt, (newVal) => {
 watch(() => localSettings.value.textboxPromptContent, (newVal) => {
   settingsStore.setTextboxPrompt(newVal)
 })
+
+// 注意：translationMode 不需要 watch，因为 handleTranslationModeChange 已经处理了 store 同步
 
 // 获取模型列表（复刻原版 doFetchModels 逻辑）
 async function fetchModels() {
@@ -619,10 +741,14 @@ function handleTextboxPromptSelect(content: string, name: string) {
 // 重置翻译提示词为默认值
 function resetTranslatePromptToDefault() {
   const isJsonMode = localSettings.value.translatePromptMode === 'json'
-  if (isJsonMode) {
-    localSettings.value.promptContent = DEFAULT_TRANSLATE_JSON_PROMPT
+  
+  // 根据翻译模式和提示词模式选择对应的默认提示词
+  if (localSettings.value.translationMode === 'single') {
+    // 逐气泡翻译模式
+    localSettings.value.promptContent = isJsonMode ? DEFAULT_SINGLE_BUBBLE_JSON_PROMPT : DEFAULT_SINGLE_BUBBLE_PROMPT
   } else {
-    localSettings.value.promptContent = DEFAULT_TRANSLATE_PROMPT
+    // 整页批量翻译模式
+    localSettings.value.promptContent = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
   }
   toast.success('已重置为默认提示词')
 }
@@ -700,5 +826,16 @@ function resetTranslatePromptToDefault() {
   color: var(--primary-color, #4a90d9);
   border-color: var(--primary-color, #4a90d9);
   background: rgba(74, 144, 217, 0.05);
+}
+
+/* 翻译模式提示样式 */
+.translation-mode-hint {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #f8f9fa);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  border-left: 3px solid var(--primary-color, #4a90d9);
 }
 </style>

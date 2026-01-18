@@ -8,6 +8,16 @@ DEFAULT_PROMPT = "你是一个好用的翻译助手。请将我的非中文语�
 DEFAULT_TEXTBOX_PROMPT = "你是一个专业的外语老师。请将我提供的非中文内容连成一句或几句话并翻译成中文。同时要告诉我为什么这么翻译，这句话有哪些知识点。"
 DEFAULT_PROMPT_NAME = "默认提示词"
 
+# --- 新增 JSON 格式提示词（单气泡翻译专用）---
+DEFAULT_TRANSLATE_JSON_PROMPT = """你是一个专业的翻译引擎。请将用户提供的文本翻译成简体中文。
+
+当文本中包含特殊字符（如大括号{}、引号""、反斜杠\\等）时，请在输出中保留它们但不要将它们视为JSON语法的一部分。
+
+请严格按照以下 JSON 格式返回结果，不要添加任何额外的解释或对话:
+{
+  "translated_text": "[翻译后的文本放在这里]"
+}"""
+
 # --- 批量翻译提示词 ---
 # 使用三步翻译法，支持多文本批量翻译
 # 注意：如需翻译为其他语言，请修改提示词中的"中文"为目标语言
@@ -115,10 +125,8 @@ BATCH_TRANSLATE_MAX_CHARS_PER_REQUEST = 4000  # 单个请求的最大字符数 (
 
 
 
-# --- 模型与历史 ---
-MAX_MODEL_HISTORY = 5
+# --- 模型与提示词 ---
 DEFAULT_MODEL_PROVIDER = 'siliconflow'
-MODEL_HISTORY_FILE = 'model_history.json'
 PROMPTS_FILE = 'prompts.json'
 TEXTBOX_PROMPTS_FILE = 'textbox_prompts.json'
 

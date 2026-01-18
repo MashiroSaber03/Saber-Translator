@@ -30,7 +30,6 @@ from src.core.config_models import (
 # 导入共享模块
 from src.shared import constants
 from src.shared.path_helpers import get_font_path
-from ..config_api import save_model_info_api
 
 # 获取logger
 logger = logging.getLogger("TranslateAPI")

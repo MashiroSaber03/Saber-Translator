@@ -10,10 +10,6 @@ import type {
   TranslationProvider
 } from '@/types/settings'
 import type { ProviderConfigsCache, TranslationProviderConfig } from '../types'
-import {
-  DEFAULT_TRANSLATE_PROMPT,
-  DEFAULT_TRANSLATE_JSON_PROMPT
-} from '@/constants'
 
 /**
  * 创建翻译服务设置模块
@@ -75,16 +71,26 @@ export function useTranslationSettings(
 
   /**
    * 设置翻译提示词模式
-   * 切换时自动更新当前提示词内容为对应模式的默认提示词
+   * 切换时从对应的存储字段加载提示词（不会丢失用户修改）
    * @param isJsonMode - 是否为JSON格式模式
    */
   function setTranslatePromptMode(isJsonMode: boolean): void {
     // 更新模式状态
     settings.value.translation.isJsonMode = isJsonMode
 
-    // 根据模式切换默认提示词
-    const defaultPrompt = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
-    settings.value.translatePrompt = defaultPrompt
+    // 根据翻译模式和提示词模式，从对应的存储字段加载提示词
+    const isSingleMode = settings.value.translation.translationMode === 'single'
+    let prompt: string
+    if (isSingleMode) {
+      prompt = isJsonMode
+        ? settings.value.translation.singleJsonPrompt
+        : settings.value.translation.singleNormalPrompt
+    } else {
+      prompt = isJsonMode
+        ? settings.value.translation.batchJsonPrompt
+        : settings.value.translation.batchNormalPrompt
+    }
+    settings.value.translatePrompt = prompt
 
     saveToStorage()
     console.log(`翻译提示词模式已切换为: ${isJsonMode ? 'JSON格式' : '普通模式'}`)
@@ -107,7 +113,8 @@ export function useTranslationSettings(
       customBaseUrl: settings.value.translation.customBaseUrl,
       rpmLimit: settings.value.translation.rpmLimit,
       maxRetries: settings.value.translation.maxRetries,
-      isJsonMode: settings.value.translation.isJsonMode
+      isJsonMode: settings.value.translation.isJsonMode,
+      translationMode: settings.value.translation.translationMode
     }
 
     providerConfigs.value.translation[provider] = config
@@ -131,6 +138,7 @@ export function useTranslationSettings(
       if (cached.rpmLimit !== undefined) settings.value.translation.rpmLimit = cached.rpmLimit
       if (cached.maxRetries !== undefined) settings.value.translation.maxRetries = cached.maxRetries
       if (cached.isJsonMode !== undefined) settings.value.translation.isJsonMode = cached.isJsonMode
+      if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
       console.log(`[Settings] 恢复翻译服务商配置: ${provider}`, cached)
     } else {
       // 无缓存时清空配置（保留默认值）

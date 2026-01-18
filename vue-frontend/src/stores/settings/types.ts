@@ -17,6 +17,7 @@ export interface TranslationProviderConfig {
   rpmLimit?: number
   maxRetries?: number
   isJsonMode?: boolean
+  translationMode?: 'batch' | 'single'
 }
 
 /** 高质量翻译服务配置缓存项 */

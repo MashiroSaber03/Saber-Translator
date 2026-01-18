@@ -132,9 +132,6 @@ if __name__ == '__main__':
     prompts_data = load_json_config('prompts.json', {"default_prompt": "默认", "saved_prompts": []})
     print("加载 prompts.json:", prompts_data)
 
-    history_data = load_json_config('model_history.json')
-    print("加载 model_history.json:", history_data)
-
     # 测试加载不存在的 JSON
     non_exist_json = load_json_config('non_existent.json', {'error': True})
     print("加载 non_existent.json:", non_exist_json)

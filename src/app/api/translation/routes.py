@@ -13,7 +13,7 @@ from . import (
     re_render_with_states,
     translate_single_text, LAMA_AVAILABLE,
     BubbleState, bubble_states_to_api_response,
-    constants, get_font_path, save_model_info_api
+    constants, get_font_path
 )
 
 
@@ -679,7 +679,9 @@ def route_translate_single_text():
             return jsonify({'error': '非本地部署模式下必须提供API Key'}), 400
 
         try:
-            logger.info(f"开始调用translate_single_text函数进行翻译... JSON模式: {use_json_format}, 自定义BaseURL: {custom_base_url if custom_base_url else '无'}, rpm: {rpm_limit_translation}")
+            # 构建日志信息
+            base_url_info = f", BaseURL: {custom_base_url}" if model_provider == constants.CUSTOM_OPENAI_PROVIDER_ID and custom_base_url else ""
+            logger.info(f"开始调用translate_single_text函数进行翻译... 服务商: {model_provider}, JSON模式: {use_json_format}{base_url_info}, rpm: {rpm_limit_translation}")
             logger.info(f"提示词内容: {prompt_content[:100] if prompt_content else '无(将使用默认)'}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
                 original_text, 
@@ -692,12 +694,6 @@ def route_translate_single_text():
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 rpm_limit_translation=rpm_limit_translation # <--- 传递rpm参数
             )
-            
-            # 保存模型使用历史
-            try:
-                save_model_info_api(model_provider, model_name)
-            except Exception as e:
-                logger.warning(f"保存模型历史时出错: {e}")
             
             return jsonify({
                 'translated_text': translated

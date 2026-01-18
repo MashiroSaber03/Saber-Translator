@@ -11,7 +11,6 @@
  * - proofreading.ts: AI校对设置
  * - prompts.ts: 提示词管理
  * - misc.ts: 更多设置（PDF、调试、文字样式等）
- * - modelHistory.ts: 模型历史记录
  */
 
 import { defineStore } from 'pinia'
@@ -46,8 +45,7 @@ import {
   useHqTranslationSettings,
   useProofreadingSettings,
   usePromptsSettings,
-  useMiscSettings,
-  useModelHistory
+  useMiscSettings
 } from './modules'
 
 // ============================================================
@@ -131,6 +129,14 @@ export const useSettingsStore = defineStore('settings', () => {
 
         // 【复刻原版】左侧边栏文字设置始终使用默认值，不从 localStorage 恢复
         settings.value.textStyle = { ...defaults.textStyle }
+
+        // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
+        const t = settings.value.translation
+        if (t.translationMode === 'single') {
+          settings.value.translatePrompt = t.isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+        } else {
+          settings.value.translatePrompt = t.isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+        }
 
         console.log('已从 localStorage 加载设置（textStyle 使用默认值）')
       }
@@ -291,9 +297,6 @@ export const useSettingsStore = defineStore('settings', () => {
   // 更多设置模块
   const miscModule = useMiscSettings(settings, saveToStorage)
 
-  // 模型历史记录模块
-  const modelHistoryModule = useModelHistory()
-
   // ============================================================
   // 兼容旧接口的方法
   // ============================================================
@@ -349,9 +352,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function initSettings(): void {
     cleanupLegacyThemeSettings()
     loadFromStorage()
-    modelHistoryModule.loadCustomFontPresetsFromStorage()
     loadProviderConfigsFromStorage()
-    modelHistoryModule.loadModelHistoryFromStorage()
   }
 
   /**
@@ -487,15 +488,34 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.translatePromptModeSelect === 'json') {
       settings.value.translation.isJsonMode = true
     }
+    if (backendSettings.translationMode) {
+      settings.value.translation.translationMode = backendSettings.translationMode as 'batch' | 'single'
+    }
 
     // 目标语言
     if (backendSettings.targetLanguage) {
       settings.value.targetLanguage = backendSettings.targetLanguage as string
     }
 
-    // 翻译提示词
-    if (backendSettings.promptContent) {
-      settings.value.translatePrompt = backendSettings.promptContent as string
+    // 4个独立的提示词字段
+    if (backendSettings.batchNormalPrompt) {
+      settings.value.translation.batchNormalPrompt = backendSettings.batchNormalPrompt as string
+    }
+    if (backendSettings.batchJsonPrompt) {
+      settings.value.translation.batchJsonPrompt = backendSettings.batchJsonPrompt as string
+    }
+    if (backendSettings.singleNormalPrompt) {
+      settings.value.translation.singleNormalPrompt = backendSettings.singleNormalPrompt as string
+    }
+    if (backendSettings.singleJsonPrompt) {
+      settings.value.translation.singleJsonPrompt = backendSettings.singleJsonPrompt as string
+    }
+    // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
+    const t = settings.value.translation
+    if (t.translationMode === 'single') {
+      settings.value.translatePrompt = t.isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+    } else {
+      settings.value.translatePrompt = t.isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
     }
     if (backendSettings.enableTextboxPrompt !== undefined) {
       settings.value.useTextboxPrompt = backendSettings.enableTextboxPrompt as boolean
@@ -783,12 +803,16 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmTranslation: String(settings.value.translation.rpmLimit),
         translationMaxRetries: String(settings.value.translation.maxRetries),
         translatePromptModeSelect: settings.value.translation.isJsonMode ? 'json' : 'normal',
+        translationMode: settings.value.translation.translationMode,
 
         // 目标语言
         targetLanguage: settings.value.targetLanguage,
 
-        // 翻译提示词
-        promptContent: settings.value.translatePrompt,
+        // 翻译提示词（4个独立字段）
+        batchNormalPrompt: settings.value.translation.batchNormalPrompt,
+        batchJsonPrompt: settings.value.translation.batchJsonPrompt,
+        singleNormalPrompt: settings.value.translation.singleNormalPrompt,
+        singleJsonPrompt: settings.value.translation.singleJsonPrompt,
         enableTextboxPrompt: settings.value.useTextboxPrompt,
         textboxPromptContent: settings.value.textboxPrompt,
 
@@ -882,7 +906,6 @@ export const useSettingsStore = defineStore('settings', () => {
     // 核心状态
     settings,
     providerConfigs,
-    customFontPresets: modelHistoryModule.customFontPresets,
 
     // OCR 模块
     ocrEngine: ocrModule.ocrEngine,
@@ -941,13 +964,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
 
-    // 模型历史记录模块
-    modelHistory: modelHistoryModule.modelHistory,
-    addModelToHistory: modelHistoryModule.addModelToHistory,
-    getModelHistory: modelHistoryModule.getModelHistory,
-    clearModelHistory: modelHistoryModule.clearModelHistory,
-    addCustomFontPreset: modelHistoryModule.addCustomFontPreset,
-    removeCustomFontPreset: modelHistoryModule.removeCustomFontPreset,
 
     // 兼容旧接口
     saveProviderConfig,

@@ -83,6 +83,13 @@ export interface AiVisionOcrSettings {
 }
 
 /**
+ * 翻译模式类型
+ * - batch: 整页批量翻译 (默认)，一次发送全部气泡文本，对模型要求较高
+ * - single: 逐气泡翻译，每个气泡单独翻译，对模型要求较低，适合小模型
+ */
+export type TranslationMode = 'batch' | 'single'
+
+/**
  * 翻译服务设置
  */
 export interface TranslationServiceSettings {
@@ -93,6 +100,16 @@ export interface TranslationServiceSettings {
   rpmLimit: number
   maxRetries: number
   isJsonMode: boolean
+  /** 翻译模式：batch=整页批量，single=逐气泡 */
+  translationMode: TranslationMode
+  /** 批量翻译 - 普通模式提示词 */
+  batchNormalPrompt: string
+  /** 批量翻译 - JSON模式提示词 */
+  batchJsonPrompt: string
+  /** 逐气泡翻译 - 普通模式提示词 */
+  singleNormalPrompt: string
+  /** 逐气泡翻译 - JSON模式提示词 */
+  singleJsonPrompt: string
 }
 
 /**

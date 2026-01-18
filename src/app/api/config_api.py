@@ -17,9 +17,6 @@ config_bp = Blueprint('config_api', __name__, url_prefix='/api')
 # --- 需要加载/保存配置的辅助函数 ---
 # (这些函数原本在 app.py，现在移到这里)
 
-def load_model_info():
-    return load_json_config(constants.MODEL_HISTORY_FILE, default_value={})
-
 def load_prompts():
     # 翻译设置使用批量翻译系统提示词作为默认值
     default_data = {"default_prompt": constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE, "saved_prompts": []}
@@ -45,45 +42,6 @@ def save_textbox_prompts(prompt_data):
     success = save_json_config(constants.TEXTBOX_PROMPTS_FILE, prompt_data)
     if not success: logger.warning(f"保存文本框提示词信息失败: {constants.TEXTBOX_PROMPTS_FILE}")
 # ------------------------------------
-
-@config_bp.route('/get_used_models', methods=['GET'])
-def get_used_models():
-    model_provider = request.args.get('model_provider')
-    if not model_provider:
-        return jsonify({'error': '缺少 model_provider 参数'}), 400
-
-    model_info = load_model_info()
-    used_models = model_info.get(model_provider, [])
-    return jsonify({'models': used_models})
-
-@config_bp.route('/get_model_info', methods=['GET'])
-def get_model_info():
-    model_info = load_model_info()
-    return jsonify(model_info)
-
-@config_bp.route('/save_model_info', methods=['POST'])
-def save_model_info_api():
-    data = request.get_json()
-    if not data or 'modelProvider' not in data or 'modelName' not in data:
-        return jsonify({'error': '缺少模型供应商或模型名称'}), 400
-
-    model_provider = data['modelProvider']
-    model_name = data['modelName']
-    
-    # 保存模型信息
-    model_info = load_model_info()
-    if model_provider not in model_info:
-        model_info[model_provider] = []
-
-    if model_name and model_name not in model_info[model_provider]:
-        model_info[model_provider].insert(0, model_name)
-        model_info[model_provider] = model_info[model_provider][:constants.MAX_MODEL_HISTORY]
-
-    success = save_json_config(constants.MODEL_HISTORY_FILE, model_info)
-    if not success:
-        logger.warning(f"保存模型历史信息失败: {constants.MODEL_HISTORY_FILE}")
-    
-    return jsonify({'message': '模型信息保存成功'})
 
 @config_bp.route('/get_prompts', methods=['GET'])
 def get_prompts():

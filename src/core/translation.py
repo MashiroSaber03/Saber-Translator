@@ -81,6 +81,53 @@ def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: l
     request_count_ref[0] += 1
     logger.debug(f"rpm: {service_name} - 当前窗口请求计数: {request_count_ref[0]}/{rpm_limit if rpm_limit > 0 else '无限制'}")
 
+def _safely_extract_from_json(json_str, field_name):
+    """
+    安全地从JSON字符串中提取特定字段，处理各种异常情况。
+
+    Args:
+        json_str (str): JSON格式的字符串
+        field_name (str): 要提取的字段名
+
+    Returns:
+        str: 提取的文本，如果失败则返回简化处理的原始文本
+    """
+    # 尝试直接解析
+    try:
+        data = json.loads(json_str)
+        if field_name in data:
+            return data[field_name]
+    except (json.JSONDecodeError, TypeError, KeyError):
+        pass
+
+    # 解析失败，尝试使用正则表达式提取
+    try:
+        # 匹配 "field_name": "内容" 或 "field_name":"内容" 的模式
+        pattern = r'"' + re.escape(field_name) + r'"\s*:\s*"(.+?)"'
+        # 多行模式，使用DOTALL
+        match = re.search(pattern, json_str, re.DOTALL)
+        if match:
+            # 反转义提取的文本
+            extracted = match.group(1)
+            # 处理转义字符
+            extracted = extracted.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+            return extracted
+    except Exception:
+        pass
+
+    # 如果依然失败，尝试清理明显的JSON结构，仅保留文本内容
+    try:
+        # 删除常见JSON结构字符
+        cleaned = re.sub(r'[{}"\[\]]', '', json_str)
+        # 删除字段名和冒号
+        cleaned = re.sub(fr'{field_name}\s*:', '', cleaned)
+        # 删除多余空白
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+    except Exception:
+        # 所有方法都失败，返回原始文本
+        return json_str
+
 def translate_single_text(text, target_language, model_provider, 
                           api_key=None, model_name=None, prompt_content=None, 
                           use_json_format=False, custom_base_url=None,
@@ -99,7 +146,7 @@ def translate_single_text(text, target_language, model_provider,
         api_key (str, optional): API 密钥 (对于非本地部署是必需的)。
         model_name (str, optional): 模型名称。
         prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
-        use_json_format (bool): [已弃用] 此参数不再使用，保留仅为向后兼容。
+        use_json_format (bool): 是否期望并解析 JSON 格式的响应。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
         rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
         max_retries (int): 翻译失败时的最大重试次数。
@@ -110,7 +157,14 @@ def translate_single_text(text, target_language, model_provider,
         return ""
 
     if prompt_content is None:
-        prompt_content = constants.DEFAULT_PROMPT
+        # 根据是否使用 JSON 格式选择默认提示词
+        if use_json_format:
+            prompt_content = constants.DEFAULT_TRANSLATE_JSON_PROMPT
+        else:
+            prompt_content = constants.DEFAULT_PROMPT
+    elif use_json_format and '"translated_text"' not in prompt_content:
+        # 如果用户传入了自定义提示词但不是JSON格式，给出警告
+        logger.warning("期望JSON格式输出，但提供的翻译提示词可能不是JSON格式。")
 
 
     logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, 重试: {max_retries})")
@@ -322,6 +376,16 @@ def translate_single_text(text, target_language, model_provider,
                 translated_text = response.choices[0].message.content.strip()
             else:
                 raise ValueError(f"不支持的翻译服务提供商: {model_provider}")
+            
+            # 如果使用 JSON 格式，尝试从响应中提取 translated_text 字段
+            if use_json_format:
+                try:
+                    extracted_text = _safely_extract_from_json(translated_text, "translated_text")
+                    logger.info(f"成功从JSON响应中提取翻译文本: '{extracted_text[:50]}...'")
+                    translated_text = extracted_text
+                except Exception as e:
+                    logger.warning(f"无法将翻译结果解析为JSON，将尝试提取文本。原始响应: {translated_text[:100]}")
+                    translated_text = _safely_extract_from_json(translated_text, "translated_text")
             
             break
             
