@@ -39,6 +39,7 @@
       :progress-text="progressText"
       :progress-current="progressCurrent"
       :progress-total="progressTotal"
+      :is-repair-loading="isRepairLoading"
       @go-previous-image="goToPreviousImage"
       @go-next-image="goToNextImage"
       @toggle-thumbnails="toggleThumbnails"
@@ -57,7 +58,7 @@
       @translate-with-bubbles="translateWithCurrentBubbles"
       @toggle-drawing-mode="toggleDrawingMode"
       @delete-selected-bubbles="deleteSelectedBubbles"
-      @repair-selected-bubble="repairSelectedBubble"
+      @repair-selected-bubble="handleRepairSelectedBubble"
       @activate-repair-brush="activateRepairBrush"
       @activate-restore-brush="activateRestoreBrush"
       @apply-and-next="applyAndNext"
@@ -225,6 +226,8 @@
         <BubbleEditor
           :bubble="selectedBubble"
           :bubble-index="selectedBubbleIndex"
+          :is-ocr-loading="isOcrLoading"
+          :is-translate-loading="isTranslateLoading"
           @update="handleBubbleUpdateWithSync"
           @re-render="handleReRender"
           @ocr-recognize="handleOcrRecognize"
@@ -321,8 +324,8 @@ const {
   getDrawingRectStyle,
   handleBubbleUpdate,
   deleteSelectedBubbles,
-  repairSelectedBubble,
-  handleOcrRecognize
+  repairSelectedBubble: bubbleRepairSelectedBubble,
+  handleOcrRecognize: bubbleOcrRecognize
 } = useBubbleActions({
   onReRender: () => reRenderFullImage(),
   onDelayedPreview: () => reRenderFullImage()  // 延迟预览也触发重新渲染
@@ -443,6 +446,15 @@ const progressCurrent = ref(0)
 
 /** 总进度 */
 const progressTotal = ref(0)
+
+/** 单气泡 OCR 识别中 */
+const isOcrLoading = ref(false)
+
+/** 单气泡翻译中 */
+const isTranslateLoading = ref(false)
+
+/** 修复气泡背景中 */
+const isRepairLoading = ref(false)
 
 // ============================================================
 // 图片查看器状态
@@ -954,6 +966,26 @@ function handleResetCurrentBubble(index: number): void {
   reRenderFullImage()
 }
 
+/** 处理重新 OCR 识别单个气泡（带 loading 状态） */
+async function handleOcrRecognize(index: number): Promise<void> {
+  isOcrLoading.value = true
+  try {
+    await bubbleOcrRecognize(index)
+  } finally {
+    isOcrLoading.value = false
+  }
+}
+
+/** 处理修复选中气泡背景（带 loading 状态） */
+async function handleRepairSelectedBubble(): Promise<void> {
+  isRepairLoading.value = true
+  try {
+    await bubbleRepairSelectedBubble()
+  } finally {
+    isRepairLoading.value = false
+  }
+}
+
 /** 处理重新翻译单个气泡 */
 async function handleReTranslateBubble(index: number): Promise<void> {
   const bubble = bubbles.value[index]
@@ -962,6 +994,7 @@ async function handleReTranslateBubble(index: number): Promise<void> {
     return
   }
 
+  isTranslateLoading.value = true
   try {
     console.log(`开始重新翻译气泡 #${index + 1}`)
     const { translateSingleText } = await import('@/api/translate')
@@ -991,6 +1024,8 @@ async function handleReTranslateBubble(index: number): Promise<void> {
     }
   } catch (error) {
     console.error('翻译出错:', error)
+  } finally {
+    isTranslateLoading.value = false
   }
 }
 

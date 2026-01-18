@@ -182,11 +182,12 @@
         </button>
         <button
           class="annotation-btn"
-          :disabled="!hasSelection"
+          :class="{ 'is-loading': isRepairLoading }"
+          :disabled="!hasSelection || isRepairLoading"
           @click="$emit('repair-selected-bubble')"
           title="修复选中气泡背景 (R)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
+          <svg viewBox="0 0 16 16" width="14" height="14" :class="{ 'spin-icon': isRepairLoading }">
             <path d="M2 14l3-3m0 0l6-6 3 3-6 6m-3 0l-1 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M11 5l-1-1 2-2 2 2-2 2-1-1z" fill="currentColor" />
           </svg>
@@ -352,6 +353,8 @@ const props = defineProps<{
   progressCurrent: number
   /** 总进度 */
   progressTotal: number
+  /** 修复气泡背景中 */
+  isRepairLoading?: boolean
 }>()
 
 // ============================================================
@@ -765,6 +768,26 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-container.completed .edit-progress-text {
   color: #00ff88;
+}
+
+/* 修复按钮 Loading 状态 */
+.annotation-btn.is-loading {
+  opacity: 0.7;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.annotation-btn.is-loading .spin-icon {
+  animation: spin-repair-icon 1s linear infinite;
+}
+
+@keyframes spin-repair-icon {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 笔刷大小指示器 */

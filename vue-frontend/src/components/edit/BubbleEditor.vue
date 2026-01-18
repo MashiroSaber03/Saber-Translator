@@ -15,7 +15,15 @@
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">🇯🇵 日语原文 (OCR结果)</span>
-        <button class="re-ocr-btn" @click="handleOcrRecognize" title="重新OCR此气泡">🔄</button>
+        <button 
+          class="re-ocr-btn" 
+          :class="{ 'is-loading': isOcrLoading }"
+          :disabled="isOcrLoading"
+          @click="handleOcrRecognize" 
+          title="重新OCR此气泡"
+        >
+          <span class="btn-icon">🔄</span>
+        </button>
       </div>
       <textarea
         ref="originalTextInput"
@@ -46,8 +54,14 @@
     <div class="text-column translated-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">🇨🇳 中文译文</span>
-        <button class="re-translate-btn" @click="handleReTranslate" title="重新翻译此气泡">
-          🔄
+        <button 
+          class="re-translate-btn" 
+          :class="{ 'is-loading': isTranslateLoading }"
+          :disabled="isTranslateLoading"
+          @click="handleReTranslate" 
+          title="重新翻译此气泡"
+        >
+          <span class="btn-icon">🔄</span>
         </button>
       </div>
       <textarea
@@ -390,6 +404,10 @@ const props = defineProps<{
   bubble: BubbleState | null
   /** 气泡索引 */
   bubbleIndex: number
+  /** OCR 识别中 */
+  isOcrLoading?: boolean
+  /** 翻译中 */
+  isTranslateLoading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -977,6 +995,29 @@ onMounted(() => {
 .re-translate-btn:hover {
   background: #3498db;
   color: #fff;
+}
+
+/* Loading 状态 */
+.re-ocr-btn.is-loading,
+.re-translate-btn.is-loading {
+  opacity: 0.7;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.re-ocr-btn.is-loading .btn-icon,
+.re-translate-btn.is-loading .btn-icon {
+  display: inline-block;
+  animation: spin-icon 1s linear infinite;
+}
+
+@keyframes spin-icon {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 文本编辑器 */
