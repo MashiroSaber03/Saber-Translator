@@ -208,23 +208,24 @@ jobs:
           Get-ChildItem -Path dist/ | Select-Object Name
 
       # --------------------------------------------------
-      # 8. ZIP 分卷压缩（使用较低压缩级别以加快速度）
+      # 8. ZIP 分卷压缩（最高压缩率）
       # --------------------------------------------------
-      - name: Package with ZIP split
+      - name: Package with ZIP split (ultra compression)
         run: |
           $version = "${{ needs.prepare.outputs.version }}"
           $variant = "${{ matrix.variant }}"
           $outputName = "Saber-Translator-$version-$variant"
           
-          Write-Host "Compressing... Output: $outputName.zip (split at 1900MB)"
+          Write-Host "Compressing with maximum compression... Output: $outputName.zip (split at 1900MB)"
           
           Push-Location dist
           
-          # Use compression level 5 (faster) instead of 9 (slowest)
           # -tzip: ZIP format
-          # -mx=5: Medium compression level (much faster)
+          # -mx=9: Maximum compression level
+          # -mfb=258: Maximum FastBytes
+          # -mpass=15: Maximum compression passes
           # -v1900m: Split at 1900MB
-          7z a -tzip -mx=5 -v1900m "../$outputName.zip" "Saber-Translator/*"
+          7z a -tzip -mx=9 -mfb=258 -mpass=15 -v1900m "../$outputName.zip" "Saber-Translator/*"
           
           Pop-Location
           
