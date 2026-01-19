@@ -337,7 +337,7 @@ function addRound() {
     modelName: '',
     customBaseUrl: '',
     batchSize: 3,
-    sessionReset: 20,
+    sessionReset: 3,
     rpmLimit: 7,
     lowReasoning: false,
     noThinkingMethod: 'gemini',

@@ -188,7 +188,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const hq = settings.value.hqTranslation
     hq.batchSize = Number(hq.batchSize) || 10
-    hq.sessionReset = Number(hq.sessionReset) || 50
+    hq.sessionReset = Number(hq.sessionReset) || 3
     hq.rpmLimit = Number(hq.rpmLimit) || 60
     hq.maxRetries = Number(hq.maxRetries) || DEFAULT_HQ_TRANSLATION_MAX_RETRIES
 
@@ -541,7 +541,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.hqTranslation.batchSize = parseNum(backendSettings.hqBatchSize, 3)
     }
     if (backendSettings.hqSessionReset !== undefined) {
-      settings.value.hqTranslation.sessionReset = parseNum(backendSettings.hqSessionReset, 20)
+      settings.value.hqTranslation.sessionReset = parseNum(backendSettings.hqSessionReset, 3)
     }
     if (backendSettings.hqRpmLimit !== undefined) {
       settings.value.hqTranslation.rpmLimit = parseNum(backendSettings.hqRpmLimit, 7)
@@ -589,7 +589,7 @@ export const useSettingsStore = defineStore('settings', () => {
           customBaseUrl: (round.customBaseUrl as string) || '',
           prompt: (round.prompt as string) || '',
           batchSize: parseNum(round.batchSize, 3),
-          sessionReset: parseNum(round.sessionReset, 20),
+          sessionReset: parseNum(round.sessionReset, 3),
           rpmLimit: parseNum(round.rpmLimit, 7),
           maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES),
           lowReasoning: (round.lowReasoning as boolean) || false,
@@ -678,7 +678,7 @@ export const useSettingsStore = defineStore('settings', () => {
             modelName: config.hqModelName as string,
             customBaseUrl: config.hqCustomBaseUrl as string,
             batchSize: parseNum(config.hqBatchSize, 3),
-            sessionReset: parseNum(config.hqSessionReset, 20),
+            sessionReset: parseNum(config.hqSessionReset, 3),
             rpmLimit: parseNum(config.hqRpmLimit, 7),
             maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES),
             lowReasoning: config.hqLowReasoning as boolean,
@@ -732,7 +732,7 @@ export const useSettingsStore = defineStore('settings', () => {
         hqModelName: config.modelName || '',
         hqCustomBaseUrl: config.customBaseUrl || '',
         hqBatchSize: String(config.batchSize || 3),
-        hqSessionReset: String(config.sessionReset || 20),
+        hqSessionReset: String(config.sessionReset || 3),
         hqRpmLimit: String(config.rpmLimit || 7),
         hqMaxRetries: String(config.maxRetries || 2),
         hqLowReasoning: config.lowReasoning || false,
