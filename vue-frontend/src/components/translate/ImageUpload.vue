@@ -17,7 +17,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
 import { naturalSort } from '@/utils'
-import { useWebImportStore } from '@/stores/webImportStore'
+
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import {
   parsePdfStart,
@@ -43,7 +43,7 @@ const emit = defineEmits<{
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
-const webImportStore = useWebImportStore()
+
 
 // ============================================================
 // 状态定义
@@ -91,12 +91,7 @@ function triggerFileSelect() {
   fileInputRef.value?.click()
 }
 
-/**
- * 触发网页导入模态框
- */
-function triggerWebImport() {
-  webImportStore.openModal()
-}
+
 
 /**
  * 触发文件夹选择对话框
@@ -628,10 +623,6 @@ defineExpose({
           <span class="separator"> | </span>
           <span class="select-link folder-link" @click="triggerFolderSelect">
             📁 选择文件夹
-          </span>
-          <span class="separator"> | </span>
-          <span class="select-link web-import-link" @click="triggerWebImport">
-            🌐 从网页导入
           </span>
         </p>
       </div>
