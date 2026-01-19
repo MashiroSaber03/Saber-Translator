@@ -74,19 +74,36 @@ class MangaAnalyzer:
                                 with open(session_meta_path, "r", encoding="utf-8") as f:
                                     session_data = json.load(f)
                                 
-                                images_meta = session_data.get("images_meta", [])
-                                image_count = len(images_meta)
-                                
-                                for i in range(image_count):
-                                    image_path = os.path.join(session_dir, f"image_{i}_original.png")
-                                    if os.path.exists(image_path):
-                                        all_images.append({
-                                            "chapter_id": chapter_id,
-                                            "index": i,
-                                            "path": image_path,
-                                            "meta": images_meta[i] if i < len(images_meta) else {}
-                                        })
-                                        total_pages += 1
+                                # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
+                                if "total_pages" in session_data:
+                                    # 新格式: images/{idx}/original.png
+                                    image_count = session_data.get("total_pages", 0)
+                                    for i in range(image_count):
+                                        # 新格式路径
+                                        image_path = os.path.join(session_dir, "images", str(i), "original.png")
+                                        if os.path.exists(image_path):
+                                            all_images.append({
+                                                "chapter_id": chapter_id,
+                                                "index": i,
+                                                "path": image_path,
+                                                "meta": {}
+                                            })
+                                            total_pages += 1
+                                else:
+                                    # 旧格式: image_{idx}_original.png
+                                    images_meta = session_data.get("images_meta", [])
+                                    image_count = len(images_meta)
+                                    
+                                    for i in range(image_count):
+                                        image_path = os.path.join(session_dir, f"image_{i}_original.png")
+                                        if os.path.exists(image_path):
+                                            all_images.append({
+                                                "chapter_id": chapter_id,
+                                                "index": i,
+                                                "path": image_path,
+                                                "meta": images_meta[i] if i < len(images_meta) else {}
+                                            })
+                                            total_pages += 1
                             except Exception as e:
                                 logger.error(f"读取 session 数据失败: {chapter_id} - {e}")
                 

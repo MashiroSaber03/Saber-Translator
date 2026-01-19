@@ -327,7 +327,11 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
                     try:
                         with open(session_meta_path, "r", encoding="utf-8") as f:
                             session_data = json.load(f)
-                        page_count = len(session_data.get("images_meta", []))
+                        # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
+                        if "total_pages" in session_data:
+                            page_count = session_data.get("total_pages", 0)
+                        else:
+                            page_count = len(session_data.get("images_meta", []))
                         chapter["page_count"] = page_count
                         total_pages += page_count
                     except Exception:

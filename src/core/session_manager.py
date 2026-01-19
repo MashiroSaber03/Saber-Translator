@@ -94,61 +94,6 @@ def _load_image_data(session_folder, image_index, image_type):
     return None
 
 
-def get_image_file_path(session_folder, image_index, image_type):
-    """
-    获取图像文件的完整路径（用于 URL 访问）。
-    优先返回新格式 PNG 文件路径，其次是旧版 .b64 文件路径。
-
-    Args:
-        session_folder (str): 此会话的文件夹路径。
-        image_index (int): 图像在其列表中的索引。
-        image_type (str): 图像类型 ('original', 'translated', 'clean')。
-
-    Returns:
-        str or None: 文件的完整路径，如果文件不存在则返回 None。
-    """
-    # 优先检查新格式 PNG 文件
-    png_filename = f"image_{image_index}_{image_type}{IMAGE_FILE_EXTENSION}"
-    png_filepath = os.path.join(session_folder, png_filename)
-    
-    if os.path.exists(png_filepath):
-        return png_filepath
-        
-    # 向后兼容：检查旧版 .b64 文件
-    legacy_filename = f"image_{image_index}_{image_type}{LEGACY_B64_EXTENSION}"
-    legacy_filepath = os.path.join(session_folder, legacy_filename)
-    
-    if os.path.exists(legacy_filepath):
-        return legacy_filepath
-        
-    return None
-
-
-def get_image_url_path(session_name, image_index, image_type):
-    """
-    获取图像的 URL 路径（相对路径）。
-
-    Args:
-        session_name (str): 会话名称。
-        image_index (int): 图像在其列表中的索引。
-        image_type (str): 图像类型 ('original', 'translated', 'clean')。
-
-    Returns:
-        str or None: 图像的 URL 路径，如果文件不存在则返回 None。
-    """
-    session_folder = _get_session_path(session_name)
-    if not session_folder:
-        return None
-        
-    filepath = get_image_file_path(session_folder, image_index, image_type)
-    if not filepath:
-        return None
-        
-    # 返回相对于 API 的路径
-    filename = os.path.basename(filepath)
-    return f"/api/sessions/image/{session_name}/{filename}"
-
-
 # --- 主要加载函数 ---
 # 注意：旧的 save_session 函数已移除，保存功能请使用 src/core/page_storage.py
 
@@ -291,10 +236,16 @@ def list_sessions():
                         with open(metadata_filepath, 'r', encoding='utf-8') as f:
                             meta_data = json.load(f)
                         # 提取需要的信息
+                        # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
+                        if "total_pages" in meta_data:
+                            image_count = meta_data.get("total_pages", 0)
+                        else:
+                            image_count = len(meta_data.get("images_meta", []))
+                        
                         session_info = {
                             "name": meta_data.get("metadata", {}).get("name", item_name), # 优先用元数据里的名字
                             "saved_at": meta_data.get("metadata", {}).get("saved_at", "未知时间"),
-                            "image_count": len(meta_data.get("images_meta", [])),
+                            "image_count": image_count,
                             "version": meta_data.get("metadata", {}).get("translator_version", "未知版本")
                         }
                         sessions_list.append(session_info)
@@ -591,6 +542,4 @@ def _load_old_format_session(session_path, session_meta_data):
 # - _load_new_format_session()
 # - _load_old_format_session()
 # - _load_image_data()
-# - get_image_file_path()
-# - get_image_url_path()
 # ============================================================

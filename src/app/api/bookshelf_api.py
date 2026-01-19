@@ -327,8 +327,28 @@ def get_chapter_images(book_id, chapter_id):
             for idx, img_data in enumerate(session_data['images']):
                 if return_format == 'url':
                     # 返回图片 URL
-                    original_url = f"/api/sessions/image_by_path/{session_path}/image_{idx}_original.png" if img_data.get('originalDataURL') else None
-                    translated_url = f"/api/sessions/image_by_path/{session_path}/image_{idx}_translated.png" if img_data.get('translatedDataURL') else None
+                    # 直接使用 session_manager.load_session_by_path() 返回的 URL
+                    # 这可能是新格式（/api/sessions/page/...）或旧格式（/api/sessions/image_by_path/...）
+                    original_data = img_data.get('originalDataURL')
+                    translated_data = img_data.get('translatedDataURL')
+                    
+                    # 如果返回的是 URL 格式（以 /api/ 开头），直接使用
+                    # 否则说明返回的是 Base64 数据（不应该发生在 url 模式下，但作为兜底处理）
+                    if original_data and original_data.startswith('/api/'):
+                        original_url = original_data
+                    elif original_data:
+                        # 兜底：旧格式存档可能返回非 URL 格式的数据
+                        original_url = f"/api/sessions/image_by_path/{session_path}/image_{idx}_original.png"
+                    else:
+                        original_url = None
+                    
+                    if translated_data and translated_data.startswith('/api/'):
+                        translated_url = translated_data
+                    elif translated_data:
+                        translated_url = f"/api/sessions/image_by_path/{session_path}/image_{idx}_translated.png"
+                    else:
+                        translated_url = None
+                    
                     images.append({
                         "index": idx,
                         "original": original_url,
