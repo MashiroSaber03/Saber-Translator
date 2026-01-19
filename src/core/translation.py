@@ -170,7 +170,7 @@ def translate_single_text(text, target_language, model_provider,
     logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, 重试: {max_retries})")
 
     retry_count = 0
-    translated_text = "翻译失败: 未知错误"
+    translated_text = "【翻译失败】请检查终端中的错误日志"
 
     # --- rpm Enforcement ---
     # 使用容器来传递引用
@@ -393,7 +393,7 @@ def translate_single_text(text, target_language, model_provider,
             retry_count += 1
             error_message = str(e)
             logger.error(f"翻译失败（尝试 {retry_count}/{max_retries}，服务商: {model_provider}）: {error_message}", exc_info=True)
-            translated_text = f"翻译失败: {error_message}"
+            translated_text = "【翻译失败】请检查终端中的错误日志"
             if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_detail = e.response.json()
@@ -407,7 +407,7 @@ def translate_single_text(text, target_language, model_provider,
                 time.sleep(1)
     
     # 记录翻译结果
-    if "翻译失败" in translated_text:
+    if translated_text == "【翻译失败】请检查终端中的错误日志":
         logger.warning(f"最终翻译失败: '{text}' -> '{translated_text}'")
     else:
         logger.info(f"最终翻译成功: '{text[:30]}...' -> '{translated_text[:30]}...'")
@@ -786,9 +786,9 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
             if len(translations) != len(texts):
                 logger.warning(f"[尝试 {attempt+1}/{max_retries+1}] 翻译数量不匹配: 期望 {len(texts)}, 实际 {len(translations)}")
                 
-                # 如果翻译数量少于期望，填充原文
+                # 如果翻译数量少于期望，填充 [翻译失败] 标记
                 if len(translations) < len(texts):
-                    translations.extend(texts[len(translations):])
+                    translations.extend(['【翻译失败】请检查终端中的错误日志'] * (len(texts) - len(translations)))
                 # 如果翻译数量多于期望，截断
                 elif len(translations) > len(texts):
                     translations = translations[:len(texts)]
@@ -803,9 +803,9 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                     continue  # 重试
             
             # === 成功阶段 ===
-            # 返回结果
+            # 返回结果（空翻译使用 [翻译失败] 标记）
             for i, trans in enumerate(translations):
-                results[i] = trans if trans else texts[i]
+                results[i] = trans if trans else '【翻译失败】请检查终端中的错误日志'
             
             logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
             return results
@@ -829,9 +829,9 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 time.sleep(1)
                 continue  # 重试
     
-    # 所有重试都失败，返回原文
-    logger.error("批量翻译所有重试都失败，返回原文")
-    return texts
+    # 所有重试都失败，返回 [翻译失败] 标记
+    logger.error("批量翻译所有重试都失败，返回 [翻译失败] 标记")
+    return ['【翻译失败】请检查终端中的错误日志'] * len(texts)
 
 
 def translate_text_list(texts, target_language, model_provider, 

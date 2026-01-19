@@ -109,7 +109,7 @@ export class TranslatePool extends TaskPool {
             translatedTexts.push(response.data.translated_text || '')
           } else {
             console.warn(`[并行翻译池] 气泡 ${i + 1} 翻译失败: ${response.error}`)
-            translatedTexts.push(`[翻译失败]`)
+            translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
           }
 
           // 如果启用了文本框提示词，需要再翻译一次
@@ -134,7 +134,7 @@ export class TranslatePool extends TaskPool {
           }
         } catch (error) {
           console.error(`[并行翻译池] 气泡 ${i + 1} 翻译出错:`, error)
-          translatedTexts.push(`[翻译出错]`)
+          translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
           if (settings.useTextboxPrompt) {
             textboxTexts.push('')
           }

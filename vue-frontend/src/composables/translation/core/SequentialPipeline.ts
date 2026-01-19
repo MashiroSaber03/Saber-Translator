@@ -395,7 +395,7 @@ export function useSequentialPipeline() {
                         task.translatedTexts.push(response.data.translated_text || '')
                     } else {
                         console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
-                        task.translatedTexts.push(`[翻译失败]`)
+                        task.translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
                     }
 
                     // 如果启用了文本框提示词，需要再翻译一次
@@ -425,7 +425,7 @@ export function useSequentialPipeline() {
                     }
                 } catch (error) {
                     console.error(`[翻译] 气泡 ${i + 1} 翻译出错:`, error)
-                    task.translatedTexts.push(`[翻译出错]`)
+                    task.translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
                     if (settings.useTextboxPrompt) {
                         task.textboxTexts.push('')
                     }

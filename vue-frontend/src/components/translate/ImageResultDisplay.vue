@@ -228,10 +228,11 @@ function formatTranslatedText(text: string): string {
 /**
  * 检查译文是否为翻译失败
  * @param text - 译文
- * @returns 是否为翻译失败
+ * @returns 是否为翻译失败（匹配 【翻译失败】 或包含"翻译失败"的格式）
  */
 function isTranslationError(text: string): boolean {
-  return (text || '').includes('翻译失败')
+  const t = text || ''
+  return t.includes('【翻译失败】') || t.includes('[翻译失败]') || t.includes('翻译失败')
 }
 
 /**
