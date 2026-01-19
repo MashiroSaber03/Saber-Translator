@@ -89,14 +89,14 @@ jobs:
             ### 下载说明
             
             📦 **普通用户（开箱即用）：**
-            - CPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-cpu.*` 文件
-            - GPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-gpu.*` 文件
-            - 将所有分卷放在同一目录，解压 `.zip` 文件即可
+            - CPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-cpu.7z*` 文件
+            - GPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-gpu.7z*` 文件
+            - 将所有分卷放在同一目录，使用 **7-Zip** 或 **Bandzip** 解压 `.7z.001` 文件即可
             
             🔧 **源码部署用户：**
             - 下载 `models.z01` 和 `models.zip`，解压到项目根目录的 `models/` 文件夹
             
-            > 采用分卷压缩的方式，需要下载对应版本的多个压缩文件，将其放在同一个目录下解压
+            > ⚠️ 采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
           draft: true
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
         env:
@@ -207,60 +207,57 @@ jobs:
           Get-ChildItem -Path dist/ | Select-Object Name
 
       # --------------------------------------------------
-      # 8. ZIP 分卷压缩（最高压缩率）
+      # 8. 7z 分卷压缩（最高压缩率）
       # --------------------------------------------------
-      - name: Package with ZIP split (ultra compression)
+      - name: Package with 7z split (ultra compression)
         run: |
           $version = "${{ needs.prepare.outputs.version }}"
           $variant = "${{ matrix.variant }}"
           $outputName = "Saber-Translator-$version-$variant"
           
-          Write-Host "Compressing with maximum compression... Output: $outputName.zip (split at 1900MB)"
+          Write-Host "Compressing with 7z format... Output: $outputName.7z (split at 1900MB)"
           
           Push-Location dist
           
-          # -tzip: ZIP format
+          # -t7z: 7z native format (better compatibility than ZIP split)
           # -mx=9: Maximum compression level
           # -mfb=258: Maximum FastBytes
-          # -mpass=15: Maximum compression passes
           # -v1900m: Split at 1900MB
-          7z a -tzip -mx=9 -mfb=258 -mpass=15 -v1900m "../$outputName.zip" "Saber-Translator/*"
+          7z a -t7z -mx=9 -mfb=258 -v1900m "../$outputName.7z" "Saber-Translator/*"
           
           Pop-Location
           
           Write-Host "Compression completed. Generated files:"
-          Get-ChildItem "$outputName.*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+          Get-ChildItem "$outputName.7z*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
 
       # --------------------------------------------------
-      # 9. 重命名分卷文件（.zip.001 -> .z01 等）
+      # 9. 验证压缩文件
       # --------------------------------------------------
-      - name: Rename split archives
+      - name: Verify compressed archives
         run: |
           $version = "${{ needs.prepare.outputs.version }}"
           $variant = "${{ matrix.variant }}"
           $baseName = "Saber-Translator-$version-$variant"
           
-          Write-Host "Renaming split archives..."
+          Write-Host "Verifying compressed archives..."
           
-          $files = Get-ChildItem "$baseName.zip.*" | Sort-Object Name
+          # List all generated 7z split files
+          $files = Get-ChildItem "$baseName.7z*" | Sort-Object Name
           
-          foreach ($file in $files) {
-            if ($file.Name -match '\.zip\.(\d+)$') {
-              $num = [int]$Matches[1]
-              
-              if ($num -eq $files.Count) {
-                $newName = "$baseName.zip"
-              } else {
-                $newName = "$baseName.z{0:D2}" -f $num
-              }
-              
-              Rename-Item $file.FullName $newName
-              Write-Host "   $($file.Name) -> $newName"
-            }
+          Write-Host "Generated $($files.Count) archive file(s):"
+          $files | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+          
+          # Verify the first split file (7z will check all parts)
+          $firstFile = $files | Select-Object -First 1
+          Write-Host "Testing archive integrity: $($firstFile.Name)"
+          7z t $firstFile.FullName
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Archive verification passed!"
+          } else {
+            Write-Host "Archive verification failed!"
+            exit 1
           }
-          
-          Write-Host "Renamed files:"
-          Get-ChildItem "$baseName.*" | Where-Object { $_.Extension -match '\.(zip|z\d+)$' } | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
 
       # --------------------------------------------------
       # 10. 直接上传到 Release（不通过 artifacts）
@@ -276,8 +273,8 @@ jobs:
           
           Write-Host "Uploading $variant version to Release $tagName..."
           
-          # Get all zip/split files
-          $files = Get-ChildItem "$baseName.*" | Where-Object { $_.Extension -match '\.(zip|z\d+)$' }
+          # Get all 7z split files
+          $files = Get-ChildItem "$baseName.7z*"
           
           foreach ($file in $files) {
             Write-Host "Uploading: $($file.Name) ($([math]::Round($file.Length/1MB, 0)) MB)"
