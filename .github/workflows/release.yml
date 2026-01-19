@@ -147,7 +147,7 @@ jobs:
       - name: Extract models
         run: |
           Write-Host "Extracting models..."
-          7z x models.zip -o. -y
+          7z x models.zip -y
           
           Write-Host "Models extracted. Directory contents:"
           Get-ChildItem -Path models/ | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}

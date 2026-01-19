@@ -883,17 +883,21 @@ def hq_translate_batch():
                         raise json_module.JSONDecodeError("返回内容中未找到有效的 JSON 块", content, 0)
                 
                 # 将解析后的内容转换为 results 格式
+                # 支持的格式：
+                # 1. {"images": [...]} - 标准格式
+                # 2. [...] - 数组格式
+                # 3. {imageIndex, bubbles} - 单张图片格式（AI 只返回一张图时可能使用此格式）
                 if isinstance(parsed_content, dict) and 'images' in parsed_content:
                     results = parsed_content['images']
                 elif isinstance(parsed_content, list):
                     results = parsed_content
+                elif isinstance(parsed_content, dict) and 'imageIndex' in parsed_content and 'bubbles' in parsed_content:
+                    # 单张图片格式，包装为数组
+                    logger.info("检测到单张图片格式，自动包装为数组")
+                    results = [parsed_content]
                 else:
                     # 格式不正确，抛出异常触发重试
-                    raise json_module.JSONDecodeError(f"JSON 格式不正确，期望包含 'images' 字段或数组，实际收到: {type(parsed_content)}", str(parsed_content), 0)
-                
-                # 验证 results 是列表
-                if not isinstance(results, list):
-                    raise json_module.JSONDecodeError(f"results 不是列表类型，实际收到: {type(results)}", str(results), 0)
+                    raise json_module.JSONDecodeError(f"JSON 格式不正确，期望包含 'images' 字段、数组或单张图片格式(imageIndex+bubbles)，实际收到: {type(parsed_content)}", str(parsed_content), 0)
                 
                 # 解析成功，返回结果
                 logger.info(f"JSON 解析成功，获取到 {len(results)} 条结果")

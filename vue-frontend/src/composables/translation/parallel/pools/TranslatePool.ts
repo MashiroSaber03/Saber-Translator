@@ -418,9 +418,10 @@ export class TranslatePool extends TaskPool {
     // 尝试从 content 解析
     const content = (response as { content?: string }).content
     if (content) {
+      let parsed: any = null
       if (forceJsonOutput) {
         try {
-          return JSON.parse(content)
+          parsed = JSON.parse(content)
         } catch (e) {
           console.error('解析AI强制JSON返回的内容失败:', e)
           return null
@@ -429,11 +430,21 @@ export class TranslatePool extends TaskPool {
         const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
         if (jsonMatch?.[1]) {
           try {
-            return JSON.parse(jsonMatch[1])
+            parsed = JSON.parse(jsonMatch[1])
           } catch (e) {
             console.error('解析AI返回的JSON失败:', e)
             return null
           }
+        }
+      }
+
+      // 兼容单张图片格式：{imageIndex, bubbles} -> [{imageIndex, bubbles}]
+      if (parsed) {
+        if (Array.isArray(parsed)) {
+          return parsed as TranslationJsonData[]
+        } else if (typeof parsed === 'object' && 'imageIndex' in parsed && 'bubbles' in parsed) {
+          console.log('[TranslatePool.parseHqResponse] 检测到单张图片格式，自动包装为数组')
+          return [parsed] as TranslationJsonData[]
         }
       }
     }
