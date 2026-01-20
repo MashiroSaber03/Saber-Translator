@@ -45,7 +45,7 @@ SAKURA_STATUS = {
 }
 
 
-@system_bp.route('/test_ollama_connection', methods=['GET'])
+@system_bp.route('/test_ollama_connection', methods=['POST'])
 def test_ollama_connection():
     """
     测试Ollama连接状态
@@ -109,7 +109,7 @@ def test_ollama_connection():
         }), 500
 
 
-@system_bp.route('/test_sakura_connection', methods=['GET'])
+@system_bp.route('/test_sakura_connection', methods=['POST'])
 def test_sakura_connection():
     """
     测试Sakura服务连接状态
