@@ -79,32 +79,33 @@
 
       <!-- 本地模型选择 (Ollama/Sakura) -->
       <div v-show="isLocalProvider" class="settings-item">
-        <label>本地模型:</label>
-        <div class="local-model-list">
-          <div v-if="localSettings.modelProvider === 'ollama'" class="model-list-container">
-            <button class="settings-test-btn" @click="fetchOllamaModels" :disabled="isFetchingModels">
-              {{ isFetchingModels ? '获取中...' : '🔄 刷新模型列表' }}
-            </button>
-            <CustomSelect
-              v-if="ollamaModels.length > 0"
-              :model-value="localSettings.modelName"
-              :options="ollamaModelOptions"
-              @change="(v: any) => localSettings.modelName = v"
-            />
-            <p v-else class="model-hint">点击刷新获取可用模型</p>
-          </div>
-          <div v-else-if="localSettings.modelProvider === 'sakura'" class="model-list-container">
-            <button class="settings-test-btn" @click="fetchSakuraModels" :disabled="isFetchingModels">
-              {{ isFetchingModels ? '获取中...' : '🔄 刷新模型列表' }}
-            </button>
-            <CustomSelect
-              v-if="sakuraModels.length > 0"
-              :model-value="localSettings.modelName"
-              :options="sakuraModelOptions"
-              @change="(v: any) => localSettings.modelName = v"
-            />
-            <p v-else class="model-hint">点击刷新获取可用模型</p>
-          </div>
+        <label for="settingsLocalModelName">模型名称:</label>
+        <div class="model-input-with-fetch">
+          <input
+            type="text"
+            id="settingsLocalModelName"
+            v-model="localSettings.modelName"
+            :placeholder="localSettings.modelProvider === 'ollama' ? '例如: qwen2.5:7b' : '例如: sakura-14b-qwen2.5-v1.0'"
+          />
+          <button
+            type="button"
+            class="fetch-models-btn"
+            title="获取本地可用模型列表"
+            @click="fetchLocalModels"
+            :disabled="isFetchingModels"
+          >
+            <span class="fetch-icon">🔍</span>
+            <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
+          </button>
+        </div>
+        <!-- 模型选择下拉框 -->
+        <div v-if="localModelList.length > 0" class="model-select-container">
+          <CustomSelect
+            :model-value="localSettings.modelName"
+            :options="localModelListOptions"
+            @change="(v: any) => localSettings.modelName = v"
+          />
+          <span class="model-count">共 {{ localModelList.length }} 个模型</span>
         </div>
       </div>
 
@@ -296,8 +297,7 @@ const isTesting = ref(false)
 // 模型获取状态
 const isFetchingModels = ref(false)
 const modelList = ref<string[]>([])
-const ollamaModels = ref<string[]>([])
-const sakuraModels = ref<string[]>([])
+const localModelList = ref<string[]>([])
 
 /** 模型列表选项（用于CustomSelect） */
 const modelListOptions = computed(() => {
@@ -306,17 +306,10 @@ const modelListOptions = computed(() => {
   return options
 })
 
-/** Ollama模型选项（用于CustomSelect） */
-const ollamaModelOptions = computed(() => {
+/** 本地模型选项（用于CustomSelect） */
+const localModelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  ollamaModels.value.forEach(model => options.push({ label: model, value: model }))
-  return options
-})
-
-/** Sakura模型选项（用于CustomSelect） */
-const sakuraModelOptions = computed(() => {
-  const options = [{ label: '-- 选择模型 --', value: '' }]
-  sakuraModels.value.forEach(model => options.push({ label: model, value: model }))
+  localModelList.value.forEach(model => options.push({ label: model, value: model }))
   return options
 })
 
@@ -406,10 +399,9 @@ function handleProviderChange() {
   localSettings.value.translationMaxRetries = settingsStore.settings.translation.maxRetries
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
-  // 清空模型列表
+  // 清空所有模型列表（无论是云服务商还是本地服务商）
   modelList.value = []
-  
-
+  localModelList.value = []
 }
 
 // 处理提示词模式切换（普通 ↔ JSON）
@@ -601,38 +593,30 @@ function getProviderDisplayName(provider: string): string {
   return names[provider] || provider
 }
 
-// 获取Ollama模型列表
-async function fetchOllamaModels() {
+// 获取本地模型列表（Ollama 或 Sakura）
+async function fetchLocalModels() {
+  const provider = localSettings.value.modelProvider
   isFetchingModels.value = true
+  
   try {
-    const result = await configApi.testOllamaConnection()
-    if (result.success && result.models) {
-      ollamaModels.value = result.models
-      toast.success(`获取到 ${result.models.length} 个Ollama模型`)
+    let result
+    if (provider === 'ollama') {
+      result = await configApi.testOllamaConnection()
+    } else if (provider === 'sakura') {
+      result = await configApi.testSakuraConnection()
     } else {
-      toast.error(result.error || 'Ollama连接失败')
+      toast.error('未选择本地服务商')
+      return
+    }
+    
+    if (result.success && result.models) {
+      localModelList.value = result.models
+      toast.success(`获取到 ${result.models.length} 个${provider === 'ollama' ? 'Ollama' : 'Sakura'}模型`)
+    } else {
+      toast.error(result.error || `${provider === 'ollama' ? 'Ollama' : 'Sakura'}连接失败`)
     }
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '获取Ollama模型失败'
-    toast.error(errorMessage)
-  } finally {
-    isFetchingModels.value = false
-  }
-}
-
-// 获取Sakura模型列表
-async function fetchSakuraModels() {
-  isFetchingModels.value = true
-  try {
-    const result = await configApi.testSakuraConnection()
-    if (result.success && result.models) {
-      sakuraModels.value = result.models
-      toast.success(`获取到 ${result.models.length} 个Sakura模型`)
-    } else {
-      toast.error(result.error || 'Sakura连接失败')
-    }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '获取Sakura模型失败'
+    const errorMessage = error instanceof Error ? error.message : '获取本地模型失败'
     toast.error(errorMessage)
   } finally {
     isFetchingModels.value = false
