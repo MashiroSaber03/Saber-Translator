@@ -211,34 +211,20 @@ export class TranslatePool extends TaskPool {
     // 2. 收集图片 Base64
     const imageBase64Array = batch.map(t => this.extractBase64(t.imageData.originalDataURL))
 
-    // 3. 构建消息
-    const jsonString = JSON.stringify(jsonData, null, 2)
-    type MessageContent = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-    const userContent: MessageContent[] = [
-      {
-        type: 'text',
-        text: hqTranslation.prompt + '\n\n以下是JSON数据:\n```json\n' + jsonString + '\n```'
-      }
-    ]
-    for (const imgBase64 of imageBase64Array) {
-      userContent.push({
-        type: 'image_url',
-        image_url: { url: `data:image/png;base64,${imgBase64}` }
-      })
-    }
-
-    const messages = [
-      { role: 'system' as const, content: '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。' },
-      { role: 'user' as const, content: userContent }
-    ]
-
-    // 4. 调用多模态 AI API
+    // 3. 调用多模态 AI API - 使用新接口，传数据而不是消息
     const response = await hqTranslateBatch({
       provider: hqTranslation.provider,
       api_key: hqTranslation.apiKey,
       model_name: hqTranslation.modelName,
       custom_base_url: hqTranslation.customBaseUrl,
-      messages: messages,
+      // 新接口：传数据，后端构建消息
+      jsonData,
+      imageBase64Array,
+      prompt: hqTranslation.prompt,
+      systemPrompt: '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。',
+      isProofreading: false,
+      enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
+      // 其他参数
       low_reasoning: hqTranslation.lowReasoning,
       force_json_output: hqTranslation.forceJsonOutput,
       no_thinking_method: hqTranslation.noThinkingMethod,
@@ -246,10 +232,10 @@ export class TranslatePool extends TaskPool {
       max_retries: hqTranslation.maxRetries || 2
     })
 
-    // 5. 解析结果
+    // 4. 解析结果
     const translatedData = this.parseHqResponse(response, hqTranslation.forceJsonOutput)
 
-    // 6. 填充结果到各任务，并批量传递给下一个池子
+    // 5. 填充结果到各任务，并批量传递给下一个池子
     for (const t of batch) {
       const taskData = translatedData?.find(d => d.imageIndex === t.imageIndex)
       if (taskData) {
@@ -317,32 +303,21 @@ export class TranslatePool extends TaskPool {
     // 3. 遍历所有校对轮次
     let currentData = jsonData
     for (const round of proofreading.rounds) {
-      const jsonString = JSON.stringify(currentData, null, 2)
-      type MessageContent = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-      const userContent: MessageContent[] = [
-        {
-          type: 'text',
-          text: round.prompt + '\n\n以下是JSON数据:\n```json\n' + jsonString + '\n```'
-        }
-      ]
-      for (const imgBase64 of imageBase64Array) {
-        userContent.push({
-          type: 'image_url',
-          image_url: { url: `data:image/png;base64,${imgBase64}` }
-        })
-      }
-
-      const messages = [
-        { role: 'system' as const, content: '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。' },
-        { role: 'user' as const, content: userContent }
-      ]
+      // 使用新接口，不再手动构建messages
 
       const response = await hqTranslateBatch({
         provider: round.provider,
         api_key: round.apiKey,
         model_name: round.modelName,
         custom_base_url: round.customBaseUrl,
-        messages: messages,
+        // 使用新接口：传数据，后端构建消息
+        jsonData: currentData as any[],
+        imageBase64Array,
+        prompt: round.prompt,
+        systemPrompt: '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。',
+        isProofreading: true,
+        enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
+        // 其他参数
         low_reasoning: round.lowReasoning,
         force_json_output: round.forceJsonOutput,
         no_thinking_method: round.noThinkingMethod,

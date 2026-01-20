@@ -341,7 +341,7 @@ function addRound() {
     rpmLimit: 7,
     lowReasoning: false,
     noThinkingMethod: 'gemini',
-    forceJsonOutput: true,
+    forceJsonOutput: false,
     prompt: DEFAULT_PROOFREADING_PROMPT,
     showApiKey: false
   }

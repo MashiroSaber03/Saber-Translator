@@ -92,6 +92,16 @@ export function useMiscSettings(
     console.log(`消除文字模式OCR已${enabled ? '启用' : '禁用'}`)
   }
 
+  /**
+   * 设置详细日志开关（全局）
+   * @param enabled - 是否启用
+   */
+  function setEnableVerboseLogs(enabled: boolean): void {
+    settings.value.enableVerboseLogs = enabled
+    saveToStorage()
+    console.log(`详细日志已${enabled ? '启用' : '禁用'}`)
+  }
+
   return {
     // 计算属性
     textStyle,
@@ -102,7 +112,8 @@ export function useMiscSettings(
     setPdfProcessingMethod,
     setShowDetectionDebug,
     setAutoSaveInBookshelfMode,
-    setRemoveTextWithOcr
+    setRemoveTextWithOcr,
+    setEnableVerboseLogs
   }
 }
 

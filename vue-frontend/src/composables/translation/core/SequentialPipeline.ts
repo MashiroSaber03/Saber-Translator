@@ -520,28 +520,7 @@ export function useSequentialPipeline() {
             ? '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。'
             : '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。'
 
-        // 构建消息
-        const jsonString = JSON.stringify(jsonData, null, 2)
-        type MessageContent = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-        const userContent: MessageContent[] = [
-            {
-                type: 'text',
-                text: (prompt || '') + '\n\n以下是JSON数据:\n```json\n' + jsonString + '\n```'
-            }
-        ]
-        for (const imgBase64 of imageBase64Array) {
-            userContent.push({
-                type: 'image_url',
-                image_url: { url: `data:image/png;base64,${imgBase64}` }
-            })
-        }
-
-        const messages = [
-            { role: 'system' as const, content: systemPrompt },
-            { role: 'user' as const, content: userContent }
-        ]
-
-        // 调用 API
+        // 调用 API - 使用新接口，传数据而不是消息
         const hqConfig = settings.hqTranslation
         const roundConfig = isProofread ? aiConfig : null
         const response = await hqTranslateBatch({
@@ -549,7 +528,14 @@ export function useSequentialPipeline() {
             api_key: (isProofread ? roundConfig?.apiKey : hqConfig.apiKey) || '',
             model_name: (isProofread ? roundConfig?.modelName : hqConfig.modelName) || '',
             custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
-            messages,
+            // 新接口：传数据，后端构建消息
+            jsonData,
+            imageBase64Array,
+            prompt: prompt || '',
+            systemPrompt,
+            isProofreading: isProofread,
+            enableDebugLogs: settings.enableVerboseLogs,  // 使用全局的详细日志开关
+            // 其他参数
             low_reasoning: isProofread ? roundConfig?.lowReasoning : hqConfig.lowReasoning,
             force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
             no_thinking_method: isProofread ? roundConfig?.noThinkingMethod : hqConfig.noThinkingMethod,
@@ -557,7 +543,7 @@ export function useSequentialPipeline() {
             max_retries: isProofread ? (settings.proofreading.maxRetries || 2) : (hqConfig.maxRetries || 2)
         })
 
-        // 解析结果
+        //解析结果
         const forceJson = isProofread ? (roundConfig?.forceJsonOutput || false) : hqConfig.forceJsonOutput
         const translatedData = parseHqResponse(response, forceJson)
 
@@ -566,31 +552,20 @@ export function useSequentialPipeline() {
         if (isProofread && settings.proofreading.rounds.length > 1) {
             for (let i = 1; i < settings.proofreading.rounds.length; i++) {
                 const round = settings.proofreading.rounds[i]!
-                const roundJsonString = JSON.stringify(currentData, null, 2)
-                const roundUserContent: MessageContent[] = [
-                    {
-                        type: 'text',
-                        text: round.prompt + '\n\n以下是JSON数据:\n```json\n' + roundJsonString + '\n```'
-                    }
-                ]
-                for (const imgBase64 of imageBase64Array) {
-                    roundUserContent.push({
-                        type: 'image_url',
-                        image_url: { url: `data:image/png;base64,${imgBase64}` }
-                    })
-                }
-
-                const roundMessages = [
-                    { role: 'system' as const, content: systemPrompt },
-                    { role: 'user' as const, content: roundUserContent }
-                ]
 
                 const roundResponse = await hqTranslateBatch({
                     provider: round.provider,
                     api_key: round.apiKey,
                     model_name: round.modelName,
                     custom_base_url: round.customBaseUrl,
-                    messages: roundMessages,
+                    // 使用新接口
+                    jsonData: currentData as any[],
+                    imageBase64Array,
+                    prompt: round.prompt,
+                    systemPrompt,
+                    isProofreading: true,
+                    enableDebugLogs: settings.enableVerboseLogs,  // 使用全局的详细日志开关
+                    // 其他参数
                     low_reasoning: round.lowReasoning,
                     force_json_output: round.forceJsonOutput,
                     no_thinking_method: round.noThinkingMethod,

@@ -247,6 +247,9 @@ export interface TranslationSettings {
 
   // 消除文字模式同时执行OCR（获取带原文的干净背景图）
   removeTextWithOcr: boolean
+
+  // 详细日志（全局开关，影响所有翻译模式）
+  enableVerboseLogs: boolean
 }
 
 /**

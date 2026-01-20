@@ -655,6 +655,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.removeTextWithOcr = backendSettings.removeTextWithOcr as boolean
     }
 
+    // 详细日志
+    if (backendSettings.enableVerboseLogs !== undefined) {
+      settings.value.enableVerboseLogs = backendSettings.enableVerboseLogs as boolean
+    }
+
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
@@ -887,6 +892,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 消除文字模式OCR
         removeTextWithOcr: settings.value.removeTextWithOcr,
 
+        // 详细日志
+        enableVerboseLogs: settings.value.enableVerboseLogs,
+
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
       }
@@ -972,6 +980,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
+    setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
 
 
     // 兼容旧接口

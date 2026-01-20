@@ -41,6 +41,25 @@
       </div>
     </div>
 
+    <!-- 详细日志设置 -->
+    <div class="settings-group">
+      <div class="settings-group-title">调试选项</div>
+      <div class="settings-item checkbox-item">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            v-model="localSettings.enableVerboseLogs"
+          />
+          <span class="checkbox-text">详细日志</span>
+        </label>
+        <div class="input-hint">
+          开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。
+          <br />
+          <span class="hint-note">影响所有翻译模式，默认关闭以保持日志简洁。</span>
+        </div>
+      </div>
+    </div>
+
     <!-- PDF处理方式 -->
     <div class="settings-group">
       <div class="settings-group-title">PDF处理设置</div>
@@ -139,7 +158,8 @@ const fontInput = ref<HTMLInputElement | null>(null)
 const localSettings = ref({
   pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
   autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false,
-  removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false
+  removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false,
+  enableVerboseLogs: settingsStore.settings.enableVerboseLogs || false
 })
 
 // ============================================================
@@ -155,6 +175,10 @@ watch(() => localSettings.value.autoSaveInBookshelfMode, (val) => {
 
 watch(() => localSettings.value.removeTextWithOcr, (val) => {
   settingsStore.setRemoveTextWithOcr(val)
+})
+
+watch(() => localSettings.value.enableVerboseLogs, (val) => {
+  settingsStore.setEnableVerboseLogs(val)
 })
 
 // 刷新字体列表

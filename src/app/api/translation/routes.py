@@ -16,6 +16,68 @@ from . import (
     constants, get_font_path
 )
 
+import json
+
+
+def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
+    """
+    构建高质量翻译的消息结构
+    
+    Args:
+        json_data: JSON 数据（包含 imageIndex 和 bubbles）
+        image_base64_array: 图片 Base64 数组
+        user_prompt: 用户提示词
+        system_prompt: 系统提示词
+        
+    Returns:
+        构建好的 messages 数组
+    """
+    # 提取实际的 imageIndex 范围
+    actual_indices = [item.get('imageIndex', i) for i, item in enumerate(json_data)]
+    min_index = min(actual_indices)
+    max_index = max(actual_indices)
+    
+    # 构建 user content
+    user_content = []
+    
+    # 1. 添加提示词和图片数量说明
+    image_count_note = f"\n\n【本次请求包含 {len(image_base64_array)} 张图片（imageIndex {min_index} 至 {max_index}），请为每张图片都提供翻译结果】"
+    user_content.append({
+        'type': 'text',
+        'text': user_prompt + image_count_note
+    })
+    
+    # 2. 为每张图片添加标签和图片内容
+    for i, img_base64 in enumerate(image_base64_array):
+        actual_image_index = json_data[i].get('imageIndex', i) if i < len(json_data) else i
+        user_content.append({
+            'type': 'text',
+            'text': f"\n【图片 {i + 1}，对应 imageIndex: {actual_image_index}】"
+        })
+        user_content.append({
+            'type': 'image_url',
+            'image_url': {'url': f"data:image/png;base64,{img_base64}"}
+        })
+    
+    # 3. 添加 JSON 数据和输出检查清单
+    json_string = json.dumps(json_data, ensure_ascii=False, indent=2)
+    required_indices = ', '.join(map(str, actual_indices))
+    output_requirement = f"\n\n【输出检查清单】\n请确保你的返回结果：\n✓ 是一个包含 {len(json_data)} 个元素的JSON数组\n✓ 包含所有这些 imageIndex: {required_indices}\n✓ 每个 imageIndex 对应一个完整的翻译对象\n✓ 不要遗漏任何一张图片的翻译"
+    
+    user_content.append({
+        'type': 'text',
+        'text': f"\n\n以下是JSON数据:\n```json\n{json_string}\n```{output_requirement}"
+    })
+    
+    # 4. 构建完整的 messages
+    messages = [
+        {'role': 'system', 'content': system_prompt},
+        {'role': 'user', 'content': user_content}
+    ]
+    
+    return messages
+
+
 
 @translate_bp.route('/re_render_image', methods=['POST'])
 def re_render_image():
@@ -727,7 +789,15 @@ def hq_translate_batch():
         api_key = data.get('api_key')
         model_name = data.get('model_name')
         custom_base_url = data.get('custom_base_url')
-        messages = data.get('messages', [])
+        
+        # 支持两种调用方式
+        messages = data.get('messages')  # 旧方式：直接传消息
+        json_data = data.get('jsonData')  # 新方式：传数据，后端构建消息
+        image_base64_array = data.get('imageBase64Array')
+        user_prompt = data.get('prompt', '')
+        system_prompt = data.get('systemPrompt', '你是一个专业的漫画翻译助手。')
+        is_proofreading = data.get('isProofreading', False)
+        enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         
         # 可选参数
         low_reasoning = data.get('low_reasoning', False)
@@ -744,14 +814,29 @@ def hq_translate_batch():
         except (ValueError, TypeError):
             max_retries = 2
         
-        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, max_retries={max_retries}")
+        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, max_retries={max_retries}, debug_logs={enable_debug_logs}")
         
         # 参数验证
         if not provider or not api_key or not model_name:
             return jsonify({'error': '缺少必要参数: provider, api_key, model_name'}), 400
         
-        if not messages:
-            return jsonify({'error': '缺少 messages 参数'}), 400
+        # 检测使用哪种调用方式
+        if json_data is not None and image_base64_array is not None:
+            # 新方式：后端构建消息
+            if enable_debug_logs:
+                logger.info("[新接口] 检测到 jsonData + imageBase64Array，由后端构建消息")
+            messages = _build_hq_translate_messages(
+                json_data, 
+                image_base64_array, 
+                user_prompt, 
+                system_prompt
+            )
+        elif messages:
+            # 旧方式：直接使用传入的消息
+            if enable_debug_logs:
+                logger.info("[旧接口] 使用前端传入的 messages")
+        else:
+            return jsonify({'error': '缺少必要参数: 需要 messages 或 (jsonData + imageBase64Array)'}), 400
         
         if provider == constants.CUSTOM_OPENAI_PROVIDER_ID and not custom_base_url:
             return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
@@ -770,6 +855,36 @@ def hq_translate_batch():
             return jsonify({'error': f'不支持的服务商: {provider}'}), 400
         
         logger.info(f"使用 base_url: {base_url}")
+        
+        
+        
+        # 诊断日志：打印完整的消息结构（仅在启用调试日志时）
+        if enable_debug_logs:
+            logger.info("=" * 80)
+            logger.info("[诊断] 发送给 AI 的完整消息结构:")
+            for msg_idx, msg in enumerate(messages):
+                logger.info(f"\n--- Message {msg_idx + 1} (role: {msg.get('role')}) ---")
+                content = msg.get('content', [])
+                
+                if isinstance(content, str):
+                    # 简单字符串内容
+                    logger.info(f"内容: {content}")
+                elif isinstance(content, list):
+                    # 多模态内容
+                    for item_idx, item in enumerate(content):
+                        if isinstance(item, dict):
+                            item_type = item.get('type', 'unknown')
+                            if item_type == 'text':
+                                text_content = item.get('text', '')
+                                logger.info(f"\n[文本块 {item_idx + 1}]")
+                                logger.info(text_content)
+                            elif item_type == 'image_url':
+                                image_url = item.get('image_url', {}).get('url', '')
+                                # 只显示图片URL的前100个字符
+                                image_preview = image_url[:100] + '...' if len(image_url) > 100 else image_url
+                                logger.info(f"\n[图片块 {item_idx + 1}] {image_preview} (长度: {len(image_url)})")
+            logger.info("=" * 80)
+        
         
         # 构建请求参数（在重试循环外部构建，避免重复）
         api_params = {
@@ -835,6 +950,13 @@ def hq_translate_batch():
                 last_raw_content = content  # 保存原始内容
                 logger.info(f"高质量翻译 API 调用成功 (尝试 {attempt + 1}/{max_retries + 1})，返回内容长度: {len(content)}")
                 
+                # 打印原始响应的预览（仅在启用调试日志时）
+                if enable_debug_logs:
+                    content_preview = content[:1000] if len(content) > 1000 else content
+                    logger.info(f"[诊断] 模型返回的原始内容（前1000字符）:\n{content_preview}")
+                    if len(content) > 1000:
+                        logger.info(f"[诊断] 原始内容总长度: {len(content)} 字符")
+                
             except Exception as api_error:
                 error_msg = str(api_error)
                 last_error_msg = error_msg
@@ -872,14 +994,38 @@ def hq_translate_batch():
                     # 强制 JSON 模式：必须解析成功
                     parsed_content = json_module.loads(content)
                 else:
-                    # 非 JSON 模式：尝试从文本中提取 JSON
-                    start_idx = content.find('{')
-                    end_idx = content.rfind('}')
-                    if start_idx != -1 and end_idx != -1:
-                        json_str = content[start_idx:end_idx+1]
-                        parsed_content = json_module.loads(json_str)
+                    # 非 JSON 模式：尝试从文本中提取 JSON（支持数组和对象格式）
+                    # 先去除可能的 markdown 代码块标记
+                    cleaned_content = content.strip()
+                    if cleaned_content.startswith('```json'):
+                        cleaned_content = cleaned_content[7:].strip()
+                    if cleaned_content.startswith('```'):
+                        cleaned_content = cleaned_content[3:].strip()
+                    if cleaned_content.endswith('```'):
+                        cleaned_content = cleaned_content[:-3].strip()
+                    
+                    # 检测是数组还是对象
+                    array_start = cleaned_content.find('[')
+                    object_start = cleaned_content.find('{')
+                    
+                    if array_start != -1 and (object_start == -1 or array_start < object_start):
+                        # 数组格式 [...]
+                        end_idx = cleaned_content.rfind(']')
+                        if end_idx != -1:
+                            json_str = cleaned_content[array_start:end_idx+1]
+                            parsed_content = json_module.loads(json_str)
+                        else:
+                            raise json_module.JSONDecodeError("返回内容中未找到完整的 JSON 数组", content, 0)
+                    elif object_start != -1:
+                        # 对象格式 {...}
+                        end_idx = cleaned_content.rfind('}')
+                        if end_idx != -1:
+                            json_str = cleaned_content[object_start:end_idx+1]
+                            parsed_content = json_module.loads(json_str)
+                        else:
+                            raise json_module.JSONDecodeError("返回内容中未找到完整的 JSON 对象", content, 0)
                     else:
-                        # 找不到 JSON 块，也当作解析失败
+                        # 找不到 JSON 块
                         raise json_module.JSONDecodeError("返回内容中未找到有效的 JSON 块", content, 0)
                 
                 # 将解析后的内容转换为 results 格式
@@ -900,7 +1046,8 @@ def hq_translate_batch():
                     raise json_module.JSONDecodeError(f"JSON 格式不正确，期望包含 'images' 字段、数组或单张图片格式(imageIndex+bubbles)，实际收到: {type(parsed_content)}", str(parsed_content), 0)
                 
                 # 解析成功，返回结果
-                logger.info(f"JSON 解析成功，获取到 {len(results)} 条结果")
+                result_indices = [r.get('imageIndex', 'N/A') for r in results if isinstance(r, dict)]
+                logger.info(f"JSON 解析成功，获取到 {len(results)} 条结果，imageIndex列表: {result_indices}")
                 return jsonify({
                     'success': True,
                     'results': results
@@ -911,6 +1058,12 @@ def hq_translate_batch():
                 error_msg = f"JSON 解析失败: {parse_error}"
                 last_error_msg = error_msg
                 logger.warning(f"[尝试 {attempt + 1}/{max_retries + 1}] {error_msg}")
+                
+                # 打印原始响应内容（截断到合理长度）
+                content_preview = content[:2000] if len(content) > 2000 else content
+                logger.warning(f"[诊断] 模型返回的原始内容（前2000字符）:\n{content_preview}")
+                if len(content) > 2000:
+                    logger.warning(f"[诊断] 原始内容总长度: {len(content)} 字符")
                 
                 # 如果还有重试次数，等待后继续
                 if attempt < max_retries:

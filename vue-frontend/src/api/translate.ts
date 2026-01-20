@@ -82,8 +82,16 @@ export interface HqTranslateParams {
   model_name: string  // 后端期望 model_name 而不是 model
   custom_base_url?: string
 
-  // 消息数组（包含系统提示、用户消息+图片）
-  messages: Array<{
+  // 新方式：传数据，后端构建消息
+  jsonData?: any[]
+  imageBase64Array?: string[]
+  prompt?: string
+  systemPrompt?: string
+  isProofreading?: boolean
+  enableDebugLogs?: boolean  // 是否启用调试日志
+
+  // 旧方式：直接传消息（向后兼容）
+  messages?: Array<{
     role: 'system' | 'user' | 'assistant'
     content: string | Array<{
       type: 'text' | 'image_url'

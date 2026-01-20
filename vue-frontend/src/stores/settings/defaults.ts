@@ -110,7 +110,7 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   lowReasoning: false,
   noThinkingMethod: 'gemini',
-  forceJsonOutput: true,
+  forceJsonOutput: false,
   useStream: false,
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
@@ -167,6 +167,7 @@ export function createDefaultSettings(): TranslationSettings {
     showDetectionDebug: false,
     parallel: { ...DEFAULT_PARALLEL },
     autoSaveInBookshelfMode: false,
-    removeTextWithOcr: false
+    removeTextWithOcr: false,
+    enableVerboseLogs: false  // 默认关闭详细日志
   }
 }
