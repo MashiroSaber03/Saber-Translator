@@ -493,38 +493,37 @@ function handleClickOutside(event: MouseEvent) {
  */
 function togglePageRangeSettings() {
   isPageRangeExpanded.value = !isPageRangeExpanded.value
-  // 展开时重置为有效范围
+  // 【优化】只在首次展开或范围无效时才重置，避免用户折叠后再展开时丢失输入
   if (isPageRangeExpanded.value && totalImages.value > 0) {
-    pageRangeStart.value = 1
-    pageRangeEnd.value = totalImages.value
+    // 如果当前范围无效或未初始化（默认值1-1），重置为全范围
+    if (!isPageRangeValid.value || (pageRangeStart.value === 1 && pageRangeEnd.value === 1)) {
+      pageRangeStart.value = 1
+      pageRangeEnd.value = totalImages.value
+    }
   }
 }
 
 /**
  * 更新页面范围起始页
+ * 【简化】只做边界限制，不自动修改结束页，避免用户输入时被干扰
  */
 function updatePageRangeStart(event: Event) {
   const value = parseInt((event.target as HTMLInputElement).value)
   if (!isNaN(value)) {
+    // 只限制在有效范围内，不联动修改结束页
     pageRangeStart.value = Math.max(1, Math.min(value, totalImages.value))
-    // 确保起始页不超过结束页
-    if (pageRangeStart.value > pageRangeEnd.value) {
-      pageRangeEnd.value = pageRangeStart.value
-    }
   }
 }
 
 /**
  * 更新页面范围结束页
+ * 【简化】只做边界限制，不自动修改起始页，避免用户输入时被干扰
  */
 function updatePageRangeEnd(event: Event) {
   const value = parseInt((event.target as HTMLInputElement).value)
   if (!isNaN(value)) {
+    // 只限制在有效范围内，不联动修改起始页
     pageRangeEnd.value = Math.max(1, Math.min(value, totalImages.value))
-    // 确保结束页不小于起始页
-    if (pageRangeEnd.value < pageRangeStart.value) {
-      pageRangeStart.value = pageRangeEnd.value
-    }
   }
 }
 
@@ -836,8 +835,6 @@ if (typeof window !== 'undefined') {
                 type="number" 
                 id="pageRangeStart" 
                 :value="pageRangeStart"
-                min="1" 
-                :max="totalImages"
                 @input="updatePageRangeStart"
                 placeholder="起始"
               >
@@ -846,8 +843,6 @@ if (typeof window !== 'undefined') {
                 type="number" 
                 id="pageRangeEnd" 
                 :value="pageRangeEnd"
-                min="1" 
-                :max="totalImages"
                 @input="updatePageRangeEnd"
                 placeholder="结束"
               >
