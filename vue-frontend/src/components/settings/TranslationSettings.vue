@@ -145,6 +145,10 @@
             💡 逐气泡翻译：每个气泡单独翻译，更稳定，适合小模型或格式敏感场景
           </span>
         </div>
+        <!-- Sakura 服务商专属建议 -->
+        <div v-if="localSettings.modelProvider === 'sakura'" class="input-hint sakura-suggestion">
+          ⚠️ 建议 Sakura 服务使用"逐气泡翻译"模式，可获得更稳定的翻译效果
+        </div>
       </div>
 
       <!-- 本地服务测试按钮 -->
@@ -822,4 +826,17 @@ function resetTranslatePromptToDefault() {
   color: var(--text-secondary, #666);
   border-left: 3px solid var(--primary-color, #4a90d9);
 }
+
+/* Sakura 服务商专属建议样式 */
+.sakura-suggestion {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #856404;
+  border-left: 3px solid #ffc107;
+  font-weight: 500;
+}
+
 </style>
