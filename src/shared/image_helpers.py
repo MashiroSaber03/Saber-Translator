@@ -34,7 +34,11 @@ def base64_to_image(base64_string):
         PIL图像对象
     """
     image_data = base64.b64decode(base64_string)
-    return Image.open(io.BytesIO(image_data))
+    image = Image.open(io.BytesIO(image_data))
+    # 确保返回RGB模式的图片，避免调色板模式问题
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    return image
 
 
 def create_mask(image_size, bubble_coords, padding=0):

@@ -206,13 +206,16 @@ class ImageProcessor:
         if format == 'JPG':
             format = 'JPEG'
         
-        # JPEG 不支持透明度，需要转换
-        if format == 'JPEG' and image.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
-            image = background
+        # JPEG 不支持透明度和调色板模式，需要转换为RGB
+        if format == 'JPEG' and image.mode != 'RGB':
+            if image.mode in ('RGBA', 'LA'):
+                # 透明模式：使用白色背景
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                background.paste(image, mask=image.split()[-1])
+                image = background
+            else:
+                # 其他模式（P、L、CMYK等）：直接转RGB
+                image = image.convert('RGB')
         
         # 保存
         save_kwargs = {}

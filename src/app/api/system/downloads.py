@@ -110,6 +110,9 @@ def download_upload_image_api():
         # 解码Base64数据
         img_bytes = base64.b64decode(image_data)
         img = Image.open(io.BytesIO(img_bytes))
+        # 确保是RGB模式，避免调色板模式(P)导致保存后颜色错误
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         
         # 保存图片到临时目录
         filename = f"image_{image_index:03d}.png"
@@ -274,6 +277,9 @@ def download_all_images_api():
                 # 解码Base64数据
                 img_bytes = base64.b64decode(img_data)
                 img = Image.open(io.BytesIO(img_bytes))
+                # 确保是RGB模式
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
                 
                 # 保存图片到临时目录
                 filename = f"image_{i:03d}.png"

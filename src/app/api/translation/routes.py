@@ -160,6 +160,9 @@ def re_render_image():
             logger.info("使用消除文字后的干净图片进行重新渲染")
             try:
                 img = Image.open(io.BytesIO(base64.b64decode(clean_image_data)))
+                # 确保图片是RGB模式，避免调色板模式(P)或其他模式导致渲染问题
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
                 logger.info(f"成功加载干净图片，尺寸: {img.width}x{img.height}")
                 
                 # 标记这是干净图片，避免修复步骤
@@ -178,6 +181,9 @@ def re_render_image():
                 logger.warning("没有有效的干净图片，回退使用当前图片")
                 try:
                     img = Image.open(io.BytesIO(base64.b64decode(image_data)))
+                    # 确保图片是RGB模式，避免调色板模式(P)或其他模式导致渲染问题
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
                     logger.info(f"成功加载当前图片，尺寸: {img.width}x{img.height}")
                     
                     # 如果是字体样式变更，设置标记以避免不必要的修复
@@ -387,9 +393,15 @@ def re_render_single_bubble():
             if clean_image_data:
                 logger.info("使用传入的干净背景图像")
                 image = Image.open(io.BytesIO(base64.b64decode(clean_image_data)))
+                # 确保图片是RGB模式
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
             else:
                 logger.info("使用传入的普通图像")
                 image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+                # 确保图片是RGB模式
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
         except Exception as e:
             logger.error(f"无法解码或打开图像: {e}")
             return jsonify({'error': f'无法解码或打开图像: {str(e)}'}), 500
@@ -427,6 +439,9 @@ def re_render_single_bubble():
             try:
                 clean_image_bytes = base64.b64decode(clean_image_data)
                 clean_image = Image.open(io.BytesIO(clean_image_bytes))
+                # 确保是RGB模式
+                if clean_image.mode != 'RGB':
+                    clean_image = clean_image.convert('RGB')
                 
                 # 设置为干净背景图像的属性，以便后续处理
                 setattr(image, '_clean_image', clean_image)
@@ -609,9 +624,15 @@ def apply_settings_to_all_images():
                 if clean_image_data:
                     logger.info(f"使用干净背景图像渲染图片 {i+1}")
                     img = Image.open(io.BytesIO(base64.b64decode(clean_image_data)))
+                    # 确保图片是RGB模式
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
                 else:
                     logger.info(f"使用普通图像渲染图片 {i+1}")
                     img = Image.open(io.BytesIO(base64.b64decode(image_data)))
+                    # 确保图片是RGB模式
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
                 
                 # 创建所有气泡的统一样式
                 all_bubble_states = []
@@ -1168,11 +1189,17 @@ def ocr_single_bubble():
                     bubble_image_data = bubble_image_data.split(',')[1]
                 bubble_image_bytes = base64.b64decode(bubble_image_data)
                 bubble_image = Image.open(io.BytesIO(bubble_image_bytes))
+                # 确保图片是RGB模式
+                if bubble_image.mode != 'RGB':
+                    bubble_image = bubble_image.convert('RGB')
             else:
                 if ',' in image_data:
                     image_data = image_data.split(',')[1]
                 image_bytes = base64.b64decode(image_data)
                 image_pil = Image.open(io.BytesIO(image_bytes))
+                # 确保图片是RGB模式
+                if image_pil.mode != 'RGB':
+                    image_pil = image_pil.convert('RGB')
                 x1, y1, x2, y2 = bubble_coords[:4]
                 bubble_image = image_pil.crop((x1, y1, x2, y2))
             

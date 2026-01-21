@@ -119,8 +119,8 @@ def _load_single_image(img_path: str) -> dict:
     """
     try:
         with Image.open(img_path) as img:
-            # 转换为 RGB（处理 RGBA/P 模式）
-            if img.mode in ('RGBA', 'P'):
+            # 转换为 RGB（处理所有非RGB模式）
+            if img.mode != 'RGB':
                 img = img.convert('RGB')
             
             # 转为 base64

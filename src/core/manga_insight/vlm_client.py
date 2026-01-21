@@ -59,7 +59,8 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
         
         # 转换为 JPEG 格式输出（压缩率更高）
         output = io.BytesIO()
-        if img.mode in ('RGBA', 'P'):
+        # 确保图片是RGB模式（JPEG不支持透明通道和调色板模式）
+        if img.mode != 'RGB':
             img = img.convert('RGB')
         img.save(output, format='JPEG', quality=85)
         

@@ -194,9 +194,9 @@ def get_page_thumbnail(book_id: str, page_num: int):
                                         ratio = THUMB_WIDTH / img.width
                                         thumb_height = int(img.height * ratio)
                                         
-                                        # 缩放并转换为 RGB（处理 RGBA/P 模式）
+                                        # 缩放并转换为 RGB（确保JPEG兼容）
                                         thumb = img.resize((THUMB_WIDTH, thumb_height), Image.Resampling.LANCZOS)
-                                        if thumb.mode in ('RGBA', 'P'):
+                                        if thumb.mode != 'RGB':
                                             thumb = thumb.convert('RGB')
                                         
                                         # 保存到缓存

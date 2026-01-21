@@ -34,7 +34,9 @@ def decode_base64_image(base64_str: str) -> np.ndarray:
         base64_str = base64_str.split(',')[1]
     image_data = base64.b64decode(base64_str)
     image = Image.open(io.BytesIO(image_data))
-    if image.mode == 'RGBA':
+    # 将所有非RGB模式的图片转换为RGB（包括RGBA、P、L等）
+    # 调色板模式（P）如果直接转numpy会导致颜色错误
+    if image.mode != 'RGB':
         image = image.convert('RGB')
     return np.array(image)
 
