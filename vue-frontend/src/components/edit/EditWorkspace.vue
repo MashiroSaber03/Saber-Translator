@@ -246,7 +246,7 @@
  * 编辑模式工作区组件
  * 提供双图对照、气泡编辑、笔刷工具等功能
  */
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -376,17 +376,19 @@ const {
   hasSelection
 } = storeToRefs(bubbleStore)
 
-/** 当前图片宽度 */
-const currentImageWidth = computed(() => {
-  const img = originalWrapperRef.value?.querySelector('img')
-  return img?.naturalWidth || 2000
-})
+/** 当前图片宽度（从 Store 响应式获取） */
+const currentImageWidth = computed(() => currentImage.value?.width || 0)
 
-/** 当前图片高度 */
-const currentImageHeight = computed(() => {
+/** 当前图片高度（从 Store 响应式获取） */
+const currentImageHeight = computed(() => currentImage.value?.height || 0)
+
+/** 更新当前图片尺寸（在图片加载完成时调用） */
+function updateImageDimensions(): void {
   const img = originalWrapperRef.value?.querySelector('img')
-  return img?.naturalHeight || 2000
-})
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    imageStore.updateCurrentImageDimensions(img.naturalWidth, img.naturalHeight)
+  }
+}
 
 
 // ============================================================
@@ -901,6 +903,12 @@ function handleDrawingEnd(_event: MouseEvent): void {
 /** 处理图片加载完成 */
 function handleImageLoad(viewport: 'original' | 'translated'): void {
   console.log(`${viewport} 图片加载完成`)
+  
+  // 原图加载完成时更新尺寸
+  if (viewport === 'original') {
+    updateImageDimensions()
+  }
+  
   // 首次加载时适应屏幕
   if (scale.value === 1 && translateX.value === 0 && translateY.value === 0) {
     nextTick(() => {
@@ -1525,6 +1533,26 @@ function exitEditMode(): void {
 // 生命周期
 // ============================================================
 
+// ============================================================
+// 错误边界
+// ============================================================
+
+/** 捕获子组件错误，提供用户友好的错误提示 */
+onErrorCaptured((err, _instance, info) => {
+  console.error('[EditWorkspace] 捕获到错误:', err, info)
+  
+  // 显示用户友好的错误提示
+  const userMessage = err instanceof Error ? err.message : '操作失败，请重试'
+  showToast(userMessage, 'error')
+  
+  // 返回 false 阻止错误继续传播
+  return false
+})
+
+// ============================================================
+// 生命周期钩子
+// ============================================================
+
 onMounted(() => {
   // 加载保存的布局模式
   try {
@@ -1573,6 +1601,7 @@ watch(() => props.isEditModeActive, (active) => {
     loadBubbleStatesFromImage()
     nextTick(() => {
       workspaceRef.value?.focus()
+      updateImageDimensions()
     })
   }
 })

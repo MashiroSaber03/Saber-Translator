@@ -23,6 +23,23 @@ function generateId(): string {
 }
 
 /**
+ * 从 dataURL 异步获取图片尺寸
+ * 用于在添加图片时计算真实尺寸
+ */
+export function getImageDimensionsFromDataURL(dataURL: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.onerror = () => {
+      reject(new Error('Failed to load image'))
+    }
+    img.src = dataURL
+  })
+}
+
+/**
  * 创建默认图片数据
  */
 function createDefaultImageData(
@@ -33,6 +50,8 @@ function createDefaultImageData(
   return {
     id: generateId(),
     fileName,
+    width: 0,
+    height: 0,
     originalDataURL,
     translatedDataURL: null,
     cleanImageData: null,
@@ -53,6 +72,7 @@ function createDefaultImageData(
     ...overrides
   }
 }
+
 
 export const useImageStore = defineStore('image', () => {
   // ============================================================
@@ -172,6 +192,9 @@ export const useImageStore = defineStore('image', () => {
   function setImages(newImages: ImageData[]): void {
     images.value = newImages.map((img) => ({
       ...img,
+      // 确保 width 和 height 有默认值（兼容旧会话数据）
+      width: img.width || 0,
+      height: img.height || 0,
       strokeEnabled: img.strokeEnabled ?? DEFAULT_STROKE_ENABLED,
       strokeColor: img.strokeColor || DEFAULT_STROKE_COLOR,
       strokeWidth: img.strokeWidth ?? DEFAULT_STROKE_WIDTH,
@@ -404,6 +427,19 @@ export const useImageStore = defineStore('image', () => {
     }
   }
 
+  /**
+   * 更新当前图片的尺寸
+   * @param width - 图片宽度
+   * @param height - 图片高度
+   */
+  function updateCurrentImageDimensions(width: number, height: number): void {
+    if (currentImage.value) {
+      currentImage.value.width = width
+      currentImage.value.height = height
+      console.log(`当前图片尺寸已更新: ${width} x ${height}`)
+    }
+  }
+
   // ============================================================
   // 翻译状态管理方法
   // ============================================================
@@ -521,6 +557,7 @@ export const useImageStore = defineStore('image', () => {
     setManuallyAnnotated,
     updateCurrentImageProperty,
     updateCurrentTranslationResult,
+    updateCurrentImageDimensions,
 
     // 翻译状态管理方法
     setTranslationStatus,

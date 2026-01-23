@@ -20,6 +20,12 @@ export interface ImageData {
   /** 文件名 */
   fileName: string
 
+  // 图片尺寸
+  /** 图片宽度 */
+  width: number
+  /** 图片高度 */
+  height: number
+
   // 图片数据（Base64）
   /** 原始图片数据 */
   originalDataURL: string

@@ -10,6 +10,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
+import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 
 // ============================================================
@@ -406,6 +407,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       }
     } catch (error) {
       console.error('背景修复出错:', error)
+      const errorMessage = error instanceof Error ? error.message : '背景修复失败'
+      showToast(errorMessage, 'error')
     }
   }
 
@@ -546,10 +549,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         bubbleStore.updateBubble(index, { originalText: response.text })
         console.log(`OCR 识别成功: "${response.text}"`)
       } else {
-        console.error('OCR 识别失败:', response.error || '未知错误')
+        const errorMsg = response.error || '识别失败'
+        console.error('OCR 识别失败:', errorMsg)
+        showToast(errorMsg, 'error')
       }
     } catch (error) {
       console.error('OCR 识别出错:', error)
+      const errorMessage = error instanceof Error ? error.message : 'OCR 识别出错'
+      showToast(errorMessage, 'error')
     }
   }
 
