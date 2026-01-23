@@ -306,24 +306,56 @@ def merge_masks_from_patches(
         if mask.ndim == 3:
             mask = mask.squeeze()
         
+        # 切片在原图中的尺寸
         patch_h = patch_info.bottom - patch_info.top
-        patch_w = canvas_w
+        patch_w = canvas_w  # 切片宽度等于原图宽度（纵向切割）
         
         # 反向缩放掩码
         if dsr < 1.0:
-            padded_size = int(mask.shape[0] / dsr)
+            # 掩码是 1536x1536，需要还原到填充前的尺寸
+            # 填充前的尺寸：原始切片经过正方形填充后再缩放
+            # 原始切片尺寸: patch_h x patch_w
+            # 填充后的正方形尺寸: max(patch_h, patch_w) 
+            # 但由于后面还有额外填充使其达到 tgt_size，实际填充后尺寸需要从 pad_h/pad_w 反推
+            
+            # 缩放后的掩码尺寸 = 1536x1536 (即 mask.shape)
+            # 缩放前的填充后尺寸 = 1536 / dsr
+            padded_size = int(round(mask.shape[0] / dsr))
+            
+            # 上采样到填充后的尺寸
             mask_upscaled = cv2.resize(mask, (padded_size, padded_size), interpolation=cv2.INTER_LINEAR)
             
-            valid_h = min(padded_size - pad_h, mask_upscaled.shape[0])
-            valid_w = min(padded_size - pad_w, mask_upscaled.shape[1])
-            mask_no_pad = mask_upscaled[:valid_h, :valid_w]
+            # 计算填充前的有效区域尺寸
+            # pad_h 和 pad_w 是添加到右边和下边的填充量
+            # 有效区域 = 填充后尺寸 - 填充量
+            valid_h = padded_size - pad_h
+            valid_w = padded_size - pad_w
             
-            if mask_no_pad.size > 0:
+            # 确保不越界
+            valid_h = max(0, min(valid_h, mask_upscaled.shape[0]))
+            valid_w = max(0, min(valid_w, mask_upscaled.shape[1]))
+            
+            if valid_h > 0 and valid_w > 0:
+                # 裁剪掉填充区域（填充在右边和下边）
+                mask_no_pad = mask_upscaled[:valid_h, :valid_w]
+                
+                # 调整到切片在原图中的实际尺寸
                 mask_final = cv2.resize(mask_no_pad, (patch_w, patch_h), interpolation=cv2.INTER_LINEAR)
             else:
                 mask_final = np.zeros((patch_h, patch_w), dtype=np.float32)
         else:
-            mask_final = cv2.resize(mask, (patch_w, patch_h), interpolation=cv2.INTER_LINEAR)
+            # 无缩放情况，直接调整尺寸
+            # 同样需要去除填充
+            valid_h = mask.shape[0] - pad_h
+            valid_w = mask.shape[1] - pad_w
+            valid_h = max(0, min(valid_h, mask.shape[0]))
+            valid_w = max(0, min(valid_w, mask.shape[1]))
+            
+            if valid_h > 0 and valid_w > 0:
+                mask_no_pad = mask[:valid_h, :valid_w]
+                mask_final = cv2.resize(mask_no_pad, (patch_w, patch_h), interpolation=cv2.INTER_LINEAR)
+            else:
+                mask_final = np.zeros((patch_h, patch_w), dtype=np.float32)
         
         # 放到画布上
         top = patch_info.top
