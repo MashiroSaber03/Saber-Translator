@@ -1105,6 +1105,27 @@ export function useSequentialPipeline() {
         const imagesToProcess = getImagesToProcess(config)
         const errors: string[] = []
 
+        // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
+        // 这样用户在翻译过程中切换图片时，侧边栏不会显示默认值，翻译也不会受影响
+        if (savedTextStyles && imagesToProcess.length > 1) {
+            console.log(`📝 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
+            for (const { index } of imagesToProcess) {
+                imageStore.updateImageByIndex(index, {
+                    fontSize: savedTextStyles.fontSize,
+                    autoFontSize: savedTextStyles.autoFontSize,
+                    fontFamily: savedTextStyles.fontFamily,
+                    layoutDirection: savedTextStyles.layoutDirection,
+                    textColor: savedTextStyles.textColor,
+                    fillColor: savedTextStyles.fillColor,
+                    strokeEnabled: savedTextStyles.strokeEnabled,
+                    strokeColor: savedTextStyles.strokeColor,
+                    strokeWidth: savedTextStyles.strokeWidth,
+                    inpaintMethod: savedTextStyles.inpaintMethod,
+                    useAutoTextColor: savedTextStyles.useAutoTextColor
+                })
+            }
+        }
+
         // 判断是否启用自动保存（书架模式 + 设置开启）
         const enableAutoSave = shouldEnableAutoSave()
 

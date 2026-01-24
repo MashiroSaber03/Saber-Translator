@@ -111,6 +111,29 @@ export function usePipeline() {
             }
         }
 
+        // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
+        // 这样用户在翻译过程中切换图片时，侧边栏不会显示默认值，翻译也不会受影响
+        if (imagesToProcess.length > 1) {
+            const { textStyle } = settingsStore.settings
+            console.log(`📝 [并行模式] 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
+            for (let i = 0; i < imagesToProcess.length; i++) {
+                const imageIndex = startIndex + i
+                imageStore.updateImageByIndex(imageIndex, {
+                    fontSize: textStyle.fontSize,
+                    autoFontSize: textStyle.autoFontSize,
+                    fontFamily: textStyle.fontFamily,
+                    layoutDirection: textStyle.layoutDirection,
+                    textColor: textStyle.textColor,
+                    fillColor: textStyle.fillColor,
+                    strokeEnabled: textStyle.strokeEnabled,
+                    strokeColor: textStyle.strokeColor,
+                    strokeWidth: textStyle.strokeWidth,
+                    inpaintMethod: textStyle.inpaintMethod,
+                    useAutoTextColor: textStyle.useAutoTextColor
+                })
+            }
+        }
+
         // 判断是否启用自动保存（书架模式 + 设置开启）
         const enableAutoSave = shouldEnableAutoSave()
 
