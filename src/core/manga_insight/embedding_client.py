@@ -267,7 +267,10 @@ class ChatClient:
         response = await self.client.post(url, headers=headers, json=request_body)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices", [])
+        if not choices:
+            raise Exception("Chat API 返回空 choices")
+        return choices[0]["message"]["content"]
     
     async def _generate_stream(self, url: str, headers: dict, request_body: dict) -> str:
         """流式请求（避免超时，同时实时输出到终端）"""
@@ -292,7 +295,11 @@ class ChatClient:
                         break
                     try:
                         data = json_module.loads(data_str)
-                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        # 安全获取 choices，防止空数组导致 index out of range
+                        choices = data.get("choices", [])
+                        if not choices:
+                            continue  # 跳过空 choices 的 chunk
+                        delta = choices[0].get("delta", {})
                         if "content" in delta and delta["content"]:
                             chunk_count += 1
                             chunk_text = delta["content"]

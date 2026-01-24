@@ -274,7 +274,10 @@ def translate_single_text(text, target_language, model_provider,
                 response = requests.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()
-                translated_text = result['choices'][0]['message']['content'].strip()
+                choices = result.get('choices', [])
+                if not choices:
+                    raise ValueError("Sakura 返回空 choices")
+                translated_text = choices[0]['message']['content'].strip()
 
             elif model_provider == 'ollama':
                 url = "http://localhost:11434/api/chat"
@@ -756,7 +759,10 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 response = requests.post(url, headers=headers, json=payload, timeout=120)
                 response.raise_for_status()
                 result = response.json()
-                response_text = result['choices'][0]['message']['content'].strip()
+                choices = result.get('choices', [])
+                if not choices:
+                    raise ValueError("Sakura 返回空 choices")
+                response_text = choices[0]['message']['content'].strip()
                 
             else:
                 # OpenAI 兼容 API

@@ -256,7 +256,10 @@ class VLMClient:
             raise Exception(f"{provider} API 错误 {response.status_code}: {error_text}")
         
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices", [])
+        if not choices:
+            raise Exception(f"{provider} API 返回空 choices")
+        return choices[0]["message"]["content"]
     
     async def _call_openai_stream(self, url: str, headers: dict, request_body: dict) -> str:
         """OpenAI 兼容 API 流式调用"""
@@ -279,7 +282,11 @@ class VLMClient:
                         break
                     try:
                         data = json.loads(data_str)
-                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        # 安全获取 choices，防止空数组导致 index out of range
+                        choices = data.get("choices", [])
+                        if not choices:
+                            continue  # 跳过空 choices 的 chunk
+                        delta = choices[0].get("delta", {})
                         if "content" in delta and delta["content"]:
                             chunk_count += 1
                             chunk_text = delta["content"]

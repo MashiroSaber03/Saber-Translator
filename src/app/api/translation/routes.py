@@ -1147,7 +1147,11 @@ def _hq_translate_stream(base_url: str, api_key: str, model_name: str, request_b
                         break
                     try:
                         data = json_module.loads(data_str)
-                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        # 安全获取 choices，防止空数组导致 index out of range
+                        choices = data.get("choices", [])
+                        if not choices:
+                            continue  # 跳过空 choices 的 chunk
+                        delta = choices[0].get("delta", {})
                         if "content" in delta and delta["content"]:
                             chunk_count += 1
                             chunk_text = delta["content"]
