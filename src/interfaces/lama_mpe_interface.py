@@ -625,6 +625,7 @@ class LamaMPEInpainter:
     _instance = None
     _model = None
     _device = None
+    _loaded = False  # 使用类变量，避免 __init__ 重置
     
     def __new__(cls):
         if cls._instance is None:
@@ -632,12 +633,12 @@ class LamaMPEInpainter:
         return cls._instance
     
     def __init__(self):
+        # 注意：单例模式下 __init__ 会被多次调用，所以不要在这里重置状态
         self.model_path = resource_path("models/lama/inpainting_lama_mpe.ckpt")
-        self.loaded = False
     
     def load(self, device: str = None):
         """加载模型"""
-        if self.loaded and LamaMPEInpainter._model is not None:
+        if LamaMPEInpainter._loaded and LamaMPEInpainter._model is not None:
             return
         
         if device is None:
@@ -659,7 +660,7 @@ class LamaMPEInpainter:
         if device.startswith('cuda') or device == 'mps':
             LamaMPEInpainter._model.to(device)
         
-        self.loaded = True
+        LamaMPEInpainter._loaded = True
         logger.info("LAMA MPE 模型加载完成")
     
     def unload(self):
@@ -668,9 +669,11 @@ class LamaMPEInpainter:
             LamaMPEInpainter._model.to('cpu')
             del LamaMPEInpainter._model
             LamaMPEInpainter._model = None
+            LamaMPEInpainter._loaded = False
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            self.loaded = False
+            import gc
+            gc.collect()
             logger.info("LAMA MPE 模型已卸载")
     
     def inpaint(self, image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024) -> np.ndarray:
@@ -685,7 +688,7 @@ class LamaMPEInpainter:
         Returns:
             修复后的图像 (H, W, 3) RGB格式 uint8
         """
-        if not self.loaded:
+        if not LamaMPEInpainter._loaded:
             self.load()
         
         img_original = np.copy(image)
@@ -743,7 +746,20 @@ class LamaMPEInpainter:
         # 混合结果
         result = img_inpainted * mask_original + img_original * (1 - mask_original)
         
+        # 推理后清理临时张量
+        self._cleanup_memory()
+        
         return result.astype(np.uint8)
+    
+    def _cleanup_memory(self):
+        """推理后清理内存，防止临时张量累积，执行3次确保彻底"""
+        import gc
+        for _ in range(3):
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
 
 
 # ============================================================

@@ -23,6 +23,7 @@ import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
 import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
 import { getBookDetail } from '@/api/bookshelf'
+import { cleanupGpu } from '@/api/system'
 
 import type { FontInfo } from '@/types/api'
 
@@ -143,7 +144,10 @@ export function useTranslateInit() {
       await initializePromptSettings()
       await initializeTextboxPromptSettings()
 
-      // 4. 处理书籍/章节 URL 参数
+      // 4. 清理 GPU 资源（确保显存状态干净）
+      await initializeGpu()
+
+      // 5. 处理书籍/章节 URL 参数
       await initializeBookChapterContext()
 
       console.log('[TranslateInit] 应用初始化完成')
@@ -259,6 +263,30 @@ export function useTranslateInit() {
     } catch (error) {
       console.error('[TranslateInit] 获取文本框提示词失败:', error)
       // 提示词获取失败不阻止初始化
+    }
+  }
+
+  /**
+   * 初始化 GPU 资源
+   * 清理显存并卸载已加载的模型，确保 GPU 状态干净
+   */
+  async function initializeGpu(): Promise<void> {
+    console.log('[TranslateInit] 清理 GPU 资源...')
+
+    try {
+      const response = await cleanupGpu()
+      if (response.success) {
+        const unloadedModels = response.unloaded_models || []
+        if (unloadedModels.length > 0) {
+          console.log(`[TranslateInit] 已卸载模型: ${unloadedModels.join(', ')}`)
+        }
+        console.log(`[TranslateInit] GPU 清理完成 - 已分配: ${response.memory_allocated_mb}MB, 已预留: ${response.memory_reserved_mb}MB`)
+      } else {
+        console.warn('[TranslateInit] GPU 清理失败:', response.error)
+      }
+    } catch (error) {
+      console.warn('[TranslateInit] GPU 清理失败:', error)
+      // GPU 清理失败不阻止初始化
     }
   }
 

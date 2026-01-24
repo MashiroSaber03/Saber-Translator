@@ -52,6 +52,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        // 设置代理超时时间为 5 分钟（LAMA 修复等操作可能需要较长时间）
+        timeout: 300000,
+        proxyTimeout: 300000,
       },
       // 注意：静态资源（fonts, pic, css）从 public/ 目录加载，不需要代理
       // 只有 API 请求需要代理到后端

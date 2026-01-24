@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 import numpy as np
 from PIL import Image, ImageDraw
@@ -22,7 +21,6 @@ try:
     import torch
     from src.interfaces.lama_mpe_interface import (
         is_lama_mpe_available,
-        get_lama_mpe_inpainter,
         inpaint_with_lama_mpe
     )
     
@@ -40,48 +38,11 @@ except Exception as e:
 
 # --- 检查 litelama ---
 LiteLama = None
-LiteLama2 = None
 try:
     from litelama import LiteLama as OriginalLiteLama
     import torch
 
     LiteLama = OriginalLiteLama
-
-    class LiteLama2(OriginalLiteLama):
-        _instance = None
-        
-        def __new__(cls, *args, **kw):
-            if cls._instance is None:
-                cls._instance = object.__new__(cls)
-            return cls._instance
-            
-        def __init__(self, checkpoint_path=None, config_path=None):
-            self._checkpoint_path = checkpoint_path
-            self._config_path = config_path
-            self._model = None
-            
-            if self._checkpoint_path is None:
-                model_path = resource_path("models/lama")
-                checkpoint_path = os.path.join(model_path, "big-lama.safetensors")
-                
-                if os.path.exists(checkpoint_path) and os.path.isfile(checkpoint_path):
-                    logger.info(f"使用 litelama 模型: {checkpoint_path}")
-                else:
-                    logger.error(f"litelama 模型文件不存在: {checkpoint_path}")
-                    
-                self._checkpoint_path = checkpoint_path
-            
-            if self._config_path is None:
-                try:
-                    import litelama
-                    litelama_package_dir = os.path.dirname(litelama.__file__)
-                    default_config_path = os.path.join(litelama_package_dir, "config.yaml")
-                    if os.path.exists(default_config_path):
-                        self._config_path = default_config_path
-                except Exception:
-                    pass
-            
-            super().__init__(self._checkpoint_path, self._config_path)
     
     # 检查模型文件是否存在
     model_path = resource_path("models/lama")
@@ -139,36 +100,193 @@ def _clean_with_lama_mpe(image, mask):
 
 
 # ============================================================
-# litelama 修复函数 (后备方案)
+# LiteLama 修复器封装类（统一管理模式）
 # ============================================================
+
+class LiteLamaInpainter:
+    """LiteLama 修复器封装类 - 模型加载后保持在 GPU 上，不来回切换"""
+    
+    _instance = None
+    _model = None
+    _device = None
+    _loaded = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        # 注意：单例模式下 __init__ 会被多次调用，所以不要在这里重置状态
+        self.model_path = resource_path("models/lama/big-lama.safetensors")
+    
+    def load(self, device: str = None):
+        """加载模型到指定设备（加载后保持在该设备上）"""
+        if LiteLamaInpainter._loaded and LiteLamaInpainter._model is not None:
+            # 已加载，检查是否需要切换设备
+            if device and device != LiteLamaInpainter._device:
+                logger.info(f"litelama 切换设备: {LiteLamaInpainter._device} -> {device}")
+                LiteLamaInpainter._model.to(device)
+                LiteLamaInpainter._device = device
+            return
+        
+        if device is None:
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(
+                f"litelama 模型文件不存在: {self.model_path}\n"
+                f"请下载模型文件: big-lama.safetensors\n"
+                f"并放置到: models/lama/big-lama.safetensors"
+            )
+        
+        logger.info(f"加载 litelama 模型: {self.model_path}")
+        logger.info(f"使用设备: {device}")
+        
+        # 获取 litelama 的默认配置文件
+        config_path = None
+        try:
+            import litelama
+            litelama_package_dir = os.path.dirname(litelama.__file__)
+            default_config_path = os.path.join(litelama_package_dir, "config.yaml")
+            if os.path.exists(default_config_path):
+                config_path = default_config_path
+        except Exception:
+            pass
+        
+        # 创建模型实例
+        LiteLamaInpainter._model = LiteLama(self.model_path, config_path)
+        LiteLamaInpainter._device = device
+        
+        # 移动到目标设备并保持在那里
+        LiteLamaInpainter._model.to(device)
+        LiteLamaInpainter._loaded = True
+        
+        logger.info("litelama 模型加载完成")
+    
+    def unload(self):
+        """卸载模型释放内存"""
+        if LiteLamaInpainter._model is not None:
+            LiteLamaInpainter._model.to('cpu')
+            del LiteLamaInpainter._model
+            LiteLamaInpainter._model = None
+            LiteLamaInpainter._loaded = False
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            import gc
+            gc.collect()
+            logger.info("litelama 模型已卸载")
+    
+    def inpaint(self, image, mask, inpainting_size: int = 1024):
+        """
+        执行图像修复
+        
+        Args:
+            image: PIL Image (RGB)
+            mask: PIL Image (RGB/L) 白色=需要修复的区域
+            inpainting_size: 最大处理尺寸，超过此尺寸的图像会被缩放（默认 1024，与 LAMA MPE 一致）
+            
+        Returns:
+            修复后的 PIL Image，失败时返回 None
+        """
+        if not LiteLamaInpainter._loaded:
+            self.load()
+        
+        try:
+            init_image = image.convert("RGB")
+            mask_image = mask.convert("L")  # 转为灰度便于处理
+            
+            # 保存原始图像和掩码用于结果混合（与 LAMA MPE 一致）
+            img_original = np.array(init_image)
+            mask_original = np.array(mask_image)
+            # 二值化掩码：白色(>=127)=需要修复的区域=1，黑色(<127)=保留区域=0
+            mask_original = (mask_original >= 127).astype(np.float32)
+            mask_original = mask_original[:, :, np.newaxis]  # 扩展为 (H, W, 1)
+            
+            # 保存原始尺寸
+            original_size = init_image.size  # (width, height)
+            width, height = original_size
+            
+            # 检查是否需要缩放（与 LAMA MPE 逻辑一致）
+            max_dim = max(width, height)
+            need_resize = max_dim > inpainting_size
+            
+            if need_resize:
+                # 计算缩放比例，保持宽高比
+                scale = inpainting_size / max_dim
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                
+                logger.info(f"litelama: 缩放图像 {width}x{height} -> {new_width}x{new_height}")
+                
+                # 缩放图像和掩码
+                init_image = init_image.resize((new_width, new_height), Image.LANCZOS)
+                mask_image = mask_image.resize((new_width, new_height), Image.NEAREST)
+            
+            # 转换掩码为 RGB（litelama 需要 RGB 格式）
+            mask_rgb = mask_image.convert("RGB")
+            
+            # 执行修复
+            # 注意：litelama 内部使用 FFT 操作，不支持混合精度（bfloat16/float16），
+            # 所以不能使用 torch.autocast。主要通过图像缩放来减少显存占用。
+            result = LiteLamaInpainter._model.predict(init_image, mask_rgb)
+            
+            logger.debug("litelama 预测成功")
+            
+            if result is None:
+                self._cleanup_memory()
+                return None
+            
+            # 如果之前缩放了，需要缩放回原始尺寸
+            if need_resize:
+                result = result.resize(original_size, Image.LANCZOS)
+                logger.debug(f"litelama: 恢复到原始尺寸 {original_size[0]}x{original_size[1]}")
+            
+            # 结果混合：只在掩码区域应用修复结果，非掩码区域保持原图（与 LAMA MPE 一致）
+            result_np = np.array(result.convert("RGB"))
+            blended = (result_np * mask_original + img_original * (1 - mask_original)).astype(np.uint8)
+            result = Image.fromarray(blended)
+            
+            # 推理后清理临时张量，模型仍保持在 GPU 上
+            self._cleanup_memory()
+            
+            return result
+        except Exception as e:
+            logger.error(f"litelama 预测过程中出错: {e}", exc_info=True)
+            self._cleanup_memory()  # 出错时也清理
+            return None
+    
+    def _cleanup_memory(self):
+        """推理后清理内存，防止临时张量累积，执行3次确保彻底"""
+        import gc
+        for _ in range(3):
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+
+# 全局实例
+_litelama_inpainter = None
+
+
+def get_litelama_inpainter() -> LiteLamaInpainter:
+    """获取 litelama 修复器单例"""
+    global _litelama_inpainter
+    if _litelama_inpainter is None:
+        _litelama_inpainter = LiteLamaInpainter()
+    return _litelama_inpainter
+
 
 def _clean_with_litelama(image, mask):
     """使用 litelama 进行修复"""
     if not LAMA_LITELAMA_AVAILABLE:
         return None
-        
+    
     try:
-        Lama = LiteLama2()
-        
-        init_image = image.convert("RGB")
-        mask_image = mask.convert("RGB")
-        
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        logger.debug(f"litelama 使用设备: {device}")
-        
-        result = None
-        try:
-            Lama.to(device)
-            result = Lama.predict(init_image, mask_image)
-            logger.debug("litelama 预测成功")
-        except Exception as e:
-            logger.error(f"litelama 预测过程中出错: {e}")
-        finally:
-            Lama.to("cpu")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        
-        return result
+        inpainter = get_litelama_inpainter()
+        return inpainter.inpaint(image, mask)
     except Exception as e:
         logger.error(f"litelama 清理过程中出错: {e}")
         return None
@@ -213,14 +331,13 @@ def lama_clean_object(image, mask, lama_model='lama_mpe'):
         return None
 
 
-def clean_image_with_lama(image, mask, use_gpu=True, lama_model='lama_mpe'):
+def clean_image_with_lama(image, mask, lama_model='lama_mpe'):
     """
     使用 LAMA 模型清除图像中的文本。
 
     Args:
         image (PIL.Image.Image): 原始图像。
         mask (PIL.Image.Image): 蒙版图像，黑色(0)区域为需要清除的部分（内部会自动反转）。
-        use_gpu (bool): 是否使用GPU
         lama_model (str): 选择使用的模型 'lama_mpe' (速度优化) 或 'litelama' (通用)
 
     Returns:

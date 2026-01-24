@@ -187,3 +187,47 @@ export async function cleanTempFiles(): Promise<ApiResponse> {
 export async function getServerInfo(): Promise<ServerInfoResponse> {
   return apiClient.get<ServerInfoResponse>('/api/server-info')
 }
+
+// ==================== GPU 资源管理 API ====================
+
+/**
+ * GPU 清理响应
+ */
+export interface GpuCleanupResponse {
+  success: boolean
+  message?: string
+  unloaded_models?: string[]
+  cuda_available?: boolean
+  memory_allocated_mb?: number
+  memory_reserved_mb?: number
+  error?: string
+}
+
+/**
+ * GPU 状态响应
+ */
+export interface GpuStatusResponse {
+  success: boolean
+  cuda_available?: boolean
+  device_name?: string
+  memory_allocated_mb?: number
+  memory_reserved_mb?: number
+  memory_total_mb?: number
+  models_loaded?: string[]
+  error?: string
+}
+
+/**
+ * 清理 GPU 显存并卸载已加载的模型
+ * 建议在进入翻译页面时调用，确保 GPU 状态干净
+ */
+export async function cleanupGpu(): Promise<GpuCleanupResponse> {
+  return apiClient.post<GpuCleanupResponse>('/api/cleanup-gpu')
+}
+
+/**
+ * 获取 GPU 状态信息
+ */
+export async function getGpuStatus(): Promise<GpuStatusResponse> {
+  return apiClient.get<GpuStatusResponse>('/api/gpu-status')
+}
