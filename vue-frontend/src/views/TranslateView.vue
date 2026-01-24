@@ -352,11 +352,16 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
     return
   }
 
-  // 检查是否有已翻译的图片
-  const hasTranslatedImages = imageStore.images.some(
-    img => img.bubbleStates && img.bubbleStates.length > 0
-  )
-  if (!hasTranslatedImages) {
+  // 【优化】预先收集有气泡的图片索引，避免多次遍历
+  const translatedImageIndices: number[] = []
+  for (let i = 0; i < imageStore.images.length; i++) {
+    const img = imageStore.images[i]
+    if (img?.bubbleStates && img.bubbleStates.length > 0) {
+      translatedImageIndices.push(i)
+    }
+  }
+  
+  if (translatedImageIndices.length === 0) {
     showToast('没有已翻译的图片', 'warning')
     return
   }
@@ -369,11 +374,11 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
     const isAutoTextColor = textStyle.useAutoTextColor === true
     const isAutoFontSize = textStyle.autoFontSize === true
     
-    // 固定值设置（全部从侧边栏读取，更加统一）
+    // 固定值设置（全部从侧边栏读取）
     const fixedSettings = {
       fontSize: textStyle.fontSize,
       fontFamily: textStyle.fontFamily,
-      textDirection: textStyle.layoutDirection === 'auto' ? 'vertical' : textStyle.layoutDirection,
+      textDirection: isAutoLayout ? 'vertical' : textStyle.layoutDirection,
       textColor: textStyle.textColor,
       fillColor: textStyle.fillColor,
       strokeEnabled: textStyle.strokeEnabled,
@@ -395,25 +400,23 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
 
     /**
      * 辅助函数：应用设置到单个气泡
-     * 根据自动模式设置决定使用自动值还是固定值
      */
     const applySettingsToBubble = (bubble: typeof bubbleStore.bubbles[0]) => {
       const updatedBubble = { ...bubble }
       
-      // 字号：自动模式下不在此处更新，由后端渲染时重新计算；非自动模式使用固定值
+      // 字号：自动模式下不更新，由后端重新计算；非自动模式使用固定值
       if (options.fontSize && !isAutoFontSize) {
         updatedBubble.fontSize = fixedSettings.fontSize
       }
       
-      // 字体：直接使用固定值
+      // 字体
       if (options.fontFamily) {
         updatedBubble.fontFamily = fixedSettings.fontFamily
       }
       
-      // 排版方向：自动模式使用气泡自己的 autoTextDirection，非自动模式使用固定值
+      // 排版方向
       if (options.layoutDirection) {
         if (isAutoLayout) {
-          // 使用每个气泡自己的自动检测方向
           const autoDir = bubble.autoTextDirection
           updatedBubble.textDirection = (autoDir === 'vertical' || autoDir === 'horizontal') 
             ? autoDir 
@@ -423,113 +426,78 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
         }
       }
       
-      // 文字颜色：自动模式使用气泡自己的 autoFgColor，非自动模式使用固定值
+      // 文字颜色
       if (options.textColor) {
         if (isAutoTextColor && bubble.autoFgColor) {
-          const autoColor = rgbToHex(bubble.autoFgColor)
-          updatedBubble.textColor = autoColor ?? fixedSettings.textColor
+          updatedBubble.textColor = rgbToHex(bubble.autoFgColor) ?? fixedSettings.textColor
         } else {
           updatedBubble.textColor = fixedSettings.textColor
         }
       }
       
-      // 填充颜色：自动模式使用气泡自己的 autoBgColor，非自动模式使用固定值
+      // 填充颜色
       if (options.fillColor) {
         if (isAutoTextColor && bubble.autoBgColor) {
-          const autoColor = rgbToHex(bubble.autoBgColor)
-          updatedBubble.fillColor = autoColor ?? fixedSettings.fillColor
+          updatedBubble.fillColor = rgbToHex(bubble.autoBgColor) ?? fixedSettings.fillColor
         } else {
           updatedBubble.fillColor = fixedSettings.fillColor
         }
       }
       
-      // 描边设置：直接使用固定值
-      if (options.strokeEnabled) {
-        updatedBubble.strokeEnabled = fixedSettings.strokeEnabled
-      }
-      if (options.strokeColor) {
-        updatedBubble.strokeColor = fixedSettings.strokeColor
-      }
-      if (options.strokeWidth) {
-        updatedBubble.strokeWidth = fixedSettings.strokeWidth
-      }
+      // 描边设置
+      if (options.strokeEnabled) updatedBubble.strokeEnabled = fixedSettings.strokeEnabled
+      if (options.strokeColor) updatedBubble.strokeColor = fixedSettings.strokeColor
+      if (options.strokeWidth) updatedBubble.strokeWidth = fixedSettings.strokeWidth
       
       return updatedBubble
     }
 
-    // 更新所有图片的气泡状态
-    let updatedCount = 0
-    const images = imageStore.images
+    // 【优化】收集需要重渲染的图片索引（有翻译结果的图片）
+    const imagesToReRender: number[] = []
     
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i]
-      if (!image) continue
-      if (image.bubbleStates && image.bubbleStates.length > 0) {
-        // 使用辅助函数更新每个气泡的设置
-        const updatedBubbleStates = image.bubbleStates.map(applySettingsToBubble)
-        
-        // 【关键修复】同时更新 ImageData 级别的设置字段
-        // 这样切换图片时，侧边栏会正确显示这些设置（如自动字号开关）
-        const imageUpdates: any = {
-          bubbleStates: updatedBubbleStates
+    // 【优化】合并遍历：更新气泡状态 + 收集重渲染列表
+    for (const i of translatedImageIndices) {
+      const image = imageStore.images[i]
+      if (!image?.bubbleStates) continue
+      
+      // 更新每个气泡的设置
+      const updatedBubbleStates = image.bubbleStates.map(applySettingsToBubble)
+      
+      // 构建图片级别的设置更新
+      const imageUpdates: any = { bubbleStates: updatedBubbleStates }
+      
+      if (options.fontSize) {
+        imageUpdates.autoFontSize = isAutoFontSize
+        if (!isAutoFontSize) imageUpdates.fontSize = fixedSettings.fontSize
+      }
+      
+      if (options.fontFamily) imageUpdates.fontFamily = fixedSettings.fontFamily
+      if (options.layoutDirection) imageUpdates.layoutDirection = textStyle.layoutDirection
+      
+      // 颜色相关设置
+      if (options.textColor || options.fillColor) {
+        imageUpdates.useAutoTextColor = isAutoTextColor
+        if (!isAutoTextColor) {
+          if (options.textColor) imageUpdates.textColor = fixedSettings.textColor
+          if (options.fillColor) imageUpdates.fillColor = fixedSettings.fillColor
         }
-        
-        // 根据选项更新图片级别的设置字段
-        if (options.fontSize) {
-          imageUpdates.autoFontSize = isAutoFontSize
-          if (!isAutoFontSize) {
-            imageUpdates.fontSize = fixedSettings.fontSize
-          }
-        }
-        
-        if (options.fontFamily) {
-          imageUpdates.fontFamily = fixedSettings.fontFamily
-        }
-        
-        if (options.layoutDirection) {
-          imageUpdates.layoutDirection = textStyle.layoutDirection
-        }
-        
-        // 【优化】颜色相关设置：textColor 和 fillColor 共用 useAutoTextColor 开关
-        // 只需设置一次 useAutoTextColor
-        if (options.textColor || options.fillColor) {
-          imageUpdates.useAutoTextColor = isAutoTextColor
-        }
-        
-        if (options.textColor) {
-          if (!isAutoTextColor) {
-            imageUpdates.textColor = fixedSettings.textColor
-          }
-        }
-        
-        if (options.fillColor) {
-          if (!isAutoTextColor) {
-            imageUpdates.fillColor = fixedSettings.fillColor
-          }
-        }
-        
-        if (options.strokeEnabled) {
-          imageUpdates.strokeEnabled = fixedSettings.strokeEnabled
-        }
-        
-        if (options.strokeColor) {
-          imageUpdates.strokeColor = fixedSettings.strokeColor
-        }
-        
-        if (options.strokeWidth) {
-          imageUpdates.strokeWidth = fixedSettings.strokeWidth
-        }
-        
-        // 更新图片数据（包含气泡状态和图片级别设置）
-        imageStore.updateImageByIndex(i, imageUpdates)
-        updatedCount++
+      }
+      
+      if (options.strokeEnabled) imageUpdates.strokeEnabled = fixedSettings.strokeEnabled
+      if (options.strokeColor) imageUpdates.strokeColor = fixedSettings.strokeColor
+      if (options.strokeWidth) imageUpdates.strokeWidth = fixedSettings.strokeWidth
+      
+      imageStore.updateImageByIndex(i, imageUpdates)
+      
+      // 同时收集需要重渲染的图片（有翻译结果的）
+      if (image.translatedDataURL) {
+        imagesToReRender.push(i)
       }
     }
 
     // 同时更新当前气泡 store 中的气泡（如果有）
     if (bubbleStore.bubbles.length > 0) {
-      const updatedCurrentBubbles = bubbleStore.bubbles.map(applySettingsToBubble)
-      bubbleStore.setBubbles(updatedCurrentBubbles)
+      bubbleStore.setBubbles(bubbleStore.bubbles.map(applySettingsToBubble))
     }
 
     // 构建应用的设置项描述
@@ -543,37 +511,24 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
     if (options.strokeColor) appliedItems.push('描边颜色')
     if (options.strokeWidth) appliedItems.push('描边宽度')
 
-    // 逐张重新渲染已翻译的图片
-    const imagesToReRender: number[] = []
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i]
-      // 只要有翻译结果且有气泡，就可以重渲染（背景会兜底）
-      if (img && img.translatedDataURL && img.bubbleStates && img.bubbleStates.length > 0) {
-        imagesToReRender.push(i)
-      }
-    }
-
+    // 重新渲染已翻译的图片
     if (imagesToReRender.length > 0) {
-      // 【修复】使用 translation.progress 控制进度显示
       translation.progress.value = {
         isInProgress: true,
         current: 0,
         total: imagesToReRender.length,
         completed: 0,
         failed: 0,
-        label: `应用设置中：0 / ${imagesToReRender.length}`,  // 自定义标签
+        label: `应用设置中：0 / ${imagesToReRender.length}`,
         percentage: 0
       }
       
       const { parallelRender } = await import('@/api/parallelTranslate')
-      
       let completedCount = 0
 
-      for (let idx = 0; idx < imagesToReRender.length; idx++) {
-        const imageIndex = imagesToReRender[idx]
-        if (imageIndex === undefined) continue
+      for (const imageIndex of imagesToReRender) {
         const img = imageStore.images[imageIndex]
-        if (!img || !img.bubbleStates) continue
+        if (!img?.bubbleStates) continue
 
         try {
           // 背景兜底策略：clean → original
@@ -583,7 +538,6 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
               ? (img.cleanImageData.split('base64,')[1] || '')
               : img.cleanImageData
           } else if (img.originalDataURL) {
-            // 兜底：使用原图作为背景
             cleanImageBase64 = img.originalDataURL.includes('base64,')
               ? (img.originalDataURL.split('base64,')[1] || '')
               : img.originalDataURL
@@ -592,13 +546,11 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
           
           if (!cleanImageBase64) {
             console.log(`handleApplyToAll: 图片 ${imageIndex} 没有可用的背景图，跳过`)
-            // 标记为失败
             translation.progress.value.failed++
             continue
           }
 
-          // 构建用于渲染的气泡状态，使用更新后的 bubbleStates
-          // 【关键修复】必须包含 originalText 和 textboxText，否则后端返回时这些字段会丢失
+          // 构建 API 请求的气泡状态（包含所有必要字段）
           const bubbleStatesForApi = img.bubbleStates.map(bs => ({
             originalText: bs.originalText || '',
             translatedText: bs.translatedText || '',
@@ -621,53 +573,38 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
             autoBgColor: bs.autoBgColor,
           }))
 
-          // 使用 parallelRender API，支持 autoFontSize 参数
+          // 【优化】移除冗余的全局样式参数，因为 use_individual_styles: true 会使用气泡自己的样式
           const response = await parallelRender({
             clean_image: cleanImageBase64,
             bubble_states: bubbleStatesForApi,
-            fontSize: textStyle.fontSize,
-            fontFamily: textStyle.fontFamily,
-            textDirection: textStyle.layoutDirection === 'auto' ? 'vertical' : textStyle.layoutDirection,
-            textColor: textStyle.textColor,
-            strokeEnabled: textStyle.strokeEnabled,
-            strokeColor: textStyle.strokeColor,
-            strokeWidth: textStyle.strokeWidth,
-            autoFontSize: options.fontSize && isAutoFontSize,  // 启用自动字号时，让后端重新计算
+            autoFontSize: options.fontSize && isAutoFontSize,
             use_individual_styles: true,
           })
 
           if (response.success && response.final_image) {
-            // 如果后端返回了更新后的 bubble_states（包含计算后的字号），使用它
-            const updatedBubbleStates = response.bubble_states || img.bubbleStates
-            
             imageStore.updateImageByIndex(imageIndex, {
               translatedDataURL: `data:image/png;base64,${response.final_image}`,
-              bubbleStates: updatedBubbleStates,
+              bubbleStates: response.bubble_states || img.bubbleStates,
               hasUnsavedChanges: true
             })
             
-            // 【修复】更新进度
             completedCount++
             translation.progress.value.current = completedCount
             translation.progress.value.label = `应用设置中：${completedCount} / ${imagesToReRender.length}`
             translation.progress.value.percentage = Math.round((completedCount / imagesToReRender.length) * 100)
           } else {
-            // 渲染失败时标记
             translation.progress.value.failed++
           }
         } catch (err) {
           console.error(`重渲染图片 ${imageIndex} 失败:`, err)
-          // 异常时标记为失败
           translation.progress.value.failed++
         }
       }
       
-      // 【修复】关闭进度条
       translation.progress.value.isInProgress = false
     }
 
-    // 【关键修复】应用到全部后，手动同步当前图片设置到侧边栏
-    // 因为 Object.assign 修改对象属性不会触发 watch(currentImage)
+    // 同步当前图片设置到侧边栏
     const currentImg = imageStore.currentImage
     if (currentImg) {
       isSyncingTextStyle.value = true
@@ -679,8 +616,8 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
       }
     }
 
-    showToast(`已将 ${appliedItems.join('、')} 应用到 ${updatedCount} 张图片`, 'success')
-    console.log(`[TranslateView] 应用设置到全部完成，更新了 ${updatedCount} 张图片，重渲染了 ${imagesToReRender.length} 张`)
+    showToast(`已将 ${appliedItems.join('、')} 应用到 ${translatedImageIndices.length} 张图片`, 'success')
+    console.log(`[TranslateView] 应用设置到全部完成，更新了 ${translatedImageIndices.length} 张图片，重渲染了 ${imagesToReRender.length} 张`)
     
   } catch (error) {
     console.error('应用设置到全部失败:', error)
