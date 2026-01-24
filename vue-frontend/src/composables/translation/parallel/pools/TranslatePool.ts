@@ -253,6 +253,10 @@ export class TranslatePool extends TaskPool {
       }
     }
 
+    // 批次中的任务已在上面的 for 循环中手动 enqueue，
+    // 返回 'buffered' 状态阻止 TaskPool 再次自动 enqueue，
+    // 避免任务被重复处理导致进度计数错误
+    task.status = 'buffered'
     return task
   }
 
@@ -349,6 +353,10 @@ export class TranslatePool extends TaskPool {
       }
     }
 
+    // 批次中的任务已在上面的 for 循环中手动 enqueue，
+    // 返回 'buffered' 状态阻止 TaskPool 再次自动 enqueue，
+    // 避免任务被重复处理导致进度计数错误
+    task.status = 'buffered'
     return task
   }
 

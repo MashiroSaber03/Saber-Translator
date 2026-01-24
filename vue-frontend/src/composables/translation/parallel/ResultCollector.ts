@@ -28,8 +28,14 @@ export class ResultCollector {
    * 添加完成的任务
    */
   add(task: PipelineTask): void {
+    // 防御性检查：如果已经添加过该任务，跳过重复计数
+    // 避免因重复 enqueue 导致 completedCount 被错误增加
+    if (this.results.has(task.imageIndex)) {
+      return
+    }
+
     this.results.set(task.imageIndex, task)
-    
+
     if (task.status === 'completed') {
       this.completedCount++
     } else if (task.status === 'failed') {
@@ -53,7 +59,7 @@ export class ResultCollector {
    */
   waitForAll(totalExpected: number): Promise<{ success: number; failed: number }> {
     this.totalExpected = totalExpected
-    
+
     // 如果已经全部完成，直接返回
     if (this.completedCount + this.failedCount >= totalExpected) {
       return Promise.resolve({
