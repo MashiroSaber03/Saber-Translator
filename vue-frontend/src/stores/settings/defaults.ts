@@ -111,7 +111,7 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   lowReasoning: false,
   noThinkingMethod: 'gemini',
   forceJsonOutput: false,
-  useStream: false,
+  useStream: true,
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
 
