@@ -93,10 +93,14 @@ const isBatchTranslating = computed(() => imageStore.isBatchTranslationInProgres
 /** 是否有翻译失败的图片 */
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
 
+/** 是否显示缩略图侧边栏（有图片且不在编辑模式） */
+const showThumbnailSidebar = computed(() => hasImages.value && !isEditMode.value)
+
 /** 是否为书架模式（有书籍和章节参数） */
 const isBookshelfMode = computed(() => {
   return !!route.query.book && !!route.query.chapter
 })
+
 
 /** 当前书籍ID */
 const currentBookId = computed(() => route.query.book as string | undefined)
@@ -1414,7 +1418,8 @@ function selectImage(index: number) {
 
       <!-- 右侧缩略图侧边栏 -->
       <ThumbnailSidebar 
-        v-if="hasImages && !isEditMode"
+        v-show="showThumbnailSidebar"
+        :is-visible="showThumbnailSidebar"
         @select="selectImage"
       />
     </div>

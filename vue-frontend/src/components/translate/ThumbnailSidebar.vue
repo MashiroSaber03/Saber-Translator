@@ -18,6 +18,11 @@ import type { FolderNode } from '@/types/folder'
 // Props 和 Emits
 // ============================================================
 
+const props = defineProps<{
+  /** 组件是否可见（用于 v-show 状态监听） */
+  isVisible?: boolean
+}>()
+
 const emit = defineEmits<{
   /** 点击缩略图 */
   (e: 'select', index: number): void
@@ -32,6 +37,9 @@ const imageStore = useImageStore()
 // ============================================================
 // 状态定义
 // ============================================================
+
+/** 侧边栏容器引用（真正的滚动容器） */
+const sidebarRef = ref<HTMLElement | null>(null)
 
 /** 缩略图容器引用 */
 const containerRef = ref<HTMLElement | null>(null)
@@ -132,11 +140,26 @@ function handleBreadcrumbClick(path: string) {
 function scrollToActiveThumbnail() {
   nextTick(() => {
     const activeThumb = thumbnailRefs.value[currentIndex.value]
-    if (activeThumb && containerRef.value) {
-      const container = containerRef.value
-      const scrollTop = activeThumb.offsetTop - (container.clientHeight / 2) + (activeThumb.clientHeight / 2)
-      container.scrollTo({
-        top: Math.max(0, scrollTop),
+    
+    // 智能选择滚动容器：
+    // - 文件夹模式：使用 containerRef (.folder-content-list)
+    // - 扁平模式：使用 sidebarRef (aside)
+    const scrollContainer = (useTreeMode.value && containerRef.value) 
+      ? containerRef.value 
+      : sidebarRef.value
+    
+    if (activeThumb && scrollContainer) {
+      // 计算缩略图相对于滚动容器的位置
+      const thumbRect = activeThumb.getBoundingClientRect()
+      const containerRect = scrollContainer.getBoundingClientRect()
+      
+      // 计算需要滚动的距离，使缩略图居中显示
+      const thumbCenter = thumbRect.top + thumbRect.height / 2
+      const containerCenter = containerRect.top + containerRect.height / 2
+      const scrollOffset = thumbCenter - containerCenter
+      
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollTop + scrollOffset,
         behavior: 'smooth'
       })
     }
@@ -165,6 +188,14 @@ watch(currentIndex, () => {
   scrollToActiveThumbnail()
 })
 
+// 监听可见性变化，当从隐藏变为显示时重新定位
+watch(() => props.isVisible, (newVisible, oldVisible) => {
+  if (newVisible && !oldVisible) {
+    // 组件从隐藏变为显示，触发滚动定位
+    scrollToActiveThumbnail()
+  }
+})
+
 onMounted(() => {
   if (hasImages.value) {
     scrollToActiveThumbnail()
@@ -173,7 +204,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <aside id="thumbnail-sidebar" class="thumbnail-sidebar">
+  <aside ref="sidebarRef" id="thumbnail-sidebar" class="thumbnail-sidebar">
     <div class="card thumbnail-card">
       <h2>图片概览</h2>
       
