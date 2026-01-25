@@ -168,6 +168,7 @@ export function createDefaultSettings(): TranslationSettings {
     parallel: { ...DEFAULT_PARALLEL },
     autoSaveInBookshelfMode: false,
     removeTextWithOcr: false,
-    enableVerboseLogs: false  // 默认关闭详细日志
+    enableVerboseLogs: false,  // 默认关闭详细日志
+    lamaDisableResize: false  // 默认允许LAMA自动缩放（提高速度，减少显存占用）
   }
 }

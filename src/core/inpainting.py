@@ -222,8 +222,10 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
     if method == 'lama' and is_lama_available() and clean_image_with_lama:
         logger.debug(f"使用 LAMA 修复 (模型: {lama_model})")
         try:
+            # 从 constants 读取是否禁用缩放的配置
+            disable_resize = getattr(constants, 'LAMA_DISABLE_RESIZE', False)
             # 直接传递掩码，不需要在这里反转，因为clean_image_with_lama已经处理掩码反转
-            repaired_img = clean_image_with_lama(image_pil, bubble_mask_pil, lama_model=lama_model)
+            repaired_img = clean_image_with_lama(image_pil, bubble_mask_pil, lama_model=lama_model, disable_resize=disable_resize)
             if repaired_img:
                 result_img = repaired_img
                 clean_background = result_img.copy()

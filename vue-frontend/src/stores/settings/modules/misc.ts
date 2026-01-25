@@ -102,6 +102,16 @@ export function useMiscSettings(
     console.log(`详细日志已${enabled ? '启用' : '禁用'}`)
   }
 
+  /**
+   * 设置LAMA修复是否禁用自动缩放
+   * @param disabled - 是否禁用缩放
+   */
+  function setLamaDisableResize(disabled: boolean): void {
+    settings.value.lamaDisableResize = disabled
+    saveToStorage()
+    console.log(`LAMA修复自动缩放已${disabled ? '禁用' : '启用'}`)
+  }
+
   return {
     // 计算属性
     textStyle,
@@ -113,7 +123,8 @@ export function useMiscSettings(
     setShowDetectionDebug,
     setAutoSaveInBookshelfMode,
     setRemoveTextWithOcr,
-    setEnableVerboseLogs
+    setEnableVerboseLogs,
+    setLamaDisableResize
   }
 }
 

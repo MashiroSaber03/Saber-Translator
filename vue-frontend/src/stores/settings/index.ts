@@ -661,6 +661,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.enableVerboseLogs = backendSettings.enableVerboseLogs as boolean
     }
 
+    // LAMA修复禁用缩放设置
+    if (backendSettings.lamaDisableResize !== undefined) {
+      settings.value.lamaDisableResize = backendSettings.lamaDisableResize as boolean
+    }
+
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
@@ -897,6 +902,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 详细日志
         enableVerboseLogs: settings.value.enableVerboseLogs,
 
+        // LAMA修复禁用缩放
+        lamaDisableResize: settings.value.lamaDisableResize,
+
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
       }
@@ -983,6 +991,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
+    setLamaDisableResize: miscModule.setLamaDisableResize,
 
 
     // 兼容旧接口

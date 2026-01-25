@@ -41,6 +41,27 @@
       </div>
     </div>
 
+    <!-- LAMA 修复设置 -->
+    <div class="settings-group">
+      <div class="settings-group-title">LAMA 修复设置</div>
+      <div class="settings-item checkbox-item">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            v-model="localSettings.lamaDisableResize"
+          />
+          <span class="checkbox-text">禁用自动缩放</span>
+        </label>
+        <div class="input-hint">
+          开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。
+          <br />
+          <span class="hint-note">⚠️ 需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。</span>
+          <br />
+          <span class="hint-note">适用于两种LAMA修复方法（速度优化和通用）。</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 详细日志设置 -->
     <div class="settings-group">
       <div class="settings-group-title">调试选项</div>
@@ -159,7 +180,8 @@ const localSettings = ref({
   pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
   autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false,
   removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false,
-  enableVerboseLogs: settingsStore.settings.enableVerboseLogs || false
+  enableVerboseLogs: settingsStore.settings.enableVerboseLogs || false,
+  lamaDisableResize: settingsStore.settings.lamaDisableResize || false
 })
 
 // ============================================================
@@ -179,6 +201,10 @@ watch(() => localSettings.value.removeTextWithOcr, (val) => {
 
 watch(() => localSettings.value.enableVerboseLogs, (val) => {
   settingsStore.setEnableVerboseLogs(val)
+})
+
+watch(() => localSettings.value.lamaDisableResize, (val) => {
+  settingsStore.setLamaDisableResize(val)
 })
 
 // 刷新字体列表

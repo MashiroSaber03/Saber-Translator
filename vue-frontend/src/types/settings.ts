@@ -252,6 +252,9 @@ export interface TranslationSettings {
 
   // 详细日志（全局开关，影响所有翻译模式）
   enableVerboseLogs: boolean
+
+  // LAMA修复禁用自动缩放（True=使用原图尺寸，False=自动缩放到1024px）
+  lamaDisableResize: boolean
 }
 
 /**

@@ -676,7 +676,7 @@ class LamaMPEInpainter:
             gc.collect()
             logger.info("LAMA MPE 模型已卸载")
     
-    def inpaint(self, image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024) -> np.ndarray:
+    def inpaint(self, image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024, disable_resize: bool = False) -> np.ndarray:
         """
         执行图像修复
         
@@ -684,6 +684,7 @@ class LamaMPEInpainter:
             image: 输入图像 (H, W, 3) RGB格式 uint8
             mask: 掩码图像 (H, W) 白色(255)=需要修复的区域
             inpainting_size: 最大处理尺寸
+            disable_resize: 是否禁用缩放。True=使用原图尺寸修复（需要更多显存），False=自动缩放
             
         Returns:
             修复后的图像 (H, W, 3) RGB格式 uint8
@@ -699,10 +700,12 @@ class LamaMPEInpainter:
 
         height, width, c = image.shape
         
-        # 缩放到处理尺寸
-        if max(image.shape[0:2]) > inpainting_size:
+        # 缩放到处理尺寸（如果禁用缩放，则跳过）
+        if (not disable_resize) and max(image.shape[0:2]) > inpainting_size:
             image = resize_keep_aspect(image, inpainting_size)
             mask = resize_keep_aspect(mask, inpainting_size)
+        elif disable_resize:
+            logger.info(f"LAMA MPE: 禁用缩放模式，使用原图尺寸 {width}x{height}")
         
         # Padding 到 8 的倍数
         pad_size = 8
@@ -783,7 +786,7 @@ def is_lama_mpe_available() -> bool:
     return os.path.exists(model_path)
 
 
-def inpaint_with_lama_mpe(image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024) -> np.ndarray:
+def inpaint_with_lama_mpe(image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024, disable_resize: bool = False) -> np.ndarray:
     """
     使用 LAMA MPE 进行图像修复的便捷函数
     
@@ -791,9 +794,10 @@ def inpaint_with_lama_mpe(image: np.ndarray, mask: np.ndarray, inpainting_size: 
         image: 输入图像 (H, W, 3) RGB格式 uint8
         mask: 掩码图像 (H, W) 白色(255)=需要修复的区域
         inpainting_size: 最大处理尺寸
+        disable_resize: 是否禁用缩放。True=使用原图尺寸修复（需要更多显存），False=自动缩放
         
     Returns:
         修复后的图像 (H, W, 3) RGB格式 uint8
     """
     inpainter = get_lama_mpe_inpainter()
-    return inpainter.inpaint(image, mask, inpainting_size)
+    return inpainter.inpaint(image, mask, inpainting_size, disable_resize=disable_resize)

@@ -1,6 +1,7 @@
 import os
 import logging
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw
 
 # 导入路径助手
@@ -77,7 +78,8 @@ else:
 # LAMA MPE 修复函数
 # ============================================================
 
-def _clean_with_lama_mpe(image, mask):
+
+def _clean_with_lama_mpe(image, mask, disable_resize=False):
     """使用 LAMA MPE 进行修复"""
     try:
         # 转换为 numpy 数组
@@ -90,13 +92,14 @@ def _clean_with_lama_mpe(image, mask):
             mask_np = np.array(mask, dtype=np.uint8)
         
         # 调用 LAMA MPE
-        result_np = inpaint_with_lama_mpe(image_np, mask_np)
+        result_np = inpaint_with_lama_mpe(image_np, mask_np, disable_resize=disable_resize)
         
         # 转回 PIL Image
         return Image.fromarray(result_np)
     except Exception as e:
         logger.error(f"LAMA MPE 修复失败: {e}", exc_info=True)
         return None
+
 
 
 # ============================================================
@@ -177,7 +180,7 @@ class LiteLamaInpainter:
             gc.collect()
             logger.info("litelama 模型已卸载")
     
-    def inpaint(self, image, mask, inpainting_size: int = 1024):
+    def inpaint(self, image, mask, inpainting_size: int = 1024, disable_resize: bool = False):
         """
         执行图像修复
         
@@ -185,6 +188,7 @@ class LiteLamaInpainter:
             image: PIL Image (RGB)
             mask: PIL Image (RGB/L) 白色=需要修复的区域
             inpainting_size: 最大处理尺寸，超过此尺寸的图像会被缩放（默认 1024，与 LAMA MPE 一致）
+            disable_resize: 是否禁用缩放。True=使用原图尺寸修复（需要更多显存），False=自动缩放
             
         Returns:
             修复后的 PIL Image，失败时返回 None
@@ -207,9 +211,9 @@ class LiteLamaInpainter:
             original_size = init_image.size  # (width, height)
             width, height = original_size
             
-            # 检查是否需要缩放（与 LAMA MPE 逻辑一致）
+            # 检查是否需要缩放（如果禁用缩放，则跳过）
             max_dim = max(width, height)
-            need_resize = max_dim > inpainting_size
+            need_resize = (not disable_resize) and (max_dim > inpainting_size)
             
             if need_resize:
                 # 计算缩放比例，保持宽高比
@@ -219,9 +223,40 @@ class LiteLamaInpainter:
                 
                 logger.info(f"litelama: 缩放图像 {width}x{height} -> {new_width}x{new_height}")
                 
-                # 缩放图像和掩码
-                init_image = init_image.resize((new_width, new_height), Image.LANCZOS)
-                mask_image = mask_image.resize((new_width, new_height), Image.NEAREST)
+                # 🔧 修复1: 使用 OpenCV 进行缩放（比 PIL 的 LANCZOS 更稳定，减少对齐误差）
+                img_np = np.array(init_image)
+                mask_np = np.array(mask_image)
+                img_np = cv2.resize(img_np, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                mask_np = cv2.resize(mask_np, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+                
+                # 🔧 修复2: Padding 到 8 的倍数（与 LAMA MPE 一致，避免 FFT 操作产生的对齐误差）
+                pad_size = 8
+                padded_w = ((new_width + pad_size - 1) // pad_size) * pad_size
+                padded_h = ((new_height + pad_size - 1) // pad_size) * pad_size
+                
+                if padded_w != new_width or padded_h != new_height:
+                    logger.info(f"litelama: Padding {new_width}x{new_height} -> {padded_w}x{padded_h}")
+                    img_np = cv2.resize(img_np, (padded_w, padded_h), interpolation=cv2.INTER_LINEAR)
+                    mask_np = cv2.resize(mask_np, (padded_w, padded_h), interpolation=cv2.INTER_NEAREST)
+                
+                # 转回 PIL Image
+                init_image = Image.fromarray(img_np)
+                mask_image = Image.fromarray(mask_np)
+            elif disable_resize:
+                # 禁用缩放模式：仍然需要 Padding 到 8 的倍数
+                logger.info(f"litelama: 禁用缩放模式，使用原图尺寸 {width}x{height}")
+                pad_size = 8
+                padded_w = ((width + pad_size - 1) // pad_size) * pad_size
+                padded_h = ((height + pad_size - 1) // pad_size) * pad_size
+                
+                if padded_w != width or padded_h != height:
+                    logger.info(f"litelama: Padding 原图 {width}x{height} -> {padded_w}x{padded_h}")
+                    img_np = np.array(init_image)
+                    mask_np = np.array(mask_image)
+                    img_np = cv2.resize(img_np, (padded_w, padded_h), interpolation=cv2.INTER_LINEAR)
+                    mask_np = cv2.resize(mask_np, (padded_w, padded_h), interpolation=cv2.INTER_NEAREST)
+                    init_image = Image.fromarray(img_np)
+                    mask_image = Image.fromarray(mask_np)
             
             # 转换掩码为 RGB（litelama 需要 RGB 格式）
             mask_rgb = mask_image.convert("RGB")
@@ -237,10 +272,12 @@ class LiteLamaInpainter:
                 self._cleanup_memory()
                 return None
             
-            # 如果之前缩放了，需要缩放回原始尺寸
-            if need_resize:
-                result = result.resize(original_size, Image.LANCZOS)
-                logger.debug(f"litelama: 恢复到原始尺寸 {original_size[0]}x{original_size[1]}")
+            # 🔧 修复3: 缩放回原始尺寸时也使用 OpenCV（确保插值方法一致性）
+            if need_resize or (disable_resize and (padded_w != width or padded_h != height)):
+                result_np = np.array(result.convert("RGB"))
+                result_np = cv2.resize(result_np, (width, height), interpolation=cv2.INTER_LINEAR)
+                result = Image.fromarray(result_np)
+                logger.debug(f"litelama: 恢复到原始尺寸 {width}x{height}")
             
             # 结果混合：只在掩码区域应用修复结果，非掩码区域保持原图（与 LAMA MPE 一致）
             result_np = np.array(result.convert("RGB"))
@@ -279,14 +316,14 @@ def get_litelama_inpainter() -> LiteLamaInpainter:
     return _litelama_inpainter
 
 
-def _clean_with_litelama(image, mask):
+def _clean_with_litelama(image, mask, disable_resize=False):
     """使用 litelama 进行修复"""
     if not LAMA_LITELAMA_AVAILABLE:
         return None
     
     try:
         inpainter = get_litelama_inpainter()
-        return inpainter.inpaint(image, mask)
+        return inpainter.inpaint(image, mask, disable_resize=disable_resize)
     except Exception as e:
         logger.error(f"litelama 清理过程中出错: {e}")
         return None
@@ -296,7 +333,7 @@ def _clean_with_litelama(image, mask):
 # 统一的公开接口
 # ============================================================
 
-def lama_clean_object(image, mask, lama_model='lama_mpe'):
+def lama_clean_object(image, mask, lama_model='lama_mpe', disable_resize=False):
     """
     使用 LAMA 清理图像中的对象
     
@@ -304,6 +341,7 @@ def lama_clean_object(image, mask, lama_model='lama_mpe'):
         image (PIL.Image): 原始图像
         mask (PIL.Image): 遮罩图像，白色区域为需要清除的部分
         lama_model (str): 选择使用的模型 'lama_mpe' 或 'litelama'
+        disable_resize (bool): 是否禁用缩放，True=使用原图尺寸修复
     
     返回:
         PIL.Image: 清理后的图像，如果失败返回 None
@@ -317,21 +355,21 @@ def lama_clean_object(image, mask, lama_model='lama_mpe'):
     
     if use_mpe and LAMA_MPE_AVAILABLE:
         logger.debug("使用 LAMA MPE 进行修复")
-        return _clean_with_lama_mpe(image, mask)
+        return _clean_with_lama_mpe(image, mask, disable_resize=disable_resize)
     elif LAMA_LITELAMA_AVAILABLE:
         if use_mpe:
             logger.warning("LAMA MPE 不可用，回退到 litelama")
         logger.debug("使用 litelama 进行修复")
-        return _clean_with_litelama(image, mask)
+        return _clean_with_litelama(image, mask, disable_resize=disable_resize)
     elif LAMA_MPE_AVAILABLE:
         logger.warning("litelama 不可用，使用 LAMA MPE")
-        return _clean_with_lama_mpe(image, mask)
+        return _clean_with_lama_mpe(image, mask, disable_resize=disable_resize)
     else:
         logger.error("没有可用的 LAMA 模型")
         return None
 
 
-def clean_image_with_lama(image, mask, lama_model='lama_mpe'):
+def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=False):
     """
     使用 LAMA 模型清除图像中的文本。
 
@@ -339,6 +377,7 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe'):
         image (PIL.Image.Image): 原始图像。
         mask (PIL.Image.Image): 蒙版图像，黑色(0)区域为需要清除的部分（内部会自动反转）。
         lama_model (str): 选择使用的模型 'lama_mpe' (速度优化) 或 'litelama' (通用)
+        disable_resize (bool): 是否禁用缩放。True=使用原图尺寸修复（需要更多显存），False=自动缩放
 
     Returns:
         PIL.Image.Image or None: 修复后的图像，如果失败则返回 None。
@@ -348,7 +387,7 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe'):
         return None
 
     try:
-        logger.debug(f"LAMA 图像修复开始 (模型: {lama_model})")
+        logger.debug(f"LAMA 图像修复开始 (模型: {lama_model}, 禁用缩放: {disable_resize})")
         
         # 确保图像是 RGB 格式
         image = image.convert("RGB")
@@ -373,7 +412,7 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe'):
             pass
         
         # 调用统一的 LAMA 清理函数
-        result = lama_clean_object(image, inverted_mask, lama_model=lama_model)
+        result = lama_clean_object(image, inverted_mask, lama_model=lama_model, disable_resize=disable_resize)
         
         if result:
             logger.debug("LAMA 修复完成")

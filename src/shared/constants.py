@@ -454,3 +454,10 @@ LARGE_IMAGE_ENABLED = True  # 是否启用超长图片自动切割
 LARGE_IMAGE_DOWNSCALE_THRESHOLD = 2.5  # 缩放比阈值
 LARGE_IMAGE_ASPECT_THRESHOLD = 3.0  # 长宽比阈值
 LARGE_IMAGE_TARGET_SIZE = 1536  # 切片目标尺寸（与检测器一致）
+
+# --- LAMA 修复相关 ---
+# LAMA 修复时的最大处理尺寸（超过此尺寸会缩放）
+LAMA_INPAINTING_SIZE = 1024
+# 是否禁用 LAMA 修复时的自动缩放（默认 False，即允许缩放）
+# 设为 True 时将使用原图尺寸进行修复，需要更强的 GPU 和更多显存
+LAMA_DISABLE_RESIZE = False

@@ -186,6 +186,9 @@ def save_user_settings_to_file(settings_data):
 def get_settings():
     """获取所有用户设置"""
     settings = load_user_settings()
+    # 确保返回当前的 LAMA 设置
+    if 'lamaDisableResize' not in settings:
+        settings['lamaDisableResize'] = constants.LAMA_DISABLE_RESIZE
     return jsonify({'success': True, 'settings': settings})
 
 @config_bp.route('/save_settings', methods=['POST'])
@@ -199,6 +202,11 @@ def save_settings_api():
     success = save_user_settings_to_file(settings)
     
     if success:
+        # 同步更新运行时constants中的LAMA设置
+        if 'lamaDisableResize' in settings:
+            constants.LAMA_DISABLE_RESIZE = settings['lamaDisableResize']
+            logger.info(f"LAMA禁用缩放设置已更新: {constants.LAMA_DISABLE_RESIZE}")
+        
         logger.info("用户设置已保存到文件")
         return jsonify({'success': True, 'message': '设置保存成功'})
     else:
