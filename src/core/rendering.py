@@ -1090,21 +1090,23 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     
                     if rot_degree != 0 and canvas_image is not None:
                         # ===== 需要旋转的字符 =====
-                        # 创建足够大的临时图像（带边距以避免裁剪）
-                        padding = max(char_width, char_height)
-                        temp_size = max(char_width, char_height) * 2 + padding * 2
-                        temp_size = max(temp_size, font_size * 3)  # 确保足够大
+                        # 创建临时图像用于旋转（尺寸足够容纳旋转后的字符）
+                        # 对于90度旋转，宽高会互换，所以需要足够的空间
+                        diagonal = int(math.ceil(math.sqrt(char_width**2 + char_height**2)))
+                        padding = max(10, int(stroke_width * 2) if stroke_enabled else 0)
+                        temp_size = diagonal + padding * 2
                         temp_size = int(temp_size)
                         
                         temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
                         temp_draw = ImageDraw.Draw(temp_img)
                         
-                        temp_x = temp_size // 2 - char_width // 2
-                        temp_y = temp_size // 2 - char_height // 2
+                        # 在临时画布中心绘制字符
+                        temp_x = (temp_size - char_width) // 2
+                        temp_y = (temp_size - char_height) // 2
                         
                         temp_text_params = {
                             "font": current_font,
-                            "fill": fill if canvas_image.mode == 'RGBA' else fill
+                            "fill": fill
                         }
                         if stroke_enabled:
                             temp_text_params["stroke_width"] = int(stroke_width)
@@ -1112,20 +1114,40 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         
                         temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
                         
+                        # 旋转图像
                         rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
                         
-                        # 计算粘贴位置（水平居中）
-                        # 使用预计算的 line_width（该列实际最大字符宽度）
-                        paste_x = int((current_x_col - line_width) + round((line_width - temp_size) / 2.0))
-                        paste_y = int(current_y_char)
+                        # 裁剪掉多余的透明区域，只保留实际墨水部分
+                        rotated_arr = np.array(rotated_img)
+                        alpha_channel = rotated_arr[:, :, 3]
+                        non_zero = np.where(alpha_channel > 10)  # 阈值10以忽略抗锯齿产生的半透明像素
+                        
+                        if len(non_zero[0]) > 0:
+                            min_y, max_y = non_zero[0].min(), non_zero[0].max()
+                            min_x, max_x = non_zero[1].min(), non_zero[1].max()
+                            # 裁剪到实际内容区域
+                            cropped_rotated = rotated_img.crop((min_x, min_y, max_x + 1, max_y + 1))
+                        else:
+                            # 如果没有找到非透明像素，使用原始旋转图像
+                            cropped_rotated = rotated_img
+                        
+                        actual_width, actual_height = cropped_rotated.size
+                        
+                        # 计算粘贴位置（基于实际裁剪后的尺寸）
+                        # 水平居中：在列宽内居中
+                        paste_x = int((current_x_col - line_width) + (line_width - actual_width) / 2.0)
+                        
+                        # 垂直位置：与普通字符对齐（基于line_height_approx单位）
+                        # 使用字符的墨水中心对齐
+                        paste_y = int(current_y_char + (line_height_approx - actual_height) / 2.0)
                         
                         try:
                             if canvas_image.mode == 'RGBA':
-                                canvas_image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                                canvas_image.paste(cropped_rotated, (paste_x, paste_y), cropped_rotated)
                             else:
-                                # 如果主画布不是 RGBA，转换后粘贴
-                                rgb_rotated = rotated_img.convert('RGB')
-                                canvas_image.paste(rgb_rotated, (paste_x, paste_y))
+                                # 如果主画布不是 RGBA，需要使用 alpha 通道作为 mask
+                                rgb_rotated = cropped_rotated.convert('RGB')
+                                canvas_image.paste(rgb_rotated, (paste_x, paste_y), cropped_rotated)
                         except Exception as e:
                             logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
                             # 回退：直接绘制（不旋转）
