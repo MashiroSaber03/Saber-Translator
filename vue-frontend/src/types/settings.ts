@@ -147,6 +147,8 @@ export interface ProofreadingRound {
   lowReasoning: boolean
   noThinkingMethod: NoThinkingMethod
   forceJsonOutput: boolean
+  /** 是否使用流式调用 */
+  useStream: boolean
   prompt: string
   /** UI状态：是否显示API Key（不持久化） */
   showApiKey?: boolean

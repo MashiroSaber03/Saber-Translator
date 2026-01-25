@@ -594,7 +594,8 @@ export const useSettingsStore = defineStore('settings', () => {
           maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES),
           lowReasoning: (round.lowReasoning as boolean) || false,
           noThinkingMethod: ((round.noThinkingMethod as string) || 'gemini') as NoThinkingMethod,
-          forceJsonOutput: (round.forceJsonOutput as boolean) || false
+          forceJsonOutput: (round.forceJsonOutput as boolean) || false,
+          useStream: round.useStream !== undefined ? (round.useStream as boolean) : true
         }))
       }
     }
@@ -860,7 +861,8 @@ export const useSettingsStore = defineStore('settings', () => {
             maxRetries: round.maxRetries,
             lowReasoning: round.lowReasoning,
             noThinkingMethod: round.noThinkingMethod,
-            forceJsonOutput: round.forceJsonOutput
+            forceJsonOutput: round.forceJsonOutput,
+            useStream: round.useStream
           }))
         },
 

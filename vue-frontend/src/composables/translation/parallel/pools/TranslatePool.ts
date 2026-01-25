@@ -325,7 +325,7 @@ export class TranslatePool extends TaskPool {
         low_reasoning: round.lowReasoning,
         force_json_output: round.forceJsonOutput,
         no_thinking_method: round.noThinkingMethod,
-        use_stream: false,
+        use_stream: round.useStream ?? true,
         max_retries: round.maxRetries || proofreading.maxRetries || 2
       })
 

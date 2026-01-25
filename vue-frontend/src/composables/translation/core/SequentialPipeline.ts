@@ -539,7 +539,7 @@ export function useSequentialPipeline() {
             low_reasoning: isProofread ? roundConfig?.lowReasoning : hqConfig.lowReasoning,
             force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
             no_thinking_method: isProofread ? roundConfig?.noThinkingMethod : hqConfig.noThinkingMethod,
-            use_stream: isProofread ? false : hqConfig.useStream,
+            use_stream: isProofread ? (roundConfig?.useStream ?? true) : hqConfig.useStream,
             max_retries: isProofread ? (settings.proofreading.maxRetries || 2) : (hqConfig.maxRetries || 2)
         })
 
@@ -569,7 +569,7 @@ export function useSequentialPipeline() {
                     low_reasoning: round.lowReasoning,
                     force_json_output: round.forceJsonOutput,
                     no_thinking_method: round.noThinkingMethod,
-                    use_stream: false,
+                    use_stream: round.useStream ?? true,
                     max_retries: round.maxRetries || settings.proofreading.maxRetries || 2
                 })
 

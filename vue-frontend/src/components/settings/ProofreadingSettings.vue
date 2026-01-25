@@ -139,6 +139,7 @@
                 <input type="checkbox" v-model="round.lowReasoning" />
                 低推理模式
               </label>
+              <div class="input-hint">减少模型推理深度，提高速度</div>
             </div>
             <div class="settings-item">
               <label>取消思考方法:</label>
@@ -147,11 +148,21 @@
                 :options="noThinkingMethodOptions"
               />
             </div>
+          </div>
+          <div class="settings-row">
             <div class="settings-item">
               <label class="checkbox-label">
                 <input type="checkbox" v-model="round.forceJsonOutput" />
                 强制JSON输出
               </label>
+              <div class="input-hint">使用 response_format: json_object</div>
+            </div>
+            <div class="settings-item">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="round.useStream" />
+                流式调用
+              </label>
+              <div class="input-hint">使用流式API调用，避免超时</div>
             </div>
           </div>
 
@@ -342,6 +353,7 @@ function addRound() {
     lowReasoning: false,
     noThinkingMethod: 'gemini',
     forceJsonOutput: false,
+    useStream: true,
     prompt: DEFAULT_PROOFREADING_PROMPT,
     showApiKey: false
   }
