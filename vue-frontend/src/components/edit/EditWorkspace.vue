@@ -1009,6 +1009,12 @@ async function handleReTranslateBubble(index: number): Promise<void> {
     const { useSettingsStore } = await import('@/stores/settingsStore')
     const settings = useSettingsStore().settings
     
+    // 编辑模式的单气泡翻译固定使用逐气泡翻译的提示词
+    // 避免使用批量翻译提示词导致语义不匹配
+    const promptContent = settings.translation.isJsonMode
+      ? settings.translation.singleJsonPrompt
+      : settings.translation.singleNormalPrompt
+    
     const response = await translateSingleText({
       original_text: bubble.originalText,
       model_provider: settings.translation.provider,
@@ -1016,8 +1022,8 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       model_name: settings.translation.modelName,
       custom_base_url: settings.translation.customBaseUrl,
       target_language: settings.targetLanguage,
-      // 使用用户在设置中配置的提示词和 JSON 模式
-      prompt_content: settings.translatePrompt,
+      // 使用逐气泡翻译的提示词（无论全局翻译模式设置为什么）
+      prompt_content: promptContent,
       use_json_format: settings.translation.isJsonMode,
       rpm_limit_translation: settings.translation.rpmLimit,
       max_retries: settings.translation.maxRetries

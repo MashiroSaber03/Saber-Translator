@@ -91,7 +91,11 @@ export class TranslatePool extends TaskPool {
 
         try {
           // 调用单文本翻译API
-          // 使用用户在设置界面配置的提示词（支持普通/JSON模式的单气泡提示词）
+          // 固定使用逐气泡翻译的提示词，避免使用批量翻译提示词导致语义不匹配
+          const promptContent = settings.translation.isJsonMode
+            ? settings.translation.singleJsonPrompt
+            : settings.translation.singleNormalPrompt
+
           const response = await translateSingleText({
             original_text: originalText,
             model_provider: settings.translation.provider,
@@ -99,7 +103,7 @@ export class TranslatePool extends TaskPool {
             api_key: settings.translation.apiKey,
             custom_base_url: settings.translation.customBaseUrl,
             target_language: settings.targetLanguage,
-            prompt_content: settings.translatePrompt,  // 使用用户配置的提示词
+            prompt_content: promptContent,  // 使用逐气泡翻译的提示词
             use_json_format: settings.translation.isJsonMode,  // 传递 JSON 模式设置
             rpm_limit_translation: settings.translation.rpmLimit,
             max_retries: settings.translation.maxRetries
