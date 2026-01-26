@@ -30,22 +30,16 @@ import type {
 import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 
-// 分步 API
+// 原子步骤模块
 import {
-    parallelDetect,
-    parallelOcr,
-    parallelColor,
-    parallelTranslate,
-    parallelInpaint,
-    parallelRender,
-    type ParallelDetectResponse,
-    type ParallelOcrResponse,
-    type ParallelColorResponse,
-    type ParallelTranslateResponse,
-    type ParallelInpaintResponse,
-    type ParallelRenderResponse
-} from '@/api/parallelTranslate'
-import { hqTranslateBatch, translateSingleText } from '@/api/translate'
+    executeDetection,
+    executeOcr,
+    executeColor,
+    executeTranslate,
+    executeAiTranslate,
+    executeInpaint,
+    executeRender
+} from './steps'
 
 // 自动保存模块
 import {
@@ -193,13 +187,6 @@ export function useSequentialPipeline() {
         }
     }
 
-    function extractBase64(dataUrl: string): string {
-        if (dataUrl.includes('base64,')) {
-            return dataUrl.split('base64,')[1] || ''
-        }
-        return dataUrl
-    }
-
     function getImagesToProcess(config: PipelineConfig): { image: AppImageData; index: number }[] {
         const images = imageStore.images
         if (config.scope === 'current') {
@@ -231,516 +218,148 @@ export function useSequentialPipeline() {
     // 原子步骤执行器
     // ============================================================
 
-    async function executeDetection(task: TaskState): Promise<void> {
-        // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
-        // - bubbleStates === null/undefined: 从未处理过，需要自动检测
-        // - bubbleStates === []: 用户主动清空，跳过检测（避免"框复活"）
-        // - bubbleStates.length > 0: 有气泡数据，复用已有数据
-        const existingBubbles = task.image.bubbleStates
-        if (existingBubbles !== null && existingBubbles !== undefined) {
-            if (existingBubbles.length > 0) {
-                console.log(`图片 ${task.imageIndex + 1} 已有 ${existingBubbles.length} 个气泡，跳过检测`)
-                // 坐标需要转换为整数，后端 numpy 切片需要整数索引
-                task.bubbleCoords = existingBubbles.map(s =>
-                    s.coords.map(c => Math.round(c)) as BubbleCoords
-                )
-                task.bubbleAngles = existingBubbles.map(s => s.rotationAngle || 0)
-                task.bubblePolygons = existingBubbles.map(s => s.polygon || [])
-                task.autoDirections = existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical')
-                // 复用已有的原文（如果有）
-                task.originalTexts = existingBubbles.map(s => s.originalText || '')
-            } else {
-                console.log(`图片 ${task.imageIndex + 1} 气泡已被清空，跳过检测`)
-                // 用户主动清空了气泡，设置为空数组
-                task.bubbleCoords = []
-                task.bubbleAngles = []
-                task.bubblePolygons = []
-                task.autoDirections = []
-                task.originalTexts = []
-            }
-            return
-        }
-
-        const settings = settingsStore.settings
-        const base64 = extractBase64(task.image.originalDataURL)
-
-        const response: ParallelDetectResponse = await parallelDetect({
-            image: base64,
-            detector_type: settings.textDetector,
-            box_expand_ratio: settings.boxExpand.ratio,
-            box_expand_top: settings.boxExpand.top,
-            box_expand_bottom: settings.boxExpand.bottom,
-            box_expand_left: settings.boxExpand.left,
-            box_expand_right: settings.boxExpand.right
+    async function stepDetection(task: TaskState): Promise<void> {
+        const result = await executeDetection({
+            imageIndex: task.imageIndex,
+            image: task.image,
+            forceDetect: false
         })
 
-        if (!response.success) {
-            throw new Error(response.error || '检测失败')
+        task.bubbleCoords = result.bubbleCoords
+        task.bubbleAngles = result.bubbleAngles
+        task.bubblePolygons = result.bubblePolygons
+        task.autoDirections = result.autoDirections
+        task.rawMask = result.rawMask
+        task.textlinesPerBubble = result.textlinesPerBubble
+        if (result.originalTexts) {
+            task.originalTexts = result.originalTexts
         }
-
-        task.bubbleCoords = (response.bubble_coords || []) as BubbleCoords[]
-        task.bubbleAngles = response.bubble_angles || []
-        task.bubblePolygons = response.bubble_polygons || []
-        task.autoDirections = response.auto_directions || []
-        task.rawMask = response.raw_mask
-        task.textlinesPerBubble = response.textlines_per_bubble || []
     }
 
-    async function executeOcr(task: TaskState): Promise<void> {
-        if (task.bubbleCoords.length === 0) {
-            task.originalTexts = []
-            return
-        }
-
-        const settings = settingsStore.settings
-        const base64 = extractBase64(task.image.originalDataURL)
-
-        // PaddleOCR-VL 使用独立的源语言设置
-        const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
-            ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
-            : settings.sourceLanguage
-
-        const response: ParallelOcrResponse = await parallelOcr({
-            image: base64,
-            bubble_coords: task.bubbleCoords,
-            source_language: ocrSourceLanguage,
-            ocr_engine: settings.ocrEngine,
-            baidu_api_key: settings.baiduOcr?.apiKey,
-            baidu_secret_key: settings.baiduOcr?.secretKey,
-            baidu_version: settings.baiduOcr?.version,
-            baidu_ocr_language: settings.baiduOcr?.sourceLanguage,
-            ai_vision_provider: settings.aiVisionOcr?.provider,
-            ai_vision_api_key: settings.aiVisionOcr?.apiKey,
-            ai_vision_model_name: settings.aiVisionOcr?.modelName,
-            ai_vision_ocr_prompt: settings.aiVisionOcr?.prompt,
-            custom_ai_vision_base_url: settings.aiVisionOcr?.customBaseUrl,
-            textlines_per_bubble: task.textlinesPerBubble
+    async function stepOcr(task: TaskState): Promise<void> {
+        const result = await executeOcr({
+            imageIndex: task.imageIndex,
+            image: task.image,
+            bubbleCoords: task.bubbleCoords,
+            textlinesPerBubble: task.textlinesPerBubble
         })
 
-        if (!response.success) {
-            throw new Error(response.error || 'OCR失败')
-        }
-
-        task.originalTexts = response.original_texts || []
+        task.originalTexts = result.originalTexts
     }
 
-    async function executeColor(task: TaskState): Promise<void> {
-        if (task.bubbleCoords.length === 0) {
-            task.colors = []
-            return
-        }
-
-        const base64 = extractBase64(task.image.originalDataURL)
-
-        const response: ParallelColorResponse = await parallelColor({
-            image: base64,
-            bubble_coords: task.bubbleCoords,
-            textlines_per_bubble: task.textlinesPerBubble
+    async function stepColor(task: TaskState): Promise<void> {
+        const result = await executeColor({
+            imageIndex: task.imageIndex,
+            image: task.image,
+            bubbleCoords: task.bubbleCoords,
+            textlinesPerBubble: task.textlinesPerBubble
         })
 
-        if (!response.success) {
-            throw new Error(response.error || '颜色提取失败')
-        }
-
-        task.colors = response.colors || []
+        task.colors = result.colors
     }
 
-    async function executeTranslate(task: TaskState): Promise<void> {
-        if (task.originalTexts.length === 0) {
-            task.translatedTexts = []
-            task.textboxTexts = []
-            return
-        }
+    async function stepTranslate(task: TaskState): Promise<void> {
+        const result = await executeTranslate({
+            imageIndex: task.imageIndex,
+            originalTexts: task.originalTexts,
+            rateLimiter: rateLimiter.value
+        })
 
-        const settings = settingsStore.settings
-        const translationMode = settings.translation.translationMode || 'batch'
-
-        if (translationMode === 'single') {
-            // ==================== 逐气泡翻译模式 ====================
-            // 每个气泡单独调用翻译API，对模型要求较低，适合小模型
-            console.log(`[翻译] 使用逐气泡翻译模式，共 ${task.originalTexts.length} 个气泡`)
-
-            task.translatedTexts = []
-            task.textboxTexts = []
-
-            for (let i = 0; i < task.originalTexts.length; i++) {
-                const originalText = task.originalTexts[i]
-
-                // 跳过空文本
-                if (!originalText || originalText.trim() === '') {
-                    task.translatedTexts.push('')
-                    if (settings.useTextboxPrompt) {
-                        task.textboxTexts.push('')
-                    }
-                    continue
-                }
-
-                try {
-                    // 调用单文本翻译API
-                    // 固定使用逐气泡翻译的提示词，避免使用批量翻译提示词导致语义不匹配
-                    const promptContent = settings.translation.isJsonMode
-                        ? settings.translation.singleJsonPrompt
-                        : settings.translation.singleNormalPrompt
-
-                    const response = await translateSingleText({
-                        original_text: originalText,
-                        model_provider: settings.translation.provider,
-                        model_name: settings.translation.modelName,
-                        api_key: settings.translation.apiKey,
-                        custom_base_url: settings.translation.customBaseUrl,
-                        target_language: settings.targetLanguage,
-                        prompt_content: promptContent,  // 使用逐气泡翻译的提示词
-                        use_json_format: settings.translation.isJsonMode,  // 传递 JSON 模式设置
-                        rpm_limit_translation: settings.translation.rpmLimit,  // 传递 RPM 限制
-                        max_retries: settings.translation.maxRetries  // 传递最大重试次数
-                    })
-
-                    if (response.success && response.data) {
-                        task.translatedTexts.push(response.data.translated_text || '')
-                    } else {
-                        console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
-                        task.translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
-                    }
-
-                    // 如果启用了文本框提示词，需要再翻译一次
-                    if (settings.useTextboxPrompt && settings.textboxPrompt) {
-                        const textboxResponse = await translateSingleText({
-                            original_text: originalText,
-                            model_provider: settings.translation.provider,
-                            model_name: settings.translation.modelName,
-                            api_key: settings.translation.apiKey,
-                            custom_base_url: settings.translation.customBaseUrl,
-                            target_language: settings.targetLanguage,
-                            prompt_content: settings.textboxPrompt,
-                            rpm_limit_translation: settings.translation.rpmLimit,
-                            max_retries: settings.translation.maxRetries
-                        })
-
-                        if (textboxResponse.success && textboxResponse.data) {
-                            task.textboxTexts.push(textboxResponse.data.translated_text || '')
-                        } else {
-                            task.textboxTexts.push('')
-                        }
-                    }
-
-                    // RPM限制等待
-                    if (rateLimiter.value && i < task.originalTexts.length - 1) {
-                        await rateLimiter.value.acquire()
-                    }
-                } catch (error) {
-                    console.error(`[翻译] 气泡 ${i + 1} 翻译出错:`, error)
-                    task.translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
-                    if (settings.useTextboxPrompt) {
-                        task.textboxTexts.push('')
-                    }
-                }
-            }
-
-            console.log(`[翻译] 逐气泡翻译完成，成功 ${task.translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${task.originalTexts.length}`)
-        } else {
-            // ==================== 整页批量翻译模式 ====================
-            // 一次发送全部气泡文本，效率更高，对模型要求较高
-            console.log(`[翻译] 使用整页批量翻译模式，共 ${task.originalTexts.length} 个气泡`)
-
-            const response: ParallelTranslateResponse = await parallelTranslate({
-                original_texts: task.originalTexts,
-                target_language: settings.targetLanguage,
-                source_language: settings.sourceLanguage,
-                model_provider: settings.translation.provider,
-                model_name: settings.translation.modelName,
-                api_key: settings.translation.apiKey,
-                custom_base_url: settings.translation.customBaseUrl,
-                prompt_content: settings.translatePrompt,
-                textbox_prompt_content: settings.textboxPrompt,
-                use_textbox_prompt: settings.useTextboxPrompt,
-                rpm_limit: settings.translation.rpmLimit,
-                max_retries: settings.translation.maxRetries,
-                use_json_format: settings.translation.isJsonMode
-            })
-
-            if (!response.success) {
-                throw new Error(response.error || '翻译失败')
-            }
-
-            task.translatedTexts = response.translated_texts || []
-            task.textboxTexts = response.textbox_texts || []
-        }
+        task.translatedTexts = result.translatedTexts
+        task.textboxTexts = result.textboxTexts
     }
 
     /**
      * AI翻译步骤（高质量翻译 & 校对共用）
-     * 根据 currentMode 决定使用哪种配置
+     * 使用独立的步骤模块
      */
-    async function executeAiTranslate(tasks: TaskState[]): Promise<void> {
-        const settings = settingsStore.settings
-        const isProofread = currentMode === 'proofread'
+    async function stepAiTranslate(tasks: TaskState[]): Promise<void> {
+        const mode = currentMode === 'proofread' ? 'proofread' : 'hq'
 
-        // 收集 JSON 数据
-        const jsonData = tasks.map(t => {
-            if (isProofread) {
-                // 校对模式：使用已有译文
-                return {
-                    imageIndex: t.imageIndex,
-                    bubbles: (t.image.bubbleStates || []).map((state, idx) => ({
-                        bubbleIndex: idx,
-                        original: state.originalText || '',
-                        translated: settings.useTextboxPrompt
-                            ? (state.textboxText || state.translatedText || '')
-                            : (state.translatedText || ''),
-                        // 【简化设计】直接使用 textDirection，它已经是具体方向值
-                        textDirection: (state.textDirection === 'vertical' || state.textDirection === 'horizontal')
-                            ? state.textDirection
-                            : (state.autoTextDirection === 'vertical' || state.autoTextDirection === 'horizontal')
-                                ? state.autoTextDirection
-                                : 'vertical'
-                    }))
-                }
-            } else {
-                // 高质量翻译：使用 OCR 结果
-                return {
-                    imageIndex: t.imageIndex,
-                    bubbles: t.originalTexts.map((text, idx) => ({
-                        bubbleIndex: idx,
-                        original: text,
-                        translated: '',
-                        textDirection: t.autoDirections[idx] || 'vertical'
-                    }))
-                }
-            }
+        const result = await executeAiTranslate({
+            mode,
+            tasks: tasks.map(t => ({
+                imageIndex: t.imageIndex,
+                image: t.image,
+                originalTexts: t.originalTexts,
+                autoDirections: t.autoDirections
+            }))
         })
 
-        // 收集图片
-        const imageBase64Array = tasks.map(t => {
-            const dataUrl = isProofread
-                ? (t.image.translatedDataURL || t.image.originalDataURL)
-                : t.image.originalDataURL
-            return extractBase64(dataUrl)
-        })
-
-        // 获取配置
-        const aiConfig = isProofread ? settings.proofreading.rounds[0] : settings.hqTranslation
-        const prompt = isProofread ? aiConfig?.prompt : settings.hqTranslation.prompt
-        const systemPrompt = isProofread
-            ? '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。'
-            : '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。'
-
-        // 调用 API - 使用新接口，传数据而不是消息
-        const hqConfig = settings.hqTranslation
-        const roundConfig = isProofread ? aiConfig : null
-        const response = await hqTranslateBatch({
-            provider: (isProofread ? roundConfig?.provider : hqConfig.provider) || 'openai',
-            api_key: (isProofread ? roundConfig?.apiKey : hqConfig.apiKey) || '',
-            model_name: (isProofread ? roundConfig?.modelName : hqConfig.modelName) || '',
-            custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
-            // 新接口：传数据，后端构建消息
-            jsonData,
-            imageBase64Array,
-            prompt: prompt || '',
-            systemPrompt,
-            isProofreading: isProofread,
-            enableDebugLogs: settings.enableVerboseLogs,  // 使用全局的详细日志开关
-            // 其他参数
-            low_reasoning: isProofread ? roundConfig?.lowReasoning : hqConfig.lowReasoning,
-            force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
-            no_thinking_method: isProofread ? roundConfig?.noThinkingMethod : hqConfig.noThinkingMethod,
-            use_stream: isProofread ? (roundConfig?.useStream ?? true) : hqConfig.useStream,
-            max_retries: isProofread ? (settings.proofreading.maxRetries || 2) : (hqConfig.maxRetries || 2)
-        })
-
-        //解析结果
-        const forceJson = isProofread ? (roundConfig?.forceJsonOutput || false) : hqConfig.forceJsonOutput
-        const translatedData = parseHqResponse(response, forceJson)
-
-        // 校对模式可能有多轮
-        let currentData = translatedData || jsonData
-        if (isProofread && settings.proofreading.rounds.length > 1) {
-            for (let i = 1; i < settings.proofreading.rounds.length; i++) {
-                const round = settings.proofreading.rounds[i]!
-
-                const roundResponse = await hqTranslateBatch({
-                    provider: round.provider,
-                    api_key: round.apiKey,
-                    model_name: round.modelName,
-                    custom_base_url: round.customBaseUrl,
-                    // 使用新接口
-                    jsonData: currentData as any[],
-                    imageBase64Array,
-                    prompt: round.prompt,
-                    systemPrompt,
-                    isProofreading: true,
-                    enableDebugLogs: settings.enableVerboseLogs,  // 使用全局的详细日志开关
-                    // 其他参数
-                    low_reasoning: round.lowReasoning,
-                    force_json_output: round.forceJsonOutput,
-                    no_thinking_method: round.noThinkingMethod,
-                    use_stream: round.useStream ?? true,
-                    max_retries: round.maxRetries || settings.proofreading.maxRetries || 2
-                })
-
-                const roundResult = parseHqResponse(roundResponse, round.forceJsonOutput)
-                if (roundResult) {
-                    currentData = roundResult
-                }
-            }
-        }
-
-        // 填充结果
+        // 填充结果到tasks
         for (const t of tasks) {
-            const taskData = (currentData as any[])?.find((d: any) => d.imageIndex === t.imageIndex)
-            if (taskData) {
-                t.translatedTexts = taskData.bubbles.map((b: any) => b.translated)
+            const taskResult = result.results.find(r => r.imageIndex === t.imageIndex)
+            if (taskResult) {
+                t.translatedTexts = taskResult.translatedTexts
+                t.textboxTexts = taskResult.textboxTexts
             } else {
                 t.translatedTexts = []
+                t.textboxTexts = []
             }
-            t.textboxTexts = []
         }
     }
 
-    async function executeInpaint(task: TaskState): Promise<void> {
-        if (task.bubbleCoords.length === 0) {
-            task.cleanImage = extractBase64(task.image.originalDataURL)
-            return
-        }
-
-        const settings = settingsStore.settings
-        const { textStyle, preciseMask } = settings
-        const base64 = extractBase64(task.image.originalDataURL)
-
-        const response: ParallelInpaintResponse = await parallelInpaint({
-            image: base64,
-            bubble_coords: task.bubbleCoords,
-            bubble_polygons: task.bubblePolygons,
-            raw_mask: task.rawMask,
-            method: textStyle.inpaintMethod === 'solid' ? 'solid' : 'lama',
-            lama_model: textStyle.inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe',
-            fill_color: textStyle.fillColor,
-            mask_dilate_size: preciseMask.dilateSize,
-            mask_box_expand_ratio: preciseMask.boxExpandRatio
+    async function stepInpaint(task: TaskState): Promise<void> {
+        const result = await executeInpaint({
+            imageIndex: task.imageIndex,
+            image: task.image,
+            bubbleCoords: task.bubbleCoords,
+            bubblePolygons: task.bubblePolygons,
+            rawMask: task.rawMask
         })
 
-        if (!response.success) {
-            throw new Error(response.error || '背景修复失败')
-        }
-
-        task.cleanImage = response.clean_image
+        task.cleanImage = result.cleanImage
     }
 
-    async function executeRender(task: TaskState): Promise<void> {
-        if (!task.cleanImage) {
-            // 校对模式下，如果没有干净背景图，说明图片没有被翻译过
-            if (currentMode === 'proofread') {
-                throw new Error('此图片尚未翻译，请先翻译后再进行校对')
-            }
-            throw new Error('缺少干净背景图片')
-        }
-
-        const { textStyle } = settingsStore.settings
-
-        // 【简化设计】计算 textDirection：
-        // - 如果全局设置是 'auto'，使用检测结果
-        // - 否则使用全局设置的值
-        const globalTextDir = savedTextStyles?.autoTextDirection
-            ? 'auto'  // autoTextDirection 为 true 表示用户选择了 'auto'
-            : (savedTextStyles?.textDirection || textStyle.layoutDirection)
-
-        // 构建 bubbleStates
-        const bubbleStates: BubbleState[] = task.bubbleCoords.map((coords, idx) => {
-            const autoDir = task.autoDirections[idx] || 'vertical'
-            // 将后端返回的 'v'/'h' 格式转换为 'vertical'/'horizontal'
-            const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
-                : autoDir === 'h' ? 'horizontal'
-                    : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
-
-            // 【简化设计】textDirection 直接使用具体方向值
-            const textDirection =
-                (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
-                    ? globalTextDir
-                    : mappedAutoDir
-
-            // 【修复】颜色处理：根据 useAutoTextColor 设置决定是否使用自动提取的颜色
-            const useAutoColor = savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
-            let finalTextColor = savedTextStyles?.textColor || textStyle.textColor
-            let finalFillColor = savedTextStyles?.fillColor || textStyle.fillColor
-            const colorInfo = task.colors[idx]
-
-            if (useAutoColor && colorInfo) {
-                if (colorInfo.textColor) finalTextColor = colorInfo.textColor
-                if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
-            }
-
-            return {
-                coords,
-                polygon: [] as number[][],
-                position: { x: 0, y: 0 },
-                rotationAngle: task.bubbleAngles[idx] || 0,
-                originalText: task.originalTexts[idx] || '',
-                translatedText: task.translatedTexts[idx] || '',
-                textboxText: task.textboxTexts[idx] || '',
-                textDirection: textDirection as 'vertical' | 'horizontal',  // 渲染用的具体方向
-                autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',  // 备份检测结果
-                fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
-                fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
-                autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
-                textColor: finalTextColor,
-                fillColor: finalFillColor,
-                strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-                strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
-                strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-                inpaintMethod: savedTextStyles?.inpaintMethod || textStyle.inpaintMethod,
-                autoFgColor: task.colors[idx]?.autoFgColor || null,
-                autoBgColor: task.colors[idx]?.autoBgColor || null
-            }
+    async function stepRender(task: TaskState): Promise<void> {
+        const result = await executeRender({
+            imageIndex: task.imageIndex,
+            cleanImage: task.cleanImage!,
+            bubbleCoords: task.bubbleCoords,
+            bubbleAngles: task.bubbleAngles,
+            autoDirections: task.autoDirections,
+            originalTexts: task.originalTexts,
+            translatedTexts: task.translatedTexts,
+            textboxTexts: task.textboxTexts,
+            colors: task.colors,
+            savedTextStyles,
+            currentMode
         })
 
-        const response: ParallelRenderResponse = await parallelRender({
-            clean_image: task.cleanImage,
-            bubble_states: bubbleStates,
-            fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
-            fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
-            textDirection: savedTextStyles?.textDirection || textStyle.layoutDirection,
-            textColor: savedTextStyles?.textColor || textStyle.textColor,
-            strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-            strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
-            strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-            autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
-            use_individual_styles: true
-        })
-
-        if (!response.success) {
-            throw new Error(response.error || '渲染失败')
-        }
-
-        task.finalImage = response.final_image
-        task.bubbleStates = response.bubble_states || bubbleStates
+        task.finalImage = result.finalImage
+        task.bubbleStates = result.bubbleStates
     }
 
     // ============================================================
     // 辅助函数
     // ============================================================
+    // 步骤调度器
+    // ============================================================
+
 
     /**
-     * 执行单个步骤（通用函数，消除重复代码）
-     * 注意：aiTranslate 步骤在 executeBatchMode 中有特殊处理，不会通过此函数调用
+     * 执行单个步骤（通用调度函数）
+     * 根据步骤名称调用对应的step函数
      */
     async function executeStep(step: AtomicStepType, task: TaskState): Promise<void> {
         switch (step) {
             case 'detection':
-                await executeDetection(task)
+                await stepDetection(task)
                 break
             case 'ocr':
-                await executeOcr(task)
+                await stepOcr(task)
                 break
             case 'color':
-                await executeColor(task)
+                await stepColor(task)
                 break
             case 'translate':
-                await executeTranslate(task)
+                await stepTranslate(task)
                 break
             case 'inpaint':
-                await executeInpaint(task)
+                await stepInpaint(task)
                 break
             case 'render':
-                await executeRender(task)
+                await stepRender(task)
                 break
             case 'save':
                 // 保存步骤：保存当前已渲染的图片（仅书架模式）
@@ -751,56 +370,6 @@ export function useSequentialPipeline() {
                 // aiTranslate 在 executeBatchMode 中有批量处理逻辑
                 throw new Error('aiTranslate 应通过批量处理逻辑调用')
         }
-    }
-
-    function parseHqResponse(
-        response: { success: boolean; results?: any[]; content?: string; error?: string },
-        forceJsonOutput: boolean
-    ): any[] | null {
-        if (!response.success) {
-            console.error('API调用失败:', response.error)
-            return null
-        }
-
-        if (response.results && response.results.length > 0) {
-            const firstItem = response.results[0]
-            if (firstItem && 'imageIndex' in firstItem && 'bubbles' in firstItem) {
-                return response.results
-            }
-        }
-
-        const content = (response as { content?: string }).content
-        if (content) {
-            let parsed: any = null
-            if (forceJsonOutput) {
-                try {
-                    parsed = JSON.parse(content)
-                } catch {
-                    return null
-                }
-            } else {
-                const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
-                if (jsonMatch?.[1]) {
-                    try {
-                        parsed = JSON.parse(jsonMatch[1])
-                    } catch {
-                        return null
-                    }
-                }
-            }
-
-            // 兼容单张图片格式：{imageIndex, bubbles} -> [{imageIndex, bubbles}]
-            if (parsed) {
-                if (Array.isArray(parsed)) {
-                    return parsed
-                } else if (typeof parsed === 'object' && 'imageIndex' in parsed && 'bubbles' in parsed) {
-                    console.log('[parseHqResponse] 检测到单张图片格式，自动包装为数组')
-                    return [parsed]
-                }
-            }
-        }
-
-        return null
     }
 
     function updateImageStore(task: TaskState): void {
@@ -1028,7 +597,7 @@ export function useSequentialPipeline() {
                 try {
                     const validTasks = batchTasks.filter(t => !batchFailedIndices.has(t.imageIndex))
                     if (validTasks.length > 0) {
-                        await executeAiTranslate(validTasks)
+                        await stepAiTranslate(validTasks)
                     }
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : '未知错误'

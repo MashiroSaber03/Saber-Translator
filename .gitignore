@@ -69,3 +69,7 @@ Thumbs.db
 
 # --- 文档 ---
 docs/
+
+# WindsurfChatOpen
+.windsurfchatopen/
+.windsurfrules

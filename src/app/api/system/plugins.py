@@ -18,8 +18,6 @@ from flask import request, jsonify
 from . import system_bp
 from src.plugins.manager import get_plugin_manager
 from src.plugins.base import PluginBase
-from src.shared.image_helpers import base64_to_image
-from src.core.detection import get_bubble_coordinates, get_bubble_detection_result
 
 logger = logging.getLogger("SystemAPI.Plugins")
 
@@ -204,50 +202,3 @@ def set_plugin_default_state_api(plugin_name: str):
     except Exception as e:
         logger.error(f"设置插件 '{plugin_name}' 默认状态时出错: {e}", exc_info=True)
         return jsonify({'success': False, 'error': '设置插件默认状态时发生内部错误'}), 500
-
-
-@system_bp.route('/detect_boxes', methods=['POST'])
-def detect_boxes_api():
-    """接收图片数据，仅返回检测到的气泡坐标"""
-    data = request.get_json()
-    if not data or 'image' not in data:
-        return jsonify({'error': '缺少图像数据 (image)'}), 400
-
-    image_data = data.get('image')
-    conf_threshold = float(data.get('conf_threshold', 0.6))
-    detector_type = data.get('detector_type', 'ctd')  # 默认使用 CTD 检测器
-    
-    # 文本框扩展参数
-    box_expand_ratio = float(data.get('box_expand_ratio', 0))
-    box_expand_top = float(data.get('box_expand_top', 0))
-    box_expand_bottom = float(data.get('box_expand_bottom', 0))
-    box_expand_left = float(data.get('box_expand_left', 0))
-    box_expand_right = float(data.get('box_expand_right', 0))
-
-    try:
-        img_pil = base64_to_image(image_data)
-        # 【重要】始终使用带自动方向检测的函数，确保返回 auto_directions
-        from src.core.detection import get_bubble_detection_result_with_auto_directions
-        detection_result = get_bubble_detection_result_with_auto_directions(
-            img_pil, 
-            conf_threshold=conf_threshold, 
-            detector_type=detector_type,
-            expand_ratio=box_expand_ratio,
-            expand_top=box_expand_top,
-            expand_bottom=box_expand_bottom,
-            expand_left=box_expand_left,
-            expand_right=box_expand_right
-        )
-        coords = detection_result.get('coords', [])
-        angles = detection_result.get('angles', [])
-        auto_directions = detection_result.get('auto_directions', [])
-        logger.info(f"检测完成 (检测器: {detector_type})，找到 {len(coords)} 个气泡，自动方向: {auto_directions}")
-        return jsonify({
-            'success': True, 
-            'bubble_coords': coords, 
-            'bubble_angles': angles,
-            'auto_directions': auto_directions  # 返回自动检测的排版方向
-        })
-    except Exception as e:
-        logger.error(f"仅检测坐标时出错 (检测器: {detector_type}): {e}", exc_info=True)
-        return jsonify({'success': False, 'error': f'检测坐标失败: {str(e)}'}), 500

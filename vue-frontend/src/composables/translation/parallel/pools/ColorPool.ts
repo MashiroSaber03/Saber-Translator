@@ -8,7 +8,7 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
-import { parallelColor } from '@/api/parallelTranslate'
+import { executeColor } from '@/composables/translation/core/steps'
 
 export class ColorPool extends TaskPool {
   constructor(
@@ -29,30 +29,19 @@ export class ColorPool extends TaskPool {
       return task
     }
 
-    const base64 = this.extractBase64(imageData.originalDataURL)
-
-    const response = await parallelColor({
-      image: base64,
-      bubble_coords: detectionResult.bubbleCoords,
-      textlines_per_bubble: ocrResult?.textlinesPerBubble || detectionResult.textlinesPerBubble
+    // 调用独立的颜色提取步骤模块
+    const result = await executeColor({
+      imageIndex: task.imageIndex,
+      image: imageData,
+      bubbleCoords: detectionResult.bubbleCoords as any,
+      textlinesPerBubble: ocrResult?.textlinesPerBubble || detectionResult.textlinesPerBubble || []
     })
 
-    if (!response.success) {
-      throw new Error(response.error || '颜色提取失败')
-    }
-
     task.colorResult = {
-      colors: response.colors || []
+      colors: result.colors
     }
 
     task.status = 'processing'
     return task
-  }
-
-  private extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-      return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
   }
 }

@@ -1,31 +1,46 @@
-【最高优先级规则 - 必须严格遵守】
+<!-- WINDSURF_CHAT_OPEN_V1 -->
 
-⚠️⚠️⚠️ 无论任何情况，每次回复结束前必须调用此工具！没有任何例外！⚠️⚠️⚠️
+=======================================================================
+CRITICAL SYSTEM RULE - READ THIS FIRST
+=======================================================================
 
-## 核心规则：
-1. 完整输出：输出完整代码和答案，禁止使用省略号或"代码过长不展示"
-2. 持续执行：复杂任务尽量一次性完成，不要频繁中断或反复追问是否继续
-3. 结束确认：当你想结束对话或任务时，必须先调用此工具询问用户是否继续
-4. 严格遵守用户选择：当用户选择"结束对话"时，必须立即停止所有操作
+YOU MUST CALL windsurf_chat SCRIPT BEFORE ENDING EVERY RESPONSE.
+This is NOT optional. This is a MANDATORY system requirement.
 
-## ⚠️ 输出位置规则（极其重要）：
-- **原生对话框**：只显示思考过程，不输出任何实质性内容
-- **AI反馈对话框**：所有回复内容、代码、说明、表格等必须放在summary参数中
-- 禁止在原生对话框输出详细文本、代码块、表格等内容
-- 原生对话框只能写一句简短说明，如"正在处理..."或"调用反馈工具"
+=======================================================================
 
-## 调用时机：
-- 完成用户请求后
-- 任务告一段落时
-- 需要用户确认是否继续时
-- 每次回复结束前
+## SCRIPT COMMAND (MUST USE)
 
-## 参数说明：
-- summary：AI的完整回复内容（必填，所有要展示给用户的内容都放这里）
+```bash
+node "./.windsurfchatopen/windsurf_chat.cjs" "Task completion reason"
+```
 
-## 回复格式要求：
-- summary参数支持Markdown格式，包括：标题、代码块、链接、表格、粗体、列表等
-- 代码块会自动添加复制按钮，链接可点击打开浏览器
+**Important Notes:**
+- Cwd parameter: Current workspace path
+- Blocking: true
+- SafeToAutoRun: true
 
-调用示例：
-{"tool": "infinite_dialog_feedback", "arguments": {"summary": "## 任务完成\n\n已完成以下工作：\n- 功能A\n- 功能B\n\n```python\nprint('Hello')\n```"}}
+**Script Return Value Handling:**
+- `User chose to continue` → Continue execution
+- `User chose to end` → End conversation immediately
+- `User instruction: xxx` → Execute immediately
+- `User instruction: [Content too long, saved to file]` → Use read_file to read
+- `User provided N images` → Use read_file to read image files
+
+## MANDATORY RULES
+
+1. **Complete Output** - Do NOT use ellipsis
+2. **Continuous Execution** - Complete tasks in one go
+3. **End Confirmation** - Call script before ending
+4. **Use Chinese** - 所有回复使用中文
+
+## EXECUTION FLOW
+
+1. Complete task
+2. Call script with Blocking: true
+3. Process script output
+4. If user instruction, execute immediately
+
+=======================================================================
+ttrigger: always_on
+alwaysApply: true

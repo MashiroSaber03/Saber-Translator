@@ -255,7 +255,7 @@ import { useBrush } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
-import { detectBoxes } from '@/api/translate'
+import { executeDetection } from '@/composables/translation/core/steps'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
 import BubbleOverlay from './BubbleOverlay.vue'
@@ -1106,43 +1106,35 @@ async function autoDetectBubbles(): Promise<void> {
   try {
     showToast('正在自动检测文本框...', 'info')
     
-    const match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-    const imageData = match?.[1] || ''
-    if (!imageData) {
-      showToast('无法解析图片数据', 'error')
-      return
-    }
-    
     const settingsStore = useSettingsStore()
-    const { textDetector, boxExpand, textStyle } = settingsStore.settings
+    const { textStyle } = settingsStore.settings
     
-    const response = await detectBoxes(imageData, textDetector, {
-      box_expand_ratio: boxExpand.ratio,
-      box_expand_top: boxExpand.top,
-      box_expand_bottom: boxExpand.bottom,
-      box_expand_left: boxExpand.left,
-      box_expand_right: boxExpand.right
+    // 使用独立的检测步骤模块
+    const result = await executeDetection({
+      imageIndex: currentImageIndex.value,
+      image: image,
+      forceDetect: true  // 编辑模式下总是强制重新检测
     })
     
-    if (response.success && response.bubble_coords) {
+    if (result.bubbleCoords.length > 0) {
       imageStore.updateCurrentImage({
-        bubbleCoords: response.bubble_coords,
-        bubbleAngles: response.bubble_angles || []
+        bubbleCoords: result.bubbleCoords.map(c => [...c]),
+        bubbleAngles: result.bubbleAngles
       })
       
-      initializeTextArrays(image, response.bubble_coords.length)
+      initializeTextArrays(image, result.bubbleCoords.length)
       const detectionData = {
-        bubble_coords: response.bubble_coords.map(c => [...c]) as number[][],
-        bubble_angles: response.bubble_angles,
-        auto_directions: response.auto_directions
+        bubble_coords: result.bubbleCoords,
+        bubble_angles: result.bubbleAngles,
+        auto_directions: result.autoDirections
       }
       const newBubbles = createBubbleStatesFromDetection(detectionData, image, textStyle)
       bubbleStore.setBubbles(newBubbles)
       selectFirstBubbleIfExists()
       
-      showToast(`自动检测到 ${response.bubble_coords.length} 个文本框`, 'success')
+      showToast(`自动检测到 ${result.bubbleCoords.length} 个文本框`, 'success')
     } else {
-      showToast(response.error || '检测失败', 'error')
+      showToast('未检测到文本框', 'info')
     }
   } catch (error) {
     console.error('自动检测失败:', error)
@@ -1162,9 +1154,9 @@ async function detectAllImages(): Promise<void> {
     return
   }
 
-  // 获取检测器设置（在循环外获取，避免重复调用）
+  // 获取设置（在循环外获取，避免重复调用）
   const settingsStore = useSettingsStore()
-  const { textDetector, boxExpand, textStyle } = settingsStore.settings
+  const { textStyle } = settingsStore.settings
 
   // 【复刻原版】记录当前索引
   const originalIndex = currentImageIndex.value
@@ -1186,39 +1178,39 @@ async function detectAllImages(): Promise<void> {
       // 更新进度条
       progressCurrent.value = i + 1
 
-      const match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-      const imageData = match?.[1] || ''
-      if (!imageData) continue
-      
-      const response = await detectBoxes(imageData, textDetector, {
-        box_expand_ratio: boxExpand.ratio,
-        box_expand_top: boxExpand.top,
-        box_expand_bottom: boxExpand.bottom,
-        box_expand_left: boxExpand.left,
-        box_expand_right: boxExpand.right
-      })
+      try {
+        // 使用独立的检测步骤模块
+        const result = await executeDetection({
+          imageIndex: i,
+          image: image,
+          forceDetect: true  // 批量检测总是强制重新检测
+        })
 
-      if (response.success && response.bubble_coords) {
-        const img = images.value[i]
-        if (img) {
-          img.bubbleCoords = response.bubble_coords
-          img.bubbleAngles = response.bubble_angles || []
-          
-          initializeTextArrays(img, response.bubble_coords.length)
-          const detectionData = {
-            bubble_coords: response.bubble_coords.map(c => [...c]) as number[][],
-            bubble_angles: response.bubble_angles,
-            auto_directions: response.auto_directions
-          }
-          img.bubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
-          
-          totalDetected += response.bubble_coords.length
-          
-          // 【复刻原版】如果是当前图片，同时更新显示
-          if (i === currentImageIndex.value) {
-            loadBubbleStatesFromImage()
+        if (result.bubbleCoords.length > 0) {
+          const img = images.value[i]
+          if (img) {
+            img.bubbleCoords = result.bubbleCoords.map(c => [...c])
+            img.bubbleAngles = result.bubbleAngles
+            
+            initializeTextArrays(img, result.bubbleCoords.length)
+            const detectionData = {
+              bubble_coords: result.bubbleCoords,
+              bubble_angles: result.bubbleAngles,
+              auto_directions: result.autoDirections
+            }
+            img.bubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
+            
+            totalDetected += result.bubbleCoords.length
+            
+            // 【复刻原版】如果是当前图片，同时更新显示
+            if (i === currentImageIndex.value) {
+              loadBubbleStatesFromImage()
+            }
           }
         }
+      } catch (error) {
+        console.error(`图片 ${i + 1} 检测失败:`, error)
+        // 继续处理下一张图片
       }
     }
 

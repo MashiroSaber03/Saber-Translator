@@ -12,6 +12,7 @@
 
 import base64
 import io
+import logging
 import numpy as np
 from PIL import Image
 from flask import Blueprint, request, jsonify
@@ -26,6 +27,7 @@ from src.core.color_extractor import extract_bubble_colors
 from src.shared import constants
 
 parallel_bp = Blueprint('parallel', __name__, url_prefix='/api')
+logger = logging.getLogger('ParallelAPI')
 
 
 def decode_base64_image(base64_str: str) -> np.ndarray:
@@ -101,6 +103,13 @@ def parallel_detect():
             expand_left=expand_left,
             expand_right=expand_right
         )
+        
+        # 提取结果
+        coords = result.get('coords', [])
+        auto_directions = result.get('auto_directions', [])
+        
+        # 输出检测结果日志（包括排版方向）
+        logger.info(f"检测完成 (检测器: {detector_type})，找到 {len(coords)} 个气泡，自动方向: {auto_directions}")
         
         # 处理掩膜
         raw_mask = None

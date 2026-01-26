@@ -9,13 +9,13 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
 import type { ResultCollector } from '../ResultCollector'
-import { parallelRender } from '@/api/parallelTranslate'
+import { executeRender } from '@/composables/translation/core/steps'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { shouldEnableAutoSave, saveTranslatedImage } from '../../core/saveStep'
 import { useParallelTranslation } from '../useParallelTranslation'
-import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from '@/types/bubble'
+import type { BubbleCoords } from '@/types/bubble'
 
 export class RenderPool extends TaskPool {
   private resultCollector: ResultCollector
@@ -36,17 +36,24 @@ export class RenderPool extends TaskPool {
     const bubbleStore = useBubbleStore()
     const settingsStore = useSettingsStore()
 
-    // 构建气泡状态
-    const bubbleStates = this.buildBubbleStates(task, settingsStore)
+    // 获取干净背景图：优先使用inpaintResult，其次使用已有的cleanImageData
+    const cleanImage = task.inpaintResult?.cleanImage
+      || task.imageData.cleanImageData
+      || this.extractBase64(task.imageData.translatedDataURL || task.imageData.originalDataURL)
+
+    // 构建渲染输入数据
+    const coords = task.detectionResult?.bubbleCoords || []
+    const texts = task.translateResult?.translatedTexts || []
+    const originals = task.ocrResult?.originalTexts || []
+    const colors = task.colorResult?.colors || []
+    const angles = task.detectionResult?.bubbleAngles || []
+    const directions = task.detectionResult?.autoDirections || []
+    const textboxTexts = task.translateResult?.textboxTexts || []
 
     // 如果没有气泡或没有译文，跳过渲染（消除文字模式会走这里）
-    if (bubbleStates.length === 0) {
-      // 获取最终图片：优先使用修复后的干净图片
-      const finalImage = task.inpaintResult?.cleanImage
-        || task.imageData.cleanImageData
-        || this.extractBase64(task.imageData.originalDataURL)
+    if (coords.length === 0) {
       task.renderResult = {
-        finalImage: finalImage,
+        finalImage: cleanImage,
         bubbleStates: []
       }
       task.status = 'completed'
@@ -55,33 +62,81 @@ export class RenderPool extends TaskPool {
       return task
     }
 
-    // 获取干净背景图：优先使用inpaintResult，其次使用已有的cleanImageData
-    const cleanImage = task.inpaintResult?.cleanImage
-      || task.imageData.cleanImageData
-      || this.extractBase64(task.imageData.translatedDataURL || task.imageData.originalDataURL)
+    // AI校对模式：使用已有的bubbleStates，只更新译文
+    if (!task.detectionResult && task.imageData.bubbleStates && task.imageData.bubbleStates.length > 0) {
+      const existingBubbles = task.imageData.bubbleStates
 
-    // 调用后端渲染 API
-    const response = await parallelRender({
-      clean_image: cleanImage,
-      bubble_states: bubbleStates,
-      fontSize: settingsStore.settings.textStyle.fontSize,
-      fontFamily: settingsStore.settings.textStyle.fontFamily,
-      textDirection: settingsStore.settings.textStyle.layoutDirection,
-      textColor: settingsStore.settings.textStyle.textColor,
-      strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
-      strokeColor: settingsStore.settings.textStyle.strokeColor,
-      strokeWidth: settingsStore.settings.textStyle.strokeWidth,
-      autoFontSize: settingsStore.settings.textStyle.autoFontSize,
-      use_individual_styles: true
-    })
+      // 准备数据
+      const bubbleCoords = existingBubbles.map(bs => bs.coords)
+      const bubbleAngles = existingBubbles.map(bs => bs.rotationAngle || 0)
+      const autoDirections = existingBubbles.map(bs => bs.autoTextDirection || 'vertical')
+      const originalTexts = existingBubbles.map(bs => bs.originalText || '')
+      const translatedTexts = existingBubbles.map((bs, idx) => texts[idx] || bs.translatedText || '')
+      const textboxTexts = existingBubbles.map(bs => bs.textboxText || '')
 
-    if (!response.success) {
-      throw new Error(response.error || '渲染失败')
+      const colors = existingBubbles.map(bs => ({
+        textColor: bs.textColor || '#000000',
+        bgColor: bs.fillColor || '#FFFFFF',
+        autoFgColor: bs.autoFgColor || null,
+        autoBgColor: bs.autoBgColor || null
+      }))
+
+      // 使用executeRender步骤模块
+      const result = await executeRender({
+        imageIndex: task.imageIndex,
+        cleanImage: cleanImage,
+        bubbleCoords: bubbleCoords as any,
+        bubbleAngles: bubbleAngles,
+        autoDirections: autoDirections,
+        originalTexts: originalTexts,
+        translatedTexts: translatedTexts,
+        textboxTexts: textboxTexts,
+        colors: colors,
+        savedTextStyles: null,
+        currentMode: 'proofread'
+      })
+
+      task.renderResult = {
+        finalImage: result.finalImage,
+        bubbleStates: result.bubbleStates
+      }
+      task.status = 'completed'
+      this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
+      this.resultCollector.add(task)
+      return task
     }
 
+    // removeText模式检测：有检测结果但没有翻译结果也没有OCR结果，返回空数组跳过渲染
+    if (task.detectionResult && !task.translateResult && !task.ocrResult) {
+      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译和OCR结果），跳过渲染`)
+      task.renderResult = {
+        finalImage: cleanImage,
+        bubbleStates: []
+      }
+      task.status = 'completed'
+      this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
+      this.resultCollector.add(task)
+      return task
+    }
+
+    // 标准翻译模式：使用executeRender步骤模块
+    const result = await executeRender({
+      imageIndex: task.imageIndex,
+      cleanImage: cleanImage,
+      bubbleCoords: coords as any,
+      bubbleAngles: angles,
+      autoDirections: directions,
+      originalTexts: originals,
+      translatedTexts: texts,
+      textboxTexts: textboxTexts,
+      colors: colors,
+      savedTextStyles: null,  // 并行翻译不使用savedTextStyles
+      currentMode: 'standard'  // 固定为standard模式
+    })
+
     task.renderResult = {
-      finalImage: response.final_image || '',
-      bubbleStates: response.bubble_states || bubbleStates
+      finalImage: result.finalImage,
+      bubbleStates: result.bubbleStates
     }
 
     task.status = 'completed'
@@ -165,85 +220,6 @@ export class RenderPool extends TaskPool {
     }
 
     console.log(`✅ 图片 ${imageIndex + 1} 渲染完成`)
-  }
-
-  /**
-   * 构建 BubbleState 数组
-   */
-  private buildBubbleStates(
-    task: PipelineTask,
-    settingsStore: ReturnType<typeof useSettingsStore>
-  ): BubbleState[] {
-    // AI校对模式：使用已有的bubbleStates，只更新translatedText
-    if (!task.detectionResult && task.imageData.bubbleStates && task.imageData.bubbleStates.length > 0) {
-      const translatedTexts = task.translateResult?.translatedTexts || []
-      return task.imageData.bubbleStates.map((state, idx) => ({
-        ...state,
-        translatedText: translatedTexts[idx] || state.translatedText || ''
-      }))
-    }
-
-    // removeText模式检测：有检测结果但没有翻译结果也没有OCR结果，返回空数组跳过渲染
-    // 注意：如果有 OCR 结果（removeText + OCR 模式），需要保留原文信息，不跳过
-    if (task.detectionResult && !task.translateResult && !task.ocrResult) {
-      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译和OCR结果），跳过渲染`)
-      return []
-    }
-
-    const coords = task.detectionResult?.bubbleCoords || []
-    const texts = task.translateResult?.translatedTexts || []
-    const originals = task.ocrResult?.originalTexts || []
-    const colors = task.colorResult?.colors || []
-    const angles = task.detectionResult?.bubbleAngles || []
-    const directions = task.detectionResult?.autoDirections || []
-    const polygons = task.detectionResult?.bubblePolygons || []
-    const settings = settingsStore.settings
-
-    return coords.map((coord, idx) => {
-      const autoDir = directions[idx]
-      const mappedDirection: TextDirection = autoDir === 'v' ? 'vertical' : autoDir === 'h' ? 'horizontal' : 'vertical'
-
-      // 【简化设计】textDirection 直接使用具体方向值
-      // - 如果全局设置是 'auto'，使用检测结果
-      // - 否则使用全局设置的值
-      const globalTextDir = settings.textStyle.layoutDirection
-      const textDirection: TextDirection =
-        (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
-          ? globalTextDir
-          : mappedDirection
-
-      // 颜色处理：优先使用自动提取的颜色
-      let textColor = settings.textStyle.textColor
-      let fillColor = settings.textStyle.fillColor
-      const colorInfo = colors[idx]
-
-      if (settings.textStyle.useAutoTextColor && colorInfo) {
-        if (colorInfo.textColor) textColor = colorInfo.textColor
-        if (colorInfo.bgColor) fillColor = colorInfo.bgColor
-      }
-
-      return {
-        originalText: originals[idx] || '',
-        translatedText: texts[idx] || '',
-        textboxText: '',
-        coords: (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords,
-        polygon: polygons[idx] || [],
-        fontSize: settings.textStyle.fontSize,
-        fontFamily: settings.textStyle.fontFamily,
-        textDirection: textDirection,         // 渲染用的具体方向
-        autoTextDirection: mappedDirection,   // 备份检测结果
-        textColor: textColor,
-        fillColor: fillColor,
-        rotationAngle: angles[idx] || 0,
-        position: { x: 0, y: 0 },
-        strokeEnabled: settings.textStyle.strokeEnabled,
-        strokeColor: settings.textStyle.strokeColor,
-        strokeWidth: settings.textStyle.strokeWidth,
-        inpaintMethod: settings.textStyle.inpaintMethod as InpaintMethod,
-        autoFgColor: colorInfo?.autoFgColor || null,
-        autoBgColor: colorInfo?.autoBgColor || null
-      }
-    })
   }
 
   private extractBase64(dataUrl: string): string {

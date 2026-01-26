@@ -7,7 +7,6 @@ import { apiClient } from './client'
 import type {
   ApiResponse,
   ReRenderResponse,
-  DetectBoxesResponse,
   OcrSingleBubbleResponse,
   InpaintSingleBubbleResponse,
   HqTranslateResponse,
@@ -204,31 +203,7 @@ export async function hqTranslateBatch(params: HqTranslateParams): Promise<HqTra
   return apiClient.post<HqTranslateResponse>('/api/hq_translate_batch', params)
 }
 
-// ==================== 气泡检测 API ====================
-
-/**
- * 仅检测气泡框（不进行翻译）
- * @param image Base64 图片数据
- * @param detectorType 文字检测器类型（后端字段名 detector_type）
- * @param boxExpandParams 文本框扩展参数
- */
-export async function detectBoxes(
-  image: string,
-  detectorType?: string,
-  boxExpandParams?: {
-    box_expand_ratio?: number
-    box_expand_top?: number
-    box_expand_bottom?: number
-    box_expand_left?: number
-    box_expand_right?: number
-  }
-): Promise<DetectBoxesResponse> {
-  return apiClient.post<DetectBoxesResponse>('/api/detect_boxes', {
-    image,
-    detector_type: detectorType,
-    ...boxExpandParams,
-  })
-}
+// ==================== OCR 和修复 API ====================
 
 /**
  * 单气泡 OCR 重新识别

@@ -527,7 +527,8 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
         percentage: 0
       }
       
-      const { parallelRender } = await import('@/api/parallelTranslate')
+      // 使用独立的渲染步骤模块
+      const { executeRender } = await import('@/composables/translation/core/steps')
       let completedCount = 0
 
       for (const imageIndex of imagesToReRender) {
@@ -554,41 +555,57 @@ async function handleApplyToAll(options: ApplySettingsOptions) {
             continue
           }
 
-          // 构建 API 请求的气泡状态（包含所有必要字段）
-          const bubbleStatesForApi = img.bubbleStates.map(bs => ({
-            originalText: bs.originalText || '',
-            translatedText: bs.translatedText || '',
-            textboxText: bs.textboxText || '',
-            coords: bs.coords,
-            polygon: bs.polygon,
-            fontSize: bs.fontSize,
-            fontFamily: bs.fontFamily,
-            textDirection: bs.textDirection,
-            autoTextDirection: bs.autoTextDirection,
-            textColor: bs.textColor,
-            fillColor: bs.fillColor,
-            rotationAngle: bs.rotationAngle || 0,
-            position: bs.position || { x: 0, y: 0 },
-            strokeEnabled: bs.strokeEnabled,
-            strokeColor: bs.strokeColor,
-            strokeWidth: bs.strokeWidth,
-            inpaintMethod: bs.inpaintMethod,
-            autoFgColor: bs.autoFgColor,
-            autoBgColor: bs.autoBgColor,
+          // 准备渲染数据
+          const bubbleCoords = img.bubbleStates.map(bs => bs.coords)
+          const bubbleAngles = img.bubbleStates.map(bs => bs.rotationAngle || 0)
+          const autoDirections = img.bubbleStates.map(bs => bs.autoTextDirection || 'vertical')
+          const originalTexts = img.bubbleStates.map(bs => bs.originalText || '')
+          const translatedTexts = img.bubbleStates.map(bs => bs.translatedText || '')
+          const textboxTexts = img.bubbleStates.map(bs => bs.textboxText || '')
+          
+          // 构建颜色数据
+          const colors = img.bubbleStates.map(bs => ({
+            textColor: bs.textColor || '#000000',
+            bgColor: bs.fillColor || '#FFFFFF',
+            autoFgColor: bs.autoFgColor || null,
+            autoBgColor: bs.autoBgColor || null
           }))
 
-          // 【优化】移除冗余的全局样式参数，因为 use_individual_styles: true 会使用气泡自己的样式
-          const response = await parallelRender({
-            clean_image: cleanImageBase64,
-            bubble_states: bubbleStatesForApi,
+          // 构建savedTextStyles（从当前图片的设置）
+          const savedTextStyles = {
+            fontSize: img.fontSize,
             autoFontSize: options.fontSize && isAutoFontSize,
-            use_individual_styles: true,
+            fontFamily: img.fontFamily,
+            textDirection: img.layoutDirection,
+            autoTextDirection: textStyle.layoutDirection === 'auto',
+            textColor: img.textColor,
+            fillColor: img.fillColor,
+            strokeEnabled: img.strokeEnabled,
+            strokeColor: img.strokeColor,
+            strokeWidth: img.strokeWidth,
+            inpaintMethod: img.inpaintMethod,
+            useAutoTextColor: img.useAutoTextColor
+          }
+
+          // 调用独立的渲染步骤模块
+          const result = await executeRender({
+            imageIndex: imageIndex,
+            cleanImage: cleanImageBase64,
+            bubbleCoords: bubbleCoords as any,
+            bubbleAngles: bubbleAngles,
+            autoDirections: autoDirections,
+            originalTexts: originalTexts,
+            translatedTexts: translatedTexts,
+            textboxTexts: textboxTexts,
+            colors: colors,
+            savedTextStyles: savedTextStyles as any,
+            currentMode: 'standard'
           })
 
-          if (response.success && response.final_image) {
+          if (result.finalImage) {
             imageStore.updateImageByIndex(imageIndex, {
-              translatedDataURL: `data:image/png;base64,${response.final_image}`,
-              bubbleStates: response.bubble_states || img.bubbleStates,
+              translatedDataURL: `data:image/png;base64,${result.finalImage}`,
+              bubbleStates: result.bubbleStates || img.bubbleStates,
               hasUnsavedChanges: true
             })
             

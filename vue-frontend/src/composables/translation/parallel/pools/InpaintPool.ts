@@ -8,8 +8,7 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
-import { parallelInpaint } from '@/api/parallelTranslate'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { executeInpaint } from '@/composables/translation/core/steps'
 
 export class InpaintPool extends TaskPool {
   constructor(
@@ -23,52 +22,37 @@ export class InpaintPool extends TaskPool {
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {
     const { imageData, detectionResult } = task
-    const settingsStore = useSettingsStore()
-    const settings = settingsStore.settings
 
     if (!detectionResult || detectionResult.bubbleCoords.length === 0) {
       // 没有气泡，使用原图作为干净图
+      const extractBase64 = (dataUrl: string): string => {
+        if (dataUrl.includes('base64,')) {
+          return dataUrl.split('base64,')[1] || ''
+        }
+        return dataUrl
+      }
+
       task.inpaintResult = {
-        cleanImage: this.extractBase64(imageData.originalDataURL)
+        cleanImage: extractBase64(imageData.originalDataURL)
       }
       task.status = 'processing'
       return task
     }
 
-    const base64 = this.extractBase64(imageData.originalDataURL)
-
-    // 确定修复方法和模型
-    const inpaintMethod = settings.textStyle.inpaintMethod
-    const useLama = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
-
-    const response = await parallelInpaint({
-      image: base64,
-      bubble_coords: detectionResult.bubbleCoords,
-      bubble_polygons: detectionResult.bubblePolygons,
-      raw_mask: detectionResult.rawMask,
-      method: useLama ? 'lama' : 'solid',
-      lama_model: useLama ? inpaintMethod : undefined,
-      fill_color: settings.textStyle.fillColor,
-      mask_dilate_size: settings.preciseMask.dilateSize,
-      mask_box_expand_ratio: settings.preciseMask.boxExpandRatio
+    // 调用独立的修复步骤模块
+    const result = await executeInpaint({
+      imageIndex: task.imageIndex,
+      image: imageData,
+      bubbleCoords: detectionResult.bubbleCoords as any,
+      bubblePolygons: detectionResult.bubblePolygons,
+      rawMask: detectionResult.rawMask
     })
 
-    if (!response.success) {
-      throw new Error(response.error || '修复失败')
-    }
-
     task.inpaintResult = {
-      cleanImage: response.clean_image || ''
+      cleanImage: result.cleanImage
     }
 
     task.status = 'processing'
     return task
-  }
-
-  private extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-      return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
   }
 }

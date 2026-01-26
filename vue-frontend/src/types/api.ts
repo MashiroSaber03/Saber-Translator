@@ -37,20 +37,6 @@ export interface ReRenderResponse {
 }
 
 /**
- * 仅检测气泡框 API 响应
- */
-export interface DetectBoxesResponse {
-  success: boolean
-  /** 气泡坐标数组 */
-  bubble_coords?: BubbleCoords[]
-  /** 气泡旋转角度数组 */
-  bubble_angles?: number[]
-  /** 自动检测的排版方向数组（'v' 表示垂直，'h' 表示水平） */
-  auto_directions?: ('v' | 'h')[]
-  error?: string
-}
-
-/**
  * 单气泡 OCR API 响应
  */
 export interface OcrSingleBubbleResponse {
