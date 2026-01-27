@@ -133,7 +133,6 @@ export const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
 
 /** 默认精确文字掩膜设置 */
 export const DEFAULT_PRECISE_MASK: PreciseMaskSettings = {
-  enabled: true,
   dilateSize: 10,
   boxExpandRatio: 20
 }

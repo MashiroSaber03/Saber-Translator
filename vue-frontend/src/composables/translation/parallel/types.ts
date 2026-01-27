@@ -31,7 +31,7 @@ export interface PipelineTask {
     bubbleAngles: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
-    rawMask?: string
+    textMask?: string
     textlinesPerBubble?: any[]
   }
 

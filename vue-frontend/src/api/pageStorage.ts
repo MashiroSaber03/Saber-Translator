@@ -228,6 +228,9 @@ export interface ImageDataForSave {
     strokeEnabled?: boolean
     strokeColor?: string
     strokeWidth?: number
+    // 双掩膜系统字段
+    textMask?: string | null    // 文字检测掩膜
+    userMask?: string | null    // 用户笔刷掩膜
 }
 
 /** 保存进度回调 */
@@ -297,6 +300,9 @@ export async function saveAllPagesSequentially(
                 strokeEnabled: img.strokeEnabled,
                 strokeColor: img.strokeColor,
                 strokeWidth: img.strokeWidth,
+                // 双掩膜系统字段
+                textMask: img.textMask,
+                userMask: img.userMask,
             }
             await savePageMeta(sessionPath, idx, pageMeta)
 

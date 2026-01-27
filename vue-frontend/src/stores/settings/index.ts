@@ -617,10 +617,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.boxExpand.right = parseNum(backendSettings.boxExpandRight, 0)
     }
 
-    // 精确掩膜设置
-    if (backendSettings.usePreciseMask !== undefined) {
-      settings.value.preciseMask.enabled = backendSettings.usePreciseMask as boolean
-    }
+    // 精确掩膜设置（常驻启用，无开关）
     if (backendSettings.maskDilateSize !== undefined) {
       settings.value.preciseMask.dilateSize = parseNum(backendSettings.maskDilateSize, 5)
     }
@@ -878,8 +875,8 @@ export const useSettingsStore = defineStore('settings', () => {
         boxExpandLeft: String(settings.value.boxExpand.left),
         boxExpandRight: String(settings.value.boxExpand.right),
 
-        // 精确掩膜
-        usePreciseMask: settings.value.preciseMask.enabled,
+        // 精确掩膜（常驻启用，无开关）
+        usePreciseMask: true,  // 固定启用
         maskDilateSize: String(settings.value.preciseMask.dilateSize),
         maskBoxExpandRatio: String(settings.value.preciseMask.boxExpandRatio || 0),
 

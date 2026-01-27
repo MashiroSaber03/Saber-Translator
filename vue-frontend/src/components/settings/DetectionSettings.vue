@@ -8,7 +8,6 @@
         <CustomSelect
           v-model="settings.textDetector"
           :options="detectorOptions"
-          @change="handleDetectorChange"
         />
       </div>
     </div>
@@ -43,17 +42,11 @@
       </div>
     </div>
 
-    <!-- 精确文字掩膜设置 (仅CTD和Default支持) -->
-    <div v-show="supportsPreciseMask" class="settings-group">
+
+    <!-- 精确文字掩膜设置 (常驻功能) -->
+    <div class="settings-group">
       <div class="settings-group-title">精确文字掩膜</div>
-      <div class="settings-item">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="settings.usePreciseMask" />
-          启用精确文字掩膜
-        </label>
-        <div class="input-hint">使用更精确的文字区域掩膜进行修复</div>
-      </div>
-      <div v-show="settings.usePreciseMask" class="settings-row">
+      <div class="settings-row">
         <div class="settings-item">
           <label for="settingsMaskDilateSize">膨胀大小:</label>
           <input type="number" id="settingsMaskDilateSize" v-model.number="settings.maskDilateSize" min="0" step="1" />
@@ -93,7 +86,7 @@
  * 检测设置组件
  * 管理文字检测器和相关参数配置
  */
-import { reactive, computed, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
@@ -116,15 +109,9 @@ const settings = reactive({
   boxExpandBottom: settingsStore.settings.boxExpand.bottom,
   boxExpandLeft: settingsStore.settings.boxExpand.left,
   boxExpandRight: settingsStore.settings.boxExpand.right,
-  usePreciseMask: settingsStore.settings.preciseMask.enabled,
   maskDilateSize: settingsStore.settings.preciseMask.dilateSize,
   maskBoxExpandRatio: settingsStore.settings.preciseMask.boxExpandRatio,
   showDetectionDebug: settingsStore.settings.showDetectionDebug
-})
-
-// 计算属性：是否支持精确掩膜
-const supportsPreciseMask = computed(() => {
-  return ['ctd', 'default'].includes(settings.textDetector)
 })
 
 // 监听本地设置变化，同步到 store
@@ -152,10 +139,6 @@ watch(() => settings.boxExpandRight, (value) => {
   settingsStore.updateBoxExpand({ right: value })
 })
 
-watch(() => settings.usePreciseMask, (value) => {
-  settingsStore.updatePreciseMask({ enabled: value })
-})
-
 watch(() => settings.maskDilateSize, (value) => {
   settingsStore.updatePreciseMask({ dilateSize: value })
 })
@@ -167,14 +150,6 @@ watch(() => settings.maskBoxExpandRatio, (value) => {
 watch(() => settings.showDetectionDebug, (value) => {
   settingsStore.setShowDetectionDebug(value)
 })
-
-// 处理检测器切换
-function handleDetectorChange() {
-  // 如果切换到不支持精确掩膜的检测器，自动关闭该选项
-  if (!supportsPreciseMask.value) {
-    settings.usePreciseMask = false
-  }
-}
 </script>
 
 <style scoped>

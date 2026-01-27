@@ -109,7 +109,7 @@ def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
 
     return mask
 
-def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe'):
+def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe'):
     """
     根据指定方法修复或填充图像中的气泡区域。
 
@@ -120,9 +120,13 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
         fill_color (str): 'solid' 方法使用的填充颜色。
         bubble_polygons (list): 可选，气泡多边形坐标列表 [[[x1,y1], [x2,y2], [x3,y3], [x4,y4]], ...]
                                如果提供，将使用多边形而不是矩形来创建掩码和填充
-        precise_mask (np.ndarray): 可选，模型生成的精确文字掩膜。
+        precise_mask (np.ndarray): 可选，模型生成的精确文字掩膜（textMask）。
                                    如果提供，将直接使用此掩膜而非根据坐标生成。
                                    仅 CTD/Default 检测器支持生成此掩膜。
+        user_mask (np.ndarray): 可选，用户笔刷掩膜（userMask）。
+                                白色(255)=用户标记需要修复的区域
+                                黑色(0)=用户标记需要保留的区域
+                                灰色(127)=未修改，使用自动检测结果
         mask_dilate_size (int): 掩膜膨胀大小（像素），用于扩大修复区域。
         mask_box_expand_ratio (int): 标注框区域扩大比例（%），用于扩大标注框的收录范围。
         lama_model (str): LAMA 模型选择 'lama_mpe' (速度优化) 或 'litelama' (通用)
@@ -202,15 +206,53 @@ def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constan
             bubble_mask_np = 255 - dilated
             logger.debug(f"掩膜膨胀: {mask_dilate_size}px")
         
-        # 保存调试图像
+        # 保存自动掩膜调试图像
         try:
             debug_dir = get_debug_dir("inpainting_masks")
-            cv2.imwrite(os.path.join(debug_dir, "precise_mask_used.png"), bubble_mask_np)
+            cv2.imwrite(os.path.join(debug_dir, "auto_mask_before_user.png"), bubble_mask_np)
         except Exception as save_e:
-            logger.debug(f"保存精确掩膜调试图像失败: {save_e}")
+            logger.debug(f"保存自动掩膜调试图像失败: {save_e}")
     else:
         # 使用坐标/多边形生成掩膜
         bubble_mask_np = create_bubble_mask(image_size, bubble_coords, bubble_polygons)
+    
+    # ✅ 2. 叠加用户掩膜（不受标注框限制）
+    if user_mask is not None:
+        logger.debug("叠加用户笔刷掩膜")
+        
+        # 确保用户掩膜尺寸与图像匹配
+        if user_mask.shape[:2] != image_size[:2]:
+            user_mask = cv2.resize(user_mask, (image_size[1], image_size[0]), interpolation=cv2.INTER_LINEAR)
+        
+        # 统计用于调试
+        white_count = np.sum(user_mask > 200)
+        black_count = np.sum(user_mask < 50)
+        gray_count = np.sum((user_mask >= 50) & (user_mask <= 200))
+        logger.debug(f"用户掩膜统计: 白色(修复)={white_count}px, 黑色(保留)={black_count}px, 灰色(未改)={gray_count}px")
+        
+        # 叠加逻辑：
+        # - user_mask 白色(>200) → bubble_mask_np 设为黑色（强制修复，不受标注框限制）
+        # - user_mask 黑色(<50) → bubble_mask_np 设为白色（强制保留，不受标注框限制）
+        # - user_mask 灰色 → 保持 bubble_mask_np 原值
+        
+        # 用户标记需要修复的区域（白色）→ 强制设为黑色
+        user_repair_mask = user_mask > 200
+        bubble_mask_np[user_repair_mask] = 0
+        
+        # 用户标记需要保留的区域（黑色）→ 强制设为白色
+        user_preserve_mask = user_mask < 50
+        bubble_mask_np[user_preserve_mask] = 255
+        
+        # 保存最终掩膜调试图像
+        try:
+            debug_dir = get_debug_dir("inpainting_masks")
+            cv2.imwrite(os.path.join(debug_dir, "final_mask_with_user.png"), bubble_mask_np)
+        except Exception as save_e:
+            logger.debug(f"保存最终掩膜调试图像失败: {save_e}")
+        
+        # 统计最终掩膜
+        final_repair_count = np.sum(bubble_mask_np < 128)
+        logger.debug(f"最终掩膜修复区域: {final_repair_count}px ({final_repair_count * 100 / bubble_mask_np.size:.2f}%)")
     
     bubble_mask_pil = Image.fromarray(bubble_mask_np)
 

@@ -176,6 +176,8 @@ export class RenderPool extends TaskPool {
       originalTexts: task.ocrResult?.originalTexts || [],
       bubbleTexts: task.translateResult?.translatedTexts || [],
       textboxTexts: task.translateResult?.textboxTexts || [],
+      textMask: task.detectionResult?.textMask || null,  // 保存精确文字掩膜
+      userMask: task.imageData.userMask || null,  // 【重要】保留用户笔刷掩膜
       translationStatus: 'completed',
       translationFailed: false,
       showOriginal: false,

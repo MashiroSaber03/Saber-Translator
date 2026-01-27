@@ -176,9 +176,9 @@ export interface BoxExpandSettings {
 
 /**
  * 精确文字掩膜设置
+ * 精确文字掩膜为常驻功能，无开关
  */
 export interface PreciseMaskSettings {
-  enabled: boolean
   dilateSize: number
   boxExpandRatio: number
 }

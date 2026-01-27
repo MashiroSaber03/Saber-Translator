@@ -12,7 +12,8 @@ export interface InpaintInput {
     image: AppImageData
     bubbleCoords: BubbleCoords[]
     bubblePolygons: number[][][]
-    rawMask?: string
+    textMask?: string      // 文字检测掩膜
+    userMask?: string      // 用户笔刷掩膜
 }
 
 export interface InpaintOutput {
@@ -20,7 +21,7 @@ export interface InpaintOutput {
 }
 
 export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput> {
-    const { image, bubbleCoords, bubblePolygons, rawMask } = input
+    const { image, bubbleCoords, bubblePolygons, textMask, userMask } = input
 
     if (bubbleCoords.length === 0) {
         return { cleanImage: extractBase64(image.originalDataURL) }
@@ -31,11 +32,15 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     const { textStyle, preciseMask } = settings
     const base64 = extractBase64(image.originalDataURL)
 
+    // ✅ 分别发送 textMask 和 userMask，由后端合并处理
+    console.log(`修复步骤 - textMask: ${textMask ? '✅' : '❌'}, userMask: ${userMask ? '✅' : '❌'}`)
+
     const response: ParallelInpaintResponse = await parallelInpaint({
         image: base64,
         bubble_coords: bubbleCoords,
         bubble_polygons: bubblePolygons,
-        raw_mask: rawMask,
+        raw_mask: textMask || undefined,      // 文字检测掩膜
+        user_mask: userMask || undefined,     // 用户笔刷掩膜（新增）
         method: textStyle.inpaintMethod === 'solid' ? 'solid' : 'lama',
         lama_model: textStyle.inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe',
         fill_color: textStyle.fillColor,
@@ -56,3 +61,4 @@ function extractBase64(dataUrl: string): string {
     }
     return dataUrl
 }
+

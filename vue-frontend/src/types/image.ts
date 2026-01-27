@@ -22,9 +22,9 @@ export interface ImageData {
 
   // 图片尺寸
   /** 图片宽度 */
-  width: number
+  width?: number
   /** 图片高度 */
-  height: number
+  height?: number
 
   // 图片数据（Base64）
   /** 原始图片数据 */
@@ -47,6 +47,13 @@ export interface ImageData {
   bubbleTexts?: string[]
   /** 文本框文本数组（兼容旧数据） */
   textboxTexts?: string[]
+
+  // 双掩膜系统
+  /** 文字检测掩膜 - Default检测器生成的精确文字区域（Base64格式） */
+  textMask?: string | null
+  /** 用户笔刷掩膜 - 记录用户手动修改意图（Base64格式）
+   * 像素值：白色(255)=消除区域，黑色(0)=还原区域，灰色(127)=未修改 */
+  userMask?: string | null
 
   // 手动标注标记
   /** 是否经过手动标注（用户在编辑模式中操作过） */

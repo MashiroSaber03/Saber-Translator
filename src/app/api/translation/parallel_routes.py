@@ -62,13 +62,16 @@ def encode_mask_to_base64(mask: np.ndarray) -> str:
 
 
 def decode_mask_from_base64(base64_str: str) -> np.ndarray:
-    """从Base64解码掩膜"""
+    """从Base64解码掩膜，返回单通道灰度图"""
     if not base64_str:
         return None
     if ',' in base64_str:
         base64_str = base64_str.split(',')[1]
     image_data = base64.b64decode(base64_str)
     image = Image.open(io.BytesIO(image_data))
+    # ✅ 转换为灰度图，确保是单通道
+    if image.mode != 'L':
+        image = image.convert('L')
     return np.array(image)
 
 
@@ -345,7 +348,8 @@ def parallel_inpaint():
         
         # 获取修复参数
         bubble_polygons = data.get('bubble_polygons', [])
-        raw_mask_data = data.get('raw_mask')
+        raw_mask_data = data.get('raw_mask')        # 文字检测掩膜
+        user_mask_data = data.get('user_mask')      # 用户笔刷掩膜（新增）
         method = data.get('method', 'solid')
         lama_model = data.get('lama_model', 'lama_mpe')
         fill_color = data.get('fill_color', '#FFFFFF')
@@ -356,6 +360,11 @@ def parallel_inpaint():
         precise_mask = None
         if raw_mask_data:
             precise_mask = decode_mask_from_base64(raw_mask_data)
+        
+        # 解码用户掩膜
+        user_mask = None
+        if user_mask_data:
+            user_mask = decode_mask_from_base64(user_mask_data)
         
         # 转换为PIL图像
         img_pil = Image.fromarray(img)
@@ -368,6 +377,7 @@ def parallel_inpaint():
             fill_color=fill_color,
             bubble_polygons=bubble_polygons,
             precise_mask=precise_mask,
+            user_mask=user_mask,                    # 传递用户掩膜
             mask_dilate_size=mask_dilate_size,
             mask_box_expand_ratio=mask_box_expand_ratio,
             lama_model=lama_model

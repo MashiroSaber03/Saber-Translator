@@ -45,7 +45,8 @@ export class InpaintPool extends TaskPool {
       image: imageData,
       bubbleCoords: detectionResult.bubbleCoords as any,
       bubblePolygons: detectionResult.bubblePolygons,
-      rawMask: detectionResult.rawMask
+      textMask: detectionResult.textMask,
+      userMask: imageData.userMask || undefined  // ✅ 传递用户掩膜
     })
 
     task.inpaintResult = {

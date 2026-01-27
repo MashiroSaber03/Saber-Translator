@@ -408,6 +408,9 @@ export const useSessionStore = defineStore('session', () => {
           originalDataURL: img.originalDataURL,
           translatedDataURL: img.translatedDataURL || null,
           cleanImageData: img.cleanImageData || null,
+          // 图片尺寸（可选）
+          width: (img.width as number) || undefined,
+          height: (img.height as number) || undefined,
           // 【修复C】保留 bubbleStates 的 null 语义：null=从未处理，[]=用户清空
           // 原版语义：null/undefined 表示需要自动检测，[] 表示用户主动清空了文本框
           bubbleStates: (img.bubbleStates !== undefined && img.bubbleStates !== null)
@@ -433,6 +436,9 @@ export const useSessionStore = defineStore('session', () => {
           strokeEnabled: (img.strokeEnabled as boolean) ?? false,
           strokeColor: (img.strokeColor as string) || '#FFFFFF',
           strokeWidth: (img.strokeWidth as number) || 2,
+          // 双掩膜系统字段
+          textMask: (img.textMask as string) || null,
+          userMask: (img.userMask as string) || null,
         }))
 
         // 将图片 URL 转换为 Base64（用于 Canvas 操作和翻译功能）

@@ -16,7 +16,6 @@ export interface ParallelDetectParams {
   box_expand_bottom?: number
   box_expand_left?: number
   box_expand_right?: number
-  // 注意：精准掩膜参数只在修复阶段使用，检测阶段不需要
 }
 
 export interface ParallelDetectResponse {
@@ -123,7 +122,8 @@ export interface ParallelInpaintParams {
   image: string
   bubble_coords: number[][]
   bubble_polygons?: number[][][]
-  raw_mask?: string
+  raw_mask?: string       // 文字检测掩膜
+  user_mask?: string      // 用户笔刷掩膜（新增）
   method?: string
   lama_model?: string
   fill_color?: string

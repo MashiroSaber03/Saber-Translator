@@ -255,7 +255,7 @@ import { useBrush } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
-import { executeDetection } from '@/composables/translation/core/steps'
+import { executeDetection, saveDetectionResultToImage } from '@/composables/translation/core/steps'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
 import BubbleOverlay from './BubbleOverlay.vue'
@@ -1117,10 +1117,8 @@ async function autoDetectBubbles(): Promise<void> {
     })
     
     if (result.bubbleCoords.length > 0) {
-      imageStore.updateCurrentImage({
-        bubbleCoords: result.bubbleCoords.map(c => [...c]),
-        bubbleAngles: result.bubbleAngles
-      })
+      // ✅ 使用统一保存函数，确保所有字段都被保存
+      saveDetectionResultToImage(currentImageIndex.value, result)
       
       initializeTextArrays(image, result.bubbleCoords.length)
       const detectionData = {
@@ -1189,16 +1187,20 @@ async function detectAllImages(): Promise<void> {
         if (result.bubbleCoords.length > 0) {
           const img = images.value[i]
           if (img) {
-            img.bubbleCoords = result.bubbleCoords.map(c => [...c])
-            img.bubbleAngles = result.bubbleAngles
-            
+            // 准备 bubbleStates
             initializeTextArrays(img, result.bubbleCoords.length)
             const detectionData = {
               bubble_coords: result.bubbleCoords,
               bubble_angles: result.bubbleAngles,
               auto_directions: result.autoDirections
             }
-            img.bubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
+            const newBubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
+            
+            // ✅ 使用统一保存函数，确保所有字段都被保存
+            saveDetectionResultToImage(i, result, {
+              updateBubbleStates: true,
+              bubbleStates: newBubbleStates
+            })
             
             totalDetected += result.bubbleCoords.length
             

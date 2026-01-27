@@ -99,7 +99,7 @@ interface TaskState {
     bubbleAngles: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
-    rawMask?: string
+    textMask?: string
     textlinesPerBubble: any[]
 
     // OCR结果
@@ -229,7 +229,7 @@ export function useSequentialPipeline() {
         task.bubbleAngles = result.bubbleAngles
         task.bubblePolygons = result.bubblePolygons
         task.autoDirections = result.autoDirections
-        task.rawMask = result.rawMask
+        task.textMask = result.textMask
         task.textlinesPerBubble = result.textlinesPerBubble
         if (result.originalTexts) {
             task.originalTexts = result.originalTexts
@@ -305,7 +305,8 @@ export function useSequentialPipeline() {
             image: task.image,
             bubbleCoords: task.bubbleCoords,
             bubblePolygons: task.bubblePolygons,
-            rawMask: task.rawMask
+            textMask: task.textMask,
+            userMask: task.image.userMask || undefined  // ✅ 传递用户掩膜
         })
 
         task.cleanImage = result.cleanImage
@@ -390,6 +391,8 @@ export function useSequentialPipeline() {
             originalTexts: task.originalTexts,
             textboxTexts: task.textboxTexts,
             bubbleTexts: task.translatedTexts,
+            textMask: task.textMask || null,  // 保存精确文字掩膜
+            userMask: task.image.userMask || null,  // 【重要】保留用户笔刷掩膜
             translationStatus: 'completed',
             translationFailed: false,
             showOriginal: false,
@@ -734,6 +737,7 @@ export function useSequentialPipeline() {
                 bubbleAngles: [],
                 bubblePolygons: [],
                 autoDirections: [],
+                textMask: image.textMask || undefined, // 【重要】从图片中恢复精确文字掩膜
                 textlinesPerBubble: [],
                 originalTexts: [],
                 colors: [],

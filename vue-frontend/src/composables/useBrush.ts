@@ -11,6 +11,7 @@ import { BRUSH_MIN_SIZE, BRUSH_MAX_SIZE, BRUSH_DEFAULT_SIZE } from '@/constants'
 import { inpaintSingleBubble } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleCoords, InpaintMethod } from '@/types/bubble'
+import { addErasureToUserMask, addRestorationToUserMask } from '@/utils/maskMerger'
 
 // ============================================================
 // 类型定义
@@ -279,7 +280,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       } else if (mode === 'repair') {
         await repairBrushArea(currentImage, bounds)
       }
-      
+
       // 触发重新渲染回调
       callbacks?.onBrushComplete?.()
     }
@@ -437,7 +438,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       const originalImg = new Image()
       let loadedCount = 0
 
-      const onLoad = () => {
+      const onLoad = async () => {
         loadedCount++
         if (loadedCount < 2) return
 
@@ -478,10 +479,22 @@ export function useBrush(callbacks?: BrushCallbacks) {
         ctx.drawImage(originalImg, 0, 0)
         ctx.globalCompositeOperation = 'source-over'
 
-        // 更新 cleanImageData
+        // ✅ 更新 userMask（记录用户还原意图）
+        const newUserMask = await addRestorationToUserMask(
+          currentImage.userMask,
+          canvas.width,
+          canvas.height,
+          bounds.path,
+          bounds.radius
+        )
+
+        // 更新 cleanImageData 和 userMask
         const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
-        imageStore.updateCurrentImage({ cleanImageData: newCleanImageData })
-        console.log('还原笔刷区域完成')
+        imageStore.updateCurrentImage({
+          cleanImageData: newCleanImageData,
+          userMask: newUserMask
+        })
+        console.log('还原笔刷区域完成，userMask 已更新')
         resolve()
       }
 
@@ -593,9 +606,21 @@ export function useBrush(callbacks?: BrushCallbacks) {
           })
 
           if (response.success && response.inpainted_image) {
-            // 更新 cleanImageData
-            imageStore.updateCurrentImage({ cleanImageData: response.inpainted_image })
-            console.log('修复笔刷区域完成（LAMA 修复，精确掩膜）')
+            // ✅ 更新 userMask（记录用户消除意图）
+            const newUserMask = await addErasureToUserMask(
+              currentImage.userMask,
+              imgWidth,
+              imgHeight,
+              bounds.path,
+              bounds.radius
+            )
+
+            // 更新 cleanImageData 和 userMask
+            imageStore.updateCurrentImage({
+              cleanImageData: response.inpainted_image,
+              userMask: newUserMask
+            })
+            console.log('修复笔刷区域完成（LAMA 修复，精确掩膜），userMask 已更新')
             showToast('LAMA 修复完成', 'success')
           } else {
             throw new Error(response.error || 'LAMA 修复返回无效数据')
@@ -637,7 +662,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
     return new Promise((resolve) => {
       const img = new Image()
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas')
         canvas.width = img.naturalWidth
         canvas.height = img.naturalHeight
@@ -658,10 +683,23 @@ export function useBrush(callbacks?: BrushCallbacks) {
           ctx.fill()
         }
 
-        // 更新 cleanImageData
+
+        // ✅ 更新 userMask（记录用户消除意图）
+        const newUserMask = await addErasureToUserMask(
+          currentImage.userMask,
+          img.naturalWidth,
+          img.naturalHeight,
+          bounds.path,
+          bounds.radius
+        )
+
+        // 更新 cleanImageData 和 userMask
         const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
-        imageStore.updateCurrentImage({ cleanImageData: newCleanImageData })
-        console.log('修复笔刷区域完成（纯色填充）')
+        imageStore.updateCurrentImage({
+          cleanImageData: newCleanImageData,
+          userMask: newUserMask
+        })
+        console.log('修复笔刷区域完成（纯色填充），userMask 已更新')
         resolve()
       }
       img.onerror = () => resolve()
@@ -680,45 +718,45 @@ export function useBrush(callbacks?: BrushCallbacks) {
    */
   async function ensureCleanBackground(): Promise<boolean> {
     const currentImage = imageStore.currentImage
-    
+
     // 如果已有干净背景，直接返回
     if (!currentImage) {
       console.warn('ensureCleanBackground: 没有当前图片')
       return false
     }
-    
+
     if (currentImage.cleanImageData) {
       console.log('ensureCleanBackground: 已有干净背景')
       return true
     }
-    
+
     // 【复刻原版】从回调获取当前设置，回退到settingsStore
     const settings = callbacks?.getCurrentRepairSettings?.()
     const inpaintMethod = settings?.inpaintMethod || settingsStore.settings.textStyle.inpaintMethod
-    
+
     // 检查修复方式，只有纯色填充模式才需要创建临时干净背景
     if (inpaintMethod !== 'solid') {
       console.log('ensureCleanBackground: 非纯色填充模式，跳过')
       return false
     }
-    
+
     // 检查是否有必要的数据
     if (!currentImage.bubbleStates || currentImage.bubbleStates.length === 0) {
       console.warn('ensureCleanBackground: 没有气泡数据')
       return false
     }
-    
+
     if (!currentImage.translatedDataURL && !currentImage.originalDataURL) {
       console.warn('ensureCleanBackground: 没有图片数据')
       return false
     }
-    
+
     console.log('ensureCleanBackground: 尝试为纯色填充模式创建临时干净背景')
-    
+
     // 使用翻译后的图片或原图作为基础
     const baseSrc = currentImage.translatedDataURL || currentImage.originalDataURL
     const fillColor = settings?.fillColor || settingsStore.settings.textStyle.fillColor || '#FFFFFF'
-    
+
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = () => {
@@ -727,29 +765,29 @@ export function useBrush(callbacks?: BrushCallbacks) {
           canvas.width = img.naturalWidth
           canvas.height = img.naturalHeight
           const ctx = canvas.getContext('2d')
-          
+
           if (!ctx) {
             console.error('ensureCleanBackground: 无法获取 Canvas 上下文')
             resolve(false)
             return
           }
-          
+
           // 绘制基础图片
           ctx.drawImage(img, 0, 0)
-          
+
           // 用填充色覆盖所有气泡区域
           ctx.fillStyle = fillColor
           for (const bubble of currentImage.bubbleStates!) {
             const [x1, y1, x2, y2] = bubble.coords
             ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1)
           }
-          
+
           // 提取 Base64 数据（不含前缀）
           const tempCleanImage = canvas.toDataURL('image/png').split(',')[1]
-          
+
           // 更新图片数据
           imageStore.updateCurrentImage({ cleanImageData: tempCleanImage })
-          
+
           console.log('ensureCleanBackground: 成功创建临时干净背景（纯色填充）')
           resolve(true)
         } catch (e) {
