@@ -106,12 +106,46 @@ export class RenderPool extends TaskPool {
       return task
     }
 
-    // removeText模式检测：有检测结果但没有翻译结果也没有OCR结果，返回空数组跳过渲染
-    if (task.detectionResult && !task.translateResult && !task.ocrResult) {
-      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译和OCR结果），跳过渲染`)
+    // removeText模式检测：有检测结果但没有翻译结果
+    // 需要构建bubbleStates以便编辑模式能显示检测框（无论是否有OCR结果）
+    if (task.detectionResult && !task.translateResult) {
+      console.log(`[渲染池] 图片 ${task.imageIndex + 1}: 检测到消除文字模式（无翻译结果），构建基本bubbleStates`)
+
+      // 构建基本的bubbleStates（包含检测框信息但无译文）
+      const { textStyle } = settingsStore.settings
+      const bubbleStates = coords.map((coord, idx) => {
+        const autoDir = directions[idx] || 'vertical'
+        const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
+          : autoDir === 'h' ? 'horizontal'
+            : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
+
+        return {
+          coords: (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords,
+          polygon: [] as number[][],
+          position: { x: 0, y: 0 },
+          rotationAngle: angles[idx] || 0,
+          originalText: originals[idx] || '',  // 如果启用了removeTextWithOcr，这里会有OCR结果
+          translatedText: '',  // 消除文字模式无译文
+          textboxText: '',
+          textDirection: mappedAutoDir,
+          autoTextDirection: mappedAutoDir,
+          fontSize: textStyle.fontSize,
+          fontFamily: textStyle.fontFamily,
+          autoFontSize: textStyle.autoFontSize,
+          textColor: textStyle.textColor,
+          fillColor: textStyle.fillColor,
+          strokeEnabled: textStyle.strokeEnabled,
+          strokeColor: textStyle.strokeColor,
+          strokeWidth: textStyle.strokeWidth,
+          inpaintMethod: textStyle.inpaintMethod,
+          autoFgColor: null,
+          autoBgColor: null
+        }
+      })
+
       task.renderResult = {
         finalImage: cleanImage,
-        bubbleStates: []
+        bubbleStates: bubbleStates
       }
       task.status = 'completed'
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
@@ -182,19 +216,19 @@ export class RenderPool extends TaskPool {
       translationFailed: false,
       showOriginal: false,
       hasUnsavedChanges: true,
-      // 保存用户翻译时选择的设置（用于切换图片时恢复）
-      // 【修复】保存完整的文字设置，避免切换图片后侧边栏显示默认值
-      fontSize: settingsStore.settings.textStyle.fontSize,
-      autoFontSize: settingsStore.settings.textStyle.autoFontSize,
-      fontFamily: settingsStore.settings.textStyle.fontFamily,
-      layoutDirection: settingsStore.settings.textStyle.layoutDirection,
-      textColor: settingsStore.settings.textStyle.textColor,
-      fillColor: settingsStore.settings.textStyle.fillColor,
-      strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
-      strokeColor: settingsStore.settings.textStyle.strokeColor,
-      strokeWidth: settingsStore.settings.textStyle.strokeWidth,
-      inpaintMethod: settingsStore.settings.textStyle.inpaintMethod,
-      useAutoTextColor: settingsStore.settings.textStyle.useAutoTextColor
+      // 【修复】保存翻译时的设置，优先使用已预分发的设置，确保批量翻译时所有图片使用统一设置
+      // 这样即使用户在翻译过程中修改了设置，也不会影响正在翻译的图片
+      fontSize: task.imageData.fontSize ?? settingsStore.settings.textStyle.fontSize,
+      autoFontSize: task.imageData.autoFontSize ?? settingsStore.settings.textStyle.autoFontSize,
+      fontFamily: task.imageData.fontFamily ?? settingsStore.settings.textStyle.fontFamily,
+      layoutDirection: task.imageData.layoutDirection ?? settingsStore.settings.textStyle.layoutDirection,
+      textColor: task.imageData.textColor ?? settingsStore.settings.textStyle.textColor,
+      fillColor: task.imageData.fillColor ?? settingsStore.settings.textStyle.fillColor,
+      strokeEnabled: task.imageData.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
+      strokeColor: task.imageData.strokeColor ?? settingsStore.settings.textStyle.strokeColor,
+      strokeWidth: task.imageData.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+      inpaintMethod: task.imageData.inpaintMethod ?? settingsStore.settings.textStyle.inpaintMethod,
+      useAutoTextColor: task.imageData.useAutoTextColor ?? settingsStore.settings.textStyle.useAutoTextColor
     })
 
     // 2. 如果是当前显示的图片，同步更新 bubbleStore
