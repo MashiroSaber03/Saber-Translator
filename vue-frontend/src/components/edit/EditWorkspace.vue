@@ -390,7 +390,6 @@ function updateImageDimensions(): void {
   }
 }
 
-
 // ============================================================
 // 模板引用
 // ============================================================
@@ -902,17 +901,33 @@ function handleDrawingEnd(_event: MouseEvent): void {
 
 /** 处理图片加载完成 */
 function handleImageLoad(viewport: 'original' | 'translated'): void {
-  console.log(`${viewport} 图片加载完成`)
+  // 获取图片元素和尺寸
+  const wrapperRef = viewport === 'original' ? originalWrapperRef : translatedWrapperRef
+  const img = wrapperRef.value?.querySelector('img')
+  const width = img?.naturalWidth || 0
+  const height = img?.naturalHeight || 0
+  
+  console.log(`[EditWorkspace] ${viewport} 图片加载完成，尺寸: ${width}x${height}`)
   
   // 原图加载完成时更新尺寸
   if (viewport === 'original') {
     updateImageDimensions()
   }
   
-  // 首次加载时适应屏幕
-  if (scale.value === 1 && translateX.value === 0 && translateY.value === 0) {
+  // 【修复】恢复原版逻辑：只在以下情况自动适应屏幕
+  // 1. 初始状态（scale=1, translate=0,0）- 首次进入编辑模式
+  // 2. 检测到超大图片（超过4K）- 强制适应以避免渲染问题
+  const isInitialState = scale.value === 1 && translateX.value === 0 && translateY.value === 0
+  const isLargeImage = width > 3840 || height > 2160
+  
+  if (viewport === 'original' && (isInitialState || isLargeImage)) {
+    if (isLargeImage) {
+      console.log(`[EditWorkspace] 检测到大图（超过4K），自动适应屏幕`)
+    }
     nextTick(() => {
-      fitToScreen()
+      setTimeout(() => {
+        fitToScreen()
+      }, 50)
     })
   }
 }
@@ -1602,6 +1617,11 @@ watch(() => props.isEditModeActive, (active) => {
     nextTick(() => {
       workspaceRef.value?.focus()
       updateImageDimensions()
+      // 【修复大图问题】进入编辑模式时延迟调用 fitToScreen，确保图片正确适应屏幕
+      // 特别是对于8K等超大图片，初始缩放必须正确计算
+      setTimeout(() => {
+        fitToScreen()
+      }, 100)
     })
   }
 })
@@ -2031,14 +2051,12 @@ watch(selectedBubble, (bubble) => {
   overflow: hidden;
   position: relative;
   cursor: grab;
+  /* 【优化大图渲染】使用纯色背景替代棋盘格图案，减少渲染开销 */
   background-color: #0d1b2a;
-  background-image:
-    linear-gradient(45deg, #1a1a2e 25%, transparent 25%),
-    linear-gradient(-45deg, #1a1a2e 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1a1a2e 75%),
-    linear-gradient(-45deg, transparent 75%, #1a1a2e 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  /* 【优化大图渲染】启用 GPU 加速，减少重绘闪烁 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .image-viewport:active {
@@ -2057,6 +2075,10 @@ watch(selectedBubble, (bubble) => {
   left: 0;
   transform-origin: 0 0;
   will-change: transform;
+  /* 【优化大图渲染】强制创建独立的合成层 */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px;
 }
 
 .image-canvas-wrapper img {
@@ -2065,6 +2087,13 @@ watch(selectedBubble, (bubble) => {
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
+  /* 【优化大图渲染】使用高质量图片渲染 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  /* 【优化大图渲染】强制 GPU 加速 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* 分隔条 */

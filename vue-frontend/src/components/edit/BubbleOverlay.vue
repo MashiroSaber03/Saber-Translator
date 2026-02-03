@@ -854,6 +854,11 @@ onUnmounted(() => {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  /* 【优化大图渲染】启用 GPU 加速，减少重绘闪烁 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: contents;
 }
 
 /* 【修复问题1】笔刷模式下禁用气泡框的鼠标事件，让事件穿透到下层viewport */
@@ -873,6 +878,9 @@ onUnmounted(() => {
   pointer-events: auto;
   box-sizing: border-box;
   overflow: visible;
+  /* 【优化大图渲染】GPU 加速和优化重绘 */
+  will-change: transform, left, top, width, height;
+  contain: layout style;
 }
 
 .bubble-highlight-box:hover {
