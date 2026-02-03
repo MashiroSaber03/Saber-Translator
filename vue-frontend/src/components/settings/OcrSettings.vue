@@ -191,11 +191,20 @@
         />
         <div class="prompt-format-selector">
           <CustomSelect
-            :model-value="settings.aiVisionOcr.isJsonMode ? 'true' : 'false'"
+            :model-value="currentPromptMode"
             :options="promptModeOptions"
-            @change="(v: string | number) => { settings.aiVisionOcr.isJsonMode = v === 'true'; handleAiVisionPromptModeChange() }"
+            @change="(v: string | number) => handlePromptModeChange(String(v))"
           />
-          <span class="input-hint">JSON格式输出更结构化</span>
+          <span class="input-hint">{{ getPromptModeHint() }}</span>
+        </div>
+        <!-- PaddleOCR-VL 源语言选择器 -->
+        <div v-if="currentPromptMode === 'paddleocr_vl'" class="paddleocr-vl-lang-selector">
+          <label>源语言:</label>
+          <CustomSelect
+            :model-value="paddleOcrVlSourceLang"
+            :groups="paddleOcrVlSourceLanguageGroups"
+            @change="(v: string | number) => handlePaddleOcrVlLangChange(String(v))"
+          />
         </div>
       </div>
 
@@ -231,7 +240,9 @@ import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import {
   DEFAULT_AI_VISION_OCR_PROMPT,
-  DEFAULT_AI_VISION_OCR_JSON_PROMPT
+  DEFAULT_AI_VISION_OCR_JSON_PROMPT,
+  getPaddleOcrVlPrompt,
+  PADDLEOCR_VL_LANG_MAP
 } from '@/constants'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
@@ -320,8 +331,9 @@ const paddleOcrVlSourceLanguageGroups = [
 
 /** 提示词模式选项 */
 const promptModeOptions = [
-  { label: '普通提示词', value: 'false' },
-  { label: 'JSON提示词', value: 'true' }
+  { label: '普通提示词', value: 'normal' },
+  { label: 'JSON提示词', value: 'json' },
+  { label: 'OCR模型提示词', value: 'paddleocr_vl' }
 ]
 
 /** 源语言选项（分组） */
@@ -492,14 +504,78 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
+// 当前提示词模式（计算属性）
+const currentPromptMode = computed(() => {
+  const prompt = settingsStore.settings.aiVisionOcr.prompt
+  // 检查是否为 PaddleOCR-VL 格式提示词
+  if (prompt && prompt.includes('进行OCR:') && !prompt.includes('助手')) {
+    return 'paddleocr_vl'
+  }
+  // 检查是否为 JSON 模式
+  if (settingsStore.settings.aiVisionOcr.isJsonMode) {
+    return 'json'
+  }
+  return 'normal'
+})
 
-// 处理AI视觉提示词模式切换
-function handleAiVisionPromptModeChange() {
-  // 切换模式时更新默认提示词
-  const newPrompt = settingsStore.settings.aiVisionOcr.isJsonMode 
-    ? DEFAULT_AI_VISION_OCR_JSON_PROMPT 
-    : DEFAULT_AI_VISION_OCR_PROMPT
+// 获取提示词模式提示信息
+function getPromptModeHint(): string {
+  switch (currentPromptMode.value) {
+    case 'paddleocr_vl':
+      return 'PaddleOCR-VL、GLM-OCR 等专用 OCR 模型专用提示词'
+    case 'json':
+      return 'JSON 格式输出更结构化'
+    default:
+      return '通用 VLM 提示词，若使用 PaddleOCR-VL、GLM-OCR 等专用模型，请选择「OCR模型提示词」'
+  }
+}
+
+// 处理提示词模式切换
+function handlePromptModeChange(mode: string) {
+  let newPrompt: string
+  let isJsonMode = false
+  
+  switch (mode) {
+    case 'json':
+      newPrompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
+      isJsonMode = true
+      break
+    case 'paddleocr_vl':
+      // 使用当前选择的语言生成提示词
+      const langName = PADDLEOCR_VL_LANG_MAP[paddleOcrVlSourceLang.value] || '日语'
+      newPrompt = getPaddleOcrVlPrompt(langName)
+      isJsonMode = false
+      break
+    default: // 'normal'
+      newPrompt = DEFAULT_AI_VISION_OCR_PROMPT
+      isJsonMode = false
+      break
+  }
+  
+  // 更新 store
+  settingsStore.updateAiVisionOcr({ 
+    prompt: newPrompt,
+    isJsonMode: isJsonMode
+  })
+  
+  // 同步本地状态
+  localAiVisionOcr.value.prompt = newPrompt
+}
+
+// PaddleOCR-VL 源语言状态
+const paddleOcrVlSourceLang = ref('japanese')
+
+// 处理 PaddleOCR-VL 源语言切换
+function handlePaddleOcrVlLangChange(langCode: string) {
+  paddleOcrVlSourceLang.value = langCode
+  
+  // 根据新语言更新提示词
+  const langName = PADDLEOCR_VL_LANG_MAP[langCode] || '日语'
+  const newPrompt = getPaddleOcrVlPrompt(langName)
+  
+  // 更新 store
   settingsStore.updateAiVisionOcr({ prompt: newPrompt })
+  
   // 同步本地状态
   localAiVisionOcr.value.prompt = newPrompt
 }
@@ -664,5 +740,28 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   background-color: var(--primary-color);
   color: #ffffff;
   border-color: var(--primary-color);
+}
+
+/* PaddleOCR-VL 语言选择器 */
+.paddleocr-vl-lang-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.paddleocr-vl-lang-selector label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.paddleocr-vl-lang-selector .custom-select {
+  flex: 1;
+  min-width: 150px;
 }
 </style>

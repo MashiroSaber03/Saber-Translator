@@ -102,6 +102,50 @@ export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将
   "extracted_text": "[这里放入所有识别到的文字，可以包含换行符以大致保留原始分段，但不要包含任何其他非文本内容]"
 }`
 
+/** 
+ * PaddleOCR-VL 模型专用提示词模板
+ * 这是该模型在 Manga109-s 数据集上微调时使用的格式
+ * 使用此提示词可获得最佳识别效果（日语漫画准确率约70%）
+ * @param langName 语言显示名称（如"日语"、"简体中文"等）
+ */
+export const getPaddleOcrVlPrompt = (langName: string = '日语') => `对图中的${langName}进行OCR:`
+
+/** PaddleOCR-VL 默认提示词（日语） */
+export const DEFAULT_AI_VISION_PADDLEOCR_VL_PROMPT = getPaddleOcrVlPrompt('日语')
+
+/** 
+ * PaddleOCR-VL 语言映射
+ * 将语言代码转换为中文显示名称（用于提示词）
+ */
+export const PADDLEOCR_VL_LANG_MAP: Record<string, string> = {
+  // 东亚语言
+  'japanese': '日语',
+  'chinese': '简体中文',
+  'chinese_cht': '繁体中文',
+  'korean': '韩语',
+  // 拉丁语系
+  'english': '英语',
+  'french': '法语',
+  'german': '德语',
+  'spanish': '西班牙语',
+  'italian': '意大利语',
+  'portuguese': '葡萄牙语',
+  'dutch': '荷兰语',
+  'polish': '波兰语',
+  // 东南亚语言
+  'thai': '泰语',
+  'vietnamese': '越南语',
+  'indonesian': '印尼语',
+  'malay': '马来语',
+  // 其他语系
+  'russian': '俄语',
+  'arabic': '阿拉伯语',
+  'hindi': '印地语',
+  'turkish': '土耳其语',
+  'greek': '希腊语',
+  'hebrew': '希伯来语'
+}
+
 /** 高质量翻译模式默认提示词 */
 export const DEFAULT_HQ_TRANSLATE_PROMPT = `你是一个漫画翻译助手。我会同时提供多张连续的漫画原图和对应的JSON翻译文件，请帮我将原文翻译成中文。
 
