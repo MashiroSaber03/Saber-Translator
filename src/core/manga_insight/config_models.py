@@ -37,6 +37,15 @@ class RerankerProvider(Enum):
     CUSTOM = "custom"
 
 
+class ImageGenProvider(Enum):
+    """生图服务商枚举"""
+    OPENAI = "openai"           # DALL-E
+    SILICONFLOW = "siliconflow" # SD3.5等
+    QWEN = "qwen"               # 通义万相
+    VOLCANO = "volcano"         # 火山引擎
+    CUSTOM = "custom"           # 自定义
+
+
 class AnalysisDepth(Enum):
     """分析深度枚举"""
     QUICK = "quick"        # 仅基础信息提取
@@ -202,6 +211,35 @@ class RerankerConfig:
         )
 
 
+@dataclass
+class ImageGenConfig:
+    """生图模型配置"""
+    provider: str = "siliconflow"
+    api_key: str = ""
+    model: str = "stabilityai/stable-diffusion-3-5-large"
+    base_url: Optional[str] = None
+    max_retries: int = 3             # 每张图重试次数
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "api_key": self.api_key,
+            "model": self.model,
+            "base_url": self.base_url,
+            "max_retries": self.max_retries
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ImageGenConfig":
+        return cls(
+            provider=data.get("provider", "siliconflow"),
+            api_key=data.get("api_key", ""),
+            model=data.get("model", "stabilityai/stable-diffusion-3-5-large"),
+            base_url=data.get("base_url"),
+            max_retries=data.get("max_retries", 3)
+        )
+
+
 # 预设架构模板
 ARCHITECTURE_PRESETS = {
     "simple": {
@@ -357,6 +395,7 @@ class MangaInsightConfig:
     chat_llm: ChatLLMConfig = field(default_factory=ChatLLMConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
+    image_gen: ImageGenConfig = field(default_factory=ImageGenConfig)  # 新增：生图模型配置
     analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
     # 服务商配置缓存（用于切换服务商时保存/恢复配置）
@@ -368,6 +407,7 @@ class MangaInsightConfig:
             "chat_llm": self.chat_llm.to_dict(),
             "embedding": self.embedding.to_dict(),
             "reranker": self.reranker.to_dict(),
+            "image_gen": self.image_gen.to_dict(),
             "analysis": self.analysis.to_dict(),
             "prompts": self.prompts.to_dict(),
             # 保存服务商配置缓存
@@ -381,11 +421,13 @@ class MangaInsightConfig:
             chat_llm=ChatLLMConfig.from_dict(data.get("chat_llm", {})),
             embedding=EmbeddingConfig.from_dict(data.get("embedding", {})),
             reranker=RerankerConfig.from_dict(data.get("reranker", {})),
+            image_gen=ImageGenConfig.from_dict(data.get("image_gen", {})),
             analysis=AnalysisSettings.from_dict(data.get("analysis", {})),
             prompts=PromptsConfig.from_dict(data.get("prompts", {})),
             # 恢复服务商配置缓存
             provider_settings=data.get("providerSettings", {})
         )
+
 
 
 # ============================================================

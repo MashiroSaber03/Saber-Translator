@@ -15,3 +15,4 @@ from . import analysis_routes
 from . import chat_routes
 from . import reanalyze_routes
 from . import data_routes
+from . import continuation_routes  # 新增：续写功能路由

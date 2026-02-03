@@ -311,3 +311,14 @@ class ChatClient:
         
         print(f"\n[完成] 共 {chunk_count} 块, {len(full_text)} 字符\n")
         return full_text
+    
+    async def test_connection(self) -> bool:
+        """测试连接"""
+        try:
+            # 简单测试：发送一个短消息
+            response = await self.generate("测试", temperature=0)
+            return len(response) > 0
+        except Exception as e:
+            logger.error(f"LLM 连接测试失败: {e}")
+            return False
+

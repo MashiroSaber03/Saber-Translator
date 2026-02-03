@@ -15,10 +15,12 @@ from .config_models import (
     ChatLLMConfig,
     EmbeddingConfig,
     RerankerConfig,
+    ImageGenConfig,
     AnalysisSettings,
     VLMProvider,
     EmbeddingProvider,
     RerankerProvider,
+    ImageGenProvider,
     AnalysisDepth
 )
 

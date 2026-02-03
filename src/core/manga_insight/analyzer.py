@@ -81,12 +81,23 @@ class MangaAnalyzer:
                                     for i in range(image_count):
                                         # 新格式路径
                                         image_path = os.path.join(session_dir, "images", str(i), "original.png")
+                                        page_meta_path = os.path.join(session_dir, "images", str(i), "meta.json")
+                                        
+                                        # 加载页面元数据（包含 fileName, relativePath 等）
+                                        page_meta = {}
+                                        if os.path.exists(page_meta_path):
+                                            try:
+                                                with open(page_meta_path, "r", encoding="utf-8") as mf:
+                                                    page_meta = json.load(mf)
+                                            except Exception:
+                                                pass
+                                        
                                         if os.path.exists(image_path):
                                             all_images.append({
                                                 "chapter_id": chapter_id,
                                                 "index": i,
                                                 "path": image_path,
-                                                "meta": {}
+                                                "meta": page_meta
                                             })
                                             total_pages += 1
                                 else:
@@ -106,6 +117,15 @@ class MangaAnalyzer:
                                             total_pages += 1
                             except Exception as e:
                                 logger.error(f"读取 session 数据失败: {chapter_id} - {e}")
+                
+                # 【多文件夹支持】按 relativePath/fileName 进行自然排序
+                # 使用 re 模块实现自然排序（数字部分按数值大小排序）
+                def natural_sort_key(item):
+                    path = item.get("meta", {}).get("relativePath") or item.get("meta", {}).get("fileName", "")
+                    return [int(text) if text.isdigit() else text.lower() 
+                            for text in re.split(r'(\d+)', path)]
+                
+                all_images = sorted(all_images, key=natural_sort_key)
                 
                 self._book_info_cache = {
                     "book_id": self.book_id,

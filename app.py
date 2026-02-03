@@ -351,6 +351,7 @@ if __name__ == '__main__':
     cli.show_server_banner = lambda *x: None
     
     # host='0.0.0.0' 监听所有网络接口，允许局域网访问
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    # threaded=True 启用多线程模式，支持长时间运行的请求
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
 
     

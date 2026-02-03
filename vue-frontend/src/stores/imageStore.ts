@@ -260,9 +260,13 @@ export const useImageStore = defineStore('image', () => {
   }
 
   /**
-   * 按文件名对所有图片进行自然排序
-   * 复刻原版 main.js 中的 sortImagesByName 函数
-   * 使用 localeCompare 的 numeric 选项实现自然排序（如 1, 2, 10 而非 1, 10, 2）
+   * 按文件路径/文件名对所有图片进行自然排序
+   * 
+   * 【多文件夹支持】优先使用 relativePath（完整路径）进行排序
+   * 这样可以正确处理多文件夹导入的场景，例如：
+   * - 第0章/01.jpg, 第0章/02.jpg, 第1章/01.jpg, 第1章/02.jpg...
+   * 
+   * 如果没有 relativePath（例如直接拖拽单个图片），则使用 fileName
    * 
    * 【重要修复】排序后更新 currentImageIndex，使其仍然指向排序前的那张图片
    * 这避免了排序后 currentImageIndex 指向错误图片，导致气泡状态保存错乱的问题
@@ -271,9 +275,11 @@ export const useImageStore = defineStore('image', () => {
     // 记录排序前当前图片的 id（用于排序后找回）
     const currentImageId = currentImage.value?.id || null
 
-    // 执行排序
+    // 执行排序：优先使用 relativePath，没有则使用 fileName
     images.value.sort((a, b) => {
-      return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' })
+      const pathA = a.relativePath || a.fileName
+      const pathB = b.relativePath || b.fileName
+      return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' })
     })
 
     // 【关键修复】如果有当前图片，找到它在排序后的新位置

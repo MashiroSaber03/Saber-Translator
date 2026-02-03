@@ -18,6 +18,7 @@ import BatchSettingsTab from './settings/BatchSettingsTab.vue'
 import EmbeddingSettingsTab from './settings/EmbeddingSettingsTab.vue'
 import RerankerSettingsTab from './settings/RerankerSettingsTab.vue'
 import PromptsSettingsTab from './settings/PromptsSettingsTab.vue'
+import ImageGenSettingsTab from './settings/ImageGenSettingsTab.vue'
 
 // ============================================================
 // 事件定义
@@ -38,7 +39,7 @@ const insightStore = useInsightStore()
 // ============================================================
 
 /** 当前设置选项卡 */
-const activeSettingsTab = ref<'vlm' | 'llm' | 'batch' | 'embedding' | 'reranker' | 'prompts'>('vlm')
+const activeSettingsTab = ref<'vlm' | 'llm' | 'batch' | 'embedding' | 'reranker' | 'imagegen' | 'prompts'>('vlm')
 
 /** 是否正在保存 */
 const isSaving = ref(false)
@@ -59,6 +60,7 @@ const batchTabRef = ref<InstanceType<typeof BatchSettingsTab> | null>(null)
 const embeddingTabRef = ref<InstanceType<typeof EmbeddingSettingsTab> | null>(null)
 const rerankerTabRef = ref<InstanceType<typeof RerankerSettingsTab> | null>(null)
 const promptsTabRef = ref<InstanceType<typeof PromptsSettingsTab> | null>(null)
+const imageGenTabRef = ref<InstanceType<typeof ImageGenSettingsTab> | null>(null)
 
 // ============================================================
 // 方法
@@ -126,6 +128,10 @@ async function saveSettings(): Promise<void> {
       insightStore.updatePrompts(promptsTabRef.value.getCustomPrompts())
     }
     
+    if (imageGenTabRef.value) {
+      insightStore.updateImageGenConfig(imageGenTabRef.value.getConfig())
+    }
+    
     // 保存到后端
     const apiConfig = insightStore.getConfigForApi()
     const response = await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
@@ -177,6 +183,7 @@ function syncAllFromStore(): void {
   embeddingTabRef.value?.syncFromStore()
   rerankerTabRef.value?.syncFromStore()
   promptsTabRef.value?.syncFromStore()
+  imageGenTabRef.value?.syncFromStore()
 }
 
 // ============================================================
@@ -226,6 +233,13 @@ onMounted(async () => {
         @click="switchSettingsTab('reranker')"
       >
         🔄 重排序
+      </button>
+      <button 
+        class="settings-tab" 
+        :class="{ active: activeSettingsTab === 'imagegen' }"
+        @click="switchSettingsTab('imagegen')"
+      >
+        🎨 生图模型
       </button>
       <button 
         class="settings-tab" 
@@ -279,6 +293,13 @@ onMounted(async () => {
     <PromptsSettingsTab 
       v-show="activeSettingsTab === 'prompts'" 
       ref="promptsTabRef"
+      @show-message="showMessage"
+    />
+
+    <!-- 生图模型设置 -->
+    <ImageGenSettingsTab 
+      v-show="activeSettingsTab === 'imagegen'" 
+      ref="imageGenTabRef"
       @show-message="showMessage"
     />
 

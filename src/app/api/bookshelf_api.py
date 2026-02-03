@@ -6,6 +6,7 @@
 from flask import Blueprint, request, jsonify, Response
 import logging
 import base64
+import re
 
 from src.core import bookshelf_manager
 
@@ -353,7 +354,8 @@ def get_chapter_images(book_id, chapter_id):
                         "index": idx,
                         "original": original_url,
                         "translated": translated_url,
-                        "fileName": img_data.get('fileName', f'image_{idx}.png')
+                        "fileName": img_data.get('fileName', f'image_{idx}.png'),
+                        "relativePath": img_data.get('relativePath', '')
                     })
                 else:
                     # 返回 Base64 数据（向后兼容）
@@ -361,8 +363,18 @@ def get_chapter_images(book_id, chapter_id):
                         "index": idx,
                         "original": img_data.get('originalDataURL'),
                         "translated": img_data.get('translatedDataURL'),
-                        "fileName": img_data.get('fileName', f'image_{idx}.png')
+                        "fileName": img_data.get('fileName', f'image_{idx}.png'),
+                        "relativePath": img_data.get('relativePath', '')
                     })
+        
+        # 【多文件夹支持】按 relativePath/fileName 进行自然排序
+        # 使用 re 模块实现自然排序（数字部分按数值大小排序）
+        def natural_sort_key(item):
+            path = item.get('relativePath') or item.get('fileName', '')
+            return [int(text) if text.isdigit() else text.lower() 
+                    for text in re.split(r'(\d+)', path)]
+        
+        images = sorted(images, key=natural_sort_key)
         
         # 获取书籍信息以确定上下章
         book = bookshelf_manager.get_book(book_id)

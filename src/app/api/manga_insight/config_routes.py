@@ -222,6 +222,72 @@ def test_embedding_connection():
         }), 500
 
 
+@manga_insight_bp.route('/config/test/llm', methods=['POST'])
+def test_llm_connection():
+    """测试 LLM（对话模型）连接"""
+    async def _test():
+        from src.core.manga_insight.embedding_client import ChatClient
+        from src.core.manga_insight.config_models import ChatLLMConfig
+        
+        data = request.json or {}
+        config = ChatLLMConfig.from_dict(data) if data else load_insight_config().chat_llm
+        
+        client = ChatClient(config)
+        success = await client.test_connection()
+        await client.close()
+        return success
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        success = loop.run_until_complete(_test())
+        loop.close()
+        
+        return jsonify({
+            "success": success,
+            "message": "连接成功" if success else "连接失败"
+        })
+    except Exception as e:
+        logger.error(f"测试 LLM 连接失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/config/test/reranker', methods=['POST'])
+def test_reranker_connection():
+    """测试 Reranker 连接"""
+    async def _test():
+        from src.core.manga_insight.reranker_client import RerankerClient
+        from src.core.manga_insight.config_models import RerankerConfig
+        
+        data = request.json or {}
+        config = RerankerConfig.from_dict(data) if data else load_insight_config().reranker
+        
+        client = RerankerClient(config)
+        success = await client.test_connection()
+        await client.close()
+        return success
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        success = loop.run_until_complete(_test())
+        loop.close()
+        
+        return jsonify({
+            "success": success,
+            "message": "连接成功" if success else "连接失败"
+        })
+    except Exception as e:
+        logger.error(f"测试 Reranker 连接失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 # ==================== 提示词库 API ====================
 
 def get_prompts_library_path():

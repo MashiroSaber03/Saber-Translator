@@ -311,11 +311,11 @@ class AnalysisTaskManager:
             if self._cancel_flags.get(task.task_id):
                 task.status = TaskStatus.CANCELLED
             else:
+                # 分析完成后自动构建时间线（在设置完成状态之前，确保前端感知到时数据已就绪）
+                await self._build_timeline_on_complete(task.book_id)
+                
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = datetime.now()
-                
-                # 分析完成后自动构建时间线
-                await self._build_timeline_on_complete(task.book_id)
             
             logger.info(f"任务完成: {task.task_id}, 状态: {task.status.value}")
             

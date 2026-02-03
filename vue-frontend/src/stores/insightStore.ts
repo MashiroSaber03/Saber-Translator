@@ -178,6 +178,17 @@ export interface RerankerConfig {
 }
 
 /**
+ * 生图模型配置（续写功能）
+ */
+export interface ImageGenConfig {
+  provider: string
+  apiKey: string
+  model: string
+  baseUrl: string
+  maxRetries: number
+}
+
+/**
  * 批量分析配置
  */
 export interface BatchConfig {
@@ -250,6 +261,7 @@ export interface InsightConfig {
   llm: LlmConfig
   embedding: EmbeddingConfig
   reranker: RerankerConfig
+  imageGen: ImageGenConfig
   batch: BatchConfig
   prompts: Record<string, string>
 }
@@ -364,6 +376,13 @@ export const useInsightStore = defineStore('insight', () => {
       model: 'jina-reranker-v2-base-multilingual',
       baseUrl: '',
       topK: 5
+    },
+    imageGen: {
+      provider: 'siliconflow',
+      apiKey: '',
+      model: 'stabilityai/stable-diffusion-3-5-large',
+      baseUrl: '',
+      maxRetries: 3
     },
     batch: {
       pagesPerBatch: 5,
@@ -874,6 +893,15 @@ export const useInsightStore = defineStore('insight', () => {
   }
 
   /**
+   * 更新生图模型配置
+   * @param imageGenConfig - 生图模型配置
+   */
+  function updateImageGenConfig(imageGenConfig: Partial<ImageGenConfig>): void {
+    config.value.imageGen = { ...config.value.imageGen, ...imageGenConfig }
+    saveConfigToStorage()
+  }
+
+  /**
    * 更新批量分析配置
    * @param batchConfig - 批量分析配置
    */
@@ -1179,6 +1207,7 @@ export const useInsightStore = defineStore('insight', () => {
           llm: { ...config.value.llm, ...parsed.llm },
           embedding: { ...config.value.embedding, ...parsed.embedding },
           reranker: { ...config.value.reranker, ...parsed.reranker },
+          imageGen: { ...config.value.imageGen, ...parsed.imageGen },
           batch: { ...config.value.batch, ...parsed.batch },
           prompts: parsed.prompts || {}
         }
@@ -1226,6 +1255,13 @@ export const useInsightStore = defineStore('insight', () => {
         model: config.value.reranker.model,
         base_url: config.value.reranker.baseUrl || null,
         top_k: config.value.reranker.topK
+      },
+      image_gen: {
+        provider: config.value.imageGen.provider,
+        api_key: config.value.imageGen.apiKey,
+        model: config.value.imageGen.model,
+        base_url: config.value.imageGen.baseUrl || null,
+        max_retries: config.value.imageGen.maxRetries
       },
       analysis: {
         batch: {
@@ -1377,6 +1413,18 @@ export const useInsightStore = defineStore('insight', () => {
           units: (l.units_per_group as number) || 1,
           align: (l.align_to_chapter as boolean) || false
         })) || []
+      }
+    }
+
+    // 解析生图模型配置
+    const imageGen = apiConfig.image_gen as Record<string, unknown> | undefined
+    if (imageGen) {
+      config.value.imageGen = {
+        provider: (imageGen.provider as string) || 'siliconflow',
+        apiKey: (imageGen.api_key as string) || '',
+        model: (imageGen.model as string) || 'stabilityai/stable-diffusion-3-5-large',
+        baseUrl: (imageGen.base_url as string) || '',
+        maxRetries: (imageGen.max_retries as number) || 3
       }
     }
 
@@ -1593,6 +1641,7 @@ export const useInsightStore = defineStore('insight', () => {
     updateLlmConfig,
     updateEmbeddingConfig,
     updateRerankerConfig,
+    updateImageGenConfig,
     updateBatchConfig,
     updatePrompts,
     setConfig,

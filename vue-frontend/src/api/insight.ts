@@ -212,7 +212,9 @@ export async function startAnalysis(
     force?: boolean       // 是否强制重新分析
   }
 ): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/start`, options)
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/start`, options, {
+    timeout: 0  // 移除超时限制，分析可能很耗时
+  })
 }
 
 /**
@@ -262,7 +264,9 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightStatusRe
  * @param pageNum 页码
  */
 export async function reanalyzePage(bookId: string, pageNum: number): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/page/${pageNum}`)
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/page/${pageNum}`, {}, {
+    timeout: 0  // 移除超时限制，AI分析可能很耗时
+  })
 }
 
 // ==================== 页面数据 API ====================
@@ -345,6 +349,8 @@ export async function regenerateOverview(
   return apiClient.post(`/api/manga-insight/${bookId}/overview/generate`, {
     template: templateType,
     force: force,
+  }, {
+    timeout: 0  // 移除超时限制，概览生成可能很耗时
   })
 }
 
@@ -372,7 +378,9 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
  */
 export async function regenerateTimeline(bookId: string): Promise<InsightTimelineResponse> {
   // 使用正确的API路由: POST /regenerate/timeline
-  return apiClient.post<InsightTimelineResponse>(`/api/manga-insight/${bookId}/regenerate/timeline`, {})
+  return apiClient.post<InsightTimelineResponse>(`/api/manga-insight/${bookId}/regenerate/timeline`, {}, {
+    timeout: 0  // 移除超时限制，时间线生成可能很耗时
+  })
 }
 
 // ==================== 问答 API ====================
@@ -417,6 +425,8 @@ export async function sendChat(
   return apiClient.post<ChatResponse>(`/api/manga-insight/${bookId}/chat`, {
     question,
     ...options,
+  }, {
+    timeout: 0  // 移除超时限制，AI问答可能很耗时
   })
 }
 
@@ -439,7 +449,10 @@ export interface RebuildEmbeddingsResponse {
 export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddingsResponse> {
   return apiClient.post<RebuildEmbeddingsResponse>(
     `/api/manga-insight/${bookId}/rebuild-embeddings`,
-    {}
+    {},
+    {
+      timeout: 0  // 移除超时限制，向量索引重建可能很耗时
+    }
   )
 }
 

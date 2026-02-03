@@ -539,7 +539,8 @@ async function processMobiFile(file: File): Promise<number> {
     }
     
     sessionId = startResponse.session_id
-    const totalImages = startResponse.total_images || 0
+    // 后端返回的字段是 total_pages
+    const totalImages = startResponse.total_pages || startResponse.total_images || 0
     
     showToast(`正在解析电子书，共 ${totalImages} 张图片...`, 'info')
     
@@ -551,7 +552,7 @@ async function processMobiFile(file: File): Promise<number> {
       currentFileName.value = `${file.name} - 已处理 ${processedCount}/${totalImages} 张`
       uploadProgress.value = totalImages > 0 ? Math.round((processedCount / totalImages) * 100) : 0
       
-      const batchResponse = await parseMobiBatch(sessionId)
+      const batchResponse = await parseMobiBatch(sessionId, processedCount, 5)
       
       if (!batchResponse.success) {
         throw new Error(batchResponse.error || 'MOBI/AZW 批次解析失败')
@@ -560,15 +561,16 @@ async function processMobiFile(file: File): Promise<number> {
       // 处理返回的图片
       if (batchResponse.images && batchResponse.images.length > 0) {
         for (let i = 0; i < batchResponse.images.length; i++) {
-          const imageData = batchResponse.images[i]
-          if (!imageData) continue
+          const imageObj = batchResponse.images[i]
+          
+          // 后端返回结构：{ success, data_url, width, height, ... }
+          if (!imageObj || !imageObj.data_url) continue
           
           const imageNum = processedCount + i + 1
           const imageName = `${file.name.replace(/\.(mobi|azw|azw3)$/i, '')}_image_${String(imageNum).padStart(3, '0')}.png`
           
-          // 确保是完整的 DataURL
-          const dataURL = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`
-          imageStore.addImage(imageName, dataURL)
+          // data_url 已经是完整的 DataURL 格式
+          imageStore.addImage(imageName, imageObj.data_url)
         }
         processedCount += batchResponse.images.length
       }

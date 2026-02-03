@@ -136,10 +136,16 @@ export interface ChapterDetailResponse {
  * 章节图片数据
  */
 export interface ChapterImageData {
+  /** 图片索引 */
+  index: number
   /** 原图 URL 或 Base64 */
   original: string
   /** 翻译后图片 URL 或 Base64 */
   translated?: string
+  /** 文件名 */
+  fileName?: string
+  /** 相对路径（用于多文件夹导入） */
+  relativePath?: string
 }
 
 /**

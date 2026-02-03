@@ -18,6 +18,7 @@ import PageDetail from '@/components/insight/PageDetail.vue'
 import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
+import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
 
@@ -35,7 +36,7 @@ const bookshelfStore = useBookshelfStore()
 // ============================================================
 
 /** 当前激活的选项卡 */
-const activeTab = ref<'overview' | 'qa' | 'timeline'>('overview')
+const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation'>('overview')
 
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
@@ -88,7 +89,7 @@ const bookCoverUrl = computed(() => {
  * 切换选项卡
  * @param tab - 选项卡名称
  */
-function switchTab(tab: 'overview' | 'qa' | 'timeline'): void {
+function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation'): void {
   activeTab.value = tab
 }
 
@@ -525,6 +526,13 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
             >
               <span class="tab-icon">📈</span> 时间线
             </button>
+            <button 
+              class="tab-btn" 
+              :class="{ active: activeTab === 'continuation' }"
+              @click="switchTab('continuation')"
+            >
+              <span class="tab-icon">🎨</span> 续写
+            </button>
           </div>
           <button 
             class="mobile-nav-btn" 
@@ -548,6 +556,11 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
         <!-- 时间线标签页 -->
         <div v-show="activeTab === 'timeline' && hasSelectedBook" class="tab-content">
           <TimelinePanel />
+        </div>
+
+        <!-- 续写标签页 -->
+        <div v-show="activeTab === 'continuation' && hasSelectedBook" class="tab-content">
+          <ContinuationPanel />
         </div>
       </div>
 

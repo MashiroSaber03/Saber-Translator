@@ -64,7 +64,21 @@ export async function parsePdfCleanup(sessionId: string): Promise<ApiResponse> {
 export interface MobiParseStartResponse {
   success: boolean
   session_id?: string
-  total_images?: number
+  total_pages?: number   // 后端实际返回的字段
+  total_images?: number  // 兼容旧版本
+  error?: string
+}
+
+/**
+ * MOBI 批次图片数据
+ */
+export interface MobiBatchImage {
+  success: boolean
+  data_url?: string
+  width?: number
+  height?: number
+  filename?: string
+  page_index?: number
   error?: string
 }
 
@@ -73,7 +87,10 @@ export interface MobiParseStartResponse {
  */
 export interface MobiParseBatchResponse {
   success: boolean
-  images?: string[]
+  images?: MobiBatchImage[]
+  start_index?: number
+  end_index?: number
+  total_pages?: number
   has_more?: boolean
   error?: string
 }
@@ -96,10 +113,18 @@ export async function parseMobiStart(
 /**
  * 获取 MOBI/AZW 解析批次
  * @param sessionId 解析会话 ID
+ * @param startIndex 起始索引
+ * @param count 批次数量
  */
-export async function parseMobiBatch(sessionId: string): Promise<MobiParseBatchResponse> {
+export async function parseMobiBatch(
+  sessionId: string,
+  startIndex: number = 0,
+  count: number = 5
+): Promise<MobiParseBatchResponse> {
   return apiClient.post<MobiParseBatchResponse>('/api/parse_mobi_batch', {
     session_id: sessionId,
+    start_index: startIndex,
+    count: count,
   })
 }
 

@@ -82,7 +82,13 @@ function getConfig() {
   return {
     pagesPerBatch: pagesPerBatch.value,
     contextBatchCount: contextBatchCount.value,
-    architecturePreset: architecturePreset.value
+    architecturePreset: architecturePreset.value,
+    // 返回前端格式（units/align），getConfigForApi 会转换为后端格式
+    customLayers: customLayers.value.map(l => ({
+      name: l.name,
+      units: l.units,
+      align: l.align
+    }))
   }
 }
 
@@ -90,6 +96,15 @@ function syncFromStore(): void {
   pagesPerBatch.value = insightStore.config.batch.pagesPerBatch
   contextBatchCount.value = insightStore.config.batch.contextBatchCount
   architecturePreset.value = insightStore.config.batch.architecturePreset
+  
+  // 同步 customLayers
+  if (insightStore.config.batch.customLayers?.length > 0) {
+    customLayers.value = insightStore.config.batch.customLayers.map((l: any) => ({
+      name: l.name,
+      units: l.units_per_group ?? l.units ?? 5,
+      align: l.align_to_chapter ?? l.align ?? false
+    }))
+  }
 }
 
 defineExpose({ getConfig, syncFromStore })

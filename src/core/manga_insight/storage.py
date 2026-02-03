@@ -460,3 +460,66 @@ class AnalysisStorage:
             "segments": segments,
             "exported_at": datetime.now().isoformat()
         }
+    
+    # ============================================================
+    # 续写功能数据存储
+    # ============================================================
+    
+    async def load_continuation_script(self) -> Optional[Dict]:
+        """加载续写脚本"""
+        return self._load_json("continuation/script.json", None)
+    
+    async def save_continuation_script(self, script: Dict) -> bool:
+        """保存续写脚本"""
+        script["saved_at"] = datetime.now().isoformat()
+        return self._save_json("continuation/script.json", script)
+    
+    async def load_continuation_pages(self) -> Optional[List]:
+        """加载续写页面详情列表"""
+        return self._load_json("continuation/pages.json", None)
+    
+    async def save_continuation_pages(self, pages: List) -> bool:
+        """保存续写页面详情列表"""
+        data = {
+            "pages": pages,
+            "saved_at": datetime.now().isoformat()
+        }
+        return self._save_json("continuation/pages.json", data)
+    
+    async def load_continuation_config(self) -> Optional[Dict]:
+        """加载续写配置"""
+        return self._load_json("continuation/config.json", None)
+    
+    async def save_continuation_config(self, config: Dict) -> bool:
+        """保存续写配置"""
+        config["saved_at"] = datetime.now().isoformat()
+        return self._save_json("continuation/config.json", config)
+    
+    async def load_continuation_all(self) -> Dict:
+        """加载所有续写数据"""
+        script = await self.load_continuation_script()
+        pages_data = await self.load_continuation_pages()
+        config = await self.load_continuation_config()
+        
+        return {
+            "script": script,
+            "pages": pages_data.get("pages", []) if pages_data else [],
+            "config": config,
+            "has_data": script is not None or (pages_data is not None and len(pages_data.get("pages", [])) > 0)
+        }
+    
+    async def clear_continuation_data(self) -> bool:
+        """清除所有续写数据"""
+        import shutil
+        continuation_path = os.path.join(self.base_path, "continuation")
+        try:
+            if os.path.exists(continuation_path):
+                # 只删除脚本和页面数据，保留生成的图片
+                for filename in ["script.json", "pages.json", "config.json"]:
+                    filepath = os.path.join(continuation_path, filename)
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+            return True
+        except Exception as e:
+            logger.error(f"清除续写数据失败: {e}")
+            return False

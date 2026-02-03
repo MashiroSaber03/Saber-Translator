@@ -133,3 +133,41 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
 
 /** 支持获取模型列表的服务商 */
 export const SUPPORTED_FETCH_PROVIDERS = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'qwen', 'openai', 'custom']
+
+/** ========================
+ * 生图模型相关配置（续写功能）
+ * ======================== */
+
+/** 生图服务商选项 */
+export const IMAGE_GEN_PROVIDER_OPTIONS = [
+  { value: 'openai', label: 'OpenAI DALL-E' },
+  { value: 'siliconflow', label: 'SiliconFlow' },
+  { value: 'qwen', label: '阿里通义万相' },
+  { value: 'volcano', label: '火山引擎' },
+  { value: 'custom', label: '自定义 API' }
+]
+
+/** 生图默认模型映射 */
+export const IMAGE_GEN_DEFAULT_MODELS: Record<string, string> = {
+  'openai': 'dall-e-3',
+  'siliconflow': 'stabilityai/stable-diffusion-3-5-large',
+  'qwen': 'wanx-v1',
+  'volcano': 'high_aes_general_v21'
+}
+
+/** 生图尺寸选项 */
+export const IMAGE_SIZE_OPTIONS = [
+  { value: '1024x1024', label: '1024×1024（方形）' },
+  { value: '1024x1536', label: '1024×1536（竖版漫画推荐）' },
+  { value: '1536x1024', label: '1536×1024（横版）' },
+  { value: '768x1024', label: '768×1024（竖版）' },
+  { value: '1024x768', label: '1024×768（横版）' }
+]
+
+/** 生图服务商默认 Base URL */
+export const IMAGE_GEN_DEFAULT_BASE_URLS: Record<string, string> = {
+  'openai': 'https://api.openai.com/v1',
+  'siliconflow': 'https://api.siliconflow.cn/v1',
+  'qwen': 'https://dashscope.aliyuncs.com/api/v1',
+  'volcano': 'https://visual.volcengineapi.com'
+}
