@@ -107,6 +107,14 @@
         <span id="zoomLevel">{{ Math.round(scale * 100) }}%</span>
         <button @click="$emit('zoom-out')" title="缩小 (-)">−</button>
         <button @click="$emit('reset-zoom')" title="原始大小">1:1</button>
+        <button 
+            id="openSettingsBtn"
+            class="settings-header-btn" 
+            title="打开设置"
+            @click="openSettings()"
+          >
+            <span class="icon">⚙️</span>
+         </button>
       </div>
 
       <div class="toolbar-spacer"></div>
@@ -296,6 +304,14 @@
         </button>
       </div>
     </div>
+
+        <!-- 设置模态框 -->
+    <SettingsModal 
+      v-model="showSettingsModal"
+      :initial-tab="settingsInitialTab"
+      @save="handleSettingsSave"
+    />
+    
   </div>
 </template>
 
@@ -304,7 +320,9 @@
  * 编辑模式工具栏组件
  * 包含双行布局：第一行导航和视图控制，第二行操作工具
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { showToast } from '@/utils/toast';
+import SettingsModal from '@/components/settings/SettingsModal.vue'
 
 // ============================================================
 // Props
@@ -406,7 +424,31 @@ defineEmits<{
   (e: 'activate-restore-brush'): void
   /** 应用并下一张 */
   (e: 'apply-and-next'): void
+  /** 打开设置 */
+  (e: 'open-settings'): void
 }>()
+
+// ============================================================
+// Methods
+// ============================================================
+
+
+/** 是否显示设置模态框 */
+const showSettingsModal = ref(false)
+/** 设置模态框初始Tab（用于插件管理直接跳转） */
+const settingsInitialTab = ref<string | undefined>(undefined)
+
+/** 打开设置面板 */
+function openSettings(initialTab?: string) {
+  settingsInitialTab.value = initialTab
+  showSettingsModal.value = true
+}
+
+function handleSettingsSave() {
+  showToast('设置已保存', 'success')
+}
+
+
 
 // ============================================================
 // 计算属性
