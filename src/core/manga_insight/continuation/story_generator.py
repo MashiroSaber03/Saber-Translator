@@ -10,6 +10,7 @@ Manga Insight 剧情生成器
 import logging
 import json
 import re
+import os
 from typing import Dict, List, Any
 
 from ..config_utils import load_insight_config
@@ -28,6 +29,10 @@ class StoryGenerator:
         self.book_id = book_id
         self.config = load_insight_config()
         self.storage = AnalysisStorage(book_id)
+        # 续写脚本生成改用 VLM，可以看到原作图片
+        from ..vlm_client import VLMClient
+        self.vlm_client = VLMClient(self.config.vlm, self.config.prompts)
+        # 保留 ChatClient 用于其他文本生成任务
         self.chat_client = ChatClient(self.config.chat_llm)
         self.char_manager = CharacterManager(book_id)
     
@@ -70,7 +75,7 @@ class StoryGenerator:
         page_count: int = 15
     ) -> ChapterScript:
         """
-        生成全话脚本（第一层）
+        生成全话脚本（第一层）- 使用 VLM + 原作图片
         
         Args:
             user_direction: 用户指定的续写方向
@@ -89,21 +94,32 @@ class StoryGenerator:
         if not timeline_data:
             raise ValueError("时间线数据不存在")
         
-        # 获取最近几页的分析结果作为参考
+        # 获取最近几页的分析结果作为参考（文本信息）
         reference_pages = await self._get_recent_page_analyses(5)
         
-        # 构建提示词
+        # 【新增】获取最后 5 张原漫画图片作为视觉参考
+        original_images = await self._get_recent_manga_images(5)
+        
+        # 构建提示词（针对 VLM 优化）
         prompt = self._build_chapter_script_prompt(
             manga_summary=story_summary.get("content", ""),
             timeline_data=timeline_data,
             reference_pages=reference_pages,
             user_direction=user_direction,
-            page_count=page_count
+            page_count=page_count,
+            has_visual_reference=len(original_images) > 0  # 传递是否有视觉参考的标志
         )
         
-        # 调用 LLM
-        logger.info(f"正在生成全话脚本，页数: {page_count}")
-        response = await self.chat_client.generate(prompt)
+        # 调用 VLM（附带图片）
+        logger.info(f"正在生成全话脚本，页数: {page_count}，视觉参考: {len(original_images)} 张原作图片")
+        
+        if original_images:
+            # 使用 VLM 的多模态能力
+            response = await self._call_vlm_with_images(original_images, prompt)
+        else:
+            # 降级：无图片时使用纯文本 LLM
+            logger.warning("未找到原作图片，降级为纯文本生成")
+            response = await self.chat_client.generate(prompt)
         
         # 解析响应，提取标题
         script_text = response.strip()
@@ -217,13 +233,89 @@ class StoryGenerator:
         all_pages.sort(key=lambda x: x.get("page_number", 0))
         return all_pages[-count:] if len(all_pages) >= count else all_pages
     
+    async def _get_recent_manga_images(self, count: int = 5) -> List[bytes]:
+        """
+        获取原漫画最后 N 张图片（用于 VLM 视觉参考）
+        
+        Args:
+            count: 需要获取的图片数量
+            
+        Returns:
+            List[bytes]: 图片字节数据列表（最后几页）
+        """
+        from src.shared.path_helpers import resource_path
+        from src.core import bookshelf_manager
+        
+        images = []
+        
+        try:
+            # 从书架系统获取书籍信息
+            book = bookshelf_manager.get_book(self.book_id)
+            if not book:
+                logger.warning(f"未找到书籍: {self.book_id}")
+                return images
+            
+            # 获取所有章节的所有图片路径
+            chapters = book.get("chapters", [])
+            sessions_base = resource_path("data/sessions/bookshelf")
+            all_image_paths = []
+            
+            for chapter in chapters:
+                chapter_id = chapter.get("id")
+                if not chapter_id:
+                    continue
+                
+                # 从 session_meta.json 获取图片信息
+                session_dir = os.path.join(sessions_base, self.book_id, chapter_id)
+                session_meta_path = os.path.join(session_dir, "session_meta.json")
+                
+                if os.path.exists(session_meta_path):
+                    try:
+                        with open(session_meta_path, "r", encoding="utf-8") as f:
+                            session_data = json.load(f)
+                        
+                        # 支持两种格式
+                        if "total_pages" in session_data:
+                            image_count = session_data.get("total_pages", 0)
+                        else:
+                            images_meta = session_data.get("images_meta", [])
+                            image_count = len(images_meta)
+                        
+                        for i in range(image_count):
+                            # 优先使用原图
+                            image_path = os.path.join(session_dir, "images", str(i), "original.png")
+                            if os.path.exists(image_path):
+                                all_image_paths.append(image_path)
+                    except Exception as e:
+                        logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
+                        continue
+            
+            # 取最后 count 张图片
+            recent_paths = all_image_paths[-count:] if len(all_image_paths) > count else all_image_paths
+            
+            # 读取图片字节数据
+            for img_path in recent_paths:
+                try:
+                    with open(img_path, "rb") as f:
+                        images.append(f.read())
+                except Exception as e:
+                    logger.warning(f"读取图片失败: {img_path}, {e}")
+            
+            logger.info(f"成功加载 {len(images)} 张原作图片用于脚本生成")
+            return images
+            
+        except Exception as e:
+            logger.error(f"获取原漫画图片失败: {e}")
+            return images
+    
     def _build_chapter_script_prompt(
         self,
         manga_summary: str,
         timeline_data: Dict,
         reference_pages: List[Dict] = None,
         user_direction: str = "",
-        page_count: int = 15
+        page_count: int = 15,
+        has_visual_reference: bool = False
     ) -> str:
         """生成全话脚本的提示词"""
         # 使用 CharacterManager 获取树状角色信息（包含形态）
@@ -266,6 +358,35 @@ class StoryGenerator:
         
         direction_text = f"\n\n用户期望的剧情方向：\n{user_direction}" if user_direction else ""
         
+        # 【新增】针对 VLM 的视觉参考说明
+        visual_reference_text = ""
+        if has_visual_reference:
+            visual_reference_text = """
+
+## 视觉参考（原作最后几页图片）
+
+我已为你提供了原作最后几页的实际画面。请仔细观察这些图片，但注意以下事项：
+
+### 图片筛选
+**注意**：提供的图片中可能包含与剧情无关的内容，请主动识别并忽略：
+- ❌ **宣传图/广告页**：推广其他作品、杂志、周边商品的图片
+- ❌ **预告页**：下一话预告、角色设定图、特典插画等
+- ❌ **版权页/致谢页**：包含大量文字说明、作者后记、出版信息等
+- ❌ **封面/扉页**：单独的封面图或章节标题页
+- ✅ **只关注正式的剧情页**：包含分格、对话、叙事推进的页面
+
+### 观察要点（仅针对有效剧情页）
+- **叙事节奏**：注意原作每页的信息量、分格数量、剧情推进速度
+- **分镜风格**：大格、小格、全景、特写的使用比例和频率
+- **对话密度**：每页的对话气泡数量和对话长度
+- **情绪氛围**：最后几页的氛围是紧张、轻松、悬疑还是温馨
+- **场景连贯性**：故事最后停在什么场景，角色最后的状态和位置
+
+**重要**：
+1. 如果最后几张图都不是剧情页，请忽略它们，只根据文字信息（时间线、故事概要）进行续写
+2. 续写的剧本需在视觉叙事风格上自然衔接有效的剧情页，保持原作的独特节奏感
+"""
+        
         return f"""你是一位经验丰富的漫画编剧。请基于以下漫画的背景信息，续写下一话的剧情脚本。
 
 # 漫画背景信息
@@ -279,6 +400,7 @@ class StoryGenerator:
 ## 时间线（最近的剧情发展）
 {timeline_text}
 {reference_pages_text}
+{visual_reference_text}
 {direction_text}
 
 # 任务要求
@@ -291,7 +413,7 @@ class StoryGenerator:
 
 第1页：
 场景：[具体场景描述]
-人物：[角色名（若“主要角色”中有对应的形态名，则标注形态名）]
+人物：[角色名（若"主要角色"中有对应的形态名，则标注形态名）]
 剧情：[该页的剧情内容]
 对话：（如果有）
 - 角色A：「对话内容」
@@ -308,7 +430,7 @@ class StoryGenerator:
 4. **场景描述清晰**：为后续的画面生成提供足够的信息
 5. **情节完整**：这一话要有起承转合，可以是一个完整的小故事或者推进主线剧情
 6. **漫画分页思维**：考虑画面呈现，重要镜头、转折点适合分页
-7. **风格继承**：参考原作页面分析，保持相似的叙事节奏和分镜习惯
+7. **风格继承**：参考原作页面分析{' 和提供的原作图片' if has_visual_reference else ''}，保持相似的叙事节奏和分镜习惯
 8. **形态明确**：如果角色有多个形态，每个出场角色需标注使用的形态，格式为「角色名(形态名)」。如果角色没有特定形态要求则只需只写角色名，不要编造形态名。
 
 请开始创作，直接输出剧本内容。
@@ -462,3 +584,23 @@ class StoryGenerator:
         
         logger.warning(f"无法解析 JSON 响应: {text[:200]}...")
         return {}
+
+    async def _call_vlm_with_images(self, images: List[bytes], prompt: str) -> str:
+        """
+        调用 VLM 生成脚本（附带图片）
+        
+        Args:
+            images: 图片数据列表
+            prompt: 文本提示词
+            
+        Returns:
+            str: VLM 生成的脚本文本
+        """
+        logger.info(f"调用 VLM 生成脚本，图片数量: {len(images)}")
+        
+        # 调用 VLM 的核心方法（包含重试和错误处理）
+        response = await self.vlm_client._call_vlm(images, prompt)
+        
+        return response
+
+
