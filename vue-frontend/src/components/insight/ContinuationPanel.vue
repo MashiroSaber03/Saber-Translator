@@ -1170,21 +1170,42 @@ async function regeneratePageImage(pageNumber: number): Promise<void> {
   page.status = 'generating'
   
   try {
-    // 获取画风参考图
+    // 构建滑动窗口参考图（复用批量生成的逻辑）
     let styleRefs: string[] = []
+    
+    // 1. 先获取原漫画最后N页作为基础参考图
     const styleResult = await continuationApi.getStyleReferences(
       insightStore.currentBookId,
       styleRefPages.value
     )
     if (styleResult.success && styleResult.images) {
-      styleRefs = styleResult.images
+      styleRefs = [...styleResult.images]
     }
+    
+    // 2. 加入该页之前已生成的页面图片（模拟滑动窗口）
+    // 例如重新生成第5页时，应该用第2、3、4页的图片作为参考（假设窗口大小为3）
+    const pageIndex = pages.value.findIndex(p => p.page_number === pageNumber)
+    if (pageIndex > 0) {
+      // 遍历该页之前的所有页面
+      for (let i = 0; i < pageIndex; i++) {
+        const prevPage = pages.value[i]
+        if (prevPage && prevPage.image_url && prevPage.status === 'generated') {
+          styleRefs.push(prevPage.image_url)
+          // 保持参考图数量不超过用户设置的数量
+          if (styleRefs.length > styleRefPages.value) {
+            styleRefs = styleRefs.slice(-styleRefPages.value)
+          }
+        }
+      }
+    }
+    
+    console.log(`重新生成第 ${pageNumber} 页，使用参考图:`, styleRefs)
     
     const result = await continuationApi.regeneratePageImage(
       insightStore.currentBookId,
       pageNumber,
       page,
-      styleRefs,  // 传递画风参考图
+      styleRefs,  // 传递滑动窗口参考图
       sessionId.value,
       styleRefPages.value  // 传递滑动窗口大小
     )

@@ -874,40 +874,36 @@ class ImageGenerator:
     
     def get_style_reference_images(
         self,
-        count: int = 3,
-        generated_pages: List[PageContent] = None
+        count: int = 3
     ) -> List[str]:
         """
-        获取画风参考图片
+        获取原漫画最后N页作为画风参考图
+        
+        返回的列表按时间从早到晚排序（最老的在前，最新的在后）
+        这样前端使用 slice(-N) 滑动窗口时，能正确删除最老的页面
+        
+        注意：已生成页面的滑动窗口由前端自己维护，这里只返回原漫画的参考图
         
         Args:
             count: 需要的参考图数量
-            generated_pages: 已生成的页面列表
             
         Returns:
-            List[str]: 图片路径列表
+            List[str]: 图片路径列表，按时间从早到晚排序
         """
         style_refs = []
         
-        # 优先使用已生成的页面
-        if generated_pages:
-            for page in reversed(generated_pages):
-                if page.image_url and os.path.exists(page.image_url):
-                    style_refs.append(page.image_url)
-                    if len(style_refs) >= count:
-                        break
+        # 从原漫画最后几页获取（倒序遍历，收集最新的 count 张）
+        book_pages = self._get_original_manga_pages()
+        for page_path in reversed(book_pages):
+            if os.path.exists(page_path):
+                style_refs.append(page_path)
+                if len(style_refs) >= count:
+                    break
         
-        # 如果不够，从原漫画最后几页获取
-        if len(style_refs) < count:
-            # 获取原漫画页面路径
-            book_pages = self._get_original_manga_pages()
-            for page_path in reversed(book_pages):
-                if os.path.exists(page_path):
-                    style_refs.append(page_path)
-                    if len(style_refs) >= count:
-                        break
-        
-        return style_refs[:count]
+        # 反转，使列表按时间从早到晚排序
+        # 例如：[page100, page99, page98] -> [page98, page99, page100]
+        style_refs.reverse()
+        return style_refs
     
     def _get_original_manga_pages(self) -> List[str]:
         """获取原漫画的页面路径"""
