@@ -10,7 +10,7 @@ Manga Insight 剧情生成器
 import logging
 import json
 import re
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 
 from ..config_utils import load_insight_config
 from ..storage import AnalysisStorage
@@ -149,29 +149,23 @@ class StoryGenerator:
             characters=page_data.get("characters", []),
             character_forms=page_data.get("character_forms", []),
             description=page_data.get("description", ""),
-            dialogues=page_data.get("dialogues", []),
-            mood=page_data.get("mood", "")
+            dialogues=page_data.get("dialogues", [])
         )
     
     async def generate_image_prompt(
         self,
-        page_content: PageContent,
-        character_descriptions: Dict[str, str]
+        page_content: PageContent
     ) -> str:
         """
         生成生图提示词（第三层）
         
         Args:
             page_content: 页面内容
-            character_descriptions: 角色描述字典 {角色名: 描述}
             
         Returns:
             str: 生图提示词
         """
-        prompt = self._build_image_prompt_prompt(
-            page_content=page_content,
-            character_descriptions=character_descriptions
-        )
+        prompt = self._build_image_prompt_prompt(page_content)
         
         logger.info(f"正在生成第 {page_content.page_number} 页的生图提示词")
         response = await self.chat_client.generate(prompt)
@@ -180,22 +174,20 @@ class StoryGenerator:
     
     async def generate_all_image_prompts(
         self,
-        pages: List[PageContent],
-        character_descriptions: Dict[str, str]
+        pages: List[PageContent]
     ) -> List[PageContent]:
         """
         批量生成所有页面的生图提示词
         
         Args:
             pages: 页面内容列表
-            character_descriptions: 角色描述字典
             
         Returns:
             List[PageContent]: 更新后的页面内容列表
         """
         for page in pages:
             try:
-                image_prompt = await self.generate_image_prompt(page, character_descriptions)
+                image_prompt = await self.generate_image_prompt(page)
                 page.image_prompt = image_prompt
             except Exception as e:
                 logger.error(f"生成第 {page.page_number} 页提示词失败: {e}")
@@ -299,7 +291,7 @@ class StoryGenerator:
 
 第1页：
 场景：[具体场景描述]
-人物：[角色名(形态名), 角色名(形态名)]  ← 必须标注形态
+人物：[角色名（若“主要角色”中有对应的形态名，则标注形态名）]
 剧情：[该页的剧情内容]
 对话：（如果有）
 - 角色A：「对话内容」
@@ -317,7 +309,7 @@ class StoryGenerator:
 5. **情节完整**：这一话要有起承转合，可以是一个完整的小故事或者推进主线剧情
 6. **漫画分页思维**：考虑画面呈现，重要镜头、转折点适合分页
 7. **风格继承**：参考原作页面分析，保持相似的叙事节奏和分镜习惯
-8. **形态明确**：如果角色有多个形态，每个出场角色需标注使用的形态，格式为「角色名(形态名)」。如果角色只有一个形态或没有特定形态要求，可以只写角色名
+8. **形态明确**：如果角色有多个形态，每个出场角色需标注使用的形态，格式为「角色名(形态名)」。如果角色没有特定形态要求则只需只写角色名，不要编造形态名。
 
 请开始创作，直接输出剧本内容。
 """
@@ -326,8 +318,7 @@ class StoryGenerator:
         self,
         chapter_script: str,
         page_number: int,
-        timeline_data: Dict,
-        manga_style: str = ""  # 不再使用此参数
+        timeline_data: Dict
     ) -> str:
         """生成每页剧情细化的提示词"""
         # 从timeline_data中提取角色名称（只需要名字，不需要外貌描述）
@@ -364,47 +355,23 @@ class StoryGenerator:
   "description": "详细的画面描述，包括：角色的动作、表情、姿势、位置关系，以及建议的镜头角度（俯视/仰视/平视/特写等）",
   "dialogues": [
     {{"character": "角色名", "text": "对话内容"}}
-  ],
-  "mood": "情绪氛围（如：紧张、温馨、悲伤、压抑、冲击性）"
+  ]
 }}
 
 ## 要求
 
 1. **只提取剧本内容**：不要添加剧本中没有的信息
-2. **角色名准确**：使用角色列表中的标准名称（不含形态后缀）
-3. **形态提取**：从剧本的「人物」行提取每个角色的形态，格式为 `角色名(形态名)`。将形态名作为 `form_id`。如果剧本中没有标注形态，则省略 `character_forms` 中该角色的条目
-4. **画面描述详细**：
-   - ✅ 描述角色的动作和表情（如：回头看、皱眉、握紧拳头）
-   - ✅ 描述角色的位置关系（如：站在门口、躺在地上、背对背）
-   - ✅ 建议镜头角度（如：俯视角度表现压迫感、特写表情）
-   - ❌ 不要描述外貌特征（发色、眼睛颜色等）
-   - ❌ 不要描述服装样式
-5. **对话原样保留**：保持剧本中的对话内容
+2. **形态提取**：从剧本的「人物」行提取每个角色的形态，格式为 `角色名(形态名)`。将形态名作为 `form_id`。如果剧本中没有标注形态，则省略 `character_forms` 中该角色的条目，只需写出角色名，严禁编造形态名。
+3. **对话原样保留**：保持剧本中的对话内容
 
 请直接输出JSON数据。
 """
     
     def _build_image_prompt_prompt(
         self,
-        page_content: PageContent,
-        character_descriptions: Dict[str, str]
+        page_content: PageContent
     ) -> str:
-        """生成生图提示词的LLM提示
-        
-        根据角色是否有参考图，动态调整描述规则：
-        - 有参考图的角色：不描述外貌/服装（由参考图决定）
-        - 无参考图的角色：需要生成外貌/服装描述
-        """
-        # 分类角色：有/无参考图
-        chars_with_desc = []
-        chars_without_desc = []
-        
-        for char_name in page_content.characters:
-            if char_name in character_descriptions and character_descriptions[char_name]:
-                chars_with_desc.append(char_name)
-            else:
-                chars_without_desc.append(char_name)
-        
+        """生成生图提示词的LLM提示"""
         chars_list = ", ".join(page_content.characters) if page_content.characters else "无"
         
         dialogues_text = ""
@@ -413,33 +380,6 @@ class StoryGenerator:
                 f"- {d['character']}：「{d['text']}」"
                 for d in page_content.dialogues
             ])
-        
-        # 根据角色参考图情况动态生成规则
-        if chars_with_desc and chars_without_desc:
-            # 部分角色有参考图
-            appearance_rule = f"""**画面内容**：
-- ✅ **所有角色**：描述角色的动作、表情、姿势、位置关系
-- ✅ **所有角色**：描述镜头聚焦点（如：聚焦于角色的眼睛、手部特写）
-- ✅ **所有角色**：描述背景中可见的物体或场景元素
-- ❌ **有参考图的角色**（{', '.join(chars_with_desc)}）：不要描述外貌特征、发色、服装（由参考图决定）
-- ✅ **无参考图的角色**（{', '.join(chars_without_desc)}）：需要简要描述外貌特征（发色、体型、穿着风格等）
-- ❌ 不要描述绘画风格、光影效果、色调（由画风参考图决定）"""
-        elif chars_with_desc:
-            # 所有角色都有参考图
-            appearance_rule = """**画面内容**：
-- ✅ 描述：角色的动作、表情、姿势、位置关系
-- ✅ 描述：镜头聚焦点（如：聚焦于角色的眼睛、手部特写）
-- ✅ 描述：背景中可见的物体或场景元素
-- ❌ 不要描述：角色的发色、眼睛颜色、服装样式（这些由角色参考图决定）
-- ❌ 不要描述：绘画风格、光影效果、色调（这些由画风参考图决定）"""
-        else:
-            # 没有任何角色参考图
-            appearance_rule = """**画面内容**：
-- ✅ 描述：角色的动作、表情、姿势、位置关系
-- ✅ 描述：镜头聚焦点（如：聚焦于角色的眼睛、手部特写）
-- ✅ 描述：背景中可见的物体或场景元素
-- ✅ 描述：角色的外貌特征（发色、发型、体型、大致穿着风格），但保持简洁
-- ❌ 不要描述：绘画风格、光影效果、色调（这些由画风参考图决定）"""
 
         return f"""请基于以下剧情信息，生成一个详细的漫画绘图提示词。
 
@@ -447,7 +387,6 @@ class StoryGenerator:
 
 - 出场角色：{chars_list}
 - 画面描述：{page_content.description}
-- 情绪氛围：{page_content.mood}
 - 对话：
 {dialogues_text if dialogues_text else "（无对话）"}
 
@@ -470,14 +409,12 @@ class StoryGenerator:
 
 **分格大小**：大格（占半页以上）、中格、小格、长条格、特写小图
 **镜头角度**：俯视角度、仰视角度、平视角度、斜角、远景、中景、特写
-{appearance_rule}
 
 # 重要规则
 
 1. **分格要详细**：每个分格都要说明大小、镜头角度、具体画面内容
 2. **动作要具体**：描述角色在做什么，表情如何，位置在哪
 3. **对话用简体中文**：所有气泡内容必须是简体中文
-4. **不输出\"场景\"字段**：场景信息融入分格描述即可
 
 请直接输出提示词。
 """

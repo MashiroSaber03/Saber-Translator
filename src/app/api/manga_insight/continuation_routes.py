@@ -9,16 +9,13 @@ import asyncio
 import os
 import uuid
 from flask import request, jsonify, send_file
-from werkzeug.utils import secure_filename
 
 from . import manga_insight_bp
 from src.core.manga_insight.continuation import (
     StoryGenerator,
     ImageGenerator,
     CharacterManager,
-    CharacterForm,
     CharacterProfile,
-    CharacterReference,
     ChapterScript,
     PageContent
 )
@@ -319,12 +316,11 @@ def add_character(book_id: str):
                     "error": f"角色 '{name}' 已存在"
                 }), 400
         
-        # 创建新角色
-        new_char = CharacterReference(
+        # 创建新角色（forms 默认为空列表，用户可后续添加形态）
+        new_char = CharacterProfile(
             name=name,
             aliases=aliases if isinstance(aliases, list) else [],
-            description=description,
-            reference_image=""
+            description=description
         )
         
         characters.characters.append(new_char)
@@ -599,8 +595,6 @@ def delete_character_form(book_id: str, character_name: str, form_id: str):
         char_name = unquote(character_name)
         form_id = unquote(form_id)
         
-        # 所有形态都可以删除，不再有默认形态的限制
-        
         char_manager = CharacterManager(book_id)
         success = char_manager.delete_form(
             character_name=char_name,
@@ -838,7 +832,7 @@ def get_character_image(book_id: str, character_name: str):
         
         # 找到对应角色
         char = next((c for c in characters.characters if c.name == character_name), None)
-        reference_image = char.get_default_reference_image() if char else None
+        reference_image = char.get_any_reference_image() if char else None
         
         if not char or not reference_image:
             return jsonify({
@@ -967,20 +961,10 @@ def generate_form_orthographic(book_id: str, character_name: str, form_id: str):
         # 使用所有上传的图片作为参考生成三视图
         image_gen = ImageGenerator(book_id)
         
-        # 获取形态信息用于生成提示词
-        characters = char_manager.load_characters()
-        char = characters.get_character(char_name)
-        form_name = form_id
-        if char:
-            form = char.get_form(form_id)
-            if form:
-                form_name = form.form_name
-        
         ortho_path = run_async(image_gen.generate_character_orthographic(
             character_name=char_name,
             source_image_paths=saved_paths,
-            form_id=form_id,
-            form_name=form_name
+            form_id=form_id
         ))
         
         # 清理临时源图片
@@ -1163,11 +1147,9 @@ def generate_single_page_details(book_id: str, page_number: int):
             "success": true,
             "page": {
                 "page_number": 1,
-                "scene": "场景",
                 "characters": ["角色1"],
                 "description": "描述",
-                "dialogues": [],
-                "mood": "情绪"
+                "dialogues": []
             }
         }
     """
@@ -1233,14 +1215,8 @@ def generate_image_prompts(book_id: str):
         
         pages = [PageContent.from_dict(p) for p in pages_data]
         
-        # 获取角色描述
-        char_manager = CharacterManager(book_id)
-        char_descriptions = char_manager.get_character_descriptions()
-        
         story_gen = StoryGenerator(book_id)
-        updated_pages = run_async(story_gen.generate_all_image_prompts(
-            pages, char_descriptions
-        ))
+        updated_pages = run_async(story_gen.generate_all_image_prompts(pages))
         
         return jsonify({
             "success": True,
@@ -1283,13 +1259,8 @@ def generate_single_image_prompt(book_id: str, page_number: int):
         
         page = PageContent.from_dict(page_data)
         
-        # 获取角色描述
-        char_manager = CharacterManager(book_id)
-        char_descriptions = char_manager.get_character_descriptions()
-        
         story_gen = StoryGenerator(book_id)
-        # generate_image_prompt 返回的是字符串，需要设置到 page 对象上
-        image_prompt = run_async(story_gen.generate_image_prompt(page, char_descriptions))
+        image_prompt = run_async(story_gen.generate_image_prompt(page))
         page.image_prompt = image_prompt
         
         return jsonify({

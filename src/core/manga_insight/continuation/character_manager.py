@@ -11,13 +11,8 @@ import shutil
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from PIL import Image
-
 from ..storage import AnalysisStorage
 from .models import CharacterProfile, CharacterForm, ContinuationCharacters
-
-# 向后兼容别名
-CharacterReference = CharacterProfile
 
 logger = logging.getLogger("MangaInsight.Continuation.CharacterManager")
 
@@ -140,78 +135,6 @@ class CharacterManager:
         self.save_characters(characters)
         
         return characters
-    
-    def update_character_reference(
-        self,
-        character_name: str,
-        reference_image: str,
-        form_id: str
-    ) -> bool:
-        """
-        更新角色指定形态的参考图
-        
-        Args:
-            character_name: 角色名
-            reference_image: 参考图路径
-            form_id: 形态ID
-            
-        Returns:
-            bool: 是否更新成功
-        """
-        characters = self.load_characters()
-        
-        # 查找角色
-        char = characters.get_character(character_name)
-        
-        if char:
-            # 查找形态
-            form = char.get_form(form_id)
-            if not form:
-                # 形态不存在，无法设置参考图
-                logger.warning(f"形态不存在: {character_name}/{form_id}")
-                return False
-            
-            # 删除旧图片（如果存在且不同）
-            if form.reference_image and form.reference_image != reference_image:
-                if os.path.exists(form.reference_image):
-                    try:
-                        os.remove(form.reference_image)
-                    except Exception as e:
-                        logger.warning(f"删除旧图片失败: {e}")
-            
-            form.reference_image = reference_image
-            return self.save_characters(characters)
-        else:
-            # 添加新角色（不创建默认形态，创建用户指定的形态）
-            new_form = CharacterForm(
-                form_id=form_id,
-                form_name=form_id,  # 使用 form_id 作为初始名
-                description="",
-                reference_image=reference_image
-            )
-            characters.characters.append(CharacterProfile(
-                name=character_name,
-                aliases=[],
-                description="",
-                forms=[new_form]
-            ))
-        
-        # 保存配置
-        return self.save_characters(characters)
-    
-    def get_character_descriptions(self) -> Dict[str, str]:
-        """
-        获取所有角色的描述字典
-        
-        Returns:
-            Dict[str, str]: {角色名: 描述}
-        """
-        characters = self.load_characters()
-        
-        return {
-            char.name: char.description or f"角色 {char.name}"
-            for char in characters.characters
-        }
     
     
     # ===== 形态管理方法 =====
@@ -376,8 +299,6 @@ class CharacterManager:
         Returns:
             bool: 是否删除成功
         """
-        # 所有形态都可以删除，不再有默认形态的限制
-        
         characters = self.load_characters()
         
         char = characters.get_character(character_name)
@@ -464,24 +385,6 @@ class CharacterManager:
         
         logger.info(f"已上传形态参考图: {character_name}/{form_id} -> {save_path}")
         return save_path
-    
-    def get_form_reference_image(
-        self,
-        character_name: str,
-        form_id: str
-    ) -> Optional[str]:
-        """
-        获取指定角色指定形态的参考图路径
-        
-        Args:
-            character_name: 角色名
-            form_id: 形态ID
-            
-        Returns:
-            str: 参考图路径，不存在返回 None
-        """
-        characters = self.load_characters()
-        return characters.get_form_reference(character_name, form_id)
     
     def get_character_forms_tree(self, include_disabled: bool = False) -> Dict[str, Any]:
         """

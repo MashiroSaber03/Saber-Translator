@@ -17,10 +17,10 @@ from openai import OpenAI  # OpenAI SDK
 from PIL import Image
 import io
 
-from ..config_models import ImageGenConfig, MangaInsightConfig
+from ..config_models import ImageGenConfig
 from ..config_utils import load_insight_config
 from ..storage import AnalysisStorage
-from .models import PageContent, ContinuationCharacters, CharacterReference
+from .models import PageContent, ContinuationCharacters
 
 logger = logging.getLogger("MangaInsight.Continuation.ImageGenerator")
 
@@ -67,8 +67,7 @@ class ImageGenerator:
         
         # 构建完整提示词
         full_prompt = self._build_full_prompt(
-            page_content=page_content,
-            characters=characters
+            page_content=page_content
         )
         
         # 收集参考图片
@@ -149,24 +148,21 @@ class ImageGenerator:
         self,
         character_name: str,
         source_image_paths: list[str],
-        form_id: str,
-        form_name: str = ""
+        form_id: str
     ) -> str:
         """
-        生成角色三视图（支持形态级别）
+        生成角色三视图
         
         Args:
-            character_name: 角色名
+            character_name: 角色名（用于保存路径）
             source_image_paths: 原始参考图路径列表
-            form_id: 形态ID
-            form_name: 形态名称（用于提示词，为空时使用角色名）
+            form_id: 形态ID（用于保存路径）
             
         Returns:
             str: 生成的三视图图片路径
         """
-        # 构建提示词（统一方法，自动处理形态描述）
-        prompt = self._build_orthographic_prompt(character_name, form_name)
-        ref_name_prefix = f"{character_name}_{form_name}" if form_name else character_name
+        # 构建提示词
+        prompt = self._build_orthographic_prompt()
         
         # 调用生图API，使用所有上传的图片作为参考
         reference_images = []
@@ -174,7 +170,7 @@ class ImageGenerator:
             reference_images.append({
                 "path": img_path,
                 "type": "character",
-                "name": f"{ref_name_prefix}_ref_{i+1}"
+                "name": f"ref_{i+1}"
             })
         
         logger.info(f"使用 {len(reference_images)} 张参考图生成三视图: {character_name}/{form_id}")
@@ -237,58 +233,14 @@ class ImageGenerator:
     
     def _build_full_prompt(
         self,
-        page_content: PageContent,
-        characters: ContinuationCharacters
+        page_content: PageContent
     ) -> str:
         """构建完整的生图提示词
         
         前置：漫画家角色设定
         中间：AI 生成的剧情描述
-        后置：根据是否有参考图动态调整的规则
+        后置：统一的规则
         """
-        # 检查哪些角色有参考图
-        chars_with_ref = []
-        chars_without_ref = []
-        
-        # 构建形态映射
-        form_map = {}
-        if page_content.character_forms:
-            for cf in page_content.character_forms:
-                form_map[cf.get("character", "")] = cf.get("form_id")  # 可能为 None
-        
-        for char_name in page_content.characters:
-            char_ref = characters.get_character(char_name)
-            if not char_ref:
-                chars_without_ref.append(char_name)
-                continue
-            
-            # 检查该角色是否启用
-            if char_ref.enabled == False:
-                chars_without_ref.append(char_name)
-                continue
-            
-            # 获取指定形态
-            form_id = form_map.get(char_name)
-            form = char_ref.get_form(form_id) if form_id else None
-            
-            # 检查是否有可用的参考图
-            has_ref = False
-            
-            # 如果指定形态存在且启用且有参考图
-            if form and form.enabled != False and form.reference_image:
-                has_ref = True
-            else:
-                # 检查是否有任何启用的形态有参考图
-                for f in char_ref.forms:
-                    if f.enabled != False and f.reference_image:
-                        has_ref = True
-                        break
-            
-            if has_ref:
-                chars_with_ref.append(char_name)
-            else:
-                chars_without_ref.append(char_name)
-        
         # 前置提示词：设定角色
         prefix = """你是一位专业的漫画家。根据我提供的参考资料，画出下一页漫画。
 
@@ -297,47 +249,26 @@ class ImageGenerator:
         # 中间：AI 生成的剧情提示词
         content = page_content.image_prompt
         
-        # 后置提示词：根据参考图情况动态调整
-        suffix_parts = ["\n\n---\n\n**重要规则**："]
-        
-        # 画风规则（始终需要）
-        suffix_parts.append("1. **画风继承**：画风、线条、配色完全参考提供的原漫画页面")
-        
-        # 角色规则
-        if chars_with_ref and chars_without_ref:
-            # 部分角色有参考图
-            suffix_parts.append(f"2. **有参考图的角色**（{', '.join(chars_with_ref)}）：外貌、服装、特征必须与角色参考图保持一致")
-            suffix_parts.append(f"3. **无参考图的角色**（{', '.join(chars_without_ref)}）：根据剧情描述和整体画风自由设计，保持风格统一")
-        elif chars_with_ref:
-            # 所有角色都有参考图
-            suffix_parts.append("2. **角色外貌**：所有角色的外貌、服装、特征必须与提供的角色参考图保持一致")
-        elif chars_without_ref:
-            # 没有任何角色参考图
-            suffix_parts.append("2. **角色设计**：根据剧情描述自由设计角色外貌，保持整体风格统一，角色特征在整个漫画中要保持一致")
-        
-        # 中文规则
-        suffix_parts.append(f"{len(suffix_parts)}. **文字语言**：所有对话气泡、文字、音效词必须使用**简体中文**")
-        
-        suffix = "\n".join(suffix_parts)
+        # 后置提示词：统一规则
+        suffix = """
+
+---
+
+**重要规则**：
+1. **画风继承**：画风、线条、配色完全参考提供的原漫画页面
+2. **角色外貌**：如果提供了角色参考图，角色的外貌、服装、特征必须与参考图保持一致
+3. **文字语言**：所有对话气泡、文字、音效词必须使用**简体中文**"""
         
         return prefix + content + suffix
     
-    def _build_orthographic_prompt(self, character_name: str, form_name: str = "") -> str:
-        """构建三视图生成提示词（支持形态级别）"""
-        # 根据是否有形态名称决定角色描述
-        if form_name:
-            char_desc = f"角色「{character_name}」（{form_name}形态）"
-            extra_requirement = "\n- 如果是特殊形态（如战斗服、变身形态），要保持该形态的所有特征"
-        else:
-            char_desc = f"角色「{character_name}」"
-            extra_requirement = ""
-        
-        return f"""基于我提供的参考图片，为{char_desc}生成三视图设计稿。
+    def _build_orthographic_prompt(self) -> str:
+        """构建三视图生成提示词"""
+        return """基于我提供的参考图片，生成角色三视图设计稿。
 
 重要要求：
 - 必须完全参考我上传的图片中的角色外观
 - 保持与参考图一致的：发型、发色、眼睛颜色、服装、体型、装备、特殊特征
-- 不要创造新角色，只是将参考图中的角色画成三视图{extra_requirement}
+- 不要创造新角色，只是将参考图中的角色画成三视图
 
 三视图格式要求：
 - 白色背景
@@ -1031,17 +962,12 @@ class ImageGenerator:
         return pages
     
     def _find_image_path(self, session_dir: str, image_index: int, image_type: str = "original") -> str:
-        """查找图片文件路径，支持新旧两种存储格式"""
-        # 优先检查新格式: images/{idx}/{type}.png
-        new_format_path = os.path.join(session_dir, "images", str(image_index), f"{image_type}.png")
-        if os.path.exists(new_format_path):
-            return new_format_path
-        
-        # 其次检查旧格式: image_{idx}_{type}.{ext}
-        for ext in ['png', 'jpg', 'jpeg', 'webp']:
-            old_format_path = os.path.join(session_dir, f"image_{image_index}_{image_type}.{ext}")
-            if os.path.exists(old_format_path):
-                return old_format_path
+        """查找图片文件路径"""
+        # 格式: images/{idx}/{type}.png
+        image_path = os.path.join(session_dir, "images", str(image_index), f"{image_type}.png")
+        if os.path.exists(image_path):
+            return image_path
         
         return ""
+
 

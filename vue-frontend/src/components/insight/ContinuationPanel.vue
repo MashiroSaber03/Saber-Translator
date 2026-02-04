@@ -30,7 +30,7 @@ interface CharacterRef {
   aliases: string[]
   description: string
   forms: CharacterForm[]
-  reference_image: string  // 向后兼容：默认形态的参考图
+  reference_image: string  // 任意一张参考图（用于展示）
   enabled?: boolean
 }
 
@@ -43,11 +43,9 @@ interface ChapterScript {
 
 interface PageContent {
   page_number: number
-  scene: string
   characters: string[]
   description: string
   dialogues: Array<{ character: string; text: string }>
-  mood: string
   image_prompt: string
   image_url: string
   previous_url: string
@@ -511,11 +509,6 @@ async function saveFormInfo(): Promise<void> {
 
 /** 删除形态 */
 async function deleteForm(charName: string, form: CharacterForm): Promise<void> {
-  if (form.form_id === 'default') {
-    showMessage('默认形态无法删除', 'error')
-    return
-  }
-  
   if (!confirm(`确定要删除形态 "${form.form_name}" 吗？`)) {
     return
   }
@@ -572,10 +565,6 @@ async function uploadFormImage(charName: string, formId: string, event: Event): 
         if (form) {
           form.reference_image = result.image_path
         }
-        // 如果是默认形态，同时更新 reference_image
-        if (formId === 'default') {
-          char.reference_image = result.image_path
-        }
       }
       imageRefreshKey.value = Date.now()
       showMessage('形态参考图已上传', 'success')
@@ -608,10 +597,6 @@ async function deleteFormImageAction(charName: string, formId: string): Promise<
         const form = char.forms.find(f => f.form_id === formId)
         if (form) {
           form.reference_image = ''
-        }
-        // 如果是默认形态，同时更新 reference_image
-        if (formId === 'default') {
-          char.reference_image = ''
         }
       }
       imageRefreshKey.value = Date.now()
@@ -936,11 +921,9 @@ async function generatePageDetails(): Promise<void> {
         // 详情生成失败
         pages.value.push({
           page_number: i,
-          scene: '',
           characters: [],
           description: `生成失败: ${detailResult.error || '未知错误'}`,
           dialogues: [],
-          mood: '',
           image_prompt: '',
           image_url: '',
           previous_url: '',
@@ -1636,7 +1619,6 @@ watch(() => insightStore.currentBookId, (newBookId) => {
           <div v-for="page in pages" :key="page.page_number" class="page-card">
             <div class="page-header">
               <span class="page-number">第 {{ page.page_number }} 页</span>
-              <span class="page-mood">{{ page.mood }}</span>
             </div>
             
             <div class="page-content">
@@ -2605,11 +2587,6 @@ watch(() => insightStore.currentBookId, (newBookId) => {
 
 .page-number {
   font-weight: 600;
-}
-
-.page-mood {
-  color: var(--primary, #6366f1);
-  font-size: 13px;
 }
 
 .page-content {

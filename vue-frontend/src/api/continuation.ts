@@ -11,7 +11,7 @@ import { apiClient } from './client'
  * 角色形态
  */
 export interface CharacterForm {
-    form_id: string           // 形态ID（如 "default", "battle", "dark"）
+    form_id: string           // 形态ID（如 "normal", "battle", "dark"）
     form_name: string         // 形态显示名（如 "常服", "战斗服"）
     description: string       // 形态描述
     reference_image: string   // 参考图路径
@@ -26,14 +26,9 @@ export interface CharacterProfile {
     aliases: string[]         // 别名列表
     description: string       // 角色基础描述
     forms: CharacterForm[]    // 形态列表
-    reference_image: string   // 向后兼容：默认形态的参考图
+    reference_image: string   // 任意一张参考图（用于展示）
     enabled?: boolean         // 是否启用此角色
 }
-
-/**
- * 角色参考图（向后兼容别名）
- */
-export type CharacterRef = CharacterProfile
 
 export interface ChapterScript {
     chapter_title: string
@@ -52,12 +47,10 @@ export interface CharacterFormSelection {
 
 export interface PageContent {
     page_number: number
-    scene: string  // 已废弃，后端会提供空字符串作为默认值
-    characters: string[]                   // 出场人物（向后兼容）
-    character_forms?: CharacterFormSelection[]  // 角色形态选择（可选，新增）
+    characters: string[]
+    character_forms?: CharacterFormSelection[]
     description: string
     dialogues: Array<{ character: string; text: string }>
-    mood: string
     image_prompt: string
     image_url: string
     previous_url: string
@@ -87,7 +80,7 @@ interface PrepareResponse {
 
 interface CharactersResponse {
     success: boolean
-    characters?: CharacterRef[]
+    characters?: CharacterProfile[]
     error?: string
 }
 
@@ -139,7 +132,7 @@ export async function getCharacters(bookId: string): Promise<CharactersResponse>
 export async function addCharacter(
     bookId: string,
     data: { name: string; aliases?: string[]; description?: string }
-): Promise<{ success: boolean; character?: CharacterRef; error?: string }> {
+): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
     return apiClient.post(
         `/api/manga-insight/${bookId}/continuation/characters`,
         data
@@ -166,7 +159,7 @@ export async function updateCharacterInfo(
     bookId: string,
     characterName: string,
     data: { name?: string; aliases?: string[] }
-): Promise<{ success: boolean; character?: CharacterRef; error?: string }> {
+): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
     return apiClient.put(
         `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}`,
         data

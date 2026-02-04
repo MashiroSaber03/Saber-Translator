@@ -13,7 +13,6 @@ from .models import (
     PageContent,
     CharacterForm,
     CharacterProfile,
-    CharacterReference,  # 向后兼容别名
     ContinuationCharacters
 )
 
@@ -26,7 +25,6 @@ __all__ = [
     'PageContent',
     'CharacterForm',
     'CharacterProfile',
-    'CharacterReference',
     'ContinuationCharacters',
     'StoryGenerator',
     'ImageGenerator',
