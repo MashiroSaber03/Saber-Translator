@@ -158,7 +158,7 @@ export async function deleteCharacter(
 export async function updateCharacterInfo(
     bookId: string,
     characterName: string,
-    data: { name?: string; aliases?: string[] }
+    data: { name?: string; aliases?: string[]; enabled?: boolean }
 ): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
     return apiClient.put(
         `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}`,

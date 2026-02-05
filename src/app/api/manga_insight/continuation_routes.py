@@ -403,16 +403,18 @@ def delete_character(book_id: str, character_name: str):
 @manga_insight_bp.route('/<book_id>/continuation/characters/<character_name>', methods=['PUT'])
 def update_character_info(book_id: str, character_name: str):
     """
-    更新角色信息（名称和别名）
+    更新角色信息（名称、别名和enabled状态）
     
     Body:
         name: 新的角色名（可选）
         aliases: 别名列表（可选）
+        enabled: 是否启用（可选）
     """
     try:
         data = request.get_json() or {}
         new_name = data.get('name', '').strip()
         new_aliases = data.get('aliases', None)
+        new_enabled = data.get('enabled', None)
         
         from urllib.parse import unquote
         char_name = unquote(character_name)
@@ -441,9 +443,14 @@ def update_character_info(book_id: str, character_name: str):
         if new_aliases is not None:
             found_char.aliases = [a.strip() for a in new_aliases if a.strip()]
         
+        # 更新enabled状态
+        if new_enabled is not None:
+            found_char.enabled = bool(new_enabled)
+            logger.info(f"角色 {found_char.name} enabled状态更新为: {found_char.enabled}")
+        
         # 保存
         if char_manager.save_characters(characters):
-            logger.info(f"角色信息已更新: {found_char.name}, 别名: {found_char.aliases}")
+            logger.info(f"角色信息已更新: {found_char.name}, 别名: {found_char.aliases}, enabled: {found_char.enabled}")
             return jsonify({
                 "success": True,
                 "character": found_char.to_dict()
