@@ -1050,10 +1050,10 @@ def set_form_reference(book_id: str, character_name: str, form_id: str):
 def get_style_references(book_id: str):
     """
     获取画风参考图路径（原漫画最后N页）
-    
+
     Query:
         count: 需要的页数（默认3）
-        
+
     Returns:
         {
             "success": true,
@@ -1062,18 +1062,150 @@ def get_style_references(book_id: str):
     """
     try:
         count = request.args.get('count', 3, type=int)
-        
+
         # 获取原漫画页面路径
         image_gen = ImageGenerator(book_id)
         style_refs = image_gen.get_style_reference_images(count)
-        
+
         return jsonify({
             "success": True,
             "images": style_refs
         })
-        
+
     except Exception as e:
         logger.error(f"获取画风参考图失败: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@manga_insight_bp.route('/<book_id>/continuation/available-images', methods=['GET'])
+def get_available_images(book_id: str):
+    """
+    获取可用于参考图选择的所有图片列表
+
+    用于前端参考图选择器，返回三类图片：
+    1. 原作图片（按页码排序）
+    2. 续写图片（已生成的和占位的）
+    3. 角色档案参考图（启用的角色和形态）
+
+    Query:
+        mode: "script" 或 "image"
+            - script: 脚本生成场景，只返回原作图片
+            - image: 生图场景，返回原作图片+续写图片+角色档案
+        current_page: 当前生成的页码（仅 mode=image 时有效）
+            用于过滤，只显示当前页之前的续写图片
+
+    Returns:
+        {
+            "success": true,
+            "original_images": [
+                {"page_number": 1, "path": "路径", "has_image": true},
+                ...
+            ],
+            "continuation_images": [
+                {"page_number": 79, "path": "路径或空", "has_image": true/false},
+                ...
+            ],
+            "character_forms": [
+                {
+                    "character_name": "角色名",
+                    "form_id": "形态ID",
+                    "form_name": "形态名",
+                    "reference_image": "路径"
+                },
+                ...
+            ],
+            "total_original_pages": 78
+        }
+    """
+    try:
+        mode = request.args.get('mode', 'script')
+        current_page = request.args.get('current_page', 0, type=int)
+
+        image_gen = ImageGenerator(book_id)
+
+        # 1. 获取原作图片列表
+        original_pages = image_gen._get_original_manga_pages()
+        original_images = []
+        for i, path in enumerate(original_pages):
+            original_images.append({
+                "page_number": i + 1,
+                "path": path,
+                "has_image": os.path.exists(path) if path else False
+            })
+
+        total_original_pages = len(original_images)
+
+        result = {
+            "success": True,
+            "original_images": original_images,
+            "continuation_images": [],
+            "character_forms": [],
+            "total_original_pages": total_original_pages
+        }
+
+        # 2. 如果是生图场景，获取续写图片和角色档案
+        if mode == "image":
+            # 获取续写页面数据
+            storage = AnalysisStorage(book_id)
+            pages_data = run_async(storage.load_continuation_pages())
+
+            if pages_data and "pages" in pages_data:
+                continuation_images = []
+                for page in pages_data["pages"]:
+                    page_number = page.get("page_number", 0)
+                    # 续写页码 = 原作总页数 + 页面序号
+                    actual_page_number = total_original_pages + page_number
+
+                    # 只返回当前页之前的页面（过滤规则）
+                    if current_page > 0 and actual_page_number >= current_page:
+                        continue
+
+                    image_url = page.get("image_url", "")
+                    has_image = bool(image_url) and os.path.exists(image_url)
+
+                    # 无论是否有图片都返回（占位图也要显示）
+                    continuation_images.append({
+                        "page_number": actual_page_number,
+                        "path": image_url if has_image else "",
+                        "has_image": has_image
+                    })
+
+                result["continuation_images"] = continuation_images
+
+            # 获取角色档案（启用的角色和形态）
+            char_manager = CharacterManager(book_id)
+            characters = char_manager.load_characters()
+
+            character_forms = []
+            for char in characters.characters:
+                # 只处理启用的角色
+                if not char.enabled:
+                    continue
+
+                for form in char.forms:
+                    # 只处理启用的且有参考图的形态
+                    if not form.enabled or not form.reference_image:
+                        continue
+
+                    if os.path.exists(form.reference_image):
+                        character_forms.append({
+                            "character_name": char.name,
+                            "form_id": form.form_id,
+                            "form_name": form.form_name,
+                            "reference_image": form.reference_image
+                        })
+
+            result["character_forms"] = character_forms
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"获取可用图片列表失败: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": str(e)
@@ -1088,13 +1220,14 @@ def get_style_references(book_id: str):
 def generate_script(book_id: str):
     """
     生成全话脚本（第一层）
-    
+
     Request Body:
         {
             "direction": "用户指定的续写方向",
-            "page_count": 15
+            "page_count": 15,
+            "reference_images": ["路径1", "路径2", ...]  // 可选，自定义参考图路径列表
         }
-        
+
     Returns:
         {
             "success": true,
@@ -1110,11 +1243,13 @@ def generate_script(book_id: str):
         data = request.get_json() or {}
         direction = data.get("direction", "")
         page_count = data.get("page_count", 15)
-        
+        reference_images = data.get("reference_images", None)  # 自定义参考图路径列表
+
         story_gen = StoryGenerator(book_id)
         script = run_async(story_gen.generate_chapter_script(
             user_direction=direction,
-            page_count=page_count
+            page_count=page_count,
+            custom_reference_images=reference_images  # 传递自定义参考图
         ))
         
         # 自动保存脚本到持久化存储
@@ -1291,14 +1426,16 @@ def generate_single_image_prompt(book_id: str, page_number: int):
 def generate_page_image(book_id: str, page_number: int):
     """
     生成单页图片
-    
+
     Request Body:
         {
             "page": {...页面数据...},
             "style_reference_images": ["路径1", "路径2"],
-            "session_id": "会话ID"
+            "session_id": "会话ID",
+            "style_ref_count": 3,  // 画风参考图数量（滑动窗口大小）
+            "custom_style_refs": ["路径1", "路径2"]  // 可选，用户自定义的画风参考图
         }
-        
+
     Returns:
         {
             "success": true,
@@ -1311,28 +1448,45 @@ def generate_page_image(book_id: str, page_number: int):
         style_refs = data.get("style_reference_images", [])
         session_id = data.get("session_id", "")
         style_ref_count = data.get("style_ref_count", 3)  # 用户设置的画风参考图数量
-        
+        custom_style_refs = data.get("custom_style_refs", None)  # 用户自定义的画风参考图
+
         if not page_data:
             return jsonify({
                 "success": False,
                 "error": "缺少页面数据"
             }), 400
-        
+
         page = PageContent.from_dict(page_data)
-        
+
         # 获取角色配置
         char_manager = CharacterManager(book_id)
         characters = char_manager.load_characters()
-        
+
+        # 确定使用的画风参考图
+        # 如果用户提供了自定义参考图，直接使用；否则使用自动滑动窗口逻辑
+        if custom_style_refs is not None and len(custom_style_refs) > 0:
+            # 用户自定义选择：验证路径有效性
+            valid_refs = [p for p in custom_style_refs if p and os.path.exists(p)]
+            if len(valid_refs) == 0:
+                # 所有路径无效，回退到自动逻辑
+                logger.warning("所有自定义参考图路径无效，回退到自动选择")
+                final_style_refs = style_refs
+            else:
+                final_style_refs = valid_refs
+                logger.info(f"使用用户自定义的 {len(valid_refs)} 张画风参考图")
+        else:
+            # 使用传入的自动滑动窗口参考图
+            final_style_refs = style_refs
+
         image_gen = ImageGenerator(book_id)
         image_path = run_async(image_gen.generate_page_image(
             page_content=page,
             characters=characters,
-            style_reference_images=style_refs,
+            style_reference_images=final_style_refs,
             session_id=session_id,
             style_ref_count=style_ref_count  # 传递滑动窗口大小
         ))
-        
+
         return jsonify({
             "success": True,
             "image_path": image_path
@@ -1350,14 +1504,16 @@ def generate_page_image(book_id: str, page_number: int):
 def regenerate_page_image(book_id: str, page_number: int):
     """
     重新生成页面图片（保留上一版本）
-    
+
     Request Body:
         {
             "page": {...页面数据...},
             "style_reference_images": ["路径1", "路径2"],
-            "session_id": "会话ID"
+            "session_id": "会话ID",
+            "style_ref_count": 3,  // 画风参考图数量（滑动窗口大小）
+            "custom_style_refs": ["路径1", "路径2"]  // 可选，用户自定义的画风参考图
         }
-        
+
     Returns:
         {
             "success": true,
@@ -1371,29 +1527,42 @@ def regenerate_page_image(book_id: str, page_number: int):
         style_refs = data.get("style_reference_images", [])
         session_id = data.get("session_id", "")
         style_ref_count = data.get("style_ref_count", 3)  # 用户设置的画风参考图数量
-        
+        custom_style_refs = data.get("custom_style_refs", None)  # 用户自定义的画风参考图
+
         if not page_data:
             return jsonify({
                 "success": False,
                 "error": "缺少页面数据"
             }), 400
-        
+
         page = PageContent.from_dict(page_data)
         previous_path = page.image_url
-        
+
         # 获取角色配置
         char_manager = CharacterManager(book_id)
         characters = char_manager.load_characters()
-        
+
+        # 确定使用的画风参考图
+        if custom_style_refs is not None and len(custom_style_refs) > 0:
+            valid_refs = [p for p in custom_style_refs if p and os.path.exists(p)]
+            if len(valid_refs) == 0:
+                logger.warning("所有自定义参考图路径无效，回退到自动选择")
+                final_style_refs = style_refs
+            else:
+                final_style_refs = valid_refs
+                logger.info(f"使用用户自定义的 {len(valid_refs)} 张画风参考图")
+        else:
+            final_style_refs = style_refs
+
         image_gen = ImageGenerator(book_id)
         image_path = run_async(image_gen.regenerate_page_image(
             page_content=page,
             characters=characters,
-            style_reference_images=style_refs,
+            style_reference_images=final_style_refs,
             session_id=session_id,
             style_ref_count=style_ref_count  # 传递滑动窗口大小
         ))
-        
+
         return jsonify({
             "success": True,
             "image_path": image_path,

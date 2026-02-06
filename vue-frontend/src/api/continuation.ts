@@ -494,3 +494,75 @@ export async function exportAsPdf(bookId: string): Promise<Blob> {
 
     return response.blob()
 }
+
+// ==================== 参考图选择相关类型 ====================
+
+/**
+ * 原作/续写图片信息
+ */
+export interface MangaImageInfo {
+    page_number: number
+    path: string
+    has_image: boolean
+}
+
+/**
+ * 角色形态参考图信息
+ */
+export interface CharacterFormInfo {
+    character_name: string
+    form_id: string
+    form_name: string
+    reference_image: string
+}
+
+/**
+ * 可用图片列表响应
+ */
+export interface AvailableImagesResponse {
+    success: boolean
+    original_images?: MangaImageInfo[]
+    continuation_images?: MangaImageInfo[]
+    character_forms?: CharacterFormInfo[]
+    total_original_pages?: number
+    error?: string
+}
+
+/**
+ * 获取可用于参考图选择的所有图片列表
+ *
+ * @param bookId 书籍ID
+ * @param mode "script" 或 "image"
+ *   - script: 脚本生成场景，只返回原作图片
+ *   - image: 生图场景，返回原作图片+续写图片+角色档案
+ * @param currentPage 当前生成的页码（仅 mode=image 时有效）
+ */
+export async function getAvailableImages(
+    bookId: string,
+    mode: 'script' | 'image' = 'script',
+    currentPage: number = 0
+): Promise<AvailableImagesResponse> {
+    const params = new URLSearchParams({
+        mode,
+        current_page: currentPage.toString()
+    })
+    return apiClient.get(`/api/manga-insight/${bookId}/continuation/available-images?${params}`)
+}
+
+/**
+ * 生成脚本（支持自定义参考图）
+ */
+export async function generateScriptWithRefs(
+    bookId: string,
+    direction: string,
+    pageCount: number,
+    referenceImages?: string[]
+): Promise<ScriptResponse> {
+    return apiClient.post(`/api/manga-insight/${bookId}/continuation/script`, {
+        direction,
+        page_count: pageCount,
+        reference_images: referenceImages || null
+    }, {
+        timeout: 0  // 移除超时限制，LLM 生成可能很耗时
+    })
+}

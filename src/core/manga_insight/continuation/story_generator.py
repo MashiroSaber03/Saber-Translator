@@ -72,34 +72,45 @@ class StoryGenerator:
     async def generate_chapter_script(
         self,
         user_direction: str = "",
-        page_count: int = 15
+        page_count: int = 15,
+        custom_reference_images: List[str] = None
     ) -> ChapterScript:
         """
         生成全话脚本（第一层）- 使用 VLM + 原作图片
-        
+
         Args:
             user_direction: 用户指定的续写方向
             page_count: 续写页数
-            
+            custom_reference_images: 自定义参考图路径列表（可选）
+                如果提供，使用这些图片替代自动选择的最后N张
+                如果为 None 或空列表，使用默认的自动选择逻辑
+
         Returns:
             ChapterScript: 生成的脚本
         """
         # 获取必要数据
         story_summary = await self.storage.load_template_overview("story_summary")
         timeline_data = await self.storage.load_timeline()
-        
+
         if not story_summary or not story_summary.get("content"):
             raise ValueError("故事概要不存在，请先调用 prepare_continuation_data")
-        
+
         if not timeline_data:
             raise ValueError("时间线数据不存在")
-        
+
         # 获取最近几页的分析结果作为参考（文本信息）
         reference_pages = await self._get_recent_page_analyses(5)
-        
-        # 【新增】获取最后 5 张原漫画图片作为视觉参考
-        original_images = await self._get_recent_manga_images(5)
-        
+
+        # 获取原漫画图片作为视觉参考
+        if custom_reference_images and len(custom_reference_images) > 0:
+            # 使用用户自定义的参考图
+            original_images = await self._load_images_from_paths(custom_reference_images)
+            logger.info(f"使用自定义参考图: {len(original_images)} 张")
+        else:
+            # 使用默认的自动选择逻辑（最后5张）
+            original_images = await self._get_recent_manga_images(5)
+            logger.info(f"使用自动选择的参考图: {len(original_images)} 张")
+
         # 构建提示词（针对 VLM 优化）
         prompt = self._build_chapter_script_prompt(
             manga_summary=story_summary.get("content", ""),
@@ -109,10 +120,10 @@ class StoryGenerator:
             page_count=page_count,
             has_visual_reference=len(original_images) > 0  # 传递是否有视觉参考的标志
         )
-        
+
         # 调用 VLM（附带图片）
         logger.info(f"正在生成全话脚本，页数: {page_count}，视觉参考: {len(original_images)} 张原作图片")
-        
+
         if original_images:
             # 使用 VLM 的多模态能力
             response = await self._call_vlm_with_images(original_images, prompt)
@@ -120,11 +131,11 @@ class StoryGenerator:
             # 降级：无图片时使用纯文本 LLM
             logger.warning("未找到原作图片，降级为纯文本生成")
             response = await self.chat_client.generate(prompt)
-        
+
         # 解析响应，提取标题
         script_text = response.strip()
         chapter_title = self._extract_chapter_title(script_text)
-        
+
         return ChapterScript(
             chapter_title=chapter_title,
             page_count=page_count,
@@ -236,51 +247,51 @@ class StoryGenerator:
     async def _get_recent_manga_images(self, count: int = 5) -> List[bytes]:
         """
         获取原漫画最后 N 张图片（用于 VLM 视觉参考）
-        
+
         Args:
             count: 需要获取的图片数量
-            
+
         Returns:
             List[bytes]: 图片字节数据列表（最后几页）
         """
         from src.shared.path_helpers import resource_path
         from src.core import bookshelf_manager
-        
+
         images = []
-        
+
         try:
             # 从书架系统获取书籍信息
             book = bookshelf_manager.get_book(self.book_id)
             if not book:
                 logger.warning(f"未找到书籍: {self.book_id}")
                 return images
-            
+
             # 获取所有章节的所有图片路径
             chapters = book.get("chapters", [])
             sessions_base = resource_path("data/sessions/bookshelf")
             all_image_paths = []
-            
+
             for chapter in chapters:
                 chapter_id = chapter.get("id")
                 if not chapter_id:
                     continue
-                
+
                 # 从 session_meta.json 获取图片信息
                 session_dir = os.path.join(sessions_base, self.book_id, chapter_id)
                 session_meta_path = os.path.join(session_dir, "session_meta.json")
-                
+
                 if os.path.exists(session_meta_path):
                     try:
                         with open(session_meta_path, "r", encoding="utf-8") as f:
                             session_data = json.load(f)
-                        
+
                         # 支持两种格式
                         if "total_pages" in session_data:
                             image_count = session_data.get("total_pages", 0)
                         else:
                             images_meta = session_data.get("images_meta", [])
                             image_count = len(images_meta)
-                        
+
                         for i in range(image_count):
                             # 优先使用原图
                             image_path = os.path.join(session_dir, "images", str(i), "original.png")
@@ -289,10 +300,10 @@ class StoryGenerator:
                     except Exception as e:
                         logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
                         continue
-            
+
             # 取最后 count 张图片
             recent_paths = all_image_paths[-count:] if len(all_image_paths) > count else all_image_paths
-            
+
             # 读取图片字节数据
             for img_path in recent_paths:
                 try:
@@ -300,13 +311,46 @@ class StoryGenerator:
                         images.append(f.read())
                 except Exception as e:
                     logger.warning(f"读取图片失败: {img_path}, {e}")
-            
+
             logger.info(f"成功加载 {len(images)} 张原作图片用于脚本生成")
             return images
-            
+
         except Exception as e:
             logger.error(f"获取原漫画图片失败: {e}")
             return images
+
+    async def _load_images_from_paths(self, image_paths: List[str]) -> List[bytes]:
+        """
+        从指定路径列表加载图片字节数据
+
+        Args:
+            image_paths: 图片路径列表
+
+        Returns:
+            List[bytes]: 图片字节数据列表
+        """
+        images = []
+
+        for img_path in image_paths:
+            if not img_path:
+                continue
+
+            # 规范化路径
+            img_path = os.path.normpath(img_path)
+
+            if not os.path.exists(img_path):
+                logger.warning(f"参考图路径不存在，跳过: {img_path}")
+                continue
+
+            try:
+                with open(img_path, "rb") as f:
+                    images.append(f.read())
+                logger.debug(f"已加载参考图: {img_path}")
+            except Exception as e:
+                logger.warning(f"读取参考图失败: {img_path}, {e}")
+
+        logger.info(f"从自定义路径加载了 {len(images)} 张参考图")
+        return images
     
     def _build_chapter_script_prompt(
         self,

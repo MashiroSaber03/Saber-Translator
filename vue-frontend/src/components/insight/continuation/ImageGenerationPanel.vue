@@ -1,32 +1,52 @@
 <template>
   <div class="image-generation-panel">
     <h3>🎨 图片生成</h3>
-    
+
+    <!-- 批量生成配置区 -->
     <div class="generation-controls">
-      <button 
+      <div class="batch-config">
+        <div class="config-row">
+          <label>画风参考图数量:</label>
+          <input
+            type="number"
+            v-model.number="refCount"
+            min="1"
+            max="10"
+            class="ref-count-input"
+          />
+          <button
+            class="btn secondary"
+            @click="openBatchReferenceSelector"
+          >
+            📷 选择初始参考图 ({{ getInitialRefCount() }})
+          </button>
+        </div>
+      </div>
+
+      <button
         class="btn primary large"
         :disabled="isGenerating || pages.length === 0"
-        @click="$emit('batch-generate')"
+        @click="handleBatchGenerate"
       >
         {{ isGenerating ? '生成中...' : '🚀 批量生成图片' }}
       </button>
-      
+
       <div v-if="isGenerating" class="progress-bar">
         <div class="progress-fill" :style="{ width: progress + '%' }"></div>
         <span class="progress-text">{{ progress }}%</span>
       </div>
     </div>
-    
+
     <div class="generated-images">
       <div v-for="page in pages" :key="page.page_number" class="image-card">
         <div class="image-header">
           <h4>页面 {{ page.page_number }}</h4>
           <span class="image-status" :class="page.status">{{ getStatusText(page.status) }}</span>
         </div>
-        
+
         <div class="image-preview">
-          <img 
-            v-if="page.image_url" 
+          <img
+            v-if="page.image_url"
             :src="getImageUrl(page.image_url)"
             :alt="`页面 ${page.page_number}`"
           >
@@ -35,20 +55,20 @@
             <p>{{ page.status === 'generating' ? '生成中...' : '未生成' }}</p>
           </div>
         </div>
-        
+
         <!-- 提示词显示和编辑区域 -->
         <div class="prompt-section">
           <div class="prompt-header">
             <label>📝 生图提示词</label>
-            <button 
-              class="btn-mini" 
+            <button
+              class="btn-mini"
               @click="togglePromptEdit(page.page_number)"
             >
               {{ editingPromptPage === page.page_number ? '收起' : '编辑' }}
             </button>
           </div>
           <div v-if="editingPromptPage === page.page_number" class="prompt-edit">
-            <textarea 
+            <textarea
               v-model="page.image_prompt"
               rows="4"
               class="prompt-input"
@@ -61,16 +81,16 @@
             <p v-else class="prompt-empty">暂无提示词</p>
           </div>
         </div>
-        
+
         <div class="image-actions">
-          <button 
+          <button
             class="btn secondary small"
             :disabled="page.status === 'generating'"
             @click="$emit('regenerate', page.page_number)"
           >
             ↺ 重新生成
           </button>
-          <button 
+          <button
             v-if="page.previous_url"
             class="btn secondary small"
             @click="$emit('use-previous', page.page_number)"
@@ -80,22 +100,40 @@
         </div>
       </div>
     </div>
+
+    <!-- 批量生成参考图选择器 -->
+    <ReferenceImageSelector
+      v-model:visible="selectorVisible"
+      mode="image"
+      :max-count="refCount"
+      :original-images="availableOriginalImages"
+      :continuation-images="[]"
+      :character-forms="availableCharacterForms"
+      :initial-selection="batchInitialRefs"
+      :book-id="bookId"
+      @confirm="handleSelectorConfirm"
+      @cancel="handleSelectorCancel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { PageContent } from '@/api/continuation'
+import { ref, watch, onMounted } from 'vue'
+import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
+import { getAvailableImages } from '@/api/continuation'
 import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
+import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
 const props = defineProps<{
   pages: PageContent[]
   isGenerating: boolean
   progress: number
+  bookId: string
+  totalOriginalPages: number
 }>()
 
 const emit = defineEmits<{
-  'batch-generate': []
+  'batch-generate': [initialStyleRefs: string[] | null]
   'regenerate': [pageNumber: number]
   'use-previous': [pageNumber: number]
   'prompt-change': [pageNumber: number, prompt: string]
@@ -105,6 +143,19 @@ const state = useContinuationStateInject()
 
 // 当前正在编辑提示词的页面
 const editingPromptPage = ref<number | null>(null)
+
+// 参考图数量（使用全局配置）
+const refCount = ref(state.styleRefPages?.value || 3)
+
+// 批量生成的初始参考图选择（全局）
+const batchInitialRefs = ref<string[]>([])
+
+// 参考图选择器状态
+const selectorVisible = ref(false)
+
+// 可用图片数据
+const availableOriginalImages = ref<MangaImageInfo[]>([])
+const availableCharacterForms = ref<CharacterFormInfo[]>([])
 
 function togglePromptEdit(pageNumber: number) {
   if (editingPromptPage.value === pageNumber) {
@@ -127,6 +178,67 @@ function getStatusText(status: string): string {
   }
   return map[status] || status
 }
+
+// 获取显示的初始参考图数量
+function getInitialRefCount(): number {
+  if (batchInitialRefs.value.length > 0) {
+    return batchInitialRefs.value.length
+  }
+  return refCount.value
+}
+
+// 打开批量生成参考图选择器
+async function openBatchReferenceSelector() {
+  try {
+    // 批量生成从第1页开始，获取可用图片
+    const response = await getAvailableImages(props.bookId, 'image', props.totalOriginalPages + 1)
+    if (response.success) {
+      availableOriginalImages.value = response.original_images || []
+      availableCharacterForms.value = response.character_forms || []
+    }
+  } catch (error) {
+    console.error('加载可用图片失败:', error)
+  }
+
+  selectorVisible.value = true
+}
+
+// 选择器确认
+function handleSelectorConfirm(paths: string[]) {
+  batchInitialRefs.value = paths
+}
+
+// 选择器取消
+function handleSelectorCancel() {
+  // 不做任何操作
+}
+
+// 批量生成
+function handleBatchGenerate() {
+  const refs = batchInitialRefs.value.length > 0 ? batchInitialRefs.value : null
+  emit('batch-generate', refs)
+}
+
+// 组件挂载时同步全局配置
+onMounted(() => {
+  if (state.styleRefPages?.value) {
+    refCount.value = state.styleRefPages.value
+  }
+})
+
+// 当用户修改参考图数量时，同步到全局状态
+watch(refCount, (newValue) => {
+  if (state.styleRefPages && newValue > 0) {
+    state.styleRefPages.value = newValue
+  }
+})
+
+// 监听全局状态变化，同步到本地（实现双向同步）
+watch(() => state.styleRefPages?.value, (newValue) => {
+  if (newValue && newValue !== refCount.value) {
+    refCount.value = newValue
+  }
+})
 </script>
 
 <style scoped>
@@ -142,6 +254,41 @@ function getStatusText(status: string): string {
 
 .generation-controls {
   margin-bottom: 24px;
+}
+
+.batch-config {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--bg-secondary, #f5f5f5);
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.config-row label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #333);
+}
+
+.ref-count-input {
+  width: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.ref-count-input:focus {
+  outline: none;
+  border-color: var(--primary, #6366f1);
 }
 
 .btn {

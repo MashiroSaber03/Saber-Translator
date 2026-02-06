@@ -11,7 +11,7 @@ import { useContinuationStateInject, type ContinuationState } from './useContinu
 interface ImageGenerationComposable {
     isGenerating: Ref<boolean>
     generationProgress: Ref<number>
-    batchGenerateImages: (pages: PageContent[]) => Promise<void>
+    batchGenerateImages: (pages: PageContent[], initialStyleRefs?: string[]) => Promise<void>
     regeneratePageImage: (pageNumber: number) => Promise<void>
 }
 
@@ -23,7 +23,7 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
     const isGenerating = ref(false)
     const generationProgress = ref(0)
 
-    async function batchGenerateImages(pages: PageContent[]) {
+    async function batchGenerateImages(pages: PageContent[], initialStyleRefs?: string[]) {
         if (!bookId.value || pages.length === 0) return
 
         isGenerating.value = true
@@ -33,9 +33,16 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         let completedPages = 0
 
         try {
-            // 获取画风参考图
-            const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
-            const styleRefs = styleResult.success && styleResult.images ? styleResult.images : []
+            // 确定初始画风参考图
+            let styleRefs: string[]
+            if (initialStyleRefs && initialStyleRefs.length > 0) {
+                // 使用用户选择的初始参考图
+                styleRefs = [...initialStyleRefs]
+            } else {
+                // 使用自动逻辑：获取原作最后N张
+                const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
+                styleRefs = styleResult.success && styleResult.images ? styleResult.images : []
+            }
 
             for (const page of pages) {
                 if (page.image_url) {
@@ -97,7 +104,7 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         try {
             page.status = 'generating'
 
-            // 获取画风参考图
+            // 使用自动逻辑获取画风参考图
             const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
             const styleRefs = styleResult.success && styleResult.images ? styleResult.images : []
 

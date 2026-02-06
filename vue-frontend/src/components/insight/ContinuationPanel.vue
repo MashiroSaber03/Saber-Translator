@@ -70,6 +70,7 @@
         <ScriptGenerationPanel
           :script="state.chapterScript.value"
           :is-generating="scriptGen.isGenerating.value"
+          :book-id="insightStore.currentBookId || ''"
           @generate="handleGenerateScript"
         />
         
@@ -108,6 +109,8 @@
           :pages="state.pages.value"
           :is-generating="imageGen.isGenerating.value"
           :progress="imageGen.generationProgress.value"
+          :book-id="insightStore.currentBookId || ''"
+          :total-original-pages="totalOriginalPages"
           @batch-generate="handleBatchGenerate"
           @regenerate="handleRegenerateImage"
           @use-previous="handleUsePrevious"
@@ -213,6 +216,11 @@ const generatedPagesCount = computed(() => {
   return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
 })
 
+// 原作总页数（用于参考图选择器）
+const totalOriginalPages = computed(() => {
+  return state.totalOriginalPages?.value || 0
+})
+
 // 步骤导航
 function canNavigateToStep(step: number): boolean {
   if (step === 0) return true
@@ -234,17 +242,19 @@ function goToStep(step: number) {
 }
 
 // 脚本生成
-async function handleGenerateScript() {
+async function handleGenerateScript(referenceImages: string[] | null) {
   if (!insightStore.currentBookId) return
-  
+
   scriptGen.isGenerating.value = true
   state.errorMessage.value = ''
-  
+
   try {
-    const result = await continuationApi.generateScript(
+    // 使用支持自定义参考图的API
+    const result = await continuationApi.generateScriptWithRefs(
       insightStore.currentBookId,
       state.continuationDirection.value,
-      state.pageCount.value
+      state.pageCount.value,
+      referenceImages || undefined
     )
     
     if (result.success && result.script) {
@@ -412,9 +422,9 @@ function onPageDataChange() {
 }
 
 // 图片生成
-async function handleBatchGenerate() {
+async function handleBatchGenerate(initialStyleRefs: string[] | null) {
   if (!insightStore.currentBookId) return
-  await imageGen.batchGenerateImages(state.pages.value)
+  await imageGen.batchGenerateImages(state.pages.value, initialStyleRefs || undefined)
 }
 
 async function handleRegenerateImage(pageNumber: number) {

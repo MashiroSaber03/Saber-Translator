@@ -282,9 +282,45 @@ class CharacterManager:
             return False
         
         form.enabled = enabled
-        
+
         self.save_characters(characters)
         logger.info(f"已{'启用' if enabled else '禁用'}形态: {character_name}/{form_id}")
+        return True
+
+    def update_character_reference(
+        self,
+        character_name: str,
+        reference_image: str,
+        form_id: str = "form_1"
+    ) -> bool:
+        """
+        更新角色形态的参考图
+
+        Args:
+            character_name: 角色名
+            reference_image: 新的参考图路径
+            form_id: 形态ID（默认为form_1）
+
+        Returns:
+            bool: 是否更新成功
+        """
+        characters = self.load_characters()
+
+        char = characters.get_character(character_name)
+        if not char:
+            logger.warning(f"角色不存在: {character_name}")
+            return False
+
+        form = char.get_form(form_id)
+        if not form:
+            logger.warning(f"形态不存在: {character_name}/{form_id}")
+            return False
+
+        # 更新参考图路径
+        form.reference_image = reference_image
+
+        self.save_characters(characters)
+        logger.info(f"已更新形态参考图: {character_name}/{form_id} -> {reference_image}")
         return True
     
 

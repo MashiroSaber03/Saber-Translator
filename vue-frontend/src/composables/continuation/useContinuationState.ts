@@ -25,6 +25,7 @@ export interface ContinuationState {
     chapterScript: Ref<ChapterScript | null>
     pages: Ref<PageContent[]>
     imageRefreshKey: Ref<number>
+    totalOriginalPages: Ref<number>  // 原作总页数
 
     // 生成状态
     isGeneratingPages: Ref<boolean>
@@ -61,7 +62,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const characters = ref<CharacterProfile[]>([])
     const chapterScript = ref<ChapterScript | null>(null)
     const pages = ref<PageContent[]>([])
-
+    const totalOriginalPages = ref<number>(0)  // 原作总页数
     // 生成状态
     const isGeneratingPages = ref(false)
     const isGeneratingPrompts = ref(false)
@@ -95,6 +96,16 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                     continuationDirection.value = data.config.continuation_direction || ''
                 }
 
+                // 获取原作总页数
+                try {
+                    const availableResult = await continuationApi.getAvailableImages(bookId.value, 'script')
+                    if (availableResult.success && availableResult.total_original_pages) {
+                        totalOriginalPages.value = availableResult.total_original_pages
+                    }
+                } catch (e) {
+                    console.warn('获取原作总页数失败:', e)
+                }
+
                 isDataReady.value = true
             }
         } catch (error) {
@@ -115,6 +126,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         styleRefPages.value = 3
         continuationDirection.value = ''
         imageRefreshKey.value = Date.now()
+        totalOriginalPages.value = 0
     }
 
     function showMessage(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -166,6 +178,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         chapterScript,
         pages,
         imageRefreshKey,
+        totalOriginalPages,
 
         // 生成状态
         isGeneratingPages,
