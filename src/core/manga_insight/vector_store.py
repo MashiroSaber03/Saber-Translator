@@ -9,6 +9,7 @@ import os
 from typing import List, Dict, Optional, Any
 
 from src.shared.path_helpers import resource_path
+from .storage import get_insight_storage_path
 
 logger = logging.getLogger("MangaInsight.VectorStore")
 
@@ -27,7 +28,8 @@ class MangaVectorStore:
     
     def __init__(self, book_id: str):
         self.book_id = book_id
-        self.storage_path = resource_path(f"data/manga_insight/{book_id}/embeddings")
+        # 使用统一的路径系统
+        self.storage_path = os.path.join(get_insight_storage_path(book_id), "embeddings")
         
         self.client = None
         self.pages_collection = None

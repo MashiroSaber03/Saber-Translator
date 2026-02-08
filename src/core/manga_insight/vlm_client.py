@@ -9,18 +9,18 @@ import json
 import logging
 import asyncio
 import re
-import time
 import io
 from typing import List, Dict, Optional
 
-import httpx
 from PIL import Image
 
+from .clients import BaseAPIClient
 from .config_models import (
     VLMConfig,
     PromptsConfig,
     DEFAULT_BATCH_ANALYSIS_PROMPT
 )
+from .utils.json_parser import parse_llm_json
 
 logger = logging.getLogger("MangaInsight.VLM")
 
@@ -75,89 +75,43 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
         return image_bytes
 
 
-class VLMClient:
-    """多模态大模型客户端（统一 OpenAI 格式）"""
-    
-    # 预设服务商的 base_url（全部为 OpenAI 兼容格式）
-    PROVIDER_CONFIGS = {
-        "openai": {
-            "base_url": "https://api.openai.com/v1",
-            "models": ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"]
-        },
-        "gemini": {
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "models": ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
-        },
-        "qwen": {
-            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "models": ["qwen-vl-max", "qwen-vl-plus"]
-        },
-        "siliconflow": {
-            "base_url": "https://api.siliconflow.cn/v1",
-            "models": []
-        },
-        "deepseek": {
-            "base_url": "https://api.deepseek.com/v1",
-            "models": ["deepseek-chat"]
-        },
-        "volcano": {
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "models": []
-        }
-    }
-    
+class VLMClient(BaseAPIClient):
+    """
+    多模态大模型客户端（继承 BaseAPIClient）
+
+    继承自 BaseAPIClient，自动获得：
+    - RPM 限制
+    - 指数退避重试
+    - 流式 SSE 解析
+    - 本地服务检测和代理禁用
+    """
+
     def __init__(self, config: VLMConfig, prompts_config: Optional[PromptsConfig] = None):
+        """
+        初始化 VLMClient
+
+        Args:
+            config: VLMConfig 配置对象
+            prompts_config: 提示词配置（可选）
+        """
         self.config = config
         self.prompts_config = prompts_config or PromptsConfig()
-        
-        # 检测是否为本地服务（使用共享函数）
-        from src.shared.openai_helpers import is_local_service
-        # 修复：只有 custom 服务商才使用自定义 URL
-        provider_lower = config.provider.lower()
-        if provider_lower == 'custom':
-            base_url = config.base_url or ""
-        else:
-            base_url = self.PROVIDER_CONFIGS.get(provider_lower, {}).get("base_url", "")
-        
-        # 批量分析需要更长超时时间（5分钟）
-        if is_local_service(base_url):
-            # 本地服务禁用代理
-            self.client = httpx.AsyncClient(timeout=300.0, trust_env=False)
-            logger.info(f"VLM客户端: 检测到本地服务 ({base_url})，禁用代理")
-        else:
-            self.client = httpx.AsyncClient(timeout=300.0)
-        
-        self._rpm_last_reset = 0
-        self._rpm_count = 0
-    
+
+        # 调用父类初始化
+        super().__init__(
+            provider=config.provider,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            rpm_limit=config.rpm_limit,
+            timeout=300.0,  # 批量分析需要更长超时时间（5分钟）
+            max_retries=config.max_retries
+        )
+
+        logger.info(f"VLMClient 初始化: provider={config.provider}, base_url={self._base_url}")
+
     def is_configured(self) -> bool:
         """检查是否已配置"""
         return bool(self.config.api_key and self.config.model)
-    
-    async def close(self):
-        """关闭客户端"""
-        await self.client.aclose()
-    
-    async def _enforce_rpm_limit(self):
-        """执行 RPM 限制"""
-        if self.config.rpm_limit <= 0:
-            return
-        
-        current_time = time.time()
-        
-        if current_time - self._rpm_last_reset >= 60:
-            self._rpm_last_reset = current_time
-            self._rpm_count = 0
-        
-        if self._rpm_count >= self.config.rpm_limit:
-            wait_time = 60 - (current_time - self._rpm_last_reset)
-            if wait_time > 0:
-                logger.info(f"RPM 限制: 等待 {wait_time:.1f} 秒")
-                await asyncio.sleep(wait_time)
-                self._rpm_last_reset = time.time()
-                self._rpm_count = 0
-        
-        self._rpm_count += 1
     
     async def analyze_batch(
         self,
@@ -225,8 +179,8 @@ class VLMClient:
     async def _call_vlm(self, images: List[bytes], prompt: str) -> str:
         """调用 VLM API（统一使用 OpenAI 格式）"""
         await self._enforce_rpm_limit()
-        
-        for attempt in range(self.config.max_retries + 1):
+
+        for attempt in range(self._max_retries + 1):
             try:
                 return await self._call_openai_compatible(images, prompt)
             except Exception as e:
@@ -239,10 +193,10 @@ class VLMClient:
                             error_msg = f"{error_msg} - Response: {resp.text[:500]}"
                         elif hasattr(resp, 'content'):
                             error_msg = f"{error_msg} - Content: {resp.content[:500]}"
-                    except:
-                        pass
-                logger.warning(f"VLM 调用失败 (尝试 {attempt + 1}/{self.config.max_retries + 1}): {error_msg}")
-                if attempt < self.config.max_retries:
+                    except Exception:
+                        pass  # 忽略响应解析错误，使用原始错误信息
+                logger.warning(f"VLM 调用失败 (尝试 {attempt + 1}/{self._max_retries + 1}): {error_msg}")
+                if attempt < self._max_retries:
                     await asyncio.sleep(2 ** attempt)
                 else:
                     raise Exception(f"VLM 调用失败: {error_msg}")
@@ -250,64 +204,22 @@ class VLMClient:
     async def _call_openai_normal(self, url: str, headers: dict, request_body: dict, provider: str) -> str:
         """OpenAI 兼容 API 非流式调用"""
         response = await self.client.post(url, headers=headers, json=request_body)
-        
+
         if response.status_code != 200:
             error_text = response.text[:500] if response.text else "无响应内容"
             raise Exception(f"{provider} API 错误 {response.status_code}: {error_text}")
-        
+
         data = response.json()
         choices = data.get("choices", [])
         if not choices:
             raise Exception(f"{provider} API 返回空 choices")
         return choices[0]["message"]["content"]
-    
-    async def _call_openai_stream(self, url: str, headers: dict, request_body: dict) -> str:
-        """OpenAI 兼容 API 流式调用"""
-        request_body["stream"] = True
-        full_text = ""
-        chunk_count = 0
-        model_name = request_body.get('model', 'unknown')
-        print(f"\n[流式输出] {model_name}: ", end="", flush=True)
-        
-        async with self.client.stream("POST", url, headers=headers, json=request_body) as response:
-            if response.status_code != 200:
-                error_bytes = await response.aread()
-                error_text = error_bytes.decode('utf-8', errors='ignore')[:500]
-                raise Exception(f"API 错误 {response.status_code}: {error_text}")
-            
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        # 安全获取 choices，防止空数组导致 index out of range
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue  # 跳过空 choices 的 chunk
-                        delta = choices[0].get("delta", {})
-                        if "content" in delta and delta["content"]:
-                            chunk_count += 1
-                            chunk_text = delta["content"]
-                            full_text += chunk_text
-                            # 实时打印到终端
-                            print(chunk_text, end="", flush=True)
-                    except json.JSONDecodeError:
-                        continue
-        
-        print(f"\n[完成] 共 {chunk_count} 块, {len(full_text)} 字符\n")
-        return full_text
-    
+
     async def _call_openai_compatible(self, images: List[bytes], prompt: str) -> str:
         """调用 OpenAI 兼容 API（统一格式，支持所有服务商）"""
         provider = self.config.provider.lower()
-        # 修复：只有 custom 服务商才使用自定义 URL
-        if provider == 'custom':
-            base_url = self.config.base_url or ""
-        else:
-            base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
-        
+        base_url = self._base_url
+
         content = []
         for img in images:
             # 根据配置压缩图片以减少 Token 消耗
@@ -319,26 +231,26 @@ class VLMClient:
                 }
             })
         content.append({"type": "text", "text": prompt})
-        
+
         request_body = {
             "model": self.config.model,
             "messages": [{"role": "user", "content": content}],
             "temperature": self.config.temperature
         }
-        
+
         # 强制 JSON 输出
         if self.config.force_json:
             request_body["response_format"] = {"type": "json_object"}
-        
+
         if not base_url:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
-        
-        url = f"{base_url}/chat/completions"
-        headers = {"Authorization": f"Bearer {self.config.api_key}"}
-        
+
         if self.config.use_stream:
-            return await self._call_openai_stream(url, headers, request_body)
+            # 使用父类的流式处理方法
+            return await self._call_api_stream("/chat/completions", request_body)
         else:
+            url = f"{base_url}/chat/completions"
+            headers = self._get_headers()
             return await self._call_openai_normal(url, headers, request_body, provider)
     
     def _clean_thinking_tags(self, text: str) -> str:
@@ -443,22 +355,12 @@ class VLMClient:
     def _parse_batch_analysis(self, response_text: str, start_page: int, end_page: int) -> Dict:
         """解析批量分析结果"""
         text = self._extract_json_from_text(response_text)
-        result = None
-        
-        # 第一次尝试直接解析
-        try:
-            result = json.loads(text)
-        except json.JSONDecodeError:
-            # 第二次尝试：修复常见问题后解析
-            try:
-                fixed_text = self._try_fix_json(text)
-                result = json.loads(fixed_text)
-                logger.info(f"第{start_page}-{end_page}页批量 JSON 修复后解析成功")
-            except json.JSONDecodeError:
-                pass
-        
+
+        # 使用统一的 JSON 解析器
+        result = parse_llm_json(text)
+
         # 解析失败，返回错误结果
-        if result is None:
+        if not result:
             logger.warning(f"批量 JSON 解析失败，第{start_page}-{end_page}页")
             page_count = end_page - start_page + 1
             return {
@@ -473,7 +375,7 @@ class VLMClient:
                 "continuity_notes": "",
                 "parse_error": True
             }
-        
+
         # 解析成功，继续处理
         try:
             
@@ -536,15 +438,10 @@ class VLMClient:
         """测试连接（统一使用 OpenAI 格式）"""
         try:
             test_prompt = "请回复'连接成功'"
-            provider = self.config.provider.lower()
-            # 修复：只有 custom 服务商才使用自定义 URL
-            if provider == 'custom':
-                base_url = self.config.base_url or ""
-            else:
-                base_url = self.PROVIDER_CONFIGS.get(provider, {}).get("base_url", "")
-            
+            base_url = self._base_url
+
             if not base_url:
-                logger.error(f"服务商 '{provider}' 未配置 base_url")
+                logger.error(f"服务商 '{self.config.provider}' 未配置 base_url")
                 return False
             
             response = await self.client.post(

@@ -31,6 +31,7 @@ logger = logging.getLogger("PageStorage")
 
 # 常量
 SESSION_BASE_DIR = "sessions"
+BOOKSHELF_BASE_DIR = "bookshelf"  # 新增：书架数据目录
 SESSION_META_FILENAME = "session_meta.json"
 PAGE_META_FILENAME = "meta.json"
 IMAGES_DIR = "images"
@@ -49,16 +50,64 @@ def _get_lock(key: str) -> threading.Lock:
 
 
 def _get_session_base_dir() -> str:
-    """获取会话基础目录"""
+    """获取会话基础目录（独立会话）"""
     base_path = resource_path(os.path.join("data", SESSION_BASE_DIR))
     os.makedirs(base_path, exist_ok=True)
     return base_path
 
 
+def _is_bookshelf_path(session_path: str) -> bool:
+    """判断是否是书架路径（新格式或旧格式）"""
+    # 新格式书架路径: bookshelf/{book_id}/chapters/{chapter_id}/session
+    # 旧格式书架路径: bookshelf/{book_id}/{chapter_id}
+    # 规范化路径分隔符后再检查
+    normalized = session_path.replace("\\", "/")
+    return normalized.startswith("bookshelf/")
+
+
+def _convert_old_to_new_path(session_path: str) -> str:
+    """
+    将旧格式路径转换为新格式路径（如果新格式存在）
+    旧格式: bookshelf/{book_id}/{chapter_id}
+    新格式: bookshelf/{book_id}/chapters/{chapter_id}/session
+    """
+    normalized = session_path.replace("\\", "/")
+    parts = normalized.split("/")
+
+    # 检查是否是旧格式: bookshelf/{book_id}/{chapter_id}（3段且不含 chapters）
+    if len(parts) == 3 and parts[0] == "bookshelf" and "chapters" not in normalized:
+        book_id, chapter_id = parts[1], parts[2]
+        new_format = f"bookshelf/{book_id}/chapters/{chapter_id}/session"
+        new_full_path = resource_path(os.path.join("data", new_format))
+
+        # 如果新格式路径存在，使用新格式
+        if os.path.isdir(new_full_path):
+            return new_format
+
+    return session_path
+
+
 def _get_session_path(session_path: str) -> str:
-    """获取完整的会话目录路径"""
-    base_dir = _get_session_base_dir()
-    full_path = os.path.join(base_dir, session_path)
+    """
+    获取完整的会话目录路径
+
+    - 书架路径（新格式）: data/bookshelf/{book_id}/chapters/{chapter_id}/session
+    - 书架路径（旧格式）: data/bookshelf/{book_id}/{chapter_id}
+    - 独立会话路径: data/sessions/{session_path}
+    """
+    if _is_bookshelf_path(session_path):
+        # 尝试转换旧格式到新格式
+        converted_path = _convert_old_to_new_path(session_path)
+        # 书架路径：直接使用 data/ 作为基础
+        full_path = resource_path(os.path.join("data", converted_path))
+
+        # 如果转换后的路径不存在，回退到原路径
+        if not os.path.isdir(full_path):
+            full_path = resource_path(os.path.join("data", session_path))
+    else:
+        # 独立会话：使用 data/sessions/ 作为基础
+        base_dir = _get_session_base_dir()
+        full_path = os.path.join(base_dir, session_path)
     return full_path
 
 

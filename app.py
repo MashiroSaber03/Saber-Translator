@@ -249,6 +249,15 @@ def auto_migrate_bookshelf_data():
     except Exception as e:
         logger.warning(f"书架数据迁移检查失败: {e}")
 
+    # 新增：统一数据结构迁移（会话和Insight数据）
+    try:
+        from src.core.data_migration import check_and_migrate
+        result = check_and_migrate()
+        if result.get("migrated"):
+            logger.info(f"📦 数据结构迁移完成: {result.get('message')}")
+    except Exception as e:
+        logger.warning(f"数据结构迁移检查失败: {e}")
+
 auto_migrate_bookshelf_data()
 
 if __name__ == '__main__':

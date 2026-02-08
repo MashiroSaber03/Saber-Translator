@@ -5,24 +5,15 @@ Manga Insight 数据 API
 """
 
 import logging
-import asyncio
-from flask import request, jsonify, Response
+from flask import request, Response
 
 from . import manga_insight_bp
+from .async_helpers import run_async
+from .response_builder import success_response, error_response
 from src.core.manga_insight.storage import AnalysisStorage
 from src.core.manga_insight.features.timeline import TimelineBuilder
 
 logger = logging.getLogger("MangaInsight.API.Data")
-
-
-def run_async(coro):
-    """在同步上下文中运行异步函数"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
 
 
 def _find_image_path(session_dir: str, image_index: int, image_type: str = "original") -> str | None:
@@ -61,18 +52,12 @@ def get_overview(book_id: str):
     try:
         storage = AnalysisStorage(book_id)
         overview = run_async(storage.load_overview())
-        
-        return jsonify({
-            "success": True,
-            "overview": overview
-        })
-        
+
+        return success_response(data={"overview": overview})
+
     except Exception as e:
         logger.error(f"获取概述失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 # ==================== 页面数据 ====================
@@ -83,19 +68,12 @@ def list_pages(book_id: str):
     try:
         storage = AnalysisStorage(book_id)
         pages = run_async(storage.list_pages())
-        
-        return jsonify({
-            "success": True,
-            "pages": pages,
-            "count": len(pages)
-        })
-        
+
+        return success_response(data={"pages": pages, "count": len(pages)})
+
     except Exception as e:
         logger.error(f"获取页面列表失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/pages/<int:page_num>', methods=['GET'])
@@ -104,24 +82,15 @@ def get_page_analysis(book_id: str, page_num: int):
     try:
         storage = AnalysisStorage(book_id)
         analysis = run_async(storage.load_page_analysis(page_num))
-        
+
         if not analysis:
-            return jsonify({
-                "success": False,
-                "error": f"未找到第 {page_num} 页的分析结果"
-            }), 404
-        
-        return jsonify({
-            "success": True,
-            "analysis": analysis
-        })
-        
+            return error_response(f"未找到第 {page_num} 页的分析结果", 404)
+
+        return success_response(data={"analysis": analysis})
+
     except Exception as e:
         logger.error(f"获取页面分析失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/thumbnail/<int:page_num>', methods=['GET'])
@@ -146,25 +115,25 @@ def get_page_thumbnail(book_id: str, page_num: int):
         
         # 查找对应页面的图片
         chapters = book.get("chapters", [])
-        sessions_base = resource_path("data/sessions/bookshelf")
-        
-        # 缩略图缓存目录
-        thumb_cache_dir = resource_path(f"data/manga_insight/{book_id}/thumbnails")
+
+        # 缩略图缓存目录（使用统一路径）
+        from src.core.manga_insight.storage import get_insight_storage_path
+        thumb_cache_dir = os.path.join(get_insight_storage_path(book_id), "thumbnails")
         os.makedirs(thumb_cache_dir, exist_ok=True)
         thumb_cache_path = os.path.join(thumb_cache_dir, f"page_{page_num}.jpg")
         
         # 检查缓存
         if os.path.exists(thumb_cache_path):
             return send_file(thumb_cache_path, mimetype='image/jpeg')
-        
+
         current_page = 0
         for chapter in chapters:
             chapter_id = chapter.get("id")
             if not chapter_id:
                 continue
-            
-            # 从 session_meta.json 获取图片信息
-            session_dir = os.path.join(sessions_base, book_id, chapter_id)
+
+            # 从 session_meta.json 获取图片信息（使用新路径格式）
+            session_dir = resource_path(f"data/bookshelf/{book_id}/chapters/{chapter_id}/session")
             session_meta_path = os.path.join(session_dir, "session_meta.json")
             
             if os.path.exists(session_meta_path):
@@ -239,16 +208,15 @@ def get_page_image(book_id: str, page_num: int):
         
         # 查找对应页面的图片
         chapters = book.get("chapters", [])
-        sessions_base = resource_path("data/sessions/bookshelf")
-        
+
         current_page = 0
         for chapter in chapters:
             chapter_id = chapter.get("id")
             if not chapter_id:
                 continue
-            
-            # 从 session_meta.json 获取图片信息
-            session_dir = os.path.join(sessions_base, book_id, chapter_id)
+
+            # 从 session_meta.json 获取图片信息（使用新路径格式）
+            session_dir = resource_path(f"data/bookshelf/{book_id}/chapters/{chapter_id}/session")
             session_meta_path = os.path.join(session_dir, "session_meta.json")
             
             if os.path.exists(session_meta_path):
@@ -302,18 +270,12 @@ def list_chapters(book_id: str):
     try:
         storage = AnalysisStorage(book_id)
         chapters = run_async(storage.list_chapters())
-        
-        return jsonify({
-            "success": True,
-            "chapters": chapters
-        })
-        
+
+        return success_response(data={"chapters": chapters})
+
     except Exception as e:
         logger.error(f"获取章节列表失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/chapters/<chapter_id>', methods=['GET'])
@@ -322,24 +284,15 @@ def get_chapter_analysis(book_id: str, chapter_id: str):
     try:
         storage = AnalysisStorage(book_id)
         analysis = run_async(storage.load_chapter_analysis(chapter_id))
-        
+
         if not analysis:
-            return jsonify({
-                "success": False,
-                "error": f"未找到章节 {chapter_id} 的分析结果"
-            }), 404
-        
-        return jsonify({
-            "success": True,
-            "analysis": analysis
-        })
-        
+            return error_response(f"未找到章节 {chapter_id} 的分析结果", 404)
+
+        return success_response(data={"analysis": analysis})
+
     except Exception as e:
         logger.error(f"获取章节分析失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 # ==================== 时间线数据 ====================
@@ -358,35 +311,29 @@ def get_timeline(book_id: str):
         
         # 直接从缓存加载，不自动构建
         timeline_data = run_async(storage.load_timeline())
-        
+
         if timeline_data:
-            return jsonify({
-                "success": True,
-                "cached": True,
-                **timeline_data
-            })
+            return success_response(data=timeline_data, cached=True)
         else:
             # 没有缓存，返回空结果
-            return jsonify({
-                "success": True,
-                "cached": False,
-                "groups": [],
-                "events": [],
-                "stats": {
-                    "total_events": 0,
-                    "total_groups": 0,
-                    "total_batches": 0,
-                    "total_pages": 0
+            return success_response(
+                data={
+                    "groups": [],
+                    "events": [],
+                    "stats": {
+                        "total_events": 0,
+                        "total_groups": 0,
+                        "total_batches": 0,
+                        "total_pages": 0
+                    }
                 },
-                "message": "时间线尚未生成，请先完成漫画分析"
-            })
-        
+                cached=False,
+                message="时间线尚未生成，请先完成漫画分析"
+            )
+
     except Exception as e:
         logger.error(f"获取时间线失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 # ==================== 导出 ====================
@@ -400,24 +347,15 @@ def export_analysis(book_id: str):
         data = run_async(storage.export_all())
         
         if format_type == 'json':
-            return jsonify({
-                "success": True,
-                "data": data
-            })
+            return success_response(data=data)
         else:
             # 默认导出 Markdown
             content = _generate_markdown_report(data)
-            return jsonify({
-                "success": True,
-                "markdown": content
-            })
-        
+            return success_response(data={"markdown": content})
+
     except Exception as e:
         logger.error(f"导出分析数据失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 def _generate_markdown_report(data: dict) -> str:
@@ -479,19 +417,15 @@ def regenerate_overview(book_id: str):
         analyzer = MangaAnalyzer(book_id, config)
         
         overview = run_async(analyzer.generate_overview())
-        
-        return jsonify({
-            "success": True,
-            "message": "概述已重新生成",
-            "overview": overview
-        })
-        
+
+        return success_response(
+            data={"overview": overview},
+            message="概述已重新生成"
+        )
+
     except Exception as e:
         logger.error(f"重新生成概述失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 # ==================== 多模板概要 API ====================
@@ -522,20 +456,16 @@ def get_overview_templates(book_id: str):
         # 获取已生成的模板列表
         generated_list = run_async(storage.list_template_overviews())
         generated_keys = [item["template_key"] for item in generated_list]
-        
-        return jsonify({
-            "success": True,
+
+        return success_response(data={
             "templates": templates,
             "generated": generated_keys,
             "generated_details": generated_list
         })
-        
+
     except Exception as e:
         logger.error(f"获取概要模板列表失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/overview/generate', methods=['POST'])
@@ -571,10 +501,7 @@ def generate_template_overview(book_id: str):
         
         # 验证模板
         if template_key not in OVERVIEW_TEMPLATES:
-            return jsonify({
-                "success": False,
-                "error": f"未知的模板类型: {template_key}"
-            }), 400
+            return error_response(f"未知的模板类型: {template_key}", 400)
         
         storage = AnalysisStorage(book_id)
         config = load_insight_config()
@@ -583,11 +510,7 @@ def generate_template_overview(book_id: str):
         if not force:
             cached = run_async(storage.load_template_overview(template_key))
             if cached and cached.get("content"):
-                return jsonify({
-                    "success": True,
-                    "cached": True,
-                    **cached
-                })
+                return success_response(data=cached, cached=True)
         
         # 强制重新生成时，先删除缓存
         if force:
@@ -603,10 +526,7 @@ def generate_template_overview(book_id: str):
                 llm_client = ChatClient(config.chat_llm)
         
         if not llm_client:
-            return jsonify({
-                "success": False,
-                "error": "未配置 LLM，请先在设置中配置 VLM 或对话模型"
-            }), 400
+            return error_response("未配置 LLM，请先在设置中配置 VLM 或对话模型", 400)
         
         # 生成概要
         generator = HierarchicalSummaryGenerator(
@@ -621,19 +541,12 @@ def generate_template_overview(book_id: str):
         
         # 关闭 LLM 客户端
         run_async(llm_client.close())
-        
-        return jsonify({
-            "success": True,
-            "cached": False,
-            **result
-        })
-        
+
+        return success_response(data=result, cached=False)
+
     except Exception as e:
         logger.error(f"生成模板概要失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/overview/<template_key>', methods=['GET'])
@@ -656,37 +569,28 @@ def get_template_overview(book_id: str, template_key: str):
         
         # 验证模板
         if template_key not in OVERVIEW_TEMPLATES:
-            return jsonify({
-                "success": False,
-                "error": f"未知的模板类型: {template_key}"
-            }), 400
+            return error_response(f"未知的模板类型: {template_key}", 400)
         
         cached = run_async(storage.load_template_overview(template_key))
-        
+
         if cached and cached.get("content"):
-            return jsonify({
-                "success": True,
-                "cached": True,
-                **cached
-            })
+            return success_response(data=cached, cached=True)
         else:
             template_info = OVERVIEW_TEMPLATES[template_key]
-            return jsonify({
-                "success": True,
-                "cached": False,
-                "template_key": template_key,
-                "template_name": template_info["name"],
-                "template_icon": template_info["icon"],
-                "content": None,
-                "message": "尚未生成，请点击生成按钮"
-            })
-        
+            return success_response(
+                data={
+                    "template_key": template_key,
+                    "template_name": template_info["name"],
+                    "template_icon": template_info["icon"],
+                    "content": None
+                },
+                cached=False,
+                message="尚未生成，请点击生成按钮"
+            )
+
     except Exception as e:
         logger.error(f"获取模板概要失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/overview/<template_key>', methods=['DELETE'])
@@ -695,18 +599,12 @@ def delete_template_overview(book_id: str, template_key: str):
     try:
         storage = AnalysisStorage(book_id)
         success = run_async(storage.delete_template_overview(template_key))
-        
-        return jsonify({
-            "success": success,
-            "message": "缓存已删除" if success else "删除失败"
-        })
-        
+
+        return success_response(message="缓存已删除" if success else "删除失败")
+
     except Exception as e:
         logger.error(f"删除模板概要失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/rebuild-embeddings', methods=['POST'])
@@ -721,10 +619,7 @@ def rebuild_embeddings(book_id: str):
         
         # 检查 Embedding 是否已配置
         if not config.embedding.api_key:
-            return jsonify({
-                "success": False,
-                "error": "未配置 Embedding API Key，请先在设置中配置向量模型"
-            }), 400
+            return error_response("未配置 Embedding API Key，请先在设置中配置向量模型", 400)
         
         # 1. 重新构建向量（build_embeddings 内部会先清除现有向量）
         analyzer = MangaAnalyzer(book_id, config)
@@ -735,24 +630,20 @@ def rebuild_embeddings(book_id: str):
         stats = vector_store.get_stats()
         
         if result.get("success"):
-            return jsonify({
-                "success": True,
-                "message": f"向量嵌入重建完成: {result.get('pages_count', 0)} 页面, {result.get('events_count', 0)} 事件",
-                "stats": stats,
-                "build_result": result
-            })
+            return success_response(
+                message=f"向量嵌入重建完成: {result.get('pages_count', 0)} 页面, {result.get('events_count', 0)} 事件",
+                stats=stats,
+                build_result=result
+            )
         else:
-            return jsonify({
-                "success": False,
-                "error": result.get("error", "向量嵌入构建失败，可能是向量存储不可用或没有分析数据")
-            }), 500
-        
+            return error_response(
+                result.get("error", "向量嵌入构建失败，可能是向量存储不可用或没有分析数据"),
+                500
+            )
+
     except Exception as e:
         logger.error(f"重建向量嵌入失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/regenerate/timeline', methods=['POST'])
@@ -800,20 +691,12 @@ def regenerate_timeline(book_id: str):
             message = f"增强时间线已生成: {stats.get('total_events', 0)} 个事件, {stats.get('total_arcs', 0)} 个剧情弧, {stats.get('total_characters', 0)} 个角色"
         else:
             message = f"时间线已生成: {stats.get('total_events', 0)} 个事件"
-        
-        return jsonify({
-            "success": True,
-            "cached": True,
-            "message": message,
-            **timeline_data
-        })
-        
+
+        return success_response(data=timeline_data, cached=True, message=message)
+
     except Exception as e:
         logger.error(f"重新生成时间线失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 # ==================== 笔记 API ====================
@@ -824,19 +707,15 @@ def get_notes(book_id: str):
     try:
         storage = AnalysisStorage(book_id)
         notes = run_async(storage.load_notes())
-        
-        return jsonify({
-            "success": True,
+
+        return success_response(data={
             "notes": notes or [],
             "count": len(notes) if notes else 0
         })
-        
+
     except Exception as e:
         logger.error(f"获取笔记失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/notes', methods=['POST'])
@@ -845,32 +724,44 @@ def add_note(book_id: str):
     try:
         data = request.get_json()
         if not data:
-            return jsonify({
-                "success": False,
-                "error": "请求体为空"
-            }), 400
-        
+            return error_response("请求体为空", 400)
+
         storage = AnalysisStorage(book_id)
         notes = run_async(storage.load_notes()) or []
-        
+
+        # 补充必要字段，同时保留扩展字段
+        import uuid
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        note_data = {
+            "id": data.get("id") or str(uuid.uuid4()),
+            "type": data.get("type", "text"),
+            "content": data.get("content", ""),
+            "page_num": data.get("page_num"),
+            "created_at": data.get("created_at") or now,
+            "updated_at": data.get("updated_at") or now,
+            # 扩展字段
+            "title": data.get("title"),
+            "tags": data.get("tags"),
+            "question": data.get("question"),
+            "answer": data.get("answer"),
+            "citations": data.get("citations"),
+            "comment": data.get("comment")
+        }
+        # 移除值为 None 的扩展字段
+        note_data = {k: v for k, v in note_data.items() if v is not None}
+
         # 添加新笔记
-        notes.insert(0, data)
-        
+        notes.insert(0, note_data)
+
         # 保存笔记
         run_async(storage.save_notes(notes))
-        
-        return jsonify({
-            "success": True,
-            "message": "笔记已保存",
-            "note": data
-        })
-        
+
+        return success_response(data={"note": note_data}, message="笔记已保存")
+
     except Exception as e:
         logger.error(f"添加笔记失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/notes/<note_id>', methods=['PUT'])
@@ -879,14 +770,11 @@ def update_note(book_id: str, note_id: str):
     try:
         data = request.get_json()
         if not data:
-            return jsonify({
-                "success": False,
-                "error": "请求体为空"
-            }), 400
-        
+            return error_response("请求体为空", 400)
+
         storage = AnalysisStorage(book_id)
         notes = run_async(storage.load_notes()) or []
-        
+
         # 查找并更新笔记
         found = False
         for i, note in enumerate(notes):
@@ -894,27 +782,18 @@ def update_note(book_id: str, note_id: str):
                 notes[i] = {**note, **data}
                 found = True
                 break
-        
+
         if not found:
-            return jsonify({
-                "success": False,
-                "error": "笔记不存在"
-            }), 404
-        
+            return error_response("笔记不存在", 404)
+
         # 保存笔记
         run_async(storage.save_notes(notes))
-        
-        return jsonify({
-            "success": True,
-            "message": "笔记已更新"
-        })
-        
+
+        return success_response(message="笔记已更新")
+
     except Exception as e:
         logger.error(f"更新笔记失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/notes/<note_id>', methods=['DELETE'])
@@ -923,28 +802,19 @@ def delete_note(book_id: str, note_id: str):
     try:
         storage = AnalysisStorage(book_id)
         notes = run_async(storage.load_notes()) or []
-        
+
         # 过滤掉要删除的笔记
         original_count = len(notes)
         notes = [n for n in notes if n.get('id') != note_id]
-        
+
         if len(notes) == original_count:
-            return jsonify({
-                "success": False,
-                "error": "笔记不存在"
-            }), 404
-        
+            return error_response("笔记不存在", 404)
+
         # 保存笔记
         run_async(storage.save_notes(notes))
-        
-        return jsonify({
-            "success": True,
-            "message": "笔记已删除"
-        })
-        
+
+        return success_response(message="笔记已删除")
+
     except Exception as e:
         logger.error(f"删除笔记失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)

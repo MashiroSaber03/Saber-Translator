@@ -5,13 +5,12 @@ Manga Insight 问答系统
 """
 
 import logging
-import json
-import re
 import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
-from .config_utils import load_insight_config
+from .config_utils import load_insight_config, create_chat_client
+from .utils.json_parser import parse_llm_json
 from .config_models import DEFAULT_QA_SYSTEM_PROMPT, DEFAULT_QUESTION_DECOMPOSE_PROMPT
 from .storage import AnalysisStorage
 from .vector_store import MangaVectorStore
@@ -53,11 +52,8 @@ class MangaQA:
         if self.config.embedding.api_key:
             self.embedding_client = EmbeddingClient(self.config.embedding)
         
-        # 对话模型
-        if self.config.chat_llm.use_same_as_vlm:
-            self.chat_client = ChatClient(self.config.vlm)
-        else:
-            self.chat_client = ChatClient(self.config.chat_llm)
+        # 对话模型（使用工厂函数）
+        self.chat_client = create_chat_client(self.config)
         
         # 重排序模型（可选）
         self.reranker = None
@@ -328,26 +324,19 @@ class MangaQA:
         # 优先使用用户自定义提示词，否则使用默认
         base_prompt = self.config.prompts.question_decompose if self.config.prompts.question_decompose else DEFAULT_QUESTION_DECOMPOSE_PROMPT
         prompt = base_prompt.format(question=question)
-        
+
         try:
             response = await self.chat_client.generate(prompt, temperature=0.3)
-            
-            # 清理可能的 markdown 代码块
-            clean_response = response.strip()
-            if clean_response.startswith("```"):
-                clean_response = re.sub(r'^```(?:json)?\s*', '', clean_response)
-                clean_response = re.sub(r'\s*```$', '', clean_response)
-            
-            # 尝试找到 JSON 部分
-            json_match = re.search(r'\{[^{}]*"sub_questions"\s*:\s*\[[^\]]*\][^{}]*\}', clean_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+
+            # 使用统一的 JSON 解析器
+            data = parse_llm_json(response)
+            if data:
                 sub_questions = data.get("sub_questions", [])
                 # 过滤有效的子问题
                 sub_questions = [q.strip() for q in sub_questions if isinstance(q, str) and len(q.strip()) > 5]
                 if sub_questions:
                     return sub_questions[:4]
-            
+
             # JSON 解析失败，返回空列表
             logger.warning(f"问题分解 JSON 解析失败，使用原始预处理结果")
             return []
@@ -545,7 +534,7 @@ class MangaQA:
             if doc_id.startswith("page_"):
                 try:
                     page_num = int(doc_id.replace("page_", ""))
-                except:
+                except ValueError:
                     return None
         return page_num
     

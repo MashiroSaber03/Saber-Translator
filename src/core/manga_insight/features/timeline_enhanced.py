@@ -11,13 +11,12 @@ Manga Insight 增强版时间线构建器
 """
 
 import logging
-import json
-import re
 from typing import Dict, List, Optional
 from datetime import datetime
 
 from ..storage import AnalysisStorage
 from ..embedding_client import ChatClient
+from ..utils.json_parser import parse_llm_json
 from .timeline import TimelineBuilder
 # timeline_models 可用于类型提示，当前使用 Dict 返回
 
@@ -593,54 +592,17 @@ class EnhancedTimelineBuilder:
     def _parse_json_response(self, response: str) -> Optional[Dict]:
         """
         解析 LLM 返回的 JSON
-        
+
         Args:
             response: LLM 响应文本
-        
+
         Returns:
             Dict: 解析后的数据，失败返回 None
         """
-        if not response:
-            return None
-        
-        # 清理响应
-        text = response.strip()
-        
-        # 移除可能的 markdown 代码块标记
-        if text.startswith("```"):
-            lines = text.split("\n")
-            # 移除首行的 ```json 或 ```
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            # 移除末行的 ```
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-        
-        # 尝试直接解析
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        
-        # 尝试提取 JSON 对象
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-        
-        # 尝试修复常见问题
-        try:
-            # 修复尾部逗号
-            fixed = re.sub(r',(\s*[}\]])', r'\1', text)
-            return json.loads(fixed)
-        except json.JSONDecodeError:
-            pass
-        
-        logger.warning(f"无法解析 JSON 响应: {text[:500]}...")
-        return None
+        result = parse_llm_json(response)
+        if not result:
+            logger.warning(f"无法解析 JSON 响应: {response[:500]}...")
+        return result
     
     def _post_process(self, data: Dict) -> Dict:
         """

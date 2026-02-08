@@ -139,16 +139,27 @@ def api_presave_all_pages(session_path):
         if result.get("success"):
             try:
                 from src.core import bookshelf_manager
-                # session_path 格式: bookshelf/{book_id}/{chapter_id}
+                # session_path 新格式: bookshelf/{book_id}/chapters/{chapter_id}/session
+                # session_path 旧格式: bookshelf/{book_id}/{chapter_id}
                 path_parts = session_path.replace('\\', '/').split('/')
                 if 'bookshelf' in path_parts:
                     bookshelf_idx = path_parts.index('bookshelf')
-                    if len(path_parts) > bookshelf_idx + 2:
+                    # 新格式: 查找 chapters 关键字
+                    if 'chapters' in path_parts:
+                        chapters_idx = path_parts.index('chapters')
+                        if len(path_parts) > chapters_idx + 1:
+                            book_id = path_parts[bookshelf_idx + 1]
+                            chapter_id = path_parts[chapters_idx + 1]
+                            image_count = len(images)
+                            bookshelf_manager.update_chapter_image_count(book_id, chapter_id, image_count)
+                            logger.info(f"已更新章节 {book_id}/{chapter_id} 图片数量为 {image_count}")
+                    # 旧格式兼容: bookshelf/{book_id}/{chapter_id}
+                    elif len(path_parts) > bookshelf_idx + 2:
                         book_id = path_parts[bookshelf_idx + 1]
                         chapter_id = path_parts[bookshelf_idx + 2]
                         image_count = len(images)
                         bookshelf_manager.update_chapter_image_count(book_id, chapter_id, image_count)
-                        logger.info(f"已更新章节 {book_id}/{chapter_id} 图片数量为 {image_count}")
+                        logger.info(f"已更新章节 {book_id}/{chapter_id} 图片数量为 {image_count} (旧格式)")
             except Exception as e:
                 logger.warning(f"更新章节图片数量时出错（非致命）: {e}")
         

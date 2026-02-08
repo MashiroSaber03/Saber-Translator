@@ -5,23 +5,14 @@ Manga Insight 问答 API
 """
 
 import logging
-import asyncio
-from flask import request, jsonify
+from flask import request
 
 from . import manga_insight_bp
+from .async_helpers import run_async
+from .response_builder import success_response, error_response
 from src.core.manga_insight.qa import MangaQA
 
 logger = logging.getLogger("MangaInsight.API.Chat")
-
-
-def run_async(coro):
-    """在同步上下文中运行异步函数"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
 
 
 @manga_insight_bp.route('/<book_id>/chat', methods=['POST'])
@@ -60,10 +51,7 @@ def chat(book_id: str):
         threshold = max(0.0, min(1.0, threshold))  # 限制 0-1
         
         if not question:
-            return jsonify({
-                "success": False,
-                "error": "问题不能为空"
-            }), 400
+            return error_response("问题不能为空", 400)
         
         qa = MangaQA(book_id)
         response = run_async(qa.answer(
@@ -85,20 +73,18 @@ def chat(book_id: str):
                 "summary": c.summary
             })
         
-        return jsonify({
-            "success": True,
-            "answer": response.text,
-            "citations": citations,
-            "suggested_questions": response.suggested_questions,
-            "mode": "global" if use_global_context else "precise"  # 返回当前使用的模式
-        })
+        return success_response(
+            data={
+                "answer": response.text,
+                "citations": citations,
+                "suggested_questions": response.suggested_questions,
+                "mode": "global" if use_global_context else "precise"
+            }
+        )
         
     except Exception as e:
         logger.error(f"问答失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/chat/status', methods=['GET'])
@@ -112,8 +98,7 @@ def chat_status(book_id: str):
         qa = MangaQA(book_id)
         has_global = run_async(qa.has_global_context())
         
-        return jsonify({
-            "success": True,
+        return success_response(data={
             "has_global_context": has_global,
             "modes": {
                 "precise": {
@@ -129,10 +114,7 @@ def chat_status(book_id: str):
         
     except Exception as e:
         logger.error(f"获取问答状态失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/search', methods=['POST'])
@@ -152,22 +134,13 @@ def search(book_id: str):
         top_k = data.get("top_k", 10)
         
         if not query:
-            return jsonify({
-                "success": False,
-                "error": "搜索内容不能为空"
-            }), 400
+            return error_response("搜索内容不能为空", 400)
         
         qa = MangaQA(book_id)
         results = run_async(qa.search(query, top_k))
         
-        return jsonify({
-            "success": True,
-            "results": results
-        })
-        
+        return success_response(data={"results": results})
+
     except Exception as e:
         logger.error(f"搜索失败: {e}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return error_response(str(e), 500)

@@ -347,8 +347,9 @@ export function useTranslateInit() {
         document.title = `${chapter.title} - ${book.title} - Saber-Translator`
       }
 
-      // 尝试加载章节的会话数据
-      if (chapter.session_path) {
+      // 尝试加载章节的会话数据（仅当章节有已保存的图片时才尝试加载）
+      const hasData = chapter.page_count && chapter.page_count > 0
+      if (chapter.session_path && hasData) {
         console.log(`[TranslateInit] 尝试加载章节会话: ${chapter.session_path}`)
         try {
           await sessionStore.loadSessionByPath(chapter.session_path)
@@ -356,6 +357,8 @@ export function useTranslateInit() {
         } catch {
           console.log('[TranslateInit] 章节会话数据不存在或加载失败，将创建新会话')
         }
+      } else if (!hasData) {
+        console.log('[TranslateInit] 新章节，无需加载会话数据')
       }
 
     } catch (error) {

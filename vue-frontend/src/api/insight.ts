@@ -489,16 +489,14 @@ export async function createNote(
  * 更新笔记
  * @param bookId 书籍 ID
  * @param noteId 笔记 ID
- * @param content 新内容
+ * @param updates 更新内容
  */
 export async function updateNote(
   bookId: string,
   noteId: string,
-  content: string
+  updates: { content?: string; page_num?: number }
 ): Promise<NoteDetailResponse> {
-  return apiClient.put<NoteDetailResponse>(`/api/manga-insight/${bookId}/notes/${noteId}`, {
-    content,
-  })
+  return apiClient.put<NoteDetailResponse>(`/api/manga-insight/${bookId}/notes/${noteId}`, updates)
 }
 
 /**

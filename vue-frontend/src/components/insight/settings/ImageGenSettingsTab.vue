@@ -56,18 +56,21 @@ const showBaseUrl = computed(() => provider.value === 'custom')
 
 function onProviderChange(): void {
   const newProvider = provider.value
-  
+
   // 更新默认模型
   const defaultModel = IMAGE_GEN_DEFAULT_MODELS[newProvider]
   if (defaultModel) {
     model.value = defaultModel
   }
-  
-  // 更新默认 Base URL
-  if (newProvider !== 'custom') {
+
+  // 更新 Base URL
+  if (newProvider === 'custom') {
+    // 切换回 custom 时，从 store 恢复之前保存的 baseUrl
+    baseUrl.value = insightStore.config.imageGen?.baseUrl || ''
+  } else {
     baseUrl.value = IMAGE_GEN_DEFAULT_BASE_URLS[newProvider] || ''
   }
-  
+
   // 清空模型列表
   models.value = []
   modelSelectVisible.value = false
@@ -202,16 +205,6 @@ defineExpose({
       <label>失败重试次数</label>
       <input v-model.number="maxRetries" type="number" min="1" max="10">
       <p class="form-hint">每张图片生成失败后的重试次数</p>
-    </div>
-    
-    <div class="info-box">
-      <h4>💡 服务商说明</h4>
-      <ul>
-        <li><strong>OpenAI DALL-E</strong>: 高质量生成，但价格较高</li>
-        <li><strong>SiliconFlow</strong>: 支持 SD3.5 等开源模型，性价比高</li>
-        <li><strong>通义万相</strong>: 阿里云生图服务，需申请白名单</li>
-        <li><strong>火山引擎</strong>: 字节跳动生图服务</li>
-      </ul>
     </div>
   </div>
 </template>

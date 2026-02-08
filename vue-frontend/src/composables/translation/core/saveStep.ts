@@ -56,7 +56,8 @@ export function getSessionPath(): string | null {
         return null
     }
 
-    return `bookshelf/${bookId}/${chapterId}`
+    // 使用新格式路径: bookshelf/{book_id}/chapters/{chapter_id}/session
+    return `bookshelf/${bookId}/chapters/${chapterId}/session`
 }
 
 /**

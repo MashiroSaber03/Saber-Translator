@@ -1,5 +1,7 @@
 /**
  * InsightSettings 共享类型定义
+ *
+ * 所有模型类型（VLM、LLM、Embedding、Reranker、生图）共用统一的服务商列表
  */
 
 /** 自定义层级类型 */
@@ -15,31 +17,55 @@ export interface ModelInfo {
   name: string
 }
 
-/** VLM/LLM 服务商选项 */
-export const VLM_PROVIDER_OPTIONS = [
-  { value: 'gemini', label: 'Google Gemini' },
+/**
+ * 统一的 API 服务商列表
+ * 所有模型类型共用此列表
+ */
+export const API_PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
-  { value: 'qwen', label: '阿里通义千问' },
+  { value: 'gemini', label: 'Google Gemini' },
+  { value: 'qwen', label: '通义千问' },
   { value: 'siliconflow', label: 'SiliconFlow' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'volcano', label: '火山引擎' },
-  { value: 'custom', label: '自定义 OpenAI 兼容' }
+  { value: 'custom', label: '自定义 API' }
 ]
 
-/** Embedding 服务商选项 */
-export const EMBEDDING_PROVIDER_OPTIONS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'custom', label: '自定义' }
-]
+/**
+ * 服务商能力配置
+ * 标记每个服务商支持哪些功能
+ */
+export const PROVIDER_CAPABILITIES: Record<string, {
+  vlm: boolean
+  embedding: boolean
+  rerank: boolean
+  imageGen: boolean
+}> = {
+  openai: { vlm: true, embedding: true, rerank: false, imageGen: true },
+  gemini: { vlm: true, embedding: true, rerank: false, imageGen: false },
+  qwen: { vlm: true, embedding: true, rerank: true, imageGen: true },
+  siliconflow: { vlm: true, embedding: true, rerank: true, imageGen: true },
+  deepseek: { vlm: true, embedding: true, rerank: true, imageGen: false },
+  volcano: { vlm: true, embedding: true, rerank: true, imageGen: true },
+  custom: { vlm: true, embedding: true, rerank: true, imageGen: true }
+}
 
-/** Reranker 服务商选项 */
-export const RERANKER_PROVIDER_OPTIONS = [
-  { value: 'jina', label: 'Jina AI' },
-  { value: 'cohere', label: 'Cohere' },
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'custom', label: '自定义' }
-]
+/** 根据能力过滤服务商列表 */
+export function getProvidersForCapability(capability: 'vlm' | 'embedding' | 'rerank' | 'imageGen') {
+  return API_PROVIDER_OPTIONS.filter(p => PROVIDER_CAPABILITIES[p.value]?.[capability])
+}
+
+/** VLM/LLM 服务商选项（统一使用完整列表） */
+export const VLM_PROVIDER_OPTIONS = API_PROVIDER_OPTIONS
+
+/** Embedding 服务商选项（统一使用完整列表） */
+export const EMBEDDING_PROVIDER_OPTIONS = API_PROVIDER_OPTIONS
+
+/** Reranker 服务商选项（统一使用完整列表） */
+export const RERANKER_PROVIDER_OPTIONS = API_PROVIDER_OPTIONS
+
+/** 生图服务商选项（统一使用完整列表） */
+export const IMAGE_GEN_PROVIDER_OPTIONS = API_PROVIDER_OPTIONS
 
 /** 分析架构选项 */
 export const ARCHITECTURE_OPTIONS = [
@@ -58,38 +84,97 @@ export const PROMPT_TYPE_OPTIONS = [
   { value: 'qa_response', label: '💬 问答响应提示词' }
 ]
 
-/** VLM 默认模型映射 */
-export const VLM_DEFAULT_MODELS: Record<string, string> = {
-  'gemini': 'gemini-2.0-flash',
-  'openai': 'gpt-4o',
-  'qwen': 'qwen-vl-max',
-  'deepseek': 'deepseek-chat',
-  'siliconflow': 'Qwen/Qwen2.5-VL-72B-Instruct',
-  'volcano': 'doubao-1.5-vision-pro-32k'
+/**
+ * 统一的默认模型配置
+ * 按服务商组织，包含所有模型类型
+ */
+export const PROVIDER_DEFAULT_MODELS: Record<string, {
+  vlm?: string
+  chat?: string
+  embedding?: string
+  reranker?: string
+  imageGen?: string
+}> = {
+  openai: {
+    vlm: 'gpt-4o',
+    chat: 'gpt-4o-mini',
+    embedding: 'text-embedding-3-small',
+    imageGen: 'dall-e-3'
+  },
+  gemini: {
+    vlm: 'gemini-2.0-flash',
+    chat: 'gemini-2.0-flash',
+    embedding: 'text-embedding-004'
+  },
+  qwen: {
+    vlm: 'qwen-vl-max',
+    chat: 'qwen-turbo',
+    embedding: 'text-embedding-v3',
+    imageGen: 'wanx-v1'
+  },
+  siliconflow: {
+    vlm: 'Qwen/Qwen2.5-VL-72B-Instruct',
+    chat: 'Qwen/Qwen2.5-72B-Instruct',
+    embedding: 'BAAI/bge-m3',
+    reranker: 'BAAI/bge-reranker-v2-m3',
+    imageGen: 'stabilityai/stable-diffusion-3-5-large'
+  },
+  deepseek: {
+    vlm: 'deepseek-chat',
+    chat: 'deepseek-chat'
+  },
+  volcano: {
+    vlm: 'doubao-1.5-vision-pro-32k',
+    chat: 'doubao-1.5-pro-32k',
+    imageGen: 'high_aes_general_v21'
+  },
+  jina: {
+    reranker: 'jina-reranker-v2-base-multilingual'
+  },
+  cohere: {
+    reranker: 'rerank-multilingual-v3.0'
+  }
 }
 
-/** LLM 默认模型映射 */
-export const LLM_DEFAULT_MODELS: Record<string, string> = {
-  'gemini': 'gemini-2.0-flash',
-  'openai': 'gpt-4o-mini',
-  'qwen': 'qwen-turbo',
-  'deepseek': 'deepseek-chat',
-  'siliconflow': 'Qwen/Qwen2.5-72B-Instruct',
-  'volcano': 'doubao-1.5-pro-32k'
+/** 获取默认模型 */
+export function getDefaultModel(provider: string, modelType: 'vlm' | 'chat' | 'embedding' | 'reranker' | 'imageGen'): string {
+  return PROVIDER_DEFAULT_MODELS[provider]?.[modelType] || ''
 }
 
-/** Embedding 默认模型映射 */
-export const EMBEDDING_DEFAULT_MODELS: Record<string, string> = {
-  'openai': 'text-embedding-3-small',
-  'siliconflow': 'BAAI/bge-m3'
-}
+/** VLM 默认模型映射（向后兼容） */
+export const VLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_DEFAULT_MODELS)
+    .filter(([_, v]) => v.vlm)
+    .map(([k, v]) => [k, v.vlm!])
+)
 
-/** Reranker 默认模型映射 */
-export const RERANKER_DEFAULT_MODELS: Record<string, string> = {
-  'jina': 'jina-reranker-v2-base-multilingual',
-  'cohere': 'rerank-multilingual-v3.0',
-  'siliconflow': 'BAAI/bge-reranker-v2-m3'
-}
+/** LLM 默认模型映射（向后兼容） */
+export const LLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_DEFAULT_MODELS)
+    .filter(([_, v]) => v.chat)
+    .map(([k, v]) => [k, v.chat!])
+)
+
+/** Embedding 默认模型映射（向后兼容） */
+export const EMBEDDING_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_DEFAULT_MODELS)
+    .filter(([_, v]) => v.embedding)
+    .map(([k, v]) => [k, v.embedding!])
+)
+
+/** Reranker 默认模型映射（向后兼容） */
+export const RERANKER_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_DEFAULT_MODELS)
+    .filter(([_, v]) => v.reranker)
+    .map(([k, v]) => [k, v.reranker!])
+)
+
+/** 生图默认模型映射（向后兼容） */
+export const IMAGE_GEN_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_DEFAULT_MODELS)
+    .filter(([_, v]) => v.imageGen)
+    .map(([k, v]) => [k, v.imageGen!])
+)
 
 /** 架构预设数据 */
 export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: string; layers: CustomLayer[] }> = {
@@ -134,26 +219,55 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
 /** 支持获取模型列表的服务商 */
 export const SUPPORTED_FETCH_PROVIDERS = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'qwen', 'openai', 'custom']
 
-/** ========================
- * 生图模型相关配置（续写功能）
- * ======================== */
-
-/** 生图服务商选项 */
-export const IMAGE_GEN_PROVIDER_OPTIONS = [
-  { value: 'openai', label: 'OpenAI DALL-E' },
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'qwen', label: '阿里通义万相' },
-  { value: 'volcano', label: '火山引擎' },
-  { value: 'custom', label: '自定义 API' }
-]
-
-/** 生图默认模型映射 */
-export const IMAGE_GEN_DEFAULT_MODELS: Record<string, string> = {
-  'openai': 'dall-e-3',
-  'siliconflow': 'stabilityai/stable-diffusion-3-5-large',
-  'qwen': 'wanx-v1',
-  'volcano': 'high_aes_general_v21'
+/**
+ * 统一的服务商 Base URL 配置
+ */
+export const PROVIDER_BASE_URLS: Record<string, {
+  base?: string
+  imageGen?: string  // 部分服务商生图使用不同的 base_url
+}> = {
+  openai: {
+    base: 'https://api.openai.com/v1'
+  },
+  gemini: {
+    base: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+  },
+  qwen: {
+    base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    imageGen: 'https://dashscope.aliyuncs.com/api/v1'
+  },
+  siliconflow: {
+    base: 'https://api.siliconflow.cn/v1'
+  },
+  deepseek: {
+    base: 'https://api.deepseek.com/v1'
+  },
+  volcano: {
+    base: 'https://ark.cn-beijing.volces.com/api/v3',
+    imageGen: 'https://visual.volcengineapi.com'
+  },
+  jina: {
+    base: 'https://api.jina.ai/v1'
+  },
+  cohere: {
+    base: 'https://api.cohere.ai/v1'
+  }
 }
+
+/** 获取 Base URL */
+export function getBaseUrl(provider: string, forImageGen = false): string {
+  const config = PROVIDER_BASE_URLS[provider]
+  if (!config) return ''
+  if (forImageGen && config.imageGen) return config.imageGen
+  return config.base || ''
+}
+
+/** 生图服务商默认 Base URL（向后兼容） */
+export const IMAGE_GEN_DEFAULT_BASE_URLS: Record<string, string> = Object.fromEntries(
+  Object.entries(PROVIDER_BASE_URLS)
+    .filter(([k]) => PROVIDER_CAPABILITIES[k]?.imageGen)
+    .map(([k, v]) => [k, v.imageGen || v.base || ''])
+)
 
 /** 生图尺寸选项 */
 export const IMAGE_SIZE_OPTIONS = [
@@ -163,11 +277,3 @@ export const IMAGE_SIZE_OPTIONS = [
   { value: '768x1024', label: '768×1024（竖版）' },
   { value: '1024x768', label: '1024×768（横版）' }
 ]
-
-/** 生图服务商默认 Base URL */
-export const IMAGE_GEN_DEFAULT_BASE_URLS: Record<string, string> = {
-  'openai': 'https://api.openai.com/v1',
-  'siliconflow': 'https://api.siliconflow.cn/v1',
-  'qwen': 'https://dashscope.aliyuncs.com/api/v1',
-  'volcano': 'https://visual.volcengineapi.com'
-}

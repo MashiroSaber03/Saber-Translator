@@ -566,8 +566,8 @@ export const useSessionStore = defineStore('session', () => {
       return false
     }
 
-    // 构建会话路径
-    const sessionPath = `bookshelf/${bookId}/${chapterId}`
+    // 构建会话路径（使用新格式）
+    const sessionPath = `bookshelf/${bookId}/chapters/${chapterId}/session`
 
     setSaving(true)
     setError(null)

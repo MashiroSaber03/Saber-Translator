@@ -7,15 +7,15 @@ Manga Insight 剧情生成器
 3. 生图提示词生成
 """
 
-import logging
 import json
-import re
+import logging
 import os
+import re
 from typing import Dict, List, Any
 
-from ..config_utils import load_insight_config
+from ..config_utils import load_insight_config, create_chat_client
 from ..storage import AnalysisStorage
-from ..embedding_client import ChatClient
+from ..utils.json_parser import parse_llm_json
 from .models import ChapterScript, PageContent
 from .character_manager import CharacterManager
 
@@ -32,8 +32,8 @@ class StoryGenerator:
         # 续写脚本生成改用 VLM，可以看到原作图片
         from ..vlm_client import VLMClient
         self.vlm_client = VLMClient(self.config.vlm, self.config.prompts)
-        # 保留 ChatClient 用于其他文本生成任务
-        self.chat_client = ChatClient(self.config.chat_llm)
+        # 保留 ChatClient 用于其他文本生成任务（使用工厂函数处理 use_same_as_vlm 配置）
+        self.chat_client = create_chat_client(self.config)
         self.char_manager = CharacterManager(book_id)
     
     async def prepare_continuation_data(self) -> Dict[str, Any]:
@@ -268,7 +268,6 @@ class StoryGenerator:
 
             # 获取所有章节的所有图片路径
             chapters = book.get("chapters", [])
-            sessions_base = resource_path("data/sessions/bookshelf")
             all_image_paths = []
 
             for chapter in chapters:
@@ -276,8 +275,8 @@ class StoryGenerator:
                 if not chapter_id:
                     continue
 
-                # 从 session_meta.json 获取图片信息
-                session_dir = os.path.join(sessions_base, self.book_id, chapter_id)
+                # 从 session_meta.json 获取图片信息（使用新路径格式）
+                session_dir = resource_path(f"data/bookshelf/{self.book_id}/chapters/{chapter_id}/session")
                 session_meta_path = os.path.join(session_dir, "session_meta.json")
 
                 if os.path.exists(session_meta_path):
@@ -602,32 +601,11 @@ class StoryGenerator:
     
     def _parse_json_response(self, response: str) -> Dict:
         """解析 JSON 响应"""
-        # 清理响应文本
-        text = response.strip()
-        
-        # 移除 markdown 代码块
-        if text.startswith("```"):
-            lines = text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-        
-        # 尝试解析 JSON
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # 尝试提取 JSON 对象
-            match = re.search(r'\{[\s\S]*\}', text)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
-        
-        logger.warning(f"无法解析 JSON 响应: {text[:200]}...")
-        return {}
+        result = parse_llm_json(response)
+        if not result:
+            logger.warning(f"无法解析 JSON 响应: {response[:200]}...")
+            return {}
+        return result
 
     async def _call_vlm_with_images(self, images: List[bytes], prompt: str) -> str:
         """

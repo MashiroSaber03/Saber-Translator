@@ -20,6 +20,7 @@ import io
 from ..config_models import ImageGenConfig
 from ..config_utils import load_insight_config
 from ..storage import AnalysisStorage
+from ..clients import get_image_gen_base_url, get_image_gen_url
 from .models import PageContent, ContinuationCharacters
 
 logger = logging.getLogger("MangaInsight.Continuation.ImageGenerator")
@@ -322,7 +323,7 @@ class ImageGenerator:
         config = self.image_gen_config
         
         # 创建 OpenAI 客户端
-        base_url = config.base_url or "https://api.openai.com/v1"
+        base_url = config.base_url or get_image_gen_base_url("openai")
         client = OpenAI(
             api_key=config.api_key,
             base_url=base_url,
@@ -566,8 +567,8 @@ class ImageGenerator:
             if encoded_images:
                 body["image_prompts"] = encoded_images
         
-        base_url = config.base_url or "https://api.siliconflow.cn/v1"
-        
+        base_url = config.base_url or get_image_gen_base_url("siliconflow")
+
         async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时，图片生成可能很耗时
             for retry in range(config.max_retries):
                 try:
@@ -629,8 +630,8 @@ class ImageGenerator:
             }
         }
         
-        base_url = config.base_url or "https://dashscope.aliyuncs.com/api/v1"
-        
+        base_url = config.base_url or get_image_gen_base_url("qwen")
+
         async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时
             for retry in range(config.max_retries):
                 try:
@@ -711,8 +712,8 @@ class ImageGenerator:
             "n": 1
         }
         
-        base_url = config.base_url or "https://visual.volcengineapi.com"
-        
+        base_url = config.base_url or get_image_gen_base_url("volcano")
+
         async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时
             for retry in range(config.max_retries):
                 try:
@@ -922,15 +923,14 @@ class ImageGenerator:
             
             # 获取章节信息
             chapters = book.get("chapters", [])
-            sessions_base = resource_path("data/sessions/bookshelf")
-            
+
             for chapter in chapters:
                 chapter_id = chapter.get("id")
                 if not chapter_id:
                     continue
-                
-                # 从 session_meta.json 获取图片信息
-                session_dir = os.path.join(sessions_base, self.book_id, chapter_id)
+
+                # 从 session_meta.json 获取图片信息（使用新路径格式）
+                session_dir = resource_path(f"data/bookshelf/{self.book_id}/chapters/{chapter_id}/session")
                 session_meta_path = os.path.join(session_dir, "session_meta.json")
                 
                 if os.path.exists(session_meta_path):

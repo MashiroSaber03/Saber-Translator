@@ -155,7 +155,8 @@ async function loadBook(bookId: string): Promise<void> {
             id: ch.id,
             title: ch.title,
             startPage: ch.start_page,
-            endPage: ch.end_page
+            endPage: ch.end_page,
+            analyzed: true  // 从 API 返回的章节默认已分析
           })))
         }
       } catch (e) {

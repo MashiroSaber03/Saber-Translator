@@ -382,9 +382,9 @@ class ReanalyzeManager:
         
         if not chapter_info:
             chapter_info = {"id": chapter_id, "title": f"第{chapter_id}章"}
-        
-        # 重新生成章节总结
-        result = await analyzer._generate_chapter_from_segments(chapter_id, chapter_info, segments)
+
+        # 重新生成章节总结 - 通过 _summary_generator 调用
+        result = await analyzer._summary_generator.generate_chapter_from_segments(chapter_id, chapter_info, segments)
         await storage.save_chapter_analysis(chapter_id, result)
         
         logger.info(f"重新生成章节总结完成: {chapter_id}")

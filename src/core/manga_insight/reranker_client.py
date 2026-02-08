@@ -7,93 +7,83 @@ Manga Insight 重排序模型客户端
 import logging
 from typing import List, Dict, Optional
 
-import httpx
-
+from .clients import get_rerank_url, get_default_model, BaseAPIClient
 from .config_models import RerankerConfig
 
 logger = logging.getLogger("MangaInsight.Reranker")
 
 
-class RerankerClient:
-    """重排序模型客户端"""
-    
-    # 预设服务商的 rerank API base_url
-    PROVIDER_CONFIGS = {
-        "jina": {
-            "base_url": "https://api.jina.ai/v1/rerank",
-            "default_model": "jina-reranker-v2-base-multilingual"
-        },
-        "cohere": {
-            "base_url": "https://api.cohere.ai/v1/rerank",
-            "default_model": "rerank-multilingual-v3.0"
-        },
-        "siliconflow": {
-            "base_url": "https://api.siliconflow.cn/v1/rerank",
-            "default_model": "BAAI/bge-reranker-v2-m3"
-        },
-        "openai": {
-            "base_url": "https://api.openai.com/v1/rerank",
-            "default_model": ""
-        },
-        "gemini": {
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "default_model": ""
-        },
-        "qwen": {
-            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/rerank",
-            "default_model": ""
-        },
-        "deepseek": {
-            "base_url": "https://api.deepseek.com/v1/rerank",
-            "default_model": ""
-        },
-        "volcano": {
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3/rerank",
-            "default_model": ""
-        }
-    }
-    
+class RerankerClient(BaseAPIClient):
+    """
+    重排序模型客户端（继承 BaseAPIClient）
+
+    继承自 BaseAPIClient，自动获得：
+    - RPM 限制（默认 60 RPM）
+    - 指数退避重试（最多 2 次）
+    - 本地服务检测和代理禁用
+    """
+
     def __init__(self, config: RerankerConfig):
+        """
+        初始化 RerankerClient
+
+        Args:
+            config: RerankerConfig 配置对象
+        """
         self.config = config
         provider = config.provider.lower() if isinstance(config.provider, str) else config.provider.value
-        self.provider_config = self.PROVIDER_CONFIGS.get(provider, {})
-        # 修复：只有 custom 服务商才使用自定义 URL
-        if provider == 'custom':
-            self.base_url = config.base_url or ""
+
+        # 获取 rerank 专用 URL
+        rerank_url = get_rerank_url(provider, config.base_url)
+        self.model = config.model or get_default_model(provider, "reranker")
+
+        # 从完整 URL 中提取 base_url（去掉 /rerank 后缀）
+        # 因为 BaseAPIClient 会自动拼接 endpoint
+        if rerank_url.endswith("/rerank"):
+            base_url = rerank_url[:-7]  # 去掉 "/rerank"
         else:
-            self.base_url = self.provider_config.get("base_url", "")
-        self.model = config.model or self.provider_config.get("default_model", "")
-        self.client = httpx.AsyncClient(timeout=30.0)
-    
-    async def close(self):
-        """关闭客户端"""
-        await self.client.aclose()
-    
+            base_url = rerank_url.rsplit("/", 1)[0] if "/" in rerank_url else rerank_url
+
+        # 保存完整的 rerank URL 供后续使用
+        self._rerank_url = rerank_url
+
+        # 调用父类初始化
+        super().__init__(
+            provider=provider,
+            api_key=config.api_key,
+            base_url=base_url,
+            rpm_limit=config.rpm_limit if hasattr(config, 'rpm_limit') and config.rpm_limit else 60,
+            timeout=30.0,
+            max_retries=2
+        )
+
+        logger.info(f"RerankerClient 初始化: provider={provider}, rerank_url={self._rerank_url}")
+
     async def rerank(
         self,
         query: str,
         documents: List[Dict],
-        top_k: int = None
+        top_k: Optional[int] = None
     ) -> List[Dict]:
         """
         对文档进行重排序
-        
+
         Args:
             query: 查询文本
             documents: 待排序的文档列表
             top_k: 返回数量
-        
+
         Returns:
             List[Dict]: 重排序后的文档列表
         """
         if not documents:
             return []
-        
-        if not self.config.enabled or not self.config.api_key or not self.base_url:
+
+        if not self.config.enabled or not self.config.api_key or not self._rerank_url:
             return documents[:top_k] if top_k else documents
-        
+
         top_k = top_k or self.config.top_k
-        
+
         # 提取文档文本
         doc_texts = []
         for doc in documents:
@@ -110,14 +100,15 @@ class RerankerClient:
                 doc_texts.append(text)
             else:
                 doc_texts.append(str(doc))
-        
+
         try:
+            # 使用父类的 _call_api 方法（带重试和 RPM 限制）
+            # 但由于 rerank API 端点格式特殊，这里直接使用完整 URL
+            await self._enforce_rpm_limit()
+
             response = await self.client.post(
-                self.base_url,
-                headers={
-                    "Authorization": f"Bearer {self.config.api_key}",
-                    "Content-Type": "application/json"
-                },
+                self._rerank_url,
+                headers=self._get_headers(),
                 json={
                     "model": self.model,
                     "query": query,
@@ -127,7 +118,7 @@ class RerankerClient:
             )
             response.raise_for_status()
             result = response.json()
-            
+
             # 按重排序结果重新排列文档
             reranked = []
             for item in result.get("results", []):
@@ -136,14 +127,14 @@ class RerankerClient:
                     doc = documents[idx].copy() if isinstance(documents[idx], dict) else {"content": documents[idx]}
                     doc["rerank_score"] = item.get("relevance_score", 0)
                     reranked.append(doc)
-            
+
             return reranked[:top_k]
-            
+
         except Exception as e:
             logger.error(f"重排序失败: {e}")
             # 降级返回原始结果
             return documents[:top_k]
-    
+
     async def test_connection(self) -> bool:
         """测试连接"""
         try:

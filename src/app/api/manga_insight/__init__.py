@@ -15,4 +15,6 @@ from . import analysis_routes
 from . import chat_routes
 from . import reanalyze_routes
 from . import data_routes
-from . import continuation_routes  # 新增：续写功能路由
+
+# 续写功能路由（已拆分为子模块）
+from . import continuation  # 导入 continuation 子模块，自动注册所有子路由

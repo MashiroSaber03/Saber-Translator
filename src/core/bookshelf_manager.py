@@ -34,13 +34,15 @@ def _get_bookshelf_dir() -> str:
 
 
 def _get_session_dir_for_book(book_id: str) -> str:
-    """获取书籍对应的会话目录路径（用于删除时清理）"""
-    return resource_path(os.path.join("data", SESSIONS_DIR_NAME, "bookshelf", book_id))
+    """获取书籍对应的会话目录路径（新格式：在书架目录下）"""
+    # 新路径：data/bookshelf/{book_id}/chapters/
+    return resource_path(os.path.join("data", BOOKSHELF_DIR_NAME, book_id, "chapters"))
 
 
 def _get_session_dir_for_chapter(book_id: str, chapter_id: str) -> str:
-    """获取章节对应的会话目录路径（用于删除时清理）"""
-    return resource_path(os.path.join("data", SESSIONS_DIR_NAME, "bookshelf", book_id, chapter_id))
+    """获取章节对应的会话目录路径（新格式：在章节目录下的 session 子目录）"""
+    # 新路径：data/bookshelf/{book_id}/chapters/{chapter_id}/session/
+    return resource_path(os.path.join("data", BOOKSHELF_DIR_NAME, book_id, "chapters", chapter_id, "session"))
 
 
 def _get_books_metadata_path() -> str:
@@ -311,16 +313,33 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
         chapters = book_meta.get("chapters", [])
         total_pages = 0
         sessions_base = resource_path("data/sessions")
-        
+
         for chapter in chapters:
-            if "session_path" not in chapter:
-                chapter["session_path"] = get_chapter_session_path(book_id, chapter["id"])
+            chapter_id = chapter.get("id")
+            expected_path = get_chapter_session_path(book_id, chapter_id) if chapter_id else None
+
+            # 检查并更新 session_path（包括旧格式路径）
+            current_path = chapter.get("session_path")
+            if not current_path:
+                # 没有 session_path，设置新格式
+                chapter["session_path"] = expected_path
+            elif current_path != expected_path and chapter_id:
+                # 检查是否是旧格式路径需要更新
+                normalized = current_path.replace("\\", "/")
+                parts = normalized.split("/")
+                # 旧格式: bookshelf/{book_id}/{chapter_id}（3段且不含 chapters）
+                if len(parts) == 3 and parts[0] == "bookshelf" and "chapters" not in normalized:
+                    # 检查新格式路径是否存在数据
+                    new_session_dir = _get_session_dir_for_chapter(book_id, chapter_id)
+                    if os.path.isdir(new_session_dir):
+                        chapter["session_path"] = expected_path
+                        logger.info(f"更新章节 session_path: {current_path} -> {expected_path}")
             
             # 计算章节页数
             chapter_id = chapter.get("id")
             if chapter_id:
-                # 构建绝对路径: data/sessions/bookshelf/{book_id}/{chapter_id}
-                session_abs_path = os.path.join(sessions_base, "bookshelf", book_id, chapter_id)
+                # 使用新路径格式
+                session_abs_path = _get_session_dir_for_chapter(book_id, chapter_id)
                 session_meta_path = os.path.join(session_abs_path, "session_meta.json")
                 
                 if os.path.exists(session_meta_path):
@@ -664,11 +683,14 @@ def update_chapter_image_count(book_id: str, chapter_id: str, count: int) -> boo
 
 def get_chapter_session_path(book_id: str, chapter_id: str) -> str:
     """
-    获取章节对应的会话存储路径（相对于 data/sessions 目录）
-    这个路径用于与现有的session_manager集成
-    返回格式: bookshelf/{book_id}/{chapter_id}
+    获取章节对应的会话存储路径（相对于 data 目录）
+
+    新路径格式: bookshelf/{book_id}/chapters/{chapter_id}/session
+    旧路径格式: bookshelf/{book_id}/{chapter_id} (已弃用)
+
+    返回格式用于 page_storage.py 识别书架路径
     """
-    return os.path.join("bookshelf", book_id, chapter_id)
+    return os.path.join("bookshelf", book_id, "chapters", chapter_id, "session")
 
 
 # ==================== 标签管理 ====================

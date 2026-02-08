@@ -127,6 +127,8 @@ export interface ChapterData {
   imageCount: number
   /** 后端可能返回的 snake_case 格式 */
   image_count?: number
+  /** 页面数量（与 imageCount 同义，兼容不同命名） */
+  page_count?: number
   hasSession: boolean
   /** 后端可能返回的 snake_case 格式 */
   has_session?: boolean

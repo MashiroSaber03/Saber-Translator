@@ -14,6 +14,7 @@ logger = logging.getLogger("SessionManager")
 
 # --- 基础配置 ---
 SESSION_BASE_DIR_NAME = "sessions" # 会话保存的基础目录名
+BOOKSHELF_DIR_NAME = "bookshelf"  # 书架数据目录名
 METADATA_FILENAME = "session_meta.json" # 会话元数据文件名
 IMAGE_FILE_EXTENSION = ".png"  # 存储图片的文件扩展名（新格式）
 LEGACY_B64_EXTENSION = ".b64"  # 旧版 Base64 文件扩展名（向后兼容）
@@ -32,6 +33,14 @@ def _get_session_base_dir():
         logger.error(f"无法创建或访问会话基础目录: {base_path} - {e}", exc_info=True)
         # 极端情况下的回退（例如权限问题），可以考虑临时目录，但这里简化处理
         raise # 重新抛出错误，因为这是关键目录
+
+
+def _is_bookshelf_path(session_path: str) -> bool:
+    """判断是否是书架路径"""
+    # 规范化路径分隔符后再检查
+    normalized = session_path.replace("\\", "/")
+    return normalized.startswith("bookshelf/")
+
 
 def _get_session_path(session_name):
     """获取指定名称会话的文件夹绝对路径"""
@@ -385,17 +394,58 @@ def load_session_by_path(session_path):
         dict or None: 包含完整会话状态的字典，如果加载失败则返回 None
     """
     logger.info(f"开始按路径加载会话: {session_path}")
-    
+
     if not session_path:
         logger.error("无效的会话路径: 路径为空")
         return None
-    
-    # 构建完整路径
-    base_dir = _get_session_base_dir()
-    full_path = os.path.join(base_dir, session_path)
-    
-    # 安全检查：确保路径在 sessions 目录内
-    real_base = os.path.realpath(base_dir)
+
+    # 判断路径类型并构建完整路径
+    if _is_bookshelf_path(session_path):
+        # 书架路径：使用 data/ 作为基础目录
+        base_dir = resource_path("data")
+        normalized_path = session_path.replace("\\", "/")
+        parts = normalized_path.split("/")
+
+        # 解析路径，提取 book_id 和 chapter_id
+        book_id = None
+        chapter_id = None
+
+        if len(parts) == 3 and parts[0] == "bookshelf" and "chapters" not in normalized_path:
+            # 旧格式入参：bookshelf/{book_id}/{chapter_id}
+            book_id, chapter_id = parts[1], parts[2]
+        elif len(parts) == 5 and parts[0] == "bookshelf" and parts[2] == "chapters" and parts[4] == "session":
+            # 新格式入参：bookshelf/{book_id}/chapters/{chapter_id}/session
+            book_id, chapter_id = parts[1], parts[3]
+
+        if book_id and chapter_id:
+            # 优先尝试新格式路径
+            new_format_path = f"bookshelf/{book_id}/chapters/{chapter_id}/session"
+            full_path = os.path.join(base_dir, new_format_path)
+
+            # 如果新格式路径不存在，回退到旧格式路径
+            if not os.path.isdir(full_path):
+                old_format_path = f"bookshelf/{book_id}/{chapter_id}"
+                old_full_path = os.path.join(base_dir, old_format_path)
+                if os.path.isdir(old_full_path):
+                    logger.info(f"新格式路径不存在，回退到旧格式: {old_format_path}")
+                    full_path = old_full_path
+                    session_path = old_format_path
+                else:
+                    logger.warning(f"新旧格式路径均不存在: {full_path}, {old_full_path}")
+            else:
+                session_path = new_format_path
+        else:
+            # 无法解析，直接使用原路径
+            full_path = os.path.join(base_dir, session_path)
+
+        real_base = os.path.realpath(base_dir)
+    else:
+        # 普通会话路径：使用 data/sessions 作为基础目录
+        base_dir = _get_session_base_dir()
+        full_path = os.path.join(base_dir, session_path)
+        real_base = os.path.realpath(base_dir)
+
+    # 安全检查：确保路径在基础目录内
     real_path = os.path.realpath(full_path)
     if not real_path.startswith(real_base):
         logger.error(f"安全检查失败：路径 {session_path} 超出会话目录范围")

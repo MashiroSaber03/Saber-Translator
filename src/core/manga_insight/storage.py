@@ -2,11 +2,19 @@
 Manga Insight 存储模块
 
 管理分析结果的存储和读取。
+
+重构说明：
+- 使用 asyncio.to_thread() 包装同步 I/O，避免阻塞事件循环
+- 使用原子写入模式（临时文件 + rename），防止断电损坏数据
+- 添加文件锁防止并发写入冲突
 """
 
 import os
 import json
 import logging
+import asyncio
+import tempfile
+import threading
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -14,16 +22,63 @@ from src.shared.path_helpers import resource_path
 
 logger = logging.getLogger("MangaInsight.Storage")
 
-STORAGE_BASE_DIR = "data/manga_insight"
+# 文件锁字典，防止并发写入同一文件
+_file_locks: Dict[str, threading.Lock] = {}
+_locks_lock = threading.Lock()
+
+
+def _get_file_lock(filepath: str) -> threading.Lock:
+    """获取文件锁（线程安全）"""
+    with _locks_lock:
+        if filepath not in _file_locks:
+            _file_locks[filepath] = threading.Lock()
+        return _file_locks[filepath]
+
+# 新路径：统一存储在书架目录下
+BOOKSHELF_DIR = "data/bookshelf"
+# 旧路径：用于兼容检查
+OLD_STORAGE_BASE_DIR = "data/manga_insight"
+
+
+def get_insight_storage_path(book_id: str) -> str:
+    """
+    获取 Insight 存储路径（新格式：在书架目录下）
+
+    新路径: data/bookshelf/{book_id}/insight/
+    旧路径: data/manga_insight/{book_id}/ (已弃用，自动迁移)
+    """
+    return resource_path(os.path.join(BOOKSHELF_DIR, book_id, "insight"))
 
 
 class AnalysisStorage:
     """分析结果存储管理器"""
-    
+
     def __init__(self, book_id: str):
         self.book_id = book_id
-        self.base_path = resource_path(os.path.join(STORAGE_BASE_DIR, book_id))
+        # 使用新路径
+        self.base_path = get_insight_storage_path(book_id)
+        # 检查旧路径是否存在数据（兼容迁移）
+        self._check_and_migrate_old_data()
         self._ensure_directories()
+
+    def _check_and_migrate_old_data(self):
+        """检查并迁移旧路径的数据"""
+        old_path = resource_path(os.path.join(OLD_STORAGE_BASE_DIR, self.book_id))
+
+        # 如果旧路径存在且新路径不存在或为空，则迁移
+        if os.path.exists(old_path) and os.path.isdir(old_path):
+            if not os.path.exists(self.base_path) or not os.listdir(self.base_path):
+                try:
+                    # 确保父目录存在
+                    os.makedirs(os.path.dirname(self.base_path), exist_ok=True)
+                    # 移动数据
+                    import shutil
+                    shutil.move(old_path, self.base_path)
+                    logger.info(f"自动迁移 Insight 数据: {old_path} -> {self.base_path}")
+                except Exception as e:
+                    logger.warning(f"迁移 Insight 数据失败（将使用旧路径）: {e}")
+                    # 迁移失败时回退到旧路径
+                    self.base_path = old_path
     
     def _ensure_directories(self):
         """确保必要的目录存在"""
@@ -38,8 +93,8 @@ class AnalysisStorage:
         for dir_path in dirs:
             os.makedirs(dir_path, exist_ok=True)
     
-    def _load_json(self, filename: str, default: Any = None) -> Any:
-        """加载 JSON 文件"""
+    def _load_json_sync(self, filename: str, default: Any = None) -> Any:
+        """同步加载 JSON 文件（内部方法）"""
         filepath = os.path.join(self.base_path, filename)
         try:
             if os.path.exists(filepath):
@@ -49,74 +104,108 @@ class AnalysisStorage:
         except Exception as e:
             logger.error(f"加载 JSON 失败: {filepath} - {e}")
             return default if default is not None else {}
-    
-    def _save_json(self, filename: str, data: Any) -> bool:
-        """保存 JSON 文件"""
+
+    def _save_json_sync(self, filename: str, data: Any) -> bool:
+        """
+        同步保存 JSON 文件（内部方法）
+
+        使用原子写入模式：
+        1. 写入临时文件
+        2. 成功后 rename 替换原文件
+        3. 使用文件锁防止并发写入
+        """
         filepath = os.path.join(self.base_path, filename)
+        lock = _get_file_lock(filepath)
+
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            return True
+
+            with lock:
+                # 在同一目录创建临时文件
+                dir_path = os.path.dirname(filepath)
+                fd, tmp_path = tempfile.mkstemp(suffix='.tmp', dir=dir_path)
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+
+                    # 原子替换：Windows 需要先删除目标文件
+                    if os.path.exists(filepath):
+                        os.replace(tmp_path, filepath)
+                    else:
+                        os.rename(tmp_path, filepath)
+                    return True
+                except Exception:
+                    # 清理临时文件
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                    raise
         except Exception as e:
             logger.error(f"保存 JSON 失败: {filepath} - {e}")
             return False
+
+    async def _load_json(self, filename: str, default: Any = None) -> Any:
+        """异步加载 JSON 文件"""
+        return await asyncio.to_thread(self._load_json_sync, filename, default)
+
+    async def _save_json(self, filename: str, data: Any) -> bool:
+        """异步保存 JSON 文件"""
+        return await asyncio.to_thread(self._save_json_sync, filename, data)
     
     async def load_metadata(self) -> Dict:
-        return self._load_json("metadata.json")
-    
+        return await self._load_json("metadata.json")
+
     async def save_metadata(self, metadata: Dict) -> bool:
         metadata["updated_at"] = datetime.now().isoformat()
-        return self._save_json("metadata.json", metadata)
-    
+        return await self._save_json("metadata.json", metadata)
+
     async def load_analysis_status(self) -> Dict:
-        return self._load_json("analysis_status.json")
-    
+        return await self._load_json("analysis_status.json")
+
     async def save_analysis_status(self, status: Dict) -> bool:
         status["updated_at"] = datetime.now().isoformat()
-        return self._save_json("analysis_status.json", status)
-    
+        return await self._save_json("analysis_status.json", status)
+
     async def load_content_snapshot(self) -> Optional[Dict]:
-        return self._load_json("content_snapshot.json", None)
-    
+        return await self._load_json("content_snapshot.json", None)
+
     async def save_content_snapshot(self, snapshot: Dict) -> bool:
         snapshot["created_at"] = datetime.now().isoformat()
-        return self._save_json("content_snapshot.json", snapshot)
-    
+        return await self._save_json("content_snapshot.json", snapshot)
+
     async def load_page_analysis(self, page_num: int) -> Optional[Dict]:
         filename = f"pages/page_{page_num:03d}.json"
-        return self._load_json(filename, None)
-    
+        return await self._load_json(filename, None)
+
     async def save_page_analysis(self, page_num: int, analysis: Dict) -> bool:
         filename = f"pages/page_{page_num:03d}.json"
         analysis["saved_at"] = datetime.now().isoformat()
-        return self._save_json(filename, analysis)
-    
+        return await self._save_json(filename, analysis)
+
     async def load_chapter_analysis(self, chapter_id: str) -> Optional[Dict]:
         filename = f"chapters/{chapter_id}.json"
-        return self._load_json(filename, None)
-    
+        return await self._load_json(filename, None)
+
     async def save_chapter_analysis(self, chapter_id: str, analysis: Dict) -> bool:
         filename = f"chapters/{chapter_id}.json"
         analysis["saved_at"] = datetime.now().isoformat()
-        return self._save_json(filename, analysis)
-    
+        return await self._save_json(filename, analysis)
+
     async def load_timeline(self) -> Optional[Dict]:
         """加载时间线缓存"""
-        return self._load_json("timeline.json", None)
-    
+        return await self._load_json("timeline.json", None)
+
     async def save_timeline(self, timeline_data: Dict) -> bool:
         """保存时间线缓存"""
         timeline_data["saved_at"] = datetime.now().isoformat()
-        return self._save_json("timeline.json", timeline_data)
-    
+        return await self._save_json("timeline.json", timeline_data)
+
     async def load_notes(self) -> Optional[List]:
         """加载笔记列表"""
-        return self._load_json("notes.json", [])
-    
+        return await self._load_json("notes.json", [])
+
     async def save_notes(self, notes: List) -> bool:
         """保存笔记列表"""
-        return self._save_json("notes.json", notes)
+        return await self._save_json("notes.json", notes)
     
     async def has_timeline_cache(self) -> bool:
         """检查是否存在时间线缓存"""
@@ -135,11 +224,11 @@ class AnalysisStorage:
             return False
     
     async def load_overview(self) -> Dict:
-        return self._load_json("overview.json")
-    
+        return await self._load_json("overview.json")
+
     async def save_overview(self, overview: Dict) -> bool:
         overview["updated_at"] = datetime.now().isoformat()
-        return self._save_json("overview.json", overview)
+        return await self._save_json("overview.json", overview)
     
     # ============================================================
     # 压缩摘要存储方法（供问答全局模式使用）
@@ -148,7 +237,7 @@ class AnalysisStorage:
     async def load_compressed_context(self) -> Optional[Dict]:
         """
         加载压缩后的全文摘要
-        
+
         Returns:
             Dict: {
                 "context": str,      # 压缩后的全文摘要
@@ -158,12 +247,12 @@ class AnalysisStorage:
                 "generated_at": str  # 生成时间
             }
         """
-        return self._load_json("compressed_context.json", None)
-    
+        return await self._load_json("compressed_context.json", None)
+
     async def save_compressed_context(self, data: Dict) -> bool:
         """保存压缩后的全文摘要"""
         data["saved_at"] = datetime.now().isoformat()
-        return self._save_json("compressed_context.json", data)
+        return await self._save_json("compressed_context.json", data)
     
     async def has_compressed_context(self) -> bool:
         """检查是否存在压缩摘要"""
@@ -188,20 +277,20 @@ class AnalysisStorage:
     async def load_template_overview(self, template_key: str) -> Optional[Dict]:
         """
         加载指定模板的概要
-        
+
         Args:
             template_key: 模板键名（如 story_summary, recap, no_spoiler 等）
-        
+
         Returns:
             Dict: 模板概要数据
         """
         filename = f"overview_{template_key}.json"
-        return self._load_json(filename, None)
-    
+        return await self._load_json(filename, None)
+
     async def save_template_overview(self, template_key: str, data: Dict) -> bool:
         """
         保存指定模板的概要
-        
+
         Args:
             template_key: 模板键名
             data: 概要数据
@@ -209,7 +298,7 @@ class AnalysisStorage:
         filename = f"overview_{template_key}.json"
         data["saved_at"] = datetime.now().isoformat()
         data["template_key"] = template_key
-        return self._save_json(filename, data)
+        return await self._save_json(filename, data)
     
     async def delete_template_overview(self, template_key: str) -> bool:
         """删除指定模板的概要缓存"""
@@ -258,14 +347,14 @@ class AnalysisStorage:
     async def load_batch_analysis(self, start_page: int, end_page: int) -> Optional[Dict]:
         """加载批量分析结果"""
         filename = f"batches/batch_{start_page:03d}_{end_page:03d}.json"
-        return self._load_json(filename, None)
-    
+        return await self._load_json(filename, None)
+
     async def save_batch_analysis(self, start_page: int, end_page: int, analysis: Dict) -> bool:
         """保存批量分析结果"""
         filename = f"batches/batch_{start_page:03d}_{end_page:03d}.json"
         analysis["saved_at"] = datetime.now().isoformat()
         analysis["page_range"] = {"start": start_page, "end": end_page}
-        return self._save_json(filename, analysis)
+        return await self._save_json(filename, analysis)
     
     async def list_batches(self) -> List[Dict]:
         """列出所有批量分析结果"""
@@ -315,14 +404,14 @@ class AnalysisStorage:
     async def load_segment_summary(self, segment_id: str) -> Optional[Dict]:
         """加载小总结"""
         filename = f"segments/{segment_id}.json"
-        return self._load_json(filename, None)
-    
+        return await self._load_json(filename, None)
+
     async def save_segment_summary(self, segment_id: str, summary: Dict) -> bool:
         """保存小总结"""
         filename = f"segments/{segment_id}.json"
         summary["saved_at"] = datetime.now().isoformat()
         summary["segment_id"] = segment_id
-        return self._save_json(filename, summary)
+        return await self._save_json(filename, summary)
     
     async def list_segments(self) -> List[Dict]:
         """列出所有小总结"""
@@ -406,16 +495,22 @@ class AnalysisStorage:
         chapters_dir = os.path.join(self.base_path, "chapters")
         if not os.path.exists(chapters_dir):
             return []
-        
+
         chapters = []
         for filename in os.listdir(chapters_dir):
             if filename.endswith(".json"):
                 chapter_id = filename[:-5]
                 analysis = await self.load_chapter_analysis(chapter_id)
                 if analysis:
+                    # 获取页面范围
+                    page_range = analysis.get("page_range", {})
+                    start_page = page_range.get("start", 0)
+                    end_page = page_range.get("end", 0)
                     chapters.append({
                         "id": chapter_id,
-                        "title": analysis.get("title", chapter_id)
+                        "title": analysis.get("title", chapter_id),
+                        "start_page": start_page,
+                        "end_page": end_page
                     })
         return chapters
     
@@ -467,33 +562,33 @@ class AnalysisStorage:
     
     async def load_continuation_script(self) -> Optional[Dict]:
         """加载续写脚本"""
-        return self._load_json("continuation/script.json", None)
-    
+        return await self._load_json("continuation/script.json", None)
+
     async def save_continuation_script(self, script: Dict) -> bool:
         """保存续写脚本"""
         script["saved_at"] = datetime.now().isoformat()
-        return self._save_json("continuation/script.json", script)
-    
+        return await self._save_json("continuation/script.json", script)
+
     async def load_continuation_pages(self) -> Optional[List]:
         """加载续写页面详情列表"""
-        return self._load_json("continuation/pages.json", None)
-    
+        return await self._load_json("continuation/pages.json", None)
+
     async def save_continuation_pages(self, pages: List) -> bool:
         """保存续写页面详情列表"""
         data = {
             "pages": pages,
             "saved_at": datetime.now().isoformat()
         }
-        return self._save_json("continuation/pages.json", data)
-    
+        return await self._save_json("continuation/pages.json", data)
+
     async def load_continuation_config(self) -> Optional[Dict]:
         """加载续写配置"""
-        return self._load_json("continuation/config.json", None)
-    
+        return await self._load_json("continuation/config.json", None)
+
     async def save_continuation_config(self, config: Dict) -> bool:
         """保存续写配置"""
         config["saved_at"] = datetime.now().isoformat()
-        return self._save_json("continuation/config.json", config)
+        return await self._save_json("continuation/config.json", config)
     
     async def load_continuation_all(self) -> Dict:
         """加载所有续写数据"""

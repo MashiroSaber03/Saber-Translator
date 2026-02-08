@@ -17,3 +17,6 @@ export * from './api'
 
 // 文件夹类型
 export * from './folder'
+
+// Manga Insight 类型
+export * from './insight'

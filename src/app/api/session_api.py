@@ -225,21 +225,39 @@ def get_session_image(session_name, filename):
 def get_session_image_by_path(session_path, filename):
     """
     按路径获取会话中的图片文件（用于书籍/章节）。
-    
+
     Args:
-        session_path: 会话路径（相对于 data/sessions）
+        session_path: 会话路径（相对于 data/sessions 或 data/）
         filename: 图片文件名
-    
+
     Returns:
         图片文件的二进制内容
     """
     try:
-        # 获取基础目录
-        base_dir = session_manager._get_session_base_dir()
-        full_path = os.path.join(base_dir, session_path)
-        
+        from src.shared.path_helpers import resource_path
+
+        # 判断是否是书架路径
+        normalized_path = session_path.replace("\\", "/")
+        is_bookshelf = normalized_path.startswith("bookshelf/")
+
+        if is_bookshelf:
+            # 书架路径：使用 data/ 作为基础目录
+            base_dir = resource_path("data")
+            # 兼容旧格式：bookshelf/{book_id}/{chapter_id} -> bookshelf/{book_id}/chapters/{chapter_id}/session
+            parts = normalized_path.split("/")
+            if len(parts) == 3 and "chapters" not in normalized_path:
+                # 旧格式，转换为新格式
+                book_id, chapter_id = parts[1], parts[2]
+                session_path = f"bookshelf/{book_id}/chapters/{chapter_id}/session"
+            full_path = os.path.join(base_dir, session_path)
+            real_base = os.path.realpath(base_dir)
+        else:
+            # 普通会话路径：使用 data/sessions 作为基础目录
+            base_dir = session_manager._get_session_base_dir()
+            full_path = os.path.join(base_dir, session_path)
+            real_base = os.path.realpath(base_dir)
+
         # 安全检查
-        real_base = os.path.realpath(base_dir)
         real_path = os.path.realpath(full_path)
         if not real_path.startswith(real_base):
             logger.error(f"安全检查失败：路径 {session_path} 超出会话目录范围")
