@@ -73,6 +73,7 @@ docs/
 # --- AI 助手配置 ---
 .claude/
 .gemini/
+.playwright-mcp/
 CLAUDE.md
 .windsurfchatopen/
 .windsurfrules
