@@ -135,7 +135,7 @@ onUnmounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgb(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -144,9 +144,9 @@ onUnmounted(() => {
 
 /* 模态框容器 */
 .modal-container {
-  background: var(--modal-bg, #ffffff);
+  background: var(--modal-bg, #fff);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px rgb(0, 0, 0, 0.15);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -202,7 +202,7 @@ onUnmounted(() => {
 }
 
 .modal-close-btn:hover {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgb(0, 0, 0, 0.1);
   color: var(--text-color, #2c3e50);
 }
 

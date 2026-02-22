@@ -17,6 +17,7 @@ import { showToast } from '@/utils/toast'
 import { DEFAULT_FONT_FAMILY } from '@/constants'
 import type { TextDirection, InpaintMethod } from '@/types/bubble'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 
 // ============================================================
 // Props 和 Emits
@@ -92,8 +93,6 @@ const settingsStore = useSettingsStore()
 // 状态定义
 // ============================================================
 
-/** 文字设置面板是否展开 */
-const isFontSettingsExpanded = ref(true)
 
 /** 应用设置下拉菜单是否显示 */
 const showApplyOptions = ref(false)
@@ -110,8 +109,6 @@ const applyOptions = ref<ApplySettingsOptions>({
   strokeWidth: true,
 })
 
-/** 页面范围设置面板是否展开 */
-const isPageRangeExpanded = ref(false)
 
 /** 是否启用范围限制 */
 const isRangeEnabled = ref(false)
@@ -245,12 +242,6 @@ async function loadFontList() {
   }
 }
 
-/**
- * 切换文字设置面板展开状态
- */
-function toggleFontSettings() {
-  isFontSettingsExpanded.value = !isFontSettingsExpanded.value
-}
 
 /**
  * 更新字号
@@ -489,12 +480,10 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 /**
- * 切换页面范围设置面板
+ * 页面范围面板展开时初始化范围值
  */
-function togglePageRangeSettings() {
-  isPageRangeExpanded.value = !isPageRangeExpanded.value
-  // 【优化】只在首次展开或范围无效时才重置，避免用户折叠后再展开时丢失输入
-  if (isPageRangeExpanded.value && totalImages.value > 0) {
+function onPageRangeToggle(expanded: boolean) {
+  if (expanded && totalImages.value > 0) {
     // 如果当前范围无效或未初始化（默认值1-1），重置为全范围
     if (!isPageRangeValid.value || (pageRangeStart.value === 1 && pageRangeEnd.value === 1)) {
       pageRangeStart.value = 1
@@ -583,16 +572,11 @@ if (typeof window !== 'undefined') {
       <h2>翻译设置</h2>
       
       <!-- 文字设置折叠面板 -->
-      <div id="font-settings" class="settings-card collapsible-panel">
-        <h3 
-          class="collapsible-header"
-          @click="toggleFontSettings"
-        >
-          文字设置 
-          <span class="toggle-icon">{{ isFontSettingsExpanded ? '▼' : '▶' }}</span>
-        </h3>
-        
-        <div v-show="isFontSettingsExpanded" class="collapsible-content">
+      <CollapsiblePanel
+        title="文字设置"
+        :default-expanded="true"
+        class="settings-card"
+      >
           <div class="settings-form">
             <!-- 字号设置 -->
             <div class="form-group">
@@ -801,20 +785,14 @@ if (typeof window !== 'undefined') {
               </div>
             </div>
           </div>
-        </div>
-      </div>
+      </CollapsiblePanel>
 
-      <!-- 页面范围设置折叠面板 -->
-      <div id="page-range-settings" class="settings-card collapsible-panel">
-        <h3 
-          class="collapsible-header"
-          @click="togglePageRangeSettings"
-        >
-          指定范围 
-          <span class="toggle-icon">{{ isPageRangeExpanded ? '▼' : '▶' }}</span>
-        </h3>
-        
-        <div v-show="isPageRangeExpanded" class="collapsible-content">
+      <CollapsiblePanel
+        title="指定范围"
+        :default-expanded="false"
+        class="settings-card"
+        @toggle="onPageRangeToggle"
+      >
           <div class="settings-form page-range-form">
             <!-- 启用开关 + 图片数 -->
             <div class="range-header-row">
@@ -853,20 +831,21 @@ if (typeof window !== 'undefined') {
               范围无效
             </div>
           </div>
-        </div>
-      </div>
+      </CollapsiblePanel>
 
       <!-- 操作按钮组 -->
       <div class="action-buttons">
         <button 
-          id="translateButton" 
+          id="translateButton"
+          class="settings-button green-button"
           :disabled="!canTranslate"
           @click="emit('translateCurrent')"
         >
           翻译当前图片
         </button>
         <button 
-          id="translateAllButton" 
+          id="translateAllButton"
+          class="settings-button green-button"
           :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
           :title="isRangeEnabled ? `翻译第 ${pageRangeStart}-${pageRangeEnd} 页` : '翻译所有图片'"
           @click="handleTranslateAll"
@@ -883,7 +862,8 @@ if (typeof window !== 'undefined') {
           {{ isRangeEnabled ? `高质量翻译 ${pageRangeStart}-${pageRangeEnd}` : '高质量翻译' }}
         </button>
         <button 
-          id="proofreadButton" 
+          id="proofreadButton"
+          class="settings-button purple-button"
           :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
           :title="isRangeEnabled ? `AI校对第 ${pageRangeStart}-${pageRangeEnd} 页` : 'AI校对'"
           @click="handleProofread"
@@ -891,7 +871,8 @@ if (typeof window !== 'undefined') {
           {{ isRangeEnabled ? `AI校对 ${pageRangeStart}-${pageRangeEnd}` : 'AI校对' }}
         </button>
         <button 
-          id="removeTextOnlyButton" 
+          id="removeTextOnlyButton"
+          class="settings-button blue-button"
           :disabled="!currentImage"
           title="消除图片中的气泡文字，无需填写翻译服务商和API Key"
           @click="emit('removeText')"
@@ -899,7 +880,8 @@ if (typeof window !== 'undefined') {
           仅消除文字
         </button>
         <button 
-          id="removeAllTextButton" 
+          id="removeAllTextButton"
+          class="settings-button blue-button"
           :disabled="!hasImages || (isRangeEnabled && !isPageRangeValid)"
           :title="isRangeEnabled ? `消除第 ${pageRangeStart}-${pageRangeEnd} 页的文字` : '消除所有图片中的气泡文字'"
           @click="handleRemoveAllText"
@@ -967,7 +949,7 @@ if (typeof window !== 'undefined') {
   left: 20px;
   width: 300px;
   height: calc(100vh - 90px);
-  overflow-y: auto !important;
+  overflow-y: auto;
   padding-top: 10px;
   box-sizing: border-box;
   margin-right: 0;
@@ -985,7 +967,6 @@ if (typeof window !== 'undefined') {
 }
 
 /* 设置卡片 - 匹配原版 .settings-card 样式 */
-.settings-sidebar :deep(.card),
 .settings-sidebar .settings-card {
   background-color: white;
   border-radius: 12px;
@@ -995,13 +976,11 @@ if (typeof window !== 'undefined') {
   transition: box-shadow 0.2s;
 }
 
-.settings-sidebar :deep(.card):hover,
 .settings-sidebar .settings-card:hover {
   transform: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-.settings-sidebar :deep(.card) h2,
 .settings-sidebar .settings-card h2 {
   border-bottom: 2px solid #f0f0f0;
   padding-bottom: 12px;
@@ -1011,8 +990,8 @@ if (typeof window !== 'undefined') {
   text-align: center;
 }
 
-/* 折叠面板 - 匹配原版 #font-settings 样式 */
-.collapsible-panel {
+/* CollapsiblePanel 组件样式覆盖（匹配 SettingsSidebar 设计风格） */
+.settings-card.collapsible-panel {
   margin-top: 20px;
   border-top: 1px solid #eee;
   padding-top: 15px;
@@ -1024,12 +1003,12 @@ if (typeof window !== 'undefined') {
   background-color: #f8fafc;
 }
 
-.collapsible-panel:hover {
+.settings-card.collapsible-panel:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
 }
 
-.collapsible-header {
+.settings-card :deep(.collapsible-header) {
   cursor: pointer;
   display: flex;
   justify-content: space-between;
@@ -1043,25 +1022,19 @@ if (typeof window !== 'undefined') {
   margin-top: 0;
 }
 
-.collapsible-header:hover {
+.settings-card :deep(.collapsible-header:hover) {
   color: #3498db;
 }
 
-.toggle-icon {
+.settings-card :deep(.toggle-icon) {
   margin-left: auto;
   color: #8492a6;
   font-size: 1em;
   transition: transform 0.3s ease;
 }
 
-.toggle-icon:hover {
+.settings-card :deep(.toggle-icon:hover) {
   color: #3498db;
-}
-
-.collapsible-content {
-  overflow: visible;
-  max-height: none;
-  transition: max-height 0.3s ease;
 }
 
 /* 表单组 - 匹配原版 .settings-form 样式 */
@@ -1183,7 +1156,7 @@ if (typeof window !== 'undefined') {
 .slide-fade-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-bottom: 0 !important;
+  margin-bottom: 0;
   overflow: hidden;
 }
 
@@ -1206,9 +1179,9 @@ if (typeof window !== 'undefined') {
 .stroke-slide-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
   overflow: hidden;
 }
 
@@ -1280,8 +1253,8 @@ if (typeof window !== 'undefined') {
 
 .apply-settings-group .settings-button {
   flex: 1;
-  margin-top: 0 !important;
-  border-radius: 5px 0 0 5px !important;
+  margin-top: 0;
+  border-radius: 5px 0 0 5px;
   padding: 12px 25px;
   background-color: #007bff;
   color: white;
@@ -1394,10 +1367,10 @@ if (typeof window !== 'undefined') {
 }
 
 .action-buttons button:disabled {
-  background-color: #ccc !important;
+  background-color: #ccc;
   cursor: not-allowed;
-  box-shadow: none !important;
-  transform: none !important;
+  box-shadow: none;
+  transform: none;
 }
 
 .action-buttons button:before {
@@ -1416,104 +1389,79 @@ if (typeof window !== 'undefined') {
 }
 
 /* 翻译按钮 - 绿色 */
-.action-buttons button#translateButton,
-.action-buttons button#translateAllButton {
+.action-buttons .green-button {
   background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
   box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
 }
 
-.action-buttons button#translateButton:hover:not(:disabled),
-.action-buttons button#translateAllButton:hover:not(:disabled) {
+.action-buttons .green-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
   box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
   transform: translateY(-2px);
 }
 
 /* 校对按钮和高质量翻译按钮 - 紫色 */
-.action-buttons button#proofreadButton,
-.action-buttons button#startHqTranslationBtn,
 .action-buttons .purple-button {
-  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%) !important;
+  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
   box-shadow: 0 4px 6px rgba(142, 68, 173, 0.2);
 }
 
-.action-buttons button#proofreadButton:hover:not(:disabled),
-.action-buttons button#startHqTranslationBtn:hover:not(:disabled),
 .action-buttons .purple-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%) !important;
+  background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%);
   box-shadow: 0 6px 10px rgba(142, 68, 173, 0.3);
   transform: translateY(-2px);
 }
 
 /* 消除文字按钮 - 蓝色 */
-.action-buttons button#removeTextOnlyButton,
-.action-buttons button#removeAllTextButton {
+.action-buttons .blue-button {
   background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
   box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
 }
 
-.action-buttons button#removeTextOnlyButton:hover:not(:disabled),
-.action-buttons button#removeAllTextButton:hover:not(:disabled) {
+.action-buttons .blue-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
   box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
   transform: translateY(-2px);
 }
 
 /* 删除按钮 - 红色 */
-.action-buttons button#deleteCurrentImageButton,
-.action-buttons button#clearAllImagesButton,
 .action-buttons .red-button {
-  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
   box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
 }
 
-.action-buttons button#deleteCurrentImageButton:hover:not(:disabled),
-.action-buttons button#clearAllImagesButton:hover:not(:disabled),
 .action-buttons .red-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #bd2130 0%, #c82333 100%) !important;
+  background: linear-gradient(135deg, #bd2130 0%, #c82333 100%);
   box-shadow: 0 6px 10px rgba(220, 53, 69, 0.3);
   transform: translateY(-2px);
 }
 
 /* 清理临时文件按钮 - 橙色 */
-.action-buttons button#cleanDebugFilesButton,
 .action-buttons .orange-button {
-  background: linear-gradient(135deg, #eb9316 0%, #f0ad4e 100%) !important;
+  background: linear-gradient(135deg, #eb9316 0%, #f0ad4e 100%);
   box-shadow: 0 4px 6px rgba(240, 173, 78, 0.2);
 }
 
-.action-buttons button#cleanDebugFilesButton:hover:not(:disabled),
 .action-buttons .orange-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important;
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   box-shadow: 0 6px 10px rgba(211, 84, 0, 0.3);
   transform: translateY(-2px);
 }
 
 /* 重试失败按钮 - 橙色 */
 .action-buttons .warning-button {
-  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
   box-shadow: 0 4px 6px rgba(243, 156, 18, 0.2);
 }
 
 .action-buttons .warning-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important;
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   box-shadow: 0 6px 10px rgba(243, 156, 18, 0.3);
   transform: translateY(-2px);
 }
 
-/* 插件管理按钮 - 蓝色 */
-.action-buttons button#managePluginsButton,
-.action-buttons .blue-button {
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%) !important;
-  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
-}
+/* 插件管理按钮 - 蓝色 (已合并到上方 .blue-button) */
 
-.action-buttons button#managePluginsButton:hover:not(:disabled),
-.action-buttons .blue-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%) !important;
-  box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
-  transform: translateY(-2px);
-}
 
 /* 导航按钮 - 匹配原版 .navigation-buttons 样式 */
 .navigation-buttons {
@@ -1560,13 +1508,13 @@ if (typeof window !== 'undefined') {
    设置侧边栏样式 - 完整迁移自 sidebar.css
    =================================== */
 
-#settings-sidebar {
+.settings-sidebar {
   position: fixed;
   top: 20px;
   left: 20px;
   width: 300px;
   height: calc(100vh - 40px);
-  overflow-y: auto !important;
+  overflow-y: auto;
   padding-top: 20px;
   box-sizing: border-box;
   margin-right: 0;
@@ -1578,11 +1526,11 @@ if (typeof window !== 'undefined') {
   direction: rtl;
 }
 
-#settings-sidebar > * {
+.settings-sidebar > * {
   direction: ltr;
 }
 
-#settings-sidebar .settings-card {
+.settings-sidebar .settings-card {
   background-color: white;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
@@ -1591,12 +1539,12 @@ if (typeof window !== 'undefined') {
   transition: box-shadow 0.2s;
 }
 
-#settings-sidebar .settings-card:hover {
+.settings-sidebar .settings-card:hover {
   transform: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-#settings-sidebar .settings-card h2 {
+.settings-sidebar .settings-card h2 {
   border-bottom: 2px solid #f0f0f0;
   padding-bottom: 12px;
   margin-bottom: 20px;
@@ -1605,7 +1553,7 @@ if (typeof window !== 'undefined') {
   text-align: center;
 }
 
-#settings-sidebar .settings-card h3 {
+.settings-sidebar .settings-card h3 {
   color: #3a4767;
   font-size: 1.2em;
   margin-bottom: 15px;
@@ -1613,34 +1561,34 @@ if (typeof window !== 'undefined') {
   align-items: center;
 }
 
-#settings-sidebar .settings-card h3 .toggle-icon {
+.settings-sidebar .settings-card h3 .toggle-icon {
   margin-left: auto;
   color: #8492a6;
   font-size: 1em;
 }
 
-#settings-sidebar .settings-card h3 .toggle-icon:hover {
+.settings-sidebar .settings-card h3 .toggle-icon:hover {
   color: #3498db;
 }
 
-#settings-sidebar .settings-card h3 .toggle-icon:before {
+.settings-sidebar .settings-card h3 .toggle-icon:before {
   content: none;
 }
 
-#settings-sidebar .settings-form > div {
+.settings-sidebar .settings-form > div {
   margin-bottom: 15px;
   position: relative;
 }
 
-#settings-sidebar label {
+.settings-sidebar label {
   display: block;
   margin-bottom: 5px;
   font-weight: bold;
 }
 
-#settings-sidebar select,
-#settings-sidebar input[type="number"],
-#settings-sidebar input[type="text"] {
+.settings-sidebar select,
+.settings-sidebar input[type="number"],
+.settings-sidebar input[type="text"] {
   width: 100%;
   padding: 12px;
   border: 1px solid #e0e6ed;
@@ -1651,22 +1599,22 @@ if (typeof window !== 'undefined') {
   background-color: #f9fafc;
 }
 
-#settings-sidebar select:focus,
-#settings-sidebar input[type="number"]:focus,
-#settings-sidebar input[type="text"]:focus {
+.settings-sidebar select:focus,
+.settings-sidebar input[type="number"]:focus,
+.settings-sidebar input[type="text"]:focus {
   border-color: #3498db;
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
   outline: none;
 }
 
-#settings-sidebar .input-hint {
+.settings-sidebar .input-hint {
   font-size: 0.9em;
   color: #777;
   margin-top: 0.2em;
   display: block;
 }
 
-#settings-sidebar .navigation-buttons {
+.settings-sidebar .navigation-buttons {
   display: flex;
   gap: 10px;
   margin-top: 20px;
@@ -1674,7 +1622,7 @@ if (typeof window !== 'undefined') {
   width: auto;
 }
 
-#settings-sidebar .navigation-buttons button {
+.settings-sidebar .navigation-buttons button {
   width: auto;
   padding: 12px 15px;
   background-color: #6c757d;
@@ -1690,17 +1638,17 @@ if (typeof window !== 'undefined') {
   white-space: nowrap;
 }
 
-#settings-sidebar .navigation-buttons button:hover {
+.settings-sidebar .navigation-buttons button:hover {
   background-color: #5a6268;
 }
 
-#settings-sidebar .navigation-buttons button:disabled {
+.settings-sidebar .navigation-buttons button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
 
-#settings-sidebar #font-settings,
-#settings-sidebar #page-range-settings {
+.settings-sidebar #font-settings,
+.settings-sidebar #page-range-settings {
   margin-top: 20px;
   border-top: 1px solid #eee;
   padding-top: 15px;
@@ -1712,49 +1660,40 @@ if (typeof window !== 'undefined') {
   background-color: #f8fafc;
 }
 
-#settings-sidebar #font-settings:hover,
-#settings-sidebar #page-range-settings:hover {
+.settings-sidebar #font-settings:hover,
+.settings-sidebar #page-range-settings:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
 }
 
-#settings-sidebar #font-settings h3,
-#settings-sidebar #page-range-settings h3 {
+.settings-sidebar #font-settings h3,
+.settings-sidebar #page-range-settings h3 {
   margin-bottom: 10px;
   margin-top: 0;
 }
 
-#settings-sidebar button#applyFontSettingsToAllButton {
+.settings-sidebar button#applyFontSettingsToAllButton {
   font-size: 0.9em;
   padding: 8px 15px;
   margin-top: 10px;
 }
 
-#settings-sidebar #font-settings + div {
+.settings-sidebar #font-settings + div {
   margin-top: 20px;
 }
 
-#settings-sidebar div.settings-card {
+.settings-sidebar div.settings-card {
   margin-bottom: 15px;
   transition: box-shadow 0.2s;
 }
 
-#settings-sidebar div.settings-card .collapsible-header.collapsed {
-  margin-bottom: 0;
-}
 
-#settings-sidebar div.settings-card .collapsible-content.collapsed {
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-bottom: 0;
-}
-
-#settings-sidebar #strokeEnabled {
+.settings-sidebar #strokeEnabled {
   margin-left: 5px;
   transform: scale(1.1);
 }
 
-#settings-sidebar #strokeOptions label {
+.settings-sidebar #strokeOptions label {
   font-size: 0.95em;
 }
 
@@ -1803,7 +1742,7 @@ if (typeof window !== 'undefined') {
   left: 100%;
 }
 
-#settings-sidebar button.settings-button {
+.settings-sidebar button.settings-button {
   width: 100%;
   padding: 12px 25px;
   background-color: #007bff;
@@ -1821,7 +1760,7 @@ if (typeof window !== 'undefined') {
   white-space: nowrap;
 }
 
-#settings-sidebar button#startHqTranslation {
+.settings-sidebar button#startHqTranslation {
   text-align: center;
   justify-content: center;
   display: flex;
@@ -1847,8 +1786,8 @@ if (typeof window !== 'undefined') {
 
 .apply-settings-group .settings-button {
   flex: 1;
-  margin-top: 0 !important;
-  border-radius: 5px 0 0 5px !important;
+  margin-top: 0;
+  border-radius: 5px 0 0 5px;
 }
 
 .settings-gear-btn {
@@ -1934,181 +1873,10 @@ if (typeof window !== 'undefined') {
   margin: 6px 0;
 }
 
-/* 翻译按钮 - 绿色 */
-#settings-sidebar button#translateButton,
-#settings-sidebar button#translateAllButton {
-  width: 100%;
-  padding: 14px 25px;
-  background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-#settings-sidebar button#translateButton:hover,
-#settings-sidebar button#translateAllButton:hover {
-  background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
-  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
-  transform: translateY(-2px);
-}
-
-#settings-sidebar button#translateButton:before,
-#settings-sidebar button#translateAllButton:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-#settings-sidebar button#translateButton:hover:before,
-#settings-sidebar button#translateAllButton:hover:before {
-  left: 100%;
-}
-
-/* 消除文字按钮 - 蓝色 */
-#settings-sidebar button#removeTextOnlyButton,
-#settings-sidebar button#removeAllTextButton {
-  width: 100%;
-  padding: 14px 25px;
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-#settings-sidebar button#removeTextOnlyButton:hover,
-#settings-sidebar button#removeAllTextButton:hover {
-  background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
-  box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
-  transform: translateY(-2px);
-}
-
-#settings-sidebar button#removeTextOnlyButton:before,
-#settings-sidebar button#removeAllTextButton:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-#settings-sidebar button#removeTextOnlyButton:hover:before,
-#settings-sidebar button#removeAllTextButton:hover:before {
-  left: 100%;
-}
-
-/* 删除按钮 - 红色 */
-#settings-sidebar button#clearAllImagesButton,
-#settings-sidebar button#deleteCurrentImageButton {
-  width: 100%;
-  padding: 14px 25px;
-  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-#settings-sidebar button#clearAllImagesButton:hover,
-#settings-sidebar button#deleteCurrentImageButton:hover {
-  background: linear-gradient(135deg, #bd2130 0%, #c82333 100%);
-  box-shadow: 0 6px 10px rgba(220, 53, 69, 0.3);
-  transform: translateY(-2px);
-}
-
-#settings-sidebar button#clearAllImagesButton:before,
-#settings-sidebar button#deleteCurrentImageButton:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-#settings-sidebar button#clearAllImagesButton:hover:before,
-#settings-sidebar button#deleteCurrentImageButton:hover:before {
-  left: 100%;
-}
-
-/* 校对按钮和高质量翻译按钮 - 紫色 */
-#proofreadButton,
-#startHqTranslationBtn {
-  width: 100%;
-  padding: 14px 25px;
-  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  box-shadow: 0 4px 6px rgba(142, 68, 173, 0.2);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-#proofreadButton:hover,
-#startHqTranslationBtn:hover {
-  background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%);
-  box-shadow: 0 6px 10px rgba(142, 68, 173, 0.3);
-  transform: translateY(-2px);
-}
-
-#proofreadButton:before,
-#startHqTranslationBtn:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-#proofreadButton:hover:before,
-#startHqTranslationBtn:hover:before {
-  left: 100%;
-}
+/* 翻译按钮 - 绿色 (已迁移到 .green-button 类) */
+/* 消除文字按钮 - 蓝色 (已迁移到 .blue-button 类) */
+/* 校对/高质量翻译按钮 - 紫色 (已迁移到 .purple-button 类) */
+/* 删除按钮 - 红色  (已迁移到 .red-button 类) */
 
 /* 按钮颜色变体类 */
 #settings-sidebar button.red-button {
@@ -2150,7 +1918,7 @@ if (typeof window !== 'undefined') {
 /* ============================================================ */
 
 .page-range-form {
-  padding: 8px 0 !important;
+  padding: 8px 0;
 }
 
 /* 头部行：启用开关 + 图片数 */
@@ -2207,17 +1975,17 @@ if (typeof window !== 'undefined') {
 }
 
 .page-range-inputs-compact input {
-  width: 52px !important;
-  padding: 6px 4px !important;
-  font-size: 13px !important;
+  width: 52px;
+  padding: 6px 4px;
+  font-size: 13px;
   font-weight: 600;
   text-align: center;
-  border: 1px solid #ddd !important;
-  border-radius: 4px !important;
+  border: 1px solid #ddd;
+  border-radius: 4px;
 }
 
 .page-range-inputs-compact input:focus {
-  border-color: #5c6bc0 !important;
+  border-color: #5c6bc0;
   outline: none;
 }
 

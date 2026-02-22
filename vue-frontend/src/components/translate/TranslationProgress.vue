@@ -249,16 +249,13 @@ const progressLabel = computed(() => {
    =================================== */
 
 .translation-progress-bar {
-  margin-top: 20px;
-  margin-bottom: 20px;
+  margin: 20px auto;
   padding: 20px 24px;
   border: none;
   border-radius: 12px;
   background-color: #f8fafc;
   width: 85%;
-  margin-left: auto;
-  margin-right: auto;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 12px rgb(0,0,0,0.06);
 }
 
 /* ===================================
@@ -442,7 +439,7 @@ const progressLabel = computed(() => {
 }
 
 .save-progress {
-  background: linear-gradient(90deg, #8b5cf6, #7c3aed) !important;
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
 }
 
 /* 分隔线 */
@@ -487,17 +484,14 @@ const progressLabel = computed(() => {
 .progress-stripe::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+  inset: 0;
   background-image: linear-gradient(
     -45deg,
-    rgba(255, 255, 255, 0.2) 25%,
+    rgb(255, 255, 255, 0.2) 25%,
     transparent 25%,
     transparent 50%,
-    rgba(255, 255, 255, 0.2) 50%,
-    rgba(255, 255, 255, 0.2) 75%,
+    rgb(255, 255, 255, 0.2) 50%,
+    rgb(255, 255, 255, 0.2) 75%,
     transparent 75%,
     transparent
   );
@@ -530,7 +524,7 @@ const progressLabel = computed(() => {
   background-color: #edf2f7;
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: inset 0 1px 3px rgb(0,0,0,0.1);
 }
 
 .progress-bar .progress {
@@ -553,7 +547,7 @@ const progressLabel = computed(() => {
    =================================== */
 
 /* 平板和小屏幕（宽度 < 768px） */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .translation-progress-bar {
     width: 95%;
     padding: 16px 20px;
@@ -600,7 +594,7 @@ const progressLabel = computed(() => {
 }
 
 /* 手机屏幕（宽度 < 480px） */
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .translation-progress-bar {
     width: 100%;
     padding: 12px 16px;

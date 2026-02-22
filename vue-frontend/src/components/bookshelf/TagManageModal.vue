@@ -322,7 +322,7 @@ async function deleteTag(tagName: string) {
 
 .tag-edit-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 2px 8px rgb(102, 126, 234, 0.4);
 }
 
 /* 【复刻原版 .tag-delete-btn】删除按钮样式 */
@@ -339,7 +339,7 @@ async function deleteTag(tagName: string) {
 
 .tag-delete-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.4);
+  box-shadow: 0 2px 8px rgb(220, 53, 69, 0.4);
 }
 
 /* 编辑状态样式 */
@@ -365,7 +365,7 @@ async function deleteTag(tagName: string) {
 }
 
 .edit-name-input:focus {
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+  box-shadow: 0 0 0 2px rgb(102, 126, 234, 0.2);
 }
 
 .tag-save-btn {
@@ -381,7 +381,7 @@ async function deleteTag(tagName: string) {
 
 .tag-save-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.4);
+  box-shadow: 0 2px 8px rgb(40, 167, 69, 0.4);
 }
 
 .tag-cancel-btn {

@@ -1,0 +1,376 @@
+﻿[36mvite v7.2.7 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 405 modules transformed.
+npx : [33mnode_modules/pdfjs-dist/buil
+d/pdf.js (1982:23): Use of eval in "nod
+e_modules/pdfjs-dist/build/pdf.js" is s
+trongly discouraged as it poses securit
+y risks and may cause issues with minif
+ication.[39m
+At line:1 char:1
++ npx vite build 2>&1 | Out-File -Encod
+ing UTF8 build_output.txt; Get-C ...
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpeci 
+   fied: ([33mnode_modul...ification  
+  .[39m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCo 
+   mmandError
+ 
+rendering chunks...
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/stores/s
+ettingsStore.ts is dynamically imported
+ by C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/componen
+ts/edit/EditWorkspace.vue?vue&type=scri
+pt&setup=true&lang.ts, C:/Users/33252/O
+neDrive/Desktop/Saber-Translator/vue-fr
+ontend/src/stores/sessionStore.ts, C:/U
+sers/33252/OneDrive/Desktop/Saber-Trans
+lator/vue-frontend/src/stores/sessionSt
+ore.ts but also statically imported by 
+C:/Users/33252/OneDrive/Desktop/Saber-T
+ranslator/vue-frontend/src/App.vue?vue&
+type=script&setup=true&lang.ts, C:/User
+s/33252/OneDrive/Desktop/Saber-Translat
+or/vue-frontend/src/components/edit/Edi
+tWorkspace.vue?vue&type=script&setup=tr
+ue&lang.ts, C:/Users/33252/OneDrive/Des
+ktop/Saber-Translator/vue-frontend/src/
+components/settings/DetectionSettings.v
+ue?vue&type=script&setup=true&lang.ts, 
+C:/Users/33252/OneDrive/Desktop/Saber-T
+ranslator/vue-frontend/src/components/s
+ettings/HqTranslationSettings.vue?vue&t
+ype=script&setup=true&lang.ts, C:/Users
+/33252/OneDrive/Desktop/Saber-Translato
+r/vue-frontend/src/components/settings/
+MoreSettings.vue?vue&type=script&setup=
+true&lang.ts, C:/Users/33252/OneDrive/D
+esktop/Saber-Translator/vue-frontend/sr
+c/components/settings/OcrSettings.vue?v
+ue&type=script&setup=true&lang.ts, C:/U
+sers/33252/OneDrive/Desktop/Saber-Trans
+lator/vue-frontend/src/components/setti
+ngs/ParallelSettings.vue?vue&type=scrip
+t&setup=true&lang.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/components/settings/PromptLib
+rary.vue?vue&type=script&setup=true&lan
+g.ts, C:/Users/33252/OneDrive/Desktop/S
+aber-Translator/vue-frontend/src/compon
+ents/settings/ProofreadingSettings.vue?
+vue&type=script&setup=true&lang.ts, C:/
+Users/33252/OneDrive/Desktop/Saber-Tran
+slator/vue-frontend/src/components/sett
+ings/SettingsModal.vue?vue&type=script&
+setup=true&lang.ts, C:/Users/33252/OneD
+rive/Desktop/Saber-Translator/vue-front
+end/src/components/settings/Translation
+Settings.vue?vue&type=script&setup=true
+&lang.ts, C:/Users/33252/OneDrive/Deskt
+op/Saber-Translator/vue-frontend/src/co
+mponents/translate/ImageResultDisplay.v
+ue?vue&type=script&setup=true&lang.ts, 
+C:/Users/33252/OneDrive/Desktop/Saber-T
+ranslator/vue-frontend/src/components/t
+ranslate/ImageUpload.vue?vue&type=scrip
+t&setup=true&lang.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/components/translate/Settings
+Sidebar.vue?vue&type=script&setup=true&
+lang.ts, C:/Users/33252/OneDrive/Deskto
+p/Saber-Translator/vue-frontend/src/com
+ponents/translate/TranslationProgress.v
+ue?vue&type=script&setup=true&lang.ts, 
+C:/Users/33252/OneDrive/Desktop/Saber-T
+ranslator/vue-frontend/src/composables/
+translation/core/SequentialPipeline.ts,
+ C:/Users/33252/OneDrive/Desktop/Saber-
+Translator/vue-frontend/src/composables
+/translation/core/pipeline.ts, C:/Users
+/33252/OneDrive/Desktop/Saber-Translato
+r/vue-frontend/src/composables/translat
+ion/core/saveStep.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/composables/translation/core/
+steps/aiTranslate.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/composables/translation/core/
+steps/detection.ts, C:/Users/33252/OneD
+rive/Desktop/Saber-Translator/vue-front
+end/src/composables/translation/core/st
+eps/inpaint.ts, C:/Users/33252/OneDrive
+/Desktop/Saber-Translator/vue-frontend/
+src/composables/translation/core/steps/
+ocr.ts, C:/Users/33252/OneDrive/Desktop
+/Saber-Translator/vue-frontend/src/comp
+osables/translation/core/steps/render.t
+s, C:/Users/33252/OneDrive/Desktop/Sabe
+r-Translator/vue-frontend/src/composabl
+es/translation/core/steps/translate.ts,
+ C:/Users/33252/OneDrive/Desktop/Saber-
+Translator/vue-frontend/src/composables
+/translation/parallel/ParallelPipeline.
+ts, C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/composab
+les/translation/parallel/pools/RenderPo
+ol.ts, C:/Users/33252/OneDrive/Desktop/
+Saber-Translator/vue-frontend/src/compo
+sables/translation/parallel/pools/Trans
+latePool.ts, C:/Users/33252/OneDrive/De
+sktop/Saber-Translator/vue-frontend/src
+/composables/translation/parallel/usePa
+rallelTranslation.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/composables/useBrush.ts, C:/U
+sers/33252/OneDrive/Desktop/Saber-Trans
+lator/vue-frontend/src/composables/useB
+ubbleActions.ts, C:/Users/33252/OneDriv
+e/Desktop/Saber-Translator/vue-frontend
+/src/composables/useExportImport.ts, C:
+/Users/33252/OneDrive/Desktop/Saber-Tra
+nslator/vue-frontend/src/composables/us
+eTranslateInit.ts, C:/Users/33252/OneDr
+ive/Desktop/Saber-Translator/vue-fronte
+nd/src/composables/useValidation.ts, C:
+/Users/33252/OneDrive/Desktop/Saber-Tra
+nslator/vue-frontend/src/stores/bubbleS
+tore.ts, C:/Users/33252/OneDrive/Deskto
+p/Saber-Translator/vue-frontend/src/vie
+ws/TranslateView.vue?vue&type=script&se
+tup=true&lang.ts, dynamic import will n
+ot move module into another chunk.
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/api/tran
+slate.ts is dynamically imported by C:/
+Users/33252/OneDrive/Desktop/Saber-Tran
+slator/vue-frontend/src/components/edit
+/EditWorkspace.vue?vue&type=script&setu
+p=true&lang.ts but also statically impo
+rted by C:/Users/33252/OneDrive/Desktop
+/Saber-Translator/vue-frontend/src/api/
+index.ts, C:/Users/33252/OneDrive/Deskt
+op/Saber-Translator/vue-frontend/src/co
+mposables/translation/core/steps/aiTran
+slate.ts, C:/Users/33252/OneDrive/Deskt
+op/Saber-Translator/vue-frontend/src/co
+mposables/translation/core/steps/transl
+ate.ts, C:/Users/33252/OneDrive/Desktop
+/Saber-Translator/vue-frontend/src/comp
+osables/translation/parallel/pools/Tran
+slatePool.ts, C:/Users/33252/OneDrive/D
+esktop/Saber-Translator/vue-frontend/sr
+c/composables/useBrush.ts, C:/Users/332
+52/OneDrive/Desktop/Saber-Translator/vu
+e-frontend/src/composables/useBubbleAct
+ions.ts, C:/Users/33252/OneDrive/Deskto
+p/Saber-Translator/vue-frontend/src/com
+posables/useEditRender.ts, C:/Users/332
+52/OneDrive/Desktop/Saber-Translator/vu
+e-frontend/src/composables/useExportImp
+ort.ts, dynamic import will not move mo
+dule into another chunk.
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/api/page
+Storage.ts is dynamically imported by C
+:/Users/33252/OneDrive/Desktop/Saber-Tr
+anslator/vue-frontend/src/composables/t
+ranslation/core/saveStep.ts, C:/Users/3
+3252/OneDrive/Desktop/Saber-Translator/
+vue-frontend/src/stores/sessionStore.ts
+ but also statically imported by C:/Use
+rs/33252/OneDrive/Desktop/Saber-Transla
+tor/vue-frontend/src/api/index.ts, C:/U
+sers/33252/OneDrive/Desktop/Saber-Trans
+lator/vue-frontend/src/composables/tran
+slation/core/saveStep.ts, dynamic impor
+t will not move module into another chu
+nk.
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/stores/i
+mageStore.ts is dynamically imported by
+ C:/Users/33252/OneDrive/Desktop/Saber-
+Translator/vue-frontend/src/stores/sess
+ionStore.ts, C:/Users/33252/OneDrive/De
+sktop/Saber-Translator/vue-frontend/src
+/stores/sessionStore.ts but also static
+ally imported by C:/Users/33252/OneDriv
+e/Desktop/Saber-Translator/vue-frontend
+/src/components/edit/EditWorkspace.vue?
+vue&type=script&setup=true&lang.ts, C:/
+Users/33252/OneDrive/Desktop/Saber-Tran
+slator/vue-frontend/src/components/tran
+slate/ImageResultDisplay.vue?vue&type=s
+cript&setup=true&lang.ts, C:/Users/3325
+2/OneDrive/Desktop/Saber-Translator/vue
+-frontend/src/components/translate/Imag
+eUpload.vue?vue&type=script&setup=true&
+lang.ts, C:/Users/33252/OneDrive/Deskto
+p/Saber-Translator/vue-frontend/src/com
+ponents/translate/SettingsSidebar.vue?v
+ue&type=script&setup=true&lang.ts, C:/U
+sers/33252/OneDrive/Desktop/Saber-Trans
+lator/vue-frontend/src/components/trans
+late/ThumbnailSidebar.vue?vue&type=scri
+pt&setup=true&lang.ts, C:/Users/33252/O
+neDrive/Desktop/Saber-Translator/vue-fr
+ontend/src/components/translate/Transla
+tionProgress.vue?vue&type=script&setup=
+true&lang.ts, C:/Users/33252/OneDrive/D
+esktop/Saber-Translator/vue-frontend/sr
+c/components/translate/WebImportModal.v
+ue?vue&type=script&setup=true&lang.ts, 
+C:/Users/33252/OneDrive/Desktop/Saber-T
+ranslator/vue-frontend/src/composables/
+translation/core/SequentialPipeline.ts,
+ C:/Users/33252/OneDrive/Desktop/Saber-
+Translator/vue-frontend/src/composables
+/translation/core/pipeline.ts, C:/Users
+/33252/OneDrive/Desktop/Saber-Translato
+r/vue-frontend/src/composables/translat
+ion/core/saveStep.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/composables/translation/core/
+steps/detection.ts, C:/Users/33252/OneD
+rive/Desktop/Saber-Translator/vue-front
+end/src/composables/translation/paralle
+l/pools/RenderPool.ts, C:/Users/33252/O
+neDrive/Desktop/Saber-Translator/vue-fr
+ontend/src/composables/translation/para
+llel/useParallelTranslation.ts, C:/User
+s/33252/OneDrive/Desktop/Saber-Translat
+or/vue-frontend/src/composables/useBrus
+h.ts, C:/Users/33252/OneDrive/Desktop/S
+aber-Translator/vue-frontend/src/compos
+ables/useBubbleActions.ts, C:/Users/332
+52/OneDrive/Desktop/Saber-Translator/vu
+e-frontend/src/composables/useEditMode.
+ts, C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/composab
+les/useEditRender.ts, C:/Users/33252/On
+eDrive/Desktop/Saber-Translator/vue-fro
+ntend/src/composables/useExportImport.t
+s, C:/Users/33252/OneDrive/Desktop/Sabe
+r-Translator/vue-frontend/src/composabl
+es/useTranslateInit.ts, C:/Users/33252/
+OneDrive/Desktop/Saber-Translator/vue-f
+rontend/src/composables/useTranslationP
+ipeline.ts, C:/Users/33252/OneDrive/Des
+ktop/Saber-Translator/vue-frontend/src/
+stores/bubbleStore.ts, C:/Users/33252/O
+neDrive/Desktop/Saber-Translator/vue-fr
+ontend/src/views/TranslateView.vue?vue&
+type=script&setup=true&lang.ts, dynamic
+ import will not move module into anoth
+er chunk.
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/stores/b
+ubbleStore.ts is dynamically imported b
+y C:/Users/33252/OneDrive/Desktop/Saber
+-Translator/vue-frontend/src/stores/ses
+sionStore.ts but also statically import
+ed by C:/Users/33252/OneDrive/Desktop/S
+aber-Translator/vue-frontend/src/compon
+ents/edit/BubbleEditor.vue?vue&type=scr
+ipt&setup=true&lang.ts, C:/Users/33252/
+OneDrive/Desktop/Saber-Translator/vue-f
+rontend/src/components/edit/BubbleOverl
+ay.vue?vue&type=script&setup=true&lang.
+ts, C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/componen
+ts/edit/EditWorkspace.vue?vue&type=scri
+pt&setup=true&lang.ts, C:/Users/33252/O
+neDrive/Desktop/Saber-Translator/vue-fr
+ontend/src/composables/translation/core
+/SequentialPipeline.ts, C:/Users/33252/
+OneDrive/Desktop/Saber-Translator/vue-f
+rontend/src/composables/translation/par
+allel/pools/RenderPool.ts, C:/Users/332
+52/OneDrive/Desktop/Saber-Translator/vu
+e-frontend/src/composables/useBubbleAct
+ions.ts, C:/Users/33252/OneDrive/Deskto
+p/Saber-Translator/vue-frontend/src/com
+posables/useEditMode.ts, C:/Users/33252
+/OneDrive/Desktop/Saber-Translator/vue-
+frontend/src/composables/useEditRender.
+ts, C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/composab
+les/useTranslateInit.ts, C:/Users/33252
+/OneDrive/Desktop/Saber-Translator/vue-
+frontend/src/composables/useTranslation
+Pipeline.ts, C:/Users/33252/OneDrive/De
+sktop/Saber-Translator/vue-frontend/src
+/views/TranslateView.vue?vue&type=scrip
+t&setup=true&lang.ts, dynamic import wi
+ll not move module into another chunk.
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/33252/OneDrive/Desktop/Sab
+er-Translator/vue-frontend/src/composab
+les/translation/core/steps/index.ts is 
+dynamically imported by C:/Users/33252/
+OneDrive/Desktop/Saber-Translator/vue-f
+rontend/src/views/TranslateView.vue?vue
+&type=script&setup=true&lang.ts but als
+o statically imported by C:/Users/33252
+/OneDrive/Desktop/Saber-Translator/vue-
+frontend/src/components/edit/EditWorksp
+ace.vue?vue&type=script&setup=true&lang
+.ts, C:/Users/33252/OneDrive/Desktop/Sa
+ber-Translator/vue-frontend/src/composa
+bles/translation/core/SequentialPipelin
+e.ts, C:/Users/33252/OneDrive/Desktop/S
+aber-Translator/vue-frontend/src/compos
+ables/translation/parallel/pools/ColorP
+ool.ts, C:/Users/33252/OneDrive/Desktop
+/Saber-Translator/vue-frontend/src/comp
+osables/translation/parallel/pools/Dete
+ctionPool.ts, C:/Users/33252/OneDrive/D
+esktop/Saber-Translator/vue-frontend/sr
+c/composables/translation/parallel/pool
+s/InpaintPool.ts, C:/Users/33252/OneDri
+ve/Desktop/Saber-Translator/vue-fronten
+d/src/composables/translation/parallel/
+pools/OcrPool.ts, C:/Users/33252/OneDri
+ve/Desktop/Saber-Translator/vue-fronten
+d/src/composables/translation/parallel/
+pools/RenderPool.ts, dynamic import wil
+l not move module into another chunk.
+[39m
+computing gzip size...
+[2m../src/app/static/vue/[22m[32mindex.html                                                   [39m[1m[2m  0.66 kB[22m[1m[22m[2m │ gzip:   0.43 kB[22m
+[2m../src/app/static/vue/[22m[35massets/CustomSelect.CoWnC2Ju.css                             [39m[1m[2m  1.76 kB[22m[1m[22m[2m │ gzip:   0.64 kB[22m
+[2m../src/app/static/vue/[22m[35massets/BaseModal.DBjVSxvp.css                                [39m[1m[2m  1.83 kB[22m[1m[22m[2m │ gzip:   0.62 kB[22m
+[2m../src/app/static/vue/[22m[35massets/ReaderView.DnKQZrI8.css                               [39m[1m[2m  9.72 kB[22m[1m[22m[2m │ gzip:   2.03 kB[22m
+[2m../src/app/static/vue/[22m[35massets/index.Dw7izAM-.css                                    [39m[1m[2m 10.62 kB[22m[1m[22m[2m │ gzip:   3.10 kB[22m
+[2m../src/app/static/vue/[22m[35massets/BookshelfView.UkQoIyyb.css                            [39m[1m[2m 22.91 kB[22m[1m[22m[2m │ gzip:   4.34 kB[22m
+[2m../src/app/static/vue/[22m[35massets/InsightView.C94Cj_o8.css                              [39m[1m[2m121.11 kB[22m[1m[22m[2m │ gzip:  17.16 kB[22m
+[2m../src/app/static/vue/[22m[35massets/TranslateView.DmlH8GlI.css                            [39m[1m[2m132.90 kB[22m[1m[22m[2m │ gzip:  20.64 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/session.C_VZSWrV.js                                       [39m[1m[2m  0.30 kB[22m[1m[22m[2m │ gzip:   0.22 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/client.Bht704G-.js                                        [39m[1m[2m  0.99 kB[22m[1m[22m[2m │ gzip:   0.50 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/system.DR5RJocQ.js                                        [39m[1m[2m  1.33 kB[22m[1m[22m[2m │ gzip:   0.47 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/bookshelf.B4ums9uK.js                                     [39m[1m[2m  1.62 kB[22m[1m[22m[2m │ gzip:   0.57 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/BaseModal.CTLwD9HM.js                                     [39m[1m[2m  1.80 kB[22m[1m[22m[2m │ gzip:   0.87 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/CustomSelect.vue_vue_type_style_index_0_lang.CQaT8Lug.js  [39m[1m[2m  2.66 kB[22m[1m[22m[2m │ gzip:   1.19 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/config.CwRcCkM9.js                                        [39m[1m[2m  3.57 kB[22m[1m[22m[2m │ gzip:   1.09 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/bookshelfStore.Dj-iTrX1.js                                [39m[1m[2m  5.55 kB[22m[1m[22m[2m │ gzip:   1.95 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/ReaderView.BtVDlO6Y.js                                    [39m[1m[2m  9.83 kB[22m[1m[22m[2m │ gzip:   3.96 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/BookshelfView.99zHyQXH.js                                 [39m[1m[2m 26.06 kB[22m[1m[22m[2m │ gzip:   8.96 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/utils-vendor.B9ygI19o.js                                  [39m[1m[2m 36.28 kB[22m[1m[22m[2m │ gzip:  14.69 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/index.g3N1_pzj.js                                         [39m[1m[2m 44.25 kB[22m[1m[22m[2m │ gzip:  14.04 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/vue-vendor.BAHshaBR.js                                    [39m[1m[2m107.39 kB[22m[1m[22m[2m │ gzip:  41.74 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/InsightView.CjUN--w2.js                                   [39m[1m[2m216.76 kB[22m[1m[22m[2m │ gzip:  61.58 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/pdf.U7tdldy2.js                                           [39m[1m[2m311.13 kB[22m[1m[22m[2m │ gzip:  91.78 kB[22m
+[2m../src/app/static/vue/[22m[36mjs/TranslateView.CnazIgKm.js                                 [39m[1m[2m372.52 kB[22m[1m[22m[2m │ gzip: 106.16 kB[22m
+[32m✓ built in 9.05s[39m

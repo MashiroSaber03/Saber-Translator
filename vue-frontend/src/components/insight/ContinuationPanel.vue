@@ -556,12 +556,12 @@ watch(() => insightStore.currentBookId, (newBookId) => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(255,255,255,0.2);
+  background: rgb(255,255,255,0.2);
   font-weight: bold;
   font-size: 13px;
 }
 
-.step:not(.active):not(.completed) .step-number {
+.step:not(.active, .completed) .step-number {
   background: var(--bg-secondary, #f5f5f5);
 }
 
@@ -582,7 +582,7 @@ watch(() => insightStore.currentBookId, (newBookId) => {
 }
 
 .step-panel h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 20px;
   font-size: 18px;
   font-weight: 600;
 }

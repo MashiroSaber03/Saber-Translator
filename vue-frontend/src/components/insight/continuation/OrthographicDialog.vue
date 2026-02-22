@@ -193,11 +193,8 @@ defineExpose({
 <style scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -211,7 +208,7 @@ defineExpose({
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
   animation: slideUp 0.3s;
 }
 
@@ -275,7 +272,7 @@ defineExpose({
 .upload-area:hover,
 .upload-area.drag-over {
   border-color: var(--primary, #6366f1);
-  background: rgba(99, 102, 241, 0.05);
+  background: rgb(99, 102, 241, 0.05);
 }
 
 .upload-placeholder {
@@ -323,7 +320,7 @@ defineExpose({
   position: absolute;
   top: 4px;
   right: 4px;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgb(0, 0, 0, 0.7);
   color: white;
   width: 24px;
   height: 24px;
@@ -350,9 +347,7 @@ defineExpose({
   margin: 0 auto 16px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 .progress-message {
   font-size: 16px;
@@ -366,7 +361,7 @@ defineExpose({
 }
 
 .ortho-result h4 {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   font-size: 16px;
 }
 
@@ -428,19 +423,5 @@ defineExpose({
   background: var(--bg-hover, #e5e7eb);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
+/* @keyframes fadeIn / slideUp 已迁移到 global.css */
 </style>

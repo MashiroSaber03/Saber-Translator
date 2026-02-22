@@ -725,11 +725,7 @@ function formatDate(dateStr: string): string {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 /* 空状态 */
 .empty-state {
@@ -750,7 +746,7 @@ function formatDate(dateStr: string): string {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgb(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -758,20 +754,20 @@ function formatDate(dateStr: string): string {
 }
 
 .rename-dialog {
-  background: var(--modal-bg, #ffffff);
+  background: var(--modal-bg, #fff);
   padding: 20px;
   border-radius: 8px;
   min-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.15);
 }
 
 .rename-dialog h4 {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   color: var(--text-color, #2c3e50);
 }
 
 .rename-dialog p {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   color: var(--text-secondary, #666);
 }
 

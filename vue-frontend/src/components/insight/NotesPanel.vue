@@ -388,7 +388,7 @@ function getNoteTypeIcon(type: NoteType): string {
 /* ==================== CSS变量 ==================== */
 .workspace-section {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
   --text-primary: #1a202c;
   --text-secondary: #64748b;
@@ -442,7 +442,7 @@ function getNoteTypeIcon(type: NoteType): string {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 50px rgb(0, 0, 0, 0.3);
 }
 
 .modal-content.modal-sm {
@@ -519,7 +519,7 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .btn-primary {
-  background: var(--primary-color);
+  background: var(--color-primary);
   color: white;
 }
 
@@ -585,7 +585,7 @@ function getNoteTypeIcon(type: NoteType): string {
 .form-input:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: var(--color-primary);
 }
 
 /* ==================== 通用组件 ==================== */
@@ -654,7 +654,7 @@ function getNoteTypeIcon(type: NoteType): string {
 
 .note-actions .btn-icon-sm:hover {
   background: var(--bg-tertiary);
-  border-color: var(--primary-color);
+  border-color: var(--color-primary);
 }
 
 .note-title {
@@ -682,7 +682,7 @@ function getNoteTypeIcon(type: NoteType): string {
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
-  background: var(--primary-light, rgba(99, 102, 241, 0.1));
+  background: var(--primary-light, rgb(99, 102, 241, 0.1));
   color: var(--primary-color, #6366f1);
   border-radius: 12px;
 }
@@ -723,12 +723,12 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .note-item:hover {
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 2px 8px rgb(99, 102, 241, 0.1);
 }
 
 .note-item.qa-note {
-    border-left: 3px solid var(--primary-color);
+    border-left: 3px solid var(--color-primary);
 }
 
 .note-item.text-note {
@@ -779,7 +779,7 @@ function getNoteTypeIcon(type: NoteType): string {
 .note-tag {
     font-size: 11px;
     padding: 2px 6px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-radius: 10px;
     opacity: 0.8;
@@ -800,7 +800,7 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .note-page-ref {
-    color: var(--primary-color);
+    color: var(--color-primary);
     cursor: pointer;
 }
 
@@ -821,7 +821,7 @@ function getNoteTypeIcon(type: NoteType): string {
 
 .btn-delete-note:hover {
     color: var(--error-color);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgb(239, 68, 68, 0.1);
 }
 
 .section-header-with-actions {
@@ -912,7 +912,7 @@ function getNoteTypeIcon(type: NoteType): string {
 .note-detail-qa-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--color-primary);
     margin-bottom: 6px;
 }
 
@@ -930,7 +930,7 @@ function getNoteTypeIcon(type: NoteType): string {
 
 .note-detail-tag {
     padding: 4px 10px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-radius: 12px;
     font-size: 12px;
@@ -943,7 +943,7 @@ function getNoteTypeIcon(type: NoteType): string {
     padding: 6px 12px;
     background: var(--bg-tertiary);
     border-radius: 8px;
-    color: var(--primary-color);
+    color: var(--color-primary);
     font-size: 13px;
     cursor: pointer;
     transition: background 0.2s;
@@ -971,7 +971,7 @@ function getNoteTypeIcon(type: NoteType): string {
 .citation-badge {
     display: inline-block;
     padding: 2px 8px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-radius: 10px;
     font-size: 11px;
@@ -1033,7 +1033,7 @@ function getNoteTypeIcon(type: NoteType): string {
     display: inline-flex;
     align-items: center;
     padding: 4px 10px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-radius: 12px;
     font-size: 12px;

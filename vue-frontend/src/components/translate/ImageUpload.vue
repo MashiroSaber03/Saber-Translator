@@ -718,7 +718,7 @@ defineExpose({
 .drop-area.drag-over {
   border-color: #3498db;
   background-color: #ecf5fe;
-  box-shadow: 0 0 15px rgba(52, 152, 219, 0.3);
+  box-shadow: 0 0 15px rgb(52, 152, 219, 0.3);
 }
 
 .drop-area.loading {
@@ -740,7 +740,7 @@ defineExpose({
 }
 
 .select-link {
-  color: #3498db !important;
+  color: #3498db;
   cursor: pointer;
   text-decoration: underline;
   font-weight: bold;
@@ -748,7 +748,7 @@ defineExpose({
 }
 
 .select-link:hover {
-  color: #2572a4 !important;
+  color: #2572a4;
 }
 
 .separator {
@@ -825,11 +825,7 @@ defineExpose({
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 .loading-text {
   font-size: 14px;

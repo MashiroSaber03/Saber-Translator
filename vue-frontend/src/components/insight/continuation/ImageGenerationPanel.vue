@@ -247,7 +247,7 @@ watch(() => state.styleRefPages?.value, (newValue) => {
 }
 
 .image-generation-panel h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 20px;
   font-size: 18px;
   font-weight: 600;
 }
@@ -540,6 +540,6 @@ watch(() => state.styleRefPages?.value, (newValue) => {
 .prompt-input:focus {
   outline: none;
   border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgb(99, 102, 241, 0.1);
 }
 </style>

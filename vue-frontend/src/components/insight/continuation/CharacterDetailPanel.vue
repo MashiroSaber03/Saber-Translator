@@ -163,7 +163,7 @@ defineEmits<{
 }
 
 .detail-info h4 {
-  margin: 0 0 4px 0;
+  margin: 0 0 4px;
   font-size: 18px;
   font-weight: 600;
   color: #1a1a2e;
@@ -198,16 +198,13 @@ defineEmits<{
 .toggle-switch .toggle-slider {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: #cbd5e1;
   transition: 0.3s;
   border-radius: 22px;
 }
 
-.toggle-switch .toggle-slider:before {
+.toggle-switch .toggle-slider::before {
   position: absolute;
   content: "";
   height: 16px;
@@ -217,14 +214,14 @@ defineEmits<{
   background-color: white;
   transition: 0.3s;
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.2);
 }
 
 .toggle-switch input:checked + .toggle-slider {
   background: linear-gradient(135deg, #10b981, #059669);
 }
 
-.toggle-switch input:checked + .toggle-slider:before {
+.toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(18px);
 }
 
@@ -240,13 +237,13 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgb(0, 0, 0, 0.08);
 }
 
 .icon-btn-lg:hover {
   background: #f0f2ff;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.12);
 }
 
 .icon-btn-lg.danger:hover {

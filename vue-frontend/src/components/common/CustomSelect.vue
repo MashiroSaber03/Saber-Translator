@@ -7,17 +7,15 @@
     class="custom-select" 
     :class="{ open: isOpen, disabled: disabled }"
     ref="selectRef"
-    style="color: #1f2430;"
   >
     <!-- 选择框显示区域 -->
     <div 
       class="custom-select-trigger" 
       @click="toggleDropdown"
       :title="title"
-      style="background: #fff; color: #1f2430;"
     >
-      <span class="custom-select-value" style="color: #1f2430;">{{ displayValue }}</span>
-      <span class="custom-select-arrow" style="color: #666;">
+      <span class="custom-select-value">{{ displayValue }}</span>
+      <span class="custom-select-arrow">
         <svg viewBox="0 0 12 12" width="12" height="12">
           <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" />
         </svg>
@@ -217,8 +215,8 @@ onUnmounted(() => {
 .custom-select {
   position: relative;
   min-width: 160px;
-  font-size: 13px !important;
-  color: #1f2430 !important;
+  font-size: 13px;
+  color: #1f2430;
 }
 
 .custom-select-trigger {
@@ -229,8 +227,8 @@ onUnmounted(() => {
   padding: 0 10px;
   border: 1px solid #cfd6e4;
   border-radius: 8px;
-  background: #ffffff !important;
-  color: #1f2430 !important;
+  background: #ffffff;
+  color: #1f2430;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -254,12 +252,12 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1f2430 !important;
+  color: #1f2430;
 }
 
 .custom-select-arrow {
   margin-left: 8px;
-  color: #666666 !important;
+  color: #666666;
   transition: transform 0.2s;
 }
 
@@ -271,25 +269,25 @@ onUnmounted(() => {
   position: fixed; /* 改为 fixed 以配合 Teleport */
   /* top, left, width 由 JS 动态计算 */
   margin-top: 0; /* JS计算位置时已包含偏移 */
-  background: #ffffff !important;
+  background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 20000; /* 确保高于模态框 (10002) */
   max-height: 300px;
   overflow-y: auto;
-  color: #1f2430 !important;
+  color: #1f2430;
 }
 
 .custom-select-options {
   padding: 4px 0;
-  background: #ffffff !important;
-  color: #1f2430 !important;
+  background: #ffffff;
+  color: #1f2430;
 }
 
 .custom-select-group {
   margin-bottom: 4px;
-  background: #ffffff !important;
+  background: #ffffff;
 }
 
 .custom-select-group:last-child {
@@ -300,8 +298,8 @@ onUnmounted(() => {
   padding: 8px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #666666 !important;
-  background: #f5f5f5 !important;
+  color: #666666;
+  background: #f5f5f5;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -309,19 +307,19 @@ onUnmounted(() => {
 .custom-select-option {
   padding: 8px 12px;
   cursor: pointer;
-  color: #1f2430 !important;
-  background: #ffffff !important;
+  color: #1f2430;
+  background: #ffffff;
   transition: background 0.15s;
 }
 
 .custom-select-option:hover {
-  background: #e3f2fd !important;
-  color: #1f2430 !important;
+  background: #e3f2fd;
+  color: #1f2430;
 }
 
 .custom-select-option.selected {
-  background: #e8edff !important;
-  color: #3040c2 !important;
+  background: #e8edff;
+  color: #3040c2;
   font-weight: 500;
 }
 

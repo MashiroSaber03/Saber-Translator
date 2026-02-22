@@ -75,7 +75,7 @@ defineEmits<{
 
 .character-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.1);
 }
 
 .character-card.selected {
@@ -126,7 +126,7 @@ defineEmits<{
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(99, 102, 241, 0.9);
+  background: rgb(99, 102, 241, 0.9);
   color: white;
   padding: 4px 8px;
   border-radius: 12px;
@@ -136,18 +136,15 @@ defineEmits<{
 
 .disabled-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .disabled-overlay span {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgb(255, 255, 255, 0.9);
   padding: 6px 12px;
   border-radius: 6px;
   font-weight: 600;
@@ -187,7 +184,7 @@ defineEmits<{
 
 .edit-btn:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgb(0, 0, 0, 0.05);
 }
 
 .character-aliases {

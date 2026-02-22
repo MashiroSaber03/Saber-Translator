@@ -38,17 +38,14 @@ withDefaults(defineProps<Props>(), {
 /* 完全复刻原版进度条样式 */
 
 .translation-progress-bar {
-  margin-top: 20px;
-  margin-bottom: 20px;
+  margin: 20px auto;
   padding: 20px;
   border: none;
   border-radius: 8px;
   background-color: #f8fafc;
   text-align: center;
   width: 85%;
-  margin-left: auto;
-  margin-right: auto;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgb(0,0,0,0.05);
 }
 
 .progress-bar-label {
@@ -64,7 +61,7 @@ withDefaults(defineProps<Props>(), {
   background-color: #edf2f7;
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: inset 0 1px 3px rgb(0,0,0,0.1);
 }
 
 .progress-bar .progress {
@@ -76,20 +73,17 @@ withDefaults(defineProps<Props>(), {
   position: relative;
 }
 
-.progress-bar .progress:after {
+.progress-bar .progress::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+  inset: 0;
   background-image: linear-gradient(
       -45deg,
-      rgba(255, 255, 255, .2) 25%,
+      rgb(255, 255, 255, .2) 25%,
       transparent 25%,
       transparent 50%,
-      rgba(255, 255, 255, .2) 50%,
-      rgba(255, 255, 255, .2) 75%,
+      rgb(255, 255, 255, .2) 50%,
+      rgb(255, 255, 255, .2) 75%,
       transparent 75%,
       transparent
   );
@@ -103,6 +97,7 @@ withDefaults(defineProps<Props>(), {
   0% {
     background-position: 0 0;
   }
+
   100% {
     background-position: 30px 30px;
   }

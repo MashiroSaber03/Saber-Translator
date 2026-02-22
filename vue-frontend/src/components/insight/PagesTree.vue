@@ -326,9 +326,9 @@ watch(
 /* ==================== CSS变量 ==================== */
 .pages-tree-section {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
-  --bg-hover: rgba(99, 102, 241, 0.1);
+  --bg-hover: rgb(99, 102, 241, 0.1);
   --text-primary: #1a202c;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
@@ -468,7 +468,7 @@ watch(
 }
 
 .tree-chapter-header.active {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgb(99, 102, 241, 0.1);
 }
 
 .tree-expand-icon {
@@ -536,7 +536,7 @@ watch(
 }
 
 .btn-reanalyze-chapter:hover {
-    opacity: 1 !important;
+    opacity: 1;
 }
 
 .tree-pages-grid {
@@ -568,8 +568,8 @@ watch(
 }
 
 .tree-page-item.selected {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgb(99, 102, 241, 0.2);
 }
 
 .tree-page-item.analyzed::after {
@@ -601,7 +601,7 @@ watch(
     left: 0;
     right: 0;
     padding: 2px 4px;
-    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    background: linear-gradient(transparent, rgb(0,0,0,0.7));
     color: white;
     font-size: 10px;
     text-align: center;

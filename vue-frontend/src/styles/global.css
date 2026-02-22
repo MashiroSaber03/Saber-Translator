@@ -49,7 +49,6 @@
   /* ===================================
      变量别名层 - 确保兼容性
      =================================== */
-  --primary-color: var(--color-primary);
   --error-color: var(--color-danger);
   --success-color: var(--color-success);
   --warning-color: var(--color-warning);
@@ -77,6 +76,30 @@
   --transition-fast: 0.2s ease;
   --transition-normal: 0.3s ease;
   --transition-slow: 0.5s ease;
+
+  /* z-index 分层体系 */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-sidebar: 300;
+  --z-overlay: 1000;
+  --z-modal: 1100;
+  --z-popover: 1200;
+  --z-toast: 1300;
+
+  /* 字体族 */
+  --font-sans: 'Arial', sans-serif;
+  --font-mono: 'Consolas', 'Monaco', monospace;
+  --font-jp: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
+
+  /*
+   * 响应式断点参考（统一使用 width <= Npx 语法）
+   * --bp-sm:   480px   小屏手机
+   * --bp-md:   768px   平板（最常用）
+   * --bp-lg:   900px   中屏
+   * --bp-xl:   1024px  大平板
+   * --bp-2xl:  1200px  桌面
+   */
 
   /* 书架页面变量 */
   --header-height: 64px;
@@ -142,6 +165,16 @@ body {
 }
 
 /* 关键帧动画 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0
@@ -178,6 +211,18 @@ body {
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(53, 152, 219, 0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
@@ -380,125 +425,6 @@ footer {
   line-height: 1;
 }
 
-/* ===================================
-   通用模态框样式 (.modal 体系)
-   迁移自 bookshelf.css / modals.css
-   =================================== */
-
-.modal {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1000;
-}
-
-.modal.active {
-  display: block;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-}
-
-.modal-content {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--card-bg, #ffffff);
-  border-radius: var(--border-radius-lg, 16px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  z-index: 1001;
-  animation: modalSlideIn 0.3s ease;
-}
-
-.modal-large {
-  max-width: 700px;
-}
-
-.modal-small {
-  max-width: 400px;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -48%);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
-  flex-shrink: 0;
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary, #333);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  color: var(--text-secondary, #777);
-  cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: var(--hover-bg, #f0f4f8);
-  color: var(--text-primary, #333);
-}
-
-.modal-body {
-  padding: 24px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border-color, #e2e8f0);
-  flex-shrink: 0;
-}
 
 /* ===================================
    通用表单样式
@@ -546,32 +472,6 @@ footer {
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-/* ===================================
-   章节拖拽排序样式
-   迁移自 bookshelf.css
-   =================================== */
-
-.chapter-drag-handle {
-  cursor: grab;
-  padding: 4px 8px;
-  color: var(--text-secondary, #777);
-  font-size: 1.2rem;
-  user-select: none;
-  transition: color 0.2s;
-}
-
-.chapter-drag-handle:hover {
-  color: var(--text-primary, #333);
-}
-
-.chapter-item.dragging {
-  opacity: 0.5;
-  background: var(--border-color, #e2e8f0);
-}
-
-.chapter-item.drag-over {
-  border-top: 2px solid #667eea;
-}
 
 /* ===================================
    标签相关样式
@@ -756,120 +656,32 @@ footer {
 }
 
 /* ===================================
-   书架页面头部全局样式
-   注意：使用 .bookshelf-page 限定作用域，避免影响其他页面
+   设置按钮高亮引导动画
+   由 useValidation.ts 和 FirstTimeGuide.vue 共用
    =================================== */
 
-.bookshelf-page .app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 0 24px;
-  height: 64px;
-  box-shadow: 0 2px 20px rgba(102, 126, 234, 0.3);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  max-width: none;
-  width: 100%;
-  margin: 0;
+@keyframes settingsHighlight {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(74, 144, 217, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgb(74, 144, 217, 0);
+  }
 }
 
-.bookshelf-page .header-content {
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-  border-radius: 0;
+.settings-highlight {
+  animation: settingsHighlight 1.5s ease-in-out infinite;
 }
 
-.bookshelf-page .logo-container a {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-  color: white;
-}
+/* ===================================
+   body 级全局 cursor 样式
+   从 EditWorkspace.vue scoped CSS 迁出（scoped 中无法匹配 body）
+   =================================== */
 
-.bookshelf-page .app-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  margin-right: 0;
-}
-
-.bookshelf-page .app-name {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: white;
-  letter-spacing: -0.5px;
-}
-
-.bookshelf-page .header-links {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.bookshelf-page .lan-access-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.95);
-  font-size: 0.85rem;
-  background: rgba(255, 255, 255, 0.18);
-  padding: 6px 12px;
-  border-radius: 20px;
-  backdrop-filter: blur(4px);
-  font-family: 'Consolas', 'Monaco', monospace;
-}
-
-.bookshelf-page .tutorial-link,
-.bookshelf-page .github-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.9);
-  text-decoration: none;
-  font-size: 0.9rem;
-  padding: 6px 12px;
-  border-radius: 6px;
-  transition: all 0.2s;
-  background-color: transparent;
-}
-
-.bookshelf-page .tutorial-link:hover,
-.bookshelf-page .github-link:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
-}
-
-.bookshelf-page .github-icon {
-  width: 20px;
-  height: 20px;
-}
-
-.bookshelf-page .theme-toggle {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  border-radius: 50%;
-  width: 38px;
-  height: 38px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  font-size: 1.2rem;
-}
-
-.bookshelf-page .theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: rotate(15deg);
+body.middle-button-drawing,
+body.middle-button-drawing * {
+  cursor: crosshair !important;
 }

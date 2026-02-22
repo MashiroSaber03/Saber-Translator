@@ -509,9 +509,9 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 /* ==================== CSS变量 ==================== */
 .timeline-tab {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
-  --bg-hover: rgba(99, 102, 241, 0.1);
+  --bg-hover: rgb(99, 102, 241, 0.1);
   --text-primary: #1a202c;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
@@ -544,7 +544,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .btn-primary {
-  background: var(--primary-color);
+  background: var(--color-primary);
   color: white;
 }
 
@@ -633,7 +633,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 .error-message {
   font-size: 12px;
   color: var(--danger, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+  background: rgb(239, 68, 68, 0.1);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
@@ -656,9 +656,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin: 0 auto 12px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 /* 空状态 */
 .timeline-empty-state {
@@ -672,13 +670,13 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-empty-state h4 {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   font-size: 18px;
 }
 
 .timeline-empty-state p {
   color: var(--text-secondary);
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
 }
 
 /* 工具栏 */
@@ -704,7 +702,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .stat-badge.cached {
-  background: rgba(34, 197, 94, 0.1);
+  background: rgb(34, 197, 94, 0.1);
   color: var(--success, #22c55e);
 }
 
@@ -736,7 +734,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-summary-card h4 {
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   font-size: 16px;
   font-weight: 600;
 }
@@ -756,7 +754,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-summary-card .theme-tag {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
   padding: 4px 10px;
   border-radius: 20px;
   font-size: 12px;
@@ -771,7 +769,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   padding-bottom: 8px;
   border-bottom: 2px solid var(--primary-color, #6366f1);
   display: inline-block;
@@ -784,7 +782,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 .characters-section h4 {
   font-size: 14px;
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
 }
 
 .characters-grid {
@@ -872,7 +870,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
 }
 
 .thread-intro {
@@ -887,7 +885,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 .plot-arcs-section h4 {
   font-size: 14px;
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
 }
 
 .plot-arcs-list {
@@ -1048,7 +1046,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 /* 事件列表 */
 .timeline-events-list {
-  margin: 10px 0 0 0;
+  margin: 10px 0 0;
   padding: 10px 0 0 16px;
   border-top: 1px dashed var(--border-color);
   list-style: disc;
@@ -1087,7 +1085,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid currentColor;
+  border: 2px solid currentcolor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1146,16 +1144,16 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: var(--color-primary);
     border: 3px solid var(--bg-primary);
-    box-shadow: 0 0 0 2px var(--primary-color);
+    box-shadow: 0 0 0 2px var(--color-primary);
     z-index: 1;
 }
 
 .timeline-node-line {
     flex: 1;
     width: 2px;
-    background: linear-gradient(180deg, var(--primary-color), var(--border-color));
+    background: linear-gradient(180deg, var(--color-primary), var(--border-color));
     margin-top: 4px;
 }
 
@@ -1174,7 +1172,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 .timeline-card:hover {
     transform: translateX(4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.1);
 }
 
 .timeline-card-header {
@@ -1253,7 +1251,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: var(--color-primary);
 }
 
 .timeline-event-item:not(:last-child) {
@@ -1310,7 +1308,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-summary-card {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--primary-dark) 100%);
     color: white;
     border-radius: 12px;
     padding: 20px;
@@ -1318,7 +1316,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-summary-card h4 {
-    margin: 0 0 12px 0;
+    margin: 0 0 12px;
     font-size: 16px;
     font-weight: 600;
 }
@@ -1344,7 +1342,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-summary-card .theme-tag {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgb(255, 255, 255, 0.2);
     padding: 4px 10px;
     border-radius: 20px;
     font-size: 12px;
@@ -1358,9 +1356,9 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 16px 0;
+    margin: 0 0 16px;
     padding-bottom: 8px;
-    border-bottom: 2px solid var(--primary-color);
+    border-bottom: 2px solid var(--color-primary);
     display: inline-block;
 }
 
@@ -1377,7 +1375,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .timeline-section h4.collapsible:hover {
-    color: var(--primary-color);
+    color: var(--color-primary);
 }
 
 .collapse-icon {
@@ -1395,14 +1393,14 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     background: var(--bg-secondary);
     border-radius: 12px;
     padding: 16px;
-    border-left: 4px solid var(--primary-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border-left: 4px solid var(--color-primary);
+    box-shadow: 0 2px 8px rgb(0, 0, 0, 0.05);
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .story-arc-card:hover {
     transform: translateX(4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.1);
 }
 
 .story-arc-card.mood-紧张 { border-left-color: #ef4444; }
@@ -1437,7 +1435,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     font-size: 14px;
     color: var(--text-secondary);
     line-height: 1.5;
-    margin: 0 0 10px 0;
+    margin: 0 0 10px;
 }
 
 .arc-mood {
@@ -1462,7 +1460,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 }
 
 .arc-events ul {
-    margin: 8px 0 0 0;
+    margin: 8px 0 0;
     padding-left: 20px;
     color: var(--text-secondary);
 }
@@ -1487,7 +1485,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     background: var(--bg-secondary);
     border-radius: 12px;
     padding: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgb(0, 0, 0, 0.05);
     transition: transform 0.2s;
 }
 
@@ -1506,13 +1504,13 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     font-size: 13px;
     color: var(--text-secondary);
     line-height: 1.5;
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
 }
 
 .character-arc {
     font-size: 13px;
     color: var(--text-secondary);
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
 }
 
 .first-appear {
@@ -1570,7 +1568,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     font-size: 13px;
     color: var(--text-secondary);
     line-height: 1.5;
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
 }
 
 .thread-intro {
@@ -1605,7 +1603,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 .event-item.importance-critical {
     border-left: 3px solid #dc2626;
-    background: rgba(239, 68, 68, 0.05);
+    background: rgb(239, 68, 68, 0.05);
 }
 
 .event-pages {
@@ -1627,8 +1625,8 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 .event-chars {
     font-size: 11px;
-    color: var(--primary-color);
-    background: rgba(99, 102, 241, 0.1);
+    color: var(--color-primary);
+    background: rgb(99, 102, 241, 0.1);
     padding: 2px 8px;
     border-radius: 8px;
     white-space: nowrap;

@@ -259,17 +259,5 @@ defineExpose({
   cursor: pointer;
 }
 
-/* 设置按钮高亮引导动画 */
-@keyframes settingsHighlight {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(74, 144, 217, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(74, 144, 217, 0);
-  }
-}
-
-:global(.settings-highlight) {
-  animation: settingsHighlight 1.5s ease-in-out infinite;
-}
+/* .settings-highlight 及 @keyframes settingsHighlight 已迁移到 global.css */
 </style>

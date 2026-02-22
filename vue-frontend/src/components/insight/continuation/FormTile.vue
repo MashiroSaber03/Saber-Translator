@@ -81,11 +81,11 @@ function handleUpload(event: Event) {
 <style scoped>
 /* 卡片容器 */
 .form-tile {
-  background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
+  background: linear-gradient(135deg, #fff 0%, #f8f9ff 100%);
   border-radius: 16px;
   overflow: hidden;
   border: 1.5px solid #e8eaf6;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 2px 8px rgb(99, 102, 241, 0.08);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
@@ -93,7 +93,7 @@ function handleUpload(event: Event) {
 
 .form-tile:hover {
   border-color: #c7d2fe;
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.16);
+  box-shadow: 0 8px 24px rgb(99, 102, 241, 0.16);
   transform: translateY(-2px);
 }
 
@@ -147,7 +147,7 @@ function handleUpload(event: Event) {
 .upload-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.92), rgba(124, 58, 237, 0.92));
+  background: linear-gradient(135deg, rgb(99, 102, 241, 0.92), rgb(124, 58, 237, 0.92));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -161,7 +161,7 @@ function handleUpload(event: Event) {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  text-shadow: 0 1px 2px rgb(0, 0, 0, 0.1);
 }
 
 .form-image-section:hover .upload-overlay {
@@ -170,7 +170,7 @@ function handleUpload(event: Event) {
 
 /* 内容区域 */
 .form-content {
-  padding: 14px 12px 12px 12px;
+  padding: 14px 12px 12px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -259,16 +259,13 @@ function handleUpload(event: Event) {
 .toggle-track {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: linear-gradient(135deg, #cbd5e1, #94a3b8);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 18px;
 }
 
-.toggle-track:before {
+.toggle-track::before {
   position: absolute;
   content: "";
   height: 14px;
@@ -278,14 +275,14 @@ function handleUpload(event: Event) {
   background: white;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 4px rgb(0, 0, 0, 0.2);
 }
 
 .toggle-control input:checked + .toggle-track {
   background: linear-gradient(135deg, #10b981, #059669);
 }
 
-.toggle-control input:checked + .toggle-track:before {
+.toggle-control input:checked + .toggle-track::before {
   transform: translateX(14px);
 }
 

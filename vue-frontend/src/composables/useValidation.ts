@@ -466,14 +466,12 @@ export function useValidation() {
 
     isSettingsButtonHighlighted.value = true
 
-    // 添加动画效果
-    settingsBtn.style.animation = 'settingsBtnPulse 0.5s ease-in-out 3'
-    settingsBtn.style.boxShadow = '0 0 10px var(--primary-color, #4a90d9)'
+    // 使用 CSS 类切换代替直接操作 style（样式定义在 global.css 或 AppHeader 中）
+    settingsBtn.classList.add('settings-highlight')
 
     // 3秒后移除效果
     setTimeout(() => {
-      settingsBtn.style.animation = ''
-      settingsBtn.style.boxShadow = ''
+      settingsBtn.classList.remove('settings-highlight')
       isSettingsButtonHighlighted.value = false
     }, 3000)
   }

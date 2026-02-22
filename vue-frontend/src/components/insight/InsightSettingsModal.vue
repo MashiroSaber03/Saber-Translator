@@ -353,7 +353,7 @@ onMounted(async () => {
 .insight-settings-modal .form-group textarea:focus {
   outline: none;
   border-color: var(--primary, #6366f1);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgb(99, 102, 241, 0.1);
 }
 
 .insight-settings-modal .form-hint {
@@ -498,7 +498,7 @@ onMounted(async () => {
 .insight-settings-modal .prompt-editor {
   width: 100%;
   min-height: 200px;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: Consolas, Monaco, monospace;
   font-size: 13px;
   line-height: 1.5;
   padding: 12px;
@@ -590,7 +590,7 @@ onMounted(async () => {
 .insight-settings-modal .prompt-type-badge {
   font-size: 11px;
   padding: 2px 6px;
-  background: rgba(99, 102, 241, 0.1);
+  background: rgb(99, 102, 241, 0.1);
   color: var(--primary, #6366f1);
   border-radius: 4px;
   white-space: nowrap;
@@ -625,7 +625,7 @@ onMounted(async () => {
 }
 
 .insight-settings-modal .batch-info-box h4 {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary, #333);
@@ -651,9 +651,9 @@ onMounted(async () => {
 .insight-settings-modal .batch-estimate-box {
   margin-top: 12px;
   padding: 10px 12px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+  background: linear-gradient(135deg, rgb(99, 102, 241, 0.1), rgb(99, 102, 241, 0.05));
   border-radius: 6px;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid rgb(99, 102, 241, 0.2);
 }
 
 .insight-settings-modal .batch-estimate-box p {

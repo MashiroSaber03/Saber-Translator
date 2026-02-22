@@ -19,6 +19,7 @@ import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
+import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
 
@@ -373,24 +374,7 @@ function closeChapterSelectModal(): void {
 // 生命周期
 // ============================================================
 
-// 保存 body 原始样式（用于页面卸载时恢复）
-let originalBodyPadding = ''
-let originalBodyMargin = ''
-let originalBodyOverflow = ''
-
 onMounted(async () => {
-  // 【关键修复4】移除 global.css 中 body 的 20px 左右内边距
-  // 保存原始样式以便离开页面时恢复
-  const bodyStyle = document.body.style
-  originalBodyPadding = bodyStyle.padding
-  originalBodyMargin = bodyStyle.margin
-  originalBodyOverflow = bodyStyle.overflow
-  
-  // 强制移除 body 的内外边距，并禁止整体滚动
-  bodyStyle.padding = '0'
-  bodyStyle.margin = '0'
-  bodyStyle.overflow = 'hidden'
-  
   // 加载书籍列表
   await bookshelfStore.fetchBooks()
 
@@ -403,12 +387,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopStatusPolling()
-  
-  // 【关键修复4】恢复 body 的原始样式
-  const bodyStyle = document.body.style
-  bodyStyle.padding = originalBodyPadding
-  bodyStyle.margin = originalBodyMargin
-  bodyStyle.overflow = originalBodyOverflow
 })
 
 // 监听分析状态变化
@@ -424,26 +402,18 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 <template>
   <div class="insight-page">
     <!-- 页面头部 -->
-    <header class="app-header">
-      <div class="header-content">
-        <div class="logo-container">
-          <router-link to="/" title="书架首页">
-            <img :src="'/pic/logo.png'" alt="Saber-Translator Logo" class="app-logo">
-            <span class="app-name">Saber-Translator</span>
-          </router-link>
-        </div>
-        <div class="header-links">
-          <router-link to="/" class="nav-link">📚 书架</router-link>
-          <a href="javascript:void(0)" class="nav-link" @click="goToTranslate">🌐 翻译</a>
-          <span class="nav-link active">🔍 分析</span>
-          <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
-          <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
-          <button id="themeToggle" class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
-            <span class="theme-icon">☀️</span>
-          </button>
-        </div>
-      </div>
-    </header>
+    <AppHeader variant="insight" logo-title="书架首页">
+      <template #header-links>
+        <router-link to="/" class="nav-link">📚 书架</router-link>
+        <a href="javascript:void(0)" class="nav-link" @click="goToTranslate">🌐 翻译</a>
+        <span class="nav-link active">🔍 分析</span>
+        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
+        <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
+        <button id="themeToggle" class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <span class="theme-icon">☀️</span>
+        </button>
+      </template>
+    </AppHeader>
 
     <!-- 主内容区 -->
     <main class="insight-main">
@@ -615,85 +585,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   margin: 0;
   /* 【修复3 + 优化】覆盖 global.css，并为 fixed header 预留空间 */
   /* 合并 padding 声明：top 56px（为 header 预留空间），left/right/bottom 0（覆盖 global.css） */
-  padding: 56px 0 0 0 !important;
+  padding: 56px 0 0 0;
   /* 使用 Flex 布局以支持子元素的高度计算 */
   display: flex;
   flex-direction: column;
-  
-  /* CSS变量定义 */
-  --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f1f5f9;
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --text-tertiary: #94a3b8;
-  --border-color: #e2e8f0;
-  --primary-color: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-  --bg-hover: rgba(99, 102, 241, 0.1);
 }
 
-/* Header样式 */
-.insight-page :deep(.app-header) {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 56px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    max-width: none;
-    width: auto;
-    margin: 0;
-}
-
-.insight-page :deep(.header-content) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    max-width: 100%;
-    padding: 0;
-    background: transparent;
-    border-radius: 0;
-    box-shadow: none;
-}
-
-.insight-page :deep(.logo-container a) {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-decoration: none;
-    color: var(--text-primary);
-}
-
-.insight-page :deep(.app-logo) {
-    height: 32px;
-    width: auto;
-    max-height: 32px;
-}
-
-.insight-page :deep(.app-name) {
-    font-weight: 600;
-    font-size: 18px;
-}
-
-.insight-page :deep(.header-links) {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.insight-page :deep(.nav-link) {
+/* Header 内 slot 元素样式（slot 内容保留父组件的 scoped 属性，无需 :deep()） */
+.nav-link {
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 14px;
@@ -702,17 +601,17 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     transition: all 0.2s;
 }
 
-.insight-page :deep(.nav-link:hover) {
+.nav-link:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
 }
 
-.insight-page :deep(.nav-link.active) {
-    background: var(--primary-color);
+.nav-link.active {
+    background: var(--color-primary);
     color: white;
 }
 
-.insight-page :deep(.theme-toggle) {
+.theme-toggle {
     background: transparent;
     border: none;
     cursor: pointer;
@@ -799,15 +698,15 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .mobile-nav-btn:hover {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .mobile-nav-btn.active {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .tab-btn {
@@ -830,7 +729,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .tab-btn.active {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 
@@ -864,7 +763,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 .form-select:focus,
 .form-input:focus {
     outline: none;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .form-label {
@@ -922,7 +821,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .btn-primary {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 
@@ -983,14 +882,12 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     width: 48px;
     height: 48px;
     border: 4px solid var(--border-color);
-    border-top-color: var(--primary-color);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 .loading-text {
     margin-top: 16px;
@@ -1005,7 +902,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 /* 移动端导航按钮 */
-@media (min-width: 769px) {
+@media (width > 768px) {
   .mobile-nav-btn {
     display: none;
   }
@@ -1013,12 +910,12 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 /* ==================== 书籍信息区域样式 - 与原版一致的垂直居中布局 ==================== */
 .book-info-section {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  padding: 20px 16px !important;
-  text-align: center !important;
-  border-bottom: 1px solid var(--border-color) !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .book-cover-wrapper {
@@ -1051,33 +948,33 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .book-title {
-  font-size: 16px !important;
-  font-weight: 600 !important;
-  color: var(--text-primary) !important;
-  margin: 0 0 10px 0 !important;
-  text-align: center !important;
-  max-width: 100% !important;
-  word-break: break-word !important;
-  line-height: 1.4 !important;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 10px 0;
+  text-align: center;
+  max-width: 100%;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .book-meta {
-  display: flex !important;
-  justify-content: center !important;
-  gap: 16px !important;
-  font-size: 13px !important;
-  color: var(--text-secondary) !important;
-  flex-wrap: wrap !important;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
 }
 
 .meta-item {
-  display: flex !important;
-  align-items: center !important;
-  gap: 4px !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .meta-icon {
-  font-size: 14px !important;
+  font-size: 14px;
 }
 
 /* ==================== 侧边栏区域通用样式 ==================== */
@@ -1092,7 +989,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 /* ==================== v-show修复：标签页内容显示 ==================== */
 .tab-content[style*="display: none"] {
-  display: none !important;
+  display: none;
 }
 
 .tab-content:not([style*="display: none"]) {

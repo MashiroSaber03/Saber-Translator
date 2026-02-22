@@ -705,8 +705,8 @@ function handleAiVisionPromptSelect(content: string, name: string) {
 
 .settings-test-btn:hover:not(:disabled) {
   background-color: var(--bg-hover);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .settings-test-btn:disabled {
@@ -737,9 +737,9 @@ function handleAiVisionPromptSelect(content: string, name: string) {
 }
 
 .fetch-models-btn:hover:not(:disabled) {
-  background-color: var(--primary-color);
-  color: #ffffff;
-  border-color: var(--primary-color);
+  background-color: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 /* PaddleOCR-VL 语言选择器 */

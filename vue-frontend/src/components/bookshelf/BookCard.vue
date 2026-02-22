@@ -91,7 +91,7 @@ function handleImageError(event: Event) {
     background: var(--card-bg);
     border-radius: var(--border-radius-md, 12px);
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.08);
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
@@ -109,11 +109,11 @@ function handleImageError(event: Event) {
 
 .book-card:hover {
     transform: translateY(-6px) scale(1.02);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 12px 32px rgb(0, 0, 0, 0.15);
 }
 
 .book-card:hover::after {
-    border-color: rgba(102, 126, 234, 0.5);
+    border-color: rgb(102, 126, 234, 0.5);
 }
 
 .book-card:active {
@@ -148,7 +148,7 @@ function handleImageError(event: Event) {
     content: '查看详情';
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgb(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -170,7 +170,7 @@ function handleImageError(event: Event) {
     left: 50%;
     transform: translate(-50%, -50%);
     font-size: 3rem;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgb(255, 255, 255, 0.8);
 }
 
 /* 书籍信息 */
@@ -194,7 +194,6 @@ function handleImageError(event: Event) {
 
 .book-chapter-count {
     font-size: 0.8rem;
-    margin: 0;
     color: var(--text-secondary);
     margin: 4px 0;
 }

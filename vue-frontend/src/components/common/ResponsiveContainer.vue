@@ -235,7 +235,7 @@ provide('responsive', {
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgb(0, 0, 0, 0.1);
 }
 
 .mobile-nav-toggle:hover {
@@ -254,12 +254,9 @@ provide('responsive', {
 /* 遮罩层 */
 .sidebar-backdrop {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 99;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(0, 0, 0, 0.5);
 }
 
 /* 过渡动画 */
@@ -276,7 +273,7 @@ provide('responsive', {
 /* ==================== 响应式布局 ==================== */
 
 /* 平板端（768px - 1024px） */
-@media (max-width: 1024px) {
+@media (width <= 1024px) {
   .mobile-nav-toggle {
     display: flex;
     align-items: center;
@@ -296,15 +293,15 @@ provide('responsive', {
   }
   
   .responsive-main {
-    margin-left: 0 !important;
-    margin-right: 0 !important;
+    margin-left: 0;
+    margin-right: 0;
   }
 }
 
 /* 移动端（< 768px） */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .responsive-sidebar {
-    width: 100% !important;
+    width: 100%;
     max-width: 320px;
   }
   
@@ -322,7 +319,7 @@ provide('responsive', {
 }
 
 /* 超小屏幕（< 480px） */
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .responsive-sidebar {
     max-width: 280px;
   }

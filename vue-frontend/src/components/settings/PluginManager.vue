@@ -309,16 +309,13 @@ onMounted(() => {
 .slider {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: var(--bg-tertiary);
   transition: 0.3s;
   border-radius: 22px;
 }
 
-.slider:before {
+.slider::before {
   position: absolute;
   content: '';
   height: 16px;
@@ -331,10 +328,10 @@ onMounted(() => {
 }
 
 input:checked + .slider {
-  background-color: var(--primary-color);
+  background-color: var(--color-primary);
 }
 
-input:checked + .slider:before {
+input:checked + .slider::before {
   transform: translateX(18px);
 }
 
@@ -354,11 +351,8 @@ input:checked + .slider:before {
 /* 配置模态框 */
 .plugin-config-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;

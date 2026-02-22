@@ -60,6 +60,7 @@ defineExpose({
 
 <style scoped>
 /* ============ Vue Toast 组件样式 ============ */
+
 /* 使用独特前缀避免与全局 CSS 冲突 */
 
 .vue-toast-container {
@@ -77,12 +78,12 @@ defineExpose({
 }
 
 .vue-toast-message {
-  background-color: rgba(0, 0, 0, 0.75);
+  background-color: rgb(0, 0, 0, 0.75);
   border-radius: 8px;
   padding: 12px 24px;
   padding-right: 36px;
   margin-bottom: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3);
   position: relative;
   max-width: 100%;
   pointer-events: auto;
@@ -93,19 +94,19 @@ defineExpose({
 }
 
 .vue-toast-info {
-  background-color: rgba(24, 144, 255, 0.85);
+  background-color: rgb(24, 144, 255, 0.85);
 }
 
 .vue-toast-success {
-  background-color: rgba(82, 196, 26, 0.85);
+  background-color: rgb(82, 196, 26, 0.85);
 }
 
 .vue-toast-warning {
-  background-color: rgba(250, 173, 20, 0.85);
+  background-color: rgb(250, 173, 20, 0.85);
 }
 
 .vue-toast-error {
-  background-color: rgba(255, 77, 79, 0.85);
+  background-color: rgb(255, 77, 79, 0.85);
 }
 
 .vue-toast-close {
@@ -117,7 +118,7 @@ defineExpose({
   border: none;
   font-size: 18px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
   line-height: 1;
   padding: 0;
   width: 20px;
@@ -154,6 +155,7 @@ defineExpose({
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -161,7 +163,7 @@ defineExpose({
 }
 
 /* 响应式适配 */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .vue-toast-container {
     bottom: 60px;
     max-width: 90%;

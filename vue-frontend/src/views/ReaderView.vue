@@ -270,6 +270,7 @@ watch(
 .reader-page {
     margin: 0;
     padding: 0;
+
     /* 优先使用阅读器设置的背景色 */
     background: var(--reader-bg-color, #1a1a2e);
     min-height: 100vh;
@@ -289,7 +290,7 @@ watch(
     justify-content: space-between;
     padding: 0 16px;
     z-index: 1000;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
 }
 
 .header-left,
@@ -310,7 +311,7 @@ watch(
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgb(255, 255, 255, 0.15);
     border: none;
     border-radius: 8px;
     color: white;
@@ -320,11 +321,11 @@ watch(
 }
 
 .header-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgb(255, 255, 255, 0.25);
 }
 
 .header-btn.primary {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgb(255, 255, 255, 0.9);
     color: #667eea;
 }
 
@@ -373,7 +374,7 @@ watch(
 /* 查看模式切换 */
 .view-mode-toggle {
     display: flex;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgb(255, 255, 255, 0.15);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -382,7 +383,7 @@ watch(
     padding: 8px 16px;
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(255, 255, 255, 0.7);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
@@ -393,13 +394,13 @@ watch(
 }
 
 .mode-btn.active {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgb(255, 255, 255, 0.9);
     color: #667eea;
     font-weight: 500;
 }
 
 /* ==================== 响应式设计 ==================== */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .header-btn .btn-text {
         display: none;
     }
@@ -422,7 +423,7 @@ watch(
     }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
     .reader-header {
         padding: 0 8px;
     }

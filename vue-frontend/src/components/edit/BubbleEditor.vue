@@ -1015,6 +1015,7 @@ onMounted(() => {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -1041,7 +1042,7 @@ onMounted(() => {
 .text-editor:focus {
   outline: none;
   border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+  box-shadow: 0 0 0 3px rgb(52, 152, 219, 0.15);
 }
 
 .original-editor {
@@ -1077,13 +1078,13 @@ onMounted(() => {
 }
 
 .apply-text-btn {
-  background: #27ae60 !important;
-  color: white !important;
-  border-color: #27ae60 !important;
+  background: #27ae60;
+  color: white;
+  border-color: #27ae60;
 }
 
 .apply-text-btn:hover {
-  background: #219a52 !important;
+  background: #219a52;
 }
 
 .keyboard-toggle-btn {
@@ -1097,7 +1098,7 @@ onMounted(() => {
   padding: 16px;
   background: #f5f6fb;
   border-radius: 10px;
-  border: 1px solid rgba(82, 92, 105, 0.12);
+  border: 1px solid rgb(82, 92, 105, 0.12);
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1109,10 +1110,10 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
-  background: #ffffff;
-  border: 1px solid rgba(96, 110, 140, 0.22);
+  background: #fff;
+  border: 1px solid rgb(96, 110, 140, 0.22);
   border-radius: 12px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 24px rgb(15, 23, 42, 0.12);
 }
 
 .toolbar-row {
@@ -1131,7 +1132,7 @@ onMounted(() => {
 .toolbar-row-bottom {
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid rgb(226, 232, 240, 0.9);
   border-radius: 10px;
   background: linear-gradient(180deg, #fbfcff 0%, #f4f6ff 100%);
 }
@@ -1158,7 +1159,7 @@ onMounted(() => {
 .toolbar-divider {
   width: 1px;
   height: 26px;
-  background: rgba(15, 23, 42, 0.08);
+  background: rgb(15, 23, 42, 0.08);
 }
 
 .toolbar-divider.vertical {
@@ -1197,7 +1198,7 @@ onMounted(() => {
 .toolbar-font-select:focus {
   outline: none;
   border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
+  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.18);
 }
 
 /* 字号输入 */
@@ -1216,7 +1217,7 @@ onMounted(() => {
 .toolbar-fontsize-input:focus {
   outline: none;
   border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.15);
+  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.15);
 }
 
 .toolbar-fontsize-btns {
@@ -1247,7 +1248,7 @@ onMounted(() => {
 .toolbar-btn {
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(119, 130, 161, 0.35);
+  border: 1px solid rgb(119, 130, 161, 0.35);
   border-radius: 8px;
   background: #fff;
   color: #3b3f4f;
@@ -1257,13 +1258,13 @@ onMounted(() => {
   justify-content: center;
   transition: all 0.12s;
   padding: 0;
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+  box-shadow: inset 0 -1px 0 rgb(0, 0, 0, 0.03);
 }
 
 .toolbar-btn:hover {
   border-color: #7d96ff;
   color: #2b4bff;
-  box-shadow: 0 2px 8px rgba(107, 125, 255, 0.25);
+  box-shadow: 0 2px 8px rgb(107, 125, 255, 0.25);
 }
 
 .toolbar-btn[data-active='true'],
@@ -1271,7 +1272,7 @@ onMounted(() => {
   background: linear-gradient(135deg, #e8edff, #d9e2ff);
   border-color: #5670ff;
   color: #3040c2;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgb(255, 255, 255, 0.7);
 }
 
 .toolbar-btn:active {
@@ -1306,7 +1307,7 @@ onMounted(() => {
   width: 26px;
   height: 6px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid rgb(0, 0, 0, 0.2);
 }
 
 .hidden-color-input {
@@ -1358,7 +1359,7 @@ onMounted(() => {
 .toolbar-inpaint-select:focus {
   outline: none;
   border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
+  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.18);
 }
 
 .toolbar-solid-color-options {
@@ -1394,7 +1395,7 @@ onMounted(() => {
 .toolbar-mini-input:focus {
   outline: none;
   border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.2);
+  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.2);
 }
 
 .toolbar-unit {
@@ -1504,7 +1505,7 @@ onMounted(() => {
 
 .btn-apply:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+  box-shadow: 0 4px 12px rgb(39, 174, 96, 0.3);
 }
 
 .btn-apply-all {
@@ -1515,7 +1516,7 @@ onMounted(() => {
 
 .btn-apply-all:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+  box-shadow: 0 4px 12px rgb(52, 152, 219, 0.3);
 }
 
 .btn-reset {

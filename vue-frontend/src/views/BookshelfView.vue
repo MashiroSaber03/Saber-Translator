@@ -15,6 +15,7 @@ import BookModal from '@/components/bookshelf/BookModal.vue'
 import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import AppHeader from '@/components/common/AppHeader.vue'
 import { showToast } from '@/utils/toast'
 
 const router = useRouter()
@@ -155,30 +156,22 @@ function showFeatureNotice() {
 <template>
   <div class="bookshelf-page">
     <!-- 页面头部 -->
-    <header class="app-header">
-      <div class="header-content">
-        <div class="logo-container">
-          <router-link to="/" title="书架首页">
-            <img src="/pic/logo.png" alt="Saber-Translator Logo" class="app-logo">
-            <span class="app-name">Saber-Translator</span>
-          </router-link>
-        </div>
-        <div class="header-links">
-          <span class="lan-access-info" title="其他设备可通过此地址访问">
-            <span class="lan-icon">🌐局域网设备可通过该网址访问</span>
-            <span id="lanUrl">{{ lanUrl }}</span>
-            <button class="copy-btn" title="复制地址" @click="copyLanUrl">📋</button>
-          </span>
-          <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
-          <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
-            <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
-          </a>
-          <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
-            <span class="theme-icon">☀️</span>
-          </button>
-        </div>
-      </div>
-    </header>
+    <AppHeader variant="bookshelf" logo-title="书架首页">
+      <template #header-links>
+        <span class="lan-access-info" title="其他设备可通过此地址访问">
+          <span class="lan-icon">🌐局域网设备可通过该网址访问</span>
+          <span id="lanUrl">{{ lanUrl }}</span>
+          <button class="copy-btn" title="复制地址" @click="copyLanUrl">📋</button>
+        </span>
+        <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
+        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
+          <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
+        </a>
+        <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <span class="theme-icon">☀️</span>
+        </button>
+      </template>
+    </AppHeader>
 
     <!-- 主内容区 -->
     <main class="bookshelf-main">
@@ -269,65 +262,8 @@ function showFeatureNotice() {
 <style scoped>
 /* ==================== 书架页面完整样式 - 完整迁移自 bookshelf.css ==================== */
 
-/* 页面头部样式 */
-.bookshelf-page :deep(.app-header) {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    padding: 0 24px !important;
-    height: 64px !important;
-    box-shadow: 0 2px 20px rgba(102, 126, 234, 0.3) !important;
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 100 !important;
-    display: flex !important;
-    align-items: center !important;
-    max-width: none !important;
-    width: 100% !important;
-    margin: 0 !important;
-}
-
-.bookshelf-page :deep(.header-content) {
-    max-width: 1400px;
-    width: 100%;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: transparent !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-}
-
-.bookshelf-page :deep(.logo-container a) {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-decoration: none;
-    color: white !important;
-}
-
-.bookshelf-page :deep(.app-logo) {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    margin-right: 0 !important;
-}
-
-.bookshelf-page :deep(.app-name) {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: white !important;
-    letter-spacing: -0.5px;
-}
-
-.bookshelf-page :deep(.header-links) {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.bookshelf-page :deep(.lan-access-info) {
+/* header 内 slot 元素样式（需要 :deep 因为元素在 AppHeader 子组件 slot 中渲染） */
+.lan-access-info {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -337,10 +273,42 @@ function showFeatureNotice() {
     padding: 6px 12px;
     border-radius: 20px;
     backdrop-filter: blur(4px);
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono, 'Consolas', 'Monaco', monospace);
 }
 
-.bookshelf-page :deep(.theme-toggle) {
+.tutorial-link {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.15);
+    transition: all 0.2s ease;
+}
+
+.tutorial-link:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.github-link {
+    display: flex;
+    align-items: center;
+    padding: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    transition: all 0.2s ease;
+}
+
+.github-link:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.github-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+}
+
+.theme-toggle {
     background: rgba(255, 255, 255, 0.2);
     border: none;
     border-radius: 50%;
@@ -353,7 +321,7 @@ function showFeatureNotice() {
     transition: all 0.2s ease;
 }
 
-.bookshelf-page :deep(.theme-toggle:hover) {
+.theme-toggle:hover {
     background: rgba(255, 255, 255, 0.3);
     transform: rotate(15deg);
 }
@@ -498,190 +466,5 @@ function showFeatureNotice() {
     margin: 0 0 24px 0;
 }
 
-/* 模态框通用样式 */
-.modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-    box-sizing: border-box;
-}
-
-.modal.active {
-    display: flex;
-    animation: modalFadeIn 0.25s ease;
-}
-
-@keyframes modalFadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-.modal-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-}
-
-.modal-content {
-    position: relative;
-    background: var(--card-bg);
-    border-radius: 16px;
-    width: 100%;
-    max-width: 480px;
-    max-height: calc(100vh - 32px);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.25);
-    animation: modalSlideUp 0.3s ease;
-}
-
-@keyframes modalSlideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.95);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-.modal-content.modal-large {
-    max-width: 800px;
-}
-
-.modal-content.modal-small {
-    max-width: 400px;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--card-bg);
-}
-
-.modal-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.modal-close {
-    background: var(--hover-bg);
-    border: none;
-    font-size: 1.3rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.modal-close:hover {
-    color: var(--text-primary);
-    background: var(--border-color);
-}
-
-.modal-body {
-    padding: 24px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 16px 24px;
-    border-top: 1px solid var(--border-color);
-    background: var(--card-bg);
-}
-
-/* 表单样式 */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    display: block;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 8px;
-}
-
-.form-group label .required {
-    color: #dc3545;
-}
-
-.form-group input[type="text"] {
-    width: 100%;
-    padding: 12px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 0.95rem;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    transition: border-color 0.2s;
-}
-
-.form-group input[type="text"]:focus {
-    outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-/* Toast通知样式 */
-.toast {
-    position: fixed;
-    top: 80px;
-    right: 20px;
-    z-index: 3000;
-    padding: 12px 20px;
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    animation: slideIn 0.3s ease;
-}
-
-.toast.success {
-    border-color: var(--success-color);
-}
-
-.toast.error {
-    border-color: var(--error-color);
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateX(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
+/* 模态框/表单/Toast 样式已迁移到 BaseModal + global.css */
 </style>

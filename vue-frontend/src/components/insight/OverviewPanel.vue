@@ -446,7 +446,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 /* ==================== CSS变量 ==================== */
 .overview-tab {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
   --text-primary: #1a202c;
   --text-secondary: #64748b;
@@ -517,13 +517,13 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .template-select:hover {
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .template-select:focus {
     outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgb(99, 102, 241, 0.2);
 }
 
 .card-header-actions {
@@ -540,23 +540,23 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .template-status.status-cached {
-    background: rgba(34, 197, 94, 0.1);
+    background: rgb(34, 197, 94, 0.1);
     color: #22c55e;
 }
 
 .template-status.status-empty {
-    background: rgba(156, 163, 175, 0.1);
+    background: rgb(156, 163, 175, 0.1);
     color: var(--text-tertiary);
 }
 
 .template-status.status-generating {
-    background: rgba(99, 102, 241, 0.1);
-    color: var(--primary-color);
+    background: rgb(99, 102, 241, 0.1);
+    color: var(--color-primary);
     animation: pulse 1.5s infinite;
 }
 
 .template-status.status-error {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgb(239, 68, 68, 0.1);
     color: #ef4444;
 }
 
@@ -568,13 +568,13 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .template-description {
     font-size: 12px;
     color: var(--text-tertiary);
-    margin: 0 0 12px 0;
+    margin: 0 0 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .placeholder-text.generating {
-    color: var(--primary-color);
+    color: var(--color-primary);
     animation: pulse 1.5s infinite;
 }
 
@@ -604,7 +604,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .btn-icon:hover {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 
@@ -623,7 +623,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 16px 0 8px 0;
+    margin: 16px 0 8px;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--border-color);
 }
@@ -636,7 +636,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 12px 0 6px 0;
+    margin: 12px 0 6px;
 }
 
 .markdown-content p {
@@ -667,7 +667,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .markdown-content blockquote {
     margin: 12px 0;
     padding: 8px 12px;
-    border-left: 3px solid var(--primary-color);
+    border-left: 3px solid var(--color-primary);
     background: var(--bg-tertiary);
     border-radius: 0 6px 6px 0;
 }
@@ -699,7 +699,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     display: block;
     font-size: 28px;
     font-weight: 700;
-    color: var(--primary-color);
+    color: var(--color-primary);
 }
 
 .stat-label {
@@ -745,14 +745,14 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .recent-page-item:hover {
-  background: var(--bg-hover, rgba(99, 102, 241, 0.1));
+  background: var(--bg-hover, rgb(99, 102, 241, 0.1));
   transform: translateX(4px);
 }
 
 .recent-page-item .page-number {
   font-size: 13px;
   font-weight: 500;
-  color: var(--primary-color);
+  color: var(--color-primary);
 }
 
 .recent-page-item .page-summary {

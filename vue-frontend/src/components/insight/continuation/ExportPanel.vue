@@ -114,7 +114,7 @@ async function clearAndRestart() {
 }
 
 .export-panel h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 20px;
   font-size: 18px;
   font-weight: 600;
 }
@@ -159,12 +159,12 @@ async function clearAndRestart() {
 .format-card:hover {
   border-color: var(--primary, #6366f1);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 4px 12px rgb(99, 102, 241, 0.1);
 }
 
 .format-card.selected {
   border-color: var(--primary, #6366f1);
-  background: rgba(99, 102, 241, 0.05);
+  background: rgb(99, 102, 241, 0.05);
 }
 
 .format-icon {

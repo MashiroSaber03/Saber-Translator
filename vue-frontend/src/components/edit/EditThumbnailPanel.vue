@@ -55,9 +55,9 @@ defineEmits<{
 .edit-thumbnails-panel {
   position: relative;
   width: auto;
-  background: rgba(0,0,0,0.3);
+  background: rgb(0,0,0,0.3);
   padding: 10px 15px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgb(255,255,255,0.1);
   flex-shrink: 0;
 }
 
@@ -65,8 +65,7 @@ defineEmits<{
   display: flex;
   flex-direction: row;
   gap: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto hidden;
   padding: 5px 0;
 }
 
@@ -75,12 +74,12 @@ defineEmits<{
 }
 
 .thumbnails-scroll::-webkit-scrollbar-track {
-  background: rgba(255,255,255,0.1);
+  background: rgb(255,255,255,0.1);
   border-radius: 3px;
 }
 
 .thumbnails-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.3);
+  background: rgb(255,255,255,0.3);
   border-radius: 3px;
 }
 
@@ -97,13 +96,13 @@ defineEmits<{
 }
 
 .edit-thumbnail-item:hover {
-  border-color: rgba(255,255,255,0.5);
+  border-color: rgb(255,255,255,0.5);
   transform: scale(1.05);
 }
 
 .edit-thumbnail-item.active {
   border-color: #667eea;
-  box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 0 10px rgb(102, 126, 234, 0.5);
 }
 
 .edit-thumbnail-item img {
@@ -116,7 +115,7 @@ defineEmits<{
   position: absolute;
   bottom: 2px;
   right: 2px;
-  background: rgba(0,0,0,0.7);
+  background: rgb(0,0,0,0.7);
   color: #fff;
   font-size: 10px;
   padding: 1px 4px;

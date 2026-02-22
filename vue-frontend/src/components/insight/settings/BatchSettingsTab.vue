@@ -133,21 +133,21 @@ defineExpose({ getConfig, syncFromStore })
     </div>
     
     <!-- 自定义层级编辑器 -->
-    <div v-if="showCustomLayersEditor" style="margin-top: 16px;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 14px;">自定义层级</label>
-      <div style="margin-bottom: 8px;">
+    <div v-if="showCustomLayersEditor" class="custom-layers-section">
+      <label class="custom-layers-label">自定义层级</label>
+      <div class="custom-layers-list">
         <div 
           v-for="(layer, idx) in customLayers" 
           :key="idx"
-          style="display: flex; flex-direction: row; gap: 8px; align-items: center; margin-bottom: 8px; padding: 12px; background: #f5f5f5; border-radius: 8px; border: 1px solid #e0e0e0;"
+          class="custom-layer-row"
         >
-          <span style="min-width: 50px; color: #666; font-size: 13px;">第{{ idx + 1 }}层</span>
+          <span class="layer-index">第{{ idx + 1 }}层</span>
           <input 
             type="text" 
             :value="layer.name"
             :disabled="!canEditLayerName(idx)"
             placeholder="层级名称"
-            style="flex: 1; padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 14px;"
+            class="layer-name-input"
             @change="updateCustomLayer(idx, 'name', ($event.target as HTMLInputElement).value)"
           >
           <input 
@@ -156,17 +156,17 @@ defineExpose({ getConfig, syncFromStore })
             :disabled="!canEditLayerUnits(idx)"
             :title="getLayerUnitsTitle(idx)"
             min="0" max="20"
-            style="width: 70px; padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 14px;"
+            class="layer-units-input"
             @change="updateCustomLayer(idx, 'units', parseInt(($event.target as HTMLInputElement).value) || 0)"
           >
-          <label style="display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; cursor: pointer; min-width: 40px; text-align: center;">
-            <input type="checkbox" :checked="layer.align" style="width: 16px; height: 16px;" @change="updateCustomLayer(idx, 'align', ($event.target as HTMLInputElement).checked)">
-            <span style="line-height: 1.2;">章节<br>对齐</span>
+          <label class="layer-align-label">
+            <input type="checkbox" :checked="layer.align" class="layer-align-checkbox" @change="updateCustomLayer(idx, 'align', ($event.target as HTMLInputElement).checked)">
+            <span class="layer-align-text">章节<br>对齐</span>
           </label>
-          <button v-if="canDeleteLayer(idx)" type="button" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;" @click="removeCustomLayer(idx)">删除</button>
+          <button v-if="canDeleteLayer(idx)" type="button" class="layer-delete-btn" @click="removeCustomLayer(idx)">删除</button>
         </div>
       </div>
-      <button type="button" class="btn btn-sm" style="margin-top: 4px; border: 1px solid #e0e0e0;" @click="addCustomLayer">+ 添加层级</button>
+      <button type="button" class="btn btn-sm layer-add-btn" @click="addCustomLayer">+ 添加层级</button>
       <p class="form-hint">第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。</p>
     </div>
     
@@ -187,3 +187,95 @@ defineExpose({ getConfig, syncFromStore })
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 自定义层级编辑器 */
+.custom-layers-section {
+  margin-top: 16px;
+}
+
+.custom-layers-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.custom-layers-list {
+  margin-bottom: 8px;
+}
+
+.custom-layer-row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.layer-index {
+  min-width: 50px;
+  color: #666;
+  font-size: 13px;
+}
+
+.layer-name-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.layer-units-input {
+  width: 70px;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.layer-align-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 40px;
+  text-align: center;
+}
+
+.layer-align-checkbox {
+  width: 16px;
+  height: 16px;
+}
+
+.layer-align-text {
+  line-height: 1.2;
+}
+
+.layer-delete-btn {
+  padding: 6px 12px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.layer-delete-btn:hover {
+  background: #dc2626;
+}
+
+.layer-add-btn {
+  margin-top: 4px;
+  border: 1px solid #e0e0e0;
+}
+</style>

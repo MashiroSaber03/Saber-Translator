@@ -522,9 +522,9 @@ watch(analysisMode, () => {
 /* ==================== CSS变量 ==================== */
 .analysis-control-compact {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
-  --bg-hover: rgba(99, 102, 241, 0.1);
+  --bg-hover: rgb(99, 102, 241, 0.1);
   --text-primary: #1a202c;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
@@ -559,7 +559,7 @@ watch(analysisMode, () => {
 .error-message {
   font-size: 12px;
   color: var(--danger, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+  background: rgb(239, 68, 68, 0.1);
   padding: 6px 10px;
   border-radius: 4px;
   margin-top: 8px;
@@ -611,17 +611,13 @@ watch(analysisMode, () => {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid currentColor;
+  border: 2px solid currentcolor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 /* 禁用状态 */
 .btn-analysis-start:disabled {
@@ -662,8 +658,8 @@ watch(analysisMode, () => {
 }
 
 .status-dot.running {
-    background: var(--primary-color);
-    box-shadow: 0 0 8px var(--primary-color);
+    background: var(--color-primary);
+    box-shadow: 0 0 8px var(--color-primary);
     animation: pulse-glow 1.5s infinite;
 }
 
@@ -680,8 +676,8 @@ watch(analysisMode, () => {
 }
 
 @keyframes pulse-glow {
-    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--primary-color); }
-    50% { opacity: 0.6; box-shadow: 0 0 4px var(--primary-color); }
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--color-primary); }
+    50% { opacity: 0.6; box-shadow: 0 0 4px var(--color-primary); }
 }
 
 .status-label {
@@ -706,7 +702,7 @@ watch(analysisMode, () => {
 
 .progress-fill-slim {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), var(--primary-light));
+    background: linear-gradient(90deg, var(--color-primary), var(--primary-light));
     transition: width 0.3s ease;
     width: 0%;
 }
@@ -723,13 +719,13 @@ watch(analysisMode, () => {
 
 /* 覆盖CustomSelect在按钮组中的宽度 */
 .btn-group-idle :deep(.custom-select) {
-    min-width: 70px !important;
-    flex: 0 0 auto !important;
+    min-width: 70px;
+    flex: 0 0 auto;
 }
 
 .btn-group-idle :deep(.custom-select-trigger) {
-    height: 38px !important;
-    padding: 0 10px !important;
+    height: 38px;
+    padding: 0 10px;
 }
 
 .analysis-mode-select {
@@ -746,7 +742,7 @@ watch(analysisMode, () => {
 
 .analysis-mode-select:focus {
     outline: none;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .btn-analysis-start {
@@ -758,7 +754,7 @@ watch(analysisMode, () => {
     padding: 8px 16px;
     font-size: 13px;
     font-weight: 500;
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    background: linear-gradient(135deg, var(--color-primary), var(--primary-dark));
     color: white;
     border: none;
     border-radius: 8px;
@@ -768,7 +764,7 @@ watch(analysisMode, () => {
 
 .btn-analysis-start:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 12px rgb(99, 102, 241, 0.3);
 }
 
 .btn-analysis-start:active {
@@ -841,7 +837,7 @@ watch(analysisMode, () => {
 .form-select-compact:focus,
 .form-input-compact:focus {
     outline: none;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .analysis-options-row {
@@ -865,7 +861,7 @@ watch(analysisMode, () => {
     width: 14px;
     height: 14px;
     cursor: pointer;
-    accent-color: var(--primary-color);
+    accent-color: var(--color-primary);
 }
 
 .btn-icon-sm {
@@ -884,7 +880,7 @@ watch(analysisMode, () => {
 
 .btn-icon-sm:hover {
     background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-color: var(--primary-color);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
 }
 </style>

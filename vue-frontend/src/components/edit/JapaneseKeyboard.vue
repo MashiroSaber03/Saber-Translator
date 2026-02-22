@@ -387,13 +387,13 @@ function deleteChar(): void {
 <style scoped>
 /* 50音键盘容器 - 使用固定颜色值 */
 .kana-keyboard {
-  background: #ffffff !important;
+  background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.15);
   margin-top: 10px;
   overflow: hidden;
-  color: #333333 !important;
+  color: #333;
 }
 
 /* 键盘头部 - 红色渐变背景 */
@@ -421,7 +421,7 @@ function deleteChar(): void {
   padding: 4px 10px;
   border: none;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
   color: #fff;
   font-size: 11px;
   cursor: pointer;
@@ -429,7 +429,7 @@ function deleteChar(): void {
 }
 
 .kana-tab:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgb(255, 255, 255, 0.3);
 }
 
 .kana-tab.active {
@@ -443,7 +443,7 @@ function deleteChar(): void {
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -454,7 +454,7 @@ function deleteChar(): void {
 }
 
 .kana-keyboard-close:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgb(255, 255, 255, 0.4);
 }
 
 /* 选项区域 */
@@ -472,7 +472,7 @@ function deleteChar(): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #333333 !important;
+  color: #333;
   font-size: 12px;
 }
 
@@ -481,7 +481,7 @@ function deleteChar(): void {
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: #333333 !important;
+  color: #333;
 }
 
 .kana-mode-select input[type="radio"] {
@@ -493,7 +493,7 @@ function deleteChar(): void {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 4px;
-  color: #333333 !important;
+  color: #333;
   font-size: 12px;
 }
 
@@ -502,7 +502,7 @@ function deleteChar(): void {
   padding: 10px;
   max-height: 280px;
   overflow-y: auto;
-  background: #ffffff !important;
+  background: #fff;
 }
 
 /* 假名表格 */
@@ -510,7 +510,7 @@ function deleteChar(): void {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  background: #ffffff !important;
+  background: #fff;
 }
 
 .kana-table th,
@@ -518,22 +518,22 @@ function deleteChar(): void {
   padding: 2px;
   text-align: center;
   vertical-align: middle;
-  background: #ffffff !important;
+  background: #fff;
 }
 
 .kana-table th {
-  color: #666666 !important;
+  color: #666;
   font-weight: 500;
   font-size: 11px;
   padding-bottom: 6px;
 }
 
 .row-label {
-  color: #888888 !important;
+  color: #888;
   font-size: 11px;
   font-weight: 500;
-  padding-right: 8px !important;
-  text-align: right !important;
+  padding-right: 8px;
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -541,10 +541,10 @@ function deleteChar(): void {
 .kana-key {
   width: 42px;
   height: 42px;
-  border: 1px solid #dddddd !important;
+  border: 1px solid #ddd;
   border-radius: 6px;
-  background: #f8f9fa !important;
-  color: #333333 !important;
+  background: #f8f9fa;
+  color: #333;
   font-size: 13px;
   line-height: 1.2;
   cursor: pointer;
@@ -558,28 +558,28 @@ function deleteChar(): void {
 
 /* 假名文字样式 */
 .kana-hiragana {
-  color: #333333 !important;
+  color: #333;
   font-size: 13px;
   display: block;
 }
 
 .kana-katakana {
-  color: #666666 !important;
+  color: #666;
   font-size: 11px;
   display: block;
 }
 
 .kana-key:hover {
-  background: #e3f2fd !important;
-  border-color: #2196f3 !important;
+  background: #e3f2fd;
+  border-color: #2196f3;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 2px 6px rgb(33, 150, 243, 0.3);
 }
 
 .kana-key:active,
 .kana-key.pressed {
   transform: translateY(0);
-  background: #bbdefb !important;
+  background: #bbdefb;
 }
 
 /* 特殊字符网格 */
@@ -587,7 +587,7 @@ function deleteChar(): void {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
   gap: 6px;
-  background: #ffffff !important;
+  background: #fff;
 }
 
 .special-key {
@@ -596,12 +596,12 @@ function deleteChar(): void {
   min-height: 32px;
   padding: 4px 8px;
   font-size: 14px;
-  color: #333333 !important;
+  color: #333;
 }
 
 .char-label {
   font-size: 9px;
-  color: #666666 !important;
+  color: #666;
   margin-top: 2px;
 }
 
@@ -622,17 +622,17 @@ function deleteChar(): void {
 
 .kana-backspace {
   padding: 6px 16px;
-  background: rgba(231, 76, 60, 0.1);
-  border: 1px solid rgba(231, 76, 60, 0.3);
+  background: rgb(231, 76, 60, 0.1);
+  border: 1px solid rgb(231, 76, 60, 0.3);
   border-radius: 4px;
-  color: #e74c3c !important;
+  color: #e74c3c;
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
 }
 
 .kana-backspace:hover {
-  background: rgba(231, 76, 60, 0.2);
-  border-color: rgba(231, 76, 60, 0.5);
+  background: rgb(231, 76, 60, 0.2);
+  border-color: rgb(231, 76, 60, 0.5);
 }
 </style>

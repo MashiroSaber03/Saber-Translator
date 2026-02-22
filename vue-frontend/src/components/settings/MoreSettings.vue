@@ -316,7 +316,7 @@ async function cleanTempFiles() {
 }
 
 .about-info .links a {
-  color: var(--primary-color);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -348,7 +348,7 @@ async function cleanTempFiles() {
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: var(--primary-color);
+  accent-color: var(--color-primary);
 }
 
 .checkbox-text {

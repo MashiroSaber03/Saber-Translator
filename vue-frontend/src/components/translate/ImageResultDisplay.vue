@@ -343,7 +343,7 @@ async function handleImportFile(event: Event): Promise<void> {
           class="slider range-slider"
           @input="updateImageSize"
         >
-        <span id="imageSizeValue">{{ imageSize }}%</span>
+        <span class="image-size-value">{{ imageSize }}%</span>
       </div>
       
       <!-- 重新翻译失败按钮 -->
@@ -363,7 +363,8 @@ async function handleImportFile(event: Event): Promise<void> {
       <div class="image-container">
         <!-- 翻译后图片 -->
         <img 
-          id="translatedImageDisplay" 
+          id="translatedImageDisplay"
+          class="translated-image"
           :src="displayImageUrl" 
           alt="翻译后图片"
           :style="imageStyle"
@@ -377,7 +378,7 @@ async function handleImportFile(event: Event): Promise<void> {
       class="text-info"
     >
       <h3>检测到的文本（原文 → 译文）</h3>
-      <pre id="detectedTextList"><template v-if="hasDetectedTexts"><span v-for="(item, index) in detectedTexts" :key="index" class="text-item"><span class="original-text">{{ formatOriginalText(item.original) }}</span>
+      <pre class="detected-text-list"><template v-if="hasDetectedTexts"><span v-for="(item, index) in detectedTexts" :key="index" class="text-item"><span class="original-text">{{ formatOriginalText(item.original) }}</span>
 <span :class="['translated-text', { 'translation-error': isTranslationError(item.translated) }]">{{ formatTranslatedText(item.translated) }}</span>
 <span class="separator">──────────────────────────</span>
 
@@ -524,7 +525,7 @@ async function handleImportFile(event: Event): Promise<void> {
   cursor: pointer;
 }
 
-#imageSizeValue {
+.image-size-value {
   min-width: 45px;
   text-align: right;
   font-size: 14px;
@@ -575,7 +576,7 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 /* 翻译后图片 - 匹配原版 #translatedImageDisplay 样式 */
-#translatedImageDisplay {
+.translated-image {
   position: relative;
   max-width: 100%;
   height: auto;
@@ -615,7 +616,7 @@ async function handleImportFile(event: Event): Promise<void> {
   font-weight: 600;
 }
 
-#detectedTextList {
+.detected-text-list {
   margin: 0;
   padding: 0;
   white-space: pre-wrap;
@@ -937,15 +938,7 @@ async function handleImportFile(event: Event): Promise<void> {
   left: 100%;
 }
 
-#exportTextButton, #importTextButton {
-  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%) !important;
-  box-shadow: 0 4px 6px rgba(46, 204, 113, 0.2) !important;
-}
-
-#exportTextButton:hover, #importTextButton:hover {
-  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%) !important;
-  box-shadow: 0 6px 10px rgba(46, 204, 113, 0.3) !important;
-}
+/* 导出/导入按钮样式已通过 .download-btn.success 类处理 */
 
 #image-display-area #upload-section #loadingMessage,
 #image-display-area #upload-section .error-message {
@@ -972,7 +965,7 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 #translatingMessage, #downloadingMessage {
-  display: none !important;
+  display: none;
 }
 
 #result-section p#translatingMessage {
@@ -998,7 +991,7 @@ async function handleImportFile(event: Event): Promise<void> {
   z-index: 1000;
   border-radius: 5px;
   box-sizing: border-box;
-  overflow: visible !important;
+  overflow: visible;
   cursor: pointer;
 }
 

@@ -5,6 +5,7 @@
  * 支持双引擎：Gallery-DL (主流站点高速下载) 和 AI Agent (通用网站)
  */
 import { ref, computed, watch } from 'vue'
+import BaseModal from '@/components/common/BaseModal.vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
@@ -324,20 +325,15 @@ function handleResetPrompt() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="isVisible" class="modal-overlay" @click.self="handleClose">
-      <div class="modal-container">
-        <!-- 头部 -->
-        <div class="modal-header">
-          <h2 class="modal-title">
-            <span class="title-icon">🌐</span>
-            从网页导入漫画
-          </h2>
-          <button class="close-btn" @click="handleClose" title="关闭">×</button>
-        </div>
-
-        <!-- 内容 -->
-        <div class="modal-body">
+  <BaseModal
+    :model-value="isVisible"
+    title="🌐 从网页导入漫画"
+    size="large"
+    custom-class="web-import-modal"
+    :close-on-overlay="!isProcessing"
+    :close-on-esc="!isProcessing"
+    @close="handleClose"
+  >
           <!-- URL 输入 -->
           <div class="url-section">
             <input
@@ -884,10 +880,9 @@ function handleResetPrompt() {
               <div class="progress-fill" :style="{ width: `${downloadProgressPercent}%` }"></div>
             </div>
           </div>
-        </div>
 
         <!-- 底部 -->
-        <div class="modal-footer">
+        <template #footer>
           <button class="cancel-btn" @click="handleClose" :disabled="status === 'downloading'">
             取消
           </button>
@@ -900,82 +895,19 @@ function handleResetPrompt() {
             <span v-else>📥</span>
             {{ status === 'downloading' ? '下载中...' : '导入' }}
           </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+        </template>
+  </BaseModal>
 </template>
 
-<style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
+<style>
+/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
 
-.modal-container {
-  background: var(--bg-primary, #fff);
-  border-radius: 12px;
-  width: 90%;
+/* WebImportModal 的 BaseModal 定制 */
+.web-import-modal .modal-container {
   max-width: 800px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
 }
 
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color, #eee);
-}
-
-.modal-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-primary, #333);
-}
-
-.title-icon {
-  font-size: 22px;
-}
-
-.close-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  font-size: 24px;
-  cursor: pointer;
-  border-radius: 6px;
-  color: var(--text-secondary, #666);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.close-btn:hover {
-  background: var(--bg-secondary, #f5f5f5);
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
 
 .url-section {
   display: flex;
@@ -1161,7 +1093,7 @@ function handleResetPrompt() {
 }
 
 .group-title {
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary, #333);
@@ -1171,7 +1103,7 @@ function handleResetPrompt() {
 }
 
 .subsection-title {
-  margin: 12px 0 8px 0;
+  margin: 12px 0 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary, #666);
@@ -1340,7 +1272,7 @@ function handleResetPrompt() {
   overflow-y: auto;
   padding: 12px;
   background: #1e1e1e;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: Consolas, Monaco, monospace;
   font-size: 12px;
 }
 
@@ -1449,7 +1381,7 @@ function handleResetPrompt() {
 
 .image-item.selected {
   border-color: var(--primary-color, #4a90d9);
-  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
+  box-shadow: 0 0 0 2px rgb(74, 144, 217, 0.2);
 }
 
 .image-checkbox {
@@ -1557,12 +1489,10 @@ function handleResetPrompt() {
   width: 14px;
   height: 14px;
   border: 2px solid transparent;
-  border-top-color: currentColor;
+  border-top-color: currentcolor;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 </style>

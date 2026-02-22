@@ -813,7 +813,7 @@ function resetTranslatePromptToDefault() {
 .reset-btn:hover {
   color: var(--primary-color, #4a90d9);
   border-color: var(--primary-color, #4a90d9);
-  background: rgba(74, 144, 217, 0.05);
+  background: rgb(74, 144, 217, 0.05);
 }
 
 /* 翻译模式提示样式 */

@@ -151,7 +151,7 @@ function getStatusText(status: string): string {
 }
 
 .empty-state p {
-  margin: 0 0 20px 0;
+  margin: 0 0 20px;
   font-size: 16px;
 }
 

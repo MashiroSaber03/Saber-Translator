@@ -865,7 +865,7 @@ onUnmounted(() => {
 .bubble-overlay.brush-mode .bubble-highlight-box,
 .bubble-overlay.brush-mode .resize-handle,
 .bubble-overlay.brush-mode .rotate-handle {
-  pointer-events: none !important;
+  pointer-events: none;
 }
 
 /* 矩形气泡高亮框 - 使用反向缩放保持边框在屏幕上的固定宽度 */
@@ -902,8 +902,8 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box.multi-selected {
-  border: calc(3px / var(--scale, 1)) solid #ff1744 !important;
-  background: rgba(255, 23, 68, 0.25) !important;
+  border: calc(3px / var(--scale, 1)) solid #ff1744;
+  background: rgba(255, 23, 68, 0.25);
   box-shadow: 0 0 calc(12px / var(--scale, 1)) rgba(255, 23, 68, 0.6);
 }
 
@@ -930,7 +930,7 @@ onUnmounted(() => {
 
 /* 调整手柄 - 反向缩放保持屏幕上 10x10px */
 .resize-handle {
-  display: block !important;
+  display: block;
   position: absolute;
   /* 尺寸反向缩放 */
   width: calc(10px / var(--scale, 1));
@@ -938,7 +938,7 @@ onUnmounted(() => {
   background: #00ff88;
   border: calc(2px / var(--scale, 1)) solid #fff;
   border-radius: calc(3px / var(--scale, 1));
-  pointer-events: auto !important;
+  pointer-events: auto;
   z-index: 20;
   box-sizing: border-box;
   box-shadow: 0 0 calc(3px / var(--scale, 1)) rgba(0, 0, 0, 0.3);
@@ -962,7 +962,7 @@ onUnmounted(() => {
 
 /* 旋转连接线 - 反向缩放 */
 .rotate-line {
-  display: block !important;
+  display: block;
   position: absolute;
   top: calc(-25px / var(--scale, 1));
   left: 50%;
@@ -975,7 +975,7 @@ onUnmounted(() => {
 
 /* 旋转手柄 - 反向缩放保持屏幕上 12x12px */
 .rotate-handle {
-  display: block !important;
+  display: block;
   position: absolute;
   top: calc(-35px / var(--scale, 1));
   left: 50%;
@@ -986,7 +986,7 @@ onUnmounted(() => {
   border: calc(2px / var(--scale, 1)) solid #fff;
   border-radius: 50%;
   cursor: grab;
-  pointer-events: auto !important;
+  pointer-events: auto;
   z-index: 15;
   box-shadow: 0 0 calc(6px / var(--scale, 1)) rgba(0, 255, 136, 0.8);
   transition: transform 0.15s, box-shadow 0.15s;

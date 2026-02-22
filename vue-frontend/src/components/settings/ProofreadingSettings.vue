@@ -474,9 +474,9 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 }
 
 .fetch-models-btn:hover:not(:disabled) {
-  background-color: var(--primary-color);
-  color: #ffffff;
-  border-color: var(--primary-color);
+  background-color: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 .fetch-models-btn:disabled {
@@ -550,8 +550,8 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 .settings-test-btn:hover:not(:disabled) {
   background-color: var(--bg-hover);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .settings-test-btn:active:not(:disabled) {

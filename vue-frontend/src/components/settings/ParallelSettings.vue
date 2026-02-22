@@ -101,16 +101,13 @@ const lockSize = computed({
 .toggle-slider {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: var(--border-color);
   transition: 0.3s;
   border-radius: 24px;
 }
 
-.toggle-slider:before {
+.toggle-slider::before {
   position: absolute;
   content: "";
   height: 18px;
@@ -123,10 +120,10 @@ const lockSize = computed({
 }
 
 input:checked + .toggle-slider {
-  background-color: var(--primary-color);
+  background-color: var(--color-primary);
 }
 
-input:checked + .toggle-slider:before {
+input:checked + .toggle-slider::before {
   transform: translateX(20px);
 }
 
@@ -157,7 +154,7 @@ input:checked + .toggle-slider:before {
 
 .number-input::-webkit-inner-spin-button,
 .number-input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 
@@ -171,8 +168,8 @@ input:checked + .toggle-slider:before {
 .settings-note {
   margin-top: 12px;
   padding: 10px 12px;
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  background: rgb(255, 193, 7, 0.1);
+  border: 1px solid rgb(255, 193, 7, 0.3);
   border-radius: 6px;
   font-size: 12px;
 }

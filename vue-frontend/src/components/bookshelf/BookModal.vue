@@ -409,7 +409,7 @@ async function saveBook() {
   background: var(--card-bg, #fff);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.1);
   max-height: 200px;
   overflow-y: auto;
   z-index: 10;

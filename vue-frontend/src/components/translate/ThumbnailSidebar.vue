@@ -343,7 +343,7 @@ onMounted(() => {
    缩略图侧边栏样式 - 复刻自 thumbnail.css
    =================================== */
 
-#thumbnail-sidebar {
+.thumbnail-sidebar {
   position: fixed;
   top: 20px;
   right: 20px;
@@ -376,13 +376,13 @@ onMounted(() => {
 #thumbnail-sidebar .thumbnail-card {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgb(0,0,0,0.08);
   padding: 25px;
   transition: box-shadow 0.2s;
 }
 
 #thumbnail-sidebar .thumbnail-card:hover {
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 16px rgb(0,0,0,0.12);
 }
 
 #thumbnail-sidebar .thumbnail-card h2 {
@@ -486,7 +486,7 @@ onMounted(() => {
 .folder-item:hover {
   background: linear-gradient(135deg, #fff3d4 0%, #ffe8b8 100%);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(240, 215, 140, 0.4);
+  box-shadow: 0 2px 8px rgb(240, 215, 140, 0.4);
 }
 
 /* 文件夹图标作为右上角角标 */
@@ -498,7 +498,7 @@ onMounted(() => {
   background: #fff;
   border-radius: 4px;
   padding: 1px 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.1);
   z-index: 1;
 }
 
@@ -532,7 +532,7 @@ onMounted(() => {
    缩略图列表（扁平模式）
    =================================== */
 
-#thumbnailList {
+.thumbnail-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -564,7 +564,7 @@ onMounted(() => {
 .folder-content-list .thumbnail-item.active,
 .folder-content-list .thumbnail-item:hover {
   border-color: #3498db;
-  box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
+  box-shadow: 0 0 8px rgb(52, 152, 219, 0.5);
   transform: translateY(-2px);
 }
 
@@ -582,7 +582,7 @@ onMounted(() => {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: rgba(53, 152, 219, 0.8);
+  background-color: rgb(53, 152, 219, 0.8);
   color: white;
   width: 15px;
   height: 15px;
@@ -600,7 +600,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: rgba(255, 0, 0, 0.8);
+  background-color: rgb(255, 0, 0, 0.8);
   color: white;
   width: 18px;
   height: 18px;
@@ -619,7 +619,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: rgba(0, 123, 255, 0.8);
+  background-color: rgb(0, 123, 255, 0.8);
   color: white;
   width: 18px;
   height: 18px;
@@ -637,7 +637,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   left: 3px;
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: rgb(0, 0, 0, 0.6);
   color: white;
   min-width: 18px;
   height: 18px;
@@ -649,7 +649,7 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 500;
   z-index: 8;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.3);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -658,7 +658,7 @@ onMounted(() => {
   position: absolute;
   top: 3px;
   left: 3px;
-  background-color: rgba(34, 197, 94, 0.9);  /* 绿色 */
+  background-color: rgb(34, 197, 94, 0.9);  /* 绿色 */
   color: white;
   width: 18px;
   height: 18px;
@@ -669,7 +669,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: bold;
   z-index: 9;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.3);
 }
 
 /* 空状态 */

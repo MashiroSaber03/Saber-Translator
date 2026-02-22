@@ -344,7 +344,7 @@ defineExpose({
   justify-content: space-between;
   padding: 0 16px;
   z-index: 1000;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
 }
 
 .header-left,
@@ -365,7 +365,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255, 255, 255, 0.15);
   border: none;
   border-radius: 8px;
   color: white;
@@ -375,11 +375,11 @@ defineExpose({
 }
 
 .header-btn:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(255, 255, 255, 0.25);
 }
 
 .header-btn.primary {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgb(255, 255, 255, 0.9);
   color: #667eea;
 }
 
@@ -428,7 +428,7 @@ defineExpose({
 /* 查看模式切换 */
 .view-mode-toggle {
   display: flex;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255, 255, 255, 0.15);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -437,7 +437,7 @@ defineExpose({
   padding: 8px 16px;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
@@ -448,7 +448,7 @@ defineExpose({
 }
 
 .mode-btn.active {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgb(255, 255, 255, 0.9);
   color: #667eea;
   font-weight: 500;
 }
@@ -460,7 +460,7 @@ defineExpose({
   left: 0;
   right: 0;
   height: 60px;
-  background: linear-gradient(to top, rgba(26, 26, 46, 0.95), rgba(26, 26, 46, 0.8));
+  background: linear-gradient(to top, rgb(26, 26, 46, 0.95), rgb(26, 26, 46, 0.8));
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
@@ -474,8 +474,8 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.1);
+  border: 1px solid rgb(255, 255, 255, 0.2);
   border-radius: 8px;
   color: white;
   font-size: 14px;
@@ -484,7 +484,7 @@ defineExpose({
 }
 
 .nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
 }
 
 .nav-btn:disabled {
@@ -509,23 +509,20 @@ defineExpose({
   color: white;
   font-size: 20px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
   transition: all 0.3s;
   z-index: 100;
 }
 
 .scroll-top-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 6px 16px rgb(102, 126, 234, 0.5);
 }
 
 /* 设置面板 */
 .settings-panel {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 2000;
   display: none;
 }
@@ -536,11 +533,8 @@ defineExpose({
 
 .settings-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
 }
 
 .settings-content {
@@ -548,10 +542,11 @@ defineExpose({
   top: 56px;
   right: 16px;
   width: 300px;
+
   /* 修复：使用固定的深色背景，不依赖可能未定义的CSS变量 */
   background: #2d2d44;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.3);
   overflow: hidden;
 }
 
@@ -560,7 +555,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgb(255, 255, 255, 0.1);
+
   /* 修复：确保头部背景也是深色 */
   background: #2d2d44;
 }
@@ -575,7 +571,7 @@ defineExpose({
 .close-btn {
   width: 28px;
   height: 28px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255, 255, 255, 0.1);
   border: none;
   border-radius: 50%;
   color: white;
@@ -585,11 +581,12 @@ defineExpose({
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
 }
 
 .settings-body {
   padding: 16px;
+
   /* 修复：确保主体背景也是深色 */
   background: #2d2d44;
 }
@@ -604,8 +601,9 @@ defineExpose({
 
 .setting-item label {
   display: block;
+
   /* 修复：确保标签文字是淡白色，在深色背景上可见 */
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -619,15 +617,15 @@ defineExpose({
 .setting-control input[type="range"] {
   flex: 1;
   height: 4px;
-  -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  appearance: none;
+  background: rgb(255, 255, 255, 0.2);
   border-radius: 2px;
   outline: none;
 }
 
 .setting-control input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
+  appearance: none;
   width: 16px;
   height: 16px;
   background: #667eea;
@@ -662,11 +660,11 @@ defineExpose({
 
 .bg-option.active {
   border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 0 0 2px rgb(102, 126, 234, 0.3);
 }
 
 /* 响应式设计 */
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .header-btn .btn-text {
     display: none;
   }
@@ -707,7 +705,7 @@ defineExpose({
   }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .reader-header {
     padding: 0 8px;
   }

@@ -3,11 +3,13 @@
  * 图片预览模态框组件
  * 支持点击缩略图放大查看、键盘导航、缩放等功能
  * 可在漫画分析页面的多个位置复用
+ * 基于 BaseModal 实现
  */
 
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
+import BaseModal from '@/components/common/BaseModal.vue'
 
 // ============================================================
 // Props 和 Events
@@ -37,8 +39,8 @@ const emit = defineEmits<{
 
 const insightStore = useInsightStore()
 
-/** 模态框根元素引用 */
-const modalRef = ref<HTMLElement | null>(null)
+/** 模态框内容区引用 */
+const previewContentRef = ref<HTMLElement | null>(null)
 
 /** 当前缩放比例 */
 const scale = ref(1)
@@ -200,15 +202,12 @@ function endDrag(): void {
 }
 
 /**
- * 处理键盘事件
+ * 处理键盘事件 (额外的导航/缩放快捷键，ESC 由 BaseModal 处理)
  */
 function handleKeydown(event: KeyboardEvent): void {
   if (!props.visible) return
   
   switch (event.key) {
-    case 'Escape':
-      close()
-      break
     case 'ArrowLeft':
       navigatePrev()
       break
@@ -254,8 +253,11 @@ watch(() => props.visible, (visible) => {
     isLoading.value = true
     loadError.value = false
     nextTick(() => {
-      modalRef.value?.focus()
+      previewContentRef.value?.focus()
     })
+    document.addEventListener('keydown', handleKeydown)
+  } else {
+    document.removeEventListener('keydown', handleKeydown)
   }
 })
 
@@ -264,22 +266,21 @@ watch(() => props.pageNum, () => {
   isLoading.value = true
   loadError.value = false
 })
-
-onMounted(() => {
-  document.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>
-  <Teleport to="body">
-    <div 
-      v-if="visible"
-      ref="modalRef"
-      class="image-preview-modal"
+  <BaseModal
+    :model-value="visible"
+    :show-header="false"
+    size="full"
+    custom-class="image-preview-modal-wrapper"
+    :close-on-overlay="false"
+    :close-on-esc="true"
+    @close="close"
+  >
+    <div
+      ref="previewContentRef"
+      class="image-preview-content"
       tabindex="0"
       @click="close"
       @wheel="handleWheel"
@@ -388,35 +389,50 @@ onUnmounted(() => {
         <span>Esc 关闭</span>
       </div>
     </div>
-  </Teleport>
+  </BaseModal>
 </template>
 
 
-<style scoped>
-/* 模态框背景 */
-.image-preview-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.95);
+<style>
+/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
+
+/* 让 BaseModal 的容器变为全屏暗色背景 */
+.image-preview-modal-wrapper .modal-container {
+  background: rgb(0, 0, 0, 0.95);
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.image-preview-modal-wrapper .modal-body {
+  padding: 0;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+}
+
+/* 预览内容区 */
+.image-preview-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
   outline: none;
+  position: relative;
 }
 
 /* 关闭按钮 */
-.preview-close {
+.image-preview-content .preview-close {
   position: absolute;
   top: 16px;
   right: 16px;
   width: 40px;
   height: 40px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255, 255, 255, 0.1);
   border: none;
   border-radius: 50%;
   color: white;
@@ -426,15 +442,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 10;
 }
 
-.preview-close:hover {
-  background: rgba(255, 255, 255, 0.2);
+.image-preview-content .preview-close:hover {
+  background: rgb(255, 255, 255, 0.2);
   transform: scale(1.1);
 }
 
 /* 图片容器 */
-.preview-image-container {
+.image-preview-content .preview-image-container {
   flex: 1;
   display: flex;
   align-items: center;
@@ -444,7 +461,7 @@ onUnmounted(() => {
   padding: 60px 20px 100px;
 }
 
-.preview-image-container img {
+.image-preview-content .preview-image-container img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -453,33 +470,33 @@ onUnmounted(() => {
 }
 
 /* 加载状态 */
-.preview-loading,
-.preview-error {
+.image-preview-content .preview-loading,
+.image-preview-content .preview-error {
   text-align: center;
   color: white;
 }
 
-.loading-spinner {
+.image-preview-content .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
+  border: 3px solid rgb(255, 255, 255, 0.3);
   border-top-color: white;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: imagePreviewSpin 0.8s linear infinite;
   margin: 0 auto 16px;
 }
 
-@keyframes spin {
+@keyframes imagePreviewSpin {
   to { transform: rotate(360deg); }
 }
 
-.error-icon {
+.image-preview-content .error-icon {
   font-size: 48px;
   margin-bottom: 16px;
 }
 
 /* 底部工具栏 */
-.preview-toolbar {
+.image-preview-content .preview-toolbar {
   position: absolute;
   bottom: 40px;
   left: 50%;
@@ -487,18 +504,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgb(0, 0, 0, 0.7);
   padding: 10px 20px;
   border-radius: 30px;
   backdrop-filter: blur(10px);
 }
 
-.toolbar-btn {
+.image-preview-content .toolbar-btn {
   width: 36px;
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255, 255, 255, 0.1);
   color: white;
   font-size: 16px;
   cursor: pointer;
@@ -508,36 +525,36 @@ onUnmounted(() => {
   justify-content: center;
 }
 
-.toolbar-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
+.image-preview-content .toolbar-btn:hover:not(:disabled) {
+  background: rgb(255, 255, 255, 0.2);
 }
 
-.toolbar-btn:disabled {
+.image-preview-content .toolbar-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-.nav-btn {
+.image-preview-content .nav-btn {
   font-size: 14px;
 }
 
-.page-info,
-.scale-info {
+.image-preview-content .page-info,
+.image-preview-content .scale-info {
   color: white;
   font-size: 14px;
   min-width: 60px;
   text-align: center;
 }
 
-.toolbar-divider {
+.image-preview-content .toolbar-divider {
   width: 1px;
   height: 24px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
   margin: 0 4px;
 }
 
 /* 快捷键提示 */
-.preview-hints {
+.image-preview-content .preview-hints {
   position: absolute;
   bottom: 12px;
   left: 50%;
@@ -545,29 +562,29 @@ onUnmounted(() => {
   display: flex;
   gap: 16px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgb(255, 255, 255, 0.5);
 }
 
 /* 响应式 */
-@media (max-width: 768px) {
-  .preview-toolbar {
+@media (width <= 768px) {
+  .image-preview-content .preview-toolbar {
     padding: 8px 12px;
     gap: 8px;
   }
   
-  .toolbar-btn {
+  .image-preview-content .toolbar-btn {
     width: 32px;
     height: 32px;
     font-size: 14px;
   }
   
-  .page-info,
-  .scale-info {
+  .image-preview-content .page-info,
+  .image-preview-content .scale-info {
     font-size: 12px;
     min-width: 50px;
   }
   
-  .preview-hints {
+  .image-preview-content .preview-hints {
     display: none;
   }
 }

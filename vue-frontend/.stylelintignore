@@ -1,0 +1,18 @@
+# Stylelint Ignore
+# 已有违规文件暂时忽略，随重构进度逐步移除
+
+# P0 任务文件（待清理）
+src/views/BookshelfView.vue
+src/views/InsightView.vue
+src/components/common/CustomSelect.vue
+
+# P1 任务文件（待清理）
+src/components/translate/SettingsSidebar.vue
+src/components/edit/EditWorkspace.vue
+
+# P2 任务文件（待清理）  
+src/components/common/JapaneseKeyboard.vue
+src/components/edit/BubbleOverlay.vue
+src/components/bookshelf/BookDetailModal.vue
+src/components/translate/ImageResultDisplay.vue
+src/components/edit/EditToolbar.vue

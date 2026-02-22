@@ -159,21 +159,19 @@ watch(
   align-items: center;
   justify-content: center;
   height: calc(100vh - 56px);
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
 }
 
 .loading-spinner {
   width: 48px;
   height: 48px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
+  border: 3px solid rgb(255, 255, 255, 0.1);
   border-top-color: #667eea;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 .loading-state p {
   margin-top: 16px;
@@ -187,7 +185,7 @@ watch(
   align-items: center;
   justify-content: center;
   height: calc(100vh - 56px);
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
   text-align: center;
   padding: 20px;
 }
@@ -198,13 +196,13 @@ watch(
 }
 
 .empty-state h2 {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   color: white;
   font-weight: 500;
 }
 
 .empty-state p {
-  margin: 0 0 24px 0;
+  margin: 0 0 24px;
   font-size: 14px;
 }
 
@@ -212,7 +210,7 @@ watch(
 .images-container {
   width: 100%;
   max-width: var(--reader-max-width, 100%);
-  padding: 16px 0 80px 0;
+  padding: 16px 0 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -235,7 +233,7 @@ watch(
 
 .reader-image.loading {
   min-height: 300px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -245,7 +243,7 @@ watch(
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgb(0, 0, 0, 0.6);
   color: white;
   padding: 4px 8px;
   border-radius: 4px;
@@ -280,6 +278,6 @@ watch(
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
 }
 </style>

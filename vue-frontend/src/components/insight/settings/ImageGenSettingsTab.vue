@@ -219,7 +219,7 @@ defineExpose({
 }
 
 .info-box h4 {
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
 }

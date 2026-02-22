@@ -2,9 +2,10 @@
 /**
  * 确认对话框组件
  * 用于需要用户确认的操作，如删除、批量操作等
+ * 基于 BaseModal 实现
  */
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import BaseModal from './BaseModal.vue'
 
 // ============================================================
 // Props 和 Emits 定义
@@ -38,13 +39,6 @@ const emit = defineEmits<{
 }>()
 
 // ============================================================
-// 状态
-// ============================================================
-
-/** 模态框容器引用 */
-const modalRef = ref<HTMLElement | null>(null)
-
-// ============================================================
 // 方法
 // ============================================================
 
@@ -61,117 +55,63 @@ function handleConfirm(): void {
 function handleCancel(): void {
   emit('cancel')
 }
-
-/**
- * 处理点击遮罩层（关闭模态框）
- */
-function handleOverlayClick(event: MouseEvent): void {
-  // 只有点击遮罩层本身才关闭，点击内容区域不关闭
-  if (event.target === event.currentTarget) {
-    emit('cancel')
-  }
-}
-
-/**
- * 处理键盘事件
- */
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    emit('cancel')
-  } else if (event.key === 'Enter') {
-    emit('confirm')
-  }
-}
-
-// ============================================================
-// 生命周期
-// ============================================================
-
-onMounted(() => {
-  // 添加键盘事件监听
-  document.addEventListener('keydown', handleKeydown)
-  // 聚焦到模态框以便接收键盘事件
-  modalRef.value?.focus()
-})
-
-onUnmounted(() => {
-  // 移除键盘事件监听
-  document.removeEventListener('keydown', handleKeydown)
-})
 </script>
 
 <template>
-  <div 
-    ref="modalRef"
-    class="modal-overlay confirm-modal-overlay"
-    tabindex="-1"
-    @click="handleOverlayClick"
+  <BaseModal
+    :title="title"
+    size="small"
+    custom-class="confirm-modal"
+    :close-on-overlay="true"
+    :close-on-esc="true"
+    @close="handleCancel"
   >
-    <div class="modal-content confirm-modal-content">
-      <!-- 标题 -->
-      <div class="modal-header">
-        <h3 class="modal-title">{{ title }}</h3>
-        <button class="modal-close-btn" @click="handleCancel" title="关闭">×</button>
-      </div>
-
-      <!-- 消息内容 -->
-      <div class="modal-body confirm-modal-body">
-        <p class="confirm-message">{{ message }}</p>
-      </div>
-
-      <!-- 按钮区域 -->
-      <div class="modal-footer confirm-modal-footer">
-        <button 
-          class="btn btn-secondary" 
-          @click="handleCancel"
-        >
-          {{ cancelText }}
-        </button>
-        <button 
-          :class="['btn', confirmType === 'danger' ? 'btn-danger' : 'btn-primary']"
-          @click="handleConfirm"
-        >
-          {{ confirmText }}
-        </button>
-      </div>
+    <!-- 消息内容 -->
+    <div class="confirm-modal-body">
+      <p class="confirm-message">{{ message }}</p>
     </div>
-  </div>
+
+    <!-- 按钮区域 -->
+    <template #footer>
+      <button 
+        class="btn btn-secondary" 
+        @click="handleCancel"
+      >
+        {{ cancelText }}
+      </button>
+      <button 
+        :class="['btn', confirmType === 'danger' ? 'btn-danger' : 'btn-primary']"
+        @click="handleConfirm"
+      >
+        {{ confirmText }}
+      </button>
+    </template>
+  </BaseModal>
 </template>
 
-<style scoped>
-/* 确认模态框特定样式 */
-.confirm-modal-content {
-  max-width: 400px;
-  width: 90%;
-}
+<style>
+/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
 
-.confirm-modal-body {
+/* 确认模态框特定样式 */
+.confirm-modal .modal-body {
   padding: 20px;
   text-align: center;
 }
 
-.confirm-message {
+.confirm-modal .confirm-message {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-color);
 }
 
-.confirm-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 15px 20px;
-  border-top: 1px solid var(--border-color);
-}
-
-.btn-danger {
+.confirm-modal .modal-footer .btn-danger {
   background-color: #dc3545;
   color: white;
   border: none;
 }
 
-.btn-danger:hover {
+.confirm-modal .modal-footer .btn-danger:hover {
   background-color: #c82333;
 }
 </style>

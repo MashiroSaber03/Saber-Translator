@@ -1,0 +1,20 @@
+{
+    "extends": "stylelint-config-standard",
+    "customSyntax": "postcss-html",
+    "rules": {
+        "declaration-no-important": true,
+        "selector-max-id": 0,
+        "no-descending-specificity": null,
+        "declaration-block-no-duplicate-properties": true,
+        "color-function-notation": null,
+        "alpha-value-notation": null,
+        "selector-class-pattern": null,
+        "custom-property-pattern": null,
+        "keyframes-name-pattern": null
+    },
+    "ignoreFiles": [
+        "node_modules/**",
+        "dist/**",
+        "build/**"
+    ]
+}

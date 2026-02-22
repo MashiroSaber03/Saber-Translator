@@ -104,7 +104,7 @@
         </button>
         <button @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</button>
         <button @click="$emit('zoom-in')" title="放大 (+)">+</button>
-        <span id="zoomLevel">{{ Math.round(scale * 100) }}%</span>
+        <span id="zoomLevel" class="zoom-level">{{ Math.round(scale * 100) }}%</span>
         <button @click="$emit('zoom-out')" title="缩小 (-)">−</button>
         <button @click="$emit('reset-zoom')" title="原始大小">1:1</button>
       </div>
@@ -611,7 +611,7 @@ const brushCursorStyle = computed(() => {
   background: rgba(255,255,255,0.2);
 }
 
-.view-controls #zoomLevel {
+.view-controls .zoom-level {
   min-width: 50px;
   text-align: center;
   color: #fff;
@@ -620,7 +620,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .view-mode-btn {
-  font-size: 18px !important;
+  font-size: 18px;
 }
 
 /* 快捷操作 */
@@ -803,8 +803,8 @@ const brushCursorStyle = computed(() => {
 /* 激活状态按钮 */
 .annotation-btn.active,
 .brush-btn.active {
-  background: rgba(102, 126, 234, 0.5) !important;
-  border-color: #667eea !important;
+  background: rgba(102, 126, 234, 0.5);
+  border-color: #667eea;
 }
 
 /* 笔刷光标 */

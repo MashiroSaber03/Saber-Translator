@@ -106,7 +106,7 @@ function isTagSelected(tagName: string): boolean {
     padding: 16px;
     background: var(--card-bg);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.08);
 }
 
 /* 搜索框 */
@@ -131,7 +131,7 @@ function isTagSelected(tagName: string): boolean {
 .search-box input:focus {
     outline: none;
     border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgb(102, 126, 234, 0.1);
 }
 
 .search-btn, .clear-search-btn {
@@ -209,11 +209,11 @@ function isTagSelected(tagName: string): boolean {
     background: var(--tag-color, #667eea);
     color: white;
     border-color: var(--tag-color, #667eea);
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 2px 8px rgb(102, 126, 234, 0.3);
 }
 
 .tag-count {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgb(255, 255, 255, 0.3);
     padding: 1px 6px;
     border-radius: 10px;
     font-size: 0.7rem;

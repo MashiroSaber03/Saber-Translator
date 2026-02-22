@@ -1,0 +1,585 @@
+# Saber-Translator 前端 UI 样式架构重构 — 实施计划（第六次修订 · 终版）
+
+基于 **85 个 Vue 文件 + 1 CSS + 52 composables + 23 stores + 8 utils** 的五轮完整全局审查，覆盖 **37 个扫描维度**。共发现 **28 类问题**，涉及 **~60 个文件**，分解为 **27 个任务**。
+
+## 🔒 核心约束：零视觉回归
+
+> [!CAUTION]
+> **重构不改变前端 UI**。重构前后的样式、布局、动画、颜色、间距、字体、层级等必须**像素级一致**。
+
+**每个任务的执行规则：**
+
+| 规则 | 说明 |
+|------|------|
+| 先截图后改 | 每个任务开始前对受影响页面截图作为基线 |
+| 等值替换 | 删除 `!important` 必须先验证去掉后样式不变（用 DevTools 逐条验证）|
+| 变量替换保值 | CSS 变量替换时确保新变量的**计算值**与旧值完全相同 |
+| 迁移不改写 | 样式从 A 文件迁移到 B 文件时，CSS 属性值**原样复制**，不做"顺便优化" |
+| z-index 等效 | z-index 替换为 token 时，token 值必须保持原有层级关系不变 |
+| 逐文件验证 | 每完成一个文件的修改，立即 `npm run dev` 目视对比 |
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> 经五轮全局复审，覆盖 37 个维度。无更多可扫描维度，确认这是终版。
+
+> [!WARNING]  
+> **global.css 瘦身策略修正**：原方案计划从 875 行瘦身到 ~150 行，但全局搜索发现 `.btn` 被 **45 个文件**引用、`.form-group` 被 **19 个文件**引用、`.settings-group` 被 **30+ 处**引用。这些全局类名**不能简单删除**，需要改为"保留精简版全局定义 + 逐步解耦"策略。
+
+> [!CAUTION]
+> - [SettingsModal.vue](file:///c:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/components/settings/SettingsModal.vue) scoped CSS 中的 `.settings-group` 定义无法穿透到子组件 → 子组件实际依赖 global.css
+> - `z-index` 值域从 100 到 99999，47 处硬编码，模态框层级可能互相遮挡
+
+---
+
+## 问题覆盖度矩阵（28 类）
+
+| # | 问题 | 阶段 | 来源 |
+|---|------|------|------|
+| 1 | global.css 膨胀（875行）| P0 | 第 1 轮 |
+| 2 | 通用组件未采用（AppHeader/CollapsiblePanel/ResponsiveContainer）| P0+P2 | 第 1 轮 |
+| 3 | BaseModal 采用率低（14+ 组件自建模态框）| P1 | 第 1 轮 |
+| 4 | 样式三重重复（.btn/.modal/.form-group/.settings-group 值不一致）| P0+P1 | 第 1 轮 |
+| 5 | InsightView CSS 变量重定义 + body hack | P1 | 第 1 轮 |
+| 6 | SettingsSidebar 50+ ID 选择器 | P1 | 第 1 轮 |
+| 7 | `!important` 泛滥（**177 处**，19 个文件）| P1+P2 | 第 2 轮更新 |
+| 8 | `:deep()` 滥用 | P1 | 第 1 轮 |
+| 9 | 非 scoped `<style>`（3 个文件）| P0 | 第 1 轮 |
+| 10 | 硬编码颜色 | P2 | 第 1 轮 |
+| 11 | CSS 变量命名冗余（`--primary-color` **80+ 处引用**）| P0 | 第 1+4 轮修正 |
+| 12 | `document.body.style` 操作散落（5 文件 20 处）| P1 | 第 2 轮 |
+| 13 | scoped CSS 中全局选择器 BUG（EditWorkspace）| P1 | 第 2 轮 |
+| 14 | Composable 中 DOM 样式操作 | P2 | 第 2 轮 |
+| 15 | 模板内联 `style=""` 硬编码 | P2 | 第 2 轮 |
+| 16 | LoadingSpinner 空文件 | P0 | 第 1 轮 |
+| 17 | `@keyframes` 动画重名泛滥（50+ 定义）| P2 | 第 3 轮 |
+| 18 | `z-index` 无体系（47 处，100-99999）| P2 | 第 3 轮 |
+| 19 | global.css 依赖网过深，不可简单删除 | P0 修正 | 第 3 轮 |
+| 20 | `font-family` 不统一（5 种声明，24 处）| P2 | 第 4 轮 |
+| 21 | `box-sizing` 冗余重复（16 处）| P2 | 第 4 轮 |
+| 22 | `@media` 断点不统一（5 种值，21 处）| P3 | 第 4 轮 |
+| 23 | **`:focus` + `outline:none` 重复模式（50+/49 处）**| P3 | 🆕 第 5 轮 |
+| 24 | **`transition: all` 性能反模式（330+ 处）**| P3 | 🆕 第 5 轮 |
+| 25 | **`backdrop-filter` 不一致（8 处 4 种 blur）**| P3 | 🆕 第 5 轮 |
+| 26 | **[rem](file:///c:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/components/bookshelf/BookDetailModal.vue#338-372) vs `px` 混用（5 文件用 rem，其余全 px）**| P3 | 🆕 第 5 轮 |
+| 27 | **无 CSS Lint 护栏（无 stylelint 配置）**| P0 | 🆕 第 6 轮 |
+| 28 | **无 CSS 命名规范约定**| P0 | 🆕 第 6 轮 |
+
+---
+
+## P0: 🔴 Critical — 基础架构修复
+
+### 任务 27：Stylelint 护栏 + CODING_STYLE.md 🆕
+
+> [!IMPORTANT]
+> **成本极低但价值极高**：不改任何已有代码，只建立规则防止问题回归。
+
+#### [NEW] .stylelintrc.json
+
+关键规则：
+- `declaration-no-important: true`
+- `selector-max-id: 0`
+- `no-descending-specificity: true`
+- `declaration-block-no-duplicate-properties: true`
+- Vue 文件通过 `postcss-html` 解析
+
+> [!NOTE]
+> 初期将已有违规文件加入 `.stylelintignore`，每完成一个任务就从 ignore 中移除对应文件，实现渐进式收紧。
+
+#### [MODIFY] package.json
+
+新增 devDependencies: `stylelint`, `stylelint-config-standard`, `postcss-html`
+新增 script: `"lint:css": "stylelint 'src/**/*.{vue,css}'"`
+
+#### [NEW] CODING_STYLE.md
+
+约定内容（不修改已有类名，仅约束新代码）：
+
+| 规则 | 说明 |
+|------|------|
+| 命名格式 | 新组件采用 `组件名-元素名` 格式，已有类名不改 |
+| 禁止 `!important` | 通过 stylelint 强制 |
+| 禁止 ID 选择器 | 通过 stylelint 强制 |
+| CSS 变量优先 | 颜色/圆角/阴影/字体必须用 `var(--xxx)` |
+| scoped 为默认 | `<style scoped>` 除非有文档说明的例外 |
+| 动画复用 | 通用 @keyframes 必须定义在 global.css |
+
+---
+
+### 任务 1：global.css 重构（修正策略）
+
+#### [MODIFY] [global.css](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/styles/global.css)
+
+> [!IMPORTANT]
+> **策略变更**：不再"暴力瘦身"到 150 行，改为**分层重构**。
+
+**新 global.css 结构（约 350-400 行）：**
+
+```
+├── 第一层：CSS 变量（统一命名后 ~100 行）
+├── 第二层：CSS Reset + 滚动条 (~30 行)
+├── 第三层：@keyframes 通用动画 (~50 行)
+├── 第四层：.btn 按钮体系精简版 (~60 行)
+│    ── 保留 .btn, .btn-primary, .btn-secondary, .btn-danger, .btn-sm, .btn-icon
+│    ── 删除 .btn-ghost 等确认无引用变体
+├── 第五层：.form-group / .settings-group 精简版 (~60 行)
+│    ── 合并 global.css + SettingsModal 的定义为一份权威版本
+├── 第六层：body.* 全局 cursor 样式 (~10 行)
+│    ── body.middle-button-drawing（从 EditWorkspace 迁入）
+└── 删除项：.modal 体系（→ BaseModal）、.bookshelf-page 覆盖（→ View）、
+            .chapter-drag-handle（→ ChapterList.vue）
+```
+
+**具体删除迁移 (~400 行)：**
+
+| 行范围 | 内容 | 迁移目标 |
+|--------|------|----------|
+| L388-501 | `.modal` 模态框体系 | BaseModal.vue + 各模态框组件 ⚠️ **须在任务 8 BaseModal 迁移完成后再删除** |
+| L554-574 | `.chapter-drag-handle` | ChapterList.vue scoped |
+| L763-875 | `.bookshelf-page .app-header` 覆盖 | BookshelfView.vue（AppHeader variant）|
+| 重复/无引用 `.btn` 变体 | ~30 行 | 删除 |
+
+---
+
+### 任务 2：CSS 变量命名统一
+
+#### [MODIFY] [global.css](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/styles/global.css) + 全部引用组件
+
+> [!WARNING]
+> `--primary-color` 实际是 `--color-primary` 的**别名**（global.css L52: `--primary-color: var(--color-primary)`），在 **80+ 处**被引用。目标是删除别名，将 80+ 处引用改为已有的 `--color-primary`。建议渐进迁移。
+
+> [!CAUTION]
+> **零回归要求**：替换前必须确认 `--color-primary` 和 `--primary-color` 的计算值完全相同（因为是别名所以一定相同）。替换必须全局搜索确保零遗漏，否则颜色丢失。
+
+| 旧名（别名，删除） | 新名（已存在，保留） | 实际引用处数 |
+|-------------|-------------|------------|
+| `--primary-color` | `--color-primary`（已定义 L11）| **80+** |
+| `--border-radius-sm` / `-md` / `-lg` | `--radius-sm` / `-md` / `-lg`（已定义 L65-67）| ~8 |
+| `--btn-primary-bg` | `--color-primary` | ~3 |
+| `--card-bg-color` ↔ `--card-bg` | 统一为 `--card-bg`（L104 已有别名）| ~2 |
+| `--text-color` | 保留（body 级变量，与 `--text-primary` 语义不同）| ~10 |
+| `--bg-color` | 保留（body 级变量，无 `--bg-primary` 对应）| ~5 |
+
+---
+
+### 任务 3：4 个 View 统一使用 AppHeader
+
+> [!CAUTION]
+> **零回归要求**：AppHeader 的 `variant` 样式必须完全复制各 View 当前的 header 样式（颜色、间距、字体等），而非"设计新样式"。迁移后每个页面的 header 必须和迁移前像素级一致。
+
+#### [MODIFY] [AppHeader.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/common/AppHeader.vue)
+- 添加 `variant` prop（`default` | `bookshelf` | `insight`）
+
+#### [MODIFY] [BookshelfView.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/views/BookshelfView.vue)
+- 删除内联 header + 19 `!important` + 9 `:deep()` + 重复 `.btn`/`.card` CSS（约 300 行）
+- 改用 `<AppHeader variant="bookshelf" />`
+
+#### [MODIFY] [InsightView.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/views/InsightView.vue)
+- 删除内联 header + 26 `!important` + 10 `:deep()` + CSS 变量覆盖（约 200 行）
+
+#### [MODIFY] [TranslateView.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/views/TranslateView.vue) / [ReaderView.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/views/ReaderView.vue)
+- 确认 header 使用方式并统一
+
+---
+
+### 任务 4：非 scoped 样式修复
+
+| 文件 | 修改 |
+|------|------|
+| [InsightSettingsModal.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/insight/InsightSettingsModal.vue) | `<style>` → `<style scoped>`（或加命名空间，因为 BaseModal Teleport）|
+| [CustomSelect.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/common/CustomSelect.vue) | 保留非 scoped（Teleport），添加 `.cs-` 命名空间前缀；同时修复 19 处 `!important` |
+| [App.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/App.vue) | 全局样式移入 global.css |
+| [LoadingSpinner.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/common/LoadingSpinner.vue) | 实现或删除（0 字节空文件）|
+
+---
+
+## P1: 🟠 High — 深度样式修复
+
+### 任务 5：`.settings-group` 定义统一
+
+> [!WARNING]
+> `.settings-group` 在 3 处定义，30+ 处引用。SettingsModal.vue 的 scoped 定义无法穿透到子组件。
+
+| 定义位置 | 行为 |
+|---------|------|
+| global.css L598-756 | 全局定义 ← **实际给 settings/ 子组件供样式** |
+| SettingsModal.vue L312 | scoped 定义 ← 仅作用于自身 |
+| WebImportModal.vue L1152 | scoped 定义 ← 仅作用于自身 |
+
+**方案**：保留 global.css 中精简版 `.settings-group`（或提取为 `settings-group.css` 按需引入），删除 SettingsModal 中的重复定义。
+
+---
+
+### 任务 6：InsightView 修复
+- 删除 10+ CSS 变量重定义（`--bg-primary/--bg-secondary/--text-primary/--primary-color` 等）
+- 删除 `document.body.style.padding/margin/overflow` hack（2 处）
+- 删除 26 处 `!important`（**逐条验证**：用 DevTools 取消 `!important` 确认样式不变后再删除）
+
+---
+
+### 任务 7：SettingsSidebar ID + `!important`
+
+#### [MODIFY] [SettingsSidebar.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/translate/SettingsSidebar.vue)
+- 50+ 处 `#settings-sidebar` → class
+- 30 处 `!important` → 重构优先级（**逐条验证**：每删一处先在 DevTools 确认去掉后样式不变）
+- `.apply-settings-group` 重复定义（L1273 + L1840）合并
+
+---
+
+### 任务 8：BaseModal 完整迁移（14+ 组件）
+
+> [!CAUTION]
+> **零回归要求**：迁移后模态框的尺寸、圆角、阴影、动画、背景遮罩透明度必须与原实现完全一致。BaseModal 只提供结构，样式由各组件自行保留。
+
+**已使用 BaseModal（6 个）：** SessionModal、InsightSettingsModal、FirstTimeGuide、TagManageModal、SponsorModal、BookModal
+
+**需迁移 BaseModal（14+ 个）：**
+
+| 组件 | 当前结构 |
+|------|---------|
+| ConfirmModal | 手写 `.modal-overlay` |
+| WebImportModal | 手写 overlay |
+| WebImportDisclaimer | 手写 overlay |
+| SettingsModal | 手写 `.settings-modal`（含 body.style.overflow 操作）|
+| ChapterSelectModal | 手写 `.modal-overlay` |
+| ImagePreviewModal | 手写 `.modal-overlay` |
+| BookDetailModal | 手写 `.modal-overlay` |
+| QAPanel 内嵌弹窗 | `.modal-overlay` |
+| 5 × continuation Dialog | 手写 `.modal-overlay`（AddCharacter/AddForm/EditCharacter/EditForm/Orthographic）|
+
+---
+
+### 任务 9：`document.body.style` 操作统一
+
+| 文件 | 操作 | 方案 |
+|------|------|------|
+| InsightView | `.padding/.margin/.overflow` | 删除，改用 CSS |
+| SettingsModal | `.overflow`（4 处）| 迁移 BaseModal 后统一处理 |
+| EditWorkspace | `.cursor/.userSelect`（8 处）| 保留（拖拽合理），确保 onUnmounted 清理 |
+| BaseModal | `.overflow`（3 处）| 保留（BaseModal 统一管理 body overflow）|
+| BubbleOverlay | `classList.add/remove`（7 处）| 保留，但样式移出 scoped |
+
+---
+
+### 任务 10：scoped CSS 中全局选择器 BUG
+
+#### [MODIFY] [EditWorkspace.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/edit/EditWorkspace.vue)
+- L2390-2393 `body.middle-button-drawing` 在 scoped 中 → **永远无法匹配**
+- 迁移到 [global.css](file:///c:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/styles/global.css) 或拆出 `<style>` 非 scoped 块
+- 同时处理 15 处 `!important` + `#restoreBrushBtn` ID
+
+---
+
+### 任务 11：`!important` 全量治理 — P1 阶段组件
+
+| 文件 | 数量 | 随哪个任务处理 |
+|------|------|---------------|
+| SettingsSidebar | 30 | 任务 7 |
+| InsightView | 26 | 任务 6 |
+| BookshelfView | 19 | 任务 3（P0）|
+| CustomSelect | 19 | 任务 4（P0）|
+| EditWorkspace | 15 | 任务 10 |
+
+---
+
+## P2: 🟡 Medium — 代码质量提升
+
+### 任务 12：`@keyframes` 动画去重 🆕
+
+> [!NOTE]
+> 50+ 处 `@keyframes` 定义，大量重名。虽然 scoped 下不会冲突，但代码重复严重。
+
+> [!CAUTION]
+> **零回归要求**：合并前必须逐个比对各组件中同名 `@keyframes` 的参数（duration、timing-function、keyframe 百分比）是否完全一致。**不一致的不合并**，保留在各自组件中。
+
+| 动画名 | 重复定义文件数 | 方案 |
+|--------|-------------|------|
+| `spin` | 12 | 移入 global.css，各组件删除 |
+| `fadeIn` | 9 | 移入 global.css（已有），各组件删除 |
+| `pulse` | 5 | 移入 global.css（已有），各组件删除 |
+| `slideIn` | 3 | 移入 global.css（已有），各组件删除 |
+| `slideUp` | 5 | 移入 global.css |
+| `progressFadeIn` / `progressShine` | 2（EditWorkspace + EditToolbar）| 合并到一处 |
+| 其余（`lockPulse`/`presavePulse`/`brushModeHint` 等）| 1 | 保留在各自组件 |
+
+---
+
+### 任务 13：`z-index` 分层体系 🆕
+
+> [!WARNING]
+> 当前 47 处 z-index 硬编码，值域 100-99999，无统一设计。
+
+> [!CAUTION]
+> **零回归要求**：token 值必须保持当前的**相对层级关系**不变。例如 CustomSelect dropdown(20000) 必须在 SettingsModal(10002) 之上。替换后逐页面验证弹窗/下拉/toast 的层叠顺序。
+
+**建议在 global.css 新增 z-index 设计 token：**
+
+```css
+:root {
+  --z-base:       1;      /* 普通 */
+  --z-dropdown:   100;    /* 下拉菜单 */
+  --z-sticky:     200;    /* 固定 header */
+  --z-sidebar:    300;    /* 侧边栏 */
+  --z-overlay:    1000;   /* 遮罩层 */
+  --z-modal:      1100;   /* 模态框 */
+  --z-popover:    1200;   /* 气泡 */
+  --z-toast:      1300;   /* Toast 通知 */
+}
+```
+
+**当前问题热点：**
+
+| 组件 | 当前 z-index | 建议 |
+|------|-------------|------|
+| AppHeader | 100 | `var(--z-sticky)` |
+| BaseModal / 所有模态框 | 1000-1100 | `var(--z-modal)` |
+| SettingsModal | **10002** | `var(--z-modal)` |
+| SettingsSidebar | **9999** × 2 | `var(--z-sidebar)` |
+| CustomSelect dropdown | **20000** | `var(--z-popover)` |
+| ToastNotification | **99999** | `var(--z-toast)` |
+| EditWorkspace 弹窗 | 9999 / 10000 | `var(--z-modal)` |
+
+---
+
+### 任务 14：启用 CollapsiblePanel / ResponsiveContainer
+
+#### [MODIFY] [SettingsSidebar.vue](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/components/translate/SettingsSidebar.vue)
+- 折叠面板逻辑 → 使用 CollapsiblePanel
+
+#### 评估各 View 中 ResponsiveContainer / MobileNav 采用
+
+---
+
+### 任务 15：`!important` 全量治理 — P2 阶段组件
+
+| 文件 | 数量 |
+|------|------|
+| JapaneseKeyboard | 24 |
+| BubbleOverlay | 8 |
+| BookDetailModal | 7 |
+| ImageResultDisplay | 6 |
+| EditToolbar | 3 |
+| ResponsiveContainer | 3 |
+| ImageUpload | 2 |
+| TranslateView | 2 |
+| TranslationProgress | 1 |
+| PagesTree | 1 |
+| AnalysisProgress | 4 |
+
+---
+
+### 任务 16：Composable 中 DOM 样式操作
+
+| 文件 | 操作 | 方案 |
+|------|------|------|
+| [useValidation.ts](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/composables/useValidation.ts) | `style.animation/boxShadow`（L470-476）| → CSS class + classList |
+| [useBrush.ts](file:///c:/Users/33252/OneDrive/Desktop/Saber-Translator/vue-frontend/src/composables/useBrush.ts) | `canvas.style.cssText`（L385）| 保留（canvas 合理），添加注释 |
+
+---
+
+### 任务 17：ID 选择器替换
+
+| 文件 | ID 选择器 |
+|------|-----------|
+| SettingsSidebar | 50+（任务 7）|
+| EditWorkspace | `#restoreBrushBtn`（任务 10）|
+| ReaderControls | `#nextChapterBtn`, `#scrollTopBtn` 等 |
+| EditToolbar | `#zoomLevel`, `#prevBubbleBtn` |
+| ImageUpload | `#drop-area` |
+| ThumbnailSidebar | `#thumbnail-sidebar` |
+| TranslationProgress | `#translationProgressBar` |
+| ReaderCanvas | `#loadingState`, `#emptyState` |
+| ImageResultDisplay | `#toggleImageButton` |
+
+---
+
+### 任务 18：硬编码颜色 + 模板内联样式
+
+> [!CAUTION]
+> **零回归要求**：替换为 CSS 变量时，变量值必须**等于当前硬编码值**。不可"顺便统一"成不同的颜色。
+
+**高优先级硬编码颜色文件：**
+EditWorkspace (40+), JapaneseKeyboard (24), CustomSelect (22), BookDetailModal (7+), ImageResultDisplay (5+)
+
+**模板内联静态 `style=""`：**
+
+| 文件 | 处数 | 示例 |
+|------|------|------|
+| CustomSelect | 4 | `style="color:…"` / `style="font-size:…"` / `style="background:…"` |
+| TranslateView | 1 | L1421 `style="color: #888; font-size: 0.85em;"` |
+| BatchSettingsTab | 1 | `style="color:…"` |
+| EditToolbar | 1 | `style="background:…"` |
+
+---
+
+### 任务 19：死 CSS 清理 + `box-sizing` 冗余 🆕
+
+| 文件 | 内容 |
+|------|------|
+| SponsorModal | ~85 行无用 `.donate-modal` CSS（L104-188，已用 BaseModal，可删除）|
+| CollapsiblePanel | 重复 `.collapsible-header` 定义 |
+| SettingsSidebar | `.apply-settings-group` 重复定义（L1273 + L1840）— 已在任务 7 中合并 |
+| **16 个文件** | 冗余 `box-sizing: border-box`（global.css 已有 `*` 选择器全局设置）|
+
+涉及：BookshelfView, ThumbnailSidebar, SettingsSidebar×4, ImageResultDisplay, QAPanel, EditWorkspace×3, BubbleOverlay×2, BubbleEditor×2
+
+---
+
+### 任务 20：`font-family` 统一 🆕
+
+> [!NOTE]
+> 当前 5 种 font-family 声明，24 处引用，无统一 CSS 变量。
+
+> [!CAUTION]
+> **零回归要求**：`--font-mono` 的值必须等于当前最常用的 monospace 声明，不要"设计新字体栈"。各 token 值从现有最高频声明中直接提取。
+
+**建议在 global.css 新增 font token：**
+```css
+:root {
+  --font-sans: 'Arial', sans-serif;
+  --font-mono: 'Consolas', 'Monaco', monospace;
+  --font-jp: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
+}
+```
+
+| 当前声明 | 出现次数 | 替换为 |
+|---------|---------|-------|
+| `'Consolas', 'Monaco', monospace` | 5 | `var(--font-mono)` |
+| `monospace` | 2 | `var(--font-mono)` |
+| `'SF Mono', Monaco, 'Courier New', monospace` | 1 | `var(--font-mono)` |
+| `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif` | 1 | `var(--font-sans)` |
+| `system-ui, -apple-system, sans-serif` | 1 | `var(--font-sans)` |
+| `'Noto Sans JP', 'Yu Gothic'...` | 2 | `var(--font-jp)` |
+| `inherit` | 10 | 保留（正确用法）|
+
+---
+
+## P3: 🟢 Low — 长期优化
+
+### 任务 21：`:global()` 修复
+- FirstTimeGuide `:global(.settings-highlight)` → JS class 控制
+
+### 任务 22：ReaderControls CSS 变量注入
+- `document.documentElement.style.setProperty`（L165-167）→ 可保留但添加注释
+
+### 任务 23：`@media` 断点统一 🆕
+
+当前 21 处 `@media` 使用 5 种断点值，建议统一为 CSS 变量或注释约定：
+
+| 断点 | 当前用途 | 使用次数 |
+|------|---------|----------|
+| 480px | 小屏适配 | 3 |
+| 768px | 平板适配 | 10 |
+| 900px | 中屏适配 | 2 |
+| 1024px | 大平板 | 2 |
+| 1200px | 桌面 | 1 |
+
+另有 1 处 `prefers-color-scheme: dark`（WebImportDisclaimer）和 1 处 `min-width: 769px`（InsightView），建议统一为 `max-width: 768px`。
+
+### 任务 24：`:deep()` 清理
+
+> [!NOTE]
+> ~25 处 `:deep()` 使用。大部分随 AppHeader/BaseModal 迁移（任务 3/8）自然解决，此任务处理剩余项。
+
+| 文件 | 处数 | 方案 |
+|------|------|------|
+| BookshelfView | 9 | 随任务 3 AppHeader 迁移一起处理 |
+| InsightView | 10 | 随任务 3/6 一起处理 |
+| 其余散落 | ~6 | 逐个评估必要性，不必要的改为 scoped 内部选择器 |
+
+### 任务 25：其他 CSS 一致性优化 🆕
+
+> [!CAUTION]
+> **零回归要求**：`transition: all` 替换为具体属性时，必须确认列出的属性**覆盖**了该元素上所有实际有 transition 效果的属性，否则会丢失过渡动画。
+
+| 问题 | 现状 | 建议 |
+|------|------|------|
+| `:focus` + `outline: none` 重复 | 50+ 处 `:focus` / 49 处 `outline: none`，30+ 组件各自定义 | 在 global.css 统一定义表单元素 focus 样式，组件仅覆盖必要部分 |
+| `transition: all` | 330+ 处 transition，大量使用 `all`（性能反模式）| 改为指定具体属性（`background-color`, `opacity`, ...），**逐元素在 DevTools 确认过渡效果一致** |
+| `backdrop-filter` | 8 处，4 种 blur 值（2/4/8/10px）| 统一为 2-3 个 token 变量 |
+| [rem](file:///c:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/components/bookshelf/BookDetailModal.vue#338-372) vs `px` | 5 文件用 rem（BookshelfView/BookSearch/BookDetailModal/BookCard/global.css），其余全 px | 统一为 px（组件级）或全局转 rem（架构级）|
+
+---
+
+### 任务 26：巨型组件拆分（仅 5 个高逻辑复杂度组件）
+
+> [!IMPORTANT]
+> **不为拆分而拆分**。仅拆分逻辑复杂度高的组件（函数数 ≥ 80）。其余 1000+ 行组件（TimelinePanel/NotesPanel/EditToolbar 等）行数膨胀主因是 CSS，应通过样式重构解决。
+
+| 文件 | 总行 | Script | CSS | 函数数 | 拆分建议 |
+|------|------|--------|-----|-------|---------|
+| EditWorkspace | 2761 | 1402 | 1115 | **185** | 已拆出 EditToolbar/EditThumbnailPanel，可继续拆 zoom/pan 逻辑→composable、笔刷交互→composable |
+| TranslateView | 1902 | 1476 | 425 | **119** | 顶层编排组件，可拆 ImageUploadSection、TranslationResultSection |
+| BubbleOverlay | 1013 | 732 | 173 | **98** | 拖拽/旋转/缩放事件处理→useBubbleInteraction composable |
+| BubbleEditor | 1531 | 551 | 596 | **92** | 文本编辑/格式化/字体控制可拆子组件 |
+| SettingsSidebar | 2238 | 961 | 1276 | 80 | 各设置分区可拆为独立 Tab 组件（类似 insight 已有的 xxxSettingsTab 模式）|
+
+---
+
+## 全局扫描完整性证明（五轮审查，37 个维度）
+
+| 扫描维度 | 范围 | 结果 |
+|---------|------|------|
+| Vue 文件 | 85 个（100%）| 全部检查 |
+| `<style>` vs `<style scoped>` | 85 个 | 3 个非 scoped |
+| `!important` | 全部 src/ | **177 处**，19 个文件 |
+| `:deep()` | 全部 src/ | ~25 处 |
+| `@keyframes` | 全部 src/ | **50+ 定义**，10+ 重名 |
+| `z-index >= 100` | 全部 src/ | **47 处** |
+| `document.body.style` | composables + views + components | 5 个文件 |
+| `.classList` | 全部 TS/Vue | 1 个文件（BubbleOverlay） |
+| `class="btn "` 引用 | 全部 Vue | **45 个文件** |
+| `class="form-group"` 引用 | 全部 Vue | **19 个文件** |
+| `class="modal-overlay"` 引用 | 全部 Vue | **10 个文件** |
+| `.settings-group` 引用 | 全部 Vue | **30+ 处** |
+| ID 选择器 | 全部 CSS | 60+ 处 |
+| 硬编码颜色 | 全部 CSS | 150+ 处 |
+| `font-family` | 全部 CSS | **24 处**，5 种声明 |
+| `box-sizing` | 全部 CSS | **16 处**冗余 |
+| `@media` 断点 | 全部 CSS | **21 处**，5 种断点值 |
+| `Teleport` | 全部 Vue | 9 个组件（scoped 兼容 OK）|
+| `@import` | 全部 CSS | 0（干净）|
+| `:global()` | 全部 Vue | 1 处（FirstTimeGuide）|
+| `prefers-color-scheme` | 全部 CSS | 1 处（WebImportDisclaimer）|
+| `var(--primary-color)` | 全部 src/ | **80+ 处** |
+| `:focus` 样式 | 全部 CSS | **50+ 处**，30+ 组件各自定义 |
+| `outline: none` | 全部 CSS | **49 处**（可访问性风险）|
+| `transition` | 全部 CSS | **330+ 处**，大量 `all` |
+| `backdrop-filter` | 全部 CSS | 8 处，4 种 blur 值 |
+| `v-bind()` CSS | 全部 Vue | 0（未使用）|
+| `-webkit-` 前缀 | 全部 CSS | 0（Vite autoprefixer）|
+| [rem](file:///c:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/components/bookshelf/BookDetailModal.vue#338-372) vs `px` | 全部 CSS | 5 文件用 rem，其余全 px |
+| `data-theme` / dark mode | 全部 src/ | CSS 变量模式（干净）|
+| 多 `<style>` 块 | 全部 Vue | **0（确认）** |
+| Composables | 52 个 | 2 个有 DOM 操作 |
+| Stores | 23 个 | 0 样式问题 |
+| Utils | 8 个 | 0 样式问题 |
+| Router / main.ts | 2 个 | 干净 |
+| index.html / assets / public | 各 1 | 无额外 CSS |
+| ESLint / Vite 配置 | 2 个 | 无 CSS 相关规则 -> 任务 27 添加 stylelint |
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+```bash
+cd c:\Users\33252\OneDrive\Desktop\Saber-Translator\vue-frontend
+npm run typecheck   # TypeScript ≤ 0 errors
+npm run build       # Vite 构建成功
+npm run lint        # ESLint 0 errors
+npm run lint:css    # Stylelint 0 errors（渐进式：已清理的文件）
+npm run test        # Vitest 全通过
+```
+
+### Visual Regression（每阶段完成后 `npm run dev`）
+
+| 阶段 | 验证重点 |
+|------|---------|
+| P0 | 全站 header、主题切换、CSS 变量、按钮/表单/settings-group 外观不变 |
+| P1 | 所有模态框开关、InsightView 背景色、编辑器 cursor、SettingsSidebar 折叠/展开 |
+| P2 | 动画效果、z-index 层叠正确、日语键盘外观、CustomSelect 下拉 |
+| P3 | focus 样式可访问性、transition 性能、backdrop-filter 一致性 |

@@ -305,7 +305,7 @@ function closeOrthoDialog() {
 }
 
 .section-title h4 {
-  margin: 0 0 4px 0;
+  margin: 0 0 4px;
   font-size: 16px;
 }
 
@@ -383,7 +383,7 @@ function closeOrthoDialog() {
 .character-tile.selected {
   background: linear-gradient(135deg, #eef2ff 0%, #e8e8ff 100%);
   border-color: #6366f1;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 4px 12px rgb(99, 102, 241, 0.2);
 }
 
 .character-tile.disabled {
@@ -440,7 +440,7 @@ function closeOrthoDialog() {
   position: absolute;
   top: 2px;
   left: 2px;
-  background: rgba(239, 68, 68, 0.9);
+  background: rgb(239, 68, 68, 0.9);
   color: white;
   font-size: 9px;
   font-weight: 500;

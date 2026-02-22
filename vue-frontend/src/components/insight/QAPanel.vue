@@ -563,7 +563,7 @@ onMounted(() => {
 /* ==================== CSS变量 ==================== */
 .qa-container {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
   --text-primary: #1a202c;
   --text-secondary: #64748b;
@@ -628,7 +628,7 @@ onMounted(() => {
 
 .suggestion-btn:hover {
     background: var(--bg-tertiary);
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .chat-message {
@@ -678,7 +678,7 @@ onMounted(() => {
 }
 
 .chat-message.user .message-content {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-bottom-right-radius: 4px;
 }
@@ -698,7 +698,7 @@ onMounted(() => {
 }
 
 .chat-message.assistant .answer-text p {
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
 }
 
 .chat-message.assistant .answer-text p:last-child {
@@ -716,14 +716,14 @@ onMounted(() => {
 }
 
 .chat-message.assistant .answer-text strong {
-    color: var(--primary-color);
+    color: var(--color-primary);
     font-weight: 600;
 }
 
 .chat-message.assistant .answer-text blockquote {
     margin: 8px 0;
     padding: 6px 12px;
-    border-left: 3px solid var(--primary-color);
+    border-left: 3px solid var(--color-primary);
     background: var(--bg-tertiary);
     border-radius: 0 6px 6px 0;
     font-style: italic;
@@ -798,7 +798,7 @@ onMounted(() => {
 }
 
 .qa-mode-btn.active {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     font-weight: 500;
 }
@@ -851,7 +851,7 @@ onMounted(() => {
 }
 
 .example-tag:hover {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 
@@ -893,7 +893,7 @@ onMounted(() => {
 
 .send-btn {
     padding: 12px 24px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border: none;
     border-radius: 12px;
@@ -929,7 +929,7 @@ onMounted(() => {
 }
 
 .citation-item:hover {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 
@@ -949,9 +949,9 @@ onMounted(() => {
 }
 
 .message-save-btn:hover {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
-    border-color: var(--primary-color);
+    border-color: var(--color-primary);
 }
 
 .message-save-btn.saved {
@@ -966,6 +966,7 @@ onMounted(() => {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1013,7 +1014,7 @@ onMounted(() => {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgb(0, 0, 0, 0.5);
 }
 
 .note-modal .modal-content {
@@ -1027,7 +1028,7 @@ onMounted(() => {
     max-height: 90vh;
     background: var(--bg-primary);
     border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1128,7 +1129,7 @@ onMounted(() => {
     display: inline-flex;
     align-items: center;
     padding: 4px 10px;
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
     border-radius: 12px;
     font-size: 12px;
@@ -1176,8 +1177,8 @@ onMounted(() => {
 .note-form .form-input:focus,
 .note-form .form-textarea:focus {
     outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgb(99, 102, 241, 0.1);
 }
 
 .note-form .form-textarea {
@@ -1199,7 +1200,7 @@ onMounted(() => {
 }
 
 .btn-primary {
-    background: var(--primary-color);
+    background: var(--color-primary);
     color: white;
 }
 

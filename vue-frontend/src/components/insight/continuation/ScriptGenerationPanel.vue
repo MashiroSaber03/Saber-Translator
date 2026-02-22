@@ -168,7 +168,7 @@ watch(() => props.bookId, (newBookId) => {
 }
 
 .script-panel h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 20px;
   font-size: 18px;
   font-weight: 600;
 }

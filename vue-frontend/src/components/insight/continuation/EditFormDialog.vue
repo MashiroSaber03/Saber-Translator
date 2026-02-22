@@ -77,11 +77,8 @@ function save() {
 <style scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -89,10 +86,7 @@ function save() {
   animation: fadeIn 0.2s;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* @keyframes fadeIn 已迁移到 global.css */
 
 .modal-dialog {
   background: var(--bg-primary, #fff);
@@ -100,20 +94,11 @@ function save() {
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
   animation: slideUp 0.3s;
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
+/* @keyframes slideUp 已迁移到 global.css */
 
 .edit-form-dialog {
   max-width: 400px;

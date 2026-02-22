@@ -231,11 +231,8 @@ function handleCancel(): void {
 <style scoped>
 .reference-selector-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -243,10 +240,7 @@ function handleCancel(): void {
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* @keyframes fadeIn 已迁移到 global.css */
 
 .reference-selector-modal {
   background: white;
@@ -256,7 +250,7 @@ function handleCancel(): void {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.2);
   animation: scaleIn 0.3s ease;
   overflow: hidden;
 }
@@ -380,13 +374,13 @@ function handleCancel(): void {
 
 .thumbnail:hover {
   border-color: #409eff;
-  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.25);
+  box-shadow: 0 2px 12px rgb(64, 158, 255, 0.25);
   transform: translateY(-2px);
 }
 
 .thumbnail.selected {
   border-color: #409eff;
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2);
+  box-shadow: 0 0 0 3px rgb(64, 158, 255, 0.2);
 }
 
 .thumbnail.disabled {
@@ -414,7 +408,7 @@ function handleCancel(): void {
   justify-content: center;
   font-size: 13px;
   font-weight: bold;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px rgb(0, 0, 0, 0.25);
   animation: badgePop 0.15s ease;
 }
 
@@ -427,7 +421,7 @@ function handleCancel(): void {
   position: absolute;
   bottom: 4px;
   right: 4px;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgb(0, 0, 0, 0.75);
   color: white;
   padding: 3px 8px;
   border-radius: 4px;
@@ -437,11 +431,8 @@ function handleCancel(): void {
 
 .disabled-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255, 255, 255, 0.6);
+  inset: 0;
+  background: rgb(255, 255, 255, 0.6);
   cursor: not-allowed;
 }
 
@@ -463,7 +454,7 @@ function handleCancel(): void {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgb(0, 0, 0, 0.75);
   color: white;
   padding: 4px 6px;
   font-size: 10px;
@@ -505,7 +496,7 @@ function handleCancel(): void {
 }
 
 /* 响应式适配 */
-@media (max-width: 900px) {
+@media (width <= 900px) {
   .reference-selector-modal {
     width: 95vw;
     max-height: 90vh;

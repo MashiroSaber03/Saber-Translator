@@ -1905,7 +1905,7 @@ watch(selectedBubble, (bubble) => {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.view-controls #zoomLevel {
+.view-controls .zoom-level {
   min-width: 50px;
   text-align: center;
   color: #fff;
@@ -1914,7 +1914,7 @@ watch(selectedBubble, (bubble) => {
 }
 
 .view-mode-btn {
-  font-size: 18px !important;
+  font-size: 18px;
 }
 
 .view-mode-btn.single-mode .dual-icon {
@@ -2270,13 +2270,13 @@ watch(selectedBubble, (bubble) => {
 }
 
 .apply-text-btn {
-  background: #27ae60 !important;
-  color: white !important;
-  border-color: #27ae60 !important;
+  background: #27ae60;
+  color: white;
+  border-color: #27ae60;
 }
 
 .apply-text-btn:hover {
-  background: #219a52 !important;
+  background: #219a52;
 }
 
 /* ============ 样式设置区域 ============ */
@@ -2380,17 +2380,15 @@ watch(selectedBubble, (bubble) => {
 
 /* ============ 绘制模式 ============ */
 .drawing-mode .image-viewport {
-  cursor: crosshair !important;
+  cursor: crosshair;
 }
 
 .drawing-mode .image-canvas-wrapper {
-  cursor: crosshair !important;
+  cursor: crosshair;
 }
 
-body.middle-button-drawing,
-body.middle-button-drawing * {
-  cursor: crosshair !important;
-}
+/* body.middle-button-drawing 已迁移到 global.css（scoped 中无法匹配 body）*/
+
 
 .drawing-rect-edit {
   position: absolute;
@@ -2423,15 +2421,15 @@ body.middle-button-drawing * {
 }
 
 .brush-btn.active {
-  background: rgba(76, 175, 80, 0.3) !important;
-  border-color: #4CAF50 !important;
-  color: #4CAF50 !important;
+  background: rgba(76, 175, 80, 0.3);
+  border-color: #4CAF50;
+  color: #4CAF50;
 }
 
 #restoreBrushBtn.active {
-  background: rgba(33, 150, 243, 0.3) !important;
-  border-color: #2196F3 !important;
-  color: #2196F3 !important;
+  background: rgba(33, 150, 243, 0.3);
+  border-color: #2196F3;
+  color: #2196F3;
 }
 
 .brush-size-display {
@@ -2444,7 +2442,7 @@ body.middle-button-drawing * {
 }
 
 .edit-workspace.brush-mode-active .image-viewport {
-  cursor: none !important;
+  cursor: none;
 }
 
 .edit-workspace.brush-mode-active[data-brush-mode="repair"] .image-viewport {
@@ -2735,7 +2733,7 @@ body.middle-button-drawing * {
 }
 
 /* ============ 响应式调整 ============ */
-@media (max-width: 1200px) {
+@media (width <= 1200px) {
   .style-settings-section {
     flex: none;
     max-width: none;
@@ -2743,7 +2741,7 @@ body.middle-button-drawing * {
   }
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .image-comparison-container {
     flex-direction: column;
   }

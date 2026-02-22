@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
+import BaseModal from '@/components/common/BaseModal.vue'
 
 const emit = defineEmits<{
   close: []
@@ -426,15 +427,15 @@ async function quickAddTagToBook(tagName: string) {
 </script>
 
 <template>
-  <!-- 书籍详情模态框 - 使用与原版相同的HTML结构 -->
-  <div class="modal active">
-    <div class="modal-overlay" @click="emit('close')"></div>
-    <div class="modal-content modal-large">
-      <div class="modal-header">
-        <h2>书籍详情</h2>
-        <button class="modal-close" @click="emit('close')">&times;</button>
-      </div>
-      <div class="modal-body">
+  <!-- 书籍详情模态框 - 基于 BaseModal -->
+  <BaseModal
+    title="书籍详情"
+    size="large"
+    custom-class="book-detail-modal"
+    :close-on-overlay="true"
+    :close-on-esc="true"
+    @close="emit('close')"
+  >
         <div v-if="currentBook" class="book-detail-container">
           <!-- 书籍信息 - 与原版相同的垂直布局 -->
           <div class="book-info-section">
@@ -530,49 +531,40 @@ async function quickAddTagToBook(tagName: string) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
+  </BaseModal>
 
   <!-- 章节编辑模态框 -->
-  <Teleport to="body">
-    <div v-if="showChapterModal" class="modal active">
-      <div class="modal-overlay" @click="showChapterModal = false"></div>
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>{{ editingChapterId ? '编辑章节' : '新建章节' }}</h2>
-          <button class="modal-close" @click="showChapterModal = false">&times;</button>
+  <BaseModal
+    v-model="showChapterModal"
+    :title="editingChapterId ? '编辑章节' : '新建章节'"
+    size="small"
+    :close-on-overlay="true"
+    :close-on-esc="true"
+  >
+        <div class="form-group">
+          <label for="chapterTitleInput">章节名称 <span class="required">*</span></label>
+          <input
+            id="chapterTitleInput"
+            v-model="chapterTitle"
+            type="text"
+            placeholder="例如：第1话、序章"
+            @keypress.enter="saveChapter"
+          >
         </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label for="chapterTitleInput">章节名称 <span class="required">*</span></label>
-            <input
-              id="chapterTitleInput"
-              v-model="chapterTitle"
-              type="text"
-              placeholder="例如：第1话、序章"
-              @keypress.enter="saveChapter"
-            >
-          </div>
-        </div>
-        <div class="modal-footer">
+        <template #footer>
           <button type="button" class="btn btn-secondary" @click="showChapterModal = false">取消</button>
           <button type="button" class="btn btn-primary" @click="saveChapter">保存</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+        </template>
+  </BaseModal>
 
-  <!-- 【复刻原版】快速添加标签模态框 -->
-  <Teleport to="body">
-    <div v-if="showAddTagModal" class="modal active">
-      <div class="modal-overlay" @click="closeAddTagModal"></div>
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>快速添加标签</h2>
-          <button class="modal-close" @click="closeAddTagModal">&times;</button>
-        </div>
-        <div class="modal-body">
+  <BaseModal
+    v-model="showAddTagModal"
+    title="快速添加标签"
+    size="small"
+    :close-on-overlay="true"
+    :close-on-esc="true"
+    @close="closeAddTagModal"
+  >
           <!-- 【复刻原版】搜索/创建输入框 -->
           <div class="quick-tag-input-wrapper">
             <input
@@ -617,38 +609,30 @@ async function quickAddTagToBook(tagName: string) {
               {{ quickTagFilter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
             </p>
           </div>
-        </div>
-        <div class="modal-footer">
+        <template #footer>
           <button type="button" class="btn btn-secondary" @click="closeAddTagModal">关闭</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+        </template>
+  </BaseModal>
 
   <!-- 删除确认模态框 -->
-  <Teleport to="body">
-    <div v-if="showDeleteConfirm" class="modal active">
-      <div class="modal-overlay" @click="showDeleteConfirm = false"></div>
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>确认删除</h2>
-          <button class="modal-close" @click="showDeleteConfirm = false">&times;</button>
-        </div>
-        <div class="modal-body">
+  <BaseModal
+    v-model="showDeleteConfirm"
+    title="确认删除"
+    size="small"
+    :close-on-overlay="true"
+    :close-on-esc="true"
+  >
           <p>
             {{ deleteTarget === 'book' 
               ? '确定要删除这本书籍吗？所有章节数据将一并删除，此操作不可恢复。' 
               : '确定要删除这个章节吗？此操作不可恢复。' 
             }}
           </p>
-        </div>
-        <div class="modal-footer">
+        <template #footer>
           <button type="button" class="btn btn-secondary" @click="showDeleteConfirm = false">取消</button>
           <button type="button" class="btn btn-danger" @click="confirmDelete">删除</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+        </template>
+  </BaseModal>
 </template>
 
 <style scoped>
@@ -889,33 +873,33 @@ async function quickAddTagToBook(tagName: string) {
 
 .chapter-enter-btn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white !important;
+    color: white;
     font-weight: 500;
 }
 
 .chapter-enter-btn:hover {
-    background: linear-gradient(135deg, #7b8eef 0%, #8a5cb5 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, #7b8eef 0%, #8a5cb5 100%);
+    color: white;
     transform: scale(1.02);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .chapter-read-btn {
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white !important;
+    color: white;
     font-weight: 500;
 }
 
 .chapter-read-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #34ce57 0%, #38d9a9 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, #34ce57 0%, #38d9a9 100%);
+    color: white;
     transform: scale(1.02);
     box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
 }
 
 .chapter-read-btn:disabled {
     background: var(--border-color);
-    color: var(--text-secondary) !important;
+    color: var(--text-secondary);
     cursor: not-allowed;
     opacity: 0.6;
 }

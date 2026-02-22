@@ -486,9 +486,9 @@ watch(selectedPageNum, () => {
 /* ==================== CSS变量 ==================== */
 .page-detail-container {
   --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fff;
   --bg-tertiary: #f1f5f9;
-  --bg-hover: rgba(99, 102, 241, 0.1);
+  --bg-hover: rgb(99, 102, 241, 0.1);
   --text-primary: #1a202c;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
@@ -521,7 +521,7 @@ watch(selectedPageNum, () => {
 }
 
 .btn-primary {
-  background: var(--primary-color);
+  background: var(--color-primary);
   color: white;
 }
 
@@ -585,9 +585,7 @@ watch(selectedPageNum, () => {
   margin: 0 auto 12px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin 已迁移到 global.css */
 
 /* 页面头部 */
 .page-detail-header {
@@ -639,7 +637,7 @@ watch(selectedPageNum, () => {
 .error-message {
   font-size: 12px;
   color: var(--danger, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+  background: rgb(239, 68, 68, 0.1);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
@@ -662,11 +660,8 @@ watch(selectedPageNum, () => {
 
 .image-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0);
+  inset: 0;
+  background: rgb(0, 0, 0, 0);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -674,7 +669,7 @@ watch(selectedPageNum, () => {
 }
 
 .page-detail-image:hover .image-overlay {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgb(0, 0, 0, 0.3);
 }
 
 .zoom-hint {
@@ -700,7 +695,7 @@ watch(selectedPageNum, () => {
 }
 
 .analysis-status-tag.analyzed {
-  background: rgba(34, 197, 94, 0.1);
+  background: rgb(34, 197, 94, 0.1);
   color: var(--success, #22c55e);
 }
 
@@ -711,7 +706,7 @@ watch(selectedPageNum, () => {
 
 .page-summary h5 {
   font-size: 14px;
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   color: var(--text-primary);
 }
 
@@ -756,7 +751,7 @@ watch(selectedPageNum, () => {
 
 .dialogues-section h5 {
   font-size: 14px;
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   color: var(--text-primary);
 }
 
@@ -822,7 +817,7 @@ watch(selectedPageNum, () => {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid currentColor;
+  border: 2px solid currentcolor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -832,11 +827,8 @@ watch(selectedPageNum, () => {
 /* 图片预览模态框 */
 .image-preview-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.95);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.95);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -889,7 +881,7 @@ watch(selectedPageNum, () => {
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255, 255, 255, 0.2);
   color: white;
   font-size: 18px;
   cursor: pointer;
@@ -897,7 +889,7 @@ watch(selectedPageNum, () => {
 }
 
 .preview-nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgb(255, 255, 255, 0.3);
 }
 
 .preview-nav-btn:disabled {

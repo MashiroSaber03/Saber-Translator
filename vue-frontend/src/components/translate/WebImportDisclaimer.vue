@@ -150,11 +150,8 @@ function handleCancel() {
 <style scoped>
 .disclaimer-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: rgb(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,7 +167,7 @@ function handleCancel() {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 25px 80px rgb(0, 0, 0, 0.4);
   border: 2px solid #f0ad4e;
 }
 
@@ -298,7 +295,7 @@ function handleCancel() {
 
 .confirmation-input:focus {
   border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+  box-shadow: 0 0 0 3px rgb(52, 152, 219, 0.2);
 }
 
 .input-error {
@@ -351,7 +348,7 @@ function handleCancel() {
 .btn-confirm:hover:not(:disabled) {
   background: linear-gradient(135deg, #219a52, #27ae60);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+  box-shadow: 0 4px 12px rgb(39, 174, 96, 0.3);
 }
 
 .btn-confirm:disabled {
