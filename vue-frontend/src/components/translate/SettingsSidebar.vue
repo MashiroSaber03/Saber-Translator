@@ -961,34 +961,6 @@ if (typeof window !== 'undefined') {
   z-index: 50;
 }
 
-.settings-sidebar > * {
-  direction: ltr;
-}
-
-/* 设置卡片 - 匹配原版 .settings-card 样式 */
-.settings-sidebar .settings-card {
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  padding: 25px;
-  margin-bottom: 15px;
-  transition: box-shadow 0.2s;
-}
-
-.settings-sidebar .settings-card:hover {
-  transform: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-}
-
-.settings-sidebar .settings-card h2 {
-  border-bottom: 2px solid #f0f0f0;
-  padding-bottom: 12px;
-  margin-bottom: 20px;
-  color: #2c3e50;
-  font-size: 1.6em;
-  text-align: center;
-}
-
 /* CollapsiblePanel 组件样式覆盖（匹配 SettingsSidebar 设计风格） */
 .settings-card.collapsible-panel {
   margin-top: 20px;

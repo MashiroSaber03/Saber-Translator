@@ -725,33 +725,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin-bottom: 24px;
 }
 
-.timeline-summary-card h4 {
-  margin: 0 0 12px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.timeline-summary-card .one-sentence {
-  font-size: 15px;
-  line-height: 1.6;
-  margin-bottom: 12px;
-}
-
-.timeline-summary-card .themes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.timeline-summary-card .theme-tag {
-  background: rgb(255, 255, 255, 0.2);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-}
-
 /* 剧情发展标题 */
 .timeline-section {
   margin-bottom: 20px;
