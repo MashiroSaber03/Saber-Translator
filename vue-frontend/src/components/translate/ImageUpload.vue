@@ -320,7 +320,6 @@ async function processImageFile(file: File): Promise<void> {
   })
 }
 
-
 /**
  * 处理 PDF 文件
  * 支持前端 pdf.js 和后端 PyMuPDF 两种方式
@@ -820,16 +819,9 @@ defineExpose({
   width: 32px;
   height: 32px;
   border: 3px solid var(--border-color, #e0e0e0);
-  border-top-color: var(--primary-color, #4a90d9);
+  border-top-color: var(--color-primary, #4a90d9);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-
-/* @keyframes spin 已迁移到 global.css */
-
-.loading-text {
-  font-size: 14px;
-  color: var(--text-secondary, #666);
 }
 
 </style>

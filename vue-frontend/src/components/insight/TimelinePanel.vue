@@ -516,7 +516,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
@@ -656,14 +656,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin: 0 auto 12px;
 }
 
-/* @keyframes spin 已迁移到 global.css */
-
-/* 空状态 */
-.timeline-empty-state {
-  text-align: center;
-  padding: 40px 20px;
-}
-
 .empty-icon {
   font-size: 48px;
   margin-bottom: 16px;
@@ -726,7 +718,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 /* 故事概要卡片 - 与原版一致的紫色渐变背景 */
 .timeline-summary-card {
-  background: linear-gradient(135deg, var(--primary-color, #6366f1) 0%, var(--primary-dark, #4f46e5) 100%);
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, var(--primary-dark, #4f46e5) 100%);
   color: white;
   border-radius: 12px;
   padding: 20px;
@@ -771,7 +763,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   color: var(--text-primary);
   margin: 0 0 16px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--primary-color, #6366f1);
+  border-bottom: 2px solid var(--color-primary, #6366f1);
   display: inline-block;
 }
 

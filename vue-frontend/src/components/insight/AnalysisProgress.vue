@@ -529,7 +529,7 @@ watch(analysisMode, () => {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
   --success-color: #22c55e;
@@ -617,14 +617,6 @@ watch(analysisMode, () => {
   animation: spin 0.8s linear infinite;
 }
 
-/* @keyframes spin 已迁移到 global.css */
-
-/* 禁用状态 */
-.btn-analysis-start:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .btn-icon-sm:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -673,11 +665,6 @@ watch(analysisMode, () => {
 
 .status-dot.failed {
     background: var(--error-color);
-}
-
-@keyframes pulse-glow {
-    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--color-primary); }
-    50% { opacity: 0.6; box-shadow: 0 0 4px var(--color-primary); }
 }
 
 .status-label {

@@ -351,7 +351,6 @@ onMounted(() => {
   height: calc(100vh - 40px);
   overflow-y: auto;
   padding-top: 20px;
-  box-sizing: border-box;
   margin-left: 0;
   order: 1;
   scrollbar-width: thin;
@@ -650,7 +649,7 @@ onMounted(() => {
   font-weight: 500;
   z-index: 8;
   box-shadow: 0 1px 3px rgb(0, 0, 0, 0.3);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* 已翻译角标（左上角绿色对勾） */
@@ -679,8 +678,4 @@ onMounted(() => {
   color: #94a3b8;
 }
 
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-}
 </style>

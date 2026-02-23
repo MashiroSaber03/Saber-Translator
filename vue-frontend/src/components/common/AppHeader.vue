@@ -141,7 +141,7 @@ function showFeatureNotice(): void {
   width: auto;
   margin: 0 auto;
   max-width: calc(100% - 700px);
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 
 .header-content {
@@ -296,17 +296,6 @@ function showFeatureNotice(): void {
   animation: pulse-highlight 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse-highlight {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgb(102, 126, 234, 0.7);
-  }
-
-  50% {
-    box-shadow: 0 0 0 10px rgb(102, 126, 234, 0);
-  }
-}
-
 .theme-toggle {
   background-color: #f0f2f5;
   border: 1px solid #dcdfe6;
@@ -338,7 +327,7 @@ function showFeatureNotice(): void {
   height: 56px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  z-index: 100;
+  z-index: var(--z-dropdown);
   display: flex;
   align-items: center;
   padding: 0 20px;

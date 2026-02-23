@@ -951,7 +951,6 @@ if (typeof window !== 'undefined') {
   height: calc(100vh - 90px);
   overflow-y: auto;
   padding-top: 10px;
-  box-sizing: border-box;
   margin-right: 0;
   order: -1;
   display: flex;
@@ -1068,7 +1067,6 @@ if (typeof window !== 'undefined') {
   padding: 12px;
   border: 1px solid #e0e6ed;
   border-radius: 8px;
-  box-sizing: border-box;
   font-size: 1em;
   transition: border-color 0.3s, box-shadow 0.3s;
   background-color: #f9fafc;
@@ -1242,60 +1240,73 @@ if (typeof window !== 'undefined') {
   display: block;
 }
 
-/* 应用设置组 - 匹配原版 .apply-settings-group 样式 */
+/* 应用设置组 */
 .apply-settings-group {
   display: flex;
   align-items: stretch;
-  gap: 0;
-  margin-top: 10px;
+  margin-top: 12px;
   position: relative;
+  width: 100%;
+  height: 36px;
 }
 
-.apply-settings-group .settings-button {
+.settings-sidebar .apply-settings-group button.settings-button {
   flex: 1;
-  margin-top: 0;
-  border-radius: 5px 0 0 5px;
-  padding: 12px 25px;
-  background-color: #007bff;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  border-radius: 6px 0 0 6px;
+  padding: 0 10px;
+  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
   color: white;
   border: none;
   cursor: pointer;
-  font-size: 1.1em;
-  transition: background-color 0.3s;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
   text-align: center;
+  line-height: 36px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.apply-settings-group .settings-button:hover:not(:disabled) {
-  background-color: #0056b3;
+.settings-sidebar .apply-settings-group button.settings-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #357abd 0%, #2a6aad 100%);
+  box-shadow: 0 2px 8px rgba(74, 144, 217, 0.35);
 }
 
-.apply-settings-group .settings-button:disabled {
-  background-color: #ccc;
+.settings-sidebar .apply-settings-group button.settings-button:disabled {
+  background: #c5c5c5;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .settings-gear-btn {
-  padding: 8px 12px;
-  background-color: #0056b3;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: linear-gradient(135deg, #357abd 0%, #2a6aad 100%);
   color: white;
   border: none;
-  border-left: 1px solid rgba(255,255,255,0.3);
-  border-radius: 0 5px 5px 0;
+  border-left: 1px solid rgba(255,255,255,0.15);
+  border-radius: 0 6px 6px 0;
   cursor: pointer;
-  font-size: 1em;
-  transition: background-color 0.3s;
+  font-size: 14px;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .settings-gear-btn:hover {
-  background-color: #004494;
+  background: linear-gradient(135deg, #2a6aad 0%, #1f5a9d 100%);
 }
 
 .settings-gear-btn:disabled {
-  background-color: #999;
+  background: #aaa;
   cursor: not-allowed;
 }
 
@@ -1309,7 +1320,7 @@ if (typeof window !== 'undefined') {
   border: 1px solid var(--border-color, #ddd);
   border-radius: 5px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 9999;
+  z-index: var(--z-overlay);
   padding: 10px;
   margin-bottom: 5px;
 }
@@ -1325,7 +1336,7 @@ if (typeof window !== 'undefined') {
 }
 
 .apply-option:hover {
-  color: var(--primary-color, #007bff);
+  color: var(--color-primary, #007bff);
 }
 
 .apply-option input[type="checkbox"] {
@@ -1516,7 +1527,6 @@ if (typeof window !== 'undefined') {
   height: calc(100vh - 40px);
   overflow-y: auto;
   padding-top: 20px;
-  box-sizing: border-box;
   margin-right: 0;
   order: -1;
   display: flex;
@@ -1593,7 +1603,6 @@ if (typeof window !== 'undefined') {
   padding: 12px;
   border: 1px solid #e0e6ed;
   border-radius: 8px;
-  box-sizing: border-box;
   font-size: 1em;
   transition: border-color 0.3s, box-shadow 0.3s;
   background-color: #f9fafc;
@@ -1776,102 +1785,8 @@ if (typeof window !== 'undefined') {
   cursor: not-allowed;
 }
 
-.apply-settings-group {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  margin-top: 10px;
-  position: relative;
-}
 
-.apply-settings-group .settings-button {
-  flex: 1;
-  margin-top: 0;
-  border-radius: 5px 0 0 5px;
-}
 
-.settings-gear-btn {
-  padding: 8px 12px;
-  background-color: #0056b3;
-  color: white;
-  border: none;
-  border-left: 1px solid rgba(255,255,255,0.3);
-  border-radius: 0 5px 5px 0;
-  cursor: pointer;
-  font-size: 1em;
-  transition: background-color 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.settings-gear-btn:hover {
-  background-color: #004494;
-}
-
-.settings-gear-btn:disabled {
-  background-color: #999;
-  cursor: not-allowed;
-}
-
-.apply-settings-dropdown {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 5px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 9999;
-  padding: 10px;
-  margin-bottom: 5px;
-}
-
-.apply-settings-dropdown.show {
-  display: block;
-}
-
-.apply-settings-dropdown .dropdown-title {
-  font-size: 0.9em;
-  font-weight: bold;
-  color: var(--text-color, #333);
-  margin-bottom: 8px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border-color, #eee);
-}
-
-.apply-settings-dropdown label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 0.85em;
-  color: var(--text-color, #555);
-  cursor: pointer;
-}
-
-.apply-settings-dropdown label:hover {
-  color: var(--primary-color, #007bff);
-}
-
-.apply-settings-dropdown input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-}
-
-.apply-settings-dropdown .select-all-option {
-  font-weight: bold;
-  color: var(--primary-color, #007bff);
-}
-
-.apply-settings-dropdown .dropdown-divider {
-  height: 1px;
-  background: var(--border-color, #eee);
-  margin: 6px 0;
-}
 
 /* 翻译按钮 - 绿色 (已迁移到 .green-button 类) */
 /* 消除文字按钮 - 蓝色 (已迁移到 .blue-button 类) */

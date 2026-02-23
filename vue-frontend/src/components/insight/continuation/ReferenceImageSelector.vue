@@ -236,23 +236,8 @@ function handleCancel(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   animation: fadeIn 0.2s ease;
-}
-
-/* @keyframes fadeIn 已迁移到 global.css */
-
-.reference-selector-modal {
-  background: white;
-  border-radius: 12px;
-  width: 850px;
-  max-width: 90vw;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.2);
-  animation: scaleIn 0.3s ease;
-  overflow: hidden;
 }
 
 @keyframes scaleIn {

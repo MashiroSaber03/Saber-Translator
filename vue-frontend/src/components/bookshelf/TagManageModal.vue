@@ -242,7 +242,7 @@ async function deleteTag(tagName: string) {
 }
 
 .form-row input[type="text"]:focus {
-  border-color: var(--primary-color, #667eea);
+  border-color: var(--color-primary, #667eea);
 }
 
 .form-row input[type="color"] {
@@ -356,7 +356,7 @@ async function deleteTag(tagName: string) {
 .edit-name-input {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid var(--primary-color, #667eea);
+  border: 1px solid var(--color-primary, #667eea);
   border-radius: 4px;
   font-size: 14px;
   outline: none;

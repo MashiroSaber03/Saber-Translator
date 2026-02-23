@@ -343,7 +343,7 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
 }
 
@@ -503,7 +503,7 @@ defineExpose({
   bottom: 80px;
   width: 48px;
   height: 48px;
-  background: var(--primary-color, #667eea);
+  background: var(--color-primary, #667eea);
   border: none;
   border-radius: 50%;
   color: white;
@@ -511,7 +511,7 @@ defineExpose({
   cursor: pointer;
   box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
   transition: all 0.3s;
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 
 .scroll-top-btn:hover {
@@ -523,7 +523,7 @@ defineExpose({
 .settings-panel {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: var(--z-popover);
   display: none;
 }
 

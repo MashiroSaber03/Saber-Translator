@@ -601,7 +601,7 @@ async function handleImportFile(event: Event): Promise<void> {
   border: 1px solid var(--border-color, #eee);
   border-radius: 4px;
   white-space: pre-wrap;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   text-align: left;
   overflow-x: auto;
@@ -632,7 +632,7 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 .translated-text {
-  color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
 }
 
 .translated-text.translation-error {
@@ -716,12 +716,12 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 .download-format-selector select:hover {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .download-format-selector select:focus {
   outline: none;
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
   box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
 }
 
@@ -851,7 +851,7 @@ async function handleImportFile(event: Event): Promise<void> {
   border: 1px solid #eee;
   border-radius: 4px;
   white-space: pre-wrap;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   text-align: left;
   overflow-x: auto;
@@ -988,9 +988,8 @@ async function handleImportFile(event: Event): Promise<void> {
   position: absolute;
   border: 1px solid #2980b9;
   pointer-events: auto;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   border-radius: 5px;
-  box-sizing: border-box;
   overflow: visible;
   cursor: pointer;
 }
@@ -999,9 +998,4 @@ async function handleImportFile(event: Event): Promise<void> {
   border: 1px solid #e74c3c;
 }
 
-@keyframes pulse-border {
-  0% { border-color: #e74c3c; }
-  50% { border-color: #ff6b6b; }
-  100% { border-color: #e74c3c; }
-}
 </style>

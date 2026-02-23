@@ -171,13 +171,6 @@ watch(
   animation: spin 1s linear infinite;
 }
 
-/* @keyframes spin 已迁移到 global.css */
-
-.loading-state p {
-  margin-top: 16px;
-  font-size: 14px;
-}
-
 /* 空状态 */
 .empty-state {
   display: flex;

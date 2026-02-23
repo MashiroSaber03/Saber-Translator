@@ -728,7 +728,7 @@ const brushCursorStyle = computed(() => {
   font-size: 12px;
   color: #00ff88;
   font-weight: 600;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 .edit-progress-bar {
@@ -781,15 +781,6 @@ const brushCursorStyle = computed(() => {
   animation: spin-repair-icon 1s linear infinite;
 }
 
-@keyframes spin-repair-icon {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* 笔刷大小指示器 */
 .brush-size-indicator {
   color: #fff;
@@ -824,7 +815,7 @@ const brushCursorStyle = computed(() => {
   color: #fff;
   border-radius: 6px;
   font-size: 13px;
-  z-index: 10000;
+  z-index: var(--z-modal);
   pointer-events: none;
 }
 
@@ -873,7 +864,7 @@ const brushCursorStyle = computed(() => {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: var(--z-overlay);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-5px);
@@ -914,7 +905,7 @@ const brushCursorStyle = computed(() => {
 
 .help-key {
   color: #6b7280;
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-family: var(--font-mono);
   background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 4px;

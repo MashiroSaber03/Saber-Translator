@@ -334,11 +334,6 @@ const progressLabel = computed(() => {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
 /* 池子统计 */
 .pool-stats {
   display: flex;

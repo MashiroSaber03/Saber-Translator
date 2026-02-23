@@ -569,7 +569,7 @@ onMounted(() => {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
   --success-color: #22c55e;
@@ -961,18 +961,6 @@ onMounted(() => {
     cursor: default;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* 加载动画 */
 .loading-dots {
   display: inline-block;
@@ -998,7 +986,7 @@ onMounted(() => {
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 1000;
+    z-index: var(--z-overlay);
     display: none;
 }
 
@@ -1171,7 +1159,6 @@ onMounted(() => {
     background: var(--bg-secondary);
     color: var(--text-primary);
     transition: border-color 0.2s, box-shadow 0.2s;
-    box-sizing: border-box;
 }
 
 .note-form .form-input:focus,

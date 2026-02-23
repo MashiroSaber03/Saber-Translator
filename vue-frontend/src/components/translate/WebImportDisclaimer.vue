@@ -155,7 +155,7 @@ function handleCancel() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: var(--z-popover);
   backdrop-filter: blur(4px);
 }
 
@@ -278,7 +278,7 @@ function handleCancel() {
   font-weight: 700;
   border-radius: 8px;
   border: 2px dashed #3498db;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .confirmation-input {

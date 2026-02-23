@@ -198,7 +198,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   animation: fadeIn 0.2s;
 }
 
@@ -345,14 +345,6 @@ defineExpose({
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
-}
-
-/* @keyframes spin 已迁移到 global.css */
-
-.progress-message {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 12px 0;
 }
 
 .progress-tip {

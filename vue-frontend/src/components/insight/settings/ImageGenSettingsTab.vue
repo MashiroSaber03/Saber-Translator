@@ -232,7 +232,7 @@ defineExpose({
 }
 
 .info-box li strong {
-  color: var(--primary-color, #007bff);
+  color: var(--color-primary, #007bff);
 }
 </style>
 

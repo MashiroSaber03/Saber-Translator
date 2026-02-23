@@ -177,7 +177,7 @@ defineExpose({
 }
 
 .highlight {
-  color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
   font-weight: 500;
 }
 
@@ -217,7 +217,7 @@ defineExpose({
 }
 
 .guide-btn.primary {
-  background-color: var(--primary-color, #4a90d9);
+  background-color: var(--color-primary, #4a90d9);
   color: white;
   border: none;
 }

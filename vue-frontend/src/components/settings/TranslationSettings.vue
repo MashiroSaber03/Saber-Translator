@@ -811,8 +811,8 @@ function resetTranslatePromptToDefault() {
 }
 
 .reset-btn:hover {
-  color: var(--primary-color, #4a90d9);
-  border-color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
   background: rgb(74, 144, 217, 0.05);
 }
 
@@ -824,7 +824,7 @@ function resetTranslatePromptToDefault() {
   border-radius: 6px;
   font-size: 12px;
   color: var(--text-secondary, #666);
-  border-left: 3px solid var(--primary-color, #4a90d9);
+  border-left: 3px solid var(--color-primary, #4a90d9);
 }
 
 /* Sakura 服务商专属建议样式 */

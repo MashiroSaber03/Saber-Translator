@@ -926,7 +926,7 @@ function handleResetPrompt() {
 }
 
 .url-input:focus {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .engine-select {
@@ -941,7 +941,7 @@ function handleResetPrompt() {
 }
 
 .engine-select:focus {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .engine-select:disabled {
@@ -1149,7 +1149,7 @@ function handleResetPrompt() {
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .form-input.small {
@@ -1262,7 +1262,7 @@ function handleResetPrompt() {
 }
 
 .extracting-hint {
-  color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
   font-weight: normal;
   font-size: 13px;
 }
@@ -1376,11 +1376,11 @@ function handleResetPrompt() {
 }
 
 .image-item:hover {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .image-item.selected {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
   box-shadow: 0 0 0 2px rgb(74, 144, 217, 0.2);
 }
 
@@ -1434,7 +1434,7 @@ function handleResetPrompt() {
 
 .progress-fill {
   height: 100%;
-  background: var(--primary-color, #4a90d9);
+  background: var(--color-primary, #4a90d9);
   transition: width 0.3s ease;
 }
 

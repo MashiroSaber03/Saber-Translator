@@ -876,7 +876,6 @@ onUnmounted(() => {
   background: rgba(255, 200, 0, 0.1);
   cursor: pointer;
   pointer-events: auto;
-  box-sizing: border-box;
   overflow: visible;
   /* 【优化大图渲染】GPU 加速和优化重绘 */
   will-change: transform, left, top, width, height;
@@ -940,7 +939,6 @@ onUnmounted(() => {
   border-radius: calc(3px / var(--scale, 1));
   pointer-events: auto;
   z-index: 20;
-  box-sizing: border-box;
   box-shadow: 0 0 calc(3px / var(--scale, 1)) rgba(0, 0, 0, 0.3);
 }
 

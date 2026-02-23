@@ -211,7 +211,7 @@ defineExpose({
 }
 
 .collapsible-header.clickable:hover {
-  color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
 }
 
 /* 禁用状态 */
@@ -226,8 +226,8 @@ defineExpose({
 
 /* 标题 */
 .collapsible-title {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 20px;
 }
 
 /* 切换图标 */

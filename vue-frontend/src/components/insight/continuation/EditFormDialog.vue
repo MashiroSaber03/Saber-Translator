@@ -82,26 +82,8 @@ function save() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   animation: fadeIn 0.2s;
-}
-
-/* @keyframes fadeIn 已迁移到 global.css */
-
-.modal-dialog {
-  background: var(--bg-primary, #fff);
-  border-radius: 12px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
-  animation: slideUp 0.3s;
-}
-
-/* @keyframes slideUp 已迁移到 global.css */
-
-.edit-form-dialog {
-  max-width: 400px;
 }
 
 .modal-header {

@@ -814,7 +814,7 @@ function selectImage(index: number) {
 
 /* 拖拽区域高亮 */
 #drop-area.drag-over {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
   background-color: var(--hover-bg, rgb(74, 144, 217, 0.1));
 }
 
@@ -829,7 +829,7 @@ function selectImage(index: number) {
 }
 
 .thumbnail-item.active {
-  border-color: var(--primary-color, #4a90d9);
+  border-color: var(--color-primary, #4a90d9);
 }
 
 .thumbnail-item.failed {
@@ -868,11 +868,6 @@ function selectImage(index: number) {
   color: var(--success-color, #27ae60);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
 /* 编辑模式占位符 */
 .edit-placeholder {
   display: flex;
@@ -896,7 +891,7 @@ function selectImage(index: number) {
 
 .progress {
   height: 100%;
-  background: var(--primary-color, #4a90d9);
+  background: var(--color-primary, #4a90d9);
   transition: width 0.3s ease;
 }
 
@@ -915,7 +910,7 @@ function selectImage(index: number) {
 
 :deep(.settings-header-btn.highlight) {
   animation: settingsBtnPulse 0.5s ease-in-out 3;
-  box-shadow: 0 0 10px var(--primary-color, #4a90d9);
+  box-shadow: 0 0 10px var(--color-primary, #4a90d9);
 }
 
 /* 书籍/章节信息样式 */
@@ -948,7 +943,7 @@ function selectImage(index: number) {
 }
 
 .book-chapter-info .chapter-title {
-  color: var(--primary-color, #4a90d9);
+  color: var(--color-primary, #4a90d9);
 }
 
 /* 响应式：小屏幕隐藏书籍/章节信息 */
@@ -988,7 +983,7 @@ function selectImage(index: number) {
   width: auto;
   margin: 0 auto;
   max-width: calc(100% - 700px);
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 
 .header-content {

@@ -302,7 +302,7 @@ async function saveBook() {
 }
 
 .form-group input[type="text"]:focus {
-  border-color: var(--primary-color, #667eea);
+  border-color: var(--color-primary, #667eea);
 }
 
 .cover-upload-area {
@@ -315,7 +315,7 @@ async function saveBook() {
 }
 
 .cover-upload-area:hover {
-  border-color: var(--primary-color, #667eea);
+  border-color: var(--color-primary, #667eea);
 }
 
 .cover-preview {
@@ -372,7 +372,7 @@ async function saveBook() {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: var(--primary-color, #667eea);
+  background: var(--color-primary, #667eea);
   color: #fff;
   font-size: 12px;
   border-radius: 4px;

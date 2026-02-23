@@ -356,7 +356,7 @@ input:checked + .slider::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1100;
+  z-index: var(--z-modal);
 }
 
 .plugin-config-content {

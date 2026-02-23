@@ -493,7 +493,7 @@ watch(selectedPageNum, () => {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
@@ -583,16 +583,6 @@ watch(selectedPageNum, () => {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin: 0 auto 12px;
-}
-
-/* @keyframes spin 已迁移到 global.css */
-
-/* 页面头部 */
-.page-detail-header {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
 }
 
 .page-detail-header h4 {
@@ -832,7 +822,7 @@ watch(selectedPageNum, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   outline: none;
 }
 

@@ -289,7 +289,7 @@ watch(
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    z-index: 1000;
+    z-index: var(--z-overlay);
     box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
 }
 

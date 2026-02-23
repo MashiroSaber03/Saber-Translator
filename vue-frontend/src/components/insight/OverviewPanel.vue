@@ -452,7 +452,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
   --success-color: #22c55e;
@@ -558,11 +558,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .template-status.status-error {
     background: rgb(239, 68, 68, 0.1);
     color: #ef4444;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
 }
 
 .template-description {

@@ -263,7 +263,6 @@ function startStatusPolling(): void {
   }, 3000)
 }
 
-
 /**
  * 停止状态轮询
  */
@@ -368,7 +367,6 @@ function handleChapterSelect(chapterId: string): void {
 function closeChapterSelectModal(): void {
   showChapterSelectModal.value = false
 }
-
 
 // ============================================================
 // 生命周期
@@ -875,7 +873,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: var(--z-popover);
 }
 
 .loading-spinner {
@@ -885,14 +883,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-}
-
-/* @keyframes spin 已迁移到 global.css */
-
-.loading-text {
-    margin-top: 16px;
-    color: white;
-    font-size: 14px;
 }
 
 /* 移动端侧边栏显示控制 */

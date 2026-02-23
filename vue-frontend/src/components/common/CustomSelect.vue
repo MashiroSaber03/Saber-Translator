@@ -273,7 +273,7 @@ onUnmounted(() => {
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 20000; /* 确保高于模态框 (10002) */
+  z-index: var(--z-popover); /* 确保高于模态框 */
   max-height: 300px;
   overflow-y: auto;
   color: #1f2430;

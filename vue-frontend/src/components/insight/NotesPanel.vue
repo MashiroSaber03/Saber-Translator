@@ -394,7 +394,7 @@ function getNoteTypeIcon(type: NoteType): string {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --border-color: #e2e8f0;
-  --primary-color: #6366f1;
+  --color-primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
   --success-color: #22c55e;
@@ -423,7 +423,7 @@ function getNoteTypeIcon(type: NoteType): string {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   align-items: center;
   justify-content: center;
 }
@@ -683,7 +683,7 @@ function getNoteTypeIcon(type: NoteType): string {
   padding: 2px 8px;
   font-size: 12px;
   background: var(--primary-light, rgb(99, 102, 241, 0.1));
-  color: var(--primary-color, #6366f1);
+  color: var(--color-primary, #6366f1);
   border-radius: 12px;
 }
 

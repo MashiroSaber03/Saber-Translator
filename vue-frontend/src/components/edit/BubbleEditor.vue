@@ -1011,16 +1011,6 @@ onMounted(() => {
   animation: spin-icon 1s linear infinite;
 }
 
-@keyframes spin-icon {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* 文本编辑器 */
 .text-editor {
   flex: 1;
@@ -1035,7 +1025,6 @@ onMounted(() => {
   transition:
     border-color 0.2s,
     box-shadow 0.2s;
-  box-sizing: border-box;
   font-family: inherit;
 }
 
@@ -1047,7 +1036,7 @@ onMounted(() => {
 
 .original-editor {
   background: #fff8f8;
-  font-family: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
+  font-family: var(--font-jp);
 }
 
 .translated-editor {
@@ -1100,7 +1089,6 @@ onMounted(() => {
   border-radius: 10px;
   border: 1px solid rgb(82, 92, 105, 0.12);
   overflow-y: auto;
-  box-sizing: border-box;
 }
 
 /* ============ Office风格工具栏 ============ */

@@ -1658,7 +1658,7 @@ watch(selectedBubble, (bubble) => {
   width: 100vw;
   height: 100vh;
   background: #1a1a2e;
-  z-index: 9999;
+  z-index: var(--z-overlay);
   overflow: hidden;
   margin: 0;
   border-radius: 0;
@@ -2228,7 +2228,6 @@ watch(selectedBubble, (bubble) => {
   line-height: 1.6;
   resize: none;
   transition: border-color 0.2s, box-shadow 0.2s;
-  box-sizing: border-box;
   font-family: inherit;
 }
 
@@ -2240,7 +2239,7 @@ watch(selectedBubble, (bubble) => {
 
 .original-editor {
   background: #fff8f8;
-  font-family: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
+  font-family: var(--font-jp);
 }
 
 .translated-editor {
@@ -2287,7 +2286,6 @@ watch(selectedBubble, (bubble) => {
   border-radius: 10px;
   border: 1px solid rgba(82, 92, 105, 0.12);
   overflow-y: auto;
-  box-sizing: border-box;
 }
 
 /* ============ 操作按钮 ============ */
@@ -2394,7 +2392,6 @@ watch(selectedBubble, (bubble) => {
   position: absolute;
   border: 2px dashed #00d4ff;
   background: rgba(0, 212, 255, 0.1);
-  box-sizing: border-box;
   pointer-events: none;
   z-index: 25;
 }
@@ -2463,7 +2460,7 @@ watch(selectedBubble, (bubble) => {
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
-  z-index: 10000;
+  z-index: var(--z-modal);
   pointer-events: none;
   animation: brushModeHint 0.3s ease;
 }
@@ -2692,7 +2689,7 @@ watch(selectedBubble, (bubble) => {
   font-size: 12px;
   color: #00ff88;
   font-weight: 600;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 .edit-progress-bar {
