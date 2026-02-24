@@ -301,18 +301,23 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
     """获取书籍详情"""
     book_meta = _load_book_metadata(book_id)
     if book_meta:
-        # 确保封面路径是API路径
+        meta_needs_save = False  # 统一标记元数据是否需要持久化
+
+        # 确保封面路径是API路径（旧格式修正）
         if book_meta.get("cover") and not book_meta["cover"].startswith("/api"):
             book_meta["cover"] = f"/api/bookshelf/books/{book_id}/cover"
+            meta_needs_save = True
         
-        # 确保有tags字段
+        # 确保有tags字段（旧版数据兼容）
         if "tags" not in book_meta:
             book_meta["tags"] = []
+            meta_needs_save = True
         
         # 确保每个章节都有 session_path 和 page_count
         chapters = book_meta.get("chapters", [])
         total_pages = 0
         sessions_base = resource_path("data/sessions")
+        session_path_updated = False  # 标记是否有章节的 session_path 被更新
 
         for chapter in chapters:
             chapter_id = chapter.get("id")
@@ -323,6 +328,7 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
             if not current_path:
                 # 没有 session_path，设置新格式
                 chapter["session_path"] = expected_path
+                session_path_updated = True
             elif current_path != expected_path and chapter_id:
                 # 检查是否是旧格式路径需要更新
                 normalized = current_path.replace("\\", "/")
@@ -333,9 +339,10 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
                     new_session_dir = _get_session_dir_for_chapter(book_id, chapter_id)
                     if os.path.isdir(new_session_dir):
                         chapter["session_path"] = expected_path
+                        session_path_updated = True
                         logger.info(f"更新章节 session_path: {current_path} -> {expected_path}")
-            
-            # 计算章节页数
+
+            # 计算章节页数（每个章节都需要计算，与路径迁移无关）
             chapter_id = chapter.get("id")
             if chapter_id:
                 # 使用新路径格式
@@ -359,6 +366,12 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
                     chapter["page_count"] = 0
             else:
                 chapter["page_count"] = 0
+
+        # 如果有任何字段需要更新，统一持久化保存，避免每次加载都重复修正
+        if session_path_updated or meta_needs_save:
+            _save_book_metadata(book_id, book_meta)
+            if session_path_updated:
+                logger.info(f"书籍 {book_id} 的章节 session_path 已迁移并保存")
         
         book_meta["total_pages"] = total_pages
     
