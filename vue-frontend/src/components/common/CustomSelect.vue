@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
 // 类型定义
 // 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，boolean 不兼容
@@ -117,6 +117,10 @@ const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
 
+const VIEWPORT_PADDING = 12
+const DROPDOWN_GAP = 6
+const MAX_DROPDOWN_HEIGHT = 360
+
 // 是否使用分组模式
 const hasGroups = computed(() => props.groups && props.groups.length > 0)
 
@@ -145,24 +149,61 @@ function toggleDropdown(): void {
   if (props.disabled) return
   
   if (!isOpen.value) {
-    // 打开前计算位置
-    updatePosition()
     isOpen.value = true
+    // 先渲染下拉，再根据视口和内容动态定位
+    nextTick(() => {
+      updatePosition()
+      requestAnimationFrame(() => updatePosition())
+    })
   } else {
     isOpen.value = false
   }
 }
 
+function getOptionCount(): number {
+  if (hasGroups.value) {
+    return props.groups.reduce((count, group) => count + group.options.length + 1, 0)
+  }
+  return props.options.length
+}
+
 // 更新下拉框位置
 function updatePosition() {
-  if (selectRef.value) {
-    const rect = selectRef.value.getBoundingClientRect()
-    dropdownStyle.value = {
-      top: `${rect.bottom + 4}px`,
-      left: `${rect.left}px`,
-      width: `${rect.width}px`,
-      minWidth: '160px' // 保持最小宽度
-    }
+  if (!selectRef.value) return
+
+  const rect = selectRef.value.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const fallbackHeight = Math.min(MAX_DROPDOWN_HEIGHT, Math.max(44, getOptionCount() * 40))
+  const renderedHeight = dropdownRef.value?.scrollHeight ?? fallbackHeight
+  const desiredHeight = Math.min(MAX_DROPDOWN_HEIGHT, Math.max(44, renderedHeight))
+
+  const spaceBelow = viewportHeight - rect.bottom - VIEWPORT_PADDING
+  const spaceAbove = rect.top - VIEWPORT_PADDING
+  const shouldOpenAbove = spaceBelow < Math.min(desiredHeight, 220) && spaceAbove > spaceBelow
+
+  const availableHeight = shouldOpenAbove ? spaceAbove : spaceBelow
+  const maxHeight = Math.min(desiredHeight, Math.max(availableHeight - DROPDOWN_GAP, 44))
+  const width = Math.min(rect.width, viewportWidth - VIEWPORT_PADDING * 2)
+  const left = Math.min(
+    Math.max(rect.left, VIEWPORT_PADDING),
+    viewportWidth - VIEWPORT_PADDING - width
+  )
+
+  const rawTop = shouldOpenAbove
+    ? rect.top - maxHeight - DROPDOWN_GAP
+    : rect.bottom + DROPDOWN_GAP
+  const top = Math.min(
+    Math.max(rawTop, VIEWPORT_PADDING),
+    viewportHeight - VIEWPORT_PADDING - maxHeight
+  )
+
+  dropdownStyle.value = {
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    width: `${Math.round(width)}px`,
+    minWidth: '160px',
+    maxHeight: `${Math.round(maxHeight)}px`
   }
 }
 
@@ -215,7 +256,7 @@ onUnmounted(() => {
 .custom-select {
   position: relative;
   min-width: 160px;
-  font-size: 13px;
+  font-size: 14px;
   color: #1f2430;
 }
 
@@ -223,8 +264,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 36px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid #cfd6e4;
   border-radius: 8px;
   background: #ffffff;
@@ -271,16 +312,17 @@ onUnmounted(() => {
   margin-top: 0; /* JS计算位置时已包含偏移 */
   background: #ffffff;
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: var(--z-popover); /* 确保高于模态框 */
-  max-height: 300px;
+  border-radius: 10px;
+  box-shadow: 0 12px 26px rgba(19, 36, 70, 0.18);
+  z-index: 2000;
+  max-height: 360px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   color: #1f2430;
 }
 
 .custom-select-options {
-  padding: 4px 0;
+  padding: 6px 0;
   background: #ffffff;
   color: #1f2430;
 }
@@ -305,10 +347,12 @@ onUnmounted(() => {
 }
 
 .custom-select-option {
-  padding: 8px 12px;
+  padding: 9px 12px;
   cursor: pointer;
   color: #1f2430;
   background: #ffffff;
+  font-size: 14px;
+  line-height: 1.4;
   transition: background 0.15s;
 }
 

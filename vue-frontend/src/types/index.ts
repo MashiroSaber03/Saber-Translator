@@ -20,3 +20,6 @@ export * from './folder'
 
 // Manga Insight 类型
 export * from './insight'
+
+// 翻译页工作流类型
+export * from './workflow'

@@ -18,7 +18,6 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { showToast } from '@/utils/toast'
-import { cleanDebugFiles, cleanTempFiles } from '@/api/system'
 import ImageUpload from '@/components/translate/ImageUpload.vue'
 import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 import ImageResultDisplay from '@/components/translate/ImageResultDisplay.vue'
@@ -35,6 +34,7 @@ import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import { useTextStyleSync } from '@/composables/useTextStyleSync'
+import type { WorkflowRunRequest } from '@/types/workflow'
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
@@ -75,9 +75,6 @@ const translateInit = useTranslateInit()
 
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
-
-/** 设置模态框初始Tab（用于插件管理直接跳转） */
-const settingsInitialTab = ref<string | undefined>(undefined)
 
 /** 是否显示赞助模态框 */
 const showSponsorModal = ref(false)
@@ -368,6 +365,61 @@ async function removeTextRange(startPage: number, endPage: number) {
 }
 
 /**
+ * 统一处理侧边栏工作流启动
+ */
+async function handleRunWorkflow(payload: WorkflowRunRequest) {
+  const range = payload.range
+
+  switch (payload.mode) {
+    case 'translate-current':
+      await translateCurrentImage()
+      return
+    case 'translate-batch':
+      if (range) {
+        await translateImageRange(range.startPage, range.endPage)
+      } else {
+        await translateAllImages()
+      }
+      return
+    case 'hq-batch':
+      if (range) {
+        await startHqTranslationRange(range.startPage, range.endPage)
+      } else {
+        await startHqTranslation()
+      }
+      return
+    case 'proofread-batch':
+      if (range) {
+        await startProofreadingRange(range.startPage, range.endPage)
+      } else {
+        await startProofreading()
+      }
+      return
+    case 'remove-current':
+      await removeTextOnly()
+      return
+    case 'remove-batch':
+      if (range) {
+        await removeTextRange(range.startPage, range.endPage)
+      } else {
+        await removeAllText()
+      }
+      return
+    case 'retry-failed':
+      await handleRetryFailed()
+      return
+    case 'delete-current':
+      deleteCurrentImage()
+      return
+    case 'clear-all':
+      clearAllImages()
+      return
+    default:
+      return
+  }
+}
+
+/**
  * 删除当前图片
  * 对齐原版 events.js handleDeleteCurrent
  */
@@ -389,37 +441,6 @@ function clearAllImages() {
   if (confirm('确定要清除所有图片吗？这将丢失所有未保存的进度。')) {
     imageStore.clearImages()
     showToast('所有图片已清除', 'success')
-  }
-}
-
-/**
- * 清理临时文件
- * 调用后端API清理调试文件和临时下载文件
- */
-async function handleCleanTempFiles() {
-  try {
-    
-    // 清理调试文件
-    const debugResult = await cleanDebugFiles()
-    
-    // 清理临时下载文件
-    const tempResult = await cleanTempFiles()
-    
-    if (debugResult.success && tempResult.success) {
-      showToast('临时文件清理完成', 'success')
-    } else {
-      // 部分成功
-      const messages: string[] = []
-      if (!debugResult.success) {
-        messages.push('调试文件清理失败')
-      }
-      if (!tempResult.success) {
-        messages.push('临时文件清理失败')
-      }
-      showToast(messages.join('，'), 'warning')
-    }
-  } catch (error) {
-    showToast('清理临时文件失败', 'error')
   }
 }
 
@@ -494,19 +515,9 @@ async function saveCurrentSession() {
 
 /**
  * 打开设置模态框
- * @param initialTab - 可选的初始Tab，如 'plugins'
  */
-function openSettings(initialTab?: string) {
-  settingsInitialTab.value = initialTab
+function openSettings() {
   showSettingsModal.value = true
-}
-
-/**
- * 打开插件管理
- * 【修复问题2】复刻原版：点击插件管理按钮直接进入插件管理界面
- */
-function openPlugins() {
-  openSettings('plugins')
 }
 
 /**
@@ -643,22 +654,7 @@ function selectImage(index: number) {
     <div class="container">
       <!-- 左侧设置侧边栏组件 -->
       <SettingsSidebar
-        @translate-current="translateCurrentImage"
-        @translate-all="translateAllImages"
-        @translate-range="translateImageRange"
-        @hq-translate="startHqTranslation"
-        @hq-translate-range="startHqTranslationRange"
-        @proofread="startProofreading"
-        @proofread-range="startProofreadingRange"
-        @remove-text="removeTextOnly"
-        @remove-all-text="removeAllText"
-        @remove-text-range="removeTextRange"
-        @retry-failed="handleRetryFailed"
-        @delete-current="deleteCurrentImage"
-        @clear-all="clearAllImages"
-        @clean-temp="handleCleanTempFiles"
-        @open-plugins="openPlugins"
-        @open-settings="openSettings"
+        @run-workflow="handleRunWorkflow"
         @previous="goToPrevious"
         @next="goToNext"
         @apply-to-all="handleApplyToAll"
@@ -676,7 +672,6 @@ function selectImage(index: number) {
               ref="imageUploadRef"
               @upload-complete="handleUploadComplete"
             />
-
           </div>
           
           <!-- 缩略图列表已移至右侧侧边栏 -->
@@ -734,7 +729,6 @@ function selectImage(index: number) {
     <!-- 设置模态框 -->
     <SettingsModal 
       v-model="showSettingsModal"
-      :initial-tab="settingsInitialTab"
       @save="handleSettingsSave"
     />
     

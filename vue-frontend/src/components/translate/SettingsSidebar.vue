@@ -9,13 +9,20 @@
  * - 导航按钮
  */
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
 import { showToast } from '@/utils/toast'
 import { DEFAULT_FONT_FAMILY } from '@/constants'
 import type { TextDirection, InpaintMethod } from '@/types/bubble'
+import {
+  DEFAULT_WORKFLOW_MODE,
+  WORKFLOW_MODE_CONFIGS,
+  type WorkflowMode,
+  type WorkflowModeConfig,
+  type WorkflowRunRequest
+} from '@/types/workflow'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 
@@ -24,36 +31,8 @@ import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 // ============================================================
 
 const emit = defineEmits<{
-  /** 翻译当前图片 */
-  (e: 'translateCurrent'): void
-  /** 翻译所有图片 */
-  (e: 'translateAll'): void
-  /** 翻译指定范围图片 */
-  (e: 'translateRange', startPage: number, endPage: number): void
-  /** 高质量翻译 */
-  (e: 'hqTranslate'): void
-  /** 高质量翻译指定范围 */
-  (e: 'hqTranslateRange', startPage: number, endPage: number): void
-  /** AI 校对 */
-  (e: 'proofread'): void
-  /** AI 校对指定范围 */
-  (e: 'proofreadRange', startPage: number, endPage: number): void
-  /** 仅消除文字 */
-  (e: 'removeText'): void
-  /** 消除所有图片文字 */
-  (e: 'removeAllText'): void
-  /** 消除指定范围图片文字 */
-  (e: 'removeTextRange', startPage: number, endPage: number): void
-  /** 删除当前图片 */
-  (e: 'deleteCurrent'): void
-  /** 清除所有图片 */
-  (e: 'clearAll'): void
-  /** 清理临时文件 */
-  (e: 'cleanTemp'): void
-  /** 打开插件管理 */
-  (e: 'openPlugins'): void
-  /** 打开设置 */
-  (e: 'openSettings'): void
+  /** 启动工作流 */
+  (e: 'runWorkflow', payload: WorkflowRunRequest): void
   /** 上一张图片 */
   (e: 'previous'): void
   /** 下一张图片 */
@@ -119,6 +98,9 @@ const pageRangeStart = ref(1)
 /** 页面范围结束页 */
 const pageRangeEnd = ref(1)
 
+/** 当前工作流模式 */
+const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
+
 /** 排版方向选项（用于CustomSelect） */
 const layoutDirectionOptions = [
   { label: '自动 (根据检测)', value: 'auto' },
@@ -164,8 +146,121 @@ const canGoPrevious = computed(() => imageStore.canGoPrevious)
 /** 是否可以切换下一张 */
 const canGoNext = computed(() => imageStore.canGoNext)
 
+/** 当前工作流是否可执行 */
+const canRunWorkflow = computed(() => {
+  const mode = selectedWorkflowMode.value
+  const rangeInvalid = isRangeActiveForCurrentMode.value && !isPageRangeValid.value
+
+  switch (mode) {
+    case 'translate-current':
+      return !!currentImage.value && canTranslate.value
+    case 'translate-batch':
+    case 'hq-batch':
+    case 'proofread-batch':
+      return canTranslate.value && !rangeInvalid
+    case 'remove-current':
+    case 'delete-current':
+      return !!currentImage.value
+    case 'remove-batch':
+      return hasImages.value && !rangeInvalid
+    case 'clear-all':
+      return hasImages.value
+    case 'retry-failed':
+      return hasFailedImages.value && !imageStore.isBatchTranslationInProgress
+    default:
+      return false
+  }
+})
+
 /** 文字样式设置 */
 const textStyle = computed(() => settingsStore.textStyle)
+
+/** 失败图片数量 */
+const failedImageCount = computed(() => imageStore.failedImageCount)
+
+/** 是否有失败图片 */
+const hasFailedImages = computed(() => failedImageCount.value > 0)
+
+/** 当前工作流配置 */
+const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
+  return WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === selectedWorkflowMode.value) ?? WORKFLOW_MODE_CONFIGS[0]!
+})
+
+/** 当前模式是否支持范围处理 */
+const supportsRangeForCurrentMode = computed(() => selectedWorkflowConfig.value.supportsRange)
+
+/** 范围是否被激活且可用于当前模式 */
+const isRangeActiveForCurrentMode = computed(() => {
+  return supportsRangeForCurrentMode.value && isRangeEnabled.value
+})
+
+/** 工作流选项（用于 CustomSelect） */
+const workflowModeOptions = computed(() => {
+  return WORKFLOW_MODE_CONFIGS.map(cfg => ({
+    label: cfg.label,
+    value: cfg.mode
+  }))
+})
+
+/** 启动按钮文案 */
+const workflowStartLabel = computed(() => selectedWorkflowConfig.value.startLabel)
+
+/** 当前模式的范围/对象标签 */
+const workflowContextTag = computed(() => {
+  if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
+    return `范围 ${pageRangeStart.value}-${pageRangeEnd.value}`
+  }
+
+  switch (selectedWorkflowMode.value) {
+    case 'translate-current':
+    case 'remove-current':
+    case 'delete-current':
+      return '当前页'
+    case 'translate-batch':
+    case 'hq-batch':
+    case 'proofread-batch':
+    case 'remove-batch':
+    case 'clear-all':
+      return '全量'
+    case 'retry-failed':
+      return hasFailedImages.value ? `失败 ${failedImageCount.value} 张` : '失败重试'
+    default:
+      return '流程'
+  }
+})
+
+/** 当前模式类型标签 */
+const workflowModeTag = computed(() => {
+  if (isDangerousWorkflow.value) {
+    return '高风险'
+  }
+  return supportsRangeForCurrentMode.value ? '批量流程' : '单页流程'
+})
+
+/** 当前模式说明文案 */
+const workflowDescription = computed(() => {
+  switch (selectedWorkflowMode.value) {
+    case 'delete-current':
+      return '删除前会弹出确认，建议先检查当前页是否已保存。'
+    case 'clear-all':
+      return '清除前会弹出确认，此操作会移除所有已加载图片。'
+    case 'retry-failed':
+      return hasFailedImages.value
+        ? `将重试 ${failedImageCount.value} 张失败图片。`
+        : '当前没有失败图片可重试。'
+    default:
+      if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
+        return `当前范围：第 ${pageRangeStart.value}-${pageRangeEnd.value} 页。`
+      }
+      if (supportsRangeForCurrentMode.value) {
+        return '当前范围：全部图片（可启用指定范围）。'
+      }
+      return '当前只作用于当前图片。'
+  }
+})
+
+/** 当前工作流是否危险操作 */
+const isDangerousWorkflow = computed(() => selectedWorkflowConfig.value.isDangerous)
 
 /** 字体列表（包含内置字体） */
 const fontList = ref<string[]>([])
@@ -204,6 +299,19 @@ onMounted(async () => {
   if (currentFont && !fontList.value.includes(currentFont)) {
     // 如果当前字体不在列表中，添加到列表
     fontList.value = [currentFont, ...fontList.value]
+  }
+
+  // 监听点击外部关闭应用选项菜单
+  window.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleClickOutside)
+})
+
+watch(supportsRangeForCurrentMode, (supports) => {
+  if (!supports) {
+    isRangeEnabled.value = false
   }
 })
 
@@ -517,52 +625,30 @@ function updatePageRangeEnd(event: Event) {
 }
 
 /**
- * 处理翻译所有图片（根据范围设置）
+ * 处理工作流模式切换
  */
-function handleTranslateAll() {
-  if (isRangeEnabled.value && isPageRangeValid.value) {
-    emit('translateRange', pageRangeStart.value, pageRangeEnd.value)
-  } else {
-    emit('translateAll')
-  }
+function handleWorkflowModeChange(value: string | number) {
+  selectedWorkflowMode.value = String(value) as WorkflowMode
 }
 
 /**
- * 处理高质量翻译（根据范围设置）
+ * 启动当前工作流
  */
-function handleHqTranslate() {
-  if (isRangeEnabled.value && isPageRangeValid.value) {
-    emit('hqTranslateRange', pageRangeStart.value, pageRangeEnd.value)
-  } else {
-    emit('hqTranslate')
-  }
-}
+function handleRunWorkflow() {
+  if (!canRunWorkflow.value) return
 
-/**
- * 处理AI校对（根据范围设置）
- */
-function handleProofread() {
-  if (isRangeEnabled.value && isPageRangeValid.value) {
-    emit('proofreadRange', pageRangeStart.value, pageRangeEnd.value)
-  } else {
-    emit('proofread')
+  const payload: WorkflowRunRequest = {
+    mode: selectedWorkflowMode.value
   }
-}
 
-/**
- * 处理消除所有图片文字（根据范围设置）
- */
-function handleRemoveAllText() {
-  if (isRangeEnabled.value && isPageRangeValid.value) {
-    emit('removeTextRange', pageRangeStart.value, pageRangeEnd.value)
-  } else {
-    emit('removeAllText')
+  if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
+    payload.range = {
+      startPage: pageRangeStart.value,
+      endPage: pageRangeEnd.value
+    }
   }
-}
 
-// 监听点击外部事件
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', handleClickOutside)
+  emit('runWorkflow', payload)
 }
 </script>
 
@@ -800,15 +886,19 @@ if (typeof window !== 'undefined') {
                 <input 
                   type="checkbox" 
                   v-model="isRangeEnabled"
-                  :disabled="totalImages === 0"
+                  :disabled="totalImages === 0 || !supportsRangeForCurrentMode"
                 >
                 <span>启用</span>
               </label>
               <span class="total-count">共 {{ totalImages }} 张</span>
             </div>
+
+            <div v-if="!supportsRangeForCurrentMode" class="range-note">
+              当前模式不支持指定范围
+            </div>
             
             <!-- 页面范围输入（启用时显示） -->
-            <div v-show="isRangeEnabled" class="page-range-inputs-compact">
+            <div v-show="isRangeActiveForCurrentMode" class="page-range-inputs-compact">
               <input 
                 type="number" 
                 id="pageRangeStart" 
@@ -827,97 +917,41 @@ if (typeof window !== 'undefined') {
             </div>
             
             <!-- 范围错误提示 -->
-            <div v-if="isRangeEnabled && !isPageRangeValid && totalImages > 0" class="range-error-compact">
+            <div v-if="isRangeActiveForCurrentMode && !isPageRangeValid && totalImages > 0" class="range-error-compact">
               范围无效
             </div>
           </div>
       </CollapsiblePanel>
 
-      <!-- 操作按钮组 -->
-      <div class="action-buttons">
-        <button 
-          id="translateButton"
-          class="settings-button green-button"
-          :disabled="!canTranslate"
-          @click="emit('translateCurrent')"
+      <!-- 工作流启动区 -->
+      <div class="action-buttons workflow-controls">
+        <div class="form-group">
+          <label for="workflowModeSelect">操作模式:</label>
+          <CustomSelect
+            id="workflowModeSelect"
+            :model-value="selectedWorkflowMode"
+            :options="workflowModeOptions"
+            @change="handleWorkflowModeChange"
+          />
+        </div>
+        <div class="workflow-meta">
+          <span class="workflow-chip">{{ workflowContextTag }}</span>
+          <span class="workflow-chip" :class="{ 'danger-chip': isDangerousWorkflow }">
+            {{ workflowModeTag }}
+          </span>
+        </div>
+        <button
+          id="runWorkflowButton"
+          class="settings-button workflow-run-button"
+          :class="{ 'danger-button': isDangerousWorkflow }"
+          :disabled="!canRunWorkflow"
+          @click="handleRunWorkflow"
         >
-          翻译当前图片
+          {{ workflowStartLabel }}
         </button>
-        <button 
-          id="translateAllButton"
-          class="settings-button green-button"
-          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
-          :title="isRangeEnabled ? `翻译第 ${pageRangeStart}-${pageRangeEnd} 页` : '翻译所有图片'"
-          @click="handleTranslateAll"
-        >
-          {{ isRangeEnabled ? `翻译 ${pageRangeStart}-${pageRangeEnd} 页` : '翻译所有图片' }}
-        </button>
-        <button 
-          id="startHqTranslationBtn" 
-          class="settings-button purple-button" 
-          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
-          :title="isRangeEnabled ? `高质量翻译第 ${pageRangeStart}-${pageRangeEnd} 页` : '使用高质量翻译模式（需在设置中配置）'"
-          @click="handleHqTranslate"
-        >
-          {{ isRangeEnabled ? `高质量翻译 ${pageRangeStart}-${pageRangeEnd}` : '高质量翻译' }}
-        </button>
-        <button 
-          id="proofreadButton"
-          class="settings-button purple-button"
-          :disabled="!canTranslate || (isRangeEnabled && !isPageRangeValid)"
-          :title="isRangeEnabled ? `AI校对第 ${pageRangeStart}-${pageRangeEnd} 页` : 'AI校对'"
-          @click="handleProofread"
-        >
-          {{ isRangeEnabled ? `AI校对 ${pageRangeStart}-${pageRangeEnd}` : 'AI校对' }}
-        </button>
-        <button 
-          id="removeTextOnlyButton"
-          class="settings-button blue-button"
-          :disabled="!currentImage"
-          title="消除图片中的气泡文字，无需填写翻译服务商和API Key"
-          @click="emit('removeText')"
-        >
-          仅消除文字
-        </button>
-        <button 
-          id="removeAllTextButton"
-          class="settings-button blue-button"
-          :disabled="!hasImages || (isRangeEnabled && !isPageRangeValid)"
-          :title="isRangeEnabled ? `消除第 ${pageRangeStart}-${pageRangeEnd} 页的文字` : '消除所有图片中的气泡文字'"
-          @click="handleRemoveAllText"
-        >
-          {{ isRangeEnabled ? `消除 ${pageRangeStart}-${pageRangeEnd} 页文字` : '消除所有图片文字' }}
-        </button>
-        <button 
-          id="deleteCurrentImageButton" 
-          class="settings-button red-button" 
-          :disabled="!currentImage"
-          @click="emit('deleteCurrent')"
-        >
-          删除当前图片
-        </button>
-        <button 
-          id="clearAllImagesButton" 
-          class="settings-button red-button"
-          :disabled="!hasImages"
-          @click="emit('clearAll')"
-        >
-          清除所有图片
-        </button>
-        <button 
-          id="cleanDebugFilesButton" 
-          class="settings-button orange-button"
-          @click="emit('cleanTemp')"
-        >
-          清理临时文件
-        </button>
-        <button 
-          id="managePluginsButton" 
-          class="settings-button blue-button"
-          @click="emit('openPlugins')"
-        >
-          插件管理
-        </button>
+        <div class="workflow-description">
+          {{ workflowDescription }}
+        </div>
       </div>
       
       <!-- 导航按钮 -->
@@ -1332,6 +1366,71 @@ if (typeof window !== 'undefined') {
   margin-top: 16px;
 }
 
+.workflow-controls {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #d6dfed;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fd 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  gap: 8px;
+}
+
+.workflow-controls .form-group {
+  margin-bottom: 0;
+}
+
+.workflow-controls .form-group label {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2f3d56;
+  letter-spacing: 0.2px;
+}
+
+.workflow-controls :deep(.custom-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.workflow-controls :deep(.custom-select-trigger) {
+  height: 42px;
+  border-radius: 10px;
+  border-color: #b8c5dc;
+}
+
+.workflow-controls :deep(.custom-select-value) {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2f47;
+}
+
+.workflow-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.workflow-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d4568;
+  background: #e6eefb;
+  border: 1px solid #d4e1f7;
+}
+
+.workflow-chip.danger-chip {
+  color: #9f2b2b;
+  background: #ffe7e7;
+  border-color: #ffcaca;
+}
+
 /* 按钮基础样式 - 匹配原版 */
 .action-buttons button {
   width: 100%;
@@ -1371,81 +1470,46 @@ if (typeof window !== 'undefined') {
   left: 100%;
 }
 
-/* 翻译按钮 - 绿色 */
-.action-buttons .green-button {
-  background: linear-gradient(135deg, #4cae4c 0%, #5cb85c 100%);
-  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
+.workflow-controls .workflow-run-button {
+  margin-top: 0;
+  min-height: 54px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #3ea94a 0%, #59ba54 100%);
+  box-shadow: 0 8px 16px rgba(62, 169, 74, 0.24);
 }
 
-.action-buttons .green-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #449d44 0%, #5cb85c 100%);
-  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
-  transform: translateY(-2px);
+.workflow-controls .workflow-run-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #369740 0%, #50b14b 100%);
+  box-shadow: 0 10px 18px rgba(54, 151, 64, 0.28);
+  transform: translateY(-1px);
 }
 
-/* 校对按钮和高质量翻译按钮 - 紫色 */
-.action-buttons .purple-button {
-  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
-  box-shadow: 0 4px 6px rgba(142, 68, 173, 0.2);
+.workflow-controls .workflow-run-button.danger-button {
+  background: linear-gradient(135deg, #d64242 0%, #bf3434 100%);
+  box-shadow: 0 8px 16px rgba(214, 66, 66, 0.24);
 }
 
-.action-buttons .purple-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8e44ad 0%, #6c3483 100%);
-  box-shadow: 0 6px 10px rgba(142, 68, 173, 0.3);
-  transform: translateY(-2px);
+.workflow-controls .workflow-run-button.danger-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #bf3434 0%, #a92a2a 100%);
+  box-shadow: 0 10px 18px rgba(191, 52, 52, 0.28);
 }
 
-/* 消除文字按钮 - 蓝色 */
-.action-buttons .blue-button {
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
-  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+.workflow-description {
+  margin-top: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #5b6f8e;
 }
-
-.action-buttons .blue-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
-  box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
-  transform: translateY(-2px);
-}
-
-/* 删除按钮 - 红色 */
-.action-buttons .red-button {
-  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-  box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
-}
-
-.action-buttons .red-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #bd2130 0%, #c82333 100%);
-  box-shadow: 0 6px 10px rgba(220, 53, 69, 0.3);
-  transform: translateY(-2px);
-}
-
-/* 清理临时文件按钮 - 橙色 */
-.action-buttons .orange-button {
-  background: linear-gradient(135deg, #eb9316 0%, #f0ad4e 100%);
-  box-shadow: 0 4px 6px rgba(240, 173, 78, 0.2);
-}
-
-.action-buttons .orange-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
-  box-shadow: 0 6px 10px rgba(211, 84, 0, 0.3);
-  transform: translateY(-2px);
-}
-
-/* 重试失败按钮 - 橙色 */
-.action-buttons .warning-button {
-  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
-  box-shadow: 0 4px 6px rgba(243, 156, 18, 0.2);
-}
-
-.action-buttons .warning-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
-  box-shadow: 0 6px 10px rgba(243, 156, 18, 0.3);
-  transform: translateY(-2px);
-}
-
-/* 插件管理按钮 - 蓝色 (已合并到上方 .blue-button) */
-
-
 /* 导航按钮 - 匹配原版 .navigation-buttons 样式 */
 .navigation-buttons {
   display: flex;
@@ -1684,45 +1748,6 @@ if (typeof window !== 'undefined') {
   overflow: visible;
 }
 
-/* ===================================
-   按钮样式 - 完整迁移自 components.css
-   =================================== */
-
-.sidebar-btn {
-  width: 100%;
-  padding: 14px 25px;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-.sidebar-btn:hover {
-  transform: translateY(-2px);
-}
-
-.sidebar-btn:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-.sidebar-btn:hover:before {
-  left: 100%;
-}
-
 .settings-sidebar button.settings-button {
   width: 100%;
   padding: 12px 25px;
@@ -1741,13 +1766,6 @@ if (typeof window !== 'undefined') {
   white-space: nowrap;
 }
 
-.settings-sidebar button#startHqTranslation {
-  text-align: center;
-  justify-content: center;
-  display: flex;
-  align-items: center;
-}
-
 #settings-sidebar button.settings-button:hover {
   background-color: #0056b3;
 }
@@ -1755,45 +1773,6 @@ if (typeof window !== 'undefined') {
 #settings-sidebar button.settings-button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
-}
-
-
-
-
-/* 翻译按钮 - 绿色 (已迁移到 .green-button 类) */
-/* 消除文字按钮 - 蓝色 (已迁移到 .blue-button 类) */
-/* 校对/高质量翻译按钮 - 紫色 (已迁移到 .purple-button 类) */
-/* 删除按钮 - 红色  (已迁移到 .red-button 类) */
-
-/* 按钮颜色变体类 */
-#settings-sidebar button.red-button {
-  background: linear-gradient(135deg, #d43f3a 0%, #d9534f 100%);
-  box-shadow: 0 4px 6px rgba(217, 83, 79, 0.2);
-}
-
-#settings-sidebar button.red-button:hover {
-  background: linear-gradient(135deg, #c9302c 0%, #d9534f 100%);
-  box-shadow: 0 6px 10px rgba(217, 83, 79, 0.3);
-}
-
-#settings-sidebar button.orange-button {
-  background: linear-gradient(135deg, #eb9316 0%, #f0ad4e 100%);
-  box-shadow: 0 4px 6px rgba(240, 173, 78, 0.2);
-}
-
-#settings-sidebar button.orange-button:hover {
-  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
-  box-shadow: 0 6px 10px rgba(211, 84, 0, 0.3);
-}
-
-#settings-sidebar button.green-button {
-  background: linear-gradient(135deg, #5cb85c 0%, #4cae4c 100%);
-  box-shadow: 0 4px 6px rgba(92, 184, 92, 0.2);
-}
-
-#settings-sidebar button.green-button:hover {
-  background: linear-gradient(135deg, #4cae4c 0%, #449d44 100%);
-  box-shadow: 0 6px 10px rgba(92, 184, 92, 0.3);
 }
 
 /* ============================================================ */
@@ -1853,6 +1832,12 @@ if (typeof window !== 'undefined') {
   color: #888;
 }
 
+.range-note {
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: #6b7c93;
+}
+
 /* 紧凑的范围输入 */
 .page-range-inputs-compact {
   display: flex;
@@ -1889,5 +1874,29 @@ if (typeof window !== 'undefined') {
   font-size: 11px;
   color: #c62828;
   text-align: center;
+}
+
+/* 覆盖遗留 settings-button 通用规则，确保工作流按钮视觉和排版稳定 */
+.settings-sidebar .workflow-controls button.workflow-run-button {
+  margin-top: 0;
+  min-height: 54px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-sidebar .workflow-controls button.workflow-run-button:disabled {
+  color: #f3f6fa;
+  background: #c1c8d1;
+  box-shadow: none;
+  transform: none;
 }
 </style>
