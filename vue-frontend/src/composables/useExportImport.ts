@@ -664,11 +664,15 @@ export function useExportImport() {
         downloadProgressText.value = `上传图片 ${i + 1}/${totalImages}...`
 
         try {
-          // 传递 image_index 而不是 fileName（与后端一致）
+          // 确定文件路径（用于保留文件夹结构）
+          const filePath = imgData?.relativePath || imgData?.fileName || undefined
+
+          // 传递 image_index 和 file_path（用于文件夹结构导出）
           const uploadResponse = await downloadUploadImage(
             sessionId,
             imageDataURL,
-            i
+            i,
+            filePath
           )
 
           if (uploadResponse.success) {

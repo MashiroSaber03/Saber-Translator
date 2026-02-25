@@ -8,6 +8,7 @@
 """
 
 import os
+import re
 import shutil
 import base64
 import io
@@ -89,6 +90,7 @@ def download_upload_image_api():
         session_id = data.get('session_id')
         image_index = data.get('image_index', 0)
         image_data = data.get('image_data')
+        file_path = data.get('file_path')  # 可选：文件相对路径（用于保留文件夹结构）
         
         if not session_id or not image_data:
             return jsonify({'error': '缺少必要参数'}), 400
@@ -114,12 +116,40 @@ def download_upload_image_api():
         if img.mode != 'RGB':
             img = img.convert('RGB')
         
-        # 保存图片到临时目录
-        filename = f"image_{image_index:03d}.png"
-        filepath = os.path.join(temp_dir, filename)
+        # 确定保存路径
+        if file_path:
+            # 使用文件路径保存（保留文件夹结构）
+            # 安全校验：防止路径遍历攻击
+            sanitized_path = file_path.replace('\\', '/').strip('/')
+            if '..' in sanitized_path or sanitized_path.startswith('/'):
+                return jsonify({'error': '无效的文件路径'}), 400
+            
+            # 将原始扩展名替换为 .png
+            name_without_ext = os.path.splitext(sanitized_path)[0]
+            sanitized_path = name_without_ext + '.png'
+            
+            # 构建完整路径
+            filepath = os.path.join(temp_dir, sanitized_path)
+            
+            # 处理同名文件：如果已存在则自动添加序号
+            if os.path.exists(filepath):
+                base_name = os.path.splitext(sanitized_path)[0]
+                counter = 1
+                while os.path.exists(os.path.join(temp_dir, f"{base_name}_{counter}.png")):
+                    counter += 1
+                filepath = os.path.join(temp_dir, f"{base_name}_{counter}.png")
+            
+            # 创建子目录（如果需要）
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        else:
+            # 回退到扁平结构（向后兼容）
+            filename = f"image_{image_index:03d}.png"
+            filepath = os.path.join(temp_dir, filename)
+        
         img.save(filepath, format="PNG")
         
-        logger.debug(f"会话 {session_id}: 已保存图片 {filename}")
+        rel_path = os.path.relpath(filepath, temp_dir)
+        logger.debug(f"会话 {session_id}: 已保存图片 {rel_path}")
         
         return jsonify({
             'success': True,
@@ -171,12 +201,20 @@ def download_finalize_api():
         if not os.path.exists(temp_dir):
             return jsonify({'error': '会话不存在或已过期'}), 404
             
-        # 获取所有已保存的图片文件
-        saved_files = sorted([
-            os.path.join(temp_dir, f) 
-            for f in os.listdir(temp_dir) 
-            if f.startswith('image_') and f.endswith('.png')
-        ])
+        # 获取所有已保存的图片文件（支持文件夹结构，递归遍历）
+        saved_files = []  # 列表元素: (绝对路径, 相对路径)
+        for root, dirs, files in os.walk(temp_dir):
+            for f in files:
+                if f.lower().endswith('.png'):
+                    full_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(full_path, temp_dir).replace('\\', '/')
+                    saved_files.append((full_path, rel_path))
+        
+        # 按相对路径自然排序（支持多文件夹场景）
+        def _natural_sort_key(item):
+            return [int(text) if text.isdigit() else text.lower()
+                    for text in re.split(r'(\d+)', item[1])]
+        saved_files.sort(key=_natural_sort_key)
         
         if not saved_files:
             logger.error("没有找到任何图片文件")
@@ -191,22 +229,22 @@ def download_finalize_api():
             output_path = os.path.join(temp_dir, f"comic_translator_images{ext}")
             
             with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for file in saved_files:
-                    zipf.write(file, os.path.basename(file))
+                for full_path, rel_path in saved_files:
+                    zipf.write(full_path, rel_path)  # 保留文件夹结构
                     
             logger.info(f"已创建{format_type.upper()}文件: {output_path}")
             
         elif format_type == 'pdf':
             output_path = os.path.join(temp_dir, "comic_translator_images.pdf")
             
-            # 使用PIL创建PDF
+            # 使用PIL创建PDF（PDF 不支持文件夹层级，按排序后的顺序排列页面）
             images = []
-            for file in saved_files:
+            for full_path, rel_path in saved_files:
                 try:
-                    img = Image.open(file).convert('RGB')
+                    img = Image.open(full_path).convert('RGB')
                     images.append(img)
                 except Exception as e:
-                    logger.error(f"加载图片到PDF失败: {file} - {str(e)}")
+                    logger.error(f"加载图片到PDF失败: {rel_path} - {str(e)}")
             
             if images:
                 first_image = images[0]
@@ -222,9 +260,12 @@ def download_finalize_api():
             logger.error(f"不支持的格式类型: {format_type}")
             return jsonify({'error': f'不支持的格式类型: {format_type}'}), 400
             
+        # 检查是否包含文件夹结构
+        has_folders = any('/' in rel for _, rel in saved_files)
+        
         return jsonify({
             'success': True,
-            'message': f'已成功处理 {len(saved_files)} 张图片',
+            'message': f'已成功处理 {len(saved_files)} 张图片' + ('（保留文件夹结构）' if has_folders else ''),
             'file_id': session_id,
             'format': format_type
         })

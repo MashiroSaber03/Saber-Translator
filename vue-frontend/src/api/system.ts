@@ -153,16 +153,19 @@ export async function downloadStartSession(
  * @param sessionId 下载会话 ID
  * @param imageData Base64 图片数据
  * @param imageIndex 图片索引
+ * @param filePath 文件相对路径（可选，用于保留文件夹结构，如 "漫画/第1章/01.jpg"）
  */
 export async function downloadUploadImage(
   sessionId: string,
   imageData: string,
-  imageIndex: number
+  imageIndex: number,
+  filePath?: string
 ): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>('/api/download_upload_image', {
     session_id: sessionId,
     image_data: imageData,
     image_index: imageIndex,
+    file_path: filePath,
   })
 }
 
