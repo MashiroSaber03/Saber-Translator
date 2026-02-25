@@ -2,7 +2,7 @@
 /**
  * 设置侧边栏组件
  * 翻译页面左侧的设置面板，包含文字设置、操作按钮等
- * 
+ *
  * 功能：
  * - 文字设置折叠面板（字号、字体、排版、颜色、描边、填充方式）
  * - 翻译操作按钮组
@@ -21,7 +21,7 @@ import {
   WORKFLOW_MODE_CONFIGS,
   type WorkflowMode,
   type WorkflowModeConfig,
-  type WorkflowRunRequest
+  type WorkflowRunRequest,
 } from '@/types/workflow'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
@@ -72,7 +72,6 @@ const settingsStore = useSettingsStore()
 // 状态定义
 // ============================================================
 
-
 /** 应用设置下拉菜单是否显示 */
 const showApplyOptions = ref(false)
 
@@ -87,7 +86,6 @@ const applyOptions = ref<ApplySettingsOptions>({
   strokeColor: true,
   strokeWidth: true,
 })
-
 
 /** 是否启用范围限制 */
 const isRangeEnabled = ref(false)
@@ -105,14 +103,14 @@ const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
 const layoutDirectionOptions = [
   { label: '自动 (根据检测)', value: 'auto' },
   { label: '竖向排版', value: 'vertical' },
-  { label: '横向排版', value: 'horizontal' }
+  { label: '横向排版', value: 'horizontal' },
 ]
 
 /** 填充方式选项（用于CustomSelect） */
 const inpaintMethodOptions = [
   { label: '纯色填充', value: 'solid' },
   { label: 'LAMA修复 (速度优化)', value: 'lama_mpe' },
-  { label: 'LAMA修复 (通用)', value: 'litelama' }
+  { label: 'LAMA修复 (通用)', value: 'litelama' },
 ]
 
 // ============================================================
@@ -130,15 +128,15 @@ const totalImages = computed(() => imageStore.images.length)
 
 /** 页面范围是否有效 */
 const isPageRangeValid = computed(() => {
-  return pageRangeStart.value >= 1 && 
-         pageRangeEnd.value <= totalImages.value && 
-         pageRangeStart.value <= pageRangeEnd.value
+  return (
+    pageRangeStart.value >= 1 &&
+    pageRangeEnd.value <= totalImages.value &&
+    pageRangeStart.value <= pageRangeEnd.value
+  )
 })
 
 /** 是否可以翻译 */
-const canTranslate = computed(() => 
-  hasImages.value && !imageStore.isBatchTranslationInProgress
-)
+const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
 
 /** 是否可以切换上一张 */
 const canGoPrevious = computed(() => imageStore.canGoPrevious)
@@ -183,7 +181,10 @@ const hasFailedImages = computed(() => failedImageCount.value > 0)
 
 /** 当前工作流配置 */
 const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
-  return WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === selectedWorkflowMode.value) ?? WORKFLOW_MODE_CONFIGS[0]!
+  return (
+    WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === selectedWorkflowMode.value) ??
+    WORKFLOW_MODE_CONFIGS[0]!
+  )
 })
 
 /** 当前模式是否支持范围处理 */
@@ -198,7 +199,7 @@ const isRangeActiveForCurrentMode = computed(() => {
 const workflowModeOptions = computed(() => {
   return WORKFLOW_MODE_CONFIGS.map(cfg => ({
     label: cfg.label,
-    value: cfg.mode
+    value: cfg.mode,
   }))
 })
 
@@ -270,7 +271,7 @@ const BUILTIN_FONTS = [
   DEFAULT_FONT_FAMILY,
   'fonts/msyh.ttc',
   'fonts/simhei.ttf',
-  'fonts/simsun.ttc'
+  'fonts/simsun.ttc',
 ]
 
 /** 字体上传输入框引用 */
@@ -280,7 +281,7 @@ const fontUploadInput = ref<HTMLInputElement | null>(null)
 const fontSelectOptions = computed(() => {
   const options = fontList.value.map(font => ({
     label: getFontDisplayName(font),
-    value: font
+    value: font,
   }))
   options.push({ label: '自定义字体...', value: 'custom-font' })
   return options
@@ -293,7 +294,7 @@ const fontSelectOptions = computed(() => {
 onMounted(async () => {
   // 加载字体列表
   await loadFontList()
-  
+
   // 确保当前选中的字体在列表中
   const currentFont = textStyle.value.fontFamily
   if (currentFont && !fontList.value.includes(currentFont)) {
@@ -309,7 +310,7 @@ onUnmounted(() => {
   window.removeEventListener('click', handleClickOutside)
 })
 
-watch(supportsRangeForCurrentMode, (supports) => {
+watch(supportsRangeForCurrentMode, supports => {
   if (!supports) {
     isRangeEnabled.value = false
   }
@@ -331,9 +332,7 @@ async function loadFontList() {
       const firstItem = response.fonts[0]
       if (typeof firstItem === 'object' && 'path' in firstItem) {
         // 新格式：提取字体路径
-        const serverFonts = response.fonts.map((f) => 
-          typeof f === 'object' ? f.path : f
-        )
+        const serverFonts = response.fonts.map(f => (typeof f === 'object' ? f.path : f))
         fontList.value = serverFonts
       } else {
         // 旧格式：直接使用
@@ -349,7 +348,6 @@ async function loadFontList() {
     fontList.value = [...BUILTIN_FONTS]
   }
 }
-
 
 /**
  * 更新字号
@@ -386,7 +384,7 @@ async function handleFontUpload(event: Event) {
   const validExtensions = ['.ttf', '.ttc', '.otf']
   const fileName = file.name.toLowerCase()
   const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
-  
+
   if (!isValidType) {
     showToast('请选择 .ttf、.ttc 或 .otf 格式的字体文件', 'error')
     input.value = ''
@@ -436,17 +434,17 @@ function getFontDisplayName(fontPath: string): string {
     'fonts/simfang.ttf': '中易仿宋',
     'fonts/simhei.ttf': '中易黑体',
     'fonts/SIMLI.TTF': '中易隶书',
-    'fonts/simsun.ttc': '宋体'
+    'fonts/simsun.ttc': '宋体',
   }
-  
+
   // 先检查是否有预定义的中文名称
   if (fontNameMap[fontPath]) {
     return fontNameMap[fontPath]
   }
-  
+
   // 从路径中提取文件名
   const fileName = fontPath.split('/').pop() || fontPath
-  
+
   // 检查文件名是否有预定义名称（不区分大小写）
   for (const [path, name] of Object.entries(fontNameMap)) {
     const mapFileName = path.split('/').pop() || ''
@@ -454,7 +452,7 @@ function getFontDisplayName(fontPath: string): string {
       return name
     }
   }
-  
+
   // 移除扩展名
   return fileName.replace(/\.(ttf|ttc|otf)$/i, '')
 }
@@ -638,13 +636,13 @@ function handleRunWorkflow() {
   if (!canRunWorkflow.value) return
 
   const payload: WorkflowRunRequest = {
-    mode: selectedWorkflowMode.value
+    mode: selectedWorkflowMode.value,
   }
 
   if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
     payload.range = {
       startPage: pageRangeStart.value,
-      endPage: pageRangeEnd.value
+      endPage: pageRangeEnd.value,
     }
   }
 
@@ -655,272 +653,300 @@ function handleRunWorkflow() {
 <template>
   <aside id="settings-sidebar" class="settings-sidebar">
     <div class="card settings-card">
-      <h2>翻译设置</h2>
-      
+      <h2 class="sidebar-title">翻译设置</h2>
+
       <!-- 文字设置折叠面板 -->
       <CollapsiblePanel
         title="文字设置"
         :default-expanded="true"
-        class="settings-card"
+        class="settings-panel text-settings-panel"
       >
-          <div class="settings-form">
-            <!-- 字号设置 -->
+        <div class="settings-form text-settings-form">
+          <section class="setting-group">
+            <div class="group-title-row">
+              <h3 class="group-title">字体排版</h3>
+              <span class="group-note">影响新翻译文本</span>
+            </div>
             <div class="form-group">
-              <label for="fontSize">字号大小:</label>
-              <input 
-                type="number" 
-                id="fontSize" 
+              <label for="fontSize">字号</label>
+              <input
+                type="number"
+                id="fontSize"
                 :value="textStyle.fontSize"
                 min="10"
                 :disabled="textStyle.autoFontSize"
                 :class="{ 'disabled-input': textStyle.autoFontSize }"
                 :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
                 @input="updateFontSize"
+              />
+              <label
+                class="toggle-pill auto-fontsize-toggle"
+                for="autoFontSize"
+                title="勾选后，首次翻译时自动为每个气泡计算合适的字号"
               >
-              <span class="auto-fontSize-option" title="勾选后，首次翻译时自动为每个气泡计算合适的字号">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   id="autoFontSize"
                   :checked="textStyle.autoFontSize"
                   @change="updateAutoFontSize"
-                >
-                <label for="autoFontSize">自动计算初始字号</label>
-              </span>
+                />
+                <span>自动计算初始字号</span>
+              </label>
             </div>
 
-            <!-- 字体选择 -->
             <div class="form-group">
-              <label for="fontFamily">文本字体:</label>
+              <label for="fontFamily">文本字体</label>
               <CustomSelect
                 :model-value="textStyle.fontFamily"
                 :options="fontSelectOptions"
                 @change="handleFontSelectChange"
               />
-              <!-- 隐藏的字体上传输入框 -->
-              <input 
+              <input
                 ref="fontUploadInput"
-                type="file" 
-                id="fontUpload" 
-                accept=".ttf,.ttc,.otf" 
-                style="display: none;"
+                type="file"
+                id="fontUpload"
+                accept=".ttf,.ttc,.otf"
+                style="display: none"
                 @change="handleFontUpload"
-              >
+              />
             </div>
 
-            <!-- 排版设置 -->
             <div class="form-group">
-              <label for="layoutDirection">排版设置:</label>
+              <label for="layoutDirection">排版方向</label>
               <CustomSelect
                 :model-value="textStyle.layoutDirection"
                 :options="layoutDirectionOptions"
                 @change="handleLayoutDirectionChange"
               />
             </div>
-            
-            <!-- 文字颜色 -->
+          </section>
+
+          <section class="setting-group">
+            <div class="group-title-row">
+              <h3 class="group-title">颜色与填充</h3>
+            </div>
             <div class="form-group">
-              <label for="textColor">文字颜色:</label>
-              <div class="color-with-auto">
-                <label class="auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
-                  <input 
-                    type="checkbox" 
+              <div class="label-row">
+                <label for="textColor">文字颜色</label>
+                <label class="toggle-pill auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
+                  <input
+                    type="checkbox"
                     :checked="textStyle.useAutoTextColor"
                     @change="updateUseAutoTextColor"
-                  >
+                  />
                   <span>自动</span>
                 </label>
-                <input 
-                  type="color" 
-                  id="textColor" 
-                  :value="textStyle.textColor"
-                  :disabled="textStyle.useAutoTextColor"
-                  @input="updateTextColor"
-                >
               </div>
-              <div v-if="textStyle.useAutoTextColor" class="auto-color-hint">
-                💡 翻译时将自动使用识别到的文字颜色
+              <input
+                type="color"
+                id="textColor"
+                class="color-input"
+                :value="textStyle.textColor"
+                :disabled="textStyle.useAutoTextColor"
+                @input="updateTextColor"
+              />
+              <div v-if="textStyle.useAutoTextColor" class="inline-hint">
+                翻译时将自动使用识别到的文字颜色
               </div>
             </div>
-            
-            <!-- 描边设置 -->
+
             <div class="form-group">
-              <span class="checkbox-label">
-                <input 
-                  type="checkbox" 
-                  id="strokeEnabled"
-                  :checked="textStyle.strokeEnabled"
-                  @change="updateStrokeEnabled"
-                >
-                <label for="strokeEnabled">启用文本描边:</label>
-              </span>
-            </div>
-            
-            <Transition name="stroke-slide">
-              <div v-if="textStyle.strokeEnabled" id="strokeOptions" class="stroke-options">
-                <div class="form-group">
-                  <label for="strokeColor">描边颜色:</label>
-                  <input 
-                    type="color" 
-                    id="strokeColor" 
-                    :value="textStyle.strokeColor"
-                    @input="updateStrokeColor"
-                  >
-                </div>
-                <div class="form-group">
-                  <label for="strokeWidth">描边宽度 (px):</label>
-                  <input 
-                    type="number" 
-                    id="strokeWidth" 
-                    :value="textStyle.strokeWidth"
-                    min="0" 
-                    max="10"
-                    style="width: 60px; padding: 5px;"
-                    @input="updateStrokeWidth"
-                  >
-                  <div class="input-hint">0 表示无描边。</div>
-                </div>
-              </div>
-            </Transition>
-            
-            <!-- 填充方式 -->
-            <div class="form-group">
-              <label for="useInpainting">气泡填充方式:</label>
+              <label for="useInpainting">气泡填充方式</label>
               <CustomSelect
                 :model-value="textStyle.inpaintMethod"
                 :options="inpaintMethodOptions"
                 @change="handleInpaintMethodChange"
               />
             </div>
-            
-            <!-- 填充颜色（仅纯色填充时显示，带动画） -->
+
             <Transition name="slide-fade">
-              <div v-if="textStyle.inpaintMethod === 'solid'" id="solidColorOptions" class="form-group">
-                <label for="fillColor">填充颜色:</label>
-                <input 
-                  type="color" 
-                  id="fillColor" 
+              <div
+                v-if="textStyle.inpaintMethod === 'solid'"
+                id="solidColorOptions"
+                class="form-group inline-color-group"
+              >
+                <label for="fillColor">填充颜色</label>
+                <input
+                  type="color"
+                  id="fillColor"
+                  class="color-input compact"
                   :value="textStyle.fillColor"
                   @input="updateFillColor"
-                >
+                />
               </div>
             </Transition>
-          </div>
-          
-          <!-- 应用到全部按钮 -->
-          <div class="apply-settings-group">
-            <button 
-              type="button" 
-              class="settings-button"
-              :disabled="!hasImages"
-              @click="handleApplyToAll"
-            >
-              应用到全部
-            </button>
-            <button 
-              type="button" 
-              class="settings-gear-btn" 
-              title="选择要应用的参数"
-              @click="toggleApplyOptions"
-            >
-              ⚙️
-            </button>
-            
-            <!-- 应用选项下拉菜单 -->
-            <div v-if="showApplyOptions" class="apply-options-dropdown">
-              <div class="apply-option">
-                <input 
-                  type="checkbox" 
-                  id="apply_selectAll"
-                  :checked="Object.values(applyOptions).every(v => v)"
-                  @change="toggleSelectAll"
-                >
-                <label for="apply_selectAll">全选</label>
+          </section>
+
+          <section class="setting-group">
+            <div class="group-title-row">
+              <h3 class="group-title">描边</h3>
+              <label class="toggle-pill stroke-toggle" for="strokeEnabled">
+                <input
+                  type="checkbox"
+                  id="strokeEnabled"
+                  :checked="textStyle.strokeEnabled"
+                  @change="updateStrokeEnabled"
+                />
+                <span>启用描边</span>
+              </label>
+            </div>
+
+            <Transition name="stroke-slide">
+              <div v-if="textStyle.strokeEnabled" id="strokeOptions" class="stroke-options">
+                <div class="stroke-grid">
+                  <div class="form-group">
+                    <label for="strokeColor">描边颜色</label>
+                    <input
+                      type="color"
+                      id="strokeColor"
+                      class="color-input compact"
+                      :value="textStyle.strokeColor"
+                      @input="updateStrokeColor"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="strokeWidth">描边宽度 (px)</label>
+                    <input
+                      type="number"
+                      id="strokeWidth"
+                      class="compact-number-input"
+                      :value="textStyle.strokeWidth"
+                      min="0"
+                      max="10"
+                      @input="updateStrokeWidth"
+                    />
+                    <div class="input-hint">0 表示无描边。</div>
+                  </div>
+                </div>
               </div>
-              <hr>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_fontSize" v-model="applyOptions.fontSize">
-                <label for="apply_fontSize">字号</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_fontFamily" v-model="applyOptions.fontFamily">
-                <label for="apply_fontFamily">字体</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_layoutDirection" v-model="applyOptions.layoutDirection">
-                <label for="apply_layoutDirection">排版方向</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor">
-                <label for="apply_textColor">文字颜色</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_fillColor" v-model="applyOptions.fillColor">
-                <label for="apply_fillColor">填充颜色</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_strokeEnabled" v-model="applyOptions.strokeEnabled">
-                <label for="apply_strokeEnabled">描边开关</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_strokeColor" v-model="applyOptions.strokeColor">
-                <label for="apply_strokeColor">描边颜色</label>
-              </div>
-              <div class="apply-option">
-                <input type="checkbox" id="apply_strokeWidth" v-model="applyOptions.strokeWidth">
-                <label for="apply_strokeWidth">描边宽度</label>
-              </div>
+            </Transition>
+          </section>
+        </div>
+
+        <!-- 应用到全部按钮 -->
+        <div class="apply-settings-group">
+          <button
+            type="button"
+            class="settings-button"
+            :disabled="!hasImages"
+            @click="handleApplyToAll"
+          >
+            应用到全部
+          </button>
+          <button
+            type="button"
+            class="settings-gear-btn"
+            title="选择要应用的参数"
+            @click="toggleApplyOptions"
+          >
+            ⚙️
+          </button>
+
+          <!-- 应用选项下拉菜单 -->
+          <div v-if="showApplyOptions" class="apply-options-dropdown">
+            <div class="apply-option">
+              <input
+                type="checkbox"
+                id="apply_selectAll"
+                :checked="Object.values(applyOptions).every(v => v)"
+                @change="toggleSelectAll"
+              />
+              <label for="apply_selectAll">全选</label>
+            </div>
+            <hr />
+            <div class="apply-option">
+              <input type="checkbox" id="apply_fontSize" v-model="applyOptions.fontSize" />
+              <label for="apply_fontSize">字号</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_fontFamily" v-model="applyOptions.fontFamily" />
+              <label for="apply_fontFamily">字体</label>
+            </div>
+            <div class="apply-option">
+              <input
+                type="checkbox"
+                id="apply_layoutDirection"
+                v-model="applyOptions.layoutDirection"
+              />
+              <label for="apply_layoutDirection">排版方向</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />
+              <label for="apply_textColor">文字颜色</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_fillColor" v-model="applyOptions.fillColor" />
+              <label for="apply_fillColor">填充颜色</label>
+            </div>
+            <div class="apply-option">
+              <input
+                type="checkbox"
+                id="apply_strokeEnabled"
+                v-model="applyOptions.strokeEnabled"
+              />
+              <label for="apply_strokeEnabled">描边开关</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_strokeColor" v-model="applyOptions.strokeColor" />
+              <label for="apply_strokeColor">描边颜色</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_strokeWidth" v-model="applyOptions.strokeWidth" />
+              <label for="apply_strokeWidth">描边宽度</label>
             </div>
           </div>
+        </div>
       </CollapsiblePanel>
 
       <CollapsiblePanel
         title="指定范围"
         :default-expanded="false"
-        class="settings-card"
+        class="settings-panel"
         @toggle="onPageRangeToggle"
       >
-          <div class="settings-form page-range-form">
-            <!-- 启用开关 + 图片数 -->
-            <div class="range-header-row">
-              <label class="range-toggle-compact">
-                <input 
-                  type="checkbox" 
-                  v-model="isRangeEnabled"
-                  :disabled="totalImages === 0 || !supportsRangeForCurrentMode"
-                >
-                <span>启用</span>
-              </label>
-              <span class="total-count">共 {{ totalImages }} 张</span>
-            </div>
-
-            <div v-if="!supportsRangeForCurrentMode" class="range-note">
-              当前模式不支持指定范围
-            </div>
-            
-            <!-- 页面范围输入（启用时显示） -->
-            <div v-show="isRangeActiveForCurrentMode" class="page-range-inputs-compact">
-              <input 
-                type="number" 
-                id="pageRangeStart" 
-                :value="pageRangeStart"
-                @input="updatePageRangeStart"
-                placeholder="起始"
-              >
-              <span class="range-sep">~</span>
-              <input 
-                type="number" 
-                id="pageRangeEnd" 
-                :value="pageRangeEnd"
-                @input="updatePageRangeEnd"
-                placeholder="结束"
-              >
-            </div>
-            
-            <!-- 范围错误提示 -->
-            <div v-if="isRangeActiveForCurrentMode && !isPageRangeValid && totalImages > 0" class="range-error-compact">
-              范围无效
-            </div>
+        <div class="settings-form page-range-form">
+          <!-- 启用开关 + 图片数 -->
+          <div class="range-header-row">
+            <label class="range-toggle-compact">
+              <input
+                type="checkbox"
+                v-model="isRangeEnabled"
+                :disabled="totalImages === 0 || !supportsRangeForCurrentMode"
+              />
+              <span>启用</span>
+            </label>
+            <span class="total-count">共 {{ totalImages }} 张</span>
           </div>
+
+          <div v-if="!supportsRangeForCurrentMode" class="range-note">当前模式不支持指定范围</div>
+
+          <!-- 页面范围输入（启用时显示） -->
+          <div v-show="isRangeActiveForCurrentMode" class="page-range-inputs-compact">
+            <input
+              type="number"
+              id="pageRangeStart"
+              :value="pageRangeStart"
+              @input="updatePageRangeStart"
+              placeholder="起始"
+            />
+            <span class="range-sep">~</span>
+            <input
+              type="number"
+              id="pageRangeEnd"
+              :value="pageRangeEnd"
+              @input="updatePageRangeEnd"
+              placeholder="结束"
+            />
+          </div>
+
+          <!-- 范围错误提示 -->
+          <div
+            v-if="isRangeActiveForCurrentMode && !isPageRangeValid && totalImages > 0"
+            class="range-error-compact"
+          >
+            范围无效
+          </div>
+        </div>
       </CollapsiblePanel>
 
       <!-- 工作流启动区 -->
@@ -953,203 +979,292 @@ function handleRunWorkflow() {
           {{ workflowDescription }}
         </div>
       </div>
-      
+
       <!-- 导航按钮 -->
       <div class="navigation-buttons">
-        <button 
-          id="prevImageButton" 
-          :disabled="!canGoPrevious"
-          @click="emit('previous')"
-        >
+        <button id="prevImageButton" :disabled="!canGoPrevious" @click="emit('previous')">
           上一张
         </button>
-        <button 
-          id="nextImageButton" 
-          :disabled="!canGoNext"
-          @click="emit('next')"
-        >
-          下一张
-        </button>
+        <button id="nextImageButton" :disabled="!canGoNext" @click="emit('next')">下一张</button>
       </div>
     </div>
   </aside>
 </template>
 
 <style scoped>
-/* 设置侧边栏样式 - 匹配原版 #settings-sidebar 样式 */
+/* 侧边栏容器 */
 .settings-sidebar {
   position: fixed;
-  top: 70px; /* 为顶部导航栏留出空间 */
+  top: 70px;
   left: 20px;
   width: 300px;
   height: calc(100vh - 90px);
   overflow-y: auto;
   padding-top: 10px;
-  margin-right: 0;
-  order: -1;
   display: flex;
   flex-direction: column;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 #f8fafc;
   direction: rtl;
   z-index: 50;
+  scrollbar-width: thin;
+  scrollbar-color: #c7d5e7 #eef3f9;
 }
 
-/* CollapsiblePanel 组件样式覆盖（匹配 SettingsSidebar 设计风格） */
-.settings-card.collapsible-panel {
-  margin-top: 20px;
-  border-top: 1px solid #eee;
-  padding-top: 15px;
-  padding-bottom: 15px;
-  margin-bottom: 15px;
-  transition: transform 0.2s, box-shadow 0.2s;
-  border-radius: 8px;
-  padding: 15px;
-  background-color: #f8fafc;
+.settings-sidebar > * {
+  direction: ltr;
 }
 
-.settings-card.collapsible-panel:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+.settings-sidebar::-webkit-scrollbar {
+  width: 8px;
 }
 
-.settings-card :deep(.collapsible-header) {
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  margin: 0;
-  user-select: none;
-  color: #3a4767;
-  font-size: 1.2em;
-  margin-bottom: 10px;
-  margin-top: 0;
+.settings-sidebar::-webkit-scrollbar-track {
+  background: #eef3f9;
+  border-radius: 999px;
 }
 
-.settings-card :deep(.collapsible-header:hover) {
-  color: #3498db;
+.settings-sidebar::-webkit-scrollbar-thumb {
+  background: #c7d5e7;
+  border-radius: 999px;
 }
 
-.settings-card :deep(.toggle-icon) {
-  margin-left: auto;
-  color: #8492a6;
-  font-size: 1em;
-  transition: transform 0.3s ease;
+/* 顶层卡片 */
+.settings-card {
+  background: #fff;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(28, 45, 72, 0.08);
+  padding: 18px;
+  margin-bottom: 14px;
 }
 
-.settings-card :deep(.toggle-icon:hover) {
-  color: #3498db;
+.sidebar-title {
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5edf7;
+  color: #20314f;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
 }
 
-/* 表单组 - 匹配原版 .settings-form 样式 */
+/* 折叠面板统一风格 */
+.settings-panel {
+  margin: 0 0 12px;
+  padding: 14px;
+  border: 1px solid #d9e4f2;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f9fcff 0%, #f4f8fd 100%);
+}
+
+.settings-panel :deep(.collapsible-header) {
+  margin: 0 0 10px;
+  padding: 0;
+  color: #304464;
+}
+
+.settings-panel :deep(.collapsible-title) {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.settings-panel :deep(.toggle-icon) {
+  color: #6e81a2;
+  font-size: 12px;
+}
+
+.settings-panel :deep(.collapsible-content) {
+  padding-top: 2px;
+}
+
 .settings-form {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
-.settings-form > div {
-  margin-bottom: 15px;
-  position: relative;
+.setting-group {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid #e1e9f5;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.setting-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.group-title {
+  margin: 0;
+  color: #273959;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.group-note {
+  color: #7a8aa4;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  position: relative;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
 }
 
 .form-group label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
+  margin: 0;
+  color: #2f3d56;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.form-group input[type="number"],
-.form-group select {
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-sidebar input[type='number'],
+.settings-sidebar input[type='text'],
+.settings-sidebar select {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #e0e6ed;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid #cfdcec;
   border-radius: 8px;
-  font-size: 1em;
-  transition: border-color 0.3s, box-shadow 0.3s;
-  background-color: #f9fafc;
+  font-size: 14px;
+  color: #1f2f47;
+  background: #fbfdff;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-.form-group input[type="number"]:focus,
-.form-group select:focus {
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+.settings-sidebar input[type='number']:focus,
+.settings-sidebar input[type='text']:focus,
+.settings-sidebar select:focus {
+  border-color: #4a82ce;
+  box-shadow: 0 0 0 3px rgba(74, 130, 206, 0.18);
   outline: none;
 }
 
-.form-group input[type="color"] {
-  width: 50px;
-  height: 30px;
-  padding: 2px;
-  border: 1px solid #e0e6ed;
-  border-radius: 4px;
-  cursor: pointer;
-  background-color: #f9fafc;
+.disabled-input {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-.form-group input[type="color"]:disabled {
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 10px;
+  border: 1px solid #d3deed;
+  border-radius: 999px;
+  background: #f4f8fd;
+  color: #5b6f8e;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-pill input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #4a82ce;
+  cursor: pointer;
+}
+
+.toggle-pill:has(input:checked) {
+  border-color: #94b5e5;
+  background: #e9f2ff;
+  color: #21579c;
+}
+
+.auto-fontsize-toggle {
+  margin-top: 2px;
+}
+
+.color-input {
+  width: 58px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid #cfdcec;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.color-input.compact {
+  width: 72px;
+}
+
+.color-input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* 颜色选择器与自动开关容器 */
-.color-with-auto {
-  display: flex;
+.inline-color-group {
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
 }
 
-/* 自动颜色开关 */
-.auto-color-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.inline-hint {
+  color: #3a6ea7;
   font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: #f5f5f5;
-  border: 1px solid #e0e6ed;
-  transition: all 0.2s ease;
+  line-height: 1.35;
+  padding: 6px 8px;
+  border: 1px solid #d2e2fa;
+  border-radius: 8px;
+  background: #edf4ff;
 }
 
-.auto-color-toggle:hover {
-  border-color: #3498db;
-}
-
-.auto-color-toggle:has(input:checked) {
-  background: #e3f2fd;
-  border-color: #3498db;
-  color: #3498db;
-}
-
-.auto-color-toggle input {
-  cursor: pointer;
-}
-
-/* 自动颜色提示 */
-.auto-color-hint {
-  padding: 6px 10px;
+.stroke-options {
   margin-top: 6px;
-  font-size: 11px;
-  color: #3498db;
-  background: #e3f2fd;
-  border-radius: 4px;
-  border-left: 3px solid #3498db;
+  padding: 10px;
+  border: 1px solid #d8e4f6;
+  border-radius: 10px;
+  background: #f6f9ff;
 }
 
-/* 填充颜色过渡动画 */
+.stroke-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compact-number-input {
+  width: 100%;
+  min-height: 36px;
+}
+
+.input-hint {
+  color: #6f8099;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* 展开/收起动画 */
 .slide-fade-enter-active {
-  transition: all 0.3s ease-out;
+  transition: all 0.28s ease-out;
 }
 
 .slide-fade-leave-active {
@@ -1160,17 +1275,15 @@ function handleRunWorkflow() {
 .slide-fade-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-bottom: 0;
   overflow: hidden;
 }
 
 .slide-fade-enter-to,
 .slide-fade-leave-from {
   opacity: 1;
-  max-height: 60px;
+  max-height: 70px;
 }
 
-/* 描边选项过渡动画 */
 .stroke-slide-enter-active {
   transition: all 0.3s ease-out;
 }
@@ -1183,197 +1296,206 @@ function handleRunWorkflow() {
 .stroke-slide-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-top: 0;
-  padding-top: 0;
-  padding-bottom: 0;
   overflow: hidden;
 }
 
 .stroke-slide-enter-to,
 .stroke-slide-leave-from {
   opacity: 1;
-  max-height: 150px;
+  max-height: 220px;
 }
 
-/* 自动字号选项 - 匹配原版布局（在字号输入框下方，一行显示） */
-.auto-fontSize-option {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-  width: 100%;
-}
-
-.auto-fontSize-option input[type="checkbox"] {
-  margin-right: 5px;
-  flex-shrink: 0;
-  width: auto;
-}
-
-.auto-fontSize-option label {
-  margin-bottom: 0;
-  font-weight: normal;
-  font-size: 0.9em;
-  white-space: nowrap;
-}
-/* 复选框标签 */
-.checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* 描边选项 - 匹配原版 #strokeOptions 样式 */
-.stroke-options {
-  display: block;
-  margin-left: 20px;
-  border-left: 2px solid #eee;
-  padding-left: 15px;
-  margin-top: 5px;
-}
-
-.stroke-options .form-group {
-  margin-bottom: 10px;
-}
-
-.stroke-options .form-group label {
-  font-size: 0.95em;
-}
-
-.stroke-options .input-hint {
-  font-size: 0.9em;
-  color: #777;
-  margin-top: 2px;
-  display: block;
-}
-
-/* 应用设置组 */
+/* 应用到全部 */
 .apply-settings-group {
   display: flex;
   align-items: stretch;
-  margin-top: 12px;
   position: relative;
+  margin-top: 14px;
   width: 100%;
-  height: 36px;
+  height: 38px;
 }
 
-.settings-sidebar .apply-settings-group button.settings-button {
+.apply-settings-group .settings-button {
   flex: 1;
   min-width: 0;
-  width: auto;
   margin: 0;
-  border-radius: 6px 0 0 6px;
-  padding: 0 10px;
-  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-  color: white;
   border: none;
-  cursor: pointer;
+  border-radius: 8px 0 0 8px;
+  background: linear-gradient(135deg, #4b89d0 0%, #316fb6 100%);
+  color: #fff;
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  cursor: pointer;
   transition: all 0.2s ease;
-  text-align: center;
-  line-height: 36px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.settings-sidebar .apply-settings-group button.settings-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #357abd 0%, #2a6aad 100%);
-  box-shadow: 0 2px 8px rgba(74, 144, 217, 0.35);
+.apply-settings-group .settings-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3f7bc4 0%, #2b64a9 100%);
 }
 
-.settings-sidebar .apply-settings-group button.settings-button:disabled {
-  background: #c5c5c5;
+.apply-settings-group .settings-button:disabled {
+  background: #c2c9d4;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .settings-gear-btn {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  background: linear-gradient(135deg, #357abd 0%, #2a6aad 100%);
-  color: white;
+  width: 38px;
   border: none;
-  border-left: 1px solid rgba(255,255,255,0.15);
-  border-radius: 0 6px 6px 0;
-  cursor: pointer;
+  border-left: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(135deg, #316fb6 0%, #285d99 100%);
+  color: #fff;
   font-size: 14px;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
 .settings-gear-btn:hover {
-  background: linear-gradient(135deg, #2a6aad 0%, #1f5a9d 100%);
+  background: linear-gradient(135deg, #2a64a5 0%, #224f82 100%);
 }
 
-.settings-gear-btn:disabled {
-  background: #aaa;
-  cursor: not-allowed;
-}
-
-/* 应用选项下拉菜单 - 匹配原版 .apply-settings-dropdown 样式 */
 .apply-options-dropdown {
   position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 5px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: var(--z-overlay);
+  inset: auto 0 calc(100% + 6px) 0;
   padding: 10px;
-  margin-bottom: 5px;
+  border: 1px solid #d7e2f2;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(22, 37, 58, 0.16);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: var(--z-overlay);
 }
 
 .apply-option {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 0.85em;
-  color: var(--text-color, #555);
+  gap: 8px;
+  min-height: 26px;
+  color: #405473;
+  font-size: 13px;
   cursor: pointer;
+}
+
+.apply-option input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #4b89d0;
 }
 
 .apply-option:hover {
-  color: var(--color-primary, #007bff);
-}
-
-.apply-option input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
+  color: #2b5f9d;
 }
 
 .apply-options-dropdown hr {
-  height: 1px;
-  background: var(--border-color, #eee);
   margin: 6px 0;
   border: none;
+  border-top: 1px solid #e3ebf6;
 }
 
-/* 操作按钮组 */
+/* 页面范围面板 */
+.page-range-form {
+  gap: 8px;
+}
+
+.range-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.range-toggle-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #d4deed;
+  border-radius: 999px;
+  background: #f4f8fd;
+  color: #5d7090;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.range-toggle-compact:has(input:checked) {
+  border-color: #94b5e5;
+  background: #e9f2ff;
+  color: #21579c;
+}
+
+.range-toggle-compact input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #4a82ce;
+}
+
+.total-count {
+  color: #6f809a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.range-note {
+  color: #6f8099;
+  font-size: 12px;
+}
+
+.page-range-inputs-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-range-inputs-compact input {
+  width: 58px;
+  min-height: 34px;
+  padding: 6px 4px;
+  border: 1px solid #ccd9ea;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.page-range-inputs-compact input:focus {
+  border-color: #4a82ce;
+  outline: none;
+}
+
+.range-sep {
+  color: #7a8aa4;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.range-error-compact {
+  color: #b73535;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid #f3cccc;
+  border-radius: 8px;
+  background: #fff1f1;
+  text-align: center;
+}
+
+/* 工作流区 */
 .action-buttons {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .workflow-controls {
-  margin-top: 16px;
   padding: 14px;
-  border: 1px solid #d6dfed;
+  border: 1px solid #d6e1f0;
   border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fd 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  gap: 8px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f7fd 100%);
 }
 
 .workflow-controls .form-group {
@@ -1382,10 +1504,6 @@ function handleRunWorkflow() {
 
 .workflow-controls .form-group label {
   margin-bottom: 6px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #2f3d56;
-  letter-spacing: 0.2px;
 }
 
 .workflow-controls :deep(.custom-select) {
@@ -1394,22 +1512,15 @@ function handleRunWorkflow() {
 }
 
 .workflow-controls :deep(.custom-select-trigger) {
-  height: 42px;
+  min-height: 42px;
   border-radius: 10px;
-  border-color: #b8c5dc;
-}
-
-.workflow-controls :deep(.custom-select-value) {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2f47;
+  border-color: #b8c6dd;
 }
 
 .workflow-meta {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-top: 2px;
 }
 
 .workflow-chip {
@@ -1417,486 +1528,98 @@ function handleRunWorkflow() {
   align-items: center;
   height: 24px;
   padding: 0 9px;
+  border: 1px solid #d3e1f6;
   border-radius: 999px;
+  background: #e8f0fd;
+  color: #2d4568;
   font-size: 12px;
   font-weight: 600;
-  color: #2d4568;
-  background: #e6eefb;
-  border: 1px solid #d4e1f7;
 }
 
 .workflow-chip.danger-chip {
-  color: #9f2b2b;
-  background: #ffe7e7;
   border-color: #ffcaca;
+  background: #ffe7e7;
+  color: #9f2b2b;
 }
 
-/* 按钮基础样式 - 匹配原版 */
-.action-buttons button {
-  width: 100%;
-  padding: 14px 25px;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: all 0.3s;
-  margin-top: 15px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  position: relative;
-  overflow: hidden;
-}
-
-.action-buttons button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
-
-.action-buttons button:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-.action-buttons button:hover:not(:disabled):before {
-  left: 100%;
-}
-
-.workflow-controls .workflow-run-button {
-  margin-top: 0;
+.workflow-run-button {
   min-height: 54px;
-  padding: 0 14px;
+  border: none;
   border-radius: 10px;
+  background: linear-gradient(135deg, #3ea94a 0%, #58ba54 100%);
+  box-shadow: 0 8px 16px rgba(62, 169, 74, 0.24);
+  color: #fff;
   font-size: 16px;
   font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.3;
-  text-align: center;
-  white-space: normal;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #3ea94a 0%, #59ba54 100%);
-  box-shadow: 0 8px 16px rgba(62, 169, 74, 0.24);
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-.workflow-controls .workflow-run-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #369740 0%, #50b14b 100%);
-  box-shadow: 0 10px 18px rgba(54, 151, 64, 0.28);
+.workflow-run-button:hover:not(:disabled) {
   transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(54, 151, 64, 0.28);
 }
 
-.workflow-controls .workflow-run-button.danger-button {
+.workflow-run-button.danger-button {
   background: linear-gradient(135deg, #d64242 0%, #bf3434 100%);
   box-shadow: 0 8px 16px rgba(214, 66, 66, 0.24);
 }
 
-.workflow-controls .workflow-run-button.danger-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #bf3434 0%, #a92a2a 100%);
+.workflow-run-button.danger-button:hover:not(:disabled) {
   box-shadow: 0 10px 18px rgba(191, 52, 52, 0.28);
 }
 
+.workflow-run-button:disabled {
+  background: #c1c8d1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
 .workflow-description {
-  margin-top: 0;
+  color: #5c6f8f;
   font-size: 13px;
   line-height: 1.45;
-  color: #5b6f8e;
 }
-/* 导航按钮 - 匹配原版 .navigation-buttons 样式 */
+
+/* 翻页按钮 */
 .navigation-buttons {
   display: flex;
   gap: 10px;
-  margin-top: 20px;
-  justify-content: space-between;
-  width: auto;
+  margin-top: 16px;
 }
 
 .navigation-buttons button {
-  width: auto;
-  padding: 12px 15px;
-  background-color: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background-color 0.3s;
-  box-shadow: none;
-  transform: none;
-  font-weight: normal;
-  white-space: nowrap;
   flex: 1;
+  min-height: 38px;
+  border: none;
+  border-radius: 8px;
+  background: #6c7784;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
 .navigation-buttons button:hover:not(:disabled) {
-  background-color: #5a6268;
+  background: #5a6572;
 }
 
 .navigation-buttons button:disabled {
-  background-color: #ccc;
+  background: #c2c9d4;
   cursor: not-allowed;
 }
 
-/* 禁用的输入框样式 */
-.disabled-input {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+@media (max-height: 860px) {
+  .settings-sidebar {
+    top: 66px;
+    height: calc(100vh - 80px);
+  }
 
-/* ===================================
-   设置侧边栏样式 - 完整迁移自 sidebar.css
-   =================================== */
-
-.settings-sidebar {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  width: 300px;
-  height: calc(100vh - 40px);
-  overflow-y: auto;
-  padding-top: 20px;
-  margin-right: 0;
-  order: -1;
-  display: flex;
-  flex-direction: column;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 #f8fafc;
-  direction: rtl;
-}
-
-.settings-sidebar > * {
-  direction: ltr;
-}
-
-.settings-sidebar .settings-card {
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  padding: 25px;
-  margin-bottom: 15px;
-  transition: box-shadow 0.2s;
-}
-
-.settings-sidebar .settings-card:hover {
-  transform: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-}
-
-.settings-sidebar .settings-card h2 {
-  border-bottom: 2px solid #f0f0f0;
-  padding-bottom: 12px;
-  margin-bottom: 20px;
-  color: #2c3e50;
-  font-size: 1.6em;
-  text-align: center;
-}
-
-.settings-sidebar .settings-card h3 {
-  color: #3a4767;
-  font-size: 1.2em;
-  margin-bottom: 15px;
-  display: flex;
-  align-items: center;
-}
-
-.settings-sidebar .settings-card h3 .toggle-icon {
-  margin-left: auto;
-  color: #8492a6;
-  font-size: 1em;
-}
-
-.settings-sidebar .settings-card h3 .toggle-icon:hover {
-  color: #3498db;
-}
-
-.settings-sidebar .settings-card h3 .toggle-icon:before {
-  content: none;
-}
-
-.settings-sidebar .settings-form > div {
-  margin-bottom: 15px;
-  position: relative;
-}
-
-.settings-sidebar label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-
-.settings-sidebar select,
-.settings-sidebar input[type="number"],
-.settings-sidebar input[type="text"] {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #e0e6ed;
-  border-radius: 8px;
-  font-size: 1em;
-  transition: border-color 0.3s, box-shadow 0.3s;
-  background-color: #f9fafc;
-}
-
-.settings-sidebar select:focus,
-.settings-sidebar input[type="number"]:focus,
-.settings-sidebar input[type="text"]:focus {
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
-  outline: none;
-}
-
-.settings-sidebar .input-hint {
-  font-size: 0.9em;
-  color: #777;
-  margin-top: 0.2em;
-  display: block;
-}
-
-.settings-sidebar .navigation-buttons {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
-  justify-content: space-between;
-  width: auto;
-}
-
-.settings-sidebar .navigation-buttons button {
-  width: auto;
-  padding: 12px 15px;
-  background-color: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background-color 0.3s;
-  box-shadow: none;
-  transform: none;
-  font-weight: normal;
-  white-space: nowrap;
-}
-
-.settings-sidebar .navigation-buttons button:hover {
-  background-color: #5a6268;
-}
-
-.settings-sidebar .navigation-buttons button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.settings-sidebar #font-settings,
-.settings-sidebar #page-range-settings {
-  margin-top: 20px;
-  border-top: 1px solid #eee;
-  padding-top: 15px;
-  padding-bottom: 15px;
-  margin-bottom: 15px;
-  transition: transform 0.2s, box-shadow 0.2s;
-  border-radius: 8px;
-  padding: 15px;
-  background-color: #f8fafc;
-}
-
-.settings-sidebar #font-settings:hover,
-.settings-sidebar #page-range-settings:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-}
-
-.settings-sidebar #font-settings h3,
-.settings-sidebar #page-range-settings h3 {
-  margin-bottom: 10px;
-  margin-top: 0;
-}
-
-.settings-sidebar button#applyFontSettingsToAllButton {
-  font-size: 0.9em;
-  padding: 8px 15px;
-  margin-top: 10px;
-}
-
-.settings-sidebar #font-settings + div {
-  margin-top: 20px;
-}
-
-.settings-sidebar div.settings-card {
-  margin-bottom: 15px;
-  transition: box-shadow 0.2s;
-}
-
-
-.settings-sidebar #strokeEnabled {
-  margin-left: 5px;
-  transform: scale(1.1);
-}
-
-.settings-sidebar #strokeOptions label {
-  font-size: 0.95em;
-}
-
-#solidColorOptions, #inpaintingOptions {
-  margin-top: 10px;
-  margin-bottom: 10px;
-  overflow: visible;
-}
-
-.settings-sidebar button.settings-button {
-  width: 100%;
-  padding: 12px 25px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 1.1em;
-  transition: background-color 0.3s;
-  margin-top: 10px;
-  box-shadow: none;
-  transform: none;
-  font-weight: normal;
-  text-align: center;
-  white-space: nowrap;
-}
-
-#settings-sidebar button.settings-button:hover {
-  background-color: #0056b3;
-}
-
-#settings-sidebar button.settings-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-/* ============================================================ */
-/* 页面范围设置面板样式 */
-/* ============================================================ */
-
-/* ============================================================ */
-/* 页面范围设置 - 紧凑样式 */
-/* ============================================================ */
-
-.page-range-form {
-  padding: 8px 0;
-}
-
-/* 头部行：启用开关 + 图片数 */
-.range-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.range-toggle-compact {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 6px 12px;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #666;
-  transition: all 0.2s ease;
-}
-
-.range-toggle-compact:hover {
-  border-color: #5c6bc0;
-}
-
-.range-toggle-compact:has(input:checked) {
-  background: #e8eaf6;
-  border-color: #5c6bc0;
-  color: #3f51b5;
-}
-
-.range-toggle-compact input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: #5c6bc0;
-}
-
-.total-count {
-  font-size: 12px;
-  color: #888;
-}
-
-.range-note {
-  margin-bottom: 8px;
-  font-size: 11px;
-  color: #6b7c93;
-}
-
-/* 紧凑的范围输入 */
-.page-range-inputs-compact {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.page-range-inputs-compact input {
-  width: 52px;
-  padding: 6px 4px;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.page-range-inputs-compact input:focus {
-  border-color: #5c6bc0;
-  outline: none;
-}
-
-.range-sep {
-  font-size: 14px;
-  color: #999;
-}
-
-/* 紧凑的错误提示 */
-.range-error-compact {
-  padding: 4px 8px;
-  background: #ffebee;
-  border-radius: 4px;
-  font-size: 11px;
-  color: #c62828;
-  text-align: center;
-}
-
-/* 覆盖遗留 settings-button 通用规则，确保工作流按钮视觉和排版稳定 */
-.settings-sidebar .workflow-controls button.workflow-run-button {
-  margin-top: 0;
-  min-height: 54px;
-  padding: 0 14px;
-  border-radius: 10px;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.3;
-  text-align: center;
-  white-space: normal;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.settings-sidebar .workflow-controls button.workflow-run-button:disabled {
-  color: #f3f6fa;
-  background: #c1c8d1;
-  box-shadow: none;
-  transform: none;
+  .sidebar-title {
+    font-size: 22px;
+  }
 }
 </style>
