@@ -662,7 +662,7 @@ function handleRunWorkflow() {
         class="settings-panel text-settings-panel"
       >
         <div class="settings-form text-settings-form">
-          <section class="setting-group">
+          <section class="setting-group setting-group-typography">
             <div class="group-title-row">
               <h3 class="group-title">字体排版</h3>
               <span class="group-note">影响新翻译文本</span>
@@ -721,7 +721,7 @@ function handleRunWorkflow() {
             </div>
           </section>
 
-          <section class="setting-group">
+          <section class="setting-group setting-group-color">
             <div class="group-title-row">
               <h3 class="group-title">颜色与填充</h3>
             </div>
@@ -777,7 +777,7 @@ function handleRunWorkflow() {
             </Transition>
           </section>
 
-          <section class="setting-group">
+          <section class="setting-group setting-group-stroke">
             <div class="group-title-row">
               <h3 class="group-title">描边</h3>
               <label class="toggle-pill stroke-toggle" for="strokeEnabled">
@@ -1030,9 +1030,9 @@ function handleRunWorkflow() {
 /* 顶层卡片 */
 .settings-card {
   background: #fff;
-  border: 1px solid #dbe5f2;
+  border: 1px solid #dbe4ef;
   border-radius: 14px;
-  box-shadow: 0 10px 24px rgba(28, 45, 72, 0.08);
+  box-shadow: 0 8px 20px rgba(28, 45, 72, 0.07);
   padding: 18px;
   margin-bottom: 14px;
 }
@@ -1040,26 +1040,28 @@ function handleRunWorkflow() {
 .sidebar-title {
   margin: 0 0 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #e5edf7;
+  border-bottom: 1px solid #e2e9f2;
   color: #20314f;
   font-size: 24px;
   font-weight: 700;
   text-align: center;
 }
 
-/* 折叠面板统一风格 */
+/* 面板层：恢复轻量容器，形成“2层结构” */
 .settings-panel {
   margin: 0 0 12px;
-  padding: 14px;
-  border: 1px solid #d9e4f2;
+  padding: 12px;
+  border: 1px solid #d8e3f1;
   border-radius: 12px;
-  background: linear-gradient(180deg, #f9fcff 0%, #f4f8fd 100%);
+  background: #f5f8fd;
 }
 
 .settings-panel :deep(.collapsible-header) {
   margin: 0 0 10px;
   padding: 0;
   color: #304464;
+  border-bottom: 1px solid #dde7f4;
+  padding-bottom: 8px;
 }
 
 .settings-panel :deep(.collapsible-title) {
@@ -1082,15 +1084,22 @@ function handleRunWorkflow() {
 }
 
 .setting-group {
-  margin-bottom: 10px;
-  padding: 12px;
-  border: 1px solid #e1e9f5;
-  border-radius: 10px;
-  background: #fff;
+  --group-divider-color: #d4deeb;
+  margin: 0;
+  padding: 10px 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .setting-group:last-child {
   margin-bottom: 0;
+}
+
+.setting-group + .setting-group {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 3px solid var(--group-divider-color);
 }
 
 .group-title-row {
@@ -1098,7 +1107,21 @@ function handleRunWorkflow() {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid #dfe8f4;
+}
+
+.setting-group-typography {
+  --group-divider-color: #d4deeb;
+}
+
+.setting-group-color {
+  --group-divider-color: #24a87a;
+}
+
+.setting-group-stroke {
+  --group-divider-color: #dc9a2f;
 }
 
 .group-title {
@@ -1106,10 +1129,11 @@ function handleRunWorkflow() {
   color: #273959;
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .group-note {
-  color: #7a8aa4;
+  color: #7d8ba4;
   font-size: 11px;
   line-height: 1.2;
 }
@@ -1118,7 +1142,7 @@ function handleRunWorkflow() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 11px;
 }
 
 .form-group:last-child {
@@ -1238,11 +1262,11 @@ function handleRunWorkflow() {
 }
 
 .stroke-options {
-  margin-top: 6px;
-  padding: 10px;
-  border: 1px solid #d8e4f6;
-  border-radius: 10px;
-  background: #f6f9ff;
+  margin-top: 8px;
+  padding: 8px 0 0;
+  border-top: 1px dashed #d7e2ef;
+  border-radius: 0;
+  background: transparent;
 }
 
 .stroke-grid {
@@ -1492,10 +1516,10 @@ function handleRunWorkflow() {
 }
 
 .workflow-controls {
-  padding: 14px;
-  border: 1px solid #d6e1f0;
+  padding: 12px;
+  border: 1px solid #d8e3f1;
   border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f2f7fd 100%);
+  background: #f8fbff;
 }
 
 .workflow-controls .form-group {
