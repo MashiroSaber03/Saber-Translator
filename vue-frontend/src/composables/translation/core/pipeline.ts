@@ -77,7 +77,8 @@ export function usePipeline() {
         // 'all' 和 'range' 都是批量操作，都可以使用并行模式
         const parallelConfig = settingsStore.settings.parallel
         const isBatchScope = config.scope === 'all' || config.scope === 'range'
-        const shouldUseParallel = parallelConfig?.enabled && isBatchScope
+        // 仅嵌字模式依赖现有气泡状态，保持顺序执行可避免批量并行下的数据歧义
+        const shouldUseParallel = parallelConfig?.enabled && isBatchScope && config.mode !== 'embed'
 
         if (shouldUseParallel) {
             console.log(`🚀 使用并行管线，模式: ${config.mode}, 范围: ${config.scope}`)

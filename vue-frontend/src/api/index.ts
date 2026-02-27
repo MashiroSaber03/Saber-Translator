@@ -46,3 +46,15 @@ export * from './plugin'
 
 // 配置 API
 export * from './config'
+
+// 术语库 / 翻译记忆 API
+export * from './glossary'
+
+// 质量分析 API
+export * from './quality'
+
+// 版本对比 API
+export * from './compare'
+
+// 任务中心 API
+export * from './jobs'

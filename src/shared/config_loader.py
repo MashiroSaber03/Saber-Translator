@@ -14,7 +14,7 @@ def get_config_path(filename):
     """获取配置文件的绝对路径"""
     return os.path.join(CONFIG_DIR, filename)
 
-def load_json_config(filename, default_value={}):
+def load_json_config(filename, default_value=None):
     """
     加载指定名称的 JSON 配置文件。
 
@@ -25,6 +25,9 @@ def load_json_config(filename, default_value={}):
     Returns:
         dict or list or any: 解析后的配置数据或默认值。
     """
+    if default_value is None:
+        default_value = {}
+
     config_path = get_config_path(filename)
     try:
         if os.path.exists(config_path):
@@ -67,7 +70,7 @@ def save_json_config(filename, data):
         logger.error(f"保存 JSON 配置文件失败: {config_path} - {e}", exc_info=True)
         return False
 
-def load_yaml_config(filename, default_value={}):
+def load_yaml_config(filename, default_value=None):
     """
     加载指定名称的 YAML 配置文件。
 
@@ -78,6 +81,9 @@ def load_yaml_config(filename, default_value={}):
     Returns:
         dict or any: 解析后的配置数据或默认值。
     """
+    if default_value is None:
+        default_value = {}
+
     config_path = get_config_path(filename)
     try:
         if os.path.exists(config_path):

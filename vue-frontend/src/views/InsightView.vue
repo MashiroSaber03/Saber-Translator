@@ -403,11 +403,26 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     <AppHeader variant="insight" logo-title="书架首页">
       <template #header-links>
         <router-link to="/" class="nav-link">📚 书架</router-link>
-        <a href="javascript:void(0)" class="nav-link" @click="goToTranslate">🌐 翻译</a>
+        <button type="button" class="nav-link nav-btn" aria-label="前往翻译页面" @click="goToTranslate">🌐 翻译</button>
         <span class="nav-link active">🔍 分析</span>
-        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
-        <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
-        <button id="themeToggle" class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+        <a
+          href="https://www.mashirosaber.top/use/manga-insight.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="nav-link"
+          title="使用教程"
+        >
+          📖 教程
+        </a>
+        <button id="settingsBtn" type="button" class="btn btn-icon" title="设置" aria-label="打开设置" @click="openSettingsModal">⚙️</button>
+        <button
+          id="themeToggle"
+          type="button"
+          class="theme-toggle"
+          title="功能开发中"
+          aria-label="主题切换（开发中）"
+          @click="showFeatureNotice"
+        >
           <span class="theme-icon">☀️</span>
         </button>
       </template>
@@ -597,6 +612,13 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     padding: 6px 12px;
     border-radius: 6px;
     transition: all 0.2s;
+}
+
+.nav-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
 }
 
 .nav-link:hover {

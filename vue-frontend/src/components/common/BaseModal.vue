@@ -2,13 +2,30 @@
   <Teleport to="body">
     <Transition name="modal-fade">
       <div v-if="modelValue" class="modal-overlay" @click.self="handleOverlayClick">
-        <div class="modal-container" :class="[sizeClass, customClass]" :style="customStyle">
+        <div
+          ref="modalContainerRef"
+          class="modal-container"
+          :class="[sizeClass, customClass]"
+          :style="customStyle"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="resolvedAriaLabelledby"
+          :aria-describedby="ariaDescribedby"
+          tabindex="-1"
+        >
           <!-- 模态框头部 -->
           <div v-if="showHeader" class="modal-header">
-            <h3 class="modal-title">
+            <h3 :id="internalTitleId" class="modal-title">
               <slot name="title">{{ title }}</slot>
             </h3>
-            <button v-if="showCloseButton" class="modal-close-btn" title="关闭" @click="close">
+            <button
+              v-if="showCloseButton"
+              type="button"
+              class="modal-close-btn"
+              title="关闭"
+              aria-label="关闭对话框"
+              @click="close"
+            >
               ✕
             </button>
           </div>
@@ -29,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, watch, onMounted, onUnmounted, nextTick, ref, getCurrentInstance } from 'vue'
 
 // Props 定义
 interface Props {
@@ -51,6 +68,12 @@ interface Props {
   customClass?: string
   /** 自定义样式 */
   customStyle?: Record<string, string>
+  /** 可选：显式指定 aria-labelledby */
+  ariaLabelledby?: string
+  /** 可选：显式指定 aria-describedby */
+  ariaDescribedby?: string
+  /** 可选：打开后优先聚焦的选择器（在模态框内部查询） */
+  initialFocusSelector?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -62,7 +85,10 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEsc: true,
   size: 'medium',
   customClass: '',
-  customStyle: () => ({})
+  customStyle: () => ({}),
+  ariaLabelledby: '',
+  ariaDescribedby: '',
+  initialFocusSelector: ''
 })
 
 // Emits 定义
@@ -80,6 +106,86 @@ const sizeClass = computed(() => {
   return `modal-${props.size}`
 })
 
+const modalContainerRef = ref<HTMLElement | null>(null)
+const lastActiveElement = ref<HTMLElement | null>(null)
+const instanceUid = getCurrentInstance()?.uid ?? Math.floor(Math.random() * 100000)
+const internalTitleId = `base-modal-title-${instanceUid}`
+const ariaDescribedby = computed(() => props.ariaDescribedby || undefined)
+const resolvedAriaLabelledby = computed(() => {
+  if (props.ariaLabelledby) return props.ariaLabelledby
+  return props.showHeader ? internalTitleId : undefined
+})
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'button:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]'
+].join(',')
+
+function getFocusableElements(): HTMLElement[] {
+  if (!modalContainerRef.value) return []
+  return Array.from(modalContainerRef.value.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter(el => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true')
+}
+
+function focusFirstElement(): void {
+  const container = modalContainerRef.value
+  if (!container) return
+
+  if (props.initialFocusSelector) {
+    const preferred = container.querySelector<HTMLElement>(props.initialFocusSelector)
+    if (preferred) {
+      preferred.focus()
+      return
+    }
+  }
+
+  const focusables = getFocusableElements()
+  if (focusables.length > 0) {
+    focusables[0]?.focus()
+  } else {
+    container.focus()
+  }
+}
+
+function restoreFocus(): void {
+  const previous = lastActiveElement.value
+  if (previous && typeof previous.focus === 'function') {
+    previous.focus()
+  }
+}
+
+function trapFocus(event: KeyboardEvent): void {
+  const focusables = getFocusableElements()
+  const container = modalContainerRef.value
+  if (!container) return
+
+  if (focusables.length === 0) {
+    event.preventDefault()
+    container.focus()
+    return
+  }
+
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement as HTMLElement | null
+
+  if (event.shiftKey) {
+    if (active === first || active === container) {
+      event.preventDefault()
+      last?.focus()
+    }
+  } else if (active === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
 // 关闭模态框
 const close = () => {
   emit('update:modelValue', false)
@@ -95,8 +201,14 @@ const handleOverlayClick = () => {
 
 // 处理键盘事件
 const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.modelValue) return
+
   if (event.key === 'Escape' && props.closeOnEsc && props.modelValue) {
     close()
+    return
+  }
+  if (event.key === 'Tab') {
+    trapFocus(event)
   }
 }
 
@@ -105,14 +217,20 @@ watch(
   () => props.modelValue,
   (newValue) => {
     if (newValue) {
+      lastActiveElement.value = document.activeElement as HTMLElement | null
       emit('open')
       // 打开时禁止背景滚动
       document.body.style.overflow = 'hidden'
+      nextTick(() => {
+        focusFirstElement()
+      })
     } else {
       // 关闭时恢复背景滚动
       document.body.style.overflow = ''
+      restoreFocus()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // 生命周期
@@ -124,6 +242,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   // 确保恢复背景滚动
   document.body.style.overflow = ''
+  restoreFocus()
 })
 </script>
 

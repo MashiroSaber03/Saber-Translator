@@ -4,6 +4,7 @@ import json
 from hashlib import md5
 import logging
 from time import sleep
+from src.shared.http_retry import post_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,14 @@ class BaiduTranslateInterface:
         # 发送请求并处理重试
         for attempt in range(max_retries):
             try:
-                response = requests.post(self.API_URL, params=params, headers=headers)
+                response = post_with_retry(
+                    self.API_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=(10, 60),
+                    max_retries=1,
+                    backoff_base=retry_delay,
+                )
                 result = response.json()
                 
                 # 检查返回的错误码

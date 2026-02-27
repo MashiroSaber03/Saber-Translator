@@ -39,6 +39,15 @@ export function useTextStyleSync() {
     const bubbleStore = useBubbleStore()
     const translation = useTranslation()
 
+    function rgbToHex(rgb: [number, number, number] | null | undefined): string | null {
+        if (!rgb || rgb.length !== 3) return null
+        const [r, g, b] = rgb
+        return '#' + [r, g, b].map(x => {
+            const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16)
+            return hex.length === 1 ? '0' + hex : hex
+        }).join('')
+    }
+
     // 当前图片（计算属性）
     const currentImage = computed(() => imageStore.currentImage)
 
@@ -159,7 +168,7 @@ export function useTextStyleSync() {
 
         // 需要重新渲染的设置项（与原版 renderSettings 一致）
         const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
-            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor']
+            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor', 'useAutoTextColor']
 
         if (!renderSettings.includes(settingKey)) {
             return
@@ -180,7 +189,28 @@ export function useTextStyleSync() {
         }
 
         const stateProperty = propertyMap[settingKey]
-        if (stateProperty && image.bubbleStates) {
+        if (image.bubbleStates) {
+            if (settingKey === 'useAutoTextColor') {
+                const useAuto = newValue === true
+                const fallbackTextColor = settingsStore.settings.textStyle.textColor
+                const fallbackFillColor = settingsStore.settings.textStyle.fillColor
+
+                const updatedBubbles = image.bubbleStates.map(bs => ({
+                    ...bs,
+                    textColor: useAuto
+                        ? (rgbToHex(bs.autoFgColor) ?? fallbackTextColor)
+                        : fallbackTextColor,
+                    fillColor: useAuto
+                        ? (rgbToHex(bs.autoBgColor) ?? fallbackFillColor)
+                        : fallbackFillColor
+                }))
+
+                imageStore.updateCurrentImage({
+                    bubbleStates: updatedBubbles,
+                    useAutoTextColor: useAuto
+                })
+                bubbleStore.setBubbles(updatedBubbles)
+            } else if (stateProperty) {
             // 【简化设计】处理 layoutDirection 变更
             if (settingKey === 'layoutDirection') {
                 if (newValue === 'auto') {
@@ -217,6 +247,7 @@ export function useTextStyleSync() {
 
                 // 同步更新 bubbleStore
                 bubbleStore.setBubbles(updatedBubbles)
+            }
             }
         }
 

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from openai import OpenAI
 from src.shared.openai_helpers import create_openai_client
+from src.shared.http_retry import post_with_retry, get_with_retry
 
 # 添加项目根目录到 Python 路径
 root_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -252,7 +253,14 @@ def translate_single_text(text, target_language, model_provider,
                     "media": "text"
                 }
                 
-                response = requests.post(url, headers=headers, json=payload)
+                response = post_with_retry(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=(10, 120),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 response.raise_for_status()
                 result = response.json()
                 if "target" in result and len(result["target"]) > 0:
@@ -271,7 +279,14 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": f"将下面的日文文本翻译成中文：{text}"}
                     ]
                 }
-                response = requests.post(url, headers=headers, json=payload)
+                response = post_with_retry(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=(10, 120),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 response.raise_for_status()
                 result = response.json()
                 choices = result.get('choices', [])
@@ -289,7 +304,13 @@ def translate_single_text(text, target_language, model_provider,
                     ],
                     "stream": False
                 }
-                response = requests.post(url, json=payload)
+                response = post_with_retry(
+                    url,
+                    json=payload,
+                    timeout=(10, 120),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 response.raise_for_status()
                 result = response.json()
                 if "message" in result and "content" in result["message"]:
@@ -743,7 +764,13 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                     "messages": messages,
                     "stream": False
                 }
-                response = requests.post(url, json=payload, timeout=120)
+                response = post_with_retry(
+                    url,
+                    json=payload,
+                    timeout=(10, 120),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 response.raise_for_status()
                 result = response.json()
                 response_text = result.get("message", {}).get("content", "").strip()
@@ -756,7 +783,14 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                     "model": model_name,
                     "messages": messages
                 }
-                response = requests.post(url, headers=headers, json=payload, timeout=120)
+                response = post_with_retry(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=(10, 120),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 response.raise_for_status()
                 result = response.json()
                 choices = result.get('choices', [])
@@ -1046,7 +1080,7 @@ if __name__ == '__main__':
 
     print(f"\n测试 Ollama ({test_model_ollama}):")
     try:
-        requests.get("http://localhost:11434")
+        get_with_retry("http://localhost:11434", timeout=(3, 5), max_retries=1)
         result_ollama = translate_single_text(test_text_en, 'zh', 'ollama', model_name=test_model_ollama)
         print(f"  '{test_text_en}' -> '{result_ollama}'")
     except requests.exceptions.ConnectionError:
@@ -1056,7 +1090,7 @@ if __name__ == '__main__':
 
     print(f"\n测试 Sakura ({test_model_sakura}):")
     try:
-        requests.get("http://localhost:8080")
+        get_with_retry("http://localhost:8080", timeout=(3, 5), max_retries=1)
         result_sakura = translate_single_text(test_text_jp, 'zh', 'sakura', model_name=test_model_sakura)
         print(f"  '{test_text_jp}' -> '{result_sakura}'")
     except requests.exceptions.ConnectionError:
@@ -1068,7 +1102,7 @@ if __name__ == '__main__':
     test_list = ["Hello", "World", "これはペンです"]
     # 尝试使用 Ollama 进行批量测试，如果 Ollama 不可用，则此部分会失败
     try:
-        requests.get("http://localhost:11434")
+        get_with_retry("http://localhost:11434", timeout=(3, 5), max_retries=1)
         translated_list = translate_text_list(test_list, 'zh', 'ollama', model_name=test_model_ollama)
         print(f"批量翻译结果 ({len(translated_list)}):")
         for i, t in enumerate(translated_list):

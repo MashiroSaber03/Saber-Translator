@@ -71,7 +71,8 @@ export const STEP_CHAIN_CONFIGS: Record<TranslationMode, AtomicStepType[]> = {
     standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
     hq: ['detection', 'ocr', 'color', 'aiTranslate', 'inpaint', 'render'],
     proofread: ['aiTranslate', 'render'],
-    removeText: ['detection', 'inpaint', 'render']
+    removeText: ['detection', 'inpaint', 'render'],
+    embed: ['color', 'inpaint', 'render']
 }
 
 /** 步骤显示名称 */
@@ -159,6 +160,9 @@ export function useSequentialPipeline() {
     }
 
     function validateConfig(config: PipelineConfig): boolean {
+        if (config.mode === 'embed') {
+            return true
+        }
         const validationType = config.mode === 'hq' ? 'hq'
             : config.mode === 'proofread' ? 'proofread'
                 : config.mode === 'removeText' ? 'ocr'
@@ -423,11 +427,11 @@ export function useSequentialPipeline() {
 
     /**
      * 判断是否使用逐张处理模式
-     * - standard / removeText: 逐张处理（每张图完成全部步骤后再处理下一张）
+     * - standard / removeText / embed: 逐张处理（每张图完成全部步骤后再处理下一张）
      * - hq / proofread: 按批次处理（批次内保持按步骤批量处理）
      */
     function shouldUsePerImageMode(mode: TranslationMode): boolean {
-        return mode === 'standard' || mode === 'removeText'
+        return mode === 'standard' || mode === 'removeText' || mode === 'embed'
     }
 
     /**
@@ -745,8 +749,8 @@ export function useSequentialPipeline() {
                 textboxTexts: []
             }
 
-            // 校对模式需要从已有数据初始化
-            if (config.mode === 'proofread' && image.bubbleStates && image.bubbleStates.length > 0) {
+            // 校对/仅嵌字模式需要从已有数据初始化
+            if ((config.mode === 'proofread' || config.mode === 'embed') && image.bubbleStates && image.bubbleStates.length > 0) {
                 task.bubbleCoords = image.bubbleStates.map(s => s.coords)
                 task.bubbleAngles = image.bubbleStates.map(s => s.rotationAngle || 0)
                 task.autoDirections = image.bubbleStates.map(s => s.autoTextDirection || s.textDirection || 'vertical')
@@ -811,7 +815,8 @@ export function useSequentialPipeline() {
                 standard: '翻译',
                 hq: '高质量翻译',
                 proofread: 'AI校对',
-                removeText: '消除文字'
+                removeText: '消除文字',
+                embed: '嵌字'
             }
             toast.success(`${modeLabels[config.mode]}完成！`)
 

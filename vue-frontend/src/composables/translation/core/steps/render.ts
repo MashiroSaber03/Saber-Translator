@@ -86,8 +86,12 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         const colorInfo = colors[idx]
 
         if (useAutoColor && colorInfo) {
-            if (colorInfo.textColor) finalTextColor = colorInfo.textColor
-            if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
+            const autoTextColor = rgbToHex(colorInfo.autoFgColor)
+            const autoFillColor = rgbToHex(colorInfo.autoBgColor)
+
+            // 仅在后端确实提取到自动颜色时覆盖，避免被后端兜底黑白值误覆盖
+            if (autoTextColor) finalTextColor = autoTextColor
+            if (autoFillColor) finalFillColor = autoFillColor
         }
 
         return {
@@ -136,4 +140,18 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         finalImage: response.final_image || '',
         bubbleStates: response.bubble_states || bubbleStates
     }
+}
+
+function rgbToHex(rgb?: [number, number, number] | null): string | null {
+    if (!rgb || rgb.length !== 3) {
+        return null
+    }
+    const [r, g, b] = rgb
+    return (
+        '#' +
+        [r, g, b]
+            .map(value => Math.max(0, Math.min(255, value)))
+            .map(value => value.toString(16).padStart(2, '0'))
+            .join('')
+    )
 }

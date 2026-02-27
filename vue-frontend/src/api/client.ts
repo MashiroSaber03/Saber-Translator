@@ -5,6 +5,7 @@
 
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosError } from 'axios'
 import type { ApiError, ApiResponse } from '@/types'
+import { forceRefreshLocalToken, getLocalWriteHeaders } from './localToken'
 
 /**
  * 创建 API 错误对象
@@ -40,8 +41,17 @@ class ApiClient {
 
     // 请求拦截器
     this.instance.interceptors.request.use(
-      config => {
-        // 可以在这里添加认证 token 等
+      async config => {
+        // 本机模式安全层：所有写操作自动注入本地 Token
+        const method = (config.method || 'get').toLowerCase()
+        const isWrite = ['post', 'put', 'patch', 'delete'].includes(method)
+        if (isWrite) {
+          const tokenHeaders = await getLocalWriteHeaders()
+          config.headers = {
+            ...(config.headers || {}),
+            ...tokenHeaders
+          }
+        }
         return config
       },
       error => {
@@ -52,7 +62,33 @@ class ApiClient {
     // 响应拦截器
     this.instance.interceptors.response.use(
       response => response,
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
+        const originalConfig = error.config as (AxiosRequestConfig & { _localTokenRetried?: boolean }) | undefined
+        const method = (originalConfig?.method || '').toLowerCase()
+        const isWrite = ['post', 'put', 'patch', 'delete'].includes(method)
+        const errorData = (error.response?.data || {}) as Record<string, unknown>
+        const errorMessage = String(errorData.error || errorData.message || '')
+        const shouldRefreshAndRetry =
+          error.response?.status === 401 &&
+          isWrite &&
+          !originalConfig?._localTokenRetried &&
+          errorMessage.includes('本地访问令牌')
+
+        if (shouldRefreshAndRetry && originalConfig) {
+          try {
+            originalConfig._localTokenRetried = true
+            await forceRefreshLocalToken()
+            const refreshedTokenHeaders = await getLocalWriteHeaders(undefined, { forceRefresh: true })
+            originalConfig.headers = {
+              ...(originalConfig.headers || {}),
+              ...refreshedTokenHeaders,
+            }
+            return await this.instance.request(originalConfig)
+          } catch {
+            // 失败时走统一错误处理
+          }
+        }
+
         const apiError = createApiError(error)
         console.error('API 错误:', apiError)
         return Promise.reject(apiError)

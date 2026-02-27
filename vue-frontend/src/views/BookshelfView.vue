@@ -161,13 +161,13 @@ function showFeatureNotice() {
         <span class="lan-access-info" title="其他设备可通过此地址访问">
           <span class="lan-icon">🌐局域网设备可通过该网址访问</span>
           <span id="lanUrl">{{ lanUrl }}</span>
-          <button class="copy-btn" title="复制地址" @click="copyLanUrl">📋</button>
+          <button type="button" class="copy-btn" title="复制地址" aria-label="复制局域网地址" @click="copyLanUrl">📋</button>
         </span>
-        <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
-        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
+        <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer" class="tutorial-link">使用教程</a>
+        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" rel="noopener noreferrer" class="github-link">
           <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
         </a>
-        <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+        <button type="button" class="theme-toggle" title="功能开发中" aria-label="主题切换（开发中）" @click="showFeatureNotice">
           <span class="theme-icon">☀️</span>
         </button>
       </template>
@@ -255,7 +255,6 @@ function showFeatureNotice() {
       @confirm="confirmCallback?.(); showConfirmModal = false"
       @cancel="showConfirmModal = false"
     />
-
   </div>
 </template>
 

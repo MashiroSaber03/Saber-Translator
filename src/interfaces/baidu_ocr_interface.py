@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from typing import List, Dict, Tuple, Optional, Any
+from src.shared.http_retry import post_with_retry
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class BaiduOCRInterface:
         url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={self.api_key}&client_secret={self.secret_key}"
         
         try:
-            response = requests.post(url)
+            response = post_with_retry(url, timeout=(10, 30), max_retries=3, backoff_base=1.0)
             result = response.json()
             if 'access_token' in result:
                 return result['access_token']
@@ -140,7 +141,15 @@ class BaiduOCRInterface:
                 # 不记录完整请求参数，仅记录端点和是否有语言设置
                 logger.info(f"请求端点: {endpoint.split('/')[-1]}, 语言设置: {'有' if 'language_type' in data else '无'}")
                 
-                response = requests.post(endpoint, params=params, data=data, headers=headers)
+                response = post_with_retry(
+                    endpoint,
+                    params=params,
+                    data=data,
+                    headers=headers,
+                    timeout=(10, 60),
+                    max_retries=3,
+                    backoff_base=1.0,
+                )
                 result = response.json()
                 
                 if 'error_code' in result:
@@ -270,7 +279,7 @@ def test_baidu_ocr_connection(api_key: str, secret_key: str) -> Dict[str, Any]:
     """
     try:
         url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_key}&client_secret={secret_key}"
-        response = requests.post(url)
+        response = post_with_retry(url, timeout=(10, 30), max_retries=3, backoff_base=1.0)
         result = response.json()
         
         if 'access_token' in result:

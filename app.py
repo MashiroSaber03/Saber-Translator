@@ -1,5 +1,5 @@
 import os
-from flask import Flask, redirect, request
+from flask import Flask, redirect, request, jsonify
 import webbrowser
 import threading
 import secrets
@@ -162,6 +162,31 @@ def setup_logging():
 # 确定应用根目录 (app.py 所在的目录，即项目根目录)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+# 本机单用户模式（默认开启）
+LOCAL_MODE_ENABLED = _env_flag("SABER_LOCAL_MODE", True)
+APP_PORT = int(os.getenv("SABER_PORT", "5000"))
+DEFAULT_HOST = "127.0.0.1" if LOCAL_MODE_ENABLED else "0.0.0.0"
+APP_HOST = os.getenv("SABER_BIND_HOST", DEFAULT_HOST)
+LOCAL_API_TOKEN_HEADER = "X-Saber-Local-Token"
+LOCAL_API_TOKEN = os.getenv("SABER_LOCAL_TOKEN") or secrets.token_urlsafe(32)
+# 是否强制本地访问令牌（默认关闭，可按需开启）
+LOCAL_TOKEN_REQUIRED = _env_flag("SABER_REQUIRE_LOCAL_TOKEN", False)
+
+# 默认仅允许本机 Web UI 作为跨域来源
+allowed_origins_env = os.getenv(
+    "SABER_ALLOWED_ORIGINS",
+    f"http://127.0.0.1:{APP_PORT},http://localhost:{APP_PORT}",
+)
+ALLOWED_CORS_ORIGINS = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+
 # 创建日志记录器
 logger = setup_logging()
 
@@ -170,7 +195,56 @@ app = Flask(__name__,
            # 相对于 app.py (项目根目录) 的路径
            static_folder=os.path.join('src', 'app', 'static'),
            static_url_path='') # 保持 static_url_path 为空，以便 URL 保持 /style.css 等形式
-CORS(app)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": ALLOWED_CORS_ORIGINS}},
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", LOCAL_API_TOKEN_HEADER],
+)
+
+app.config["LOCAL_MODE_ENABLED"] = LOCAL_MODE_ENABLED
+app.config["LOCAL_API_TOKEN_HEADER"] = LOCAL_API_TOKEN_HEADER
+app.config["LOCAL_API_TOKEN"] = LOCAL_API_TOKEN
+app.config["LOCAL_TOKEN_REQUIRED"] = LOCAL_TOKEN_REQUIRED
+app.config["APP_HOST"] = APP_HOST
+app.config["APP_PORT"] = APP_PORT
+
+if LOCAL_MODE_ENABLED:
+    logger.info("本机单用户安全模式已启用")
+    if LOCAL_TOKEN_REQUIRED:
+        logger.info(f"本地 API Token 校验已启用，Header: {LOCAL_API_TOKEN_HEADER}")
+    else:
+        logger.info("本地 API Token 校验已关闭")
+
+
+@app.before_request
+def enforce_local_api_token():
+    """
+    本机模式下，对所有写操作 API 强制校验本地令牌。
+    """
+    if not app.config.get("LOCAL_MODE_ENABLED", True):
+        return None
+    if not app.config.get("LOCAL_TOKEN_REQUIRED", False):
+        return None
+
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+
+    if not request.path.startswith("/api/"):
+        return None
+
+    # 获取本地 token 的接口自身不需要 token
+    if request.path == "/api/local-token":
+        return None
+
+    expected = app.config.get("LOCAL_API_TOKEN", "")
+    provided = request.headers.get(app.config.get("LOCAL_API_TOKEN_HEADER", LOCAL_API_TOKEN_HEADER), "")
+    if not expected or not provided or not secrets.compare_digest(expected, provided):
+        return jsonify({
+            "success": False,
+            "error": "未授权：缺少或无效的本地访问令牌"
+        }), 401
+    return None
 
 # --- 初始化插件管理器 ---
 try:
@@ -211,7 +285,7 @@ def get_local_ip():
         return "127.0.0.1"
 
 def open_browser():
-    webbrowser.open_new("http://127.0.0.1:5000/")
+    webbrowser.open_new(f"http://127.0.0.1:{APP_PORT}/")
 
 # 注册重定向路由以保持向后兼容性
 from src.app.route_redirects import register_redirects
@@ -333,8 +407,8 @@ if __name__ == '__main__':
     local_ip = get_local_ip()
     
     # 美化启动信息
-    local_url = f"http://127.0.0.1:5000/"
-    lan_url = f"http://{local_ip}:5000/"
+    local_url = f"http://127.0.0.1:{APP_PORT}/"
+    lan_url = f"http://{local_ip}:{APP_PORT}/"
     
     # Saber-Translator ASCII Art Logo
     logo = f"""
@@ -359,8 +433,7 @@ if __name__ == '__main__':
     cli = sys.modules['flask.cli']
     cli.show_server_banner = lambda *x: None
     
-    # host='0.0.0.0' 监听所有网络接口，允许局域网访问
-    # threaded=True 启用多线程模式，支持长时间运行的请求
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
+    # 本机模式默认仅监听 127.0.0.1，可通过 SABER_BIND_HOST 覆盖
+    app.run(host=APP_HOST, port=APP_PORT, debug=False, use_reloader=False, threaded=True)
 
     

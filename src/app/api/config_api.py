@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify # 已有
 from src.shared.config_loader import load_json_config, save_json_config
 from src.shared import constants
 import logging # 需要 logging
+from copy import deepcopy
 
 # 获取 logger
 logger = logging.getLogger("ConfigAPI")
@@ -182,6 +183,42 @@ def save_user_settings_to_file(settings_data):
         logger.warning(f"保存用户设置失败: {constants.USER_SETTINGS_FILE}")
     return success
 
+
+SENSITIVE_KEYS = {
+    "apikey",
+    "secretkey",
+    "appkey",
+    "appsecret",
+    "token",
+}
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lower = key.lower()
+    if lower in SENSITIVE_KEYS:
+        return True
+    if "apikey" in lower:
+        return True
+    if "secret" in lower:
+        return True
+    # 避免误伤普通字段，仅对明显密钥字段做清理
+    return lower.endswith("token")
+
+
+def _strip_sensitive_values(data):
+    """递归清理敏感字段值（保留键，值置空字符串）。"""
+    if isinstance(data, dict):
+        output = {}
+        for k, v in data.items():
+            if _is_sensitive_key(str(k)):
+                output[k] = ""
+            else:
+                output[k] = _strip_sensitive_values(v)
+        return output
+    if isinstance(data, list):
+        return [_strip_sensitive_values(item) for item in data]
+    return data
+
 @config_bp.route('/get_settings', methods=['GET'])
 def get_settings():
     """获取所有用户设置"""
@@ -189,6 +226,8 @@ def get_settings():
     # 确保返回当前的 LAMA 设置
     if 'lamaDisableResize' not in settings:
         settings['lamaDisableResize'] = constants.LAMA_DISABLE_RESIZE
+    if 'sessionOnlySecrets' not in settings:
+        settings['sessionOnlySecrets'] = True
     return jsonify({'success': True, 'settings': settings})
 
 @config_bp.route('/save_settings', methods=['POST'])
@@ -199,7 +238,17 @@ def save_settings_api():
         return jsonify({'success': False, 'error': '缺少设置数据'}), 400
     
     settings = data['settings']
-    success = save_user_settings_to_file(settings)
+    if not isinstance(settings, dict):
+        return jsonify({'success': False, 'error': 'settings 格式错误'}), 400
+
+    session_only = bool(settings.get('sessionOnlySecrets', True))
+    settings['sessionOnlySecrets'] = session_only
+
+    settings_to_save = deepcopy(settings)
+    if session_only:
+        settings_to_save = _strip_sensitive_values(settings_to_save)
+
+    success = save_user_settings_to_file(settings_to_save)
     
     if success:
         # 同步更新运行时constants中的LAMA设置

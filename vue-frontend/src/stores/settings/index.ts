@@ -67,6 +67,31 @@ export const useSettingsStore = defineStore('settings', () => {
     aiVisionOcr: {}
   })
 
+  const SENSITIVE_KEYWORDS = ['apikey', 'secret', 'token']
+
+  function isSensitiveKey(key: string): boolean {
+    const lower = key.toLowerCase()
+    return SENSITIVE_KEYWORDS.some(keyword => lower.includes(keyword))
+  }
+
+  function stripSensitiveValues<T>(value: T): T {
+    if (Array.isArray(value)) {
+      return value.map(item => stripSensitiveValues(item)) as T
+    }
+    if (value && typeof value === 'object') {
+      const output: Record<string, unknown> = {}
+      for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        if (isSensitiveKey(key)) {
+          output[key] = ''
+        } else {
+          output[key] = stripSensitiveValues(item)
+        }
+      }
+      return output as T
+    }
+    return value
+  }
+
   // ============================================================
   // localStorage 持久化方法
   // ============================================================
@@ -76,7 +101,10 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveToStorage(): void {
     try {
-      const data = JSON.stringify(settings.value)
+      const payload = settings.value.sessionOnlySecrets
+        ? stripSensitiveValues(settings.value)
+        : settings.value
+      const data = JSON.stringify(payload)
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, data)
     } catch (error) {
       console.error('保存设置到 localStorage 失败:', error)
@@ -88,7 +116,10 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveProviderConfigsToStorage(): void {
     try {
-      const data = JSON.stringify(providerConfigs.value)
+      const payload = settings.value.sessionOnlySecrets
+        ? stripSensitiveValues(providerConfigs.value)
+        : providerConfigs.value
+      const data = JSON.stringify(payload)
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, data)
     } catch (error) {
       console.error('保存服务商配置缓存失败:', error)
@@ -362,6 +393,12 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value = createDefaultSettings()
     saveToStorage()
     console.log('设置已重置为默认值')
+  }
+
+  function setSessionOnlySecrets(enabled: boolean): void {
+    settings.value.sessionOnlySecrets = enabled
+    saveToStorage()
+    saveProviderConfigsToStorage()
   }
 
   // ============================================================
@@ -662,6 +699,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.lamaDisableResize !== undefined) {
       settings.value.lamaDisableResize = backendSettings.lamaDisableResize as boolean
     }
+    if (backendSettings.sessionOnlySecrets !== undefined) {
+      settings.value.sessionOnlySecrets = backendSettings.sessionOnlySecrets as boolean
+    }
 
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
@@ -901,6 +941,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
         // LAMA修复禁用缩放
         lamaDisableResize: settings.value.lamaDisableResize,
+        sessionOnlySecrets: settings.value.sessionOnlySecrets,
 
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
@@ -989,6 +1030,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
     setLamaDisableResize: miscModule.setLamaDisableResize,
+    setSessionOnlySecrets,
 
 
     // 兼容旧接口

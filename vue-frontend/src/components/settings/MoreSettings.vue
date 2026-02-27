@@ -137,8 +137,8 @@
         <p><strong>Saber-Translator</strong></p>
         <p>AI驱动的漫画翻译工具</p>
         <p class="links">
-          <a href="http://www.mashirosaber.top" target="_blank">📖 使用教程</a>
-          <a href="https://github.com/MashiroSaber/saber-translator" target="_blank">🐙 GitHub</a>
+          <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer">📖 使用教程</a>
+          <a href="https://github.com/MashiroSaber/saber-translator" target="_blank" rel="noopener noreferrer">🐙 GitHub</a>
         </p>
         <p class="disclaimer">本项目完全开源免费，请勿上当受骗</p>
       </div>

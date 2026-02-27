@@ -9,7 +9,7 @@
 - files.py: 文件处理相关API
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 import socket
 
 # 创建系统API蓝图
@@ -33,7 +33,7 @@ def get_local_ip():
 def get_server_info():
     """获取服务器信息，包括局域网访问地址"""
     local_ip = get_local_ip()
-    port = 5000  # 默认端口
+    port = int(current_app.config.get("APP_PORT", 5000))
     
     return jsonify({
         "success": True,
@@ -41,6 +41,21 @@ def get_server_info():
         "lan_url": f"http://{local_ip}:{port}/",
         "lan_ip": local_ip,
         "port": port
+    })
+
+
+@system_bp.route('/local-token', methods=['GET'])
+def get_local_token():
+    """
+    获取本机模式 API 访问令牌。
+    前端在启动后读取并通过自定义请求头发送。
+    """
+    enabled = bool(current_app.config.get("LOCAL_TOKEN_REQUIRED", False))
+    return jsonify({
+        "success": True,
+        "enabled": enabled,
+        "header": current_app.config.get("LOCAL_API_TOKEN_HEADER", "X-Saber-Local-Token"),
+        "token": current_app.config.get("LOCAL_API_TOKEN", "") if enabled else "",
     })
 
 

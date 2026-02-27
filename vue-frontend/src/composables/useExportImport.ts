@@ -15,6 +15,7 @@ import {
   cleanTempFiles
 } from '@/api/system'
 import { reRenderImage } from '@/api/translate'
+import { parallelColor, parallelInpaint } from '@/api/parallelTranslate'
 import type { BubbleState } from '@/types/bubble'
 import { getEffectiveDirection } from '@/types/bubble'
 
@@ -245,6 +246,9 @@ export function useExportImport() {
       // 统计信息
       let updatedImages = 0
       let updatedBubbles = 0
+      let skippedImagesWithoutCoords = 0
+      let skippedImagesWithoutCleanBackground = 0
+      let reRenderedImages = 0
 
       // 获取当前设置
       const textStyle = settingsStore.settings.textStyle
@@ -350,9 +354,11 @@ export function useExportImport() {
           updatedImages++
           image.hasUnsavedChanges = true
 
-          // 如果图片已翻译且有气泡，添加到重新渲染列表
-          if (image.translatedDataURL && image.bubbleStates && image.bubbleStates.length > 0) {
+          // 只要有可渲染气泡（有有效坐标），就允许重渲染
+          if (image.bubbleStates && image.bubbleStates.some(bs => isRenderableCoords(bs.coords))) {
             imagesToReRender.push(imageIndex)
+          } else {
+            skippedImagesWithoutCoords++
           }
         }
       }
@@ -378,38 +384,104 @@ export function useExportImport() {
           importProgressText.value = `渲染图片 ${i + 1}/${imagesToReRender.length}`
 
           try {
-            // 【复刻原版】背景兜底策略：clean → original
-            let cleanImageBase64 = ''
-            if (img.cleanImageData) {
-              cleanImageBase64 = img.cleanImageData.includes('base64,')
-                ? (img.cleanImageData.split('base64,')[1] || '')
-                : img.cleanImageData
-            } else if (img.originalDataURL) {
-              // 兜底：使用原图作为背景
-              cleanImageBase64 = img.originalDataURL.includes('base64,')
-                ? (img.originalDataURL.split('base64,')[1] || '')
-                : img.originalDataURL
-              console.log(`importText: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
-            }
-
-            if (!cleanImageBase64) {
-              console.log(`importText: 图片 ${imageIndex} 没有可用的背景图，跳过`)
+            const renderableBubbleStates = img.bubbleStates.filter(bs => isRenderableCoords(bs.coords))
+            if (renderableBubbleStates.length === 0) {
+              console.log(`importText: 图片 ${imageIndex} 无可渲染气泡坐标，跳过`)
               continue
             }
 
+            const originalImageBase64 = extractBase64(img.originalDataURL)
+            if (!originalImageBase64) {
+              console.log(`importText: 图片 ${imageIndex} 没有可用原图，跳过`)
+              skippedImagesWithoutCleanBackground++
+              continue
+            }
+
+            // 优先使用已有 clean 图；没有时先执行一次批量修复，避免直接叠字到原文上
+            let cleanImageBase64 = extractBase64(img.cleanImageData)
+            if (!cleanImageBase64) {
+              const preferredInpaintMethod = img.inpaintMethod || textStyle.inpaintMethod || 'solid'
+              const inpaintMethod = preferredInpaintMethod === 'solid' ? 'solid' : 'lama'
+              const lamaModel = preferredInpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe'
+
+              try {
+                const inpaintResponse = await parallelInpaint({
+                  image: originalImageBase64,
+                  bubble_coords: renderableBubbleStates.map(bs => bs.coords),
+                  bubble_polygons: renderableBubbleStates.map(bs => bs.polygon || []),
+                  raw_mask: img.textMask || undefined,
+                  user_mask: img.userMask || undefined,
+                  method: inpaintMethod,
+                  lama_model: lamaModel,
+                  fill_color: img.fillColor || textStyle.fillColor
+                })
+
+                if (inpaintResponse.success && inpaintResponse.clean_image) {
+                  cleanImageBase64 = inpaintResponse.clean_image
+                  imageStore.updateImageByIndex(imageIndex, {
+                    cleanImageData: inpaintResponse.clean_image,
+                    hasUnsavedChanges: true
+                  })
+                  console.log(`importText: 图片 ${imageIndex} 已自动生成 clean 背景`)
+                } else {
+                  console.warn(`importText: 图片 ${imageIndex} 背景修复失败: ${inpaintResponse.error || '未知错误'}`)
+                }
+              } catch (inpaintError) {
+                console.error(`importText: 图片 ${imageIndex} 背景修复异常:`, inpaintError)
+              }
+            }
+
+            if (!cleanImageBase64) {
+              console.log(`importText: 图片 ${imageIndex} 缺少 clean 背景，跳过渲染以避免叠字`)
+              skippedImagesWithoutCleanBackground++
+              continue
+            }
+
+            // 自动文字颜色：导入文本场景没有走完整流水线，这里补一轮颜色提取
+            const useAutoColor = (img.useAutoTextColor ?? textStyle.useAutoTextColor) === true
+            if (useAutoColor) {
+              const needsColorExtraction = renderableBubbleStates.some(
+                bs => !bs.autoFgColor && !bs.autoBgColor
+              )
+
+              if (needsColorExtraction) {
+                try {
+                  const colorResponse = await parallelColor({
+                    image: originalImageBase64,
+                    bubble_coords: renderableBubbleStates.map(bs => bs.coords)
+                  })
+
+                  if (colorResponse.success && colorResponse.colors) {
+                    renderableBubbleStates.forEach((bs, idx) => {
+                      const colorInfo = colorResponse.colors?.[idx]
+                      if (!colorInfo) return
+
+                      bs.autoFgColor = colorInfo.autoFgColor ?? bs.autoFgColor ?? null
+                      bs.autoBgColor = colorInfo.autoBgColor ?? bs.autoBgColor ?? null
+                    })
+                  }
+                } catch (colorError) {
+                  console.warn(`importText: 图片 ${imageIndex} 颜色提取失败:`, colorError)
+                }
+              }
+            }
+
             // 构建 API 参数
-            const bubbleStatesForApi = img.bubbleStates.map(bs => ({
+            const bubbleStatesForApi = renderableBubbleStates.map(bs => ({
               translatedText: bs.translatedText || '',
               coords: bs.coords,
               fontSize: bs.fontSize || textStyle.fontSize,
               fontFamily: bs.fontFamily || textStyle.fontFamily,
               textDirection: getEffectiveDirection(bs),
-              textColor: bs.textColor || textStyle.textColor,
+              textColor: useAutoColor && bs.autoFgColor ? (rgbToHex(bs.autoFgColor) || bs.textColor || textStyle.textColor) : (bs.textColor || textStyle.textColor),
+              fillColor: useAutoColor && bs.autoBgColor ? (rgbToHex(bs.autoBgColor) || bs.fillColor || textStyle.fillColor) : (bs.fillColor || textStyle.fillColor),
               rotationAngle: bs.rotationAngle || 0,
               position: bs.position || { x: 0, y: 0 },
               strokeEnabled: bs.strokeEnabled ?? textStyle.strokeEnabled,
               strokeColor: bs.strokeColor || textStyle.strokeColor,
               strokeWidth: bs.strokeWidth ?? textStyle.strokeWidth,
+              autoFgColor: bs.autoFgColor || null,
+              autoBgColor: bs.autoBgColor || null
             }))
 
             const response = await reRenderImage({
@@ -435,6 +507,7 @@ export function useExportImport() {
                 translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
                 hasUnsavedChanges: true
               })
+              reRenderedImages++
               console.log(`importText: 图片 ${imageIndex} 渲染成功`)
             }
           } catch (err) {
@@ -447,10 +520,16 @@ export function useExportImport() {
       importProgressText.value = '导入完成'
 
       // 显示导入结果
-      const reRenderedCount = imagesToReRender.length
-      const message = reRenderedCount > 0
+      const reRenderedCount = reRenderedImages
+      let message = reRenderedCount > 0
         ? `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本，重渲染了 ${reRenderedCount} 张图片`
         : `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`
+      if (skippedImagesWithoutCoords > 0) {
+        message += `；${skippedImagesWithoutCoords} 张图片缺少有效气泡坐标，无法自动嵌字（请先检测或手动标注）`
+      }
+      if (skippedImagesWithoutCleanBackground > 0) {
+        message += `；${skippedImagesWithoutCleanBackground} 张图片未生成干净背景，已跳过自动嵌字（避免叠字）`
+      }
       toast.success(message)
     } catch (error) {
       console.error('导入文本出错:', error)
@@ -514,6 +593,36 @@ export function useExportImport() {
       strokeWidth: textStyle.strokeWidth,
       inpaintMethod: textStyle.inpaintMethod
     }
+  }
+
+  function isRenderableCoords(coords: number[] | undefined | null): boolean {
+    if (!coords || coords.length < 4) return false
+    const [x1, y1, x2, y2] = coords.map(v => Number(v))
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return false
+    if (x2 <= x1 || y2 <= y1) return false
+    // createDefaultBubbleState 的占位坐标，避免错误渲染到左上角
+    if (x1 === 0 && y1 === 0 && x2 === 100 && y2 === 100) return false
+    return true
+  }
+
+  function extractBase64(dataUrl: string | null | undefined): string {
+    if (!dataUrl) return ''
+    if (dataUrl.includes('base64,')) {
+      return dataUrl.split('base64,')[1] || ''
+    }
+    return dataUrl
+  }
+
+  function rgbToHex(rgb?: [number, number, number] | null): string | null {
+    if (!rgb || rgb.length !== 3) return null
+    const [r, g, b] = rgb
+    return (
+      '#' +
+      [r, g, b]
+        .map(value => Math.max(0, Math.min(255, Math.round(value))))
+        .map(value => value.toString(16).padStart(2, '0'))
+        .join('')
+    )
   }
 
   // ============================================================

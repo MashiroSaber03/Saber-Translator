@@ -355,6 +355,30 @@ async function startProofreadingRange(startPage: number, endPage: number) {
 }
 
 /**
+ * 仅嵌字当前图片（跳过翻译 API）
+ */
+async function embedCurrentImage() {
+  if (!currentImage.value) return
+  await translation.embedCurrentImage()
+}
+
+/**
+ * 仅嵌字所有图片（跳过翻译 API）
+ */
+async function embedAllImages() {
+  if (!hasImages.value) return
+  await translation.embedAllImages()
+}
+
+/**
+ * 仅嵌字指定范围图片（跳过翻译 API）
+ */
+async function embedImageRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  await translation.embedImageRange({ startPage, endPage })
+}
+
+/**
  * 消除指定范围图片的文字
  * @param startPage 起始页（1开始）
  * @param endPage 结束页（1开始）
@@ -393,6 +417,16 @@ async function handleRunWorkflow(payload: WorkflowRunRequest) {
         await startProofreadingRange(range.startPage, range.endPage)
       } else {
         await startProofreading()
+      }
+      return
+    case 'embed-current':
+      await embedCurrentImage()
+      return
+    case 'embed-batch':
+      if (range) {
+        await embedImageRange(range.startPage, range.endPage)
+      } else {
+        await embedAllImages()
       }
       return
     case 'remove-current':
@@ -634,16 +668,18 @@ function selectImage(index: number) {
           <span class="icon">⚙️</span>
           <span>设置</span>
         </button>
-        <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
-        <a href="javascript:void(0)" class="donate-link" @click="openSponsor">
+        <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer" class="tutorial-link">使用教程</a>
+        <button type="button" class="donate-link" aria-label="赞助项目" @click="openSponsor">
           <span>❤️ 请作者喝奶茶</span>
-        </a>
-        <a href="https://github.com/MashiroSaber03" target="_blank" class="github-link">
+        </button>
+        <a href="https://github.com/MashiroSaber03" target="_blank" rel="noopener noreferrer" class="github-link">
           <img :src="'/pic/github.jpg'" alt="GitHub" class="github-icon">
         </a>
         <button 
+          type="button"
           class="theme-toggle" 
           title="功能开发中"
+          aria-label="主题切换（开发中）"
           @click="showFeatureNotice"
         >
           <span class="theme-icon">☀️</span>
@@ -1055,6 +1091,9 @@ function selectImage(index: number) {
   background-color: rgb(255, 105, 180, 0.15);
   border-radius: 20px;
   color: #e91e63;
+  border: none;
+  cursor: pointer;
+  font: inherit;
   text-decoration: none;
   transition: all 0.3s ease;
 }

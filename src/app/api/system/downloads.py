@@ -22,6 +22,7 @@ from PIL import Image
 
 from . import system_bp
 from src.shared.path_helpers import resource_path
+from src.shared.security import validate_relative_path, resolve_under_base
 
 logger = logging.getLogger("SystemAPI.Downloads")
 
@@ -119,25 +120,34 @@ def download_upload_image_api():
         # 确定保存路径
         if file_path:
             # 使用文件路径保存（保留文件夹结构）
-            # 安全校验：防止路径遍历攻击
-            sanitized_path = file_path.replace('\\', '/').strip('/')
-            if '..' in sanitized_path or sanitized_path.startswith('/'):
-                return jsonify({'error': '无效的文件路径'}), 400
-            
+            # 安全校验 + 归一化
+            ok, normalized_or_error = validate_relative_path(file_path, allow_unicode=True)
+            if not ok:
+                return jsonify({'error': f'无效的文件路径: {normalized_or_error}'}), 400
+
             # 将原始扩展名替换为 .png
-            name_without_ext = os.path.splitext(sanitized_path)[0]
-            sanitized_path = name_without_ext + '.png'
-            
-            # 构建完整路径
-            filepath = os.path.join(temp_dir, sanitized_path)
+            name_without_ext = os.path.splitext(normalized_or_error)[0]
+            target_rel_path = name_without_ext + '.png'
+
+            # 构建完整路径（强制限制在 temp_dir 下）
+            ok, filepath_or_error = resolve_under_base(temp_dir, target_rel_path)
+            if not ok:
+                return jsonify({'error': f'无效的文件路径: {filepath_or_error}'}), 400
+            filepath = filepath_or_error
             
             # 处理同名文件：如果已存在则自动添加序号
             if os.path.exists(filepath):
-                base_name = os.path.splitext(sanitized_path)[0]
+                base_name = os.path.splitext(target_rel_path)[0]
                 counter = 1
-                while os.path.exists(os.path.join(temp_dir, f"{base_name}_{counter}.png")):
+                while True:
+                    candidate_rel = f"{base_name}_{counter}.png"
+                    ok, candidate_or_error = resolve_under_base(temp_dir, candidate_rel)
+                    if not ok:
+                        return jsonify({'error': f'无效的文件路径: {candidate_or_error}'}), 400
+                    if not os.path.exists(candidate_or_error):
+                        filepath = candidate_or_error
+                        break
                     counter += 1
-                filepath = os.path.join(temp_dir, f"{base_name}_{counter}.png")
             
             # 创建子目录（如果需要）
             os.makedirs(os.path.dirname(filepath), exist_ok=True)

@@ -53,6 +53,30 @@ const routes: RouteRecordRaw[] = [
     })
   },
   {
+    path: '/quality',
+    name: 'quality',
+    component: () => import('@/views/QualityView.vue'),
+    meta: { title: '质量工作台' }
+  },
+  {
+    path: '/glossary',
+    name: 'glossary',
+    component: () => import('@/views/GlossaryView.vue'),
+    meta: { title: '术语库与记忆' }
+  },
+  {
+    path: '/compare',
+    name: 'compare',
+    component: () => import('@/views/CompareView.vue'),
+    meta: { title: '版本对比' }
+  },
+  {
+    path: '/jobs',
+    name: 'jobs',
+    component: () => import('@/views/JobsView.vue'),
+    meta: { title: '任务中心' }
+  },
+  {
     // 未定义路由重定向到书架
     path: '/:pathMatch(.*)*',
     redirect: { name: 'bookshelf' }

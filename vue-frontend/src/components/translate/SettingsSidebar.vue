@@ -156,6 +156,10 @@ const canRunWorkflow = computed(() => {
     case 'hq-batch':
     case 'proofread-batch':
       return canTranslate.value && !rangeInvalid
+    case 'embed-current':
+      return !!currentImage.value && canTranslate.value
+    case 'embed-batch':
+      return hasImages.value && canTranslate.value && !rangeInvalid
     case 'remove-current':
     case 'delete-current':
       return !!currentImage.value
@@ -214,12 +218,14 @@ const workflowContextTag = computed(() => {
 
   switch (selectedWorkflowMode.value) {
     case 'translate-current':
+    case 'embed-current':
     case 'remove-current':
     case 'delete-current':
       return '当前页'
     case 'translate-batch':
     case 'hq-batch':
     case 'proofread-batch':
+    case 'embed-batch':
     case 'remove-batch':
     case 'clear-all':
       return '全量'
@@ -241,6 +247,10 @@ const workflowModeTag = computed(() => {
 /** 当前模式说明文案 */
 const workflowDescription = computed(() => {
   switch (selectedWorkflowMode.value) {
+    case 'embed-current':
+      return '使用当前页已有译文与气泡坐标进行嵌字，不会调用翻译 API。'
+    case 'embed-batch':
+      return '使用已有译文批量嵌字，不会调用翻译 API；可启用指定范围。'
     case 'delete-current':
       return '删除前会弹出确认，建议先检查当前页是否已保存。'
     case 'clear-all':
@@ -502,6 +512,7 @@ function updateTextColor(event: Event) {
 function updateUseAutoTextColor(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   settingsStore.updateTextStyle({ useAutoTextColor: checked })
+  emit('textStyleChanged', 'useAutoTextColor', checked)
 }
 
 /**

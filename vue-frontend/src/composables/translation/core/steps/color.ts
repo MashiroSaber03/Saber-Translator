@@ -29,6 +29,18 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
         return { colors: [] }
     }
 
+    // 复用已有气泡颜色：
+    // 当图片已有 bubbleStates 且检测步骤被跳过时，textlinesPerBubble 会为空，
+    // 48px 颜色提取会退化到简单裁剪模式，稳定性较差。
+    // 这种情况下优先复用已缓存的自动颜色，避免无意义重算。
+    if (!hasUsableTextlines(textlinesPerBubble, bubbleCoords.length)) {
+        const cachedColors = getCachedColorsFromBubbleStates(image, bubbleCoords.length)
+        if (cachedColors) {
+            console.info(`[颜色提取] 复用已缓存颜色（页内已有气泡数据）`)
+            return { colors: cachedColors }
+        }
+    }
+
     const base64 = extractBase64(image.originalDataURL)
 
     const response: ParallelColorResponse = await parallelColor({
@@ -51,4 +63,31 @@ function extractBase64(dataUrl: string): string {
         return dataUrl.split('base64,')[1] || ''
     }
     return dataUrl
+}
+
+function hasUsableTextlines(textlinesPerBubble: any[], expectedBubbleCount: number): boolean {
+    if (!Array.isArray(textlinesPerBubble) || textlinesPerBubble.length !== expectedBubbleCount) {
+        return false
+    }
+    return textlinesPerBubble.some(lines => Array.isArray(lines) && lines.length > 0)
+}
+
+function getCachedColorsFromBubbleStates(
+    image: AppImageData,
+    expectedBubbleCount: number
+): ColorOutput['colors'] | null {
+    const states = image.bubbleStates
+    if (!states || states.length !== expectedBubbleCount) {
+        return null
+    }
+
+    const colors = states.map(state => ({
+        textColor: state.textColor || '#000000',
+        bgColor: state.fillColor || '#FFFFFF',
+        autoFgColor: state.autoFgColor || null,
+        autoBgColor: state.autoBgColor || null
+    }))
+
+    const hasAnyAutoColor = colors.some(c => c.autoFgColor || c.autoBgColor)
+    return hasAnyAutoColor ? colors : null
 }
