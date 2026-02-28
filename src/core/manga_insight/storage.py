@@ -15,7 +15,7 @@ import logging
 import asyncio
 import tempfile
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from datetime import datetime
 
 from src.shared.path_helpers import resource_path
@@ -150,6 +150,20 @@ class AnalysisStorage:
     async def _save_json(self, filename: str, data: Any) -> bool:
         """异步保存 JSON 文件"""
         return await asyncio.to_thread(self._save_json_sync, filename, data)
+
+    async def _delete_file_if_exists(self, filepath: str) -> bool:
+        """异步删除文件，文件不存在时返回 False。"""
+        def _delete() -> bool:
+            if not os.path.exists(filepath):
+                return False
+            os.remove(filepath)
+            return True
+
+        try:
+            return await asyncio.to_thread(_delete)
+        except Exception as e:
+            logger.error(f"删除文件失败: {filepath} - {e}")
+            return False
     
     async def load_metadata(self) -> Dict:
         return await self._load_json("metadata.json")
@@ -181,6 +195,11 @@ class AnalysisStorage:
         analysis["saved_at"] = datetime.now().isoformat()
         return await self._save_json(filename, analysis)
 
+    async def delete_page_analysis(self, page_num: int) -> bool:
+        """删除单页分析结果。"""
+        filepath = os.path.join(self.base_path, f"pages/page_{page_num:03d}.json")
+        return await self._delete_file_if_exists(filepath)
+
     async def load_chapter_analysis(self, chapter_id: str) -> Optional[Dict]:
         filename = f"chapters/{chapter_id}.json"
         return await self._load_json(filename, None)
@@ -189,6 +208,11 @@ class AnalysisStorage:
         filename = f"chapters/{chapter_id}.json"
         analysis["saved_at"] = datetime.now().isoformat()
         return await self._save_json(filename, analysis)
+
+    async def delete_chapter_analysis(self, chapter_id: str) -> bool:
+        """删除章节分析结果。"""
+        filepath = os.path.join(self.base_path, f"chapters/{chapter_id}.json")
+        return await self._delete_file_if_exists(filepath)
 
     async def load_timeline(self) -> Optional[Dict]:
         """加载时间线缓存"""
@@ -473,6 +497,151 @@ class AnalysisStorage:
         except Exception as e:
             logger.error(f"清除批量分析和小总结失败: {e}")
             return False
+
+    @staticmethod
+    def _range_contains_any_page(start_page: int, end_page: int, target_pages: Set[int]) -> bool:
+        """判断页码区间是否与目标页集合有交集。"""
+        if start_page <= 0 or end_page <= 0 or start_page > end_page:
+            return False
+        for page_num in target_pages:
+            if start_page <= page_num <= end_page:
+                return True
+        return False
+
+    async def _clear_global_derived_caches(self) -> int:
+        """清理受页面变更影响的全局衍生缓存。"""
+        deleted_count = 0
+
+        cache_files = [
+            os.path.join(self.base_path, "overview.json"),
+            os.path.join(self.base_path, "timeline.json"),
+            os.path.join(self.base_path, "compressed_context.json")
+        ]
+        for cache_file in cache_files:
+            if await self._delete_file_if_exists(cache_file):
+                deleted_count += 1
+
+        # 多模板概览缓存
+        for filename in os.listdir(self.base_path):
+            if filename.startswith("overview_") and filename.endswith(".json"):
+                if await self._delete_file_if_exists(os.path.join(self.base_path, filename)):
+                    deleted_count += 1
+
+        return deleted_count
+
+    async def clear_cache_for_pages(self, page_nums: List[int], chapter_ids: Optional[List[str]] = None) -> Dict[str, int]:
+        """
+        按页清理相关缓存（page/batch/segment/chapter + 全局衍生缓存）。
+
+        Args:
+            page_nums: 受影响页码
+            chapter_ids: 可选，明确受影响章节 ID
+        """
+        result = {
+            "pages_deleted": 0,
+            "batches_deleted": 0,
+            "segments_deleted": 0,
+            "chapters_deleted": 0,
+            "global_caches_deleted": 0
+        }
+
+        normalized_pages = sorted({
+            p for p in page_nums
+            if isinstance(p, int) and not isinstance(p, bool) and p > 0
+        })
+        target_pages = set(normalized_pages)
+
+        if chapter_ids is None:
+            chapter_ids = []
+        chapter_id_set = {cid for cid in chapter_ids if isinstance(cid, str) and cid}
+
+        # 1) 删除页面结果
+        for page_num in normalized_pages:
+            if await self.delete_page_analysis(page_num):
+                result["pages_deleted"] += 1
+
+        # 2) 删除命中的批量结果
+        batches = await self.list_batches()
+        for batch in batches:
+            start_page = batch.get("start_page", 0)
+            end_page = batch.get("end_page", 0)
+            if self._range_contains_any_page(start_page, end_page, target_pages):
+                deleted = await self.delete_batch_analysis(start_page, end_page)
+                if deleted:
+                    result["batches_deleted"] += 1
+
+        # 3) 删除命中的小总结
+        segments = await self.list_segments()
+        for segment in segments:
+            page_range = segment.get("page_range", {})
+            start_page = page_range.get("start", 0)
+            end_page = page_range.get("end", 0)
+            if self._range_contains_any_page(start_page, end_page, target_pages):
+                segment_id = segment.get("segment_id")
+                if segment_id and await self.delete_segment_summary(segment_id):
+                    result["segments_deleted"] += 1
+
+        # 4) 删除命中的章节总结（按章节ID或页码范围）
+        chapters = await self.list_chapters()
+        deleted_chapter_ids = set()
+        for chapter in chapters:
+            chapter_id = chapter.get("id")
+            if not chapter_id:
+                continue
+
+            should_delete = chapter_id in chapter_id_set
+            if not should_delete:
+                start_page = chapter.get("start_page", 0)
+                end_page = chapter.get("end_page", 0)
+                should_delete = self._range_contains_any_page(start_page, end_page, target_pages)
+
+            if should_delete and chapter_id not in deleted_chapter_ids:
+                if await self.delete_chapter_analysis(chapter_id):
+                    result["chapters_deleted"] += 1
+                deleted_chapter_ids.add(chapter_id)
+
+        # 5) 删除明确指定但未在 list_chapters 中出现的章节文件
+        for chapter_id in chapter_id_set:
+            if chapter_id in deleted_chapter_ids:
+                continue
+            if await self.delete_chapter_analysis(chapter_id):
+                result["chapters_deleted"] += 1
+
+        # 6) 清理全局衍生缓存
+        result["global_caches_deleted"] = await self._clear_global_derived_caches()
+
+        logger.info(
+            "按页清理缓存完成: pages=%s, batches=%s, segments=%s, chapters=%s, globals=%s",
+            result["pages_deleted"],
+            result["batches_deleted"],
+            result["segments_deleted"],
+            result["chapters_deleted"],
+            result["global_caches_deleted"]
+        )
+        return result
+
+    async def clear_cache_for_chapters(self, chapter_ids: List[str], page_nums: Optional[List[int]] = None) -> Dict[str, int]:
+        """
+        按章节清理相关缓存。
+
+        Args:
+            chapter_ids: 章节 ID 列表
+            page_nums: 可选，章节关联页码（用于精确删除 batch/segment）
+        """
+        normalized_chapters = [cid for cid in chapter_ids if isinstance(cid, str) and cid]
+        derived_pages: List[int] = list(page_nums or [])
+
+        if not derived_pages and normalized_chapters:
+            existing_chapters = await self.list_chapters()
+            for chapter in existing_chapters:
+                chapter_id = chapter.get("id")
+                if chapter_id in normalized_chapters:
+                    start_page = chapter.get("start_page", 0)
+                    end_page = chapter.get("end_page", 0)
+                    if start_page > 0 and end_page >= start_page:
+                        derived_pages.extend(list(range(start_page, end_page + 1)))
+
+        return await self.clear_cache_for_pages(derived_pages, chapter_ids=normalized_chapters)
     
     async def list_pages(self) -> List[int]:
         """列出已分析的页面"""

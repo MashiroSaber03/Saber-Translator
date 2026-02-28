@@ -38,6 +38,9 @@ const isLoading = ref(false)
 /** 是否正在重新分析 */
 const isReanalyzing = ref(false)
 
+/** 是否等待异步重分析任务完成 */
+const pendingReanalyzePage = ref<number | null>(null)
+
 /** 是否显示图片预览 */
 const showImagePreview = ref(false)
 
@@ -102,6 +105,15 @@ const sceneDescription = computed(() => pageAnalysis.value?.scene || '')
 
 /** 氛围/情绪 */
 const moodDescription = computed(() => pageAnalysis.value?.mood || '')
+
+/** 当前页是否存在进行中的重分析任务 */
+const isReanalyzeTaskRunning = computed(() => {
+  return (
+    pendingReanalyzePage.value !== null &&
+    pendingReanalyzePage.value === selectedPageNum.value &&
+    insightStore.analysisStatus === 'running'
+  )
+})
 
 // ============================================================
 // 方法
@@ -183,14 +195,18 @@ async function reanalyzePage(): Promise<void> {
     )
     
     if (response.success) {
-      // 重新加载页面详情
-      await loadPageDetail()
+      if ((response as any).task_id) {
+        insightStore.setCurrentTaskId((response as any).task_id)
+      }
+      pendingReanalyzePage.value = selectedPageNum.value
+      insightStore.setAnalysisStatus('running')
     } else {
       errorMessage.value = response.error || '重新分析失败'
     }
   } catch (error) {
     console.error('重新分析失败:', error)
-    errorMessage.value = error instanceof Error ? error.message : '重新分析失败'
+    const message = (error as { message?: string })?.message
+    errorMessage.value = message || '重新分析失败'
   } finally {
     isReanalyzing.value = false
   }
@@ -309,6 +325,16 @@ async function exportPageData(): Promise<void> {
 watch(selectedPageNum, () => {
   loadPageDetail()
 }, { immediate: true })
+
+// 分析完成后自动刷新当前页详情（依赖全局轮询触发 dataRefreshKey）
+watch(() => insightStore.dataRefreshKey, async (newKey) => {
+  if (newKey <= 0 || !selectedPageNum.value) return
+
+  if (pendingReanalyzePage.value !== null) {
+    pendingReanalyzePage.value = null
+  }
+  await loadPageDetail()
+})
 </script>
 
 <template>
@@ -425,12 +451,12 @@ watch(selectedPageNum, () => {
         <div class="page-detail-actions">
           <button 
             class="btn btn-secondary btn-sm" 
-            :disabled="isReanalyzing"
-            :class="{ loading: isReanalyzing }"
+            :disabled="isReanalyzing || isReanalyzeTaskRunning"
+            :class="{ loading: isReanalyzing || isReanalyzeTaskRunning }"
             @click="reanalyzePage"
           >
-            <span v-if="isReanalyzing" class="btn-spinner"></span>
-            {{ isReanalyzing ? '分析中...' : '🔄 重新分析' }}
+            <span v-if="isReanalyzing || isReanalyzeTaskRunning" class="btn-spinner"></span>
+            {{ isReanalyzing ? '启动中...' : (isReanalyzeTaskRunning ? '分析中...' : '🔄 重新分析') }}
           </button>
           <button 
             v-if="isPageAnalyzed"

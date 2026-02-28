@@ -12,35 +12,35 @@ from .async_helpers import run_async
 from .response_builder import success_response, error_response
 from src.core.manga_insight.storage import AnalysisStorage
 from src.core.manga_insight.features.timeline import TimelineBuilder
+from src.core.manga_insight.book_pages import build_book_pages_manifest
 
 logger = logging.getLogger("MangaInsight.API.Data")
 
 
-def _find_image_path(session_dir: str, image_index: int, image_type: str = "original") -> str | None:
-    """
-    查找图片文件路径，支持新旧两种存储格式。
-    
-    Args:
-        session_dir: 会话目录路径
-        image_index: 图片索引（0-based）
-        image_type: 图片类型（original/translated/clean）
-    
-    Returns:
-        图片文件的绝对路径，如果未找到返回 None
-    """
+def _guess_mime_type(image_path: str) -> str:
+    """根据文件扩展名推断 MIME 类型。"""
+    ext = image_path.rsplit(".", 1)[-1].lower()
+    return {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp"
+    }.get(ext, "application/octet-stream")
+
+
+def _get_page_image_path(book_id: str, page_num: int) -> str | None:
+    """基于统一页面清单获取页码对应原图路径。"""
     import os
-    
-    # 优先检查新格式: images/{idx}/{type}.png
-    new_format_path = os.path.join(session_dir, "images", str(image_index), f"{image_type}.png")
-    if os.path.exists(new_format_path):
-        return new_format_path
-    
-    # 其次检查旧格式: image_{idx}_{type}.{ext}
-    for ext in ['png', 'jpg', 'jpeg', 'webp']:
-        old_format_path = os.path.join(session_dir, f"image_{image_index}_{image_type}.{ext}")
-        if os.path.exists(old_format_path):
-            return old_format_path
-    
+
+    manifest = build_book_pages_manifest(book_id)
+    all_images = manifest.get("all_images", [])
+    if page_num <= 0 or page_num > len(all_images):
+        return None
+
+    image_path = all_images[page_num - 1].get("path")
+    if image_path and os.path.exists(image_path):
+        return image_path
+
     return None
 
 
@@ -97,24 +97,16 @@ def get_page_analysis(book_id: str, page_num: int):
 def get_page_thumbnail(book_id: str, page_num: int):
     """获取页面缩略图（自动生成小尺寸版本）"""
     import os
-    import io
-    import json
     from flask import send_file
     from PIL import Image
-    from src.shared.path_helpers import resource_path
-    from src.core import bookshelf_manager
     
     THUMB_WIDTH = 150  # 缩略图宽度
     THUMB_QUALITY = 70  # JPEG 质量
     
     try:
-        # 从书架系统获取书籍信息
-        book = bookshelf_manager.get_book(book_id)
-        if not book:
+        image_path = _get_page_image_path(book_id, page_num)
+        if not image_path:
             return Response(status=404)
-        
-        # 查找对应页面的图片
-        chapters = book.get("chapters", [])
 
         # 缩略图缓存目录（使用统一路径）
         from src.core.manga_insight.storage import get_insight_storage_path
@@ -126,65 +118,22 @@ def get_page_thumbnail(book_id: str, page_num: int):
         if os.path.exists(thumb_cache_path):
             return send_file(thumb_cache_path, mimetype='image/jpeg')
 
-        current_page = 0
-        for chapter in chapters:
-            chapter_id = chapter.get("id")
-            if not chapter_id:
-                continue
+        # 生成缩略图
+        try:
+            with Image.open(image_path) as img:
+                ratio = THUMB_WIDTH / img.width
+                thumb_height = int(img.height * ratio)
 
-            # 从 session_meta.json 获取图片信息（使用新路径格式）
-            session_dir = resource_path(f"data/bookshelf/{book_id}/chapters/{chapter_id}/session")
-            session_meta_path = os.path.join(session_dir, "session_meta.json")
-            
-            if os.path.exists(session_meta_path):
-                try:
-                    with open(session_meta_path, "r", encoding="utf-8") as f:
-                        session_data = json.load(f)
-                    
-                    # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
-                    if "total_pages" in session_data:
-                        # 新格式
-                        image_count = session_data.get("total_pages", 0)
-                    else:
-                        # 旧格式
-                        images_meta = session_data.get("images_meta", [])
-                        image_count = len(images_meta)
-                    
-                    for i in range(image_count):
-                        current_page += 1
-                        if current_page == page_num:
-                            # 找到了目标页面，使用辅助函数查找图片路径（兼容新旧格式）
-                            image_path = _find_image_path(session_dir, i, "original")
-                            if image_path:
-                                # 生成缩略图
-                                try:
-                                    with Image.open(image_path) as img:
-                                        # 计算等比例缩放高度
-                                        ratio = THUMB_WIDTH / img.width
-                                        thumb_height = int(img.height * ratio)
-                                        
-                                        # 缩放并转换为 RGB（确保JPEG兼容）
-                                        thumb = img.resize((THUMB_WIDTH, thumb_height), Image.Resampling.LANCZOS)
-                                        if thumb.mode != 'RGB':
-                                            thumb = thumb.convert('RGB')
-                                        
-                                        # 保存到缓存
-                                        thumb.save(thumb_cache_path, 'JPEG', quality=THUMB_QUALITY)
-                                        
-                                        # 返回缩略图
-                                        return send_file(thumb_cache_path, mimetype='image/jpeg')
-                                except Exception as e:
-                                    logger.warning(f"生成缩略图失败: {image_path}, {e}")
-                                    # 降级：直接返回原图
-                                    return send_file(image_path, mimetype='image/jpeg')
-                            
-                            return Response(status=404)
-                except Exception as e:
-                    logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
-                    continue
-        
-        # 未找到图片
-        return Response(status=404)
+                thumb = img.resize((THUMB_WIDTH, thumb_height), Image.Resampling.LANCZOS)
+                if thumb.mode != 'RGB':
+                    thumb = thumb.convert('RGB')
+
+                thumb.save(thumb_cache_path, 'JPEG', quality=THUMB_QUALITY)
+
+                return send_file(thumb_cache_path, mimetype='image/jpeg')
+        except Exception as e:
+            logger.warning(f"生成缩略图失败: {image_path}, {e}")
+            return send_file(image_path, mimetype=_guess_mime_type(image_path))
         
     except Exception as e:
         logger.error(f"获取缩略图失败: {e}", exc_info=True)
@@ -194,68 +143,13 @@ def get_page_thumbnail(book_id: str, page_num: int):
 @manga_insight_bp.route('/<book_id>/page-image/<int:page_num>', methods=['GET'])
 def get_page_image(book_id: str, page_num: int):
     """获取页面原图"""
-    import os
-    import json
     from flask import send_file
-    from src.shared.path_helpers import resource_path
-    from src.core import bookshelf_manager
     
     try:
-        # 从书架系统获取书籍信息
-        book = bookshelf_manager.get_book(book_id)
-        if not book:
+        image_path = _get_page_image_path(book_id, page_num)
+        if not image_path:
             return Response(status=404)
-        
-        # 查找对应页面的图片
-        chapters = book.get("chapters", [])
-
-        current_page = 0
-        for chapter in chapters:
-            chapter_id = chapter.get("id")
-            if not chapter_id:
-                continue
-
-            # 从 session_meta.json 获取图片信息（使用新路径格式）
-            session_dir = resource_path(f"data/bookshelf/{book_id}/chapters/{chapter_id}/session")
-            session_meta_path = os.path.join(session_dir, "session_meta.json")
-            
-            if os.path.exists(session_meta_path):
-                try:
-                    with open(session_meta_path, "r", encoding="utf-8") as f:
-                        session_data = json.load(f)
-                    
-                    # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
-                    if "total_pages" in session_data:
-                        # 新格式
-                        image_count = session_data.get("total_pages", 0)
-                    else:
-                        # 旧格式
-                        images_meta = session_data.get("images_meta", [])
-                        image_count = len(images_meta)
-                    
-                    for i in range(image_count):
-                        current_page += 1
-                        if current_page == page_num:
-                            # 找到了目标页面，使用辅助函数查找图片路径（兼容新旧格式）
-                            image_path = _find_image_path(session_dir, i, "original")
-                            if image_path:
-                                # 确定 MIME 类型
-                                ext = image_path.rsplit('.', 1)[-1].lower()
-                                mime_types = {
-                                    'png': 'image/png',
-                                    'jpg': 'image/jpeg',
-                                    'jpeg': 'image/jpeg',
-                                    'webp': 'image/webp'
-                                }
-                                return send_file(image_path, mimetype=mime_types.get(ext, 'image/jpeg'))
-                            
-                            return Response(status=404)
-                except Exception as e:
-                    logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
-                    continue
-        
-        # 未找到图片
-        return Response(status=404)
+        return send_file(image_path, mimetype=_guess_mime_type(image_path))
         
     except Exception as e:
         logger.error(f"获取页面图片失败: {e}", exc_info=True)

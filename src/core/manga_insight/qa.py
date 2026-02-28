@@ -715,3 +715,22 @@ class MangaQA:
         # 降级检查概述
         overview = await self.storage.load_overview()
         return bool(overview and overview.get("summary"))
+
+    async def close(self):
+        """释放问答相关客户端资源。"""
+        clients = [
+            ("chat_client", self.chat_client),
+            ("embedding_client", self.embedding_client),
+            ("reranker", self.reranker),
+        ]
+
+        for client_name, client in clients:
+            if not client:
+                continue
+            close_func = getattr(client, "close", None)
+            if not callable(close_func):
+                continue
+            try:
+                await close_func()
+            except Exception as exc:
+                logger.warning("关闭 %s 失败: %s", client_name, exc)

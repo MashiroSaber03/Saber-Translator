@@ -168,40 +168,42 @@ class ContentChangeDetector:
             Dict: 内容快照
         """
         try:
-            from src.core import bookshelf_manager
             import os
-            
-            book = bookshelf_manager.get_book(self.book_id)
-            
-            if not book:
-                return {"chapters": []}
-            
-            chapters = []
-            for ch in book.get("chapters", []):
-                chapter_id = ch.get("id") or ch.get("chapter_id")
-                chapter_data = {
-                    "chapter_id": chapter_id,
-                    "title": ch.get("title", ""),
-                    "pages": []
-                }
-                
-                # 获取章节详情和图片
-                chapter_detail = bookshelf_manager.get_chapter(self.book_id, chapter_id)
-                if chapter_detail:
-                    images = chapter_detail.get("images", [])
-                    for idx, img in enumerate(images):
-                        image_path = img.get("original_path") or img.get("path")
-                        if image_path and os.path.exists(image_path):
-                            with open(image_path, "rb") as f:
-                                page_hash = self.compute_page_hash(f.read())
-                            
-                            chapter_data["pages"].append({
-                                "page_num": img.get("index", idx + 1),
-                                "hash": page_hash
-                            })
-                
-                chapters.append(chapter_data)
-            
+            from .book_pages import build_book_pages_manifest
+
+            manifest = build_book_pages_manifest(self.book_id)
+            all_images = manifest.get("all_images", [])
+            chapter_titles = {
+                (ch.get("id") or ch.get("chapter_id")): ch.get("title", "")
+                for ch in manifest.get("chapters", [])
+            }
+
+            chapter_map: Dict[str, Dict] = {}
+
+            for page_num, image_info in enumerate(all_images, start=1):
+                chapter_id = image_info.get("chapter_id") or "__unknown__"
+                image_path = image_info.get("path")
+                if not image_path or not os.path.exists(image_path):
+                    continue
+
+                if chapter_id not in chapter_map:
+                    chapter_map[chapter_id] = {
+                        "chapter_id": chapter_id,
+                        "title": chapter_titles.get(chapter_id, ""),
+                        "pages": []
+                    }
+
+                with open(image_path, "rb") as image_file:
+                    page_hash = self.compute_page_hash(image_file.read())
+
+                chapter_map[chapter_id]["pages"].append({
+                    "page_num": page_num,
+                    "hash": page_hash
+                })
+
+            chapters = list(chapter_map.values())
+            chapters.sort(key=lambda item: item.get("pages", [{}])[0].get("page_num", 0) if item.get("pages") else 0)
+
             return {"chapters": chapters}
             
         except Exception as e:

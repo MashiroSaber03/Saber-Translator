@@ -10,6 +10,7 @@ import { ref, computed, watch } from 'vue'
 import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import type { ApiError } from '@/types'
 
 /** 分析模式选项 */
 const analysisModeOptions = [
@@ -175,6 +176,17 @@ function onAnalysisModeChange(): void {
   insightStore.setAnalysisMode(analysisMode.value)
 }
 
+function getStartErrorMessage(error: unknown): string {
+  const apiError = error as Partial<ApiError> | undefined
+  if (apiError?.status === 409) {
+    return apiError.message || '启动被拒绝：当前书籍已有运行中的任务'
+  }
+  if (apiError?.message) {
+    return apiError.message
+  }
+  return '启动分析失败'
+}
+
 /**
  * 开始分析
  */
@@ -232,7 +244,7 @@ async function startAnalysis(): Promise<void> {
       console.error('启动分析失败:', response.error)
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '启动分析失败'
+    errorMessage.value = getStartErrorMessage(error)
     console.error('启动分析失败:', error)
   } finally {
     isStarting.value = false

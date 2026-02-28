@@ -10,7 +10,7 @@ import threading
 from typing import Dict, List, Optional, Callable
 from datetime import datetime
 
-from .task_models import AnalysisTask, TaskStatus, TaskType
+from .task_models import AnalysisTask, TaskStatus, TaskType, TaskStartResult
 from .config_utils import load_insight_config
 
 logger = logging.getLogger("MangaInsight.TaskManager")
@@ -40,7 +40,7 @@ class AnalysisTaskManager:
             return
 
         self.tasks: Dict[str, AnalysisTask] = {}
-        self.running_tasks: Dict[str, asyncio.Task] = {}
+        self.running_tasks: Dict[str, threading.Thread] = {}
         self.book_tasks: Dict[str, List[str]] = {}  # book_id -> [task_ids]
         self.progress_callbacks: Dict[str, List[Callable]] = {}
         self._pause_events: Dict[str, threading.Event] = {}
@@ -55,7 +55,8 @@ class AnalysisTaskManager:
         task_type: TaskType,
         target_chapters: Optional[List[str]] = None,
         target_pages: Optional[List[int]] = None,
-        is_incremental: bool = False
+        is_incremental: bool = False,
+        force_reanalyze: bool = False
     ) -> AnalysisTask:
         """
         创建分析任务
@@ -75,7 +76,8 @@ class AnalysisTaskManager:
             task_type=task_type,
             target_chapters=target_chapters,
             target_pages=target_pages,
-            is_incremental=is_incremental
+            is_incremental=is_incremental,
+            force_reanalyze=force_reanalyze
         )
 
         self.tasks[task.task_id] = task
@@ -93,24 +95,82 @@ class AnalysisTaskManager:
         logger.info(f"创建任务: {task.task_id} (类型: {task_type.value}, 书籍: {book_id})")
         return task
 
-    async def start_task(self, task_id: str) -> bool:
-        """启动任务"""
+    def _find_running_task_for_book(self, book_id: str, exclude_task_id: Optional[str] = None) -> Optional[str]:
+        """查找书籍当前运行中的任务 ID。"""
+        for tid in self.book_tasks.get(book_id, []):
+            if exclude_task_id and tid == exclude_task_id:
+                continue
+            other_task = self.tasks.get(tid)
+            if other_task and other_task.status == TaskStatus.RUNNING:
+                return tid
+        return None
+
+    def _remove_task_records(self, task_id: str) -> None:
+        """移除任务及其关联索引，避免失败启动产生幽灵 pending 任务。"""
+        task = self.tasks.pop(task_id, None)
+        if not task:
+            return
+
+        book_task_ids = self.book_tasks.get(task.book_id, [])
+        if task_id in book_task_ids:
+            book_task_ids.remove(task_id)
+        if not book_task_ids and task.book_id in self.book_tasks:
+            del self.book_tasks[task.book_id]
+
+        self.progress_callbacks.pop(task_id, None)
+        self._pause_events.pop(task_id, None)
+        self._cancel_flags.pop(task_id, None)
+        self.running_tasks.pop(task_id, None)
+
+    async def start_task(self, task_id: str) -> TaskStartResult:
+        """启动任务，返回结构化结果。"""
         task = self.tasks.get(task_id)
         if not task:
             logger.error(f"任务不存在: {task_id}")
-            return False
+            return TaskStartResult(
+                success=False,
+                task_id=task_id,
+                reason=f"任务不存在: {task_id}",
+                error_code="TASK_NOT_FOUND",
+                status_code=404
+            )
 
         if task.status == TaskStatus.RUNNING:
             logger.warning(f"任务已在运行中: {task_id}")
-            return False
+            return TaskStartResult(
+                success=False,
+                task_id=task_id,
+                reason=f"任务已在运行中: {task_id}",
+                error_code="TASK_START_REJECTED",
+                status_code=409
+            )
+
+        if task.status in [TaskStatus.PAUSED, TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.FAILED]:
+            logger.warning(f"任务状态不允许启动: {task_id}, status={task.status.value}")
+            return TaskStartResult(
+                success=False,
+                task_id=task_id,
+                reason=f"任务状态不允许启动: {task.status.value}",
+                error_code="TASK_START_REJECTED",
+                status_code=400
+            )
 
         # 检查该书籍是否已有运行中的任务
         book_id = task.book_id
-        for tid in self.book_tasks.get(book_id, []):
-            other_task = self.tasks.get(tid)
-            if other_task and other_task.task_id != task_id and other_task.status == TaskStatus.RUNNING:
-                logger.warning(f"书籍 {book_id} 已有运行中的任务: {tid}")
-                return False
+        running_task_id = self._find_running_task_for_book(book_id, exclude_task_id=task_id)
+        if running_task_id:
+            logger.warning(f"书籍 {book_id} 已有运行中的任务: {running_task_id}")
+            # 启动冲突时不保留新建的 pending 任务，避免状态接口被“最新任务”误导
+            if task.status == TaskStatus.PENDING:
+                self._remove_task_records(task_id)
+            return TaskStartResult(
+                success=False,
+                task_id=task_id,
+                reason=f"书籍 {book_id} 已有运行中的任务 ({running_task_id})",
+                error_code="TASK_START_REJECTED",
+                status_code=409,
+                running_task_id=running_task_id
+            )
 
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
@@ -129,7 +189,12 @@ class AnalysisTaskManager:
         self.running_tasks[task_id] = thread
 
         logger.info(f"启动任务: {task_id}")
-        return True
+        return TaskStartResult(
+            success=True,
+            task_id=task_id,
+            reason="任务已启动",
+            status_code=200
+        )
 
     async def pause_task(self, task_id: str) -> bool:
         """暂停任务"""
@@ -153,6 +218,11 @@ class AnalysisTaskManager:
             return False
 
         if task.status != TaskStatus.PAUSED:
+            return False
+
+        running_task_id = self._find_running_task_for_book(task.book_id, exclude_task_id=task_id)
+        if running_task_id:
+            logger.warning(f"恢复任务失败：书籍 {task.book_id} 已有运行中的任务 {running_task_id}")
             return False
 
         task.status = TaskStatus.RUNNING
@@ -257,17 +327,22 @@ class AnalysisTaskManager:
                 check_pause_cancel_func=self._check_pause_and_cancel,
                 notify_progress_func=self._notify_progress
             )
-            await executor.execute(task, analyzer)
+            task_warnings = await executor.execute(task, analyzer) or []
 
             # 检查是否被取消
             if self._cancel_flags.get(task.task_id):
                 task.status = TaskStatus.CANCELLED
             else:
                 # 构建时间线
-                await executor.build_timeline_on_complete(task.book_id)
+                timeline_warning = await executor.build_timeline_on_complete(task.book_id)
+                if timeline_warning:
+                    task_warnings.append(timeline_warning)
 
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = datetime.now()
+
+            if task_warnings:
+                task.warnings.extend(task_warnings)
 
             logger.info(f"任务完成: {task.task_id}, 状态: {task.status.value}")
 

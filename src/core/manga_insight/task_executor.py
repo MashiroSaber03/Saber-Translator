@@ -6,7 +6,7 @@
 """
 
 import logging
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Optional
 
 from .task_models import AnalysisTask, TaskType
 from .config_utils import load_insight_config
@@ -39,7 +39,7 @@ class TaskExecutor:
         self._check_pause_and_cancel = check_pause_cancel_func
         self._notify_progress = notify_progress_func
 
-    async def execute(self, task: AnalysisTask, analyzer):
+    async def execute(self, task: AnalysisTask, analyzer) -> List[str]:
         """
         执行分析任务
 
@@ -48,19 +48,30 @@ class TaskExecutor:
             analyzer: MangaAnalyzer 实例
         """
         if task.task_type == TaskType.FULL_BOOK:
-            await self.execute_full_book_analysis(task, analyzer)
+            return await self.execute_full_book_analysis(task, analyzer)
         elif task.task_type == TaskType.CHAPTER:
-            await self.execute_chapter_analysis(task, analyzer)
+            return await self.execute_chapter_analysis(task, analyzer)
         elif task.task_type == TaskType.INCREMENTAL:
-            await self.execute_incremental_analysis(task, analyzer)
+            return await self.execute_incremental_analysis(task, analyzer)
         elif task.task_type == TaskType.REANALYZE:
-            await self.execute_reanalysis(task, analyzer)
+            return await self.execute_reanalysis(task, analyzer)
+        return []
 
-    async def execute_full_book_analysis(self, task: AnalysisTask, analyzer):
+    async def execute_full_book_analysis(self, task: AnalysisTask, analyzer) -> List[str]:
         """执行全书分析（支持四层级批量模式）"""
+        warnings: List[str] = []
+
         # 检查 VLM 是否已配置
         if not analyzer.vlm.is_configured():
             raise ValueError("VLM 未配置，请先在设置中配置 VLM 服务商和 API Key")
+
+        if task.force_reanalyze:
+            logger.info("全书任务启用强制重算：清理现有分析缓存")
+            cleared = await analyzer.storage.clear_all()
+            if not cleared:
+                warning_msg = "全书重分析前清理缓存失败，继续执行重算"
+                logger.warning(warning_msg)
+                warnings.append(warning_msg)
 
         # 获取书籍信息
         book_info = await analyzer.get_book_info()
@@ -79,10 +90,12 @@ class TaskExecutor:
         use_stream = config.vlm.use_stream
         logger.info(f"批量分析: 每批 {pages_per_batch} 页, 强制JSON: {'是' if force_json else '否'}, 流式请求: {'是' if use_stream else '否'}")
 
-        await self._execute_full_book_batch_analysis(task, analyzer, book_info)
+        warnings.extend(await self._execute_full_book_batch_analysis(task, analyzer, book_info))
+        return warnings
 
-    async def _execute_full_book_batch_analysis(self, task: AnalysisTask, analyzer, book_info: dict):
+    async def _execute_full_book_batch_analysis(self, task: AnalysisTask, analyzer, book_info: dict) -> List[str]:
         """执行全书动态层级批量分析"""
+        warnings: List[str] = []
         config = load_insight_config()
         batch_settings = config.analysis.batch
         pages_per_batch = batch_settings.pages_per_batch
@@ -114,15 +127,15 @@ class TaskExecutor:
 
         if not batch_results:
             logger.warning("批量分析无结果，跳过后续层级")
-            await self._post_analysis_processing(task, analyzer)
-            return
+            warnings.extend(await self._post_analysis_processing(task, analyzer))
+            return warnings
 
         # ========== 中间层: 汇总层级 ==========
         current_results = batch_results
 
         for layer_idx in range(1, len(layers) - 1):
             if not self._check_pause_and_cancel(task.task_id):
-                return
+                return warnings
 
             layer = layers[layer_idx]
             layer_name = layer.get("name", f"层级{layer_idx}")
@@ -147,7 +160,8 @@ class TaskExecutor:
             task.progress.current_phase = last_layer.get("name", "全书总结")
             logger.info(f"开始 {last_layer.get('name', '全书总结')}...")
 
-        await self._post_analysis_processing(task, analyzer)
+        warnings.extend(await self._post_analysis_processing(task, analyzer))
+        return warnings
 
     def _build_chapter_page_map(self, all_images: List[Dict]) -> Dict[str, List[int]]:
         """构建章节到页码的映射"""
@@ -211,38 +225,53 @@ class TaskExecutor:
             batch_results, all_images, chapters, layer_name, progress_cb
         )
 
-    async def execute_chapter_analysis(self, task: AnalysisTask, analyzer):
+    async def execute_chapter_analysis(self, task: AnalysisTask, analyzer) -> List[str]:
         """执行章节分析（使用动态层级模式）"""
+        warnings: List[str] = []
         if not analyzer.vlm.is_configured():
             raise ValueError("VLM 未配置，请先在设置中配置 VLM 服务商和 API Key")
 
         chapters = task.target_chapters or []
         task.progress.total_pages = len(chapters)
+        book_info = await analyzer.get_book_info()
+        all_images = book_info.get("all_images", [])
+        chapter_page_map = self._build_chapter_page_map(all_images)
 
         for i, chapter_id in enumerate(chapters):
             if not self._check_pause_and_cancel(task.task_id):
-                return
+                return warnings
 
             task.progress.current_phase = f"分析章节: {chapter_id}"
 
             try:
+                if task.force_reanalyze:
+                    chapter_pages = chapter_page_map.get(chapter_id, [])
+                    await analyzer.storage.clear_cache_for_chapters([chapter_id], chapter_pages)
+
                 def progress_cb(phase, current, total, message):
                     task.progress.current_phase = f"{chapter_id}: {message}"
                     self._notify_progress(task.task_id, task.progress.to_dict())
 
-                await analyzer.analyze_chapter_with_segments(chapter_id, progress_callback=progress_cb)
+                await analyzer.analyze_chapter_with_segments(
+                    chapter_id,
+                    progress_callback=progress_cb,
+                    force=task.force_reanalyze
+                )
 
                 task.progress.analyzed_pages = i + 1
                 logger.info(f"完成章节分析: {chapter_id}")
             except Exception as e:
                 logger.error(f"章节分析失败: {chapter_id} - {e}")
+                warnings.append(f"章节 {chapter_id} 分析失败: {e}")
 
             self._notify_progress(task.task_id, task.progress.to_dict())
 
-        await self._post_analysis_processing(task, analyzer)
+        warnings.extend(await self._post_analysis_processing(task, analyzer))
+        return warnings
 
-    async def execute_incremental_analysis(self, task: AnalysisTask, analyzer):
+    async def execute_incremental_analysis(self, task: AnalysisTask, analyzer) -> List[str]:
         """执行增量分析"""
+        warnings: List[str] = []
         from .incremental_analyzer import IncrementalAnalyzer
 
         incremental = IncrementalAnalyzer(task.book_id, load_insight_config())
@@ -262,11 +291,12 @@ class TaskExecutor:
 
         if result.get("status") == "cancelled":
             logger.info(f"增量分析已取消: {task.task_id}")
-            return
+            return warnings
 
         if result.get("status") == "no_pages":
             logger.warning(f"增量分析: {result.get('message', '没有可分析的图片')}")
-            return
+            warnings.append(result.get("message", "没有可分析的图片"))
+            return warnings
 
         if result.get("status") == "no_changes":
             logger.info(f"增量分析: {result.get('message', '无需分析')}")
@@ -276,13 +306,15 @@ class TaskExecutor:
         total_pages = result.get("total_pages", 0)
         logger.info(f"增量分析完成: 本次分析 {pages_analyzed} 页, 之前已分析 {previously_analyzed} 页, 共 {total_pages} 页")
 
-        await self._post_analysis_processing(task, analyzer)
+        warnings.extend(await self._post_analysis_processing(task, analyzer))
+        return warnings
 
-    async def execute_reanalysis(self, task: AnalysisTask, analyzer):
+    async def execute_reanalysis(self, task: AnalysisTask, analyzer) -> List[str]:
         """执行重新分析（使用批量分析模式）"""
+        warnings: List[str] = []
         pages = task.target_pages or []
         if not pages:
-            return
+            return warnings
 
         pages = sorted(pages)
         task.progress.total_pages = len(pages)
@@ -292,12 +324,14 @@ class TaskExecutor:
         batch_settings = analyzer.config.analysis.batch
         pages_per_batch = batch_settings.pages_per_batch
 
+        await analyzer.storage.clear_cache_for_pages(pages)
+
         batch_idx = 0
         total_batches = (len(pages) + pages_per_batch - 1) // pages_per_batch
 
         for i in range(0, len(pages), pages_per_batch):
             if not self._check_pause_and_cancel(task.task_id):
-                return
+                return warnings
 
             batch_pages = pages[i:i + pages_per_batch]
             batch_image_infos = []
@@ -319,14 +353,17 @@ class TaskExecutor:
             except Exception as e:
                 logger.error(f"重新分析批次失败: 第{batch_pages[0]}-{batch_pages[-1]}页 - {e}")
                 task.failed_pages.extend(batch_pages)
+                warnings.append(f"第{batch_pages[0]}-{batch_pages[-1]}页重分析失败: {e}")
 
             batch_idx += 1
             self._notify_progress(task.task_id, task.progress.to_dict())
 
-        await self._post_analysis_processing(task, analyzer)
+        warnings.extend(await self._post_analysis_processing(task, analyzer))
+        return warnings
 
-    async def _post_analysis_processing(self, task: AnalysisTask, analyzer):
+    async def _post_analysis_processing(self, task: AnalysisTask, analyzer) -> List[str]:
         """分析完成后的后续处理（嵌入、概述等）"""
+        warnings: List[str] = []
         # 生成向量嵌入
         logger.info("开始构建向量嵌入...")
         task.progress.current_phase = "embedding"
@@ -335,6 +372,7 @@ class TaskExecutor:
             logger.info("向量嵌入完成")
         except Exception as e:
             logger.error(f"向量嵌入失败: {e}", exc_info=True)
+            warnings.append(f"向量嵌入失败: {e}")
 
         # 生成概述
         logger.info("开始生成概述...")
@@ -344,8 +382,11 @@ class TaskExecutor:
             logger.info("概述生成完成")
         except Exception as e:
             logger.error(f"概述生成失败: {e}", exc_info=True)
+            warnings.append(f"概述生成失败: {e}")
 
-    async def build_timeline_on_complete(self, book_id: str):
+        return warnings
+
+    async def build_timeline_on_complete(self, book_id: str) -> Optional[str]:
         """
         分析完成后自动构建并保存时间线（增强模式）
 
@@ -379,3 +420,5 @@ class TaskExecutor:
 
         except Exception as e:
             logger.error(f"构建时间线失败: {e}", exc_info=True)
+            return f"时间线构建失败: {e}"
+        return None

@@ -63,6 +63,27 @@ class AnalysisProgress:
 
 
 @dataclass
+class TaskStartResult:
+    """任务启动结果"""
+    success: bool
+    task_id: Optional[str] = None
+    reason: str = ""
+    error_code: Optional[str] = None
+    status_code: int = 200
+    running_task_id: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "success": self.success,
+            "task_id": self.task_id,
+            "reason": self.reason,
+            "error_code": self.error_code,
+            "status_code": self.status_code,
+            "running_task_id": self.running_task_id
+        }
+
+
+@dataclass
 class AnalysisTask:
     """分析任务"""
     task_id: str = ""
@@ -87,6 +108,8 @@ class AnalysisTask:
     # 增量分析相关
     is_incremental: bool = False
     base_analysis_version: Optional[str] = None
+    force_reanalyze: bool = False
+    warnings: List[str] = field(default_factory=list)
     
     def __post_init__(self):
         if not self.task_id:
@@ -109,7 +132,9 @@ class AnalysisTask:
             "error_message": self.error_message,
             "failed_pages": self.failed_pages,
             "is_incremental": self.is_incremental,
-            "base_analysis_version": self.base_analysis_version
+            "base_analysis_version": self.base_analysis_version,
+            "force_reanalyze": self.force_reanalyze,
+            "warnings": self.warnings
         }
     
     @classmethod
@@ -160,7 +185,9 @@ class AnalysisTask:
             error_message=data.get("error_message"),
             failed_pages=data.get("failed_pages", []),
             is_incremental=data.get("is_incremental", False),
-            base_analysis_version=data.get("base_analysis_version")
+            base_analysis_version=data.get("base_analysis_version"),
+            force_reanalyze=data.get("force_reanalyze", False),
+            warnings=data.get("warnings", [])
         )
 
 

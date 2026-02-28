@@ -9,21 +9,57 @@ from flask import request
 
 from . import manga_insight_bp
 from .async_helpers import run_async
-from .response_builder import success_response, error_response, task_response
+from .response_builder import error_response, task_response
 from src.core.manga_insight.incremental_analyzer import ReanalyzeManager
+from src.core.manga_insight.book_pages import build_book_pages_manifest
 
 logger = logging.getLogger("MangaInsight.API.Reanalyze")
+
+
+def _validate_pages_input(pages, total_pages: int):
+    """校验并标准化页码列表。"""
+    if total_pages <= 0:
+        raise ValueError("书籍没有可分析的图片")
+
+    if not isinstance(pages, list) or not pages:
+        raise ValueError("未指定页面")
+
+    normalized = []
+    for page_num in pages:
+        if not isinstance(page_num, int) or isinstance(page_num, bool):
+            raise ValueError(f"页码必须是整数: {page_num}")
+        if page_num <= 0:
+            raise ValueError(f"页码必须大于 0: {page_num}")
+        if total_pages > 0 and page_num > total_pages:
+            raise ValueError(f"页码越界: {page_num} (总页数 {total_pages})")
+        normalized.append(page_num)
+
+    return sorted(set(normalized))
 
 
 @manga_insight_bp.route('/<book_id>/reanalyze/page/<int:page_num>', methods=['POST'])
 def reanalyze_page(book_id: str, page_num: int):
     """重新分析单页（使用批量分析模式）"""
     try:
+        manifest = build_book_pages_manifest(book_id)
+        total_pages = manifest.get("total_pages", 0)
+        normalized_pages = _validate_pages_input([page_num], total_pages)
+
         manager = ReanalyzeManager(book_id)
-        task_id = run_async(manager.reanalyze_pages([page_num]))
+        start_result = run_async(manager.reanalyze_pages(normalized_pages))
+        if not start_result.success:
+            return error_response(
+                start_result.reason or "任务启动失败",
+                start_result.status_code or 409,
+                error_code=start_result.error_code or "TASK_START_REJECTED",
+                task_id=start_result.task_id,
+                running_task_id=start_result.running_task_id
+            )
 
-        return task_response(task_id, "started", message=f"已开始重新分析第 {page_num} 页")
+        return task_response(start_result.task_id, "started", message=f"已开始重新分析第 {page_num} 页")
 
+    except ValueError as e:
+        return error_response(str(e), 400)
     except Exception as e:
         logger.error(f"重新分析页面失败: {e}", exc_info=True)
         return error_response(str(e), 500)
@@ -40,17 +76,28 @@ def reanalyze_pages(book_id: str):
         }
     """
     try:
+        manifest = build_book_pages_manifest(book_id)
+        total_pages = manifest.get("total_pages", 0)
+
         data = request.json or {}
         pages = data.get("pages", [])
-        
-        if not pages:
-            return error_response("未指定页面", 400)
+        normalized_pages = _validate_pages_input(pages, total_pages)
 
         manager = ReanalyzeManager(book_id)
-        task_id = run_async(manager.reanalyze_pages(pages))
+        start_result = run_async(manager.reanalyze_pages(normalized_pages))
+        if not start_result.success:
+            return error_response(
+                start_result.reason or "任务启动失败",
+                start_result.status_code or 409,
+                error_code=start_result.error_code or "TASK_START_REJECTED",
+                task_id=start_result.task_id,
+                running_task_id=start_result.running_task_id
+            )
 
-        return task_response(task_id, "started", message=f"已开始重新分析 {len(pages)} 个页面")
+        return task_response(start_result.task_id, "started", message=f"已开始重新分析 {len(normalized_pages)} 个页面")
 
+    except ValueError as e:
+        return error_response(str(e), 400)
     except Exception as e:
         logger.error(f"重新分析页面失败: {e}", exc_info=True)
         return error_response(str(e), 500)
@@ -60,10 +107,27 @@ def reanalyze_pages(book_id: str):
 def reanalyze_chapter(book_id: str, chapter_id: str):
     """重新分析章节"""
     try:
-        manager = ReanalyzeManager(book_id)
-        task_id = run_async(manager.reanalyze_chapter(chapter_id))
+        manifest = build_book_pages_manifest(book_id)
+        chapter_ids = {
+            (chapter.get("id") or chapter.get("chapter_id"))
+            for chapter in manifest.get("chapters", [])
+            if (chapter.get("id") or chapter.get("chapter_id"))
+        }
+        if chapter_id not in chapter_ids:
+            return error_response(f"章节不存在: {chapter_id}", 400)
 
-        return task_response(task_id, "started", message=f"已开始重新分析章节 {chapter_id}")
+        manager = ReanalyzeManager(book_id)
+        start_result = run_async(manager.reanalyze_chapter(chapter_id))
+        if not start_result.success:
+            return error_response(
+                start_result.reason or "任务启动失败",
+                start_result.status_code or 409,
+                error_code=start_result.error_code or "TASK_START_REJECTED",
+                task_id=start_result.task_id,
+                running_task_id=start_result.running_task_id
+            )
+
+        return task_response(start_result.task_id, "started", message=f"已开始重新分析章节 {chapter_id}")
 
     except Exception as e:
         logger.error(f"重新分析章节失败: {e}", exc_info=True)
@@ -85,9 +149,17 @@ def reanalyze_book(book_id: str):
             )
 
         manager = ReanalyzeManager(book_id)
-        task_id = run_async(manager.reanalyze_book())
+        start_result = run_async(manager.reanalyze_book())
+        if not start_result.success:
+            return error_response(
+                start_result.reason or "任务启动失败",
+                start_result.status_code or 409,
+                error_code=start_result.error_code or "TASK_START_REJECTED",
+                task_id=start_result.task_id,
+                running_task_id=start_result.running_task_id
+            )
 
-        return task_response(task_id, "started", message="已开始重新分析全书")
+        return task_response(start_result.task_id, "started", message="已开始重新分析全书")
 
     except Exception as e:
         logger.error(f"重新分析全书失败: {e}", exc_info=True)

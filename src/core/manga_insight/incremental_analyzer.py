@@ -254,21 +254,29 @@ class ReanalyzeManager:
             from .config_utils import load_insight_config
             self.config = load_insight_config()
     
-    async def reanalyze_pages(self, page_nums: List[int]) -> str:
+    async def reanalyze_pages(self, page_nums: List[int]):
         """重新分析指定页面（使用批量分析模式）"""
         from .task_manager import get_task_manager
         from .task_models import TaskType
         
+        normalized_pages = sorted({
+            page_num for page_num in page_nums
+            if isinstance(page_num, int) and not isinstance(page_num, bool) and page_num > 0
+        })
+
         task_manager = get_task_manager()
         task = await task_manager.create_task(
             book_id=self.book_id,
             task_type=TaskType.REANALYZE,
-            target_pages=page_nums
+            target_pages=normalized_pages,
+            force_reanalyze=True
         )
-        await task_manager.start_task(task.task_id)
-        return task.task_id
+        start_result = await task_manager.start_task(task.task_id)
+        if not start_result.task_id:
+            start_result.task_id = task.task_id
+        return start_result
     
-    async def reanalyze_chapter(self, chapter_id: str) -> str:
+    async def reanalyze_chapter(self, chapter_id: str):
         """重新分析整个章节"""
         from .task_manager import get_task_manager
         from .task_models import TaskType
@@ -277,27 +285,29 @@ class ReanalyzeManager:
         task = await task_manager.create_task(
             book_id=self.book_id,
             task_type=TaskType.CHAPTER,
-            target_chapters=[chapter_id]
+            target_chapters=[chapter_id],
+            force_reanalyze=True
         )
-        await task_manager.start_task(task.task_id)
-        return task.task_id
+        start_result = await task_manager.start_task(task.task_id)
+        if not start_result.task_id:
+            start_result.task_id = task.task_id
+        return start_result
     
-    async def reanalyze_book(self) -> str:
+    async def reanalyze_book(self):
         """重新分析全书"""
         from .task_manager import get_task_manager
         from .task_models import TaskType
-        
-        # 清除现有分析结果
-        storage = AnalysisStorage(self.book_id)
-        await storage.clear_all()
-        
+
         task_manager = get_task_manager()
         task = await task_manager.create_task(
             book_id=self.book_id,
-            task_type=TaskType.FULL_BOOK
+            task_type=TaskType.FULL_BOOK,
+            force_reanalyze=True
         )
-        await task_manager.start_task(task.task_id)
-        return task.task_id
+        start_result = await task_manager.start_task(task.task_id)
+        if not start_result.task_id:
+            start_result.task_id = task.task_id
+        return start_result
     
     # ============================================================
     # 四层级模式重新分析方法
@@ -369,7 +379,7 @@ class ReanalyzeManager:
         
         if not segments:
             logger.warning(f"章节 {chapter_id} 没有小总结，使用动态层级模式重新分析")
-            return await analyzer.analyze_chapter_with_segments(chapter_id)
+            return await analyzer.analyze_chapter_with_segments(chapter_id, force=True)
         
         # 获取章节信息
         book_info = await analyzer.get_book_info()

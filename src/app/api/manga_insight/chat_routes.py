@@ -35,6 +35,7 @@ def chat(book_id: str):
     - 精确模式（默认）：使用 RAG 检索相关片段，适合具体问题如"第15页发生了什么"
     - 全局模式：使用压缩后的全文摘要，适合总结性问题如"故事的主题是什么"
     """
+    qa = None
     try:
         data = request.json or {}
         question = data.get("question", "").strip()
@@ -85,6 +86,9 @@ def chat(book_id: str):
     except Exception as e:
         logger.error(f"问答失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if qa:
+            run_async(qa.close())
 
 
 @manga_insight_bp.route('/<book_id>/chat/status', methods=['GET'])
@@ -94,6 +98,7 @@ def chat_status(book_id: str):
     
     返回当前可用的问答模式信息
     """
+    qa = None
     try:
         qa = MangaQA(book_id)
         has_global = run_async(qa.has_global_context())
@@ -115,6 +120,9 @@ def chat_status(book_id: str):
     except Exception as e:
         logger.error(f"获取问答状态失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if qa:
+            run_async(qa.close())
 
 
 @manga_insight_bp.route('/<book_id>/search', methods=['POST'])
@@ -128,6 +136,7 @@ def search(book_id: str):
             "top_k": 10
         }
     """
+    qa = None
     try:
         data = request.json or {}
         query = data.get("query", "").strip()
@@ -144,3 +153,6 @@ def search(book_id: str):
     except Exception as e:
         logger.error(f"搜索失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if qa:
+            run_async(qa.close())

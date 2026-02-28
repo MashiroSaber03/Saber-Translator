@@ -138,6 +138,24 @@ const storySummary = computed(() => timelineData.value?.story_summary || '')
 // ============================================================
 
 /**
+ * 统一标准化后端时间线响应
+ * 兼容 simple/enhanced 以及 story_arcs/plot_arcs 字段差异
+ */
+function normalizeTimelineResponse(response: any): TimelineData {
+  return {
+    mode: response.mode || 'simple',
+    groups: response.groups || [],
+    stats: response.stats,
+    story_summary: response.story_summary || response.summary?.one_sentence || response.summary || '',
+    main_characters: response.main_characters || response.characters || [],
+    plot_arcs: response.plot_arcs || response.story_arcs || [],
+    plot_threads: response.plot_threads || [],
+    events: response.events || [],
+    cached: response.cached
+  }
+}
+
+/**
  * 加载时间线
  */
 async function loadTimeline(): Promise<void> {
@@ -151,22 +169,7 @@ async function loadTimeline(): Promise<void> {
     console.log('Timeline API response:', response)
     
     if (response.success) {
-      // API返回格式根据mode不同而不同：
-      // 简单模式: { success, cached, groups, events, stats, mode: "simple" }
-      // 增强模式: { success, cached, story_arcs, characters, plot_threads, summary, stats, mode: "enhanced" }
-      timelineData.value = {
-        mode: response.mode || 'simple',
-        // 简单模式使用groups，增强模式使用story_arcs
-        groups: response.groups || [],
-        stats: response.stats,
-        // 增强模式数据
-        story_summary: response.summary?.one_sentence || '',
-        main_characters: response.characters || [],
-        plot_arcs: response.story_arcs || [],
-        plot_threads: response.plot_threads || [],
-        events: response.events || [],
-        cached: response.cached
-      }
+      timelineData.value = normalizeTimelineResponse(response)
       console.log('Parsed timelineData:', timelineData.value)
     } else {
       errorMessage.value = response.error || '加载时间线失败'
@@ -189,9 +192,9 @@ async function regenerateTimeline(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.regenerateTimeline(insightStore.currentBookId)
+    const response = await insightApi.regenerateTimeline(insightStore.currentBookId) as any
     if (response.success) {
-      timelineData.value = response as unknown as TimelineData
+      timelineData.value = normalizeTimelineResponse(response)
     } else {
       errorMessage.value = '重新生成失败'
     }

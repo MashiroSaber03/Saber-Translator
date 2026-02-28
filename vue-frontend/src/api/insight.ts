@@ -515,9 +515,9 @@ export async function deleteNote(bookId: string, noteId: string): Promise<ApiRes
  * @param bookId 书籍 ID
  */
 export async function getAnalysisConfig(
-  bookId: string
+  _bookId: string
 ): Promise<ApiResponse<{ config: AnalysisConfig }>> {
-  return apiClient.get(`/api/manga-insight/${bookId}/config`)
+  return apiClient.get('/api/manga-insight/config')
 }
 
 /**
@@ -526,10 +526,10 @@ export async function getAnalysisConfig(
  * @param config 配置数据
  */
 export async function saveAnalysisConfig(
-  bookId: string,
+  _bookId: string,
   config: AnalysisConfig
 ): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/config`, config)
+  return apiClient.post<ApiResponse>('/api/manga-insight/config', config)
 }
 
 // ==================== 全局配置 API ====================

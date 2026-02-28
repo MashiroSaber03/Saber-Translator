@@ -6,8 +6,6 @@ Manga Insight 主分析器
 
 import logging
 import os
-import json
-import re
 from typing import Dict, List
 from datetime import datetime
 
@@ -16,6 +14,7 @@ from .storage import AnalysisStorage
 from .vlm_client import VLMClient
 from .embedding_client import EmbeddingClient
 from .vector_store import MangaVectorStore
+from .book_pages import build_book_pages_manifest
 
 # 导入拆分的模块
 from .batch_analyzer import BatchAnalyzer
@@ -59,98 +58,8 @@ class MangaAnalyzer:
             return self._book_info_cache
 
         try:
-            from src.core import bookshelf_manager
-            from src.shared.path_helpers import resource_path
-
-            book = bookshelf_manager.get_book(self.book_id)
-
-            if book:
-                # 计算总页数：遍历所有章节的 session 数据
-                total_pages = 0
-                chapters = book.get("chapters", [])
-                all_images = []
-
-                for chapter in chapters:
-                    chapter_id = chapter.get("id")
-                    if chapter_id:
-                        # 从 session_meta.json 获取图片信息（使用新路径格式）
-                        session_dir = resource_path(f"data/bookshelf/{self.book_id}/chapters/{chapter_id}/session")
-                        session_meta_path = os.path.join(session_dir, "session_meta.json")
-
-                        if os.path.exists(session_meta_path):
-                            try:
-                                with open(session_meta_path, "r", encoding="utf-8") as f:
-                                    session_data = json.load(f)
-
-                                # 支持两种格式：新格式使用 total_pages，旧格式使用 images_meta
-                                if "total_pages" in session_data:
-                                    # 新格式: images/{idx}/original.png
-                                    image_count = session_data.get("total_pages", 0)
-                                    for i in range(image_count):
-                                        # 新格式路径
-                                        image_path = os.path.join(session_dir, "images", str(i), "original.png")
-                                        page_meta_path = os.path.join(session_dir, "images", str(i), "meta.json")
-
-                                        # 加载页面元数据（包含 fileName, relativePath 等）
-                                        page_meta = {}
-                                        if os.path.exists(page_meta_path):
-                                            try:
-                                                with open(page_meta_path, "r", encoding="utf-8") as mf:
-                                                    page_meta = json.load(mf)
-                                            except Exception:
-                                                pass
-
-                                        if os.path.exists(image_path):
-                                            all_images.append({
-                                                "chapter_id": chapter_id,
-                                                "index": i,
-                                                "path": image_path,
-                                                "meta": page_meta
-                                            })
-                                            total_pages += 1
-                                else:
-                                    # 旧格式: image_{idx}_original.png
-                                    images_meta = session_data.get("images_meta", [])
-                                    image_count = len(images_meta)
-
-                                    for i in range(image_count):
-                                        image_path = os.path.join(session_dir, f"image_{i}_original.png")
-                                        if os.path.exists(image_path):
-                                            all_images.append({
-                                                "chapter_id": chapter_id,
-                                                "index": i,
-                                                "path": image_path,
-                                                "meta": images_meta[i] if i < len(images_meta) else {}
-                                            })
-                                            total_pages += 1
-                            except Exception as e:
-                                logger.error(f"读取 session 数据失败: {chapter_id} - {e}")
-
-                # 【多文件夹支持】按 relativePath/fileName 进行自然排序
-                def natural_sort_key(item):
-                    path = item.get("meta", {}).get("relativePath") or item.get("meta", {}).get("fileName", "")
-                    return [int(text) if text.isdigit() else text.lower()
-                            for text in re.split(r'(\d+)', path)]
-
-                all_images = sorted(all_images, key=natural_sort_key)
-
-                self._book_info_cache = {
-                    "book_id": self.book_id,
-                    "title": book.get("title", ""),
-                    "total_pages": total_pages,
-                    "chapters": chapters,
-                    "cover": book.get("cover", ""),
-                    "all_images": all_images
-                }
-
-                logger.info(f"书籍 {self.book_id} 共有 {total_pages} 页")
-            else:
-                self._book_info_cache = {
-                    "book_id": self.book_id,
-                    "total_pages": 0,
-                    "all_images": []
-                }
-
+            self._book_info_cache = build_book_pages_manifest(self.book_id)
+            logger.info(f"书籍 {self.book_id} 共有 {self._book_info_cache.get('total_pages', 0)} 页")
             return self._book_info_cache
         except Exception as e:
             logger.error(f"获取书籍信息失败: {e}")
@@ -160,32 +69,22 @@ class MangaAnalyzer:
         """
         获取原图（非翻译图）用于分析
 
-        从书架系统获取原图路径
+        基于统一页面清单按页码获取原图路径。
         """
         try:
-            from src.core import bookshelf_manager
+            book_info = await self.get_book_info()
+            all_images = book_info.get("all_images", [])
 
-            # 获取书籍信息
-            book = bookshelf_manager.get_book(self.book_id)
-            if not book:
-                raise ValueError(f"未找到书籍: {self.book_id}")
+            if page_num <= 0 or page_num > len(all_images):
+                raise ValueError(f"页面越界: 第{page_num}页 (总页数: {len(all_images)})")
 
-            # 查找包含该页面的章节
-            chapters = book.get("chapters", [])
-            for chapter in chapters:
-                chapter_detail = bookshelf_manager.get_chapter(self.book_id, chapter.get("id"))
-                if not chapter_detail:
-                    continue
+            image_info = all_images[page_num - 1]
+            image_path = image_info.get("path")
+            if not image_path or not os.path.exists(image_path):
+                raise ValueError(f"未找到页面图片文件: 第{page_num}页")
 
-                images = chapter_detail.get("images", [])
-                for img in images:
-                    if img.get("index") == page_num or img.get("page_num") == page_num:
-                        image_path = img.get("original_path") or img.get("path")
-                        if image_path and os.path.exists(image_path):
-                            with open(image_path, "rb") as f:
-                                return f.read()
-
-            raise ValueError(f"未找到页面图片: 第{page_num}页")
+            with open(image_path, "rb") as image_file:
+                return image_file.read()
         except Exception as e:
             logger.error(f"获取原图失败: 第{page_num}页 - {e}")
             raise
@@ -329,7 +228,8 @@ class MangaAnalyzer:
     async def analyze_chapter_with_segments(
         self,
         chapter_id: str,
-        progress_callback=None
+        progress_callback=None,
+        force: bool = False
     ) -> Dict:
         """使用动态层级模式分析章节"""
         batch_settings = self.config.analysis.batch
@@ -392,7 +292,12 @@ class MangaAnalyzer:
                 valid_results = [r for r in batch_results if not r.get("parse_error")]
                 previous_results = valid_results[-context_batch_count:]
 
-            batch_result = await self.analyze_batch(page_nums, image_infos=image_infos, previous_results=previous_results)
+            batch_result = await self.analyze_batch(
+                page_nums,
+                image_infos=image_infos,
+                force=force,
+                previous_results=previous_results
+            )
             batch_results.append(batch_result)
             batch_idx += 1
 
@@ -428,7 +333,7 @@ class MangaAnalyzer:
                         message=f"生成{layer_name} {segment_id}"
                     )
 
-                segment_result = await self.generate_segment_summary(segment_id, group_items)
+                segment_result = await self.generate_segment_summary(segment_id, group_items, force=force)
                 segment_results.append(segment_result)
 
             current_results = segment_results
