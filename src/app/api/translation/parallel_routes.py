@@ -17,7 +17,10 @@ import numpy as np
 from PIL import Image
 from flask import Blueprint, request, jsonify
 
-from src.core.detection import get_bubble_detection_result_with_auto_directions
+from src.core.detection import (
+    get_bubble_detection_result_with_auto_directions,
+    detect_textlines_with_paddle_det
+)
 from src.core.ocr import recognize_text_in_bubbles
 from src.core.translation import translate_text_list
 from src.core.inpainting import inpaint_bubbles
@@ -73,6 +76,13 @@ def decode_mask_from_base64(base64_str: str) -> np.ndarray:
     if image.mode != 'L':
         image = image.convert('L')
     return np.array(image)
+
+
+def _has_usable_textlines(textlines_per_bubble, expected_count: int) -> bool:
+    """检查 textlines_per_bubble 是否可用于颜色提取"""
+    if not isinstance(textlines_per_bubble, list) or len(textlines_per_bubble) != expected_count:
+        return False
+    return any(isinstance(lines, list) and len(lines) > 0 for lines in textlines_per_bubble)
 
 
 @parallel_bp.route('/parallel/detect', methods=['POST'])
@@ -226,6 +236,28 @@ def parallel_color():
         
         # 转换为PIL图像
         img_pil = Image.fromarray(img)
+
+        if not _has_usable_textlines(textlines_per_bubble, len(bubble_coords)):
+            logger.info("颜色提取未收到有效文本行，尝试使用 Paddle det 补充文本行...")
+            generated_textlines = []
+            for coords in bubble_coords:
+                try:
+                    if not isinstance(coords, (list, tuple)) or len(coords) < 4:
+                        generated_textlines.append([])
+                        continue
+
+                    x1, y1, x2, y2 = [int(round(float(v))) for v in coords[:4]]
+                    generated_textlines.append(
+                        detect_textlines_with_paddle_det(img_pil, (x1, y1, x2, y2))
+                    )
+                except Exception:
+                    generated_textlines.append([])
+
+            if _has_usable_textlines(generated_textlines, len(bubble_coords)):
+                textlines_per_bubble = generated_textlines
+                logger.info("Paddle det 文本行补充成功，使用精确文本行进行颜色提取")
+            else:
+                logger.info("Paddle det 未补充到文本行，将使用简单裁剪模式提取颜色")
         
         # 使用便捷函数提取颜色（会自动初始化）
         results = extract_bubble_colors(img_pil, bubble_coords, textlines_per_bubble)

@@ -11,6 +11,8 @@ export type WorkflowMode =
   | 'translate-batch'
   | 'hq-batch'
   | 'proofread-batch'
+  | 'embed-current'
+  | 'embed-batch'
   | 'remove-current'
   | 'remove-batch'
   | 'retry-failed'
@@ -78,6 +80,20 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     mode: 'proofread-batch',
     label: 'AI 校对',
     startLabel: '启动 AI 校对',
+    supportsRange: true,
+    isDangerous: false
+  },
+  {
+    mode: 'embed-current',
+    label: '仅嵌字当前图片',
+    startLabel: '启动当前页嵌字',
+    supportsRange: false,
+    isDangerous: false
+  },
+  {
+    mode: 'embed-batch',
+    label: '仅嵌字（批量）',
+    startLabel: '启动批量嵌字',
     supportsRange: true,
     isDangerous: false
   },

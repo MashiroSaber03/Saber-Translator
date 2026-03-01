@@ -7,7 +7,7 @@
 // ============================================================
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'embed'
 
 /** 执行范围 */
 export type ExecutionScope = 'current' | 'all' | 'failed' | 'range'

@@ -3,6 +3,7 @@
  */
 
 import type { WebImportSettings, ExtractResult, DownloadResult, AgentLog, ComicPage, WebImportEngine, GalleryDLSupportResult } from '@/types/webImport'
+import { getLocalWriteHeaders } from './localToken'
 
 const API_BASE = '/api/web-import'
 
@@ -50,11 +51,12 @@ export async function extractImages(
   engine: WebImportEngine = 'auto',
   onPage?: (page: ComicPage) => void  // 新增：每下载一张图片就回调
 ): Promise<void> {
+  const headers = await getLocalWriteHeaders({
+    'Content-Type': 'application/json'
+  })
   const response = await fetch(`${API_BASE}/extract`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ url, config, engine })
   })
 
@@ -130,11 +132,12 @@ export async function downloadImages(
   config: WebImportSettings,
   engine: WebImportEngine = 'ai-agent'
 ): Promise<DownloadResult> {
+  const headers = await getLocalWriteHeaders({
+    'Content-Type': 'application/json'
+  })
   const response = await fetch(`${API_BASE}/download`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ pages, sourceUrl, config, engine })
   })
 
@@ -150,11 +153,12 @@ export async function downloadImages(
  * 测试 Firecrawl 连接
  */
 export async function testFirecrawlConnection(apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  const headers = await getLocalWriteHeaders({
+    'Content-Type': 'application/json'
+  })
   const response = await fetch(`${API_BASE}/test-firecrawl`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ apiKey })
   })
 
@@ -170,11 +174,12 @@ export async function testAgentConnection(
   customBaseUrl: string,
   modelName: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
+  const headers = await getLocalWriteHeaders({
+    'Content-Type': 'application/json'
+  })
   const response = await fetch(`${API_BASE}/test-agent`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ provider, apiKey, customBaseUrl, modelName })
   })
 

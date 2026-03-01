@@ -255,6 +255,9 @@ export interface TranslationSettings {
 
   // LAMA修复禁用自动缩放（True=使用原图尺寸，False=自动缩放到1024px）
   lamaDisableResize: boolean
+
+  // 敏感密钥仅保存在当前会话内（不写入 localStorage / 后端配置文件）
+  sessionOnlySecrets: boolean
 }
 
 /**

@@ -25,6 +25,8 @@ export interface Toast {
   type: ToastType
   /** 是否为HTML内容 */
   isHTML: boolean
+  /** 屏幕阅读器播报模式 */
+  announceMode?: 'polite' | 'assertive'
   /** 自动关闭定时器 */
   timer?: ReturnType<typeof setTimeout>
 }
@@ -87,7 +89,14 @@ const clearToastTimers = (toast: Toast): void => {
 const addToast = (message: string, type: ToastType = 'info', duration: number = 3000): number => {
   const id = ++toastId
   const messageId = `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-  const toast: Toast = { id, messageId, message, type, isHTML: false }
+  const toast: Toast = {
+    id,
+    messageId,
+    message,
+    type,
+    isHTML: false,
+    announceMode: type === 'error' ? 'assertive' : 'polite'
+  }
 
   // 如果设置了持续时间，添加自动关闭定时器
   if (duration > 0) {
@@ -179,7 +188,14 @@ const showGeneralMessage = (
   clearAll()
 
   const id = ++toastId
-  const toast: Toast = { id, messageId: msgId, message, type, isHTML }
+  const toast: Toast = {
+    id,
+    messageId: msgId,
+    message,
+    type,
+    isHTML,
+    announceMode: type === 'error' ? 'assertive' : 'polite'
+  }
 
   // 复刻原版 ui.js 逻辑：添加自动超时安全机制
   // 即使是 duration=0 的无限消息，也在 30 秒后自动消失

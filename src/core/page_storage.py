@@ -26,6 +26,7 @@ import threading
 from typing import Optional, Dict, Any, List
 
 from src.shared.path_helpers import resource_path
+from src.shared.security import validate_relative_path, resolve_under_base, normalize_rel_path
 
 logger = logging.getLogger("PageStorage")
 
@@ -61,7 +62,7 @@ def _is_bookshelf_path(session_path: str) -> bool:
     # 新格式书架路径: bookshelf/{book_id}/chapters/{chapter_id}/session
     # 旧格式书架路径: bookshelf/{book_id}/{chapter_id}
     # 规范化路径分隔符后再检查
-    normalized = session_path.replace("\\", "/")
+    normalized = normalize_rel_path(session_path)
     return normalized.startswith("bookshelf/")
 
 
@@ -71,7 +72,7 @@ def _convert_old_to_new_path(session_path: str) -> str:
     旧格式: bookshelf/{book_id}/{chapter_id}
     新格式: bookshelf/{book_id}/chapters/{chapter_id}/session
     """
-    normalized = session_path.replace("\\", "/")
+    normalized = normalize_rel_path(session_path)
     parts = normalized.split("/")
 
     # 检查是否是旧格式: bookshelf/{book_id}/{chapter_id}（3段且不含 chapters）
@@ -95,19 +96,35 @@ def _get_session_path(session_path: str) -> str:
     - 书架路径（旧格式）: data/bookshelf/{book_id}/{chapter_id}
     - 独立会话路径: data/sessions/{session_path}
     """
-    if _is_bookshelf_path(session_path):
+    ok, normalized_or_error = validate_relative_path(session_path, allow_unicode=False)
+    if not ok:
+        raise ValueError(f"无效会话路径: {normalized_or_error}")
+
+    normalized_path = normalized_or_error
+
+    if _is_bookshelf_path(normalized_path):
         # 尝试转换旧格式到新格式
-        converted_path = _convert_old_to_new_path(session_path)
+        converted_path = _convert_old_to_new_path(normalized_path)
         # 书架路径：直接使用 data/ 作为基础
-        full_path = resource_path(os.path.join("data", converted_path))
+        data_base = resource_path("data")
+        ok_resolve, full_path_or_error = resolve_under_base(data_base, converted_path)
+        if not ok_resolve:
+            raise ValueError(f"无效会话路径: {full_path_or_error}")
+        full_path = full_path_or_error
 
         # 如果转换后的路径不存在，回退到原路径
         if not os.path.isdir(full_path):
-            full_path = resource_path(os.path.join("data", session_path))
+            ok_resolve, full_path_or_error = resolve_under_base(data_base, normalized_path)
+            if not ok_resolve:
+                raise ValueError(f"无效会话路径: {full_path_or_error}")
+            full_path = full_path_or_error
     else:
         # 独立会话：使用 data/sessions/ 作为基础
         base_dir = _get_session_base_dir()
-        full_path = os.path.join(base_dir, session_path)
+        ok_resolve, full_path_or_error = resolve_under_base(base_dir, normalized_path)
+        if not ok_resolve:
+            raise ValueError(f"无效会话路径: {full_path_or_error}")
+        full_path = full_path_or_error
     return full_path
 
 

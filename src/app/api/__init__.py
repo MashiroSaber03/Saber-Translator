@@ -20,6 +20,24 @@ from .web_import_api import web_import_bp  # ✨ 网页漫画导入 API
 
 # 导入并行翻译蓝图
 from .translation.parallel_routes import parallel_bp  # ✨ 并行翻译 API
+from .glossary_api import glossary_bp  # ✨ 术语库 API
+from .quality_api import quality_bp  # ✨ 质量分析 API
+from .compare_api import compare_bp  # ✨ 版本对比 API
+from .jobs_api import jobs_bp  # ✨ 任务中心 API
 
 # 这个列表将在应用初始化时被导入和注册
-all_blueprints = [translate_bp, config_bp, system_bp, session_bp, bookshelf_bp, manga_insight_bp, web_import_bp, parallel_bp, page_storage_bp]
+all_blueprints = [
+    translate_bp,
+    config_bp,
+    system_bp,
+    session_bp,
+    bookshelf_bp,
+    manga_insight_bp,
+    web_import_bp,
+    parallel_bp,
+    page_storage_bp,
+    glossary_bp,
+    quality_bp,
+    compare_bp,
+    jobs_bp,
+]

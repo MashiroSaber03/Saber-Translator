@@ -21,7 +21,8 @@ import {
     getStandardModeConfig,
     getHqModeConfig,
     getProofreadModeConfig,
-    getRemoveTextModeConfig
+    getRemoveTextModeConfig,
+    getEmbedModeConfig
 } from './translation'
 import type { PageRange } from './translation/core/types'
 
@@ -29,7 +30,7 @@ import type { PageRange } from './translation/core/types'
 export type { TranslationProgress, PageRange } from './translation/core/types'
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'embed'
 
 /** 翻译结果 */
 export interface TranslateResult {
@@ -209,9 +210,41 @@ export function useTranslation() {
                 return getProofreadModeConfig(scope, pageRange ? { pageRange } : undefined)
             case 'removeText':
                 return getRemoveTextModeConfig(scope, pageRange ? { pageRange } : undefined)
+            case 'embed':
+                return getEmbedModeConfig(scope, pageRange ? { pageRange } : undefined)
             default:
                 return getStandardModeConfig(scope, pageRange ? { pageRange } : undefined)
         }
+    }
+
+    function isRenderableCoords(coords: number[] | undefined | null): boolean {
+        if (!coords || coords.length < 4) return false
+        const [x1, y1, x2, y2] = coords.map(v => Number(v))
+        if (![x1, y1, x2, y2].every(Number.isFinite)) return false
+        if (x2 <= x1 || y2 <= y1) return false
+        if (x1 === 0 && y1 === 0 && x2 === 100 && y2 === 100) return false
+        return true
+    }
+
+    function hasEmbeddableText(text?: string): boolean {
+        return !!text && text.trim().length > 0
+    }
+
+    function isEmbeddableImage(index: number): boolean {
+        const image = imageStore.images[index]
+        if (!image?.bubbleStates || image.bubbleStates.length === 0) {
+            return false
+        }
+        return image.bubbleStates.some(bs =>
+            isRenderableCoords(bs.coords) &&
+            (hasEmbeddableText(bs.translatedText) || hasEmbeddableText(bs.textboxText))
+        )
+    }
+
+    function getNonEmbeddablePages(pageIndexes: number[]): number[] {
+        return pageIndexes
+            .filter(index => !isEmbeddableImage(index))
+            .map(index => index + 1)
     }
 
     // ============================================================
@@ -286,6 +319,55 @@ export function useTranslation() {
     async function removeTextRange(pageRange: PageRange): Promise<boolean> {
         const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
         const result = await translatePages(pageIndexes, 'removeText')
+        return result.success
+    }
+
+    // ============================================================
+    // 仅嵌字（跳过翻译 API）
+    // ============================================================
+
+    /**
+     * 仅嵌字当前图片（使用已有文本和气泡坐标）
+     */
+    async function embedCurrentImage(): Promise<boolean> {
+        const index = imageStore.currentImageIndex
+        if (!isEmbeddableImage(index)) {
+            toast.error('当前图片缺少可嵌字数据：请先确保有有效气泡坐标，并已导入译文文本')
+            return false
+        }
+        const result = await translatePages([index], 'embed')
+        return result.success
+    }
+
+    /**
+     * 仅嵌字所有图片（要求每张图都有可用气泡坐标和导入文本）
+     */
+    async function embedAllImages(): Promise<boolean> {
+        const pageIndexes = range(0, imageStore.images.length)
+        const invalidPages = getNonEmbeddablePages(pageIndexes)
+        if (invalidPages.length > 0) {
+            const preview = invalidPages.slice(0, 5).join('、')
+            const suffix = invalidPages.length > 5 ? ' 等' : ''
+            toast.error(`以下页缺少可嵌字数据：第 ${preview} 页${suffix}`)
+            return false
+        }
+        const result = await translatePages(pageIndexes, 'embed')
+        return result.success
+    }
+
+    /**
+     * 仅嵌字指定范围图片
+     */
+    async function embedImageRange(pageRange: PageRange): Promise<boolean> {
+        const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
+        const invalidPages = getNonEmbeddablePages(pageIndexes)
+        if (invalidPages.length > 0) {
+            const preview = invalidPages.slice(0, 5).join('、')
+            const suffix = invalidPages.length > 5 ? ' 等' : ''
+            toast.error(`范围内以下页缺少可嵌字数据：第 ${preview} 页${suffix}`)
+            return false
+        }
+        const result = await translatePages(pageIndexes, 'embed')
         return result.success
     }
 
@@ -395,6 +477,11 @@ export function useTranslation() {
         removeTextOnly,
         removeAllTexts,
         removeTextRange,
+
+        // 仅嵌字（跳过翻译 API）
+        embedCurrentImage,
+        embedAllImages,
+        embedImageRange,
 
         // 重新翻译失败图片
         retryFailedImages,

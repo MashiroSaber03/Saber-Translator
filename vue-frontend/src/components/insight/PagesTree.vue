@@ -7,6 +7,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
+import { getLocalWriteHeaders } from '@/api/localToken'
 
 // ============================================================
 // 状态
@@ -145,9 +146,10 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
   if (!confirm('确定要重新分析此章节吗？')) return
   
   try {
+    const headers = await getLocalWriteHeaders()
     const response = await fetch(
       `/api/manga-insight/${insightStore.currentBookId}/reanalyze/chapter/${chapterId}`,
-      { method: 'POST' }
+      { method: 'POST', headers }
     )
     const data = await response.json()
     if (data.success) {

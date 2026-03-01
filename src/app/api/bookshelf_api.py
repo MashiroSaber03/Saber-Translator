@@ -9,10 +9,32 @@ import base64
 import re
 
 from src.core import bookshelf_manager
+from src.shared.security import validate_safe_id
 
 logger = logging.getLogger("BookshelfAPI")
 
 bookshelf_bp = Blueprint('bookshelf', __name__, url_prefix='/api/bookshelf')
+
+
+def _validate_book_id_or_error(book_id: str):
+    if not validate_safe_id(book_id):
+        return jsonify({"success": False, "error": "无效的书籍ID"}), 400
+    return None
+
+
+def _validate_chapter_id_or_error(chapter_id: str):
+    if not validate_safe_id(chapter_id):
+        return jsonify({"success": False, "error": "无效的章节ID"}), 400
+    return None
+
+
+def _validate_id_list_or_error(ids, field_name: str):
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"success": False, "error": f"{field_name} 不能为空"}), 400
+    invalid = [item for item in ids if not validate_safe_id(str(item))]
+    if invalid:
+        return jsonify({"success": False, "error": f"{field_name} 包含非法ID"}), 400
+    return None
 
 
 # ==================== 书籍 API ====================
@@ -68,6 +90,9 @@ def create_book():
 def get_book(book_id):
     """获取书籍详情"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         book = bookshelf_manager.get_book(book_id)
         if book:
             return jsonify({
@@ -85,6 +110,9 @@ def get_book(book_id):
 def update_book(book_id):
     """更新书籍信息"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "请求数据为空"}), 400
@@ -110,6 +138,9 @@ def update_book(book_id):
 def delete_book(book_id):
     """删除书籍"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         if bookshelf_manager.delete_book(book_id):
             return jsonify({"success": True})
         else:
@@ -123,6 +154,9 @@ def delete_book(book_id):
 def get_book_cover(book_id):
     """获取书籍封面图片"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         cover_data = bookshelf_manager.get_cover(book_id)
         if cover_data:
             # 解码Base64并返回图片
@@ -163,6 +197,9 @@ def get_book_cover(book_id):
 def list_chapters(book_id):
     """获取书籍的所有章节"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         chapters = bookshelf_manager.get_chapters(book_id)
         return jsonify({
             "success": True,
@@ -177,6 +214,9 @@ def list_chapters(book_id):
 def create_chapter(book_id):
     """创建新章节"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "请求数据为空"}), 400
@@ -204,6 +244,12 @@ def create_chapter(book_id):
 def get_chapter(book_id, chapter_id):
     """获取章节详情"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(chapter_id)
+        if invalid:
+            return invalid
         chapter = bookshelf_manager.get_chapter(book_id, chapter_id)
         if chapter:
             return jsonify({
@@ -221,6 +267,12 @@ def get_chapter(book_id, chapter_id):
 def update_chapter(book_id, chapter_id):
     """更新章节信息"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(chapter_id)
+        if invalid:
+            return invalid
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "请求数据为空"}), 400
@@ -244,6 +296,12 @@ def update_chapter(book_id, chapter_id):
 def delete_chapter(book_id, chapter_id):
     """删除章节"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(chapter_id)
+        if invalid:
+            return invalid
         if bookshelf_manager.delete_chapter(book_id, chapter_id):
             return jsonify({"success": True})
         else:
@@ -257,11 +315,17 @@ def delete_chapter(book_id, chapter_id):
 def reorder_chapters(book_id):
     """重新排序章节"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
         data = request.get_json()
         if not data or 'chapter_ids' not in data:
             return jsonify({"success": False, "error": "请求数据无效"}), 400
         
         chapter_ids = data.get('chapter_ids', [])
+        invalid = _validate_id_list_or_error(chapter_ids, "chapter_ids")
+        if invalid:
+            return invalid
         
         if bookshelf_manager.reorder_chapters(book_id, chapter_ids):
             return jsonify({"success": True})
@@ -276,6 +340,12 @@ def reorder_chapters(book_id):
 def update_chapter_image_count(book_id, chapter_id):
     """更新章节的图片数量"""
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(chapter_id)
+        if invalid:
+            return invalid
         data = request.get_json()
         if not data or 'count' not in data:
             return jsonify({"success": False, "error": "请求数据无效"}), 400
@@ -309,6 +379,12 @@ def get_chapter_images(book_id, chapter_id):
     return_format = request.args.get('format', 'url')  # 默认返回 URL
     
     try:
+        invalid = _validate_book_id_or_error(book_id)
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(chapter_id)
+        if invalid:
+            return invalid
         # 获取章节的会话路径
         session_path = bookshelf_manager.get_chapter_session_path(book_id, chapter_id)
         if not session_path:
@@ -424,6 +500,12 @@ def save_chapter_session():
         
         if not book_id or not chapter_id:
             return jsonify({"success": False, "error": "缺少书籍或章节ID"}), 400
+        invalid = _validate_book_id_or_error(str(book_id))
+        if invalid:
+            return invalid
+        invalid = _validate_chapter_id_or_error(str(chapter_id))
+        if invalid:
+            return invalid
         
         if not session_data:
             return jsonify({"success": False, "error": "缺少会话数据"}), 400
@@ -544,8 +626,9 @@ def batch_delete_books():
             return jsonify({"success": False, "error": "请求数据无效"}), 400
         
         book_ids = data.get('book_ids', [])
-        if not book_ids:
-            return jsonify({"success": False, "error": "未选择书籍"}), 400
+        invalid = _validate_id_list_or_error(book_ids, "book_ids")
+        if invalid:
+            return invalid
         
         result = bookshelf_manager.delete_books_batch(book_ids)
         return jsonify({
@@ -568,8 +651,9 @@ def batch_add_tags():
         book_ids = data.get('book_ids', [])
         tags = data.get('tags', [])
         
-        if not book_ids:
-            return jsonify({"success": False, "error": "未选择书籍"}), 400
+        invalid = _validate_id_list_or_error(book_ids, "book_ids")
+        if invalid:
+            return invalid
         if not tags:
             return jsonify({"success": False, "error": "未选择标签"}), 400
         
@@ -594,8 +678,9 @@ def batch_remove_tags():
         book_ids = data.get('book_ids', [])
         tags = data.get('tags', [])
         
-        if not book_ids:
-            return jsonify({"success": False, "error": "未选择书籍"}), 400
+        invalid = _validate_id_list_or_error(book_ids, "book_ids")
+        if invalid:
+            return invalid
         if not tags:
             return jsonify({"success": False, "error": "未选择标签"}), 400
         

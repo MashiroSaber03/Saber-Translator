@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { getLocalWriteHeaders } from './localToken'
 
 // ==================== 类型定义 ====================
 
@@ -458,11 +459,12 @@ export async function regeneratePageImage(
  * 后端会自动从 pages.json 加载图片路径
  */
 export async function exportAsImages(bookId: string): Promise<Blob> {
+    const headers = await getLocalWriteHeaders({
+        'Content-Type': 'application/json'
+    })
     const response = await fetch(`/api/manga-insight/${bookId}/continuation/export/images`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({})
     })
 
@@ -479,11 +481,12 @@ export async function exportAsImages(bookId: string): Promise<Blob> {
  * 后端会自动从 pages.json 加载图片路径
  */
 export async function exportAsPdf(bookId: string): Promise<Blob> {
+    const headers = await getLocalWriteHeaders({
+        'Content-Type': 'application/json'
+    })
     const response = await fetch(`/api/manga-insight/${bookId}/continuation/export/pdf`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({})
     })
 

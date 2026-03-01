@@ -20,10 +20,19 @@ from src.core.page_storage import (
     save_translated_page,
     load_session
 )
+from src.shared.security import validate_relative_path
 
 logger = logging.getLogger("PageStorageAPI")
 
 page_storage_bp = Blueprint('page_storage', __name__, url_prefix='/api/sessions')
+
+
+def _validate_session_path_or_error(session_path: str):
+    """统一校验 session_path，避免路径穿越。"""
+    ok, message = validate_relative_path(session_path, allow_unicode=False)
+    if not ok:
+        return jsonify({"success": False, "error": f"无效的会话路径: {message}"}), 400
+    return None
 
 
 # ============================================================
@@ -34,6 +43,9 @@ page_storage_bp = Blueprint('page_storage', __name__, url_prefix='/api/sessions'
 def api_save_session_meta(session_path):
     """保存会话元数据"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = request.get_json()
         result = save_session_meta(session_path, data)
         return jsonify(result)
@@ -46,6 +58,9 @@ def api_save_session_meta(session_path):
 def api_load_session_meta(session_path):
     """加载会话元数据"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = load_session_meta(session_path)
         if data:
             return jsonify({"success": True, "data": data})
@@ -64,6 +79,9 @@ def api_load_session_meta(session_path):
 def api_save_page_image(session_path, page_index, image_type):
     """保存单页图片"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = request.get_json()
         base64_data = data.get("data", "")
         result = save_page_image(session_path, page_index, image_type, base64_data)
@@ -77,6 +95,9 @@ def api_save_page_image(session_path, page_index, image_type):
 def api_load_page_image(session_path, page_index, image_type):
     """加载单页图片"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         image_bytes = load_page_image(session_path, page_index, image_type)
         if image_bytes:
             return send_file(
@@ -99,6 +120,9 @@ def api_load_page_image(session_path, page_index, image_type):
 def api_save_page_meta(session_path, page_index):
     """保存单页元数据"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = request.get_json()
         result = save_page_meta(session_path, page_index, data)
         return jsonify(result)
@@ -111,6 +135,9 @@ def api_save_page_meta(session_path, page_index):
 def api_load_page_meta(session_path, page_index):
     """加载单页元数据"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = load_page_meta(session_path, page_index)
         if data:
             return jsonify({"success": True, "data": data})
@@ -129,6 +156,9 @@ def api_load_page_meta(session_path, page_index):
 def api_presave_all_pages(session_path):
     """预保存所有页面"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = request.get_json()
         images = data.get("images", [])
         ui_settings = data.get("ui_settings", {})
@@ -173,6 +203,9 @@ def api_presave_all_pages(session_path):
 def api_save_translated_page(session_path, page_index):
     """保存翻译完成的页面"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = request.get_json()
         translated_data = data.get("translated")
         clean_data = data.get("clean")
@@ -195,6 +228,9 @@ def api_save_translated_page(session_path, page_index):
 def api_load_session(session_path):
     """加载完整会话"""
     try:
+        invalid_response = _validate_session_path_or_error(session_path)
+        if invalid_response:
+            return invalid_response
         data = load_session(session_path)
         if data:
             return jsonify({"success": True, "data": data})

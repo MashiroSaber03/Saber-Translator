@@ -3,6 +3,7 @@ import hashlib
 import time
 import uuid
 import logging
+from src.shared.http_retry import post_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,13 @@ class YoudaoTranslateInterface:
             }
             
             # 发送请求
-            response = requests.post(self.api_url, params=params)
+            response = post_with_retry(
+                self.api_url,
+                params=params,
+                timeout=(10, 60),
+                max_retries=3,
+                backoff_base=1.0,
+            )
             result = response.json()
             
             # 处理结果

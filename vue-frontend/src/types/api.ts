@@ -336,3 +336,95 @@ export interface InsightTimelineResponse {
   }>
   error?: string
 }
+
+/**
+ * 术语/翻译记忆条目
+ */
+export interface GlossaryEntry {
+  id: string
+  source_text: string
+  target_text: string
+  note?: string
+  entry_type: 'term' | 'memory'
+  scope: 'global' | 'book'
+  book_id?: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 质量问题项
+ */
+export interface QualityIssue {
+  id: string
+  type: string
+  severity: 'high' | 'medium' | 'low' | string
+  page_index: number
+  bubble_index?: number | null
+  message: string
+  original_text?: string
+  translated_text?: string
+  metrics?: Record<string, unknown>
+}
+
+/**
+ * 质量报告
+ */
+export interface QualityReport {
+  session: string
+  generated_at: string
+  issue_count: number
+  summary: {
+    total: number
+    by_type: Record<string, number>
+    by_severity: Record<string, number>
+  }
+  issues: QualityIssue[]
+}
+
+/**
+ * 译文对比运行结果
+ */
+export interface CompareRun {
+  id: string
+  status: string
+  created_at: string
+  session?: string
+  page_index?: number
+  baseline: {
+    id: string
+    name: string
+    text: string
+  }
+  candidates: Array<{
+    id: string
+    name: string
+    text: string
+    similarity: number
+    diff_segments: Array<{
+      op: 'replace' | 'insert' | 'delete' | string
+      base: string
+      candidate: string
+    }>
+    diff_summary: Record<string, number>
+  }>
+}
+
+/**
+ * 任务中心项
+ */
+export interface JobItem {
+  id: string
+  type: string
+  title: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | string
+  created_at: string
+  updated_at: string
+  started_at?: string | null
+  finished_at?: string | null
+  retry_count: number
+  payload?: Record<string, unknown>
+  result?: Record<string, unknown> | null
+  error?: string | null
+}

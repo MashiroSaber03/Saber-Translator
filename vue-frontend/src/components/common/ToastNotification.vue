@@ -1,16 +1,26 @@
 <template>
   <Teleport to="body">
-    <div class="vue-toast-container">
+    <div class="vue-toast-container" role="status" aria-live="polite" aria-atomic="true">
       <TransitionGroup name="toast-slide">
         <div
           v-for="toast in toasts"
           :key="toast.id"
           class="vue-toast-message"
           :class="'vue-toast-' + toast.type"
+          :role="getToastRole(toast)"
+          :aria-live="getToastAriaLive(toast)"
+          aria-atomic="true"
         >
           <span v-if="toast.isHTML" v-html="toast.message"></span>
           <span v-else>{{ toast.message }}</span>
-          <button class="vue-toast-close" @click.stop="removeToast(toast.id)">×</button>
+          <button
+            type="button"
+            class="vue-toast-close"
+            aria-label="关闭通知"
+            @click.stop="removeToast(toast.id)"
+          >
+            ×
+          </button>
         </div>
       </TransitionGroup>
     </div>
@@ -25,6 +35,7 @@
  */
 import { onUnmounted } from 'vue'
 import { toastService } from '@/utils/toast'
+import type { Toast } from '@/utils/toast'
 
 // 使用全局 toast 服务的消息队列
 const toasts = toastService.toasts
@@ -35,6 +46,14 @@ const toasts = toastService.toasts
  */
 const removeToast = (id: number): void => {
   toastService.removeToast(id)
+}
+
+const getToastRole = (toast: Toast): 'alert' | 'status' => {
+  return toast.announceMode === 'assertive' || toast.type === 'error' ? 'alert' : 'status'
+}
+
+const getToastAriaLive = (toast: Toast): 'assertive' | 'polite' => {
+  return toast.announceMode === 'assertive' || toast.type === 'error' ? 'assertive' : 'polite'
 }
 
 // 组件卸载时清除所有定时器

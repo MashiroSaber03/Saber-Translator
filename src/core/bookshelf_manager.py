@@ -12,6 +12,7 @@ import shutil
 import uuid
 from typing import Optional, List, Dict, Any
 from src.shared.path_helpers import resource_path
+from src.shared.security import validate_safe_id
 
 logger = logging.getLogger("BookshelfManager")
 
@@ -33,14 +34,31 @@ def _get_bookshelf_dir() -> str:
     return base_path
 
 
+def _validate_or_raise_id(value: str, field_name: str) -> None:
+    if not validate_safe_id(value):
+        raise ValueError(f"无效的 {field_name}")
+
+
+def _is_path_within(base_dir: str, candidate: str) -> bool:
+    try:
+        real_base = os.path.realpath(base_dir)
+        real_candidate = os.path.realpath(candidate)
+        return os.path.commonpath([real_base, real_candidate]) == real_base
+    except Exception:
+        return False
+
+
 def _get_session_dir_for_book(book_id: str) -> str:
     """获取书籍对应的会话目录路径（新格式：在书架目录下）"""
+    _validate_or_raise_id(book_id, "book_id")
     # 新路径：data/bookshelf/{book_id}/chapters/
     return resource_path(os.path.join("data", BOOKSHELF_DIR_NAME, book_id, "chapters"))
 
 
 def _get_session_dir_for_chapter(book_id: str, chapter_id: str) -> str:
     """获取章节对应的会话目录路径（新格式：在章节目录下的 session 子目录）"""
+    _validate_or_raise_id(book_id, "book_id")
+    _validate_or_raise_id(chapter_id, "chapter_id")
     # 新路径：data/bookshelf/{book_id}/chapters/{chapter_id}/session/
     return resource_path(os.path.join("data", BOOKSHELF_DIR_NAME, book_id, "chapters", chapter_id, "session"))
 
@@ -52,11 +70,14 @@ def _get_books_metadata_path() -> str:
 
 def _get_book_dir(book_id: str) -> str:
     """获取指定书籍的目录路径"""
+    _validate_or_raise_id(book_id, "book_id")
     return os.path.join(_get_bookshelf_dir(), book_id)
 
 
 def _get_chapter_dir(book_id: str, chapter_id: str) -> str:
     """获取指定章节的目录路径"""
+    _validate_or_raise_id(book_id, "book_id")
+    _validate_or_raise_id(chapter_id, "chapter_id")
     return os.path.join(_get_book_dir(book_id), "chapters", chapter_id)
 
 
@@ -420,18 +441,27 @@ def update_book(book_id: str, title: Optional[str] = None,
 
 def delete_book(book_id: str) -> bool:
     """删除书籍及其所有章节"""
-    book_dir = _get_book_dir(book_id)
+    try:
+        book_dir = _get_book_dir(book_id)
+    except ValueError as e:
+        logger.error(f"删除书籍失败: {e}")
+        return False
     
     if not os.path.exists(book_dir):
         logger.warning(f"书籍目录不存在: {book_id}")
         return False
     
     try:
+        bookshelf_root = _get_bookshelf_dir()
+        if not _is_path_within(bookshelf_root, book_dir):
+            logger.error(f"删除书籍失败，目录越界: {book_dir}")
+            return False
+
         shutil.rmtree(book_dir)
         
         # 删除对应的会话文件（图片数据）
         session_dir = _get_session_dir_for_book(book_id)
-        if os.path.exists(session_dir):
+        if os.path.exists(session_dir) and _is_path_within(bookshelf_root, session_dir):
             shutil.rmtree(session_dir)
             logger.info(f"已删除书籍会话目录: {session_dir}")
         
@@ -596,6 +626,10 @@ def update_chapter(book_id: str, chapter_id: str, title: Optional[str] = None) -
 
 def delete_chapter(book_id: str, chapter_id: str) -> bool:
     """删除章节"""
+    if not validate_safe_id(book_id) or not validate_safe_id(chapter_id):
+        logger.error("删除章节失败: 非法 book_id 或 chapter_id")
+        return False
+
     book_meta = _load_book_metadata(book_id)
     if not book_meta:
         return False
@@ -609,6 +643,10 @@ def delete_chapter(book_id: str, chapter_id: str) -> bool:
     chapter_dir = _get_chapter_dir(book_id, chapter_id)
     if os.path.exists(chapter_dir):
         try:
+            bookshelf_root = _get_bookshelf_dir()
+            if not _is_path_within(bookshelf_root, chapter_dir):
+                logger.error(f"删除章节失败，目录越界: {chapter_dir}")
+                return False
             shutil.rmtree(chapter_dir)
         except Exception as e:
             logger.error(f"删除章节目录失败: {e}")
@@ -618,8 +656,10 @@ def delete_chapter(book_id: str, chapter_id: str) -> bool:
     session_dir = _get_session_dir_for_chapter(book_id, chapter_id)
     if os.path.exists(session_dir):
         try:
-            shutil.rmtree(session_dir)
-            logger.info(f"已删除章节会话目录: {session_dir}")
+            bookshelf_root = _get_bookshelf_dir()
+            if _is_path_within(bookshelf_root, session_dir):
+                shutil.rmtree(session_dir)
+                logger.info(f"已删除章节会话目录: {session_dir}")
         except Exception as e:
             logger.warning(f"删除章节会话目录失败（非致命）: {e}")
     
@@ -703,6 +743,8 @@ def get_chapter_session_path(book_id: str, chapter_id: str) -> str:
 
     返回格式用于 page_storage.py 识别书架路径
     """
+    _validate_or_raise_id(book_id, "book_id")
+    _validate_or_raise_id(chapter_id, "chapter_id")
     return os.path.join("bookshelf", book_id, "chapters", chapter_id, "session")
 
 

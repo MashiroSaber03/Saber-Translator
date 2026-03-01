@@ -10,7 +10,7 @@
       </div>
 
       <!-- 右侧：导航链接（使用 slot 允许各 View 自定义内容） -->
-      <div class="header-links">
+      <nav class="header-links" aria-label="主导航">
         <slot name="header-links">
           <!-- 默认内容：通用导航链接 -->
 
@@ -18,6 +18,13 @@
           <router-link v-if="showBackToShelf" to="/" class="back-to-shelf">
             📚 返回书架
           </router-link>
+
+          <div class="workspace-links">
+            <router-link to="/quality" class="workspace-link">质量</router-link>
+            <router-link to="/glossary" class="workspace-link">术语</router-link>
+            <router-link to="/compare" class="workspace-link">对比</router-link>
+            <router-link to="/jobs" class="workspace-link">任务</router-link>
+          </div>
 
           <!-- 保存按钮（仅在书架模式下显示） -->
           <button
@@ -32,9 +39,11 @@
           <!-- 设置按钮 -->
           <button
             v-if="showSettingsButton"
+            type="button"
             class="header-btn settings-btn"
             :class="{ 'highlight-animation': highlightSettings }"
             title="设置"
+            aria-label="打开设置"
             @click="$emit('openSettings')"
           >
             ⚙️
@@ -44,6 +53,7 @@
           <a
             href="http://www.mashirosaber.top"
             target="_blank"
+            rel="noopener noreferrer"
             class="tutorial-link"
             title="使用教程"
           >
@@ -51,14 +61,21 @@
           </a>
 
           <!-- 赞助按钮 -->
-          <a href="#" class="donate-link" title="请作者喝奶茶" @click.prevent="$emit('donate')">
+          <button
+            type="button"
+            class="donate-link"
+            title="请作者喝奶茶"
+            aria-label="赞助项目"
+            @click="$emit('donate')"
+          >
             🍵 赞助
-          </a>
+          </button>
 
           <!-- GitHub 链接 -->
           <a
             href="https://github.com/MashiroSaber03/saber-translator"
             target="_blank"
+            rel="noopener noreferrer"
             class="github-link"
             title="GitHub 仓库"
           >
@@ -66,11 +83,17 @@
             GitHub
           </a>
 
-          <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <button
+            type="button"
+            class="theme-toggle"
+            title="功能开发中"
+            aria-label="主题切换（开发中）"
+            @click="showFeatureNotice"
+          >
             <span class="theme-icon">☀️</span>
           </button>
         </slot>
-      </div>
+      </nav>
     </div>
   </header>
 </template>
@@ -186,6 +209,29 @@ function showFeatureNotice(): void {
   gap: 15px;
 }
 
+.workspace-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-link {
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: rgba(22, 119, 255, 0.08);
+  color: #214f88;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.workspace-link:hover {
+  background: rgba(22, 119, 255, 0.18);
+  transform: translateY(-1px);
+}
+
 .tutorial-link, .github-link {
   display: flex;
   align-items: center;
@@ -218,8 +264,11 @@ function showFeatureNotice(): void {
   background-color: rgb(255, 105, 180, 0.15);
   border-radius: 20px;
   color: #e91e63;
+  border: none;
   text-decoration: none;
+  cursor: pointer;
   transition: all 0.3s ease;
+  font: inherit;
 }
 
 .donate-link:hover {
@@ -431,6 +480,52 @@ function showFeatureNotice(): void {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.app-header--bookshelf .workspace-link {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.app-header--bookshelf .workspace-link:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    max-width: none;
+    width: 100%;
+    padding: 8px 10px;
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .header-links {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .app-name {
+    font-size: 1.1em;
+  }
+
+  .app-header--bookshelf .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .app-header--bookshelf {
+    height: auto;
+    min-height: 56px;
+    padding: 8px 12px;
+  }
 }
 </style>
 
