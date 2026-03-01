@@ -259,6 +259,30 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightStatusRe
 }
 
 /**
+ * 预览分析（无副作用，不写入缓存）
+ * @param bookId 书籍 ID
+ * @param pages 预览页码（最多 5 页）
+ */
+export interface PreviewAnalysisResponse {
+  success: boolean
+  preview?: any
+  persisted?: boolean
+  message?: string
+  error?: string
+}
+
+export async function previewAnalysis(
+  bookId: string,
+  pages?: number[]
+): Promise<PreviewAnalysisResponse> {
+  return apiClient.post<PreviewAnalysisResponse>(
+    `/api/manga-insight/${bookId}/preview`,
+    pages ? { pages } : {},
+    { timeout: 0 }
+  )
+}
+
+/**
  * 重新分析单页
  * @param bookId 书籍 ID
  * @param pageNum 页码

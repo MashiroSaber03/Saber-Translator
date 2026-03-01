@@ -175,6 +175,8 @@ def analysis_status_response(
     analyzed: bool,
     analyzed_pages_count: int,
     total_pages: int,
+    fully_analyzed: Optional[bool] = None,
+    completion_ratio: Optional[float] = None,
     has_overview: bool = False,
     current_task: Optional[Dict] = None,
     **extras
@@ -187,6 +189,8 @@ def analysis_status_response(
         analyzed: 是否已分析
         analyzed_pages_count: 已分析页数
         total_pages: 总页数
+        fully_analyzed: 是否已完整分析
+        completion_ratio: 完成比例（0~1）
         has_overview: 是否有概览
         current_task: 当前任务信息
         **extras: 额外字段
@@ -194,10 +198,17 @@ def analysis_status_response(
     Returns:
         Flask Response 对象
     """
+    if fully_analyzed is None:
+        fully_analyzed = total_pages > 0 and analyzed_pages_count >= total_pages
+    if completion_ratio is None:
+        completion_ratio = (analyzed_pages_count / total_pages) if total_pages > 0 else 0.0
+
     response = {
         "success": True,
         "book_id": book_id,
         "analyzed": analyzed,
+        "fully_analyzed": fully_analyzed,
+        "completion_ratio": completion_ratio,
         "analyzed_pages_count": analyzed_pages_count,
         "analyzed_pages": analyzed_pages_count,  # 别名，保持兼容
         "total_pages": total_pages,

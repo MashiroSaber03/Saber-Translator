@@ -303,6 +303,7 @@ def _generate_markdown_report(data: dict) -> str:
 @manga_insight_bp.route('/<book_id>/regenerate/overview', methods=['POST'])
 def regenerate_overview(book_id: str):
     """重新生成概述"""
+    analyzer = None
     try:
         from src.core.manga_insight.analyzer import MangaAnalyzer
         from src.core.manga_insight.config_utils import load_insight_config
@@ -320,6 +321,12 @@ def regenerate_overview(book_id: str):
     except Exception as e:
         logger.error(f"重新生成概述失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if analyzer:
+            try:
+                run_async(analyzer.close())
+            except Exception as close_error:
+                logger.warning(f"关闭概述分析器失败: {close_error}")
 
 
 # ==================== 多模板概要 API ====================
@@ -383,6 +390,7 @@ def generate_template_overview(book_id: str):
             "cached": false
         }
     """
+    llm_client = None
     try:
         from src.core.manga_insight.features.hierarchical_summary import HierarchicalSummaryGenerator
         from src.core.manga_insight.embedding_client import ChatClient
@@ -411,7 +419,6 @@ def generate_template_overview(book_id: str):
             run_async(storage.delete_template_overview(template_key))
         
         # 初始化 LLM 客户端
-        llm_client = None
         if config.chat_llm.use_same_as_vlm:
             if config.vlm.api_key:
                 llm_client = ChatClient(config.vlm)
@@ -432,15 +439,18 @@ def generate_template_overview(book_id: str):
         
         # skip_cache=True 因为 API 层已经处理了缓存检查
         result = run_async(generator.generate_with_template(template_key, skip_cache=True))
-        
-        # 关闭 LLM 客户端
-        run_async(llm_client.close())
 
         return success_response(data=result, cached=False)
 
     except Exception as e:
         logger.error(f"生成模板概要失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if llm_client:
+            try:
+                run_async(llm_client.close())
+            except Exception as close_error:
+                logger.warning(f"关闭模板概要 LLM 客户端失败: {close_error}")
 
 
 @manga_insight_bp.route('/<book_id>/overview/<template_key>', methods=['GET'])
@@ -504,6 +514,7 @@ def delete_template_overview(book_id: str, template_key: str):
 @manga_insight_bp.route('/<book_id>/rebuild-embeddings', methods=['POST'])
 def rebuild_embeddings(book_id: str):
     """重新构建向量嵌入"""
+    analyzer = None
     try:
         from src.core.manga_insight.analyzer import MangaAnalyzer
         from src.core.manga_insight.config_utils import load_insight_config
@@ -538,6 +549,12 @@ def rebuild_embeddings(book_id: str):
     except Exception as e:
         logger.error(f"重建向量嵌入失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if analyzer:
+            try:
+                run_async(analyzer.close())
+            except Exception as close_error:
+                logger.warning(f"关闭向量重建分析器失败: {close_error}")
 
 
 @manga_insight_bp.route('/<book_id>/regenerate/timeline', methods=['POST'])

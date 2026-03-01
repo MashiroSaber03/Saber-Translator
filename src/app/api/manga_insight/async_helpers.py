@@ -5,6 +5,7 @@ Manga Insight 异步辅助工具
 """
 
 import asyncio
+import threading
 from functools import wraps
 from typing import Coroutine, Any, TypeVar
 
@@ -22,12 +23,28 @@ def run_async(coro: Coroutine[Any, Any, T]) -> T:
         协程返回值
     """
     try:
-        loop = asyncio.get_event_loop()
+        # 当前线程存在“正在运行”的事件循环时，不能直接 run_until_complete。
+        asyncio.get_running_loop()
     except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # 同步上下文：直接创建并运行临时事件循环。
+        return asyncio.run(coro)
 
-    return loop.run_until_complete(coro)
+    result: dict[str, T] = {}
+    error: dict[str, BaseException] = {}
+
+    def _run_in_thread() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - 异常透传
+            error["value"] = exc
+
+    thread = threading.Thread(target=_run_in_thread, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "value" in error:
+        raise error["value"]
+    return result["value"]
 
 
 def async_route(f):

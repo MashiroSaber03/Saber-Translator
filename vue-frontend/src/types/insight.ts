@@ -570,11 +570,17 @@ export interface GeneratedTemplate {
  */
 export interface InsightStatusResponse {
   success: boolean
+  book_id?: string
+  analyzed?: boolean
+  fully_analyzed?: boolean
+  completion_ratio?: number
   status?: TaskStatus
   task?: AnalysisTask
+  current_task?: AnalysisTask
   progress?: AnalysisProgress
   total_pages?: number
   analyzed_pages?: number
+  analyzed_pages_count?: number
   has_overview?: boolean
   has_timeline?: boolean
   error?: string

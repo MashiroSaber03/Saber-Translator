@@ -111,6 +111,7 @@ class MangaAnalyzer:
         images: List[bytes] = None,
         image_infos: List[Dict] = None,
         force: bool = False,
+        persist: bool = True,
         previous_results: List[Dict] = None
     ) -> Dict:
         """批量分析多页（第一层级）- 委托给 BatchAnalyzer"""
@@ -119,6 +120,7 @@ class MangaAnalyzer:
             images=images,
             image_infos=image_infos,
             force=force,
+            persist=persist,
             previous_results=previous_results,
             get_image_func=self._get_image_from_info
         )
@@ -403,3 +405,17 @@ class MangaAnalyzer:
     async def generate_overview(self) -> Dict:
         """生成全书概述（层级式摘要）- 委托给 OverviewGenerator"""
         return await self._overview_generator.generate_overview()
+
+    async def close(self):
+        """关闭外部客户端资源。"""
+        if self.vlm:
+            try:
+                await self.vlm.close()
+            except Exception as e:
+                logger.warning(f"关闭 VLM 客户端失败: {e}")
+
+        if self.embedding:
+            try:
+                await self.embedding.close()
+            except Exception as e:
+                logger.warning(f"关闭 Embedding 客户端失败: {e}")

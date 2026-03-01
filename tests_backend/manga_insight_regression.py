@@ -242,6 +242,983 @@ async def check_qa_close() -> None:
     assert qa.reranker.closed is True, "reranker 应被关闭"
 
 
+def _count_insight_cache_files(base_path: str) -> int:
+    total = 0
+    for folder in ("pages", "batches", "segments", "chapters"):
+        folder_path = os.path.join(base_path, folder)
+        if not os.path.exists(folder_path):
+            continue
+        for name in os.listdir(folder_path):
+            if name.endswith(".json"):
+                total += 1
+    return total
+
+
+async def check_reanalyze_sparse_pages_are_contiguous() -> None:
+    """检查非连续页重分析会按连续段分批，不出现跨洞范围文件。"""
+    try:
+        from src.core.manga_insight.task_executor import TaskExecutor
+        from src.core.manga_insight.storage import AnalysisStorage, get_insight_storage_path
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    book_id = f"regression_sparse_{uuid.uuid4().hex[:8]}"
+    storage = AnalysisStorage(book_id)
+
+    class _FakeAnalyzer:
+        def __init__(self):
+            self.storage = storage
+            self.config = types.SimpleNamespace(
+                analysis=types.SimpleNamespace(
+                    batch=types.SimpleNamespace(pages_per_batch=3)
+                )
+            )
+            self._book_info = {
+                "all_images": [{"path": f"p{i}.png"} for i in range(1, 8)]
+            }
+
+        async def get_book_info(self):
+            return self._book_info
+
+        async def analyze_batch(self, page_nums, image_infos=None, force=False, **_kwargs):
+            start_page = min(page_nums)
+            end_page = max(page_nums)
+            await storage.save_batch_analysis(start_page, end_page, {
+                "pages": [{"page_number": p} for p in page_nums]
+            })
+            for page_num in page_nums:
+                await storage.save_page_analysis(page_num, {"page_number": page_num})
+            return {"page_range": {"start": start_page, "end": end_page}}
+
+        async def build_embeddings(self):
+            return {"success": True}
+
+        async def generate_overview(self):
+            return {"summary": "ok"}
+
+    def _always_continue(_task_id: str) -> bool:
+        return True
+
+    def _ignore_progress(_task_id: str, _progress: dict) -> None:
+        return None
+
+    task = AnalysisTask(
+        book_id=book_id,
+        task_type=TaskType.REANALYZE,
+        target_pages=[1, 2, 4, 5]
+    )
+
+    executor = TaskExecutor(
+        check_pause_cancel_func=_always_continue,
+        notify_progress_func=_ignore_progress
+    )
+
+    try:
+        await executor.execute_reanalysis(task, _FakeAnalyzer())
+        batches = await storage.list_batches()
+        batch_ranges = [(b["start_page"], b["end_page"]) for b in batches]
+
+        assert (1, 4) not in batch_ranges, "不应出现跨洞范围批次 1-4"
+        assert batch_ranges == [(1, 2), (4, 5)], f"批次范围应为连续段，实际: {batch_ranges}"
+    finally:
+        shutil.rmtree(get_insight_storage_path(book_id), ignore_errors=True)
+
+
+async def check_full_mode_forces_reanalyze() -> None:
+    """检查 mode=full 时会强制 force_reanalyze=True。"""
+    try:
+        from flask import Flask
+        from src.app.api.manga_insight import analysis_routes
+        from src.core.manga_insight.task_models import AnalysisTask
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    app = Flask(__name__)
+    captured = {}
+
+    class _DummyTaskManager:
+        async def create_task(self, **kwargs):
+            captured.update(kwargs)
+            return AnalysisTask(
+                book_id=kwargs["book_id"],
+                task_type=kwargs["task_type"],
+                force_reanalyze=kwargs.get("force_reanalyze", False),
+            )
+
+        async def start_task(self, task_id):
+            return types.SimpleNamespace(
+                success=True,
+                task_id=task_id,
+                reason="ok",
+                error_code=None,
+                status_code=200,
+                running_task_id=None
+            )
+
+    old_manifest = analysis_routes.build_book_pages_manifest
+    old_get_task_manager = analysis_routes.get_task_manager
+    try:
+        analysis_routes.build_book_pages_manifest = lambda _book_id: {
+            "total_pages": 12,
+            "chapters": []
+        }
+        analysis_routes.get_task_manager = lambda: _DummyTaskManager()
+
+        with app.test_request_context(json={"mode": "full", "force": False}):
+            response = analysis_routes.start_analysis("book_force_full")
+            payload = response.get_json()
+            assert payload.get("success") is True, "启动 full 模式应成功"
+            assert captured.get("force_reanalyze") is True, "full 模式必须强制重跑"
+    finally:
+        analysis_routes.build_book_pages_manifest = old_manifest
+        analysis_routes.get_task_manager = old_get_task_manager
+
+
+async def check_status_ignores_completed_latest_task() -> None:
+    """检查状态接口不会把已完成 latest_task 当作 current_task 返回。"""
+    try:
+        from flask import Flask
+        from src.app.api.manga_insight import analysis_routes
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    app = Flask(__name__)
+
+    class _DummyTaskManager:
+        async def get_latest_book_task(self, _book_id):
+            return {
+                "task_id": "task_done",
+                "status": "completed",
+                "progress": {"analyzed_pages": 3, "total_pages": 10},
+            }
+
+    class _DummyStorage:
+        def __init__(self, _book_id):
+            pass
+
+        async def list_pages(self):
+            return [1, 2, 3]
+
+        async def load_overview(self):
+            return {}
+
+    old_manifest = analysis_routes.build_book_pages_manifest
+    old_get_task_manager = analysis_routes.get_task_manager
+    old_storage_cls = analysis_routes.AnalysisStorage
+    try:
+        analysis_routes.build_book_pages_manifest = lambda _book_id: {"total_pages": 10, "chapters": []}
+        analysis_routes.get_task_manager = lambda: _DummyTaskManager()
+        analysis_routes.AnalysisStorage = _DummyStorage
+
+        with app.test_request_context():
+            response = analysis_routes.get_analysis_status("book_status")
+            payload = response.get_json()
+
+        assert payload.get("success") is True, "状态接口应成功"
+        assert payload.get("current_task") is None, "completed latest_task 不应作为 current_task 返回"
+        assert payload.get("fully_analyzed") is False, "3/10 页面时不应判定 fully_analyzed=true"
+    finally:
+        analysis_routes.build_book_pages_manifest = old_manifest
+        analysis_routes.get_task_manager = old_get_task_manager
+        analysis_routes.AnalysisStorage = old_storage_cls
+
+
+async def check_status_includes_failed_latest_task() -> None:
+    """检查状态接口会返回失败中的 latest_task 供前端显示 failed 状态。"""
+    try:
+        from flask import Flask
+        from src.app.api.manga_insight import analysis_routes
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    app = Flask(__name__)
+
+    class _DummyTaskManager:
+        async def get_latest_book_task(self, _book_id):
+            return {
+                "task_id": "task_failed",
+                "status": "failed",
+                "error_message": "mock failed",
+            }
+
+    class _DummyStorage:
+        def __init__(self, _book_id):
+            pass
+
+        async def list_pages(self):
+            return []
+
+        async def load_overview(self):
+            return {}
+
+    old_manifest = analysis_routes.build_book_pages_manifest
+    old_get_task_manager = analysis_routes.get_task_manager
+    old_storage_cls = analysis_routes.AnalysisStorage
+    try:
+        analysis_routes.build_book_pages_manifest = lambda _book_id: {"total_pages": 10, "chapters": []}
+        analysis_routes.get_task_manager = lambda: _DummyTaskManager()
+        analysis_routes.AnalysisStorage = _DummyStorage
+
+        with app.test_request_context():
+            response = analysis_routes.get_analysis_status("book_status_failed")
+            payload = response.get_json()
+
+        assert payload.get("success") is True, "状态接口应成功"
+        assert payload.get("current_task", {}).get("status") == "failed", "failed latest_task 应透出给前端"
+    finally:
+        analysis_routes.build_book_pages_manifest = old_manifest
+        analysis_routes.get_task_manager = old_get_task_manager
+        analysis_routes.AnalysisStorage = old_storage_cls
+
+
+async def check_preview_no_side_effect() -> None:
+    """检查 preview 接口调用前后缓存文件数量不变，且返回 persisted=false。"""
+    try:
+        from flask import Flask
+        from src.app.api.manga_insight import analysis_routes
+        import src.core.manga_insight.analyzer as analyzer_module
+        from src.core.manga_insight.storage import AnalysisStorage, get_insight_storage_path
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    app = Flask(__name__)
+    book_id = f"regression_preview_{uuid.uuid4().hex[:8]}"
+    storage = AnalysisStorage(book_id)
+    old_manifest = analysis_routes.build_book_pages_manifest
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+
+    class _PreviewAnalyzer:
+        def __init__(self, _book_id, _config):
+            self.closed = False
+
+        async def analyze_batch(self, page_nums, force=False, persist=True, **_kwargs):
+            assert persist is False, "preview 必须以 persist=False 调用"
+            return {
+                "page_range": {"start": min(page_nums), "end": max(page_nums)},
+                "pages": [{"page_number": p} for p in page_nums]
+            }
+
+        async def close(self):
+            self.closed = True
+
+    try:
+        # 准备既有缓存，调用 preview 前后应保持不变
+        await storage.save_page_analysis(1, {"page_summary": "existing"})
+        await storage.save_batch_analysis(1, 2, {"batch_summary": "existing"})
+        before_count = _count_insight_cache_files(storage.base_path)
+
+        analysis_routes.build_book_pages_manifest = lambda _book_id: {
+            "total_pages": 10,
+            "chapters": []
+        }
+        analyzer_module.MangaAnalyzer = _PreviewAnalyzer
+
+        with app.test_request_context(json={"pages": [1, 2, 3]}):
+            response = analysis_routes.preview_analysis(book_id)
+            payload = response.get_json()
+            assert payload.get("success") is True, "preview 调用应成功"
+            assert payload.get("persisted") is False, "preview 必须显式返回 persisted=false"
+
+        after_count = _count_insight_cache_files(storage.base_path)
+        assert before_count == after_count, "preview 不应新增或删除分析缓存文件"
+    finally:
+        analysis_routes.build_book_pages_manifest = old_manifest
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+        shutil.rmtree(get_insight_storage_path(book_id), ignore_errors=True)
+
+
+async def check_incremental_snapshot_diff_flow() -> None:
+    """检查增量分析基于快照差异：重跑修改页并清理删除章节缓存。"""
+    try:
+        import src.core.manga_insight.analyzer as analyzer_module
+        from src.core.manga_insight.incremental_analyzer import IncrementalAnalyzer
+        from src.core.manga_insight.change_detector import ContentChange, ChangeType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubStorage:
+        def __init__(self):
+            self.clear_calls = []
+            self.saved_snapshot = None
+
+        async def load_content_snapshot(self):
+            return {"chapters": [{"chapter_id": "ch_keep", "pages": [{"page_num": 1, "hash": "a"}]}]}
+
+        async def clear_cache_for_pages(self, page_nums, chapter_ids=None):
+            self.clear_calls.append((sorted(page_nums), sorted(chapter_ids or [])))
+            return {"pages_deleted": len(page_nums)}
+
+        async def list_pages(self):
+            return [1, 2, 3]
+
+        async def list_batches(self):
+            return []
+
+        async def load_batch_analysis(self, _start_page, _end_page):
+            return None
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _StubDetector:
+        async def build_content_snapshot(self):
+            return {
+                "chapters": [
+                    {"chapter_id": "ch_keep", "pages": [{"page_num": 2, "hash": "changed"}]}
+                ]
+            }
+
+        async def detect_changes(self, _current, _previous):
+            return [
+                ContentChange(ChangeType.MODIFIED, chapter_id="ch_keep", page_numbers=[2]),
+                ContentChange(ChangeType.DELETED, chapter_id="ch_deleted", page_numbers=[3, 4]),
+            ]
+
+    class _StubAnalyzer:
+        instances = []
+
+        def __init__(self, _book_id, _config):
+            self.closed = False
+            self.batch_calls = []
+            _StubAnalyzer.instances.append(self)
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}, {"path": "p2"}, {"path": "p3"}, {"path": "p4"}]}
+
+        async def analyze_batch(self, page_nums, image_infos=None, force=False, previous_results=None, **_kwargs):
+            self.batch_calls.append(list(page_nums))
+            return {"page_range": {"start": min(page_nums), "end": max(page_nums)}}
+
+        async def close(self):
+            self.closed = True
+
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+    analyzer_module.MangaAnalyzer = _StubAnalyzer
+    try:
+        config = types.SimpleNamespace(
+            analysis=types.SimpleNamespace(
+                batch=types.SimpleNamespace(
+                    pages_per_batch=5,
+                    context_batch_count=1
+                )
+            ),
+            embedding=types.SimpleNamespace(api_key="")
+        )
+        incremental = IncrementalAnalyzer("book_incremental", config)
+        incremental.storage = _StubStorage()
+        incremental.change_detector = _StubDetector()
+
+        result = await incremental.analyze_new_content()
+        analyzer_instance = _StubAnalyzer.instances[-1]
+
+        assert result.get("status") == "completed", f"增量分析应完成，实际: {result}"
+        assert analyzer_instance.batch_calls == [[2]], f"仅应重跑修改页，实际: {analyzer_instance.batch_calls}"
+        assert incremental.storage.clear_calls == [
+            ([3, 4], ["ch_deleted"]),
+            ([2], [])
+        ], f"应先清理删除内容，再清理待重跑页面，实际: {incremental.storage.clear_calls}"
+        assert incremental.storage.saved_snapshot is not None, "完成后应保存新快照"
+        assert analyzer_instance.closed is True, "增量分析结束后应关闭 analyzer 客户端"
+    finally:
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+
+
+async def check_incremental_no_snapshot_when_failed_pages() -> None:
+    """检查增量分析存在失败页时不会保存快照。"""
+    try:
+        import src.core.manga_insight.analyzer as analyzer_module
+        from src.core.manga_insight.incremental_analyzer import IncrementalAnalyzer
+        from src.core.manga_insight.change_detector import ContentChange, ChangeType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubStorage:
+        def __init__(self):
+            self.saved_snapshot = None
+
+        async def load_content_snapshot(self):
+            return {"chapters": []}
+
+        async def clear_cache_for_pages(self, page_nums, chapter_ids=None):
+            return {}
+
+        async def list_pages(self):
+            return []
+
+        async def list_batches(self):
+            return []
+
+        async def load_batch_analysis(self, _start_page, _end_page):
+            return None
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _StubDetector:
+        async def build_content_snapshot(self):
+            return {"chapters": [{"chapter_id": "ch_1", "pages": [{"page_num": 2, "hash": "h2"}]}]}
+
+        async def detect_changes(self, _current, _previous):
+            return [ContentChange(ChangeType.MODIFIED, chapter_id="ch_1", page_numbers=[2])]
+
+    class _FailingAnalyzer:
+        instances = []
+
+        def __init__(self, _book_id, _config):
+            self.closed = False
+            _FailingAnalyzer.instances.append(self)
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}, {"path": "p2"}]}
+
+        async def analyze_batch(self, page_nums, image_infos=None, force=False, previous_results=None, **_kwargs):
+            raise RuntimeError("mock analyze failure")
+
+        async def close(self):
+            self.closed = True
+
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+    analyzer_module.MangaAnalyzer = _FailingAnalyzer
+    try:
+        config = types.SimpleNamespace(
+            analysis=types.SimpleNamespace(
+                batch=types.SimpleNamespace(
+                    pages_per_batch=5,
+                    context_batch_count=1
+                )
+            ),
+            embedding=types.SimpleNamespace(api_key="")
+        )
+        incremental = IncrementalAnalyzer("book_incremental_fail", config)
+        incremental.storage = _StubStorage()
+        incremental.change_detector = _StubDetector()
+
+        result = await incremental.analyze_new_content()
+        analyzer_instance = _FailingAnalyzer.instances[-1]
+
+        assert result.get("status") == "completed", f"应返回 completed，实际: {result}"
+        assert result.get("pages_failed") == 1, f"失败页应为 1，实际: {result}"
+        assert result.get("snapshot_saved") is False, "失败页存在时 snapshot_saved 应为 False"
+        assert incremental.storage.saved_snapshot is None, "失败页存在时不应保存快照"
+        assert analyzer_instance.closed is True, "异常后 analyzer 仍应被关闭"
+    finally:
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+
+
+async def check_incremental_parse_error_no_snapshot() -> None:
+    """检查增量分析遇到 parse_error 时视为失败且不保存快照。"""
+    try:
+        import src.core.manga_insight.analyzer as analyzer_module
+        from src.core.manga_insight.incremental_analyzer import IncrementalAnalyzer
+        from src.core.manga_insight.change_detector import ContentChange, ChangeType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubStorage:
+        def __init__(self):
+            self.saved_snapshot = None
+
+        async def load_content_snapshot(self):
+            return {"chapters": []}
+
+        async def clear_cache_for_pages(self, page_nums, chapter_ids=None):
+            return {}
+
+        async def list_pages(self):
+            return []
+
+        async def list_batches(self):
+            return []
+
+        async def load_batch_analysis(self, _start_page, _end_page):
+            return None
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _StubDetector:
+        async def build_content_snapshot(self):
+            return {"chapters": [{"chapter_id": "ch_1", "pages": [{"page_num": 2, "hash": "h2"}]}]}
+
+        async def detect_changes(self, _current, _previous):
+            return [ContentChange(ChangeType.MODIFIED, chapter_id="ch_1", page_numbers=[2])]
+
+    class _ParseErrorAnalyzer:
+        instances = []
+
+        def __init__(self, _book_id, _config):
+            self.closed = False
+            _ParseErrorAnalyzer.instances.append(self)
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}, {"path": "p2"}]}
+
+        async def analyze_batch(self, page_nums, image_infos=None, force=False, previous_results=None, **_kwargs):
+            return {
+                "page_range": {"start": min(page_nums), "end": max(page_nums)},
+                "pages": [{"page_number": p, "parse_error": True} for p in page_nums],
+                "parse_error": True,
+            }
+
+        async def close(self):
+            self.closed = True
+
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+    analyzer_module.MangaAnalyzer = _ParseErrorAnalyzer
+    try:
+        config = types.SimpleNamespace(
+            analysis=types.SimpleNamespace(
+                batch=types.SimpleNamespace(
+                    pages_per_batch=5,
+                    context_batch_count=1
+                )
+            ),
+            embedding=types.SimpleNamespace(api_key="")
+        )
+        incremental = IncrementalAnalyzer("book_incremental_parse_error", config)
+        incremental.storage = _StubStorage()
+        incremental.change_detector = _StubDetector()
+
+        result = await incremental.analyze_new_content()
+        analyzer_instance = _ParseErrorAnalyzer.instances[-1]
+
+        assert result.get("status") == "completed", f"应返回 completed，实际: {result}"
+        assert result.get("pages_failed") == 1, f"parse_error 页应计入失败，实际: {result}"
+        assert result.get("pages_analyzed") == 0, f"parse_error 页不应计入成功，实际: {result}"
+        assert result.get("snapshot_saved") is False, "parse_error 失败存在时 snapshot_saved 应为 False"
+        assert incremental.storage.saved_snapshot is None, "parse_error 失败存在时不应保存快照"
+        assert analyzer_instance.closed is True, "结束后 analyzer 应关闭"
+    finally:
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+
+
+async def check_incremental_cancelled_before_cleanup() -> None:
+    """检查增量分析在取消时不会先清理缓存。"""
+    try:
+        import src.core.manga_insight.analyzer as analyzer_module
+        from src.core.manga_insight.incremental_analyzer import IncrementalAnalyzer
+        from src.core.manga_insight.change_detector import ContentChange, ChangeType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubStorage:
+        def __init__(self):
+            self.clear_called = False
+
+        async def load_content_snapshot(self):
+            return {"chapters": []}
+
+        async def clear_cache_for_pages(self, page_nums, chapter_ids=None):
+            self.clear_called = True
+            return {}
+
+        async def list_pages(self):
+            return []
+
+        async def list_batches(self):
+            return []
+
+        async def load_batch_analysis(self, _start_page, _end_page):
+            return None
+
+        async def save_content_snapshot(self, snapshot):
+            return True
+
+    class _StubDetector:
+        async def build_content_snapshot(self):
+            return {"chapters": [{"chapter_id": "ch_1", "pages": [{"page_num": 1, "hash": "h1"}]}]}
+
+        async def detect_changes(self, _current, _previous):
+            return [ContentChange(ChangeType.MODIFIED, chapter_id="ch_1", page_numbers=[1])]
+
+    class _StubAnalyzer:
+        instances = []
+
+        def __init__(self, _book_id, _config):
+            self.closed = False
+            _StubAnalyzer.instances.append(self)
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}]}
+
+        async def close(self):
+            self.closed = True
+
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+    analyzer_module.MangaAnalyzer = _StubAnalyzer
+    try:
+        config = types.SimpleNamespace(
+            analysis=types.SimpleNamespace(
+                batch=types.SimpleNamespace(
+                    pages_per_batch=5,
+                    context_batch_count=1
+                )
+            ),
+            embedding=types.SimpleNamespace(api_key="")
+        )
+        incremental = IncrementalAnalyzer("book_incremental_cancel", config)
+        incremental.storage = _StubStorage()
+        incremental.change_detector = _StubDetector()
+
+        result = await incremental.analyze_new_content(should_stop=lambda: True)
+        analyzer_instance = _StubAnalyzer.instances[-1]
+
+        assert result.get("status") == "cancelled", f"应返回 cancelled，实际: {result}"
+        assert incremental.storage.clear_called is False, "取消前不应执行缓存清理"
+        assert analyzer_instance.closed is True, "取消后 analyzer 仍应被关闭"
+    finally:
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+
+
+async def check_task_manager_closes_analyzer() -> None:
+    """检查任务执行结束后会调用 analyzer.close()。"""
+    try:
+        import src.core.manga_insight.task_manager as task_manager_module
+        import src.core.manga_insight.analyzer as analyzer_module
+        import src.core.manga_insight.task_executor as task_executor_module
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType, TaskStatus
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubAnalyzer:
+        instances = []
+
+        def __init__(self, _book_id, _config):
+            self.closed = False
+            _StubAnalyzer.instances.append(self)
+
+        async def close(self):
+            self.closed = True
+
+    class _StubExecutor:
+        def __init__(self, check_pause_cancel_func, notify_progress_func):
+            self._check = check_pause_cancel_func
+            self._notify = notify_progress_func
+
+        async def execute(self, task, analyzer):
+            return []
+
+        async def build_timeline_on_complete(self, book_id):
+            return None
+
+    old_load_config = task_manager_module.load_insight_config
+    old_analyzer_cls = analyzer_module.MangaAnalyzer
+    old_executor_cls = task_executor_module.TaskExecutor
+
+    manager = task_manager_module.get_task_manager()
+    manager.tasks.clear()
+    manager.running_tasks.clear()
+    manager.book_tasks.clear()
+    manager.progress_callbacks.clear()
+    manager._pause_events.clear()
+    manager._cancel_flags.clear()
+
+    task = AnalysisTask(book_id="book_close", task_type=TaskType.FULL_BOOK)
+    task.status = TaskStatus.RUNNING
+    manager.tasks[task.task_id] = task
+    manager.running_tasks[task.task_id] = object()
+    manager._cancel_flags[task.task_id] = False
+
+    try:
+        task_manager_module.load_insight_config = lambda: types.SimpleNamespace()
+        analyzer_module.MangaAnalyzer = _StubAnalyzer
+        task_executor_module.TaskExecutor = _StubExecutor
+
+        await manager._execute_task(task)
+        analyzer_instance = _StubAnalyzer.instances[-1]
+
+        assert analyzer_instance.closed is True, "任务结束后 analyzer.close() 必须被调用"
+        assert task.status == TaskStatus.COMPLETED, f"任务应完成，实际状态: {task.status}"
+    finally:
+        task_manager_module.load_insight_config = old_load_config
+        analyzer_module.MangaAnalyzer = old_analyzer_cls
+        task_executor_module.TaskExecutor = old_executor_cls
+
+
+async def check_reanalysis_parse_error_marks_failed_pages() -> None:
+    """检查重分析遇到 parse_error 会计入失败页且不增加成功进度。"""
+    try:
+        from src.core.manga_insight.task_executor import TaskExecutor
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _FakeStorage:
+        async def clear_cache_for_pages(self, page_nums):
+            return {}
+
+    class _FakeAnalyzer:
+        def __init__(self):
+            self.storage = _FakeStorage()
+            self.config = types.SimpleNamespace(
+                analysis=types.SimpleNamespace(
+                    batch=types.SimpleNamespace(pages_per_batch=5)
+                )
+            )
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}, {"path": "p2"}]}
+
+        async def analyze_batch(self, page_nums, image_infos=None, force=False, **_kwargs):
+            return {
+                "page_range": {"start": min(page_nums), "end": max(page_nums)},
+                "pages": [{"page_number": p, "parse_error": True} for p in page_nums],
+                "parse_error": True,
+            }
+
+        async def build_embeddings(self):
+            return {"success": True}
+
+        async def generate_overview(self):
+            return {"summary": "ok"}
+
+    task = AnalysisTask(
+        book_id="book_reanalyze_parse_error",
+        task_type=TaskType.REANALYZE,
+        target_pages=[1, 2]
+    )
+
+    executor = TaskExecutor(
+        check_pause_cancel_func=lambda _task_id: True,
+        notify_progress_func=lambda _task_id, _progress: None
+    )
+    warnings = await executor.execute_reanalysis(task, _FakeAnalyzer())
+
+    assert task.progress.analyzed_pages == 0, "parse_error 批次不应计入成功进度"
+    assert sorted(task.failed_pages) == [1, 2], f"失败页应包含目标页，实际: {task.failed_pages}"
+    assert any("重分析失败" in warning for warning in warnings), f"应包含重分析失败告警，实际: {warnings}"
+
+
+async def check_full_analysis_refreshes_snapshot() -> None:
+    """检查 full 分析完成后会重建并保存 content snapshot。"""
+    try:
+        import src.core.manga_insight.task_executor as task_executor_module
+        import src.core.manga_insight.change_detector as change_detector_module
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _VlmStub:
+        @staticmethod
+        def is_configured():
+            return True
+
+    class _StorageStub:
+        def __init__(self):
+            self.saved_snapshot = None
+
+        async def clear_all(self):
+            return True
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _AnalyzerStub:
+        def __init__(self):
+            self.vlm = _VlmStub()
+            self.storage = _StorageStub()
+            self.config = types.SimpleNamespace(
+                analysis=types.SimpleNamespace(
+                    batch=types.SimpleNamespace(pages_per_batch=5)
+                )
+            )
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}], "chapters": []}
+
+    class _DetectorStub:
+        def __init__(self, _book_id):
+            pass
+
+        async def build_content_snapshot(self):
+            return {"chapters": [{"chapter_id": "ch_1", "pages": [{"page_num": 1, "hash": "h1"}]}]}
+
+    old_load_config = task_executor_module.load_insight_config
+    old_detector_cls = change_detector_module.ContentChangeDetector
+    executor = task_executor_module.TaskExecutor(
+        check_pause_cancel_func=lambda _task_id: True,
+        notify_progress_func=lambda _task_id, _progress: None
+    )
+
+    async def _noop_full_batch(*_args, **_kwargs):
+        return [], False
+
+    task = AnalysisTask(book_id="book_full_snapshot", task_type=TaskType.FULL_BOOK, force_reanalyze=True)
+    analyzer = _AnalyzerStub()
+    old_execute_full_batch = executor._execute_full_book_batch_analysis
+
+    try:
+        task_executor_module.load_insight_config = lambda: types.SimpleNamespace(
+            analysis=types.SimpleNamespace(batch=types.SimpleNamespace(pages_per_batch=5)),
+            vlm=types.SimpleNamespace(force_json=True, use_stream=False),
+        )
+        change_detector_module.ContentChangeDetector = _DetectorStub
+        executor._execute_full_book_batch_analysis = _noop_full_batch
+
+        warnings = await executor.execute_full_book_analysis(task, analyzer)
+
+        assert warnings == [], f"不应产生警告，实际: {warnings}"
+        assert analyzer.storage.saved_snapshot is not None, "full 分析后应保存 content snapshot"
+    finally:
+        task_executor_module.load_insight_config = old_load_config
+        change_detector_module.ContentChangeDetector = old_detector_cls
+        executor._execute_full_book_batch_analysis = old_execute_full_batch
+
+
+async def check_full_analysis_parse_error_batch_skips_snapshot() -> None:
+    """检查 full 分析中出现 parse_error 批次时不会刷新快照。"""
+    try:
+        import src.core.manga_insight.task_executor as task_executor_module
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _VlmStub:
+        @staticmethod
+        def is_configured():
+            return True
+
+    class _StorageStub:
+        def __init__(self):
+            self.saved_snapshot = None
+
+        async def clear_all(self):
+            return True
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _AnalyzerStub:
+        def __init__(self):
+            self.vlm = _VlmStub()
+            self.storage = _StorageStub()
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}], "chapters": []}
+
+        async def build_embeddings(self):
+            return {"success": True}
+
+        async def generate_overview(self):
+            return {"summary": "ok"}
+
+    old_load_config = task_executor_module.load_insight_config
+    executor = task_executor_module.TaskExecutor(
+        check_pause_cancel_func=lambda _task_id: True,
+        notify_progress_func=lambda _task_id, _progress: None
+    )
+    old_execute_batch_layer = executor._execute_batch_layer
+    old_post_processing = executor._post_analysis_processing
+
+    async def _parse_error_batch_layer(*_args, **_kwargs):
+        return [{
+            "page_range": {"start": 1, "end": 1},
+            "pages": [{"page_number": 1, "parse_error": True}],
+            "parse_error": True,
+        }]
+
+    async def _noop_post(*_args, **_kwargs):
+        return []
+
+    task = AnalysisTask(book_id="book_full_parse_error", task_type=TaskType.FULL_BOOK, force_reanalyze=True)
+    analyzer = _AnalyzerStub()
+
+    try:
+        task_executor_module.load_insight_config = lambda: types.SimpleNamespace(
+            analysis=types.SimpleNamespace(
+                batch=types.SimpleNamespace(
+                    pages_per_batch=5,
+                    context_batch_count=1,
+                    get_layers=lambda: [{"name": "批量分析", "units_per_group": 5, "align_to_chapter": False}]
+                )
+            ),
+            vlm=types.SimpleNamespace(force_json=True, use_stream=False),
+        )
+        executor._execute_batch_layer = _parse_error_batch_layer
+        executor._post_analysis_processing = _noop_post
+
+        warnings = await executor.execute_full_book_analysis(task, analyzer)
+
+        assert analyzer.storage.saved_snapshot is None, "parse_error 批次存在时不应保存 content snapshot"
+        assert any("失败批次" in warning for warning in warnings), f"应包含失败批次告警，实际: {warnings}"
+    finally:
+        task_executor_module.load_insight_config = old_load_config
+        executor._execute_batch_layer = old_execute_batch_layer
+        executor._post_analysis_processing = old_post_processing
+
+
+async def check_full_analysis_skips_snapshot_when_batch_failed() -> None:
+    """检查 full 分析存在失败批次时不会刷新快照。"""
+    try:
+        import src.core.manga_insight.task_executor as task_executor_module
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _VlmStub:
+        @staticmethod
+        def is_configured():
+            return True
+
+    class _StorageStub:
+        def __init__(self):
+            self.saved_snapshot = None
+
+        async def clear_all(self):
+            return True
+
+        async def save_content_snapshot(self, snapshot):
+            self.saved_snapshot = snapshot
+            return True
+
+    class _AnalyzerStub:
+        def __init__(self):
+            self.vlm = _VlmStub()
+            self.storage = _StorageStub()
+            self.config = types.SimpleNamespace(
+                analysis=types.SimpleNamespace(
+                    batch=types.SimpleNamespace(pages_per_batch=5)
+                )
+            )
+
+        async def get_book_info(self):
+            return {"all_images": [{"path": "p1"}], "chapters": []}
+
+    old_load_config = task_executor_module.load_insight_config
+    executor = task_executor_module.TaskExecutor(
+        check_pause_cancel_func=lambda _task_id: True,
+        notify_progress_func=lambda _task_id, _progress: None
+    )
+
+    async def _failed_batch_result(*_args, **_kwargs):
+        return ["全书批量分析存在失败批次: 1/1"], True
+
+    task = AnalysisTask(book_id="book_full_snapshot_fail", task_type=TaskType.FULL_BOOK, force_reanalyze=True)
+    analyzer = _AnalyzerStub()
+    old_execute_full_batch = executor._execute_full_book_batch_analysis
+
+    try:
+        task_executor_module.load_insight_config = lambda: types.SimpleNamespace(
+            analysis=types.SimpleNamespace(batch=types.SimpleNamespace(pages_per_batch=5)),
+            vlm=types.SimpleNamespace(force_json=True, use_stream=False),
+        )
+        executor._execute_full_book_batch_analysis = _failed_batch_result
+
+        warnings = await executor.execute_full_book_analysis(task, analyzer)
+
+        assert any("失败批次" in w for w in warnings), f"应包含失败批次警告，实际: {warnings}"
+        assert analyzer.storage.saved_snapshot is None, "存在失败批次时不应保存 content snapshot"
+    finally:
+        task_executor_module.load_insight_config = old_load_config
+        executor._execute_full_book_batch_analysis = old_execute_full_batch
+
+
 async def main() -> int:
     checks = [
         ("task_start_conflict", check_task_start_conflict),
@@ -249,6 +1226,20 @@ async def main() -> int:
         ("page_validation", check_page_validation),
         ("manifest_resilience", check_manifest_resilience),
         ("qa_close", check_qa_close),
+        ("reanalyze_sparse_pages_are_contiguous", check_reanalyze_sparse_pages_are_contiguous),
+        ("full_mode_forces_reanalyze", check_full_mode_forces_reanalyze),
+        ("status_ignores_completed_latest_task", check_status_ignores_completed_latest_task),
+        ("status_includes_failed_latest_task", check_status_includes_failed_latest_task),
+        ("preview_no_side_effect", check_preview_no_side_effect),
+        ("incremental_snapshot_diff_flow", check_incremental_snapshot_diff_flow),
+        ("incremental_no_snapshot_when_failed_pages", check_incremental_no_snapshot_when_failed_pages),
+        ("incremental_parse_error_no_snapshot", check_incremental_parse_error_no_snapshot),
+        ("incremental_cancelled_before_cleanup", check_incremental_cancelled_before_cleanup),
+        ("task_manager_closes_analyzer", check_task_manager_closes_analyzer),
+        ("reanalysis_parse_error_marks_failed_pages", check_reanalysis_parse_error_marks_failed_pages),
+        ("full_analysis_refreshes_snapshot", check_full_analysis_refreshes_snapshot),
+        ("full_analysis_parse_error_batch_skips_snapshot", check_full_analysis_parse_error_batch_skips_snapshot),
+        ("full_analysis_skips_snapshot_when_batch_failed", check_full_analysis_skips_snapshot_when_batch_failed),
     ]
 
     failed = 0

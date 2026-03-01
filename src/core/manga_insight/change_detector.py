@@ -68,7 +68,11 @@ class ContentChangeDetector:
                 ContentChange(
                     change_type=ChangeType.ADDED,
                     chapter_id=ch.get("chapter_id"),
-                    page_numbers=[p.get("page_num") for p in ch.get("pages", [])]
+                    page_numbers=[
+                        p.get("page_num")
+                        for p in ch.get("pages", [])
+                        if isinstance(p.get("page_num"), int)
+                    ]
                 )
                 for ch in current_content.get("chapters", [])
             ]
@@ -91,27 +95,46 @@ class ContentChangeDetector:
                 changes.append(ContentChange(
                     change_type=ChangeType.ADDED,
                     chapter_id=ch_id,
-                    page_numbers=[p.get("page_num") for p in curr_ch.get("pages", [])]
+                    page_numbers=[
+                        p.get("page_num")
+                        for p in curr_ch.get("pages", [])
+                        if isinstance(p.get("page_num"), int)
+                    ]
                 ))
             else:
                 # 检测页面级变更
-                modified_pages = self._detect_page_changes(
+                page_changes = self._detect_page_changes(
                     curr_ch.get("pages", []),
                     prev_chapters[ch_id].get("pages", [])
                 )
+                modified_pages = page_changes.get("added_or_modified", [])
+                deleted_pages = page_changes.get("deleted", [])
+
                 if modified_pages:
                     changes.append(ContentChange(
                         change_type=ChangeType.MODIFIED,
                         chapter_id=ch_id,
                         page_numbers=modified_pages
                     ))
-        
+                if deleted_pages:
+                    changes.append(ContentChange(
+                        change_type=ChangeType.DELETED,
+                        chapter_id=ch_id,
+                        page_numbers=deleted_pages
+                    ))
+
         # 检测删除
         for ch_id in prev_chapters:
             if ch_id not in curr_chapters:
+                deleted_pages = [
+                    p.get("page_num")
+                    for p in prev_chapters[ch_id].get("pages", [])
+                    if isinstance(p.get("page_num"), int)
+                ]
                 changes.append(ContentChange(
                     change_type=ChangeType.DELETED,
-                    chapter_id=ch_id
+                    chapter_id=ch_id,
+                    page_numbers=deleted_pages
                 ))
         
         return changes
@@ -120,7 +143,7 @@ class ContentChangeDetector:
         self,
         current: List[Dict],
         previous: List[Dict]
-    ) -> List[int]:
+    ) -> Dict[str, List[int]]:
         """
         检测页面级变更（通过哈希对比）
         
@@ -129,11 +152,17 @@ class ContentChangeDetector:
             previous: 之前页面列表
         
         Returns:
-            List[int]: 变更的页码列表
+            Dict[str, List[int]]: 页面变化结果
         """
         prev_hashes = {
             p.get("page_num"): p.get("hash") 
             for p in previous
+            if isinstance(p.get("page_num"), int)
+        }
+        curr_hashes = {
+            p.get("page_num"): p.get("hash")
+            for p in current
+            if isinstance(p.get("page_num"), int)
         }
         
         changed = []
@@ -142,10 +171,20 @@ class ContentChangeDetector:
             page_hash = page.get("hash")
             
             # 新增或修改
+            if not isinstance(page_num, int):
+                continue
             if page_num not in prev_hashes or page_hash != prev_hashes[page_num]:
                 changed.append(page_num)
-        
-        return changed
+
+        deleted = [
+            page_num for page_num in prev_hashes.keys()
+            if page_num not in curr_hashes
+        ]
+
+        return {
+            "added_or_modified": sorted(changed),
+            "deleted": sorted(deleted)
+        }
     
     @staticmethod
     def compute_page_hash(image_data: bytes) -> str:

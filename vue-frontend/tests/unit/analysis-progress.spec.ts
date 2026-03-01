@@ -69,4 +69,76 @@ describe('AnalysisProgress', () => {
     expect(wrapper.emitted('start-polling')).toBeUndefined()
     expect(store.analysisStatus).toBe('idle')
   })
+
+  it('shows full rerun description and sends full mode when incremental is off', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setAnalysisStatus('idle')
+    store.setIncrementalAnalysis(false)
+    store.setBookTotalPages(20)
+    store.setChapters([])
+
+    startAnalysisMock.mockResolvedValue({
+      success: true,
+      task_id: 'task-full',
+    })
+
+    const wrapper = mount(AnalysisProgress, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub"></div>',
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue', 'change'],
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('全量重跑整本书（会清理旧结果）')
+
+    await wrapper.find('.btn-analysis-start').trigger('click')
+    await flushPromises()
+
+    expect(startAnalysisMock).toHaveBeenCalledWith('book-1', expect.objectContaining({ mode: 'full' }))
+  })
+
+  it('allows retry when status is failed', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setAnalysisStatus('failed')
+    store.setIncrementalAnalysis(false)
+    store.setBookTotalPages(20)
+    store.setChapters([])
+
+    startAnalysisMock.mockResolvedValue({
+      success: true,
+      task_id: 'task-retry',
+    })
+
+    const wrapper = mount(AnalysisProgress, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub"></div>',
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue', 'change'],
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('.btn-analysis-start').exists()).toBe(true)
+    expect(wrapper.text()).toContain('重新分析')
+
+    await wrapper.find('.btn-analysis-start').trigger('click')
+    await flushPromises()
+    expect(startAnalysisMock).toHaveBeenCalled()
+  })
 })

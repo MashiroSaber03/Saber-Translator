@@ -99,7 +99,9 @@ const progressText = computed(() => {
 
 /** 是否显示空闲状态按钮组 */
 const showIdleButtons = computed(() => {
-  return insightStore.analysisStatus === 'idle' || insightStore.analysisStatus === 'completed'
+  return insightStore.analysisStatus === 'idle'
+    || insightStore.analysisStatus === 'completed'
+    || insightStore.analysisStatus === 'failed'
 })
 
 /** 是否显示运行中按钮组 */
@@ -114,7 +116,9 @@ const showPausedButtons = computed(() => {
 
 /** 开始按钮文本 */
 const startButtonText = computed(() => {
-  return insightStore.analysisStatus === 'completed' ? '重新分析' : '开始分析'
+  return (insightStore.analysisStatus === 'completed' || insightStore.analysisStatus === 'failed')
+    ? '重新分析'
+    : '开始分析'
 })
 
 /** 是否显示章节选择 */
@@ -140,7 +144,7 @@ const canStartAnalysis = computed(() => {
 const analysisModeDescription = computed(() => {
   switch (analysisMode.value) {
     case 'full':
-      return '分析整本书的所有页面'
+      return '全量重跑整本书（会清理旧结果）'
     case 'chapter':
       return '仅分析选中章节的页面'
     case 'page':

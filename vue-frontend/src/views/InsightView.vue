@@ -22,6 +22,7 @@ import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
+import { resolveAnalysisStatus } from '@/utils/insightStatus'
 
 // ============================================================
 // 路由和状态
@@ -200,31 +201,15 @@ async function loadAnalysisStatus(): Promise<void> {
       if (response.analyzed_pages_count !== undefined) {
         insightStore.setAnalyzedPagesCount(response.analyzed_pages_count)
       }
-      
-      // 根据current_task或analyzed字段判断状态
-      if (response.current_task) {
-        const taskStatus = response.current_task.status
-        if (taskStatus === 'running') {
-          insightStore.setAnalysisStatus('running')
-          if (response.current_task.progress) {
-            insightStore.updateProgress(
-              response.current_task.progress.analyzed_pages || 0,
-              response.current_task.progress.total_pages || 0
-            )
-          }
-        } else if (taskStatus === 'paused') {
-          insightStore.setAnalysisStatus('paused')
-        } else if (taskStatus === 'completed') {
-          insightStore.setAnalysisStatus('completed')
-        } else if (taskStatus === 'failed') {
-          insightStore.setAnalysisStatus('failed')
-        } else {
-          insightStore.setAnalysisStatus('idle')
-        }
-      } else if (response.analyzed) {
-        insightStore.setAnalysisStatus('completed')
-      } else {
-        insightStore.setAnalysisStatus('idle')
+
+      const resolvedStatus = resolveAnalysisStatus(response)
+      insightStore.setAnalysisStatus(resolvedStatus)
+
+      if (resolvedStatus === 'running' && response.current_task?.progress) {
+        insightStore.updateProgress(
+          response.current_task.progress.analyzed_pages || 0,
+          response.current_task.progress.total_pages || 0
+        )
       }
     }
   } catch (error) {

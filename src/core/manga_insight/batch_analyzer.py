@@ -33,6 +33,7 @@ class BatchAnalyzer:
         images: List[bytes] = None,
         image_infos: List[Dict] = None,
         force: bool = False,
+        persist: bool = True,
         previous_results: List[Dict] = None,
         get_image_func=None
     ) -> Dict:
@@ -44,6 +45,7 @@ class BatchAnalyzer:
             images: 图片数据列表
             image_infos: 图片信息列表
             force: 是否强制重新分析
+            persist: 是否持久化分析结果
             previous_results: 前 N 批的分析结果列表，用于上下文连贯
             get_image_func: 获取图片的回调函数
 
@@ -84,18 +86,19 @@ class BatchAnalyzer:
         result["analyzed_at"] = datetime.now().isoformat()
         result["analysis_mode"] = "batch"
 
-        # 保存批量结果
-        await self.storage.save_batch_analysis(start_page, end_page, result)
+        if persist:
+            # 保存批量结果
+            await self.storage.save_batch_analysis(start_page, end_page, result)
 
-        # 同时保存单页结果
-        if result.get("pages"):
-            for page_data in result["pages"]:
-                page_num = page_data.get("page_number")
-                if page_num:
-                    page_data["from_batch"] = True
-                    page_data["batch_range"] = {"start": start_page, "end": end_page}
-                    page_data["analyzed_at"] = result["analyzed_at"]
-                    await self.storage.save_page_analysis(page_num, page_data)
+            # 同时保存单页结果
+            if result.get("pages"):
+                for page_data in result["pages"]:
+                    page_num = page_data.get("page_number")
+                    if page_num:
+                        page_data["from_batch"] = True
+                        page_data["batch_range"] = {"start": start_page, "end": end_page}
+                        page_data["analyzed_at"] = result["analyzed_at"]
+                        await self.storage.save_page_analysis(page_num, page_data)
 
         return result
 

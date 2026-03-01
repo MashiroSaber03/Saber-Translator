@@ -90,15 +90,25 @@ class TaskExecutor:
         use_stream = config.vlm.use_stream
         logger.info(f"批量分析: 每批 {pages_per_batch} 页, 强制JSON: {'是' if force_json else '否'}, 流式请求: {'是' if use_stream else '否'}")
 
-        warnings.extend(await self._execute_full_book_batch_analysis(task, analyzer, book_info))
+        batch_warnings, had_batch_failures = await self._execute_full_book_batch_analysis(task, analyzer, book_info)
+        warnings.extend(batch_warnings)
+
+        if had_batch_failures:
+            warning_msg = "全书分析存在失败批次，本次不更新内容快照（避免后续增量漏检）"
+            logger.warning(warning_msg)
+            warnings.append(warning_msg)
+        elif self._check_pause_and_cancel(task.task_id):
+            snapshot_warning = await self._refresh_content_snapshot(task.book_id, analyzer)
+            if snapshot_warning:
+                warnings.append(snapshot_warning)
         return warnings
 
-    async def _execute_full_book_batch_analysis(self, task: AnalysisTask, analyzer, book_info: dict) -> List[str]:
+    async def _execute_full_book_batch_analysis(self, task: AnalysisTask, analyzer, book_info: dict) -> tuple[List[str], bool]:
         """执行全书动态层级批量分析"""
         warnings: List[str] = []
         config = load_insight_config()
         batch_settings = config.analysis.batch
-        pages_per_batch = batch_settings.pages_per_batch
+        pages_per_batch = max(1, batch_settings.pages_per_batch)
         context_batch_count = batch_settings.context_batch_count
 
         # 获取层级配置
@@ -118,24 +128,45 @@ class TaskExecutor:
         # ========== 第一层: 批量分析 ==========
         first_layer = layers[0] if layers else {"name": "批量分析", "units_per_group": 5, "align_to_chapter": False}
         align_to_chapter = first_layer.get("align_to_chapter", False)
+        expected_batches = self._estimate_expected_batches(
+            all_images=all_images,
+            chapter_page_map=chapter_page_map,
+            pages_per_batch=pages_per_batch,
+            align_to_chapter=align_to_chapter
+        )
 
         task.progress.current_phase = "batch_analysis"
         batch_results = await self._execute_batch_layer(
             task, analyzer, all_images, pages_per_batch, context_batch_count,
             align_to_chapter, chapter_page_map
         )
+        parse_error_batches = [result for result in batch_results if result.get("parse_error")]
+        dropped_batches = max(0, expected_batches - len(batch_results))
+        had_batch_failures = (
+            self._check_pause_and_cancel(task.task_id)
+            and (dropped_batches > 0 or len(parse_error_batches) > 0)
+        )
+        if had_batch_failures:
+            warning_msg = (
+                f"全书批量分析存在失败批次: "
+                f"丢失{dropped_batches}批, 解析失败{len(parse_error_batches)}批, 预期{expected_batches}批"
+            )
+            logger.warning(warning_msg)
+            warnings.append(warning_msg)
 
-        if not batch_results:
+        valid_batch_results = [result for result in batch_results if not result.get("parse_error")]
+
+        if not valid_batch_results:
             logger.warning("批量分析无结果，跳过后续层级")
             warnings.extend(await self._post_analysis_processing(task, analyzer))
-            return warnings
+            return warnings, had_batch_failures
 
         # ========== 中间层: 汇总层级 ==========
-        current_results = batch_results
+        current_results = valid_batch_results
 
         for layer_idx in range(1, len(layers) - 1):
             if not self._check_pause_and_cancel(task.task_id):
-                return warnings
+                return warnings, had_batch_failures
 
             layer = layers[layer_idx]
             layer_name = layer.get("name", f"层级{layer_idx}")
@@ -161,7 +192,28 @@ class TaskExecutor:
             logger.info(f"开始 {last_layer.get('name', '全书总结')}...")
 
         warnings.extend(await self._post_analysis_processing(task, analyzer))
-        return warnings
+        return warnings, had_batch_failures
+
+    @staticmethod
+    def _estimate_expected_batches(
+        all_images: List[Dict],
+        chapter_page_map: Dict[str, List[int]],
+        pages_per_batch: int,
+        align_to_chapter: bool
+    ) -> int:
+        """估算第一层批量分析的预期批次数。"""
+        if align_to_chapter and chapter_page_map:
+            total = 0
+            for page_nums in chapter_page_map.values():
+                if not page_nums:
+                    continue
+                total += (len(page_nums) + pages_per_batch - 1) // pages_per_batch
+            return total
+
+        total_pages = len(all_images)
+        if total_pages <= 0:
+            return 0
+        return (total_pages + pages_per_batch - 1) // pages_per_batch
 
     def _build_chapter_page_map(self, all_images: List[Dict]) -> Dict[str, List[int]]:
         """构建章节到页码的映射"""
@@ -304,7 +356,12 @@ class TaskExecutor:
         pages_analyzed = result.get("pages_analyzed", 0)
         previously_analyzed = result.get("previously_analyzed", 0)
         total_pages = result.get("total_pages", 0)
+        pages_failed = result.get("pages_failed", 0)
         logger.info(f"增量分析完成: 本次分析 {pages_analyzed} 页, 之前已分析 {previously_analyzed} 页, 共 {total_pages} 页")
+        if pages_failed:
+            warning_msg = f"增量分析存在失败页面: {pages_failed} 页（快照未更新，将在下次重试）"
+            logger.warning(warning_msg)
+            warnings.append(warning_msg)
 
         warnings.extend(await self._post_analysis_processing(task, analyzer))
         return warnings
@@ -316,24 +373,36 @@ class TaskExecutor:
         if not pages:
             return warnings
 
-        pages = sorted(pages)
+        pages = sorted({
+            page for page in pages
+            if isinstance(page, int) and not isinstance(page, bool) and page > 0
+        })
+        if not pages:
+            return warnings
+
         task.progress.total_pages = len(pages)
 
         book_info = await analyzer.get_book_info()
         all_images = book_info.get("all_images", [])
         batch_settings = analyzer.config.analysis.batch
-        pages_per_batch = batch_settings.pages_per_batch
+        pages_per_batch = max(1, batch_settings.pages_per_batch)
 
         await analyzer.storage.clear_cache_for_pages(pages)
 
-        batch_idx = 0
-        total_batches = (len(pages) + pages_per_batch - 1) // pages_per_batch
+        contiguous_ranges = self._split_contiguous_ranges(pages)
+        contiguous_batches: List[List[int]] = []
+        for page_range in contiguous_ranges:
+            contiguous_batches.extend(
+                [page_range[i:i + pages_per_batch] for i in range(0, len(page_range), pages_per_batch)]
+            )
 
-        for i in range(0, len(pages), pages_per_batch):
+        total_batches = len(contiguous_batches)
+        analyzed_pages_count = 0
+
+        for batch_idx, batch_pages in enumerate(contiguous_batches):
             if not self._check_pause_and_cancel(task.task_id):
                 return warnings
 
-            batch_pages = pages[i:i + pages_per_batch]
             batch_image_infos = []
 
             for page_num in batch_pages:
@@ -343,23 +412,44 @@ class TaskExecutor:
             task.progress.current_page = batch_pages[0]
 
             try:
-                await analyzer.analyze_batch(
+                result = await analyzer.analyze_batch(
                     page_nums=batch_pages,
                     image_infos=batch_image_infos,
                     force=True
                 )
-                task.progress.analyzed_pages = min(i + pages_per_batch, len(pages))
+                if not result or result.get("parse_error"):
+                    raise RuntimeError("批量结果解析失败")
+                analyzed_pages_count += len(batch_pages)
+                task.progress.analyzed_pages = analyzed_pages_count
                 logger.info(f"完成重新分析批次 {batch_idx + 1}/{total_batches}: 第{batch_pages[0]}-{batch_pages[-1]}页")
             except Exception as e:
                 logger.error(f"重新分析批次失败: 第{batch_pages[0]}-{batch_pages[-1]}页 - {e}")
                 task.failed_pages.extend(batch_pages)
                 warnings.append(f"第{batch_pages[0]}-{batch_pages[-1]}页重分析失败: {e}")
 
-            batch_idx += 1
             self._notify_progress(task.task_id, task.progress.to_dict())
 
         warnings.extend(await self._post_analysis_processing(task, analyzer))
         return warnings
+
+    @staticmethod
+    def _split_contiguous_ranges(page_nums: List[int]) -> List[List[int]]:
+        """将页码按连续段切分。"""
+        if not page_nums:
+            return []
+
+        ranges: List[List[int]] = []
+        current_range: List[int] = [page_nums[0]]
+
+        for page_num in page_nums[1:]:
+            if page_num == current_range[-1] + 1:
+                current_range.append(page_num)
+            else:
+                ranges.append(current_range)
+                current_range = [page_num]
+
+        ranges.append(current_range)
+        return ranges
 
     async def _post_analysis_processing(self, task: AnalysisTask, analyzer) -> List[str]:
         """分析完成后的后续处理（嵌入、概述等）"""
@@ -385,6 +475,26 @@ class TaskExecutor:
             warnings.append(f"概述生成失败: {e}")
 
         return warnings
+
+    async def _refresh_content_snapshot(self, book_id: str, analyzer) -> Optional[str]:
+        """重建并保存内容快照，供后续增量分析使用。"""
+        try:
+            from .change_detector import ContentChangeDetector
+
+            detector = ContentChangeDetector(book_id)
+            snapshot = await detector.build_content_snapshot()
+            saved = await analyzer.storage.save_content_snapshot(snapshot)
+            if not saved:
+                warning = "内容快照保存失败，后续增量分析可能退化为全量扫描"
+                logger.warning(warning)
+                return warning
+
+            logger.info("全书分析后已更新内容快照")
+        except Exception as e:
+            warning = f"内容快照更新失败: {e}"
+            logger.warning(warning)
+            return warning
+        return None
 
     async def build_timeline_on_complete(self, book_id: str) -> Optional[str]:
         """

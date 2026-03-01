@@ -102,6 +102,8 @@ def start_analysis(book_id: str):
         else:
             return error_response(f"无效的分析模式: {mode}", 400)
 
+        force_reanalyze = bool(force) or mode in {"full", "pages"}
+
         # 创建任务
         task = run_async(task_manager.create_task(
             book_id=book_id,
@@ -109,7 +111,7 @@ def start_analysis(book_id: str):
             target_chapters=target_chapters,
             target_pages=target_pages,
             is_incremental=(mode == "incremental"),
-            force_reanalyze=bool(force) or mode == "pages"
+            force_reanalyze=force_reanalyze
         ))
 
         # 启动任务
@@ -228,6 +230,7 @@ def get_analysis_status(book_id: str):
 
         # 获取最新任务
         latest_task = run_async(task_manager.get_latest_book_task(book_id))
+        current_task = latest_task if latest_task and latest_task.get("status") in {"running", "paused", "pending", "failed"} else None
 
         # 获取存储状态
         storage = AnalysisStorage(book_id)
@@ -235,14 +238,19 @@ def get_analysis_status(book_id: str):
         overview = run_async(storage.load_overview())
         manifest = build_book_pages_manifest(book_id)
         total_pages = manifest.get("total_pages", 0)
+        analyzed_pages_count = len(analyzed_pages)
+        fully_analyzed = total_pages > 0 and analyzed_pages_count >= total_pages
+        completion_ratio = analyzed_pages_count / total_pages if total_pages > 0 else 0.0
 
         return analysis_status_response(
             book_id=book_id,
-            analyzed=len(analyzed_pages) > 0,
-            analyzed_pages_count=len(analyzed_pages),
+            analyzed=analyzed_pages_count > 0,
+            analyzed_pages_count=analyzed_pages_count,
             total_pages=total_pages,
             has_overview=bool(overview),
-            current_task=latest_task
+            current_task=current_task,
+            fully_analyzed=fully_analyzed,
+            completion_ratio=completion_ratio
         )
 
     except Exception as e:
@@ -267,6 +275,7 @@ def get_analysis_tasks(book_id: str):
 @manga_insight_bp.route('/<book_id>/preview', methods=['POST'])
 def preview_analysis(book_id: str):
     """预览分析效果（使用批量分析模式）"""
+    analyzer = None
     try:
         manifest = build_book_pages_manifest(book_id)
         total_pages = manifest.get("total_pages", 0)
@@ -289,11 +298,12 @@ def preview_analysis(book_id: str):
         # 使用批量分析
         result = run_async(analyzer.analyze_batch(
             page_nums=pages,
-            force=True
+            force=True,
+            persist=False
         ))
 
         return success_response(
-            data={"preview": result},
+            data={"preview": result, "persisted": False},
             message=f"已预览分析 {len(pages)} 页"
         )
 
@@ -302,3 +312,9 @@ def preview_analysis(book_id: str):
     except Exception as e:
         logger.error(f"预览分析失败: {e}", exc_info=True)
         return error_response(str(e), 500)
+    finally:
+        if analyzer:
+            try:
+                run_async(analyzer.close())
+            except Exception as close_error:
+                logger.warning(f"关闭预览分析器失败: {close_error}")

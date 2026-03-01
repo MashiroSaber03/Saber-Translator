@@ -313,6 +313,7 @@ class AnalysisTaskManager:
 
     async def _execute_task(self, task: AnalysisTask):
         """执行分析任务 - 委托给 TaskExecutor"""
+        analyzer = None
         try:
             logger.info(f"开始执行任务: {task.task_id}")
 
@@ -354,6 +355,11 @@ class AnalysisTaskManager:
             task.error_message = str(e)
             logger.error(f"任务执行失败: {task.task_id} - {e}", exc_info=True)
         finally:
+            if analyzer:
+                try:
+                    await analyzer.close()
+                except Exception as e:
+                    logger.warning(f"关闭任务分析器失败: {task.task_id} - {e}")
             if task.task_id in self.running_tasks:
                 del self.running_tasks[task.task_id]
 
