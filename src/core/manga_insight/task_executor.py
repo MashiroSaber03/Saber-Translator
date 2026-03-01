@@ -352,16 +352,24 @@ class TaskExecutor:
 
         if result.get("status") == "no_changes":
             logger.info(f"增量分析: {result.get('message', '无需分析')}")
-
-        pages_analyzed = result.get("pages_analyzed", 0)
-        previously_analyzed = result.get("previously_analyzed", 0)
-        total_pages = result.get("total_pages", 0)
-        pages_failed = result.get("pages_failed", 0)
-        logger.info(f"增量分析完成: 本次分析 {pages_analyzed} 页, 之前已分析 {previously_analyzed} 页, 共 {total_pages} 页")
-        if pages_failed:
-            warning_msg = f"增量分析存在失败页面: {pages_failed} 页（快照未更新，将在下次重试）"
-            logger.warning(warning_msg)
-            warnings.append(warning_msg)
+            cache_cleanup = result.get("cache_cleanup") or {}
+            had_cleanup = any(
+                isinstance(value, int) and value > 0
+                for value in cache_cleanup.values()
+            )
+            if not had_cleanup:
+                return warnings
+            logger.info("增量分析无重跑页面，但检测到缓存清理，继续执行后处理")
+        else:
+            pages_analyzed = result.get("pages_analyzed", 0)
+            previously_analyzed = result.get("previously_analyzed", 0)
+            total_pages = result.get("total_pages", 0)
+            pages_failed = result.get("pages_failed", 0)
+            logger.info(f"增量分析完成: 本次分析 {pages_analyzed} 页, 之前已分析 {previously_analyzed} 页, 共 {total_pages} 页")
+            if pages_failed:
+                warning_msg = f"增量分析存在失败页面: {pages_failed} 页（快照未更新，将在下次重试）"
+                logger.warning(warning_msg)
+                warnings.append(warning_msg)
 
         warnings.extend(await self._post_analysis_processing(task, analyzer))
         return warnings

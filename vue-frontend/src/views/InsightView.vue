@@ -225,24 +225,30 @@ async function loadAnalysisStatus(): Promise<void> {
 function startStatusPolling(): void {
   stopStatusPolling()
   statusPollingTimer = setInterval(async () => {
+    const statusBeforePolling = insightStore.analysisStatus
     await loadAnalysisStatus()
     
     // 检查分析状态变化
     const status = insightStore.analysisStatus
-    if (status === 'completed' || status === 'failed' || status === 'idle') {
+    const wasActiveTask = statusBeforePolling === 'running' || statusBeforePolling === 'paused'
+    if ((status === 'completed' || status === 'failed' || status === 'idle') && wasActiveTask) {
       // 停止轮询
       stopStatusPolling()
-      
-      // 分析完成后，延迟1秒再刷新数据
-      // 延迟是为了确保后端的汇总任务（概览、时间线生成）完成
+
+      const refreshData = async () => {
+        await loadAnalysisStatus()
+        // 触发面板组件刷新（通过 Store 的 dataRefreshKey）
+        insightStore.triggerDataRefresh()
+      }
+
       if (status === 'completed') {
-        console.log('分析完成，等待1秒后刷新数据...')
-        setTimeout(async () => {
-          console.log('开始刷新概览和时间线数据')
-          await loadAnalysisStatus()
-          // 触发面板组件刷新（通过 Store 的 dataRefreshKey）
-          insightStore.triggerDataRefresh()
+        // completed 时保留延迟，等待后端汇总任务完成
+        setTimeout(() => {
+          void refreshData()
         }, 1000)
+      } else {
+        // idle/failed 终态也要刷新，确保章节/单页任务结束后界面闭环
+        await refreshData()
       }
     }
   }, 3000)

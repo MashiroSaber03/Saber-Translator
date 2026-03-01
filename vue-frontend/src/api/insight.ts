@@ -293,6 +293,17 @@ export async function reanalyzePage(bookId: string, pageNum: number): Promise<Ap
   })
 }
 
+/**
+ * 重新分析章节
+ * @param bookId 书籍 ID
+ * @param chapterId 章节 ID
+ */
+export async function reanalyzeChapter(bookId: string, chapterId: string): Promise<ApiResponse> {
+  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/chapter/${chapterId}`, {}, {
+    timeout: 0  // 移除超时限制，AI分析可能很耗时
+  })
+}
+
 // ==================== 页面数据 API ====================
 
 /**

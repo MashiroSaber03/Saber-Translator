@@ -142,18 +142,20 @@ function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boo
  * @param chapterId - 章节ID
  */
 async function reanalyzeChapter(chapterId: string): Promise<void> {
+  if (!insightStore.currentBookId) return
   if (!confirm('确定要重新分析此章节吗？')) return
   
   try {
-    const response = await fetch(
-      `/api/manga-insight/${insightStore.currentBookId}/reanalyze/chapter/${chapterId}`,
-      { method: 'POST' }
-    )
-    const data = await response.json()
-    if (data.success) {
+    const response = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
+    if (response.success) {
+      const taskId = (response as any).task_id
+      if (taskId) {
+        insightStore.setCurrentTaskId(taskId)
+      }
+      insightStore.setAnalysisStatus('running')
       alert('章节分析已启动')
     } else {
-      alert('启动失败: ' + (data.error || '未知错误'))
+      alert('启动失败: ' + (response.error || '未知错误'))
     }
   } catch (error) {
     console.error('重新分析章节失败:', error)

@@ -653,7 +653,7 @@ class AnalysisStorage:
         for filename in os.listdir(pages_dir):
             if filename.startswith("page_") and filename.endswith(".json"):
                 try:
-                    page_num = int(filename[5:8])
+                    page_num = int(filename[5:-5])
                     pages.append(page_num)
                 except ValueError:
                     pass

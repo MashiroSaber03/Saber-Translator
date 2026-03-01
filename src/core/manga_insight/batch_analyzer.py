@@ -94,7 +94,7 @@ class BatchAnalyzer:
             if result.get("pages"):
                 for page_data in result["pages"]:
                     page_num = page_data.get("page_number")
-                    if page_num:
+                    if page_num and not page_data.get("parse_error"):
                         page_data["from_batch"] = True
                         page_data["batch_range"] = {"start": start_page, "end": end_page}
                         page_data["analyzed_at"] = result["analyzed_at"]

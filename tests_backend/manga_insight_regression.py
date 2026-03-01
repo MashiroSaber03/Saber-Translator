@@ -215,6 +215,167 @@ async def check_manifest_resilience() -> None:
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
+async def check_manifest_sort_respects_chapter_order() -> None:
+    """检查同名文件跨章节时，清单排序仍保持章节连续。"""
+    try:
+        import src.core as core_module
+        import src.shared.path_helpers as path_helpers
+        from src.core.manga_insight.book_pages import build_book_pages_manifest
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    temp_root = tempfile.mkdtemp(prefix="manifest_sort_regression_")
+    book_id = f"book_manifest_sort_{uuid.uuid4().hex[:8]}"
+    old_bookshelf = getattr(core_module, "bookshelf_manager", None)
+    old_resource_path = path_helpers.resource_path
+
+    def _write_page(chapter_id: str, page_idx: int, file_name: str) -> None:
+        image_dir = os.path.join(
+            temp_root, "data", "bookshelf", book_id, "chapters", chapter_id, "session", "images", str(page_idx)
+        )
+        os.makedirs(image_dir, exist_ok=True)
+        with open(os.path.join(image_dir, "original.png"), "wb") as f:
+            f.write(b"fake-image")
+        with open(os.path.join(image_dir, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"fileName": file_name}, f)
+
+    try:
+        for chapter_id in ("ch_1", "ch_2"):
+            session_dir = os.path.join(
+                temp_root, "data", "bookshelf", book_id, "chapters", chapter_id, "session"
+            )
+            os.makedirs(session_dir, exist_ok=True)
+            with open(os.path.join(session_dir, "session_meta.json"), "w", encoding="utf-8") as f:
+                json.dump({"total_pages": 2}, f)
+            _write_page(chapter_id, 0, "image_000.png")
+            _write_page(chapter_id, 1, "image_001.png")
+
+        core_module.bookshelf_manager = types.SimpleNamespace(
+            get_book=lambda query_book_id: {
+                "id": query_book_id,
+                "title": "Manifest Sort Book",
+                "cover": "",
+                "chapters": [{"id": "ch_1"}, {"id": "ch_2"}],
+            } if query_book_id == book_id else None
+        )
+        path_helpers.resource_path = lambda rel: os.path.join(temp_root, rel)
+
+        manifest = build_book_pages_manifest(book_id)
+        chapter_sequence = [item.get("chapter_id") for item in manifest.get("all_images", [])]
+
+        assert chapter_sequence == ["ch_1", "ch_1", "ch_2", "ch_2"], \
+            f"页序应保持章节连续，实际: {chapter_sequence}"
+    finally:
+        if old_bookshelf is not None:
+            core_module.bookshelf_manager = old_bookshelf
+        path_helpers.resource_path = old_resource_path
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+async def check_storage_list_pages_supports_large_page_numbers() -> None:
+    """检查 list_pages 可正确解析 1000+ 页码文件名。"""
+    try:
+        from src.core.manga_insight.storage import AnalysisStorage, get_insight_storage_path
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    book_id = f"regression_large_pages_{uuid.uuid4().hex[:8]}"
+    storage = AnalysisStorage(book_id)
+
+    try:
+        await storage.save_page_analysis(1, {"page_summary": "p1"})
+        await storage.save_page_analysis(1000, {"page_summary": "p1000"})
+        await storage.save_page_analysis(12345, {"page_summary": "p12345"})
+
+        pages = await storage.list_pages()
+        assert pages == [1, 1000, 12345], f"list_pages 应返回完整页码，实际: {pages}"
+    finally:
+        shutil.rmtree(get_insight_storage_path(book_id), ignore_errors=True)
+
+
+async def check_batch_parse_error_pages_not_persisted() -> None:
+    """检查批量结果中的 parse_error 页面不会作为单页分析落盘。"""
+    try:
+        from src.core.manga_insight.batch_analyzer import BatchAnalyzer
+        from src.core.manga_insight.storage import AnalysisStorage, get_insight_storage_path
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubVlm:
+        async def analyze_batch(self, _images, start_page, _context=None):
+            return {
+                "page_range": {"start": start_page, "end": start_page + 1},
+                "pages": [
+                    {"page_number": start_page, "parse_error": True},
+                    {"page_number": start_page + 1, "page_summary": "ok"},
+                ],
+                "batch_summary": "batch",
+                "parse_error": False,
+            }
+
+    book_id = f"regression_parse_error_{uuid.uuid4().hex[:8]}"
+    storage = AnalysisStorage(book_id)
+    analyzer = BatchAnalyzer(book_id, storage, _StubVlm())
+
+    try:
+        await analyzer.analyze_batch(page_nums=[1, 2], images=[b"img1", b"img2"], force=True, persist=True)
+        pages = await storage.list_pages()
+        assert pages == [2], f"parse_error 页面不应计入单页缓存，实际: {pages}"
+    finally:
+        shutil.rmtree(get_insight_storage_path(book_id), ignore_errors=True)
+
+
+async def check_incremental_no_changes_skips_post_processing() -> None:
+    """检查增量 no_changes（无清理）不会触发 embedding/overview 后处理。"""
+    try:
+        import src.core.manga_insight.incremental_analyzer as incremental_module
+        from src.core.manga_insight.task_executor import TaskExecutor
+        from src.core.manga_insight.task_models import AnalysisTask, TaskType
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"MISSING_DEPENDENCY:{exc.name}") from exc
+
+    class _StubIncrementalAnalyzer:
+        def __init__(self, _book_id, _config):
+            pass
+
+        async def analyze_new_content(self, on_progress=None, should_stop=None):
+            if on_progress:
+                on_progress(0, 0)
+            return {
+                "status": "no_changes",
+                "message": "无新增或修改页面，已是最新状态",
+                "cache_cleanup": {},
+            }
+
+    class _StubAnalyzer:
+        pass
+
+    old_incremental_cls = incremental_module.IncrementalAnalyzer
+    incremental_module.IncrementalAnalyzer = _StubIncrementalAnalyzer
+
+    executor = TaskExecutor(
+        check_pause_cancel_func=lambda _task_id: True,
+        notify_progress_func=lambda _task_id, _progress: None
+    )
+    post_calls = {"count": 0}
+    old_post_processing = executor._post_analysis_processing
+
+    async def _tracked_post(*_args, **_kwargs):
+        post_calls["count"] += 1
+        return []
+
+    task = AnalysisTask(book_id="book_incremental_no_changes", task_type=TaskType.INCREMENTAL)
+
+    try:
+        executor._post_analysis_processing = _tracked_post
+        warnings = await executor.execute_incremental_analysis(task, _StubAnalyzer())
+        assert warnings == [], f"no_changes 不应产生告警，实际: {warnings}"
+        assert post_calls["count"] == 0, "no_changes 且无清理时不应触发后处理"
+    finally:
+        incremental_module.IncrementalAnalyzer = old_incremental_cls
+        executor._post_analysis_processing = old_post_processing
+
+
 class _DummyClosable:
     def __init__(self):
         self.closed = False
@@ -1225,6 +1386,10 @@ async def main() -> int:
         ("storage_clear_for_pages", check_storage_clear_for_pages),
         ("page_validation", check_page_validation),
         ("manifest_resilience", check_manifest_resilience),
+        ("manifest_sort_respects_chapter_order", check_manifest_sort_respects_chapter_order),
+        ("storage_list_pages_supports_large_page_numbers", check_storage_list_pages_supports_large_page_numbers),
+        ("batch_parse_error_pages_not_persisted", check_batch_parse_error_pages_not_persisted),
+        ("incremental_no_changes_skips_post_processing", check_incremental_no_changes_skips_post_processing),
         ("qa_close", check_qa_close),
         ("reanalyze_sparse_pages_are_contiguous", check_reanalyze_sparse_pages_are_contiguous),
         ("full_mode_forces_reanalyze", check_full_mode_forces_reanalyze),

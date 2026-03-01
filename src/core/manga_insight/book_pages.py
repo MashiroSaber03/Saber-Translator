@@ -173,7 +173,7 @@ def build_book_pages_manifest(book_id: str) -> Dict[str, Any]:
         def sort_key(item: Dict[str, Any]) -> tuple:
             meta = item.get("meta", {})
             sortable = meta.get("relativePath") or meta.get("fileName") or os.path.basename(item.get("path", ""))
-            return (_natural_sort_parts(sortable), item.get("chapter_order", 0), item.get("index", 0))
+            return (item.get("chapter_order", 0), _natural_sort_parts(sortable), item.get("index", 0))
 
         all_images.sort(key=sort_key)
 
