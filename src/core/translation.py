@@ -549,8 +549,7 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
         )
     
     if has_numeric_prefix and min_index_line != -1:
-        # 只保留从 <|1|> 开始到最大编号行的内容
-        modified_lines = lines[min_index_line:max_index_line + 1]
+        modified_lines = lines[min_index_line:]
         cleaned_text = "\n".join(modified_lines)
     
     # 4. 修复前缀和翻译内容之间的空格问题
