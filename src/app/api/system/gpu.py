@@ -94,7 +94,16 @@ def get_gpu_status():
         JSON: GPU 状态
     """
     try:
+        torch_version = getattr(torch, "__version__", "")
+        torch_cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+        cudnn_version = None
+        try:
+            cudnn_version = torch.backends.cudnn.version()
+        except Exception:
+            cudnn_version = None
+
         cuda_available = torch.cuda.is_available()
+        device_count = torch.cuda.device_count() if cuda_available else 0
         
         if cuda_available:
             device_name = torch.cuda.get_device_name(0)
@@ -126,7 +135,11 @@ def get_gpu_status():
         
         return jsonify({
             'success': True,
+            'torch_version': torch_version,
+            'torch_cuda_version': torch_cuda_version,
+            'cudnn_version': cudnn_version,
             'cuda_available': cuda_available,
+            'device_count': device_count,
             'device_name': device_name,
             'memory_allocated_mb': round(memory_allocated, 1),
             'memory_reserved_mb': round(memory_reserved, 1),

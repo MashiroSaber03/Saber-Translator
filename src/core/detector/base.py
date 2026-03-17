@@ -45,10 +45,38 @@ class BaseTextDetector(ABC):
     @staticmethod
     def _resolve_device(device: str) -> str:
         """解析设备，处理 CUDA 不可用的情况"""
-        import torch
-        if device == 'cuda' and not torch.cuda.is_available():
-            logger.warning("CUDA 不可用，回退到 CPU")
+        import os
+        try:
+            import torch
+        except Exception as e:
+            logger.error(f"无法导入 torch，检测器只能使用 CPU: {e}")
             return 'cpu'
+
+        if device == 'cuda':
+            cuda_available = False
+            try:
+                cuda_available = torch.cuda.is_available()
+            except Exception:
+                cuda_available = False
+
+            if not cuda_available:
+                torch_version = getattr(torch, "__version__", "")
+                torch_cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+                device_count = 0
+                try:
+                    device_count = torch.cuda.device_count()
+                except Exception:
+                    device_count = 0
+
+                msg = (
+                    f"CUDA 不可用，回退到 CPU (torch={torch_version}, "
+                    f"torch.version.cuda={torch_cuda_version}, device_count={device_count})"
+                )
+                if os.environ.get("SABER_DEVICE") == "cuda":
+                    raise RuntimeError(msg)
+                logger.warning(msg)
+                return 'cpu'
+
         return device
     
     @abstractmethod

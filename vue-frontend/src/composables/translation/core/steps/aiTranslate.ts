@@ -77,7 +77,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 imageIndex: t.imageIndex,
                 bubbles: (t.image.bubbleStates || []).map((state, idx) => ({
                     bubbleIndex: idx,
-                    original: state.originalText || '',
+                    original: stripBoxSuffix(state.originalText || ''),
                     translated: settings.useTextboxPrompt
                         ? (state.textboxText || state.translatedText || '')
                         : (state.translatedText || ''),
@@ -95,7 +95,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 imageIndex: t.imageIndex,
                 bubbles: (t.originalTexts || []).map((text, idx) => ({
                     bubbleIndex: idx,
-                    original: text,
+                    original: stripBoxSuffix(text),
                     translated: '',
                     textDirection: (t.autoDirections?.[idx]) || 'vertical'
                 }))
@@ -211,6 +211,11 @@ function extractBase64(dataUrl: string): string {
         return dataUrl.split('base64,')[1] || ''
     }
     return dataUrl
+}
+
+function stripBoxSuffix(text: string): string {
+    if (!text) return text
+    return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
 }
 
 /**

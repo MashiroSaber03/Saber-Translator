@@ -49,6 +49,7 @@ export class RenderPool extends TaskPool {
     const angles = task.detectionResult?.bubbleAngles || []
     const directions = task.detectionResult?.autoDirections || []
     const textboxTexts = task.translateResult?.textboxTexts || []
+    const bubbleProbs = task.detectionResult?.bubbleProbs || []
 
     // 如果没有气泡或没有译文，跳过渲染（消除文字模式会走这里）
     if (coords.length === 0) {
@@ -70,9 +71,9 @@ export class RenderPool extends TaskPool {
       const bubbleCoords = existingBubbles.map(bs => bs.coords)
       const bubbleAngles = existingBubbles.map(bs => bs.rotationAngle || 0)
       const autoDirections = existingBubbles.map(bs => bs.autoTextDirection || 'vertical')
-      const originalTexts = existingBubbles.map(bs => bs.originalText || '')
-      const translatedTexts = existingBubbles.map((bs, idx) => texts[idx] || bs.translatedText || '')
-      const textboxTexts = existingBubbles.map(bs => bs.textboxText || '')
+      const originalTexts = existingBubbles.map(bs => this.stripBoxSuffix(bs.originalText || ''))
+      const translatedTexts = existingBubbles.map((bs, idx) => this.stripBoxSuffix(texts[idx] || bs.translatedText || ''))
+      const textboxTexts = existingBubbles.map(bs => this.stripBoxSuffix(bs.textboxText || ''))
 
       const colors = existingBubbles.map(bs => ({
         textColor: bs.textColor || '#000000',
@@ -98,7 +99,7 @@ export class RenderPool extends TaskPool {
 
       task.renderResult = {
         finalImage: result.finalImage,
-        bubbleStates: result.bubbleStates
+        bubbleStates: this.appendBoxToBubbleStates(result.bubbleStates, bubbleProbs)
       }
       task.status = 'completed'
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
@@ -160,9 +161,9 @@ export class RenderPool extends TaskPool {
       bubbleCoords: coords as any,
       bubbleAngles: angles,
       autoDirections: directions,
-      originalTexts: originals,
-      translatedTexts: texts,
-      textboxTexts: textboxTexts,
+      originalTexts: originals.map(this.stripBoxSuffix),
+      translatedTexts: texts.map(this.stripBoxSuffix),
+      textboxTexts: textboxTexts.map(this.stripBoxSuffix),
       colors: colors,
       savedTextStyles: null,  // 并行翻译不使用savedTextStyles
       currentMode: 'standard'  // 固定为standard模式
@@ -170,7 +171,7 @@ export class RenderPool extends TaskPool {
 
     task.renderResult = {
       finalImage: result.finalImage,
-      bubbleStates: result.bubbleStates
+      bubbleStates: this.appendBoxToBubbleStates(result.bubbleStates, bubbleProbs)
     }
 
     task.status = 'completed'
@@ -263,5 +264,19 @@ export class RenderPool extends TaskPool {
       return dataUrl.split('base64,')[1] || ''
     }
     return dataUrl
+  }
+
+  private stripBoxSuffix(text: string): string {
+    if (!text) return text
+    return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
+  }
+
+  private appendBoxToBubbleStates(states: any[], bubbleProbs: number[]): any[] {
+    if (!bubbleProbs || bubbleProbs.length !== states.length) return states
+    return states.map((s, idx) => ({
+      ...s,
+      originalText: `${s.originalText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`,
+      translatedText: `${s.translatedText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`
+    }))
   }
 }

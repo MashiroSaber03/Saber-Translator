@@ -29,6 +29,7 @@ export interface PipelineTask {
   detectionResult?: {
     bubbleCoords: number[][]  // [[x1, y1, x2, y2], ...]
     bubbleAngles: number[]
+    bubbleProbs: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
     textMask?: string

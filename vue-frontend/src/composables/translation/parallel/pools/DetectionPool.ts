@@ -34,6 +34,7 @@ export class DetectionPool extends TaskPool {
     task.detectionResult = {
       bubbleCoords: result.bubbleCoords,
       bubbleAngles: result.bubbleAngles,
+      bubbleProbs: result.bubbleProbs,
       bubblePolygons: result.bubblePolygons,
       autoDirections: result.autoDirections,
       textMask: result.textMask,

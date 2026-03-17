@@ -11,6 +11,7 @@ export interface OcrInput {
     imageIndex: number
     image: AppImageData
     bubbleCoords: BubbleCoords[]
+    bubbleProbs: number[]
     textlinesPerBubble: any[]
 }
 
@@ -19,7 +20,7 @@ export interface OcrOutput {
 }
 
 export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
-    const { image, bubbleCoords, textlinesPerBubble } = input
+    const { image, bubbleCoords, bubbleProbs, textlinesPerBubble } = input
 
     if (bubbleCoords.length === 0) {
         return { originalTexts: [] }
@@ -37,6 +38,7 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     const response: ParallelOcrResponse = await parallelOcr({
         image: base64,
         bubble_coords: bubbleCoords,
+        bubble_probs: bubbleProbs,
         source_language: ocrSourceLanguage,
         ocr_engine: settings.ocrEngine,
         baidu_api_key: settings.baiduOcr?.apiKey,

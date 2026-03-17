@@ -17,6 +17,7 @@ export interface DetectionInput {
 export interface DetectionOutput {
     bubbleCoords: BubbleCoords[]
     bubbleAngles: number[]
+    bubbleProbs: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
     textMask?: string  // 文字检测掩膜
@@ -42,6 +43,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
                     s.coords.map(c => Math.round(c)) as BubbleCoords
                 ),
                 bubbleAngles: existingBubbles.map(s => s.rotationAngle || 0),
+                bubbleProbs: existingBubbles.map(() => 1.0), // 已有数据默认满置信度
                 bubblePolygons: existingBubbles.map(s => s.polygon || []),
                 autoDirections: existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical'),
                 textMask: image.textMask ?? undefined,  // 从持久化数据中获取掩膜
@@ -53,6 +55,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
             return {
                 bubbleCoords: [],
                 bubbleAngles: [],
+                bubbleProbs: [],
                 bubblePolygons: [],
                 autoDirections: [],
                 textMask: undefined,
@@ -109,11 +112,12 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     }
 
     return {
-        bubbleCoords: (response.bubble_coords || []) as BubbleCoords[],
+        bubbleCoords: response.bubble_coords as any || [],
         bubbleAngles: response.bubble_angles || [],
+        bubbleProbs: response.bubble_probs || [],
         bubblePolygons: response.bubble_polygons || [],
         autoDirections: response.auto_directions || [],
-        textMask: textMaskData,  // 返回生成的精确掩膜
+        textMask: textMaskData,
         textlinesPerBubble: response.textlines_per_bubble || []
     }
 }

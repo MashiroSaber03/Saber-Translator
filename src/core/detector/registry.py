@@ -95,8 +95,12 @@ def get_detector(
             f"支持的类型: {list(_detector_registry.keys())}"
         )
     
+    requested_device = kwargs.get("device")
+    existing = _detector_instances.get(detector_type)
+    device_mismatch = bool(existing and requested_device and getattr(existing, "device", None) != requested_device)
+
     # 检查是否需要创建新实例
-    if force_reload or detector_type not in _detector_instances:
+    if force_reload or detector_type not in _detector_instances or device_mismatch:
         logger.info(f"创建检测器实例: {detector_type}")
         detector_class = _detector_registry[detector_type]
         _detector_instances[detector_type] = detector_class(**kwargs)
@@ -152,7 +156,11 @@ def detect(
     """
     from src.shared import constants
     
-    detector = get_detector(detector_type)
+    import os
+    import torch
+    preferred_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    preferred_device = os.environ.get('SABER_DEVICE', preferred_device)
+    detector = get_detector(detector_type, device=preferred_device)
     
     # 判断是否启用大图检测
     if enable_large_image is None:

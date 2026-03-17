@@ -38,6 +38,7 @@ export class OcrPool extends TaskPool {
       imageIndex: task.imageIndex,
       image: imageData,
       bubbleCoords: detectionResult.bubbleCoords as any,
+      bubbleProbs: detectionResult.bubbleProbs || [],
       textlinesPerBubble: detectionResult.textlinesPerBubble || []
     })
 

@@ -12,6 +12,7 @@ import type { RateLimiter } from '@/utils/rateLimiter'
 export interface TranslateInput {
     imageIndex: number
     originalTexts: string[]
+    bubbleProbs?: number[]
     rateLimiter?: RateLimiter | null
 }
 
@@ -21,7 +22,7 @@ export interface TranslateOutput {
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
-    const { originalTexts, rateLimiter = null } = input
+    const { originalTexts, bubbleProbs = [], rateLimiter = null } = input
 
     if (originalTexts.length === 0) {
         return {
@@ -33,6 +34,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
     const translationMode = settings.translation.translationMode || 'batch'
+    const cleanOriginalTexts = originalTexts.map(stripBoxSuffix)
 
     if (translationMode === 'single') {
         // ==================== 逐气泡翻译模式 ====================
@@ -41,8 +43,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         const translatedTexts: string[] = []
         const textboxTexts: string[] = []
 
-        for (let i = 0; i < originalTexts.length; i++) {
-            const originalText = originalTexts[i]
+        for (let i = 0; i < cleanOriginalTexts.length; i++) {
+            const originalText = cleanOriginalTexts[i]
 
             // 跳过空文本
             if (!originalText || originalText.trim() === '') {
@@ -114,14 +116,17 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         }
 
         console.log(`[翻译] 逐气泡翻译完成，成功 ${translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${originalTexts.length}`)
-        return { translatedTexts, textboxTexts }
+        return {
+            translatedTexts: appendBoxSuffix(translatedTexts, bubbleProbs),
+            textboxTexts
+        }
 
     } else {
         // ==================== 整页批量翻译模式 ====================
         console.log(`[翻译] 使用整页批量翻译模式，共 ${originalTexts.length} 个气泡`)
 
         const response: ParallelTranslateResponse = await parallelTranslate({
-            original_texts: originalTexts,
+            original_texts: cleanOriginalTexts,
             target_language: settings.targetLanguage,
             source_language: settings.sourceLanguage,
             model_provider: settings.translation.provider,
@@ -141,8 +146,18 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         }
 
         return {
-            translatedTexts: response.translated_texts || [],
+            translatedTexts: appendBoxSuffix(response.translated_texts || [], bubbleProbs),
             textboxTexts: response.textbox_texts || []
         }
     }
+}
+
+function stripBoxSuffix(text: string): string {
+    if (!text) return text
+    return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
+}
+
+function appendBoxSuffix(texts: string[], bubbleProbs: number[]): string[] {
+    if (!bubbleProbs || bubbleProbs.length !== texts.length) return texts
+    return texts.map((t, idx) => `${t} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`)
 }

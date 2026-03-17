@@ -97,6 +97,7 @@ interface TaskState {
     // 检测结果
     bubbleCoords: BubbleCoords[]
     bubbleAngles: number[]
+    bubbleProbs: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
     textMask?: string
@@ -227,6 +228,7 @@ export function useSequentialPipeline() {
 
         task.bubbleCoords = result.bubbleCoords
         task.bubbleAngles = result.bubbleAngles
+        task.bubbleProbs = result.bubbleProbs
         task.bubblePolygons = result.bubblePolygons
         task.autoDirections = result.autoDirections
         task.textMask = result.textMask
@@ -241,6 +243,7 @@ export function useSequentialPipeline() {
             imageIndex: task.imageIndex,
             image: task.image,
             bubbleCoords: task.bubbleCoords,
+            bubbleProbs: task.bubbleProbs,
             textlinesPerBubble: task.textlinesPerBubble
         })
 
@@ -262,6 +265,7 @@ export function useSequentialPipeline() {
         const result = await executeTranslate({
             imageIndex: task.imageIndex,
             originalTexts: task.originalTexts,
+            bubbleProbs: task.bubbleProbs,
             rateLimiter: rateLimiter.value
         })
 
@@ -313,22 +317,40 @@ export function useSequentialPipeline() {
     }
 
     async function stepRender(task: TaskState): Promise<void> {
+        const originalTextsForRender = task.originalTexts.map(stripBoxSuffix)
+        const translatedTextsForRender = task.translatedTexts.map(stripBoxSuffix)
+        const textboxTextsForRender = task.textboxTexts.map(stripBoxSuffix)
+
         const result = await executeRender({
             imageIndex: task.imageIndex,
             cleanImage: task.cleanImage!,
             bubbleCoords: task.bubbleCoords,
             bubbleAngles: task.bubbleAngles,
             autoDirections: task.autoDirections,
-            originalTexts: task.originalTexts,
-            translatedTexts: task.translatedTexts,
-            textboxTexts: task.textboxTexts,
+            originalTexts: originalTextsForRender,
+            translatedTexts: translatedTextsForRender,
+            textboxTexts: textboxTextsForRender,
             colors: task.colors,
             savedTextStyles,
             currentMode
         })
 
         task.finalImage = result.finalImage
-        task.bubbleStates = result.bubbleStates
+        task.bubbleStates = appendBoxToBubbleStates(result.bubbleStates, task.bubbleProbs)
+    }
+
+    function stripBoxSuffix(text: string): string {
+        if (!text) return text
+        return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
+    }
+
+    function appendBoxToBubbleStates(states: BubbleState[], bubbleProbs: number[]): BubbleState[] {
+        if (!bubbleProbs || bubbleProbs.length !== states.length) return states
+        return states.map((s, idx) => ({
+            ...s,
+            originalText: `${s.originalText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`,
+            translatedText: `${s.translatedText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`
+        }))
     }
 
     // ============================================================

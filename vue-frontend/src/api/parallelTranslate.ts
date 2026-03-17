@@ -22,6 +22,7 @@ export interface ParallelDetectResponse {
   success: boolean
   bubble_coords?: number[][]
   bubble_angles?: number[]
+  bubble_probs?: number[]
   bubble_polygons?: number[][][]
   auto_directions?: string[]
   raw_mask?: string
@@ -38,6 +39,7 @@ export async function parallelDetect(params: ParallelDetectParams): Promise<Para
 export interface ParallelOcrParams {
   image: string
   bubble_coords: number[][]
+  bubble_probs?: number[]
   source_language?: string
   ocr_engine?: string
   baidu_api_key?: string

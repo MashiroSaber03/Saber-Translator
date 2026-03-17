@@ -6,6 +6,7 @@ Default (DBNet ResNet34) 后端
 
 import os
 import logging
+import time
 from typing import List, Tuple, Optional
 
 import cv2
@@ -58,11 +59,15 @@ class DefaultBackend(BaseTextDetector):
             unclip_ratio: 框扩展比例
         """
         self.model_dir = model_dir or resource_path(DEFAULT_MODEL_DIR)
-        self.detect_size = detect_size
+        env_detect_size = os.environ.get("SABER_DEFAULT_DETECT_SIZE")
+        self.detect_size = int(env_detect_size) if env_detect_size else detect_size
         self.text_threshold = text_threshold
         self.box_threshold = box_threshold
         self.unclip_ratio = unclip_ratio
         self.seg_rep = None
+        self._disable_bilateral = os.environ.get("SABER_DISABLE_BILATERAL") == "1"
+        self._use_fp16 = os.environ.get("SABER_DEFAULT_FP16") == "1"
+        self._profile = os.environ.get("SABER_PROFILE_DETECT") == "1"
         
         super().__init__(device=device, **kwargs)
     
@@ -88,6 +93,8 @@ class DefaultBackend(BaseTextDetector):
         
         if self.device in ('cuda', 'mps'):
             self.model = self.model.to(self.device)
+        if self.device == 'cuda':
+            torch.backends.cudnn.benchmark = True
         
         # 初始化后处理器 (复用 CTD 的 SegDetectorRepresenter)
         self.seg_rep = SegDetectorRepresenter(
@@ -114,7 +121,7 @@ class DefaultBackend(BaseTextDetector):
         from src.interfaces.default.imgproc import resize_aspect_ratio
         
         # 双边滤波降噪 (与原实现一致)
-        image_filtered = cv2.bilateralFilter(image, 17, 80, 80)
+        image_filtered = image if self._disable_bilateral else cv2.bilateralFilter(image, 17, 80, 80)
         
         img_resized, ratio, _, pad_w, pad_h = resize_aspect_ratio(
             image_filtered,
@@ -143,11 +150,13 @@ class DefaultBackend(BaseTextDetector):
             raise RuntimeError("模型未加载")
         
         im_h, im_w = image.shape[:2]
-        
+
+        t0 = time.perf_counter() if self._profile else 0.0
         # 预处理
         img_resized, ratio, pad_w, pad_h = self._preprocess_image(image)
         img_resized_h, img_resized_w = img_resized.shape[:2]
         ratio_h = ratio_w = 1 / ratio
+        t1 = time.perf_counter() if self._profile else 0.0
         
         # 转换为 tensor: (H, W, C) -> (1, C, H, W), 归一化到 [-1, 1]
         batch = einops.rearrange(
@@ -157,9 +166,14 @@ class DefaultBackend(BaseTextDetector):
         batch = torch.from_numpy(batch).to(self.device)
         
         # 模型推理
-        db, mask = self.model(batch)
-        db = db.sigmoid().cpu().numpy()
-        mask = mask.cpu().numpy()
+        if self.device == 'cuda' and self._use_fp16:
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                db, mask = self.model(batch)
+        else:
+            db, mask = self.model(batch)
+        db = db.sigmoid().float().cpu().numpy()
+        mask = mask.float().cpu().numpy()
+        t2 = time.perf_counter() if self._profile else 0.0
         
         # 后处理 - 使用 SegDetectorRepresenter 提取文本框
         # 注意: CTD 版本的 SegDetectorRepresenter 需要显式传入 height/width 参数
@@ -170,6 +184,7 @@ class DefaultBackend(BaseTextDetector):
             width=img_resized_w
         )
         boxes, scores = boxes[0], scores[0]
+        t3 = time.perf_counter() if self._profile else 0.0
         
         # 过滤无效框并调整坐标
         textlines = []
@@ -208,6 +223,17 @@ class DefaultBackend(BaseTextDetector):
         # 缩放到原图尺寸
         raw_mask = cv2.resize(mask_cropped, (im_w, im_h), interpolation=cv2.INTER_LINEAR)
         raw_mask = np.clip(raw_mask * 255, 0, 255).astype(np.uint8)
+        t4 = time.perf_counter() if self._profile else 0.0
+
+        if self._profile:
+            pre_ms = (t1 - t0) * 1000
+            infer_ms = (t2 - t1) * 1000
+            post_ms = (t3 - t2) * 1000
+            mask_ms = (t4 - t3) * 1000
+            logger.info(
+                f"Default 性能: pre={pre_ms:.1f}ms infer={infer_ms:.1f}ms post={post_ms:.1f}ms mask={mask_ms:.1f}ms "
+                f"size={self.detect_size} bilateral={'off' if self._disable_bilateral else 'on'} fp16={'on' if (self.device=='cuda' and self._use_fp16) else 'off'}"
+            )
         
         logger.info(f"Default 检测到 {len(textlines)} 个文本行")
         return textlines, raw_mask
