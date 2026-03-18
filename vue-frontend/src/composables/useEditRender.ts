@@ -48,8 +48,9 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   /** 渲染错误信息 */
   const renderError = ref('')
 
-  /** 当前渲染的token（用于取消过期渲染） */
-  let currentRenderToken: symbol | null = null
+  /** 每张图片各自的渲染 token（避免切图后把结果写到错误图片上） */
+  const renderTokenByImageId: Record<string, symbol> = {}
+  let activeRenderCount = 0
 
   // ============================================================
   // 辅助函数
@@ -94,6 +95,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       console.warn('reRenderFullImage: 没有当前图片')
       return false
     }
+    const imageId = image.id
 
     // 检查是否有气泡
     // 【复刻原版逻辑】没有气泡坐标时跳过后端渲染
@@ -105,7 +107,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       const cleanBase64 = getCleanImageBase64()
       if (cleanBase64) {
         const translatedDataURL = `data:image/png;base64,${cleanBase64}`
-        imageStore.updateCurrentImage({ translatedDataURL })
+        image.translatedDataURL = translatedDataURL
         if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
       }
       return true
@@ -121,12 +123,13 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       return false
     }
 
-    // 创建新的渲染token
+    // 创建新的渲染token（按图片维度）
     const renderToken = Symbol('render')
-    currentRenderToken = renderToken
+    renderTokenByImageId[imageId] = renderToken
 
     // 设置渲染状态
-    isRendering.value = true
+    activeRenderCount += 1
+    isRendering.value = activeRenderCount > 0
     renderError.value = ''
     if (!silentMode) callbacks?.onRenderStart?.()
 
@@ -174,7 +177,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       } as any)
 
       // 检查token是否过期（被新的渲染请求取代）
-      if (currentRenderToken !== renderToken) {
+      if (renderTokenByImageId[imageId] !== renderToken) {
         console.log('reRenderFullImage: 渲染结果已过期，忽略')
         return false
       }
@@ -183,7 +186,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (response.rendered_image) {
         // 更新翻译图
         const translatedDataURL = `data:image/png;base64,${response.rendered_image}`
-        imageStore.updateCurrentImage({ translatedDataURL })
+        image.translatedDataURL = translatedDataURL
 
         console.log('reRenderFullImage: 渲染成功')
         if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
@@ -197,7 +200,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       }
     } catch (error) {
       // 检查token是否过期
-      if (currentRenderToken !== renderToken) {
+      if (renderTokenByImageId[imageId] !== renderToken) {
         return false
       }
 
@@ -207,11 +210,12 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (!silentMode) callbacks?.onRenderError?.(errorMsg)
       return false
     } finally {
-      // 只有当前token才能重置状态
-      if (currentRenderToken === renderToken) {
-        isRendering.value = false
-        if (!silentMode) callbacks?.onRenderEnd?.()
+      if (renderTokenByImageId[imageId] === renderToken) {
+        delete renderTokenByImageId[imageId]
       }
+      activeRenderCount = Math.max(0, activeRenderCount - 1)
+      isRendering.value = activeRenderCount > 0
+      if (!silentMode) callbacks?.onRenderEnd?.()
     }
   }
 
@@ -219,7 +223,10 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
    * 取消当前渲染
    */
   function cancelRender(): void {
-    currentRenderToken = null
+    for (const k of Object.keys(renderTokenByImageId)) {
+      delete renderTokenByImageId[k]
+    }
+    activeRenderCount = 0
     isRendering.value = false
   }
 
