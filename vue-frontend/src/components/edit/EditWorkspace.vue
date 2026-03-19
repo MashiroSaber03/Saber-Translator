@@ -1206,6 +1206,34 @@ async function handleDeleteSelectedBubbles(): Promise<void> {
   deleteSelectedBubbles()
 }
 
+const KEYBOARD_MOVE_STEP = 2
+
+function moveSelectedBubblesBy(deltaX: number, deltaY: number): void {
+  if (!hasSelection.value || (deltaX === 0 && deltaY === 0)) return
+
+  pushUndoSnapshot('move selected bubbles by keyboard')
+
+  const indices = [...new Set(
+    (selectedIndices.value.length > 0 ? selectedIndices.value : [selectedBubbleIndex.value])
+      .filter((index) => index >= 0)
+  )]
+
+  for (const index of indices) {
+    const bubble = bubbles.value[index]
+    if (!bubble) continue
+
+    const currentPosition = bubble.position || { x: 0, y: 0 }
+    bubbleStore.updateBubble(index, {
+      position: {
+        x: currentPosition.x + deltaX,
+        y: currentPosition.y + deltaY
+      }
+    })
+  }
+
+  reRenderFullImage()
+}
+
 function handleApplyBubbleStyleToAll(updates: Partial<BubbleState>): void {
   if (bubbles.value.length === 0) return
 
@@ -1691,6 +1719,30 @@ function handleKeyDown(event: KeyboardEvent): void {
       // 【复刻原版】笔刷模式下不处理导航
       if (!brushMode.value) {
         goToNextImage()
+        event.preventDefault()
+      }
+      break
+    case 'ArrowLeft':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(-KEYBOARD_MOVE_STEP, 0)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowRight':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(KEYBOARD_MOVE_STEP, 0)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowUp':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(0, -KEYBOARD_MOVE_STEP)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowDown':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(0, KEYBOARD_MOVE_STEP)
         event.preventDefault()
       }
       break
