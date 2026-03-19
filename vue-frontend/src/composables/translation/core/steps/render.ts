@@ -103,6 +103,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
             fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
             autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+            textAlign: savedTextStyles?.textAlign || textStyle.textAlign,
             textColor: finalTextColor,
             fillColor: finalFillColor,
             strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,

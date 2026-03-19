@@ -89,6 +89,9 @@
             <CustomSelect
               v-model="localFontFamily"
               :groups="fontSelectGroups"
+              :searchable="true"
+              search-placeholder="????"
+              no-results-text="???????"
               title="字体"
               @change="handleFontFamilyChange"
             />
@@ -178,43 +181,48 @@
 
           <div class="toolbar-divider vertical"></div>
 
-          <!-- 背景修复方式选择器 -->
-          <div class="toolbar-inpaint-group" title="背景修复方式">
-            <CustomSelect
-              v-model="localInpaintMethod"
-              :options="inpaintMethodOptions"
-              @change="handleInpaintMethodChange"
-            />
-
-            <!-- 纯色填充时的颜色选择器 -->
-            <div
-              class="toolbar-color-picker toolbar-solid-color-options"
-              :class="{ hidden: localInpaintMethod !== 'solid' }"
+          <!-- 文字对齐 -->
+          <div class="toolbar-icon-group" aria-label="文字对齐">
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'left'"
+              title="左对齐"
+              @click="setTextAlign('left')"
             >
-              <button class="toolbar-btn toolbar-color-btn" @click="triggerFillColorPicker">
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                  <rect
-                    x="2"
-                    y="2"
-                    width="12"
-                    height="12"
-                    rx="2"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.3" />
-                </svg>
-                <span class="color-indicator" :style="{ background: localFillColor }"></span>
-              </button>
-              <input
-                ref="fillColorInput"
-                type="color"
-                v-model="localFillColor"
-                class="hidden-color-input"
-                @change="handleFillColorChange"
-              />
-            </div>
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M2 4h10M2 7h8M2 10h10M2 13h6" stroke="currentColor" stroke-width="1.4" />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'center'"
+              title="居中对齐"
+              @click="setTextAlign('center')"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M3 4h10M4 7h8M3 10h10M5 13h6" stroke="currentColor" stroke-width="1.4" />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'right'"
+              title="右对齐"
+              @click="setTextAlign('right')"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M4 4h10M6 7h8M4 10h10M8 13h6" stroke="currentColor" stroke-width="1.4" />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'justify'"
+              title="两侧对齐"
+              @click="setTextAlign('justify')"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M2 4h12M2 7h12M2 10h12M2 13h12" stroke="currentColor" stroke-width="1.4" />
+              </svg>
+            </button>
           </div>
 
           <div class="toolbar-divider vertical"></div>
@@ -388,10 +396,11 @@
  * 使用原版Office风格浅色主题
  */
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
-import { useBubbleStore } from '@/stores/bubbleStore'
 import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
-import type { BubbleState, TextDirection, InpaintMethod } from '@/types/bubble'
+import type { BubbleState, TextDirection, TextAlign } from '@/types/bubble'
 import { getFontListApi } from '@/api/config'
+import type { FontInfo } from '@/types/api'
+import { normalizeFontList, ensureFontPresent, createFontSelectGroups } from '@/utils/fontUtils'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
@@ -421,15 +430,11 @@ const emit = defineEmits<{
   (e: 'reTranslate', index: number): void
   /** 应用当前气泡更改 */
   (e: 'applyBubble', index: number): void
+  /** 应用当前样式到全部气泡 */
+  (e: 'applyAll', updates: Partial<BubbleState>): void
   /** 【复刻原版 4.3】重置当前气泡到初始状态 */
   (e: 'resetCurrent', index: number): void
 }>()
-
-// ============================================================
-// Store
-// ============================================================
-
-const bubbleStore = useBubbleStore()
 
 // ============================================================
 // 默认值
@@ -444,6 +449,7 @@ const defaultBubble: BubbleState = {
   fontSize: 24,
   fontFamily: DEFAULT_FONT_FAMILY,
   textDirection: 'vertical',  // 简化设计：不再使用 'auto'
+  textAlign: 'center',
   autoTextDirection: 'vertical',
   textColor: '#231816',
   fillColor: '#FFFFFF',
@@ -464,13 +470,12 @@ const localTranslatedText = ref('')
 const localFontSize = ref(24)
 const localFontFamily = ref(DEFAULT_FONT_FAMILY)
 const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
+const localTextAlign = ref<TextAlign>('center')
 const localTextColor = ref('#231816')
-const localFillColor = ref('#FFFFFF')
 const localStrokeEnabled = ref(true)
 const localStrokeColor = ref('#FFFFFF')
 const localStrokeWidth = ref(3)
 const localRotationAngle = ref(0)
-const localInpaintMethod = ref<InpaintMethod>('solid')
 const localPositionX = ref(0)
 const localPositionY = ref(0)
 
@@ -480,7 +485,6 @@ const translatedTextInput = ref<HTMLTextAreaElement | null>(null)
 
 // 颜色选择器引用
 const textColorInput = ref<HTMLInputElement | null>(null)
-const fillColorInput = ref<HTMLInputElement | null>(null)
 const strokeColorInput = ref<HTMLInputElement | null>(null)
 
 // 日语软键盘状态
@@ -488,14 +492,7 @@ const showJpKeyboard = ref(false)
 const jpKeyboardTarget = ref<'original' | 'translated'>('original')
 
 // 字体相关
-const systemFonts = ref<{ name: string; path: string }[]>([
-  { name: '思源黑体', path: DEFAULT_FONT_FAMILY },
-  { name: '华文楷体', path: 'fonts/STKAITI.TTF' },
-  { name: '华文细黑', path: 'fonts/STXIHEI.TTF' },
-  { name: '黑体', path: 'fonts/SIMHEI.TTF' },
-  { name: '宋体', path: 'fonts/SIMSUN.TTC' },
-])
-const customFonts = ref<{ name: string; path: string }[]>([])
+const fonts = ref<FontInfo[]>([])
 
 // ============================================================
 // 计算属性
@@ -515,27 +512,9 @@ const positionY = computed(() => {
 
 /** 字体选择器分组选项（用于CustomSelect） */
 const fontSelectGroups = computed(() => {
-  const groups = [
-    {
-      label: '系统字体',
-      options: systemFonts.value.map(f => ({ label: f.name, value: f.path })),
-    },
-  ]
-  if (customFonts.value.length > 0) {
-    groups.push({
-      label: '自定义字体',
-      options: customFonts.value.map(f => ({ label: f.name, value: f.path })),
-    })
-  }
-  return groups
+  const normalized = ensureFontPresent(fonts.value, localFontFamily.value)
+  return createFontSelectGroups(normalized)
 })
-
-/** 背景修复方式选项（用于CustomSelect） */
-const inpaintMethodOptions = [
-  { label: '纯色填充', value: 'solid' },
-  { label: 'LAMA修复(漫画)', value: 'lama_mpe' },
-  { label: 'LAMA修复(通用)', value: 'litelama' },
-]
 
 // ============================================================
 // 同步本地状态
@@ -549,13 +528,12 @@ function syncFromBubble(bubble: BubbleState | null): void {
   localFontSize.value = b.fontSize
   localFontFamily.value = b.fontFamily
   localTextDirection.value = b.textDirection
+  localTextAlign.value = b.textAlign || 'center'
   localTextColor.value = b.textColor
-  localFillColor.value = b.fillColor
   localStrokeEnabled.value = b.strokeEnabled
   localStrokeColor.value = b.strokeColor
   localStrokeWidth.value = b.strokeWidth
   localRotationAngle.value = b.rotationAngle
-  localInpaintMethod.value = b.inpaintMethod
   localPositionX.value = b.position?.x || 0
   localPositionY.value = b.position?.y || 0
 }
@@ -635,6 +613,12 @@ function setTextDirection(direction: TextDirection): void {
   emit('update', { textDirection: direction })
 }
 
+/** 设置文字对齐 */
+function setTextAlign(align: TextAlign): void {
+  localTextAlign.value = align
+  emit('update', { textAlign: align })
+}
+
 // ============================================================
 // 事件处理 - 颜色
 // ============================================================
@@ -647,16 +631,6 @@ function triggerTextColorPicker(): void {
 /** 处理文字颜色变化 */
 function handleTextColorChange(): void {
   emit('update', { textColor: localTextColor.value })
-}
-
-/** 触发填充颜色选择器 */
-function triggerFillColorPicker(): void {
-  fillColorInput.value?.click()
-}
-
-/** 处理填充颜色变化 */
-function handleFillColorChange(): void {
-  emit('update', { fillColor: localFillColor.value })
 }
 
 /** 触发描边颜色选择器 */
@@ -682,15 +656,6 @@ function toggleStroke(): void {
 /** 处理描边宽度变化 */
 function handleStrokeWidthChange(): void {
   emit('update', { strokeWidth: localStrokeWidth.value })
-}
-
-// ============================================================
-// 事件处理 - 修复方式
-// ============================================================
-
-/** 处理修复方式变化 */
-function handleInpaintMethodChange(): void {
-  emit('update', { inpaintMethod: localInpaintMethod.value })
 }
 
 // ============================================================
@@ -768,20 +733,16 @@ function handleApplyBubble(): void {
 
 /** 应用到全部气泡 */
 function applyToAll(): void {
-  bubbleStore.updateAllBubbles({
+  emit('applyAll', {
     fontSize: localFontSize.value,
     fontFamily: localFontFamily.value,
     textDirection: localTextDirection.value,
+    textAlign: localTextAlign.value,
     textColor: localTextColor.value,
-    fillColor: localFillColor.value,
     strokeEnabled: localStrokeEnabled.value,
     strokeColor: localStrokeColor.value,
     strokeWidth: localStrokeWidth.value,
-    inpaintMethod: localInpaintMethod.value,
   })
-  console.log('样式已应用到所有气泡')
-  // 触发重新渲染
-  emit('reRender')
 }
 
 /** 重置气泡编辑 */
@@ -896,28 +857,7 @@ function handleKanaDelete(target: 'original' | 'translated'): void {
 async function loadFontList(): Promise<void> {
   try {
     const response = await getFontListApi()
-    if (response.fonts) {
-      const system: { name: string; path: string }[] = []
-      const custom: { name: string; path: string }[] = []
-
-      for (const font of response.fonts) {
-        // API返回的字段是display_name，需要转换为name
-        const fontItem = {
-          name: typeof font === 'string' ? font : font.display_name || font.file_name || '',
-          path: typeof font === 'string' ? font : font.path,
-        }
-        if (fontItem.path.startsWith('fonts/')) {
-          system.push(fontItem)
-        } else {
-          custom.push(fontItem)
-        }
-      }
-
-      if (system.length > 0) {
-        systemFonts.value = system
-      }
-      customFonts.value = custom
-    }
+    fonts.value = ensureFontPresent(normalizeFontList(response.fonts), localFontFamily.value)
   } catch (error) {
     console.error('加载字体列表失败:', error)
   }
@@ -1249,10 +1189,15 @@ onMounted(() => {
   box-shadow: inset 0 -1px 0 rgb(0, 0, 0, 0.03);
 }
 
-.toolbar-btn:hover {
+.toolbar-btn:not(:disabled):hover {
   border-color: #7d96ff;
   color: #2b4bff;
   box-shadow: 0 2px 8px rgb(107, 125, 255, 0.25);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .toolbar-btn[data-active='true'],

@@ -11,6 +11,7 @@ import type {
   BubbleApiResponse,
   BubbleGlobalDefaults,
   TextDirection,
+  TextAlign,
   InpaintMethod
 } from '@/types/bubble'
 import {
@@ -39,6 +40,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   fontSize: 25,
   fontFamily: DEFAULT_FONT_FAMILY,
   textDirection: 'vertical',  // 简化设计：不再使用 'auto'，始终是具体方向
+  textAlign: 'center',
   autoTextDirection: 'vertical',
   textColor: '#000000',
   fillColor: DEFAULT_FILL_COLOR,
@@ -285,6 +287,14 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
     return false
   }
 
+  const validAlignments: TextAlign[] = ['left', 'center', 'right', 'justify']
+  if (
+    typeof s.textAlign !== 'string' ||
+    !validAlignments.includes(s.textAlign as TextAlign)
+  ) {
+    return false
+  }
+
   // 检查修复方式是否有效
   const validInpaintMethods: InpaintMethod[] = ['solid', 'lama_mpe', 'litelama']
   if (
@@ -400,6 +410,7 @@ export function getDefaultBubbleSettings(globalSettings?: {
   fontSize?: number
   fontFamily?: string
   layoutDirection?: 'auto' | 'vertical' | 'horizontal'
+  textAlign?: TextAlign
   textColor?: string
   fillColor?: string
   strokeEnabled?: boolean
@@ -413,6 +424,7 @@ export function getDefaultBubbleSettings(globalSettings?: {
       fontSize: DEFAULT_BUBBLE_STATE.fontSize,
       fontFamily: DEFAULT_BUBBLE_STATE.fontFamily,
       textDirection: DEFAULT_BUBBLE_STATE.textDirection,
+      textAlign: DEFAULT_BUBBLE_STATE.textAlign,
       textColor: DEFAULT_BUBBLE_STATE.textColor,
       fillColor: DEFAULT_BUBBLE_STATE.fillColor,
       strokeEnabled: DEFAULT_BUBBLE_STATE.strokeEnabled,
@@ -427,6 +439,7 @@ export function getDefaultBubbleSettings(globalSettings?: {
     fontSize: globalSettings.fontSize ?? DEFAULT_BUBBLE_STATE.fontSize,
     fontFamily: globalSettings.fontFamily ?? DEFAULT_BUBBLE_STATE.fontFamily,
     textDirection: globalSettings.layoutDirection ?? DEFAULT_BUBBLE_STATE.textDirection,
+    textAlign: globalSettings.textAlign ?? DEFAULT_BUBBLE_STATE.textAlign,
     textColor: globalSettings.textColor ?? DEFAULT_BUBBLE_STATE.textColor,
     fillColor: globalSettings.fillColor ?? DEFAULT_BUBBLE_STATE.fillColor,
     strokeEnabled: globalSettings.strokeEnabled ?? DEFAULT_BUBBLE_STATE.strokeEnabled,

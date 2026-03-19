@@ -526,6 +526,13 @@ def map_to_vertical_punctuation(text: str) -> str:
     """
     return process_text_for_vertical(text)
 
+
+def strip_horizontal_tags(text: str) -> str:
+    """去除文本中的 <H></H> 标记，避免横排时将其当作普通字符绘制。"""
+    if not text:
+        return text
+    return re.sub(r'</?H>', '', text, flags=re.IGNORECASE)
+
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
     加载字体文件，带缓存。
@@ -592,6 +599,9 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
     """
     if not text or not text.strip() or bubble_width <= 0 or bubble_height <= 0:
         return constants.DEFAULT_FONT_SIZE
+
+    if text_direction != 'vertical':
+        text = strip_horizontal_tags(text)
 
     W = bubble_width * padding_ratio
     H = bubble_height * padding_ratio
@@ -858,23 +868,26 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  stroke_color=constants.DEFAULT_STROKE_COLOR,
                                  stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                  bubble_width=None,
+                                 text_align: str = "center",
                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
-    在指定位置绘制竖排多行文本。
-    
-    关键特性：
-    1. 逐字符调用 CJK_Compatibility_Forms_translate 进行标点转换
-    2. 支持单字符旋转（如日文长音符号 ー 需要旋转90度）
-    3. 气泡级别的旋转在 render_all_bubbles 中统一处理
+    ??????????????????????
+
+    ????????
+    1. ????????CJK_Compatibility_Forms_translate ?????????
+    2. ????????????????????????????????0???
+    3. ???????????? render_all_bubbles ????????
+    4. ???????????????left=??????center=?????ight=??????justify=??????
     """
     if not text:
         return
-    
-    # 预处理文本（省略号等）
+
+    align = (text_align or "center").lower()
+    if align not in ("left", "center", "right", "justify"):
+        align = "center"
+
     text = map_to_vertical_punctuation(text)
-    
-    # 获取绘制的 Image 对象（用于单字符旋转时创建临时图像）
-    # draw 对象是 ImageDraw.Draw，其 _image 属性指向原始 Image
+
     canvas_image = None
     if hasattr(draw, '_image'):
         canvas_image = draw._image
@@ -882,65 +895,49 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     lines = []
     current_line = ""
     current_column_height = 0
-    line_height_approx = font.size + 1  # 字间距为1像素
+    line_height_approx = font.size + 1
 
-    # ===== 处理 <H></H> 标签的智能换行 =====
-    # 先按 \n 分割段落，然后在每个段落内处理
+    def estimate_horizontal_block_height(content: str) -> int:
+        if not content:
+            return 0
+        if len(content) >= 3:
+            raw_height = sum(font.getbbox(c)[2] - font.getbbox(c)[0] for c in content)
+        else:
+            raw_height = font.size
+        units_needed = math.ceil(raw_height / line_height_approx)
+        return max(1, units_needed) * line_height_approx
+
     paragraphs = text.split('\n')
-    
     for para_idx, paragraph in enumerate(paragraphs):
-        # 非第一个段落时，先换列（实现回车换行效果）
-        # 在竖排模式下，回车符(\n)应该对应新的一列
         if para_idx > 0:
             if current_line:
                 lines.append(current_line)
                 current_line = ""
                 current_column_height = 0
-        
+
         if not paragraph:
-            # 空段落，跳过（换列已在上面处理）
             continue
-        
-        # 分割段落为普通文本和横排块
+
         parts = re.split(r'(<H>.*?</H>)', paragraph, flags=re.IGNORECASE | re.DOTALL)
-        
         for part in parts:
             if not part:
                 continue
-            
+
             is_h_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
-            
             if is_h_block:
-                # 横排块：计算其高度并作为整体处理
-                content = part[3:-4]  # 去除 <H> 和 </H>
+                content = part[3:-4]
                 if not content:
                     continue
-                
-                # 估算横排块的高度（使用单位系统）
-                if len(content) >= 3:
-                    # 3+ 字符旋转后变成竖排，高度 = 字符宽度之和
-                    raw_height = sum(font.getbbox(c)[2] - font.getbbox(c)[0] for c in content)
-                else:
-                    # 2 字符横排，高度 = 字体高度
-                    raw_height = font.size
-                
-                # 按单位计算占用高度（向上取整）
-                units_needed = math.ceil(raw_height / line_height_approx)
-                units_needed = max(1, units_needed)
-                block_height = units_needed * line_height_approx
-                
-                # 检查是否能放入当前列
+                block_height = estimate_horizontal_block_height(content)
                 if current_column_height + block_height <= max_height:
-                    current_line += part  # 保持标签完整
+                    current_line += part
                     current_column_height += block_height
                 else:
-                    # 需要换列
                     if current_line:
                         lines.append(current_line)
                     current_line = part
                     current_column_height = block_height
             else:
-                # 普通文本：逐字符处理
                 for char in part:
                     if current_column_height + line_height_approx <= max_height:
                         current_line += char
@@ -949,84 +946,119 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         lines.append(current_line)
                         current_line = char
                         current_column_height = line_height_approx
-    
-    # 添加最后一行
+
     if current_line:
         lines.append(current_line)
 
-    # 列宽基于字体大小估算
     column_width_approx = font.size + 3
-
-    # 计算文本段落的总宽度
     total_text_width_for_centering = len(lines) * column_width_approx
-    
-    # 居中对齐
+
     if bubble_width is not None:
         bubble_center_x = x - bubble_width / 2
         current_x_base = bubble_center_x + total_text_width_for_centering / 2
     else:
         current_x_base = x
 
-    # 计算垂直方向文本总高度，用于居中
-    max_chars_in_line = 0
-    if lines:
-        max_chars_in_line = max(len(line) for line in lines if line)
-    total_text_height_for_centering = max_chars_in_line * line_height_approx
-
-    if total_text_height_for_centering < max_height:
-        vertical_offset = (max_height - total_text_height_for_centering) / 2
-        start_y_base = y + vertical_offset
-    else:
-        start_y_base = y
-
-    # 预加载NotoSans字体，用于特殊字符
     special_font = None
     font_size = font.size
 
-    # ===== 预计算每列的实际最大字符宽度 =====
-    # 计算每列的最大字符实际宽度，用于精确居中对齐。
+    line_segment_meta = []
+    line_logical_heights = []
     line_max_widths = []
-    for line in lines:
-        max_char_width = font_size  # 默认使用 font_size
-        for char in line:
-            converted_char, _ = CJK_Compatibility_Forms_translate(char, 1)
-            # 确定使用哪个字体
-            actual_font = font
-            if FREETYPE_AVAILABLE and not font_supports_char(font_family_path, converted_char):
-                for fallback_path in FALLBACK_FONTS:
-                    if font_supports_char(fallback_path, converted_char):
-                        actual_font = get_font(fallback_path, font_size)
-                        break
-            # 获取字符宽度
-            try:
-                bbox = actual_font.getbbox(converted_char)
-                char_width = bbox[2] - bbox[0]
-                if char_width > max_char_width:
-                    max_char_width = char_width
-            except:
-                pass
-        line_max_widths.append(max_char_width)
 
-    current_x_col = current_x_base
-    for line_idx, line in enumerate(lines):
-        current_y_char = start_y_base
-        # 获取当前列的实际宽度
-        line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
-        
-        # ===== 分割行内容为普通文本和横排块 =====
-        # 使用正则表达式分割 <H>...</H> 标签
+    for line in lines:
+        segments = []
+        line_height = 0
+        max_segment_width = font_size
         parts = re.split(r'(<H>.*?</H>)', line, flags=re.IGNORECASE | re.DOTALL)
-        
         for part in parts:
             if not part:
                 continue
-            
-            # 检查是否为横排块
+
+            is_h_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
+            if is_h_block:
+                content = part[3:-4]
+                if not content:
+                    continue
+                block_height = estimate_horizontal_block_height(content)
+                segments.append({
+                    "kind": "horizontal",
+                    "content": content,
+                    "height": block_height
+                })
+                line_height += block_height
+
+                try:
+                    char_widths = [max(1, font.getbbox(c)[2] - font.getbbox(c)[0]) for c in content]
+                    block_width = sum(char_widths) if len(content) <= 2 else max(char_widths)
+                    max_segment_width = max(max_segment_width, block_width)
+                except Exception:
+                    pass
+            else:
+                for char in part:
+                    segments.append({
+                        "kind": "char",
+                        "content": char,
+                        "height": line_height_approx
+                    })
+                    line_height += line_height_approx
+
+                    converted_char, _ = CJK_Compatibility_Forms_translate(char, 1)
+                    actual_font = font
+                    if FREETYPE_AVAILABLE and not font_supports_char(font_family_path, converted_char):
+                        for fallback_path in FALLBACK_FONTS:
+                            if font_supports_char(fallback_path, converted_char):
+                                actual_font = get_font(fallback_path, font_size)
+                                break
+                    try:
+                        bbox = actual_font.getbbox(converted_char)
+                        char_width = bbox[2] - bbox[0]
+                        max_segment_width = max(max_segment_width, char_width)
+                    except Exception:
+                        pass
+
+        line_segment_meta.append(segments)
+        line_logical_heights.append(line_height)
+        line_max_widths.append(max_segment_width)
+
+    current_x_col = current_x_base
+    for line_idx, line in enumerate(lines):
+        line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
+        segments = line_segment_meta[line_idx] if line_idx < len(line_segment_meta) else []
+        line_height = line_logical_heights[line_idx] if line_idx < len(line_logical_heights) else 0
+
+        available_vertical_space = max(0, max_height - line_height)
+        if align == "left":
+            current_y_char = y
+        elif align == "right":
+            current_y_char = y + available_vertical_space
+        else:
+            current_y_char = y + available_vertical_space / 2
+
+        justify_enabled = (
+            align == "justify"
+            and line_idx < len(lines) - 1
+            and len(segments) >= 2
+            and max_height > line_height
+        )
+        justify_base_extra = 0
+        justify_remainder = 0
+        applied_gaps = 0
+        if justify_enabled:
+            extra_total = int(max_height - line_height)
+            gap_count = len(segments) - 1
+            if gap_count > 0:
+                justify_base_extra = extra_total // gap_count
+                justify_remainder = extra_total % gap_count
+
+        parts = re.split(r'(<H>.*?</H>)', line, flags=re.IGNORECASE | re.DOTALL)
+        for part in parts:
+            if not part:
+                continue
+
             is_horizontal_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
-            
             if is_horizontal_block:
-                # ===== 渲染横排块 =====
-                content = part[3:-4]  # 去除 <H> 和 </H>
+                content = part[3:-4]
                 if content:
                     block_height = render_horizontal_block(
                         content=content,
@@ -1040,28 +1072,27 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         current_x_col=current_x_col,
                         current_y=current_y_char,
                         line_width=line_width,
-                        line_height_unit=line_height_approx  # 传递单位高度
+                        line_height_unit=line_height_approx
                     )
                     current_y_char += block_height
+                    if justify_enabled and applied_gaps < len(segments) - 1:
+                        current_y_char += justify_base_extra + (1 if applied_gaps < justify_remainder else 0)
+                        applied_gaps += 1
             else:
-                # ===== 渲染普通竖排字符 =====
                 for char in part:
-                    # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
-                    converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
-                    
-                    # ===== 使用字体回退系统 =====
+                    converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)
                     current_font = font
-                    
+
                     if FREETYPE_AVAILABLE:
                         if not font_supports_char(font_family_path, converted_char):
                             for fallback_path in FALLBACK_FONTS:
                                 if font_supports_char(fallback_path, converted_char):
                                     try:
                                         current_font = get_font(fallback_path, font_size)
-                                        logger.debug(f"字符 '{converted_char}' 使用回退字体: {os.path.basename(fallback_path)}")
+                                        logger.debug(f"??? '{converted_char}' ??????????: {os.path.basename(fallback_path)}")
                                         break
                                     except Exception as e:
-                                        logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                        logger.warning(f"?????????????: {fallback_path} - {e}")
                                         continue
                     else:
                         if converted_char in SPECIAL_CHARS:
@@ -1069,12 +1100,11 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                 try:
                                     special_font = get_font(NOTOSANS_FONT_PATH, font_size)
                                 except Exception as e:
-                                    logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
+                                    logger.error(f"???NotoSans??????: {e}?????????????")
                                     special_font = font
                             if special_font is not None:
                                 current_font = special_font
-                    
-                    # 准备绘制参数
+
                     text_draw_params = {
                         "font": current_font,
                         "fill": fill
@@ -1082,28 +1112,21 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     if stroke_enabled:
                         text_draw_params["stroke_width"] = int(stroke_width)
                         text_draw_params["stroke_fill"] = stroke_color
-                    
-                    # 获取字符尺寸
+
                     bbox = current_font.getbbox(converted_char)
                     char_width = bbox[2] - bbox[0]
                     char_height = bbox[3] - bbox[1]
-                    
+
                     if rot_degree != 0 and canvas_image is not None:
-                        # ===== 需要旋转的字符 =====
-                        # 创建临时图像用于旋转（尺寸足够容纳旋转后的字符）
-                        # 对于90度旋转，宽高会互换，所以需要足够的空间
                         diagonal = int(math.ceil(math.sqrt(char_width**2 + char_height**2)))
                         padding = max(10, int(stroke_width * 2) if stroke_enabled else 0)
-                        temp_size = diagonal + padding * 2
-                        temp_size = int(temp_size)
-                        
+                        temp_size = int(diagonal + padding * 2)
+
                         temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
                         temp_draw = ImageDraw.Draw(temp_img)
-                        
-                        # 在临时画布中心绘制字符
                         temp_x = (temp_size - char_width) // 2
                         temp_y = (temp_size - char_height) // 2
-                        
+
                         temp_text_params = {
                             "font": current_font,
                             "fill": fill
@@ -1111,88 +1134,57 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         if stroke_enabled:
                             temp_text_params["stroke_width"] = int(stroke_width)
                             temp_text_params["stroke_fill"] = stroke_color
-                        
+
                         temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
-                        
-                        # 旋转图像
                         rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
-                        
-                        # 裁剪掉多余的透明区域，只保留实际墨水部分
+
                         rotated_arr = np.array(rotated_img)
                         alpha_channel = rotated_arr[:, :, 3]
-                        non_zero = np.where(alpha_channel > 10)  # 阈值10以忽略抗锯齿产生的半透明像素
-                        
+                        non_zero = np.where(alpha_channel > 10)
                         if len(non_zero[0]) > 0:
                             min_y, max_y = non_zero[0].min(), non_zero[0].max()
                             min_x, max_x = non_zero[1].min(), non_zero[1].max()
-                            # 裁剪到实际内容区域
                             cropped_rotated = rotated_img.crop((min_x, min_y, max_x + 1, max_y + 1))
                         else:
-                            # 如果没有找到非透明像素，使用原始旋转图像
                             cropped_rotated = rotated_img
-                        
+
                         actual_width, actual_height = cropped_rotated.size
-                        
-                        # 计算粘贴位置（基于实际裁剪后的尺寸）
-                        # 水平居中：在列宽内居中
                         paste_x = int((current_x_col - line_width) + (line_width - actual_width) / 2.0)
-                        
-                        # 垂直位置：与普通字符对齐（基于line_height_approx单位）
-                        # 使用字符的墨水中心对齐
                         paste_y = int(current_y_char + (line_height_approx - actual_height) / 2.0)
-                        
+
                         try:
                             if canvas_image.mode == 'RGBA':
                                 canvas_image.paste(cropped_rotated, (paste_x, paste_y), cropped_rotated)
                             else:
-                                # 如果主画布不是 RGBA，需要使用 alpha 通道作为 mask
                                 rgb_rotated = cropped_rotated.convert('RGB')
                                 canvas_image.paste(rgb_rotated, (paste_x, paste_y), cropped_rotated)
                         except Exception as e:
-                            logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
-                            # 回退：直接绘制（不旋转）
+                            logger.warning(f"????????????: {e}?????????????")
                             text_x_char = current_x_col - char_width
                             draw.text((text_x_char, current_y_char), converted_char, **text_draw_params)
                     else:
-                        # ===== 常规绘制（不需要旋转） =====
-                        # ===== 水平居中计算 =====
-                        # 计算字符在当前列中的水平居中位置，line_width 为该列的最大字符宽度。
-                        # 使用预计算的 line_width（该列实际最大字符宽度）
                         text_x_char = (current_x_col - line_width) + round((line_width - char_width) / 2.0)
                         text_y_char = current_y_char
-                        
-                        # ===== 墨水偏移校正（水平+垂直）=====
-                        # Pillow 的 getbbox() 返回的边界框可能不等于实际墨水区域
-                        # 对于某些字符（如竖排标点），实际墨水可能偏向边界框的一侧
-                        # 需要校正以实现真正的视觉居中
+
                         ink_offset_x, ink_offset_y = get_char_ink_offset(converted_char, current_font)
-                        text_x_char -= ink_offset_x  # 反向补偿水平墨水偏移
-                        
-                        # ===== 竖排标点符号垂直居中校正（使用墨水偏移）=====
-                        # 获取参考汉字（如"我"）的墨水 y 偏移作为基准
-                        # 所有标点的墨水中心应该与汉字的墨水中心对齐
+                        text_x_char -= ink_offset_x
                         if is_vertical_punctuation(converted_char):
-                            # 计算参考汉字的墨水偏移（使用缓存避免重复计算）
                             if not hasattr(get_char_ink_offset, '_ref_y_offset'):
                                 ref_font = get_font(font_family_path, font_size) if font_family_path else current_font
-                                _, ref_y = get_char_ink_offset('我', ref_font)
+                                _, ref_y = get_char_ink_offset('??', ref_font)
                                 get_char_ink_offset._ref_y_offset = ref_y
                             ref_y_offset = get_char_ink_offset._ref_y_offset
-                            
-                            # 垂直对齐：将标点的墨水中心与汉字的墨水中心对齐
-                            # 如果 ink_offset_y > ref_y_offset，说明标点偏下，需要上移
-                            # 如果 ink_offset_y < ref_y_offset，说明标点偏上，需要下移
                             vertical_correction = ref_y_offset - ink_offset_y
                             text_y_char += vertical_correction
-                        
-                        # 直接绘制
+
                         draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
-                    
+
                     current_y_char += line_height_approx
-        
+                    if justify_enabled and applied_gaps < len(segments) - 1:
+                        current_y_char += justify_base_extra + (1 if applied_gaps < justify_remainder else 0)
+                        applied_gaps += 1
         current_x_col -= column_width_approx
 
-# --- 横排文本绘制函数（不含旋转，旋转在 render_all_bubbles 中统一处理） ---
 def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   fill=constants.DEFAULT_TEXT_COLOR,
                                   stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
@@ -1200,6 +1192,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                   bubble_width=None,
                                   bubble_height=None,
+                                  text_align: str = "center",
                                   font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
     在指定位置绘制横排多行文本（不含旋转）。
@@ -1210,9 +1203,17 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     Args:
         bubble_width: 气泡宽度，用于水平居中
         bubble_height: 气泡高度，用于垂直居中
+        text_align: 横排文字对齐方式（left/center/right/justify），默认 center 以兼容历史行为
     """
     if not text:
         return
+
+    text = strip_horizontal_tags(text)
+
+    # 规范化对齐参数
+    align = (text_align or "center").lower()
+    if align not in ("left", "center", "right", "justify"):
+        align = "center"
 
     # 一次遍历：分行 + 记录每个字符的宽度
     lines = []
@@ -1273,14 +1274,49 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     font_size = font.size
 
     for line_idx, line in enumerate(lines):
-        # 计算水平居中偏移
-        if bubble_width is not None:
-            horizontal_offset = (bubble_width - line_widths[line_idx]) / 2
-            current_x = x + horizontal_offset
-        else:
+        line_width = line_widths[line_idx]
+
+        # 计算水平对齐起点
+        if bubble_width is None:
             current_x = x
+        else:
+            if align == "left" or align == "justify":
+                current_x = x
+            elif align == "right":
+                current_x = x + (bubble_width - line_width)
+            else:  # center（默认）
+                current_x = x + (bubble_width - line_width) / 2
+
+        # justify：为非最后一行分配额外间距（优先在空格处分配，否则均分到字符间隙）
+        justify_enabled = (
+            align == "justify"
+            and bubble_width is not None
+            and line_idx < len(lines) - 1
+            and len(line) >= 2
+            and bubble_width > line_width
+        )
+        justify_mode = None  # "spaces" | "chars" | None
+        justify_gap_positions = []  # gap positions based on mode
+        justify_base_extra = 0
+        justify_remainder = 0
+        if justify_enabled:
+            # spaces：将额外间距加到每个空格字符之后
+            space_positions = [idx for idx, ch in enumerate(line[:-1]) if ch == " "]
+            if space_positions:
+                justify_mode = "spaces"
+                justify_gap_positions = space_positions
+            else:
+                justify_mode = "chars"
+                justify_gap_positions = list(range(len(line) - 1))
+
+            gap_count = len(justify_gap_positions)
+            if gap_count > 0:
+                extra_total = int(bubble_width - line_width)
+                justify_base_extra = extra_total // gap_count
+                justify_remainder = extra_total % gap_count
         
         char_widths = line_char_widths[line_idx]
+        applied_gaps = 0
         for char_idx, char in enumerate(line):
             # ===== 使用字体回退系统 =====
             current_font = font
@@ -1330,6 +1366,21 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
             draw.text((current_x, current_y), char, **text_draw_params)
             
             current_x += char_width
+
+            # justify：追加额外间距
+            if justify_mode is not None and char_idx < len(line) - 1 and len(justify_gap_positions) > 0:
+                add_gap = False
+                if justify_mode == "spaces":
+                    # 仅在空格字符处增加间距
+                    if char_idx in justify_gap_positions:
+                        add_gap = True
+                else:  # chars
+                    add_gap = True
+
+                if add_gap:
+                    extra = justify_base_extra + (1 if applied_gaps < justify_remainder else 0)
+                    current_x += extra
+                    applied_gaps += 1
         current_y += line_height
 
 def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
@@ -1367,6 +1418,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
         font_size_setting = style.get('fontSize', constants.DEFAULT_FONT_SIZE)
         font_family_rel = style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH)
         text_direction = style.get('text_direction', constants.DEFAULT_TEXT_DIRECTION)
+        text_align = style.get('text_align', style.get('textAlign', 'center'))
         position_offset = style.get('position_offset', {'x': 0, 'y': 0})
         text_color = style.get('text_color', constants.DEFAULT_TEXT_COLOR)
         rotation_angle = style.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)
@@ -1429,6 +1481,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
@@ -1441,6 +1494,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1480,6 +1534,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
@@ -1491,6 +1546,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1826,6 +1882,7 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                 else:
@@ -1838,6 +1895,7 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                 
@@ -1870,6 +1928,7 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                 else:
@@ -1881,6 +1940,7 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                     

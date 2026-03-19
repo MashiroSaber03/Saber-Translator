@@ -33,12 +33,15 @@ export interface ReRenderParams {
     fontSize?: number
     fontFamily?: string
     textDirection?: string
+    textAlign?: string
     textColor?: string
     rotationAngle?: number
     position?: { x: number; y: number }
     strokeEnabled?: boolean
     strokeColor?: string
     strokeWidth?: number
+    fillColor?: string
+    inpaintMethod?: string
   }>
 
   // 全局样式设置

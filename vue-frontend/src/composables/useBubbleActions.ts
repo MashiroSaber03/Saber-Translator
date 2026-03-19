@@ -11,7 +11,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
 import { showToast } from '@/utils/toast'
-import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import type { BubbleState, BubbleCoords, InpaintMethod } from '@/types/bubble'
 
 // ============================================================
 // 类型定义
@@ -22,6 +22,11 @@ export interface BubbleActionCallbacks {
   onReRender?: () => void | Promise<unknown>
   /** 【修复问题5】触发延迟渲染预览（用于实时预览，有防抖），支持返回Promise */
   onDelayedPreview?: () => void | Promise<unknown>
+  /** 当前漫画级别的画笔修复选项 */
+  getCurrentRepairSettings?: () => {
+    inpaintMethod: InpaintMethod
+    fillColor: string
+  }
 }
 
 // ============================================================
@@ -349,8 +354,15 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     }
 
     // 获取修复方法和填充颜色
-    const inpaintMethod = bubble.inpaintMethod || 'solid'
-    const fillColor = bubble.fillColor || '#FFFFFF'
+    const repairSettings = callbacks?.getCurrentRepairSettings?.()
+    const inpaintMethod = repairSettings?.inpaintMethod
+      || bubble.inpaintMethod
+      || settingsStore.settings.textStyle.inpaintMethod
+      || 'solid'
+    const fillColor = repairSettings?.fillColor
+      || bubble.fillColor
+      || settingsStore.settings.textStyle.fillColor
+      || '#FFFFFF'
     const rotationAngle = bubble.rotationAngle || 0
 
     try {

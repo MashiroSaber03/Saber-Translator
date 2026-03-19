@@ -221,6 +221,7 @@ export interface ImageDataForSave {
     autoFontSize?: boolean
     fontFamily?: string
     layoutDirection?: string
+    textAlign?: string
     useAutoTextColor?: boolean
     textColor?: string
     fillColor?: string
@@ -293,6 +294,7 @@ export async function saveAllPagesSequentially(
                 autoFontSize: img.autoFontSize,
                 fontFamily: img.fontFamily,
                 layoutDirection: img.layoutDirection,
+                textAlign: img.textAlign,
                 useAutoTextColor: img.useAutoTextColor,
                 textColor: img.textColor,
                 fillColor: img.fillColor,

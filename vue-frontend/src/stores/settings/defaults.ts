@@ -46,6 +46,7 @@ export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   autoFontSize: false,
   fontFamily: DEFAULT_FONT_FAMILY,
   layoutDirection: 'auto',
+  textAlign: 'center',
   textColor: '#000000',
   fillColor: DEFAULT_FILL_COLOR,
   strokeEnabled: DEFAULT_STROKE_ENABLED,
@@ -147,6 +148,7 @@ export const DEFAULT_PARALLEL: ParallelSettings = {
 export function createDefaultSettings(): TranslationSettings {
   return {
     textStyle: { ...DEFAULT_TEXT_STYLE },
+    defaultTextStyle: { ...DEFAULT_TEXT_STYLE },
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',

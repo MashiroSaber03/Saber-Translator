@@ -123,6 +123,7 @@ export function usePipeline() {
                     autoFontSize: textStyle.autoFontSize,
                     fontFamily: textStyle.fontFamily,
                     layoutDirection: textStyle.layoutDirection,
+                    textAlign: textStyle.textAlign,
                     textColor: textStyle.textColor,
                     fillColor: textStyle.fillColor,
                     strokeEnabled: textStyle.strokeEnabled,

@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ImageData, TranslationStatus, ImageDataUpdates } from '@/types/image'
 import type { BubbleState } from '@/types/bubble'
+import { useSettingsStore } from '@/stores/settingsStore'
 import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_FILL_COLOR,
@@ -62,12 +63,14 @@ function createDefaultImageData(
     autoFontSize: false,
     fontFamily: DEFAULT_FONT_FAMILY,
     layoutDirection: 'auto',
+    textAlign: 'center',
     textColor: '#000000',
     fillColor: DEFAULT_FILL_COLOR,
     inpaintMethod: 'solid',
     strokeEnabled: DEFAULT_STROKE_ENABLED,
     strokeColor: DEFAULT_STROKE_COLOR,
     strokeWidth: DEFAULT_STROKE_WIDTH,
+    useAutoTextColor: false,
     hasUnsavedChanges: false,
     ...overrides
   }
@@ -145,7 +148,10 @@ export const useImageStore = defineStore('image', () => {
     originalDataURL: string,
     overrides?: Partial<ImageData>
   ): ImageData {
-    const newImage = createDefaultImageData(fileName, originalDataURL, overrides)
+    const newImage = createDefaultImageData(fileName, originalDataURL, {
+      ...getDefaultImageStyle(),
+      ...overrides
+    })
     images.value.push(newImage)
 
     // 如果是第一张图片，自动设置为当前图片
@@ -169,8 +175,12 @@ export const useImageStore = defineStore('image', () => {
       overrides?: Partial<ImageData>
     }>
   ): ImageData[] {
+    const defaultStyle = getDefaultImageStyle()
     const newImages = imageList.map(({ fileName, originalDataURL, overrides }) =>
-      createDefaultImageData(fileName, originalDataURL, overrides)
+      createDefaultImageData(fileName, originalDataURL, {
+        ...defaultStyle,
+        ...overrides
+      })
     )
 
     const wasEmpty = images.value.length === 0
@@ -195,6 +205,9 @@ export const useImageStore = defineStore('image', () => {
       // 确保 width 和 height 有默认值（兼容旧会话数据）
       width: img.width || 0,
       height: img.height || 0,
+      textAlign: img.textAlign || 'center',
+      fillColor: img.fillColor || DEFAULT_FILL_COLOR,
+      inpaintMethod: img.inpaintMethod || 'solid',
       strokeEnabled: img.strokeEnabled ?? DEFAULT_STROKE_ENABLED,
       strokeColor: img.strokeColor || DEFAULT_STROKE_COLOR,
       strokeWidth: img.strokeWidth ?? DEFAULT_STROKE_WIDTH,
@@ -256,6 +269,7 @@ export const useImageStore = defineStore('image', () => {
     images.value = []
     currentImageIndex.value = -1
     isBatchTranslationInProgress.value = false
+    useSettingsStore().applyDefaultTextStyleToCurrent()
     console.log('所有图片已清除')
   }
 
@@ -575,3 +589,22 @@ export const useImageStore = defineStore('image', () => {
     getFailedImageIndices
   }
 })
+
+function getDefaultImageStyle(): Partial<ImageData> {
+  const settingsStore = useSettingsStore()
+  const style = settingsStore.settings.defaultTextStyle
+  return {
+    fontSize: style.fontSize,
+    autoFontSize: style.autoFontSize,
+    fontFamily: style.fontFamily,
+    layoutDirection: style.layoutDirection,
+    textAlign: style.textAlign,
+    textColor: style.textColor,
+    fillColor: style.fillColor,
+    inpaintMethod: style.inpaintMethod,
+    strokeEnabled: style.strokeEnabled,
+    strokeColor: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    useAutoTextColor: style.useAutoTextColor
+  }
+}

@@ -19,6 +19,11 @@ export type PolygonCoords = number[][]
 export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
 /**
+ * 文本对齐方式
+ */
+export type TextAlign = 'left' | 'center' | 'right' | 'justify'
+
+/**
  * 修复方式
  */
 export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
@@ -57,6 +62,8 @@ export interface BubbleState {
   fontFamily: string
   /** 渲染使用的排版方向，只有 'vertical' | 'horizontal'，渲染时直接使用 */
   textDirection: TextDirection
+  /** 文本对齐 */
+  textAlign: TextAlign
   /** 后端自动检测的排版方向（备份），用于切换回"自动"时恢复 */
   autoTextDirection: TextDirection
   /** 文字颜色 */
@@ -120,6 +127,7 @@ export interface BubbleGlobalDefaults {
   fontSize?: number
   fontFamily?: string
   textDirection?: TextDirection
+  textAlign?: TextAlign
   textColor?: string
   fillColor?: string
   inpaintMethod?: InpaintMethod
