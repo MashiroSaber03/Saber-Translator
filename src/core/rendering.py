@@ -607,7 +607,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
         return constants.DEFAULT_FONT_SIZE
     
     c_w = 1.0
-    l_h = 1.05
+    l_h = 1.15
 
     if text_direction == 'vertical':
         W, H = H, W
@@ -955,7 +955,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         lines.append(current_line)
 
     # 列宽基于字体大小估算
-    column_width_approx = font.size + 3
+    column_width_approx = max(1, int(round((font.size + 3) * 1.15)))
 
     # 计算文本段落的总宽度
     total_text_width_for_centering = len(lines) * column_width_approx
@@ -1255,7 +1255,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     if not lines:
         return
 
-    line_height = font.size + 5
+    line_height = max(1, int(round((font.size + 5) * 1.15)))
     
     # 计算每行的总宽度（直接使用已记录的值，不再遍历）
     line_widths = [sum(widths) for widths in line_char_widths]
