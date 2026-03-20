@@ -466,8 +466,10 @@ class Model48pxOCR:
             all_widths = []        # 对应宽度
             region_to_bubble = []  # 映射到气泡索引
             
+            precise_mode = not (textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords))
+
             # 如果没有提供原始文本行，使用简单裁剪模式
-            if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
+            if not precise_mode:
                 logger.info("使用简单裁剪模式提取颜色")
                 for bubble_idx, (x1, y1, x2, y2) in enumerate(bubble_coords):
                     bubble = img_np[y1:y2, x1:x2]
@@ -526,6 +528,7 @@ class Model48pxOCR:
                 
                 # 创建批量 Tensor（一次内存分配）
                 batch = np.zeros((N, 48, max_w, 3), dtype=np.uint8)
+                regions_used = [None] * N
                 for i, idx in enumerate(chunk_indices):
                     w = all_widths[idx]
                     region = all_regions[idx]
@@ -537,6 +540,7 @@ class Model48pxOCR:
                         region = cv2.resize(region, (new_w, 48), interpolation=cv2.INTER_LINEAR)
                         w = new_w
                     batch[i, :, :w, :] = region[:, :w, :]
+                    regions_used[i] = region[:, :w, :]
                 
                 # 归一化并传输到设备（只传输一次！）
                 tensor = (torch.from_numpy(batch).float() - 127.5) / 127.5
@@ -566,6 +570,10 @@ class Model48pxOCR:
                     _, fg_color, bg_color = self._decode_with_colors(
                         pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
                     )
+                    if precise_mode and regions_used[i] is not None:
+                        peak_fg = self._estimate_dominant_fg_color_hsv(regions_used[i])
+                        if peak_fg is not None and self._should_override_fg(fg_color, peak_fg):
+                            fg_color = peak_fg
                     all_colors[chunk_indices[i]] = (fg_color, bg_color, prob)
                 
                 # 清理 GPU 内存
@@ -630,6 +638,86 @@ class Model48pxOCR:
         g = sum(c[1] for c in colors) // len(colors)
         b = sum(c[2] for c in colors) // len(colors)
         return (r, g, b)
+
+    def _estimate_dominant_fg_color_hsv(self, region_rgb: np.ndarray) -> Optional[Tuple[int, int, int]]:
+        if region_rgb is None or region_rgb.size == 0:
+            return None
+        if region_rgb.ndim != 3 or region_rgb.shape[2] != 3:
+            return None
+
+        step = 2
+        sample = region_rgb[::step, ::step, :]
+        if sample.size == 0:
+            return None
+
+        hsv = cv2.cvtColor(sample, cv2.COLOR_RGB2HSV)
+        h = hsv[:, :, 0].reshape(-1)
+        s = hsv[:, :, 1].reshape(-1)
+        v = hsv[:, :, 2].reshape(-1)
+
+        s_min = int(0.15 * 255)
+        v_min = int(0.20 * 255)
+        mask = (s >= s_min) & (v >= v_min)
+        if int(mask.sum()) < 24:
+            return None
+
+        bin_size = 5
+        bins = 36
+        h_bins = (h // bin_size).astype(np.int32)
+        h_bins = h_bins[mask]
+        if h_bins.size == 0:
+            return None
+
+        counts = np.bincount(h_bins, minlength=bins)
+        peak_bin = int(counts.argmax())
+        if int(counts[peak_bin]) < 12:
+            return None
+
+        peak_mask = mask & ((h // bin_size) == peak_bin)
+        if int(peak_mask.sum()) < 12:
+            return None
+
+        rgb_flat = sample.reshape(-1, 3)
+        peak_rgb = rgb_flat[peak_mask]
+        if peak_rgb.size == 0:
+            return None
+
+        mean = peak_rgb.mean(axis=0)
+        r, g, b = int(round(float(mean[0]))), int(round(float(mean[1]))), int(round(float(mean[2])))
+        r = min(max(r, 0), 255)
+        g = min(max(g, 0), 255)
+        b = min(max(b, 0), 255)
+
+        if self._is_near_white_rgb((r, g, b)):
+            return None
+        return (r, g, b)
+
+    def _should_override_fg(
+        self,
+        model_fg: Optional[Tuple[int, int, int]],
+        peak_fg: Tuple[int, int, int],
+    ) -> bool:
+        if model_fg is None:
+            return True
+        if self._is_near_white_rgb(model_fg):
+            return True
+        model_s = self._rgb_saturation(model_fg)
+        peak_s = self._rgb_saturation(peak_fg)
+        if model_s < 0.18 and peak_s >= 0.18:
+            return True
+        if peak_s > model_s + 0.12:
+            return True
+        return False
+
+    def _rgb_saturation(self, rgb: Tuple[int, int, int]) -> float:
+        hsv = cv2.cvtColor(np.array([[rgb]], dtype=np.uint8), cv2.COLOR_RGB2HSV)[0, 0]
+        return float(hsv[1]) / 255.0
+
+    def _is_near_white_rgb(self, rgb: Tuple[int, int, int]) -> bool:
+        hsv = cv2.cvtColor(np.array([[rgb]], dtype=np.uint8), cv2.COLOR_RGB2HSV)[0, 0]
+        s = int(hsv[1])
+        v = int(hsv[2])
+        return s < int(0.20 * 255) and v > int(0.85 * 255)
 
 
 def get_48px_ocr_handler() -> Model48pxOCR:
