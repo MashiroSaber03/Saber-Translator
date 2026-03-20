@@ -1669,7 +1669,8 @@ function stopPanelResize(): void {
 /** 处理键盘事件 */
 function handleKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement
-  const key = event.key.toLowerCase()
+  const actionKey = event.code === 'Delete' ? 'Delete' : event.key
+  const key = actionKey.toLowerCase()
   const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'z'
 
   if (isUndoShortcut) {
@@ -1693,12 +1694,13 @@ function handleKeyDown(event: KeyboardEvent): void {
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return
   }
 
-  switch (event.key) {
+  switch (actionKey) {
     case 'Escape':
       // 【复刻原版】Escape 退出编辑模式（原版没有此快捷键，但保留作为增强）
       exitEditMode()
       break
     case 'Delete':
+    case 'Del':
     case 'Backspace':
       // 【复刻原版】笔刷模式下不处理删除
       if (!brushMode.value && hasSelection.value) {

@@ -397,6 +397,7 @@
  */
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
+import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleState, TextDirection, TextAlign } from '@/types/bubble'
 import { getFontListApi } from '@/api/config'
 import type { FontInfo } from '@/types/api'
@@ -439,6 +440,8 @@ const emit = defineEmits<{
 // ============================================================
 // 默认值
 // ============================================================
+
+const settingsStore = useSettingsStore()
 
 const defaultBubble: BubbleState = {
   coords: [0, 0, 0, 0],
@@ -521,8 +524,30 @@ const fontSelectGroups = computed(() => {
 // ============================================================
 
 /** 从气泡数据同步到本地状态 */
+function createFallbackBubble(): BubbleState {
+  const textStyle = settingsStore.settings.textStyle
+  const layoutDirection = textStyle.layoutDirection
+  const textDirection = layoutDirection === 'horizontal' || layoutDirection === 'vertical'
+    ? layoutDirection
+    : defaultBubble.textDirection
+
+  return {
+    ...defaultBubble,
+    fontSize: textStyle.fontSize ?? defaultBubble.fontSize,
+    fontFamily: textStyle.fontFamily || defaultBubble.fontFamily,
+    textDirection,
+    textAlign: textStyle.textAlign || defaultBubble.textAlign,
+    textColor: textStyle.textColor || defaultBubble.textColor,
+    fillColor: textStyle.fillColor || defaultBubble.fillColor,
+    strokeEnabled: textStyle.strokeEnabled ?? defaultBubble.strokeEnabled,
+    strokeColor: textStyle.strokeColor || defaultBubble.strokeColor,
+    strokeWidth: textStyle.strokeWidth ?? defaultBubble.strokeWidth,
+    inpaintMethod: textStyle.inpaintMethod || defaultBubble.inpaintMethod,
+  }
+}
+
 function syncFromBubble(bubble: BubbleState | null): void {
-  const b = bubble || defaultBubble
+  const b = bubble || createFallbackBubble()
   localOriginalText.value = b.originalText
   localTranslatedText.value = b.translatedText
   localFontSize.value = b.fontSize
@@ -540,9 +565,12 @@ function syncFromBubble(bubble: BubbleState | null): void {
 
 // 监听 props 变化，同步本地状态
 watch(
-  () => props.bubble,
-  newBubble => {
-    syncFromBubble(newBubble)
+  () => ({
+    bubble: props.bubble,
+    textStyle: settingsStore.settings.textStyle
+  }),
+  ({ bubble }) => {
+    syncFromBubble(bubble)
   },
   { deep: true, immediate: true }
 )
