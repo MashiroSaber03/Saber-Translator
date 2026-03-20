@@ -173,6 +173,7 @@ export interface FontInfo {
   display_name: string
   path: string
   is_default: boolean
+  source?: 'builtin' | 'custom' | 'system' | 'local'
 }
 
 /**

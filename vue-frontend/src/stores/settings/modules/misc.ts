@@ -25,6 +25,8 @@ export function useMiscSettings(
 
   /** 当前文字样式设置 */
   const textStyle = computed(() => settings.value.textStyle)
+  /** 默认文字样式设置 */
+  const defaultTextStyle = computed(() => settings.value.defaultTextStyle)
 
   // ============================================================
   // 通用设置更新方法
@@ -47,6 +49,22 @@ export function useMiscSettings(
    */
   function updateTextStyle(updates: Partial<TextStyleSettings>): void {
     Object.assign(settings.value.textStyle, updates)
+  }
+
+  /**
+   * 更新默认文字样式设置
+   * 会持久化到 localStorage / 后端设置
+   */
+  function updateDefaultTextStyle(updates: Partial<TextStyleSettings>): void {
+    Object.assign(settings.value.defaultTextStyle, updates)
+    saveToStorage()
+  }
+
+  /**
+   * 将默认文字样式应用到当前侧边栏文字设置
+   */
+  function applyDefaultTextStyleToCurrent(): void {
+    settings.value.textStyle = { ...settings.value.defaultTextStyle }
   }
 
   // ============================================================
@@ -115,10 +133,13 @@ export function useMiscSettings(
   return {
     // 计算属性
     textStyle,
+    defaultTextStyle,
 
     // 方法
     updateSettings,
     updateTextStyle,
+    updateDefaultTextStyle,
+    applyDefaultTextStyleToCurrent,
     setPdfProcessingMethod,
     setShowDetectionDebug,
     setAutoSaveInBookshelfMode,

@@ -14,8 +14,8 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
 import { showToast } from '@/utils/toast'
-import { DEFAULT_FONT_FAMILY } from '@/constants'
-import type { TextDirection, InpaintMethod } from '@/types/bubble'
+import type { FontInfo } from '@/types/api'
+import type { TextDirection, TextAlign, InpaintMethod } from '@/types/bubble'
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
@@ -25,6 +25,7 @@ import {
 } from '@/types/workflow'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import { normalizeFontList, ensureFontPresent, createFontSelectGroups } from '@/utils/fontUtils'
 
 // ============================================================
 // Props 和 Emits
@@ -54,6 +55,7 @@ interface ApplySettingsOptions {
   fontSize: boolean
   fontFamily: boolean
   layoutDirection: boolean
+  textAlign: boolean
   textColor: boolean
   fillColor: boolean
   strokeEnabled: boolean
@@ -80,6 +82,7 @@ const applyOptions = ref<ApplySettingsOptions>({
   fontSize: true,
   fontFamily: true,
   layoutDirection: true,
+  textAlign: true,
   textColor: true,
   fillColor: true,
   strokeEnabled: true,
@@ -104,6 +107,13 @@ const layoutDirectionOptions = [
   { label: '自动 (根据检测)', value: 'auto' },
   { label: '竖向排版', value: 'vertical' },
   { label: '横向排版', value: 'horizontal' },
+]
+
+const textAlignOptions = [
+  { label: '左对齐', value: 'left' },
+  { label: '居中对齐', value: 'center' },
+  { label: '右对齐', value: 'right' },
+  { label: '两侧对齐', value: 'justify' },
 ]
 
 /** 填充方式选项（用于CustomSelect） */
@@ -263,28 +273,23 @@ const workflowDescription = computed(() => {
 /** 当前工作流是否危险操作 */
 const isDangerousWorkflow = computed(() => selectedWorkflowConfig.value.isDangerous)
 
-/** 字体列表（包含内置字体） */
-const fontList = ref<string[]>([])
-
-/** 内置字体列表（确保始终显示） */
-const BUILTIN_FONTS = [
-  DEFAULT_FONT_FAMILY,
-  'fonts/msyh.ttc',
-  'fonts/simhei.ttf',
-  'fonts/simsun.ttc',
-]
+/** 字体列表（包含内置 / 系统 / 自定义字体） */
+const fontList = ref<FontInfo[]>([])
+const CUSTOM_FONT_UPLOAD_VALUE = '__upload_custom_font__'
 
 /** 字体上传输入框引用 */
 const fontUploadInput = ref<HTMLInputElement | null>(null)
 
-/** 字体选择选项（用于CustomSelect） */
-const fontSelectOptions = computed(() => {
-  const options = fontList.value.map(font => ({
-    label: getFontDisplayName(font),
-    value: font,
-  }))
-  options.push({ label: '自定义字体...', value: 'custom-font' })
-  return options
+/** 字体分组选项（用于 CustomSelect） */
+const fontSelectGroups = computed(() => {
+  const fonts = ensureFontPresent(fontList.value, textStyle.value.fontFamily)
+  return [
+    ...createFontSelectGroups(fonts),
+    {
+      label: '操作',
+      options: [{ label: '上传自定义字体...', value: CUSTOM_FONT_UPLOAD_VALUE }]
+    }
+  ]
 })
 
 // ============================================================
@@ -294,13 +299,6 @@ const fontSelectOptions = computed(() => {
 onMounted(async () => {
   // 加载字体列表
   await loadFontList()
-
-  // 确保当前选中的字体在列表中
-  const currentFont = textStyle.value.fontFamily
-  if (currentFont && !fontList.value.includes(currentFont)) {
-    // 如果当前字体不在列表中，添加到列表
-    fontList.value = [currentFont, ...fontList.value]
-  }
 
   // 监听点击外部关闭应用选项菜单
   window.addEventListener('click', handleClickOutside)
@@ -326,26 +324,10 @@ watch(supportsRangeForCurrentMode, supports => {
 async function loadFontList() {
   try {
     const response = await getFontList()
-    // 后端返回的是 { fonts: [{file_name, display_name, path, is_default}, ...] }
-    if (response.fonts && Array.isArray(response.fonts) && response.fonts.length > 0) {
-      // 检查是新格式（对象数组）还是旧格式（字符串数组）
-      const firstItem = response.fonts[0]
-      if (typeof firstItem === 'object' && 'path' in firstItem) {
-        // 新格式：提取字体路径
-        const serverFonts = response.fonts.map(f => (typeof f === 'object' ? f.path : f))
-        fontList.value = serverFonts
-      } else {
-        // 旧格式：直接使用
-        fontList.value = response.fonts as string[]
-      }
-    } else {
-      // 如果API失败，至少显示内置字体
-      fontList.value = [...BUILTIN_FONTS]
-    }
+    fontList.value = ensureFontPresent(normalizeFontList(response.fonts), textStyle.value.fontFamily)
   } catch (error) {
     console.error('加载字体列表失败:', error)
-    // 出错时也显示内置字体
-    fontList.value = [...BUILTIN_FONTS]
+    fontList.value = ensureFontPresent([], textStyle.value.fontFamily)
   }
 }
 
@@ -398,6 +380,7 @@ async function handleFontUpload(event: Event) {
       await loadFontList()
       // 设置新上传的字体为当前字体
       settingsStore.updateTextStyle({ fontFamily: response.fontPath })
+      emit('textStyleChanged', 'fontFamily', response.fontPath)
       showToast('字体上传成功', 'success')
     } else {
       showToast(response.error || '字体上传失败', 'error')
@@ -412,57 +395,11 @@ async function handleFontUpload(event: Event) {
 }
 
 /**
- * 获取字体显示名称
- */
-function getFontDisplayName(fontPath: string): string {
-  // 内置字体的中文名称映射（与后端保持一致）
-  const fontNameMap: Record<string, string> = {
-    'fonts/STXINGKA.TTF': '华文行楷',
-    'fonts/STXINWEI.TTF': '华文新魏',
-    'fonts/STZHONGS.TTF': '华文中宋',
-    'fonts/STKAITI.TTF': '楷体',
-    'fonts/STLITI.TTF': '隶书',
-    'fonts/思源黑体SourceHanSansK-Bold.TTF': '思源黑体',
-    'fonts/STSONG.TTF': '华文宋体',
-    'fonts/msyh.ttc': '微软雅黑',
-    'fonts/msyhbd.ttc': '微软雅黑粗体',
-    'fonts/SIMYOU.TTF': '幼圆',
-    'fonts/STFANGSO.TTF': '仿宋',
-    'fonts/STHUPO.TTF': '华文琥珀',
-    'fonts/STXIHEI.TTF': '华文细黑',
-    'fonts/simkai.ttf': '中易楷体',
-    'fonts/simfang.ttf': '中易仿宋',
-    'fonts/simhei.ttf': '中易黑体',
-    'fonts/SIMLI.TTF': '中易隶书',
-    'fonts/simsun.ttc': '宋体',
-  }
-
-  // 先检查是否有预定义的中文名称
-  if (fontNameMap[fontPath]) {
-    return fontNameMap[fontPath]
-  }
-
-  // 从路径中提取文件名
-  const fileName = fontPath.split('/').pop() || fontPath
-
-  // 检查文件名是否有预定义名称（不区分大小写）
-  for (const [path, name] of Object.entries(fontNameMap)) {
-    const mapFileName = path.split('/').pop() || ''
-    if (mapFileName.toLowerCase() === fileName.toLowerCase()) {
-      return name
-    }
-  }
-
-  // 移除扩展名
-  return fileName.replace(/\.(ttf|ttc|otf)$/i, '')
-}
-
-/**
  * 处理字体选择变化（CustomSelect）
  */
 function handleFontSelectChange(value: string | number) {
   const strValue = String(value)
-  if (strValue === 'custom-font') {
+  if (strValue === CUSTOM_FONT_UPLOAD_VALUE) {
     fontUploadInput.value?.click()
     return
   }
@@ -477,6 +414,12 @@ function handleLayoutDirectionChange(value: string | number) {
   const strValue = String(value)
   settingsStore.updateTextStyle({ layoutDirection: strValue as TextDirection })
   emit('textStyleChanged', 'layoutDirection', strValue)
+}
+
+function handleTextAlignChange(value: string | number) {
+  const strValue = String(value)
+  settingsStore.updateTextStyle({ textAlign: strValue as TextAlign })
+  emit('textStyleChanged', 'textAlign', strValue)
 }
 
 /**
@@ -559,6 +502,7 @@ function toggleSelectAll() {
     fontSize: newValue,
     fontFamily: newValue,
     layoutDirection: newValue,
+    textAlign: newValue,
     textColor: newValue,
     fillColor: newValue,
     strokeEnabled: newValue,
@@ -698,7 +642,10 @@ function handleRunWorkflow() {
               <label for="fontFamily">文本字体</label>
               <CustomSelect
                 :model-value="textStyle.fontFamily"
-                :options="fontSelectOptions"
+                :groups="fontSelectGroups"
+                :searchable="true"
+                search-placeholder="????"
+                no-results-text="???????"
                 @change="handleFontSelectChange"
               />
               <input
@@ -717,6 +664,15 @@ function handleRunWorkflow() {
                 :model-value="textStyle.layoutDirection"
                 :options="layoutDirectionOptions"
                 @change="handleLayoutDirectionChange"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="textAlign">文字对齐</label>
+              <CustomSelect
+                :model-value="textStyle.textAlign"
+                :options="textAlignOptions"
+                @change="handleTextAlignChange"
               />
             </div>
           </section>
@@ -869,6 +825,10 @@ function handleRunWorkflow() {
                 v-model="applyOptions.layoutDirection"
               />
               <label for="apply_layoutDirection">排版方向</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_textAlign" v-model="applyOptions.textAlign" />
+              <label for="apply_textAlign">文字对齐</label>
             </div>
             <div class="apply-option">
               <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />

@@ -23,6 +23,7 @@ export interface ApplySettingsOptions {
     fontSize: boolean
     fontFamily: boolean
     layoutDirection: boolean
+    textAlign: boolean
     textColor: boolean
     fillColor: boolean
     strokeEnabled: boolean
@@ -64,6 +65,7 @@ export function useTextStyleSync() {
             autoFontSize: image.autoFontSize ?? currentStyle.autoFontSize,
             fontFamily: image.fontFamily ?? currentStyle.fontFamily,
             layoutDirection: image.layoutDirection ?? currentStyle.layoutDirection,
+            textAlign: image.textAlign ?? currentStyle.textAlign,
             textColor: image.textColor ?? currentStyle.textColor,
             fillColor: image.fillColor ?? currentStyle.fillColor,
             strokeEnabled: image.strokeEnabled ?? currentStyle.strokeEnabled,
@@ -87,6 +89,7 @@ export function useTextStyleSync() {
             autoFontSize: style.autoFontSize,
             fontFamily: style.fontFamily,
             layoutDirection: style.layoutDirection,
+            textAlign: style.textAlign,
             textColor: style.textColor,
             fillColor: style.fillColor,
             strokeEnabled: style.strokeEnabled,
@@ -158,7 +161,7 @@ export function useTextStyleSync() {
         // Vue 版暂时不实现此检查，因为切换图片时不会触发设置变更事件
 
         // 需要重新渲染的设置项（与原版 renderSettings 一致）
-        const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
+        const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textAlign', 'textColor',
             'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor']
 
         if (!renderSettings.includes(settingKey)) {
@@ -172,6 +175,7 @@ export function useTextStyleSync() {
             'fontSize': 'fontSize',
             'fontFamily': 'fontFamily',
             'layoutDirection': 'textDirection',  // UI 是 layoutDirection，状态是 textDirection
+            'textAlign': 'textAlign',
             'textColor': 'textColor',
             'strokeEnabled': 'strokeEnabled',
             'strokeColor': 'strokeColor',
@@ -243,6 +247,7 @@ export function useTextStyleSync() {
                 fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,
                 fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
                 textDirection: getEffectiveDirection(bs),
+                textAlign: bs.textAlign || settingsStore.settings.textStyle.textAlign,
                 textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
                 rotationAngle: bs.rotationAngle || 0,
                 position: bs.position || { x: 0, y: 0 },
@@ -372,6 +377,7 @@ export function useTextStyleSync() {
                     fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,  // 传递当前字号，后端会根据 autoFontSize=true 重新计算
                     fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
                     textDirection: getEffectiveDirection(bs),
+                    textAlign: bs.textAlign || settingsStore.settings.textStyle.textAlign,
                     textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
                     rotationAngle: bs.rotationAngle || 0,
                     position: bs.position || { x: 0, y: 0 },
@@ -513,6 +519,7 @@ export function useTextStyleSync() {
                 fontSize: textStyle.fontSize,
                 fontFamily: textStyle.fontFamily,
                 textDirection: isAutoLayout ? 'vertical' : textStyle.layoutDirection,
+                textAlign: textStyle.textAlign,
                 textColor: textStyle.textColor,
                 fillColor: textStyle.fillColor,
                 strokeEnabled: textStyle.strokeEnabled,
@@ -558,6 +565,10 @@ export function useTextStyleSync() {
                     } else {
                         updatedBubble.textDirection = fixedSettings.textDirection as 'vertical' | 'horizontal'
                     }
+                }
+
+                if (options.textAlign) {
+                    updatedBubble.textAlign = fixedSettings.textAlign
                 }
 
                 // 文字颜色
@@ -607,6 +618,7 @@ export function useTextStyleSync() {
 
                 if (options.fontFamily) imageUpdates.fontFamily = fixedSettings.fontFamily
                 if (options.layoutDirection) imageUpdates.layoutDirection = textStyle.layoutDirection
+                if (options.textAlign) imageUpdates.textAlign = fixedSettings.textAlign
 
                 // 颜色相关设置
                 if (options.textColor || options.fillColor) {
@@ -639,6 +651,7 @@ export function useTextStyleSync() {
             if (options.fontSize) appliedItems.push(isAutoFontSize ? '自动字号' : '字号')
             if (options.fontFamily) appliedItems.push('字体')
             if (options.layoutDirection) appliedItems.push(isAutoLayout ? '自动排版方向' : '排版方向')
+            if (options.textAlign) appliedItems.push('文字对齐')
             if (options.textColor) appliedItems.push(isAutoTextColor ? '自动文字颜色' : '文字颜色')
             if (options.fillColor) appliedItems.push(isAutoTextColor ? '自动填充颜色' : '填充颜色')
             if (options.strokeEnabled) appliedItems.push('描边开关')
@@ -707,6 +720,7 @@ export function useTextStyleSync() {
                             autoFontSize: options.fontSize && isAutoFontSize,
                             fontFamily: img.fontFamily,
                             textDirection: img.layoutDirection,
+                            textAlign: img.textAlign,
                             autoTextDirection: textStyle.layoutDirection === 'auto',
                             textColor: img.textColor,
                             fillColor: img.fillColor,

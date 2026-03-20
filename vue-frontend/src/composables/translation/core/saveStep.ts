@@ -65,6 +65,7 @@ export function getSessionPath(): string | null {
  */
 function buildUiSettings(): Record<string, unknown> {
     const settingsStore = useSettingsStore()
+    const sessionStore = useSessionStore()
     const { textStyle } = settingsStore.settings
 
     return {
@@ -72,6 +73,7 @@ function buildUiSettings(): Record<string, unknown> {
         autoFontSize: textStyle.autoFontSize,
         fontFamily: textStyle.fontFamily,
         layoutDirection: textStyle.layoutDirection,
+        textAlign: textStyle.textAlign,
         textColor: textStyle.textColor,
         useInpaintingMethod: textStyle.inpaintMethod,
         fillColor: textStyle.fillColor,
@@ -79,6 +81,8 @@ function buildUiSettings(): Record<string, unknown> {
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
         useAutoTextColor: textStyle.useAutoTextColor,
+        editBrushInpaintMethod: sessionStore.editBrushSettings.inpaintMethod,
+        editBrushFillColor: sessionStore.editBrushSettings.fillColor,
     }
 }
 

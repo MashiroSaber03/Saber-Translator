@@ -1,16 +1,11 @@
-<!--
-  自定义下拉选择器组件
-  替代原生select，提供更好的样式控制
--->
-<template>
-  <div 
-    class="custom-select" 
+﻿<template>
+  <div
+    class="custom-select"
     :class="{ open: isOpen, disabled: disabled }"
     ref="selectRef"
   >
-    <!-- 选择框显示区域 -->
-    <div 
-      class="custom-select-trigger" 
+    <div
+      class="custom-select-trigger"
       @click="toggleDropdown"
       :title="title"
     >
@@ -21,20 +16,34 @@
         </svg>
       </span>
     </div>
-    
-    <!-- 下拉选项列表 -->
+
     <Teleport to="body">
-      <div 
+      <div
         v-if="isOpen"
-        ref="dropdownRef" 
+        ref="dropdownRef"
         class="custom-select-dropdown"
         :style="dropdownStyle"
       >
+        <div
+          v-if="searchable"
+          class="custom-select-search"
+          @click.stop
+        >
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="custom-select-search-input"
+            :placeholder="searchPlaceholder"
+            @click.stop
+          />
+        </div>
+
         <div class="custom-select-options">
-          <template v-if="hasGroups">
-            <div 
-              v-for="group in groupedOptions" 
-              :key="group.label" 
+          <template v-if="visibleOptionCount > 0 && hasGroups">
+            <div
+              v-for="group in groupedOptions"
+              :key="group.label"
               class="custom-select-group"
             >
               <div class="custom-select-group-label">{{ group.label }}</div>
@@ -49,7 +58,8 @@
               </div>
             </div>
           </template>
-          <template v-else>
+
+          <template v-else-if="visibleOptionCount > 0">
             <div
               v-for="option in flatOptions"
               :key="option.value"
@@ -60,6 +70,10 @@
               {{ option.label }}
             </div>
           </template>
+
+          <div v-else class="custom-select-empty">
+            {{ noResultsText }}
+          </div>
         </div>
       </div>
     </Teleport>
@@ -67,10 +81,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
-// 类型定义
-// 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，boolean 不兼容
 type SelectValue = string | number
 
 interface SelectOption {
@@ -83,81 +95,106 @@ interface SelectGroup {
   options: SelectOption[]
 }
 
-// Props
 const props = withDefaults(defineProps<{
-  /** 当前选中的值 */
   modelValue: SelectValue
-  /** 选项数组 (平铺模式) */
   options?: SelectOption[]
-  /** 分组选项数组 (分组模式) */
   groups?: SelectGroup[]
-  /** 占位文本 */
   placeholder?: string
-  /** 是否禁用 */
   disabled?: boolean
-  /** 标题提示 */
   title?: string
+  searchable?: boolean
+  searchPlaceholder?: string
+  noResultsText?: string
 }>(), {
   options: () => [],
   groups: () => [],
   placeholder: '请选择',
   disabled: false,
-  title: ''
+  title: '',
+  searchable: false,
+  searchPlaceholder: '搜索...',
+  noResultsText: '无匹配项'
 })
 
-// Emits
 const emit = defineEmits<{
   (e: 'update:modelValue', value: SelectValue): void
   (e: 'change', value: SelectValue): void
 }>()
 
-// 状态
 const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
+const searchInputRef = ref<HTMLInputElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
+const searchQuery = ref('')
 
 const VIEWPORT_PADDING = 12
 const DROPDOWN_GAP = 6
 const MAX_DROPDOWN_HEIGHT = 360
 
-// 是否使用分组模式
-const hasGroups = computed(() => props.groups && props.groups.length > 0)
+const hasGroups = computed(() => props.groups.length > 0)
+const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLocaleLowerCase())
 
-// 分组选项
-const groupedOptions = computed(() => props.groups)
+function optionMatches(option: SelectOption): boolean {
+  if (!props.searchable || !normalizedSearchQuery.value) {
+    return true
+  }
 
-// 平铺选项
-const flatOptions = computed(() => props.options)
+  const keyword = normalizedSearchQuery.value
+  return `${option.label} ${String(option.value)}`.toLocaleLowerCase().includes(keyword)
+}
 
-// 获取所有选项（用于查找当前选中项的标签）
+const groupedOptions = computed(() => {
+  if (!hasGroups.value) return []
+
+  return props.groups
+    .map((group) => ({
+      ...group,
+      options: group.options.filter(optionMatches)
+    }))
+    .filter((group) => group.options.length > 0)
+})
+
+const flatOptions = computed(() => props.options.filter(optionMatches))
+
 const allOptions = computed(() => {
   if (hasGroups.value) {
-    return props.groups.flatMap(g => g.options)
+    return props.groups.flatMap(group => group.options)
   }
   return props.options
 })
 
-// 当前显示的值
+const visibleOptionCount = computed(() => {
+  if (hasGroups.value) {
+    return groupedOptions.value.reduce((count, group) => count + group.options.length, 0)
+  }
+  return flatOptions.value.length
+})
+
 const displayValue = computed(() => {
-  const option = allOptions.value.find(o => o.value === props.modelValue)
+  const option = allOptions.value.find(option => option.value === props.modelValue)
   return option ? option.label : props.placeholder
 })
 
-// 切换下拉框
 function toggleDropdown(): void {
   if (props.disabled) return
-  
+
   if (!isOpen.value) {
+    searchQuery.value = ''
     isOpen.value = true
-    // 先渲染下拉，再根据视口和内容动态定位
     nextTick(() => {
       updatePosition()
       requestAnimationFrame(() => updatePosition())
+      if (props.searchable) {
+        searchInputRef.value?.focus()
+        searchInputRef.value?.select()
+      }
     })
-  } else {
-    isOpen.value = false
+    return
   }
+
+  isOpen.value = false
+  searchQuery.value = ''
 }
 
 function getOptionCount(): number {
@@ -167,7 +204,6 @@ function getOptionCount(): number {
   return props.options.length
 }
 
-// 更新下拉框位置
 function updatePosition() {
   if (!selectRef.value) return
 
@@ -207,40 +243,35 @@ function updatePosition() {
   }
 }
 
-// 选择选项
 function selectOption(value: SelectValue): void {
   emit('update:modelValue', value)
   emit('change', value)
   isOpen.value = false
+  searchQuery.value = ''
 }
 
-// 点击外部关闭
 function handleClickOutside(event: MouseEvent): void {
-  // 检查点击是否在触发器上
   if (selectRef.value && selectRef.value.contains(event.target as Node)) {
     return
   }
-  
-  // 检查点击是否在下拉菜单内部
+
   if (dropdownRef.value && dropdownRef.value.contains(event.target as Node)) {
     return
   }
 
   isOpen.value = false
+  searchQuery.value = ''
 }
 
-// 监听页面滚动和调整大小，更新位置或关闭
 function handleScrollOrResize() {
   if (isOpen.value) {
-    // 简单起见，滚动时更新位置
     updatePosition()
   }
 }
 
-// 生命周期
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  window.addEventListener('scroll', handleScrollOrResize, true) // 捕获模式以监听所有滚动
+  window.addEventListener('scroll', handleScrollOrResize, true)
   window.addEventListener('resize', handleScrollOrResize)
 })
 
@@ -249,10 +280,15 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScrollOrResize, true)
   window.removeEventListener('resize', handleScrollOrResize)
 })
+
+watch(searchQuery, () => {
+  if (isOpen.value) {
+    nextTick(() => updatePosition())
+  }
+})
 </script>
 
 <style>
-/* 不使用scoped，直接使用全局样式确保不被覆盖 */
 .custom-select {
   position: relative;
   min-width: 160px;
@@ -307,9 +343,8 @@ onUnmounted(() => {
 }
 
 .custom-select-dropdown {
-  position: fixed; /* 改为 fixed 以配合 Teleport */
-  /* top, left, width 由 JS 动态计算 */
-  margin-top: 0; /* JS计算位置时已包含偏移 */
+  position: fixed;
+  margin-top: 0;
   background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 10px;
@@ -319,6 +354,31 @@ onUnmounted(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   color: #1f2430;
+}
+
+.custom-select-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #edf0f6;
+}
+
+.custom-select-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #cfd6e4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2430;
+  outline: none;
+}
+
+.custom-select-search-input:focus {
+  border-color: #5b73f2;
+  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.16);
 }
 
 .custom-select-options {
@@ -367,4 +427,10 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+.custom-select-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: #7a8194;
+  font-size: 13px;
+}
 </style>

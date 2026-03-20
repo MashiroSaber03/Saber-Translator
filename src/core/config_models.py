@@ -52,6 +52,7 @@ class BubbleState:
     font_size: int = constants.DEFAULT_FONT_SIZE
     font_family: str = constants.DEFAULT_FONT_RELATIVE_PATH
     text_direction: str = constants.DEFAULT_TEXT_DIRECTION  # "vertical" | "horizontal"
+    text_align: str = "center"  # "left" | "center" | "right" | "justify"（仅横排渲染生效）
     auto_text_direction: str = constants.DEFAULT_TEXT_DIRECTION  # 自动检测的排版方向（始终在检测时计算，不受用户选择影响）
     text_color: str = constants.DEFAULT_TEXT_COLOR
     fill_color: str = constants.DEFAULT_FILL_COLOR       # 单个气泡的填充色
@@ -88,6 +89,7 @@ class BubbleState:
             "fontSize": self.font_size,
             "fontFamily": self.font_family,
             "textDirection": self.text_direction,
+            "textAlign": self.text_align,
             "autoTextDirection": self.auto_text_direction,  # 自动检测的排版方向
             "textColor": self.text_color,
             "fillColor": self.fill_color,
@@ -114,6 +116,7 @@ class BubbleState:
             "fontSize": self.font_size,
             "fontFamily": self.font_family,
             "text_direction": self.text_direction,
+            "text_align": self.text_align,
             "position_offset": self.position_offset,
             "text_color": self.text_color,
             "rotation_angle": self.rotation_angle,
@@ -148,6 +151,8 @@ class BubbleState:
             "fontFamily": "font_family",
             "textDirection": "text_direction",
             "text_direction": "text_direction",  # 兼容后端命名
+            "textAlign": "text_align",
+            "text_align": "text_align",  # 兼容后端命名
             "autoTextDirection": "auto_text_direction",  # 自动检测的排版方向
             "auto_text_direction": "auto_text_direction",  # 兼容后端命名
             "textColor": "text_color",

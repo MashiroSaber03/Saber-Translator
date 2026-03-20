@@ -3,7 +3,7 @@
  * 定义翻译页面中图片的数据结构
  */
 
-import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from './bubble'
+import type { BubbleState, BubbleCoords, TextDirection, TextAlign, InpaintMethod } from './bubble'
 
 /**
  * 翻译状态
@@ -76,6 +76,8 @@ export interface ImageData {
   fontFamily: string
   /** 排版方向（用户选择，包括 'auto'） */
   layoutDirection: TextDirection
+  /** 文本对齐 */
+  textAlign: TextAlign
   /** 文字颜色 */
   textColor: string
   /** 填充颜色 */

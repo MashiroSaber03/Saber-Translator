@@ -176,6 +176,7 @@ export function useSequentialPipeline() {
             autoTextDirection: layoutDirectionValue === 'auto',
             textDirection: layoutDirectionValue === 'auto' ? 'vertical' : layoutDirectionValue,
             layoutDirection: layoutDirectionValue,  // 保存用户原始选择（包括 'auto'）
+            textAlign: textStyle.textAlign,
             fillColor: textStyle.fillColor,
             textColor: textStyle.textColor,
             rotationAngle: 0,
@@ -403,6 +404,7 @@ export function useSequentialPipeline() {
             autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
             fontFamily: savedTextStyles?.fontFamily ?? textStyle.fontFamily,
             layoutDirection: savedTextStyles?.layoutDirection ?? textStyle.layoutDirection,
+            textAlign: savedTextStyles?.textAlign ?? textStyle.textAlign,
             textColor: savedTextStyles?.textColor ?? textStyle.textColor,
             fillColor: savedTextStyles?.fillColor ?? textStyle.fillColor,
             strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
@@ -691,6 +693,7 @@ export function useSequentialPipeline() {
                     autoFontSize: savedTextStyles.autoFontSize,
                     fontFamily: savedTextStyles.fontFamily,
                     layoutDirection: savedTextStyles.layoutDirection,
+                    textAlign: savedTextStyles.textAlign,
                     textColor: savedTextStyles.textColor,
                     fillColor: savedTextStyles.fillColor,
                     strokeEnabled: savedTextStyles.strokeEnabled,

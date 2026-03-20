@@ -146,12 +146,15 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         fontSize: Number(s.fontSize) || 24,
         fontFamily: s.fontFamily || DEFAULT_FONT_FAMILY,
         textDirection: getEffectiveDirection(s),
+        textAlign: s.textAlign || 'center',
         textColor: s.textColor || '#231816',
         rotationAngle: Math.round(Number(s.rotationAngle) || 0),
         position: s.position ? { x: Math.round(s.position.x || 0), y: Math.round(s.position.y || 0) } : { x: 0, y: 0 },
         strokeEnabled: s.strokeEnabled !== undefined ? s.strokeEnabled : true,
         strokeColor: s.strokeColor || '#FFFFFF',
         strokeWidth: Number(s.strokeWidth) || 3,
+        fillColor: s.fillColor || '#FFFFFF',
+        inpaintMethod: s.inpaintMethod || 'solid'
       }))
 
       // 调用后端API（使用正确的参数格式，确保数值类型）

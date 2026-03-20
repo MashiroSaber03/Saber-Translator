@@ -67,6 +67,10 @@ export const useSettingsStore = defineStore('settings', () => {
     aiVisionOcr: {}
   })
 
+  function syncCurrentTextStyleFromDefault(): void {
+    settings.value.textStyle = { ...settings.value.defaultTextStyle }
+  }
+
   // ============================================================
   // localStorage 持久化方法
   // ============================================================
@@ -101,7 +105,7 @@ export const useSettingsStore = defineStore('settings', () => {
   /**
    * 从 localStorage 加载设置
    * 优先读取新 Key，若不存在则尝试读取原版 Key 并迁移
-   * 【复刻原版】textStyle（左侧边栏文字设置）不从 localStorage 加载，始终使用默认值
+   * 当前侧边栏文字设置始终以 defaultTextStyle 初始化，后续可手动修改
    */
   function loadFromStorage(): void {
     try {
@@ -126,9 +130,7 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value = deepMerge(defaults, parsed)
         // 确保数值类型正确
         ensureNumericTypes()
-
-        // 【复刻原版】左侧边栏文字设置始终使用默认值，不从 localStorage 恢复
-        settings.value.textStyle = { ...defaults.textStyle }
+        syncCurrentTextStyleFromDefault()
 
         // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
         const t = settings.value.translation
@@ -138,7 +140,7 @@ export const useSettingsStore = defineStore('settings', () => {
           settings.value.translatePrompt = t.isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
         }
 
-        console.log('已从 localStorage 加载设置（textStyle 使用默认值）')
+        console.log('已从 localStorage 加载设置（textStyle 已按 defaultTextStyle 初始化）')
       }
     } catch (error) {
       console.error('从 localStorage 加载设置失败:', error)
@@ -168,7 +170,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /**
    * 确保设置中的数值类型正确
-   * 注意：textStyle 不在这里处理，因为它会被重置为默认值（复刻原版行为）
+   * 同时修正 textStyle / defaultTextStyle 中的数字字段
    */
   function ensureNumericTypes(): void {
     const be = settings.value.boxExpand
@@ -203,6 +205,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const pr = settings.value.proofreading
     pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
+
+    const defaultTextStyle = createDefaultSettings().defaultTextStyle
+    const textStyles = [settings.value.textStyle, settings.value.defaultTextStyle]
+    for (const style of textStyles) {
+      style.fontSize = Number(style.fontSize) || defaultTextStyle.fontSize
+      style.strokeWidth = Number(style.strokeWidth) || defaultTextStyle.strokeWidth
+    }
 
     // 迁移旧版服务商名称
     if ((tr.provider as string) === 'baidu') {
@@ -381,14 +390,11 @@ export const useSettingsStore = defineStore('settings', () => {
         const backendSettings = response.settings
         console.log('[Settings] 从后端加载设置:', backendSettings)
         applyBackendSettings(backendSettings)
-
-        // 【复刻原版】左侧边栏文字设置始终使用默认值，不从后端恢复
-        const defaults = createDefaultSettings()
-        settings.value.textStyle = { ...defaults.textStyle }
+        syncCurrentTextStyleFromDefault()
 
         saveToStorage()
         saveProviderConfigsToStorage()
-        console.log('[Settings] 后端设置已应用（textStyle 使用默认值）')
+        console.log('[Settings] 后端设置已应用（textStyle 已按 defaultTextStyle 初始化）')
         return true
       } else {
         console.warn('[Settings] 后端无设置数据，使用 localStorage 或默认值')
@@ -663,6 +669,29 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.lamaDisableResize = backendSettings.lamaDisableResize as boolean
     }
 
+    const defaultTextSettings = backendSettings.defaultTextSettings as Record<string, unknown> | undefined
+    if (defaultTextSettings && typeof defaultTextSettings === 'object') {
+      settings.value.defaultTextStyle = {
+        ...settings.value.defaultTextStyle,
+        fontSize: parseNum(defaultTextSettings.fontSize, settings.value.defaultTextStyle.fontSize),
+        autoFontSize: (defaultTextSettings.autoFontSize as boolean) ?? settings.value.defaultTextStyle.autoFontSize,
+        fontFamily: (defaultTextSettings.fontFamily as string) || settings.value.defaultTextStyle.fontFamily,
+        layoutDirection: (defaultTextSettings.layoutDirection as 'vertical' | 'horizontal' | 'auto')
+          || (defaultTextSettings.textDirection as 'vertical' | 'horizontal' | 'auto')
+          || settings.value.defaultTextStyle.layoutDirection,
+        textAlign: (defaultTextSettings.textAlign as 'left' | 'center' | 'right' | 'justify')
+          || settings.value.defaultTextStyle.textAlign,
+        textColor: (defaultTextSettings.textColor as string) || settings.value.defaultTextStyle.textColor,
+        fillColor: (defaultTextSettings.fillColor as string) || settings.value.defaultTextStyle.fillColor,
+        strokeEnabled: (defaultTextSettings.strokeEnabled as boolean) ?? settings.value.defaultTextStyle.strokeEnabled,
+        strokeColor: (defaultTextSettings.strokeColor as string) || settings.value.defaultTextStyle.strokeColor,
+        strokeWidth: parseNum(defaultTextSettings.strokeWidth, settings.value.defaultTextStyle.strokeWidth),
+        inpaintMethod: (defaultTextSettings.inpaintMethod as 'solid' | 'lama_mpe' | 'litelama')
+          || settings.value.defaultTextStyle.inpaintMethod,
+        useAutoTextColor: (defaultTextSettings.useAutoTextColor as boolean) ?? settings.value.defaultTextStyle.useAutoTextColor
+      }
+    }
+
     // 服务商配置缓存
     if (backendSettings.providerSettings && typeof backendSettings.providerSettings === 'object') {
       const providerSettings = backendSettings.providerSettings as Record<string, Record<string, Record<string, unknown>>>
@@ -902,6 +931,23 @@ export const useSettingsStore = defineStore('settings', () => {
         // LAMA修复禁用缩放
         lamaDisableResize: settings.value.lamaDisableResize,
 
+        // 默认文字设置
+        defaultTextSettings: {
+          fontSize: settings.value.defaultTextStyle.fontSize,
+          autoFontSize: settings.value.defaultTextStyle.autoFontSize,
+          fontFamily: settings.value.defaultTextStyle.fontFamily,
+          layoutDirection: settings.value.defaultTextStyle.layoutDirection,
+          textDirection: settings.value.defaultTextStyle.layoutDirection,
+          textAlign: settings.value.defaultTextStyle.textAlign,
+          textColor: settings.value.defaultTextStyle.textColor,
+          fillColor: settings.value.defaultTextStyle.fillColor,
+          strokeEnabled: settings.value.defaultTextStyle.strokeEnabled,
+          strokeColor: settings.value.defaultTextStyle.strokeColor,
+          strokeWidth: settings.value.defaultTextStyle.strokeWidth,
+          inpaintMethod: settings.value.defaultTextStyle.inpaintMethod,
+          useAutoTextColor: settings.value.defaultTextStyle.useAutoTextColor
+        },
+
         // 服务商分组配置缓存
         providerSettings: buildProviderSettingsForBackend(),
       }
@@ -981,8 +1027,11 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 更多设置模块
     textStyle: miscModule.textStyle,
+    defaultTextStyle: miscModule.defaultTextStyle,
     updateSettings: miscModule.updateSettings,
     updateTextStyle: miscModule.updateTextStyle,
+    updateDefaultTextStyle: miscModule.updateDefaultTextStyle,
+    applyDefaultTextStyleToCurrent: miscModule.applyDefaultTextStyleToCurrent,
     setPdfProcessingMethod: miscModule.setPdfProcessingMethod,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,

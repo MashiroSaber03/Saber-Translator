@@ -218,6 +218,7 @@ def re_render_image():
         
         # 提取颜色和旋转角度设置
         textColor = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
+        textAlign = data.get('textAlign', 'center')
         rotationAngle = data.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)
         logger.info(f"提取全局文字颜色设置: {textColor}, 旋转角度: {rotationAngle}")
         
@@ -249,6 +250,7 @@ def re_render_image():
                     font_size=style.get('fontSize', constants.DEFAULT_FONT_SIZE) if isinstance(style.get('fontSize'), int) else constants.DEFAULT_FONT_SIZE,
                     font_family=font_path,
                     text_direction=style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
+                    text_align=style.get('textAlign', textAlign),
                     position_offset=style.get('position', {'x': 0, 'y': 0}),
                     text_color=style.get('textColor', textColor),
                     rotation_angle=style.get('rotationAngle', rotationAngle),
@@ -268,6 +270,7 @@ def re_render_image():
                     font_size=fontSize if isinstance(fontSize, int) else constants.DEFAULT_FONT_SIZE,
                     font_family=corrected_font_path,
                     text_direction=text_direction,
+                    text_align=textAlign,
                     text_color=textColor,
                     rotation_angle=rotationAngle,
                     stroke_enabled=stroke_enabled,
@@ -413,6 +416,7 @@ def re_render_single_bubble():
             'fontSize': fontSize,
             'fontFamily': corrected_font_path,
             'text_direction': text_direction,
+            'text_align': data.get('textAlign', 'center'),
             'position_offset': position_offset,
             'text_color': text_color,
             'rotation_angle': rotation_angle,
@@ -470,6 +474,7 @@ def re_render_single_bubble():
                     'fontSize': style.get('fontSize', constants.DEFAULT_FONT_SIZE),
                     'fontFamily': font_path,
                     'text_direction': style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
+                    'text_align': style.get('textAlign', data.get('textAlign', 'center')),
                     'position_offset': style.get('position', {'x': 0, 'y': 0}),
                     'text_color': style.get('textColor', constants.DEFAULT_TEXT_COLOR),
                     'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),
@@ -579,6 +584,7 @@ def apply_settings_to_all_images():
             fontSize = constants.DEFAULT_FONT_SIZE
         fontFamily = data.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH)
         textDirection = data.get('textDirection', constants.DEFAULT_TEXT_DIRECTION)
+        textAlign = data.get('textAlign', 'center')
         textColor = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
         rotationAngle = data.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)
         
@@ -641,6 +647,7 @@ def apply_settings_to_all_images():
                         'fontSize': fontSize,
                         'fontFamily': fontFamily,
                         'textDirection': textDirection,
+                        'textAlign': textAlign,
                         'position': {'x': 0, 'y': 0},
                         'textColor': textColor,
                         'rotationAngle': rotationAngle,
@@ -658,6 +665,7 @@ def apply_settings_to_all_images():
                         'fontSize': style.get('fontSize', constants.DEFAULT_FONT_SIZE),
                         'fontFamily': font_path,
                         'text_direction': style.get('textDirection', constants.DEFAULT_TEXT_DIRECTION),
+                        'text_align': style.get('textAlign', textAlign),
                         'position_offset': style.get('position', {'x': 0, 'y': 0}),
                         'text_color': style.get('textColor', constants.DEFAULT_TEXT_COLOR),
                         'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),

@@ -14,6 +14,32 @@ logger = logging.getLogger("ConfigAPI")
 # 定义蓝图实例 (已在步骤 2 定义)
 config_bp = Blueprint('config_api', __name__, url_prefix='/api')
 
+# --- 默认文字设置（供前端持久化） ---
+DEFAULT_TEXT_SETTINGS_KEY = "defaultTextSettings"
+
+def get_default_text_settings() -> dict:
+    """
+    返回一个默认的“文字设置”块（camelCase），用于前端持久化/初始化。
+
+    说明：后端不强制解释该结构，仅保证读写；默认值与 constants 保持一致。
+    """
+    return {
+        "fontSize": constants.DEFAULT_FONT_SIZE,
+        "autoFontSize": False,
+        # 前端常用格式（fonts/xxx.ttf），后端会在渲染时通过 get_font_path 解析
+        "fontFamily": getattr(constants, "DEFAULT_FONT_FAMILY", constants.DEFAULT_FONT_RELATIVE_PATH),
+        "layoutDirection": "auto",
+        "textDirection": constants.DEFAULT_TEXT_DIRECTION,
+        "textAlign": "center",
+        "textColor": constants.DEFAULT_TEXT_COLOR,
+        "fillColor": constants.DEFAULT_FILL_COLOR,
+        "strokeEnabled": constants.DEFAULT_STROKE_ENABLED,
+        "strokeColor": constants.DEFAULT_STROKE_COLOR,
+        "strokeWidth": constants.DEFAULT_STROKE_WIDTH,
+        "inpaintMethod": "solid",
+        "useAutoTextColor": False,
+    }
+
 # --- 需要加载/保存配置的辅助函数 ---
 # (这些函数原本在 app.py，现在移到这里)
 
@@ -189,6 +215,9 @@ def get_settings():
     # 确保返回当前的 LAMA 设置
     if 'lamaDisableResize' not in settings:
         settings['lamaDisableResize'] = constants.LAMA_DISABLE_RESIZE
+    # 确保返回默认文字设置块（供前端持久化使用）
+    if DEFAULT_TEXT_SETTINGS_KEY not in settings or not isinstance(settings.get(DEFAULT_TEXT_SETTINGS_KEY), dict):
+        settings[DEFAULT_TEXT_SETTINGS_KEY] = get_default_text_settings()
     return jsonify({'success': True, 'settings': settings})
 
 @config_bp.route('/save_settings', methods=['POST'])
@@ -211,3 +240,29 @@ def save_settings_api():
         return jsonify({'success': True, 'message': '设置保存成功'})
     else:
         return jsonify({'success': False, 'error': '保存设置失败'}), 500
+
+
+@config_bp.route('/get_default_text_settings', methods=['GET'])
+def get_default_text_settings_api():
+    """读取默认文字设置块（供前端持久化使用）"""
+    settings = load_user_settings()
+    block = settings.get(DEFAULT_TEXT_SETTINGS_KEY)
+    if not isinstance(block, dict):
+        block = get_default_text_settings()
+    return jsonify({'success': True, DEFAULT_TEXT_SETTINGS_KEY: block})
+
+
+@config_bp.route('/save_default_text_settings', methods=['POST'])
+def save_default_text_settings_api():
+    """保存默认文字设置块（合并写入 user_settings.json，不覆盖其他设置）"""
+    data = request.get_json() or {}
+    block = data.get(DEFAULT_TEXT_SETTINGS_KEY) or data.get('default_text_settings')
+    if not isinstance(block, dict):
+        return jsonify({'success': False, 'error': '缺少或无效的默认文字设置块'}), 400
+
+    settings = load_user_settings()
+    settings[DEFAULT_TEXT_SETTINGS_KEY] = block
+    success = save_user_settings_to_file(settings)
+    if success:
+        return jsonify({'success': True, 'message': '默认文字设置已保存'})
+    return jsonify({'success': False, 'error': '保存默认文字设置失败'}), 500

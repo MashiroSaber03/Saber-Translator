@@ -3,7 +3,7 @@
  * 定义翻译设置、OCR设置、高质量翻译设置等
  */
 
-import type { TextDirection, InpaintMethod } from './bubble'
+import type { TextDirection, TextAlign, InpaintMethod } from './bubble'
 
 /**
  * OCR 引擎类型
@@ -191,6 +191,7 @@ export interface TextStyleSettings {
   autoFontSize: boolean
   fontFamily: string
   layoutDirection: TextDirection
+  textAlign: TextAlign
   textColor: string
   fillColor: string
   strokeEnabled: boolean
@@ -207,6 +208,7 @@ export interface TextStyleSettings {
 export interface TranslationSettings {
   // 文字样式设置
   textStyle: TextStyleSettings
+  defaultTextStyle: TextStyleSettings
 
   // OCR 设置
   ocrEngine: OcrEngine

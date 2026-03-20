@@ -31,6 +31,8 @@
       :scale="scale"
       :is-drawing-mode="isDrawingMode"
       :has-selection="hasSelection"
+      :current-inpaint-method="currentInpaintMethod"
+      :current-fill-color="currentFillColor"
       :brush-mode="brushMode"
       :brush-size="brushSize"
       :mouse-x="mouseX"
@@ -57,10 +59,12 @@
       @detect-all-images="detectAllImages"
       @translate-with-bubbles="translateWithCurrentBubbles"
       @toggle-drawing-mode="toggleDrawingMode"
-      @delete-selected-bubbles="deleteSelectedBubbles"
+      @delete-selected-bubbles="handleDeleteSelectedBubbles"
       @repair-selected-bubble="handleRepairSelectedBubble"
       @activate-repair-brush="activateRepairBrush"
       @activate-restore-brush="activateRestoreBrush"
+      @update-inpaint-method="handleToolbarInpaintMethodChange"
+      @update-fill-color="handleToolbarFillColorChange"
       @apply-and-next="applyAndNext"
     />
 
@@ -121,14 +125,14 @@
                 @multi-select="handleBubbleMultiSelect"
                 @drag-start="handleBubbleDragStart"
                 @dragging="handleBubbleDragging"
-                @drag-end="handleBubbleDragEnd"
+                @drag-end="handleBubbleDragEndWithUndo"
                 @resize-start="handleBubbleResizeStart"
                 @resizing="handleBubbleResizing"
-                @resize-end="handleBubbleResizeEnd"
+                @resize-end="handleBubbleResizeEndWithUndo"
                 @rotate-start="handleBubbleRotateStart"
                 @rotating="handleBubbleRotating"
-                @rotate-end="handleBubbleRotateEnd"
-                @draw-bubble="handleDrawBubble"
+                @rotate-end="handleBubbleRotateEndWithUndo"
+                @draw-bubble="handleDrawBubbleWithUndo"
               />
               <!-- 绘制中的临时矩形 -->
               <div
@@ -193,14 +197,14 @@
                 @multi-select="handleBubbleMultiSelect"
                 @drag-start="handleBubbleDragStart"
                 @dragging="handleBubbleDragging"
-                @drag-end="handleBubbleDragEnd"
+                @drag-end="handleBubbleDragEndWithUndo"
                 @resize-start="handleBubbleResizeStart"
                 @resizing="handleBubbleResizing"
-                @resize-end="handleBubbleResizeEnd"
+                @resize-end="handleBubbleResizeEndWithUndo"
                 @rotate-start="handleBubbleRotateStart"
                 @rotating="handleBubbleRotating"
-                @rotate-end="handleBubbleRotateEnd"
-                @draw-bubble="handleDrawBubble"
+                @rotate-end="handleBubbleRotateEndWithUndo"
+                @draw-bubble="handleDrawBubbleWithUndo"
               />
               <!-- 绘制中的临时矩形 -->
               <div
@@ -233,6 +237,7 @@
           @ocr-recognize="handleOcrRecognize"
           @re-translate="handleReTranslateBubble"
           @apply-bubble="handleApplyBubble"
+          @apply-all="handleApplyBubbleStyleToAll"
           @reset-current="handleResetCurrentBubble"
         />
       </div>
@@ -251,12 +256,13 @@ import { storeToRefs } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageViewer } from '@/composables/useImageViewer'
-import { useBrush } from '@/composables/useBrush'
+import { useBrush, type RestoreArea } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { executeDetection, saveDetectionResultToImage } from '@/composables/translation/core/steps'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import { showToast } from '@/utils/toast'
 import BubbleOverlay from './BubbleOverlay.vue'
 import BubbleEditor from './BubbleEditor.vue'
@@ -264,7 +270,8 @@ import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { ImageData as AppImageData } from '@/types/image'
-import type { BubbleState, InpaintMethod } from '@/types/bubble'
+import type { BubbleState, BubbleCoords, InpaintMethod } from '@/types/bubble'
+import { cloneBubbleStates } from '@/utils/bubbleFactory'
 
 // ============================================================
 // Props 和 Emits
@@ -286,6 +293,7 @@ const emit = defineEmits<{
 
 const imageStore = useImageStore()
 const bubbleStore = useBubbleStore()
+const sessionStore = useSessionStore()
 
 // 使用翻译 composable（用于"使用当前气泡翻译"功能）
 const {
@@ -320,7 +328,6 @@ const {
   handleBubbleRotating,
   handleBubbleRotateEnd,
   toggleDrawingMode,
-  handleDrawBubble,
   getDrawingRectStyle,
   handleBubbleUpdate,
   deleteSelectedBubbles,
@@ -328,7 +335,11 @@ const {
   handleOcrRecognize: bubbleOcrRecognize
 } = useBubbleActions({
   onReRender: () => reRenderFullImage(),
-  onDelayedPreview: () => reRenderFullImage()  // 延迟预览也触发重新渲染
+  onDelayedPreview: () => reRenderFullImage(),
+  getCurrentRepairSettings: () => ({
+    inpaintMethod: currentInpaintMethod.value,
+    fillColor: currentFillColor.value
+  })  // 延迟预览也触发重新渲染
 })
 
 // 本地绘制辅助变量（用于坐标计算）
@@ -347,8 +358,10 @@ const {
   startBrushPainting,
   continueBrushPainting,
   finishBrushPainting,
-  adjustBrushSize
+  adjustBrushSize,
+  restoreBubbleAreas
 } = useBrush({
+  onBeforeBrushApply: () => pushUndoSnapshot('brush paint'),
   onBrushComplete: () => reRenderFullImage(),
   // 【复刻原版】提供当前编辑面板的修复设置，不依赖气泡选中状态
   getCurrentRepairSettings: () => ({
@@ -365,6 +378,8 @@ const {
   canGoPrevious,
   canGoNext
 } = storeToRefs(imageStore)
+
+const { editBrushSettings } = storeToRefs(sessionStore)
 
 const {
   bubbles,
@@ -427,10 +442,31 @@ const translatedPanelCollapsed = ref(false)
 // ============================================================
 
 /** 当前编辑面板选择的修复方式 */
-const currentInpaintMethod = ref<InpaintMethod>('solid')
+const currentInpaintMethod = computed<InpaintMethod>({
+  get: () => editBrushSettings.value.inpaintMethod,
+  set: value => sessionStore.setEditBrushSettings({ inpaintMethod: value })
+})
 
-/** 当前编辑面板选择的填充颜色 */
-const currentFillColor = ref('#FFFFFF')
+/** ????????????????????*/
+const currentFillColor = computed<string>({
+  get: () => editBrushSettings.value.fillColor,
+  set: value => sessionStore.setEditBrushSettings({ fillColor: value })
+})
+
+interface EditUndoSnapshot {
+  bubbles: BubbleState[]
+  selectedBubbleIndex: number
+  selectedIndices: number[]
+  cleanImageData: string | null
+  translatedDataURL: string | null
+  userMask: string | null
+  currentInpaintMethod: InpaintMethod
+  currentFillColor: string
+}
+
+const MAX_UNDO_SNAPSHOTS = 50
+const undoStack = ref<EditUndoSnapshot[]>([])
+const isApplyingUndo = ref(false)
 
 // ============================================================
 // 进度条状态
@@ -603,6 +639,94 @@ function saveBubbleStatesToImage(): void {
   // 如果 bubbleStates 从未是数组且当前也没有气泡，不做任何操作（保持 null 语义）
 }
 
+function createUndoSnapshot(): EditUndoSnapshot | null {
+  if (!currentImage.value) return null
+
+  return {
+    bubbles: cloneBubbleStates(bubbles.value),
+    selectedBubbleIndex: selectedBubbleIndex.value,
+    selectedIndices: [...selectedIndices.value],
+    cleanImageData: currentImage.value.cleanImageData || null,
+    translatedDataURL: currentImage.value.translatedDataURL || null,
+    userMask: currentImage.value.userMask || null,
+    currentInpaintMethod: currentInpaintMethod.value,
+    currentFillColor: currentFillColor.value
+  }
+}
+
+function areUndoSnapshotsEqual(a: EditUndoSnapshot, b: EditUndoSnapshot): boolean {
+  return (
+    a.selectedBubbleIndex === b.selectedBubbleIndex
+    && a.currentInpaintMethod === b.currentInpaintMethod
+    && a.currentFillColor === b.currentFillColor
+    && a.cleanImageData === b.cleanImageData
+    && a.translatedDataURL === b.translatedDataURL
+    && a.userMask === b.userMask
+    && JSON.stringify(a.selectedIndices) === JSON.stringify(b.selectedIndices)
+    && JSON.stringify(a.bubbles) === JSON.stringify(b.bubbles)
+  )
+}
+
+function pushUndoSnapshot(reason = ''): void {
+  if (isApplyingUndo.value || !props.isEditModeActive) return
+
+  const snapshot = createUndoSnapshot()
+  if (!snapshot) return
+
+  const lastSnapshot = undoStack.value[undoStack.value.length - 1]
+  if (lastSnapshot && areUndoSnapshotsEqual(lastSnapshot, snapshot)) {
+    return
+  }
+
+  undoStack.value.push(snapshot)
+  if (undoStack.value.length > MAX_UNDO_SNAPSHOTS) {
+    undoStack.value.shift()
+  }
+
+  if (reason) {
+    console.log(`[EditWorkspace] 已记录撤回快照: ${reason}`)
+  }
+}
+
+function resetUndoHistory(): void {
+  undoStack.value = []
+}
+
+function applyUndoSnapshot(snapshot: EditUndoSnapshot): void {
+  if (!currentImage.value) return
+
+  isApplyingUndo.value = true
+  try {
+    const restoredBubbles = cloneBubbleStates(snapshot.bubbles)
+
+    bubbles.value = restoredBubbles
+    selectedBubbleIndex.value = snapshot.selectedBubbleIndex
+    selectedIndices.value = [...snapshot.selectedIndices]
+    currentInpaintMethod.value = snapshot.currentInpaintMethod
+    currentFillColor.value = snapshot.currentFillColor
+
+    imageStore.updateCurrentImage({
+      bubbleStates: cloneBubbleStates(snapshot.bubbles),
+      cleanImageData: snapshot.cleanImageData,
+      translatedDataURL: snapshot.translatedDataURL,
+      userMask: snapshot.userMask,
+      hasUnsavedChanges: true
+    })
+  } finally {
+    isApplyingUndo.value = false
+  }
+}
+
+function undoLastEdit(): void {
+  if (undoStack.value.length === 0) return
+
+  const snapshot = undoStack.value.pop()
+  if (!snapshot) return
+
+  applyUndoSnapshot(snapshot)
+  showToast('已撤回上一步编辑', 'success')
+}
+
 /** 从当前图片加载气泡状态 */
 function loadBubbleStatesFromImage(): void {
   if (currentImage.value?.bubbleStates) {
@@ -615,6 +739,7 @@ function loadBubbleStatesFromImage(): void {
     bubbleStore.clearBubblesLocal()
   }
   selectFirstBubbleIfExists()
+  resetUndoHistory()
   // 【复刻原版】切图时保持当前缩放和位置，不自动 fitToScreen
   // 旧版 navigateImage() 调用 loadImagesToViewer(false) 保持视图位置
 }
@@ -939,20 +1064,20 @@ function handleReRender(): void {
   reRenderFullImage()
 }
 
+function shouldTrackUndoForBubbleUpdates(updates: Partial<BubbleState>): boolean {
+  const nonUndoKeys = new Set<keyof BubbleState>(['originalText', 'translatedText', 'textboxText'])
+  return Object.keys(updates).some((key) => !nonUndoKeys.has(key as keyof BubbleState))
+}
+
 /**
  * 【复刻原版】处理气泡更新并同步独立修复设置
  * 即使没有选中气泡，也能更新编辑面板的修复设置状态
  */
 function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
-  // 同步修复设置到独立状态（不依赖气泡选中）
-  if (updates.inpaintMethod !== undefined) {
-    currentInpaintMethod.value = updates.inpaintMethod
+  if (selectedBubbleIndex.value >= 0 && shouldTrackUndoForBubbleUpdates(updates)) {
+    pushUndoSnapshot('update bubble style')
   }
-  if (updates.fillColor !== undefined) {
-    currentFillColor.value = updates.fillColor
-  }
-  
-  // 如果有选中的气泡，才更新气泡状态
+
   if (selectedBubbleIndex.value >= 0) {
     handleBubbleUpdate(updates)
   }
@@ -978,6 +1103,8 @@ function handleResetCurrentBubble(index: number): void {
     showToast('无法重置：找不到初始状态', 'warning')
     return
   }
+
+  pushUndoSnapshot('reset current bubble')
   
   // 使用初始状态的深拷贝来更新当前气泡
   const clonedState = JSON.parse(JSON.stringify(initialState))
@@ -1001,12 +1128,118 @@ async function handleOcrRecognize(index: number): Promise<void> {
 
 /** 处理修复选中气泡背景（带 loading 状态） */
 async function handleRepairSelectedBubble(): Promise<void> {
+  if (!hasSelection.value) return
+
   isRepairLoading.value = true
   try {
+    pushUndoSnapshot('repair selected bubble')
     await bubbleRepairSelectedBubble()
   } finally {
     isRepairLoading.value = false
   }
+}
+
+function handleToolbarInpaintMethodChange(value: InpaintMethod): void {
+  if (currentInpaintMethod.value !== value) {
+    pushUndoSnapshot('update repair method')
+    currentInpaintMethod.value = value
+  }
+}
+
+function handleToolbarFillColorChange(value: string): void {
+  if (currentFillColor.value !== value) {
+    pushUndoSnapshot('update repair fill color')
+    currentFillColor.value = value
+  }
+}
+
+function handleDrawBubbleWithUndo(coords: BubbleCoords): void {
+  pushUndoSnapshot('draw bubble')
+  bubbleStore.addBubble(coords, {
+    inpaintMethod: currentInpaintMethod.value,
+    fillColor: currentFillColor.value
+  })
+  bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
+  reRenderFullImage()
+}
+
+function handleBubbleDragEndWithUndo(index: number, newCoords: BubbleCoords): void {
+  pushUndoSnapshot('drag bubble')
+  handleBubbleDragEnd(index, newCoords)
+}
+
+function handleBubbleResizeEndWithUndo(index: number, newCoords: BubbleCoords): void {
+  pushUndoSnapshot('resize bubble')
+  handleBubbleResizeEnd(index, newCoords)
+}
+
+function handleBubbleRotateEndWithUndo(index: number, angle: number): void {
+  pushUndoSnapshot('rotate bubble')
+  handleBubbleRotateEnd(index, angle)
+}
+
+async function handleDeleteSelectedBubbles(): Promise<void> {
+  if (!hasSelection.value) return
+
+  pushUndoSnapshot('delete selected bubbles')
+
+  const image = currentImage.value
+  if (image) {
+    const indices = [...new Set(
+      (selectedIndices.value.length > 0 ? selectedIndices.value : [selectedBubbleIndex.value])
+        .filter((index) => index >= 0)
+    )]
+    const areas: RestoreArea[] = indices
+      .map((index) => bubbles.value[index])
+      .filter((bubble): bubble is BubbleState => !!bubble)
+      .map((bubble) => ({
+        coords: bubble.coords,
+        rotationAngle: bubble.rotationAngle,
+        polygon: bubble.polygon
+      }))
+
+    if (areas.length > 0) {
+      await restoreBubbleAreas(image, areas)
+    }
+  }
+
+  deleteSelectedBubbles()
+}
+
+const KEYBOARD_MOVE_STEP = 2
+
+function moveSelectedBubblesBy(deltaX: number, deltaY: number): void {
+  if (!hasSelection.value || (deltaX === 0 && deltaY === 0)) return
+
+  pushUndoSnapshot('move selected bubbles by keyboard')
+
+  const indices = [...new Set(
+    (selectedIndices.value.length > 0 ? selectedIndices.value : [selectedBubbleIndex.value])
+      .filter((index) => index >= 0)
+  )]
+
+  for (const index of indices) {
+    const bubble = bubbles.value[index]
+    if (!bubble) continue
+
+    const currentPosition = bubble.position || { x: 0, y: 0 }
+    bubbleStore.updateBubble(index, {
+      position: {
+        x: currentPosition.x + deltaX,
+        y: currentPosition.y + deltaY
+      }
+    })
+  }
+
+  reRenderFullImage()
+}
+
+function handleApplyBubbleStyleToAll(updates: Partial<BubbleState>): void {
+  if (bubbles.value.length === 0) return
+
+  pushUndoSnapshot('apply style to all bubbles')
+  bubbleStore.updateAllBubbles(updates)
+  reRenderFullImage()
 }
 
 /** 处理重新翻译单个气泡 */
@@ -1074,7 +1307,8 @@ function initializeTextArrays(image: AppImageData, count: number): void {
 function createBubbleStatesFromDetection(
   response: { bubble_coords: number[][]; bubble_angles?: number[]; auto_directions?: string[] },
   image: AppImageData,
-  textStyle: { fontSize: number; fontFamily: string; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; inpaintMethod: string }
+  textStyle: { fontSize: number; fontFamily: string; textAlign: BubbleState['textAlign']; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; inpaintMethod: string },
+  brushSettings: { fillColor: string; inpaintMethod: InpaintMethod }
 ): BubbleState[] {
   const autoDirections = response.auto_directions || []
   return response.bubble_coords.map((coords, i) => {
@@ -1097,13 +1331,14 @@ function createBubbleStatesFromDetection(
       fontFamily: textStyle.fontFamily,
       textDirection: autoDir,
       autoTextDirection: autoDir,
+      textAlign: textStyle.textAlign,
       textColor: textStyle.textColor,
-      fillColor: textStyle.fillColor,
+      fillColor: brushSettings.fillColor,
       strokeEnabled: textStyle.strokeEnabled,
       strokeColor: textStyle.strokeColor,
       strokeWidth: textStyle.strokeWidth,
       rotationAngle: response.bubble_angles?.[i] || 0,
-      inpaintMethod: textStyle.inpaintMethod as 'solid' | 'lama_mpe' | 'litelama',
+      inpaintMethod: brushSettings.inpaintMethod,
       position: { x: 0, y: 0 },
       polygon: []
     }
@@ -1123,6 +1358,10 @@ async function autoDetectBubbles(): Promise<void> {
     
     const settingsStore = useSettingsStore()
     const { textStyle } = settingsStore.settings
+    const brushSettings = {
+      fillColor: currentFillColor.value,
+      inpaintMethod: currentInpaintMethod.value
+    }
     
     // 使用独立的检测步骤模块
     const result = await executeDetection({
@@ -1141,7 +1380,7 @@ async function autoDetectBubbles(): Promise<void> {
         bubble_angles: result.bubbleAngles,
         auto_directions: result.autoDirections
       }
-      const newBubbles = createBubbleStatesFromDetection(detectionData, image, textStyle)
+      const newBubbles = createBubbleStatesFromDetection(detectionData, image, textStyle, brushSettings)
       bubbleStore.setBubbles(newBubbles)
       selectFirstBubbleIfExists()
       
@@ -1182,6 +1421,12 @@ async function detectAllImages(): Promise<void> {
   progressCurrent.value = 0
 
   try {
+    const settingsStore = useSettingsStore()
+    const { textStyle } = settingsStore.settings
+    const brushSettings = {
+      fillColor: currentFillColor.value,
+      inpaintMethod: currentInpaintMethod.value
+    }
     let totalDetected = 0
 
     for (let i = 0; i < totalImages; i++) {
@@ -1209,7 +1454,7 @@ async function detectAllImages(): Promise<void> {
               bubble_angles: result.bubbleAngles,
               auto_directions: result.autoDirections
             }
-            const newBubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
+            const newBubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle, brushSettings)
             
             // ✅ 使用统一保存函数，确保所有字段都被保存
             saveDetectionResultToImage(i, result, {
@@ -1424,7 +1669,16 @@ function stopPanelResize(): void {
 /** 处理键盘事件 */
 function handleKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement
-  const key = event.key.toLowerCase()
+  const actionKey = event.code === 'Delete' ? 'Delete' : event.key
+  const key = actionKey.toLowerCase()
+  const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'z'
+
+  if (isUndoShortcut) {
+    if (target.tagName === 'TEXTAREA') return
+    undoLastEdit()
+    event.preventDefault()
+    return
+  }
   
   // 【复刻原版 edit_mode.js handleEditModeKeydown】
   // 笔刷快捷键 R/U 和导航快捷键 A/D 只在 textarea 中禁用（用户可能想输入文字）
@@ -1440,17 +1694,18 @@ function handleKeyDown(event: KeyboardEvent): void {
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return
   }
 
-  switch (event.key) {
+  switch (actionKey) {
     case 'Escape':
       // 【复刻原版】Escape 退出编辑模式（原版没有此快捷键，但保留作为增强）
       exitEditMode()
       break
     case 'Delete':
+    case 'Del':
     case 'Backspace':
       // 【复刻原版】笔刷模式下不处理删除
       if (!brushMode.value && hasSelection.value) {
-        deleteSelectedBubbles()
         event.preventDefault()
+        void handleDeleteSelectedBubbles()
       }
       break
     case 'a':
@@ -1466,6 +1721,30 @@ function handleKeyDown(event: KeyboardEvent): void {
       // 【复刻原版】笔刷模式下不处理导航
       if (!brushMode.value) {
         goToNextImage()
+        event.preventDefault()
+      }
+      break
+    case 'ArrowLeft':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(-KEYBOARD_MOVE_STEP, 0)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowRight':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(KEYBOARD_MOVE_STEP, 0)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowUp':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(0, -KEYBOARD_MOVE_STEP)
+        event.preventDefault()
+      }
+      break
+    case 'ArrowDown':
+      if (!brushMode.value && hasSelection.value) {
+        moveSelectedBubblesBy(0, KEYBOARD_MOVE_STEP)
         event.preventDefault()
       }
       break
@@ -1623,6 +1902,8 @@ watch(() => props.isEditModeActive, (active) => {
         fitToScreen()
       }, 100)
     })
+  } else {
+    resetUndoHistory()
   }
 })
 
@@ -1633,14 +1914,6 @@ watch(currentImageIndex, () => {
   }
 })
 
-// 【复刻原版】监听选中气泡变化，同步修复设置到独立状态
-// 对应原版 selectBubbleNew 中更新 $('#bubbleInpaintMethodNew') 的逻辑
-watch(selectedBubble, (bubble) => {
-  if (bubble) {
-    currentInpaintMethod.value = bubble.inpaintMethod || 'solid'
-    currentFillColor.value = bubble.fillColor || '#FFFFFF'
-  }
-}, { immediate: true })
 </script>
 
 <style scoped>

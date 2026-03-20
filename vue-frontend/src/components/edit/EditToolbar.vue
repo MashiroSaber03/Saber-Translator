@@ -225,6 +225,30 @@
           笔刷: {{ brushSize }}px
         </span>
 
+        <div class="toolbar-divider"></div>
+
+        <div class="repair-toolbar-group">
+          <span class="repair-toolbar-label">修复方式</span>
+          <CustomSelect
+            :model-value="currentInpaintMethod"
+            :options="inpaintMethodOptions"
+            title="文本框修复方式"
+            @change="handleInpaintMethodChange"
+          />
+          <label
+            v-if="currentInpaintMethod === 'solid'"
+            class="repair-color-chip"
+            title="纯色填充颜色"
+          >
+            <span>填充色</span>
+            <input
+              type="color"
+              :value="currentFillColor"
+              @input="handleFillColorChange"
+            />
+          </label>
+        </div>
+
         <!-- 快捷键帮助 -->
         <div class="help-tooltip-container">
           <button class="help-tooltip-btn" title="快捷键操作帮助">
@@ -247,6 +271,7 @@
               <div class="help-title">⌨️ 快捷键</div>
               <div class="help-item"><span class="help-key">A / D</span><span class="help-desc">切换上/下一张图片</span></div>
               <div class="help-item"><span class="help-key">Ctrl+Enter</span><span class="help-desc">应用并跳转下一张</span></div>
+              <div class="help-item"><span class="help-key">Ctrl+Z</span><span class="help-desc">撤回最近一次编辑</span></div>
               <div class="help-item"><span class="help-key">Delete / Backspace</span><span class="help-desc">删除选中气泡</span></div>
               <div class="help-item"><span class="help-key">按住R+左键拖拽</span><span class="help-desc">修复笔刷</span></div>
               <div class="help-item"><span class="help-key">按住U+左键拖拽</span><span class="help-desc">还原笔刷</span></div>
@@ -305,6 +330,8 @@
  * 包含双行布局：第一行导航和视图控制，第二行操作工具
  */
 import { computed } from 'vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
+import type { InpaintMethod } from '@/types/bubble'
 
 // ============================================================
 // Props
@@ -337,6 +364,10 @@ const props = defineProps<{
   isDrawingMode: boolean
   /** 是否有选中 */
   hasSelection: boolean
+  /** 当前修复方式 */
+  currentInpaintMethod: InpaintMethod
+  /** 当前填充颜色 */
+  currentFillColor: string
   /** 笔刷模式 */
   brushMode: 'repair' | 'restore' | null
   /** 笔刷大小 */
@@ -361,7 +392,7 @@ const props = defineProps<{
 // Emits
 // ============================================================
 
-defineEmits<{
+const emit = defineEmits<{
   /** 切换到上一张图片 */
   (e: 'go-previous-image'): void
   /** 切换到下一张图片 */
@@ -404,9 +435,19 @@ defineEmits<{
   (e: 'activate-repair-brush'): void
   /** 激活还原笔刷 */
   (e: 'activate-restore-brush'): void
+  /** 更新修复方式 */
+  (e: 'update-inpaint-method', value: InpaintMethod): void
+  /** 更新填充色 */
+  (e: 'update-fill-color', value: string): void
   /** 应用并下一张 */
   (e: 'apply-and-next'): void
 }>()
+
+const inpaintMethodOptions = [
+  { label: '纯色填充', value: 'solid' },
+  { label: 'LAMA修复(漫画)', value: 'lama_mpe' },
+  { label: 'LAMA修复(通用)', value: 'litelama' }
+]
 
 // ============================================================
 // 计算属性
@@ -444,6 +485,14 @@ const brushCursorStyle = computed(() => {
     display: props.brushMode ? 'block' : 'none'
   }
 })
+
+function handleInpaintMethodChange(value: string | number): void {
+  emit('update-inpaint-method', String(value) as InpaintMethod)
+}
+
+function handleFillColorChange(event: Event): void {
+  emit('update-fill-color', (event.target as HTMLInputElement).value)
+}
 </script>
 
 <style scoped>
@@ -789,6 +838,43 @@ const brushCursorStyle = computed(() => {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   margin-left: 8px;
+}
+
+.repair-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.repair-toolbar-label {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.repair-color-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: #fff;
+  font-size: 12px;
+}
+
+.repair-color-chip input[type="color"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 /* 激活状态按钮 */

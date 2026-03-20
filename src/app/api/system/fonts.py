@@ -46,6 +46,12 @@ def get_font_directory() -> str:
     return resource_path(os.path.join('src', 'app', 'static', 'fonts'))
 
 
+def get_windows_fonts_directory() -> str:
+    """获取 Windows 系统字体目录（默认 C:\\Windows\\Fonts）"""
+    windir = os.environ.get("WINDIR", r"C:\Windows")
+    return os.path.join(windir, "Fonts")
+
+
 def sanitize_filename(filename: str) -> str:
     """
     安全处理文件名，保留中文字符
@@ -93,6 +99,49 @@ def generate_display_name(file_name: str, default_fonts: Dict[str, str]) -> tupl
     return display_name, False
 
 
+def _scan_font_dir(font_dir: str, *, source: str) -> List[Dict[str, Any]]:
+    """
+    扫描字体目录，返回字体信息列表。
+
+    Args:
+        font_dir: 要扫描的目录路径
+        source: 字体来源标记（local/system）
+
+    Returns:
+        字体信息列表
+    """
+    results: List[Dict[str, Any]] = []
+    if not font_dir or not os.path.isdir(font_dir):
+        return results
+
+    for file_name in os.listdir(font_dir):
+        if not file_name.lower().endswith(SUPPORTED_FONT_EXTENSIONS):
+            continue
+
+        abs_path = os.path.abspath(os.path.join(font_dir, file_name))
+        if not os.path.isfile(abs_path):
+            continue
+
+        if source == "local":
+            display_name, is_default = generate_display_name(file_name, DEFAULT_FONTS_MAPPING)
+            path_value = f'fonts/{file_name}'
+        else:
+            # 系统字体：仅保证返回可用的绝对路径
+            display_name = os.path.splitext(file_name)[0]
+            is_default = False
+            path_value = abs_path
+
+        results.append({
+            'file_name': file_name,
+            'display_name': display_name,
+            'path': path_value,
+            'is_default': is_default,
+            'source': source
+        })
+
+    return results
+
+
 @system_bp.route('/get_font_list', methods=['GET'])
 def get_font_list():
     """
@@ -117,23 +166,24 @@ def get_font_list():
     """
     try:
         font_dir = get_font_directory()
-        all_fonts: List[Dict[str, Any]] = []
-        
-        # 遍历字体目录
-        for file_name in os.listdir(font_dir):
-            if file_name.lower().endswith(SUPPORTED_FONT_EXTENSIONS):
-                display_name, is_default = generate_display_name(file_name, DEFAULT_FONTS_MAPPING)
-                
-                font_info = {
-                    'file_name': file_name,
-                    'display_name': display_name,
-                    'path': f'fonts/{file_name}',
-                    'is_default': is_default
-                }
-                all_fonts.append(font_info)
-        
-        # 按默认字体优先、然后按名称排序
-        all_fonts.sort(key=lambda x: (not x['is_default'], x['display_name']))
+
+        # 1) 内置/上传字体（项目 fonts 目录）
+        local_fonts = _scan_font_dir(font_dir, source="local")
+
+        # 2) Windows 已安装字体（C:\Windows\Fonts）
+        system_fonts: List[Dict[str, Any]] = []
+        if os.name == "nt":
+            system_font_dir = get_windows_fonts_directory()
+            system_fonts = _scan_font_dir(system_font_dir, source="system")
+
+        all_fonts: List[Dict[str, Any]] = local_fonts + system_fonts
+
+        # 排序：本地优先；默认映射字体优先；再按名称排序
+        all_fonts.sort(key=lambda x: (
+            0 if x.get('source') == 'local' else 1,
+            not x.get('is_default', False),
+            x.get('display_name', '')
+        ))
         
         logger.info(f"成功获取字体列表，共 {len(all_fonts)} 个字体")
         

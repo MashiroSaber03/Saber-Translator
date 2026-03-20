@@ -12,6 +12,7 @@ import type {
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useSessionStore } from '@/stores/sessionStore'
 
 // 从 bubbleFactory 统一导入 store 内部使用的工厂函数
 import {
@@ -157,7 +158,9 @@ export const useBubbleStore = defineStore('bubble', () => {
 
     // 【复刻原版 edit_mode.js addNewBubble】从 settingsStore 读取当前 UI 设置
     const settingsStore = useSettingsStore()
+    const sessionStore = useSessionStore()
     const textStyle = settingsStore.settings.textStyle
+    const editBrushSettings = sessionStore.editBrushSettings
 
     // 【简化设计】textDirection 直接使用具体方向值：
     // - 如果全局设置是 'auto'，使用检测结果
@@ -178,9 +181,10 @@ export const useBubbleStore = defineStore('bubble', () => {
       fontSize: textStyle.fontSize,
       fontFamily: textStyle.fontFamily,
       textDirection: bubbleTextDirection,  // 直接使用具体方向
+      textAlign: textStyle.textAlign,
       textColor: textStyle.textColor,
-      fillColor: textStyle.fillColor,
-      inpaintMethod: textStyle.inpaintMethod,
+      fillColor: editBrushSettings.fillColor || textStyle.fillColor,
+      inpaintMethod: editBrushSettings.inpaintMethod || textStyle.inpaintMethod,
       strokeEnabled: textStyle.strokeEnabled,
       strokeColor: textStyle.strokeColor,
       strokeWidth: textStyle.strokeWidth,
@@ -451,6 +455,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         current.fontSize !== initial.fontSize ||
         current.fontFamily !== initial.fontFamily ||
         current.textDirection !== initial.textDirection ||
+        current.textAlign !== initial.textAlign ||
         current.textColor !== initial.textColor ||
         current.fillColor !== initial.fillColor ||
         current.rotationAngle !== initial.rotationAngle ||

@@ -50,10 +50,18 @@ export interface CurrentRepairSettings {
 }
 
 export interface BrushCallbacks {
+  /** 真正修改 cleanImageData / userMask 前的回调，可用于记录撤回快照 */
+  onBeforeBrushApply?: () => void
   /** 笔刷操作完成后触发重新渲染 */
   onBrushComplete?: () => void
   /** 【复刻原版】获取当前编辑面板的修复设置，对应原版 $('#bubbleInpaintMethodNew').val() 等 */
   getCurrentRepairSettings?: () => CurrentRepairSettings
+}
+
+export interface RestoreArea {
+  coords: BubbleCoords
+  rotationAngle?: number
+  polygon?: number[][]
 }
 
 // ============================================================
@@ -275,6 +283,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
     // 执行笔刷操作（异步）
     const executeAndRender = async () => {
+      callbacks?.onBeforeBrushApply?.()
+
       if (mode === 'restore') {
         await restoreBrushArea(currentImage, bounds)
       } else if (mode === 'repair') {
@@ -503,6 +513,167 @@ export function useBrush(callbacks?: BrushCallbacks) {
       originalImg.onload = onLoad
       originalImg.onerror = () => resolve()
 
+      cleanImg.src = cleanSrc
+      originalImg.src = currentImage.originalDataURL
+    })
+  }
+
+  function drawAreaMask(
+    ctx: CanvasRenderingContext2D,
+    area: RestoreArea
+  ): void {
+    if (area.polygon && area.polygon.length >= 3) {
+      ctx.beginPath()
+      area.polygon.forEach((point, index) => {
+        const [x, y] = point
+        if (index === 0) {
+          ctx.moveTo(x, y)
+        } else {
+          ctx.lineTo(x, y)
+        }
+      })
+      ctx.closePath()
+      ctx.fill()
+      return
+    }
+
+    const [x1, y1, x2, y2] = area.coords
+    const width = x2 - x1
+    const height = y2 - y1
+    const rotationAngle = area.rotationAngle || 0
+
+    if (Math.abs(rotationAngle) < 0.1) {
+      ctx.fillRect(x1, y1, width, height)
+      return
+    }
+
+    const cx = (x1 + x2) / 2
+    const cy = (y1 + y2) / 2
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate((rotationAngle * Math.PI) / 180)
+    ctx.fillRect(-width / 2, -height / 2, width, height)
+    ctx.restore()
+  }
+
+  async function updateUserMaskWithAreas(
+    currentUserMask: string | null | undefined,
+    width: number,
+    height: number,
+    areas: RestoreArea[],
+    fillStyle: 'black' | 'white'
+  ): Promise<string> {
+    const baseMask = currentUserMask
+      ? `data:image/png;base64,${currentUserMask}`
+      : null
+
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(currentUserMask || '')
+        return
+      }
+
+      const applyMask = () => {
+        ctx.fillStyle = fillStyle
+        for (const area of areas) {
+          drawAreaMask(ctx, area)
+        }
+        const dataUrl = canvas.toDataURL('image/png')
+        resolve(dataUrl.split(',')[1] || '')
+      }
+
+      if (!baseMask) {
+        ctx.fillStyle = 'rgb(127, 127, 127)'
+        ctx.fillRect(0, 0, width, height)
+        applyMask()
+        return
+      }
+
+      const img = new Image()
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height)
+        applyMask()
+      }
+      img.onerror = () => {
+        ctx.fillStyle = 'rgb(127, 127, 127)'
+        ctx.fillRect(0, 0, width, height)
+        applyMask()
+      }
+      img.src = baseMask
+    })
+  }
+
+  async function restoreBubbleAreas(currentImage: any, areas: RestoreArea[]): Promise<void> {
+    if (!currentImage?.originalDataURL || !areas.length) return
+
+    const cleanSrc = currentImage.cleanImageData
+      ? `data:image/png;base64,${currentImage.cleanImageData}`
+      : currentImage.originalDataURL
+
+    return new Promise((resolve) => {
+      const cleanImg = new Image()
+      const originalImg = new Image()
+      let loadedCount = 0
+
+      const onLoad = async () => {
+        loadedCount += 1
+        if (loadedCount < 2) return
+
+        const canvas = document.createElement('canvas')
+        canvas.width = cleanImg.naturalWidth
+        canvas.height = cleanImg.naturalHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve()
+          return
+        }
+
+        ctx.drawImage(cleanImg, 0, 0)
+
+        const maskCanvas = document.createElement('canvas')
+        maskCanvas.width = canvas.width
+        maskCanvas.height = canvas.height
+        const maskCtx = maskCanvas.getContext('2d')
+        if (!maskCtx) {
+          resolve()
+          return
+        }
+
+        maskCtx.fillStyle = 'white'
+        for (const area of areas) {
+          drawAreaMask(maskCtx, area)
+        }
+
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.drawImage(maskCanvas, 0, 0)
+        ctx.globalCompositeOperation = 'destination-over'
+        ctx.drawImage(originalImg, 0, 0)
+        ctx.globalCompositeOperation = 'source-over'
+
+        const newUserMask = await updateUserMaskWithAreas(
+          currentImage.userMask,
+          canvas.width,
+          canvas.height,
+          areas,
+          'black'
+        )
+
+        imageStore.updateCurrentImage({
+          cleanImageData: canvas.toDataURL('image/png').split(',')[1],
+          userMask: newUserMask
+        })
+
+        resolve()
+      }
+
+      cleanImg.onload = onLoad
+      originalImg.onload = onLoad
+      cleanImg.onerror = () => resolve()
+      originalImg.onerror = () => resolve()
       cleanImg.src = cleanSrc
       originalImg.src = currentImage.originalDataURL
     })
@@ -852,6 +1023,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     getBrushPathBounds,
 
     // 干净背景管理
-    ensureCleanBackground
+    ensureCleanBackground,
+    restoreBubbleAreas
   }
 }

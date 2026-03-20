@@ -7,6 +7,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
+import type { InpaintMethod } from '@/types/bubble'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 /**
  * 会话数据接口（用于保存和加载）
@@ -63,11 +65,24 @@ export interface SessionSaveOptions {
   isBookshelfMode?: boolean
 }
 
+export interface EditBrushSettings {
+  inpaintMethod: InpaintMethod
+  fillColor: string
+}
+
 // ============================================================
 // Store 定义
 // ============================================================
 
 export const useSessionStore = defineStore('session', () => {
+  function createDefaultEditBrushSettings(): EditBrushSettings {
+    const textStyle = useSettingsStore().settings.textStyle
+    return {
+      inpaintMethod: textStyle.inpaintMethod || 'solid',
+      fillColor: textStyle.fillColor || '#FFFFFF'
+    }
+  }
+
   // ============================================================
   // 状态定义
   // ============================================================
@@ -101,6 +116,9 @@ export const useSessionStore = defineStore('session', () => {
 
   /** 是否正在保存 */
   const isSaving = ref(false)
+
+  /** 编辑模式画笔修复选项，绑定到当前漫画/会话 */
+  const editBrushSettings = ref<EditBrushSettings>(createDefaultEditBrushSettings())
 
   // ============================================================
   // 计算属性
@@ -140,6 +158,7 @@ export const useSessionStore = defineStore('session', () => {
       bookTitle,
       chapterTitle
     }
+    editBrushSettings.value = createDefaultEditBrushSettings()
     console.log(`会话上下文已设置: 书籍=${bookId}, 章节=${chapterId}`)
   }
 
@@ -169,7 +188,20 @@ export const useSessionStore = defineStore('session', () => {
       bookTitle: null,
       chapterTitle: null
     }
+    editBrushSettings.value = createDefaultEditBrushSettings()
     console.log('会话上下文已清除')
+  }
+
+  function setEditBrushSettings(updates: Partial<EditBrushSettings>): void {
+    const nextMethod = updates.inpaintMethod ?? editBrushSettings.value.inpaintMethod
+    const normalizedMethod: InpaintMethod = ['solid', 'lama_mpe', 'litelama'].includes(String(nextMethod))
+      ? nextMethod as InpaintMethod
+      : 'solid'
+
+    editBrushSettings.value = {
+      inpaintMethod: normalizedMethod,
+      fillColor: updates.fillColor ?? editBrushSettings.value.fillColor ?? '#FFFFFF'
+    }
   }
 
   /**
@@ -304,6 +336,7 @@ export const useSessionStore = defineStore('session', () => {
     isLoading.value = false
     isSaving.value = false
     error.value = null
+    editBrushSettings.value = createDefaultEditBrushSettings()
     console.log('会话状态已重置')
   }
 
@@ -414,7 +447,10 @@ export const useSessionStore = defineStore('session', () => {
           // 【修复C】保留 bubbleStates 的 null 语义：null=从未处理，[]=用户清空
           // 原版语义：null/undefined 表示需要自动检测，[] 表示用户主动清空了文本框
           bubbleStates: (img.bubbleStates !== undefined && img.bubbleStates !== null)
-            ? (img.bubbleStates as import('@/types/bubble').BubbleState[])
+            ? (img.bubbleStates as import('@/types/bubble').BubbleState[]).map((state) => ({
+              textAlign: 'center',
+              ...state
+            }))
             : null,
           // 恢复手动标注标记
           isManuallyAnnotated: Boolean(img.isManuallyAnnotated),
@@ -429,6 +465,7 @@ export const useSessionStore = defineStore('session', () => {
           autoFontSize: (img.autoFontSize as boolean) ?? false,
           fontFamily: (img.fontFamily as string) || 'Microsoft YaHei',
           layoutDirection: (img.layoutDirection as 'vertical' | 'horizontal' | 'auto') || 'auto',
+          textAlign: (img.textAlign as 'left' | 'center' | 'right' | 'justify') || 'center',
           useAutoTextColor: (img.useAutoTextColor as boolean) ?? undefined,
           textColor: (img.textColor as string) || '#000000',
           fillColor: (img.fillColor as string) || '#FFFFFF',
@@ -511,6 +548,7 @@ export const useSessionStore = defineStore('session', () => {
           autoFontSize: (uiSettings.autoFontSize as boolean) ?? settingsStore.settings.textStyle.autoFontSize,
           fontFamily: (uiSettings.fontFamily as string) || settingsStore.settings.textStyle.fontFamily,
           layoutDirection: (uiSettings.layoutDirection as 'vertical' | 'horizontal' | 'auto') || settingsStore.settings.textStyle.layoutDirection,
+          textAlign: (uiSettings.textAlign as 'left' | 'center' | 'right' | 'justify') || settingsStore.settings.textStyle.textAlign,
           textColor: (uiSettings.textColor as string) || settingsStore.settings.textStyle.textColor,
           fillColor: (uiSettings.fillColor as string) || settingsStore.settings.textStyle.fillColor,
           inpaintMethod,
@@ -518,6 +556,19 @@ export const useSessionStore = defineStore('session', () => {
           strokeColor: (uiSettings.strokeColor as string) || settingsStore.settings.textStyle.strokeColor,
           strokeWidth: (uiSettings.strokeWidth as number) || settingsStore.settings.textStyle.strokeWidth,
           useAutoTextColor: (uiSettings.useAutoTextColor as boolean) ?? settingsStore.settings.textStyle.useAutoTextColor,
+        })
+
+        setEditBrushSettings({
+          inpaintMethod: (
+            (uiSettings.editBrushInpaintMethod as InpaintMethod)
+            || (uiSettings.useInpaintingMethod as InpaintMethod)
+            || settingsStore.settings.textStyle.inpaintMethod
+          ),
+          fillColor: (
+            (uiSettings.editBrushFillColor as string)
+            || (uiSettings.fillColor as string)
+            || settingsStore.settings.textStyle.fillColor
+          )
         })
 
         console.log('UI 设置已恢复')
@@ -605,6 +656,7 @@ export const useSessionStore = defineStore('session', () => {
         autoFontSize: textStyle.autoFontSize,
         fontFamily: textStyle.fontFamily,
         layoutDirection: textStyle.layoutDirection,
+        textAlign: textStyle.textAlign,
         textColor: textStyle.textColor,
         useInpaintingMethod: textStyle.inpaintMethod,
         fillColor: textStyle.fillColor,
@@ -612,6 +664,8 @@ export const useSessionStore = defineStore('session', () => {
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
         useAutoTextColor: textStyle.useAutoTextColor,
+        editBrushInpaintMethod: editBrushSettings.value.inpaintMethod,
+        editBrushFillColor: editBrushSettings.value.fillColor,
       }
 
       // 使用公共函数逐页保存
@@ -688,6 +742,7 @@ export const useSessionStore = defineStore('session', () => {
     isSaving,
     error,
     loadingProgress,
+    editBrushSettings,
 
     // 计算属性
     isBookshelfMode,
@@ -698,6 +753,7 @@ export const useSessionStore = defineStore('session', () => {
     setContext,
     clearContext,
     parseContextFromUrl,
+    setEditBrushSettings,
 
     // 会话名称管理
     setSessionName,

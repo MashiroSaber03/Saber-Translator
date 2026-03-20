@@ -96,6 +96,7 @@ export interface SavedTextStyles {
     autoTextDirection: boolean
     /** 用户选择的排版方向（包括 'auto'） */
     layoutDirection: 'auto' | 'vertical' | 'horizontal'
+    textAlign: 'left' | 'center' | 'right' | 'justify'
     fillColor: string
     textColor: string
     rotationAngle: number
