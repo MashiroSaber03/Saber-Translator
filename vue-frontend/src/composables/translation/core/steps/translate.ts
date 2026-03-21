@@ -22,7 +22,7 @@ export interface TranslateOutput {
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
-    const { originalTexts, bubbleProbs = [], rateLimiter = null } = input
+    const { originalTexts, rateLimiter = null } = input
 
     if (originalTexts.length === 0) {
         return {
@@ -117,7 +117,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
         console.log(`[翻译] 逐气泡翻译完成，成功 ${translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${originalTexts.length}`)
         return {
-            translatedTexts: appendBoxSuffix(translatedTexts, bubbleProbs),
+            translatedTexts,
             textboxTexts
         }
 
@@ -146,7 +146,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         }
 
         return {
-            translatedTexts: appendBoxSuffix(response.translated_texts || [], bubbleProbs),
+            translatedTexts: response.translated_texts || [],
             textboxTexts: response.textbox_texts || []
         }
     }
@@ -155,9 +155,4 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 function stripBoxSuffix(text: string): string {
     if (!text) return text
     return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
-}
-
-function appendBoxSuffix(texts: string[], bubbleProbs: number[]): string[] {
-    if (!bubbleProbs || bubbleProbs.length !== texts.length) return texts
-    return texts.map((t, idx) => `${t} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`)
 }

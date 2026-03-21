@@ -336,21 +336,12 @@ export function useSequentialPipeline() {
         })
 
         task.finalImage = result.finalImage
-        task.bubbleStates = appendBoxToBubbleStates(result.bubbleStates, task.bubbleProbs)
+        task.bubbleStates = result.bubbleStates
     }
 
     function stripBoxSuffix(text: string): string {
         if (!text) return text
         return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
-    }
-
-    function appendBoxToBubbleStates(states: BubbleState[], bubbleProbs: number[]): BubbleState[] {
-        if (!bubbleProbs || bubbleProbs.length !== states.length) return states
-        return states.map((s, idx) => ({
-            ...s,
-            originalText: `${s.originalText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`,
-            translatedText: `${s.translatedText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`
-        }))
     }
 
     // ============================================================

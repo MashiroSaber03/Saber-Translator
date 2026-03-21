@@ -1013,15 +1013,16 @@ onMounted(() => {
 
 /* 文本编辑器 */
 .text-editor {
-  flex: 1;
+  flex: 0 0 auto;
   width: 100%;
-  min-height: 60px;
+  min-height: 120px;
   padding: 12px;
   border: 2px solid var(--border-color, #e9ecef);
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
-  resize: none;
+  resize: vertical;
+  overflow: auto;
   transition:
     border-color 0.2s,
     box-shadow 0.2s;

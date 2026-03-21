@@ -99,7 +99,7 @@ export class RenderPool extends TaskPool {
 
       task.renderResult = {
         finalImage: result.finalImage,
-        bubbleStates: this.appendBoxToBubbleStates(result.bubbleStates, bubbleProbs)
+        bubbleStates: result.bubbleStates
       }
       task.status = 'completed'
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
@@ -171,7 +171,7 @@ export class RenderPool extends TaskPool {
 
     task.renderResult = {
       finalImage: result.finalImage,
-      bubbleStates: this.appendBoxToBubbleStates(result.bubbleStates, bubbleProbs)
+      bubbleStates: result.bubbleStates
     }
 
     task.status = 'completed'
@@ -271,12 +271,4 @@ export class RenderPool extends TaskPool {
     return text.replace(/\s*\[BOX:\s*-?\d+(?:\.\d+)?\]\s*$/i, '')
   }
 
-  private appendBoxToBubbleStates(states: any[], bubbleProbs: number[]): any[] {
-    if (!bubbleProbs || bubbleProbs.length !== states.length) return states
-    return states.map((s, idx) => ({
-      ...s,
-      originalText: `${s.originalText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`,
-      translatedText: `${s.translatedText} [BOX: ${Number(bubbleProbs[idx]).toFixed(3)}]`
-    }))
-  }
 }
