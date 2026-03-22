@@ -12,6 +12,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 // ============================================================
 // 类型定义
@@ -39,6 +40,13 @@ function normalizeCoords(coords: BubbleCoords): BubbleCoords {
     Math.round(coords[2]),
     Math.round(coords[3])
   ]
+}
+
+function buildImageSrc(value: string): string {
+  if (!value) return value
+  if (value.startsWith('/api/')) return value
+  if (value.startsWith('data:')) return value
+  return 'data:image/png;base64,' + value
 }
 
 // ============================================================
@@ -357,16 +365,10 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       console.log(`开始修复气泡 #${index + 1} 背景，方法: ${inpaintMethod}`)
 
       // 获取基础图像数据（优先使用cleanImageData保留之前的修复效果）
-      let baseImageData: string
-      if (image.cleanImageData) {
-        baseImageData = image.cleanImageData
-      } else {
-        const match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-        baseImageData = match && match[1] ? match[1] : ''
-        if (!baseImageData) {
-          console.error('无法解析图像数据')
-          return
-        }
+      const baseImageData = await getPureBase64FromImageSource(image.cleanImageData || image.originalDataURL)
+      if (!baseImageData) {
+        console.error('无法解析图像数据')
+        return
       }
 
       const isLamaMethod = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
@@ -426,9 +428,9 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     // 获取基础图像
     let baseSrc: string
     if (image.cleanImageData) {
-      baseSrc = 'data:image/png;base64,' + image.cleanImageData
+      baseSrc = buildImageSrc(image.cleanImageData)
     } else if (image.originalDataURL) {
-      baseSrc = image.originalDataURL
+      baseSrc = buildImageSrc(image.originalDataURL)
     } else {
       console.error('无法找到基础图像用于填充')
       return
@@ -518,7 +520,10 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
     try {
       console.log(`开始 OCR 识别气泡 #${index + 1}`)
-      const imageData = image.originalDataURL.split(',')[1] || ''
+      const imageData = await getPureBase64FromImageSource(image.originalDataURL)
+      if (!imageData) {
+        throw new Error('无法读取图片数据')
+      }
       const settings = settingsStore.settings
       // PaddleOCR-VL 使用独立的源语言设置
       const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
@@ -531,17 +536,17 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         {
           source_language: ocrSourceLanguage,
           // 百度 OCR 参数（复刻原版 edit_mode.js）
-          baidu_ocr_api_key: settings.baiduOcr.apiKey,
-          baidu_ocr_secret_key: settings.baiduOcr.secretKey,
-          baidu_version: settings.baiduOcr.version,
-          baidu_source_language: settings.baiduOcr.sourceLanguage,
+          baidu_ocr_api_key: settings.baiduOcr?.apiKey,
+          baidu_ocr_secret_key: settings.baiduOcr?.secretKey,
+          baidu_version: settings.baiduOcr?.version,
+          baidu_source_language: settings.baiduOcr?.sourceLanguage,
           // AI 视觉 OCR 参数（复刻原版 edit_mode.js）
-          ai_vision_provider: settings.aiVisionOcr.provider,
-          ai_vision_api_key: settings.aiVisionOcr.apiKey,
-          ai_vision_model_name: settings.aiVisionOcr.modelName,
-          ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
-          custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl,
-          ai_vision_min_image_size: settings.aiVisionOcr.minImageSize
+          ai_vision_provider: settings.aiVisionOcr?.provider,
+          ai_vision_api_key: settings.aiVisionOcr?.apiKey,
+          ai_vision_model_name: settings.aiVisionOcr?.modelName,
+          ai_vision_ocr_prompt: settings.aiVisionOcr?.prompt,
+          custom_ai_vision_base_url: settings.aiVisionOcr?.customBaseUrl,
+          ai_vision_min_image_size: settings.aiVisionOcr?.minImageSize
         }
       )
 

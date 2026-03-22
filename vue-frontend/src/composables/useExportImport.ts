@@ -17,6 +17,7 @@ import {
 import { reRenderImage } from '@/api/translate'
 import type { BubbleState } from '@/types/bubble'
 import { getEffectiveDirection } from '@/types/bubble'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 /**
  * 导出文本数据结构
@@ -381,14 +382,9 @@ export function useExportImport() {
             // 【复刻原版】背景兜底策略：clean → original
             let cleanImageBase64 = ''
             if (img.cleanImageData) {
-              cleanImageBase64 = img.cleanImageData.includes('base64,')
-                ? (img.cleanImageData.split('base64,')[1] || '')
-                : img.cleanImageData
+              cleanImageBase64 = (await getPureBase64FromImageSource(img.cleanImageData)) || ''
             } else if (img.originalDataURL) {
-              // 兜底：使用原图作为背景
-              cleanImageBase64 = img.originalDataURL.includes('base64,')
-                ? (img.originalDataURL.split('base64,')[1] || '')
-                : img.originalDataURL
+              cleanImageBase64 = (await getPureBase64FromImageSource(img.originalDataURL)) || ''
               console.log(`importText: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
             }
 
@@ -523,7 +519,7 @@ export function useExportImport() {
   /**
    * 下载当前图片（翻译后或原始图片）
    */
-  function downloadCurrentImage(): void {
+  async function downloadCurrentImage(): Promise<void> {
     const currentImage = imageStore.currentImage
     if (!currentImage) {
       toast.warning('没有可下载的图片')
@@ -541,27 +537,31 @@ export function useExportImport() {
     isDownloading.value = true
 
     try {
-      // 从 Base64 数据创建 Blob
-      const base64Data = imageDataURL.split(',')[1]
-      if (!base64Data) {
-        throw new Error('无效的图片数据')
-      }
+      let url: string
+      if (imageDataURL.startsWith('/api/')) {
+        const resp = await fetch(imageDataURL)
+        if (!resp.ok) throw new Error('无效的图片数据')
+        const blob = await resp.blob()
+        url = URL.createObjectURL(blob)
+      } else {
+        const base64Data = imageDataURL.startsWith('data:') ? (imageDataURL.split(',')[1] || '') : imageDataURL
+        if (!base64Data) throw new Error('无效的图片数据')
+        const byteCharacters = atob(base64Data)
+        const byteArrays: ArrayBuffer[] = []
 
-      const byteCharacters = atob(base64Data)
-      const byteArrays: ArrayBuffer[] = []
-
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512)
-        const byteNumbers = new Array(slice.length)
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i)
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512)
+          const byteNumbers = new Array(slice.length)
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i)
+          }
+          const uint8Array = new Uint8Array(byteNumbers)
+          byteArrays.push(uint8Array.buffer as ArrayBuffer)
         }
-        const uint8Array = new Uint8Array(byteNumbers)
-        byteArrays.push(uint8Array.buffer as ArrayBuffer)
-      }
 
-      const blob = new Blob(byteArrays, { type: 'image/png' })
-      const url = URL.createObjectURL(blob)
+        const blob = new Blob(byteArrays, { type: 'image/png' })
+        url = URL.createObjectURL(blob)
+      }
 
       // 创建下载链接
       const a = document.createElement('a')
@@ -664,13 +664,15 @@ export function useExportImport() {
         downloadProgressText.value = `上传图片 ${i + 1}/${totalImages}...`
 
         try {
+          const pure = await getPureBase64FromImageSource(imageDataURL)
+          const uploadData = pure ? `data:image/png;base64,${pure}` : imageDataURL
           // 确定文件路径（用于保留文件夹结构）
           const filePath = imgData?.relativePath || imgData?.fileName || undefined
 
           // 传递 image_index 和 file_path（用于文件夹结构导出）
           const uploadResponse = await downloadUploadImage(
             sessionId,
-            imageDataURL,
+            uploadData,
             i,
             filePath
           )

@@ -12,6 +12,7 @@ import { inpaintSingleBubble } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleCoords, InpaintMethod } from '@/types/bubble'
 import { addErasureToUserMask, addRestorationToUserMask } from '@/utils/maskMerger'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 // ============================================================
 // 类型定义
@@ -419,6 +420,13 @@ export function useBrush(callbacks?: BrushCallbacks) {
   // 笔刷效果应用
   // ============================================================
 
+  function buildImageSrc(value: string): string {
+    if (!value) return value
+    if (value.startsWith('/api/')) return value
+    if (value.startsWith('data:')) return value
+    return 'data:image/png;base64,' + value
+  }
+
   /**
    * 还原笔刷区域（恢复为原图）
    */
@@ -428,7 +436,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     // 获取当前干净背景
     let cleanSrc: string
     if (currentImage.cleanImageData) {
-      cleanSrc = 'data:image/png;base64,' + currentImage.cleanImageData
+      cleanSrc = buildImageSrc(currentImage.cleanImageData)
     } else {
       cleanSrc = currentImage.originalDataURL
     }
@@ -542,16 +550,20 @@ export function useBrush(callbacks?: BrushCallbacks) {
     inpaintMethod: 'lama_mpe' | 'litelama' = 'lama_mpe'
   ): Promise<void> {
     // 获取当前干净背景或原图
-    let baseImageData: string
+    let baseImageData: string | null
     let baseImageSrc: string
     if (currentImage.cleanImageData) {
-      baseImageData = currentImage.cleanImageData
-      baseImageSrc = 'data:image/png;base64,' + currentImage.cleanImageData
+      baseImageData = await getPureBase64FromImageSource(currentImage.cleanImageData)
+      baseImageSrc = buildImageSrc(currentImage.cleanImageData)
     } else if (currentImage.originalDataURL) {
-      baseImageData = currentImage.originalDataURL.split(',')[1]
-      baseImageSrc = currentImage.originalDataURL
+      baseImageData = await getPureBase64FromImageSource(currentImage.originalDataURL)
+      baseImageSrc = buildImageSrc(currentImage.originalDataURL)
     } else {
       console.error('无法获取基础图像用于 LAMA 修复')
+      return
+    }
+    if (!baseImageData) {
+      console.error('无法读取基础图像数据用于 LAMA 修复')
       return
     }
 
@@ -653,9 +665,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
     // 获取当前干净背景
     let cleanSrc: string
     if (currentImage.cleanImageData) {
-      cleanSrc = 'data:image/png;base64,' + currentImage.cleanImageData
+      cleanSrc = buildImageSrc(currentImage.cleanImageData)
     } else if (currentImage.originalDataURL) {
-      cleanSrc = currentImage.originalDataURL
+      cleanSrc = buildImageSrc(currentImage.originalDataURL)
     } else {
       return
     }
