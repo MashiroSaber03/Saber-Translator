@@ -17,7 +17,8 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import {
     saveTranslatedPage,
-    saveSessionMeta
+    saveSessionMeta,
+    getPageImageUrl
 } from '@/api/pageStorage'
 
 // ============================================================
@@ -255,8 +256,16 @@ export async function saveTranslatedImage(pageIndex: number): Promise<void> {
             throw new Error(result.error || '保存失败')
         }
 
-        // 标记该页已保存
-        imageStore.updateImageByIndex(pageIndex, { hasUnsavedChanges: false })
+        const cacheBust = `?t=${Date.now()}`
+        imageStore.updateImageByIndex(pageIndex, {
+            translatedDataURL: img.translatedDataURL?.startsWith('data:')
+                ? `${getPageImageUrl(sessionPath, pageIndex, 'translated')}${cacheBust}`
+                : img.translatedDataURL,
+            cleanImageData: (img.cleanImageData && typeof img.cleanImageData === 'string' && !img.cleanImageData.startsWith('/api/'))
+                ? `${getPageImageUrl(sessionPath, pageIndex, 'clean')}${cacheBust}`
+                : img.cleanImageData,
+            hasUnsavedChanges: false
+        })
 
         console.log(`[AutoSave] 页面 ${pageIndex + 1} 已保存`)
 

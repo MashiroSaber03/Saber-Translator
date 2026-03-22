@@ -14,6 +14,7 @@
 import { hqTranslateBatch } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ImageData } from '@/types/image'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 // ============================================================
 // 类型定义
@@ -104,12 +105,13 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     })
 
     // 2. 收集图片 Base64
-    const imageBase64Array = input.tasks.map(t => {
+    const imageBase64Array = await Promise.all(input.tasks.map(async t => {
         const dataUrl = isProofread
             ? (t.image.translatedDataURL || t.image.originalDataURL)
             : t.image.originalDataURL
-        return extractBase64(dataUrl)
-    })
+        const base64 = await getPureBase64FromImageSource(dataUrl)
+        return base64 || ''
+    }))
 
     // 3. 获取配置
     const aiConfig = isProofread ? settings.proofreading.rounds[0] : settings.hqTranslation
@@ -202,16 +204,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
 // ============================================================
 // 辅助函数
 // ============================================================
-
-/**
- * 提取 Base64 数据
- */
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
-}
 
 function stripBoxSuffix(text: string): string {
     if (!text) return text

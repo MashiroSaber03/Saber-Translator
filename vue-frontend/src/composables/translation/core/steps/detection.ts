@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export interface DetectionInput {
     imageIndex: number
@@ -66,7 +67,10 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     }
 
     const settings = settingsStore.settings
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+    if (!base64) {
+        throw new Error('无法读取图片数据')
+    }
 
     // 步骤1: 使用用户选择的检测器进行检测（获取文本框）
     const response: ParallelDetectResponse = await parallelDetect({
@@ -120,13 +124,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         textMask: textMaskData,
         textlinesPerBubble: response.textlines_per_bubble || []
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }
 
 /**

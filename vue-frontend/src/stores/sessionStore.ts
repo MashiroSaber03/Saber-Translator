@@ -339,44 +339,6 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /**
-   * 将会话中的所有图片 URL 转换为 Base64
-   * 复刻原版 convertImagesToBase64 逻辑
-   */
-  async function convertImagesToBase64(
-    images: ImageData[],
-    progressCallback?: (current: number, total: number) => void
-  ): Promise<void> {
-    const total = images.length
-
-    for (let i = 0; i < total; i++) {
-      const img = images[i]
-      if (!img) continue
-      if (progressCallback) progressCallback(i + 1, total)
-
-      // 转换原图
-      if (img.originalDataURL && img.originalDataURL.startsWith('/api/')) {
-        const base64 = await imageUrlToBase64(img.originalDataURL)
-        if (base64) img.originalDataURL = base64
-      }
-
-      // 转换翻译图
-      if (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) {
-        const base64 = await imageUrlToBase64(img.translatedDataURL)
-        if (base64) img.translatedDataURL = base64
-      }
-
-      // 转换干净背景（cleanImageData 存储的是纯 Base64，不带 data: 前缀）
-      if (img.cleanImageData && img.cleanImageData.startsWith('/api/')) {
-        const base64 = await imageUrlToBase64(img.cleanImageData)
-        if (base64) {
-          // 移除 data:image/png;base64, 前缀
-          img.cleanImageData = base64.replace(/^data:image\/\w+;base64,/, '')
-        }
-      }
-    }
-  }
-
   async function loadSessionByPath(sessionPath: string): Promise<boolean> {
     setLoading(true)
     setError(null)
@@ -441,25 +403,11 @@ export const useSessionStore = defineStore('session', () => {
           userMask: (img.userMask as string) || null,
         }))
 
-        // 将图片 URL 转换为 Base64（用于 Canvas 操作和翻译功能）
-        // 复刻原版逻辑：显示进度并逐张转换
         if (images.length > 0) {
-          console.log('正在加载图片...')
-          loadingProgress.value = { current: 0, total: images.length, message: '正在加载图片...' }
-
-          await convertImagesToBase64(images, (current, total) => {
-            const progress = (current / total) * 100
-            loadingProgress.value = { current, total, message: `加载图片 ${current}/${total}...` }
-            console.log(`加载图片 ${current}/${total}... (${progress.toFixed(0)}%)`)
-          })
-
           loadingProgress.value = { current: images.length, total: images.length, message: '加载完成' }
-          console.log('图片加载完成，已转换为 Base64')
-
-          // 延迟清除进度信息
           setTimeout(() => {
             loadingProgress.value = { current: 0, total: 0, message: '' }
-          }, 500)
+          }, 300)
         }
 
         // 设置图片到 imageStore
@@ -576,27 +524,7 @@ export const useSessionStore = defineStore('session', () => {
     loadingProgress.value = { current: 0, total: totalImages, message: `准备保存 ${totalImages} 张图片...` }
 
     try {
-      // 步骤0: 在保存前，将所有 /api/... URL 格式的图片转换为 Base64
-      const hasApiUrls = allImages.some(img =>
-        (img.originalDataURL && img.originalDataURL.startsWith('/api/')) ||
-        (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) ||
-        (img.cleanImageData && img.cleanImageData.startsWith('/api/'))
-      )
-
-      if (hasApiUrls) {
-        console.log('[saveChapterSession] 检测到 /api/ URL 格式图片，开始转换为 Base64...')
-        loadingProgress.value = { current: 0, total: totalImages, message: '转换图片格式...' }
-
-        await convertImagesToBase64(allImages, (current, total) => {
-          loadingProgress.value = {
-            current: 0,
-            total: totalImages,
-            message: `转换图片 ${current}/${total}...`
-          }
-        })
-
-        console.log('[saveChapterSession] 图片格式转换完成')
-      }
+      console.log('[saveChapterSession] 跳过 /api/ URL 图片全量转换（逐页保存时按需保存已修改的页面）')
 
       // 收集 UI 设置（仅保存文本样式设置）
       const { textStyle } = settingsStore.settings

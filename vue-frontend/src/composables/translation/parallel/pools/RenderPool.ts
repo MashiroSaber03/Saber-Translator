@@ -16,6 +16,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { shouldEnableAutoSave, saveTranslatedImage } from '../../core/saveStep'
 import { useParallelTranslation } from '../useParallelTranslation'
 import type { BubbleCoords } from '@/types/bubble'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export class RenderPool extends TaskPool {
   private resultCollector: ResultCollector
@@ -38,8 +39,9 @@ export class RenderPool extends TaskPool {
 
     // 获取干净背景图：优先使用inpaintResult，其次使用已有的cleanImageData
     const cleanImage = task.inpaintResult?.cleanImage
-      || task.imageData.cleanImageData
-      || this.extractBase64(task.imageData.translatedDataURL || task.imageData.originalDataURL)
+      || (await getPureBase64FromImageSource(task.imageData.cleanImageData))
+      || (await getPureBase64FromImageSource(task.imageData.translatedDataURL || task.imageData.originalDataURL))
+      || ''
 
     // 构建渲染输入数据
     const coords = task.detectionResult?.bubbleCoords || []
@@ -257,13 +259,6 @@ export class RenderPool extends TaskPool {
     }
 
     console.log(`✅ 图片 ${imageIndex + 1} 渲染完成`)
-  }
-
-  private extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-      return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
   }
 
   private stripBoxSuffix(text: string): string {

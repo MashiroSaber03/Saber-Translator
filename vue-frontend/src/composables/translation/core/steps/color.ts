@@ -5,6 +5,7 @@
 import { parallelColor, type ParallelColorResponse } from '@/api/parallelTranslate'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export interface ColorInput {
     imageIndex: number
@@ -29,7 +30,10 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
         return { colors: [] }
     }
 
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+    if (!base64) {
+        throw new Error('无法读取图片数据')
+    }
 
     const response: ParallelColorResponse = await parallelColor({
         image: base64,
@@ -44,11 +48,4 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
     return {
         colors: response.colors || []
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }

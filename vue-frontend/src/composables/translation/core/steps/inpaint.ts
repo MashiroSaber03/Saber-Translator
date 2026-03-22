@@ -6,6 +6,7 @@ import { parallelInpaint, type ParallelInpaintResponse } from '@/api/parallelTra
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export interface InpaintInput {
     imageIndex: number
@@ -24,13 +25,17 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     const { image, bubbleCoords, bubblePolygons, textMask, userMask } = input
 
     if (bubbleCoords.length === 0) {
-        return { cleanImage: extractBase64(image.originalDataURL) }
+        const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+        return { cleanImage: base64 || '' }
     }
 
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
     const { textStyle, preciseMask } = settings
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+    if (!base64) {
+        throw new Error('无法读取图片数据')
+    }
 
     // ✅ 分别发送 textMask 和 userMask，由后端合并处理
     console.log(`修复步骤 - textMask: ${textMask ? '✅' : '❌'}, userMask: ${userMask ? '✅' : '❌'}`)
@@ -53,12 +58,5 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     }
 
     return { cleanImage: response.clean_image || '' }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }
 

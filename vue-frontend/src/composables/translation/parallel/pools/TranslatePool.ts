@@ -14,6 +14,7 @@ import type { ParallelProgressTracker } from '../ParallelProgressTracker'
 import { parallelTranslate } from '@/api/parallelTranslate'
 import { hqTranslateBatch, translateSingleText } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export class TranslatePool extends TaskPool {
   private mode: ParallelTranslationMode = 'standard'
@@ -303,10 +304,11 @@ export class TranslatePool extends TaskPool {
     }))
 
     // 2. 收集图片（优先使用翻译后的图片）
-    const imageBase64Array = batch.map(t => {
+    const imageBase64Array = await Promise.all(batch.map(async t => {
       const dataUrl = t.imageData.translatedDataURL || t.imageData.originalDataURL
-      return this.extractBase64(dataUrl)
-    })
+      const base64 = await getPureBase64FromImageSource(dataUrl)
+      return base64 || ''
+    }))
 
     // 3. 遍历所有校对轮次
     let currentData = jsonData
@@ -378,13 +380,6 @@ export class TranslatePool extends TaskPool {
   }
 
   // ==================== 辅助方法 ====================
-  private extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-      return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
-  }
-
   private parseHqResponse(
     response: { success: boolean; results?: any[]; content?: string; error?: string },
     forceJsonOutput: boolean

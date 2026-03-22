@@ -265,6 +265,8 @@ onMounted(() => {
               :src="image.originalDataURL" 
               :alt="image.fileName"
               class="thumbnail-image"
+              loading="lazy"
+              decoding="async"
             >
             <!-- 页码角标（左下角） -->
             <span class="page-number-indicator">{{ getImageGlobalIndex(image) + 1 }}</span>
@@ -308,6 +310,8 @@ onMounted(() => {
             :src="image.originalDataURL" 
             :alt="image.fileName"
             class="thumbnail-image"
+            loading="lazy"
+            decoding="async"
           >
           <!-- 页码角标（左下角） -->
           <span class="page-number-indicator">{{ index + 1 }}</span>

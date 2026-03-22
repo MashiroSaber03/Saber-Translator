@@ -6,6 +6,7 @@ import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export interface OcrInput {
     imageIndex: number
@@ -28,7 +29,10 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
 
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+    if (!base64) {
+        throw new Error('无法读取图片数据')
+    }
 
     // PaddleOCR-VL 使用独立的源语言设置
     const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
@@ -60,11 +64,4 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     return {
         originalTexts: response.original_texts || []
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }

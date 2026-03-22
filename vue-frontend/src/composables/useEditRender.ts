@@ -11,6 +11,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { reRenderImage } from '@/api/translate'
 import { DEFAULT_FONT_FAMILY } from '@/constants'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 // ============================================================
 // 类型定义
@@ -59,25 +60,16 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   /**
    * 获取干净背景图像的Base64数据
    */
-  function getCleanImageBase64(): string | null {
+  async function getCleanImageBase64(): Promise<string | null> {
     const image = currentImage.value
     if (!image) return null
 
     // 优先使用cleanImageData
     if (image.cleanImageData) {
-      return image.cleanImageData
+      return await getPureBase64FromImageSource(image.cleanImageData)
     }
 
-    // 否则使用原图
-    if (image.originalDataURL) {
-      // 移除data:image/xxx;base64,前缀
-      const base64Match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-      if (base64Match && base64Match[1]) {
-        return base64Match[1]
-      }
-    }
-
-    return null
+    return await getPureBase64FromImageSource(image.originalDataURL)
   }
 
   // ============================================================
@@ -104,7 +96,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       console.log('reRenderFullImage: 没有气泡，跳过后端渲染')
 
       // 将cleanImageData作为翻译图显示（修复笔刷场景）
-      const cleanBase64 = getCleanImageBase64()
+      const cleanBase64 = await getCleanImageBase64()
       if (cleanBase64) {
         const translatedDataURL = `data:image/png;base64,${cleanBase64}`
         image.translatedDataURL = translatedDataURL
@@ -114,7 +106,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     }
 
     // 获取必要的图像数据
-    const cleanBase64 = getCleanImageBase64()
+    const cleanBase64 = await getCleanImageBase64()
 
     if (!cleanBase64) {
       console.error('reRenderFullImage: 缺少图像数据')

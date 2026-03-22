@@ -9,6 +9,7 @@ import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
 import { executeInpaint } from '@/composables/translation/core/steps'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 export class InpaintPool extends TaskPool {
   constructor(
@@ -25,15 +26,9 @@ export class InpaintPool extends TaskPool {
 
     if (!detectionResult || detectionResult.bubbleCoords.length === 0) {
       // 没有气泡，使用原图作为干净图
-      const extractBase64 = (dataUrl: string): string => {
-        if (dataUrl.includes('base64,')) {
-          return dataUrl.split('base64,')[1] || ''
-        }
-        return dataUrl
-      }
-
+      const base64 = await getPureBase64FromImageSource(imageData.originalDataURL)
       task.inpaintResult = {
-        cleanImage: extractBase64(imageData.originalDataURL)
+        cleanImage: base64 || ''
       }
       task.status = 'processing'
       return task

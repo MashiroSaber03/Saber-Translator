@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -File .\tools\start_system_monitor.ps1

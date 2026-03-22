@@ -15,6 +15,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { showToast } from '@/utils/toast'
 import { getEffectiveDirection } from '@/types/bubble'
 import { useTranslation } from '@/composables/useTranslationPipeline'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 
 /**
  * 应用设置选项接口
@@ -258,14 +259,17 @@ export function useTextStyleSync() {
             let cleanImageBase64 = ''
             if (image.cleanImageData) {
                 const cleanData = image.cleanImageData
-                cleanImageBase64 = cleanData.includes('base64,')
-                    ? (cleanData.split('base64,')[1] || '')
-                    : cleanData
+                if (cleanData.startsWith('/api/')) {
+                    cleanImageBase64 = (await getPureBase64FromImageSource(cleanData)) || ''
+                } else {
+                    cleanImageBase64 = cleanData.includes('base64,')
+                        ? (cleanData.split('base64,')[1] || '')
+                        : cleanData
+                }
             } else if (image.originalDataURL) {
                 // 兜底：使用原图作为背景
-                cleanImageBase64 = image.originalDataURL.includes('base64,')
-                    ? (image.originalDataURL.split('base64,')[1] || '')
-                    : image.originalDataURL
+                const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+                cleanImageBase64 = base64 || ''
                 console.log('handleTextStyleChanged: 使用原图作为背景（兜底）')
             }
 
@@ -352,13 +356,16 @@ export function useTextStyleSync() {
                 let cleanImageBase64 = ''
                 if (image.cleanImageData) {
                     const cleanData = image.cleanImageData
-                    cleanImageBase64 = cleanData.includes('base64,')
-                        ? (cleanData.split('base64,')[1] || '')
-                        : cleanData
+                    if (cleanData.startsWith('/api/')) {
+                        cleanImageBase64 = (await getPureBase64FromImageSource(cleanData)) || ''
+                    } else {
+                        cleanImageBase64 = cleanData.includes('base64,')
+                            ? (cleanData.split('base64,')[1] || '')
+                            : cleanData
+                    }
                 } else if (image.originalDataURL) {
-                    cleanImageBase64 = image.originalDataURL.includes('base64,')
-                        ? (image.originalDataURL.split('base64,')[1] || '')
-                        : image.originalDataURL
+                    const base64 = await getPureBase64FromImageSource(image.originalDataURL)
+                    cleanImageBase64 = base64 || ''
                 }
 
                 if (!cleanImageBase64) {
@@ -669,13 +676,16 @@ export function useTextStyleSync() {
                         // 背景兜底策略：clean → original
                         let cleanImageBase64 = ''
                         if (img.cleanImageData) {
-                            cleanImageBase64 = img.cleanImageData.includes('base64,')
-                                ? (img.cleanImageData.split('base64,')[1] || '')
-                                : img.cleanImageData
+                            if (img.cleanImageData.startsWith('/api/')) {
+                                cleanImageBase64 = (await getPureBase64FromImageSource(img.cleanImageData)) || ''
+                            } else {
+                                cleanImageBase64 = img.cleanImageData.includes('base64,')
+                                    ? (img.cleanImageData.split('base64,')[1] || '')
+                                    : img.cleanImageData
+                            }
                         } else if (img.originalDataURL) {
-                            cleanImageBase64 = img.originalDataURL.includes('base64,')
-                                ? (img.originalDataURL.split('base64,')[1] || '')
-                                : img.originalDataURL
+                            const base64 = await getPureBase64FromImageSource(img.originalDataURL)
+                            cleanImageBase64 = base64 || ''
                             console.log(`handleApplyToAll: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
                         }
 
