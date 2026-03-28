@@ -18,6 +18,8 @@ export type PolygonCoords = number[][]
  */
 export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
+export type TextAlign = 'left' | 'center'
+
 /**
  * 修复方式
  */
@@ -67,6 +69,8 @@ export interface BubbleState {
   rotationAngle: number
   /** 位置偏移 */
   position: BubblePosition
+  /** 横排对齐方式（主要用于 horizontal） */
+  textAlign?: TextAlign
 
   // 描边参数
   /** 是否启用描边 */
@@ -120,6 +124,7 @@ export interface BubbleGlobalDefaults {
   fontSize?: number
   fontFamily?: string
   textDirection?: TextDirection
+  textAlign?: TextAlign
   textColor?: string
   fillColor?: string
   inpaintMethod?: InpaintMethod

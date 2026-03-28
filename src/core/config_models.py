@@ -57,6 +57,7 @@ class BubbleState:
     fill_color: str = constants.DEFAULT_FILL_COLOR       # 单个气泡的填充色
     rotation_angle: float = constants.DEFAULT_ROTATION_ANGLE  # 旋转角度（度）
     position_offset: Dict[str, int] = field(default_factory=lambda: {"x": 0, "y": 0})
+    text_align: str = "center"  # "left" | "center"（主要用于横排）
     
     # === 描边参数 ===
     stroke_enabled: bool = constants.DEFAULT_STROKE_ENABLED
@@ -93,6 +94,7 @@ class BubbleState:
             "fillColor": self.fill_color,
             "rotationAngle": self.rotation_angle,
             "position": self.position_offset,
+            "textAlign": self.text_align,
             # 描边参数
             "strokeEnabled": self.stroke_enabled,
             "strokeColor": self.stroke_color,
@@ -117,6 +119,7 @@ class BubbleState:
             "position_offset": self.position_offset,
             "text_color": self.text_color,
             "rotation_angle": self.rotation_angle,
+            "text_align": self.text_align,
             "stroke_enabled": self.stroke_enabled,
             "stroke_color": self.stroke_color,
             "stroke_width": self.stroke_width,
@@ -157,6 +160,8 @@ class BubbleState:
             "rotation_angle": "rotation_angle",  # 兼容后端命名
             "position": "position_offset",
             "position_offset": "position_offset",  # 兼容后端命名
+            "textAlign": "text_align",
+            "text_align": "text_align",
             # 描边参数
             "strokeEnabled": "stroke_enabled",
             "stroke_enabled": "stroke_enabled",

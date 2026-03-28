@@ -220,10 +220,12 @@ export function useSequentialPipeline() {
     // ============================================================
 
     async function stepDetection(task: TaskState): Promise<void> {
+        const settingsStore = useSettingsStore()
+        const forceDetect = Boolean(settingsStore.settings.textStyle.useAutoTextColor) && Boolean(task.image.bubbleStates && task.image.bubbleStates.length > 0)
         const result = await executeDetection({
             imageIndex: task.imageIndex,
             image: task.image,
-            forceDetect: false
+            forceDetect
         })
 
         task.bubbleCoords = result.bubbleCoords

@@ -154,6 +154,45 @@
             </button>
           </div>
 
+          <div
+            v-if="localTextDirection === 'horizontal'"
+            class="toolbar-icon-group"
+            aria-label="横排对齐"
+          >
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'left'"
+              @click="setTextAlign('left')"
+              title="左对齐"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path
+                  d="M3 4h10M3 8h7M3 12h9"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'center'"
+              @click="setTextAlign('center')"
+              title="居中"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path
+                  d="M3 4h10M4.5 8h7M3.5 12h9"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+
           <div class="toolbar-divider vertical"></div>
 
           <!-- 文字颜色 -->
@@ -390,7 +429,7 @@
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
-import type { BubbleState, TextDirection, InpaintMethod } from '@/types/bubble'
+import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import { getFontListApi } from '@/api/config'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -453,6 +492,7 @@ const defaultBubble: BubbleState = {
   rotationAngle: 0,
   inpaintMethod: 'solid',
   position: { x: 0, y: 0 },
+  textAlign: 'center',
 }
 
 // ============================================================
@@ -464,6 +504,7 @@ const localTranslatedText = ref('')
 const localFontSize = ref(24)
 const localFontFamily = ref(DEFAULT_FONT_FAMILY)
 const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
+const localTextAlign = ref<TextAlign>('center')
 const localTextColor = ref('#231816')
 const localFillColor = ref('#FFFFFF')
 const localStrokeEnabled = ref(true)
@@ -549,6 +590,7 @@ function syncFromBubble(bubble: BubbleState | null): void {
   localFontSize.value = b.fontSize
   localFontFamily.value = b.fontFamily
   localTextDirection.value = b.textDirection
+  localTextAlign.value = (b.textAlign as TextAlign) || 'center'
   localTextColor.value = b.textColor
   localFillColor.value = b.fillColor
   localStrokeEnabled.value = b.strokeEnabled
@@ -633,6 +675,11 @@ function handleFontFamilyChange(): void {
 function setTextDirection(direction: TextDirection): void {
   localTextDirection.value = direction
   emit('update', { textDirection: direction })
+}
+
+function setTextAlign(align: TextAlign): void {
+  localTextAlign.value = align
+  emit('update', { textAlign: align })
 }
 
 // ============================================================
@@ -772,6 +819,7 @@ function applyToAll(): void {
     fontSize: localFontSize.value,
     fontFamily: localFontFamily.value,
     textDirection: localTextDirection.value,
+    textAlign: localTextAlign.value,
     textColor: localTextColor.value,
     fillColor: localFillColor.value,
     strokeEnabled: localStrokeEnabled.value,

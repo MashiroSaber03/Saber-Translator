@@ -451,6 +451,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         current.fontSize !== initial.fontSize ||
         current.fontFamily !== initial.fontFamily ||
         current.textDirection !== initial.textDirection ||
+        current.textAlign !== initial.textAlign ||
         current.textColor !== initial.textColor ||
         current.fillColor !== initial.fillColor ||
         current.rotationAngle !== initial.rotationAngle ||

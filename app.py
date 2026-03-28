@@ -20,6 +20,11 @@ import mimetypes
 # Flask/Werkzeug 在服务静态文件时通常会参考这个
 mimetypes.add_type('text/javascript', '.js')
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(errors="replace")
+
 colorama.init()
 
 # 配置日志

@@ -570,10 +570,12 @@ class Model48pxOCR:
                     _, fg_color, bg_color = self._decode_with_colors(
                         pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
                     )
-                    if precise_mode and regions_used[i] is not None:
-                        peak_fg = self._estimate_dominant_fg_color_hsv(regions_used[i])
-                        if peak_fg is not None and self._should_override_fg(fg_color, peak_fg):
-                            fg_color = peak_fg
+                    if regions_used[i] is not None:
+                        est_fg, est_bg = self._estimate_text_main_color(regions_used[i])
+                        if est_fg is not None and self._should_override_fg(fg_color, est_fg, est_bg):
+                            fg_color = est_fg
+                        if bg_color is None and est_bg is not None:
+                            bg_color = est_bg
                     all_colors[chunk_indices[i]] = (fg_color, bg_color, prob)
                 
                 # 清理 GPU 内存
@@ -592,11 +594,11 @@ class Model48pxOCR:
                 
                 if bubble_color_data:
                     # 聚合颜色
-                    fg_colors = [c[0] for c in bubble_color_data if c[0] is not None]
+                    fg_colors = [(c[0], c[2]) for c in bubble_color_data if c[0] is not None]
                     bg_colors = [c[1] for c in bubble_color_data if c[1] is not None]
                     probs = [c[2] for c in bubble_color_data if c[2] > 0]
                     
-                    final_fg = self._average_colors(fg_colors) if fg_colors else None
+                    final_fg = self._select_representative_fg(fg_colors) if fg_colors else None
                     final_bg = self._average_colors(bg_colors) if bg_colors else None
                     final_prob = sum(probs) / len(probs) if probs else 0.0
                     
@@ -639,73 +641,125 @@ class Model48pxOCR:
         b = sum(c[2] for c in colors) // len(colors)
         return (r, g, b)
 
-    def _estimate_dominant_fg_color_hsv(self, region_rgb: np.ndarray) -> Optional[Tuple[int, int, int]]:
-        if region_rgb is None or region_rgb.size == 0:
-            return None
-        if region_rgb.ndim != 3 or region_rgb.shape[2] != 3:
-            return None
+    def _select_representative_fg(self, colors_with_weight: List[Tuple[Tuple[int, int, int], float]]) -> Tuple[int, int, int]:
+        filtered = [(rgb, w) for (rgb, w) in colors_with_weight if rgb is not None]
+        non_white = [(rgb, w) for (rgb, w) in filtered if not self._is_near_white_rgb(rgb)]
+        pool = non_white if non_white else filtered
+        if not pool:
+            return (0, 0, 0)
 
-        step = 2
+        buckets: Dict[Tuple[int, int, int], List[Tuple[Tuple[int, int, int], float]]] = {}
+        for rgb, w in pool:
+            key = (int(rgb[0]) // 16, int(rgb[1]) // 16, int(rgb[2]) // 16)
+            buckets.setdefault(key, []).append((rgb, float(w)))
+
+        best_key = None
+        best_score = -1.0
+        for key, items in buckets.items():
+            score = sum(w for _, w in items)
+            if score > best_score:
+                best_score = score
+                best_key = key
+
+        chosen = buckets.get(best_key, pool)
+        denom = max(sum(w for _, w in chosen), 1e-6)
+        r = int(round(sum(rgb[0] * w for rgb, w in chosen) / denom))
+        g = int(round(sum(rgb[1] * w for rgb, w in chosen) / denom))
+        b = int(round(sum(rgb[2] * w for rgb, w in chosen) / denom))
+        return (min(max(r, 0), 255), min(max(g, 0), 255), min(max(b, 0), 255))
+
+    def _estimate_text_main_color(self, region_rgb: np.ndarray) -> Tuple[Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]]]:
+        if region_rgb is None or region_rgb.size == 0:
+            return None, None
+        if region_rgb.ndim != 3 or region_rgb.shape[2] != 3:
+            return None, None
+
+        step = 2 if min(region_rgb.shape[0], region_rgb.shape[1]) >= 32 else 1
         sample = region_rgb[::step, ::step, :]
         if sample.size == 0:
-            return None
+            return None, None
 
-        hsv = cv2.cvtColor(sample, cv2.COLOR_RGB2HSV)
-        h = hsv[:, :, 0].reshape(-1)
-        s = hsv[:, :, 1].reshape(-1)
-        v = hsv[:, :, 2].reshape(-1)
+        gray = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        mag = cv2.magnitude(gx, gy).reshape(-1)
+        mag_sorted = np.sort(mag)
+        if mag_sorted.size < 32:
+            return None, None
 
-        s_min = int(0.15 * 255)
-        v_min = int(0.20 * 255)
-        mask = (s >= s_min) & (v >= v_min)
-        if int(mask.sum()) < 24:
-            return None
+        bg_thr = float(mag_sorted[int(0.60 * (mag_sorted.size - 1))])
+        edge_thr = float(mag_sorted[int(0.88 * (mag_sorted.size - 1))])
 
-        bin_size = 5
-        bins = 36
-        h_bins = (h // bin_size).astype(np.int32)
-        h_bins = h_bins[mask]
-        if h_bins.size == 0:
-            return None
+        mag2 = mag.reshape(gray.shape)
+        bg_mask = mag2 <= bg_thr
+        edge_mask = mag2 >= edge_thr
 
-        counts = np.bincount(h_bins, minlength=bins)
-        peak_bin = int(counts.argmax())
-        if int(counts[peak_bin]) < 12:
-            return None
+        bg_pixels = sample[bg_mask]
+        if bg_pixels.size == 0:
+            bg_pixels = sample.reshape(-1, 3)
+        bg_rgb = np.median(bg_pixels.astype(np.float32), axis=0)
+        bg_rgb_t = (int(round(float(bg_rgb[0]))), int(round(float(bg_rgb[1]))), int(round(float(bg_rgb[2]))))
+        bg_lab = cv2.cvtColor(np.array([[bg_rgb_t]], dtype=np.uint8), cv2.COLOR_RGB2LAB)[0, 0].astype(np.int16)
 
-        peak_mask = mask & ((h // bin_size) == peak_bin)
-        if int(peak_mask.sum()) < 12:
-            return None
+        candidates = sample[edge_mask]
+        if candidates.size == 0:
+            return None, bg_rgb_t
 
-        rgb_flat = sample.reshape(-1, 3)
-        peak_rgb = rgb_flat[peak_mask]
-        if peak_rgb.size == 0:
-            return None
+        hsv = cv2.cvtColor(candidates.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+        s = hsv[:, 1].astype(np.int32)
+        v = hsv[:, 2].astype(np.int32)
+        not_white = ~((s < int(0.20 * 255)) & (v > int(0.88 * 255)))
+        candidates = candidates[not_white]
+        if candidates.size == 0:
+            return None, bg_rgb_t
 
-        mean = peak_rgb.mean(axis=0)
-        r, g, b = int(round(float(mean[0]))), int(round(float(mean[1]))), int(round(float(mean[2])))
-        r = min(max(r, 0), 255)
-        g = min(max(g, 0), 255)
-        b = min(max(b, 0), 255)
+        cand_lab = cv2.cvtColor(candidates.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2LAB).reshape(-1, 3).astype(np.int16)
+        d0 = cand_lab[:, 0] - int(bg_lab[0])
+        d1 = cand_lab[:, 1] - int(bg_lab[1])
+        d2 = cand_lab[:, 2] - int(bg_lab[2])
+        dist2 = d0 * d0 + d1 * d1 + d2 * d2
+        keep = dist2 >= (18 * 18)
+        candidates2 = candidates[keep]
+        if candidates2.size == 0:
+            candidates2 = candidates
 
-        if self._is_near_white_rgb((r, g, b)):
-            return None
-        return (r, g, b)
+        hsv2 = cv2.cvtColor(candidates2.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+        s2 = hsv2[:, 1].astype(np.int32)
+        v2 = hsv2[:, 2].astype(np.int32)
+        strong = (s2 >= int(0.18 * 255)) | (v2 <= int(0.80 * 255))
+        candidates3 = candidates2[strong]
+        if candidates3.size == 0:
+            candidates3 = candidates2
+
+        fg_rgb = np.median(candidates3.astype(np.float32), axis=0)
+        fg = (int(round(float(fg_rgb[0]))), int(round(float(fg_rgb[1]))), int(round(float(fg_rgb[2]))))
+        if self._is_near_white_rgb(fg):
+            return None, bg_rgb_t
+        return fg, bg_rgb_t
 
     def _should_override_fg(
         self,
         model_fg: Optional[Tuple[int, int, int]],
-        peak_fg: Tuple[int, int, int],
+        est_fg: Tuple[int, int, int],
+        est_bg: Optional[Tuple[int, int, int]] = None,
     ) -> bool:
         if model_fg is None:
             return True
         if self._is_near_white_rgb(model_fg):
             return True
+        if est_bg is not None:
+            model_lab = cv2.cvtColor(np.array([[model_fg]], dtype=np.uint8), cv2.COLOR_RGB2LAB)[0, 0].astype(np.int16)
+            bg_lab = cv2.cvtColor(np.array([[est_bg]], dtype=np.uint8), cv2.COLOR_RGB2LAB)[0, 0].astype(np.int16)
+            d0 = int(model_lab[0]) - int(bg_lab[0])
+            d1 = int(model_lab[1]) - int(bg_lab[1])
+            d2 = int(model_lab[2]) - int(bg_lab[2])
+            if d0 * d0 + d1 * d1 + d2 * d2 < (14 * 14):
+                return True
         model_s = self._rgb_saturation(model_fg)
-        peak_s = self._rgb_saturation(peak_fg)
-        if model_s < 0.18 and peak_s >= 0.18:
+        est_s = self._rgb_saturation(est_fg)
+        if model_s < 0.18 and est_s >= 0.18:
             return True
-        if peak_s > model_s + 0.12:
+        if est_s > model_s + 0.12:
             return True
         return False
 

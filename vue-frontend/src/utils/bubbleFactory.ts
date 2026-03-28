@@ -44,6 +44,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   fillColor: DEFAULT_FILL_COLOR,
   rotationAngle: 0,
   position: { x: 0, y: 0 },
+  textAlign: 'center',
 
   // 描边参数
   strokeEnabled: DEFAULT_STROKE_ENABLED,

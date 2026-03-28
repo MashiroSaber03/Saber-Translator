@@ -1200,6 +1200,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                   bubble_width=None,
                                   bubble_height=None,
+                                  text_align="center",
                                   font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
     在指定位置绘制横排多行文本（不含旋转）。
@@ -1275,7 +1276,10 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     for line_idx, line in enumerate(lines):
         # 计算水平居中偏移
         if bubble_width is not None:
-            horizontal_offset = (bubble_width - line_widths[line_idx]) / 2
+            if text_align == "left":
+                horizontal_offset = 0
+            else:
+                horizontal_offset = (bubble_width - line_widths[line_idx]) / 2
             current_x = x + horizontal_offset
         else:
             current_x = x
@@ -1432,6 +1436,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
+                    text_align = state.get('textAlign') or state.get('text_align') or 'center'
                     draw_multiline_text_horizontal(
                         temp_draw, text, font,
                         temp_offset_x, temp_offset_y, max_text_width,
@@ -1441,6 +1446,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1483,6 +1489,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
+                    text_align = state.get('textAlign') or state.get('text_align') or 'center'
                     draw_multiline_text_horizontal(
                         draw, text, font, draw_x, draw_y, max_text_width,
                         fill=text_color,
@@ -1491,6 +1498,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=text_align,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1838,6 +1846,7 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                 
@@ -1881,6 +1890,7 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
+                        text_align=getattr(state, "text_align", "center"),
                         font_family_path=state.font_family
                     )
                     
