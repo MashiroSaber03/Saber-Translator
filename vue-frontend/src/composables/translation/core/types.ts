@@ -92,6 +92,7 @@ export interface SavedTextStyles {
     fontFamily: string
     fontSize: number
     autoFontSize: boolean
+    lineSpacing: number
     textDirection: string
     autoTextDirection: boolean
     /** 用户选择的排版方向（包括 'auto'） */

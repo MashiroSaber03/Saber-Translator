@@ -20,6 +20,8 @@ export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
 export type TextAlign = 'left' | 'center'
 
+export type LineSpacing = number
+
 /**
  * 修复方式
  */
@@ -71,6 +73,8 @@ export interface BubbleState {
   position: BubblePosition
   /** 横排对齐方式（主要用于 horizontal） */
   textAlign?: TextAlign
+  /** 行间距倍率（主要用于 horizontal），默认 1.15 */
+  lineSpacing?: LineSpacing
 
   // 描边参数
   /** 是否启用描边 */
@@ -125,6 +129,7 @@ export interface BubbleGlobalDefaults {
   fontFamily?: string
   textDirection?: TextDirection
   textAlign?: TextAlign
+  lineSpacing?: LineSpacing
   textColor?: string
   fillColor?: string
   inpaintMethod?: InpaintMethod

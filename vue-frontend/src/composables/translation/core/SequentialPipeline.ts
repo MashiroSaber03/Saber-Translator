@@ -174,6 +174,7 @@ export function useSequentialPipeline() {
             fontFamily: textStyle.fontFamily,
             fontSize: textStyle.fontSize,
             autoFontSize: textStyle.autoFontSize,
+            lineSpacing: textStyle.lineSpacing,
             autoTextDirection: layoutDirectionValue === 'auto',
             textDirection: layoutDirectionValue === 'auto' ? 'vertical' : layoutDirectionValue,
             layoutDirection: layoutDirectionValue,  // 保存用户原始选择（包括 'auto'）

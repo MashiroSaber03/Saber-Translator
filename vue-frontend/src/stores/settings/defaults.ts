@@ -46,6 +46,7 @@ export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   autoFontSize: false,
   fontFamily: DEFAULT_FONT_FAMILY,
   layoutDirection: 'auto',
+  lineSpacing: 1.15,
   textColor: '#000000',
   fillColor: DEFAULT_FILL_COLOR,
   strokeEnabled: DEFAULT_STROKE_ENABLED,

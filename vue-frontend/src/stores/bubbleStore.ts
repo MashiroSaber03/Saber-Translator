@@ -178,6 +178,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       fontSize: textStyle.fontSize,
       fontFamily: textStyle.fontFamily,
       textDirection: bubbleTextDirection,  // 直接使用具体方向
+      lineSpacing: textStyle.lineSpacing,
       textColor: textStyle.textColor,
       fillColor: textStyle.fillColor,
       inpaintMethod: textStyle.inpaintMethod,
@@ -452,6 +453,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         current.fontFamily !== initial.fontFamily ||
         current.textDirection !== initial.textDirection ||
         current.textAlign !== initial.textAlign ||
+        current.lineSpacing !== initial.lineSpacing ||
         current.textColor !== initial.textColor ||
         current.fillColor !== initial.fillColor ||
         current.rotationAngle !== initial.rotationAngle ||

@@ -54,6 +54,7 @@ interface ApplySettingsOptions {
   fontSize: boolean
   fontFamily: boolean
   layoutDirection: boolean
+  lineSpacing: boolean
   textColor: boolean
   fillColor: boolean
   strokeEnabled: boolean
@@ -80,6 +81,7 @@ const applyOptions = ref<ApplySettingsOptions>({
   fontSize: true,
   fontFamily: true,
   layoutDirection: true,
+  lineSpacing: true,
   textColor: true,
   fillColor: true,
   strokeEnabled: true,
@@ -479,6 +481,14 @@ function handleLayoutDirectionChange(value: string | number) {
   emit('textStyleChanged', 'layoutDirection', strValue)
 }
 
+function updateLineSpacing(event: Event) {
+  const target = event.target as HTMLInputElement
+  const value = parseFloat(target.value)
+  if (!Number.isFinite(value)) return
+  settingsStore.updateTextStyle({ lineSpacing: value })
+  emit('textStyleChanged', 'lineSpacing', value)
+}
+
 /**
  * 处理填充方式变化（CustomSelect）
  */
@@ -559,6 +569,7 @@ function toggleSelectAll() {
     fontSize: newValue,
     fontFamily: newValue,
     layoutDirection: newValue,
+    lineSpacing: newValue,
     textColor: newValue,
     fillColor: newValue,
     strokeEnabled: newValue,
@@ -719,6 +730,19 @@ function handleRunWorkflow() {
                 @change="handleLayoutDirectionChange"
               />
             </div>
+
+            <div class="form-group">
+              <label for="lineSpacing">行间距</label>
+              <input
+                type="number"
+                id="lineSpacing"
+                :value="textStyle.lineSpacing"
+                min="0.5"
+                max="3"
+                step="0.05"
+                @input="updateLineSpacing"
+              />
+            </div>
           </section>
 
           <section class="setting-group setting-group-color">
@@ -869,6 +893,10 @@ function handleRunWorkflow() {
                 v-model="applyOptions.layoutDirection"
               />
               <label for="apply_layoutDirection">排版方向</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_lineSpacing" v-model="applyOptions.lineSpacing" />
+              <label for="apply_lineSpacing">行间距</label>
             </div>
             <div class="apply-option">
               <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />

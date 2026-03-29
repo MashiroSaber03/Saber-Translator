@@ -24,6 +24,7 @@ export interface ApplySettingsOptions {
     fontSize: boolean
     fontFamily: boolean
     layoutDirection: boolean
+    lineSpacing: boolean
     textColor: boolean
     fillColor: boolean
     strokeEnabled: boolean
@@ -65,6 +66,7 @@ export function useTextStyleSync() {
             autoFontSize: image.autoFontSize ?? currentStyle.autoFontSize,
             fontFamily: image.fontFamily ?? currentStyle.fontFamily,
             layoutDirection: image.layoutDirection ?? currentStyle.layoutDirection,
+            lineSpacing: image.lineSpacing ?? currentStyle.lineSpacing,
             textColor: image.textColor ?? currentStyle.textColor,
             fillColor: image.fillColor ?? currentStyle.fillColor,
             strokeEnabled: image.strokeEnabled ?? currentStyle.strokeEnabled,
@@ -88,6 +90,7 @@ export function useTextStyleSync() {
             autoFontSize: style.autoFontSize,
             fontFamily: style.fontFamily,
             layoutDirection: style.layoutDirection,
+            lineSpacing: style.lineSpacing,
             textColor: style.textColor,
             fillColor: style.fillColor,
             strokeEnabled: style.strokeEnabled,
@@ -160,7 +163,7 @@ export function useTextStyleSync() {
 
         // 需要重新渲染的设置项（与原版 renderSettings 一致）
         const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
-            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor']
+            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor', 'lineSpacing']
 
         if (!renderSettings.includes(settingKey)) {
             return
@@ -177,7 +180,8 @@ export function useTextStyleSync() {
             'strokeEnabled': 'strokeEnabled',
             'strokeColor': 'strokeColor',
             'strokeWidth': 'strokeWidth',
-            'fillColor': 'fillColor'
+            'fillColor': 'fillColor',
+            'lineSpacing': 'lineSpacing'
         }
 
         const stateProperty = propertyMap[settingKey]
@@ -244,6 +248,7 @@ export function useTextStyleSync() {
                 fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,
                 fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
                 textDirection: getEffectiveDirection(bs),
+                lineSpacing: typeof bs.lineSpacing === 'number' ? bs.lineSpacing : settingsStore.settings.textStyle.lineSpacing,
                 textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
                 rotationAngle: bs.rotationAngle || 0,
                 position: bs.position || { x: 0, y: 0 },
@@ -288,6 +293,7 @@ export function useTextStyleSync() {
                     fontSize: settingsStore.settings.textStyle.fontSize,
                     fontFamily: settingsStore.settings.textStyle.fontFamily,
                     textDirection: layoutDir === 'auto' ? 'vertical' : layoutDir,
+                    lineSpacing: settingsStore.settings.textStyle.lineSpacing,
                     textColor: settingsStore.settings.textStyle.textColor,
                     bubble_states: bubbleStatesForApi,
                     use_individual_styles: true,
@@ -520,6 +526,7 @@ export function useTextStyleSync() {
                 fontSize: textStyle.fontSize,
                 fontFamily: textStyle.fontFamily,
                 textDirection: isAutoLayout ? 'vertical' : textStyle.layoutDirection,
+                lineSpacing: textStyle.lineSpacing,
                 textColor: textStyle.textColor,
                 fillColor: textStyle.fillColor,
                 strokeEnabled: textStyle.strokeEnabled,
@@ -565,6 +572,10 @@ export function useTextStyleSync() {
                     } else {
                         updatedBubble.textDirection = fixedSettings.textDirection as 'vertical' | 'horizontal'
                     }
+                }
+
+                if (options.lineSpacing) {
+                    updatedBubble.lineSpacing = fixedSettings.lineSpacing
                 }
 
                 // 文字颜色
@@ -614,6 +625,7 @@ export function useTextStyleSync() {
 
                 if (options.fontFamily) imageUpdates.fontFamily = fixedSettings.fontFamily
                 if (options.layoutDirection) imageUpdates.layoutDirection = textStyle.layoutDirection
+                if (options.lineSpacing) imageUpdates.lineSpacing = fixedSettings.lineSpacing
 
                 // 颜色相关设置
                 if (options.textColor || options.fillColor) {
@@ -646,6 +658,7 @@ export function useTextStyleSync() {
             if (options.fontSize) appliedItems.push(isAutoFontSize ? '自动字号' : '字号')
             if (options.fontFamily) appliedItems.push('字体')
             if (options.layoutDirection) appliedItems.push(isAutoLayout ? '自动排版方向' : '排版方向')
+            if (options.lineSpacing) appliedItems.push('行间距')
             if (options.textColor) appliedItems.push(isAutoTextColor ? '自动文字颜色' : '文字颜色')
             if (options.fillColor) appliedItems.push(isAutoTextColor ? '自动填充颜色' : '填充颜色')
             if (options.strokeEnabled) appliedItems.push('描边开关')
@@ -716,6 +729,7 @@ export function useTextStyleSync() {
                             fontSize: img.fontSize,
                             autoFontSize: options.fontSize && isAutoFontSize,
                             fontFamily: img.fontFamily,
+                            lineSpacing: img.lineSpacing ?? textStyle.lineSpacing,
                             textDirection: img.layoutDirection,
                             autoTextDirection: textStyle.layoutDirection === 'auto',
                             textColor: img.textColor,

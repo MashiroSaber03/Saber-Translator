@@ -191,6 +191,7 @@ export interface TextStyleSettings {
   autoFontSize: boolean
   fontFamily: string
   layoutDirection: TextDirection
+  lineSpacing: number
   textColor: string
   fillColor: string
   strokeEnabled: boolean

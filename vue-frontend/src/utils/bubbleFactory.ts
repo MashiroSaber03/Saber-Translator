@@ -45,6 +45,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   rotationAngle: 0,
   position: { x: 0, y: 0 },
   textAlign: 'center',
+  lineSpacing: 1.15,
 
   // 描边参数
   strokeEnabled: DEFAULT_STROKE_ENABLED,

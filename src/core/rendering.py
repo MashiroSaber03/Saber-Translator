@@ -858,6 +858,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  stroke_color=constants.DEFAULT_STROKE_COLOR,
                                  stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                  bubble_width=None,
+                                 line_spacing=1.15,
                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
     在指定位置绘制竖排多行文本。
@@ -882,7 +883,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     lines = []
     current_line = ""
     current_column_height = 0
-    line_height_approx = font.size + 1  # 字间距为1像素
+    line_height_approx = font.size + 1
 
     # ===== 处理 <H></H> 标签的智能换行 =====
     # 先按 \n 分割段落，然后在每个段落内处理
@@ -955,7 +956,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         lines.append(current_line)
 
     # 列宽基于字体大小估算
-    column_width_approx = max(1, int(round((font.size + 3) * 1.15)))
+    column_width_approx = max(1, int(round((font.size + 3) * float(line_spacing))))
 
     # 计算文本段落的总宽度
     total_text_width_for_centering = len(lines) * column_width_approx
@@ -1201,6 +1202,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   bubble_width=None,
                                   bubble_height=None,
                                   text_align="center",
+                                  line_spacing=1.15,
                                   font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
     """
     在指定位置绘制横排多行文本（不含旋转）。
@@ -1256,7 +1258,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     if not lines:
         return
 
-    line_height = max(1, int(round((font.size + 5) * 1.15)))
+    line_height = max(1, int(round((font.size + 5) * float(line_spacing))))
     
     # 计算每行的总宽度（直接使用已记录的值，不再遍历）
     line_widths = [sum(widths) for widths in line_char_widths]
@@ -1433,10 +1435,12 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
+                        line_spacing=state.get('lineSpacing') or state.get('line_spacing') or 1.15,
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
                     text_align = state.get('textAlign') or state.get('text_align') or 'center'
+                    line_spacing = state.get('lineSpacing') or state.get('line_spacing') or 1.15
                     draw_multiline_text_horizontal(
                         temp_draw, text, font,
                         temp_offset_x, temp_offset_y, max_text_width,
@@ -1447,6 +1451,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
                         text_align=text_align,
+                        line_spacing=line_spacing,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1486,10 +1491,12 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
+                        line_spacing=state.get('lineSpacing') or state.get('line_spacing') or 1.15,
                         font_family_path=font_family_rel
                     )
                 elif text_direction == 'horizontal':
                     text_align = state.get('textAlign') or state.get('text_align') or 'center'
+                    line_spacing = state.get('lineSpacing') or state.get('line_spacing') or 1.15
                     draw_multiline_text_horizontal(
                         draw, text, font, draw_x, draw_y, max_text_width,
                         fill=text_color,
@@ -1499,6 +1506,7 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
                         text_align=text_align,
+                        line_spacing=line_spacing,
                         font_family_path=font_family_rel
                     )
                 else:
@@ -1834,6 +1842,7 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
+                        line_spacing=getattr(state, "line_spacing", 1.15),
                         font_family_path=state.font_family
                     )
                 else:
@@ -1847,6 +1856,7 @@ def render_bubbles_unified(
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
                         text_align=getattr(state, "text_align", "center"),
+                        line_spacing=getattr(state, "line_spacing", 1.15),
                         font_family_path=state.font_family
                     )
                 
@@ -1879,6 +1889,7 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
+                        line_spacing=getattr(state, "line_spacing", 1.15),
                         font_family_path=state.font_family
                     )
                 else:
@@ -1891,6 +1902,7 @@ def render_bubbles_unified(
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
                         text_align=getattr(state, "text_align", "center"),
+                        line_spacing=getattr(state, "line_spacing", 1.15),
                         font_family_path=state.font_family
                     )
                     

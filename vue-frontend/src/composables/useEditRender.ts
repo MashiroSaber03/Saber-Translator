@@ -142,6 +142,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         fontFamily: s.fontFamily || DEFAULT_FONT_FAMILY,
         textDirection: getEffectiveDirection(s),
         textAlign: s.textAlign || 'center',
+        lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : 1.15,
         textColor: s.textColor || '#231816',
         rotationAngle: Math.round(Number(s.rotationAngle) || 0),
         position: s.position ? { x: Math.round(s.position.x || 0), y: Math.round(s.position.y || 0) } : { x: 0, y: 0 },

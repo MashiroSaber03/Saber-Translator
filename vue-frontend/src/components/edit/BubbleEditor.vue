@@ -116,6 +116,21 @@
               </div>
             </div>
           </div>
+          <div class="combo-control size-control">
+            <label>行距</label>
+            <div class="size-input-wrap">
+              <input
+                type="number"
+                v-model.number="localLineSpacing"
+                class="toolbar-fontsize-input"
+                :min="0.5"
+                :max="3"
+                :step="0.05"
+                title="行间距"
+                @change="handleLineSpacingChange"
+              />
+            </div>
+          </div>
         </div>
 
         <!-- 第二行：样式工具按钮 -->
@@ -493,6 +508,7 @@ const defaultBubble: BubbleState = {
   inpaintMethod: 'solid',
   position: { x: 0, y: 0 },
   textAlign: 'center',
+  lineSpacing: 1.15,
 }
 
 // ============================================================
@@ -505,6 +521,7 @@ const localFontSize = ref(24)
 const localFontFamily = ref(DEFAULT_FONT_FAMILY)
 const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
 const localTextAlign = ref<TextAlign>('center')
+const localLineSpacing = ref(1.15)
 const localTextColor = ref('#231816')
 const localFillColor = ref('#FFFFFF')
 const localStrokeEnabled = ref(true)
@@ -591,6 +608,7 @@ function syncFromBubble(bubble: BubbleState | null): void {
   localFontFamily.value = b.fontFamily
   localTextDirection.value = b.textDirection
   localTextAlign.value = (b.textAlign as TextAlign) || 'center'
+  localLineSpacing.value = typeof b.lineSpacing === 'number' ? b.lineSpacing : 1.15
   localTextColor.value = b.textColor
   localFillColor.value = b.fillColor
   localStrokeEnabled.value = b.strokeEnabled
@@ -680,6 +698,10 @@ function setTextDirection(direction: TextDirection): void {
 function setTextAlign(align: TextAlign): void {
   localTextAlign.value = align
   emit('update', { textAlign: align })
+}
+
+function handleLineSpacingChange(): void {
+  emit('update', { lineSpacing: localLineSpacing.value })
 }
 
 // ============================================================
@@ -820,6 +842,7 @@ function applyToAll(): void {
     fontFamily: localFontFamily.value,
     textDirection: localTextDirection.value,
     textAlign: localTextAlign.value,
+    lineSpacing: localLineSpacing.value,
     textColor: localTextColor.value,
     fillColor: localFillColor.value,
     strokeEnabled: localStrokeEnabled.value,

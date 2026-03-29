@@ -76,6 +76,8 @@ export interface ImageData {
   fontFamily: string
   /** 排版方向（用户选择，包括 'auto'） */
   layoutDirection: TextDirection
+  /** 行间距倍率 */
+  lineSpacing?: number
   /** 文字颜色 */
   textColor: string
   /** 填充颜色 */

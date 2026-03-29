@@ -58,6 +58,7 @@ class BubbleState:
     rotation_angle: float = constants.DEFAULT_ROTATION_ANGLE  # 旋转角度（度）
     position_offset: Dict[str, int] = field(default_factory=lambda: {"x": 0, "y": 0})
     text_align: str = "center"  # "left" | "center"（主要用于横排）
+    line_spacing: float = 1.15
     
     # === 描边参数 ===
     stroke_enabled: bool = constants.DEFAULT_STROKE_ENABLED
@@ -95,6 +96,7 @@ class BubbleState:
             "rotationAngle": self.rotation_angle,
             "position": self.position_offset,
             "textAlign": self.text_align,
+            "lineSpacing": self.line_spacing,
             # 描边参数
             "strokeEnabled": self.stroke_enabled,
             "strokeColor": self.stroke_color,
@@ -120,6 +122,7 @@ class BubbleState:
             "text_color": self.text_color,
             "rotation_angle": self.rotation_angle,
             "text_align": self.text_align,
+            "line_spacing": self.line_spacing,
             "stroke_enabled": self.stroke_enabled,
             "stroke_color": self.stroke_color,
             "stroke_width": self.stroke_width,
@@ -162,6 +165,8 @@ class BubbleState:
             "position_offset": "position_offset",  # 兼容后端命名
             "textAlign": "text_align",
             "text_align": "text_align",
+            "lineSpacing": "line_spacing",
+            "line_spacing": "line_spacing",
             # 描边参数
             "strokeEnabled": "stroke_enabled",
             "stroke_enabled": "stroke_enabled",

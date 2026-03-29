@@ -151,6 +151,7 @@ export interface ParallelRenderParams {
   fontSize?: number
   fontFamily?: string
   textDirection?: string
+  lineSpacing?: number
   textColor?: string
   strokeEnabled?: boolean
   strokeColor?: string
