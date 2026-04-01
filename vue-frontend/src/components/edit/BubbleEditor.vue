@@ -425,6 +425,30 @@
         </div>
       </details>
 
+      <details class="color-presets-panel">
+        <summary>颜色预设</summary>
+        <div class="color-presets">
+          <div v-for="preset in colorPresets" :key="preset.id" class="color-preset-item">
+            <button
+              class="color-swatch-btn"
+              @click="applyColorPreset(preset)"
+              :title="`文字 ${preset.textColor} / 描边 ${preset.strokeEnabled ? preset.strokeColor : '关闭'}`"
+            >
+              <span
+                class="color-swatch"
+                :style="{
+                  backgroundColor: preset.textColor,
+                  borderColor: preset.strokeEnabled ? preset.strokeColor : 'transparent',
+                  borderWidth: preset.strokeEnabled ? Math.min(4, preset.strokeWidth) + 'px' : '1px'
+                }"
+              />
+            </button>
+            <button class="color-preset-delete" title="删除" @click="deleteColorPreset(preset.id)">×</button>
+          </div>
+          <button class="color-preset-add" title="从当前样式新增" @click="addColorPresetFromCurrent">+</button>
+        </div>
+      </details>
+
       <!-- 操作按钮 -->
       <div class="edit-action-buttons">
         <button class="btn-apply" @click="handleApplyBubble">应用</button>
@@ -443,8 +467,10 @@
  */
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
+import type { EditorColorPreset } from '@/types/settings'
 import { getFontListApi } from '@/api/config'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -484,6 +510,7 @@ const emit = defineEmits<{
 // ============================================================
 
 const bubbleStore = useBubbleStore()
+const settingsStore = useSettingsStore()
 
 // ============================================================
 // 默认值
@@ -702,6 +729,33 @@ function setTextAlign(align: TextAlign): void {
 
 function handleLineSpacingChange(): void {
   emit('update', { lineSpacing: localLineSpacing.value })
+}
+
+const colorPresets = computed(() => settingsStore.settings.editorColorPresets || [])
+
+function applyColorPreset(preset: EditorColorPreset): void {
+  emit('update', {
+    textColor: preset.textColor,
+    strokeEnabled: preset.strokeEnabled,
+    strokeColor: preset.strokeColor,
+    strokeWidth: preset.strokeWidth,
+  })
+  emit('reRender')
+}
+
+function addColorPresetFromCurrent(): void {
+  const preset: EditorColorPreset = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    textColor: localTextColor.value,
+    strokeEnabled: Boolean(localStrokeEnabled.value),
+    strokeColor: localStrokeColor.value,
+    strokeWidth: Number(localStrokeWidth.value) || 0,
+  }
+  settingsStore.updateSettings({ editorColorPresets: [...colorPresets.value, preset] })
+}
+
+function deleteColorPreset(id: string): void {
+  settingsStore.updateSettings({ editorColorPresets: colorPresets.value.filter(p => p.id !== id) })
 }
 
 // ============================================================
@@ -1534,6 +1588,94 @@ onMounted(() => {
   background: linear-gradient(135deg, #e8edff, #d9e2ff);
   border-color: #5670ff;
   color: #3040c2;
+}
+
+.color-presets-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+  padding-top: 12px;
+}
+
+.color-presets-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-color, #495057);
+  font-weight: 500;
+  padding: 4px 0;
+}
+
+.color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.color-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-swatch-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d0d7ea;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-style: solid;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.color-preset-delete {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d0d7ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+
+.color-preset-delete:hover {
+  background: #fff0f0;
+  border-color: #f0b4b4;
+  color: #b42323;
+}
+
+.color-preset-add {
+  width: 30px;
+  height: 30px;
+  border: 1px dashed #9aaefc;
+  border-radius: 8px;
+  background: #f2f4ff;
+  color: #2f46c8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.color-preset-add:hover {
+  background: #dfe4ff;
 }
 
 /* 操作按钮 */

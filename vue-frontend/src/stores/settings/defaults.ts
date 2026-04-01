@@ -5,6 +5,7 @@
 
 import type {
   TextStyleSettings,
+  EditorColorPreset,
   BaiduOcrSettings,
   PaddleOcrVlSettings,
   AiVisionOcrSettings,
@@ -56,6 +57,15 @@ export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   // 智能颜色识别默认关闭
   useAutoTextColor: false
 }
+
+export const DEFAULT_EDITOR_COLOR_PRESETS: EditorColorPreset[] = [
+  { id: 'white-black', textColor: '#FFFFFF', strokeEnabled: true, strokeColor: '#000000', strokeWidth: 3 },
+  { id: 'black-white', textColor: '#000000', strokeEnabled: true, strokeColor: '#FFFFFF', strokeWidth: 3 },
+  { id: 'blue-white', textColor: '#2A68FF', strokeEnabled: true, strokeColor: '#FFFFFF', strokeWidth: 3 },
+  { id: 'white-blue', textColor: '#FFFFFF', strokeEnabled: true, strokeColor: '#2A68FF', strokeWidth: 3 },
+  { id: 'yellow-white', textColor: '#FFD400', strokeEnabled: true, strokeColor: '#FFFFFF', strokeWidth: 3 },
+  { id: 'white-yellow', textColor: '#FFFFFF', strokeEnabled: true, strokeColor: '#FFD400', strokeWidth: 3 },
+]
 
 /** 默认百度OCR设置 */
 export const DEFAULT_BAIDU_OCR: BaiduOcrSettings = {
@@ -148,6 +158,7 @@ export const DEFAULT_PARALLEL: ParallelSettings = {
 export function createDefaultSettings(): TranslationSettings {
   return {
     textStyle: { ...DEFAULT_TEXT_STYLE },
+    editorColorPresets: [...DEFAULT_EDITOR_COLOR_PRESETS],
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',

@@ -202,12 +202,23 @@ export interface TextStyleSettings {
   useAutoTextColor: boolean  // 默认使用自动识别的文字颜色
 }
 
+export interface EditorColorPreset {
+  id: string
+  textColor: string
+  strokeEnabled: boolean
+  strokeColor: string
+  strokeWidth: number
+}
+
 /**
  * 完整的翻译设置
  */
 export interface TranslationSettings {
   // 文字样式设置
   textStyle: TextStyleSettings
+
+  // 编辑器颜色预设（会持久化到 localStorage，并在 session 保存时写入 ui_settings）
+  editorColorPresets: EditorColorPreset[]
 
   // OCR 设置
   ocrEngine: OcrEngine

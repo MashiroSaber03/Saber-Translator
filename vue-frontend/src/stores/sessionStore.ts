@@ -470,6 +470,11 @@ export const useSessionStore = defineStore('session', () => {
           useAutoTextColor: (uiSettings.useAutoTextColor as boolean) ?? settingsStore.settings.textStyle.useAutoTextColor,
         })
 
+        const presets = uiSettings.colorPresets as any
+        if (Array.isArray(presets)) {
+          settingsStore.updateSettings({ editorColorPresets: presets })
+        }
+
         console.log('UI 设置已恢复')
       }
 
@@ -543,6 +548,7 @@ export const useSessionStore = defineStore('session', () => {
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
         useAutoTextColor: textStyle.useAutoTextColor,
+        colorPresets: settingsStore.settings.editorColorPresets,
       }
 
       // 使用公共函数逐页保存
