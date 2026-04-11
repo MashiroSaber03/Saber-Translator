@@ -36,6 +36,50 @@ _translation_rpm_last_reset_time_container = [0]
 _translation_rpm_request_count_container = [0]
 # ------------------------------------------
 
+def _log_llm_usage(provider: str, model: str, response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        logger.info(f"[LLM usage] provider={provider} model={model} usage=missing")
+        return
+
+    try:
+        if hasattr(usage, "model_dump"):
+            usage_dict = usage.model_dump()
+        elif isinstance(usage, dict):
+            usage_dict = usage
+        else:
+            usage_dict = getattr(usage, "__dict__", {}) or {}
+
+        prompt_tokens = usage_dict.get("prompt_tokens")
+        completion_tokens = usage_dict.get("completion_tokens")
+        total_tokens = usage_dict.get("total_tokens")
+
+        prompt_details = usage_dict.get("prompt_tokens_details") or {}
+        if hasattr(prompt_details, "model_dump"):
+            prompt_details = prompt_details.model_dump()
+        elif not isinstance(prompt_details, dict):
+            prompt_details = getattr(prompt_details, "__dict__", {}) or {}
+
+        cached_tokens = prompt_details.get("cached_tokens")
+        if cached_tokens is None and isinstance(prompt_details, dict):
+            cached_tokens = 0
+
+        parts = [
+            f"provider={provider}",
+            f"model={model}",
+        ]
+        if prompt_tokens is not None:
+            parts.append(f"prompt={int(prompt_tokens)}")
+        parts.append(f"cached={int(cached_tokens) if cached_tokens is not None else 'n/a'}")
+        if completion_tokens is not None:
+            parts.append(f"completion={int(completion_tokens)}")
+        if total_tokens is not None:
+            parts.append(f"total={int(total_tokens)}")
+
+        logger.info("[LLM usage] " + " ".join(parts))
+    except Exception:
+        return
+
 def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: list, request_count_ref: list):
     """
     执行rpm（每分钟请求数）限制检查和等待。
@@ -196,6 +240,7 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": text},
                     ]
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 translated_text = response.choices[0].message.content.strip()
                 
             elif model_provider == 'deepseek':
@@ -210,6 +255,7 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": text},
                     ]
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 translated_text = response.choices[0].message.content.strip()
                 
             elif model_provider == 'volcano':
@@ -223,6 +269,7 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": text},
                     ]
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 translated_text = response.choices[0].message.content.strip()
 
             elif model_provider == 'caiyun':
@@ -356,6 +403,7 @@ def translate_single_text(text, target_language, model_provider,
                     model=model_name,
                     messages=gemini_messages,
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 translated_text = response.choices[0].message.content.strip()
                 logger.info(f"Gemini 文本翻译成功，模型: {model_name}")
                 logger.info(f"Gemini 翻译结果 (前100字符): {translated_text[:100]}")
@@ -376,6 +424,7 @@ def translate_single_text(text, target_language, model_provider,
                         {"role": "user", "content": text},
                     ],
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 translated_text = response.choices[0].message.content.strip()
             else:
                 raise ValueError(f"不支持的翻译服务提供商: {model_provider}")
@@ -771,6 +820,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                     messages=messages,
                     timeout=120
                 )
+                _log_llm_usage(model_provider, model_name, response)
                 response_text = response.choices[0].message.content.strip()
             
             # 日志：输出原始响应（用于调试）

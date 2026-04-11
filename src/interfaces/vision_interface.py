@@ -29,8 +29,8 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
             logger.error(f"调用 {service_friendly_name} 失败：未提供 Base URL。")
             return ""
 
-        # 使用辅助函数创建客户端，自动处理代理问题
-        client = create_openai_client(api_key=api_key, base_url=base_url_to_use)
+        max_retries = 0 if "自定义" in (service_friendly_name or "") else None
+        client = create_openai_client(api_key=api_key, base_url=base_url_to_use, max_retries=max_retries)
 
         payload_messages = [ # payload 结构保持一致
             {

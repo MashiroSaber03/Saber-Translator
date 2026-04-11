@@ -32,7 +32,8 @@ def is_local_service(base_url: Optional[str]) -> bool:
 def create_openai_client(
     api_key: str,
     base_url: Optional[str] = None,
-    timeout: float = 30.0
+    timeout: float = 30.0,
+    max_retries: Optional[int] = None
 ) -> OpenAI:
     """
     创建 OpenAI 客户端（支持自动绕过本地服务的代理）
@@ -60,20 +61,36 @@ def create_openai_client(
             trust_env=False,  # 关键：禁用代理（不从环境变量读取）
         )
         
-        client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            http_client=http_client
-        )
+        kwargs = {
+            "api_key": api_key,
+            "base_url": base_url,
+            "http_client": http_client,
+        }
+        if max_retries is not None:
+            kwargs["max_retries"] = max_retries
+
+        try:
+            client = OpenAI(**kwargs)
+        except TypeError:
+            kwargs.pop("max_retries", None)
+            client = OpenAI(**kwargs)
         
         logger.debug(f"已创建无代理 OpenAI 客户端: {base_url}")
     else:
         # 远程服务使用默认配置（会使用系统代理）
-        client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout
-        )
+        kwargs = {
+            "api_key": api_key,
+            "base_url": base_url,
+            "timeout": timeout,
+        }
+        if max_retries is not None:
+            kwargs["max_retries"] = max_retries
+
+        try:
+            client = OpenAI(**kwargs)
+        except TypeError:
+            kwargs.pop("max_retries", None)
+            client = OpenAI(**kwargs)
         logger.debug(f"已创建 OpenAI 客户端: {base_url or '默认'}")
     
     return client
