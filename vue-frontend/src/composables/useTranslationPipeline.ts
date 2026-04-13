@@ -19,6 +19,7 @@ import { useToast } from '@/utils/toast'
 import {
     usePipeline,
     getStandardModeConfig,
+    getRepairAbnormalResultsModeConfig,
     getHqModeConfig,
     getProofreadModeConfig,
     getRemoveTextModeConfig
@@ -29,7 +30,7 @@ import type { PageRange } from './translation/core/types'
 export type { TranslationProgress, PageRange } from './translation/core/types'
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr'
 
 /** 翻译结果 */
 export interface TranslateResult {
@@ -130,6 +131,7 @@ export function useTranslation() {
         pageIndexes: number[],
         mode: TranslationMode
     ): Promise<TranslateResult> {
+        console.log('[翻译入口] translatePages', { mode, pageIndexes })
         // 验证
         if (pageIndexes.length === 0) {
             toast.error('没有指定要翻译的页面')
@@ -203,6 +205,9 @@ export function useTranslation() {
         switch (mode) {
             case 'standard':
                 return getStandardModeConfig(scope, pageRange ? { pageRange } : undefined)
+            case 'repairEmptyOcr':
+            case 'repairAbnormalResults':
+                return getRepairAbnormalResultsModeConfig(scope, pageRange ? { pageRange } : undefined)
             case 'hq':
                 return getHqModeConfig(scope, pageRange ? { pageRange } : undefined)
             case 'proofread':
@@ -251,6 +256,30 @@ export function useTranslation() {
         const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
         const result = await translatePages(pageIndexes, 'standard')
         return result.success
+    }
+
+    async function repairAbnormalResultsAll(): Promise<boolean> {
+        const result = await translatePages(range(0, imageStore.images.length), 'repairAbnormalResults')
+        return result.success
+    }
+
+    async function repairAbnormalResultsRange(pageRange: PageRange): Promise<boolean> {
+        const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
+        console.log('[异常结果复查] useTranslationPipeline.repairAbnormalResultsRange', {
+            pageRange,
+            pageIndexes
+        })
+        const result = await translatePages(pageIndexes, 'repairAbnormalResults')
+        return result.success
+    }
+
+    // 兼容旧调用名
+    async function repairEmptyOcrAll(): Promise<boolean> {
+        return repairAbnormalResultsAll()
+    }
+
+    async function repairEmptyOcrRange(pageRange: PageRange): Promise<boolean> {
+        return repairAbnormalResultsRange(pageRange)
     }
 
     /**
@@ -389,6 +418,10 @@ export function useTranslation() {
         // 批量翻译
         translateAllImages,
         translateImageRange,
+        repairAbnormalResultsAll,
+        repairAbnormalResultsRange,
+        repairEmptyOcrAll,
+        repairEmptyOcrRange,
         cancelBatchTranslation,
 
         // 仅消除文字

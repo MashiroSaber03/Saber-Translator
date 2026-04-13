@@ -7,6 +7,7 @@
 import { parallelRender, type ParallelRenderResponse } from '@/api/parallelTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import { getPureBase64FromImageSource } from '@/utils/imageBase64'
 import type { SavedTextStyles } from '../types'
 
 export interface RenderInput {
@@ -53,6 +54,11 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             throw new Error('此图片尚未翻译，请先翻译后再进行校对')
         }
         throw new Error('缺少干净背景图片')
+    }
+
+    const normalizedCleanImage = await getPureBase64FromImageSource(cleanImage)
+    if (!normalizedCleanImage) {
+        throw new Error('无法读取干净背景图片')
     }
 
     const settingsStore = useSettingsStore()
@@ -116,7 +122,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     })
 
     const response: ParallelRenderResponse = await parallelRender({
-        clean_image: cleanImage,
+        clean_image: normalizedCleanImage,
         bubble_states: bubbleStates,
         fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
         fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,

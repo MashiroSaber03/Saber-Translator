@@ -27,8 +27,11 @@ import type {
     SavedTextStyles,
     TranslationMode
 } from './types'
+import { normalizeTranslationMode } from './types'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import { containsJapaneseKana, isTranslationErrorText } from '@/utils/translationText'
+import { forwardFrontendLog } from '@/api/system'
 
 // 原子步骤模块
 import {
@@ -69,6 +72,8 @@ export type AtomicStepType =
  */
 export const STEP_CHAIN_CONFIGS: Record<TranslationMode, AtomicStepType[]> = {
     standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
+    repairAbnormalResults: ['ocr', 'translate', 'render'],
+    repairEmptyOcr: ['ocr', 'translate', 'render'],
     hq: ['detection', 'ocr', 'color', 'aiTranslate', 'inpaint', 'render'],
     proofread: ['aiTranslate', 'render'],
     removeText: ['detection', 'inpaint', 'render']
@@ -105,6 +110,11 @@ interface TaskState {
 
     // OCR结果
     originalTexts: string[]
+    repairEmptyIndices?: number[]
+    repairJapaneseIndices?: number[]
+    repairFailedTranslationIndices?: number[]
+    recoveredEmptyOcrCount?: number
+    skipRemaining?: boolean
 
     // 颜色结果
     colors: Array<{
@@ -124,6 +134,7 @@ interface TaskState {
     // 渲染结果
     finalImage?: string
     bubbleStates?: BubbleState[]
+    syncedAfterRender?: boolean
 }
 
 // ============================================================
@@ -189,16 +200,52 @@ export function useSequentialPipeline() {
         }
     }
 
+    function logRepairProgress(message: string): void {
+        const fullMessage = `[异常结果复查] ${message}`
+        console.log(fullMessage)
+        void forwardFrontendLog(fullMessage).catch(() => {
+            // 日志转发失败不应影响主流程
+        })
+    }
+
+    async function logRepairSummary(message: string): Promise<void> {
+        const fullMessage = `[异常结果复查] 完成：${message}`
+        console.log(fullMessage)
+        try {
+            await forwardFrontendLog(fullMessage)
+        } catch {
+            // 日志转发失败不应影响主流程
+        }
+    }
+
+    function isRepairTargetPage(image: AppImageData): boolean {
+        if (!image.translatedDataURL || !image.cleanImageData || !image.bubbleStates?.length) {
+            return false
+        }
+
+        return image.bubbleStates.some(state => {
+            const hasEmptyOcr = !state.originalText || state.originalText.trim() === ''
+            const hasJapaneseTranslation = containsJapaneseKana(state.translatedText || '')
+            const hasFailedTranslation = isTranslationErrorText(state.translatedText || '')
+            return hasEmptyOcr || hasJapaneseTranslation || hasFailedTranslation
+        })
+    }
+
     function getImagesToProcess(config: PipelineConfig): { image: AppImageData; index: number }[] {
         const images = imageStore.images
+        const filterRepairReviewImages = (items: { image: AppImageData; index: number }[]) => {
+            if (normalizeTranslationMode(config.mode) !== 'repairAbnormalResults') return items
+            return items.filter(({ image }) => isRepairTargetPage(image))
+        }
+
         if (config.scope === 'current') {
             const currentImage = imageStore.currentImage
-            return currentImage ? [{ image: currentImage, index: imageStore.currentImageIndex }] : []
+            return currentImage ? filterRepairReviewImages([{ image: currentImage, index: imageStore.currentImageIndex }]) : []
         }
         if (config.scope === 'failed') {
-            return imageStore.getFailedImageIndices()
+            return filterRepairReviewImages(imageStore.getFailedImageIndices()
                 .map(index => ({ image: images[index]!, index }))
-                .filter(item => item.image !== undefined)
+                .filter(item => item.image !== undefined))
         }
         if (config.scope === 'range' && config.pageRange) {
             // 页码从1开始，转换为0索引
@@ -209,11 +256,11 @@ export function useSequentialPipeline() {
                 return []
             }
 
-            return images
+            return filterRepairReviewImages(images
                 .slice(startIndex, endIndex + 1)
-                .map((image, idx) => ({ image, index: startIndex + idx }))
+                .map((image, idx) => ({ image, index: startIndex + idx })))
         }
-        return images.map((image, index) => ({ image, index }))
+        return filterRepairReviewImages(images.map((image, index) => ({ image, index })))
     }
 
     // ============================================================
@@ -242,6 +289,70 @@ export function useSequentialPipeline() {
     }
 
     async function stepOcr(task: TaskState): Promise<void> {
+        if (currentMode === 'repairAbnormalResults') {
+            const emptyIndices = task.originalTexts
+                .map((text, idx) => (!text || text.trim() === '' ? idx : -1))
+                .filter(idx => idx >= 0)
+            const japaneseIndices = task.translatedTexts
+                .map((text, idx) => (containsJapaneseKana(text || '') ? idx : -1))
+                .filter(idx => idx >= 0)
+            const failedTranslationIndices = task.translatedTexts
+                .map((text, idx) => (isTranslationErrorText(text || '') ? idx : -1))
+                .filter(idx => idx >= 0)
+
+            task.repairEmptyIndices = emptyIndices
+            task.repairJapaneseIndices = japaneseIndices
+            task.repairFailedTranslationIndices = failedTranslationIndices
+
+            if (emptyIndices.length === 0 && japaneseIndices.length === 0 && failedTranslationIndices.length === 0) {
+                console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页未命中异常结果，跳过`)
+                task.skipRemaining = true
+                return
+            }
+
+            console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页发现 ${emptyIndices.length} 个空气泡，${japaneseIndices.length} 个含日文译文气泡，${failedTranslationIndices.length} 个翻译失败气泡`)
+
+            if (emptyIndices.length === 0) {
+                console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页无需补OCR，直接整页重翻`)
+                task.recoveredEmptyOcrCount = 0
+                return
+            }
+
+            console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页开始二次OCR`)
+
+            const result = await executeOcr({
+                imageIndex: task.imageIndex,
+                image: task.image,
+                bubbleCoords: emptyIndices.map(idx => task.bubbleCoords[idx]!),
+                bubbleProbs: emptyIndices.map(idx => task.bubbleProbs[idx] ?? 1),
+                textlinesPerBubble: emptyIndices.map(idx => task.textlinesPerBubble[idx] ?? null)
+            })
+
+            const mergedOriginalTexts = [...task.originalTexts]
+            let recoveredCount = 0
+
+            emptyIndices.forEach((targetIdx, localIdx) => {
+                const recoveredText = result.originalTexts[localIdx] || ''
+                mergedOriginalTexts[targetIdx] = recoveredText
+                if (recoveredText.trim() !== '') {
+                    recoveredCount++
+                }
+            })
+
+            task.originalTexts = mergedOriginalTexts
+            task.recoveredEmptyOcrCount = recoveredCount
+
+            console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页二次OCR补回 ${recoveredCount}/${emptyIndices.length}`)
+
+            if (recoveredCount === 0 && japaneseIndices.length === 0 && failedTranslationIndices.length === 0) {
+                console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页仍无可补回文本，且无其他异常译文，跳过重翻`)
+                task.skipRemaining = true
+            } else if (recoveredCount === 0) {
+                console.log(`[异常结果复查] 第 ${task.imageIndex + 1} 页OCR未补回，但因存在异常译文仍继续整页重翻`)
+            }
+            return
+        }
+
         const result = await executeOcr({
             imageIndex: task.imageIndex,
             image: task.image,
@@ -433,6 +544,23 @@ export function useSequentialPipeline() {
         }
     }
 
+    function buildRepairAbnormalResultsSummary(tasks: TaskState[]): string {
+        const scannedPages = tasks.length
+        const totalEmptyBubbles = tasks.reduce((sum, task) => sum + (task.repairEmptyIndices?.length || 0), 0)
+        const totalJapaneseBubbles = tasks.reduce((sum, task) => sum + (task.repairJapaneseIndices?.length || 0), 0)
+        const totalFailedTranslationBubbles = tasks.reduce((sum, task) => sum + (task.repairFailedTranslationIndices?.length || 0), 0)
+        const recoveredBubbles = tasks.reduce((sum, task) => sum + (task.recoveredEmptyOcrCount || 0), 0)
+        const emptyOcrPages = tasks.filter(task => (task.repairEmptyIndices?.length || 0) > 0).length
+        const japanesePages = tasks.filter(task => (task.repairJapaneseIndices?.length || 0) > 0).length
+        const failedTranslationPages = tasks.filter(task => (task.repairFailedTranslationIndices?.length || 0) > 0).length
+        const retranslatedPages = tasks.filter(task => !task.skipRemaining).length
+        const unrecoveredPages = tasks.filter(task =>
+            (task.repairEmptyIndices?.length || 0) > 0 && (task.recoveredEmptyOcrCount || 0) === 0
+        ).length
+
+        return `扫描${scannedPages}页，空白OCR页${emptyOcrPages}页（${totalEmptyBubbles}个气泡），含日文页${japanesePages}页（${totalJapaneseBubbles}个气泡），翻译失败页${failedTranslationPages}页（${totalFailedTranslationBubbles}个气泡），补回${recoveredBubbles}个空气泡，重翻${retranslatedPages}页，未补回${unrecoveredPages}页`
+    }
+
     // ============================================================
     // 主执行函数
     // ============================================================
@@ -443,7 +571,7 @@ export function useSequentialPipeline() {
      * - hq / proofread: 按批次处理（批次内保持按步骤批量处理）
      */
     function shouldUsePerImageMode(mode: TranslationMode): boolean {
-        return mode === 'standard' || mode === 'removeText'
+        return mode === 'standard' || mode === 'removeText' || mode === 'repairAbnormalResults' || mode === 'repairEmptyOcr'
     }
 
     /**
@@ -486,8 +614,14 @@ export function useSequentialPipeline() {
             }
 
             const imageProgress = Math.floor((imageIdx / tasks.length) * 90)
-            reporter.setPercentage(imageProgress, `处理图片 ${imageIdx + 1}/${tasks.length}`)
-            toast.info(`处理图片 ${imageIdx + 1}/${tasks.length}...`)
+            const pageProgressMessage = config.mode === 'repairAbnormalResults'
+                ? `处理P${task.imageIndex + 1}图片 ${imageIdx + 1}/${tasks.length}`
+                : `处理图片 ${imageIdx + 1}/${tasks.length}`
+            reporter.setPercentage(imageProgress, pageProgressMessage)
+            if (config.mode === 'repairAbnormalResults') {
+                logRepairProgress(pageProgressMessage)
+            }
+            toast.info(`${pageProgressMessage}...`)
 
             imageStore.setTranslationStatus(task.imageIndex, 'processing')
             let taskFailed = false
@@ -507,8 +641,20 @@ export function useSequentialPipeline() {
                     reporter.setPercentage(stepProgress, `图片 ${imageIdx + 1}: ${STEP_LABELS[step]}`)
 
                     await executeStep(step, task)
+                    if (step === 'render' && task.finalImage && task.bubbleStates) {
+                        updateImageStore(task)
+                        task.syncedAfterRender = true
+                    }
+                    if (task.skipRemaining) {
+                        break
+                    }
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : '未知错误'
+                    if (step === 'save') {
+                        console.warn(`⚠️ 图片 ${task.imageIndex + 1} 自动保存失败（不影响翻译结果）: ${msg}`)
+                        errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
+                        continue
+                    }
                     errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
                     imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
                     taskFailed = true
@@ -517,8 +663,14 @@ export function useSequentialPipeline() {
             }
 
             // 这张图片处理完成，立即更新 store
-            if (!taskFailed) {
-                updateImageStore(task)
+            if (!taskFailed && task.skipRemaining) {
+                imageStore.setTranslationStatus(task.imageIndex, 'completed')
+                completed++
+                console.log(`⏭️ 图片 ${imageIdx + 1}/${tasks.length} 跳过后续步骤`)
+            } else if (!taskFailed) {
+                if (!task.syncedAfterRender) {
+                    updateImageStore(task)
+                }
                 completed++
                 console.log(`✅ 图片 ${imageIdx + 1}/${tasks.length} 处理完成`)
             }
@@ -648,8 +800,17 @@ export function useSequentialPipeline() {
                         const stepProgress = batchProgress + 50 + Math.floor((i / batchTasks.length) * 40)
                         reporter.setPercentage(stepProgress, `图片 ${batchStart + i + 1}: ${STEP_LABELS[step]}`)
                         await executeStep(step, task)
+                        if (step === 'render' && task.finalImage && task.bubbleStates) {
+                            updateImageStore(task)
+                            task.syncedAfterRender = true
+                        }
                     } catch (err) {
                         const msg = err instanceof Error ? err.message : '未知错误'
+                        if (step === 'save') {
+                            console.warn(`⚠️ 图片 ${task.imageIndex + 1} 自动保存失败（不影响翻译结果）: ${msg}`)
+                            errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
+                            continue
+                        }
                         errors.push(`图片 ${task.imageIndex + 1}: ${step} - ${msg}`)
                         imageStore.setTranslationStatus(task.imageIndex, 'failed', msg)
                         batchFailedIndices.add(task.imageIndex)
@@ -658,7 +819,9 @@ export function useSequentialPipeline() {
 
                 // 这张图片处理完成（aiTranslate 后的步骤都完成了），立即更新 store
                 if (!batchFailedIndices.has(task.imageIndex)) {
-                    updateImageStore(task)
+                    if (!task.syncedAfterRender) {
+                        updateImageStore(task)
+                    }
                     completed++
                     console.log(`✅ 图片 ${batchStart + i + 1} 处理完成`)
                 }
@@ -684,17 +847,33 @@ export function useSequentialPipeline() {
             return { success: false, completed: 0, failed: 0, errors: ['没有图片'] }
         }
 
-        currentMode = config.mode
-        const usePerImageMode = shouldUsePerImageMode(config.mode)
-
-        isExecuting.value = true
-        if (config.scope === 'all' || config.scope === 'failed') {
-            imageStore.setBatchTranslationInProgress(true)
+        const normalizedConfig: PipelineConfig = {
+            ...config,
+            mode: normalizeTranslationMode(config.mode)
         }
+
+        currentMode = normalizedConfig.mode
+        const usePerImageMode = shouldUsePerImageMode(normalizedConfig.mode)
+
         initRateLimiter()
         saveCurrentStyles()
 
-        const imagesToProcess = getImagesToProcess(config)
+        const imagesToProcess = getImagesToProcess(normalizedConfig)
+        if (normalizedConfig.mode === 'repairAbnormalResults') {
+            console.log(`🔎 异常结果复查：筛出 ${imagesToProcess.length} 张待处理图片`)
+        }
+        if (imagesToProcess.length === 0) {
+            const message = normalizedConfig.mode === 'repairAbnormalResults'
+                ? '指定范围内没有已翻译且含空白OCR、日文译文或翻译失败的页面'
+                : '指定范围内没有可处理的图片'
+            toast.info(message)
+            return { success: true, completed: 0, failed: 0, errors: [] }
+        }
+
+        isExecuting.value = true
+        if (normalizedConfig.scope === 'all' || normalizedConfig.scope === 'failed') {
+            imageStore.setBatchTranslationInProgress(true)
+        }
         const errors: string[] = []
 
         // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
@@ -722,10 +901,10 @@ export function useSequentialPipeline() {
         const enableAutoSave = shouldEnableAutoSave()
 
         // 动态生成步骤链
-        let stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
+        let stepChain = [...STEP_CHAIN_CONFIGS[normalizedConfig.mode]]
 
         // 消除文字模式：根据设置决定是否包含 OCR 步骤
-        if (config.mode === 'removeText' && settingsStore.settings.removeTextWithOcr) {
+        if (normalizedConfig.mode === 'removeText' && settingsStore.settings.removeTextWithOcr) {
             // 在 detection 后插入 ocr 步骤: ['detection', 'ocr', 'inpaint', 'render']
             const detectionIdx = stepChain.indexOf('detection')
             if (detectionIdx !== -1) {
@@ -739,7 +918,7 @@ export function useSequentialPipeline() {
         }
 
         console.log(`🚀 顺序管线启动`)
-        console.log(`   模式: ${config.mode}`)
+        console.log(`   模式: ${normalizedConfig.mode}`)
         console.log(`   处理方式: ${usePerImageMode ? '逐张处理' : '批次处理'}`)
         console.log(`   步骤链: [${stepChain.join(' → ')}]`)
         console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
@@ -751,6 +930,7 @@ export function useSequentialPipeline() {
                 image,
                 bubbleCoords: [],
                 bubbleAngles: [],
+                bubbleProbs: [],
                 bubblePolygons: [],
                 autoDirections: [],
                 textMask: image.textMask || undefined, // 【重要】从图片中恢复精确文字掩膜
@@ -762,9 +942,11 @@ export function useSequentialPipeline() {
             }
 
             // 校对模式需要从已有数据初始化
-            if (config.mode === 'proofread' && image.bubbleStates && image.bubbleStates.length > 0) {
+            if ((normalizedConfig.mode === 'proofread' || normalizedConfig.mode === 'repairAbnormalResults') && image.bubbleStates && image.bubbleStates.length > 0) {
                 task.bubbleCoords = image.bubbleStates.map(s => s.coords)
                 task.bubbleAngles = image.bubbleStates.map(s => s.rotationAngle || 0)
+                task.bubbleProbs = image.bubbleStates.map(() => 1.0)
+                task.bubblePolygons = image.bubbleStates.map(s => s.polygon || [])
                 task.autoDirections = image.bubbleStates.map(s => s.autoTextDirection || s.textDirection || 'vertical')
                 task.originalTexts = image.bubbleStates.map(s => s.originalText || '')
                 task.translatedTexts = image.bubbleStates.map(s => s.translatedText || '')
@@ -785,7 +967,7 @@ export function useSequentialPipeline() {
         })
 
         try {
-            reporter.init(imagesToProcess.length, `${config.mode} 模式启动...`)
+            reporter.init(imagesToProcess.length, `${normalizedConfig.mode} 模式启动...`)
 
             // 如果启用自动保存，先执行预保存（保存所有原始图片）
             if (enableAutoSave) {
@@ -815,21 +997,30 @@ export function useSequentialPipeline() {
 
             if (usePerImageMode) {
                 // 逐张处理模式
-                result = await executePerImageMode(tasks, stepChain, config, errors)
+                result = await executePerImageMode(tasks, stepChain, normalizedConfig, errors)
             } else {
                 // 批次处理模式
-                result = await executeBatchMode(tasks, stepChain, config, errors)
+                result = await executeBatchMode(tasks, stepChain, normalizedConfig, errors)
             }
 
             reporter.setPercentage(100, '完成！')
 
             const modeLabels: Record<TranslationMode, string> = {
                 standard: '翻译',
+                repairAbnormalResults: '复查异常结果并重翻',
+                repairEmptyOcr: '补全空白OCR并重翻',
                 hq: '高质量翻译',
                 proofread: 'AI校对',
                 removeText: '消除文字'
             }
-            toast.success(`${modeLabels[config.mode]}完成！`)
+
+            if (normalizedConfig.mode === 'repairAbnormalResults') {
+                const summary = buildRepairAbnormalResultsSummary(tasks)
+                await logRepairSummary(summary)
+                toast.success(`${modeLabels[normalizedConfig.mode]}完成：${summary}`)
+            } else {
+                toast.success(`${modeLabels[normalizedConfig.mode]}完成！`)
+            }
 
             return {
                 success: result.failed === 0,

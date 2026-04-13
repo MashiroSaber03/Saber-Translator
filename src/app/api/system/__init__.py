@@ -9,11 +9,13 @@
 - files.py: 文件处理相关API
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
+import logging
 import socket
 
 # 创建系统API蓝图
 system_bp = Blueprint('system_api', __name__, url_prefix='/api')
+frontend_logger = logging.getLogger('FrontendLog')
 
 
 def get_local_ip():
@@ -42,6 +44,26 @@ def get_server_info():
         "lan_ip": local_ip,
         "port": port
     })
+
+
+@system_bp.route('/frontend_log', methods=['POST'])
+def frontend_log():
+    """接收前端关键进度日志并转发到后端控制台。"""
+    data = request.get_json(silent=True) or {}
+    message = str(data.get('message') or '').strip()
+    level = str(data.get('level') or 'info').lower()
+
+    if not message:
+        return jsonify({"success": False, "error": "message is required"}), 400
+
+    if level == 'error':
+        frontend_logger.error(message)
+    elif level == 'warning':
+        frontend_logger.warning(message)
+    else:
+        frontend_logger.info(message)
+
+    return jsonify({"success": True})
 
 
 # 导入各个子模块以注册路由

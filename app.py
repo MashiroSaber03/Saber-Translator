@@ -8,7 +8,6 @@ from src.shared.path_helpers import resource_path
 from src.shared import constants
 import logging
 import logging.config
-import platform
 import sys
 import colorama
 from datetime import datetime
@@ -215,6 +214,13 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def is_port_in_use(port: int) -> bool:
+    """检测本机端口是否已被占用。"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
 def open_browser():
     webbrowser.open_new("http://127.0.0.1:5000/")
 
@@ -266,6 +272,10 @@ def auto_migrate_bookshelf_data():
 auto_migrate_bookshelf_data()
 
 if __name__ == '__main__':
+    if is_port_in_use(5000):
+        logger.error("检测到 5000 端口已被占用，可能已有旧的 Saber-Translator 实例在运行。请先关闭旧窗口，或使用“一键启动.bat”重新启动。")
+        sys.exit(1)
+
     # 禁用Flask的默认日志处理
     app.logger.handlers.clear()
     

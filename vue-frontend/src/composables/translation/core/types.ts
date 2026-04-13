@@ -7,7 +7,15 @@
 // ============================================================
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr'
+
+/** 兼容旧版本翻译模式 ID */
+export function normalizeTranslationMode(mode: TranslationMode): TranslationMode {
+    if (mode === 'repairEmptyOcr') {
+        return 'repairAbnormalResults'
+    }
+    return mode
+}
 
 /** 执行范围 */
 export type ExecutionScope = 'current' | 'all' | 'failed' | 'range'

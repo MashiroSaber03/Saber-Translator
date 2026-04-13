@@ -19,6 +19,7 @@ import type { TextDirection, InpaintMethod } from '@/types/bubble'
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
+  normalizeWorkflowMode,
   type WorkflowMode,
   type WorkflowModeConfig,
   type WorkflowRunRequest,
@@ -128,6 +129,11 @@ const hasImages = computed(() => imageStore.hasImages)
 /** 总图片数量 */
 const totalImages = computed(() => imageStore.images.length)
 
+/** 是否真的存在进行中的批处理任务（避免旧状态把按钮永久锁死） */
+const hasProcessingImages = computed(() => {
+  return imageStore.images.some(img => img.translationStatus === 'processing')
+})
+
 /** 页面范围是否有效 */
 const isPageRangeValid = computed(() => {
   return (
@@ -138,7 +144,10 @@ const isPageRangeValid = computed(() => {
 })
 
 /** 是否可以翻译 */
-const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
+const canTranslate = computed(() => {
+  const isWorkflowBusy = imageStore.isBatchTranslationInProgress && hasProcessingImages.value
+  return hasImages.value && !isWorkflowBusy
+})
 
 /** 是否可以切换上一张 */
 const canGoPrevious = computed(() => imageStore.canGoPrevious)
@@ -148,13 +157,15 @@ const canGoNext = computed(() => imageStore.canGoNext)
 
 /** 当前工作流是否可执行 */
 const canRunWorkflow = computed(() => {
-  const mode = selectedWorkflowMode.value
+  const mode = normalizeWorkflowMode(selectedWorkflowMode.value)
   const rangeInvalid = isRangeActiveForCurrentMode.value && !isPageRangeValid.value
 
   switch (mode) {
     case 'translate-current':
       return !!currentImage.value && canTranslate.value
     case 'translate-batch':
+    case 'repair-abnormal-results-batch':
+    case 'repair-empty-ocr-batch':
     case 'hq-batch':
     case 'proofread-batch':
       return canTranslate.value && !rangeInvalid
@@ -183,8 +194,9 @@ const hasFailedImages = computed(() => failedImageCount.value > 0)
 
 /** 当前工作流配置 */
 const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
+  const mode = normalizeWorkflowMode(selectedWorkflowMode.value)
   return (
-    WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === selectedWorkflowMode.value) ??
+    WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === mode) ??
     WORKFLOW_MODE_CONFIGS[0]!
   )
 })
@@ -220,6 +232,8 @@ const workflowContextTag = computed(() => {
     case 'delete-current':
       return '当前页'
     case 'translate-batch':
+    case 'repair-abnormal-results-batch':
+    case 'repair-empty-ocr-batch':
     case 'hq-batch':
     case 'proofread-batch':
     case 'remove-batch':
@@ -242,7 +256,13 @@ const workflowModeTag = computed(() => {
 
 /** 当前模式说明文案 */
 const workflowDescription = computed(() => {
-  switch (selectedWorkflowMode.value) {
+  switch (normalizeWorkflowMode(selectedWorkflowMode.value)) {
+    case 'repair-abnormal-results-batch':
+    case 'repair-empty-ocr-batch':
+      if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
+        return `将扫描第 ${pageRangeStart.value}-${pageRangeEnd.value} 页中已翻译且含空白OCR、日文译文或翻译失败的页面。`
+      }
+      return '将扫描全部已翻译页面，复查空白OCR、日文译文与翻译失败的气泡，并对命中页整页重翻。'
     case 'delete-current':
       return '删除前会弹出确认，建议先检查当前页是否已保存。'
     case 'clear-all':

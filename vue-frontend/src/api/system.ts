@@ -13,6 +13,10 @@ import type {
   ServerInfoResponse,
 } from '@/types'
 
+export interface FrontendLogResponse extends ApiResponse {
+  success: boolean
+}
+
 // ==================== PDF 解析 API ====================
 
 /**
@@ -28,6 +32,19 @@ export async function parsePdfStart(
   formData.append('file', file)
   formData.append('batch_size', batchSize.toString())
   return apiClient.upload<PdfParseStartResponse>('/api/parse_pdf_start', formData)
+}
+
+/**
+ * 将前端关键日志转发到后端控制台
+ */
+export async function forwardFrontendLog(
+  message: string,
+  level: 'info' | 'warning' | 'error' = 'info'
+): Promise<FrontendLogResponse> {
+  return apiClient.post<FrontendLogResponse>('/api/frontend_log', {
+    message,
+    level,
+  })
 }
 
 /**

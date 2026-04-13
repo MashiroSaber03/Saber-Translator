@@ -18,6 +18,7 @@ import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useExportImport, type DownloadFormat } from '@/composables/useExportImport'
+import { isTranslationErrorText } from '@/utils/translationText'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 
@@ -231,8 +232,7 @@ function formatTranslatedText(text: string): string {
  * @returns 是否为翻译失败（匹配 【翻译失败】 或包含"翻译失败"的格式）
  */
 function isTranslationError(text: string): boolean {
-  const t = text || ''
-  return t.includes('【翻译失败】') || t.includes('[翻译失败]') || t.includes('翻译失败')
+  return isTranslationErrorText(text)
 }
 
 /**

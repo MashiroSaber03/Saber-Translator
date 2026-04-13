@@ -262,6 +262,16 @@ async function translateAllImages() {
   await translation.translateAllImages()
 }
 
+async function repairAbnormalResultsAll() {
+  if (!hasImages.value) return
+
+  if (!validateBeforeTranslation('normal')) {
+    return
+  }
+
+  await translation.repairAbnormalResultsAll()
+}
+
 /**
  * 高质量翻译
  */
@@ -322,6 +332,25 @@ async function translateImageRange(startPage: number, endPage: number) {
   await translation.translateImageRange({ startPage, endPage })
 }
 
+async function repairAbnormalResultsRange(
+  startPageOrRange: number | { startPage: number; endPage: number },
+  endPage?: number
+) {
+  if (!hasImages.value) return
+
+  if (!validateBeforeTranslation('normal')) {
+    return
+  }
+
+  const pageRange = typeof startPageOrRange === 'number'
+    ? { startPage: startPageOrRange, endPage: endPage ?? startPageOrRange }
+    : startPageOrRange
+
+  console.log('[异常结果复查] TranslateView.repairAbnormalResultsRange', pageRange)
+
+  await translation.repairAbnormalResultsRange(pageRange)
+}
+
 /**
  * 高质量翻译指定范围
  * @param startPage 起始页（1开始）
@@ -379,6 +408,15 @@ async function handleRunWorkflow(payload: WorkflowRunRequest) {
         await translateImageRange(range.startPage, range.endPage)
       } else {
         await translateAllImages()
+      }
+      return
+    case 'repair-abnormal-results-batch':
+    case 'repair-empty-ocr-batch':
+      if (range) {
+        console.log('[异常结果复查] handleRunWorkflow payload.range', range)
+        await repairAbnormalResultsRange(range.startPage, range.endPage)
+      } else {
+        await repairAbnormalResultsAll()
       }
       return
     case 'hq-batch':

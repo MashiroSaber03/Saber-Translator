@@ -77,7 +77,8 @@ export function usePipeline() {
         // 'all' 和 'range' 都是批量操作，都可以使用并行模式
         const parallelConfig = settingsStore.settings.parallel
         const isBatchScope = config.scope === 'all' || config.scope === 'range'
-        const shouldUseParallel = parallelConfig?.enabled && isBatchScope
+        const supportsParallelMode = config.mode === 'standard' || config.mode === 'hq' || config.mode === 'proofread' || config.mode === 'removeText'
+        const shouldUseParallel = parallelConfig?.enabled && isBatchScope && supportsParallelMode
 
         if (shouldUseParallel) {
             console.log(`🚀 使用并行管线，模式: ${config.mode}, 范围: ${config.scope}`)

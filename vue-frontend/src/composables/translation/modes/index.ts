@@ -5,6 +5,7 @@
  */
 
 export { getStandardModeConfig } from './standardMode'
+export { getRepairAbnormalResultsModeConfig } from './repairAbnormalResultsMode'
 export { getHqModeConfig } from './hqMode'
 export { getProofreadModeConfig } from './proofreadMode'
 export { getRemoveTextModeConfig } from './removeTextMode'

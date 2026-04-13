@@ -9,6 +9,8 @@
 export type WorkflowMode =
   | 'translate-current'
   | 'translate-batch'
+  | 'repair-abnormal-results-batch'
+  | 'repair-empty-ocr-batch'
   | 'hq-batch'
   | 'proofread-batch'
   | 'remove-current'
@@ -68,6 +70,13 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     isDangerous: false
   },
   {
+    mode: 'repair-abnormal-results-batch',
+    label: '复查异常结果并重翻',
+    startLabel: '启动异常结果复查',
+    supportsRange: true,
+    isDangerous: false
+  },
+  {
     mode: 'hq-batch',
     label: '高质量翻译',
     startLabel: '启动高质量翻译',
@@ -117,3 +126,11 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     isDangerous: true
   }
 ]
+
+/** 兼容旧版本工作流 ID */
+export function normalizeWorkflowMode(mode: WorkflowMode): WorkflowMode {
+  if (mode === 'repair-empty-ocr-batch') {
+    return 'repair-abnormal-results-batch'
+  }
+  return mode
+}
