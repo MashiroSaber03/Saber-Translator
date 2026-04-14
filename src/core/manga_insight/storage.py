@@ -15,6 +15,7 @@ import logging
 import asyncio
 import tempfile
 import threading
+import hashlib
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime
 
@@ -88,7 +89,10 @@ class AnalysisStorage:
             os.path.join(self.base_path, "chapters"),
             os.path.join(self.base_path, "batches"),
             os.path.join(self.base_path, "segments"),
-            os.path.join(self.base_path, "embeddings")
+            os.path.join(self.base_path, "embeddings"),
+            os.path.join(self.base_path, "character_cards"),
+            os.path.join(self.base_path, "character_cards", "compiled"),
+            os.path.join(self.base_path, "character_cards", "png"),
         ]
         for dir_path in dirs:
             os.makedirs(dir_path, exist_ok=True)
@@ -150,6 +154,23 @@ class AnalysisStorage:
     async def _save_json(self, filename: str, data: Any) -> bool:
         """异步保存 JSON 文件"""
         return await asyncio.to_thread(self._save_json_sync, filename, data)
+
+    def _save_binary_sync(self, filepath: str, data: bytes) -> bool:
+        """同步保存二进制文件。"""
+        lock = _get_file_lock(filepath)
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with lock:
+                with open(filepath, "wb") as f:
+                    f.write(data)
+            return True
+        except Exception as e:
+            logger.error(f"保存二进制文件失败: {filepath} - {e}")
+            return False
+
+    async def _save_binary(self, filepath: str, data: bytes) -> bool:
+        """异步保存二进制文件。"""
+        return await asyncio.to_thread(self._save_binary_sync, filepath, data)
 
     async def _delete_file_if_exists(self, filepath: str) -> bool:
         """异步删除文件，文件不存在时返回 False。"""
@@ -787,3 +808,84 @@ class AnalysisStorage:
         except Exception as e:
             logger.error(f"清除续写数据失败: {e}")
             return False
+
+    # ============================================================
+    # 角色卡工坊数据存储
+    # ============================================================
+
+    @staticmethod
+    def safe_card_filename(character_name: str) -> str:
+        """将角色名转换为安全文件名。"""
+        import re
+        name = (character_name or "").strip()
+        if not name:
+            return "character_card"
+        name = re.sub(r'[\\/:*?"<>|]', "_", name)
+        name = re.sub(r"\s+", "_", name)
+        name = name.strip("._")
+        return name[:96] or "character_card"
+
+    @staticmethod
+    def _character_storage_filename(character_name: str) -> str:
+        """
+        角色名到存储文件名（稳定且防冲突）。
+        """
+        safe = AnalysisStorage.safe_card_filename(character_name)
+        digest = hashlib.sha1((character_name or "").encode("utf-8")).hexdigest()[:12]
+        return f"{safe}__{digest}"
+
+    async def load_character_card_draft(self) -> Optional[Dict]:
+        """加载角色卡草稿。"""
+        return await self._load_json("character_cards/draft.json", None)
+
+    async def save_character_card_draft(self, draft: Dict) -> bool:
+        """保存角色卡草稿。"""
+        payload = dict(draft or {})
+        payload["saved_at"] = datetime.now().isoformat()
+        return await self._save_json("character_cards/draft.json", payload)
+
+    async def load_compiled_character_card(self, character_name: str) -> Optional[Dict]:
+        """加载已编译角色卡。"""
+        storage_name = self._character_storage_filename(character_name)
+        card = await self._load_json(f"character_cards/compiled/{storage_name}.json", None)
+        if card:
+            return card
+        # 兼容旧版本：旧文件名只使用 safe_card_filename
+        legacy_name = self.safe_card_filename(character_name)
+        return await self._load_json(f"character_cards/compiled/{legacy_name}.json", None)
+
+    async def save_compiled_character_card(self, character_name: str, card: Dict) -> bool:
+        """保存已编译角色卡。"""
+        filename = self._character_storage_filename(character_name)
+        return await self._save_json(f"character_cards/compiled/{filename}.json", card or {})
+
+    async def save_character_card_png(self, character_name: str, png_bytes: bytes) -> str:
+        """保存角色卡 PNG，返回文件路径。"""
+        filename = self._character_storage_filename(character_name)
+        filepath = os.path.join(self.base_path, "character_cards", "png", f"{filename}.png")
+        success = await self._save_binary(filepath, png_bytes)
+        if not success:
+            raise RuntimeError("保存 PNG 失败")
+        return filepath
+
+    async def get_character_card_png_path(self, character_name: str) -> Optional[str]:
+        """获取已保存角色卡 PNG 路径。"""
+        filename = self._character_storage_filename(character_name)
+        filepath = os.path.join(self.base_path, "character_cards", "png", f"{filename}.png")
+        if os.path.exists(filepath):
+            return filepath
+        legacy_name = self.safe_card_filename(character_name)
+        legacy_path = os.path.join(self.base_path, "character_cards", "png", f"{legacy_name}.png")
+        return legacy_path if os.path.exists(legacy_path) else None
+
+    async def load_character_card_export_logs(self) -> List[Dict]:
+        """加载角色卡导出日志。"""
+        return await self._load_json("character_cards/export_logs.json", [])
+
+    async def append_character_card_export_log(self, log_item: Dict) -> bool:
+        """追加导出日志。"""
+        logs = await self.load_character_card_export_logs()
+        logs.insert(0, log_item)
+        # 控制日志上限，避免无限增长
+        logs = logs[:500]
+        return await self._save_json("character_cards/export_logs.json", logs)

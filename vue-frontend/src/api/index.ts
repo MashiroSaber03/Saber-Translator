@@ -46,3 +46,6 @@ export * from './plugin'
 
 // 配置 API
 export * from './config'
+
+// 角色卡工坊 API
+export * from './characterCard'

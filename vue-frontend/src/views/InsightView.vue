@@ -19,6 +19,7 @@ import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
+import CharacterCardStudioPanel from '@/components/insight/CharacterCardStudioPanel.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
@@ -38,7 +39,7 @@ const bookshelfStore = useBookshelfStore()
 // ============================================================
 
 /** 当前激活的选项卡 */
-const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation'>('overview')
+const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation' | 'character_cards'>('overview')
 
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
@@ -91,7 +92,7 @@ const bookCoverUrl = computed(() => {
  * 切换选项卡
  * @param tab - 选项卡名称
  */
-function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation'): void {
+function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_cards'): void {
   activeTab.value = tab
 }
 
@@ -493,6 +494,13 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
             >
               <span class="tab-icon">🎨</span> 续写
             </button>
+            <button
+              class="tab-btn"
+              :class="{ active: activeTab === 'character_cards' }"
+              @click="switchTab('character_cards')"
+            >
+              <span class="tab-icon">🃏</span> 角色卡
+            </button>
           </div>
           <button 
             class="mobile-nav-btn" 
@@ -521,6 +529,11 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
         <!-- 续写标签页 -->
         <div v-show="activeTab === 'continuation' && hasSelectedBook" class="tab-content">
           <ContinuationPanel />
+        </div>
+
+        <!-- 角色卡工坊标签页 -->
+        <div v-show="activeTab === 'character_cards' && hasSelectedBook" class="tab-content">
+          <CharacterCardStudioPanel />
         </div>
       </div>
 

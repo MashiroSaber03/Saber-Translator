@@ -23,3 +23,6 @@ export * from './insight'
 
 // 翻译页工作流类型
 export * from './workflow'
+
+// 角色卡工坊类型
+export * from './characterCard'
