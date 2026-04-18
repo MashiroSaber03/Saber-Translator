@@ -108,12 +108,6 @@ CJK_H2V = {
     "⋰": "⋮",     # 对角省略号 → 竖向三点
     "⋱": "⋮",     # 对角省略号 → 竖向三点
     
-    # === 波浪线类 ===
-    "~": "︴",      # ASCII 波浪线
-    "〜": "︴",     # 日文波浪线
-    "～": "︴",     # 全角波浪线
-    "〰": "︴",     # 波浪破折号
-    
     # === 感叹问号类（重要！专用竖排变体）===
     "!": "︕",      # 英文感叹号
     "?": "︖",      # 英文问号
@@ -135,6 +129,10 @@ CJK_H2V = {
     "-": "︲",  "−": "︲",      # 连字符
     "・": "·",                  # 中黑点
 }
+
+# --- 波浪线类字符（统一规范为日文波浪线 〜）---
+WAVE_DASH_CHARS = {"~", "〜", "～", "〰"}
+NORMALIZED_WAVE_DASH = "〜"
 
 # --- CJK 竖转横标点符号映射表 (反向映射) ---
 CJK_V2H = {v: k for k, v in CJK_H2V.items()}
@@ -388,6 +386,12 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
     # 特殊处理：日文长音符号在竖排时需要旋转 90 度
     if cdpt == 'ー' and direction == 1:
         return 'ー', 90
+
+    # 特殊处理：波浪线类统一规范为日文波浪线，在竖排时旋转 90 度
+    if cdpt in WAVE_DASH_CHARS:
+        if direction == 1:
+            return NORMALIZED_WAVE_DASH, 90
+        return NORMALIZED_WAVE_DASH, 0
     
     # 竖→横 转换
     if cdpt in CJK_V2H:
