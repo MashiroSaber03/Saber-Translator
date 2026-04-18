@@ -72,6 +72,7 @@ export type AtomicStepType =
  */
 export const STEP_CHAIN_CONFIGS: Record<TranslationMode, AtomicStepType[]> = {
     standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
+    rerender: ['render'],
     repairAbnormalResults: ['ocr', 'translate', 'render'],
     repairEmptyOcr: ['ocr', 'translate', 'render'],
     hq: ['detection', 'ocr', 'color', 'aiTranslate', 'inpaint', 'render'],
@@ -171,6 +172,9 @@ export function useSequentialPipeline() {
     }
 
     function validateConfig(config: PipelineConfig): boolean {
+        if (config.mode === 'rerender') {
+            return true
+        }
         const validationType = config.mode === 'hq' ? 'hq'
             : config.mode === 'proofread' ? 'proofread'
                 : config.mode === 'removeText' ? 'ocr'
@@ -218,6 +222,28 @@ export function useSequentialPipeline() {
         }
     }
 
+    function logRerenderProgress(message: string): void {
+        const fullMessage = `[全部重渲染] ${message}`
+        console.log(fullMessage)
+        void forwardFrontendLog(fullMessage).catch(() => {
+            // 日志转发失败不应影响主流程
+        })
+    }
+
+    async function logRerenderSummary(message: string): Promise<void> {
+        const fullMessage = `[全部重渲染] 完成：${message}`
+        console.log(fullMessage)
+        try {
+            await forwardFrontendLog(fullMessage)
+        } catch {
+            // 日志转发失败不应影响主流程
+        }
+    }
+
+    function isRerenderTargetPage(image: AppImageData): boolean {
+        return Boolean(image.translatedDataURL && image.bubbleStates?.length)
+    }
+
     function isRepairTargetPage(image: AppImageData): boolean {
         if (!image.translatedDataURL || !image.cleanImageData || !image.bubbleStates?.length) {
             return false
@@ -233,17 +259,23 @@ export function useSequentialPipeline() {
 
     function getImagesToProcess(config: PipelineConfig): { image: AppImageData; index: number }[] {
         const images = imageStore.images
+        const filterRerenderImages = (items: { image: AppImageData; index: number }[]) => {
+            if (normalizeTranslationMode(config.mode) !== 'rerender') return items
+            return items.filter(({ image }) => isRerenderTargetPage(image))
+        }
         const filterRepairReviewImages = (items: { image: AppImageData; index: number }[]) => {
             if (normalizeTranslationMode(config.mode) !== 'repairAbnormalResults') return items
             return items.filter(({ image }) => isRepairTargetPage(image))
         }
+        const applyModeFilter = (items: { image: AppImageData; index: number }[]) =>
+            filterRepairReviewImages(filterRerenderImages(items))
 
         if (config.scope === 'current') {
             const currentImage = imageStore.currentImage
-            return currentImage ? filterRepairReviewImages([{ image: currentImage, index: imageStore.currentImageIndex }]) : []
+            return currentImage ? applyModeFilter([{ image: currentImage, index: imageStore.currentImageIndex }]) : []
         }
         if (config.scope === 'failed') {
-            return filterRepairReviewImages(imageStore.getFailedImageIndices()
+            return applyModeFilter(imageStore.getFailedImageIndices()
                 .map(index => ({ image: images[index]!, index }))
                 .filter(item => item.image !== undefined))
         }
@@ -256,11 +288,11 @@ export function useSequentialPipeline() {
                 return []
             }
 
-            return filterRepairReviewImages(images
+            return applyModeFilter(images
                 .slice(startIndex, endIndex + 1)
                 .map((image, idx) => ({ image, index: startIndex + idx })))
         }
-        return filterRepairReviewImages(images.map((image, index) => ({ image, index })))
+        return applyModeFilter(images.map((image, index) => ({ image, index })))
     }
 
     // ============================================================
@@ -431,6 +463,27 @@ export function useSequentialPipeline() {
     }
 
     async function stepRender(task: TaskState): Promise<void> {
+        if (currentMode === 'rerender') {
+            const existingBubbleStates = task.image.bubbleStates || []
+            if (existingBubbleStates.length === 0) {
+                throw new Error('当前页面没有可重渲染的气泡')
+            }
+
+            task.bubbleCoords = existingBubbleStates.map(state => state.coords)
+            task.bubbleAngles = existingBubbleStates.map(state => state.rotationAngle || 0)
+            task.autoDirections = existingBubbleStates.map(state => state.autoTextDirection || 'vertical')
+            task.originalTexts = existingBubbleStates.map(state => state.originalText || '')
+            task.translatedTexts = existingBubbleStates.map(state => state.translatedText || '')
+            task.textboxTexts = existingBubbleStates.map(state => state.textboxText || '')
+            task.colors = existingBubbleStates.map(state => ({
+                textColor: state.textColor || savedTextStyles?.textColor || settingsStore.settings.textStyle.textColor,
+                bgColor: state.fillColor || savedTextStyles?.fillColor || settingsStore.settings.textStyle.fillColor,
+                autoFgColor: state.autoFgColor || null,
+                autoBgColor: state.autoBgColor || null
+            }))
+            task.cleanImage = task.image.cleanImageData || task.image.originalDataURL
+        }
+
         const originalTextsForRender = task.originalTexts.map(stripBoxSuffix)
         const translatedTextsForRender = task.translatedTexts.map(stripBoxSuffix)
         const textboxTextsForRender = task.textboxTexts.map(stripBoxSuffix)
@@ -445,6 +498,7 @@ export function useSequentialPipeline() {
             translatedTexts: translatedTextsForRender,
             textboxTexts: textboxTextsForRender,
             colors: task.colors,
+            existingBubbleStates: currentMode === 'rerender' ? (task.image.bubbleStates || undefined) : undefined,
             savedTextStyles,
             currentMode
         })
@@ -508,6 +562,7 @@ export function useSequentialPipeline() {
                 : null
 
         const { textStyle } = settingsStore.settings
+        const shouldPreserveImageStyles = currentMode === 'rerender'
 
         imageStore.updateImageByIndex(task.imageIndex, {
             translatedDataURL,
@@ -526,17 +581,17 @@ export function useSequentialPipeline() {
             hasUnsavedChanges: true,
             // 保存用户翻译时选择的设置（用于切换图片时恢复）
             // 【修复】保存完整的文字设置，避免切换图片后侧边栏显示默认值
-            fontSize: savedTextStyles?.fontSize ?? textStyle.fontSize,
-            autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
-            fontFamily: savedTextStyles?.fontFamily ?? textStyle.fontFamily,
-            layoutDirection: savedTextStyles?.layoutDirection ?? textStyle.layoutDirection,
-            textColor: savedTextStyles?.textColor ?? textStyle.textColor,
-            fillColor: savedTextStyles?.fillColor ?? textStyle.fillColor,
-            strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-            strokeColor: savedTextStyles?.strokeColor ?? textStyle.strokeColor,
-            strokeWidth: savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
-            inpaintMethod: savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod,
-            useAutoTextColor: savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
+            fontSize: shouldPreserveImageStyles ? task.image.fontSize : (savedTextStyles?.fontSize ?? textStyle.fontSize),
+            autoFontSize: shouldPreserveImageStyles ? task.image.autoFontSize : (savedTextStyles?.autoFontSize ?? textStyle.autoFontSize),
+            fontFamily: shouldPreserveImageStyles ? task.image.fontFamily : (savedTextStyles?.fontFamily ?? textStyle.fontFamily),
+            layoutDirection: shouldPreserveImageStyles ? task.image.layoutDirection : (savedTextStyles?.layoutDirection ?? textStyle.layoutDirection),
+            textColor: shouldPreserveImageStyles ? task.image.textColor : (savedTextStyles?.textColor ?? textStyle.textColor),
+            fillColor: shouldPreserveImageStyles ? task.image.fillColor : (savedTextStyles?.fillColor ?? textStyle.fillColor),
+            strokeEnabled: shouldPreserveImageStyles ? task.image.strokeEnabled : (savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled),
+            strokeColor: shouldPreserveImageStyles ? task.image.strokeColor : (savedTextStyles?.strokeColor ?? textStyle.strokeColor),
+            strokeWidth: shouldPreserveImageStyles ? task.image.strokeWidth : (savedTextStyles?.strokeWidth ?? textStyle.strokeWidth),
+            inpaintMethod: shouldPreserveImageStyles ? task.image.inpaintMethod : (savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod),
+            useAutoTextColor: shouldPreserveImageStyles ? task.image.useAutoTextColor : (savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor)
         })
 
         if (task.imageIndex === imageStore.currentImageIndex && task.bubbleStates) {
@@ -561,6 +616,10 @@ export function useSequentialPipeline() {
         return `扫描${scannedPages}页，空白OCR页${emptyOcrPages}页（${totalEmptyBubbles}个气泡），含日文页${japanesePages}页（${totalJapaneseBubbles}个气泡），翻译失败页${failedTranslationPages}页（${totalFailedTranslationBubbles}个气泡），补回${recoveredBubbles}个空气泡，重翻${retranslatedPages}页，未补回${unrecoveredPages}页`
     }
 
+    function buildRerenderSummary(tasks: TaskState[]): string {
+        return `扫描${tasks.length}页，重渲染${tasks.length}页`
+    }
+
     // ============================================================
     // 主执行函数
     // ============================================================
@@ -571,7 +630,7 @@ export function useSequentialPipeline() {
      * - hq / proofread: 按批次处理（批次内保持按步骤批量处理）
      */
     function shouldUsePerImageMode(mode: TranslationMode): boolean {
-        return mode === 'standard' || mode === 'removeText' || mode === 'repairAbnormalResults' || mode === 'repairEmptyOcr'
+        return mode === 'standard' || mode === 'removeText' || mode === 'repairAbnormalResults' || mode === 'repairEmptyOcr' || mode === 'rerender'
     }
 
     /**
@@ -614,12 +673,14 @@ export function useSequentialPipeline() {
             }
 
             const imageProgress = Math.floor((imageIdx / tasks.length) * 90)
-            const pageProgressMessage = config.mode === 'repairAbnormalResults'
+            const pageProgressMessage = config.mode === 'repairAbnormalResults' || config.mode === 'rerender'
                 ? `处理P${task.imageIndex + 1}图片 ${imageIdx + 1}/${tasks.length}`
                 : `处理图片 ${imageIdx + 1}/${tasks.length}`
             reporter.setPercentage(imageProgress, pageProgressMessage)
             if (config.mode === 'repairAbnormalResults') {
                 logRepairProgress(pageProgressMessage)
+            } else if (config.mode === 'rerender') {
+                logRerenderProgress(pageProgressMessage)
             }
             toast.info(`${pageProgressMessage}...`)
 
@@ -861,11 +922,15 @@ export function useSequentialPipeline() {
         const imagesToProcess = getImagesToProcess(normalizedConfig)
         if (normalizedConfig.mode === 'repairAbnormalResults') {
             console.log(`🔎 异常结果复查：筛出 ${imagesToProcess.length} 张待处理图片`)
+        } else if (normalizedConfig.mode === 'rerender') {
+            console.log(`🔁 全部重渲染：筛出 ${imagesToProcess.length} 张待处理图片`)
         }
         if (imagesToProcess.length === 0) {
             const message = normalizedConfig.mode === 'repairAbnormalResults'
                 ? '指定范围内没有已翻译且含空白OCR、日文译文或翻译失败的页面'
-                : '指定范围内没有可处理的图片'
+                : normalizedConfig.mode === 'rerender'
+                    ? '指定范围内没有已翻译且含气泡的页面可重渲染'
+                    : '指定范围内没有可处理的图片'
             toast.info(message)
             return { success: true, completed: 0, failed: 0, errors: [] }
         }
@@ -878,7 +943,7 @@ export function useSequentialPipeline() {
 
         // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
         // 这样用户在翻译过程中切换图片时，侧边栏不会显示默认值，翻译也不会受影响
-        if (savedTextStyles && imagesToProcess.length > 1) {
+        if (savedTextStyles && imagesToProcess.length > 1 && normalizedConfig.mode !== 'rerender') {
             console.log(`📝 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
             for (const { index } of imagesToProcess) {
                 imageStore.updateImageByIndex(index, {
@@ -942,7 +1007,7 @@ export function useSequentialPipeline() {
             }
 
             // 校对模式需要从已有数据初始化
-            if ((normalizedConfig.mode === 'proofread' || normalizedConfig.mode === 'repairAbnormalResults') && image.bubbleStates && image.bubbleStates.length > 0) {
+            if ((normalizedConfig.mode === 'proofread' || normalizedConfig.mode === 'repairAbnormalResults' || normalizedConfig.mode === 'rerender') && image.bubbleStates && image.bubbleStates.length > 0) {
                 task.bubbleCoords = image.bubbleStates.map(s => s.coords)
                 task.bubbleAngles = image.bubbleStates.map(s => s.rotationAngle || 0)
                 task.bubbleProbs = image.bubbleStates.map(() => 1.0)
@@ -960,6 +1025,8 @@ export function useSequentialPipeline() {
                 // 使用已有的干净背景图
                 if (image.cleanImageData) {
                     task.cleanImage = image.cleanImageData
+                } else if (normalizedConfig.mode === 'rerender' && image.originalDataURL) {
+                    task.cleanImage = image.originalDataURL
                 }
             }
 
@@ -1007,6 +1074,7 @@ export function useSequentialPipeline() {
 
             const modeLabels: Record<TranslationMode, string> = {
                 standard: '翻译',
+                rerender: '全部重渲染',
                 repairAbnormalResults: '复查异常结果并重翻',
                 repairEmptyOcr: '补全空白OCR并重翻',
                 hq: '高质量翻译',
@@ -1017,6 +1085,10 @@ export function useSequentialPipeline() {
             if (normalizedConfig.mode === 'repairAbnormalResults') {
                 const summary = buildRepairAbnormalResultsSummary(tasks)
                 await logRepairSummary(summary)
+                toast.success(`${modeLabels[normalizedConfig.mode]}完成：${summary}`)
+            } else if (normalizedConfig.mode === 'rerender') {
+                const summary = buildRerenderSummary(tasks)
+                await logRerenderSummary(summary)
                 toast.success(`${modeLabels[normalizedConfig.mode]}完成：${summary}`)
             } else {
                 toast.success(`${modeLabels[normalizedConfig.mode]}完成！`)

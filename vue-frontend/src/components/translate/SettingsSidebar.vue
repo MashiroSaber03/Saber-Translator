@@ -163,6 +163,8 @@ const canRunWorkflow = computed(() => {
   switch (mode) {
     case 'translate-current':
       return !!currentImage.value && canTranslate.value
+    case 'rerender-batch':
+      return hasImages.value && !rangeInvalid
     case 'translate-batch':
     case 'repair-abnormal-results-batch':
     case 'repair-empty-ocr-batch':
@@ -232,6 +234,7 @@ const workflowContextTag = computed(() => {
     case 'delete-current':
       return '当前页'
     case 'translate-batch':
+    case 'rerender-batch':
     case 'repair-abnormal-results-batch':
     case 'repair-empty-ocr-batch':
     case 'hq-batch':
@@ -257,6 +260,11 @@ const workflowModeTag = computed(() => {
 /** 当前模式说明文案 */
 const workflowDescription = computed(() => {
   switch (normalizeWorkflowMode(selectedWorkflowMode.value)) {
+    case 'rerender-batch':
+      if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
+        return `将重渲染第 ${pageRangeStart.value}-${pageRangeEnd.value} 页中所有已翻译且含气泡的页面。`
+      }
+      return '将重渲染全部已翻译且含气泡的页面，不重新OCR，也不重新翻译。'
     case 'repair-abnormal-results-batch':
     case 'repair-empty-ocr-batch':
       if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {

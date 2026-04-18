@@ -9,6 +9,7 @@
 export type WorkflowMode =
   | 'translate-current'
   | 'translate-batch'
+  | 'rerender-batch'
   | 'repair-abnormal-results-batch'
   | 'repair-empty-ocr-batch'
   | 'hq-batch'
@@ -66,6 +67,13 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     mode: 'translate-batch',
     label: '翻译所有图片',
     startLabel: '启动批量翻译',
+    supportsRange: true,
+    isDangerous: false
+  },
+  {
+    mode: 'rerender-batch',
+    label: '全部重渲染',
+    startLabel: '启动全部重渲染',
     supportsRange: true,
     isDangerous: false
   },

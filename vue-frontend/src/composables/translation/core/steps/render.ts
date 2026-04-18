@@ -25,6 +25,7 @@ export interface RenderInput {
         autoFgColor?: [number, number, number] | null
         autoBgColor?: [number, number, number] | null
     }>
+    existingBubbleStates?: BubbleState[]
     savedTextStyles?: SavedTextStyles | null
     currentMode: string
 }
@@ -44,6 +45,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         translatedTexts,
         textboxTexts,
         colors,
+        existingBubbleStates,
         savedTextStyles,
         currentMode
     } = input
@@ -71,8 +73,10 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         ? 'auto'  // autoTextDirection 为 true 表示用户选择了 'auto'
         : (savedTextStyles?.textDirection || textStyle.layoutDirection)
 
-    // 构建 bubbleStates
-    const bubbleStates: BubbleState[] = bubbleCoords.map((coords, idx) => {
+    // 重渲染模式：直接复用当前气泡状态，避免覆盖已有的逐气泡样式
+    const bubbleStates: BubbleState[] = currentMode === 'rerender' && existingBubbleStates?.length
+        ? existingBubbleStates.map((state) => ({ ...state }))
+        : bubbleCoords.map((coords, idx) => {
         const autoDir = autoDirections[idx] || 'vertical'
         // 将后端返回的 'v'/'h' 格式转换为 'vertical'/'horizontal'
         const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
@@ -119,7 +123,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             autoFgColor: colors[idx]?.autoFgColor || null,
             autoBgColor: colors[idx]?.autoBgColor || null
         }
-    })
+        })
 
     const response: ParallelRenderResponse = await parallelRender({
         clean_image: normalizedCleanImage,

@@ -19,6 +19,7 @@ import { useToast } from '@/utils/toast'
 import {
     usePipeline,
     getStandardModeConfig,
+    getRerenderModeConfig,
     getRepairAbnormalResultsModeConfig,
     getHqModeConfig,
     getProofreadModeConfig,
@@ -30,7 +31,7 @@ import type { PageRange } from './translation/core/types'
 export type { TranslationProgress, PageRange } from './translation/core/types'
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr' | 'rerender'
 
 /** 翻译结果 */
 export interface TranslateResult {
@@ -205,6 +206,8 @@ export function useTranslation() {
         switch (mode) {
             case 'standard':
                 return getStandardModeConfig(scope, pageRange ? { pageRange } : undefined)
+            case 'rerender':
+                return getRerenderModeConfig(scope, pageRange ? { pageRange } : undefined)
             case 'repairEmptyOcr':
             case 'repairAbnormalResults':
                 return getRepairAbnormalResultsModeConfig(scope, pageRange ? { pageRange } : undefined)
@@ -260,6 +263,17 @@ export function useTranslation() {
 
     async function repairAbnormalResultsAll(): Promise<boolean> {
         const result = await translatePages(range(0, imageStore.images.length), 'repairAbnormalResults')
+        return result.success
+    }
+
+    async function rerenderAll(): Promise<boolean> {
+        const result = await translatePages(range(0, imageStore.images.length), 'rerender')
+        return result.success
+    }
+
+    async function rerenderRange(pageRange: PageRange): Promise<boolean> {
+        const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
+        const result = await translatePages(pageIndexes, 'rerender')
         return result.success
     }
 
@@ -418,6 +432,8 @@ export function useTranslation() {
         // 批量翻译
         translateAllImages,
         translateImageRange,
+        rerenderAll,
+        rerenderRange,
         repairAbnormalResultsAll,
         repairAbnormalResultsRange,
         repairEmptyOcrAll,

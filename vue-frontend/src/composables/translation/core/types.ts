@@ -7,7 +7,7 @@
 // ============================================================
 
 /** 翻译模式 */
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr'
+export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText' | 'repairAbnormalResults' | 'repairEmptyOcr' | 'rerender'
 
 /** 兼容旧版本翻译模式 ID */
 export function normalizeTranslationMode(mode: TranslationMode): TranslationMode {

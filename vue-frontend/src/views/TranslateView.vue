@@ -262,6 +262,11 @@ async function translateAllImages() {
   await translation.translateAllImages()
 }
 
+async function rerenderAllImages() {
+  if (!hasImages.value) return
+  await translation.rerenderAll()
+}
+
 async function repairAbnormalResultsAll() {
   if (!hasImages.value) return
 
@@ -351,6 +356,11 @@ async function repairAbnormalResultsRange(
   await translation.repairAbnormalResultsRange(pageRange)
 }
 
+async function rerenderImageRange(startPage: number, endPage: number) {
+  if (!hasImages.value) return
+  await translation.rerenderRange({ startPage, endPage })
+}
+
 /**
  * 高质量翻译指定范围
  * @param startPage 起始页（1开始）
@@ -408,6 +418,13 @@ async function handleRunWorkflow(payload: WorkflowRunRequest) {
         await translateImageRange(range.startPage, range.endPage)
       } else {
         await translateAllImages()
+      }
+      return
+    case 'rerender-batch':
+      if (range) {
+        await rerenderImageRange(range.startPage, range.endPage)
+      } else {
+        await rerenderAllImages()
       }
       return
     case 'repair-abnormal-results-batch':
