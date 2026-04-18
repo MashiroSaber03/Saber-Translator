@@ -134,6 +134,21 @@ CJK_H2V = {
 WAVE_DASH_CHARS = {"~", "〜", "～", "〰"}
 NORMALIZED_WAVE_DASH = "〜"
 
+# --- 纯心型符号（统一规范为 ♥）---
+HEART_VARIANT_SEQUENCES = {
+    "♥️", "♥︎",
+    "❤️", "❤︎",
+    "❣️", "❣︎",
+}
+HEART_CHARS = {
+    "♥", "♡", "❤", "❥", "❣",
+    "💕", "💞", "💓", "💗", "💖", "💘",
+    "💙", "💚", "💛", "💜", "🖤", "🤍", "🤎",
+    "🩷", "🩵", "🩶",
+    "💝", "💟",
+}
+NORMALIZED_HEART = "♥"
+
 # --- CJK 竖转横标点符号映射表 (反向映射) ---
 CJK_V2H = {v: k for k, v in CJK_H2V.items()}
 
@@ -412,6 +427,18 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
             return cdpt, 0
     
     return cdpt, 0
+
+
+def normalize_heart_symbols(text: str) -> str:
+    """将纯心型符号统一规范为 ♥，排除破碎/着火/缠绷带/情书等特殊语义。"""
+    if not text:
+        return text
+
+    normalized = text
+    for seq in HEART_VARIANT_SEQUENCES:
+        normalized = normalized.replace(seq, NORMALIZED_HEART)
+
+    return ''.join(NORMALIZED_HEART if ch in HEART_CHARS else ch for ch in normalized)
 
 
 def auto_add_horizontal_tags(text: str) -> str:
@@ -875,6 +902,9 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     if not text:
         return
     
+    # 统一纯心型符号，避免不同爱心字符混用
+    text = normalize_heart_symbols(text)
+
     # 预处理文本（省略号等）
     text = map_to_vertical_punctuation(text)
     
@@ -1220,6 +1250,9 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     """
     if not text:
         return
+
+    # 统一纯心型符号，避免不同爱心字符混用
+    text = normalize_heart_symbols(text)
 
     # 一次遍历：分行 + 记录每个字符的宽度
     lines = []
