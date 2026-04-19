@@ -13,6 +13,8 @@ from datetime import datetime
 
 from openai import OpenAI
 
+from src.shared.openai_helpers import create_openai_client
+
 from .prompts import get_system_prompt, DEFAULT_EXTRACTION_PROMPT
 from .firecrawl_tools import FIRECRAWL_TOOLS, execute_firecrawl_tool_sync
 
@@ -89,11 +91,11 @@ class MangaScraperAgent:
         """初始化 LLM 客户端"""
         # 获取 base_url
         base_url = self._get_base_url()
-        
-        return OpenAI(
+
+        return create_openai_client(
             api_key=self.api_key,
             base_url=base_url,
-            timeout=self.timeout
+            timeout=self.timeout,
         )
     
     def _get_base_url(self) -> Optional[str]:

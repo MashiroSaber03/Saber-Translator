@@ -6,7 +6,6 @@ import re
 import os
 import sys
 from pathlib import Path
-from openai import OpenAI
 from src.shared.openai_helpers import create_openai_client
 
 # 添加项目根目录到 Python 路径

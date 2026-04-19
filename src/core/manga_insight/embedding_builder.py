@@ -44,6 +44,9 @@ class EmbeddingBuilder:
         1. 页面级向量 (page_summary)
         2. 事件级向量 (key_events) - 细粒度检索
 
+        若 batches/ 不完整（部分批次丢失），会从 pages/ 单页分析补齐缺失页面，
+        避免出现"batches 仅 4 个 → 只处理 20 页 → pages/ 里 1100+ 页被无视"的数据丢失。
+
         Returns:
             Dict: 构建结果统计
         """
@@ -55,7 +58,7 @@ class EmbeddingBuilder:
         batches = await self.storage.list_batches()
 
         if not batches:
-            # 降级：从页面分析构建
+            # 完全没有 batches，直接走 pages/ 兜底
             logger.info("无批次数据，从页面分析构建向量")
             return await self._build_embeddings_from_pages()
 
@@ -68,6 +71,7 @@ class EmbeddingBuilder:
         pages_count = 0
         events_count = 0
         skip_count = 0
+        covered_pages: set = set()
 
         for batch_info in tqdm(batches, desc="构建向量嵌入", unit="批次"):
             start_page = batch_info["start_page"]
@@ -97,6 +101,7 @@ class EmbeddingBuilder:
                             }
                         )
                         pages_count += 1
+                        covered_pages.add(page_num)
                     except Exception as e:
                         logger.warning(f"页面 {page_num} 向量化失败: {e}")
 
@@ -128,18 +133,51 @@ class EmbeddingBuilder:
                 except Exception as e:
                     logger.warning(f"事件向量化失败 ({batch_id}): {e}")
 
+        # 用 pages/ 单页分析补齐 batches 未覆盖的页面
+        all_page_nums = await self.storage.list_pages()
+        uncovered = [p for p in all_page_nums if p not in covered_pages]
+        filled_count = 0
+
+        if uncovered:
+            logger.info(
+                f"批次覆盖 {len(covered_pages)} 页，从单页分析补齐剩余 {len(uncovered)} 页"
+            )
+            for page_num in tqdm(uncovered, desc="补齐页面向量", unit="页"):
+                analysis = await self.storage.load_page_analysis(page_num)
+                if not analysis:
+                    continue
+                summary = analysis.get("page_summary", "")
+                if not summary:
+                    continue
+                try:
+                    embedding = await self.embedding.embed(summary)
+                    await self.vector_store.add_page_embedding(
+                        page_num=page_num,
+                        embedding=embedding,
+                        metadata={
+                            "page_summary": summary,
+                            "type": "page",
+                            "parent_batch": "page_fallback"
+                        }
+                    )
+                    pages_count += 1
+                    filled_count += 1
+                except Exception as e:
+                    logger.warning(f"补齐页面 {page_num} 向量化失败: {e}")
+
         result = {
             "success": True,
             "pages_count": pages_count,
             "events_count": events_count,
             "total_count": pages_count + events_count,
             "batches_processed": len(batches) - skip_count,
-            "batches_skipped": skip_count
+            "batches_skipped": skip_count,
+            "pages_filled_from_fallback": filled_count,
         }
 
         logger.info(
-            f"向量嵌入构建完成: {pages_count} 页面, {events_count} 事件, "
-            f"共 {pages_count + events_count} 条向量"
+            f"向量嵌入构建完成: {pages_count} 页面 (其中 {filled_count} 来自单页补齐), "
+            f"{events_count} 事件, 共 {pages_count + events_count} 条向量"
         )
         return result
 

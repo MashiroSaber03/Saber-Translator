@@ -1134,7 +1134,8 @@ def _hq_translate_stream(base_url: str, api_key: str, model_name: str, request_b
     print(f"\n[高质量翻译-流式输出] {model_name}: ", end="", flush=True)
     
     # 使用同步的 httpx 客户端，设置较长的超时时间
-    with httpx.Client(timeout=300.0) as client:
+    from src.shared.http_config import build_httpx_kwargs
+    with httpx.Client(**build_httpx_kwargs(base_url, 300.0)) as client:
         with client.stream("POST", url, headers=headers, json=request_body) as response:
             if response.status_code != 200:
                 error_text = response.read().decode('utf-8', errors='ignore')[:500]

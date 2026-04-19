@@ -9,7 +9,6 @@ import json
 import time
 from io import BytesIO
 from PIL import Image
-from openai import OpenAI  # 添加OpenAI库导入，用于火山引擎调用
 from src.shared.openai_helpers import create_openai_client  # 导入辅助函数
 
 from src.shared import constants

@@ -125,14 +125,16 @@ class BaseAPIClient:
         """
         创建 HTTP 客户端
 
-        根据 base_url 判断是否为本地服务，本地服务禁用代理。
+        统一经由 src.shared.http_config 注入：
+        - 本地服务禁用代理
+        - 远程服务保留系统代理
+        - 全场景注入浏览器 UA（绕过套 CF 中转站的 WAF UA 黑名单）
         """
-        from src.shared.openai_helpers import is_local_service
+        from src.shared.http_config import build_httpx_kwargs, is_local_service
 
         if is_local_service(self._base_url):
             logger.info(f"检测到本地服务 ({self._base_url})，禁用代理")
-            return httpx.AsyncClient(timeout=self._timeout, trust_env=False)
-        return httpx.AsyncClient(timeout=self._timeout)
+        return httpx.AsyncClient(**build_httpx_kwargs(self._base_url, self._timeout))
 
     @property
     def base_url(self) -> str:
@@ -140,8 +142,20 @@ class BaseAPIClient:
         return self._base_url
 
     async def close(self):
-        """关闭客户端"""
-        await self.client.aclose()
+        """关闭客户端。
+
+        httpx.AsyncClient 绑定在创建它的 event loop 上。Flask 路由经由 `run_async`
+        每次新建临时 loop 执行协程，build/查询阶段的 loop 销毁后再调用 close()，
+        aclose() 会抛 "Event loop is closed"。此时底层 socket 已随旧 loop 被系统
+        回收，无资源泄漏，吞掉该错误即可。其他错误仍原样抛出。
+        """
+        try:
+            await self.client.aclose()
+        except RuntimeError as exc:
+            if "Event loop is closed" in str(exc):
+                logger.debug("aclose 跨 loop（可忽略）: %s", exc)
+                return
+            raise
 
     async def __aenter__(self):
         """上下文管理器入口"""

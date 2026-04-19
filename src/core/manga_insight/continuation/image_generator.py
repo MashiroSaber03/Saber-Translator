@@ -13,9 +13,11 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 import httpx
-from openai import OpenAI  # OpenAI SDK
 from PIL import Image
 import io
+
+from src.shared.http_config import build_httpx_kwargs
+from src.shared.openai_helpers import create_openai_client
 
 from ..config_models import ImageGenConfig
 from ..config_utils import load_insight_config
@@ -324,7 +326,7 @@ class ImageGenerator:
         
         # 创建 OpenAI 客户端
         base_url = config.base_url or get_image_gen_base_url("openai")
-        client = OpenAI(
+        client = create_openai_client(
             api_key=config.api_key,
             base_url=base_url,
         )
@@ -400,10 +402,10 @@ class ImageGenerator:
                     
                     # URL
                     elif result.startswith("http"):
-                        async with httpx.AsyncClient(timeout=60) as http_client:
+                        async with httpx.AsyncClient(**build_httpx_kwargs(result, 60)) as http_client:
                             img_response = await http_client.get(result)
                             return img_response.content
-                    
+
                     else:
                         logger.warning(f"未知的响应格式: {result[:300]}...")
                         raise ValueError("无法解析图片响应")
@@ -569,7 +571,7 @@ class ImageGenerator:
         
         base_url = config.base_url or get_image_gen_base_url("siliconflow")
 
-        async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时，图片生成可能很耗时
+        async with httpx.AsyncClient(**build_httpx_kwargs(base_url, 300)) as client:  # 5分钟超时，图片生成可能很耗时
             for retry in range(config.max_retries):
                 try:
                     response = await client.post(
@@ -632,7 +634,7 @@ class ImageGenerator:
         
         base_url = config.base_url or get_image_gen_base_url("qwen")
 
-        async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时
+        async with httpx.AsyncClient(**build_httpx_kwargs(base_url, 300)) as client:  # 5分钟超时
             for retry in range(config.max_retries):
                 try:
                     response = await client.post(
@@ -714,7 +716,7 @@ class ImageGenerator:
         
         base_url = config.base_url or get_image_gen_base_url("volcano")
 
-        async with httpx.AsyncClient(timeout=300) as client:  # 5分钟超时
+        async with httpx.AsyncClient(**build_httpx_kwargs(base_url, 300)) as client:  # 5分钟超时
             for retry in range(config.max_retries):
                 try:
                     response = await client.post(
@@ -755,7 +757,7 @@ class ImageGenerator:
             raise ValueError("自定义服务商需要设置 base_url")
         
         # 创建 OpenAI 客户端（使用自定义 base_url）
-        client = OpenAI(
+        client = create_openai_client(
             api_key=config.api_key,
             base_url=config.base_url,
         )
@@ -831,10 +833,10 @@ class ImageGenerator:
                     
                     # URL
                     elif result.startswith("http"):
-                        async with httpx.AsyncClient(timeout=60) as http_client:
+                        async with httpx.AsyncClient(**build_httpx_kwargs(result, 60)) as http_client:
                             img_response = await http_client.get(result)
                             return img_response.content
-                    
+
                     else:
                         logger.warning(f"未知的响应格式: {result[:300]}...")
                         raise ValueError("无法解析图片响应")

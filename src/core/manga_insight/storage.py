@@ -41,6 +41,29 @@ BOOKSHELF_DIR = "data/bookshelf"
 OLD_STORAGE_BASE_DIR = "data/manga_insight"
 
 
+def _on_rmtree_error(func, path, exc_info):
+    """shutil.rmtree 的 onerror 回调。
+
+    Windows 下 ChromaDB 的 mmap/文件句柄会让 rmtree 抛 WinError 32（文件被占用）。
+    跳过被占用的文件后，其所在父目录又会因"目录非空"抛 WinError 145。
+    两类错误都视为可忽略——残留向量文件会被后续 add_* 覆盖，不影响正确性。
+    其他错误仍照常抛出。
+    """
+    import stat
+    err = exc_info[1]
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+        return
+    except Exception:
+        pass
+    winerror = getattr(err, 'winerror', None)
+    if winerror in (32, 145):
+        logger.debug(f"rmtree 跳过被占用/非空: WinError {winerror} {path}")
+        return
+    raise err
+
+
 def get_insight_storage_path(book_id: str) -> str:
     """
     获取 Insight 存储路径（新格式：在书架目录下）
@@ -705,11 +728,16 @@ class AnalysisStorage:
         return chapters
     
     async def clear_all(self) -> bool:
-        """清除所有分析结果"""
+        """清除所有分析结果。
+
+        Windows 下 ChromaDB 的 PersistentClient 会持有 `data_level0.bin` 等文件的
+        mmap/句柄，导致 rmtree 时抛 WinError 32。这里用 onerror 回调对这类错误做
+        静默跳过（残留向量文件会被后续 add_* 覆盖，不影响正确性）。
+        """
         import shutil
         try:
             if os.path.exists(self.base_path):
-                shutil.rmtree(self.base_path)
+                shutil.rmtree(self.base_path, onerror=_on_rmtree_error)
             self._ensure_directories()
             return True
         except Exception as e:

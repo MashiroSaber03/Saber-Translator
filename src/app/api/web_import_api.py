@@ -766,7 +766,7 @@ def test_agent_connection():
         if not api_key:
             return jsonify({'success': False, 'error': '请输入 API Key'}), 400
         
-        from openai import OpenAI
+        from src.shared.openai_helpers import create_openai_client
         
         # 获取 base_url
         provider_urls = {
@@ -788,10 +788,10 @@ def test_agent_connection():
         logger.info(f"[Agent测试] 开始调用 {model_name} 模型...")
         
         # 创建客户端
-        client = OpenAI(
+        client = create_openai_client(
             api_key=api_key,
             base_url=final_base_url,
-            timeout=30
+            timeout=30,
         )
         
         # 发送测试请求
