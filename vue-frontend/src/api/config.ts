@@ -217,6 +217,8 @@ export interface AiVisionOcrTestParams {
   modelName: string
   customBaseUrl?: string
   prompt?: string
+  reasoningEffort?: string
+  imageDetail?: string
 }
 
 /**

@@ -89,7 +89,9 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
   customBaseUrl: '',
   isJsonMode: false,
-  minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
+  minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE,
+  reasoningEffort: 'default',
+  imageDetail: 'default'
 }
 
 /** 默认翻译服务设置 */

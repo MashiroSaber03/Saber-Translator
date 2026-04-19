@@ -70,6 +70,9 @@ export interface PaddleOcrVlSettings {
 /**
  * AI 视觉 OCR 设置
  */
+export type AiVisionVolcanoReasoningEffort = 'default' | 'high' | 'medium' | 'low' | 'minimal'
+export type AiVisionVolcanoImageDetail = 'default' | 'xhigh' | 'high' | 'low'
+
 export interface AiVisionOcrSettings {
   provider: string
   apiKey: string
@@ -80,6 +83,10 @@ export interface AiVisionOcrSettings {
   isJsonMode: boolean
   /** 最小图片尺寸 (VLM 模型通常要求 >= 28px) */
   minImageSize: number
+  /** 火山引擎思考深度，default 表示不传递参数 */
+  reasoningEffort: AiVisionVolcanoReasoningEffort
+  /** 火山引擎图片理解度，default 表示不传递参数 */
+  imageDetail: AiVisionVolcanoImageDetail
 }
 
 /**

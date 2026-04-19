@@ -46,6 +46,10 @@ export interface AiVisionOcrProviderConfig {
   isJsonMode?: boolean
   /** 最小图片尺寸 */
   minImageSize?: number
+  /** 火山引擎思考深度 */
+  reasoningEffort?: string
+  /** 火山引擎图片理解度 */
+  imageDetail?: string
 }
 
 /** 服务商配置缓存结构 */

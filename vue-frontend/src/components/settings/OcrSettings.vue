@@ -222,6 +222,25 @@
         <div class="input-hint">VLM模型通常要求图片尺寸 ≥28px，设为0则不自动放大小图</div>
       </div>
 
+      <div v-if="settings.aiVisionOcr.provider === 'volcano'" class="settings-row">
+        <div class="settings-item">
+          <label for="settingsAiVisionReasoningEffort">思考深度:</label>
+          <CustomSelect
+            :model-value="localAiVisionOcr.reasoningEffort"
+            :options="aiVisionReasoningEffortOptions"
+            @change="(v: string | number) => localAiVisionOcr.reasoningEffort = String(v) as typeof localAiVisionOcr.reasoningEffort"
+          />
+        </div>
+        <div class="settings-item">
+          <label for="settingsAiVisionImageDetail">图片理解度:</label>
+          <CustomSelect
+            :model-value="localAiVisionOcr.imageDetail"
+            :options="aiVisionImageDetailOptions"
+            @change="(v: string | number) => localAiVisionOcr.imageDetail = String(v) as typeof localAiVisionOcr.imageDetail"
+          />
+        </div>
+      </div>
+
       <button class="settings-test-btn" @click="testAiVisionOcr" :disabled="isTesting">
         {{ isTesting ? '测试中...' : '🔗 测试连接' }}
       </button>
@@ -281,6 +300,23 @@ const aiVisionProviderOptions = [
   { label: '火山引擎', value: 'volcano' },
   { label: 'Google Gemini', value: 'gemini' },
   { label: '自定义 OpenAI 兼容服务', value: 'custom_openai_vision' }
+]
+
+/** 火山引擎思考深度选项 */
+const aiVisionReasoningEffortOptions = [
+  { label: '默认（不传递思考深度参数）', value: 'default' },
+  { label: '高', value: 'high' },
+  { label: '中', value: 'medium' },
+  { label: '低', value: 'low' },
+  { label: '关闭', value: 'minimal' }
+]
+
+/** 火山引擎图片理解度选项 */
+const aiVisionImageDetailOptions = [
+  { label: '默认（不传递图片理解度参数）', value: 'default' },
+  { label: '超高细节理解', value: 'xhigh' },
+  { label: '高细节理解', value: 'high' },
+  { label: '低细节理解', value: 'low' }
 ]
 
 /** PaddleOCR-VL 源语言选项（分组） */
@@ -384,7 +420,9 @@ const localAiVisionOcr = ref({
   customBaseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
   prompt: settingsStore.settings.aiVisionOcr.prompt,
   rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit,
-  minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
+  minImageSize: settingsStore.settings.aiVisionOcr.minImageSize,
+  reasoningEffort: settingsStore.settings.aiVisionOcr.reasoningEffort,
+  imageDetail: settingsStore.settings.aiVisionOcr.imageDetail
 })
 
 // 直接访问 store 的只读设置（用于显示条件判断）
@@ -426,6 +464,12 @@ watch(() => localAiVisionOcr.value.rpmLimit, (val) => {
 })
 watch(() => localAiVisionOcr.value.minImageSize, (val) => {
   settingsStore.updateAiVisionOcr({ minImageSize: val })
+})
+watch(() => localAiVisionOcr.value.reasoningEffort, (val) => {
+  settingsStore.updateAiVisionOcr({ reasoningEffort: val })
+})
+watch(() => localAiVisionOcr.value.imageDetail, (val) => {
+  settingsStore.updateAiVisionOcr({ imageDetail: val })
 })
 
 // 密码显示状态
@@ -503,6 +547,8 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
+  localAiVisionOcr.value.reasoningEffort = settingsStore.settings.aiVisionOcr.reasoningEffort
+  localAiVisionOcr.value.imageDetail = settingsStore.settings.aiVisionOcr.imageDetail
 }
 // 当前提示词模式（计算属性）
 const currentPromptMode = computed(() => {
@@ -618,7 +664,9 @@ async function testAiVisionOcr() {
       apiKey: localAiVisionOcr.value.apiKey,
       modelName: localAiVisionOcr.value.modelName,
       customBaseUrl: localAiVisionOcr.value.customBaseUrl,
-      prompt: localAiVisionOcr.value.prompt
+      prompt: localAiVisionOcr.value.prompt,
+      reasoningEffort: localAiVisionOcr.value.reasoningEffort,
+      imageDetail: localAiVisionOcr.value.imageDetail
     })
     if (result.success) {
       toast.success('AI视觉OCR连接成功')

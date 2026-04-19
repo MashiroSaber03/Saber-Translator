@@ -52,6 +52,9 @@ export interface ParallelOcrParams {
   ai_vision_ocr_prompt?: string
   custom_ai_vision_base_url?: string
   ai_vision_min_image_size?: number
+  ai_vision_reasoning_effort?: string
+  ai_vision_image_detail?: string
+  textlines_per_bubble?: any[]
   textlines_per_bubble?: any[]
 }
 

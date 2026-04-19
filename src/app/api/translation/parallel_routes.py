@@ -171,6 +171,8 @@ def parallel_ocr():
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
         ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+        ai_vision_reasoning_effort = data.get('ai_vision_reasoning_effort')
+        ai_vision_image_detail = data.get('ai_vision_image_detail')
         
         # 转换为PIL图像
         img_pil = Image.fromarray(img)
@@ -191,7 +193,9 @@ def parallel_ocr():
             ai_vision_model_name=ai_vision_model_name,
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
-            ai_vision_min_image_size=ai_vision_min_image_size
+            ai_vision_min_image_size=ai_vision_min_image_size,
+            ai_vision_reasoning_effort=ai_vision_reasoning_effort,
+            ai_vision_image_detail=ai_vision_image_detail
         )
         
         return jsonify({

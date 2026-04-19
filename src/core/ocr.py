@@ -87,6 +87,8 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                               use_json_format_for_ai_vision=False,
                               rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
                               ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+                              ai_vision_reasoning_effort=None,
+                              ai_vision_image_detail=None,
                               jsonPromptMode: str = 'normal',
                               textlines_per_bubble=None):  # 新增：每个气泡对应的原始文本行（48px OCR 使用）
     """
@@ -371,7 +373,9 @@ def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan',
                             api_key=ai_vision_api_key,
                             model_name=ai_vision_model_name,
                             prompt=current_ai_vision_ocr_prompt,
-                            custom_base_url=custom_ai_vision_base_url
+                            custom_base_url=custom_ai_vision_base_url,
+                            reasoning_effort=ai_vision_reasoning_effort,
+                            image_detail=ai_vision_image_detail
                         )
                         
                         extracted_text_final = ""

@@ -372,6 +372,8 @@ def test_ai_vision_ocr_api():
         model_name = data.get('model_name')
         prompt = data.get('prompt')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
+        reasoning_effort = data.get('reasoning_effort')
+        image_detail = data.get('image_detail')
         
         # 检查必要参数
         missing = []
@@ -428,7 +430,9 @@ def test_ai_vision_ocr_api():
             api_key,
             model_name,
             prompt,
-            custom_base_url=custom_ai_vision_base_url
+            custom_base_url=custom_ai_vision_base_url,
+            reasoning_effort=reasoning_effort,
+            image_detail=image_detail
         )
         
         return jsonify({

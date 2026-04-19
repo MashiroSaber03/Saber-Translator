@@ -1276,6 +1276,8 @@ def ocr_single_bubble():
                 ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt', constants.DEFAULT_AI_VISION_OCR_PROMPT if hasattr(constants, 'DEFAULT_AI_VISION_OCR_PROMPT') else '')
                 custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
                 ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+                ai_vision_reasoning_effort = data.get('ai_vision_reasoning_effort')
+                ai_vision_image_detail = data.get('ai_vision_image_detail')
                 
                 if not ai_vision_api_key:
                     return jsonify({'error': 'AI视觉OCR需要提供API Key'}), 400
@@ -1301,7 +1303,9 @@ def ocr_single_bubble():
                     api_key=ai_vision_api_key,
                     model_name=ai_vision_model_name,
                     prompt=ai_vision_ocr_prompt,
-                    custom_base_url=custom_ai_vision_base_url
+                    custom_base_url=custom_ai_vision_base_url,
+                    reasoning_effort=ai_vision_reasoning_effort,
+                    image_detail=ai_vision_image_detail
                 )
             
             elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:

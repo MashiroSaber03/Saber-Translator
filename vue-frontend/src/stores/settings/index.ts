@@ -465,6 +465,12 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.aiVisionMinImageSize !== undefined) {
       settings.value.aiVisionOcr.minImageSize = parseNum(backendSettings.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
     }
+    if (backendSettings.aiVisionReasoningEffort) {
+      settings.value.aiVisionOcr.reasoningEffort = backendSettings.aiVisionReasoningEffort as typeof settings.value.aiVisionOcr.reasoningEffort
+    }
+    if (backendSettings.aiVisionImageDetail) {
+      settings.value.aiVisionOcr.imageDetail = backendSettings.aiVisionImageDetail as typeof settings.value.aiVisionOcr.imageDetail
+    }
 
     // 翻译服务设置
     if (backendSettings.modelProvider) {
@@ -707,7 +713,9 @@ export const useSettingsStore = defineStore('settings', () => {
             prompt: config.aiVisionOcrPrompt as string,
             rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
             isJsonMode: config.aiVisionPromptModeSelect === 'json',
-            minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
+            minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE),
+            reasoningEffort: (config.aiVisionReasoningEffort as typeof settings.value.aiVisionOcr.reasoningEffort) || 'default',
+            imageDetail: (config.aiVisionImageDetail as typeof settings.value.aiVisionOcr.imageDetail) || 'default'
           }
         }
       }
@@ -759,7 +767,9 @@ export const useSettingsStore = defineStore('settings', () => {
         aiVisionOcrPrompt: config.prompt || '',
         rpmAiVisionOcr: String(config.rpmLimit || 0),
         aiVisionPromptModeSelect: config.isJsonMode ? 'json' : 'normal',
-        aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
+        aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE),
+        aiVisionReasoningEffort: config.reasoningEffort || 'default',
+        aiVisionImageDetail: config.imageDetail || 'default'
       }
     }
 
@@ -807,6 +817,8 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
         aiVisionPromptModeSelect: settings.value.aiVisionOcr.isJsonMode ? 'json' : 'normal',
         aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
+        aiVisionReasoningEffort: settings.value.aiVisionOcr.reasoningEffort,
+        aiVisionImageDetail: settings.value.aiVisionOcr.imageDetail,
 
         // 翻译服务
         modelProvider: settings.value.translation.provider,

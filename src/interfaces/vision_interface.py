@@ -18,8 +18,62 @@ from src.shared.image_helpers import image_to_base64
 # 设置日志
 logger = logging.getLogger("VisionInterface")
 
+
+def _log_llm_usage(provider: str, model: str, usage) -> None:
+    if usage is None:
+        logger.info(f"[LLM usage] provider={provider} model={model} usage=missing")
+        return
+
+    try:
+        if hasattr(usage, "model_dump"):
+            usage_dict = usage.model_dump()
+        elif isinstance(usage, dict):
+            usage_dict = usage
+        else:
+            usage_dict = getattr(usage, "__dict__", {}) or {}
+
+        prompt_tokens = usage_dict.get("prompt_tokens")
+        completion_tokens = usage_dict.get("completion_tokens")
+        total_tokens = usage_dict.get("total_tokens")
+
+        prompt_details = usage_dict.get("prompt_tokens_details") or {}
+        if hasattr(prompt_details, "model_dump"):
+            prompt_details = prompt_details.model_dump()
+        elif not isinstance(prompt_details, dict):
+            prompt_details = getattr(prompt_details, "__dict__", {}) or {}
+
+        cached_tokens = prompt_details.get("cached_tokens")
+        if cached_tokens is None and isinstance(prompt_details, dict):
+            cached_tokens = 0
+
+        parts = [
+            f"provider={provider}",
+            f"model={model}",
+        ]
+        if prompt_tokens is not None:
+            parts.append(f"prompt={int(prompt_tokens)}")
+        parts.append(f"cached={int(cached_tokens) if cached_tokens is not None else 'n/a'}")
+        if completion_tokens is not None:
+            parts.append(f"completion={int(completion_tokens)}")
+        if total_tokens is not None:
+            parts.append(f"total={int(total_tokens)}")
+
+        logger.info("[LLM usage] " + " ".join(parts))
+    except Exception:
+        return
+
 # VVVVVV 新增：通用的 OpenAI 兼容视觉 API 调用函数 VVVVVV
-def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, base_url_to_use, service_friendly_name, start_time):
+def _call_generic_openai_vision_api(
+    image_base64,
+    api_key,
+    model_name,
+    prompt,
+    base_url_to_use,
+    service_friendly_name,
+    start_time,
+    reasoning_effort=None,
+    image_detail=None
+):
     """
     通用的 OpenAI 兼容视觉 API 调用函数。
     """
@@ -32,12 +86,16 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
         max_retries = 0 if "自定义" in (service_friendly_name or "") else None
         client = create_openai_client(api_key=api_key, base_url=base_url_to_use, max_retries=max_retries)
 
+        image_url_payload = {"url": f"data:image/png;base64,{image_base64}"}
+        if image_detail and image_detail != 'default':
+            image_url_payload["detail"] = image_detail
+
         payload_messages = [ # payload 结构保持一致
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                    {"type": "image_url", "image_url": image_url_payload}
                 ]
             }
         ]
@@ -45,10 +103,17 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
         # debug_payload = { "model": model_name, "messages": [...] }
         # logger.debug(f"{service_friendly_name} API 请求体 (无图): {json.dumps(debug_payload, ensure_ascii=False)}")
 
-        response = client.chat.completions.create(
+        request_kwargs = dict(
             model=model_name,
             messages=payload_messages
         )
+        if reasoning_effort and reasoning_effort != 'default':
+            request_kwargs["reasoning_effort"] = reasoning_effort
+
+        response = client.chat.completions.create(
+            **request_kwargs
+        )
+        _log_llm_usage(service_friendly_name, model_name, getattr(response, "usage", None))
 
         if response and response.choices and len(response.choices) > 0:
             content = response.choices[0].message.content
@@ -74,7 +139,7 @@ def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, b
 
 def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
                                # VVVVVV 新增 custom_base_url 参数 VVVVVV
-                               custom_base_url=None):
+                               custom_base_url=None, reasoning_effort=None, image_detail=None):
                                # ^^^^^^ 结束新增 ^^^^^^
     if not image_pil:
         logger.error("未提供有效图像")
@@ -104,7 +169,9 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             # VVVVVV 修改为调用通用函数 VVVVVV
             return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
                                                    "https://ark.cn-beijing.volces.com/api/v3",
-                                                   "火山引擎", start_time)
+                                                   "火山引擎", start_time,
+                                                   reasoning_effort=reasoning_effort,
+                                                   image_detail=image_detail)
             # ^^^^^^ 结束修改 ^^^^^^
         elif provider_lower == 'gemini':
             # VVVVVV 修改为调用通用函数 VVVVVV
@@ -182,6 +249,7 @@ def call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start
         # 检查响应状态
         if response.status_code == 200:
             result = response.json()
+            _log_llm_usage("SiliconFlow", model_name, result.get("usage"))
             
             # 提取识别结果
             if 'choices' in result and len(result['choices']) > 0:
@@ -211,7 +279,7 @@ def call_siliconflow_vision_api(image_base64, api_key, model_name, prompt, start
 # 更新 test_ai_vision_ocr 函数签名和内部调用
 def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
                        # VVVVVV 新增 custom_base_url 参数 VVVVVV
-                       custom_base_url=None):
+                       custom_base_url=None, reasoning_effort=None, image_detail=None):
                        # ^^^^^^ 结束新增 ^^^^^^
     try:
         # 加载图片
@@ -223,7 +291,9 @@ def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
                 api_key,
                 model_name,
                 prompt,
-                custom_base_url=custom_base_url # <<< 传递自定义 Base URL
+                custom_base_url=custom_base_url, # <<< 传递自定义 Base URL
+                reasoning_effort=reasoning_effort,
+                image_detail=image_detail
             )
 
             if result:
