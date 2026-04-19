@@ -219,7 +219,9 @@ def re_render_image():
         # 提取颜色和旋转角度设置
         textColor = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
         rotationAngle = data.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE)
-        logger.info(f"提取全局文字颜色设置: {textColor}, 旋转角度: {rotationAngle}")
+        lineSpacing = data.get('lineSpacing', constants.DEFAULT_LINE_SPACING)
+        textAlign = data.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
+        logger.info(f"提取全局文字颜色设置: {textColor}, 旋转角度: {rotationAngle}, 行间距: {lineSpacing}, 对齐: {textAlign}")
         
         # === 统一使用 BubbleState 处理 ===
         # 优先使用新的 bubble_states 格式，如果没有则从 all_bubble_states 转换
@@ -255,6 +257,8 @@ def re_render_image():
                     stroke_enabled=style.get('strokeEnabled', stroke_enabled),
                     stroke_color=style.get('strokeColor', stroke_color),
                     stroke_width=style.get('strokeWidth', stroke_width),
+                    line_spacing=style.get('lineSpacing', constants.DEFAULT_LINE_SPACING),
+                    text_align=style.get('textAlign', constants.DEFAULT_TEXT_ALIGN),
                 )
                 bubble_states.append(state)
         else:
@@ -273,6 +277,8 @@ def re_render_image():
                     stroke_enabled=stroke_enabled,
                     stroke_color=stroke_color,
                     stroke_width=stroke_width,
+                    line_spacing=lineSpacing,
+                    text_align=textAlign,
                 )
                 bubble_states.append(state)
         
@@ -333,10 +339,12 @@ def re_render_single_bubble():
         # 新增参数：文字颜色和旋转角度
         text_color = data.get('text_color', constants.DEFAULT_TEXT_COLOR)  # 默认黑色
         rotation_angle = data.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)  # 默认0度，不旋转
-        
+
         stroke_enabled = data.get('strokeEnabled', constants.DEFAULT_STROKE_ENABLED)
         stroke_color = data.get('strokeColor', constants.DEFAULT_STROKE_COLOR)
         stroke_width = int(data.get('strokeWidth', constants.DEFAULT_STROKE_WIDTH))
+        line_spacing = data.get('lineSpacing', constants.DEFAULT_LINE_SPACING)
+        text_align = data.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
         
         # 处理字号 - 直接使用传入的数值
         if not isinstance(fontSize, int) or fontSize <= 0:
@@ -418,7 +426,9 @@ def re_render_single_bubble():
             'rotation_angle': rotation_angle,
             'stroke_enabled': stroke_enabled,
             'stroke_color': stroke_color,
-            'stroke_width': stroke_width
+            'stroke_width': stroke_width,
+            'line_spacing': line_spacing,
+            'text_align': text_align
         }
         logger.info(f"当前气泡 {bubble_index} 的样式设置: {bubble_style}")
         logger.info(f"特别检查排版方向: text_direction={text_direction}")
@@ -475,7 +485,9 @@ def re_render_single_bubble():
                     'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),
                     'stroke_enabled': style.get('strokeEnabled', stroke_enabled),
                     'stroke_color': style.get('strokeColor', stroke_color),
-                    'stroke_width': style.get('strokeWidth', stroke_width)
+                    'stroke_width': style.get('strokeWidth', stroke_width),
+                    'line_spacing': style.get('lineSpacing', constants.DEFAULT_LINE_SPACING),
+                    'text_align': style.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
                 }
                 
                 # 确保正确保存文字方向设置
@@ -515,10 +527,10 @@ def re_render_single_bubble():
         try:
             logger.info("开始调用render_single_bubble函数...")
             rendered_image = render_single_bubble(
-                image, 
-                bubble_index, 
-                all_texts, 
-                bubble_coords, 
+                image,
+                bubble_index,
+                all_texts,
+                bubble_coords,
                 fontSize,
                 corrected_font_path,
                 text_direction,
@@ -528,7 +540,12 @@ def re_render_single_bubble():
                 text_color,          # 文字颜色参数
                 rotation_angle,      # 旋转角度参数
                 use_lama,           # LAMA修复选项
-                data.get('fill_color', constants.DEFAULT_FILL_COLOR) # 填充颜色参数
+                data.get('fill_color', constants.DEFAULT_FILL_COLOR), # 填充颜色参数
+                stroke_enabled,
+                stroke_color,
+                stroke_width,
+                line_spacing,
+                text_align
             )
             logger.info("成功调用render_single_bubble函数，获得渲染结果")
             
@@ -585,7 +602,10 @@ def apply_settings_to_all_images():
         stroke_enabled = data.get('strokeEnabled', constants.DEFAULT_STROKE_ENABLED)
         stroke_color = data.get('strokeColor', constants.DEFAULT_STROKE_COLOR)
         stroke_width = int(data.get('strokeWidth', constants.DEFAULT_STROKE_WIDTH))
+        lineSpacing = data.get('lineSpacing', constants.DEFAULT_LINE_SPACING)
+        textAlign = data.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
         logger.info(f"全局应用描边设置: enabled={stroke_enabled}, color={stroke_color}, width={stroke_width}")
+        logger.info(f"全局应用排版设置: 行间距={lineSpacing}, 对齐={textAlign}")
         
         # 获取其他必要参数
         all_images = data.get('all_images', [])
@@ -646,7 +666,9 @@ def apply_settings_to_all_images():
                         'rotationAngle': rotationAngle,
                         'stroke_enabled': stroke_enabled,
                         'stroke_color': stroke_color,
-                        'stroke_width': stroke_width
+                        'stroke_width': stroke_width,
+                        'lineSpacing': lineSpacing,
+                        'textAlign': textAlign
                     }
                     all_bubble_states.append(bubble_style)
                 
@@ -663,7 +685,9 @@ def apply_settings_to_all_images():
                         'rotation_angle': style.get('rotationAngle', constants.DEFAULT_ROTATION_ANGLE),
                         'stroke_enabled': style.get('strokeEnabled', stroke_enabled),
                         'stroke_color': style.get('strokeColor', stroke_color),
-                        'stroke_width': style.get('strokeWidth', stroke_width)
+                        'stroke_width': style.get('strokeWidth', stroke_width),
+                        'line_spacing': style.get('lineSpacing', lineSpacing),
+                        'text_align': style.get('textAlign', textAlign)
                     }
                     bubble_states[str(j)] = converted_style
                 
@@ -690,7 +714,9 @@ def apply_settings_to_all_images():
                     rotation_angle=rotationAngle,
                     stroke_enabled=stroke_enabled,
                     stroke_color=stroke_color,
-                    stroke_width=stroke_width
+                    stroke_width=stroke_width,
+                    line_spacing=lineSpacing,
+                    text_align=textAlign
                 )
                 
                 # 转换为base64字符串

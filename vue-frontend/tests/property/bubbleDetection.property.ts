@@ -178,6 +178,8 @@ function createBubbleStatesFromDetection(
     strokeEnabled: boolean
     strokeColor: string
     strokeWidth: number
+    lineSpacing?: number
+    textAlign?: 'start' | 'center' | 'end'
     inpaintMethod: 'solid' | 'lama_mpe' | 'litelama'
   }
 ) {

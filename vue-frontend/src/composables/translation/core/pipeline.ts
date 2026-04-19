@@ -128,6 +128,8 @@ export function usePipeline() {
                     strokeEnabled: textStyle.strokeEnabled,
                     strokeColor: textStyle.strokeColor,
                     strokeWidth: textStyle.strokeWidth,
+                    lineSpacing: textStyle.lineSpacing,
+                    textAlign: textStyle.textAlign,
                     inpaintMethod: textStyle.inpaintMethod,
                     useAutoTextColor: textStyle.useAutoTextColor
                 })

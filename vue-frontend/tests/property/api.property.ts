@@ -42,6 +42,8 @@ function generateBubbleState(): fc.Arbitrary<BubbleState> {
     strokeEnabled: fc.boolean(),
     strokeColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
     strokeWidth: fc.integer({ min: 1, max: 10 }),
+    lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
+    textAlign: fc.constantFrom('start', 'center', 'end'),
     inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama'),
   })
 }

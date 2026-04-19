@@ -62,6 +62,10 @@ class BubbleState:
     stroke_enabled: bool = constants.DEFAULT_STROKE_ENABLED
     stroke_color: str = constants.DEFAULT_STROKE_COLOR
     stroke_width: int = constants.DEFAULT_STROKE_WIDTH
+
+    # === 排版参数 ===
+    line_spacing: float = constants.DEFAULT_LINE_SPACING  # 行间距倍数
+    text_align: str = constants.DEFAULT_TEXT_ALIGN  # 'start' | 'center' | 'end'
     
     # === 修复参数 ===
     inpaint_method: str = "solid"  # "solid" | "lama"
@@ -97,6 +101,9 @@ class BubbleState:
             "strokeEnabled": self.stroke_enabled,
             "strokeColor": self.stroke_color,
             "strokeWidth": self.stroke_width,
+            # 排版参数
+            "lineSpacing": self.line_spacing,
+            "textAlign": self.text_align,
             # 修复参数
             "inpaintMethod": self.inpaint_method,
             # 自动颜色提取
@@ -120,6 +127,8 @@ class BubbleState:
             "stroke_enabled": self.stroke_enabled,
             "stroke_color": self.stroke_color,
             "stroke_width": self.stroke_width,
+            "line_spacing": self.line_spacing,
+            "text_align": self.text_align,
         }
     
     @classmethod
@@ -164,6 +173,11 @@ class BubbleState:
             "stroke_color": "stroke_color",
             "strokeWidth": "stroke_width",
             "stroke_width": "stroke_width",
+            # 排版参数
+            "lineSpacing": "line_spacing",
+            "line_spacing": "line_spacing",
+            "textAlign": "text_align",
+            "text_align": "text_align",
             # 修复参数
             "inpaintMethod": "inpaint_method",
             # 自动颜色提取

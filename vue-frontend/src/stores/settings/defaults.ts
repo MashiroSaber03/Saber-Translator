@@ -22,6 +22,8 @@ import {
   DEFAULT_STROKE_ENABLED,
   DEFAULT_STROKE_COLOR,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_LINE_SPACING,
+  DEFAULT_TEXT_ALIGN,
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
   DEFAULT_TRANSLATE_JSON_PROMPT,
@@ -53,7 +55,10 @@ export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
   strokeWidth: DEFAULT_STROKE_WIDTH,
   inpaintMethod: 'solid',
   // 智能颜色识别默认关闭
-  useAutoTextColor: false
+  useAutoTextColor: false,
+  // 排版设置
+  lineSpacing: DEFAULT_LINE_SPACING,
+  textAlign: DEFAULT_TEXT_ALIGN
 }
 
 /** 默认百度OCR设置 */

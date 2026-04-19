@@ -410,6 +410,8 @@ export function useExportImport() {
               strokeEnabled: bs.strokeEnabled ?? textStyle.strokeEnabled,
               strokeColor: bs.strokeColor || textStyle.strokeColor,
               strokeWidth: bs.strokeWidth ?? textStyle.strokeWidth,
+              lineSpacing: bs.lineSpacing ?? textStyle.lineSpacing,
+              textAlign: bs.textAlign ?? textStyle.textAlign,
             }))
 
             const response = await reRenderImage({
@@ -428,6 +430,8 @@ export function useExportImport() {
               strokeEnabled: textStyle.strokeEnabled,
               strokeColor: textStyle.strokeColor,
               strokeWidth: textStyle.strokeWidth,
+              lineSpacing: textStyle.lineSpacing,
+              textAlign: textStyle.textAlign,
             })
 
             if (response.rendered_image) {
@@ -512,6 +516,8 @@ export function useExportImport() {
       strokeEnabled: textStyle.strokeEnabled,
       strokeColor: textStyle.strokeColor,
       strokeWidth: textStyle.strokeWidth,
+      lineSpacing: textStyle.lineSpacing,
+      textAlign: textStyle.textAlign,
       inpaintMethod: textStyle.inpaintMethod
     }
   }

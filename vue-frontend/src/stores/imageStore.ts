@@ -12,7 +12,9 @@ import {
   DEFAULT_FILL_COLOR,
   DEFAULT_STROKE_ENABLED,
   DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH
+  DEFAULT_STROKE_WIDTH,
+  DEFAULT_LINE_SPACING,
+  DEFAULT_TEXT_ALIGN
 } from '@/constants'
 
 /**
@@ -68,6 +70,8 @@ function createDefaultImageData(
     strokeEnabled: DEFAULT_STROKE_ENABLED,
     strokeColor: DEFAULT_STROKE_COLOR,
     strokeWidth: DEFAULT_STROKE_WIDTH,
+    lineSpacing: DEFAULT_LINE_SPACING,
+    textAlign: DEFAULT_TEXT_ALIGN,
     hasUnsavedChanges: false,
     ...overrides
   }
@@ -198,6 +202,8 @@ export const useImageStore = defineStore('image', () => {
       strokeEnabled: img.strokeEnabled ?? DEFAULT_STROKE_ENABLED,
       strokeColor: img.strokeColor || DEFAULT_STROKE_COLOR,
       strokeWidth: img.strokeWidth ?? DEFAULT_STROKE_WIDTH,
+      lineSpacing: img.lineSpacing ?? DEFAULT_LINE_SPACING,
+      textAlign: img.textAlign ?? DEFAULT_TEXT_ALIGN,
       hasUnsavedChanges: img.hasUnsavedChanges || false
     }))
 

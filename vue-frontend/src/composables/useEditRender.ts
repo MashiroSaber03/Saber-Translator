@@ -152,6 +152,8 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         strokeEnabled: s.strokeEnabled !== undefined ? s.strokeEnabled : true,
         strokeColor: s.strokeColor || '#FFFFFF',
         strokeWidth: Number(s.strokeWidth) || 3,
+        lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : 1.0,
+        textAlign: s.textAlign || 'center',
       }))
 
       // 调用后端API（使用正确的参数格式，确保数值类型）
@@ -167,6 +169,8 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         strokeEnabled: bubbleStates[0]?.strokeEnabled !== undefined ? bubbleStates[0].strokeEnabled : true,
         strokeColor: bubbleStates[0]?.strokeColor || '#FFFFFF',
         strokeWidth: Number(bubbleStates[0]?.strokeWidth) || 3,
+        lineSpacing: typeof bubbleStates[0]?.lineSpacing === 'number' ? bubbleStates[0].lineSpacing : 1.0,
+        textAlign: bubbleStates[0]?.textAlign || 'center',
         use_individual_styles: true,
         use_inpainting: false,
         use_lama: false,

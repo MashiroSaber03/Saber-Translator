@@ -228,6 +228,8 @@ export interface ImageDataForSave {
     strokeEnabled?: boolean
     strokeColor?: string
     strokeWidth?: number
+    lineSpacing?: number
+    textAlign?: 'start' | 'center' | 'end'
     // 双掩膜系统字段
     textMask?: string | null    // 文字检测掩膜
     userMask?: string | null    // 用户笔刷掩膜
@@ -300,6 +302,8 @@ export async function saveAllPagesSequentially(
                 strokeEnabled: img.strokeEnabled,
                 strokeColor: img.strokeColor,
                 strokeWidth: img.strokeWidth,
+                lineSpacing: img.lineSpacing,
+                textAlign: img.textAlign,
                 // 双掩膜系统字段
                 textMask: img.textMask,
                 userMask: img.userMask,

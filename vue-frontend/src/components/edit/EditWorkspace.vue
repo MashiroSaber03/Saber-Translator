@@ -1074,7 +1074,7 @@ function initializeTextArrays(image: AppImageData, count: number): void {
 function createBubbleStatesFromDetection(
   response: { bubble_coords: number[][]; bubble_angles?: number[]; auto_directions?: string[] },
   image: AppImageData,
-  textStyle: { fontSize: number; fontFamily: string; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; inpaintMethod: string }
+  textStyle: { fontSize: number; fontFamily: string; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; lineSpacing: number; textAlign: 'start' | 'center' | 'end'; inpaintMethod: string }
 ): BubbleState[] {
   const autoDirections = response.auto_directions || []
   return response.bubble_coords.map((coords, i) => {
@@ -1102,6 +1102,8 @@ function createBubbleStatesFromDetection(
       strokeEnabled: textStyle.strokeEnabled,
       strokeColor: textStyle.strokeColor,
       strokeWidth: textStyle.strokeWidth,
+      lineSpacing: textStyle.lineSpacing,
+      textAlign: textStyle.textAlign,
       rotationAngle: response.bubble_angles?.[i] || 0,
       inpaintMethod: textStyle.inpaintMethod as 'solid' | 'lama_mpe' | 'litelama',
       position: { x: 0, y: 0 },

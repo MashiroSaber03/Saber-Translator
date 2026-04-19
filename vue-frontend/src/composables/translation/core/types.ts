@@ -105,4 +105,8 @@ export interface SavedTextStyles {
     useAutoTextColor: boolean
     /** 修复方式 */
     inpaintMethod: 'solid' | 'lama_mpe' | 'litelama'
+    /** 行间距倍数 */
+    lineSpacing: number
+    /** 对齐方式 */
+    textAlign: 'start' | 'center' | 'end'
 }

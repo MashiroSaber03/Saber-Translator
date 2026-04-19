@@ -18,7 +18,9 @@ import {
   DEFAULT_FILL_COLOR,
   DEFAULT_STROKE_ENABLED,
   DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH
+  DEFAULT_STROKE_WIDTH,
+  DEFAULT_LINE_SPACING,
+  DEFAULT_TEXT_ALIGN
 } from '@/constants'
 
 /**
@@ -49,6 +51,10 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   strokeEnabled: DEFAULT_STROKE_ENABLED,
   strokeColor: DEFAULT_STROKE_COLOR,
   strokeWidth: DEFAULT_STROKE_WIDTH,
+
+  // 排版参数
+  lineSpacing: DEFAULT_LINE_SPACING,
+  textAlign: DEFAULT_TEXT_ALIGN,
 
   // 修复参数
   inpaintMethod: 'solid',
@@ -406,6 +412,8 @@ export function getDefaultBubbleSettings(globalSettings?: {
   strokeColor?: string
   strokeWidth?: number
   inpaintMethod?: InpaintMethod
+  lineSpacing?: number
+  textAlign?: 'start' | 'center' | 'end'
 }): BubbleStateOverrides {
   if (!globalSettings) {
     // 返回默认值
@@ -418,7 +426,9 @@ export function getDefaultBubbleSettings(globalSettings?: {
       strokeEnabled: DEFAULT_BUBBLE_STATE.strokeEnabled,
       strokeColor: DEFAULT_BUBBLE_STATE.strokeColor,
       strokeWidth: DEFAULT_BUBBLE_STATE.strokeWidth,
-      inpaintMethod: DEFAULT_BUBBLE_STATE.inpaintMethod
+      inpaintMethod: DEFAULT_BUBBLE_STATE.inpaintMethod,
+      lineSpacing: DEFAULT_BUBBLE_STATE.lineSpacing,
+      textAlign: DEFAULT_BUBBLE_STATE.textAlign
     }
   }
 
@@ -432,7 +442,9 @@ export function getDefaultBubbleSettings(globalSettings?: {
     strokeEnabled: globalSettings.strokeEnabled ?? DEFAULT_BUBBLE_STATE.strokeEnabled,
     strokeColor: globalSettings.strokeColor ?? DEFAULT_BUBBLE_STATE.strokeColor,
     strokeWidth: globalSettings.strokeWidth ?? DEFAULT_BUBBLE_STATE.strokeWidth,
-    inpaintMethod: globalSettings.inpaintMethod ?? DEFAULT_BUBBLE_STATE.inpaintMethod
+    inpaintMethod: globalSettings.inpaintMethod ?? DEFAULT_BUBBLE_STATE.inpaintMethod,
+    lineSpacing: globalSettings.lineSpacing ?? DEFAULT_BUBBLE_STATE.lineSpacing,
+    textAlign: globalSettings.textAlign ?? DEFAULT_BUBBLE_STATE.textAlign
   }
 }
 

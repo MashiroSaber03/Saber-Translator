@@ -137,6 +137,8 @@ export class RenderPool extends TaskPool {
           strokeEnabled: textStyle.strokeEnabled,
           strokeColor: textStyle.strokeColor,
           strokeWidth: textStyle.strokeWidth,
+          lineSpacing: textStyle.lineSpacing,
+          textAlign: textStyle.textAlign,
           inpaintMethod: textStyle.inpaintMethod,
           autoFgColor: null,
           autoBgColor: null
@@ -227,6 +229,8 @@ export class RenderPool extends TaskPool {
       strokeEnabled: task.imageData.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
       strokeColor: task.imageData.strokeColor ?? settingsStore.settings.textStyle.strokeColor,
       strokeWidth: task.imageData.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+      lineSpacing: task.imageData.lineSpacing ?? settingsStore.settings.textStyle.lineSpacing,
+      textAlign: task.imageData.textAlign ?? settingsStore.settings.textStyle.textAlign,
       inpaintMethod: task.imageData.inpaintMethod ?? settingsStore.settings.textStyle.inpaintMethod,
       useAutoTextColor: task.imageData.useAutoTextColor ?? settingsStore.settings.textStyle.useAutoTextColor
     })

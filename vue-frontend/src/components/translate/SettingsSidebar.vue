@@ -14,8 +14,8 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
 import { showToast } from '@/utils/toast'
-import { DEFAULT_FONT_FAMILY } from '@/constants'
-import type { TextDirection, InpaintMethod } from '@/types/bubble'
+import { DEFAULT_FONT_FAMILY, DEFAULT_LINE_SPACING, DEFAULT_TEXT_ALIGN } from '@/constants'
+import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
@@ -59,6 +59,8 @@ interface ApplySettingsOptions {
   strokeEnabled: boolean
   strokeColor: boolean
   strokeWidth: boolean
+  lineSpacing: boolean
+  textAlign: boolean
 }
 
 // ============================================================
@@ -85,6 +87,8 @@ const applyOptions = ref<ApplySettingsOptions>({
   strokeEnabled: true,
   strokeColor: true,
   strokeWidth: true,
+  lineSpacing: true,
+  textAlign: true,
 })
 
 /** 是否启用范围限制 */
@@ -104,6 +108,13 @@ const layoutDirectionOptions = [
   { label: '自动 (根据检测)', value: 'auto' },
   { label: '竖向排版', value: 'vertical' },
   { label: '横向排版', value: 'horizontal' },
+]
+
+/** 对齐方式选项（横排=水平对齐，竖排=列内字符对齐） */
+const textAlignOptions = [
+  { label: '起始 (左/顶)', value: 'start' },
+  { label: '居中', value: 'center' },
+  { label: '末尾 (右/底)', value: 'end' },
 ]
 
 /** 填充方式选项（用于CustomSelect） */
@@ -497,6 +508,26 @@ function updateTextColor(event: Event) {
 }
 
 /**
+ * 更新行间距倍数（0.5 - 3.0）
+ */
+function updateLineSpacing(event: Event) {
+  let value = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(value) || value <= 0) value = DEFAULT_LINE_SPACING
+  value = Math.max(0.5, Math.min(3.0, value))
+  settingsStore.updateTextStyle({ lineSpacing: value })
+  emit('textStyleChanged', 'lineSpacing', value)
+}
+
+/**
+ * 更新对齐方式
+ */
+function updateTextAlign(value: string | number) {
+  const strValue = String(value) as TextAlign
+  settingsStore.updateTextStyle({ textAlign: strValue })
+  emit('textStyleChanged', 'textAlign', strValue)
+}
+
+/**
  * 更新是否使用自动文字颜色
  */
 function updateUseAutoTextColor(event: Event) {
@@ -564,6 +595,8 @@ function toggleSelectAll() {
     strokeEnabled: newValue,
     strokeColor: newValue,
     strokeWidth: newValue,
+    lineSpacing: newValue,
+    textAlign: newValue,
   }
 }
 
@@ -719,6 +752,29 @@ function handleRunWorkflow() {
                 @change="handleLayoutDirectionChange"
               />
             </div>
+
+            <div class="form-group">
+              <label for="lineSpacing">行间距</label>
+              <input
+                type="number"
+                id="lineSpacing"
+                :value="textStyle.lineSpacing"
+                min="0.5"
+                max="3"
+                step="0.1"
+                title="行间距倍数（0.5 - 3.0）"
+                @change="updateLineSpacing"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="textAlign">对齐方式</label>
+              <CustomSelect
+                :model-value="textStyle.textAlign"
+                :options="textAlignOptions"
+                @change="updateTextAlign"
+              />
+            </div>
           </section>
 
           <section class="setting-group setting-group-color">
@@ -869,6 +925,14 @@ function handleRunWorkflow() {
                 v-model="applyOptions.layoutDirection"
               />
               <label for="apply_layoutDirection">排版方向</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_lineSpacing" v-model="applyOptions.lineSpacing" />
+              <label for="apply_lineSpacing">行间距</label>
+            </div>
+            <div class="apply-option">
+              <input type="checkbox" id="apply_textAlign" v-model="applyOptions.textAlign" />
+              <label for="apply_textAlign">对齐方式</label>
             </div>
             <div class="apply-option">
               <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />

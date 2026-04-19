@@ -858,14 +858,27 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  stroke_color=constants.DEFAULT_STROKE_COLOR,
                                  stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                  bubble_width=None,
-                                 font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
+                                 font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH,
+                                 line_spacing=constants.DEFAULT_LINE_SPACING,
+                                 text_align=constants.DEFAULT_TEXT_ALIGN):
     """
     在指定位置绘制竖排多行文本。
-    
+
+    Word 逻辑：第一列贴气泡右边界开始，向左换列；每列按 text_align 独立做
+    顶/中/底对齐（基于该列实际高度 line_heights[line_idx]）。
+
     关键特性：
     1. 逐字符调用 CJK_Compatibility_Forms_translate 进行标点转换
     2. 支持单字符旋转（如日文长音符号 ー 需要旋转90度）
     3. 气泡级别的旋转在 render_all_bubbles 中统一处理
+
+    Args:
+        x: 气泡右边界（第一列贴该边界）
+        y: 气泡顶边界（列内字符起点的参考原点）
+        max_height: 气泡高度，限制每列最多能放多少字符
+        bubble_width: 保留用于调用方兼容，Word 逻辑下第一列固定贴气泡右边，不再整体居中
+        line_spacing: 列间距倍数（影响 column_width_approx）
+        text_align: 列内字符垂直对齐方式 'start'=顶 | 'center'=中 | 'end'=底
     """
     if not text:
         return
@@ -880,42 +893,44 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         canvas_image = draw._image
 
     lines = []
+    line_heights = []  # 每列的实际高度（字符/横排块占用的垂直像素），与 lines 一一对应
     current_line = ""
     current_column_height = 0
-    line_height_approx = font.size + 1  # 字间距为1像素
+    line_height_approx = font.size + 1  # 同一列内字符之间的字间距（不受 line_spacing 影响）
 
     # ===== 处理 <H></H> 标签的智能换行 =====
     # 先按 \n 分割段落，然后在每个段落内处理
     paragraphs = text.split('\n')
-    
+
     for para_idx, paragraph in enumerate(paragraphs):
         # 非第一个段落时，先换列（实现回车换行效果）
         # 在竖排模式下，回车符(\n)应该对应新的一列
         if para_idx > 0:
             if current_line:
                 lines.append(current_line)
+                line_heights.append(current_column_height)
                 current_line = ""
                 current_column_height = 0
-        
+
         if not paragraph:
             # 空段落，跳过（换列已在上面处理）
             continue
-        
+
         # 分割段落为普通文本和横排块
         parts = re.split(r'(<H>.*?</H>)', paragraph, flags=re.IGNORECASE | re.DOTALL)
-        
+
         for part in parts:
             if not part:
                 continue
-            
+
             is_h_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
-            
+
             if is_h_block:
                 # 横排块：计算其高度并作为整体处理
                 content = part[3:-4]  # 去除 <H> 和 </H>
                 if not content:
                     continue
-                
+
                 # 估算横排块的高度（使用单位系统）
                 if len(content) >= 3:
                     # 3+ 字符旋转后变成竖排，高度 = 字符宽度之和
@@ -923,12 +938,12 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                 else:
                     # 2 字符横排，高度 = 字体高度
                     raw_height = font.size
-                
+
                 # 按单位计算占用高度（向上取整）
                 units_needed = math.ceil(raw_height / line_height_approx)
                 units_needed = max(1, units_needed)
                 block_height = units_needed * line_height_approx
-                
+
                 # 检查是否能放入当前列
                 if current_column_height + block_height <= max_height:
                     current_line += part  # 保持标签完整
@@ -937,6 +952,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     # 需要换列
                     if current_line:
                         lines.append(current_line)
+                        line_heights.append(current_column_height)
                     current_line = part
                     current_column_height = block_height
             else:
@@ -947,38 +963,25 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         current_column_height += line_height_approx
                     else:
                         lines.append(current_line)
+                        line_heights.append(current_column_height)
                         current_line = char
                         current_column_height = line_height_approx
-    
+
     # 添加最后一行
     if current_line:
         lines.append(current_line)
+        line_heights.append(current_column_height)
 
-    # 列宽基于字体大小估算
-    column_width_approx = font.size + 3
+    # 列宽基于字体大小估算（列间距受 line_spacing 影响：竖排的"行间距"即两列之间的距离）
+    column_width_approx = int(font.size * line_spacing) + 3
 
-    # 计算文本段落的总宽度
-    total_text_width_for_centering = len(lines) * column_width_approx
-    
-    # 居中对齐
-    if bubble_width is not None:
-        bubble_center_x = x - bubble_width / 2
-        current_x_base = bubble_center_x + total_text_width_for_centering / 2
-    else:
-        current_x_base = x
+    # Word 逻辑：水平方向始终从气泡右边开始（第一列贴气泡右边界，不再整体居中）
+    # 传入的 x 是气泡右边界，current_x_col 表示当前列的右边界
+    # bubble_width 保留用于调用方兼容，当前逻辑不再需要
+    _ = bubble_width
+    current_x_base = x
 
-    # 计算垂直方向文本总高度，用于居中
-    max_chars_in_line = 0
-    if lines:
-        max_chars_in_line = max(len(line) for line in lines if line)
-    total_text_height_for_centering = max_chars_in_line * line_height_approx
-
-    if total_text_height_for_centering < max_height:
-        vertical_offset = (max_height - total_text_height_for_centering) / 2
-        start_y_base = y + vertical_offset
-    else:
-        start_y_base = y
-
+    # 垂直方向每列独立对齐（在主循环内按 line_heights[line_idx] 计算）
     # 预加载NotoSans字体，用于特殊字符
     special_font = None
     font_size = font.size
@@ -1009,7 +1012,18 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
 
     current_x_col = current_x_base
     for line_idx, line in enumerate(lines):
-        current_y_char = start_y_base
+        # 每列独立按 text_align 计算垂直起点（Word 逻辑）
+        col_height = line_heights[line_idx] if line_idx < len(line_heights) else 0
+        if col_height < max_height:
+            if text_align == 'start':
+                col_vertical_offset = 0
+            elif text_align == 'end':
+                col_vertical_offset = max_height - col_height
+            else:
+                col_vertical_offset = (max_height - col_height) / 2
+        else:
+            col_vertical_offset = 0
+        current_y_char = y + col_vertical_offset
         # 获取当前列的实际宽度
         line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
         
@@ -1200,7 +1214,9 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                   bubble_width=None,
                                   bubble_height=None,
-                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH):
+                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH,
+                                  line_spacing=constants.DEFAULT_LINE_SPACING,
+                                  text_align=constants.DEFAULT_TEXT_ALIGN):
     """
     在指定位置绘制横排多行文本（不含旋转）。
     旋转逻辑已移至 render_all_bubbles 函数中统一处理，使用外接圆方案优化性能。
@@ -1208,8 +1224,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     优化：一次遍历同时完成分行和记录字符宽度，避免重复调用 getbbox()。
     
     Args:
-        bubble_width: 气泡宽度，用于水平居中
-        bubble_height: 气泡高度，用于垂直居中
+        bubble_width: 气泡宽度，用于按 text_align 计算每行水平对齐偏移（start=左/center=中/end=右）
+        bubble_height: 保留用于调用方兼容，当前 Word 逻辑下文字始终从气泡顶部开始，不再需要垂直居中
     """
     if not text:
         return
@@ -1255,27 +1271,29 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     if not lines:
         return
 
-    line_height = font.size + 5
-    
+    line_height = int(font.size * line_spacing) + 5
+
     # 计算每行的总宽度（直接使用已记录的值，不再遍历）
     line_widths = [sum(widths) for widths in line_char_widths]
-    
-    # 计算垂直居中偏移
-    total_text_height = len(lines) * line_height
-    if bubble_height is not None and total_text_height < bubble_height:
-        vertical_offset = (bubble_height - total_text_height) / 2
-        current_y = y + vertical_offset
-    else:
-        current_y = y
-    
+
+    # Word 逻辑：垂直方向始终从气泡顶部开始（不居中，text_align 只管水平方向）
+    # bubble_height 参数保留用于调用方兼容，当前逻辑不再需要
+    _ = bubble_height
+    current_y = y
+
     # 预加载NotoSans字体，用于特殊字符
     special_font = None
     font_size = font.size
 
     for line_idx, line in enumerate(lines):
-        # 计算水平居中偏移
+        # 水平对齐偏移（start=左, center=中, end=右）
         if bubble_width is not None:
-            horizontal_offset = (bubble_width - line_widths[line_idx]) / 2
+            if text_align == 'start':
+                horizontal_offset = 0
+            elif text_align == 'end':
+                horizontal_offset = bubble_width - line_widths[line_idx]
+            else:
+                horizontal_offset = (bubble_width - line_widths[line_idx]) / 2
             current_x = x + horizontal_offset
         else:
             current_x = x
@@ -1375,6 +1393,9 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
         stroke_color = style.get('stroke_color', constants.DEFAULT_STROKE_COLOR)
         stroke_width = style.get('stroke_width', constants.DEFAULT_STROKE_WIDTH)
 
+        line_spacing = style.get('line_spacing', style.get('lineSpacing', constants.DEFAULT_LINE_SPACING))
+        text_align = style.get('text_align', style.get('textAlign', constants.DEFAULT_TEXT_ALIGN))
+
         # --- 处理字体大小 ---
         bubble_width = x2 - x1
         bubble_height = y2 - y1
@@ -1429,7 +1450,9 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
-                        font_family_path=font_family_rel
+                        font_family_path=font_family_rel,
+                        line_spacing=line_spacing,
+                        text_align=text_align
                     )
                 elif text_direction == 'horizontal':
                     draw_multiline_text_horizontal(
@@ -1441,7 +1464,9 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
-                        font_family_path=font_family_rel
+                        font_family_path=font_family_rel,
+                        line_spacing=line_spacing,
+                        text_align=text_align
                     )
                 else:
                     logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
@@ -1480,7 +1505,9 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_color=stroke_color,
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
-                        font_family_path=font_family_rel
+                        font_family_path=font_family_rel,
+                        line_spacing=line_spacing,
+                        text_align=text_align
                     )
                 elif text_direction == 'horizontal':
                     draw_multiline_text_horizontal(
@@ -1491,7 +1518,9 @@ def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
                         stroke_width=stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
-                        font_family_path=font_family_rel
+                        font_family_path=font_family_rel,
+                        line_spacing=line_spacing,
+                        text_align=text_align
                     )
                 else:
                     logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
@@ -1518,7 +1547,9 @@ def render_single_bubble(
     fill_color=constants.DEFAULT_FILL_COLOR,
     stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
     stroke_color=constants.DEFAULT_STROKE_COLOR,
-    stroke_width=constants.DEFAULT_STROKE_WIDTH
+    stroke_width=constants.DEFAULT_STROKE_WIDTH,
+    line_spacing=constants.DEFAULT_LINE_SPACING,
+    text_align=constants.DEFAULT_TEXT_ALIGN
     ):
     """
     使用新的文本和样式重新渲染单个气泡（通过更新样式并渲染所有气泡实现）。
@@ -1579,7 +1610,9 @@ def render_single_bubble(
                  'rotation_angle': global_rot_angle,
                  'stroke_enabled': stroke_enabled,
                  'stroke_color': stroke_color,
-                 'stroke_width': stroke_width
+                 'stroke_width': stroke_width,
+                 'line_spacing': line_spacing,
+                 'text_align': text_align
              }
 
     # --- 更新目标气泡的样式 ---
@@ -1598,7 +1631,9 @@ def render_single_bubble(
         'rotation_angle': rotation_angle,
         'stroke_enabled': stroke_enabled,
         'stroke_color': stroke_color,
-        'stroke_width': stroke_width
+        'stroke_width': stroke_width,
+        'line_spacing': line_spacing,
+        'text_align': text_align
     })
 
     bubble_states_to_use[str(bubble_index)] = target_style
@@ -1645,7 +1680,9 @@ def re_render_text_in_bubbles(
     rotation_angle=constants.DEFAULT_ROTATION_ANGLE,
     stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
     stroke_color=constants.DEFAULT_STROKE_COLOR,
-    stroke_width=constants.DEFAULT_STROKE_WIDTH
+    stroke_width=constants.DEFAULT_STROKE_WIDTH,
+    line_spacing=constants.DEFAULT_LINE_SPACING,
+    text_align=constants.DEFAULT_TEXT_ALIGN
     ):
     """
     使用新的文本和样式重新渲染气泡中的文字。
@@ -1703,6 +1740,10 @@ def re_render_text_in_bubbles(
                 bubble_states_to_use[i_str]['stroke_color'] = stroke_color
             if 'stroke_width' not in bubble_states_to_use[i_str]:
                 bubble_states_to_use[i_str]['stroke_width'] = stroke_width
+            if 'line_spacing' not in bubble_states_to_use[i_str]:
+                bubble_states_to_use[i_str]['line_spacing'] = line_spacing
+            if 'text_align' not in bubble_states_to_use[i_str]:
+                bubble_states_to_use[i_str]['text_align'] = text_align
     else:
         # 没有预定义样式，使用全局设置创建新样式
         logger.info("没有找到预定义气泡样式，使用全局设置创建样式")
@@ -1724,7 +1765,9 @@ def re_render_text_in_bubbles(
                 'rotation_angle': rotation_angle,
                 'stroke_enabled': stroke_enabled,
                 'stroke_color': stroke_color,
-                'stroke_width': stroke_width
+                'stroke_width': stroke_width,
+                'line_spacing': line_spacing,
+                'text_align': text_align
             }
 
     # --- 调用核心渲染函数 ---
@@ -1826,7 +1869,9 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        font_family_path=state.font_family
+                        font_family_path=state.font_family,
+                        line_spacing=state.line_spacing,
+                        text_align=state.text_align
                     )
                 else:
                     draw_multiline_text_horizontal(
@@ -1838,7 +1883,9 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
-                        font_family_path=state.font_family
+                        font_family_path=state.font_family,
+                        line_spacing=state.line_spacing,
+                        text_align=state.text_align
                     )
                 
                 temp_center = temp_size // 2
@@ -1870,7 +1917,9 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        font_family_path=state.font_family
+                        font_family_path=state.font_family,
+                        line_spacing=state.line_spacing,
+                        text_align=state.text_align
                     )
                 else:
                     draw_multiline_text_horizontal(
@@ -1881,7 +1930,9 @@ def render_bubbles_unified(
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
                         bubble_height=max_text_height,
-                        font_family_path=state.font_family
+                        font_family_path=state.font_family,
+                        line_spacing=state.line_spacing,
+                        text_align=state.text_align
                     )
                     
         except Exception as render_e:

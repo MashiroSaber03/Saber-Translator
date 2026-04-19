@@ -3,7 +3,7 @@
  * 定义翻译设置、OCR设置、高质量翻译设置等
  */
 
-import type { TextDirection, InpaintMethod } from './bubble'
+import type { TextDirection, InpaintMethod, TextAlign } from './bubble'
 
 /**
  * OCR 引擎类型
@@ -199,6 +199,9 @@ export interface TextStyleSettings {
   inpaintMethod: InpaintMethod
   // 智能颜色识别设置
   useAutoTextColor: boolean  // 默认使用自动识别的文字颜色
+  // 排版设置
+  lineSpacing: number  // 行间距倍数（1.0 = 不改变现有行高）
+  textAlign: TextAlign  // 对齐方式：横排水平对齐 / 竖排列内字符对齐
 }
 
 /**

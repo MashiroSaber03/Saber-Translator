@@ -184,6 +184,8 @@ export const useBubbleStore = defineStore('bubble', () => {
       strokeEnabled: textStyle.strokeEnabled,
       strokeColor: textStyle.strokeColor,
       strokeWidth: textStyle.strokeWidth,
+      lineSpacing: textStyle.lineSpacing,
+      textAlign: textStyle.textAlign,
       rotationAngle: 0,
       position: { x: 0, y: 0 },
       // 允许 overrides 覆盖上述默认值
@@ -457,6 +459,8 @@ export const useBubbleStore = defineStore('bubble', () => {
         current.strokeEnabled !== initial.strokeEnabled ||
         current.strokeColor !== initial.strokeColor ||
         current.strokeWidth !== initial.strokeWidth ||
+        current.lineSpacing !== initial.lineSpacing ||
+        current.textAlign !== initial.textAlign ||
         current.inpaintMethod !== initial.inpaintMethod ||
         JSON.stringify(current.coords) !== JSON.stringify(initial.coords)
       ) {
@@ -505,6 +509,8 @@ export const useBubbleStore = defineStore('bubble', () => {
     stroke_enabled: boolean[]
     stroke_colors: string[]
     stroke_widths: number[]
+    line_spacings: number[]
+    text_aligns: string[]
     inpaint_methods: string[]
   } {
     return {
@@ -530,6 +536,8 @@ export const useBubbleStore = defineStore('bubble', () => {
       stroke_enabled: bubbles.value.map(b => b.strokeEnabled),
       stroke_colors: bubbles.value.map(b => b.strokeColor),
       stroke_widths: bubbles.value.map(b => b.strokeWidth),
+      line_spacings: bubbles.value.map(b => b.lineSpacing),
+      text_aligns: bubbles.value.map(b => b.textAlign),
       inpaint_methods: bubbles.value.map(b => b.inpaintMethod)
     }
   }

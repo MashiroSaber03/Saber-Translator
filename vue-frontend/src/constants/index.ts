@@ -224,6 +224,12 @@ export const DEFAULT_STROKE_COLOR = '#FFFFFF'
 /** 默认描边宽度 */
 export const DEFAULT_STROKE_WIDTH = 3
 
+/** 默认行间距倍数（1.0 = 不改变现有行高） */
+export const DEFAULT_LINE_SPACING = 1.0
+
+/** 默认文本对齐方式：'start' | 'center' | 'end'（横竖通用） */
+export const DEFAULT_TEXT_ALIGN: 'start' | 'center' | 'end' = 'center'
+
 // ============================================================
 // 编辑模式字号预设常量
 // ============================================================

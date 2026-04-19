@@ -108,6 +108,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
             strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
             strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
+            lineSpacing: savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
+            textAlign: savedTextStyles?.textAlign || textStyle.textAlign,
             inpaintMethod: savedTextStyles?.inpaintMethod || textStyle.inpaintMethod,
             autoFgColor: colors[idx]?.autoFgColor || null,
             autoBgColor: colors[idx]?.autoBgColor || null
@@ -124,6 +126,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
         strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
         strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
+        lineSpacing: savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
+        textAlign: savedTextStyles?.textAlign || textStyle.textAlign,
         autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
         use_individual_styles: true
     })

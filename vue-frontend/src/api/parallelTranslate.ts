@@ -153,6 +153,8 @@ export interface ParallelRenderParams {
   strokeEnabled?: boolean
   strokeColor?: string
   strokeWidth?: number
+  lineSpacing?: number
+  textAlign?: 'start' | 'center' | 'end'
   autoFontSize?: boolean
   use_individual_styles?: boolean
 }

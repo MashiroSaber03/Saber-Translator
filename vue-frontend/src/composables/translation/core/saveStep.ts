@@ -78,6 +78,8 @@ function buildUiSettings(): Record<string, unknown> {
         strokeEnabled: textStyle.strokeEnabled,
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
+        lineSpacing: textStyle.lineSpacing,
+        textAlign: textStyle.textAlign,
         useAutoTextColor: textStyle.useAutoTextColor,
     }
 }

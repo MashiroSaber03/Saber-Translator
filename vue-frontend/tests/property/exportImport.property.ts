@@ -51,6 +51,8 @@ describe('文本导出导入属性测试', () => {
     strokeEnabled: fc.boolean(),
     strokeColor: fc.constant('#FFFFFF'),
     strokeWidth: fc.integer({ min: 1, max: 10 }),
+    lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
+    textAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
     inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama') as fc.Arbitrary<'solid' | 'lama_mpe' | 'litelama'>
   })
 
@@ -326,6 +328,8 @@ describe('文本导出导入属性测试', () => {
             strokeEnabled: false,
             strokeColor: '#FFFFFF',
             strokeWidth: 3,
+            lineSpacing: 1.0,
+            textAlign: 'center' as 'start' | 'center' | 'end',
             inpaintMethod: 'solid'
           }
           

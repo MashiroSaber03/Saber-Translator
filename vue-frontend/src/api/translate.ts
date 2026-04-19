@@ -39,6 +39,8 @@ export interface ReRenderParams {
     strokeEnabled?: boolean
     strokeColor?: string
     strokeWidth?: number
+    lineSpacing?: number
+    textAlign?: 'start' | 'center' | 'end'
   }>
 
   // 全局样式设置
@@ -49,6 +51,8 @@ export interface ReRenderParams {
   strokeEnabled?: boolean
   strokeColor?: string
   strokeWidth?: number
+  lineSpacing?: number
+  textAlign?: 'start' | 'center' | 'end'
 
   // 控制选项
   use_individual_styles?: boolean
@@ -166,6 +170,8 @@ export async function applySettingsToAllImages(
     stroke_enabled?: boolean
     stroke_color?: string
     stroke_width?: number
+    line_spacing?: number
+    text_align?: 'start' | 'center' | 'end'
   }
 ): Promise<ApiResponse<{ translated_images: string[] }>> {
   return apiClient.post('/api/apply_settings_to_all_images', {

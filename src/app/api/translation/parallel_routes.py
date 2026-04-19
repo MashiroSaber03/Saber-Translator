@@ -422,6 +422,8 @@ def parallel_render():
         stroke_enabled = data.get('strokeEnabled', False)
         stroke_color = data.get('strokeColor', '#FFFFFF')
         stroke_width = data.get('strokeWidth', 2)
+        line_spacing = data.get('lineSpacing', constants.DEFAULT_LINE_SPACING)
+        text_align = data.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
         auto_font_size = data.get('autoFontSize', False)
         use_individual_styles = data.get('use_individual_styles', True)
         
@@ -453,6 +455,8 @@ def parallel_render():
                 stroke_enabled=bs_data.get('strokeEnabled', stroke_enabled),
                 stroke_color=bs_data.get('strokeColor', stroke_color),
                 stroke_width=bs_data.get('strokeWidth', stroke_width),
+                line_spacing=bs_data.get('lineSpacing', line_spacing),
+                text_align=bs_data.get('textAlign', text_align),
                 inpaint_method=bs_data.get('inpaintMethod', 'solid'),
                 auto_fg_color=auto_fg,
                 auto_bg_color=auto_bg
@@ -500,6 +504,8 @@ def parallel_render():
                 'strokeEnabled': bs.stroke_enabled,
                 'strokeColor': bs.stroke_color,
                 'strokeWidth': bs.stroke_width,
+                'lineSpacing': bs.line_spacing,
+                'textAlign': bs.text_align,
                 'inpaintMethod': bs.inpaint_method,
                 'autoFgColor': bs.auto_fg_color,
                 'autoBgColor': bs.auto_bg_color

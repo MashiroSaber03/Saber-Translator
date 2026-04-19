@@ -281,6 +281,58 @@
           </div>
         </div>
 
+        <!-- 新增：行间距 + 对齐 -->
+        <div class="toolbar-row toolbar-row-typography">
+          <div class="combo-control linespacing-control">
+            <label>行间距</label>
+            <input
+              type="number"
+              v-model.number="localLineSpacing"
+              class="toolbar-mini-input linespacing-input"
+              min="0.5"
+              max="3"
+              step="0.1"
+              title="行间距倍数（0.5 - 3.0）"
+              @change="handleLineSpacingChange"
+            />
+          </div>
+
+          <div class="toolbar-divider vertical"></div>
+
+          <div class="toolbar-icon-group" aria-label="对齐方式" title="横排=水平对齐，竖排=列内字符对齐">
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'start'"
+              @click="setTextAlign('start')"
+              :title="localTextDirection === 'vertical' ? '顶部对齐' : '左对齐'"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'center'"
+              @click="setTextAlign('center')"
+              title="居中对齐"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M2 4h12M4 8h8M3 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button
+              class="toolbar-btn"
+              :data-active="localTextAlign === 'end'"
+              @click="setTextAlign('end')"
+              :title="localTextDirection === 'vertical' ? '底部对齐' : '右对齐'"
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M2 4h12M6 8h8M4 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
         <!-- 第三行：旋转 + 位置 -->
         <div class="toolbar-row toolbar-row-bottom">
           <div class="toolbar-rotation-group" title="旋转角度">
@@ -389,8 +441,8 @@
  */
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
-import type { BubbleState, TextDirection, InpaintMethod } from '@/types/bubble'
+import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY, DEFAULT_LINE_SPACING, DEFAULT_TEXT_ALIGN } from '@/constants'
+import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import { getFontListApi } from '@/api/config'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -453,6 +505,8 @@ const defaultBubble: BubbleState = {
   rotationAngle: 0,
   inpaintMethod: 'solid',
   position: { x: 0, y: 0 },
+  lineSpacing: DEFAULT_LINE_SPACING,
+  textAlign: DEFAULT_TEXT_ALIGN,
 }
 
 // ============================================================
@@ -473,6 +527,8 @@ const localRotationAngle = ref(0)
 const localInpaintMethod = ref<InpaintMethod>('solid')
 const localPositionX = ref(0)
 const localPositionY = ref(0)
+const localLineSpacing = ref(DEFAULT_LINE_SPACING)
+const localTextAlign = ref<TextAlign>(DEFAULT_TEXT_ALIGN)
 
 // 文本输入框引用
 const originalTextInput = ref<HTMLTextAreaElement | null>(null)
@@ -558,6 +614,8 @@ function syncFromBubble(bubble: BubbleState | null): void {
   localInpaintMethod.value = b.inpaintMethod
   localPositionX.value = b.position?.x || 0
   localPositionY.value = b.position?.y || 0
+  localLineSpacing.value = b.lineSpacing ?? DEFAULT_LINE_SPACING
+  localTextAlign.value = b.textAlign ?? DEFAULT_TEXT_ALIGN
 }
 
 // 监听 props 变化，同步本地状态
@@ -694,6 +752,25 @@ function handleInpaintMethodChange(): void {
 }
 
 // ============================================================
+// 事件处理 - 行间距与对齐
+// ============================================================
+
+/** 处理行间距变化（限制在 0.5-3.0） */
+function handleLineSpacingChange(): void {
+  let v = Number(localLineSpacing.value)
+  if (!Number.isFinite(v) || v <= 0) v = DEFAULT_LINE_SPACING
+  v = Math.max(0.5, Math.min(3.0, v))
+  localLineSpacing.value = v
+  emit('update', { lineSpacing: v })
+}
+
+/** 设置对齐方式 */
+function setTextAlign(align: TextAlign): void {
+  localTextAlign.value = align
+  emit('update', { textAlign: align })
+}
+
+// ============================================================
 // 事件处理 - 旋转
 // ============================================================
 
@@ -778,6 +855,8 @@ function applyToAll(): void {
     strokeColor: localStrokeColor.value,
     strokeWidth: localStrokeWidth.value,
     inpaintMethod: localInpaintMethod.value,
+    lineSpacing: localLineSpacing.value,
+    textAlign: localTextAlign.value,
   })
   console.log('样式已应用到所有气泡')
   // 触发重新渲染
@@ -1117,12 +1196,17 @@ onMounted(() => {
 }
 
 .toolbar-row-actions,
+.toolbar-row-typography,
 .toolbar-row-bottom {
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid rgb(226, 232, 240, 0.9);
   border-radius: 10px;
   background: linear-gradient(180deg, #fbfcff 0%, #f4f6ff 100%);
+}
+
+.linespacing-input {
+  width: 64px;
 }
 
 .combo-control {

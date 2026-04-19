@@ -436,6 +436,8 @@ export const useSessionStore = defineStore('session', () => {
           strokeEnabled: (img.strokeEnabled as boolean) ?? false,
           strokeColor: (img.strokeColor as string) || '#FFFFFF',
           strokeWidth: (img.strokeWidth as number) || 2,
+          lineSpacing: (img.lineSpacing as number) ?? 1.0,
+          textAlign: (img.textAlign as 'start' | 'center' | 'end') || 'center',
           // 双掩膜系统字段
           textMask: (img.textMask as string) || null,
           userMask: (img.userMask as string) || null,
@@ -517,6 +519,8 @@ export const useSessionStore = defineStore('session', () => {
           strokeEnabled: (uiSettings.strokeEnabled as boolean) ?? settingsStore.settings.textStyle.strokeEnabled,
           strokeColor: (uiSettings.strokeColor as string) || settingsStore.settings.textStyle.strokeColor,
           strokeWidth: (uiSettings.strokeWidth as number) || settingsStore.settings.textStyle.strokeWidth,
+          lineSpacing: (uiSettings.lineSpacing as number) ?? settingsStore.settings.textStyle.lineSpacing,
+          textAlign: (uiSettings.textAlign as 'start' | 'center' | 'end') || settingsStore.settings.textStyle.textAlign,
           useAutoTextColor: (uiSettings.useAutoTextColor as boolean) ?? settingsStore.settings.textStyle.useAutoTextColor,
         })
 
@@ -611,6 +615,8 @@ export const useSessionStore = defineStore('session', () => {
         strokeEnabled: textStyle.strokeEnabled,
         strokeColor: textStyle.strokeColor,
         strokeWidth: textStyle.strokeWidth,
+        lineSpacing: textStyle.lineSpacing,
+        textAlign: textStyle.textAlign,
         useAutoTextColor: textStyle.useAutoTextColor,
       }
 

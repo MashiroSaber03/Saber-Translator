@@ -182,6 +182,8 @@ export function useSequentialPipeline() {
             strokeEnabled: textStyle.strokeEnabled,
             strokeColor: textStyle.strokeColor,
             strokeWidth: textStyle.strokeWidth,
+            lineSpacing: textStyle.lineSpacing,
+            textAlign: textStyle.textAlign,
             useAutoTextColor: textStyle.useAutoTextColor,
             inpaintMethod: textStyle.inpaintMethod
         }
@@ -408,6 +410,8 @@ export function useSequentialPipeline() {
             strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
             strokeColor: savedTextStyles?.strokeColor ?? textStyle.strokeColor,
             strokeWidth: savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
+            lineSpacing: savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
+            textAlign: savedTextStyles?.textAlign ?? textStyle.textAlign,
             inpaintMethod: savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod,
             useAutoTextColor: savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
         })
@@ -696,6 +700,8 @@ export function useSequentialPipeline() {
                     strokeEnabled: savedTextStyles.strokeEnabled,
                     strokeColor: savedTextStyles.strokeColor,
                     strokeWidth: savedTextStyles.strokeWidth,
+                    lineSpacing: savedTextStyles.lineSpacing,
+                    textAlign: savedTextStyles.textAlign,
                     inpaintMethod: savedTextStyles.inpaintMethod,
                     useAutoTextColor: savedTextStyles.useAutoTextColor
                 })

@@ -19,6 +19,13 @@ export type PolygonCoords = number[][]
 export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
 /**
+ * 文本对齐方式（横竖通用）
+ * - 横排：start=左对齐，center=居中，end=右对齐
+ * - 竖排：start=顶部对齐，center=居中，end=底部对齐
+ */
+export type TextAlign = 'start' | 'center' | 'end'
+
+/**
  * 修复方式
  */
 export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
@@ -76,6 +83,12 @@ export interface BubbleState {
   /** 描边宽度 */
   strokeWidth: number
 
+  // 排版参数
+  /** 行间距倍数（默认 1.0） */
+  lineSpacing: number
+  /** 对齐方式（横排=水平对齐，竖排=列内字符对齐） */
+  textAlign: TextAlign
+
   // 修复参数
   /** 修复方式 */
   inpaintMethod: InpaintMethod
@@ -126,6 +139,8 @@ export interface BubbleGlobalDefaults {
   strokeEnabled?: boolean
   strokeColor?: string
   strokeWidth?: number
+  lineSpacing?: number
+  textAlign?: TextAlign
 }
 
 // ============================================================

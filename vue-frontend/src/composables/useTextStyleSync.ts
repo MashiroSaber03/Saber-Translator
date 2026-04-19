@@ -28,6 +28,8 @@ export interface ApplySettingsOptions {
     strokeEnabled: boolean
     strokeColor: boolean
     strokeWidth: boolean
+    lineSpacing: boolean
+    textAlign: boolean
 }
 
 /**
@@ -69,6 +71,8 @@ export function useTextStyleSync() {
             strokeEnabled: image.strokeEnabled ?? currentStyle.strokeEnabled,
             strokeColor: image.strokeColor ?? currentStyle.strokeColor,
             strokeWidth: image.strokeWidth ?? currentStyle.strokeWidth,
+            lineSpacing: image.lineSpacing ?? currentStyle.lineSpacing,
+            textAlign: image.textAlign ?? currentStyle.textAlign,
             inpaintMethod: image.inpaintMethod ?? currentStyle.inpaintMethod,
             useAutoTextColor: image.useAutoTextColor ?? currentStyle.useAutoTextColor
         })
@@ -92,6 +96,8 @@ export function useTextStyleSync() {
             strokeEnabled: style.strokeEnabled,
             strokeColor: style.strokeColor,
             strokeWidth: style.strokeWidth,
+            lineSpacing: style.lineSpacing,
+            textAlign: style.textAlign,
             inpaintMethod: style.inpaintMethod,
             useAutoTextColor: style.useAutoTextColor
         })
@@ -159,7 +165,8 @@ export function useTextStyleSync() {
 
         // 需要重新渲染的设置项（与原版 renderSettings 一致）
         const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
-            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor']
+            'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor',
+            'lineSpacing', 'textAlign']
 
         if (!renderSettings.includes(settingKey)) {
             return
@@ -176,7 +183,9 @@ export function useTextStyleSync() {
             'strokeEnabled': 'strokeEnabled',
             'strokeColor': 'strokeColor',
             'strokeWidth': 'strokeWidth',
-            'fillColor': 'fillColor'
+            'fillColor': 'fillColor',
+            'lineSpacing': 'lineSpacing',
+            'textAlign': 'textAlign'
         }
 
         const stateProperty = propertyMap[settingKey]
@@ -249,6 +258,8 @@ export function useTextStyleSync() {
                 strokeEnabled: bs.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
                 strokeColor: bs.strokeColor || settingsStore.settings.textStyle.strokeColor,
                 strokeWidth: bs.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+                lineSpacing: bs.lineSpacing ?? settingsStore.settings.textStyle.lineSpacing,
+                textAlign: bs.textAlign ?? settingsStore.settings.textStyle.textAlign,
             }))
 
             const bubbleTexts = bubbleStatesForApi.map(s => s.translatedText)
@@ -294,6 +305,8 @@ export function useTextStyleSync() {
                     strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
                     strokeColor: settingsStore.settings.textStyle.strokeColor,
                     strokeWidth: settingsStore.settings.textStyle.strokeWidth,
+                    lineSpacing: settingsStore.settings.textStyle.lineSpacing,
+                    textAlign: settingsStore.settings.textStyle.textAlign,
                 }
             )
 
@@ -378,6 +391,8 @@ export function useTextStyleSync() {
                     strokeEnabled: bs.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
                     strokeColor: bs.strokeColor || settingsStore.settings.textStyle.strokeColor,
                     strokeWidth: bs.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
+                    lineSpacing: bs.lineSpacing ?? settingsStore.settings.textStyle.lineSpacing,
+                    textAlign: bs.textAlign ?? settingsStore.settings.textStyle.textAlign,
                 }))
 
                 const bubbleTexts = bubbleStatesForApi.map(s => s.translatedText)
@@ -403,6 +418,8 @@ export function useTextStyleSync() {
                         strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
                         strokeColor: settingsStore.settings.textStyle.strokeColor,
                         strokeWidth: settingsStore.settings.textStyle.strokeWidth,
+                        lineSpacing: settingsStore.settings.textStyle.lineSpacing,
+                        textAlign: settingsStore.settings.textStyle.textAlign,
                     }
                 )
 
@@ -518,6 +535,8 @@ export function useTextStyleSync() {
                 strokeEnabled: textStyle.strokeEnabled,
                 strokeColor: textStyle.strokeColor,
                 strokeWidth: textStyle.strokeWidth,
+                lineSpacing: textStyle.lineSpacing,
+                textAlign: textStyle.textAlign,
             }
 
             /**
@@ -583,6 +602,10 @@ export function useTextStyleSync() {
                 if (options.strokeColor) updatedBubble.strokeColor = fixedSettings.strokeColor
                 if (options.strokeWidth) updatedBubble.strokeWidth = fixedSettings.strokeWidth
 
+                // 排版设置
+                if (options.lineSpacing) updatedBubble.lineSpacing = fixedSettings.lineSpacing
+                if (options.textAlign) updatedBubble.textAlign = fixedSettings.textAlign
+
                 return updatedBubble
             }
 
@@ -620,6 +643,8 @@ export function useTextStyleSync() {
                 if (options.strokeEnabled) imageUpdates.strokeEnabled = fixedSettings.strokeEnabled
                 if (options.strokeColor) imageUpdates.strokeColor = fixedSettings.strokeColor
                 if (options.strokeWidth) imageUpdates.strokeWidth = fixedSettings.strokeWidth
+                if (options.lineSpacing) imageUpdates.lineSpacing = fixedSettings.lineSpacing
+                if (options.textAlign) imageUpdates.textAlign = fixedSettings.textAlign
 
                 imageStore.updateImageByIndex(i, imageUpdates)
 
@@ -644,6 +669,8 @@ export function useTextStyleSync() {
             if (options.strokeEnabled) appliedItems.push('描边开关')
             if (options.strokeColor) appliedItems.push('描边颜色')
             if (options.strokeWidth) appliedItems.push('描边宽度')
+            if (options.lineSpacing) appliedItems.push('行间距')
+            if (options.textAlign) appliedItems.push('对齐方式')
 
             // 重新渲染已翻译的图片
             if (imagesToReRender.length > 0) {
@@ -713,6 +740,8 @@ export function useTextStyleSync() {
                             strokeEnabled: img.strokeEnabled,
                             strokeColor: img.strokeColor,
                             strokeWidth: img.strokeWidth,
+                            lineSpacing: img.lineSpacing ?? textStyle.lineSpacing,
+                            textAlign: img.textAlign ?? textStyle.textAlign,
                             inpaintMethod: img.inpaintMethod,
                             useAutoTextColor: img.useAutoTextColor
                         }

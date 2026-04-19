@@ -88,6 +88,10 @@ export interface ImageData {
   strokeColor: string
   /** 描边宽度 */
   strokeWidth: number
+  /** 行间距倍数 */
+  lineSpacing?: number
+  /** 对齐方式 */
+  textAlign?: 'start' | 'center' | 'end'
   /** 是否使用自动检测的文字颜色 */
   useAutoTextColor?: boolean
 
