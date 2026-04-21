@@ -56,88 +56,64 @@ SPECIAL_CHARS = {'‼', '⁉', '︕', '︖', '︙', '⋮', '⋯'}
 
 # =============================================================================
 # 竖排标点符号处理系统
+#
+# 设计：竖排保留原字符并在渲染时整体旋转 90°，不再做字符替换。本节只保留若干
+# 字符集合用于旋转判定：
+#   - LEGACY_VERTICAL_CHARS：已是竖排字形的字符（用户历史数据或手动输入），
+#     遇到时保持原样、不再二次旋转
+#   - UPRIGHT_IN_VERTICAL：竖排下保持直立的标点（感叹/问/句/逗/冒/分号等）
+#   - EXTRA_VERTICAL_ROTATE_CHARS：Unicode 类别非 P 但应旋转的字符（⋯ ～）
 # =============================================================================
 
-# --- CJK 横转竖标点符号映射表 ---
-CJK_H2V = {
-    # === 基础标点符号 ===
-    "‥": "︰",      # 两点省略号
-    "—": "︱",      # 破折号
-    "―": "|",       # 水平线
-    "–": "︲",      # 短破折号
-    "_": "︴",      # 下划线
-    
-    # === 括号类 - 基础 ===
-    "(": "︵",  ")": "︶",      # 英文圆括号
-    "（": "︵", "）": "︶",     # 中文圆括号
-    "{": "︷",  "}": "︸",      # 花括号
-    "〔": "︹", "〕": "︺",     # 龟甲括号
-    "【": "︻", "】": "︼",     # 方头括号
-    "《": "︽", "》": "︾",     # 书名号
-    "〈": "︿", "〉": "﹀",     # 单尖括号
-    "[": "﹇",  "]": "﹈",      # 英文方括号
-    
-    # === 括号类 - 扩展 Unicode ===
-    "⟨": "︿", "⟩": "﹀",       # 数学尖括号
-    "⟪": "︿", "⟫": "﹀",       # 数学双尖括号
-    "⦅": "︵", "⦆": "︶",       # 全角括号变体
-    "❨": "︵", "❩": "︶",       # 装饰圆括号
-    "❪": "︷", "❫": "︸",       # 装饰花括号
-    "❬": "﹇", "❭": "﹈",       # 装饰方括号
-    "❮": "︿", "❯": "﹀",       # 装饰尖括号
-    
-    # === 引号类 ===
-    "「": "﹁", "」": "﹂",     # 日式单引号
-    "『": "﹃", "』": "﹄",     # 日式双引号
-    "﹑": "﹅",                 # 顿号变体
-    "﹆": "﹆",                 # 保持不变
-    '"': "﹁", '"': "﹂",       # 弯双引号
-    "'": "﹁", "'": "﹂",       # 弯单引号
-    "″": "﹂", "‴": "﹂",       # Prime 符号
-    "‶": "﹁", "ⷷ": "﹁",       # Prime 变体
-    
-    # === 装饰线 ===
-    "﹉": "﹉", "﹊": "﹊",     # 虚线
-    "﹋": "﹋", "﹌": "﹌",     # 虚线
-    "﹍": "﹍", "﹎": "﹎",     # 虚线
-    "﹏": "﹏",                 # 波浪线
-    
-    # === 省略号类 ===
-    "…": "⋮",      # 水平省略号 → 竖向三点
-    "⋯": "︙",     # 居中省略号 → 竖向省略号
-    "⋰": "⋮",     # 对角省略号 → 竖向三点
-    "⋱": "⋮",     # 对角省略号 → 竖向三点
-    
-    # === 波浪线类 ===
-    "~": "︴",      # ASCII 波浪线
-    "〜": "︴",     # 日文波浪线
-    "～": "︴",     # 全角波浪线
-    "〰": "︴",     # 波浪破折号
-    
-    # === 感叹问号类（重要！专用竖排变体）===
-    "!": "︕",      # 英文感叹号
-    "?": "︖",      # 英文问号
-    "！": "︕",     # 中文全角感叹号
-    "？": "︖",     # 中文全角问号
-    "؟": "︖",     # 阿拉伯问号
-    "¿": "︖",     # 西班牙倒问号
-    "¡": "︕",     # 西班牙倒感叹号
-    
-    # === 句点类 ===
-    ".": "︒",      # 英文句点
-    "。": "︒",     # 中文句号
-    
-    # === 分隔符类 ===
-    ";": "︔",  "；": "︔",     # 分号
-    ":": "︓",  "：": "︓",     # 冒号
-    ",": "︐",  "，": "︐",     # 逗号
-    "‚": "︐",  "„": "︐",      # 低引号
-    "-": "︲",  "−": "︲",      # 连字符
-    "・": "·",                  # 中黑点
+# --- 已是竖排字形的字符集合（用户直接输入时不再二次旋转） ---
+# 涵盖 CJK Compatibility Forms 的竖排变体、组合标点族、以及旋转对称字符。
+# 注：· 仅放在 UPRIGHT_IN_VERTICAL 里，不再重复放进 LEGACY。
+LEGACY_VERTICAL_CHARS = {
+    # 组合标点族（已是紧凑竖排字形）
+    '‼', '⁉', '⁇', '⁈',
+    # ASCII 旋转对称字符
+    '|',
+    # 竖向省略号
+    '⋮', '︙',
+    # 竖排句读（CJK Compatibility Forms）
+    '︐', '︑', '︒', '︓', '︔', '︕', '︖',
+    # 两点省略 / 破折号 / 连字符 / 下划 / 波浪（竖向）
+    '︰', '︱', '︲', '︳', '︴',
+    # 竖排括号（圆/花/龟甲/方头/书名/尖/方/白方头）
+    '︵', '︶', '︷', '︸', '︹', '︺', '︻', '︼', '︽', '︾', '︿', '﹀',
+    '︗', '︘', '﹇', '﹈',
+    # 竖排引号（日式 corner bracket）
+    '﹁', '﹂', '﹃', '﹄',
+    # 着重号
+    '﹅', '﹆',
+    # 竖向虚线 / 波浪线装饰
+    '﹉', '﹊', '﹋', '﹌', '﹍', '﹎', '﹏',
 }
 
-# --- CJK 竖转横标点符号映射表 (反向映射) ---
-CJK_V2H = {v: k for k, v in CJK_H2V.items()}
+# --- 竖排下保持直立（不旋转）的标点集合 ---
+# 这些字符旋转 90° 后字形会"躺倒"（叹号/问号的主笔画变横向、点变成侧面），
+# 视觉上不自然。CJK 竖排惯例是：感叹/问号、句读点、中黑点等保持直立。
+# 注意：冒号分号（: ; ： ；）走旋转路径——它们的竖排传统形态是"两点横向并列"
+# （CJK Compatibility Forms 的 ︓ ︔），恰好是 90° 旋转的结果。
+UPRIGHT_IN_VERTICAL = {
+    # 感叹号 / 问号
+    '!', '?', '！', '？', '¿', '¡', '؟',
+    # 句点
+    '.', '。',
+    # 逗号 / 顿号
+    ',', '，', '、',
+    # 中黑点 / 两点省略
+    '·', '・', '‥',
+}
+
+# --- 竖排需要旋转但 Unicode 类别不是 P 的字符 ---
+# 这些字符语义上是"线性延展"标点，但 unicodedata 把它们归为 Sm（数学符号），
+# is_punctuation 返回 False。显式加入以触发 90° 旋转，与同族的 Pd 类保持一致。
+EXTRA_VERTICAL_ROTATE_CHARS = {
+    '⋯',   # U+22EF MIDLINE HORIZONTAL ELLIPSIS（居中省略号）
+    '～',   # U+FF5E FULLWIDTH TILDE
+    '−',   # U+2212 MINUS SIGN（视觉等同 -，应与破折号/连字符同步旋转）
+}
 
 # --- 特殊组合标点映射 (保留用于组合符号处理) ---
 SPECIAL_PUNCTUATION_PATTERNS = [
@@ -153,39 +129,19 @@ SPECIAL_PUNCTUATION_PATTERNS = [
     ('？！', '⁉'),     # 中文问号加感叹号
 ]
 
-# --- 需要垂直居中校正的竖排标点符号 ---
-# 这些是 CJK Compatibility Forms 的竖排标点，某些字体（如微软雅黑）对这些字符
-# 的垂直位置处理不正确（偏上），需要在渲染时进行手动校正
-VERTICAL_CENTER_PUNCTUATION = {
-    # 竖排句读标点
-    '︒', '︐', '︑', '︓', '︔', '︕', '︖', '︰',
-    # 竖排括号
-    '︵', '︶', '︷', '︸', '︹', '︺', '︻', '︼', '︽', '︾', '︿', '﹀',
-    # 竖排引号
-    '﹁', '﹂', '﹃', '﹄',
-    # 竖排线类
-    '︱', '︲', '︳', '︴',
-    # 竖排省略号
-    '︙', '⋮',
-    # 其他竖排符号
-    '﹅', '﹆', '﹇', '﹈',
-    # 特殊组合标点（双感叹号、感叹问号等）
-    '‼', '⁉',
-}
-
 
 def is_punctuation(ch: str) -> bool:
     """
     检查字符是否为标点符号
-    
+
     Args:
         ch: 单个字符
-        
+
     Returns:
         是否为标点符号
     """
     import unicodedata
-    
+
     cp = ord(ch)
     # ASCII 标点符号
     if ((cp >= 33 and cp <= 47) or (cp >= 58 and cp <= 64) or
@@ -196,22 +152,6 @@ def is_punctuation(ch: str) -> bool:
     if cat.startswith("P"):
         return True
     return False
-
-
-def is_vertical_punctuation(ch: str) -> bool:
-    """
-    检查字符是否为竖排标点符号（需要垂直居中校正）
-    
-    某些字体（如微软雅黑）对 CJK Compatibility Forms 的竖排标点
-    处理不正确，导致标点位置偏上。此函数用于识别这些需要校正的字符。
-    
-    Args:
-        ch: 单个字符
-        
-    Returns:
-        是否为需要垂直居中校正的竖排标点
-    """
-    return ch in VERTICAL_CENTER_PUNCTUATION
 
 
 # =============================================================================
@@ -341,72 +281,69 @@ def get_char_ink_offset(char: str, font: ImageFont.FreeTypeFont) -> Tuple[float,
 def compact_special_symbols(text: str) -> str:
     """
     预处理特殊符号
-    
+
     处理逻辑：
-    1. 替换半角省略号
-    2. 将西文省略号(U+2026,贴底)替换为居中省略号(U+22EF)，解决横排省略号位置偏下的问题
-    
+    - 将连续的半角点（.. / ...）合并为省略号 …
+
     注意事项：
+    - 不再做 … → ⋯ 的二次替换：该替换原本是横排下为解决 U+2026 贴底问题加的补丁，
+      但会使字符码点从主字体常见的 U+2026 变为冷门的 U+22EF，在竖排旋转路径下触发
+      字体回退，导致省略号的字形风格与正文不一致（用户感知为"字体变了"）。
     - 不再合并连续省略号，以保留原文的情感表达层次
       (例如: ...... 表示长时间沉默，不应被压缩为 ...)
     - 不删除标点后的空格，保留用户/AI输出的原始格式
-    
+
     Args:
         text: 原始文本
-        
+
     Returns:
         处理后的文本
     """
     if not text:
         return text
-    
-    # 替换半角省略号
+
+    # 将半角点合并为省略号
     text = text.replace('...', '…')
     text = text.replace('..', '…')
-    
-    # 将西文省略号(U+2026,贴底)替换为居中省略号(U+22EF)
-    # 解决横排省略号位置偏下的问题
-    text = text.replace('…', '⋯')
-    
+
     return text
 
 
 def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, int]:
     """
-    CJK兼容形式标点符号转换
-    
-    根据排版方向将标点符号转换为对应的形式。
-    
+    决定字符在竖排渲染时的旋转角度（不再做字符替换）。
+
+    新策略：保留原字符，竖排下对"线性延展"类标点（括号、破折号、波浪、引号、
+    省略号等）整体旋转 90°；对"点状/句读"类标点（感叹/问/句/逗/冒/分号等）
+    保持直立以避免字形躺倒。
+
     Args:
         cdpt: 单个字符
-        direction: 排版方向，0 = 横排，1 = 竖排
-        
+        direction: 0 = 横排，1 = 竖排
+
     Returns:
-        Tuple[str, int]: (转换后的字符, 旋转角度)
-        旋转角度通常为 0，特殊情况（如日文长音符号）可能为 90
+        Tuple[str, int]: (字符, 旋转角度)
+        - 横排：始终 (cdpt, 0)
+        - 竖排：
+            * ー 返回 (ー, 90)
+            * UPRIGHT_IN_VERTICAL（感叹/问/句/逗/冒/分号等）保持 0°
+            * LEGACY_VERTICAL_CHARS（旧 CJK Compatibility Forms + ‼ ⁉）保持 0°
+            * 其余标点及 EXTRA_VERTICAL_ROTATE_CHARS 返回 (cdpt, 90)
+            * 非标点（汉字/假名等）保持 0°
     """
-    # 特殊处理：日文长音符号在竖排时需要旋转 90 度
-    if cdpt == 'ー' and direction == 1:
-        return 'ー', 90
-    
-    # 竖→横 转换
-    if cdpt in CJK_V2H:
-        if direction == 0:
-            # 横排时，将竖排符号转为横排
-            return CJK_V2H[cdpt], 0
-        else:
-            # 竖排时，保持不变
-            return cdpt, 0
-    
-    # 横→竖 转换
-    elif cdpt in CJK_H2V:
-        if direction == 1:
-            # 竖排时，将横排符号转为竖排
-            return CJK_H2V[cdpt], 0
-        else:
-            # 横排时，保持不变
-            return cdpt, 0
-    
+    if direction == 0:
+        return cdpt, 0
+
+    if cdpt == 'ー':
+        return cdpt, 90
+
+    # 直立：CJK 竖排下这些标点保持原方向，旋转会导致字形躺倒
+    if cdpt in UPRIGHT_IN_VERTICAL or cdpt in LEGACY_VERTICAL_CHARS:
+        return cdpt, 0
+
+    if is_punctuation(cdpt) or cdpt in EXTRA_VERTICAL_ROTATE_CHARS:
+        return cdpt, 90
+
     return cdpt, 0
 
 
@@ -470,44 +407,47 @@ def auto_add_horizontal_tags(text: str) -> str:
 def process_text_for_vertical(text: str) -> str:
     """
     为竖排渲染预处理文本
-    
-    注意：这个函数只做预处理，不做字符转换！
-    字符转换（CJK_Compatibility_Forms_translate）在渲染函数中逐字符进行，
-    这样才能正确处理需要旋转的字符（如日文长音符号 ー）。
-    
+
+    竖排不再做字符替换，字符级的旋转在 draw_multiline_text_vertical 中
+    按 CJK_Compatibility_Forms_translate 的返回值逐字符决定。
+
     处理流程：
-    1. 调用 compact_special_symbols 统一省略号格式
-    2. 处理特殊组合标点（如 !! → ‼）
-    3. 在竖排文本中，将省略号替换为竖排省略号符号
+    1. 调用 compact_special_symbols 统一省略号格式（... → …）
+    2. 处理特殊组合标点（如 !! → ‼，!? → ⁉）
+    3. 把连续的"线性延展"标点（省略号 / 破折号 / 波浪，长度 >= 2）
+       包成 <E>...</E> 块，渲染时整段旋转以消除逐字旋转导致的拼接缝
     4. 自动为英文/数字添加 <H> 横排标签
-    
+
     Args:
         text: 原始文本
-        
+
     Returns:
         预处理后的文本（尚未进行字符转换）
     """
     if not text:
         return text
-    
-    # 步骤1: 预处理特殊符号
+
+    # 步骤1: 预处理特殊符号（合并 ... 为 …）
     text = compact_special_symbols(text)
-    
-    # 步骤2: 处理特殊组合标点
+
+    # 步骤2: 处理特殊组合标点（合并后由渲染层决定是否旋转）
     for pattern, replacement in SPECIAL_PUNCTUATION_PATTERNS:
         text = text.replace(pattern, replacement)
-    
-    # 步骤3: 在竖排文本中，将省略号替换为竖排省略号符号
-    text = text.replace('…', '︙')
-    text = text.replace('⋯', '︙')
-    
+
+    # 步骤3: 聚合"线性延展"类标点的连续段为 <E> 块（≥ 2 个才打包）
+    # 目的：这些字符单独旋转后相邻两个之间会出现明显拼接缝（例如 —— 出现 ~10px
+    # 横向空隙，…… 出现点间断开）。打包成一段整体旋转，一次墨迹、无缝连接。
+    # 各族内部连续才聚合，跨族不合并（如 —～ 不打包）。
+    for pattern in (
+        r'[…⋯]{2,}',          # 省略号族
+        r'[—–―─]{2,}',        # 破折号族（EM / EN / HORIZONTAL BAR / BOX DRAWINGS LIGHT HORIZONTAL）
+        r'[～〜〰]{2,}',        # 波浪族
+    ):
+        text = re.sub(pattern, lambda m: f'<E>{m.group(0)}</E>', text)
+
     # 步骤4: 自动为英文/数字添加 <H> 横排标签
     text = auto_add_horizontal_tags(text)
-    
-    # 注意：不在此处进行字符转换！
-    # 字符转换将在渲染函数 draw_multiline_text_vertical 中逐字符进行，
-    # 这样才能正确获取和处理旋转角度。
-    
+
     return text
 
 
@@ -800,8 +740,91 @@ def render_horizontal_block(content: str, font, font_size: int,
     
     # 使用正确的透明度混合
     _paste_with_alpha(canvas_image, final_block, paste_x, paste_y)
-    
+
     # 返回分配的空间高度（整数个单位），确保后续文本位置正确
+    return allocated_height
+
+
+def render_ellipsis_block(content: str, font, font_size: int,
+                          fill, stroke_enabled: bool, stroke_color,
+                          stroke_width, canvas_image: Optional[Image.Image],
+                          current_x_col: int, current_y: float,
+                          line_width: int, line_height_unit: int) -> int:
+    """
+    渲染"线性延展"标点的连续段：把 N 个横向字符合成一条横带，整体旋转 90°
+    后作为 N 个单元格高度的连续竖向笔迹。
+
+    适用场景：连续的省略号 `……`、破折号 `——`、波浪 `～～`（由预处理统一打包
+    成 <E>...</E>）。相比逐字符旋转再逐格放置，一次性旋转可以保留字体对字符
+    内部间距/形状的设计，并消除相邻字符间 line_height_approx 大于墨水高度
+    造成的拼接缝（实测破折号独立渲染会露 10px 空隙）。
+
+    Args:
+        content: 连续同类字符串（长度 >= 1，通常 >= 2 才会走此路径）
+        line_width: 当前列宽（用于水平居中）
+        line_height_unit: 单元格高度（与普通字符一致）
+
+    Returns:
+        占用的总像素高度 = len(content) * line_height_unit
+    """
+    if not content or canvas_image is None:
+        return len(content) * line_height_unit
+
+    allocated_height = len(content) * line_height_unit
+
+    # 1) 测量横向整串的墨水 bbox
+    try:
+        full_bbox = font.getbbox(content)
+    except Exception:
+        return allocated_height
+    content_w = max(1, full_bbox[2] - full_bbox[0])
+    content_h = max(1, full_bbox[3] - full_bbox[1])
+
+    # 2) 创建临时 RGBA 画布；留 padding 容纳描边与抗锯齿
+    padding = max(10, int(stroke_width * 2) if stroke_enabled else 10)
+    temp_w = content_w + padding * 2
+    temp_h = content_h + padding * 2
+    temp_img = Image.new('RGBA', (temp_w, temp_h), (0, 0, 0, 0))
+    temp_draw = ImageDraw.Draw(temp_img)
+
+    # 3) 绘制横向串；把 bbox 的左上角对齐到 (padding, padding)
+    text_params = {'font': font, 'fill': fill}
+    if stroke_enabled:
+        text_params['stroke_width'] = int(stroke_width)
+        text_params['stroke_fill'] = stroke_color
+    draw_x = padding - full_bbox[0]
+    draw_y = padding - full_bbox[1]
+    try:
+        temp_draw.text((draw_x, draw_y), content, **text_params)
+    except Exception as e:
+        logger.warning(f"省略号块绘制失败: {e}")
+        return allocated_height
+
+    # 4) 整体旋转 90° 顺时针
+    rotated = temp_img.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
+
+    # 5) 按 alpha 裁剪到实际墨迹
+    try:
+        rotated_arr = np.array(rotated)
+        alpha = rotated_arr[:, :, 3]
+        non_zero = np.where(alpha > 10)
+        if len(non_zero[0]) > 0:
+            min_y, max_y = non_zero[0].min(), non_zero[0].max()
+            min_x, max_x = non_zero[1].min(), non_zero[1].max()
+            cropped = rotated.crop((min_x, min_y, max_x + 1, max_y + 1))
+        else:
+            cropped = rotated
+    except Exception:
+        cropped = rotated
+
+    actual_w, actual_h = cropped.size
+
+    # 6) 水平居中到列宽，垂直居中到 allocated_height
+    paste_x = int((current_x_col - line_width) + (line_width - actual_w) / 2.0)
+    paste_y = int(current_y + (allocated_height - actual_h) / 2.0)
+
+    _paste_with_alpha(canvas_image, cropped, paste_x, paste_y)
+
     return allocated_height
 
 
@@ -916,14 +939,15 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
             # 空段落，跳过（换列已在上面处理）
             continue
 
-        # 分割段落为普通文本和横排块
-        parts = re.split(r'(<H>.*?</H>)', paragraph, flags=re.IGNORECASE | re.DOTALL)
+        # 分割段落为普通文本、横排块和省略号块
+        parts = re.split(r'(<H>.*?</H>|<E>.*?</E>)', paragraph, flags=re.IGNORECASE | re.DOTALL)
 
         for part in parts:
             if not part:
                 continue
 
             is_h_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
+            is_e_block = part.lower().startswith('<e>') and part.lower().endswith('</e>')
 
             if is_h_block:
                 # 横排块：计算其高度并作为整体处理
@@ -950,6 +974,22 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     current_column_height += block_height
                 else:
                     # 需要换列
+                    if current_line:
+                        lines.append(current_line)
+                        line_heights.append(current_column_height)
+                    current_line = part
+                    current_column_height = block_height
+            elif is_e_block:
+                # 省略号块：每个 … / ⋯ 占 1 个单元格高度，整段原子放置
+                content = part[3:-4]  # 去除 <E> 和 </E>
+                if not content:
+                    continue
+                block_height = len(content) * line_height_approx
+
+                if current_column_height + block_height <= max_height:
+                    current_line += part
+                    current_column_height += block_height
+                else:
                     if current_line:
                         lines.append(current_line)
                         line_heights.append(current_column_height)
@@ -1027,17 +1067,16 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         # 获取当前列的实际宽度
         line_width = line_max_widths[line_idx] if line_idx < len(line_max_widths) else font_size
         
-        # ===== 分割行内容为普通文本和横排块 =====
-        # 使用正则表达式分割 <H>...</H> 标签
-        parts = re.split(r'(<H>.*?</H>)', line, flags=re.IGNORECASE | re.DOTALL)
-        
+        # ===== 分割行内容为普通文本、横排块和省略号块 =====
+        parts = re.split(r'(<H>.*?</H>|<E>.*?</E>)', line, flags=re.IGNORECASE | re.DOTALL)
+
         for part in parts:
             if not part:
                 continue
-            
-            # 检查是否为横排块
+
             is_horizontal_block = part.lower().startswith('<h>') and part.lower().endswith('</h>')
-            
+            is_ellipsis_block = part.lower().startswith('<e>') and part.lower().endswith('</e>')
+
             if is_horizontal_block:
                 # ===== 渲染横排块 =====
                 content = part[3:-4]  # 去除 <H> 和 </H>
@@ -1055,6 +1094,25 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         current_y=current_y_char,
                         line_width=line_width,
                         line_height_unit=line_height_approx  # 传递单位高度
+                    )
+                    current_y_char += block_height
+            elif is_ellipsis_block:
+                # ===== 渲染连续省略号块（整段旋转，消除拼接缝）=====
+                content = part[3:-4]  # 去除 <E> 和 </E>
+                if content:
+                    block_height = render_ellipsis_block(
+                        content=content,
+                        font=font,
+                        font_size=font_size,
+                        fill=fill,
+                        stroke_enabled=stroke_enabled,
+                        stroke_color=stroke_color,
+                        stroke_width=stroke_width,
+                        canvas_image=canvas_image,
+                        current_x_col=current_x_col,
+                        current_y=current_y_char,
+                        line_width=line_width,
+                        line_height_unit=line_height_approx,
                     )
                     current_y_char += block_height
             else:
@@ -1174,31 +1232,27 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         # 使用预计算的 line_width（该列实际最大字符宽度）
                         text_x_char = (current_x_col - line_width) + round((line_width - char_width) / 2.0)
                         text_y_char = current_y_char
-                        
-                        # ===== 墨水偏移校正（水平+垂直）=====
+
+                        # ===== 墨水偏移校正（水平）=====
                         # Pillow 的 getbbox() 返回的边界框可能不等于实际墨水区域
-                        # 对于某些字符（如竖排标点），实际墨水可能偏向边界框的一侧
-                        # 需要校正以实现真正的视觉居中
-                        ink_offset_x, ink_offset_y = get_char_ink_offset(converted_char, current_font)
-                        text_x_char -= ink_offset_x  # 反向补偿水平墨水偏移
-                        
-                        # ===== 竖排标点符号垂直居中校正（使用墨水偏移）=====
-                        # 获取参考汉字（如"我"）的墨水 y 偏移作为基准
-                        # 所有标点的墨水中心应该与汉字的墨水中心对齐
-                        if is_vertical_punctuation(converted_char):
-                            # 计算参考汉字的墨水偏移（使用缓存避免重复计算）
-                            if not hasattr(get_char_ink_offset, '_ref_y_offset'):
-                                ref_font = get_font(font_family_path, font_size) if font_family_path else current_font
-                                _, ref_y = get_char_ink_offset('我', ref_font)
-                                get_char_ink_offset._ref_y_offset = ref_y
-                            ref_y_offset = get_char_ink_offset._ref_y_offset
-                            
-                            # 垂直对齐：将标点的墨水中心与汉字的墨水中心对齐
-                            # 如果 ink_offset_y > ref_y_offset，说明标点偏下，需要上移
-                            # 如果 ink_offset_y < ref_y_offset，说明标点偏上，需要下移
-                            vertical_correction = ref_y_offset - ink_offset_y
-                            text_y_char += vertical_correction
-                        
+                        # 反向补偿水平墨水偏移以实现真正的视觉居中。
+                        ink_offset_x, _ = get_char_ink_offset(converted_char, current_font)
+                        text_x_char -= ink_offset_x
+
+                        # ===== 直立标点的垂直居中校正 =====
+                        # 像 ，、。. 这类字符的墨水天然贴在基线附近，若直接按 current_y_char
+                        # 绘制会落在单元格底部。这里以字符的墨水 bbox 中心为基准，把它对齐
+                        # 到单元格（line_height_approx）中心。汉字/假名自身高度占满单元格，
+                        # 不需要此校正，故仅对 UPRIGHT_IN_VERTICAL 启用。
+                        if converted_char in UPRIGHT_IN_VERTICAL:
+                            try:
+                                ink_bbox = current_font.getbbox(converted_char)
+                                ink_mid_y = (ink_bbox[1] + ink_bbox[3]) / 2.0
+                                target_mid_y = line_height_approx / 2.0
+                                text_y_char = current_y_char + (target_mid_y - ink_mid_y)
+                            except Exception:
+                                pass
+
                         # 直接绘制
                         draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
                     
