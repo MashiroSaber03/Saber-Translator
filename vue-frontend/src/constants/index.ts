@@ -298,6 +298,10 @@ export const EDIT_MODE_EVENT_NS = '.editModeUi'
 
 /** 编辑模式布局存储键 */
 export const LAYOUT_MODE_KEY = 'edit_mode_layout'
+/** 编辑模式横向布局右栏宽度存储键 */
+export const EDIT_PANEL_WIDTH_KEY = 'edit_mode_panel_width'
+/** 编辑模式纵向布局右栏高度存储键 */
+export const EDIT_PANEL_HEIGHT_KEY = 'edit_mode_panel_height'
 
 // ============================================================
 // localStorage 存储键常量

@@ -262,7 +262,7 @@ import BubbleOverlay from './BubbleOverlay.vue'
 import BubbleEditor from './BubbleEditor.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
-import { LAYOUT_MODE_KEY } from '@/constants'
+import { LAYOUT_MODE_KEY, EDIT_PANEL_WIDTH_KEY, EDIT_PANEL_HEIGHT_KEY } from '@/constants'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
 
@@ -653,6 +653,9 @@ function toggleLayout(): void {
   } catch (e) {
     console.warn('保存布局模式失败:', e)
   }
+  nextTick(() => {
+    restoreSavedPanelSize(layoutMode.value)
+  })
   // 【复刻原版 4.4】切换布局后延迟 300ms 自动适应屏幕
   // 旧版 toggleLayoutMode() 会在切换后调用 fitToScreen
   setTimeout(() => {
@@ -1408,8 +1411,49 @@ function handlePanelResize(event: MouseEvent): void {
   }
 }
 
+function restoreSavedPanelSize(layout: 'horizontal' | 'vertical'): void {
+  if (!editPanelRef.value) return
+
+  try {
+    if (layout === 'horizontal') {
+      const savedWidth = Number(localStorage.getItem(EDIT_PANEL_WIDTH_KEY) || '')
+      if (Number.isFinite(savedWidth) && savedWidth >= 300) {
+        editPanelRef.value.style.flex = `0 0 ${savedWidth}px`
+        editPanelRef.value.style.minWidth = `${savedWidth}px`
+      }
+      editPanelRef.value.style.height = ''
+    } else {
+      const savedHeight = Number(localStorage.getItem(EDIT_PANEL_HEIGHT_KEY) || '')
+      if (Number.isFinite(savedHeight) && savedHeight >= 200) {
+        editPanelRef.value.style.flex = `0 0 ${savedHeight}px`
+        editPanelRef.value.style.height = `${savedHeight}px`
+      }
+      editPanelRef.value.style.minWidth = ''
+    }
+  } catch (e) {
+    console.warn('恢复编辑面板尺寸失败:', e)
+  }
+}
+
+function persistCurrentPanelSize(): void {
+  if (!editPanelRef.value) return
+
+  try {
+    if (layoutMode.value === 'horizontal') {
+      localStorage.setItem(EDIT_PANEL_WIDTH_KEY, String(editPanelRef.value.offsetWidth))
+    } else {
+      localStorage.setItem(EDIT_PANEL_HEIGHT_KEY, String(editPanelRef.value.offsetHeight))
+    }
+  } catch (e) {
+    console.warn('保存编辑面板尺寸失败:', e)
+  }
+}
+
 /** 停止面板大小调整 */
 function stopPanelResize(): void {
+  if (isResizingPanel.value) {
+    persistCurrentPanelSize()
+  }
   isResizingPanel.value = false
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
@@ -1592,6 +1636,7 @@ onMounted(() => {
     loadBubbleStatesFromImage()
     nextTick(() => {
       workspaceRef.value?.focus()
+      restoreSavedPanelSize(layoutMode.value)
     })
   }
 })
@@ -1617,6 +1662,7 @@ watch(() => props.isEditModeActive, (active) => {
     nextTick(() => {
       workspaceRef.value?.focus()
       updateImageDimensions()
+      restoreSavedPanelSize(layoutMode.value)
       // 【修复大图问题】进入编辑模式时延迟调用 fitToScreen，确保图片正确适应屏幕
       // 特别是对于8K等超大图片，初始缩放必须正确计算
       setTimeout(() => {

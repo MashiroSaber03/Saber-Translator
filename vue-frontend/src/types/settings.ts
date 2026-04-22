@@ -3,7 +3,7 @@
  * 定义翻译设置、OCR设置、高质量翻译设置等
  */
 
-import type { TextDirection, InpaintMethod } from './bubble'
+import type { TextDirection, InpaintMethod, TextAlign } from './bubble'
 
 /**
  * OCR 引擎类型
@@ -217,6 +217,22 @@ export interface EditorColorPreset {
   strokeWidth: number
 }
 
+export interface EditorBubblePreset {
+  id: string
+  fontFamily: string
+  fontSize: number
+  lineSpacing: number
+  textDirection: TextDirection
+  textAlign: TextAlign
+  textColor: string
+  strokeEnabled: boolean
+  strokeColor: string
+  strokeWidth: number
+  rotationAngle: number
+  inpaintMethod: InpaintMethod
+  fillColor: string
+}
+
 /**
  * 完整的翻译设置
  */
@@ -226,6 +242,9 @@ export interface TranslationSettings {
 
   // 编辑器颜色预设（会持久化到 localStorage，并在 session 保存时写入 ui_settings）
   editorColorPresets: EditorColorPreset[]
+
+  // 编辑器气泡预设（完整样式模板）
+  editorBubblePresets: EditorBubblePreset[]
 
   // OCR 设置
   ocrEngine: OcrEngine

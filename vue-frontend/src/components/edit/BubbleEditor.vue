@@ -449,6 +449,24 @@
         </div>
       </details>
 
+      <details class="bubble-presets-panel">
+        <summary>气泡预设</summary>
+        <div class="bubble-presets">
+          <div v-for="preset in bubblePresets" :key="preset.id" class="bubble-preset-item">
+            <button
+              class="bubble-preset-btn"
+              @click="applyBubblePreset(preset)"
+              :title="`${preset.fontSize}px / ${preset.textDirection === 'vertical' ? '竖排' : '横排'} / ${preset.fontFamily}`"
+            >
+              <span class="bubble-preset-title">{{ preset.fontSize }}px {{ preset.textDirection === 'vertical' ? '竖排' : '横排' }}</span>
+              <span class="bubble-preset-meta">{{ getFontDisplayName(preset.fontFamily) }}</span>
+            </button>
+            <button class="color-preset-delete" title="删除" @click="deleteBubblePreset(preset.id)">×</button>
+          </div>
+          <button class="color-preset-add" title="从当前气泡样式新增" @click="addBubblePresetFromCurrent">+</button>
+        </div>
+      </details>
+
       <!-- 操作按钮 -->
       <div class="edit-action-buttons">
         <button class="btn-apply" @click="handleApplyBubble">应用</button>
@@ -470,7 +488,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY } from '@/constants'
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
-import type { EditorColorPreset } from '@/types/settings'
+import type { EditorColorPreset, EditorBubblePreset } from '@/types/settings'
 import { getFontListApi } from '@/api/config'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -732,6 +750,7 @@ function handleLineSpacingChange(): void {
 }
 
 const colorPresets = computed(() => settingsStore.settings.editorColorPresets || [])
+const bubblePresets = computed(() => settingsStore.settings.editorBubblePresets || [])
 
 function applyColorPreset(preset: EditorColorPreset): void {
   emit('update', {
@@ -756,6 +775,65 @@ function addColorPresetFromCurrent(): void {
 
 function deleteColorPreset(id: string): void {
   settingsStore.updateSettings({ editorColorPresets: colorPresets.value.filter(p => p.id !== id) })
+}
+
+function getFontDisplayName(fontPath: string): string {
+  const matched = [...systemFonts.value, ...customFonts.value].find(font => font.path === fontPath)
+  return matched?.name || fontPath.split('/').pop() || fontPath
+}
+
+function applyBubblePreset(preset: EditorBubblePreset): void {
+  localFontFamily.value = preset.fontFamily
+  localFontSize.value = preset.fontSize
+  localLineSpacing.value = preset.lineSpacing
+  localTextDirection.value = preset.textDirection
+  localTextAlign.value = preset.textAlign
+  localTextColor.value = preset.textColor
+  localStrokeEnabled.value = preset.strokeEnabled
+  localStrokeColor.value = preset.strokeColor
+  localStrokeWidth.value = preset.strokeWidth
+  localRotationAngle.value = preset.rotationAngle
+  localInpaintMethod.value = preset.inpaintMethod
+  localFillColor.value = preset.fillColor
+
+  emit('update', {
+    fontFamily: preset.fontFamily,
+    fontSize: preset.fontSize,
+    lineSpacing: preset.lineSpacing,
+    textDirection: preset.textDirection,
+    textAlign: preset.textAlign,
+    textColor: preset.textColor,
+    strokeEnabled: preset.strokeEnabled,
+    strokeColor: preset.strokeColor,
+    strokeWidth: preset.strokeWidth,
+    rotationAngle: preset.rotationAngle,
+    inpaintMethod: preset.inpaintMethod,
+    fillColor: preset.fillColor,
+  })
+  emit('reRender')
+}
+
+function addBubblePresetFromCurrent(): void {
+  const preset: EditorBubblePreset = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    fontFamily: localFontFamily.value,
+    fontSize: Number(localFontSize.value) || 24,
+    lineSpacing: Number(localLineSpacing.value) || 1.15,
+    textDirection: localTextDirection.value,
+    textAlign: localTextAlign.value,
+    textColor: localTextColor.value,
+    strokeEnabled: Boolean(localStrokeEnabled.value),
+    strokeColor: localStrokeColor.value,
+    strokeWidth: Number(localStrokeWidth.value) || 0,
+    rotationAngle: Number(localRotationAngle.value) || 0,
+    inpaintMethod: localInpaintMethod.value,
+    fillColor: localFillColor.value,
+  }
+  settingsStore.updateSettings({ editorBubblePresets: [...bubblePresets.value, preset] })
+}
+
+function deleteBubblePreset(id: string): void {
+  settingsStore.updateSettings({ editorBubblePresets: bubblePresets.value.filter(p => p.id !== id) })
 }
 
 // ============================================================
@@ -1676,6 +1754,64 @@ onMounted(() => {
 
 .color-preset-add:hover {
   background: #dfe4ff;
+}
+
+.bubble-presets-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+  padding-top: 12px;
+}
+
+.bubble-presets-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-color, #495057);
+  font-weight: 500;
+  padding: 4px 0;
+}
+
+.bubble-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.bubble-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bubble-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 120px;
+  padding: 8px 10px;
+  background: #f8f9ff;
+  border: 1px solid #d0d7ea;
+  border-radius: 8px;
+  color: #2f46c8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bubble-preset-btn:hover {
+  background: #e7ebff;
+  border-color: #9aaefc;
+}
+
+.bubble-preset-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bubble-preset-meta {
+  font-size: 11px;
+  color: #5f6b8a;
 }
 
 /* 操作按钮 */

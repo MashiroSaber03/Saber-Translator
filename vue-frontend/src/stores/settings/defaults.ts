@@ -161,6 +161,7 @@ export function createDefaultSettings(): TranslationSettings {
   return {
     textStyle: { ...DEFAULT_TEXT_STYLE },
     editorColorPresets: [...DEFAULT_EDITOR_COLOR_PRESETS],
+    editorBubblePresets: [],
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',
