@@ -25,6 +25,9 @@ from src.shared import constants
 
 logger = logging.getLogger("PaddleOCR_VL")
 
+PADDLEOCR_VL_MAX_NEW_TOKENS = 1024
+PADDLEOCR_VL_PRECISE_MODE_MIN_TEXTLINES = 5
+
 # 源语言映射：前端语言代码 -> 显示名称（用于构建 OCR 提示词）
 PADDLEOCR_VL_LANG_MAP = {
     # 东亚语言
@@ -61,6 +64,91 @@ PADDLEOCR_VL_LANG_MAP = {
     'japan': '日语',
     'en': '英语',
 }
+
+
+def _extract_line_region(image: np.ndarray, pts: np.ndarray) -> Optional[np.ndarray]:
+    """根据四边形文本行坐标提取矫正后的行图像。"""
+    if image is None or image.size == 0:
+        return None
+
+    im_h, im_w = image.shape[:2]
+    pts = np.array(pts, dtype=np.float32)
+    if pts.shape != (4, 2):
+        return None
+
+    x1, y1 = pts[:, 0].min(), pts[:, 1].min()
+    x2, y2 = pts[:, 0].max(), pts[:, 1].max()
+    x1 = max(0, int(x1))
+    y1 = max(0, int(y1))
+    x2 = min(im_w, int(x2))
+    y2 = min(im_h, int(y2))
+
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    cropped = image[y1:y2, x1:x2]
+    if cropped.size == 0:
+        return None
+
+    src_pts = pts.copy()
+    src_pts[:, 0] -= x1
+    src_pts[:, 1] -= y1
+
+    width_top = np.linalg.norm(src_pts[1] - src_pts[0])
+    width_bottom = np.linalg.norm(src_pts[2] - src_pts[3])
+    height_left = np.linalg.norm(src_pts[3] - src_pts[0])
+    height_right = np.linalg.norm(src_pts[2] - src_pts[1])
+
+    target_w = max(int(round(max(width_top, width_bottom))), 1)
+    target_h = max(int(round(max(height_left, height_right))), 1)
+
+    dst_pts = np.array(
+        [[0, 0], [target_w - 1, 0], [target_w - 1, target_h - 1], [0, target_h - 1]],
+        dtype=np.float32
+    )
+    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    region = cv2.warpPerspective(cropped, matrix, (target_w, target_h))
+    if region.size == 0:
+        return None
+    return region
+
+
+def _get_textline_center(line_info: Dict[str, Any]) -> Tuple[float, float]:
+    polygon = line_info.get('polygon', [])
+    pts = np.array(polygon, dtype=np.float32)
+    if pts.shape != (4, 2):
+        return (0.0, 0.0)
+    center = pts.mean(axis=0)
+    return (float(center[0]), float(center[1]))
+
+
+def _sort_textlines(textlines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """按漫画常见阅读顺序排序文本行。"""
+    valid_lines = []
+    for line_info in textlines:
+        if not isinstance(line_info, dict):
+            continue
+        polygon = line_info.get('polygon', [])
+        pts = np.array(polygon, dtype=np.float32)
+        if pts.shape == (4, 2):
+            valid_lines.append(line_info)
+
+    if not valid_lines:
+        return []
+
+    vertical_count = sum(1 for line in valid_lines if line.get('direction') == 'v')
+    horizontal_count = len(valid_lines) - vertical_count
+
+    if vertical_count >= horizontal_count:
+        return sorted(
+            valid_lines,
+            key=lambda line: (-_get_textline_center(line)[0], _get_textline_center(line)[1])
+        )
+
+    return sorted(
+        valid_lines,
+        key=lambda line: (_get_textline_center(line)[1], _get_textline_center(line)[0])
+    )
 
 
 
@@ -265,7 +353,7 @@ class PaddleOCRVLHandler:
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=256,
+                    max_new_tokens=PADDLEOCR_VL_MAX_NEW_TOKENS,
                     do_sample=False
                 )
             
@@ -286,6 +374,30 @@ class PaddleOCRVLHandler:
             logger.error(f"OCR 识别出错: {type(e).__name__}: {e}")
             logger.error(f"图像尺寸: {pil_img.size}, 模式: {pil_img.mode}")
             raise
+
+    def _recognize_textlines(self, img_np: np.ndarray, textlines: List[Dict[str, Any]], source_language: str) -> str:
+        """按文本行逐行识别，并直接连续拼接，不引入换行。"""
+        sorted_textlines = _sort_textlines(textlines)
+        if not sorted_textlines:
+            return ""
+
+        line_texts: List[str] = []
+        for line_idx, line_info in enumerate(sorted_textlines):
+            polygon = line_info.get('polygon', [])
+            region = _extract_line_region(img_np, np.array(polygon, dtype=np.float32))
+            if region is None or region.size == 0:
+                logger.debug(f"文本行 {line_idx} 区域无效，跳过")
+                continue
+
+            logger.debug(
+                f"文本行 {line_idx + 1}/{len(sorted_textlines)}，方向: {line_info.get('direction', 'unknown')}，"
+                f"尺寸: {region.shape[1]}x{region.shape[0]}"
+            )
+            text = self._recognize_single(region, source_language)
+            if text:
+                line_texts.append(text)
+
+        return ''.join(line_texts)
     
     def recognize_text(
         self, 
@@ -322,6 +434,15 @@ class PaddleOCRVLHandler:
             
             for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
                 try:
+                    bubble_textlines = []
+                    if textlines_per_bubble and i < len(textlines_per_bubble):
+                        candidate = textlines_per_bubble[i]
+                        if isinstance(candidate, list):
+                            bubble_textlines = candidate
+
+                    valid_textline_count = len(_sort_textlines(bubble_textlines))
+                    use_precise_mode = valid_textline_count >= PADDLEOCR_VL_PRECISE_MODE_MIN_TEXTLINES
+
                     # 裁剪气泡区域
                     bubble = img_np[y1:y2, x1:x2]
                     
@@ -330,10 +451,15 @@ class PaddleOCRVLHandler:
                         results.append("")
                         continue
                     
-                    logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，尺寸: {bubble.shape[1]}x{bubble.shape[0]}")
-                    
-                    # 识别文本
-                    text = self._recognize_single(bubble, source_language)
+                    logger.info(
+                        f"处理气泡 {i+1}/{len(bubble_coords)}，尺寸: {bubble.shape[1]}x{bubble.shape[0]}，"
+                        f"textlines: {valid_textline_count}，模式: {'precise' if use_precise_mode else 'bubble'}"
+                    )
+
+                    if use_precise_mode:
+                        text = self._recognize_textlines(img_np, bubble_textlines, source_language)
+                    else:
+                        text = self._recognize_single(bubble, source_language)
                     results.append(text)
                     
                     if text:
