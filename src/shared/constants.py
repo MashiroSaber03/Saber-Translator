@@ -160,7 +160,7 @@ DEFAULT_TEXT_COLOR = '#231816'
 DEFAULT_ROTATION_ANGLE = 0
 DEFAULT_FILL_COLOR = '#FFFFFF'
 DEFAULT_LINE_SPACING = 1.0  # 行间距倍数，1.0 等价原有渲染
-DEFAULT_TEXT_ALIGN = 'center'  # 对齐方式：'start' | 'center' | 'end'
+DEFAULT_TEXT_ALIGN = 'start'  # 对齐方式：'start' | 'center' | 'end'
 
 # --- OCR 相关 ---
 SUPPORTED_LANGUAGES_OCR = {

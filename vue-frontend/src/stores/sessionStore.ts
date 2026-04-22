@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
+import { DEFAULT_TEXT_ALIGN } from '@/constants'
 
 /**
  * 会话数据接口（用于保存和加载）
@@ -437,7 +438,7 @@ export const useSessionStore = defineStore('session', () => {
           strokeColor: (img.strokeColor as string) || '#FFFFFF',
           strokeWidth: (img.strokeWidth as number) || 2,
           lineSpacing: (img.lineSpacing as number) ?? 1.0,
-          textAlign: (img.textAlign as 'start' | 'center' | 'end') || 'center',
+          textAlign: (img.textAlign as 'start' | 'center' | 'end') || DEFAULT_TEXT_ALIGN,
           // 双掩膜系统字段
           textMask: (img.textMask as string) || null,
           userMask: (img.userMask as string) || null,

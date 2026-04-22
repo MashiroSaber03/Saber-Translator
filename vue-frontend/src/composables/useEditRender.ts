@@ -10,7 +10,7 @@ import { getEffectiveDirection } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { reRenderImage } from '@/api/translate'
-import { DEFAULT_FONT_FAMILY } from '@/constants'
+import { DEFAULT_FONT_FAMILY, DEFAULT_TEXT_ALIGN } from '@/constants'
 
 // ============================================================
 // 类型定义
@@ -153,7 +153,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         strokeColor: s.strokeColor || '#FFFFFF',
         strokeWidth: Number(s.strokeWidth) || 3,
         lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : 1.0,
-        textAlign: s.textAlign || 'center',
+        textAlign: s.textAlign || DEFAULT_TEXT_ALIGN,
       }))
 
       // 调用后端API（使用正确的参数格式，确保数值类型）
@@ -170,7 +170,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         strokeColor: bubbleStates[0]?.strokeColor || '#FFFFFF',
         strokeWidth: Number(bubbleStates[0]?.strokeWidth) || 3,
         lineSpacing: typeof bubbleStates[0]?.lineSpacing === 'number' ? bubbleStates[0].lineSpacing : 1.0,
-        textAlign: bubbleStates[0]?.textAlign || 'center',
+        textAlign: bubbleStates[0]?.textAlign || DEFAULT_TEXT_ALIGN,
         use_individual_styles: true,
         use_inpainting: false,
         use_lama: false,
