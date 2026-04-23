@@ -6,6 +6,7 @@
 import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useImageStore } from '@/stores/imageStore'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 describe('imageStore', () => {
     beforeEach(() => {
@@ -67,6 +68,40 @@ describe('imageStore', () => {
             expect(store.imageCount).toBe(1)
             expect(store.currentImage?.fileName).toBe('test2.png')
             expect(store.currentImageIndex).toBe(0)
+        })
+
+        it('加载旧会话图片时应补齐统一的文字样式默认值', () => {
+            const store = useImageStore()
+
+            store.setImages([
+                {
+                    id: 'legacy-image',
+                    fileName: 'legacy.png',
+                    width: 0,
+                    height: 0,
+                    originalDataURL: 'data:image/png;base64,legacy',
+                    translatedDataURL: null,
+                    cleanImageData: null,
+                    bubbleStates: null,
+                    translationStatus: 'pending',
+                    translationFailed: false,
+                    hasUnsavedChanges: false,
+                } as any
+            ])
+
+            expect(store.currentImage?.fontSize).toBe(TEXT_STYLE_DEFAULTS.fontSize)
+            expect(store.currentImage?.autoFontSize).toBe(TEXT_STYLE_DEFAULTS.autoFontSize)
+            expect(store.currentImage?.fontFamily).toBe(TEXT_STYLE_DEFAULTS.fontFamily)
+            expect(store.currentImage?.layoutDirection).toBe(TEXT_STYLE_DEFAULTS.layoutDirection)
+            expect(store.currentImage?.textColor).toBe(TEXT_STYLE_DEFAULTS.textColor)
+            expect(store.currentImage?.fillColor).toBe(TEXT_STYLE_DEFAULTS.fillColor)
+            expect(store.currentImage?.inpaintMethod).toBe(TEXT_STYLE_DEFAULTS.inpaintMethod)
+            expect(store.currentImage?.strokeEnabled).toBe(TEXT_STYLE_DEFAULTS.strokeEnabled)
+            expect(store.currentImage?.strokeColor).toBe(TEXT_STYLE_DEFAULTS.strokeColor)
+            expect(store.currentImage?.strokeWidth).toBe(TEXT_STYLE_DEFAULTS.strokeWidth)
+            expect(store.currentImage?.lineSpacing).toBe(TEXT_STYLE_DEFAULTS.lineSpacing)
+            expect(store.currentImage?.textAlign).toBe(TEXT_STYLE_DEFAULTS.textAlign)
+            expect(store.currentImage?.useAutoTextColor).toBe(TEXT_STYLE_DEFAULTS.useAutoTextColor)
         })
     })
 

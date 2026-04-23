@@ -68,7 +68,7 @@ class BubbleState:
     text_align: str = constants.DEFAULT_TEXT_ALIGN  # 'start' | 'center' | 'end'
     
     # === 修复参数 ===
-    inpaint_method: str = "solid"  # "solid" | "lama"
+    inpaint_method: str = constants.DEFAULT_INPAINT_METHOD  # "solid" | "lama"
     
     # === 自动颜色提取（48px OCR 模型） ===
     auto_fg_color: Optional[Tuple[int, int, int]] = None  # 自动提取的前景色 RGB (0-255)

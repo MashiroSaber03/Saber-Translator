@@ -121,7 +121,7 @@ TRANSLATE_IMAGE_SPEC = {
                     "fontSize": {
                         "type": "integer",
                         "description": "字体大小",
-                        "default": 25
+                        "default": constants.DEFAULT_FONT_SIZE
                     },
                     "fontFamily": {
                         "type": "string",

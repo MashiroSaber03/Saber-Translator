@@ -109,7 +109,7 @@ def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
 
     return mask
 
-def inpaint_bubbles(image_pil, bubble_coords, method='solid', fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe'):
+def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_METHOD, fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe'):
     """
     根据指定方法修复或填充图像中的气泡区域。
 

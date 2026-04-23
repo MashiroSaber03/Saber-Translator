@@ -13,6 +13,7 @@ import { executeRender } from '@/composables/translation/core/steps'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { shouldEnableAutoSave, saveTranslatedImage } from '../../core/saveStep'
 import { useParallelTranslation } from '../useParallelTranslation'
 import type { BubbleCoords } from '@/types/bubble'
@@ -75,8 +76,8 @@ export class RenderPool extends TaskPool {
       const textboxTexts = existingBubbles.map(bs => bs.textboxText || '')
 
       const colors = existingBubbles.map(bs => ({
-        textColor: bs.textColor || '#000000',
-        bgColor: bs.fillColor || '#FFFFFF',
+        textColor: bs.textColor || TEXT_STYLE_DEFAULTS.textColor,
+        bgColor: bs.fillColor || TEXT_STYLE_DEFAULTS.fillColor,
         autoFgColor: bs.autoFgColor || null,
         autoBgColor: bs.autoBgColor || null
       }))

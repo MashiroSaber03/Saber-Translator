@@ -1633,7 +1633,7 @@ def render_single_bubble(
         from src.interfaces.lama_interface import is_lama_available
         # from src.interfaces.migan_interface import is_migan_available
         
-        inpainting_method = 'solid'
+        inpainting_method = constants.DEFAULT_INPAINT_METHOD
         if use_lama and is_lama_available(): inpainting_method = 'lama'
         # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
         img_pil, generated_clean_bg = inpaint_bubbles(
@@ -1768,7 +1768,7 @@ def re_render_text_in_bubbles(
         from src.interfaces.lama_interface import is_lama_available
         # from src.interfaces.migan_interface import is_migan_available
         
-        inpainting_method = 'solid'
+        inpainting_method = constants.DEFAULT_INPAINT_METHOD
         if use_lama and is_lama_available(): inpainting_method = 'lama'
         # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
 
@@ -2039,7 +2039,7 @@ def render_single_bubble_unified(
         target_state = bubble_states[bubble_index]
         target_coords = [list(target_state.coords)]
         
-        inpaint_method = target_state.inpaint_method if target_state.inpaint_method else 'solid'
+        inpaint_method = target_state.inpaint_method if target_state.inpaint_method else constants.DEFAULT_INPAINT_METHOD
         img_to_render, generated_clean_bg = inpaint_bubbles(
             image, target_coords, method=inpaint_method, fill_color=target_state.fill_color
         )
@@ -2107,7 +2107,7 @@ def re_render_with_states(
         from src.interfaces.lama_interface import is_lama_available
         
         bubble_coords = [list(s.coords) for s in bubble_states]
-        inpainting_method = 'solid'
+        inpainting_method = constants.DEFAULT_INPAINT_METHOD
         if use_lama and is_lama_available():
             inpainting_method = 'lama'
         

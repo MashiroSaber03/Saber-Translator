@@ -10,12 +10,6 @@
 /** 默认提示词名称 */
 export const DEFAULT_PROMPT_NAME = '默认提示词'
 
-/** 默认字体路径 */
-export const DEFAULT_FONT_FAMILY = 'fonts/思源黑体SourceHanSansK-Bold.TTF'
-
-/** 默认气泡填充颜色（白色） */
-export const DEFAULT_FILL_COLOR = '#FFFFFF'
-
 /** AI 视觉 OCR 默认提示词（普通模式） */
 export const DEFAULT_AI_VISION_OCR_PROMPT = `你是一个ocr助手，你需要将我发送给你的图片中的文字提取出来并返回给我，要求：
 1、完整识别：我发送给你的图片中的文字都是需要识别的内容
@@ -214,21 +208,6 @@ export const CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND = 'custom_openai_vision'
 // ============================================================
 // 文本描边默认值常量
 // ============================================================
-
-/** 默认启用描边 */
-export const DEFAULT_STROKE_ENABLED = true
-
-/** 默认描边颜色（白色） */
-export const DEFAULT_STROKE_COLOR = '#FFFFFF'
-
-/** 默认描边宽度 */
-export const DEFAULT_STROKE_WIDTH = 3
-
-/** 默认行间距倍数（1.0 = 不改变现有行高） */
-export const DEFAULT_LINE_SPACING = 1.0
-
-/** 默认文本对齐方式：'start' | 'center' | 'end'（横竖通用） */
-export const DEFAULT_TEXT_ALIGN: 'start' | 'center' | 'end' = 'start'
 
 // ============================================================
 // 编辑模式字号预设常量

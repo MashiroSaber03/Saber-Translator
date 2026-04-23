@@ -14,7 +14,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
 import { showToast } from '@/utils/toast'
-import { DEFAULT_FONT_FAMILY, DEFAULT_LINE_SPACING, DEFAULT_TEXT_ALIGN } from '@/constants'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import {
   DEFAULT_WORKFLOW_MODE,
@@ -279,7 +279,7 @@ const fontList = ref<string[]>([])
 
 /** 内置字体列表（确保始终显示） */
 const BUILTIN_FONTS = [
-  DEFAULT_FONT_FAMILY,
+  TEXT_STYLE_DEFAULTS.fontFamily,
   'fonts/msyh.ttc',
   'fonts/simhei.ttf',
   'fonts/simsun.ttc',
@@ -512,7 +512,7 @@ function updateTextColor(event: Event) {
  */
 function updateLineSpacing(event: Event) {
   let value = Number((event.target as HTMLInputElement).value)
-  if (!Number.isFinite(value) || value <= 0) value = DEFAULT_LINE_SPACING
+  if (!Number.isFinite(value) || value <= 0) value = TEXT_STYLE_DEFAULTS.lineSpacing
   value = Math.max(0.5, Math.min(3.0, value))
   settingsStore.updateTextStyle({ lineSpacing: value })
   emit('textStyleChanged', 'lineSpacing', value)

@@ -15,6 +15,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { showToast } from '@/utils/toast'
 import { getEffectiveDirection } from '@/types/bubble'
 import { useTranslation } from '@/composables/useTranslationPipeline'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 /**
  * 应用设置选项接口
@@ -722,8 +723,8 @@ export function useTextStyleSync() {
 
                         // 构建颜色数据
                         const colors = img.bubbleStates.map(bs => ({
-                            textColor: bs.textColor || '#000000',
-                            bgColor: bs.fillColor || '#FFFFFF',
+                            textColor: bs.textColor || TEXT_STYLE_DEFAULTS.textColor,
+                            bgColor: bs.fillColor || TEXT_STYLE_DEFAULTS.fillColor,
                             autoFgColor: bs.autoFgColor || null,
                             autoBgColor: bs.autoBgColor || null
                         }))

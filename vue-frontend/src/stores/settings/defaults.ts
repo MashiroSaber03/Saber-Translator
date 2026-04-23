@@ -16,14 +16,8 @@ import type {
   TranslationSettings,
   ParallelSettings
 } from '@/types/settings'
+import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
 import {
-  DEFAULT_FONT_FAMILY,
-  DEFAULT_FILL_COLOR,
-  DEFAULT_STROKE_ENABLED,
-  DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH,
-  DEFAULT_LINE_SPACING,
-  DEFAULT_TEXT_ALIGN,
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
   DEFAULT_TRANSLATE_JSON_PROMPT,
@@ -43,22 +37,25 @@ import {
 // ============================================================
 
 /** 默认文字样式设置 */
-export const DEFAULT_TEXT_STYLE: TextStyleSettings = {
-  fontSize: 25,
-  autoFontSize: false,
-  fontFamily: DEFAULT_FONT_FAMILY,
-  layoutDirection: 'auto',
-  textColor: '#000000',
-  fillColor: DEFAULT_FILL_COLOR,
-  strokeEnabled: DEFAULT_STROKE_ENABLED,
-  strokeColor: DEFAULT_STROKE_COLOR,
-  strokeWidth: DEFAULT_STROKE_WIDTH,
-  inpaintMethod: 'solid',
-  // 智能颜色识别默认关闭
-  useAutoTextColor: false,
-  // 排版设置
-  lineSpacing: DEFAULT_LINE_SPACING,
-  textAlign: DEFAULT_TEXT_ALIGN
+export function createDefaultTextStyle(): TextStyleSettings {
+  const defaults = getTextStyleDefaults()
+  return {
+    fontSize: defaults.fontSize,
+    autoFontSize: defaults.autoFontSize,
+    fontFamily: defaults.fontFamily,
+    layoutDirection: defaults.layoutDirection,
+    textColor: defaults.textColor,
+    fillColor: defaults.fillColor,
+    strokeEnabled: defaults.strokeEnabled,
+    strokeColor: defaults.strokeColor,
+    strokeWidth: defaults.strokeWidth,
+    inpaintMethod: defaults.inpaintMethod,
+    // 智能颜色识别默认关闭
+    useAutoTextColor: defaults.useAutoTextColor,
+    // 排版设置
+    lineSpacing: defaults.lineSpacing,
+    textAlign: defaults.textAlign
+  }
 }
 
 /** 默认百度OCR设置 */
@@ -151,7 +148,7 @@ export const DEFAULT_PARALLEL: ParallelSettings = {
 /** 创建默认翻译设置 */
 export function createDefaultSettings(): TranslationSettings {
   return {
-    textStyle: { ...DEFAULT_TEXT_STYLE },
+    textStyle: createDefaultTextStyle(),
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',

@@ -6,6 +6,7 @@
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { useToast } from '@/utils/toast'
 import {
   downloadStartSession,
@@ -505,7 +506,7 @@ export function useExportImport() {
       originalText: '',
       translatedText: '',
       textboxText: '',
-      fontSize: typeof fontSize === 'number' ? fontSize : 25,
+      fontSize: typeof fontSize === 'number' ? fontSize : TEXT_STYLE_DEFAULTS.fontSize,
       fontFamily: fontFamily,
       textDirection: 'vertical',
       autoTextDirection: 'vertical',

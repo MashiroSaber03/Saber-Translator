@@ -22,6 +22,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
 import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
+import { reloadTextStyleDefaultsFromBackend } from '@/defaults/textStyleDefaults'
 import { getBookDetail } from '@/api/bookshelf'
 import { cleanupGpu } from '@/api/system'
 
@@ -167,6 +168,9 @@ export function useTranslateInit() {
    */
   async function initializeSettings(): Promise<void> {
     console.log('[TranslateInit] 初始化设置...')
+
+    // 先重新拉取一次最新的文字样式默认值
+    await reloadTextStyleDefaultsFromBackend()
 
     // 先从 localStorage 加载（作为基础/备份）
     settingsStore.initSettings()

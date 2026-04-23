@@ -27,12 +27,7 @@ import {
   getDefaultBubbleSettings,
   initBubbleStates
 } from '@/utils/bubbleFactory'
-import {
-  DEFAULT_FILL_COLOR,
-  DEFAULT_STROKE_ENABLED,
-  DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH
-} from '@/constants'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { BubbleCoords, TextDirection, InpaintMethod, BubbleState } from '@/types/bubble'
 
 // ============================================================
@@ -131,19 +126,19 @@ describe('气泡工厂函数属性测试', () => {
       expect(state.polygon).toEqual([])
 
       // 验证渲染参数默认值
-      expect(state.fontSize).toBe(24)
-      expect(state.fontFamily).toBe('')
-      expect(state.textDirection).toBe('auto')
+      expect(state.fontSize).toBe(TEXT_STYLE_DEFAULTS.fontSize)
+      expect(state.fontFamily).toBe(TEXT_STYLE_DEFAULTS.fontFamily)
+      expect(state.textDirection).toBe('vertical')
       expect(state.autoTextDirection).toBe('vertical')
       expect(state.textColor).toBe('#000000')
-      expect(state.fillColor).toBe(DEFAULT_FILL_COLOR)
+      expect(state.fillColor).toBe(TEXT_STYLE_DEFAULTS.fillColor)
       expect(state.rotationAngle).toBe(0)
       expect(state.position).toEqual({ x: 0, y: 0 })
 
       // 验证描边参数默认值
-      expect(state.strokeEnabled).toBe(DEFAULT_STROKE_ENABLED)
-      expect(state.strokeColor).toBe(DEFAULT_STROKE_COLOR)
-      expect(state.strokeWidth).toBe(DEFAULT_STROKE_WIDTH)
+      expect(state.strokeEnabled).toBe(TEXT_STYLE_DEFAULTS.strokeEnabled)
+      expect(state.strokeColor).toBe(TEXT_STYLE_DEFAULTS.strokeColor)
+      expect(state.strokeWidth).toBe(TEXT_STYLE_DEFAULTS.strokeWidth)
 
       // 验证修复参数默认值
       expect(state.inpaintMethod).toBe('solid')
@@ -179,7 +174,7 @@ describe('气泡工厂函数属性测试', () => {
 
             // 验证未覆盖的值保持默认
             expect(state.textboxText).toBe('')
-            expect(state.fontFamily).toBe('')
+            expect(state.fontFamily).toBe(TEXT_STYLE_DEFAULTS.fontFamily)
             expect(state.inpaintMethod).toBe('solid')
 
             return true
@@ -983,14 +978,14 @@ describe('气泡工厂函数属性测试', () => {
       const defaults = getDefaultBubbleSettings()
 
       // 验证默认值存在
-      expect(defaults.fontSize).toBe(24)
-      expect(defaults.fontFamily).toBe('')
-      expect(defaults.textDirection).toBe('auto')
+      expect(defaults.fontSize).toBe(TEXT_STYLE_DEFAULTS.fontSize)
+      expect(defaults.fontFamily).toBe(TEXT_STYLE_DEFAULTS.fontFamily)
+      expect(defaults.textDirection).toBe('vertical')
       expect(defaults.textColor).toBe('#000000')
-      expect(defaults.fillColor).toBe(DEFAULT_FILL_COLOR)
-      expect(defaults.strokeEnabled).toBe(DEFAULT_STROKE_ENABLED)
-      expect(defaults.strokeColor).toBe(DEFAULT_STROKE_COLOR)
-      expect(defaults.strokeWidth).toBe(DEFAULT_STROKE_WIDTH)
+      expect(defaults.fillColor).toBe(TEXT_STYLE_DEFAULTS.fillColor)
+      expect(defaults.strokeEnabled).toBe(TEXT_STYLE_DEFAULTS.strokeEnabled)
+      expect(defaults.strokeColor).toBe(TEXT_STYLE_DEFAULTS.strokeColor)
+      expect(defaults.strokeWidth).toBe(TEXT_STYLE_DEFAULTS.strokeWidth)
       expect(defaults.inpaintMethod).toBe('solid')
     })
 

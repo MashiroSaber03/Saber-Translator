@@ -11,6 +11,7 @@ import { BRUSH_MIN_SIZE, BRUSH_MAX_SIZE, BRUSH_DEFAULT_SIZE } from '@/constants'
 import { inpaintSingleBubble } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleCoords, InpaintMethod } from '@/types/bubble'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { addErasureToUserMask, addRestorationToUserMask } from '@/utils/maskMerger'
 
 // ============================================================
@@ -516,8 +517,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
     // 【复刻原版】从编辑面板获取修复方式，对应原版 $('#bubbleInpaintMethodNew').val()
     // 通过回调获取，不依赖气泡选中状态
     const settings = callbacks?.getCurrentRepairSettings?.() || {
-      inpaintMethod: 'solid' as InpaintMethod,
-      fillColor: '#FFFFFF'
+      inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod as InpaintMethod,
+      fillColor: TEXT_STYLE_DEFAULTS.fillColor
     }
     const inpaintMethod = settings.inpaintMethod
 

@@ -7,7 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
-import { DEFAULT_TEXT_ALIGN } from '@/constants'
+import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 
 /**
  * 会话数据接口（用于保存和加载）
@@ -426,19 +426,7 @@ export const useSessionStore = defineStore('session', () => {
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),
           hasUnsavedChanges: false,
-          fontSize: (img.fontSize as number) || 24,
-          autoFontSize: (img.autoFontSize as boolean) ?? false,
-          fontFamily: (img.fontFamily as string) || 'Microsoft YaHei',
-          layoutDirection: (img.layoutDirection as 'vertical' | 'horizontal' | 'auto') || 'auto',
-          useAutoTextColor: (img.useAutoTextColor as boolean) ?? undefined,
-          textColor: (img.textColor as string) || '#000000',
-          fillColor: (img.fillColor as string) || '#FFFFFF',
-          inpaintMethod: (img.inpaintMethod as import('@/types/bubble').InpaintMethod) || 'litelama',
-          strokeEnabled: (img.strokeEnabled as boolean) ?? false,
-          strokeColor: (img.strokeColor as string) || '#FFFFFF',
-          strokeWidth: (img.strokeWidth as number) || 2,
-          lineSpacing: (img.lineSpacing as number) ?? 1.0,
-          textAlign: (img.textAlign as 'start' | 'center' | 'end') || DEFAULT_TEXT_ALIGN,
+          ...normalizeImageTextStyleFields(img),
           // 双掩膜系统字段
           textMask: (img.textMask as string) || null,
           userMask: (img.userMask as string) || null,

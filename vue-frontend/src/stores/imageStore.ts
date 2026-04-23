@@ -7,21 +7,37 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ImageData, TranslationStatus, ImageDataUpdates } from '@/types/image'
 import type { BubbleState } from '@/types/bubble'
+import { useSettingsStore } from '@/stores/settingsStore'
 import {
-  DEFAULT_FONT_FAMILY,
-  DEFAULT_FILL_COLOR,
-  DEFAULT_STROKE_ENABLED,
-  DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH,
-  DEFAULT_LINE_SPACING,
-  DEFAULT_TEXT_ALIGN
-} from '@/constants'
+  getImageTextStyleDefaults,
+  normalizeImageTextStyleFields,
+} from '@/defaults/textStyleDefaults'
 
 /**
  * 生成唯一 ID
  */
 function generateId(): string {
   return `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+}
+
+function pickDefinedValues<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
+  ) as Partial<T>
+}
+
+function getCurrentImageTextStyleSeed(preferCurrentTextStyle: boolean): ReturnType<typeof getImageTextStyleDefaults> {
+  const canonicalDefaults = getImageTextStyleDefaults()
+  if (!preferCurrentTextStyle) {
+    return canonicalDefaults
+  }
+
+  try {
+    const settingsStore = useSettingsStore()
+    return normalizeImageTextStyleFields(settingsStore.settings.textStyle as Partial<ImageData>)
+  } catch {
+    return canonicalDefaults
+  }
 }
 
 /**
@@ -47,8 +63,10 @@ export function getImageDimensionsFromDataURL(dataURL: string): Promise<{ width:
 function createDefaultImageData(
   fileName: string,
   originalDataURL: string,
-  overrides?: Partial<ImageData>
+  overrides?: Partial<ImageData>,
+  options?: { preferCurrentTextStyle?: boolean }
 ): ImageData {
+  const imageTextStyle = getCurrentImageTextStyleSeed(options?.preferCurrentTextStyle ?? true)
   return {
     id: generateId(),
     fileName,
@@ -60,18 +78,7 @@ function createDefaultImageData(
     bubbleStates: null,
     translationStatus: 'pending',
     translationFailed: false,
-    fontSize: 25,
-    autoFontSize: false,
-    fontFamily: DEFAULT_FONT_FAMILY,
-    layoutDirection: 'auto',
-    textColor: '#000000',
-    fillColor: DEFAULT_FILL_COLOR,
-    inpaintMethod: 'solid',
-    strokeEnabled: DEFAULT_STROKE_ENABLED,
-    strokeColor: DEFAULT_STROKE_COLOR,
-    strokeWidth: DEFAULT_STROKE_WIDTH,
-    lineSpacing: DEFAULT_LINE_SPACING,
-    textAlign: DEFAULT_TEXT_ALIGN,
+    ...imageTextStyle,
     hasUnsavedChanges: false,
     ...overrides
   }
@@ -149,7 +156,9 @@ export const useImageStore = defineStore('image', () => {
     originalDataURL: string,
     overrides?: Partial<ImageData>
   ): ImageData {
-    const newImage = createDefaultImageData(fileName, originalDataURL, overrides)
+    const newImage = createDefaultImageData(fileName, originalDataURL, overrides, {
+      preferCurrentTextStyle: true
+    })
     images.value.push(newImage)
 
     // 如果是第一张图片，自动设置为当前图片
@@ -194,18 +203,21 @@ export const useImageStore = defineStore('image', () => {
    * @param newImages - 新的图片数组
    */
   function setImages(newImages: ImageData[]): void {
-    images.value = newImages.map((img) => ({
-      ...img,
-      // 确保 width 和 height 有默认值（兼容旧会话数据）
-      width: img.width || 0,
-      height: img.height || 0,
-      strokeEnabled: img.strokeEnabled ?? DEFAULT_STROKE_ENABLED,
-      strokeColor: img.strokeColor || DEFAULT_STROKE_COLOR,
-      strokeWidth: img.strokeWidth ?? DEFAULT_STROKE_WIDTH,
-      lineSpacing: img.lineSpacing ?? DEFAULT_LINE_SPACING,
-      textAlign: img.textAlign ?? DEFAULT_TEXT_ALIGN,
-      hasUnsavedChanges: img.hasUnsavedChanges || false
-    }))
+    images.value = newImages.map((img) => {
+      const normalizedTextStyle = normalizeImageTextStyleFields(img)
+      return createDefaultImageData(
+        img.fileName,
+        img.originalDataURL,
+        {
+          ...pickDefinedValues(img as Record<string, unknown>),
+          ...normalizedTextStyle,
+          width: img.width || 0,
+          height: img.height || 0,
+          hasUnsavedChanges: img.hasUnsavedChanges || false
+        } as Partial<ImageData>,
+        { preferCurrentTextStyle: false }
+      )
+    })
 
     // 重置当前索引
     if (images.value.length > 0) {

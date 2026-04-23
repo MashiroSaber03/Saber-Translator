@@ -341,6 +341,12 @@ export interface UserSettingsResponse {
   error?: string
 }
 
+export interface TextStyleDefaultsResponse {
+  success: boolean
+  defaults?: Record<string, unknown>
+  error?: string
+}
+
 /**
  * 获取用户设置（从后端 config/user_settings.json 加载）
  */
@@ -349,6 +355,13 @@ export async function getUserSettings(): Promise<UserSettingsResponse> {
   const response = await apiClient.get<UserSettingsResponse>('/api/get_settings')
   console.log('[API] /api/get_settings 响应:', response)
   return response
+}
+
+/**
+ * 获取当前文字样式默认值
+ */
+export async function getTextStyleDefaults(): Promise<TextStyleDefaultsResponse> {
+  return apiClient.get<TextStyleDefaultsResponse>('/api/config/text-style-defaults')
 }
 
 /**
@@ -413,5 +426,6 @@ export const configApi = {
 
   // 用户设置
   getUserSettings,
+  getTextStyleDefaults,
   saveUserSettings,
 }

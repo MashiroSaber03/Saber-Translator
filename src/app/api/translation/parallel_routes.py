@@ -243,8 +243,8 @@ def parallel_color():
             fg_hex = rgb_to_hex(fg_color)
             bg_hex = rgb_to_hex(bg_color)
             colors.append({
-                'textColor': fg_hex or '#000000',
-                'bgColor': bg_hex or '#FFFFFF',
+                'textColor': fg_hex or constants.DEFAULT_TEXT_COLOR,
+                'bgColor': bg_hex or constants.DEFAULT_FILL_COLOR,
                 'autoFgColor': fg_color,
                 'autoBgColor': bg_color
             })
@@ -350,7 +350,7 @@ def parallel_inpaint():
         bubble_polygons = data.get('bubble_polygons', [])
         raw_mask_data = data.get('raw_mask')        # 文字检测掩膜
         user_mask_data = data.get('user_mask')      # 用户笔刷掩膜（新增）
-        method = data.get('method', 'solid')
+        method = data.get('method', constants.DEFAULT_INPAINT_METHOD)
         lama_model = data.get('lama_model', 'lama_mpe')
         fill_color = data.get('fill_color', '#FFFFFF')
         mask_dilate_size = data.get('mask_dilate_size', 0)
@@ -418,7 +418,7 @@ def parallel_render():
         font_size = data.get('fontSize', 25)
         font_family = data.get('fontFamily', constants.DEFAULT_FONT_FAMILY)
         text_direction = data.get('textDirection', 'vertical')
-        text_color = data.get('textColor', '#000000')
+        text_color = data.get('textColor', constants.DEFAULT_TEXT_COLOR)
         stroke_enabled = data.get('strokeEnabled', False)
         stroke_color = data.get('strokeColor', '#FFFFFF')
         stroke_width = data.get('strokeWidth', 2)
@@ -457,7 +457,7 @@ def parallel_render():
                 stroke_width=bs_data.get('strokeWidth', stroke_width),
                 line_spacing=bs_data.get('lineSpacing', line_spacing),
                 text_align=bs_data.get('textAlign', text_align),
-                inpaint_method=bs_data.get('inpaintMethod', 'solid'),
+                inpaint_method=bs_data.get('inpaintMethod', constants.DEFAULT_INPAINT_METHOD),
                 auto_fg_color=auto_fg,
                 auto_bg_color=auto_bg
             )

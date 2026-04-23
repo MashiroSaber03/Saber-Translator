@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify # 已有
 # 导入配置加载/保存函数和常量
 from src.shared.config_loader import load_json_config, save_json_config
 from src.shared import constants
+from src.shared.text_style_defaults import get_text_style_defaults
 import logging # 需要 logging
 
 # 获取 logger
@@ -190,6 +191,12 @@ def get_settings():
     if 'lamaDisableResize' not in settings:
         settings['lamaDisableResize'] = constants.LAMA_DISABLE_RESIZE
     return jsonify({'success': True, 'settings': settings})
+
+@config_bp.route('/config/text-style-defaults', methods=['GET'])
+def get_text_style_defaults_api():
+    """获取当前文字样式默认值。"""
+    constants.refresh_text_style_runtime_defaults()
+    return jsonify({'success': True, 'defaults': get_text_style_defaults()})
 
 @config_bp.route('/save_settings', methods=['POST'])
 def save_settings_api():

@@ -46,6 +46,9 @@ export default defineConfig({
     port: 5173,
     // 允许局域网访问
     host: true,
+    fs: {
+      allow: [resolve(__dirname, '..')],
+    },
     // API 请求代理到 Flask 后端
     proxy: {
       // 所有 API 请求代理到 Flask

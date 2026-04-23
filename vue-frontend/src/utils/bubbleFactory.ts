@@ -13,15 +13,7 @@ import type {
   TextDirection,
   InpaintMethod
 } from '@/types/bubble'
-import {
-  DEFAULT_FONT_FAMILY,
-  DEFAULT_FILL_COLOR,
-  DEFAULT_STROKE_ENABLED,
-  DEFAULT_STROKE_COLOR,
-  DEFAULT_STROKE_WIDTH,
-  DEFAULT_LINE_SPACING,
-  DEFAULT_TEXT_ALIGN
-} from '@/constants'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 /**
  * 默认气泡状态值
@@ -38,26 +30,26 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   polygon: [],
 
   // 渲染参数
-  fontSize: 25,
-  fontFamily: DEFAULT_FONT_FAMILY,
+  fontSize: TEXT_STYLE_DEFAULTS.fontSize,
+  fontFamily: TEXT_STYLE_DEFAULTS.fontFamily,
   textDirection: 'vertical',  // 简化设计：不再使用 'auto'，始终是具体方向
   autoTextDirection: 'vertical',
-  textColor: '#000000',
-  fillColor: DEFAULT_FILL_COLOR,
+  textColor: TEXT_STYLE_DEFAULTS.textColor,
+  fillColor: TEXT_STYLE_DEFAULTS.fillColor,
   rotationAngle: 0,
   position: { x: 0, y: 0 },
 
   // 描边参数
-  strokeEnabled: DEFAULT_STROKE_ENABLED,
-  strokeColor: DEFAULT_STROKE_COLOR,
-  strokeWidth: DEFAULT_STROKE_WIDTH,
+  strokeEnabled: TEXT_STYLE_DEFAULTS.strokeEnabled,
+  strokeColor: TEXT_STYLE_DEFAULTS.strokeColor,
+  strokeWidth: TEXT_STYLE_DEFAULTS.strokeWidth,
 
   // 排版参数
-  lineSpacing: DEFAULT_LINE_SPACING,
-  textAlign: DEFAULT_TEXT_ALIGN,
+  lineSpacing: TEXT_STYLE_DEFAULTS.lineSpacing,
+  textAlign: TEXT_STYLE_DEFAULTS.textAlign,
 
   // 修复参数
-  inpaintMethod: 'solid',
+  inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod,
 
   // 自动颜色提取（可选字段，翻译时由后端填充）
   autoFgColor: null,

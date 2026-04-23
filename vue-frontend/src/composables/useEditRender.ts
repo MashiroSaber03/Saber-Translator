@@ -10,7 +10,7 @@ import { getEffectiveDirection } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { reRenderImage } from '@/api/translate'
-import { DEFAULT_FONT_FAMILY, DEFAULT_TEXT_ALIGN } from '@/constants'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 // ============================================================
 // 类型定义
@@ -143,17 +143,17 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       const bubbleStatesForApi = bubbleStates.map((s) => ({
         translatedText: s.translatedText || '',
         coords: s.coords,  // 后端会用 bubble_coords 覆盖，这里无需整数化
-        fontSize: Number(s.fontSize) || 24,
-        fontFamily: s.fontFamily || DEFAULT_FONT_FAMILY,
+        fontSize: Number(s.fontSize) || TEXT_STYLE_DEFAULTS.fontSize,
+        fontFamily: s.fontFamily || TEXT_STYLE_DEFAULTS.fontFamily,
         textDirection: getEffectiveDirection(s),
-        textColor: s.textColor || '#231816',
+        textColor: s.textColor || TEXT_STYLE_DEFAULTS.textColor,
         rotationAngle: Math.round(Number(s.rotationAngle) || 0),
         position: s.position ? { x: Math.round(s.position.x || 0), y: Math.round(s.position.y || 0) } : { x: 0, y: 0 },
-        strokeEnabled: s.strokeEnabled !== undefined ? s.strokeEnabled : true,
-        strokeColor: s.strokeColor || '#FFFFFF',
-        strokeWidth: Number(s.strokeWidth) || 3,
-        lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : 1.0,
-        textAlign: s.textAlign || DEFAULT_TEXT_ALIGN,
+        strokeEnabled: s.strokeEnabled !== undefined ? s.strokeEnabled : TEXT_STYLE_DEFAULTS.strokeEnabled,
+        strokeColor: s.strokeColor || TEXT_STYLE_DEFAULTS.strokeColor,
+        strokeWidth: Number(s.strokeWidth) || TEXT_STYLE_DEFAULTS.strokeWidth,
+        lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : TEXT_STYLE_DEFAULTS.lineSpacing,
+        textAlign: s.textAlign || TEXT_STYLE_DEFAULTS.textAlign,
       }))
 
       // 调用后端API（使用正确的参数格式，确保数值类型）
@@ -162,15 +162,15 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         bubble_texts: bubbleTexts,
         bubble_coords: bubbleCoords,
         bubble_states: bubbleStatesForApi,
-        fontSize: Number(bubbleStates[0]?.fontSize) || 24,
-        fontFamily: bubbleStates[0]?.fontFamily || DEFAULT_FONT_FAMILY,
+        fontSize: Number(bubbleStates[0]?.fontSize) || TEXT_STYLE_DEFAULTS.fontSize,
+        fontFamily: bubbleStates[0]?.fontFamily || TEXT_STYLE_DEFAULTS.fontFamily,
         textDirection: bubbleStates[0] ? getEffectiveDirection(bubbleStates[0]) : 'vertical',
-        textColor: bubbleStates[0]?.textColor || '#231816',
-        strokeEnabled: bubbleStates[0]?.strokeEnabled !== undefined ? bubbleStates[0].strokeEnabled : true,
-        strokeColor: bubbleStates[0]?.strokeColor || '#FFFFFF',
-        strokeWidth: Number(bubbleStates[0]?.strokeWidth) || 3,
-        lineSpacing: typeof bubbleStates[0]?.lineSpacing === 'number' ? bubbleStates[0].lineSpacing : 1.0,
-        textAlign: bubbleStates[0]?.textAlign || DEFAULT_TEXT_ALIGN,
+        textColor: bubbleStates[0]?.textColor || TEXT_STYLE_DEFAULTS.textColor,
+        strokeEnabled: bubbleStates[0]?.strokeEnabled !== undefined ? bubbleStates[0].strokeEnabled : TEXT_STYLE_DEFAULTS.strokeEnabled,
+        strokeColor: bubbleStates[0]?.strokeColor || TEXT_STYLE_DEFAULTS.strokeColor,
+        strokeWidth: Number(bubbleStates[0]?.strokeWidth) || TEXT_STYLE_DEFAULTS.strokeWidth,
+        lineSpacing: typeof bubbleStates[0]?.lineSpacing === 'number' ? bubbleStates[0].lineSpacing : TEXT_STYLE_DEFAULTS.lineSpacing,
+        textAlign: bubbleStates[0]?.textAlign || TEXT_STYLE_DEFAULTS.textAlign,
         use_individual_styles: true,
         use_inpainting: false,
         use_lama: false,

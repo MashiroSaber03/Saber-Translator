@@ -441,9 +441,16 @@
  */
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_STEP, DEFAULT_FONT_FAMILY, DEFAULT_LINE_SPACING, DEFAULT_TEXT_ALIGN } from '@/constants'
+import {
+  FONT_SIZE_PRESETS,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
+  FONT_SIZE_STEP
+} from '@/constants'
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import { getFontListApi } from '@/api/config'
+import { createBubbleState } from '@/utils/bubbleFactory'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
@@ -487,27 +494,10 @@ const bubbleStore = useBubbleStore()
 // 默认值
 // ============================================================
 
-const defaultBubble: BubbleState = {
+const defaultBubble: BubbleState = createBubbleState({
   coords: [0, 0, 0, 0],
   polygon: [],
-  originalText: '',
-  translatedText: '',
-  textboxText: '',
-  fontSize: 24,
-  fontFamily: DEFAULT_FONT_FAMILY,
-  textDirection: 'vertical',  // 简化设计：不再使用 'auto'
-  autoTextDirection: 'vertical',
-  textColor: '#231816',
-  fillColor: '#FFFFFF',
-  strokeEnabled: true,
-  strokeColor: '#FFFFFF',
-  strokeWidth: 3,
-  rotationAngle: 0,
-  inpaintMethod: 'solid',
-  position: { x: 0, y: 0 },
-  lineSpacing: DEFAULT_LINE_SPACING,
-  textAlign: DEFAULT_TEXT_ALIGN,
-}
+})
 
 // ============================================================
 // 本地状态（用于双向绑定）
@@ -515,20 +505,20 @@ const defaultBubble: BubbleState = {
 
 const localOriginalText = ref('')
 const localTranslatedText = ref('')
-const localFontSize = ref(24)
-const localFontFamily = ref(DEFAULT_FONT_FAMILY)
+const localFontSize = ref(TEXT_STYLE_DEFAULTS.fontSize)
+const localFontFamily = ref(TEXT_STYLE_DEFAULTS.fontFamily)
 const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
-const localTextColor = ref('#231816')
-const localFillColor = ref('#FFFFFF')
-const localStrokeEnabled = ref(true)
-const localStrokeColor = ref('#FFFFFF')
-const localStrokeWidth = ref(3)
+const localTextColor = ref(TEXT_STYLE_DEFAULTS.textColor)
+const localFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
+const localStrokeEnabled = ref(TEXT_STYLE_DEFAULTS.strokeEnabled)
+const localStrokeColor = ref(TEXT_STYLE_DEFAULTS.strokeColor)
+const localStrokeWidth = ref(TEXT_STYLE_DEFAULTS.strokeWidth)
 const localRotationAngle = ref(0)
-const localInpaintMethod = ref<InpaintMethod>('solid')
+const localInpaintMethod = ref<InpaintMethod>(TEXT_STYLE_DEFAULTS.inpaintMethod)
 const localPositionX = ref(0)
 const localPositionY = ref(0)
-const localLineSpacing = ref(DEFAULT_LINE_SPACING)
-const localTextAlign = ref<TextAlign>(DEFAULT_TEXT_ALIGN)
+const localLineSpacing = ref(TEXT_STYLE_DEFAULTS.lineSpacing)
+const localTextAlign = ref<TextAlign>(TEXT_STYLE_DEFAULTS.textAlign)
 
 // 文本输入框引用
 const originalTextInput = ref<HTMLTextAreaElement | null>(null)
@@ -545,7 +535,7 @@ const jpKeyboardTarget = ref<'original' | 'translated'>('original')
 
 // 字体相关
 const systemFonts = ref<{ name: string; path: string }[]>([
-  { name: '思源黑体', path: DEFAULT_FONT_FAMILY },
+  { name: '思源黑体', path: TEXT_STYLE_DEFAULTS.fontFamily },
   { name: '华文楷体', path: 'fonts/STKAITI.TTF' },
   { name: '华文细黑', path: 'fonts/STXIHEI.TTF' },
   { name: '黑体', path: 'fonts/SIMHEI.TTF' },
@@ -614,8 +604,8 @@ function syncFromBubble(bubble: BubbleState | null): void {
   localInpaintMethod.value = b.inpaintMethod
   localPositionX.value = b.position?.x || 0
   localPositionY.value = b.position?.y || 0
-  localLineSpacing.value = b.lineSpacing ?? DEFAULT_LINE_SPACING
-  localTextAlign.value = b.textAlign ?? DEFAULT_TEXT_ALIGN
+  localLineSpacing.value = b.lineSpacing ?? TEXT_STYLE_DEFAULTS.lineSpacing
+  localTextAlign.value = b.textAlign ?? TEXT_STYLE_DEFAULTS.textAlign
 }
 
 // 监听 props 变化，同步本地状态
@@ -758,7 +748,7 @@ function handleInpaintMethodChange(): void {
 /** 处理行间距变化（限制在 0.5-3.0） */
 function handleLineSpacingChange(): void {
   let v = Number(localLineSpacing.value)
-  if (!Number.isFinite(v) || v <= 0) v = DEFAULT_LINE_SPACING
+  if (!Number.isFinite(v) || v <= 0) v = TEXT_STYLE_DEFAULTS.lineSpacing
   v = Math.max(0.5, Math.min(3.0, v))
   localLineSpacing.value = v
   emit('update', { lineSpacing: v })
