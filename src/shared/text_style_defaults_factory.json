@@ -1,0 +1,15 @@
+{
+  "fontSize": 26,
+  "autoFontSize": false,
+  "fontFamily": "fonts/思源黑体SourceHanSansK-Bold.TTF",
+  "layoutDirection": "auto",
+  "textColor": "#000000",
+  "fillColor": "#FFFFFF",
+  "inpaintMethod": "solid",
+  "useAutoTextColor": false,
+  "strokeEnabled": true,
+  "strokeColor": "#FFFFFF",
+  "strokeWidth": 3,
+  "lineSpacing": 1.0,
+  "textAlign": "start"
+}

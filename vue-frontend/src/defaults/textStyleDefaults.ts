@@ -1,4 +1,4 @@
-import textStyleDefaultsJson from '../../../config/text_style_defaults.json'
+import textStyleDefaultsJson from '../../../src/shared/text_style_defaults_factory.json'
 import type { BubbleGlobalDefaults, TextDirection } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import type { TextStyleSettings } from '@/types/settings'
@@ -71,7 +71,7 @@ function expectNonEmptyString(value: unknown, fieldName: string): string {
   return failInvalidConfig(`${fieldName} must be a non-empty string`)
 }
 
-function parseTextStyleDefaults(source: Record<string, unknown>): TextStyleDefaults {
+function parseTextStyleDefaults(source: Record<string, unknown> | TextStyleSettings): TextStyleDefaults {
   return {
     fontSize: expectPositiveInt(source.fontSize, 'fontSize'),
     autoFontSize: expectBoolean(source.autoFontSize, 'autoFontSize'),

@@ -11,6 +11,7 @@ import type {
   FetchModelsResponse,
   ConnectionTestResponse,
 } from '@/types'
+import type { TextStyleSettings } from '@/types/settings'
 
 // ==================== 提示词内容响应 ====================
 
@@ -343,7 +344,13 @@ export interface UserSettingsResponse {
 
 export interface TextStyleDefaultsResponse {
   success: boolean
-  defaults?: Record<string, unknown>
+  defaults?: TextStyleSettings
+  error?: string
+}
+
+export interface SaveTextStyleDefaultsResponse {
+  success: boolean
+  defaults?: TextStyleSettings
   error?: string
 }
 
@@ -362,6 +369,20 @@ export async function getUserSettings(): Promise<UserSettingsResponse> {
  */
 export async function getTextStyleDefaults(): Promise<TextStyleDefaultsResponse> {
   return apiClient.get<TextStyleDefaultsResponse>('/api/config/text-style-defaults')
+}
+
+/**
+ * 保存文字样式默认值（保存到后端 config/text_style_defaults.json）
+ */
+export async function saveTextStyleDefaults(defaults: TextStyleSettings): Promise<SaveTextStyleDefaultsResponse> {
+  return apiClient.post<SaveTextStyleDefaultsResponse>('/api/config/text-style-defaults', { defaults })
+}
+
+/**
+ * 重置文字样式默认值为出厂默认值
+ */
+export async function resetTextStyleDefaults(): Promise<SaveTextStyleDefaultsResponse> {
+  return apiClient.post<SaveTextStyleDefaultsResponse>('/api/config/text-style-defaults/reset')
 }
 
 /**
@@ -427,5 +448,7 @@ export const configApi = {
   // 用户设置
   getUserSettings,
   getTextStyleDefaults,
+  saveTextStyleDefaults,
+  resetTextStyleDefaults,
   saveUserSettings,
 }

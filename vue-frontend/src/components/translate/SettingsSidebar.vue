@@ -17,6 +17,14 @@ import { showToast } from '@/utils/toast'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import {
+  BUILTIN_FONTS,
+  clampLineSpacing,
+  getFontDisplayName,
+  inpaintMethodOptions,
+  layoutDirectionOptions,
+  textAlignOptions,
+} from '@/utils/textStyleForm'
+import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
   type WorkflowMode,
@@ -102,27 +110,6 @@ const pageRangeEnd = ref(1)
 
 /** 当前工作流模式 */
 const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
-
-/** 排版方向选项（用于CustomSelect） */
-const layoutDirectionOptions = [
-  { label: '自动 (根据检测)', value: 'auto' },
-  { label: '竖向排版', value: 'vertical' },
-  { label: '横向排版', value: 'horizontal' },
-]
-
-/** 对齐方式选项（横排=水平对齐，竖排=列内字符对齐） */
-const textAlignOptions = [
-  { label: '起始 (左/顶)', value: 'start' },
-  { label: '居中', value: 'center' },
-  { label: '末尾 (右/底)', value: 'end' },
-]
-
-/** 填充方式选项（用于CustomSelect） */
-const inpaintMethodOptions = [
-  { label: '纯色填充', value: 'solid' },
-  { label: 'LAMA修复 (速度优化)', value: 'lama_mpe' },
-  { label: 'LAMA修复 (通用)', value: 'litelama' },
-]
 
 // ============================================================
 // 计算属性
@@ -277,14 +264,6 @@ const isDangerousWorkflow = computed(() => selectedWorkflowConfig.value.isDanger
 /** 字体列表（包含内置字体） */
 const fontList = ref<string[]>([])
 
-/** 内置字体列表（确保始终显示） */
-const BUILTIN_FONTS = [
-  TEXT_STYLE_DEFAULTS.fontFamily,
-  'fonts/msyh.ttc',
-  'fonts/simhei.ttf',
-  'fonts/simsun.ttc',
-]
-
 /** 字体上传输入框引用 */
 const fontUploadInput = ref<HTMLInputElement | null>(null)
 
@@ -423,52 +402,6 @@ async function handleFontUpload(event: Event) {
 }
 
 /**
- * 获取字体显示名称
- */
-function getFontDisplayName(fontPath: string): string {
-  // 内置字体的中文名称映射（与后端保持一致）
-  const fontNameMap: Record<string, string> = {
-    'fonts/STXINGKA.TTF': '华文行楷',
-    'fonts/STXINWEI.TTF': '华文新魏',
-    'fonts/STZHONGS.TTF': '华文中宋',
-    'fonts/STKAITI.TTF': '楷体',
-    'fonts/STLITI.TTF': '隶书',
-    'fonts/思源黑体SourceHanSansK-Bold.TTF': '思源黑体',
-    'fonts/STSONG.TTF': '华文宋体',
-    'fonts/msyh.ttc': '微软雅黑',
-    'fonts/msyhbd.ttc': '微软雅黑粗体',
-    'fonts/SIMYOU.TTF': '幼圆',
-    'fonts/STFANGSO.TTF': '仿宋',
-    'fonts/STHUPO.TTF': '华文琥珀',
-    'fonts/STXIHEI.TTF': '华文细黑',
-    'fonts/simkai.ttf': '中易楷体',
-    'fonts/simfang.ttf': '中易仿宋',
-    'fonts/simhei.ttf': '中易黑体',
-    'fonts/SIMLI.TTF': '中易隶书',
-    'fonts/simsun.ttc': '宋体',
-  }
-
-  // 先检查是否有预定义的中文名称
-  if (fontNameMap[fontPath]) {
-    return fontNameMap[fontPath]
-  }
-
-  // 从路径中提取文件名
-  const fileName = fontPath.split('/').pop() || fontPath
-
-  // 检查文件名是否有预定义名称（不区分大小写）
-  for (const [path, name] of Object.entries(fontNameMap)) {
-    const mapFileName = path.split('/').pop() || ''
-    if (mapFileName.toLowerCase() === fileName.toLowerCase()) {
-      return name
-    }
-  }
-
-  // 移除扩展名
-  return fileName.replace(/\.(ttf|ttc|otf)$/i, '')
-}
-
-/**
  * 处理字体选择变化（CustomSelect）
  */
 function handleFontSelectChange(value: string | number) {
@@ -511,9 +444,7 @@ function updateTextColor(event: Event) {
  * 更新行间距倍数（0.5 - 3.0）
  */
 function updateLineSpacing(event: Event) {
-  let value = Number((event.target as HTMLInputElement).value)
-  if (!Number.isFinite(value) || value <= 0) value = TEXT_STYLE_DEFAULTS.lineSpacing
-  value = Math.max(0.5, Math.min(3.0, value))
+  const value = clampLineSpacing(Number((event.target as HTMLInputElement).value), TEXT_STYLE_DEFAULTS.lineSpacing)
   settingsStore.updateTextStyle({ lineSpacing: value })
   emit('textStyleChanged', 'lineSpacing', value)
 }

@@ -16,22 +16,7 @@ from typing import Any, Dict
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TEXT_STYLE_DEFAULTS_PATH = os.path.join(PROJECT_ROOT, "config", "text_style_defaults.json")
-
-_BOOTSTRAP_TEXT_STYLE_DEFAULTS: Dict[str, Any] = {
-    "fontSize": 25,
-    "autoFontSize": False,
-    "fontFamily": "fonts/思源黑体SourceHanSansK-Bold.TTF",
-    "layoutDirection": "auto",
-    "textColor": "#000000",
-    "fillColor": "#FFFFFF",
-    "inpaintMethod": "solid",
-    "useAutoTextColor": False,
-    "strokeEnabled": True,
-    "strokeColor": "#FFFFFF",
-    "strokeWidth": 3,
-    "lineSpacing": 1.0,
-    "textAlign": "start",
-}
+TEXT_STYLE_FACTORY_DEFAULTS_PATH = os.path.join(os.path.dirname(__file__), "text_style_defaults_factory.json")
 
 _REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
     "fontSize": int,
@@ -85,13 +70,35 @@ def _validate_text_style_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _write_defaults_file(path: str, defaults: Dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(defaults, file, indent=2, ensure_ascii=False)
+
+
+@lru_cache(maxsize=1)
+def load_text_style_factory_defaults() -> Dict[str, Any]:
+    if not os.path.exists(TEXT_STYLE_FACTORY_DEFAULTS_PATH):
+        raise RuntimeError("text_style_defaults_factory.json 不存在，请检查安装文件是否完整")
+
+    with open(TEXT_STYLE_FACTORY_DEFAULTS_PATH, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    if not isinstance(data, dict):
+        raise RuntimeError("text_style_defaults_factory.json 必须是对象")
+
+    return _validate_text_style_defaults(data)
+
+
+def get_text_style_factory_defaults() -> Dict[str, Any]:
+    return copy.deepcopy(load_text_style_factory_defaults())
+
+
 def ensure_text_style_defaults_file() -> None:
     if os.path.exists(TEXT_STYLE_DEFAULTS_PATH):
         return
 
-    os.makedirs(os.path.dirname(TEXT_STYLE_DEFAULTS_PATH), exist_ok=True)
-    with open(TEXT_STYLE_DEFAULTS_PATH, "w", encoding="utf-8") as file:
-        json.dump(_BOOTSTRAP_TEXT_STYLE_DEFAULTS, file, indent=2, ensure_ascii=False)
+    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, get_text_style_factory_defaults())
 
 
 @lru_cache(maxsize=1)
@@ -114,6 +121,21 @@ def get_text_style_defaults() -> Dict[str, Any]:
 def reload_text_style_defaults() -> Dict[str, Any]:
     load_text_style_defaults.cache_clear()
     return get_text_style_defaults()
+
+
+def save_text_style_defaults(next_defaults: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(next_defaults, dict):
+        raise RuntimeError("text_style_defaults.json 必须是对象")
+
+    normalized = _validate_text_style_defaults(next_defaults)
+    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, normalized)
+    return reload_text_style_defaults()
+
+
+def reset_text_style_defaults() -> Dict[str, Any]:
+    factory_defaults = get_text_style_factory_defaults()
+    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, factory_defaults)
+    return reload_text_style_defaults()
 
 
 def get_backend_default_text_direction() -> str:

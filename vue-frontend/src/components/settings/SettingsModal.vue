@@ -67,6 +67,11 @@
         <PluginManager />
       </div>
 
+      <!-- 文本默认值 -->
+      <div v-show="activeTab === 'text-defaults'" class="settings-tab-pane">
+        <TextStyleDefaultsSettings ref="textStyleDefaultsRef" :is-open="isOpen" />
+      </div>
+
       <!-- 更多设置 -->
       <div v-show="activeTab === 'more'" class="settings-tab-pane">
         <MoreSettings />
@@ -98,6 +103,16 @@ import ProofreadingSettings from './ProofreadingSettings.vue'
 import PromptLibrary from './PromptLibrary.vue'
 import PluginManager from './PluginManager.vue'
 import MoreSettings from './MoreSettings.vue'
+import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
+import { showToast } from '@/utils/toast'
+
+interface SettingsModalSavePayload {
+  textDefaultsChanged: boolean
+}
+
+interface TextStyleDefaultsSettingsExposed {
+  saveDefaults: () => Promise<{ success: boolean; changed: boolean; error?: string }>
+}
 
 // Props
 const props = defineProps<{
@@ -109,7 +124,7 @@ const props = defineProps<{
 // Emits
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'save'): void
+  (e: 'save', payload: SettingsModalSavePayload): void
 }>()
 
 // Store
@@ -118,6 +133,7 @@ const settingsStore = useSettingsStore()
 // 本地状态
 const isOpen = ref(props.modelValue)
 const activeTab = ref('ocr')
+const textStyleDefaultsRef = ref<TextStyleDefaultsSettingsExposed | null>(null)
 
 // Tab 配置
 const tabs = [
@@ -128,6 +144,7 @@ const tabs = [
   { id: 'proofreading', label: 'AI校对' },
   { id: 'prompt-library', label: '提示词管理' },
   { id: 'plugins', label: '插件管理' },
+  { id: 'text-defaults', label: '文本默认值' },
   { id: 'more', label: '更多' }
 ]
 
@@ -170,6 +187,16 @@ function handleClose() {
 
 // 保存设置
 async function handleSave() {
+  const textDefaultsResult = await textStyleDefaultsRef.value?.saveDefaults() ?? {
+    success: true,
+    changed: false
+  }
+
+  if (!textDefaultsResult.success) {
+    showToast(textDefaultsResult.error || '保存文本默认值失败', 'error')
+    return
+  }
+
   // 保存设置到 localStorage
   settingsStore.saveToStorage()
   
@@ -181,7 +208,7 @@ async function handleSave() {
     console.warn('[SettingsModal] 保存到后端失败，仅保存到 localStorage:', error)
   }
   
-  emit('save')
+  emit('save', { textDefaultsChanged: textDefaultsResult.changed })
   handleClose()
 }
 </script>

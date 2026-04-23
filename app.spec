@@ -20,6 +20,7 @@ hiddenimports = []
 # ===================== 项目资源文件 =====================
 # 1. 静态资源 (Vue SPA 构建产物、字体、图标)
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'static'), os.path.join('src', 'app', 'static')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 
 # 2. 配置文件 - 不打包用户运行时配置
 # user_settings.json, prompts.json, model_history.json 等会在运行时自动生成

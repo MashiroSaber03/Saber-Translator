@@ -6,7 +6,11 @@ from flask import Blueprint, request, jsonify # 已有
 # 导入配置加载/保存函数和常量
 from src.shared.config_loader import load_json_config, save_json_config
 from src.shared import constants
-from src.shared.text_style_defaults import get_text_style_defaults
+from src.shared.text_style_defaults import (
+    get_text_style_defaults,
+    save_text_style_defaults,
+    reset_text_style_defaults,
+)
 import logging # 需要 logging
 
 # 获取 logger
@@ -197,6 +201,33 @@ def get_text_style_defaults_api():
     """获取当前文字样式默认值。"""
     constants.refresh_text_style_runtime_defaults()
     return jsonify({'success': True, 'defaults': get_text_style_defaults()})
+
+
+@config_bp.route('/config/text-style-defaults', methods=['POST'])
+def save_text_style_defaults_api():
+    """保存文字样式默认值到 config/text_style_defaults.json。"""
+    data = request.get_json() or {}
+    defaults = data.get('defaults')
+    if defaults is None:
+        return jsonify({'success': False, 'error': '缺少 defaults 数据'}), 400
+
+    try:
+        saved_defaults = save_text_style_defaults(defaults)
+        constants.refresh_text_style_runtime_defaults()
+        return jsonify({'success': True, 'defaults': saved_defaults})
+    except RuntimeError as error:
+        return jsonify({'success': False, 'error': str(error)}), 400
+
+
+@config_bp.route('/config/text-style-defaults/reset', methods=['POST'])
+def reset_text_style_defaults_api():
+    """重置文字样式默认值为仓库出厂默认值。"""
+    try:
+        defaults = reset_text_style_defaults()
+        constants.refresh_text_style_runtime_defaults()
+        return jsonify({'success': True, 'defaults': defaults})
+    except RuntimeError as error:
+        return jsonify({'success': False, 'error': str(error)}), 400
 
 @config_bp.route('/save_settings', methods=['POST'])
 def save_settings_api():
