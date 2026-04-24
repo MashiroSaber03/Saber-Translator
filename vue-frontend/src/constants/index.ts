@@ -394,7 +394,6 @@ export type OcrEngineValue = (typeof OCR_ENGINES)[number]['value']
 export const TEXT_DETECTORS = [
   { value: 'ctd', label: 'CTD (Comic Text Detector)' },
   { value: 'yolo', label: 'YOLO' },
-  { value: 'yolov5', label: 'YOLOv5' },
   { value: 'default', label: 'Default (DBNet)' }
 ] as const
 

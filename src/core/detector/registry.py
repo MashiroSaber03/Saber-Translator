@@ -17,17 +17,15 @@ logger = logging.getLogger("DetectorRegistry")
 # 检测器类型常量
 DETECTOR_CTD = 'ctd'
 DETECTOR_YOLO = 'yolo'
-DETECTOR_YOLOV5 = 'yolov5'
 DETECTOR_DEFAULT = 'default'  # DBNet ResNet34 (detect-20241225.ckpt)
 
-DetectorType = Literal['default', 'ctd', 'yolo', 'yolov5']
+DetectorType = Literal['default', 'ctd', 'yolo']
 
 # 支持的检测器描述
 SUPPORTED_DETECTORS = {
     DETECTOR_DEFAULT: 'Default (DBNet ResNet34)',
     DETECTOR_CTD: 'CTD (Comic Text Detector)',
     DETECTOR_YOLO: 'YSGYolo',
-    DETECTOR_YOLOV5: 'YOLOv5 (旧版)'
 }
 
 # 默认检测器
@@ -59,12 +57,10 @@ def _lazy_register_builtin():
     
     from .backends.ctd_backend import CTDBackend
     from .backends.yolo_backend import YoloBackend
-    from .backends.yolov5_backend import YoloV5Backend
     from .backends.default_backend import DefaultBackend
     
     register_detector(DETECTOR_CTD, CTDBackend)
     register_detector(DETECTOR_YOLO, YoloBackend)
-    register_detector(DETECTOR_YOLOV5, YoloV5Backend)
     register_detector(DETECTOR_DEFAULT, DefaultBackend)
 
 
@@ -77,7 +73,7 @@ def get_detector(
     获取检测器实例（单例模式）
     
     Args:
-        detector_type: 检测器类型，默认使用 CTD
+        detector_type: 检测器类型，默认使用 Default
         force_reload: 是否强制重新加载
         **kwargs: 传递给检测器构造函数的参数
         

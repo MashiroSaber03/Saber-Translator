@@ -5,18 +5,13 @@
 """
 
 import logging
-import cv2
 import numpy as np
 from typing import List, Tuple, Dict, Any
 from PIL import Image
 from collections import Counter
 
 from src.shared import constants
-from src.core.detector import (
-    get_detector, detect, detect_to_legacy_format,
-    DETECTOR_CTD, DETECTOR_YOLO, DETECTOR_YOLOV5,
-    DetectionResult, TextBlock
-)
+from src.core.detector import detect
 
 logger = logging.getLogger("CoreDetection")
 
@@ -45,7 +40,7 @@ def get_bubble_detection_result(
     Args:
         image_pil: 输入的 PIL 图像对象
         conf_threshold: 检测的置信度阈值 (保留接口兼容性)
-        detector_type: 检测器类型 ('ctd', 'yolo', 'yolov5', 'default')，默认使用 CTD
+        detector_type: 检测器类型 ('ctd', 'yolo', 'default')，默认使用 Default
         expand_ratio: 整体扩展比例 (%)
         expand_top/bottom/left/right: 各边额外扩展比例 (%)
         edge_ratio_threshold: 边缘距离比例阈值，用于防止跨气泡错误合并
@@ -231,51 +226,6 @@ def analyze_direction_from_textlines(textlines: List[Dict[str, Any]]) -> str:
     return most_common[0]
 
 
-def detect_textlines_with_paddle_det(
-    image_pil: Image.Image,
-    bubble_coord: Tuple[int, int, int, int]
-) -> List[Dict[str, Any]]:
-    """使用 PaddleOCR det 模型检测气泡内的文本行（降级方案）"""
-    x1, y1, x2, y2 = bubble_coord
-    bubble_img = image_pil.crop((x1, y1, x2, y2))
-    bubble_np = np.array(bubble_img.convert('RGB'))
-    
-    textlines = []
-    
-    try:
-        from src.interfaces.paddle_ocr_onnx_interface import get_paddle_ocr_handler
-        
-        handler = get_paddle_ocr_handler()
-        if not handler.initialized:
-            handler.initialize("chinese")
-        
-        if handler.ocr is None:
-            return textlines
-        
-        result, _ = handler.ocr(bubble_np)
-        
-        if result:
-            for line in result:
-                if len(line) >= 1 and line[0] is not None:
-                    bbox = line[0]
-                    if len(bbox) == 4:
-                        polygon = [[int(p[0]) + x1, int(p[1]) + y1] for p in bbox]
-                        angle = calculate_polygon_angle(polygon)
-                        direction = angle_to_direction(angle)
-                        
-                        textlines.append({
-                            'polygon': polygon,
-                            'direction': direction,
-                            'angle': angle
-                        })
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.error(f"使用 PaddleOCR det 检测文本行时出错: {e}")
-    
-    return textlines
-
-
 def get_bubble_detection_result_with_auto_directions(
     image_pil: Image.Image,
     conf_threshold: float = 0.6,
@@ -365,15 +315,6 @@ def get_bubble_detection_result_with_auto_directions(
                 auto_dir = 'v' if (y2 - y1) > (x2 - x1) else 'h'
             
             result['auto_directions'].append(auto_dir)
-        
-        # 对于 YOLOv5，使用 PaddleOCR 降级检测
-        if detector_type == constants.DETECTOR_YOLOV5:
-            for i, coord in enumerate(result['coords']):
-                if not result['textlines_per_bubble'][i]:
-                    textlines_info = detect_textlines_with_paddle_det(image_pil, coord)
-                    result['textlines_per_bubble'][i] = textlines_info
-                    if textlines_info:
-                        result['auto_directions'][i] = analyze_direction_from_textlines(textlines_info)
         
         # 应用坐标扩展
         if result['coords']:

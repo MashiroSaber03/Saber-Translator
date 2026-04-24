@@ -13,7 +13,7 @@ export type OcrEngine = 'manga_ocr' | 'paddle_ocr' | 'paddleocr_vl' | 'baidu_ocr
 /**
  * 文本检测器类型
  */
-export type TextDetector = 'ctd' | 'yolo' | 'yolov5' | 'default'
+export type TextDetector = 'ctd' | 'yolo' | 'default'
 
 /**
  * 翻译服务商类型

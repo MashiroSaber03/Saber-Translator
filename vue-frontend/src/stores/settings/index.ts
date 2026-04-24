@@ -67,6 +67,13 @@ export const useSettingsStore = defineStore('settings', () => {
     aiVisionOcr: {}
   })
 
+  function normalizeTextDetector(detector: unknown): TextDetector {
+    if (detector === 'ctd' || detector === 'yolo' || detector === 'default') {
+      return detector
+    }
+    return 'default'
+  }
+
   // ============================================================
   // localStorage 持久化方法
   // ============================================================
@@ -124,6 +131,7 @@ export const useSettingsStore = defineStore('settings', () => {
         const defaults = createDefaultSettings()
         // 深度合并，确保新增的默认值不会丢失
         settings.value = deepMerge(defaults, parsed)
+        settings.value.textDetector = normalizeTextDetector(settings.value.textDetector)
         // 确保数值类型正确
         ensureNumericTypes()
 
@@ -418,7 +426,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.sourceLanguage = backendSettings.sourceLanguage as string
     }
     if (backendSettings.textDetector) {
-      settings.value.textDetector = backendSettings.textDetector as TextDetector
+      settings.value.textDetector = normalizeTextDetector(backendSettings.textDetector)
     }
 
     // 百度 OCR 设置

@@ -94,7 +94,6 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 const detectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },
   { label: 'YOLO', value: 'yolo' },
-  { label: 'YOLOv5', value: 'yolov5' },
   { label: 'Default (DBNet)', value: 'default' }
 ]
 
@@ -116,7 +115,7 @@ const settings = reactive({
 
 // 监听本地设置变化，同步到 store
 watch(() => settings.textDetector, (value) => {
-  settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'yolov5' | 'default')
+  settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'default')
 })
 
 watch(() => settings.boxExpandRatio, (value) => {

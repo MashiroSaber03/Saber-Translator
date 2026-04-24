@@ -42,19 +42,7 @@ src_plugins_path = os.path.join(PROJECT_ROOT, 'src', 'plugins')
 if os.path.exists(src_plugins_path):
     datas.append((src_plugins_path, os.path.join('src', 'plugins')))
 
-# 6. YOLOv5 接口目录 (模型和仓库)
-yolov5_path = os.path.join(PROJECT_ROOT, 'src', 'interfaces', 'yolov5')
-if os.path.exists(yolov5_path):
-    # models 目录
-    yolov5_models = os.path.join(yolov5_path, 'models')
-    if os.path.exists(yolov5_models):
-        datas.append((yolov5_models, os.path.join('src', 'interfaces', 'yolov5', 'models')))
-    # repo 目录
-    yolov5_repo = os.path.join(yolov5_path, 'repo')
-    if os.path.exists(yolov5_repo):
-        datas.append((yolov5_repo, os.path.join('src', 'interfaces', 'yolov5', 'repo')))
-
-# 7. 图片资源
+# 6. 图片资源
 pic_path = os.path.join(PROJECT_ROOT, 'pic')
 if os.path.exists(pic_path):
     datas.append((pic_path, 'pic'))
@@ -158,7 +146,6 @@ hiddenimports += [
     'src.core.detector.panel_detector', 'src.core.detector.smart_sort',  # 面板检测和智能排序
     'src.core.detector.backends', 'src.core.detector.backends.ctd_backend',
     'src.core.detector.backends.default_backend', 'src.core.detector.backends.yolo_backend',
-    'src.core.detector.backends.yolov5_backend',
     
     # interfaces 基础
     'src.interfaces', 'src.interfaces.manga_ocr_interface', 'src.interfaces.paddle_ocr_interface', 'src.interfaces.paddle_ocr_onnx_interface',
@@ -168,9 +155,6 @@ hiddenimports += [
     # interfaces.default (DBNet 检测器)
     'src.interfaces.default', 'src.interfaces.default.DBHead',
     'src.interfaces.default.DBNet_resnet34', 'src.interfaces.default.imgproc',
-    
-    # interfaces.yolov5
-    'src.interfaces.yolov5',
     
     # interfaces.lama_mpe
     'src.interfaces.lama_mpe_interface',
@@ -235,9 +219,6 @@ hiddenimports += [
     # asyncio (textline_merge 需要)
     'asyncio',
     
-    # YOLOv5 repo 依赖
-    'matplotlib', 'seaborn',
-    
     # 电子书处理
     'mobi', 'fitz', 'pymupdf',
     
@@ -254,7 +235,6 @@ for mod in ['flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime'
         pass
 
 # ===================== 排除项 =====================
-# 注意：matplotlib 不能排除，YOLOv5 repo 需要它
 excludes = [
     'tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
     'IPython', 'jupyter', 'notebook', 'pytest', 'sphinx', 'docutils',

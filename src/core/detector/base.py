@@ -28,7 +28,7 @@ class BaseTextDetector(ABC):
     - _detect_raw(): 执行原始检测，返回 TextLine 列表
     """
     
-    # 是否需要合并文本行（CTD/YSGYolo需要，YOLOv5不需要）
+    # 是否需要合并文本行（CTD/YSGYolo/Default 需要）
     requires_merge: bool = True
     
     def __init__(self, device: str = 'cuda', **kwargs):

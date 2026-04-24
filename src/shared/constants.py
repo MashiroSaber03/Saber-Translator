@@ -443,7 +443,6 @@ PADDLEOCR_VL_HF_MODEL = 'jzhang533/PaddleOCR-VL-For-Manga'
 # --- 文本检测器相关 ---
 DETECTOR_CTD = 'ctd'
 DETECTOR_YOLO = 'yolo'
-DETECTOR_YOLOV5 = 'yolov5'  # 旧版 YOLOv5 检测器
 DETECTOR_DEFAULT = 'default'  # DBNet ResNet34 (detect-20241225.ckpt)
 DEFAULT_DETECTOR = DETECTOR_DEFAULT
 
@@ -451,7 +450,6 @@ SUPPORTED_DETECTORS = {
     DETECTOR_DEFAULT: 'Default (DBNet ResNet34)',
     DETECTOR_CTD: 'CTD (Comic Text Detector)',
     DETECTOR_YOLO: 'YSGYolo',
-    DETECTOR_YOLOV5: 'YOLOv5 (旧版)'
 }
 
 # CTD 配置
@@ -459,9 +457,6 @@ SUPPORTED_DETECTORS = {
 # 远大于到最近邻居的距离 (比例超过此阈值)，则断开这个连接，防止跨气泡错误合并
 # 推荐值 3.0-5.0，0 表示禁用
 CTD_EDGE_RATIO_THRESHOLD = 0.0
-
-# YOLOv5 配置 (旧版)
-YOLOV5_CONF_THRESH = 0.6
 
 # YSGYolo 配置
 YOLO_MODEL_DIR = 'models/yolo'
@@ -477,9 +472,6 @@ DEFAULT_DETECT_SIZE = 1536
 DEFAULT_TEXT_THRESHOLD = 0.5
 DEFAULT_BOX_THRESHOLD = 0.7
 DEFAULT_UNCLIP_RATIO = 2.2
-
-# 48px OCR 不兼容检测器（输出多行合并框的检测器）
-OCR_48PX_INCOMPATIBLE_DETECTORS = {DETECTOR_YOLOV5}
 
 # --- 重试机制设置 ---
 DEFAULT_TRANSLATION_MAX_RETRIES = 3  # 普通翻译默认重试次数

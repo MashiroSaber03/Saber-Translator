@@ -11,7 +11,7 @@ from .data_types import TextLine, TextBlock, DetectionResult
 from .base import BaseTextDetector
 from .registry import (
     get_detector, detect, detect_to_legacy_format, register_detector, 
-    DETECTOR_CTD, DETECTOR_YOLO, DETECTOR_YOLOV5, DETECTOR_DEFAULT
+    DETECTOR_CTD, DETECTOR_YOLO, DETECTOR_DEFAULT
 )
 
 __all__ = [
@@ -29,6 +29,5 @@ __all__ = [
     # 常量
     'DETECTOR_CTD',
     'DETECTOR_YOLO',
-    'DETECTOR_YOLOV5',
     'DETECTOR_DEFAULT',
 ]

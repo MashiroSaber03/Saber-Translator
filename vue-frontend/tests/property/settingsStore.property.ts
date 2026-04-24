@@ -146,7 +146,7 @@ describe('设置状态管理属性测试', () => {
       fc.property(
         fc.constantFrom('manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision'),
         fc.constantFrom('ja', 'zh', 'en', 'ko'),
-        fc.constantFrom('ctd', 'yolo', 'yolov5', 'default'),
+        fc.constantFrom('ctd', 'yolo', 'default'),
         (ocrEngine, sourceLanguage, textDetector) => {
           // 每次迭代重新创建 Pinia 实例
           setActivePinia(createPinia())
@@ -157,7 +157,7 @@ describe('设置状态管理属性测试', () => {
           // 更新OCR设置
           store.setOcrEngine(ocrEngine as 'manga_ocr' | 'paddle_ocr' | 'baidu_ocr' | 'ai_vision')
           store.updateSettings({ sourceLanguage })
-          store.setTextDetector(textDetector as 'ctd' | 'yolo' | 'yolov5' | 'default')
+          store.setTextDetector(textDetector as 'ctd' | 'yolo' | 'default')
 
           // 验证设置已保存到 localStorage
           const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
@@ -178,6 +178,17 @@ describe('设置状态管理属性测试', () => {
       ),
       { numRuns: 100 }
     )
+  })
+
+  it('从 localStorage 加载旧版 yolov5 检测器设置时应迁移为 default', () => {
+    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
+      textDetector: 'yolov5'
+    })
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect(store.settings.textDetector).toBe('default')
   })
 
   /**
