@@ -33,6 +33,33 @@ export function useDetectionSettings(
   }
 
   /**
+   * 设置辅助 YSGYolo 检测开关
+   */
+  function setEnableAuxYoloDetection(enabled: boolean): void {
+    settings.value.enableAuxYoloDetection = enabled
+    saveToStorage()
+    console.log(`辅助 YSGYolo 检测已设置为: ${enabled}`)
+  }
+
+  /**
+   * 设置辅助 YSGYolo 置信度阈值
+   */
+  function setAuxYoloConfThreshold(threshold: number): void {
+    settings.value.auxYoloConfThreshold = threshold
+    saveToStorage()
+    console.log(`辅助 YSGYolo 置信度阈值已设置为: ${threshold}`)
+  }
+
+  /**
+   * 设置辅助 YSGYolo 重叠阈值
+   */
+  function setAuxYoloOverlapThreshold(threshold: number): void {
+    settings.value.auxYoloOverlapThreshold = threshold
+    saveToStorage()
+    console.log(`辅助 YSGYolo 重叠阈值已设置为: ${threshold}`)
+  }
+
+  /**
    * 设置 SaberYOLO 二阶段纠错开关
    */
   function setEnableSaberYoloRefine(enabled: boolean): void {
@@ -71,6 +98,9 @@ export function useDetectionSettings(
   return {
     // 方法
     setTextDetector,
+    setEnableAuxYoloDetection,
+    setAuxYoloConfThreshold,
+    setAuxYoloOverlapThreshold,
     setEnableSaberYoloRefine,
     setSaberYoloRefineOverlapThreshold,
     updateBoxExpand,

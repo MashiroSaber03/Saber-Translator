@@ -69,6 +69,9 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     const response: ParallelDetectResponse = await parallelDetect({
         image: base64,
         detector_type: settings.textDetector,
+        enable_aux_yolo_detection: settings.enableAuxYoloDetection,
+        aux_yolo_conf_threshold: settings.auxYoloConfThreshold,
+        aux_yolo_overlap_threshold: settings.auxYoloOverlapThreshold,
         enable_saber_yolo_refine: settings.enableSaberYoloRefine,
         saber_yolo_refine_overlap_threshold: settings.saberYoloRefineOverlapThreshold,
         box_expand_ratio: settings.boxExpand.ratio,
@@ -92,6 +95,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         const maskResponse: ParallelDetectResponse = await parallelDetect({
             image: base64,
             detector_type: 'default',  // 固定使用 Default 检测器生成掩膜
+            enable_aux_yolo_detection: false,  // 掩膜路径不需要辅助检测
             enable_saber_yolo_refine: false,  // 掩膜路径不需要二阶段纠错
             box_expand_ratio: 0,       // 掩膜生成不需要扩展
             box_expand_top: 0,

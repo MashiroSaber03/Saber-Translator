@@ -14,6 +14,9 @@ vi.mock('@/stores/settingsStore', () => ({
       textDetector: 'ctd',
       enableSaberYoloRefine: true,
       saberYoloRefineOverlapThreshold: 35,
+      enableAuxYoloDetection: true,
+      auxYoloConfThreshold: 0.55,
+      auxYoloOverlapThreshold: 0.2,
       boxExpand: {
         ratio: 3,
         top: 1,
@@ -65,11 +68,15 @@ describe('executeDetection saber yolo refine flags', () => {
     expect(parallelDetectMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
       detector_type: 'ctd',
       enable_saber_yolo_refine: true,
-      saber_yolo_refine_overlap_threshold: 35
+      saber_yolo_refine_overlap_threshold: 35,
+      enable_aux_yolo_detection: true,
+      aux_yolo_conf_threshold: 0.55,
+      aux_yolo_overlap_threshold: 0.2
     }))
     expect(parallelDetectMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
       detector_type: 'default',
-      enable_saber_yolo_refine: false
+      enable_saber_yolo_refine: false,
+      enable_aux_yolo_detection: false
     }))
   })
 })

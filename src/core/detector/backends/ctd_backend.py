@@ -30,6 +30,7 @@ class CTDBackend(BaseTextDetector):
     """
     CTD 检测后端
     """
+    detector_id: str = 'ctd'
     
     def __init__(self, 
                  model_dir: str = None,

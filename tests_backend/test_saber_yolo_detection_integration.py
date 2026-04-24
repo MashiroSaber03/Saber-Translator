@@ -170,6 +170,39 @@ class SaberYoloDetectionIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(detect_result_mock.call_args.kwargs["saber_yolo_refine_overlap_threshold"], 35)
 
+    def test_parallel_detect_forwards_aux_yolo_settings(self) -> None:
+        buffer = io.BytesIO()
+        self.image.save(buffer, format="PNG")
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        mocked_result = {
+            "coords": [],
+            "angles": [],
+            "polygons": [],
+            "auto_directions": [],
+            "raw_mask": None,
+            "textlines_per_bubble": [],
+        }
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.get_bubble_detection_result_with_auto_directions",
+            return_value=mocked_result,
+        ) as detect_result_mock:
+            response = self.client.post(
+                "/api/parallel/detect",
+                json={
+                    "image": image_base64,
+                    "enable_aux_yolo_detection": True,
+                    "aux_yolo_conf_threshold": 0.55,
+                    "aux_yolo_overlap_threshold": 0.2,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(detect_result_mock.call_args.kwargs["enable_aux_yolo_detection"], True)
+        self.assertEqual(detect_result_mock.call_args.kwargs["aux_yolo_conf_threshold"], 0.55)
+        self.assertEqual(detect_result_mock.call_args.kwargs["aux_yolo_overlap_threshold"], 0.2)
+
     def test_get_bubble_detection_result_does_not_force_merge_lines(self) -> None:
         fake_result = DetectionResult(blocks=[], raw_lines=[])
 

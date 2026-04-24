@@ -95,6 +95,9 @@ def parallel_detect():
         expand_bottom = data.get('box_expand_bottom', 0)
         expand_left = data.get('box_expand_left', 0)
         expand_right = data.get('box_expand_right', 0)
+        enable_aux_yolo_detection = data.get('enable_aux_yolo_detection')
+        aux_yolo_conf_threshold = data.get('aux_yolo_conf_threshold')
+        aux_yolo_overlap_threshold = data.get('aux_yolo_overlap_threshold')
         enable_saber_yolo_refine = data.get('enable_saber_yolo_refine')
         saber_yolo_refine_overlap_threshold = data.get('saber_yolo_refine_overlap_threshold')
         
@@ -107,6 +110,9 @@ def parallel_detect():
             expand_bottom=expand_bottom,
             expand_left=expand_left,
             expand_right=expand_right,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )

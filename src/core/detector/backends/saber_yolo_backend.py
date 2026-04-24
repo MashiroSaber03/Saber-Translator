@@ -26,6 +26,7 @@ class SaberYoloBackend(BaseTextDetector):
     """
 
     requires_merge: bool = False
+    detector_id: str = 'saber_yolo'
 
     def __init__(
         self,

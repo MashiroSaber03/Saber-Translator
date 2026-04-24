@@ -57,6 +57,7 @@ class YoloBackend(BaseTextDetector):
     
     100% 遵循 BallonsTranslator 的实现
     """
+    detector_id: str = 'yolo'
     
     def __init__(self,
                  model_dir: str = None,
@@ -125,7 +126,13 @@ class YoloBackend(BaseTextDetector):
         """获取有效标签"""
         return [k for k, v in self.labels.items() if v]
     
-    def _detect_raw(self, image: np.ndarray, **kwargs) -> Tuple[List[TextLine], Optional[np.ndarray]]:
+    def _detect_raw(
+        self,
+        image: np.ndarray,
+        conf_thresh: float = None,
+        iou_thresh: float = None,
+        **kwargs
+    ) -> Tuple[List[TextLine], Optional[np.ndarray]]:
         """
         执行原始检测
         
@@ -139,6 +146,8 @@ class YoloBackend(BaseTextDetector):
             raise RuntimeError("模型未加载")
         
         im_h, im_w = image.shape[:2]
+        conf_thresh = self.conf_thresh if conf_thresh is None else float(conf_thresh)
+        iou_thresh = self.iou_thresh if iou_thresh is None else float(iou_thresh)
         
         # YOLO 推理
         result = self.model.predict(
@@ -146,8 +155,8 @@ class YoloBackend(BaseTextDetector):
             save=False,
             show=False,
             verbose=False,
-            conf=self.conf_thresh,
-            iou=self.iou_thresh,
+            conf=conf_thresh,
+            iou=iou_thresh,
             agnostic_nms=True
         )[0]
         

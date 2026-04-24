@@ -200,6 +200,26 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.saberYoloRefineOverlapThreshold = Number(settings.value.saberYoloRefineOverlapThreshold)
     }
 
+    settings.value.enableAuxYoloDetection = Boolean(settings.value.enableAuxYoloDetection)
+    if (
+      settings.value.auxYoloConfThreshold === undefined ||
+      settings.value.auxYoloConfThreshold === null ||
+      isNaN(Number(settings.value.auxYoloConfThreshold))
+    ) {
+      settings.value.auxYoloConfThreshold = 0.4
+    } else {
+      settings.value.auxYoloConfThreshold = Number(settings.value.auxYoloConfThreshold)
+    }
+    if (
+      settings.value.auxYoloOverlapThreshold === undefined ||
+      settings.value.auxYoloOverlapThreshold === null ||
+      isNaN(Number(settings.value.auxYoloOverlapThreshold))
+    ) {
+      settings.value.auxYoloOverlapThreshold = 0.1
+    } else {
+      settings.value.auxYoloOverlapThreshold = Number(settings.value.auxYoloOverlapThreshold)
+    }
+
     const tr = settings.value.translation
     tr.rpmLimit = Number(tr.rpmLimit) || DEFAULT_RPM_TRANSLATION
     tr.maxRetries = Number(tr.maxRetries) || DEFAULT_TRANSLATION_MAX_RETRIES
@@ -437,6 +457,15 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     if (backendSettings.textDetector) {
       settings.value.textDetector = normalizeTextDetector(backendSettings.textDetector)
+    }
+    if (backendSettings.enableAuxYoloDetection !== undefined) {
+      settings.value.enableAuxYoloDetection = backendSettings.enableAuxYoloDetection as boolean
+    }
+    if (backendSettings.auxYoloConfThreshold !== undefined) {
+      settings.value.auxYoloConfThreshold = Number(backendSettings.auxYoloConfThreshold)
+    }
+    if (backendSettings.auxYoloOverlapThreshold !== undefined) {
+      settings.value.auxYoloOverlapThreshold = Number(backendSettings.auxYoloOverlapThreshold)
     }
     if (backendSettings.enableSaberYoloRefine !== undefined) {
       settings.value.enableSaberYoloRefine = backendSettings.enableSaberYoloRefine as boolean
@@ -812,6 +841,9 @@ export const useSettingsStore = defineStore('settings', () => {
         ocrEngine: settings.value.ocrEngine,
         sourceLanguage: settings.value.sourceLanguage,
         textDetector: settings.value.textDetector,
+        enableAuxYoloDetection: settings.value.enableAuxYoloDetection,
+        auxYoloConfThreshold: String(settings.value.auxYoloConfThreshold),
+        auxYoloOverlapThreshold: String(settings.value.auxYoloOverlapThreshold),
         enableSaberYoloRefine: settings.value.enableSaberYoloRefine,
         saberYoloRefineOverlapThreshold: String(settings.value.saberYoloRefineOverlapThreshold),
 
@@ -980,6 +1012,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,
+    setEnableAuxYoloDetection: detectionModule.setEnableAuxYoloDetection,
+    setAuxYoloConfThreshold: detectionModule.setAuxYoloConfThreshold,
+    setAuxYoloOverlapThreshold: detectionModule.setAuxYoloOverlapThreshold,
     setEnableSaberYoloRefine: detectionModule.setEnableSaberYoloRefine,
     setSaberYoloRefineOverlapThreshold: detectionModule.setSaberYoloRefineOverlapThreshold,
     updateBoxExpand: detectionModule.updateBoxExpand,

@@ -30,6 +30,7 @@ class BaseTextDetector(ABC):
     
     # 是否需要合并文本行（CTD/YSGYolo/Default 需要）
     requires_merge: bool = True
+    detector_id: str = ''
     
     def __init__(self, device: str = 'cuda', **kwargs):
         """
@@ -126,9 +127,30 @@ class BaseTextDetector(ABC):
         # 1. 预处理
         img_cv = self._preprocess(image)
         im_w, im_h = image.width, image.height
-        
+
+        enable_aux_yolo_detection = kwargs.pop('enable_aux_yolo_detection', None)
+        aux_yolo_conf_threshold = kwargs.pop('aux_yolo_conf_threshold', None)
+        aux_yolo_overlap_threshold = kwargs.pop('aux_yolo_overlap_threshold', None)
+
         # 2. 原始检测
         textlines, mask = self._detect_raw(img_cv, **kwargs)
+
+        if enable_aux_yolo_detection is None:
+            from src.shared import constants
+
+            enable_aux_yolo_detection = constants.ENABLE_AUX_YOLO_DETECTION
+
+        if enable_aux_yolo_detection:
+            from .aux_yolo import maybe_merge_with_aux_yolo
+
+            textlines = maybe_merge_with_aux_yolo(
+                img_cv,
+                textlines,
+                detector_type=self.detector_id,
+                enabled=enable_aux_yolo_detection,
+                conf_threshold=aux_yolo_conf_threshold,
+                overlap_threshold=aux_yolo_overlap_threshold,
+            )
         
         if not textlines:
             logger.info("未检测到文本区域")

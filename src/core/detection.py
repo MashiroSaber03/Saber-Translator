@@ -29,6 +29,9 @@ def _detect_with_optional_saber_refinement(
     detector_type: str,
     edge_ratio_threshold: float,
     merge_lines: bool = None,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
 ):
@@ -41,7 +44,10 @@ def _detect_with_optional_saber_refinement(
         expand_top=0,
         expand_bottom=0,
         expand_left=0,
-        expand_right=0
+        expand_right=0,
+        enable_aux_yolo_detection=enable_aux_yolo_detection,
+        aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+        aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
     )
     return apply_saber_yolo_refinement(
         image_pil,
@@ -61,6 +67,9 @@ def get_bubble_detection_result(
     expand_left: float = 0,
     expand_right: float = 0,
     edge_ratio_threshold: float = None,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
 ) -> dict:
@@ -99,6 +108,9 @@ def get_bubble_detection_result(
             detector_type=detector_type,
             edge_ratio_threshold=edge_ratio_threshold,
             merge_lines=None,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )
@@ -143,6 +155,9 @@ def get_bubble_coordinates(
     expand_left: float = 0,
     expand_right: float = 0,
     edge_ratio_threshold: float = None,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
 ) -> List[Tuple[int, int, int, int]]:
@@ -153,7 +168,9 @@ def get_bubble_coordinates(
     result = get_bubble_detection_result(
         image_pil, conf_threshold, detector_type,
         expand_ratio, expand_top, expand_bottom, expand_left, expand_right,
-        edge_ratio_threshold, enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold
+        edge_ratio_threshold,
+        enable_aux_yolo_detection, aux_yolo_conf_threshold, aux_yolo_overlap_threshold,
+        enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold
     )
     return result.get('coords', [])
 
@@ -279,6 +296,9 @@ def get_bubble_detection_result_with_auto_directions(
     expand_left: float = 0,
     expand_right: float = 0,
     edge_ratio_threshold: float = None,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
 ) -> Dict[str, Any]:
@@ -309,6 +329,9 @@ def get_bubble_detection_result_with_auto_directions(
             detector_type=detector_type,
             edge_ratio_threshold=edge_ratio_threshold,
             merge_lines=None,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )

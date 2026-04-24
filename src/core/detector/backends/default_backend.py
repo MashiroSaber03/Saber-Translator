@@ -37,6 +37,7 @@ class DefaultBackend(BaseTextDetector):
     
     # 需要文本行合并
     requires_merge: bool = True
+    detector_id: str = 'default'
     
     def __init__(self,
                  model_dir: str = None,

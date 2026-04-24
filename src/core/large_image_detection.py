@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from src.core.detector.aux_yolo import maybe_merge_with_aux_yolo
 from src.core.detector.data_types import TextBlock, DetectionResult
 from src.core.detector.base import BaseTextDetector
 from src.core.detector.textline_merge import merge_textlines
@@ -129,6 +130,14 @@ class LargeImageDetectorWrapper:
         # 2. 逐切片检测
         all_textlines = []
         all_masks = []
+        enable_aux_yolo_detection = kwargs.pop('enable_aux_yolo_detection', None)
+        aux_yolo_conf_threshold = kwargs.pop('aux_yolo_conf_threshold', None)
+        aux_yolo_overlap_threshold = kwargs.pop('aux_yolo_overlap_threshold', None)
+
+        if enable_aux_yolo_detection is None:
+            from src.shared import constants
+
+            enable_aux_yolo_detection = constants.ENABLE_AUX_YOLO_DETECTION
         
         logger.info(f"开始检测 {len(patches)} 个切片...")
         
@@ -136,6 +145,15 @@ class LargeImageDetectorWrapper:
             logger.info(f"检测切片 {patch_idx + 1}/{len(patches)}...")
             
             patch_textlines, patch_mask = self.detector._detect_raw(patch, **kwargs)
+            if enable_aux_yolo_detection:
+                patch_textlines = maybe_merge_with_aux_yolo(
+                    patch,
+                    patch_textlines,
+                    detector_type=getattr(self.detector, 'detector_id', ''),
+                    enabled=enable_aux_yolo_detection,
+                    conf_threshold=aux_yolo_conf_threshold,
+                    overlap_threshold=aux_yolo_overlap_threshold,
+                )
             
             num_lines = len(patch_textlines) if patch_textlines else 0
             logger.info(f"  切片 {patch_idx + 1}: 检测到 {num_lines} 个文本行")
