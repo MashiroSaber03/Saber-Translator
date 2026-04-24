@@ -215,6 +215,8 @@ export interface TranslationSettings {
   ocrEngine: OcrEngine
   sourceLanguage: string
   textDetector: TextDetector
+  enableSaberYoloRefine: boolean
+  saberYoloRefineOverlapThreshold: number
   baiduOcr: BaiduOcrSettings
   paddleOcrVl: PaddleOcrVlSettings
   aiVisionOcr: AiVisionOcrSettings

@@ -11,6 +11,8 @@ import { apiClient } from './client'
 export interface ParallelDetectParams {
   image: string
   detector_type?: string
+  enable_saber_yolo_refine?: boolean
+  saber_yolo_refine_overlap_threshold?: number
   box_expand_ratio?: number
   box_expand_top?: number
   box_expand_bottom?: number

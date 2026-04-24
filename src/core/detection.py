@@ -12,6 +12,7 @@ from collections import Counter
 
 from src.shared import constants
 from src.core.detector import detect
+from src.core.detector.refinement import apply_saber_yolo_refinement
 
 logger = logging.getLogger("CoreDetection")
 
@@ -23,6 +24,33 @@ class DetectionException(Exception):
 
 # ========== 主要检测接口 ==========
 
+def _detect_with_optional_saber_refinement(
+    image_pil: Image.Image,
+    detector_type: str,
+    edge_ratio_threshold: float,
+    merge_lines: bool = None,
+    enable_saber_yolo_refine: bool = None,
+    saber_yolo_refine_overlap_threshold: float = None,
+):
+    detection_result = detect(
+        image_pil,
+        detector_type=detector_type,
+        merge_lines=merge_lines,
+        edge_ratio_threshold=edge_ratio_threshold,
+        expand_ratio=0,
+        expand_top=0,
+        expand_bottom=0,
+        expand_left=0,
+        expand_right=0
+    )
+    return apply_saber_yolo_refinement(
+        image_pil,
+        detection_result,
+        detector_type=detector_type,
+        enabled=enable_saber_yolo_refine,
+        reference_overlap_threshold=saber_yolo_refine_overlap_threshold,
+    )
+
 def get_bubble_detection_result(
     image_pil: Image.Image, 
     conf_threshold: float = 0.6,
@@ -32,7 +60,9 @@ def get_bubble_detection_result(
     expand_bottom: float = 0,
     expand_left: float = 0,
     expand_right: float = 0,
-    edge_ratio_threshold: float = None
+    edge_ratio_threshold: float = None,
+    enable_saber_yolo_refine: bool = None,
+    saber_yolo_refine_overlap_threshold: float = None,
 ) -> dict:
     """
     使用指定检测器检测图像中的文本区域，返回完整检测结果（含角度信息）
@@ -40,10 +70,12 @@ def get_bubble_detection_result(
     Args:
         image_pil: 输入的 PIL 图像对象
         conf_threshold: 检测的置信度阈值 (保留接口兼容性)
-        detector_type: 检测器类型 ('ctd', 'yolo', 'default')，默认使用 Default
+        detector_type: 检测器类型，默认使用 Default
         expand_ratio: 整体扩展比例 (%)
         expand_top/bottom/left/right: 各边额外扩展比例 (%)
         edge_ratio_threshold: 边缘距离比例阈值，用于防止跨气泡错误合并
+        enable_saber_yolo_refine: 是否启用 SaberYOLO 二阶段纠错（None 时使用配置/默认值）
+        saber_yolo_refine_overlap_threshold: SaberYOLO 参考块重叠阈值（支持 0-1 或 0-100 输入）
     
     Returns:
         dict: {
@@ -62,20 +94,29 @@ def get_bubble_detection_result(
     try:
         logger.debug(f"使用 {detector_type} 检测器")
         
-        # 使用新的统一接口（merge_lines 由检测器自己决定）
-        result = detect(
+        result = _detect_with_optional_saber_refinement(
             image_pil,
             detector_type=detector_type,
             edge_ratio_threshold=edge_ratio_threshold,
-            expand_ratio=expand_ratio,
-            expand_top=expand_top,
-            expand_bottom=expand_bottom,
-            expand_left=expand_left,
-            expand_right=expand_right
+            merge_lines=None,
+            enable_saber_yolo_refine=enable_saber_yolo_refine,
+            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )
         
         # 转换为旧格式
         legacy = result.to_legacy_format()
+
+        if legacy['coords']:
+            legacy['coords'] = expand_coordinates(
+                legacy['coords'],
+                image_pil.width,
+                image_pil.height,
+                expand_ratio,
+                expand_top,
+                expand_bottom,
+                expand_left,
+                expand_right
+            )
         
         # 保存模型生成的精确文字掩膜（仅 CTD/Default 支持）
         legacy['raw_mask'] = result.mask
@@ -101,7 +142,9 @@ def get_bubble_coordinates(
     expand_bottom: float = 0,
     expand_left: float = 0,
     expand_right: float = 0,
-    edge_ratio_threshold: float = None
+    edge_ratio_threshold: float = None,
+    enable_saber_yolo_refine: bool = None,
+    saber_yolo_refine_overlap_threshold: float = None,
 ) -> List[Tuple[int, int, int, int]]:
     """
     使用指定检测器检测图像中的文本区域并返回排序后的坐标列表
@@ -110,7 +153,7 @@ def get_bubble_coordinates(
     result = get_bubble_detection_result(
         image_pil, conf_threshold, detector_type,
         expand_ratio, expand_top, expand_bottom, expand_left, expand_right,
-        edge_ratio_threshold
+        edge_ratio_threshold, enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold
     )
     return result.get('coords', [])
 
@@ -235,7 +278,9 @@ def get_bubble_detection_result_with_auto_directions(
     expand_bottom: float = 0,
     expand_left: float = 0,
     expand_right: float = 0,
-    edge_ratio_threshold: float = None
+    edge_ratio_threshold: float = None,
+    enable_saber_yolo_refine: bool = None,
+    saber_yolo_refine_overlap_threshold: float = None,
 ) -> Dict[str, Any]:
     """
     获取气泡检测结果，并返回每个气泡的自动排版方向
@@ -259,17 +304,13 @@ def get_bubble_detection_result_with_auto_directions(
     try:
         logger.debug(f"使用 {detector_type} 检测器（自动排版）")
         
-        # 使用新的统一接口
-        detection_result = detect(
+        detection_result = _detect_with_optional_saber_refinement(
             image_pil,
             detector_type=detector_type,
-            merge_lines=True,
             edge_ratio_threshold=edge_ratio_threshold,
-            expand_ratio=0,  # 先不扩展，最后统一扩展
-            expand_top=0,
-            expand_bottom=0,
-            expand_left=0,
-            expand_right=0
+            merge_lines=None,
+            enable_saber_yolo_refine=enable_saber_yolo_refine,
+            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )
         
         # 保存模型生成的精确文字掩膜

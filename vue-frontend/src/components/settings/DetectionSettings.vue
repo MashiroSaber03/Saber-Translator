@@ -10,6 +10,25 @@
           :options="detectorOptions"
         />
       </div>
+      <div class="settings-item">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="settings.enableSaberYoloRefine" />
+          启用 SaberYOLO 二阶段纠错
+        </label>
+        <div class="input-hint">使用 SaberYOLO 对误合并的大文本块进行二次拆分修正</div>
+      </div>
+      <div class="settings-item">
+        <label for="settingsSaberYoloRefineOverlapThreshold">SaberYOLO 拆分阈值 (%):</label>
+        <input
+          type="number"
+          id="settingsSaberYoloRefineOverlapThreshold"
+          v-model.number="settings.saberYoloRefineOverlapThreshold"
+          min="0"
+          max="100"
+          step="1"
+        />
+        <div class="input-hint">参考块与当前 block 的重叠面积占参考块面积的最小百分比，默认 50%</div>
+      </div>
     </div>
 
     <!-- 文本框扩展参数 -->
@@ -103,6 +122,8 @@ const settingsStore = useSettingsStore()
 // 本地设置状态（用于双向绑定）
 const settings = reactive({
   textDetector: settingsStore.settings.textDetector,
+  enableSaberYoloRefine: settingsStore.settings.enableSaberYoloRefine,
+  saberYoloRefineOverlapThreshold: settingsStore.settings.saberYoloRefineOverlapThreshold,
   boxExpandRatio: settingsStore.settings.boxExpand.ratio,
   boxExpandTop: settingsStore.settings.boxExpand.top,
   boxExpandBottom: settingsStore.settings.boxExpand.bottom,
@@ -116,6 +137,14 @@ const settings = reactive({
 // 监听本地设置变化，同步到 store
 watch(() => settings.textDetector, (value) => {
   settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'default')
+})
+
+watch(() => settings.enableSaberYoloRefine, (value) => {
+  settingsStore.setEnableSaberYoloRefine(value)
+})
+
+watch(() => settings.saberYoloRefineOverlapThreshold, (value) => {
+  settingsStore.setSaberYoloRefineOverlapThreshold(value)
 })
 
 watch(() => settings.boxExpandRatio, (value) => {

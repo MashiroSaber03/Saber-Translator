@@ -95,6 +95,8 @@ def parallel_detect():
         expand_bottom = data.get('box_expand_bottom', 0)
         expand_left = data.get('box_expand_left', 0)
         expand_right = data.get('box_expand_right', 0)
+        enable_saber_yolo_refine = data.get('enable_saber_yolo_refine')
+        saber_yolo_refine_overlap_threshold = data.get('saber_yolo_refine_overlap_threshold')
         
         # 执行检测
         result = get_bubble_detection_result_with_auto_directions(
@@ -104,7 +106,9 @@ def parallel_detect():
             expand_top=expand_top,
             expand_bottom=expand_bottom,
             expand_left=expand_left,
-            expand_right=expand_right
+            expand_right=expand_right,
+            enable_saber_yolo_refine=enable_saber_yolo_refine,
+            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
         )
         
         # 提取结果

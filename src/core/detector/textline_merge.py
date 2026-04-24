@@ -6,17 +6,84 @@
 
 import logging
 import itertools
-from typing import List, Set
+from typing import List, Set, Sequence, Optional
 from collections import Counter
 
 import numpy as np
 import networkx as nx
-from shapely.geometry import Polygon
 
 from .data_types import TextLine, TextBlock
 from .geometry import can_merge_textlines
 
 logger = logging.getLogger("TextlineMerge")
+
+
+def build_text_block_from_lines(lines: Sequence[TextLine]) -> Optional[TextBlock]:
+    """基于文本行构建一个 TextBlock，保持与主合并逻辑一致。"""
+    unique_lines = []
+    seen_coords = set()
+    for line in lines:
+        coords_tuple = tuple(line.pts.reshape(-1))
+        if coords_tuple not in seen_coords:
+            seen_coords.add(coords_tuple)
+            unique_lines.append(line)
+
+    if not unique_lines:
+        return None
+
+    fg_r = round(np.mean([line.fg_color[0] for line in unique_lines]))
+    fg_g = round(np.mean([line.fg_color[1] for line in unique_lines]))
+    fg_b = round(np.mean([line.fg_color[2] for line in unique_lines]))
+    bg_r = round(np.mean([line.bg_color[0] for line in unique_lines]))
+    bg_g = round(np.mean([line.bg_color[1] for line in unique_lines]))
+    bg_b = round(np.mean([line.bg_color[2] for line in unique_lines]))
+
+    dirs = [line.direction for line in unique_lines]
+    majority_dir_top_2 = Counter(dirs).most_common(2)
+    if len(majority_dir_top_2) == 1:
+        majority_dir = majority_dir_top_2[0][0]
+    elif majority_dir_top_2[0][1] == majority_dir_top_2[1][1]:
+        max_aspect_ratio = -100
+        majority_dir = 'h'
+        for line in unique_lines:
+            if line.aspect_ratio > max_aspect_ratio:
+                max_aspect_ratio = line.aspect_ratio
+                majority_dir = line.direction
+    else:
+        majority_dir = majority_dir_top_2[0][0]
+
+    if majority_dir == 'h':
+        sorted_indices = sorted(range(len(unique_lines)), key=lambda x: unique_lines[x].centroid[1])
+    else:
+        sorted_indices = sorted(range(len(unique_lines)), key=lambda x: -unique_lines[x].centroid[0])
+    unique_lines = [unique_lines[i] for i in sorted_indices]
+
+    total_logprobs = 0
+    total_area = sum([line.area for line in unique_lines])
+    for line in unique_lines:
+        if line.confidence > 0 and line.area > 0:
+            total_logprobs += np.log(line.confidence) * line.area
+    if total_area > 0:
+        total_logprobs /= total_area
+
+    font_size = int(min([line.font_size for line in unique_lines]))
+    angle = np.rad2deg(np.mean([line.angle for line in unique_lines])) - 90
+
+    original_angles_deg = [np.rad2deg(line.angle) for line in unique_lines]
+    has_near_90_degree = any(abs(orig_angle - 90.0) <= 1.0 for orig_angle in original_angles_deg)
+    if has_near_90_degree or abs(angle) < 3:
+        angle = 0
+
+    return TextBlock(
+        lines=unique_lines,
+        texts=[line.text for line in unique_lines],
+        font_size=font_size,
+        _angle=angle,
+        fg_color=(fg_r, fg_g, fg_b),
+        bg_color=(bg_r, bg_g, bg_b),
+        _direction=majority_dir,
+        prob=np.exp(total_logprobs)
+    )
 
 
 def _split_text_region(
@@ -155,81 +222,9 @@ def _merge_textlines_to_regions(
     for node_set in region_indices:
         nodes = list(node_set)
         lines = [textlines[i] for i in nodes]
-        
-        # 去重
-        unique_lines = []
-        seen_coords = set()
-        for line in lines:
-            coords_tuple = tuple(line.pts.reshape(-1))
-            if coords_tuple not in seen_coords:
-                seen_coords.add(coords_tuple)
-                unique_lines.append(line)
-        
-        if not unique_lines:
-            continue
-        
-        # 计算平均颜色
-        fg_r = round(np.mean([line.fg_color[0] for line in unique_lines]))
-        fg_g = round(np.mean([line.fg_color[1] for line in unique_lines]))
-        fg_b = round(np.mean([line.fg_color[2] for line in unique_lines]))
-        bg_r = round(np.mean([line.bg_color[0] for line in unique_lines]))
-        bg_g = round(np.mean([line.bg_color[1] for line in unique_lines]))
-        bg_b = round(np.mean([line.bg_color[2] for line in unique_lines]))
-        
-        # 投票决定方向
-        dirs = [line.direction for line in unique_lines]
-        majority_dir_top_2 = Counter(dirs).most_common(2)
-        if len(majority_dir_top_2) == 1:
-            majority_dir = majority_dir_top_2[0][0]
-        elif majority_dir_top_2[0][1] == majority_dir_top_2[1][1]:
-            max_aspect_ratio = -100
-            majority_dir = 'h'
-            for line in unique_lines:
-                if line.aspect_ratio > max_aspect_ratio:
-                    max_aspect_ratio = line.aspect_ratio
-                    majority_dir = line.direction
-        else:
-            majority_dir = majority_dir_top_2[0][0]
-        
-        # 按方向排序
-        if majority_dir == 'h':
-            sorted_indices = sorted(range(len(unique_lines)), 
-                                   key=lambda x: unique_lines[x].centroid[1])
-        else:
-            sorted_indices = sorted(range(len(unique_lines)), 
-                                   key=lambda x: -unique_lines[x].centroid[0])
-        unique_lines = [unique_lines[i] for i in sorted_indices]
-        
-        # 计算置信度
-        total_logprobs = 0
-        total_area = sum([line.area for line in unique_lines])
-        for line in unique_lines:
-            if line.confidence > 0 and line.area > 0:
-                total_logprobs += np.log(line.confidence) * line.area
-        if total_area > 0:
-            total_logprobs /= total_area
-        
-        # 计算字号和角度
-        font_size = int(min([line.font_size for line in unique_lines]))
-        angle = np.rad2deg(np.mean([line.angle for line in unique_lines])) - 90
-        
-        # 角度归零
-        original_angles_deg = [np.rad2deg(line.angle) for line in unique_lines]
-        has_near_90_degree = any(abs(orig_angle - 90.0) <= 1.0 for orig_angle in original_angles_deg)
-        if has_near_90_degree or abs(angle) < 3:
-            angle = 0
-        
-        block = TextBlock(
-            lines=unique_lines,
-            texts=[line.text for line in unique_lines],
-            font_size=font_size,
-            _angle=angle,
-            fg_color=(fg_r, fg_g, fg_b),
-            bg_color=(bg_r, bg_g, bg_b),
-            _direction=majority_dir,
-            prob=np.exp(total_logprobs)
-        )
-        blocks.append(block)
+        block = build_text_block_from_lines(lines)
+        if block is not None:
+            blocks.append(block)
     
     return blocks
 

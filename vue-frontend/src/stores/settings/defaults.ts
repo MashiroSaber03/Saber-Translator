@@ -152,6 +152,8 @@ export function createDefaultSettings(): TranslationSettings {
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',
+    enableSaberYoloRefine: true,
+    saberYoloRefineOverlapThreshold: 50,
     baiduOcr: { ...DEFAULT_BAIDU_OCR },
     paddleOcrVl: { ...DEFAULT_PADDLEOCR_VL },
     aiVisionOcr: { ...DEFAULT_AI_VISION_OCR },

@@ -18,8 +18,9 @@ logger = logging.getLogger("DetectorRegistry")
 DETECTOR_CTD = 'ctd'
 DETECTOR_YOLO = 'yolo'
 DETECTOR_DEFAULT = 'default'  # DBNet ResNet34 (detect-20241225.ckpt)
+DETECTOR_SABER_YOLO = 'saber_yolo'
 
-DetectorType = Literal['default', 'ctd', 'yolo']
+DetectorType = Literal['default', 'ctd', 'yolo', 'saber_yolo']
 
 # 支持的检测器描述
 SUPPORTED_DETECTORS = {
@@ -58,10 +59,12 @@ def _lazy_register_builtin():
     from .backends.ctd_backend import CTDBackend
     from .backends.yolo_backend import YoloBackend
     from .backends.default_backend import DefaultBackend
+    from .backends.saber_yolo_backend import SaberYoloBackend
     
     register_detector(DETECTOR_CTD, CTDBackend)
     register_detector(DETECTOR_YOLO, YoloBackend)
     register_detector(DETECTOR_DEFAULT, DefaultBackend)
+    register_detector(DETECTOR_SABER_YOLO, SaberYoloBackend)
 
 
 def get_detector(

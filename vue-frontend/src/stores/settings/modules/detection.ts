@@ -33,6 +33,24 @@ export function useDetectionSettings(
   }
 
   /**
+   * 设置 SaberYOLO 二阶段纠错开关
+   */
+  function setEnableSaberYoloRefine(enabled: boolean): void {
+    settings.value.enableSaberYoloRefine = enabled
+    saveToStorage()
+    console.log(`SaberYOLO 二阶段纠错已设置为: ${enabled}`)
+  }
+
+  /**
+   * 设置 SaberYOLO 二阶段纠错的重叠阈值（百分比）
+   */
+  function setSaberYoloRefineOverlapThreshold(threshold: number): void {
+    settings.value.saberYoloRefineOverlapThreshold = threshold
+    saveToStorage()
+    console.log(`SaberYOLO 二阶段纠错重叠阈值已设置为: ${threshold}%`)
+  }
+
+  /**
    * 更新文本框扩展参数
    * @param updates - 要更新的参数
    */
@@ -53,6 +71,8 @@ export function useDetectionSettings(
   return {
     // 方法
     setTextDetector,
+    setEnableSaberYoloRefine,
+    setSaberYoloRefineOverlapThreshold,
     updateBoxExpand,
     updatePreciseMask
   }

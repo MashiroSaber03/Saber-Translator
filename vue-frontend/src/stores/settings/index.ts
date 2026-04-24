@@ -190,6 +190,16 @@ export const useSettingsStore = defineStore('settings', () => {
     pm.dilateSize = Number(pm.dilateSize) || 5
     pm.boxExpandRatio = Number(pm.boxExpandRatio) || 1.0
 
+    if (
+      settings.value.saberYoloRefineOverlapThreshold === undefined ||
+      settings.value.saberYoloRefineOverlapThreshold === null ||
+      isNaN(Number(settings.value.saberYoloRefineOverlapThreshold))
+    ) {
+      settings.value.saberYoloRefineOverlapThreshold = 50
+    } else {
+      settings.value.saberYoloRefineOverlapThreshold = Number(settings.value.saberYoloRefineOverlapThreshold)
+    }
+
     const tr = settings.value.translation
     tr.rpmLimit = Number(tr.rpmLimit) || DEFAULT_RPM_TRANSLATION
     tr.maxRetries = Number(tr.maxRetries) || DEFAULT_TRANSLATION_MAX_RETRIES
@@ -427,6 +437,12 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     if (backendSettings.textDetector) {
       settings.value.textDetector = normalizeTextDetector(backendSettings.textDetector)
+    }
+    if (backendSettings.enableSaberYoloRefine !== undefined) {
+      settings.value.enableSaberYoloRefine = backendSettings.enableSaberYoloRefine as boolean
+    }
+    if (backendSettings.saberYoloRefineOverlapThreshold !== undefined) {
+      settings.value.saberYoloRefineOverlapThreshold = Number(backendSettings.saberYoloRefineOverlapThreshold)
     }
 
     // 百度 OCR 设置
@@ -796,6 +812,8 @@ export const useSettingsStore = defineStore('settings', () => {
         ocrEngine: settings.value.ocrEngine,
         sourceLanguage: settings.value.sourceLanguage,
         textDetector: settings.value.textDetector,
+        enableSaberYoloRefine: settings.value.enableSaberYoloRefine,
+        saberYoloRefineOverlapThreshold: String(settings.value.saberYoloRefineOverlapThreshold),
 
         // 百度 OCR
         baiduApiKey: settings.value.baiduOcr.apiKey,
@@ -962,6 +980,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,
+    setEnableSaberYoloRefine: detectionModule.setEnableSaberYoloRefine,
+    setSaberYoloRefineOverlapThreshold: detectionModule.setSaberYoloRefineOverlapThreshold,
     updateBoxExpand: detectionModule.updateBoxExpand,
     updatePreciseMask: detectionModule.updatePreciseMask,
 
