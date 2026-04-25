@@ -519,7 +519,8 @@ export function useExportImport() {
       strokeWidth: textStyle.strokeWidth,
       lineSpacing: textStyle.lineSpacing,
       textAlign: textStyle.textAlign,
-      inpaintMethod: textStyle.inpaintMethod
+      inpaintMethod: textStyle.inpaintMethod,
+      textlines: []
     }
   }
 

@@ -33,6 +33,7 @@ import {
   DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   DEFAULT_PROOFREADING_MAX_RETRIES
 } from '@/constants'
+import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
@@ -238,6 +239,23 @@ export const useSettingsStore = defineStore('settings', () => {
     } else {
       av.minImageSize = Number(av.minImageSize)
     }
+
+    const hybrid = settings.value.hybridOcr as typeof settings.value.hybridOcr & Record<string, unknown>
+    const normalizedHybrid = normalizeHybridOcrConfig(
+      settings.value.ocrEngine,
+      {
+        ...hybrid,
+        enabled: Boolean(hybrid.enabled)
+      },
+      {
+        preferRecommendedOrder: Boolean(hybrid.enabled)
+      }
+    )
+    settings.value.ocrEngine = normalizedHybrid.primaryEngine
+    settings.value.hybridOcr = normalizedHybrid.hybrid
+    delete (settings.value.hybridOcr as Record<string, unknown>).threshold48px
+    delete (settings.value.hybridOcr as Record<string, unknown>).thresholdMangaOcr
+    delete (settings.value.hybridOcr as Record<string, unknown>).thresholdPaddleOcr
 
     const pr = settings.value.proofreading
     pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
@@ -518,6 +536,29 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.aiVisionMinImageSize !== undefined) {
       settings.value.aiVisionOcr.minImageSize = parseNum(backendSettings.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
     }
+    if (backendSettings.enableHybridOcr !== undefined) {
+      settings.value.hybridOcr.enabled = backendSettings.enableHybridOcr as boolean
+    }
+    if (backendSettings.secondaryOcrEngine) {
+      settings.value.hybridOcr.secondaryEngine = backendSettings.secondaryOcrEngine as any
+    }
+    const hybridThresholdFromBackend =
+      backendSettings.hybridOcrConfidenceThreshold
+      ?? backendSettings.ocrConfidenceThreshold48px
+      ?? backendSettings.ocrConfidenceThresholdMangaOcr
+      ?? backendSettings.ocrConfidenceThresholdPaddleOcr
+    if (hybridThresholdFromBackend !== undefined) {
+      settings.value.hybridOcr.confidenceThreshold = parseNum(hybridThresholdFromBackend, 0.2)
+    }
+    const normalizedHybrid = normalizeHybridOcrConfig(
+      settings.value.ocrEngine,
+      settings.value.hybridOcr,
+      {
+        preferRecommendedOrder: settings.value.hybridOcr.enabled
+      }
+    )
+    settings.value.ocrEngine = normalizedHybrid.primaryEngine
+    settings.value.hybridOcr = normalizedHybrid.hybrid
 
     // 翻译服务设置
     if (backendSettings.modelProvider) {
@@ -865,6 +906,9 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
         aiVisionPromptModeSelect: settings.value.aiVisionOcr.isJsonMode ? 'json' : 'normal',
         aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
+        enableHybridOcr: settings.value.hybridOcr.enabled,
+        secondaryOcrEngine: settings.value.hybridOcr.secondaryEngine,
+        hybridOcrConfidenceThreshold: String(settings.value.hybridOcr.confidenceThreshold),
 
         // 翻译服务
         modelProvider: settings.value.translation.provider,
@@ -996,6 +1040,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateBaiduOcr: ocrModule.updateBaiduOcr,
     updatePaddleOcrVl: ocrModule.updatePaddleOcrVl,
     updateAiVisionOcr: ocrModule.updateAiVisionOcr,
+    updateHybridOcr: ocrModule.updateHybridOcr,
     setAiVisionOcrProvider: ocrModule.setAiVisionOcrProvider,
     setAiVisionOcrPromptMode: ocrModule.setAiVisionOcrPromptMode,
     saveAiVisionOcrProviderConfig: ocrModule.saveAiVisionOcrProviderConfig,

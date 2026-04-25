@@ -46,6 +46,7 @@ export class RenderPool extends TaskPool {
     const coords = task.detectionResult?.bubbleCoords || []
     const texts = task.translateResult?.translatedTexts || []
     const originals = task.ocrResult?.originalTexts || []
+    const ocrResults = task.ocrResult?.ocrResults || []
     const colors = task.colorResult?.colors || []
     const angles = task.detectionResult?.bubbleAngles || []
     const directions = task.detectionResult?.autoDirections || []
@@ -72,6 +73,14 @@ export class RenderPool extends TaskPool {
       const bubbleAngles = existingBubbles.map(bs => bs.rotationAngle || 0)
       const autoDirections = existingBubbles.map(bs => bs.autoTextDirection || 'vertical')
       const originalTexts = existingBubbles.map(bs => bs.originalText || '')
+      const existingOcrResults = existingBubbles.map(bs => bs.ocrResult || {
+        text: bs.originalText || '',
+        confidence: null,
+        confidenceSupported: false,
+        engine: '',
+        primaryEngine: '',
+        fallbackUsed: false
+      })
       const translatedTexts = existingBubbles.map((bs, idx) => texts[idx] || bs.translatedText || '')
       const textboxTexts = existingBubbles.map(bs => bs.textboxText || '')
 
@@ -89,7 +98,10 @@ export class RenderPool extends TaskPool {
         bubbleCoords: bubbleCoords as any,
         bubbleAngles: bubbleAngles,
         autoDirections: autoDirections,
+        textlinesPerBubble: existingBubbles.map(bs => bs.textlines || []),
+        existingBubbleStates: existingBubbles,
         originalTexts: originalTexts,
+        ocrResults: existingOcrResults as any,
         translatedTexts: translatedTexts,
         textboxTexts: textboxTexts,
         colors: colors,
@@ -126,6 +138,8 @@ export class RenderPool extends TaskPool {
           position: { x: 0, y: 0 },
           rotationAngle: angles[idx] || 0,
           originalText: originals[idx] || '',  // 如果启用了removeTextWithOcr，这里会有OCR结果
+          textlines: detectionResult.textlinesPerBubble?.[idx] || [],
+          ocrResult: ocrResults[idx] || null,
           translatedText: '',  // 消除文字模式无译文
           textboxText: '',
           textDirection: mappedAutoDir,
@@ -163,7 +177,10 @@ export class RenderPool extends TaskPool {
       bubbleCoords: coords as any,
       bubbleAngles: angles,
       autoDirections: directions,
+      textlinesPerBubble: task.imageData.bubbleStates?.map((bubble) => bubble.textlines || []) || task.detectionResult?.textlinesPerBubble || [],
+      existingBubbleStates: task.imageData.bubbleStates,
       originalTexts: originals,
+      ocrResults: ocrResults,
       translatedTexts: texts,
       textboxTexts: textboxTexts,
       colors: colors,
@@ -199,20 +216,10 @@ export class RenderPool extends TaskPool {
     const imageIndex = task.imageIndex
 
     // 1. 更新 imageStore
-    // 转换bubbleCoords为正确的类型
-    const bubbleCoords = (task.detectionResult?.bubbleCoords || []).map(coord =>
-      (coord.length >= 4 ? [coord[0], coord[1], coord[2], coord[3]] : [0, 0, 0, 0]) as BubbleCoords
-    )
-
     imageStore.updateImageByIndex(imageIndex, {
       translatedDataURL: `data:image/png;base64,${task.renderResult!.finalImage}`,
       cleanImageData: task.inpaintResult?.cleanImage || null,
       bubbleStates: task.renderResult!.bubbleStates,
-      bubbleCoords: bubbleCoords,
-      bubbleAngles: task.detectionResult?.bubbleAngles || [],
-      originalTexts: task.ocrResult?.originalTexts || [],
-      bubbleTexts: task.translateResult?.translatedTexts || [],
-      textboxTexts: task.translateResult?.textboxTexts || [],
       textMask: task.detectionResult?.textMask || null,  // 保存精确文字掩膜
       userMask: task.imageData.userMask || null,  // 【重要】保留用户笔刷掩膜
       translationStatus: 'completed',

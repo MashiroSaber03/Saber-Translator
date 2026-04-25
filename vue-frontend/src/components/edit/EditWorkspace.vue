@@ -1072,11 +1072,12 @@ function initializeTextArrays(image: AppImageData, count: number): void {
 
 /** 从检测响应创建气泡状态数组（复刻原版逻辑） */
 function createBubbleStatesFromDetection(
-  response: { bubble_coords: number[][]; bubble_angles?: number[]; auto_directions?: string[] },
+  response: { bubble_coords: number[][]; bubble_angles?: number[]; auto_directions?: string[]; textlines_per_bubble?: any[] },
   image: AppImageData,
   textStyle: { fontSize: number; fontFamily: string; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; lineSpacing: number; textAlign: 'start' | 'center' | 'end'; inpaintMethod: string }
 ): BubbleState[] {
   const autoDirections = response.auto_directions || []
+  const textlinesPerBubble = response.textlines_per_bubble || []
   return response.bubble_coords.map((coords, i) => {
     const x1 = coords[0] ?? 0
     const y1 = coords[1] ?? 0
@@ -1107,7 +1108,8 @@ function createBubbleStatesFromDetection(
       rotationAngle: response.bubble_angles?.[i] || 0,
       inpaintMethod: textStyle.inpaintMethod as 'solid' | 'lama_mpe' | 'litelama',
       position: { x: 0, y: 0 },
-      polygon: []
+      polygon: [],
+      textlines: textlinesPerBubble[i] || []
     }
   })
 }
@@ -1141,7 +1143,8 @@ async function autoDetectBubbles(): Promise<void> {
       const detectionData = {
         bubble_coords: result.bubbleCoords,
         bubble_angles: result.bubbleAngles,
-        auto_directions: result.autoDirections
+        auto_directions: result.autoDirections,
+        textlines_per_bubble: result.textlinesPerBubble
       }
       const newBubbles = createBubbleStatesFromDetection(detectionData, image, textStyle)
       bubbleStore.setBubbles(newBubbles)
@@ -1209,7 +1212,8 @@ async function detectAllImages(): Promise<void> {
             const detectionData = {
               bubble_coords: result.bubbleCoords,
               bubble_angles: result.bubbleAngles,
-              auto_directions: result.autoDirections
+              auto_directions: result.autoDirections,
+              textlines_per_bubble: result.textlinesPerBubble
             }
             const newBubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
             

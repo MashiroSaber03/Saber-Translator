@@ -4,11 +4,10 @@
 为核心处理模块添加详细的类型注解，提升代码可维护性
 """
 
-from typing import Protocol, Optional, List, Dict, Any, Tuple
-from PIL import Image
+from typing import Protocol, Optional
 from src.shared.types import (
     ImageType, BubbleCoords, TextList, BubbleStyles,
-    ProcessingResult, OCREngine, LanguageCode, ModelProvider
+    OCREngine, LanguageCode, ModelProvider
 )
 
 

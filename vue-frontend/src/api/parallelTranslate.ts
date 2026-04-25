@@ -5,6 +5,8 @@
  */
 
 import { apiClient } from './client'
+import type { BubbleState } from '@/types/bubble'
+import type { OcrResult } from '@/types/ocr'
 
 // ==================== 检测 API ====================
 
@@ -55,12 +57,16 @@ export interface ParallelOcrParams {
   ai_vision_ocr_prompt?: string
   custom_ai_vision_base_url?: string
   ai_vision_min_image_size?: number
+  enable_hybrid_ocr?: boolean
+  secondary_ocr_engine?: string
+  hybrid_ocr_threshold?: number
   textlines_per_bubble?: any[]
 }
 
 export interface ParallelOcrResponse {
   success: boolean
   original_texts?: string[]
+  ocr_results?: OcrResult[]
   textlines_per_bubble?: any[]
   error?: string
 }
@@ -150,7 +156,7 @@ export async function parallelInpaint(params: ParallelInpaintParams): Promise<Pa
 
 export interface ParallelRenderParams {
   clean_image: string
-  bubble_states: any[]
+  bubble_states: BubbleState[]
   fontSize?: number
   fontFamily?: string
   textDirection?: string
@@ -167,7 +173,7 @@ export interface ParallelRenderParams {
 export interface ParallelRenderResponse {
   success: boolean
   final_image?: string
-  bubble_states?: any[]
+  bubble_states?: BubbleState[]
   error?: string
 }
 

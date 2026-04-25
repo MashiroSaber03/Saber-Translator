@@ -18,8 +18,11 @@ TranslationResult: TypeAlias = Tuple[TextList, TextList]  # (bubble_texts, textb
 
 # 状态相关类型
 Position: TypeAlias = Dict[str, int]  # {'x': int, 'y': int}
-BubbleState: TypeAlias = Dict[str, Any]  # 气泡状态字典
-BubbleStatesList: TypeAlias = List[BubbleState]  # 气泡状态列表
+# 旧版字典形态的气泡数据兼容别名。新代码应优先使用 src.core.config_models.BubbleState。
+BubbleStateDict: TypeAlias = Dict[str, Any]
+BubbleState: TypeAlias = BubbleStateDict
+BubbleStatesList: TypeAlias = List[BubbleStateDict]
+BubbleStyles: TypeAlias = Dict[str, Any]
 
 # 颜色类型
 ColorHex: TypeAlias = str  # '#RRGGBB' 格式

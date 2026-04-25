@@ -37,8 +37,10 @@ export class DetectionPool extends TaskPool {
       bubblePolygons: result.bubblePolygons,
       autoDirections: result.autoDirections,
       textMask: result.textMask,
-      textlinesPerBubble: result.textlinesPerBubble
+      textlinesPerBubble: result.textlinesPerBubble,
+      bubbleStates: result.bubbleStates
     }
+    task.imageData.bubbleStates = result.bubbleStates
 
     task.status = 'processing'
     return task

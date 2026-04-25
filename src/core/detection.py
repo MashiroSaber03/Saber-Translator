@@ -175,6 +175,54 @@ def get_bubble_coordinates(
     return result.get('coords', [])
 
 
+def detect_textlines(
+    image_pil: Image.Image,
+    detector_type: str = None,
+    edge_ratio_threshold: float = None,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
+    enable_saber_yolo_refine: bool = None,
+    saber_yolo_refine_overlap_threshold: float = None,
+) -> List[Dict[str, Any]]:
+    """
+    检测图像中的原始文本行，不进行文本块合并。
+
+    返回的顺序基于检测器后处理结果，适合作为 OCR 的 textline 级输入。
+    """
+    if detector_type is None:
+        detector_type = constants.DEFAULT_DETECTOR
+
+    if edge_ratio_threshold is None:
+        edge_ratio_threshold = constants.CTD_EDGE_RATIO_THRESHOLD
+
+    try:
+        detection_result = _detect_with_optional_saber_refinement(
+            image_pil,
+            detector_type=detector_type,
+            edge_ratio_threshold=edge_ratio_threshold,
+            merge_lines=False,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
+            enable_saber_yolo_refine=enable_saber_yolo_refine,
+            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
+        )
+    except Exception as error:
+        logger.error(f"提取文本行失败: {error}", exc_info=True)
+        return []
+
+    textlines_info: List[Dict[str, Any]] = []
+    for block in detection_result.blocks:
+        for line in block.lines:
+            textlines_info.append({
+                'polygon': line.pts.tolist(),
+                'direction': line.direction,
+                'confidence': float(line.confidence),
+            })
+    return textlines_info
+
+
 # ========== 坐标处理函数 ==========
 
 def expand_coordinates(

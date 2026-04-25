@@ -17,9 +17,57 @@
 每个步骤独立处理，不需要这些整合配置类。
 """
 
-from dataclasses import dataclass, field, fields as dataclass_fields, asdict
+from dataclasses import dataclass, field, fields as dataclass_fields
 from typing import Optional, List, Tuple, Dict, Any
 from src.shared import constants
+from src.core.ocr_types import OcrResult
+
+
+# ============================================================
+# BubbleTextline: 最小文本行模型
+# ============================================================
+
+@dataclass
+class BubbleTextline:
+    polygon: List[List[int]] = field(default_factory=list)
+    direction: str = "h"
+    confidence: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "polygon": self.polygon,
+            "direction": self.direction,
+            "confidence": float(self.confidence),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BubbleTextline":
+        if not isinstance(data, dict):
+            return cls()
+
+        polygon = data.get("polygon", [])
+        if not isinstance(polygon, list):
+            polygon = []
+
+        normalized_polygon = []
+        for point in polygon:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                normalized_polygon.append([int(point[0]), int(point[1])])
+
+        direction = str(data.get("direction", "h") or "h")
+        if direction not in ("h", "v"):
+            direction = "h"
+
+        try:
+            confidence = float(data.get("confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        return cls(
+            polygon=normalized_polygon,
+            direction=direction,
+            confidence=confidence,
+        )
 
 
 # ============================================================
@@ -74,6 +122,12 @@ class BubbleState:
     auto_fg_color: Optional[Tuple[int, int, int]] = None  # 自动提取的前景色 RGB (0-255)
     auto_bg_color: Optional[Tuple[int, int, int]] = None  # 自动提取的背景色 RGB (0-255)
     color_confidence: float = 0.0  # 颜色提取置信度 0-1
+
+    # === 文本行信息 ===
+    textlines: List[BubbleTextline] = field(default_factory=list)
+
+    # === OCR 元数据 ===
+    ocr_result: Optional[OcrResult] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -110,6 +164,8 @@ class BubbleState:
             "autoFgColor": list(self.auto_fg_color) if self.auto_fg_color else None,
             "autoBgColor": list(self.auto_bg_color) if self.auto_bg_color else None,
             "colorConfidence": self.color_confidence,
+            "textlines": [textline.to_dict() for textline in self.textlines],
+            "ocrResult": self.ocr_result.to_dict() if self.ocr_result else None,
         }
     
     def to_render_dict(self) -> Dict[str, Any]:
@@ -187,6 +243,9 @@ class BubbleState:
             "auto_bg_color": "auto_bg_color",
             "colorConfidence": "color_confidence",
             "color_confidence": "color_confidence",
+            "textlines": "textlines",
+            "ocrResult": "ocr_result",
+            "ocr_result": "ocr_result",
         }
         
         # 转换字典键名
@@ -211,6 +270,10 @@ class BubbleState:
             filtered["auto_fg_color"] = tuple(filtered["auto_fg_color"])
         if "auto_bg_color" in filtered and isinstance(filtered["auto_bg_color"], list):
             filtered["auto_bg_color"] = tuple(filtered["auto_bg_color"])
+        if "textlines" in filtered and isinstance(filtered["textlines"], list):
+            filtered["textlines"] = [BubbleTextline.from_dict(item) for item in filtered["textlines"]]
+        if "ocr_result" in filtered and isinstance(filtered["ocr_result"], dict):
+            filtered["ocr_result"] = OcrResult.from_dict(filtered["ocr_result"])
         
         return cls(**filtered)
     

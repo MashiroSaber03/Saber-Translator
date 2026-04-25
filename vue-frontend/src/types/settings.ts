@@ -9,6 +9,7 @@ import type { TextDirection, InpaintMethod, TextAlign } from './bubble'
  * OCR 引擎类型
  */
 export type OcrEngine = 'manga_ocr' | 'paddle_ocr' | 'paddleocr_vl' | 'baidu_ocr' | 'ai_vision' | '48px_ocr'
+export type HybridOcrEngine = Extract<OcrEngine, 'manga_ocr' | '48px_ocr'>
 
 /**
  * 文本检测器类型
@@ -80,6 +81,15 @@ export interface AiVisionOcrSettings {
   isJsonMode: boolean
   /** 最小图片尺寸 (VLM 模型通常要求 >= 28px) */
   minImageSize: number
+}
+
+/**
+ * 混合 OCR 设置
+ */
+export interface HybridOcrSettings {
+  enabled: boolean
+  secondaryEngine: HybridOcrEngine
+  confidenceThreshold: number
 }
 
 /**
@@ -223,6 +233,7 @@ export interface TranslationSettings {
   baiduOcr: BaiduOcrSettings
   paddleOcrVl: PaddleOcrVlSettings
   aiVisionOcr: AiVisionOcrSettings
+  hybridOcr: HybridOcrSettings
 
   // 翻译服务设置
   translation: TranslationServiceSettings

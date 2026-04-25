@@ -27,6 +27,7 @@ export class OcrPool extends TaskPool {
       // 没有检测到气泡，直接跳过
       task.ocrResult = {
         originalTexts: [],
+        ocrResults: [],
         textlinesPerBubble: []
       }
       task.status = 'processing'
@@ -38,12 +39,22 @@ export class OcrPool extends TaskPool {
       imageIndex: task.imageIndex,
       image: imageData,
       bubbleCoords: detectionResult.bubbleCoords as any,
+      bubbleStates: imageData.bubbleStates,
       textlinesPerBubble: detectionResult.textlinesPerBubble || []
     })
 
+    if (imageData.bubbleStates) {
+      imageData.bubbleStates = imageData.bubbleStates.map((bubble, index) => ({
+        ...bubble,
+        originalText: result.originalTexts[index] || '',
+        ocrResult: result.ocrResults[index] || null
+      }))
+    }
+
     task.ocrResult = {
       originalTexts: result.originalTexts,
-      textlinesPerBubble: detectionResult.textlinesPerBubble || []
+      ocrResults: result.ocrResults,
+      textlinesPerBubble: imageData.bubbleStates?.map((bubble) => bubble.textlines || []) || detectionResult.textlinesPerBubble || []
     }
 
     task.status = 'processing'

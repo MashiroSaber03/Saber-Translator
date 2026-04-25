@@ -24,6 +24,7 @@ import einops
 
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.core.ocr_types import OcrResult, OcrTextlineResult, create_ocr_result, create_ocr_textline_result
 
 logger = logging.getLogger("Model48pxOCR")
 
@@ -187,96 +188,217 @@ class Model48pxOCR:
         Returns:
             ['text1', 'text2', ...] - 每个大框的识别结果
         """
+        return [result.text for result in self.recognize_text_with_details(image, bubble_coords, textlines_per_bubble)]
+
+    def recognize_text_with_details(
+        self,
+        image: Image.Image,
+        bubble_coords: List[Tuple[int, int, int, int]],
+        textlines_per_bubble: Optional[List[List[Dict]]] = None,
+        primary_engine: str = constants.OCR_ENGINE_48PX,
+        fallback_used: bool = False,
+    ) -> List[OcrResult]:
         if not self.initialized or self.model is None:
             logger.error("48px OCR 未初始化")
-            return [""] * len(bubble_coords)
-        
+            return [
+                create_ocr_result(
+                    "",
+                    constants.OCR_ENGINE_48PX,
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+                for _ in bubble_coords
+            ]
+
         if not bubble_coords:
             return []
-        
-        # 如果没有提供原始文本行，退化为简单的大框裁剪
-        if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
-            logger.warning("未提供原始文本行信息，使用简单裁剪模式")
-            return self._recognize_simple(image, bubble_coords)
-        
-        logger.info(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
-        
+
         try:
             img_np = np.array(image.convert('RGB'))
-            results = []
-            
+            results: List[OcrResult] = []
+
+            if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
+                logger.warning("未提供原始文本行信息，使用简单裁剪模式")
+                for x1, y1, x2, y2 in bubble_coords:
+                    bubble = img_np[y1:y2, x1:x2]
+                    if bubble.shape[0] == 0 or bubble.shape[1] == 0:
+                        results.append(
+                            create_ocr_result(
+                                "",
+                                constants.OCR_ENGINE_48PX,
+                                confidence=0.0,
+                                confidence_supported=True,
+                                primary_engine=primary_engine,
+                                fallback_used=fallback_used,
+                            )
+                        )
+                        continue
+
+                    text, _, _, prob = self._recognize_single_line_with_color(bubble)
+                    results.append(
+                        create_ocr_result(
+                            text,
+                            constants.OCR_ENGINE_48PX,
+                            confidence=prob,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                    )
+                return results
+
+            logger.info(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
+
             for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
                 if not textlines:
-                    # 该气泡没有文本行，使用简单裁剪
                     x1, y1, x2, y2 = coords
-                    bubble_text = self._recognize_region(img_np[y1:y2, x1:x2])
-                    results.append(bubble_text)
+                    bubble = img_np[y1:y2, x1:x2]
+                    text, _, _, prob = self._recognize_single_line_with_color(bubble)
+                    results.append(
+                        create_ocr_result(
+                            text,
+                            constants.OCR_ENGINE_48PX,
+                            confidence=prob,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                    )
                     continue
-                
-                # 对每个文本行进行识别
-                line_texts = []
+
+                line_texts: List[str] = []
+                line_probs: List[float] = []
                 for line_info in textlines:
                     polygon = line_info.get('polygon', [])
                     direction = line_info.get('direction', 'h')
-                    
+
                     if not polygon or len(polygon) != 4:
                         continue
-                    
-                    # 转换为 numpy 数组
+
                     pts = np.array(polygon, dtype=np.float32)
-                    
-                    # 获取变换后的文本行图像
                     region_img = get_transformed_region(img_np, pts, direction, target_height=48)
-                    
-                    # 识别单行
-                    text = self._recognize_single_line(region_img)
+                    text, _, _, prob = self._recognize_single_line_with_color(region_img)
                     if text:
                         line_texts.append(text)
-                
-                # 拼接所有文本行
-                if line_texts:
-                    bubble_text = ' '.join(line_texts)
-                    results.append(bubble_text)
+                    line_probs.append(float(prob))
+
+                bubble_text = ' '.join(line_texts) if line_texts else ""
+                bubble_prob = sum(line_probs) / len(line_probs) if line_probs else 0.0
+                if bubble_text:
                     logger.info(f"气泡 {bubble_idx}: '{bubble_text}'")
-                else:
-                    results.append("")
-            
+
+                results.append(
+                    create_ocr_result(
+                        bubble_text,
+                        constants.OCR_ENGINE_48PX,
+                        confidence=bubble_prob,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
+                    )
+                )
+
             return results
-            
+
         except Exception as e:
             logger.error(f"48px OCR 识别失败: {e}", exc_info=True)
-            return [""] * len(bubble_coords)
-    
-    def _recognize_simple(self, image: Image.Image, bubble_coords: List[Tuple]) -> List[str]:
-        """简单裁剪模式（降级方案）"""
-        img_np = np.array(image.convert('RGB'))
-        results = []
-        
-        for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-            bubble = img_np[y1:y2, x1:x2]
-            text = self._recognize_region(bubble)
-            results.append(text)
-            if text:
-                logger.info(f"气泡 {i}: '{text}'")
-        
-        return results
-    
-    def _recognize_region(self, region: np.ndarray) -> str:
-        """识别一个区域（简单缩放到48px高度）"""
-        if region.shape[0] == 0 or region.shape[1] == 0:
-            return ""
-        
-        h, w = region.shape[:2]
-        scale = 48 / h
-        new_w = max(int(w * scale), 1)
-        resized = cv2.resize(region, (new_w, 48), interpolation=cv2.INTER_LINEAR)
-        
-        return self._recognize_single_line(resized)
-    
-    def _recognize_single_line(self, line_img: np.ndarray) -> str:
-        """识别单行文本图像（仅返回文本）"""
-        text, _, _, _ = self._recognize_single_line_with_color(line_img)
-        return text
+            return [
+                create_ocr_result(
+                    "",
+                    constants.OCR_ENGINE_48PX,
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+                for _ in bubble_coords
+            ]
+
+    def recognize_textlines_with_details(
+        self,
+        image: Image.Image,
+        textlines: List[Dict],
+        primary_engine: str = constants.OCR_ENGINE_48PX,
+        fallback_used: bool = False,
+    ) -> List[OcrTextlineResult]:
+        if not self.initialized or self.model is None:
+            logger.error("48px OCR 未初始化")
+            return [
+                create_ocr_textline_result(
+                    "",
+                    constants.OCR_ENGINE_48PX,
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                    polygon=line_info.get("polygon", []) if isinstance(line_info, dict) else [],
+                    direction=line_info.get("direction", "h") if isinstance(line_info, dict) else "h",
+                )
+                for line_info in textlines
+            ]
+
+        if not textlines:
+            return []
+
+        try:
+            logger.info(f"使用 48px OCR 识别 {len(textlines)} 个文本行")
+            img_np = np.array(image.convert('RGB'))
+            results: List[OcrTextlineResult] = []
+            for line_info in textlines:
+                polygon = line_info.get('polygon', [])
+                direction = line_info.get('direction', 'h')
+
+                if not polygon or len(polygon) != 4:
+                    results.append(
+                        create_ocr_textline_result(
+                            "",
+                            constants.OCR_ENGINE_48PX,
+                            confidence=0.0,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                            polygon=polygon,
+                            direction=direction,
+                        )
+                    )
+                    continue
+
+                pts = np.array(polygon, dtype=np.float32)
+                region_img = get_transformed_region(img_np, pts, direction, target_height=48)
+                text, fg_color, bg_color, prob = self._recognize_single_line_with_color(region_img)
+                results.append(
+                    create_ocr_textline_result(
+                        text,
+                        constants.OCR_ENGINE_48PX,
+                        confidence=prob,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
+                        polygon=[list(map(int, point)) for point in polygon],
+                        direction=direction,
+                        fg_color=fg_color,
+                        bg_color=bg_color,
+                    )
+                )
+
+            return results
+        except Exception as e:
+            logger.error(f"48px OCR 文本行识别失败: {e}", exc_info=True)
+            return [
+                create_ocr_textline_result(
+                    "",
+                    constants.OCR_ENGINE_48PX,
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                    polygon=line_info.get("polygon", []) if isinstance(line_info, dict) else [],
+                    direction=line_info.get("direction", "h") if isinstance(line_info, dict) else "h",
+                )
+                for line_info in textlines
+            ]
     
     def _recognize_single_line_with_color(
         self, 

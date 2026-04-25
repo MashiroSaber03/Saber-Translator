@@ -22,6 +22,7 @@ import time
 
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.core.ocr_types import OcrResult, create_ocr_result
 
 # 设置环境变量
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -201,15 +202,33 @@ class PaddleOCRHandlerONNX:
         Returns:
             List[str]: 识别的文本列表，与 bubble_coords 一一对应
         """
+        return [result.text for result in self.recognize_text_with_details(image, bubble_coords)]
+
+    def recognize_text_with_details(
+        self,
+        image: Image.Image,
+        bubble_coords: List[Tuple[int, int, int, int]],
+        primary_engine: str = "paddle_ocr",
+        fallback_used: bool = False,
+    ) -> List[OcrResult]:
         if not self.initialized or self.ocr is None:
             print("❌ PaddleOCR ONNX 未初始化")
-            return [""] * len(bubble_coords)
-        
+            return [
+                create_ocr_result(
+                    "",
+                    "paddle_ocr",
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+                for _ in bubble_coords
+            ]
+
         if not bubble_coords:
             print("没有气泡坐标，跳过 OCR")
             return []
-        
-        # 转换为 numpy 数组
+
         try:
             if isinstance(image, Image.Image):
                 img_np = np.array(image.convert('RGB'))
@@ -217,94 +236,128 @@ class PaddleOCRHandlerONNX:
                 img_np = image
         except Exception as e:
             print(f"❌ 图像转换失败: {e}")
-            return [""] * len(bubble_coords)
-        
-        recognized_texts = []
-        
-        # 逐个处理气泡（与原 PaddleOCR 逻辑相同）
+            return [
+                create_ocr_result(
+                    "",
+                    "paddle_ocr",
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+                for _ in bubble_coords
+            ]
+
+        recognized_results: List[OcrResult] = []
+
         for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
             try:
                 print(f"处理气泡 {i+1}/{len(bubble_coords)}，坐标: ({x1}, {y1}, {x2}, {y2})")
-                
-                # 裁剪气泡区域
+
                 bubble_img = img_np[y1:y2, x1:x2]
-                
-                # 验证裁剪图像有效性
                 if bubble_img.size == 0 or bubble_img.shape[0] == 0 or bubble_img.shape[1] == 0:
                     print(f"气泡 {i} 图像无效，跳过")
-                    recognized_texts.append("")
+                    recognized_results.append(
+                        create_ocr_result(
+                            "",
+                            "paddle_ocr",
+                            confidence=0.0,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                    )
                     continue
-                
+
                 print(f"气泡 {i} 图像尺寸: {bubble_img.shape[1]}x{bubble_img.shape[0]}")
                 print(f"开始调用 RapidOCR 识别气泡 {i} 内容...")
-                
-                # 调用 RapidOCR
-                # 内部流程：det 检测文本行 → 逐行 resize 到 48×W → rec 识别
+
                 start_time = time.time()
                 result, elapsed_info = self.ocr(bubble_img)
                 elapsed = time.time() - start_time
-                
-                # 解析结果
-                # RapidOCR 返回格式: [[bbox, text, confidence], ...]
-                # 每个元素代表一个检测到的文本行
+
                 if result and len(result) > 0:
-                    # 提取所有文本行
                     texts = []
                     scores = []
                     for line in result:
-                        # RapidOCR 格式: [bbox, text, confidence]
-                        # line[0] = bbox 坐标
-                        # line[1] = 识别的文本
-                        # line[2] = 置信度分数
                         if len(line) >= 2 and line[1]:
                             text_content = line[1]
                             if isinstance(text_content, str):
                                 texts.append(text_content)
                             elif isinstance(text_content, (tuple, list)) and len(text_content) > 0:
                                 texts.append(str(text_content[0]))
-                        
-                        # 提取置信度（第三个元素）
+
                         if len(line) >= 3:
                             score = line[2]
                             if isinstance(score, (int, float)):
                                 scores.append(float(score))
-                    
-                    # 合并多行文本（与原逻辑一致）
+
                     text = " ".join(texts)
-                    recognized_texts.append(text)
-                    
-                    # 输出识别文本到终端
+                    confidence = float(np.mean(scores)) if scores else 0.0
+                    recognized_results.append(
+                        create_ocr_result(
+                            text,
+                            "paddle_ocr",
+                            confidence=confidence,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                    )
+
                     print(f"气泡 {i} 识别文本: '{text}' (耗时: {elapsed:.2f}s)")
-                    
-                    # 输出置信度（确保 scores 非空且为数值类型）
                     if scores:
-                        try:
-                            avg_score = np.mean(scores)
-                            print(f"气泡 {i} 平均置信度: {avg_score:.4f}")
-                        except (TypeError, ValueError):
-                            pass  # 忽略置信度计算错误
+                        print(f"气泡 {i} 平均置信度: {confidence:.4f}")
                 else:
-                    recognized_texts.append("")
+                    recognized_results.append(
+                        create_ocr_result(
+                            "",
+                            "paddle_ocr",
+                            confidence=0.0,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                    )
                     print(f"气泡 {i} 未识别出文本")
-                    
+
             except Exception as e:
                 print(f"❌ 气泡 {i} 识别失败: {e}")
                 import traceback
                 traceback.print_exc()
-                recognized_texts.append("")
-        
-        print(f"✅ 识别完成，成功识别 {sum(1 for t in recognized_texts if t)} / {len(bubble_coords)} 个气泡")
-        
-        # 确保返回数量与输入一致（安全检查）
-        if len(recognized_texts) != len(bubble_coords):
-            print(f"⚠️ 结果数量调整: {len(recognized_texts)} -> {len(bubble_coords)}")
-            # 填充或截断
-            if len(recognized_texts) < len(bubble_coords):
-                recognized_texts.extend([""] * (len(bubble_coords) - len(recognized_texts)))
+                recognized_results.append(
+                    create_ocr_result(
+                        "",
+                        "paddle_ocr",
+                        confidence=0.0,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
+                    )
+                )
+
+        print(f"✅ 识别完成，成功识别 {sum(1 for r in recognized_results if r.text)} / {len(bubble_coords)} 个气泡")
+
+        if len(recognized_results) != len(bubble_coords):
+            print(f"⚠️ 结果数量调整: {len(recognized_results)} -> {len(bubble_coords)}")
+            if len(recognized_results) < len(bubble_coords):
+                recognized_results.extend(
+                    [
+                        create_ocr_result(
+                            "",
+                            "paddle_ocr",
+                            confidence=0.0,
+                            confidence_supported=True,
+                            primary_engine=primary_engine,
+                            fallback_used=fallback_used,
+                        )
+                        for _ in range(len(bubble_coords) - len(recognized_results))
+                    ]
+                )
             else:
-                recognized_texts = recognized_texts[:len(bubble_coords)]
-        
-        return recognized_texts
+                recognized_results = recognized_results[:len(bubble_coords)]
+
+        return recognized_results
 
 
 # 单例模式

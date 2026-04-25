@@ -236,6 +236,16 @@ export async function ocrSingleBubble(
     ai_vision_ocr_prompt?: string
     custom_ai_vision_base_url?: string
     ai_vision_min_image_size?: number
+    enable_hybrid_ocr?: boolean
+    secondary_ocr_engine?: string
+    hybrid_ocr_threshold?: number
+    bubble_textlines?: any[]
+    text_detector?: string
+    enable_aux_yolo_detection?: boolean
+    aux_yolo_conf_threshold?: number
+    aux_yolo_overlap_threshold?: number
+    enable_saber_yolo_refine?: boolean
+    saber_yolo_refine_overlap_threshold?: number
   }
 ): Promise<OcrSingleBubbleResponse> {
   return apiClient.post<OcrSingleBubbleResponse>('/api/ocr_single_bubble', {

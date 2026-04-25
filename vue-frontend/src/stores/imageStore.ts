@@ -12,6 +12,7 @@ import {
   getImageTextStyleDefaults,
   normalizeImageTextStyleFields,
 } from '@/defaults/textStyleDefaults'
+import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
 /**
  * 生成唯一 ID
@@ -24,6 +25,35 @@ function pickDefinedValues<T extends Record<string, unknown>>(value: T): Partial
   return Object.fromEntries(
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
   ) as Partial<T>
+}
+
+function applyBubbleStateMirrors(target: ImageData, bubbleStates: BubbleState[] | null): void {
+  target.bubbleStates = bubbleStates
+  if (!bubbleStates) {
+    target.bubbleCoords = undefined
+    target.bubbleAngles = undefined
+    target.originalTexts = undefined
+    target.bubbleTexts = undefined
+    target.textboxTexts = undefined
+    target.textlinesPerBubble = undefined
+    target.ocrResults = undefined
+    return
+  }
+
+  target.bubbleCoords = bubbleStates.map((bubble) => bubble.coords)
+  target.bubbleAngles = bubbleStates.map((bubble) => bubble.rotationAngle || 0)
+  target.originalTexts = bubbleStates.map((bubble) => bubble.originalText || '')
+  target.bubbleTexts = bubbleStates.map((bubble) => bubble.translatedText || '')
+  target.textboxTexts = bubbleStates.map((bubble) => bubble.textboxText || '')
+  target.textlinesPerBubble = getTextlinesPerBubbleFromStates(bubbleStates)
+  target.ocrResults = bubbleStates.map((bubble) => bubble.ocrResult || {
+    text: bubble.originalText || '',
+    confidence: null,
+    confidenceSupported: false,
+    engine: '',
+    primaryEngine: '',
+    fallbackUsed: false
+  })
 }
 
 function getCurrentImageTextStyleSeed(preferCurrentTextStyle: boolean): ReturnType<typeof getImageTextStyleDefaults> {
@@ -364,6 +394,9 @@ export const useImageStore = defineStore('image', () => {
   function updateCurrentImage(updates: ImageDataUpdates): void {
     if (currentImage.value) {
       Object.assign(currentImage.value, updates)
+      if (updates.bubbleStates !== undefined) {
+        applyBubbleStateMirrors(currentImage.value, updates.bubbleStates)
+      }
       console.log('当前图片属性已更新:', Object.keys(updates))
     } else {
       console.warn('更新失败: 当前没有选中的图片')
@@ -380,6 +413,9 @@ export const useImageStore = defineStore('image', () => {
       const image = images.value[index]
       if (image) {
         Object.assign(image, updates)
+        if (updates.bubbleStates !== undefined) {
+          applyBubbleStateMirrors(image, updates.bubbleStates)
+        }
         console.log(`图片 ${index} 属性已更新:`, Object.keys(updates))
       }
     } else {
@@ -393,7 +429,7 @@ export const useImageStore = defineStore('image', () => {
    */
   function updateCurrentBubbleStates(bubbleStates: BubbleState[] | null): void {
     if (currentImage.value) {
-      currentImage.value.bubbleStates = bubbleStates
+      applyBubbleStateMirrors(currentImage.value, bubbleStates)
       currentImage.value.hasUnsavedChanges = true
       console.log(`当前图片气泡状态已更新，共 ${bubbleStates?.length ?? 0} 个气泡`)
     }

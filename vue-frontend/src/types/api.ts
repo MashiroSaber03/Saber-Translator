@@ -3,7 +3,9 @@
  * 定义与后端 API 交互的数据结构
  */
 
-import type { BubbleState, BubbleCoords } from './bubble'
+import type { BubbleState, BubbleCoords, BubbleTextline } from './bubble'
+
+import type { OcrResult } from './ocr'
 
 /**
  * 通用 API 响应
@@ -42,6 +44,8 @@ export interface ReRenderResponse {
 export interface OcrSingleBubbleResponse {
   success: boolean
   text?: string
+  ocr_result?: OcrResult
+  textlines?: BubbleTextline[]
   error?: string
 }
 

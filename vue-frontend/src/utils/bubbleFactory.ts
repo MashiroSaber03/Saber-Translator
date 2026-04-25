@@ -6,6 +6,7 @@
 import type {
   BubbleState,
   BubbleCoords,
+  BubbleTextline,
   BubbleStateOverrides,
   BubbleStateUpdates,
   BubbleApiResponse,
@@ -54,7 +55,27 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   // 自动颜色提取（可选字段，翻译时由后端填充）
   autoFgColor: null,
   autoBgColor: null,
-  colorConfidence: 0
+  colorConfidence: 0,
+  textlines: [],
+  ocrResult: null
+}
+
+export function cloneBubbleTextlines(textlines?: BubbleTextline[] | null): BubbleTextline[] {
+  if (!textlines || !Array.isArray(textlines)) {
+    return []
+  }
+  return textlines.map((line) => ({
+    polygon: Array.isArray(line.polygon) ? line.polygon.map((point) => [...point]) : [],
+    direction: line.direction === 'v' ? 'v' : 'h',
+    confidence: Number(line.confidence) || 0
+  }))
+}
+
+export function getTextlinesPerBubbleFromStates(states?: BubbleState[] | null): BubbleTextline[][] {
+  if (!states || !Array.isArray(states)) {
+    return []
+  }
+  return states.map((state) => cloneBubbleTextlines(state.textlines))
 }
 
 /**
@@ -76,6 +97,7 @@ export function createBubbleState(overrides?: BubbleStateOverrides): BubbleState
       ? ([...overrides.coords] as BubbleCoords)
       : ([...DEFAULT_BUBBLE_STATE.coords] as BubbleCoords),
     polygon: overrides?.polygon ? overrides.polygon.map((point) => [...point]) : [],
+    textlines: cloneBubbleTextlines(overrides?.textlines),
     position: overrides?.position
       ? { ...DEFAULT_BUBBLE_STATE.position, ...overrides.position }
       : { ...DEFAULT_BUBBLE_STATE.position }
@@ -109,6 +131,8 @@ export function createBubbleStatesFromResponse(
     bubble_coords = [],
     bubble_states = [],
     original_texts = [],
+    ocr_results = [],
+    textlines_per_bubble = [],
     bubble_texts = [],
     textbox_texts = [],
     bubble_angles = [],
@@ -121,7 +145,13 @@ export function createBubbleStatesFromResponse(
       ...createBubbleState(globalDefaults),
       ...state,
       // 确保坐标存在
-      coords: state.coords || bubble_coords[index] || [0, 0, 100, 100]
+      coords: state.coords || bubble_coords[index] || [0, 0, 100, 100],
+      textlines: cloneBubbleTextlines(
+        state.textlines && state.textlines.length > 0
+          ? state.textlines
+          : textlines_per_bubble[index]
+      ),
+      ocrResult: state.ocrResult || ocr_results[index] || null
     }))
   }
 
@@ -147,7 +177,9 @@ export function createBubbleStatesFromResponse(
 
     return createBubbleState({
       coords,
-      originalText: original_texts[index] || '',
+      originalText: original_texts[index] || ocr_results[index]?.text || '',
+      textlines: cloneBubbleTextlines(textlines_per_bubble[index]),
+      ocrResult: ocr_results[index] || null,
       translatedText: bubble_texts[index] || '',
       textboxText: textbox_texts[index] || '',
       rotationAngle: bubble_angles[index] || 0,
@@ -224,9 +256,11 @@ export function cloneBubbleStates(states: BubbleState[]): BubbleState[] {
     coords: [...state.coords] as BubbleCoords,
     polygon: state.polygon ? state.polygon.map((point) => [...point]) : [],
     position: { ...state.position },
+    textlines: cloneBubbleTextlines(state.textlines),
     // 深拷贝颜色数组（如果存在）
     autoFgColor: state.autoFgColor ? [...state.autoFgColor] as [number, number, number] : null,
-    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null
+    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null,
+    ocrResult: state.ocrResult ? { ...state.ocrResult } : null
   }))
 }
 
@@ -241,9 +275,11 @@ export function cloneBubbleState(state: BubbleState): BubbleState {
     coords: [...state.coords] as BubbleCoords,
     polygon: state.polygon ? state.polygon.map((point) => [...point]) : [],
     position: { ...state.position },
+    textlines: cloneBubbleTextlines(state.textlines),
     // 深拷贝颜色数组（如果存在）
     autoFgColor: state.autoFgColor ? [...state.autoFgColor] as [number, number, number] : null,
-    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null
+    autoBgColor: state.autoBgColor ? [...state.autoBgColor] as [number, number, number] : null,
+    ocrResult: state.ocrResult ? { ...state.ocrResult } : null
   }
 }
 
@@ -290,6 +326,34 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
     !validInpaintMethods.includes(s.inpaintMethod as InpaintMethod)
   ) {
     return false
+  }
+
+  if (s.ocrResult !== undefined && s.ocrResult !== null) {
+    const ocrResult = s.ocrResult as Record<string, unknown>
+    if (typeof ocrResult.text !== 'string') {
+      return false
+    }
+  }
+
+  if (s.textlines !== undefined) {
+    if (!Array.isArray(s.textlines)) {
+      return false
+    }
+    for (const item of s.textlines) {
+      if (!item || typeof item !== 'object') {
+        return false
+      }
+      const line = item as Record<string, unknown>
+      if (!Array.isArray(line.polygon) || line.polygon.length !== 4) {
+        return false
+      }
+      if (line.direction !== 'h' && line.direction !== 'v') {
+        return false
+      }
+      if (typeof line.confidence !== 'number' || Number.isNaN(line.confidence)) {
+        return false
+      }
+    }
   }
 
   return true

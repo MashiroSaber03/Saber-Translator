@@ -161,6 +161,21 @@ TRANSLATE_IMAGE_SPEC = {
                         "items": {"type": "string"},
                         "description": "原始文本列表"
                     },
+                    "ocr_results": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "confidence": {"type": ["number", "null"]},
+                                "confidenceSupported": {"type": "boolean"},
+                                "engine": {"type": "string"},
+                                "primaryEngine": {"type": "string"},
+                                "fallbackUsed": {"type": "boolean"}
+                            }
+                        },
+                        "description": "统一OCR结果对象列表"
+                    },
                     "translated_texts": {
                         "type": "array",
                         "items": {"type": "string"},

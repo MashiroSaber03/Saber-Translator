@@ -8,7 +8,7 @@
         <CustomSelect
           :model-value="settings.ocrEngine"
           :options="ocrEngineOptions"
-          @change="(v: any) => { settings.ocrEngine = v; handleOcrEngineChange() }"
+          @change="(v: any) => handleOcrEngineChange(String(v))"
         />
       </div>
       
@@ -23,6 +23,46 @@
         <div class="input-hint">
           {{ getSourceLanguageHint() }}
         </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">混合OCR设置</div>
+      <div class="settings-item checkbox-item">
+        <label for="settingsHybridOcrEnabled">启用混合OCR:</label>
+        <input
+          id="settingsHybridOcrEnabled"
+          type="checkbox"
+          :checked="settings.hybridOcr.enabled"
+          @change="handleHybridOcrEnabledEvent"
+        />
+      </div>
+      <div v-show="settings.hybridOcr.enabled" class="settings-row">
+        <div class="settings-item">
+          <label for="settingsHybridSecondaryOcr">备用OCR:</label>
+          <CustomSelect
+            :model-value="settings.hybridOcr.secondaryEngine"
+            :options="hybridSecondaryEngineOptions"
+            @change="(v: any) => handleHybridSecondaryEngineChange(v)"
+          />
+        </div>
+      </div>
+      <div v-show="settings.hybridOcr.enabled" class="settings-row">
+        <div class="settings-item">
+          <label for="settingsHybridThreshold">混合阈值:</label>
+          <input
+            id="settingsHybridThreshold"
+            type="number"
+            min="0"
+            max="1"
+            step="0.01"
+            :value="settings.hybridOcr.confidenceThreshold"
+            @change="handleHybridThresholdInput($event)"
+          />
+        </div>
+      </div>
+      <div v-show="settings.hybridOcr.enabled" class="input-hint">
+        首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。
       </div>
     </div>
 
@@ -244,11 +284,16 @@ import {
   getPaddleOcrVlPrompt,
   PADDLEOCR_VL_LANG_MAP
 } from '@/constants'
+import type { OcrEngine } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
+import {
+  isSupportedHybridOcrEngine,
+  SUPPORTED_HYBRID_OCR_ENGINES
+} from '@/utils/hybridOcr'
 
 /** OCR引擎选项 */
-const ocrEngineOptions = [
+const allOcrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
   { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
   { label: 'PaddleOCR-VL', value: 'paddleocr_vl' },
@@ -449,14 +494,55 @@ const aiVisionModelOptions = computed(() => {
   return options
 })
 
+const ocrEngineOptions = computed(() => {
+  if (!settings.value.hybridOcr.enabled) {
+    return allOcrEngineOptions
+  }
+  const supported = new Set<string>(SUPPORTED_HYBRID_OCR_ENGINES)
+  return allOcrEngineOptions.filter((option) => supported.has(option.value))
+})
+
+const hybridSecondaryEngineOptions = computed(() =>
+  allOcrEngineOptions
+    .filter(
+      (option) =>
+        isSupportedHybridOcrEngine(option.value) &&
+        option.value !== settings.value.ocrEngine
+    )
+    .map(option => ({ ...option }))
+)
+
 // 处理OCR引擎切换
-function handleOcrEngineChange() {
-  settingsStore.saveToStorage()
+function handleOcrEngineChange(value: string) {
+  settingsStore.setOcrEngine(value as OcrEngine)
 }
 
 // 处理源语言切换
 function handleSourceLanguageChange() {
   settingsStore.saveToStorage()
+}
+
+function handleHybridOcrEnabledChange(value: boolean) {
+  settingsStore.updateHybridOcr({ enabled: value })
+}
+
+function handleHybridOcrEnabledEvent(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  handleHybridOcrEnabledChange(Boolean(target?.checked))
+}
+
+function handleHybridSecondaryEngineChange(value: string) {
+  settingsStore.updateHybridOcr({ secondaryEngine: value as any })
+}
+
+function handleHybridThresholdChange(value: number) {
+  const normalized = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
+  settingsStore.updateHybridOcr({ confidenceThreshold: normalized })
+}
+
+function handleHybridThresholdInput(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  handleHybridThresholdChange(Number(target?.value))
 }
 
 // 处理 PaddleOCR-VL 源语言切换

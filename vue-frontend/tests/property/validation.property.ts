@@ -54,8 +54,8 @@ describe('配置验证属性测试', () => {
     'deepseek',
     'volcano',
     'caiyun',
-    'baidu',
-    'youdao',
+    'baidu_translate',
+    'youdao_translate',
     'gemini',
     'custom_openai'
   ]

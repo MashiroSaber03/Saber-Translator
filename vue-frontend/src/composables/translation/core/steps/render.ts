@@ -6,8 +6,10 @@
  */
 import { parallelRender, type ParallelRenderResponse } from '@/api/parallelTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import type { BubbleState, BubbleCoords, BubbleTextline } from '@/types/bubble'
 import type { SavedTextStyles } from '../types'
+import type { OcrResult } from '@/types/ocr'
+import { cloneBubbleStates } from '@/utils/bubbleFactory'
 
 export interface RenderInput {
     imageIndex: number
@@ -15,7 +17,10 @@ export interface RenderInput {
     bubbleCoords: BubbleCoords[]
     bubbleAngles: number[]
     autoDirections: string[]
+    textlinesPerBubble?: BubbleTextline[][]
+    existingBubbleStates?: BubbleState[] | null
     originalTexts: string[]
+    ocrResults?: OcrResult[]
     translatedTexts: string[]
     textboxTexts: string[]
     colors: Array<{
@@ -33,13 +38,54 @@ export interface RenderOutput {
     bubbleStates: BubbleState[]
 }
 
+function hasOwn(object: object, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(object, key)
+}
+
+function mergeRenderedBubbleStates(
+    localBubbleStates: BubbleState[],
+    renderedBubbleStates?: BubbleState[]
+): BubbleState[] {
+    if (!renderedBubbleStates || renderedBubbleStates.length === 0) {
+        return localBubbleStates
+    }
+
+    return renderedBubbleStates.map((renderedState, index) => {
+        const localState = localBubbleStates[index]
+        if (!localState) {
+            return renderedState
+        }
+
+        const renderedStateRecord = renderedState as Record<string, unknown>
+        const mergedState: BubbleState = {
+            ...localState,
+            ...renderedState
+        }
+
+        if (!hasOwn(renderedStateRecord, 'textlines')) {
+            mergedState.textlines = localState.textlines
+        }
+        if (!hasOwn(renderedStateRecord, 'ocrResult')) {
+            mergedState.ocrResult = localState.ocrResult ?? null
+        }
+        if (!hasOwn(renderedStateRecord, 'colorConfidence')) {
+            mergedState.colorConfidence = localState.colorConfidence
+        }
+
+        return mergedState
+    })
+}
+
 export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     const {
         cleanImage,
         bubbleCoords,
         bubbleAngles,
         autoDirections,
+        textlinesPerBubble,
+        existingBubbleStates,
         originalTexts,
+        ocrResults,
         translatedTexts,
         textboxTexts,
         colors,
@@ -66,6 +112,10 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         : (savedTextStyles?.textDirection || textStyle.layoutDirection)
 
     // 构建 bubbleStates
+    const bubbleStatesSource = existingBubbleStates && existingBubbleStates.length === bubbleCoords.length
+        ? cloneBubbleStates(existingBubbleStates)
+        : null
+
     const bubbleStates: BubbleState[] = bubbleCoords.map((coords, idx) => {
         const autoDir = autoDirections[idx] || 'vertical'
         // 将后端返回的 'v'/'h' 格式转换为 'vertical'/'horizontal'
@@ -90,12 +140,16 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
         }
 
+        const baseState = bubbleStatesSource?.[idx]
         return {
+            ...(baseState || {}),
             coords,
-            polygon: [] as number[][],
-            position: { x: 0, y: 0 },
+            polygon: baseState?.polygon || [] as number[][],
+            position: baseState?.position || { x: 0, y: 0 },
             rotationAngle: bubbleAngles[idx] || 0,
             originalText: originalTexts[idx] || '',
+            textlines: textlinesPerBubble?.[idx] || baseState?.textlines || [],
+            ocrResult: ocrResults?.[idx] || null,
             translatedText: translatedTexts[idx] || '',
             textboxText: textboxTexts[idx] || '',
             textDirection: textDirection as 'vertical' | 'horizontal',  // 渲染用的具体方向
@@ -136,8 +190,10 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         throw new Error(response.error || '渲染失败')
     }
 
+    const finalBubbleStates = mergeRenderedBubbleStates(bubbleStates, response.bubble_states)
+
     return {
         finalImage: response.final_image || '',
-        bubbleStates: response.bubble_states || bubbleStates
+        bubbleStates: finalBubbleStates
     }
 }

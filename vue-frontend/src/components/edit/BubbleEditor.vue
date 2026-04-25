@@ -14,7 +14,7 @@
     <!-- 原文编辑区 -->
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
-        <span class="column-title">🇯🇵 日语原文 (OCR结果)</span>
+        <span class="column-title">🇯🇵 日语原文</span>
         <button 
           class="re-ocr-btn" 
           :class="{ 'is-loading': isOcrLoading }"

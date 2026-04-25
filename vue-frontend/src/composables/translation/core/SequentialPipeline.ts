@@ -29,6 +29,7 @@ import type {
 } from './types'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import type { OcrResult } from '@/types/ocr'
 
 // 原子步骤模块
 import {
@@ -104,6 +105,7 @@ interface TaskState {
 
     // OCR结果
     originalTexts: string[]
+    ocrResults: OcrResult[]
 
     // 颜色结果
     colors: Array<{
@@ -233,6 +235,8 @@ export function useSequentialPipeline() {
         task.autoDirections = result.autoDirections
         task.textMask = result.textMask
         task.textlinesPerBubble = result.textlinesPerBubble
+        task.image.bubbleStates = result.bubbleStates
+        task.bubbleStates = result.bubbleStates
         if (result.originalTexts) {
             task.originalTexts = result.originalTexts
         }
@@ -243,10 +247,20 @@ export function useSequentialPipeline() {
             imageIndex: task.imageIndex,
             image: task.image,
             bubbleCoords: task.bubbleCoords,
+            bubbleStates: task.image.bubbleStates,
             textlinesPerBubble: task.textlinesPerBubble
         })
 
         task.originalTexts = result.originalTexts
+        task.ocrResults = result.ocrResults
+        if (task.image.bubbleStates) {
+            task.image.bubbleStates = task.image.bubbleStates.map((bubble, index) => ({
+                ...bubble,
+                originalText: result.originalTexts[index] || '',
+                ocrResult: result.ocrResults[index] || null
+            }))
+            task.bubbleStates = task.image.bubbleStates
+        }
     }
 
     async function stepColor(task: TaskState): Promise<void> {
@@ -254,6 +268,7 @@ export function useSequentialPipeline() {
             imageIndex: task.imageIndex,
             image: task.image,
             bubbleCoords: task.bubbleCoords,
+            bubbleStates: task.image.bubbleStates,
             textlinesPerBubble: task.textlinesPerBubble
         })
 
@@ -321,7 +336,10 @@ export function useSequentialPipeline() {
             bubbleCoords: task.bubbleCoords,
             bubbleAngles: task.bubbleAngles,
             autoDirections: task.autoDirections,
+            textlinesPerBubble: task.image.bubbleStates?.map((bubble) => bubble.textlines || []) || task.textlinesPerBubble,
+            existingBubbleStates: task.image.bubbleStates,
             originalTexts: task.originalTexts,
+            ocrResults: task.ocrResults,
             translatedTexts: task.translatedTexts,
             textboxTexts: task.textboxTexts,
             colors: task.colors,
@@ -388,11 +406,6 @@ export function useSequentialPipeline() {
             translatedDataURL,
             cleanImageData: task.cleanImage || null,
             bubbleStates: task.bubbleStates,
-            bubbleCoords: task.bubbleCoords,
-            bubbleAngles: task.bubbleAngles,
-            originalTexts: task.originalTexts,
-            textboxTexts: task.textboxTexts,
-            bubbleTexts: task.translatedTexts,
             textMask: task.textMask || null,  // 保存精确文字掩膜
             userMask: task.image.userMask || null,  // 【重要】保留用户笔刷掩膜
             translationStatus: 'completed',
@@ -746,6 +759,7 @@ export function useSequentialPipeline() {
                 textMask: image.textMask || undefined, // 【重要】从图片中恢复精确文字掩膜
                 textlinesPerBubble: [],
                 originalTexts: [],
+                ocrResults: image.ocrResults || [],
                 colors: [],
                 translatedTexts: [],
                 textboxTexts: []
@@ -756,7 +770,16 @@ export function useSequentialPipeline() {
                 task.bubbleCoords = image.bubbleStates.map(s => s.coords)
                 task.bubbleAngles = image.bubbleStates.map(s => s.rotationAngle || 0)
                 task.autoDirections = image.bubbleStates.map(s => s.autoTextDirection || s.textDirection || 'vertical')
+                task.textlinesPerBubble = image.bubbleStates.map(s => s.textlines || [])
                 task.originalTexts = image.bubbleStates.map(s => s.originalText || '')
+                task.ocrResults = image.bubbleStates.map(s => s.ocrResult || {
+                    text: s.originalText || '',
+                    confidence: null,
+                    confidenceSupported: false,
+                    engine: '',
+                    primaryEngine: '',
+                    fallbackUsed: false
+                })
                 task.translatedTexts = image.bubbleStates.map(s => s.translatedText || '')
                 task.textboxTexts = image.bubbleStates.map(s => s.textboxText || '')
                 task.colors = image.bubbleStates.map(s => ({

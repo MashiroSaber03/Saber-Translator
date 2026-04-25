@@ -17,6 +17,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import {
   createBubbleState,
   cloneBubbleStates,
+  getTextlinesPerBubbleFromStates,
   isValidBubbleState,
   detectTextDirection
 } from '@/utils/bubbleFactory'
@@ -118,7 +119,22 @@ export const useBubbleStore = defineStore('bubble', () => {
     const imageStore = useImageStore()
     const currentImage = imageStore.currentImage
     if (currentImage) {
-      currentImage.bubbleStates = cloneBubbleStates(bubbles.value)
+      const clonedBubbles = cloneBubbleStates(bubbles.value)
+      currentImage.bubbleStates = clonedBubbles
+      currentImage.bubbleCoords = clonedBubbles.map((bubble) => bubble.coords)
+      currentImage.bubbleAngles = clonedBubbles.map((bubble) => bubble.rotationAngle || 0)
+      currentImage.originalTexts = clonedBubbles.map((bubble) => bubble.originalText || '')
+      currentImage.bubbleTexts = clonedBubbles.map((bubble) => bubble.translatedText || '')
+      currentImage.textboxTexts = clonedBubbles.map((bubble) => bubble.textboxText || '')
+      currentImage.textlinesPerBubble = getTextlinesPerBubbleFromStates(clonedBubbles)
+      currentImage.ocrResults = clonedBubbles.map((bubble) => bubble.ocrResult || {
+        text: bubble.originalText || '',
+        confidence: null,
+        confidenceSupported: false,
+        engine: '',
+        primaryEngine: '',
+        fallbackUsed: false
+      })
       currentImage.hasUnsavedChanges = true
       console.log('气泡状态已同步到当前图片')
     }

@@ -8,6 +8,7 @@ import { ref, computed } from 'vue'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
 import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
+import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
 /**
  * 会话数据接口（用于保存和加载）
@@ -404,7 +405,17 @@ export const useSessionStore = defineStore('session', () => {
 
       // 转换会话数据为 ImageData 格式
       if (sessionData.images && sessionData.images.length > 0) {
-        const images: ImageData[] = sessionData.images.map((img, index) => ({
+        const images: ImageData[] = sessionData.images.map((img, index) => {
+          const bubbleStates = (img.bubbleStates !== undefined && img.bubbleStates !== null)
+            ? (img.bubbleStates as import('@/types/bubble').BubbleState[]).map((state, bubbleIndex) => ({
+                ...state,
+                textlines: state.textlines && state.textlines.length > 0
+                  ? state.textlines
+                  : (Array.isArray(img.textlinesPerBubble) ? (img.textlinesPerBubble[bubbleIndex] as any[]) || [] : [])
+              }))
+            : null
+
+          return ({
           id: `session-${index}-${Date.now()}`,
           originalDataURL: img.originalDataURL,
           translatedDataURL: img.translatedDataURL || null,
@@ -414,14 +425,40 @@ export const useSessionStore = defineStore('session', () => {
           height: (img.height as number) || undefined,
           // 【修复C】保留 bubbleStates 的 null 语义：null=从未处理，[]=用户清空
           // 原版语义：null/undefined 表示需要自动检测，[] 表示用户主动清空了文本框
-          bubbleStates: (img.bubbleStates !== undefined && img.bubbleStates !== null)
-            ? (img.bubbleStates as import('@/types/bubble').BubbleState[])
-            : null,
+          bubbleStates: bubbleStates,
+          bubbleCoords: bubbleStates
+            ? bubbleStates.map((state) => state.coords)
+            : (img.bubbleCoords !== undefined ? (img.bubbleCoords as import('@/types/bubble').BubbleCoords[]) : undefined),
+          bubbleAngles: bubbleStates
+            ? bubbleStates.map((state) => state.rotationAngle || 0)
+            : (img.bubbleAngles !== undefined ? (img.bubbleAngles as number[]) : undefined),
+          originalTexts: bubbleStates
+            ? bubbleStates.map((state) => state.originalText || '')
+            : (img.originalTexts !== undefined ? (img.originalTexts as string[]) : undefined),
+          bubbleTexts: bubbleStates
+            ? bubbleStates.map((state) => state.translatedText || '')
+            : (img.bubbleTexts !== undefined ? (img.bubbleTexts as string[]) : undefined),
+          textboxTexts: bubbleStates
+            ? bubbleStates.map((state) => state.textboxText || '')
+            : (img.textboxTexts !== undefined ? (img.textboxTexts as string[]) : undefined),
+          textlinesPerBubble: bubbleStates
+            ? getTextlinesPerBubbleFromStates(bubbleStates)
+            : (img.textlinesPerBubble !== undefined ? (img.textlinesPerBubble as any[]) : undefined),
           // 恢复手动标注标记
           isManuallyAnnotated: Boolean(img.isManuallyAnnotated),
           // 恢复文件夹路径信息
           relativePath: (img.relativePath as string) || undefined,
           folderPath: (img.folderPath as string) || undefined,
+          ocrResults: bubbleStates
+            ? bubbleStates.map((state, bubbleIndex) => state.ocrResult || ((img.ocrResults as import('@/types/ocr').OcrResult[] | undefined)?.[bubbleIndex] ?? {
+                text: state.originalText || '',
+                confidence: null,
+                confidenceSupported: false,
+                engine: '',
+                primaryEngine: '',
+                fallbackUsed: false
+              }))
+            : (img.ocrResults !== undefined ? (img.ocrResults as import('@/types/ocr').OcrResult[]) : undefined),
           fileName: img.fileName || `image-${index + 1}.png`,
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),
@@ -430,7 +467,7 @@ export const useSessionStore = defineStore('session', () => {
           // 双掩膜系统字段
           textMask: (img.textMask as string) || null,
           userMask: (img.userMask as string) || null,
-        }))
+        })})
 
         // 将图片 URL 转换为 Base64（用于 Canvas 操作和翻译功能）
         // 复刻原版逻辑：显示进度并逐张转换

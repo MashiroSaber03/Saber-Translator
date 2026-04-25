@@ -15,6 +15,9 @@ export * from './settings'
 // API 响应类型
 export * from './api'
 
+// OCR 类型
+export * from './ocr'
+
 // 文件夹类型
 export * from './folder'
 

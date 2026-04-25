@@ -13,6 +13,7 @@ import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
 import type { TranslationProvider, HqTranslationProvider, ProofreadingRound } from '@/types/settings'
+import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
 
 // ============================================================
 // 常量定义
@@ -37,8 +38,10 @@ const PROVIDERS_REQUIRING_API_KEY: TranslationProvider[] = [
 const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
   manga_ocr: 'MangaOCR',
   paddle_ocr: 'PaddleOCR',
+  paddleocr_vl: 'PaddleOCR-VL',
   baidu_ocr: '百度OCR',
-  ai_vision: 'AI视觉OCR'
+  ai_vision: 'AI视觉OCR',
+  '48px_ocr': '48px OCR'
 }
 
 /** 本地服务商（需要模型名称，但不需要 API Key） */
@@ -203,31 +206,46 @@ export function useValidation() {
       }
     }
 
-    // 检查百度 OCR 配置
-    if (engine === 'baidu_ocr') {
-      if (!baiduOcr?.apiKey || baiduOcr.apiKey.trim() === '') {
-        missingItems.push('百度OCR 的 API Key')
+    const validateEngineConfig = (ocrEngine: string, prefix = '') => {
+      if (ocrEngine === 'baidu_ocr') {
+        if (!baiduOcr?.apiKey || baiduOcr.apiKey.trim() === '') {
+          missingItems.push(`${prefix}百度OCR 的 API Key`)
+        }
+        if (!baiduOcr?.secretKey || baiduOcr.secretKey.trim() === '') {
+          missingItems.push(`${prefix}百度OCR 的 Secret Key`)
+        }
       }
-      if (!baiduOcr?.secretKey || baiduOcr.secretKey.trim() === '') {
-        missingItems.push('百度OCR 的 Secret Key')
+
+      if (ocrEngine === 'ai_vision') {
+        if (!aiVisionOcr?.provider) {
+          missingItems.push(`${prefix}AI视觉OCR 的服务商`)
+        }
+        if (!aiVisionOcr?.apiKey || aiVisionOcr.apiKey.trim() === '') {
+          missingItems.push(`${prefix}AI视觉OCR 的 API Key`)
+        }
+        if (!aiVisionOcr?.modelName || aiVisionOcr.modelName.trim() === '') {
+          missingItems.push(`${prefix}AI视觉OCR 的模型名称`)
+        }
+        if (
+          aiVisionOcr?.provider === 'custom_openai_vision' &&
+          (!aiVisionOcr?.customBaseUrl || aiVisionOcr.customBaseUrl.trim() === '')
+        ) {
+          missingItems.push(`${prefix}AI视觉OCR 的自定义 Base URL`)
+        }
       }
     }
 
-    // 检查 AI 视觉 OCR 配置
-    if (engine === 'ai_vision') {
-      if (!aiVisionOcr?.provider) {
-        missingItems.push('AI视觉OCR 的服务商')
+    validateEngineConfig(engine)
+
+    if (settings.hybridOcr?.enabled) {
+      if (!isSupportedHybridOcrCombo(engine, settings.hybridOcr.secondaryEngine)) {
+        return {
+          valid: false,
+          message: '请先在顶部 ⚙️ 设置菜单中选择 MangaOCR / 48px OCR 组合',
+          missingItems: ['混合OCR引擎组合']
+        }
       }
-      if (!aiVisionOcr?.apiKey || aiVisionOcr.apiKey.trim() === '') {
-        missingItems.push('AI视觉OCR 的 API Key')
-      }
-      if (!aiVisionOcr?.modelName || aiVisionOcr.modelName.trim() === '') {
-        missingItems.push('AI视觉OCR 的模型名称')
-      }
-      // 检查自定义服务商的 Base URL
-      if (aiVisionOcr?.provider === 'custom' && (!aiVisionOcr?.customBaseUrl || aiVisionOcr.customBaseUrl.trim() === '')) {
-        missingItems.push('AI视觉OCR 的自定义 Base URL')
-      }
+      validateEngineConfig(settings.hybridOcr.secondaryEngine, '备用')
     }
 
     if (missingItems.length > 0) {

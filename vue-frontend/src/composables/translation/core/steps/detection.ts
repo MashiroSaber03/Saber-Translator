@@ -5,8 +5,9 @@
 import { parallelDetect, type ParallelDetectResponse } from '@/api/parallelTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useImageStore } from '@/stores/imageStore'
-import type { BubbleCoords } from '@/types/bubble'
+import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { createBubbleState, getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
 export interface DetectionInput {
     imageIndex: number
@@ -20,8 +21,58 @@ export interface DetectionOutput {
     bubblePolygons: number[][][]
     autoDirections: string[]
     textMask?: string  // 文字检测掩膜
-    textlinesPerBubble: any[]
+    textlinesPerBubble: BubbleTextline[][]
     originalTexts?: string[]
+    bubbleStates: BubbleState[]
+}
+
+function createBubbleStatesFromDetection(
+    image: AppImageData,
+    result: {
+        bubbleCoords: BubbleCoords[]
+        bubbleAngles: number[]
+        autoDirections: string[]
+        textlinesPerBubble: BubbleTextline[][]
+    }
+): BubbleState[] {
+    const settingsStore = useSettingsStore()
+    const { textStyle } = settingsStore.settings
+
+    return result.bubbleCoords.map((coords, index) => {
+        const autoDirection = result.autoDirections[index] === 'h'
+            ? 'horizontal'
+            : result.autoDirections[index] === 'v'
+                ? 'vertical'
+                : (coords[3] - coords[1]) > (coords[2] - coords[0])
+                    ? 'vertical'
+                    : 'horizontal'
+
+        const textDirection = textStyle.layoutDirection === 'vertical' || textStyle.layoutDirection === 'horizontal'
+            ? textStyle.layoutDirection
+            : autoDirection
+
+        return createBubbleState({
+            coords,
+            polygon: [],
+            originalText: image.originalTexts?.[index] || '',
+            translatedText: image.bubbleTexts?.[index] || '',
+            textboxText: image.textboxTexts?.[index] || '',
+            rotationAngle: result.bubbleAngles[index] || 0,
+            textDirection,
+            autoTextDirection: autoDirection,
+            textlines: result.textlinesPerBubble[index] || [],
+            fontSize: textStyle.fontSize,
+            fontFamily: textStyle.fontFamily,
+            textColor: textStyle.textColor,
+            fillColor: textStyle.fillColor,
+            strokeEnabled: textStyle.strokeEnabled,
+            strokeColor: textStyle.strokeColor,
+            strokeWidth: textStyle.strokeWidth,
+            lineSpacing: textStyle.lineSpacing,
+            textAlign: textStyle.textAlign,
+            inpaintMethod: textStyle.inpaintMethod
+        })
+    })
 }
 
 export async function executeDetection(input: DetectionInput): Promise<DetectionOutput> {
@@ -45,8 +96,13 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
                 bubblePolygons: existingBubbles.map(s => s.polygon || []),
                 autoDirections: existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical'),
                 textMask: image.textMask ?? undefined,  // 从持久化数据中获取掩膜
-                textlinesPerBubble: [],
-                originalTexts: existingBubbles.map(s => s.originalText || '')
+                textlinesPerBubble: existingBubbles.map((bubble, index) =>
+                    bubble.textlines && bubble.textlines.length > 0
+                        ? bubble.textlines
+                        : image.textlinesPerBubble?.[index] || []
+                ),
+                originalTexts: existingBubbles.map(s => s.originalText || ''),
+                bubbleStates: existingBubbles
             }
         } else {
             console.log(`图片 ${imageIndex + 1} 气泡已被清空，跳过检测`)
@@ -57,7 +113,8 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
                 autoDirections: [],
                 textMask: undefined,
                 textlinesPerBubble: [],
-                originalTexts: []
+                originalTexts: [],
+                bubbleStates: []
             }
         }
     }
@@ -115,13 +172,17 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         // 掩膜生成失败不影响主流程，继续使用检测结果
     }
 
-    return {
+    const detectionResult = {
         bubbleCoords: (response.bubble_coords || []) as BubbleCoords[],
         bubbleAngles: response.bubble_angles || [],
         bubblePolygons: response.bubble_polygons || [],
         autoDirections: response.auto_directions || [],
         textMask: textMaskData,  // 返回生成的精确掩膜
         textlinesPerBubble: response.textlines_per_bubble || []
+    }
+    return {
+        ...detectionResult,
+        bubbleStates: createBubbleStatesFromDetection(image, detectionResult)
     }
 }
 
@@ -152,11 +213,19 @@ export function saveDetectionResultToImage(
         bubbleCoords: result.bubbleCoords,
         bubbleAngles: result.bubbleAngles,
         textMask: result.textMask || null,  // 精确文字掩膜
+        textlinesPerBubble: result.textlinesPerBubble || [],
     }
 
     // 如果提供了 bubbleStates，一起更新
     if (options?.updateBubbleStates && options.bubbleStates) {
-        updateData.bubbleStates = options.bubbleStates
+        updateData.bubbleStates = options.bubbleStates.map((state, index) => ({
+            ...state,
+            textlines: state.textlines && state.textlines.length > 0
+                ? state.textlines
+                : (result.textlinesPerBubble[index] || [])
+        }))
+    } else if (result.bubbleStates.length > 0) {
+        updateData.bubbleStates = result.bubbleStates
     }
 
     imageStore.updateImageByIndex(imageIndex, updateData)

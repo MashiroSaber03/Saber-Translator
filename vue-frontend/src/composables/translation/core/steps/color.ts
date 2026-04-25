@@ -3,14 +3,16 @@
  * 提取自 SequentialPipeline.ts Line 327-346
  */
 import { parallelColor, type ParallelColorResponse } from '@/api/parallelTranslate'
-import type { BubbleCoords } from '@/types/bubble'
+import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
 export interface ColorInput {
     imageIndex: number
     image: AppImageData
     bubbleCoords: BubbleCoords[]
-    textlinesPerBubble: any[]
+    bubbleStates?: BubbleState[] | null
+    textlinesPerBubble?: any[]
 }
 
 export interface ColorOutput {
@@ -23,7 +25,7 @@ export interface ColorOutput {
 }
 
 export async function executeColor(input: ColorInput): Promise<ColorOutput> {
-    const { image, bubbleCoords, textlinesPerBubble } = input
+    const { image, bubbleCoords, bubbleStates, textlinesPerBubble } = input
 
     if (bubbleCoords.length === 0) {
         return { colors: [] }
@@ -31,10 +33,21 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
 
     const base64 = extractBase64(image.originalDataURL)
 
+    const bubbleStateTextlines = bubbleStates && bubbleStates.length > 0
+        ? getTextlinesPerBubbleFromStates(bubbleStates)
+        : []
+    const preferredTextlines = bubbleCoords.map((_, index) => {
+        const stateTextlines = bubbleStateTextlines[index]
+        if (stateTextlines && stateTextlines.length > 0) {
+            return stateTextlines
+        }
+        return textlinesPerBubble?.[index] || []
+    })
+
     const response: ParallelColorResponse = await parallelColor({
         image: base64,
         bubble_coords: bubbleCoords,
-        textlines_per_bubble: textlinesPerBubble
+        textlines_per_bubble: preferredTextlines
     })
 
     if (!response.success) {

@@ -17,6 +17,10 @@ from . import (
 )
 
 import json
+from src.core.ocr import recognize_ocr_results_in_bubbles
+from src.core.detection import detect_textlines
+from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
+from src.plugins.manager import apply_after_ocr_hooks
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -76,6 +80,81 @@ def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, sys
     ]
     
     return messages
+
+
+def _clamp_int(value, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(round(value))))
+
+
+def _normalize_single_bubble_textlines(
+    raw_textlines,
+    *,
+    bubble_coords=None,
+    bubble_width: int,
+    bubble_height: int,
+):
+    if not raw_textlines:
+        return []
+
+    candidate_lines = raw_textlines
+    if (
+        isinstance(candidate_lines, list)
+        and candidate_lines
+        and isinstance(candidate_lines[0], list)
+    ):
+        candidate_lines = candidate_lines[0]
+
+    if not isinstance(candidate_lines, list):
+        return []
+
+    def looks_local() -> bool:
+        max_local_x = max(bubble_width - 1, 0) + 0.5
+        max_local_y = max(bubble_height - 1, 0) + 0.5
+        for line_info in candidate_lines:
+            polygon = line_info.get('polygon', []) if isinstance(line_info, dict) else []
+            for point in polygon:
+                if not isinstance(point, (list, tuple)) or len(point) < 2:
+                    return False
+                x_val = float(point[0])
+                y_val = float(point[1])
+                if x_val < -0.5 or y_val < -0.5 or x_val > max_local_x or y_val > max_local_y:
+                    return False
+        return True
+
+    local_polygons = looks_local()
+    if not local_polygons and not bubble_coords:
+        return []
+
+    offset_x = 0
+    offset_y = 0
+    if bubble_coords and not local_polygons:
+        offset_x = float(bubble_coords[0])
+        offset_y = float(bubble_coords[1])
+
+    normalized = []
+    for line_info in candidate_lines:
+        if not isinstance(line_info, dict):
+            continue
+        polygon = line_info.get('polygon', [])
+        if not isinstance(polygon, list) or len(polygon) != 4:
+            continue
+        normalized_polygon = []
+        for point in polygon:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                normalized_polygon = []
+                break
+            normalized_polygon.append([
+                _clamp_int(float(point[0]) - offset_x, 0, max(bubble_width - 1, 0)),
+                _clamp_int(float(point[1]) - offset_y, 0, max(bubble_height - 1, 0)),
+            ])
+        if len(normalized_polygon) != 4:
+            continue
+        normalized.append({
+            'polygon': normalized_polygon,
+            'direction': line_info.get('direction', 'h'),
+            'confidence': float(line_info.get('confidence', 0.0) or 0.0),
+        })
+    return normalized
 
 
 
@@ -1208,13 +1287,28 @@ def ocr_single_bubble():
         baidu_secret_key = data.get('baidu_ocr_secret_key', '')
         baidu_version = data.get('baidu_version', 'standard')
         baidu_source_language = data.get('baidu_source_language', 'auto_detect')
+        enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
+        secondary_ocr_engine = data.get('secondary_ocr_engine')
+        hybrid_ocr_threshold = data.get(
+            'hybrid_ocr_threshold',
+            data.get('ocr_confidence_threshold_48px', 0.2),
+        )
+        bubble_textlines = data.get('bubble_textlines') or data.get('textlines_per_bubble')
+        text_detector = data.get('text_detector')
+        enable_aux_yolo_detection = data.get('enable_aux_yolo_detection')
+        aux_yolo_conf_threshold = data.get('aux_yolo_conf_threshold')
+        aux_yolo_overlap_threshold = data.get('aux_yolo_overlap_threshold')
+        enable_saber_yolo_refine = data.get('enable_saber_yolo_refine')
+        saber_yolo_refine_overlap_threshold = data.get('saber_yolo_refine_overlap_threshold')
         
         if not bubble_image_data and (not image_data or not bubble_coords):
             return jsonify({'error': '缺少图片数据或气泡坐标'}), 400
-        
+
         logger.info(f"单气泡OCR请求: engine={ocr_engine}, coords={bubble_coords}")
         
         try:
+            if enable_hybrid_ocr:
+                validate_manga_48_hybrid_combo(ocr_engine, secondary_ocr_engine)
             if bubble_image_data:
                 if ',' in bubble_image_data:
                     bubble_image_data = bubble_image_data.split(',')[1]
@@ -1234,168 +1328,87 @@ def ocr_single_bubble():
                 x1, y1, x2, y2 = bubble_coords[:4]
                 bubble_image = image_pil.crop((x1, y1, x2, y2))
             
-            recognized_text = ""
-            
-            if ocr_engine == 'manga_ocr':
-                # 使用MangaOCR
-                from src.interfaces.manga_ocr_interface import recognize_japanese_text
-                recognized_text = recognize_japanese_text(bubble_image)
-                
-            elif ocr_engine == 'baidu_ocr':
-                # 使用百度OCR
-                from src.interfaces.baidu_ocr_interface import recognize_text_with_baidu_ocr
-                buffer = io.BytesIO()
-                bubble_image.save(buffer, format='PNG')
-                image_bytes = buffer.getvalue()
-                logger.info(f"使用百度OCR: version={baidu_version}, language={baidu_source_language}")
-                text_results = recognize_text_with_baidu_ocr(
-                    image_bytes,
-                    language=baidu_source_language,
-                    api_key=baidu_api_key,
-                    secret_key=baidu_secret_key,
-                    version=baidu_version
-                )
-                recognized_text = '\n'.join(text_results) if text_results else ''
-                
-            elif ocr_engine == 'paddle_ocr':
-                # 使用 PaddleOCR ONNX (RapidOCR)
-                from src.interfaces.paddle_ocr_interface import get_paddle_ocr_handler
-                import numpy as np
-                ocr_handler = get_paddle_ocr_handler()
-                
-                # 获取源语言参数，用于初始化正确的模型
-                source_language = data.get('source_language', 'chinese')
-                
-                # 必须先初始化 PaddleOCR
-                if ocr_handler and ocr_handler.initialize(source_language):
-                    # 确保图像是 RGB 格式（3通道）
-                    if bubble_image.mode != 'RGB':
-                        bubble_image = bubble_image.convert('RGB')
-                    
-                    # RapidOCR 直接调用 ocr 对象
-                    img_array = np.array(bubble_image)
-                    logger.info(f"PaddleOCR 输入图像: shape={img_array.shape}, dtype={img_array.dtype}")
-                    
-                    # RapidOCR 返回格式: [[bbox, text, confidence], ...]
-                    results, elapsed = ocr_handler.ocr(img_array)
-                    if results and len(results) > 0:
-                        texts = []
-                        for line in results:
-                            if len(line) >= 2 and line[1]:
-                                text_content = line[1]
-                                if isinstance(text_content, str):
-                                    texts.append(text_content)
-                                elif isinstance(text_content, (tuple, list)) and len(text_content) > 0:
-                                    texts.append(str(text_content[0]))
-                        recognized_text = '\n'.join(texts) if texts else ''
-                else:
-                    logger.error("PaddleOCR 初始化失败")
-                    return jsonify({'error': 'PaddleOCR 初始化失败'}), 500
-                    
-            elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID:
-                # 使用AI视觉OCR
-                from src.interfaces.vision_interface import call_ai_vision_ocr_service
-                
-                # 获取AI视觉OCR相关参数
-                ai_vision_provider = data.get('ai_vision_provider', 'siliconflow')
-                ai_vision_api_key = data.get('ai_vision_api_key', '')
-                ai_vision_model_name = data.get('ai_vision_model_name', '')
-                ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt', constants.DEFAULT_AI_VISION_OCR_PROMPT if hasattr(constants, 'DEFAULT_AI_VISION_OCR_PROMPT') else '')
-                custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
-                ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
-                
-                if not ai_vision_api_key:
-                    return jsonify({'error': 'AI视觉OCR需要提供API Key'}), 400
-                if not ai_vision_model_name:
-                    return jsonify({'error': 'AI视觉OCR需要提供模型名称'}), 400
-                
-                logger.info(f"使用AI视觉OCR: provider={ai_vision_provider}, model={ai_vision_model_name}")
-                
-                # --- AI Vision OCR 最小尺寸保护 ---
-                # 许多 VLM 模型（如 Qwen 3 VL）要求图片尺寸至少 28x28
-                orig_w, orig_h = bubble_image.size
-                if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
-                    scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
-                    new_w = int(orig_w * scale)
-                    new_h = int(orig_h * scale)
-                    bubble_image = bubble_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    logger.info(f"气泡图像过小 ({orig_w}x{orig_h})，已放大至 {new_w}x{new_h}")
-                # -----------------------------------------
-                
-                recognized_text = call_ai_vision_ocr_service(
+            bubble_w, bubble_h = bubble_image.size
+            single_coords = [(0, 0, bubble_w, bubble_h)]
+            bubble_textlines_local = _normalize_single_bubble_textlines(
+                bubble_textlines,
+                bubble_coords=bubble_coords,
+                bubble_width=bubble_w,
+                bubble_height=bubble_h,
+            )
+            source_language = data.get('source_language', 'japanese')
+            ai_vision_provider = data.get('ai_vision_provider', 'siliconflow')
+            ai_vision_api_key = data.get('ai_vision_api_key', '')
+            ai_vision_model_name = data.get('ai_vision_model_name', '')
+            ai_vision_ocr_prompt = data.get(
+                'ai_vision_ocr_prompt',
+                constants.DEFAULT_AI_VISION_OCR_PROMPT if hasattr(constants, 'DEFAULT_AI_VISION_OCR_PROMPT') else ''
+            )
+            custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
+            ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+
+            needs_textlines = enable_hybrid_ocr or ocr_engine == constants.OCR_ENGINE_48PX
+            if needs_textlines and not bubble_textlines_local:
+                bubble_textlines_local = detect_textlines(
                     bubble_image,
-                    provider=ai_vision_provider,
-                    api_key=ai_vision_api_key,
-                    model_name=ai_vision_model_name,
-                    prompt=ai_vision_ocr_prompt,
-                    custom_base_url=custom_ai_vision_base_url
+                    detector_type=text_detector,
+                    enable_aux_yolo_detection=enable_aux_yolo_detection,
+                    aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+                    aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
+                    enable_saber_yolo_refine=enable_saber_yolo_refine,
+                    saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
                 )
-            
-            elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
-                # 使用 PaddleOCR-VL (视觉语言模型)
-                from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
-                import torch
-                import numpy as np
-                
-                ocr_handler = get_paddleocr_vl_handler()
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                
-                # 获取源语言参数
-                source_language = data.get('source_language', 'japanese')
-                
-                if ocr_handler.initialize(device):
-                    # 确保图像是 RGB 格式
-                    if bubble_image.mode != 'RGB':
-                        bubble_image = bubble_image.convert('RGB')
-                    
-                    # 对于单气泡，创建一个虚拟的坐标列表（整个图像）
-                    bubble_w, bubble_h = bubble_image.size
-                    single_coords = [(0, 0, bubble_w, bubble_h)]
-                    
-                    # 调用识别（不传 textlines，使用简单模式）
-                    results = ocr_handler.recognize_text(bubble_image, single_coords, None, source_language)
-                    recognized_text = results[0] if results else ''
-                    logger.info(f"PaddleOCR-VL 单气泡识别完成")
-                else:
-                    logger.error("PaddleOCR-VL 初始化失败")
-                    return jsonify({'error': 'PaddleOCR-VL 初始化失败'}), 500
-            
-            elif ocr_engine == constants.OCR_ENGINE_48PX:
-                # 使用 48px OCR
-                from src.interfaces.ocr_48px import get_48px_ocr_handler
-                import torch
-                import numpy as np
-                
-                ocr_handler = get_48px_ocr_handler()
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                
-                if ocr_handler.initialize(device):
-                    # 确保图像是 RGB 格式
-                    if bubble_image.mode != 'RGB':
-                        bubble_image = bubble_image.convert('RGB')
-                    
-                    # 对于单气泡，创建一个虚拟的坐标列表（整个图像）
-                    bubble_w, bubble_h = bubble_image.size
-                    single_coords = [(0, 0, bubble_w, bubble_h)]
-                    
-                    # 调用识别（不传 textlines，使用简单模式）
-                    results = ocr_handler.recognize_text(bubble_image, single_coords, None)
-                    recognized_text = results[0] if results else ''
-                    logger.info(f"48px OCR 单气泡识别完成")
-                else:
-                    logger.error("48px OCR 初始化失败")
-                    return jsonify({'error': '48px OCR 初始化失败'}), 500
-                
-            else:
-                return jsonify({'error': f'不支持的OCR引擎: {ocr_engine}'}), 400
-            
+            if needs_textlines and not bubble_textlines_local:
+                bubble_textlines_local = [{
+                    'polygon': [[0, 0], [max(bubble_w - 1, 0), 0], [max(bubble_w - 1, 0), max(bubble_h - 1, 0)], [0, max(bubble_h - 1, 0)]],
+                    'direction': 'v' if bubble_h > bubble_w else 'h',
+                    'confidence': 0.0,
+                }]
+
+            ocr_results = recognize_ocr_results_in_bubbles(
+                bubble_image,
+                single_coords,
+                source_language=source_language,
+                ocr_engine=ocr_engine,
+                baidu_api_key=baidu_api_key,
+                baidu_secret_key=baidu_secret_key,
+                baidu_version=baidu_version,
+                baidu_ocr_language=baidu_source_language,
+                ai_vision_provider=ai_vision_provider,
+                ai_vision_api_key=ai_vision_api_key,
+                ai_vision_model_name=ai_vision_model_name,
+                ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                custom_ai_vision_base_url=custom_ai_vision_base_url,
+                ai_vision_min_image_size=ai_vision_min_image_size,
+                textlines_per_bubble=[bubble_textlines_local] if bubble_textlines_local else None,
+                enable_hybrid_ocr=enable_hybrid_ocr,
+                secondary_ocr_engine=secondary_ocr_engine,
+                hybrid_ocr_threshold=hybrid_ocr_threshold,
+                strict_errors=True,
+            )
+            ocr_result = ocr_results[0] if ocr_results else None
+            recognized_text = ocr_result.text if ocr_result else ""
+            hook_params = {
+                "source_language": source_language,
+                "ocr_engine": ocr_engine,
+                "ocr_results": [ocr_result.to_dict()] if ocr_result else [],
+            }
+            modified_texts = apply_after_ocr_hooks(bubble_image, [recognized_text], single_coords, hook_params)
+            if ocr_result and modified_texts and len(modified_texts) == 1:
+                recognized_text = modified_texts[0]
+                ocr_result.text = recognized_text
             logger.info(f"单气泡OCR识别结果: {recognized_text[:50]}..." if len(recognized_text) > 50 else f"单气泡OCR识别结果: {recognized_text}")
-            
+
             return jsonify({
                 'success': True,
-                'text': recognized_text
+                'text': recognized_text,
+                'ocr_result': ocr_result.to_dict() if ocr_result else None,
+                'textlines': bubble_textlines_local
             })
             
+        except ValueError as e:
+            logger.error(f"OCR识别参数错误: {e}", exc_info=True)
+            return jsonify({'error': str(e)}), 400
         except Exception as e:
             logger.error(f"OCR识别失败: {e}", exc_info=True)
             return jsonify({'error': f'OCR识别失败: {str(e)}'}), 500

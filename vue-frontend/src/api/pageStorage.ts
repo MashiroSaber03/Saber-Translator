@@ -5,6 +5,7 @@
  */
 
 import { apiClient } from './client'
+import type { BubbleState } from '@/types/bubble'
 
 // ============================================================
 // 响应类型定义
@@ -214,6 +215,13 @@ export interface ImageDataForSave {
     translationStatus?: string
     translationFailed?: boolean
     bubbleStates?: unknown[]
+    bubbleCoords?: unknown[]
+    bubbleAngles?: number[]
+    originalTexts?: string[]
+    bubbleTexts?: string[]
+    textboxTexts?: string[]
+    textlinesPerBubble?: unknown[]
+    ocrResults?: unknown[]
     isManuallyAnnotated?: boolean
     relativePath?: string
     folderPath?: string
@@ -264,6 +272,34 @@ export async function saveAllPagesSequentially(
         callback?.onProgress?.(idx + 1, totalImages)
 
         try {
+            const bubbleStatesSource = Array.isArray(img.bubbleStates) ? img.bubbleStates as BubbleState[] : null
+            const bubbleStates = bubbleStatesSource
+                ? bubbleStatesSource.map((bubble, index) => ({
+                    ...bubble,
+                    textlines: bubble.textlines?.length
+                        ? bubble.textlines
+                        : (img.textlinesPerBubble?.[index] as any[]) || []
+                }))
+                : null
+            const bubbleCoords = bubbleStates ? bubbleStates.map((bubble) => bubble.coords) : img.bubbleCoords
+            const bubbleAngles = bubbleStates ? bubbleStates.map((bubble) => bubble.rotationAngle || 0) : img.bubbleAngles
+            const originalTexts = bubbleStates ? bubbleStates.map((bubble) => bubble.originalText || '') : img.originalTexts
+            const bubbleTexts = bubbleStates ? bubbleStates.map((bubble) => bubble.translatedText || '') : img.bubbleTexts
+            const textboxTexts = bubbleStates ? bubbleStates.map((bubble) => bubble.textboxText || '') : img.textboxTexts
+            const textlinesPerBubble = bubbleStates
+                ? bubbleStates.map((bubble) => bubble.textlines || [])
+                : img.textlinesPerBubble
+            const ocrResults = bubbleStates
+                ? bubbleStates.map((bubble) => bubble.ocrResult || {
+                    text: bubble.originalText || '',
+                    confidence: null,
+                    confidenceSupported: false,
+                    engine: '',
+                    primaryEngine: '',
+                    fallbackUsed: false
+                })
+                : img.ocrResults
+
             // 保存原图
             const originalBase64 = extractBase64(img.originalDataURL)
             if (originalBase64) {
@@ -288,6 +324,13 @@ export async function saveAllPagesSequentially(
                 translationStatus: img.translationStatus,
                 translationFailed: img.translationFailed,
                 bubbleStates: img.bubbleStates,
+                bubbleCoords: bubbleCoords,
+                bubbleAngles: bubbleAngles,
+                originalTexts: originalTexts,
+                bubbleTexts: bubbleTexts,
+                textboxTexts: textboxTexts,
+                textlinesPerBubble: textlinesPerBubble,
+                ocrResults: ocrResults,
                 isManuallyAnnotated: img.isManuallyAnnotated,
                 relativePath: img.relativePath,
                 folderPath: img.folderPath,

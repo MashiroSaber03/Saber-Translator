@@ -3,7 +3,8 @@
  * 定义翻译页面中图片的数据结构
  */
 
-import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from './bubble'
+import type { BubbleState, BubbleCoords, BubbleTextline, TextDirection, InpaintMethod } from './bubble'
+import type { OcrResult } from './ocr'
 
 /**
  * 翻译状态
@@ -43,6 +44,10 @@ export interface ImageData {
   bubbleAngles?: number[]
   /** 原文文本数组（兼容旧数据） */
   originalTexts?: string[]
+  /** 每个气泡对应的原始文本行信息（内部复用） */
+  textlinesPerBubble?: BubbleTextline[][]
+  /** OCR 结果数组（统一对象结构） */
+  ocrResults?: OcrResult[]
   /** 译文文本数组（兼容旧数据） */
   bubbleTexts?: string[]
   /** 文本框文本数组（兼容旧数据） */

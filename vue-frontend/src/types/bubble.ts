@@ -2,6 +2,7 @@
  * 气泡状态类型定义
  * 与后端 BubbleState 数据类对应，用于前后端统一管理气泡渲染参数
  */
+import type { OcrResult } from './ocr'
 
 /**
  * 气泡坐标类型 [x1, y1, x2, y2]
@@ -12,6 +13,15 @@ export type BubbleCoords = [number, number, number, number]
  * 多边形坐标类型 [[x1, y1], [x2, y2], ...]
  */
 export type PolygonCoords = number[][]
+
+/**
+ * 气泡级文本行最小结构
+ */
+export interface BubbleTextline {
+  polygon: PolygonCoords
+  direction: 'h' | 'v'
+  confidence: number
+}
 
 /**
  * 文本排版方向
@@ -100,6 +110,10 @@ export interface BubbleState {
   autoBgColor?: [number, number, number] | null
   /** 颜色提取置信度 0-1 */
   colorConfidence?: number
+  /** 当前气泡的文本行信息（OCR/颜色提取复用） */
+  textlines: BubbleTextline[]
+  /** OCR 元数据 */
+  ocrResult?: OcrResult | null
 }
 
 /**
@@ -119,6 +133,8 @@ export interface BubbleApiResponse {
   bubble_coords?: BubbleCoords[]
   bubble_states?: BubbleState[]
   original_texts?: string[]
+  ocr_results?: OcrResult[]
+  textlines_per_bubble?: BubbleTextline[][]
   bubble_texts?: string[]
   textbox_texts?: string[]
   bubble_angles?: number[]

@@ -520,6 +520,9 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       console.log(`开始 OCR 识别气泡 #${index + 1}`)
       const imageData = image.originalDataURL.split(',')[1] || ''
       const settings = settingsStore.settings
+      const bubbleTextlines = bubble.textlines?.length
+        ? bubble.textlines
+        : (Array.isArray(image.textlinesPerBubble) ? image.textlinesPerBubble[index] || [] : [])
       // PaddleOCR-VL 使用独立的源语言设置
       const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
         ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
@@ -541,12 +544,26 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           ai_vision_model_name: settings.aiVisionOcr.modelName,
           ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
           custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl,
-          ai_vision_min_image_size: settings.aiVisionOcr.minImageSize
+          ai_vision_min_image_size: settings.aiVisionOcr.minImageSize,
+          enable_hybrid_ocr: settings.hybridOcr.enabled,
+          secondary_ocr_engine: settings.hybridOcr.secondaryEngine,
+          hybrid_ocr_threshold: settings.hybridOcr.confidenceThreshold,
+          bubble_textlines: bubbleTextlines,
+          text_detector: settings.textDetector,
+          enable_aux_yolo_detection: settings.enableAuxYoloDetection,
+          aux_yolo_conf_threshold: settings.auxYoloConfThreshold,
+          aux_yolo_overlap_threshold: settings.auxYoloOverlapThreshold,
+          enable_saber_yolo_refine: settings.enableSaberYoloRefine,
+          saber_yolo_refine_overlap_threshold: settings.saberYoloRefineOverlapThreshold
         }
       )
 
       if (response.success && response.text !== undefined) {
-        bubbleStore.updateBubble(index, { originalText: response.text })
+        bubbleStore.updateBubble(index, {
+          originalText: response.text,
+          textlines: response.textlines || bubbleTextlines,
+          ocrResult: response.ocr_result || null
+        })
         console.log(`OCR 识别成功: "${response.text}"`)
       } else {
         const errorMsg = response.error || '识别失败'

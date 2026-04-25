@@ -8,6 +8,7 @@ import type {
   BaiduOcrSettings,
   PaddleOcrVlSettings,
   AiVisionOcrSettings,
+  HybridOcrSettings,
   TranslationServiceSettings,
   HqTranslationSettings,
   ProofreadingSettings,
@@ -81,6 +82,13 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   customBaseUrl: '',
   isJsonMode: false,
   minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
+}
+
+/** 默认混合OCR设置 */
+export const DEFAULT_HYBRID_OCR: HybridOcrSettings = {
+  enabled: false,
+  secondaryEngine: 'manga_ocr',
+  confidenceThreshold: 0.2
 }
 
 /** 默认翻译服务设置 */
@@ -160,6 +168,7 @@ export function createDefaultSettings(): TranslationSettings {
     baiduOcr: { ...DEFAULT_BAIDU_OCR },
     paddleOcrVl: { ...DEFAULT_PADDLEOCR_VL },
     aiVisionOcr: { ...DEFAULT_AI_VISION_OCR },
+    hybridOcr: { ...DEFAULT_HYBRID_OCR },
     translation: { ...DEFAULT_TRANSLATION_SERVICE },
     targetLanguage: 'zh',
     translatePrompt: DEFAULT_TRANSLATE_PROMPT,

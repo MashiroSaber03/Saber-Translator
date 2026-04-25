@@ -401,6 +401,44 @@ def get_plugin_manager(app=None):
          plugin_manager_instance.app = app
     return plugin_manager_instance
 
+
+def apply_after_ocr_hooks(image_pil, original_texts, bubble_coords, params):
+    """
+    兼容旧插件签名的 after_ocr 钩子调用辅助函数。
+
+    旧插件接口约定返回 list[str]，这里直接串行调用并回传修改后的文本列表。
+    """
+    manager = get_plugin_manager()
+    current_texts = list(original_texts)
+    hook_methods = manager.hooks.get(AFTER_OCR, []) if manager else []
+    if not hook_methods:
+        return current_texts
+
+    for hook_entry in hook_methods:
+        try:
+            actual_plugin_name = "unknown_plugin"
+            actual_hook_method = hook_entry
+            if isinstance(hook_entry, tuple) and len(hook_entry) == 2:
+                actual_plugin_name = str(hook_entry[0])
+                actual_hook_method = hook_entry[1]
+
+            plugin_instance = getattr(actual_hook_method, "__self__", None)
+            if plugin_instance is not None:
+                actual_plugin_name = getattr(plugin_instance, "plugin_name", actual_plugin_name)
+                if isinstance(plugin_instance, PluginBase) and plugin_instance.is_enabled():
+                    result = actual_hook_method(image_pil, current_texts, bubble_coords, params)
+                    if isinstance(result, list):
+                        current_texts = [str(item or "") for item in result]
+            else:
+                result = actual_hook_method(image_pil, current_texts, bubble_coords, params)
+                if isinstance(result, list):
+                    current_texts = [str(item or "") for item in result]
+        except Exception as error:
+            logger.error(f"执行插件 '{actual_plugin_name}' 的 OCR 钩子时出错: {error}", exc_info=True)
+            continue
+
+    return current_texts
+
 # --- 测试代码 ---
 if __name__ == '__main__':
     print("--- 测试插件管理器 ---")

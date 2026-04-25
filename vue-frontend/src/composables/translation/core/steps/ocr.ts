@@ -4,25 +4,29 @@
  */
 import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { BubbleCoords } from '@/types/bubble'
+import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import type { OcrResult } from '@/types/ocr'
+import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
 export interface OcrInput {
     imageIndex: number
     image: AppImageData
     bubbleCoords: BubbleCoords[]
-    textlinesPerBubble: any[]
+    bubbleStates?: BubbleState[] | null
+    textlinesPerBubble?: any[]
 }
 
 export interface OcrOutput {
     originalTexts: string[]
+    ocrResults: OcrResult[]
 }
 
 export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
-    const { image, bubbleCoords, textlinesPerBubble } = input
+    const { image, bubbleCoords, bubbleStates, textlinesPerBubble } = input
 
     if (bubbleCoords.length === 0) {
-        return { originalTexts: [] }
+        return { originalTexts: [], ocrResults: [] }
     }
 
     const settingsStore = useSettingsStore()
@@ -33,6 +37,17 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
         ? settings.paddleOcrVl?.sourceLanguage || 'japanese'
         : settings.sourceLanguage
+
+    const bubbleStateTextlines = bubbleStates && bubbleStates.length > 0
+        ? getTextlinesPerBubbleFromStates(bubbleStates)
+        : []
+    const preferredTextlines = bubbleCoords.map((_, index) => {
+        const stateTextlines = bubbleStateTextlines[index]
+        if (stateTextlines && stateTextlines.length > 0) {
+            return stateTextlines
+        }
+        return textlinesPerBubble?.[index] || []
+    })
 
     const response: ParallelOcrResponse = await parallelOcr({
         image: base64,
@@ -48,7 +63,10 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
         ai_vision_model_name: settings.aiVisionOcr?.modelName,
         ai_vision_ocr_prompt: settings.aiVisionOcr?.prompt,
         custom_ai_vision_base_url: settings.aiVisionOcr?.customBaseUrl,
-        textlines_per_bubble: textlinesPerBubble
+        enable_hybrid_ocr: settings.hybridOcr?.enabled,
+        secondary_ocr_engine: settings.hybridOcr?.secondaryEngine,
+        hybrid_ocr_threshold: settings.hybridOcr?.confidenceThreshold,
+        textlines_per_bubble: preferredTextlines
     })
 
     if (!response.success) {
@@ -56,7 +74,8 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     }
 
     return {
-        originalTexts: response.original_texts || []
+        originalTexts: response.original_texts || [],
+        ocrResults: response.ocr_results || []
     }
 }
 

@@ -34,6 +34,7 @@ export class ColorPool extends TaskPool {
       imageIndex: task.imageIndex,
       image: imageData,
       bubbleCoords: detectionResult.bubbleCoords as any,
+      bubbleStates: imageData.bubbleStates,
       textlinesPerBubble: ocrResult?.textlinesPerBubble || detectionResult.textlinesPerBubble || []
     })
 

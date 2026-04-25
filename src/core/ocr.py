@@ -1,26 +1,26 @@
 import logging
 import os
 import time
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional
 from PIL import Image
-import cv2
 import numpy as np
 import io
 import json
 import re
-import torch  # 用于48px OCR设备检测
+import torch
 
 # 导入接口和常量
 from src.interfaces.manga_ocr_interface import recognize_japanese_text, get_manga_ocr_instance
-from src.interfaces.paddle_ocr_interface import get_paddle_ocr_handler, PaddleOCRHandler
-from src.interfaces.baidu_ocr_interface import recognize_text_with_baidu_ocr, test_baidu_ocr_connection
+from src.interfaces.paddle_ocr_interface import get_paddle_ocr_handler
+from src.interfaces.baidu_ocr_interface import recognize_text_with_baidu_ocr
 from src.shared import constants
 from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
-from src.shared.image_helpers import image_to_base64 # 导入图像转Base64助手
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
 # 导入rpm限制辅助函数
 from src.core.translation import _enforce_rpm_limit
+from src.core.ocr_types import OcrResult, create_ocr_result
+from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
 
 logger = logging.getLogger("CoreOCR")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -78,378 +78,571 @@ def _safely_extract_from_json(json_str: str, field_name: str) -> str:
         # 所有方法都失败，返回原始文本
         return json_str
 
-def recognize_text_in_bubbles(image_pil, bubble_coords, source_language='japan', ocr_engine='paddle_ocr', 
-                              baidu_api_key=None, baidu_secret_key=None, baidu_version="standard",
-                              baidu_ocr_language="auto_detect", # 新增百度OCR源语言参数
-                              ai_vision_provider=None, ai_vision_api_key=None,
-                              ai_vision_model_name=None, ai_vision_ocr_prompt=None,
-                              custom_ai_vision_base_url=None,
-                              use_json_format_for_ai_vision=False,
-                              rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
-                              ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
-                              jsonPromptMode: str = 'normal',
-                              textlines_per_bubble=None):  # 新增：每个气泡对应的原始文本行（48px OCR 使用）
-    """
-    根据源语言和引擎选择，使用指定的 OCR 引擎识别所有气泡内的文本。
 
-    Args:
-        image_pil (PIL.Image.Image): 包含气泡的原始 PIL 图像。
-        bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
-        source_language (str): 源语言代码 (例如 'japan', 'en', 'korean')。
-        ocr_engine (str): OCR引擎选择，可以是 'manga_ocr', 'paddle_ocr', 'baidu_ocr' 或 'ai_vision'。
-        baidu_api_key (str, optional): 百度OCR API Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
-        baidu_secret_key (str, optional): 百度OCR Secret Key，仅当 ocr_engine 为 'baidu_ocr' 时需要。
-        baidu_version (str, optional): 百度OCR版本，'standard'(标准版)或'high_precision'(高精度版)。
-        baidu_ocr_language (str, optional): 百度OCR源语言，'auto_detect'(自动检测)或特定语言代码。
-        ai_vision_provider (str, optional): AI视觉服务商，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_api_key (str, optional): AI视觉服务API Key，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_model_name (str, optional): AI视觉服务使用的模型名称，仅当 ocr_engine 为 'ai_vision' 时需要。
-        ai_vision_ocr_prompt (str, optional): AI视觉OCR提示词，仅当 ocr_engine 为 'ai_vision' 时需要。
-        custom_ai_vision_base_url (str, optional): 自定义AI视觉服务的Base URL，仅当使用自定义服务时需要。
-        use_json_format_for_ai_vision (bool): AI视觉OCR是否期望并解析JSON格式的响应。
-        rpm_limit_ai_vision (int): AI视觉OCR服务的每分钟请求数限制。
-        ai_vision_min_image_size (int): AI视觉OCR最小图片尺寸(像素)。气泡图像小于此值时自动放大。设为0禁用自动放大。
+def _empty_ocr_results(
+    bubble_coords: List[Tuple[int, int, int, int]],
+    engine: str,
+    *,
+    confidence_supported: bool = False,
+    primary_engine: Optional[str] = None,
+    fallback_used: bool = False,
+) -> List[OcrResult]:
+    default_confidence = 0.0 if confidence_supported else None
+    return [
+        create_ocr_result(
+            "",
+            engine,
+            confidence=default_confidence,
+            confidence_supported=confidence_supported,
+            primary_engine=primary_engine or engine,
+            fallback_used=fallback_used,
+        )
+        for _ in bubble_coords
+    ]
 
-    Returns:
-        list: 包含每个气泡识别文本的列表，顺序与 bubble_coords 一致。
-              如果某个气泡识别失败，对应位置为空字符串 ""。
-    """
+
+def _recognize_with_baidu_ocr_results(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    baidu_api_key=None,
+    baidu_secret_key=None,
+    baidu_version="standard",
+    baidu_ocr_language="auto_detect",
+    *,
+    primary_engine='baidu_ocr',
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    if not baidu_api_key or not baidu_secret_key:
+        logger.error("百度OCR未配置API密钥，OCR步骤跳过。")
+        return _empty_ocr_results(
+            bubble_coords,
+            'baidu_ocr',
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    img_np = np.array(image_pil.convert('RGB'))
+    results: List[OcrResult] = []
+    baidu_language = baidu_ocr_language
+
+    if baidu_language == 'auto_detect':
+        logger.info("百度OCR使用自动检测语言")
+    else:
+        if baidu_language == "" or baidu_language == "无":
+            baidu_language = source_language
+            logger.info(f"百度OCR使用源语言: '{source_language}' (替代'无'设置)")
+        else:
+            logger.info(f"百度OCR使用指定语言: '{baidu_language}'")
+
+    for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+        try:
+            bubble_img_np = img_np[y1:y2, x1:x2]
+            bubble_img_pil = Image.fromarray(bubble_img_np)
+            try:
+                debug_dir = get_debug_dir("ocr_bubbles")
+                bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}_baidu.png"))
+            except Exception as save_error:
+                logger.warning(f"保存 OCR 调试气泡图像失败: {save_error}")
+
+            buffer = io.BytesIO()
+            bubble_img_pil.save(buffer, format="PNG")
+            image_bytes = buffer.getvalue()
+            text_results = recognize_text_with_baidu_ocr(
+                image_bytes,
+                language=baidu_language,
+                api_key=baidu_api_key,
+                secret_key=baidu_secret_key,
+                version=baidu_version
+            )
+            text = " ".join(text_results) if text_results else ""
+            results.append(
+                create_ocr_result(
+                    text,
+                    'baidu_ocr',
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+        except Exception as error:
+            logger.error(f"处理气泡 {i} (百度OCR) 时出错: {error}", exc_info=True)
+            results.append(
+                create_ocr_result(
+                    "",
+                    'baidu_ocr',
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+
+    return results
+
+
+def _recognize_with_paddle_ocr_results(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    *,
+    primary_engine='paddle_ocr',
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    paddle_ocr = get_paddle_ocr_handler()
+    if not paddle_ocr or not paddle_ocr.initialize(source_language):
+        logger.error(f"无法初始化 PaddleOCR ({source_language})，OCR 步骤跳过。")
+        if strict_errors:
+            raise RuntimeError("PaddleOCR 初始化失败")
+        return _empty_ocr_results(
+            bubble_coords,
+            'paddle_ocr',
+            confidence_supported=True,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    try:
+        if hasattr(paddle_ocr, "recognize_text_with_details"):
+            return paddle_ocr.recognize_text_with_details(
+                image_pil,
+                bubble_coords,
+                primary_engine=primary_engine,
+                fallback_used=fallback_used,
+            )
+        texts = paddle_ocr.recognize_text(image_pil, bubble_coords)
+        return [
+            create_ocr_result(
+                text,
+                'paddle_ocr',
+                primary_engine=primary_engine,
+                fallback_used=fallback_used,
+            )
+            for text in texts
+        ]
+    except Exception as error:
+        logger.error(f"使用 PaddleOCR 识别时出错: {error}", exc_info=True)
+        return _empty_ocr_results(
+            bubble_coords,
+            'paddle_ocr',
+            confidence_supported=True,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+
+def _recognize_with_manga_ocr_results(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    textlines_per_bubble=None,
+    *,
+    primary_engine='manga_ocr',
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    ocr_instance = get_manga_ocr_instance()
+    if not ocr_instance:
+        logger.error("无法初始化 MangaOCR，OCR 步骤跳过。")
+        if strict_errors:
+            raise RuntimeError("MangaOCR 初始化失败")
+        return _empty_ocr_results(
+            bubble_coords,
+            'manga_ocr',
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    img_np = np.array(image_pil.convert('RGB'))
+    results: List[OcrResult] = []
+    logger.info(f"开始使用 MangaOCR 逐个识别 {len(bubble_coords)} 个气泡...")
+
+    for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+        try:
+            bubble_img_np = img_np[y1:y2, x1:x2]
+            bubble_img_pil = Image.fromarray(bubble_img_np)
+            try:
+                debug_dir = get_debug_dir("ocr_bubbles")
+                bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}.png"))
+            except Exception as save_error:
+                logger.warning(f"保存 OCR 调试气泡图像失败: {save_error}")
+
+            text = recognize_japanese_text(bubble_img_pil)
+            results.append(
+                create_ocr_result(
+                    text,
+                    'manga_ocr',
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+        except Exception as error:
+            logger.error(f"处理气泡 {i} (MangaOCR) 时出错: {error}", exc_info=True)
+            results.append(
+                create_ocr_result(
+                    "",
+                    'manga_ocr',
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+
+    return results
+
+
+def _recognize_with_48px_ocr_results(
+    image_pil,
+    bubble_coords,
+    textlines_per_bubble=None,
+    *,
+    primary_engine=constants.OCR_ENGINE_48PX,
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    from src.interfaces.ocr_48px import get_48px_ocr_handler
+
+    ocr_handler = get_48px_ocr_handler()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if not ocr_handler.initialize(device):
+        logger.error("48px OCR 初始化失败，OCR 步骤跳过")
+        if strict_errors:
+            raise RuntimeError("48px OCR 初始化失败")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.OCR_ENGINE_48PX,
+            confidence_supported=True,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    return ocr_handler.recognize_text_with_details(
+        image_pil,
+        bubble_coords,
+        textlines_per_bubble,
+        primary_engine=primary_engine,
+        fallback_used=fallback_used,
+    )
+
+
+def _recognize_with_paddleocr_vl_results(
+    image_pil,
+    bubble_coords,
+    source_language='japanese',
+    textlines_per_bubble=None,
+    *,
+    primary_engine=constants.OCR_ENGINE_PADDLEOCR_VL,
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
+
+    ocr_handler = get_paddleocr_vl_handler()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if not ocr_handler.initialize(device):
+        logger.error("PaddleOCR-VL 初始化失败，OCR 步骤跳过")
+        if strict_errors:
+            raise RuntimeError("PaddleOCR-VL 初始化失败")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.OCR_ENGINE_PADDLEOCR_VL,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble, source_language)
+    return [
+        create_ocr_result(
+            text,
+            constants.OCR_ENGINE_PADDLEOCR_VL,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+        for text in texts
+    ]
+
+
+def _recognize_with_ai_vision_results(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    ai_vision_provider=None,
+    ai_vision_api_key=None,
+    ai_vision_model_name=None,
+    ai_vision_ocr_prompt=None,
+    custom_ai_vision_base_url=None,
+    use_json_format_for_ai_vision=False,
+    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+    ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    *,
+    primary_engine=constants.AI_VISION_OCR_ENGINE_ID,
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    if not all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
+        logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
+        if strict_errors:
+            if not ai_vision_api_key:
+                raise ValueError("AI视觉OCR需要提供API Key")
+            if not ai_vision_model_name:
+                raise ValueError("AI视觉OCR需要提供模型名称")
+            raise ValueError("AI视觉OCR配置不完整")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.AI_VISION_OCR_ENGINE_ID,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    if ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
+        logger.error("使用自定义AI视觉OCR时，缺少Base URL。")
+        if strict_errors:
+            raise ValueError("AI视觉OCR需要提供自定义 Base URL")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.AI_VISION_OCR_ENGINE_ID,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+
+    img_np = np.array(image_pil.convert('RGB'))
+    results: List[OcrResult] = []
+    current_prompt = ai_vision_ocr_prompt
+    if use_json_format_for_ai_vision:
+        if not current_prompt or '"extracted_text"' not in current_prompt:
+            current_prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
+    elif not current_prompt:
+        current_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
+
+    for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+        try:
+            bubble_img_np = img_np[y1:y2, x1:x2]
+            bubble_img_pil = Image.fromarray(bubble_img_np)
+            orig_w, orig_h = bubble_img_pil.size
+            if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
+                scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
+                new_w = int(orig_w * scale)
+                new_h = int(orig_h * scale)
+                bubble_img_pil = bubble_img_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+            try:
+                debug_dir = get_debug_dir("ocr_bubbles")
+                bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}_ai_vision.png"))
+            except Exception as save_error:
+                logger.warning(f"保存 AI视觉OCR 调试气泡图像失败: {save_error}")
+
+            _enforce_rpm_limit(
+                rpm_limit_ai_vision,
+                f"AI Vision OCR ({ai_vision_provider})",
+                _ai_vision_ocr_rpm_last_reset_time_container,
+                _ai_vision_ocr_rpm_request_count_container
+            )
+
+            ocr_result_raw = call_ai_vision_ocr_service(
+                bubble_img_pil,
+                provider=ai_vision_provider,
+                api_key=ai_vision_api_key,
+                model_name=ai_vision_model_name,
+                prompt=current_prompt,
+                custom_base_url=custom_ai_vision_base_url
+            )
+
+            extracted_text_final = ""
+            if ocr_result_raw:
+                if use_json_format_for_ai_vision:
+                    extracted_text_final = _safely_extract_from_json(ocr_result_raw, "extracted_text")
+                else:
+                    extracted_text_final = ocr_result_raw
+
+            results.append(
+                create_ocr_result(
+                    extracted_text_final,
+                    constants.AI_VISION_OCR_ENGINE_ID,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+
+            if i < len(bubble_coords) - 1:
+                time.sleep(0.5)
+        except Exception as error:
+            logger.error(f"处理气泡 {i} (AI视觉OCR) 时出错: {error}", exc_info=True)
+            results.append(
+                create_ocr_result(
+                    "",
+                    constants.AI_VISION_OCR_ENGINE_ID,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+            )
+
+    return results
+
+
+def _recognize_with_engine(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    ocr_engine='paddle_ocr',
+    baidu_api_key=None,
+    baidu_secret_key=None,
+    baidu_version="standard",
+    baidu_ocr_language="auto_detect",
+    ai_vision_provider=None,
+    ai_vision_api_key=None,
+    ai_vision_model_name=None,
+    ai_vision_ocr_prompt=None,
+    custom_ai_vision_base_url=None,
+    use_json_format_for_ai_vision=False,
+    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+    ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    textlines_per_bubble=None,
+    *,
+    primary_engine=None,
+    fallback_used=False,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
+    effective_primary_engine = primary_engine or ocr_engine
+
+    if ocr_engine == 'manga_ocr':
+        return _recognize_with_manga_ocr_results(
+            image_pil,
+            bubble_coords,
+            source_language=source_language,
+            textlines_per_bubble=textlines_per_bubble,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+    if ocr_engine == 'paddle_ocr':
+        return _recognize_with_paddle_ocr_results(
+            image_pil,
+            bubble_coords,
+            source_language=source_language,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+    if ocr_engine == 'baidu_ocr':
+        return _recognize_with_baidu_ocr_results(
+            image_pil,
+            bubble_coords,
+            source_language=source_language,
+            baidu_api_key=baidu_api_key,
+            baidu_secret_key=baidu_secret_key,
+            baidu_version=baidu_version,
+            baidu_ocr_language=baidu_ocr_language,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+    if ocr_engine == constants.OCR_ENGINE_48PX:
+        return _recognize_with_48px_ocr_results(
+            image_pil,
+            bubble_coords,
+            textlines_per_bubble=textlines_per_bubble,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+    if ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
+        return _recognize_with_paddleocr_vl_results(
+            image_pil,
+            bubble_coords,
+            source_language=source_language,
+            textlines_per_bubble=textlines_per_bubble,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+    if ocr_engine == constants.AI_VISION_OCR_ENGINE_ID:
+        return _recognize_with_ai_vision_results(
+            image_pil,
+            bubble_coords,
+            source_language=source_language,
+            ai_vision_provider=ai_vision_provider,
+            ai_vision_api_key=ai_vision_api_key,
+            ai_vision_model_name=ai_vision_model_name,
+            ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+            custom_ai_vision_base_url=custom_ai_vision_base_url,
+            use_json_format_for_ai_vision=use_json_format_for_ai_vision,
+            rpm_limit_ai_vision=rpm_limit_ai_vision,
+            ai_vision_min_image_size=ai_vision_min_image_size,
+            primary_engine=effective_primary_engine,
+            fallback_used=fallback_used,
+            strict_errors=strict_errors,
+        )
+
+    logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
+    return _recognize_with_paddle_ocr_results(
+        image_pil,
+        bubble_coords,
+        source_language=source_language,
+        primary_engine=effective_primary_engine,
+        fallback_used=fallback_used,
+        strict_errors=strict_errors,
+    )
+
+
+def recognize_ocr_results_in_bubbles(
+    image_pil,
+    bubble_coords,
+    source_language='japan',
+    ocr_engine='paddle_ocr',
+    baidu_api_key=None,
+    baidu_secret_key=None,
+    baidu_version="standard",
+    baidu_ocr_language="auto_detect",
+    ai_vision_provider=None,
+    ai_vision_api_key=None,
+    ai_vision_model_name=None,
+    ai_vision_ocr_prompt=None,
+    custom_ai_vision_base_url=None,
+    use_json_format_for_ai_vision=False,
+    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
+    ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    jsonPromptMode: str = 'normal',
+    textlines_per_bubble=None,
+    enable_hybrid_ocr: bool = False,
+    secondary_ocr_engine: Optional[str] = None,
+    hybrid_ocr_threshold: float = 0.2,
+    strict_errors: bool = False,
+) -> List[OcrResult]:
     if not bubble_coords:
         logger.info("没有气泡坐标，跳过 OCR。")
         return []
 
-    # --- 确定 OCR 引擎类型 ---
-    ocr_engine_type = 'Unknown'
-    if ocr_engine == 'manga_ocr':
-        ocr_engine_type = 'MangaOCR'
-    elif ocr_engine == 'paddle_ocr':
-        ocr_engine_type = 'PaddleOCR'
-        logger.info(f"使用PaddleOCR引擎，源语言: {source_language}")
-    elif ocr_engine == 'baidu_ocr':
-        ocr_engine_type = 'BaiduOCR'
-    elif ocr_engine == constants.AI_VISION_OCR_ENGINE_ID: # 使用常量
-        ocr_engine_type = 'AIVision' # 内部使用的类型名
-        logger.info(f"使用AI视觉OCR引擎: {ai_vision_provider}")
-    elif ocr_engine == constants.OCR_ENGINE_48PX:
-        ocr_engine_type = '48pxOCR'
-        logger.info("使用 48px OCR 引擎")
-    elif ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL:
-        ocr_engine_type = 'PaddleOCRVL'
-        logger.info("使用 PaddleOCR-VL 引擎")
-    else:
-        logger.warning(f"未知的OCR引擎选择: {ocr_engine}，将使用PaddleOCR作为默认引擎。")
-        ocr_engine_type = 'PaddleOCR'
+    if enable_hybrid_ocr:
+        if not secondary_ocr_engine:
+            raise ValueError("启用混合OCR时必须选择备用OCR")
+        if not is_supported_manga_48_hybrid(ocr_engine, secondary_ocr_engine):
+            raise ValueError("首批混合OCR仅支持 MangaOCR / 48px OCR 组合")
+        return recognize_manga_48_hybrid(
+            image_pil,
+            bubble_coords,
+            textlines_per_bubble or [],
+            primary_engine=ocr_engine,
+            secondary_engine=secondary_ocr_engine,
+            threshold=float(hybrid_ocr_threshold),
+        )
 
-    recognized_texts = [""] * len(bubble_coords)
-    try:
-        img_np = np.array(image_pil.convert('RGB'))
-    except Exception as e:
-        logger.error(f"将 PIL 图像转换为 NumPy 数组失败: {e}", exc_info=True)
-        return recognized_texts
-
-    # --- 使用百度OCR ---
-    if ocr_engine_type == 'BaiduOCR':
-        if baidu_api_key and baidu_secret_key:
-            logger.info(f"开始使用百度OCR ({baidu_version}) 逐个识别 {len(bubble_coords)} 个气泡...")
-            
-            # 使用指定的百度OCR语言
-            baidu_language = baidu_ocr_language
-            if baidu_language == 'auto_detect':
-                logger.info(f"百度OCR使用自动检测语言")
-            else:
-                # 确保传递原始源语言，让baidu_ocr_interface处理将其映射为百度OCR对应的语言代码
-                # 如果未指定百度OCR语言，则使用传入的source_language
-                if baidu_language == "" or baidu_language == "无":
-                    baidu_language = source_language
-                    logger.info(f"百度OCR使用源语言: '{source_language}' (替代'无'设置)")
-                else:
-                    logger.info(f"百度OCR使用指定语言: '{baidu_language}'")
-            
-            # 百度OCR需要逐个处理气泡，添加请求间隔避免QPS限制
-            for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-                try:
-                    # 裁剪气泡图像 (使用 NumPy 数组)
-                    bubble_img_np = img_np[y1:y2, x1:x2]
-                    # 转换为 PIL Image
-                    bubble_img_pil = Image.fromarray(bubble_img_np)
-                    
-                    # 保存调试图像 (可选)
-                    try:
-                        debug_dir = get_debug_dir("ocr_bubbles")
-                        bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}_baidu.png"))
-                    except Exception as save_e:
-                        logger.warning(f"保存 OCR 调试气泡图像失败: {save_e}")
-                    
-                    # 将PIL图像转换为字节
-                    buffer = io.BytesIO()
-                    bubble_img_pil.save(buffer, format="PNG")
-                    image_bytes = buffer.getvalue()
-                    
-                    # 调用百度OCR接口识别
-                    text_results = recognize_text_with_baidu_ocr(
-                        image_bytes, 
-                        language=baidu_language, 
-                        api_key=baidu_api_key, 
-                        secret_key=baidu_secret_key, 
-                        version=baidu_version
-                    )
-                    
-                    # 合并所有识别的文本行
-                    text = " ".join(text_results) if text_results else ""
-                    recognized_texts[i] = text
-                    
-                    # 输出识别文本到日志
-                    if text:
-                        logger.info(f"气泡 {i} 识别文本: '{text}'")
-                    else:
-                        logger.info(f"气泡 {i} 未识别出文本")
-                    
-                except Exception as e:
-                    logger.error(f"处理气泡 {i} (百度OCR) 时出错: {e}", exc_info=True)
-                    recognized_texts[i] = "" # 出错时设置为空字符串
-            
-            logger.info("百度OCR识别完成。")
-        else:
-            logger.error("百度OCR未配置API密钥，OCR步骤跳过。")
-
-    # --- 使用 PaddleOCR ---
-    elif ocr_engine_type == 'PaddleOCR':
-        paddle_ocr = get_paddle_ocr_handler()
-        if paddle_ocr and paddle_ocr.initialize(source_language): # 尝试初始化对应语言
-            try:
-                # PaddleOCR 接口现在处理所有气泡
-                # 注意：paddle_ocr.recognize_text 需要接收原始图像和坐标列表
-                logger.info(f"开始使用 PaddleOCR 识别 {len(bubble_coords)} 个气泡...")
-                recognized_texts = paddle_ocr.recognize_text(image_pil, bubble_coords)
-                logger.info("PaddleOCR 识别完成。")
-
-                # 在核心OCR模块中记录每个气泡的识别结果，确保与MangaOCR保持一致的格式
-                for i, text in enumerate(recognized_texts):
-                    if text:
-                        logger.info(f"气泡 {i} 识别文本: '{text}'")
-                
-                # 确保返回列表长度与坐标一致
-                if len(recognized_texts) != len(bubble_coords):
-                     logger.warning(f"PaddleOCR 返回结果数量 ({len(recognized_texts)}) 与气泡数量 ({len(bubble_coords)}) 不匹配，将进行填充。")
-                     # 填充或截断以匹配长度
-                     final_texts = [""] * len(bubble_coords)
-                     for i in range(min(len(recognized_texts), len(bubble_coords))):
-                         final_texts[i] = recognized_texts[i] if recognized_texts[i] else ""
-                     recognized_texts = final_texts
-
-            except Exception as e:
-                logger.error(f"使用 PaddleOCR 识别时出错: {e}", exc_info=True)
-                # 出错时保持默认空字符串列表
-        else:
-            logger.error(f"无法初始化 PaddleOCR ({source_language})，OCR 步骤跳过。")
-
-    # --- 使用 MangaOCR (日语或 PaddleOCR 不可用时的回退) ---
-    elif ocr_engine_type == 'MangaOCR':
-        ocr_instance = get_manga_ocr_instance()
-        if ocr_instance:
-            logger.info(f"开始使用 MangaOCR 逐个识别 {len(bubble_coords)} 个气泡...")
-            # MangaOCR 需要逐个处理气泡
-            for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-                try:
-                    logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，坐标: ({x1}, {y1}, {x2}, {y2})")
-                    # 裁剪气泡图像 (使用 NumPy 数组)
-                    bubble_img_np = img_np[y1:y2, x1:x2]
-                    # 转换为 PIL Image
-                    bubble_img_pil = Image.fromarray(bubble_img_np)
-                    logger.info(f"气泡 {i} 图像尺寸: {bubble_img_pil.size}")
-
-                    # 保存调试图像 (可选)
-                    try:
-                        debug_dir = get_debug_dir("ocr_bubbles")
-                        bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}.png"))
-                        logger.debug(f"已保存气泡 {i} 的调试图像")
-                    except Exception as save_e:
-                        logger.warning(f"保存 OCR 调试气泡图像失败: {save_e}")
-
-                    # 调用 MangaOCR 接口识别
-                    logger.info(f"开始调用MangaOCR识别气泡 {i} 内容...")
-                    text = recognize_japanese_text(bubble_img_pil)
-                    recognized_texts[i] = text
-                    # 输出识别文本到日志
-                    if text:
-                        logger.info(f"气泡 {i} 识别文本: '{text}'")
-                    else:
-                        logger.info(f"气泡 {i} 未识别出文本")
-
-                except Exception as e:
-                    logger.error(f"处理气泡 {i} (MangaOCR) 时出错: {e}", exc_info=True)
-                    recognized_texts[i] = "" # 出错时设置为空字符串
-            logger.info("MangaOCR 识别完成。")
-        else:
-            logger.error("无法初始化 MangaOCR，OCR 步骤跳过。")
-    
-    # --- 使用 48px OCR ---
-    elif ocr_engine_type == '48pxOCR':
-        from src.interfaces.ocr_48px import get_48px_ocr_handler
-        
-        ocr_handler = get_48px_ocr_handler()
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        if ocr_handler.initialize(device):
-            # 传递原始文本行信息以获得更好的识别效果
-            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble)
-            logger.info("48px OCR 识别完成")
-        else:
-            logger.error("48px OCR 初始化失败，OCR 步骤跳过")
-    
-    # --- 使用 PaddleOCR-VL ---
-    elif ocr_engine_type == 'PaddleOCRVL':
-        from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
-        
-        ocr_handler = get_paddleocr_vl_handler()
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        # 如果模型未初始化，尝试初始化；否则重用已初始化的模型
-        if ocr_handler.initialize(device):
-            recognized_texts = ocr_handler.recognize_text(image_pil, bubble_coords, textlines_per_bubble, source_language)
-            logger.info("PaddleOCR-VL 识别完成")
-        else:
-            logger.error("PaddleOCR-VL 初始化失败，OCR 步骤跳过")
-    
-    elif ocr_engine_type == 'AIVision':
-        if all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
-            if ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
-                logger.error("使用自定义AI视觉OCR时，缺少Base URL (custom_ai_vision_base_url)，OCR步骤跳过。")
-                return [""] * len(bubble_coords)
-
-            logger.info(f"开始使用 AI视觉OCR ({ai_vision_provider}/{ai_vision_model_name}, rpm: {rpm_limit_ai_vision if rpm_limit_ai_vision > 0 else '无'}, BaseURL: {custom_ai_vision_base_url if custom_ai_vision_base_url else '服务商默认'}) 识别 {len(bubble_coords)} 个气泡...")
-            
-            # 根据是否使用JSON格式，选择合适的提示词
-            current_ai_vision_ocr_prompt = ai_vision_ocr_prompt
-            if use_json_format_for_ai_vision:
-                if not current_ai_vision_ocr_prompt or '"extracted_text"' not in current_ai_vision_ocr_prompt:
-                    current_ai_vision_ocr_prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
-                    logger.info("AI视觉OCR使用默认JSON提示词。")
-            elif not current_ai_vision_ocr_prompt: # 非JSON模式下，如果用户没提供，则使用默认非JSON提示词
-                 current_ai_vision_ocr_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
-
-            try:
-                for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-                    try:
-                        # 裁剪气泡图像
-                        bubble_img_np = img_np[y1:y2, x1:x2]
-                        bubble_img_pil = Image.fromarray(bubble_img_np)
-                        
-                        # --- AI Vision OCR 最小尺寸保护 ---
-                        # 许多 VLM 模型（如 Qwen 3 VL）要求图片尺寸至少 28x28
-                        # 使用用户配置的 ai_vision_min_image_size，0 表示禁用自动放大
-                        orig_w, orig_h = bubble_img_pil.size
-                        if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
-                            # 计算放大比例，确保最小边达到阈值
-                            scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
-                            new_w = int(orig_w * scale)
-                            new_h = int(orig_h * scale)
-                            bubble_img_pil = bubble_img_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                            logger.info(f"气泡 {i} 图像过小 ({orig_w}x{orig_h})，已放大至 {new_w}x{new_h}")
-                        # -----------------------------------------
-                        
-                        # 保存调试图像
-                        try:
-                            debug_dir = get_debug_dir("ocr_bubbles")
-                            bubble_img_pil.save(os.path.join(debug_dir, f"bubble_{i}_{source_language}_ai_vision.png"))
-                        except Exception as save_e:
-                            logger.warning(f"保存 AI视觉OCR 调试气泡图像失败: {save_e}")
-                        
-                        # --- rpm Enforcement for AI Vision OCR ---
-                        _enforce_rpm_limit(
-                            rpm_limit_ai_vision,
-                            f"AI Vision OCR ({ai_vision_provider})",
-                            _ai_vision_ocr_rpm_last_reset_time_container,
-                            _ai_vision_ocr_rpm_request_count_container
-                        )
-                        # -----------------------------------------
-                        
-                        logger.info(f"处理气泡 {i} (AI视觉OCR)...")
-                        ocr_result_raw = call_ai_vision_ocr_service(
-                            bubble_img_pil,
-                            provider=ai_vision_provider,
-                            api_key=ai_vision_api_key,
-                            model_name=ai_vision_model_name,
-                            prompt=current_ai_vision_ocr_prompt,
-                            custom_base_url=custom_ai_vision_base_url
-                        )
-                        
-                        extracted_text_final = ""
-                        if ocr_result_raw:
-                            if use_json_format_for_ai_vision:
-                                try:
-                                    # 使用新的安全提取方法
-                                    extracted_text = _safely_extract_from_json(ocr_result_raw, "extracted_text")
-                                    extracted_text_final = extracted_text
-                                    logger.info(f"气泡 {i} 成功从JSON响应中提取OCR文本。")
-                                except Exception as e:
-                                    logger.warning(f"气泡 {i} AI视觉OCR无法将结果解析为JSON，将尝试提取文本。原始响应: {ocr_result_raw}")
-                                    # 失败时也使用安全提取尝试获取文本
-                                    extracted_text = _safely_extract_from_json(ocr_result_raw, "extracted_text")
-                                    extracted_text_final = extracted_text
-                            else:
-                                extracted_text_final = ocr_result_raw # 非JSON模式直接使用结果
-                        
-                        recognized_texts[i] = extracted_text_final
-                        
-                        # 输出识别文本到日志
-                        if recognized_texts[i]:
-                            logger.info(f"气泡 {i} 识别文本: '{recognized_texts[i]}'")
-                        else:
-                            logger.info(f"气泡 {i} 未识别出文本")
-                        
-                        # 添加请求间隔，避免API限制
-                        if i < len(bubble_coords) - 1:  # 如果不是最后一个气泡
-                            time.sleep(0.5)  # 延迟500毫秒
-                            
-                    except Exception as e_bubble:
-                        logger.error(f"处理气泡 {i} (AI视觉OCR) 时出错: {e_bubble}", exc_info=True)
-                        recognized_texts[i] = ""
-                logger.info("AI视觉OCR 识别完成。")
-            except Exception as e_loop:
-                logger.error(f"AI视觉OCR 处理循环中发生错误: {e_loop}", exc_info=True)
-        else:
-            logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
-    else:
-         logger.error(f"未知的 OCR 引擎类型: {ocr_engine_type}")
-
-
-    return recognized_texts
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    from PIL import Image
-    from src.shared.path_helpers import resource_path # 需要导入
-    import os
-    # 假设 detection 模块已完成
-    from detection import get_bubble_coordinates
-
-    print("--- 测试 OCR 核心逻辑 ---")
-    test_image_path_jp = resource_path('pic/before1.png') # 日语测试图片
-    test_image_path_en = resource_path('pic/before2.png') # 英语测试图片 (假设存在)
-
-    def run_test(image_path, lang):
-        if os.path.exists(image_path):
-            print(f"\n--- 测试语言: {lang} ({image_path}) ---")
-            try:
-                img_pil = Image.open(image_path)
-                print("获取气泡坐标...")
-                coords = get_bubble_coordinates(img_pil)
-                if coords:
-                    print(f"找到 {len(coords)} 个气泡，开始 OCR...")
-                    texts = recognize_text_in_bubbles(img_pil, coords, source_language=lang)
-                    print("OCR 完成，结果:")
-                    for i, txt in enumerate(texts):
-                        print(f"  - 气泡 {i+1}: '{txt}'")
-                else:
-                    print("未找到气泡，无法测试 OCR。")
-            except Exception as e:
-                print(f"测试过程中发生错误: {e}")
-        else:
-            print(f"错误：测试图片未找到 {image_path}")
-
-    # 测试日语 (MangaOCR)
-    run_test(test_image_path_jp, 'japan')
-
-    # 测试英语 (PaddleOCR)
-    run_test(test_image_path_en, 'en')
+    return _recognize_with_engine(
+        image_pil,
+        bubble_coords,
+        source_language=source_language,
+        ocr_engine=ocr_engine,
+        baidu_api_key=baidu_api_key,
+        baidu_secret_key=baidu_secret_key,
+        baidu_version=baidu_version,
+        baidu_ocr_language=baidu_ocr_language,
+        ai_vision_provider=ai_vision_provider,
+        ai_vision_api_key=ai_vision_api_key,
+        ai_vision_model_name=ai_vision_model_name,
+        ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+        custom_ai_vision_base_url=custom_ai_vision_base_url,
+        use_json_format_for_ai_vision=use_json_format_for_ai_vision,
+        rpm_limit_ai_vision=rpm_limit_ai_vision,
+        ai_vision_min_image_size=ai_vision_min_image_size,
+        textlines_per_bubble=textlines_per_bubble,
+        primary_engine=ocr_engine,
+        fallback_used=False,
+        strict_errors=strict_errors,
+    )

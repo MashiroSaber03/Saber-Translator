@@ -3,7 +3,8 @@
  */
 
 import type { ImageData } from '@/types/image'
-import type { BubbleState } from '@/types/bubble'
+import type { BubbleState, BubbleTextline } from '@/types/bubble'
+import type { OcrResult } from '@/types/ocr'
 
 /**
  * 翻译模式
@@ -32,13 +33,15 @@ export interface PipelineTask {
     bubblePolygons: number[][][]
     autoDirections: string[]
     textMask?: string
-    textlinesPerBubble?: any[]
+    textlinesPerBubble?: BubbleTextline[][]
+    bubbleStates?: BubbleState[]
   }
 
   // OCR结果
   ocrResult?: {
     originalTexts: string[]
-    textlinesPerBubble?: any[]
+    ocrResults?: OcrResult[]
+    textlinesPerBubble?: BubbleTextline[][]
   }
 
   // 颜色提取结果

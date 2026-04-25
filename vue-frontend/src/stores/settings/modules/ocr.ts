@@ -9,6 +9,7 @@ import type {
   BaiduOcrSettings,
   PaddleOcrVlSettings,
   AiVisionOcrSettings,
+  HybridOcrSettings,
   OcrEngine
 } from '@/types/settings'
 import type { ProviderConfigsCache, AiVisionOcrProviderConfig } from '../types'
@@ -16,6 +17,7 @@ import {
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_AI_VISION_OCR_JSON_PROMPT
 } from '@/constants'
+import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 
 /**
  * 创建 OCR 设置模块
@@ -45,9 +47,11 @@ export function useOcrSettings(
    * @param engine - OCR引擎类型
    */
   function setOcrEngine(engine: OcrEngine): void {
-    settings.value.ocrEngine = engine
+    const normalized = normalizeHybridOcrConfig(engine, settings.value.hybridOcr)
+    settings.value.ocrEngine = normalized.primaryEngine
+    settings.value.hybridOcr = normalized.hybrid
     saveToStorage()
-    console.log(`OCR引擎已设置为: ${engine}`)
+    console.log(`OCR引擎已设置为: ${normalized.primaryEngine}`)
   }
 
   /**
@@ -84,6 +88,26 @@ export function useOcrSettings(
    */
   function updateAiVisionOcr(updates: Partial<AiVisionOcrSettings>): void {
     Object.assign(settings.value.aiVisionOcr, updates)
+    saveToStorage()
+  }
+
+  /**
+   * 更新混合OCR设置
+   */
+  function updateHybridOcr(updates: Partial<HybridOcrSettings>): void {
+    const enablingHybrid = Boolean(updates.enabled) && !settings.value.hybridOcr.enabled
+    const normalized = normalizeHybridOcrConfig(
+      settings.value.ocrEngine,
+      {
+        ...settings.value.hybridOcr,
+        ...updates
+      },
+      {
+        preferRecommendedOrder: enablingHybrid
+      }
+    )
+    settings.value.ocrEngine = normalized.primaryEngine
+    settings.value.hybridOcr = normalized.hybrid
     saveToStorage()
   }
 
@@ -188,6 +212,7 @@ export function useOcrSettings(
     updateBaiduOcr,
     updatePaddleOcrVl,
     updateAiVisionOcr,
+    updateHybridOcr,
     setAiVisionOcrProvider,
     setAiVisionOcrPromptMode,
     saveAiVisionOcrProviderConfig,

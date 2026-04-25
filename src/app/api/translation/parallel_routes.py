@@ -18,13 +18,16 @@ from PIL import Image
 from flask import Blueprint, request, jsonify
 
 from src.core.detection import get_bubble_detection_result_with_auto_directions
-from src.core.ocr import recognize_text_in_bubbles
+from src.core.ocr import recognize_ocr_results_in_bubbles
+from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
+from src.core.ocr_types import ocr_results_to_dicts, extract_texts_from_ocr_results
 from src.core.translation import translate_text_list
 from src.core.inpainting import inpaint_bubbles
 from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
-from src.core.config_models import BubbleState
+from src.core.config_models import BubbleState, bubble_states_to_api_response
 from src.core.color_extractor import extract_bubble_colors
 from src.shared import constants
+from src.plugins.manager import apply_after_ocr_hooks
 
 parallel_bp = Blueprint('parallel', __name__, url_prefix='/api')
 logger = logging.getLogger('ParallelAPI')
@@ -158,6 +161,7 @@ def parallel_ocr():
             return jsonify({
                 'success': True,
                 'original_texts': [],
+                'ocr_results': [],
                 'textlines_per_bubble': []
             })
         
@@ -181,12 +185,20 @@ def parallel_ocr():
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
         ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+        enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
+        secondary_ocr_engine = data.get('secondary_ocr_engine')
+        hybrid_ocr_threshold = data.get(
+            'hybrid_ocr_threshold',
+            data.get('ocr_confidence_threshold_48px', 0.2),
+        )
+        if enable_hybrid_ocr:
+            validate_manga_48_hybrid_combo(ocr_engine, secondary_ocr_engine)
         
         # 转换为PIL图像
         img_pil = Image.fromarray(img)
         
         # 执行OCR
-        original_texts = recognize_text_in_bubbles(
+        ocr_results = recognize_ocr_results_in_bubbles(
             img_pil,
             bubble_coords,
             source_language=source_language,
@@ -201,12 +213,27 @@ def parallel_ocr():
             ai_vision_model_name=ai_vision_model_name,
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
-            ai_vision_min_image_size=ai_vision_min_image_size
+            ai_vision_min_image_size=ai_vision_min_image_size,
+            enable_hybrid_ocr=enable_hybrid_ocr,
+            secondary_ocr_engine=secondary_ocr_engine,
+            hybrid_ocr_threshold=hybrid_ocr_threshold,
         )
+        original_texts = extract_texts_from_ocr_results(ocr_results)
+        hook_params = {
+            "source_language": source_language,
+            "ocr_engine": ocr_engine,
+            "ocr_results": ocr_results_to_dicts(ocr_results),
+        }
+        modified_texts = apply_after_ocr_hooks(img_pil, original_texts, bubble_coords, hook_params)
+        if modified_texts != original_texts and len(modified_texts) == len(ocr_results):
+            original_texts = modified_texts
+            for index, text in enumerate(modified_texts):
+                ocr_results[index].text = text
         
         return jsonify({
             'success': True,
             'original_texts': original_texts,
+            'ocr_results': ocr_results_to_dicts(ocr_results),
             'textlines_per_bubble': textlines_per_bubble
         })
         
@@ -435,42 +462,24 @@ def parallel_render():
         line_spacing = data.get('lineSpacing', constants.DEFAULT_LINE_SPACING)
         text_align = data.get('textAlign', constants.DEFAULT_TEXT_ALIGN)
         auto_font_size = data.get('autoFontSize', False)
-        use_individual_styles = data.get('use_individual_styles', True)
-        
         # 转换为BubbleState对象
         bubble_states = []
         for bs_data in bubble_states_data:
-            # 处理auto_fg_color和auto_bg_color，确保是元组
-            auto_fg = bs_data.get('autoFgColor')
-            auto_bg = bs_data.get('autoBgColor')
-            if auto_fg and isinstance(auto_fg, list):
-                auto_fg = tuple(auto_fg)
-            if auto_bg and isinstance(auto_bg, list):
-                auto_bg = tuple(auto_bg)
-            
-            bubble_state = BubbleState(
-                original_text=bs_data.get('originalText', ''),
-                translated_text=bs_data.get('translatedText', ''),
-                textbox_text=bs_data.get('textboxText', ''),
-                coords=tuple(bs_data.get('coords', [0, 0, 100, 100])),
-                polygon=bs_data.get('polygon', []),
-                font_size=bs_data.get('fontSize', font_size),
-                font_family=bs_data.get('fontFamily', font_family),
-                text_direction=bs_data.get('textDirection', text_direction),
-                auto_text_direction=bs_data.get('autoTextDirection', 'vertical'),
-                text_color=bs_data.get('textColor', text_color),
-                fill_color=bs_data.get('fillColor', '#FFFFFF'),
-                rotation_angle=bs_data.get('rotationAngle', 0),
-                position_offset=bs_data.get('position', {'x': 0, 'y': 0}),
-                stroke_enabled=bs_data.get('strokeEnabled', stroke_enabled),
-                stroke_color=bs_data.get('strokeColor', stroke_color),
-                stroke_width=bs_data.get('strokeWidth', stroke_width),
-                line_spacing=bs_data.get('lineSpacing', line_spacing),
-                text_align=bs_data.get('textAlign', text_align),
-                inpaint_method=bs_data.get('inpaintMethod', constants.DEFAULT_INPAINT_METHOD),
-                auto_fg_color=auto_fg,
-                auto_bg_color=auto_bg
-            )
+            normalized_bs_data = {
+                **bs_data,
+                'fontSize': bs_data.get('fontSize', font_size),
+                'fontFamily': bs_data.get('fontFamily', font_family),
+                'textDirection': bs_data.get('textDirection', text_direction),
+                'autoTextDirection': bs_data.get('autoTextDirection', 'vertical'),
+                'textColor': bs_data.get('textColor', text_color),
+                'strokeEnabled': bs_data.get('strokeEnabled', stroke_enabled),
+                'strokeColor': bs_data.get('strokeColor', stroke_color),
+                'strokeWidth': bs_data.get('strokeWidth', stroke_width),
+                'lineSpacing': bs_data.get('lineSpacing', line_spacing),
+                'textAlign': bs_data.get('textAlign', text_align),
+                'inpaintMethod': bs_data.get('inpaintMethod', constants.DEFAULT_INPAINT_METHOD),
+            }
+            bubble_state = BubbleState.from_dict(normalized_bs_data)
             bubble_states.append(bubble_state)
         
         # 转换为PIL图像
@@ -494,37 +503,10 @@ def parallel_render():
         final_image = np.array(final_image_pil)
         updated_states = bubble_states
         
-        # 转换bubble_states为字典列表
-        bubble_states_output = []
-        for bs in updated_states:
-            bubble_states_output.append({
-                'originalText': bs.original_text,
-                'translatedText': bs.translated_text,
-                'textboxText': bs.textbox_text,
-                'coords': list(bs.coords),
-                'polygon': bs.polygon,
-                'fontSize': bs.font_size,
-                'fontFamily': bs.font_family,
-                'textDirection': bs.text_direction,
-                'autoTextDirection': bs.auto_text_direction,
-                'textColor': bs.text_color,
-                'fillColor': bs.fill_color,
-                'rotationAngle': bs.rotation_angle,
-                'position': bs.position_offset,
-                'strokeEnabled': bs.stroke_enabled,
-                'strokeColor': bs.stroke_color,
-                'strokeWidth': bs.stroke_width,
-                'lineSpacing': bs.line_spacing,
-                'textAlign': bs.text_align,
-                'inpaintMethod': bs.inpaint_method,
-                'autoFgColor': bs.auto_fg_color,
-                'autoBgColor': bs.auto_bg_color
-            })
-        
         return jsonify({
             'success': True,
             'final_image': encode_image_to_base64(final_image),
-            'bubble_states': bubble_states_output
+            'bubble_states': bubble_states_to_api_response(updated_states)
         })
         
     except Exception as e:
