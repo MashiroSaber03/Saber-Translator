@@ -38,6 +38,7 @@ import type { WorkflowRunRequest } from '@/types/workflow'
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
+import SpreadView from '@/components/spread/SpreadView.vue'
 
 // 路由
 const route = useRoute()
@@ -81,6 +82,15 @@ const showSponsorModal = ref(false)
 
 /** 是否处于编辑模式 */
 const isEditMode = ref(false)
+
+/** 是否处于拼页视图模式 */
+const isSpreadView = ref(false)
+
+/** 是否从拼页视图进入编辑模式 */
+const enteredEditFromSpread = ref(false)
+
+/** 保存的拼页视图页码（用于退出编辑后恢复） */
+const savedSpreadIndex = ref(0)
 
 // ============================================================
 // 计算属性
@@ -462,9 +472,66 @@ function goToNext() {
 
 /**
  * 进入/退出编辑模式
+ * 如果从拼页视图进入的编辑，退出时返回拼页视图
  */
 function toggleEditMode() {
-  isEditMode.value = !isEditMode.value
+  if (isEditMode.value && enteredEditFromSpread.value) {
+    // 从编辑模式退出，且是从拼页进入的，返回拼页视图
+    isEditMode.value = false
+    isSpreadView.value = true
+    enteredEditFromSpread.value = false
+    // 恢复拼页视图的页码会在 SpreadView 组件中通过 watch 处理
+  } else {
+    // 普通切换
+    isEditMode.value = !isEditMode.value
+    // 清除拼页来源标记
+    if (!isEditMode.value) {
+      enteredEditFromSpread.value = false
+    }
+  }
+}
+
+/**
+ * 进入/退出拼页视图模式
+ */
+function toggleSpreadView() {
+  if (!hasImages.value) {
+    showToast('请先上传图片', 'warning')
+    return
+  }
+  isSpreadView.value = !isSpreadView.value
+  // 清除拼页来源标记
+  if (!isSpreadView.value) {
+    enteredEditFromSpread.value = false
+  }
+}
+
+/**
+ * 退出拼页视图
+ */
+function exitSpreadView() {
+  isSpreadView.value = false
+  enteredEditFromSpread.value = false
+}
+
+/**
+ * 从拼页视图进入编辑模式
+ * @param imageIndex 要编辑的图片索引
+ * @param spreadIndex 当前拼页页码（用于退出后恢复）
+ */
+function enterEditFromSpread(imageIndex: number, spreadIndex: number = 0) {
+  // 保存拼页页码
+  savedSpreadIndex.value = spreadIndex
+  // 标记是从拼页进入的编辑
+  enteredEditFromSpread.value = true
+  // 先切换到指定图片
+  if (imageIndex >= 0 && imageIndex < imageStore.imageCount) {
+    translateInit.switchImage(imageIndex)
+  }
+  // 退出拼页视图
+  isSpreadView.value = false
+  // 进入编辑模式
+  isEditMode.value = true
 }
 
 
@@ -646,6 +713,15 @@ function selectImage(index: number) {
           <img :src="'/pic/github.jpg'" alt="GitHub" class="github-icon">
         </a>
         <button 
+          class="spread-view-btn" 
+          title="拼页视图"
+          :disabled="!hasImages"
+          @click="toggleSpreadView"
+        >
+          <span class="icon">📖</span>
+          <span>拼页</span>
+        </button>
+        <button 
           class="theme-toggle" 
           title="功能开发中"
           @click="showFeatureNotice"
@@ -723,6 +799,14 @@ function selectImage(index: number) {
       v-if="currentImage && isEditMode"
       :is-edit-mode-active="isEditMode"
       @exit="toggleEditMode"
+    />
+    
+    <!-- 拼页视图（拼页模式时显示） -->
+    <SpreadView
+      :is-active="isSpreadView"
+      :initial-spread-index="savedSpreadIndex"
+      @exit="exitSpreadView"
+      @edit="enterEditFromSpread"
     />
 
 
@@ -1127,6 +1211,34 @@ function selectImage(index: number) {
 .settings-header-btn:hover {
   background-color: rgb(0,0,0,0.1);
   transform: translateY(-2px);
+}
+
+.spread-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 20px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9em;
+}
+
+.spread-view-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.spread-view-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spread-view-btn .icon {
+  font-size: 1em;
 }
 
 .theme-toggle {
