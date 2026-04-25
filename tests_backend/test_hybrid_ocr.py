@@ -145,6 +145,65 @@ class HybridOcrCoreTests(unittest.TestCase):
         fake_handler.recognize_textlines_with_details.assert_called_once()
         fake_handler.extract_colors_for_bubbles.assert_not_called()
 
+    def test_specialized_hybrid_path_batches_48px_textlines_across_bubbles(self) -> None:
+        fake_handler = mock.Mock()
+        fake_handler.initialize.return_value = True
+        fake_handler.recognize_textlines_with_details.return_value = [
+            create_ocr_textline_result(
+                "甲",
+                "48px_ocr",
+                confidence=0.9,
+                confidence_supported=True,
+                primary_engine="48px_ocr",
+                polygon=[[0, 0], [4, 0], [4, 4], [0, 4]],
+                direction="h",
+            ),
+            create_ocr_textline_result(
+                "乙",
+                "48px_ocr",
+                confidence=0.8,
+                confidence_supported=True,
+                primary_engine="48px_ocr",
+                polygon=[[10, 0], [14, 0], [14, 4], [10, 4]],
+                direction="h",
+            ),
+            create_ocr_textline_result(
+                "丙",
+                "48px_ocr",
+                confidence=0.7,
+                confidence_supported=True,
+                primary_engine="48px_ocr",
+                polygon=[[10, 5], [14, 5], [14, 9], [10, 9]],
+                direction="h",
+            ),
+        ]
+
+        bubble_textlines = [
+            [{"polygon": [[0, 0], [4, 0], [4, 4], [0, 4]], "direction": "h"}],
+            [
+                {"polygon": [[10, 0], [14, 0], [14, 4], [10, 4]], "direction": "h"},
+                {"polygon": [[10, 5], [14, 5], [14, 9], [10, 9]], "direction": "h"},
+            ],
+        ]
+
+        with mock.patch("src.core.ocr_hybrid_manga_48.get_48px_ocr_handler", return_value=fake_handler), \
+             mock.patch("src.core.ocr_hybrid_manga_48.torch.cuda.is_available", return_value=False):
+            results = recognize_ocr_results_in_bubbles(
+                Image.new("RGB", (32, 16), color="white"),
+                [(0, 0, 8, 8), (8, 0, 16, 16)],
+                ocr_engine="48px_ocr",
+                enable_hybrid_ocr=True,
+                secondary_ocr_engine="manga_ocr",
+                textlines_per_bubble=bubble_textlines,
+                hybrid_ocr_threshold=0.2,
+            )
+
+        self.assertEqual([result.text for result in results], ["甲", "乙 丙"])
+        fake_handler.recognize_textlines_with_details.assert_called_once()
+        called_args, called_kwargs = fake_handler.recognize_textlines_with_details.call_args
+        self.assertEqual(called_args[1], bubble_textlines[0] + bubble_textlines[1])
+        self.assertEqual(called_kwargs["primary_engine"], "48px_ocr")
+
 
 class HybridOcrRouteContractTests(unittest.TestCase):
     def setUp(self) -> None:

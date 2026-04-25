@@ -190,9 +190,31 @@ def recognize_manga_48_hybrid(
         raise RuntimeError("48px OCR 初始化失败")
 
     hybrid_results: List[OcrResult] = []
+    bubble_textlines: List[List[Dict[str, Any]]] = [
+        textlines_per_bubble[bubble_index] if bubble_index < len(textlines_per_bubble) else []
+        for bubble_index in range(len(bubble_coords))
+    ]
+    flat_textlines: List[Dict[str, Any]] = []
+    bubble_line_spans: Dict[int, tuple[int, int]] = {}
+
+    for bubble_index, textlines in enumerate(bubble_textlines):
+        if not textlines:
+            continue
+        start = len(flat_textlines)
+        flat_textlines.extend(textlines)
+        bubble_line_spans[bubble_index] = (start, len(flat_textlines))
+
+    flat_ocr48_lines: List[OcrTextlineResult] = []
+    if flat_textlines:
+        flat_ocr48_lines = ocr48_handler.recognize_textlines_with_details(
+            image,
+            flat_textlines,
+            primary_engine=primary_engine,
+            fallback_used=False,
+        )
 
     for bubble_index, bubble_coords_item in enumerate(bubble_coords):
-        textlines = textlines_per_bubble[bubble_index] if bubble_index < len(textlines_per_bubble) else []
+        textlines = bubble_textlines[bubble_index]
 
         if not textlines:
             # 无文本行时退化为整块 48px or Manga 识别，但仍保持当前组合语义。
@@ -218,12 +240,12 @@ def recognize_manga_48_hybrid(
                 )
             continue
 
-        ocr48_lines = ocr48_handler.recognize_textlines_with_details(
-            image,
-            textlines,
-            primary_engine=primary_engine,
-            fallback_used=False,
-        )
+        span = bubble_line_spans.get(bubble_index)
+        if span is None:
+            ocr48_lines = []
+        else:
+            start, end = span
+            ocr48_lines = flat_ocr48_lines[start:end]
 
         if primary_engine == constants.OCR_ENGINE_48PX:
             manga_retry_lines = [

@@ -29,6 +29,7 @@ from src.core.ocr_types import OcrResult, OcrTextlineResult, create_ocr_result, 
 logger = logging.getLogger("Model48pxOCR")
 
 _model_48px_instance = None
+DEFAULT_BATCH_CHUNK_SIZE = 16
 
 
 class ColorExtractionResult(NamedTuple):
@@ -167,6 +168,85 @@ class Model48pxOCR:
         except Exception as e:
             logger.error(f"❌ 48px OCR 初始化失败: {e}", exc_info=True)
             return False
+
+    def _infer_regions_with_color(
+        self,
+        regions: List[Optional[np.ndarray]],
+        *,
+        prob_threshold: float = 0.2,
+        max_chunk_size: int = DEFAULT_BATCH_CHUNK_SIZE,
+    ) -> List[Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]], float]]:
+        empty_result = ("", None, None, 0.0)
+        if not regions:
+            return []
+
+        results: List[Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]], float]] = [
+            empty_result for _ in regions
+        ]
+
+        valid_indices: List[int] = []
+        prepared_regions: List[np.ndarray] = []
+        widths: List[int] = []
+
+        for index, region in enumerate(regions):
+            prepared = self._prepare_region_for_batch(region)
+            if prepared is None:
+                continue
+            valid_indices.append(index)
+            prepared_regions.append(prepared)
+            widths.append(prepared.shape[1])
+
+        if not prepared_regions:
+            return results
+
+        perm = sorted(range(len(prepared_regions)), key=lambda idx: widths[idx])
+
+        for chunk_start in range(0, len(perm), max_chunk_size):
+            chunk_indices = perm[chunk_start:chunk_start + max_chunk_size]
+            chunk_widths = [widths[idx] for idx in chunk_indices]
+            batch_size = len(chunk_indices)
+            max_w = ((max(chunk_widths) + 3) // 4) * 4
+
+            batch = np.zeros((batch_size, 48, max_w, 3), dtype=np.uint8)
+            for batch_pos, prepared_idx in enumerate(chunk_indices):
+                width = widths[prepared_idx]
+                region = prepared_regions[prepared_idx]
+                batch[batch_pos, :, :width, :] = region[:, :width, :]
+
+            tensor = (torch.from_numpy(batch).float() - 127.5) / 127.5
+            tensor = einops.rearrange(tensor, 'N H W C -> N C H W')
+
+            if self.device in ('cuda', 'mps'):
+                tensor = tensor.to(self.device)
+
+            with torch.no_grad():
+                preds = self.model.infer_beam_batch_tensor(
+                    tensor, chunk_widths, beams_k=5, max_seq_length=255
+                )
+
+            for batch_pos, pred in enumerate(preds):
+                prepared_idx = chunk_indices[batch_pos]
+                original_idx = valid_indices[prepared_idx]
+
+                if pred is None or len(pred) < 6:
+                    results[original_idx] = empty_result
+                    continue
+
+                pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = pred
+                prob = float(prob)
+
+                if prob < prob_threshold:
+                    results[original_idx] = ("", None, None, prob)
+                    continue
+
+                text, fg_color, bg_color = self._decode_with_colors(
+                    pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
+                )
+                results[original_idx] = (text, fg_color, bg_color, prob)
+
+            del tensor, batch, preds
+
+        return results
     
     def recognize_text(
         self, 
@@ -217,45 +297,69 @@ class Model48pxOCR:
 
         try:
             img_np = np.array(image.convert('RGB'))
-            results: List[OcrResult] = []
 
             if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
                 logger.warning("未提供原始文本行信息，使用简单裁剪模式")
-                for x1, y1, x2, y2 in bubble_coords:
-                    bubble = img_np[y1:y2, x1:x2]
-                    if bubble.shape[0] == 0 or bubble.shape[1] == 0:
-                        results.append(
-                            create_ocr_result(
-                                "",
-                                constants.OCR_ENGINE_48PX,
-                                confidence=0.0,
-                                confidence_supported=True,
-                                primary_engine=primary_engine,
-                                fallback_used=fallback_used,
-                            )
-                        )
-                        continue
-
-                    text, _, _, prob = self._recognize_single_line_with_color(bubble)
-                    results.append(
-                        create_ocr_result(
-                            text,
-                            constants.OCR_ENGINE_48PX,
-                            confidence=prob,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                        )
+                bubble_regions = [
+                    img_np[y1:y2, x1:x2]
+                    for x1, y1, x2, y2 in bubble_coords
+                ]
+                bubble_predictions = self._infer_regions_with_color(bubble_regions)
+                return [
+                    create_ocr_result(
+                        text,
+                        constants.OCR_ENGINE_48PX,
+                        confidence=prob,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
                     )
-                return results
+                    for text, _, _, prob in bubble_predictions
+                ]
 
             logger.info(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
+
+            flat_regions: List[np.ndarray] = []
+            flat_bubble_indices: List[int] = []
+            bubble_line_texts: List[List[str]] = [[] for _ in bubble_coords]
+            bubble_line_probs: List[List[float]] = [[] for _ in bubble_coords]
+            crop_fallback_indices: List[int] = []
+            crop_fallback_regions: List[np.ndarray] = []
 
             for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
                 if not textlines:
                     x1, y1, x2, y2 = coords
-                    bubble = img_np[y1:y2, x1:x2]
-                    text, _, _, prob = self._recognize_single_line_with_color(bubble)
+                    crop_fallback_indices.append(bubble_idx)
+                    crop_fallback_regions.append(img_np[y1:y2, x1:x2])
+                    continue
+
+                for line_info in textlines:
+                    polygon = line_info.get('polygon', [])
+                    direction = line_info.get('direction', 'h')
+
+                    if not polygon or len(polygon) != 4:
+                        continue
+
+                    pts = np.array(polygon, dtype=np.float32)
+                    flat_regions.append(get_transformed_region(img_np, pts, direction, target_height=48))
+                    flat_bubble_indices.append(bubble_idx)
+
+            flat_predictions = self._infer_regions_with_color(flat_regions)
+            for bubble_idx, (text, _, _, prob) in zip(flat_bubble_indices, flat_predictions):
+                if text:
+                    bubble_line_texts[bubble_idx].append(text)
+                bubble_line_probs[bubble_idx].append(float(prob))
+
+            crop_fallback_predictions = self._infer_regions_with_color(crop_fallback_regions)
+            crop_fallback_map = {
+                bubble_idx: prediction
+                for bubble_idx, prediction in zip(crop_fallback_indices, crop_fallback_predictions)
+            }
+
+            results: List[OcrResult] = []
+            for bubble_idx in range(len(bubble_coords)):
+                if bubble_idx in crop_fallback_map:
+                    text, _, _, prob = crop_fallback_map[bubble_idx]
                     results.append(
                         create_ocr_result(
                             text,
@@ -268,24 +372,12 @@ class Model48pxOCR:
                     )
                     continue
 
-                line_texts: List[str] = []
-                line_probs: List[float] = []
-                for line_info in textlines:
-                    polygon = line_info.get('polygon', [])
-                    direction = line_info.get('direction', 'h')
-
-                    if not polygon or len(polygon) != 4:
-                        continue
-
-                    pts = np.array(polygon, dtype=np.float32)
-                    region_img = get_transformed_region(img_np, pts, direction, target_height=48)
-                    text, _, _, prob = self._recognize_single_line_with_color(region_img)
-                    if text:
-                        line_texts.append(text)
-                    line_probs.append(float(prob))
-
-                bubble_text = ' '.join(line_texts) if line_texts else ""
-                bubble_prob = sum(line_probs) / len(line_probs) if line_probs else 0.0
+                bubble_text = ' '.join(bubble_line_texts[bubble_idx]) if bubble_line_texts[bubble_idx] else ""
+                bubble_prob = (
+                    sum(bubble_line_probs[bubble_idx]) / len(bubble_line_probs[bubble_idx])
+                    if bubble_line_probs[bubble_idx]
+                    else 0.0
+                )
                 if bubble_text:
                     logger.info(f"气泡 {bubble_idx}: '{bubble_text}'")
 
@@ -345,45 +437,61 @@ class Model48pxOCR:
         try:
             logger.info(f"使用 48px OCR 识别 {len(textlines)} 个文本行")
             img_np = np.array(image.convert('RGB'))
-            results: List[OcrTextlineResult] = []
-            for line_info in textlines:
+            results: List[Optional[OcrTextlineResult]] = [None] * len(textlines)
+            valid_regions: List[np.ndarray] = []
+            valid_entries: List[Tuple[int, List[List[int]], str]] = []
+
+            for index, line_info in enumerate(textlines):
                 polygon = line_info.get('polygon', [])
                 direction = line_info.get('direction', 'h')
 
                 if not polygon or len(polygon) != 4:
-                    results.append(
-                        create_ocr_textline_result(
-                            "",
-                            constants.OCR_ENGINE_48PX,
-                            confidence=0.0,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                            polygon=polygon,
-                            direction=direction,
-                        )
+                    results[index] = create_ocr_textline_result(
+                        "",
+                        constants.OCR_ENGINE_48PX,
+                        confidence=0.0,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
+                        polygon=polygon,
+                        direction=direction,
                     )
                     continue
 
                 pts = np.array(polygon, dtype=np.float32)
-                region_img = get_transformed_region(img_np, pts, direction, target_height=48)
-                text, fg_color, bg_color, prob = self._recognize_single_line_with_color(region_img)
-                results.append(
-                    create_ocr_textline_result(
-                        text,
-                        constants.OCR_ENGINE_48PX,
-                        confidence=prob,
-                        confidence_supported=True,
-                        primary_engine=primary_engine,
-                        fallback_used=fallback_used,
-                        polygon=[list(map(int, point)) for point in polygon],
-                        direction=direction,
-                        fg_color=fg_color,
-                        bg_color=bg_color,
-                    )
+                valid_regions.append(get_transformed_region(img_np, pts, direction, target_height=48))
+                valid_entries.append((
+                    index,
+                    [list(map(int, point)) for point in polygon],
+                    direction,
+                ))
+
+            batch_results = self._infer_regions_with_color(valid_regions)
+            for (index, polygon, direction), (text, fg_color, bg_color, prob) in zip(valid_entries, batch_results):
+                results[index] = create_ocr_textline_result(
+                    text,
+                    constants.OCR_ENGINE_48PX,
+                    confidence=prob,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                    polygon=polygon,
+                    direction=direction,
+                    fg_color=fg_color,
+                    bg_color=bg_color,
                 )
 
-            return results
+            return [
+                result if result is not None else create_ocr_textline_result(
+                    "",
+                    constants.OCR_ENGINE_48PX,
+                    confidence=0.0,
+                    confidence_supported=True,
+                    primary_engine=primary_engine,
+                    fallback_used=fallback_used,
+                )
+                for result in results
+            ]
         except Exception as e:
             logger.error(f"48px OCR 文本行识别失败: {e}", exc_info=True)
             return [
@@ -420,51 +528,11 @@ class Model48pxOCR:
             - bg_color: 背景色 RGB (0-255) 或 None
             - prob: 置信度 0-1
         """
-        if line_img.shape[0] == 0 or line_img.shape[1] == 0:
-            return "", None, None, 0.0
-        
-        # 确保高度是48
-        if line_img.shape[0] != 48:
-            h, w = line_img.shape[:2]
-            scale = 48 / h
-            new_w = max(int(w * scale), 1)
-            line_img = cv2.resize(line_img, (new_w, 48), interpolation=cv2.INTER_LINEAR)
-        
-        width = line_img.shape[1]
-        
-        # 批量大小为1
-        max_w = ((width + 3) // 4) * 4
-        batch = np.zeros((1, 48, max_w, 3), dtype=np.uint8)
-        batch[0, :, :width, :] = line_img
-        
-        # 归一化
-        tensor = (torch.from_numpy(batch).float() - 127.5) / 127.5
-        tensor = einops.rearrange(tensor, 'N H W C -> N C H W')
-        
-        if self.device in ('cuda', 'mps'):
-            tensor = tensor.to(self.device)
-        
-        # 推理
-        with torch.no_grad():
-            preds = self.model.infer_beam_batch_tensor(
-                tensor, [width], beams_k=5, max_seq_length=255
-            )
-        
-        if not preds or len(preds) == 0:
-            return "", None, None, 0.0
-        
-        # 解析结果：(pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred)
-        pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = preds[0]
-        
-        if prob < prob_threshold:
-            return "", None, None, prob
-        
-        # 解码文本并聚合颜色
-        text, fg_color, bg_color = self._decode_with_colors(
-            pred_chars_index, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred
-        )
-        
-        return text, fg_color, bg_color, prob
+        return self._infer_regions_with_color(
+            [line_img],
+            prob_threshold=prob_threshold,
+            max_chunk_size=1,
+        )[0]
     
     def _decode_with_colors(
         self,
