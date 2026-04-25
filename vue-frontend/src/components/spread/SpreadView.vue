@@ -14,7 +14,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
 import { showToast } from '@/utils/toast'
 import SpreadImagePair from './SpreadImagePair.vue'
 import type { ImageData } from '@/types/image'
@@ -42,7 +41,6 @@ const emit = defineEmits<{
 // ============================================================
 
 const imageStore = useImageStore()
-const settingsStore = useSettingsStore()
 
 const { images, imageCount } = storeToRefs(imageStore)
 
@@ -77,9 +75,10 @@ const totalSpreads = computed(() => {
   if (imageCount.value === 0) return 0
   
   if (isCoverMode.value) {
-    // 封面模式：第1张单独显示，剩余图片两两组合
+    // 封面模式：第1张单独显示，剩余图片两两组合（奇数时最后一张单独显示）
     const remainingImages = imageCount.value - 1
     if (remainingImages <= 0) return 1
+    // 使用 Math.ceil 确保奇数时多出一页给最后一张
     return 1 + Math.ceil(remainingImages / 2)
   } else {
     // 普通模式：所有图片两两组合
@@ -104,20 +103,20 @@ const currentImagePair = computed(() => {
     isSingle: false,
     direction: pageDirection.value
   }
-  
+
   if (imageCount.value === 0) return pair
-  
+
   if (isCoverMode.value && currentSpreadIndex.value === 0) {
     // 封面模式的第一页：只显示第一张图片
-    pair.left = images.value[0] || null
+    pair.left = images.value[0] ?? null
     pair.isSingle = true
     return pair
   }
-  
+
   // 计算实际图片索引
   let firstIndex: number
   let secondIndex: number
-  
+
   if (isCoverMode.value) {
     // 封面模式：第1张单独显示，剩余从索引1开始两两组合
     firstIndex = 1 + (currentSpreadIndex.value - 1) * 2
@@ -127,20 +126,40 @@ const currentImagePair = computed(() => {
     firstIndex = currentSpreadIndex.value * 2
     secondIndex = firstIndex + 1
   }
-  
+
+  // 检查索引是否有效
+  const hasFirst = firstIndex < imageCount.value
+  const hasSecond = secondIndex < imageCount.value
+
   // 根据翻页方向决定左右排布
   // LTR（从左到右）：先读左页，再读右页 -> 左页是first，右页是second
   // RTL（从右到左）：先读右页，再读左页 -> 右页是first，左页是second
   if (pageDirection.value === 'ltr') {
-    pair.left = images.value[firstIndex] || null
-    pair.right = images.value[secondIndex] || null
+    pair.left = hasFirst ? (images.value[firstIndex] ?? null) : null
+    pair.right = hasSecond ? (images.value[secondIndex] ?? null) : null
   } else {
-    pair.right = images.value[firstIndex] || null
-    pair.left = images.value[secondIndex] || null
+    pair.right = hasFirst ? (images.value[firstIndex] ?? null) : null
+    pair.left = hasSecond ? (images.value[secondIndex] ?? null) : null
   }
-  
-  pair.isSingle = !images.value[secondIndex]
-  
+
+  // 判断是否单页：只有一张图片时（最后一张单独显示的情况）
+  // 情况1：只有first有图片，second没有 -> 单页
+  // 情况2：只有second有图片，first没有 -> 单页（理论上不会发生）
+  // 情况3：都没有图片 -> 空页
+  const isOnlyFirst = hasFirst && !hasSecond
+  const isOnlySecond = !hasFirst && hasSecond
+  pair.isSingle = isOnlyFirst || isOnlySecond
+
+  // RTL模式下单页时，将图片移到左侧显示（因为组件以左侧为主）
+  if (pageDirection.value === 'rtl' && pair.isSingle) {
+    if (isOnlyFirst) {
+      // 只有first有图片，移到左侧
+      pair.left = pair.right
+      pair.right = null
+    }
+    // isOnlySecond的情况保持原样（已经在左侧）
+  }
+
   return pair
 })
 

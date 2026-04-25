@@ -270,13 +270,14 @@ function handleImageError(side: 'left' | 'right'): void {
   background: #0d1b2a;
 }
 
-.image-pair-container.double-mode {
-  /* 双页模式：图片紧密排列 */
+/* 单页模式：图片居中显示，宽度与双页模式一致 */
+.image-pair-container.single-mode {
+  max-width: 100%;
 }
 
-.image-pair-container.single-mode {
-  /* 单页模式：图片居中显示 */
-  max-width: 50%;
+/* 单页模式下的图片包装器：限制最大宽度，保持与双页模式下单页的视觉一致性 */
+.image-pair-container.single-mode .spread-image-wrapper {
+  min-width: 500px;
 }
 
 /* ============ 图片包装器 ============ */
