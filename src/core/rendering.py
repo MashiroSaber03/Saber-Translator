@@ -52,7 +52,7 @@ FALLBACK_FONTS = [
 NOTOSANS_FONT_PATH = os.path.join(FONTS_DIR, 'NotoSans-Medium.ttf')
 
 # --- 需要使用特殊字体渲染的字符（Pillow 回退用）---
-SPECIAL_CHARS = {'‼', '⁉', '︕', '︖', '︙', '⋮', '⋯'}
+SPECIAL_CHARS = {'‼', '⁉', '⁇', '⁈', '︕', '︖', '︙', '⋮', '⋯'}
 
 # =============================================================================
 # 竖排标点符号处理系统
@@ -106,6 +106,28 @@ UPRIGHT_IN_VERTICAL = {
     '·', '・', '‥',
 }
 
+# --- 竖排下需要做低位标点垂直校正的字符集合 ---
+# 这些标点在大多数字体里的墨水区域天然贴近基线，若直接按 current_y_char 绘制，
+# 会落在单元格底部，看起来像“沉下去”。因此仍然需要把它们往单元格视觉中心拉回。
+# 注意：感叹号 / 问号虽然也属于 UPRIGHT_IN_VERTICAL，但很多字体中它们本来就位于
+# 字面中上部，再做同样的居中校正会被明显上提，甚至侵入上一格，所以明确排除。
+VERTICAL_CENTER_ADJUST_PUNCTUATION = {
+    '.', '。',
+    ',', '，', '、',
+    '·', '・', '‥',
+}
+
+# --- 需要以当前字体合成渲染的组合直立标点 ---
+# 这些符号很多字体并不直接提供字形，现有逻辑会回退到别的字体绘制，导致位置和风格
+# 与正文不一致。这里保留其“单字符语义”（单格、不断行），但绘制时改用当前字体把
+# constituent 标点合成一个紧凑块。
+COMBINED_UPRIGHT_SYMBOL_EXPANSIONS = {
+    '‼': '!!',
+    '⁉': '!?',
+    '⁇': '??',
+    '⁈': '?!',
+}
+
 # --- 竖排需要旋转但 Unicode 类别不是 P 的字符 ---
 # 这些字符语义上是"线性延展"标点，但 unicodedata 把它们归为 Sm（数学符号），
 # is_punctuation 返回 False。显式加入以触发 90° 旋转，与同族的 Pd 类保持一致。
@@ -123,10 +145,14 @@ SPECIAL_PUNCTUATION_PATTERNS = [
     ('!!', '‼'),       # 连续两个感叹号映射成双感叹号
     ('！！！', '‼'),   # 中文连续三个感叹号
     ('！！', '‼'),     # 中文连续两个感叹号
+    ('???', '⁇'),      # 连续三个问号映射成双问号
+    ('??', '⁇'),       # 连续两个问号映射成双问号
+    ('？？？', '⁇'),   # 中文连续三个问号
+    ('？？', '⁇'),     # 中文连续两个问号
     ('!?', '⁉'),       # 感叹号加问号映射成感叹问号组合
-    ('?!', '⁉'),       # 问号加感叹号映射成感叹问号组合
+    ('?!', '⁈'),       # 问号加感叹号映射成问号感叹号组合
     ('！？', '⁉'),     # 中文感叹号加问号
-    ('？！', '⁉'),     # 中文问号加感叹号
+    ('？！', '⁈'),     # 中文问号加感叹号
 ]
 
 
@@ -345,6 +371,114 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
         return cdpt, 90
 
     return cdpt, 0
+
+
+def get_vertical_center_adjusted_y(char: str, font: ImageFont.FreeTypeFont,
+                                   current_y_char: float, line_height_approx: int) -> float:
+    """
+    计算竖排直立标点的垂直校正后 Y 坐标。
+
+    仅对低位句读点执行校正；感叹号 / 问号等高位符号保持原始 baseline 位置，
+    避免某些字体的 bbox 度量把它们额外上提，造成与上一格文字发生重叠。
+    """
+    if char not in VERTICAL_CENTER_ADJUST_PUNCTUATION:
+        return current_y_char
+
+    try:
+        ink_bbox = font.getbbox(char)
+        ink_mid_y = (ink_bbox[1] + ink_bbox[3]) / 2.0
+        target_mid_y = line_height_approx / 2.0
+        raw_shift = target_mid_y - ink_mid_y
+
+        # 低位标点需要明显上提，但仍限制在合理范围内，避免异常字体度量导致越格。
+        max_shift = line_height_approx * 0.75
+        clamped_shift = max(-max_shift, min(max_shift, raw_shift))
+        return current_y_char + clamped_shift
+    except Exception:
+        return current_y_char
+
+
+def render_combined_upright_symbol(symbol: str, font: ImageFont.FreeTypeFont,
+                                   fill, stroke_enabled: bool, stroke_color,
+                                   stroke_width, canvas_image: Optional[Image.Image],
+                                   current_x_col: int, current_y: float,
+                                   line_width: int, line_height_unit: int) -> int:
+    """
+    使用当前字体为竖排组合标点合成一个紧凑块，并作为单个单元格绘制。
+
+    目的：
+    - 保留 `⁉ / ‼ / ⁇ / ⁈` 的“单格、不断行”语义；
+    - 避免因为主字体缺少组合字形而回退到其它字体，导致视觉位置明显上飘。
+    """
+    content = COMBINED_UPRIGHT_SYMBOL_EXPANSIONS.get(symbol)
+    if not content or canvas_image is None:
+        return line_height_unit
+
+    char_bboxes = []
+    total_width = 0
+    reference_top = None
+    reference_bottom = None
+
+    for char in content:
+        bbox = font.getbbox(char)
+        char_width = max(1, bbox[2] - bbox[0])
+        char_bboxes.append((char, bbox, char_width))
+        total_width += char_width
+        reference_top = bbox[1] if reference_top is None else min(reference_top, bbox[1])
+        reference_bottom = bbox[3] if reference_bottom is None else max(reference_bottom, bbox[3])
+
+    if not char_bboxes or reference_top is None or reference_bottom is None:
+        return line_height_unit
+
+    spacing = max(1, int(font.size * 0.04))
+    total_width += spacing * (len(char_bboxes) - 1)
+    content_height = max(1, reference_bottom - reference_top)
+
+    padding = max(10, int(stroke_width * 2) if stroke_enabled else 10)
+    temp_w = total_width + padding * 2
+    temp_h = content_height + padding * 2
+    temp_img = Image.new('RGBA', (temp_w, temp_h), (0, 0, 0, 0))
+    temp_draw = ImageDraw.Draw(temp_img)
+
+    text_params = {'font': font, 'fill': fill}
+    if stroke_enabled:
+        text_params['stroke_width'] = int(stroke_width)
+        text_params['stroke_fill'] = stroke_color
+
+    pen_x = padding
+    draw_y = padding - reference_top
+    for char, _bbox, char_width in char_bboxes:
+        temp_draw.text((pen_x, draw_y), char, **text_params)
+        pen_x += char_width + spacing
+
+    temp_arr = np.array(temp_img)
+    alpha = temp_arr[:, :, 3]
+    non_zero = np.where(alpha > 10)
+    if len(non_zero[0]) == 0:
+        return line_height_unit
+
+    min_y, max_y = non_zero[0].min(), non_zero[0].max()
+    min_x, max_x = non_zero[1].min(), non_zero[1].max()
+    cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
+
+    scale_x = min(1.0, line_width / max(1, cropped.width))
+    scale_y = min(1.0, line_height_unit / max(1, cropped.height))
+    if scale_x < 1.0 or scale_y < 1.0:
+        resized = cropped.resize(
+            (
+                max(1, int(round(cropped.width * scale_x))),
+                max(1, int(round(cropped.height * scale_y))),
+            ),
+            resample=Image.Resampling.BICUBIC,
+        )
+    else:
+        resized = cropped
+
+    paste_x = int((current_x_col - line_width) + (line_width - resized.width) / 2.0)
+    paste_y = int(current_y + reference_top * scale_y)
+    _paste_with_alpha(canvas_image, resized, paste_x, paste_y)
+
+    return line_height_unit
 
 
 def auto_add_horizontal_tags(text: str) -> str:
@@ -1120,6 +1254,27 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                 for char in part:
                     # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
                     converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
+
+                    if (
+                        rot_degree == 0
+                        and converted_char in COMBINED_UPRIGHT_SYMBOL_EXPANSIONS
+                        and canvas_image is not None
+                    ):
+                        block_height = render_combined_upright_symbol(
+                            converted_char,
+                            font,
+                            fill,
+                            stroke_enabled,
+                            stroke_color,
+                            stroke_width,
+                            canvas_image,
+                            current_x_col,
+                            current_y_char,
+                            line_width,
+                            line_height_approx,
+                        )
+                        current_y_char += block_height
+                        continue
                     
                     # ===== 使用字体回退系统 =====
                     current_font = font
@@ -1239,19 +1394,15 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         ink_offset_x, _ = get_char_ink_offset(converted_char, current_font)
                         text_x_char -= ink_offset_x
 
-                        # ===== 直立标点的垂直居中校正 =====
-                        # 像 ，、。. 这类字符的墨水天然贴在基线附近，若直接按 current_y_char
-                        # 绘制会落在单元格底部。这里以字符的墨水 bbox 中心为基准，把它对齐
-                        # 到单元格（line_height_approx）中心。汉字/假名自身高度占满单元格，
-                        # 不需要此校正，故仅对 UPRIGHT_IN_VERTICAL 启用。
-                        if converted_char in UPRIGHT_IN_VERTICAL:
-                            try:
-                                ink_bbox = current_font.getbbox(converted_char)
-                                ink_mid_y = (ink_bbox[1] + ink_bbox[3]) / 2.0
-                                target_mid_y = line_height_approx / 2.0
-                                text_y_char = current_y_char + (target_mid_y - ink_mid_y)
-                            except Exception:
-                                pass
+                        # ===== 低位直立标点的垂直校正 =====
+                        # 仅对句读点执行“往格子中心拉回”的校正；感叹号/问号等保持原始
+                        # baseline 位置，避免某些字体的 bbox 度量把它们错误上提到上一格。
+                        text_y_char = get_vertical_center_adjusted_y(
+                            converted_char,
+                            current_font,
+                            current_y_char,
+                            line_height_approx,
+                        )
 
                         # 直接绘制
                         draw.text((text_x_char, text_y_char), converted_char, **text_draw_params)
