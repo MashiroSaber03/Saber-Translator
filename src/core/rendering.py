@@ -353,7 +353,7 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
         - 竖排：
             * ー 返回 (ー, 90)
             * UPRIGHT_IN_VERTICAL（感叹/问/句/逗/冒/分号等）保持 0°
-            * LEGACY_VERTICAL_CHARS（旧 CJK Compatibility Forms + ‼ ⁉）保持 0°
+            * LEGACY_VERTICAL_CHARS（旧 CJK Compatibility Forms + 组合强调符号）保持 0°
             * 其余标点及 EXTRA_VERTICAL_ROTATE_CHARS 返回 (cdpt, 90)
             * 非标点（汉字/假名等）保持 0°
     """
@@ -547,7 +547,7 @@ def process_text_for_vertical(text: str) -> str:
 
     处理流程：
     1. 调用 compact_special_symbols 统一省略号格式（... → …）
-    2. 处理特殊组合标点（如 !! → ‼，!? → ⁉）
+    2. 处理特殊组合标点（如 !! → ‼，?? → ⁇，!? → ⁉，?! → ⁈）
     3. 把连续的"线性延展"标点（省略号 / 破折号 / 波浪，长度 >= 2）
        包成 <E>...</E> 块，渲染时整段旋转以消除逐字旋转导致的拼接缝
     4. 自动为英文/数字添加 <H> 横排标签
@@ -564,7 +564,7 @@ def process_text_for_vertical(text: str) -> str:
     # 步骤1: 预处理特殊符号（合并 ... 为 …）
     text = compact_special_symbols(text)
 
-    # 步骤2: 处理特殊组合标点（合并后由渲染层决定是否旋转）
+    # 步骤2: 处理特殊组合标点（合并后由渲染层决定是否旋转/合成绘制）
     for pattern, replacement in SPECIAL_PUNCTUATION_PATTERNS:
         text = text.replace(pattern, replacement)
 
@@ -953,9 +953,18 @@ def render_ellipsis_block(content: str, font, font_size: int,
 
     actual_w, actual_h = cropped.size
 
-    # 6) 水平居中到列宽，垂直居中到 allocated_height
+    # 6) 水平居中到列宽，垂直对齐到中文正文的视觉中心
+    # 与 render_horizontal_block 保持一致：不要按几何中心贴回，而是对齐到
+    # “分配的 N 个单元格中间位置的中文墨水中心”。否则对于 U+2026 这类本身
+    # 紧贴基线的字形，整体旋转后虽然几何上居中，但视觉上会明显偏上。
+    _, ref_ink_offset_y = get_char_ink_offset('我', font)
+    cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
+    units_needed = max(1, len(content))
+    mid_unit_index = (units_needed - 1) / 2
+    visual_center = mid_unit_index * line_height_unit + cjk_ink_center_in_unit
+
     paste_x = int((current_x_col - line_width) + (line_width - actual_w) / 2.0)
-    paste_y = int(current_y + (allocated_height - actual_h) / 2.0)
+    paste_y = int(current_y + visual_center - actual_h / 2.0)
 
     _paste_with_alpha(canvas_image, cropped, paste_x, paste_y)
 
