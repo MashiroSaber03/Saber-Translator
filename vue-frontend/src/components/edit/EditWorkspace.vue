@@ -1016,6 +1016,8 @@ async function handleReTranslateBubble(index: number): Promise<void> {
     console.warn('无法重新翻译：缺少气泡或原文')
     return
   }
+  const expectedImageId = currentImage.value?.id
+  const expectedBubble = bubble
 
   isTranslateLoading.value = true
   try {
@@ -1045,14 +1047,28 @@ async function handleReTranslateBubble(index: number): Promise<void> {
     })
 
     if (response.success && response.data?.translated_text) {
+      if (!expectedImageId || currentImage.value?.id !== expectedImageId || bubbles.value[index] !== expectedBubble) {
+        console.log(`翻译结果已过期，忽略气泡 #${index + 1} 的更新`)
+        return
+      }
       bubbleStore.updateBubble(index, { translatedText: response.data.translated_text })
       console.log(`翻译成功: "${response.data.translated_text}"`)
       reRenderFullImage()
     } else {
+      if (!expectedImageId || currentImage.value?.id !== expectedImageId || bubbles.value[index] !== expectedBubble) {
+        console.log(`翻译失败结果已过期，忽略气泡 #${index + 1} 的错误提示`)
+        return
+      }
       console.error('翻译失败:', response.error || '未知错误')
+      showToast(response.error || '重新翻译失败', 'error')
     }
   } catch (error) {
+    if (!expectedImageId || currentImage.value?.id !== expectedImageId || bubbles.value[index] !== expectedBubble) {
+      console.log(`翻译异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
+      return
+    }
     console.error('翻译出错:', error)
+    showToast(error instanceof Error ? error.message : '重新翻译失败', 'error')
   } finally {
     isTranslateLoading.value = false
   }
@@ -1121,6 +1137,8 @@ async function autoDetectBubbles(): Promise<void> {
     showToast('没有有效的图片用于检测', 'warning')
     return
   }
+  const expectedImageId = image.id
+  const expectedImageIndex = currentImageIndex.value
 
   try {
     showToast('正在自动检测文本框...', 'info')
@@ -1135,9 +1153,14 @@ async function autoDetectBubbles(): Promise<void> {
       forceDetect: true  // 编辑模式下总是强制重新检测
     })
     
+    if (currentImage.value?.id !== expectedImageId || currentImageIndex.value !== expectedImageIndex) {
+      console.log('自动检测结果已过期，当前图片已切换，忽略本次结果')
+      return
+    }
+
     if (result.bubbleCoords.length > 0) {
       // ✅ 使用统一保存函数，确保所有字段都被保存
-      saveDetectionResultToImage(currentImageIndex.value, result)
+      saveDetectionResultToImage(expectedImageIndex, result)
       
       initializeTextArrays(image, result.bubbleCoords.length)
       const detectionData = {
@@ -1155,6 +1178,10 @@ async function autoDetectBubbles(): Promise<void> {
       showToast('未检测到文本框', 'info')
     }
   } catch (error) {
+    if (currentImage.value?.id !== expectedImageId) {
+      console.log('自动检测失败结果已过期，忽略当前图片切换后的错误提示')
+      return
+    }
     console.error('自动检测失败:', error)
     showToast('自动检测失败', 'error')
   }
@@ -1533,7 +1560,11 @@ async function applyAndNext(): Promise<void> {
   saveBubbleStatesToImage()
   
   // 【修复问题3】直接await reRenderFullImage，确保渲染完成后再切图
-  await reRenderFullImage()
+  const renderSucceeded = await reRenderFullImage()
+  if (!renderSucceeded) {
+    showToast('应用失败，已停留在当前图片，请重试', 'warning')
+    return
+  }
   
   // 【复刻原版】检查是否是最后一张
   if (canGoNext.value) {
@@ -2274,14 +2305,19 @@ watch(selectedBubble, (bubble) => {
   border-color: #adb5bd;
 }
 
-.apply-text-btn {
-  background: #27ae60;
-  color: white;
-  border-color: #27ae60;
+.text-actions .apply-text-btn {
+  background: #27ae60 !important;
+  background-color: #27ae60 !important;
+  color: #fff !important;
+  border-color: #27ae60 !important;
+  font-weight: 600;
 }
 
-.apply-text-btn:hover {
-  background: #219a52;
+.text-actions .apply-text-btn:hover {
+  background: #219a52 !important;
+  background-color: #219a52 !important;
+  border-color: #219a52 !important;
+  color: #fff !important;
 }
 
 /* ============ 样式设置区域 ============ */

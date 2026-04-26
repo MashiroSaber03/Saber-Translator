@@ -1135,14 +1135,19 @@ onMounted(() => {
   border-color: #adb5bd;
 }
 
-.apply-text-btn {
-  background: #27ae60;
-  color: white;
-  border-color: #27ae60;
+.text-actions .apply-text-btn {
+  background: #27ae60 !important;
+  background-color: #27ae60 !important;
+  color: #fff !important;
+  border-color: #27ae60 !important;
+  font-weight: 600;
 }
 
-.apply-text-btn:hover {
-  background: #219a52;
+.text-actions .apply-text-btn:hover {
+  background: #219a52 !important;
+  background-color: #219a52 !important;
+  border-color: #219a52 !important;
+  color: #fff !important;
 }
 
 .keyboard-toggle-btn {

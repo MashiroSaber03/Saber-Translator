@@ -388,6 +388,9 @@ export const useBubbleStore = defineStore('bubble', () => {
 
     const bubble = bubbles.value[index]
     if (bubble) {
+      if (updates.coords) {
+        updates.autoTextDirection = detectTextDirection(updates.coords)
+      }
       Object.assign(bubble, updates)
       console.log(`已更新气泡 ${index}`)
       // 【同步】复刻旧版逻辑：每次更新单个气泡时同步到 currentImage
@@ -422,7 +425,11 @@ export const useBubbleStore = defineStore('bubble', () => {
     for (const index of indices) {
       const bubble = bubbles.value[index]
       if (bubble) {
-        Object.assign(bubble, updates)
+        const updatesWithAutoDirection = { ...updates }
+        if (updates.coords) {
+          updatesWithAutoDirection.autoTextDirection = detectTextDirection(updates.coords)
+        }
+        Object.assign(bubble, updatesWithAutoDirection)
       }
     }
     // 【同步】批量更新后统一同步一次
@@ -438,7 +445,11 @@ export const useBubbleStore = defineStore('bubble', () => {
     for (let i = 0; i < bubbles.value.length; i++) {
       const bubble = bubbles.value[i]
       if (bubble) {
-        Object.assign(bubble, updates)
+        const updatesWithAutoDirection = { ...updates }
+        if (updates.coords) {
+          updatesWithAutoDirection.autoTextDirection = detectTextDirection(updates.coords)
+        }
+        Object.assign(bubble, updatesWithAutoDirection)
       }
     }
     // 【修复问题4】批量更新后同步到 currentImage，确保样式落盘

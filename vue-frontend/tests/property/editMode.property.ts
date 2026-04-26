@@ -12,9 +12,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
-import { useBubbleStore, createBubbleState } from '@/stores/bubbleStore'
+import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords } from '@/types/bubble'
+import { createBubbleState } from '@/utils/bubbleFactory'
 
 // ============================================================
 // 测试数据生成器
@@ -139,6 +140,17 @@ function calculateResizedCoords(
   return [x1, y1, x2, y2]
 }
 
+function makeBubble(coords: BubbleCoords) {
+  const [x1, y1, x2, y2] = coords
+  const autoTextDirection = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal'
+  return createBubbleState({
+    coords,
+    polygon: [],
+    textDirection: autoTextDirection,
+    autoTextDirection,
+  })
+}
+
 // ============================================================
 // 属性测试
 // ============================================================
@@ -172,7 +184,7 @@ describe('编辑模式属性测试', () => {
             originalDataURL: 'data:image/png;base64,test1',
             translatedDataURL: null,
             cleanImageData: null,
-            bubbleStates: coords1.map(c => createBubbleState(c)),
+            bubbleStates: coords1.map((c) => makeBubble(c)),
             bubbleCoords: coords1,
             bubbleTexts: coords1.map(() => ''),
             originalTexts: coords1.map(() => ''),
@@ -188,7 +200,7 @@ describe('编辑模式属性测试', () => {
             originalDataURL: 'data:image/png;base64,test2',
             translatedDataURL: null,
             cleanImageData: null,
-            bubbleStates: coords2.map(c => createBubbleState(c)),
+            bubbleStates: coords2.map((c) => makeBubble(c)),
             bubbleCoords: coords2,
             bubbleTexts: coords2.map(() => ''),
             originalTexts: coords2.map(() => ''),
@@ -270,7 +282,7 @@ describe('编辑模式属性测试', () => {
           const bubbleStore = useBubbleStore()
 
           // 创建气泡
-          const bubble = createBubbleState(coords)
+          const bubble = makeBubble(coords)
           bubbleStore.setBubbles([bubble])
 
           // 计算原始尺寸
@@ -287,7 +299,7 @@ describe('编辑模式属性测试', () => {
           )
 
           // 更新坐标
-          bubbleStore.updateBubbleCoords(0, newCoords)
+          bubbleStore.updateBubble(0, { coords: newCoords })
 
           // 验证坐标已更新
           const updatedBubble = bubbleStore.bubbles[0]
@@ -342,7 +354,7 @@ describe('编辑模式属性测试', () => {
           const bubbleStore = useBubbleStore()
 
           // 创建气泡
-          const bubble = createBubbleState(coords)
+          const bubble = makeBubble(coords)
           bubbleStore.setBubbles([bubble])
 
           // 计算调整后的坐标
@@ -357,7 +369,7 @@ describe('编辑模式属性测试', () => {
 
           // 如果新坐标有效，更新并验证
           if (newCoords) {
-            bubbleStore.updateBubbleCoords(0, newCoords)
+            bubbleStore.updateBubble(0, { coords: newCoords })
 
             const updatedBubble = bubbleStore.bubbles[0]
             expect(updatedBubble).toBeDefined()
@@ -482,14 +494,14 @@ describe('编辑模式属性测试', () => {
 
     // 创建一个宽大于高的气泡（应该是水平方向）
     const wideCoords: BubbleCoords = [0, 0, 200, 100]
-    const bubble = createBubbleState(wideCoords)
+    const bubble = makeBubble(wideCoords)
     bubbleStore.setBubbles([bubble])
 
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('horizontal')
 
     // 更新为高大于宽的坐标（应该变成垂直方向）
     const tallCoords: BubbleCoords = [0, 0, 100, 200]
-    bubbleStore.updateBubbleCoords(0, tallCoords)
+    bubbleStore.updateBubble(0, { coords: tallCoords })
 
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
   })

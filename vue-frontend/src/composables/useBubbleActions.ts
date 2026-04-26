@@ -4,7 +4,7 @@
  * 便于后续频繁修改气泡逻辑
  */
 
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -70,10 +70,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   /** 当前绘制的临时矩形 */
   const currentDrawingRect = ref<BubbleCoords | null>(null)
-
-  /** 绘制起始点 */
-  const drawStartX = ref(0)
-  const drawStartY = ref(0)
 
   /** 是否中键按下 */
   const isMiddleButtonDown = ref(false)
@@ -192,64 +188,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     callbacks?.onReRender?.()
   }
 
-  /** 开始绘制气泡框 */
-  function startDrawingBox(x: number, y: number): void {
-    isDrawingBox.value = true
-    drawStartX.value = x
-    drawStartY.value = y
-    currentDrawingRect.value = [x, y, x, y]
-  }
-
-  /** 更新绘制中的气泡框 */
-  function updateDrawingBox(x: number, y: number): void {
-    if (!isDrawingBox.value) return
-    currentDrawingRect.value = [
-      drawStartX.value,
-      drawStartY.value,
-      x,
-      y
-    ]
-  }
-
-  /** 完成绘制气泡框 */
-  function finishDrawingBox(): BubbleCoords | null {
-    if (!isDrawingBox.value || !currentDrawingRect.value) {
-      isDrawingBox.value = false
-      currentDrawingRect.value = null
-      return null
-    }
-
-    const [x1, y1, x2, y2] = currentDrawingRect.value
-    const minSize = 10
-
-    // 检查最小尺寸
-    if (Math.abs(x2 - x1) < minSize || Math.abs(y2 - y1) < minSize) {
-      isDrawingBox.value = false
-      currentDrawingRect.value = null
-      return null
-    }
-
-    // 规范化坐标（确保x1<x2, y1<y2）
-    const normalizedCoords: BubbleCoords = [
-      Math.min(x1, x2),
-      Math.min(y1, y2),
-      Math.max(x1, x2),
-      Math.max(y1, y2)
-    ]
-
-    isDrawingBox.value = false
-    currentDrawingRect.value = null
-
-    return normalizedCoords
-  }
-
-  /** 取消绘制 */
-  function cancelDrawing(): void {
-    isDrawingBox.value = false
-    currentDrawingRect.value = null
-    isDrawingMode.value = false
-  }
-
   /** 获取绘制框样式 */
   function getDrawingRectStyle(): Record<string, string> {
     if (!currentDrawingRect.value) return {}
@@ -276,6 +214,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   let previewTimer: ReturnType<typeof setTimeout> | null = null
   /** 渲染状态锁，防止竞态条件 */
   let isRenderingPreview = false
+  /** 渲染期间是否又收到了新的预览请求 */
+  let previewRequestedWhileRendering = false
   /** 延迟时间（毫秒） */
   const PREVIEW_DELAY = 150
 
@@ -288,8 +228,10 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       clearTimeout(previewTimer)
     }
     previewTimer = setTimeout(async () => {
+      previewTimer = null
       if (isRenderingPreview) {
-        console.log('跳过渲染，上一次渲染仍在进行中')
+        previewRequestedWhileRendering = true
+        console.log('预览渲染仍在进行中，已排队等待下一次渲染')
         return
       }
       console.log('触发延迟渲染预览')
@@ -308,9 +250,42 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       } finally {
         // 【修复问题5】渲染完成后才重置状态
         isRenderingPreview = false
+        if (previewRequestedWhileRendering) {
+          previewRequestedWhileRendering = false
+          triggerDelayedPreview()
+        }
       }
     }, PREVIEW_DELAY)
   }
+
+  function isSameCurrentImage(expectedImageId: string): boolean {
+    return currentImage.value?.id === expectedImageId
+  }
+
+  function isSameBubbleTarget(expectedImageId: string, index: number, expectedBubble: BubbleState): boolean {
+    return isSameCurrentImage(expectedImageId) && bubbles.value[index] === expectedBubble
+  }
+
+  function updateCurrentImageIfStillCurrent(
+    expectedImageId: string,
+    updates: Parameters<typeof imageStore.updateCurrentImage>[0]
+  ): boolean {
+    if (!isSameCurrentImage(expectedImageId)) {
+      console.log('当前图片已切换，忽略过期的单气泡修复结果')
+      return false
+    }
+    imageStore.updateCurrentImage(updates)
+    return true
+  }
+
+  onUnmounted(() => {
+    if (previewTimer) {
+      clearTimeout(previewTimer)
+      previewTimer = null
+    }
+    isRenderingPreview = false
+    previewRequestedWhileRendering = false
+  })
 
   // ============================================================
   // 气泡编辑操作
@@ -347,6 +322,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       console.warn('无法修复背景：缺少气泡或图片数据')
       return
     }
+    const expectedImageId = image.id
 
     // 获取修复方法和填充颜色
     const inpaintMethod = bubble.inpaintMethod || 'solid'
@@ -390,22 +366,32 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         )
 
         if (response.success && response.inpainted_image) {
-          imageStore.updateCurrentImage({ cleanImageData: response.inpainted_image })
+          if (!updateCurrentImageIfStillCurrent(expectedImageId, { cleanImageData: response.inpainted_image })) {
+            return
+          }
           console.log(`气泡 #${index + 1} LAMA背景修复成功`)
           triggerDelayedPreview()
         } else {
           console.error('LAMA修复失败:', response.error || '未知错误')
           // 回退到纯色填充
-          await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle)
-          triggerDelayedPreview()
+          const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
+          if (applied) {
+            triggerDelayedPreview()
+          }
         }
       } else {
         // 使用纯色填充
-        await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle)
-        console.log(`气泡 #${index + 1} 纯色填充修复成功`)
-        triggerDelayedPreview()
+        const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
+        if (applied) {
+          console.log(`气泡 #${index + 1} 纯色填充修复成功`)
+          triggerDelayedPreview()
+        }
       }
     } catch (error) {
+      if (!isSameCurrentImage(expectedImageId)) {
+        console.log(`背景修复异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
+        return
+      }
       console.error('背景修复出错:', error)
       const errorMessage = error instanceof Error ? error.message : '背景修复失败'
       showToast(errorMessage, 'error')
@@ -416,10 +402,11 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   async function fillBubbleWithColor(
     coords: [number, number, number, number],
     fillColor: string,
-    rotationAngle: number = 0
-  ): Promise<void> {
+    rotationAngle: number = 0,
+    expectedImageId?: string
+  ): Promise<boolean> {
     const image = currentImage.value
-    if (!image) return
+    if (!image) return false
 
     const [x1, y1, x2, y2] = coords
 
@@ -431,7 +418,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       baseSrc = image.originalDataURL
     } else {
       console.error('无法找到基础图像用于填充')
-      return
+      return false
     }
 
     return new Promise((resolve) => {
@@ -442,7 +429,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         canvas.height = img.naturalHeight
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          resolve()
+          resolve(false)
           return
         }
 
@@ -490,14 +477,21 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
         // 更新cleanImageData
         const newCleanData = canvas.toDataURL('image/png').split(',')[1]
-        imageStore.updateCurrentImage({ cleanImageData: newCleanData })
+        if (expectedImageId) {
+          if (!updateCurrentImageIfStillCurrent(expectedImageId, { cleanImageData: newCleanData })) {
+            resolve(false)
+            return
+          }
+        } else {
+          imageStore.updateCurrentImage({ cleanImageData: newCleanData })
+        }
 
         console.log('已对气泡区域进行纯色填充:', coords, fillColor, '角度:', rotationAngle)
-        resolve()
+        resolve(true)
       }
       img.onerror = () => {
         console.error('加载基础图像失败')
-        resolve()
+        resolve(false)
       }
       img.src = baseSrc
     })
@@ -515,6 +509,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       console.warn('无法进行 OCR 识别：缺少气泡或图片数据')
       return
     }
+    const expectedImageId = image.id
+    const expectedBubble = bubble
 
     try {
       console.log(`开始 OCR 识别气泡 #${index + 1}`)
@@ -559,6 +555,10 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       )
 
       if (response.success && response.text !== undefined) {
+        if (!isSameBubbleTarget(expectedImageId, index, expectedBubble)) {
+          console.log(`OCR 识别结果已过期，忽略气泡 #${index + 1} 的更新`)
+          return
+        }
         bubbleStore.updateBubble(index, {
           originalText: response.text,
           textlines: response.textlines || bubbleTextlines,
@@ -566,11 +566,19 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         })
         console.log(`OCR 识别成功: "${response.text}"`)
       } else {
+        if (!isSameCurrentImage(expectedImageId)) {
+          console.log(`OCR 识别失败结果已过期，忽略气泡 #${index + 1} 的错误提示`)
+          return
+        }
         const errorMsg = response.error || '识别失败'
         console.error('OCR 识别失败:', errorMsg)
         showToast(errorMsg, 'error')
       }
     } catch (error) {
+      if (!isSameCurrentImage(expectedImageId)) {
+        console.log(`OCR 识别异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
+        return
+      }
       console.error('OCR 识别出错:', error)
       const errorMessage = error instanceof Error ? error.message : 'OCR 识别出错'
       showToast(errorMessage, 'error')
@@ -611,10 +619,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     // 气泡绘制
     toggleDrawingMode,
     handleDrawBubble,
-    startDrawingBox,
-    updateDrawingBox,
-    finishDrawingBox,
-    cancelDrawing,
     getDrawingRectStyle,
 
     // 气泡编辑

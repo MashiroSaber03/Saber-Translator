@@ -13,7 +13,7 @@
           class="nav-btn"
           :disabled="!canGoPrevious"
           @click="$emit('go-previous-image')"
-          title="上一张图片 (PageUp)"
+          title="上一张图片 (A)"
         >
           ◀◀
         </button>
@@ -28,7 +28,7 @@
           class="nav-btn"
           :disabled="!canGoNext"
           @click="$emit('go-next-image')"
-          title="下一张图片 (PageDown)"
+          title="下一张图片 (D)"
         >
           ▶▶
         </button>
@@ -51,7 +51,7 @@
           class="nav-btn"
           :disabled="!hasBubbles || selectedBubbleIndex <= 0"
           @click="$emit('select-previous-bubble')"
-          title="上一个气泡 (←)"
+          title="上一个气泡"
         >
           ◀
         </button>
@@ -63,7 +63,7 @@
           class="nav-btn"
           :disabled="!hasBubbles || selectedBubbleIndex >= bubbleCount - 1"
           @click="$emit('select-next-bubble')"
-          title="下一个气泡 (→)"
+          title="下一个气泡"
         >
           ▶
         </button>

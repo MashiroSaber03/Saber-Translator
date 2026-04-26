@@ -51,6 +51,10 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   /** 当前渲染的token（用于取消过期渲染） */
   let currentRenderToken: symbol | null = null
 
+  function isSameCurrentImage(expectedImageId: string): boolean {
+    return currentImage.value?.id === expectedImageId
+  }
+
   // ============================================================
   // 辅助函数
   // ============================================================
@@ -94,6 +98,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       console.warn('reRenderFullImage: 没有当前图片')
       return false
     }
+    const expectedImageId = image.id
 
     // 检查是否有气泡
     // 【复刻原版逻辑】没有气泡坐标时跳过后端渲染
@@ -104,6 +109,10 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       // 将cleanImageData作为翻译图显示（修复笔刷场景）
       const cleanBase64 = getCleanImageBase64()
       if (cleanBase64) {
+        if (!isSameCurrentImage(expectedImageId)) {
+          console.log('reRenderFullImage: 图片已切换，忽略过期的空气泡渲染结果')
+          return false
+        }
         const translatedDataURL = `data:image/png;base64,${cleanBase64}`
         imageStore.updateCurrentImage({ translatedDataURL })
         if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
@@ -180,6 +189,11 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       // 检查token是否过期（被新的渲染请求取代）
       if (currentRenderToken !== renderToken) {
         console.log('reRenderFullImage: 渲染结果已过期，忽略')
+        return false
+      }
+
+      if (!isSameCurrentImage(expectedImageId)) {
+        console.log('reRenderFullImage: 当前图片已切换，忽略过期渲染结果')
         return false
       }
 
