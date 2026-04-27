@@ -18,6 +18,7 @@ import {
   InpaintPool,
   RenderPool
 } from './pools'
+import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 /**
@@ -39,6 +40,7 @@ export class ParallelPipeline {
   private lock: DeepLearningLock
   private progressTracker: ParallelProgressTracker
   private resultCollector: ResultCollector
+  private activeTaskIndices: number[] = []
 
   private detectionPool: DetectionPool
   private ocrPool: OcrPool
@@ -55,45 +57,66 @@ export class ParallelPipeline {
     this.lock = new DeepLearningLock(config.deepLearningLockSize)
     this.progressTracker = new ParallelProgressTracker()
     this.resultCollector = new ResultCollector()
+    const imageStore = useImageStore()
+
+    const handleTaskComplete = (task: PipelineTask) => {
+      if (this.isCancelled) {
+        return
+      }
+
+      if (task.status !== 'failed') {
+        return
+      }
+
+      imageStore.setTranslationStatus(task.imageIndex, 'failed', task.error || '未知错误')
+      this.resultCollector.add(task)
+      this.progressTracker.incrementFailed()
+    }
 
     // 初始化渲染池（最后一个）
     this.renderPool = new RenderPool(
       this.progressTracker,
-      this.resultCollector
+      this.resultCollector,
+      handleTaskComplete
     )
 
     // 初始化修复池
     this.inpaintPool = new InpaintPool(
       this.renderPool,
       this.lock,
-      this.progressTracker
+      this.progressTracker,
+      handleTaskComplete
     )
 
     // 初始化翻译池（无锁）
     this.translatePool = new TranslatePool(
       this.inpaintPool,
-      this.progressTracker
+      this.progressTracker,
+      handleTaskComplete
     )
 
     // 初始化颜色池
     this.colorPool = new ColorPool(
       this.translatePool,
       this.lock,
-      this.progressTracker
+      this.progressTracker,
+      handleTaskComplete
     )
 
     // 初始化 OCR 池
     this.ocrPool = new OcrPool(
       this.colorPool,
       this.lock,
-      this.progressTracker
+      this.progressTracker,
+      handleTaskComplete
     )
 
     // 初始化检测池（入口）
     this.detectionPool = new DetectionPool(
       this.ocrPool,
       this.lock,
-      this.progressTracker
+      this.progressTracker,
+      handleTaskComplete
     )
   }
 
@@ -121,6 +144,7 @@ export class ParallelPipeline {
     mode: ParallelTranslationMode,
     startIndex: number = 0
   ): Promise<ParallelExecutionResult> {
+    const imageStore = useImageStore()
     this.reset()
     this.progressTracker.init(images.length)
     this.resultCollector.init(images.length)
@@ -135,6 +159,11 @@ export class ParallelPipeline {
       imageData,
       status: 'pending'
     }))
+    this.activeTaskIndices = tasks.map(task => task.imageIndex)
+
+    for (const task of tasks) {
+      imageStore.setTranslationStatus(task.imageIndex, 'processing')
+    }
 
     // 根据模式确定入口池
     const entryPool = this.getEntryPool(mode)
@@ -146,6 +175,7 @@ export class ParallelPipeline {
 
     // 等待所有结果
     const result = await this.resultCollector.waitForAll(images.length)
+    this.activeTaskIndices = []
 
     return {
       success: result.success,
@@ -161,7 +191,7 @@ export class ParallelPipeline {
    */
   private setupPoolChain(mode: ParallelTranslationMode, totalTasks: number): void {
     // 动态生成池子链配置
-    let chainConfig = [...POOL_CHAIN_CONFIGS[mode]]
+    const chainConfig = [...POOL_CHAIN_CONFIGS[mode]]
 
     // 消除文字模式：根据设置决定是否包含 OCR 步骤
     if (mode === 'removeText') {
@@ -242,6 +272,7 @@ export class ParallelPipeline {
    * 取消执行
    */
   cancel(): void {
+    const imageStore = useImageStore()
     this.isCancelled = true
     this.detectionPool.cancel()
     this.ocrPool.cancel()
@@ -250,6 +281,14 @@ export class ParallelPipeline {
     this.inpaintPool.cancel()
     this.renderPool.cancel()
     this.lock.reset()
+    for (const imageIndex of this.activeTaskIndices) {
+      const image = imageStore.images[imageIndex]
+      if (image?.translationStatus === 'processing') {
+        imageStore.setTranslationStatus(imageIndex, 'pending')
+      }
+    }
+    this.activeTaskIndices = []
+    this.resultCollector.finishEarly()
   }
 
   /**
@@ -257,6 +296,7 @@ export class ParallelPipeline {
    */
   private reset(): void {
     this.isCancelled = false
+    this.activeTaskIndices = []
     this.detectionPool.reset()
     this.ocrPool.reset()
     this.colorPool.reset()

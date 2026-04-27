@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
-import { createBubbleState, getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
+import { createBubbleState } from '@/utils/bubbleFactory'
 
 export interface DetectionInput {
     imageIndex: number

@@ -56,7 +56,7 @@ function mergeRenderedBubbleStates(
             return renderedState
         }
 
-        const renderedStateRecord = renderedState as Record<string, unknown>
+        const renderedStateRecord = renderedState as unknown as Record<string, unknown>
         const mergedState: BubbleState = {
             ...localState,
             ...renderedState

@@ -522,6 +522,8 @@ export const useImageStore = defineStore('image', () => {
         image.translationFailed = status === 'failed'
         if (errorMessage) {
           image.errorMessage = errorMessage
+        } else if (status !== 'failed') {
+          image.errorMessage = undefined
         }
         console.log(`图片 ${index} 翻译状态: ${status}`)
       }

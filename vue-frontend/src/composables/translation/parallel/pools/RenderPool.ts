@@ -59,6 +59,9 @@ export class RenderPool extends TaskPool {
         bubbleStates: []
       }
       task.status = 'completed'
+      if (this.isCancelled) {
+        return task
+      }
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
       this.resultCollector.add(task)
       return task
@@ -114,6 +117,9 @@ export class RenderPool extends TaskPool {
         bubbleStates: result.bubbleStates
       }
       task.status = 'completed'
+      if (this.isCancelled) {
+        return task
+      }
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
       this.resultCollector.add(task)
       return task
@@ -126,6 +132,7 @@ export class RenderPool extends TaskPool {
 
       // 构建基本的bubbleStates（包含检测框信息但无译文）
       const { textStyle } = settingsStore.settings
+      const detectionResult = task.detectionResult
       const bubbleStates = coords.map((coord, idx) => {
         const autoDir = directions[idx] || 'vertical'
         const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
@@ -165,6 +172,9 @@ export class RenderPool extends TaskPool {
         bubbleStates: bubbleStates
       }
       task.status = 'completed'
+      if (this.isCancelled) {
+        return task
+      }
       this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)
       this.resultCollector.add(task)
       return task
@@ -194,6 +204,9 @@ export class RenderPool extends TaskPool {
     }
 
     task.status = 'completed'
+    if (this.isCancelled) {
+      return task
+    }
 
     // 实时更新到界面
     this.updateImageToUI(task, imageStore, bubbleStore, settingsStore)

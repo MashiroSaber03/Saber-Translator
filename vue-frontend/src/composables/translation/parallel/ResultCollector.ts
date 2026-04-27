@@ -12,6 +12,7 @@ export class ResultCollector {
   private completedCount = 0
   private failedCount = 0
   private resolveWaitAll: ((value: { success: number; failed: number }) => void) | null = null
+  private isClosed = false
 
   /**
    * 初始化收集器
@@ -22,12 +23,17 @@ export class ResultCollector {
     this.completedCount = 0
     this.failedCount = 0
     this.resolveWaitAll = null
+    this.isClosed = false
   }
 
   /**
    * 添加完成的任务
    */
   add(task: PipelineTask): void {
+    if (this.isClosed) {
+      return
+    }
+
     // 防御性检查：如果已经添加过该任务，跳过重复计数
     // 避免因重复 enqueue 导致 completedCount 被错误增加
     if (this.results.has(task.imageIndex)) {
@@ -44,6 +50,7 @@ export class ResultCollector {
 
     // 检查是否全部完成
     if (this.completedCount + this.failedCount >= this.totalExpected) {
+      this.isClosed = true
       if (this.resolveWaitAll) {
         this.resolveWaitAll({
           success: this.completedCount,
@@ -72,6 +79,24 @@ export class ResultCollector {
     return new Promise(resolve => {
       this.resolveWaitAll = resolve
     })
+  }
+
+  /**
+   * 提前结束等待（用于取消场景）
+   */
+  finishEarly(): { success: number; failed: number } {
+    this.isClosed = true
+    const summary = {
+      success: this.completedCount,
+      failed: this.failedCount
+    }
+
+    if (this.resolveWaitAll) {
+      this.resolveWaitAll(summary)
+      this.resolveWaitAll = null
+    }
+
+    return summary
   }
 
   /**
@@ -124,5 +149,6 @@ export class ResultCollector {
     this.completedCount = 0
     this.failedCount = 0
     this.resolveWaitAll = null
+    this.isClosed = false
   }
 }

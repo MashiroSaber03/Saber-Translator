@@ -103,6 +103,20 @@ describe('imageStore', () => {
             expect(store.currentImage?.textAlign).toBe(TEXT_STYLE_DEFAULTS.textAlign)
             expect(store.currentImage?.useAutoTextColor).toBe(TEXT_STYLE_DEFAULTS.useAutoTextColor)
         })
+
+        it('从 failed 切回 processing 时应清除旧的错误信息', () => {
+            const store = useImageStore()
+            store.addImage('test.png', 'data:image/png;base64,mockdata')
+
+            store.setTranslationStatus(0, 'failed', 'boom')
+            expect(store.currentImage?.errorMessage).toBe('boom')
+
+            store.setTranslationStatus(0, 'processing')
+
+            expect(store.currentImage?.translationStatus).toBe('processing')
+            expect(store.currentImage?.translationFailed).toBe(false)
+            expect(store.currentImage?.errorMessage).toBeUndefined()
+        })
     })
 
     describe('尺寸管理', () => {

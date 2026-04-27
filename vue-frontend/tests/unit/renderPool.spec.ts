@@ -169,4 +169,129 @@ describe('RenderPool standard mode', () => {
     await expect((pool as any).process(task)).resolves.toBe(task)
     expect(executeRenderMock).toHaveBeenCalledOnce()
   })
+
+  it('should complete removeText tasks without requiring a translate result', async () => {
+    const { RenderPool } = await import('@/composables/translation/parallel/pools/RenderPool')
+
+    const progressTracker = { incrementCompleted: vi.fn() } as any
+    const resultCollector = { add: vi.fn() } as any
+    const pool = new RenderPool(progressTracker, resultCollector)
+
+    const task = {
+      imageIndex: 0,
+      imageData: {
+        originalDataURL: 'data:image/png;base64,abc',
+        translatedDataURL: null,
+        cleanImageData: null,
+        userMask: null,
+        bubbleStates: null,
+        fontSize: 16,
+        autoFontSize: false,
+        fontFamily: 'fonts/STSONG.TTF',
+        layoutDirection: 'auto',
+        textColor: '#000000',
+        fillColor: '#ffffff',
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        useAutoTextColor: false
+      },
+      status: 'processing',
+      detectionResult: {
+        bubbleCoords: [[0, 0, 10, 10]],
+        bubbleAngles: [0],
+        autoDirections: ['vertical'],
+        textlinesPerBubble: [[{
+          polygon: [[0, 0], [10, 0], [10, 10], [0, 10]],
+          direction: 'h',
+          confidence: 0.9
+        }]]
+      },
+      ocrResult: {
+        originalTexts: ['原文'],
+        ocrResults: [{
+          text: '原文',
+          confidence: 0.8,
+          confidenceSupported: true,
+          engine: '48px_ocr',
+          primaryEngine: '48px_ocr',
+          fallbackUsed: false
+        }]
+      },
+      inpaintResult: {
+        cleanImage: 'clean-image'
+      }
+    } as any
+
+    await expect((pool as any).process(task)).resolves.toBe(task)
+    expect(executeRenderMock).not.toHaveBeenCalled()
+    expect(task.status).toBe('completed')
+    expect(resultCollector.add).toHaveBeenCalledWith(task)
+    expect(imageStoreMock.updateImageByIndex).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({
+        translatedDataURL: 'data:image/png;base64,clean-image',
+        translationStatus: 'completed'
+      })
+    )
+  })
+
+  it('should not update UI after the render pool has been cancelled', async () => {
+    const { RenderPool } = await import('@/composables/translation/parallel/pools/RenderPool')
+
+    const progressTracker = { incrementCompleted: vi.fn() } as any
+    const resultCollector = { add: vi.fn() } as any
+    const pool = new RenderPool(progressTracker, resultCollector)
+    pool.cancel()
+
+    const task = {
+      imageIndex: 0,
+      imageData: {
+        originalDataURL: 'data:image/png;base64,abc',
+        translatedDataURL: null,
+        cleanImageData: null,
+        userMask: null,
+        bubbleStates: null,
+        fontSize: 16,
+        autoFontSize: false,
+        fontFamily: 'fonts/STSONG.TTF',
+        layoutDirection: 'auto',
+        textColor: '#000000',
+        fillColor: '#ffffff',
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        useAutoTextColor: false
+      },
+      status: 'processing',
+      detectionResult: {
+        bubbleCoords: [[0, 0, 10, 10]],
+        bubbleAngles: [0],
+        autoDirections: ['vertical'],
+        textlinesPerBubble: [[{
+          polygon: [[0, 0], [10, 0], [10, 10], [0, 10]],
+          direction: 'h',
+          confidence: 0.9
+        }]]
+      },
+      ocrResult: {
+        originalTexts: ['原文'],
+        ocrResults: []
+      },
+      inpaintResult: {
+        cleanImage: 'clean-image'
+      }
+    } as any
+
+    await expect((pool as any).process(task)).resolves.toBe(task)
+    expect(imageStoreMock.updateImageByIndex).not.toHaveBeenCalled()
+    expect(resultCollector.add).not.toHaveBeenCalled()
+  })
+
 })
