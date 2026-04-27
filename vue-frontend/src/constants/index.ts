@@ -3,12 +3,6 @@
  * 与后端 constants.js 保持一致
  */
 
-import {
-  getProviderOptionsForCapability,
-  isLocalProviderId,
-  providerSupportsCapability
-} from '@/config/aiProviders'
-
 // ============================================================
 // 默认提示词常量
 // ============================================================
@@ -307,59 +301,6 @@ export const STORAGE_KEY_MANGA_NOTES_PREFIX = 'manga_notes_'
 export const STORAGE_KEY_PROVIDER_CONFIGS = 'providerConfigs'
 
 // ============================================================
-// 翻译服务商常量
-// ============================================================
-
-/**
- * 翻译服务商列表
- * 包含所有支持的翻译服务商
- */
-export const TRANSLATE_PROVIDERS = getProviderOptionsForCapability('translation').map(option => ({
-  ...option,
-  type: isLocalProviderId(option.value) ? 'local' : option.value === 'custom' ? 'custom' : 'cloud'
-}))
-
-/** 翻译服务商值类型 */
-export type TranslateProviderValue = (typeof TRANSLATE_PROVIDERS)[number]['value']
-
-/**
- * 高质量翻译服务商列表
- * 仅包含支持高质量翻译的服务商
- */
-export const HQ_TRANSLATE_PROVIDERS = getProviderOptionsForCapability('hqTranslation')
-
-/** 高质量翻译服务商值类型 */
-export type HqTranslateProviderValue = (typeof HQ_TRANSLATE_PROVIDERS)[number]['value']
-
-/**
- * 本地翻译服务商列表
- * 不需要 API Key 的本地服务
- */
-export const LOCAL_TRANSLATE_PROVIDERS = TRANSLATE_PROVIDERS
-  .filter(provider => provider.type === 'local')
-  .map(provider => provider.value)
-
-/**
- * 不支持 RPM 限制的服务商列表
- * 这些服务商不需要设置请求频率限制
- */
-export const NO_RPM_LIMIT_PROVIDERS = [
-  'ollama',
-  'sakura',
-  'caiyun',
-  'baidu_translate',
-  'youdao_translate'
-] as const
-
-/**
- * 支持获取模型列表的服务商
- * 这些服务商可以通过 API 获取可用模型列表
- */
-export const SUPPORTS_FETCH_MODELS_PROVIDERS = TRANSLATE_PROVIDERS
-  .filter(provider => providerSupportsCapability(provider.value, 'modelFetch') && !isLocalProviderId(provider.value))
-  .map(provider => provider.value)
-
-// ============================================================
 // OCR 引擎常量
 // ============================================================
 
@@ -374,9 +315,6 @@ export const OCR_ENGINES = [
   { value: 'ai_vision', label: 'AI视觉OCR (云端)', type: 'cloud', description: '支持多服务商' }
 ] as const
 
-/** OCR 引擎值类型 */
-export type OcrEngineValue = (typeof OCR_ENGINES)[number]['value']
-
 /**
  * 文字检测器列表
  * 用于检测图片中的文字区域
@@ -387,19 +325,6 @@ export const TEXT_DETECTORS = [
   { value: 'default', label: 'Default (DBNet)' }
 ] as const
 
-/** 文字检测器值类型 */
-export type TextDetectorValue = (typeof TEXT_DETECTORS)[number]['value']
-
-/**
- * AI 视觉 OCR 服务商列表
- * 支持 AI 视觉 OCR 的云服务商
- */
-export const AI_VISION_OCR_PROVIDERS = getProviderOptionsForCapability('visionOcr')
-
-/** AI 视觉 OCR 服务商值类型 */
-export type AiVisionOcrProviderValue = (typeof AI_VISION_OCR_PROVIDERS)[number]['value']
-
-// ============================================================
 // 取消思考方法常量
 // ============================================================
 
@@ -411,9 +336,6 @@ export const NO_THINKING_METHODS = [
   { value: 'gemini', label: 'Gemini风格 (reasoning_effort=low)' },
   { value: 'volcano', label: '火山引擎风格 (thinking=null)' }
 ] as const
-
-/** 取消思考方法值类型 */
-export type NoThinkingMethodValue = (typeof NO_THINKING_METHODS)[number]['value']
 
 // ============================================================
 // 网页导入常量

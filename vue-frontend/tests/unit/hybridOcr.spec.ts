@@ -71,6 +71,9 @@ describe('hybrid OCR settings', () => {
         provider: 'custom_openai_vision',
         rpmLimit: 0,
         minImageSize: 0
+      },
+      proofreading: {
+        maxRetries: 0
       }
     })
 
@@ -86,5 +89,6 @@ describe('hybrid OCR settings', () => {
     expect(store.settings.aiVisionOcr.provider).toBe('custom')
     expect(store.settings.aiVisionOcr.rpmLimit).toBe(0)
     expect(store.settings.aiVisionOcr.minImageSize).toBe(0)
+    expect(store.settings.proofreading.maxRetries).toBe(0)
   })
 })

@@ -233,7 +233,7 @@ export class TranslatePool extends TaskPool {
       force_json_output: hqTranslation.forceJsonOutput,
       no_thinking_method: hqTranslation.noThinkingMethod,
       use_stream: hqTranslation.useStream,
-      max_retries: hqTranslation.maxRetries || 2
+      max_retries: hqTranslation.maxRetries ?? 2
     })
 
     // 4. 解析结果
@@ -330,7 +330,7 @@ export class TranslatePool extends TaskPool {
         force_json_output: round.forceJsonOutput,
         no_thinking_method: round.noThinkingMethod,
         use_stream: round.useStream ?? true,
-        max_retries: round.maxRetries || proofreading.maxRetries || 2
+        max_retries: round.maxRetries ?? proofreading.maxRetries ?? 2
       })
 
       const parsedResult = this.parseHqResponse(response, round.forceJsonOutput)

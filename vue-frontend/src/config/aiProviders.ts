@@ -223,6 +223,10 @@ export function isLocalProviderId(provider: string): boolean {
   return Boolean(getProviderManifest(provider)?.isLocal)
 }
 
+export function providerSupportsRpmLimit(provider: string): boolean {
+  return getProviderManifest(provider)?.kind === 'openai_compatible'
+}
+
 export function getProviderDisplayName(provider: string): string {
   return getProviderManifest(provider)?.label || provider
 }

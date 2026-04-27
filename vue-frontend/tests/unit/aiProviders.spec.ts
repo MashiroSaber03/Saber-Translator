@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getProviderOptionsForCapability,
+  providerSupportsRpmLimit,
   normalizeProviderId,
   providerRequiresBaseUrl,
   providerSupportsCapability
@@ -25,5 +26,12 @@ describe('translation page AI provider manifest', () => {
     const options = getProviderOptionsForCapability('visionOcr')
     expect(options.map(option => option.value)).not.toContain('deepseek')
     expect(options.map(option => option.value)).toContain('custom')
+  })
+
+  it('derives RPM-limit visibility from the shared provider manifest', () => {
+    expect(providerSupportsRpmLimit('siliconflow')).toBe(true)
+    expect(providerSupportsRpmLimit('custom')).toBe(true)
+    expect(providerSupportsRpmLimit('ollama')).toBe(false)
+    expect(providerSupportsRpmLimit('caiyun')).toBe(false)
   })
 })

@@ -7,6 +7,11 @@
 import { ref, computed, shallowRef, reactive } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import {
+  providerRequiresApiKey,
+  providerRequiresBaseUrl,
+  providerSupportsCapability
+} from '@/config/aiProviders'
 import { ParallelPipeline, createParallelPipeline } from './ParallelPipeline'
 import type { ParallelTranslationMode, ParallelExecutionResult, ParallelProgress } from './types'
 
@@ -61,11 +66,14 @@ export function useParallelTranslation() {
       return 'proofread'
     }
 
-    // 检查是否使用高质量翻译（根据provider判断）
-    const hqProviders = ['gemini', 'openai', 'claude', 'deepseek']
-    if (hqProviders.includes(settings.hqTranslation?.provider || '')) {
-      // 检查是否配置了高质量翻译API
-      if (settings.hqTranslation?.apiKey) {
+    // 检查是否使用高质量翻译（通过共享 provider manifest 判断）
+    const hqProvider = settings.hqTranslation?.provider || ''
+    if (providerSupportsCapability(hqProvider, 'hqTranslation')) {
+      const hasApiKey = !providerRequiresApiKey(hqProvider) || Boolean(settings.hqTranslation?.apiKey?.trim())
+      const hasModelName = Boolean(settings.hqTranslation?.modelName?.trim())
+      const hasBaseUrl = !providerRequiresBaseUrl(hqProvider) || Boolean(settings.hqTranslation?.customBaseUrl?.trim())
+
+      if (hasApiKey && hasModelName && hasBaseUrl) {
         return 'hq'
       }
     }

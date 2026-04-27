@@ -229,6 +229,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
+  providerSupportsRpmLimit,
   getProviderOptionsForCapability,
   isLocalProviderId,
   normalizeProviderId,
@@ -321,7 +322,7 @@ const isLocalProvider = computed(() => {
 
 // 计算属性：是否显示RPM限制
 const showRpmLimit = computed(() => {
-  return !['ollama', 'sakura', 'caiyun', 'baidu_translate', 'youdao_translate'].includes(localSettings.value.modelProvider)
+  return providerSupportsRpmLimit(localSettings.value.modelProvider)
 })
 
 // 计算属性：是否支持获取模型列表

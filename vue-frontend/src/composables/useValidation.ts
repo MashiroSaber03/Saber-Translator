@@ -106,7 +106,7 @@ export function useValidation() {
    * @returns 服务商显示名称
    */
   function getProviderDisplayName(provider: string): string {
-    return getProviderDisplayNameFromManifest(normalizeProviderId(provider))
+    return getProviderDisplayNameFromManifest(provider)
   }
 
   /**
@@ -115,7 +115,7 @@ export function useValidation() {
    * @returns 是否需要 API Key
    */
   function requiresApiKey(provider: TranslationProvider): boolean {
-    return providerRequiresApiKey(normalizeProviderId(provider))
+    return providerRequiresApiKey(provider)
   }
 
   /**
@@ -124,7 +124,7 @@ export function useValidation() {
    * @returns 是否为本地服务商
    */
   function isLocalProvider(provider: TranslationProvider): boolean {
-    return isLocalProviderId(normalizeProviderId(provider))
+    return isLocalProviderId(provider)
   }
 
   /**
@@ -133,7 +133,7 @@ export function useValidation() {
    * @returns 是否需要自定义 Base URL
    */
   function requiresBaseUrl(provider: TranslationProvider): boolean {
-    return providerRequiresBaseUrl(normalizeProviderId(provider))
+    return providerRequiresBaseUrl(provider)
   }
 
   /**
@@ -142,7 +142,7 @@ export function useValidation() {
    * @returns 是否需要自定义 Base URL
    */
   function hqRequiresBaseUrl(provider: HqTranslationProvider): boolean {
-    return providerRequiresBaseUrl(normalizeProviderId(provider))
+    return providerRequiresBaseUrl(provider)
   }
 
   // ============================================================

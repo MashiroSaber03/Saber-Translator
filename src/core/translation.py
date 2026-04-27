@@ -764,12 +764,12 @@ def translate_text_list(texts, target_language, model_provider,
         return final_translations
     
     # 检查是否为支持批量翻译的提供商 (LLM)
-    llm_providers = {
-        provider_id for provider_id in ['siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'gemini', 'custom']
-        if provider_supports_capability(provider_id, TRANSLATION_CAPABILITY)
-    }
-    
-    if canonical_provider in llm_providers and canonical_provider not in {'caiyun', constants.BAIDU_TRANSLATE_ENGINE_ID, constants.YOUDAO_TRANSLATE_ENGINE_ID}:
+    supports_batch_translation = (
+        provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY)
+        and get_provider_manifest(canonical_provider).kind != 'adapter'
+    )
+
+    if supports_batch_translation:
         # --- rpm 限制 ---
         _enforce_rpm_limit(
             rpm_limit_translation,

@@ -280,7 +280,7 @@ export const useSettingsStore = defineStore('settings', () => {
     delete (settings.value.hybridOcr as Record<string, unknown>).thresholdPaddleOcr
 
     const pr = settings.value.proofreading
-    pr.maxRetries = Number(pr.maxRetries) || DEFAULT_PROOFREADING_MAX_RETRIES
+    pr.maxRetries = parseNumberOrFallback(pr.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
 
     // 迁移旧版服务商名称
     if ((tr.provider as string) === 'baidu') {

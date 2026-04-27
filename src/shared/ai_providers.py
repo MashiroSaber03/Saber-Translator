@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, Iterable, List, Optional
+from typing import Dict, FrozenSet, Optional
 
 
 TRANSLATION_CAPABILITY = "translation"
@@ -230,14 +230,6 @@ def provider_supports_capability(provider: Optional[str], capability: str) -> bo
     return capability in manifest.capabilities if manifest else False
 
 
-def get_providers_for_capability(capability: str) -> List[str]:
-    return [
-        provider_id
-        for provider_id, manifest in _PROVIDERS.items()
-        if capability in manifest.capabilities
-    ]
-
-
 def resolve_provider_base_url(provider: Optional[str], custom_base_url: Optional[str] = None) -> Optional[str]:
     manifest = get_provider_manifest(provider)
     if manifest.id == "custom":
@@ -250,7 +242,3 @@ def is_openai_compatible_provider(provider: Optional[str]) -> bool:
         return get_provider_manifest(provider).kind == "openai_compatible"
     except ValueError:
         return False
-
-
-def iter_provider_manifests() -> Iterable[ProviderManifest]:
-    return _PROVIDERS.values()

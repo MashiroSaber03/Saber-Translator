@@ -113,16 +113,20 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
 
     // 3. 获取配置
     const aiConfig = isProofread ? settings.proofreading.rounds[0] : settings.hqTranslation
+    const hqConfig = settings.hqTranslation
+    const roundConfig = isProofread ? aiConfig : null
     const prompt = isProofread ? aiConfig?.prompt : settings.hqTranslation.prompt
     const systemPrompt = isProofread
         ? '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。'
         : '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。'
+    const requestProvider = isProofread ? (roundConfig?.provider ?? '') : (hqConfig.provider ?? '')
+    const requestMaxRetries = isProofread
+        ? (roundConfig?.maxRetries ?? settings.proofreading.maxRetries ?? 2)
+        : (hqConfig.maxRetries ?? 2)
 
     // 4. 调用 API - 第一轮
-    const hqConfig = settings.hqTranslation
-    const roundConfig = isProofread ? aiConfig : null
     const response = await hqTranslateBatch({
-        provider: (isProofread ? roundConfig?.provider : hqConfig.provider) || 'openai',
+        provider: requestProvider,
         api_key: (isProofread ? roundConfig?.apiKey : hqConfig.apiKey) || '',
         model_name: (isProofread ? roundConfig?.modelName : hqConfig.modelName) || '',
         custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
@@ -138,7 +142,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
         no_thinking_method: isProofread ? roundConfig?.noThinkingMethod : hqConfig.noThinkingMethod,
         use_stream: isProofread ? (roundConfig?.useStream ?? true) : hqConfig.useStream,
-        max_retries: isProofread ? (settings.proofreading.maxRetries || 2) : (hqConfig.maxRetries || 2)
+        max_retries: requestMaxRetries
     })
 
     // 5. 解析结果
@@ -168,7 +172,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 force_json_output: round.forceJsonOutput,
                 no_thinking_method: round.noThinkingMethod,
                 use_stream: round.useStream ?? true,
-                max_retries: round.maxRetries || settings.proofreading.maxRetries || 2
+                max_retries: round.maxRetries ?? settings.proofreading.maxRetries ?? 2
             })
 
             const roundResult = parseHqResponse(roundResponse, round.forceJsonOutput)

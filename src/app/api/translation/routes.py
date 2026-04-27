@@ -21,7 +21,14 @@ from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
 from src.plugins.manager import apply_after_ocr_hooks
-from src.shared.ai_providers import normalize_provider_id
+from src.shared.ai_providers import (
+    HQ_TRANSLATION_CAPABILITY,
+    TRANSLATION_CAPABILITY,
+    get_provider_manifest,
+    normalize_provider_id,
+    provider_supports_capability,
+    resolve_provider_base_url,
+)
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
@@ -883,16 +890,20 @@ def route_translate_single_text():
         if not all([original_text, target_language, model_provider]):
             return jsonify({'error': '缺少必要的参数 (原文、目标语言、服务商)'}), 400
 
-        # 参数检查
-        if model_provider == 'custom':
-            if not api_key:
-                return jsonify({'error': '自定义服务需要API Key'}), 400
-            if not model_name:
-                return jsonify({'error': '自定义服务需要模型名称'}), 400
-            if not custom_base_url:
-                return jsonify({'error': '自定义服务需要Base URL'}), 400
-        elif model_provider not in ['ollama', 'sakura'] and not api_key:
-            return jsonify({'error': '非本地部署模式下必须提供API Key'}), 400
+        if not provider_supports_capability(model_provider, TRANSLATION_CAPABILITY):
+            return jsonify({'error': f'不支持的服务商: {model_provider}'}), 400
+
+        try:
+            manifest = get_provider_manifest(model_provider)
+        except ValueError:
+            return jsonify({'error': f'不支持的服务商: {model_provider}'}), 400
+
+        if manifest.requires_api_key and not api_key:
+            return jsonify({'error': f'{manifest.display_name}需要API Key'}), 400
+        if manifest.requires_model and not model_name:
+            return jsonify({'error': f'{manifest.display_name}需要模型名称'}), 400
+        if manifest.requires_base_url and not custom_base_url:
+            return jsonify({'error': f'{manifest.display_name}需要Base URL'}), 400
 
         try:
             # 构建日志信息
@@ -933,7 +944,6 @@ def hq_translate_batch():
     支持流式调用以避免长时间请求超时
     """
     import json as json_module
-    import httpx
     import time  # 用于重试等待
     
     try:
@@ -995,20 +1005,18 @@ def hq_translate_batch():
         
         if provider == 'custom' and not custom_base_url:
             return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
-        
-        # 根据服务商设置 base_url
-        base_url_map = {
-            'siliconflow': 'https://api.siliconflow.cn/v1',
-            'deepseek': 'https://api.deepseek.com/v1',
-            'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            'custom': custom_base_url
-        }
-        
-        base_url = base_url_map.get(provider)
-        if not base_url:
+
+        if not provider_supports_capability(provider, HQ_TRANSLATION_CAPABILITY):
             return jsonify({'error': f'不支持的服务商: {provider}'}), 400
-        
+
+        try:
+            base_url = resolve_provider_base_url(provider, custom_base_url)
+        except ValueError:
+            return jsonify({'error': f'不支持的服务商: {provider}'}), 400
+
+        if not base_url:
+            return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
+
         logger.info(f"使用 base_url: {base_url}")
         
         

@@ -3,14 +3,16 @@ AI视觉OCR服务接口模块：用于调用不同服务商的视觉API进行OCR
 """
 
 import logging
-import requests
-import json
 import time
-from io import BytesIO
 from PIL import Image
 
 from src.shared import constants
-from src.shared.ai_providers import normalize_provider_id, provider_supports_capability
+from src.shared.ai_providers import (
+    VISION_OCR_CAPABILITY,
+    normalize_provider_id,
+    provider_supports_capability,
+    resolve_provider_base_url,
+)
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedVisionRequest
 from src.shared.image_helpers import image_to_base64
 
@@ -18,55 +20,10 @@ from src.shared.image_helpers import image_to_base64
 logger = logging.getLogger("VisionInterface")
 _transport = OpenAICompatibleChatTransport()
 
-# VVVVVV 新增：通用的 OpenAI 兼容视觉 API 调用函数 VVVVVV
-def _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt, base_url_to_use, service_friendly_name, start_time, use_json_format=False):
-    """
-    通用的 OpenAI 兼容视觉 API 调用函数。
-    """
-    logger.info(f"开始调用 {service_friendly_name} 视觉API (通过 OpenAI SDK)，模型: {model_name}, BaseURL: {base_url_to_use}")
-    try:
-        if not base_url_to_use: # 增加对 base_url_to_use 的检查
-            logger.error(f"调用 {service_friendly_name} 失败：未提供 Base URL。")
-            return ""
-
-        content = _transport.complete_vision(
-            UnifiedVisionRequest(
-                provider=service_friendly_name,
-                api_key=api_key,
-                model=model_name,
-                prompt=prompt,
-                image_base64=image_base64,
-                base_url=base_url_to_use,
-                timeout=120.0,
-                use_json_format=use_json_format,
-            )
-        )
-        if content:
-            elapsed_time = time.time() - start_time
-            logger.info(f"{service_friendly_name} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
-            logger.info(f"识别结果 (前100字符): {content[:100]}")
-            return content.strip()
-        else:
-            logger.error(f"{service_friendly_name} 响应格式异常或无有效结果")
-            return ""
-    except Exception as e:
-        logger.error(f"调用 {service_friendly_name} 视觉API ({base_url_to_use}) 时发生异常: {e}", exc_info=True)
-        # 记录更详细的错误响应 (如果可用)
-        if hasattr(e, 'response') and e.response is not None:
-            try:
-                error_detail = e.response.json()
-                logger.error(f"{service_friendly_name} API 错误详情: {error_detail}")
-            except json.JSONDecodeError:
-                logger.error(f"{service_friendly_name} API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
-        return ""
-# ^^^^^^ 结束新增辅助函数 ^^^^^^
-
 
 def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
                                prompt_mode: str = 'normal', use_json_format: bool = False,
-                               # VVVVVV 新增 custom_base_url 参数 VVVVVV
                                custom_base_url=None):
-                               # ^^^^^^ 结束新增 ^^^^^^
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
@@ -89,49 +46,50 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
 
     try:
         provider_lower = normalize_provider_id(provider)
-        if not provider_supports_capability(provider_lower, "vision_ocr"):
+        if not provider_supports_capability(provider_lower, VISION_OCR_CAPABILITY):
             logger.error(f"不支持的AI视觉OCR服务提供商: {provider}")
             return ""
+
+        resolved_base_url = resolve_provider_base_url(provider_lower, custom_base_url)
+        if not resolved_base_url:
+            logger.error(f"未提供 {provider_lower} 的 Base URL")
+            return ""
+
         logger.info(
             "[AI视觉OCR-请求] provider=%s, model=%s, prompt_mode=%s, json_mode=%s, base_url=%s",
             provider_lower,
             model_name,
             prompt_mode,
             use_json_format,
-            custom_base_url if provider_lower == 'custom' else '(provider default)',
+            resolved_base_url,
         )
         logger.info("[AI视觉OCR-请求] 实际提示词开始\n%s\n[AI视觉OCR-请求] 实际提示词结束", prompt)
-        if provider_lower == 'siliconflow':
-            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
-                                                   "https://api.siliconflow.cn/v1",
-                                                   "siliconflow", start_time, use_json_format)
-        elif provider_lower == 'volcano':
-            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
-                                                   "https://ark.cn-beijing.volces.com/api/v3",
-                                                   "volcano", start_time, use_json_format)
-        elif provider_lower == 'gemini':
-            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
-                                                   "https://generativelanguage.googleapis.com/v1beta/openai/",
-                                                   "gemini", start_time, use_json_format)
-        elif provider_lower == 'custom':
-            if not custom_base_url: # 检查 custom_base_url
-                logger.error(f"未提供自定义AI视觉OCR服务的Base URL (provider: {provider})")
-                return ""
-            return _call_generic_openai_vision_api(image_base64, api_key, model_name, prompt,
-                                                    custom_base_url, # <<< 使用传入的自定义 Base URL
-                                                    "custom", start_time, use_json_format)
-        else:
-            logger.error(f"不支持的AI视觉OCR服务提供商: {provider}")
+        content = _transport.complete_vision(
+            UnifiedVisionRequest(
+                provider=provider_lower,
+                api_key=api_key,
+                model=model_name,
+                prompt=prompt,
+                image_base64=image_base64,
+                base_url=custom_base_url if provider_lower == 'custom' else None,
+                timeout=120.0,
+                use_json_format=use_json_format,
+            )
+        )
+        if not content:
+            logger.error(f"{provider_lower} 响应格式异常或无有效结果")
             return ""
-    except Exception as e: # 捕获 call_xxx 函数可能抛出的其他未预料错误
+
+        elapsed_time = time.time() - start_time
+        logger.info(f"{provider_lower} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
+        logger.info(f"识别结果 (前100字符): {content[:100]}")
+        return content.strip()
+    except Exception as e:
         logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)
         return ""
 
-# 更新 test_ai_vision_ocr 函数签名和内部调用
 def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
-                       # VVVVVV 新增 custom_base_url 参数 VVVVVV
                        custom_base_url=None):
-                       # ^^^^^^ 结束新增 ^^^^^^
     try:
         # 加载图片
         with Image.open(image_path) as img:
