@@ -32,7 +32,7 @@
       </div>
 
       <!-- 自定义Base URL -->
-      <div v-show="hqSettings.provider === 'custom_openai'" class="settings-item">
+      <div v-show="providerRequiresBaseUrl(hqSettings.provider)" class="settings-item">
         <label for="settingsHqCustomBaseUrl">Base URL:</label>
         <input
           type="text"
@@ -163,6 +163,13 @@
  * 管理高质量翻译服务配置
  */
 import { ref, computed, watch } from 'vue'
+import {
+  getProviderDisplayName as getProviderDisplayNameFromManifest,
+  getProviderOptionsForCapability,
+  normalizeProviderId,
+  providerRequiresBaseUrl,
+  providerSupportsCapability
+} from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -171,13 +178,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
-const providerOptions = [
-  { label: 'SiliconFlow', value: 'siliconflow' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: '火山引擎', value: 'volcano' },
-  { label: 'Google Gemini', value: 'gemini' },
-  { label: '自定义 OpenAI 兼容服务', value: 'custom_openai' }
-]
+const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
 /** 取消思考方法选项 */
 const noThinkingMethodOptions = [
@@ -294,14 +295,7 @@ function syncLocalHqSettings() {
 
 // 获取服务商显示名称（与原版一致）
 function getProviderDisplayName(provider: string): string {
-  const names: Record<string, string> = {
-    'siliconflow': 'SiliconFlow',
-    'deepseek': 'DeepSeek',
-    'volcano': '火山引擎',
-    'gemini': 'Google Gemini',
-    'custom_openai': '自定义OpenAI'
-  }
-  return names[provider] || provider
+  return getProviderDisplayNameFromManifest(provider)
 }
 
 // 获取模型列表（复刻原版 doFetchModels 逻辑）
@@ -317,14 +311,13 @@ async function fetchModels() {
   }
 
   // 检查是否支持模型获取
-  const supportedProviders = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai']
-  if (!supportedProviders.includes(provider)) {
+  if (!providerSupportsCapability(provider, 'modelFetch')) {
     toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
     return
   }
 
   // 自定义服务需要 base_url
-  if (provider === 'custom_openai' && !baseUrl) {
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
   }
@@ -366,7 +359,7 @@ async function testConnection() {
   }
 
   // 自定义服务需要 base_url
-  if (provider === 'custom_openai' && !baseUrl) {
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要填写 Base URL')
     return
   }

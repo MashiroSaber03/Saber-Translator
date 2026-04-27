@@ -3,6 +3,7 @@
  * 提取自 SequentialPipeline.ts Line 289-325
  */
 import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
+import { normalizeProviderId } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
@@ -58,11 +59,13 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
         baidu_secret_key: settings.baiduOcr?.secretKey,
         baidu_version: settings.baiduOcr?.version,
         baidu_ocr_language: settings.baiduOcr?.sourceLanguage,
-        ai_vision_provider: settings.aiVisionOcr?.provider,
+        ai_vision_provider: normalizeProviderId(settings.aiVisionOcr?.provider),
         ai_vision_api_key: settings.aiVisionOcr?.apiKey,
         ai_vision_model_name: settings.aiVisionOcr?.modelName,
         ai_vision_ocr_prompt: settings.aiVisionOcr?.prompt,
+        ai_vision_prompt_mode: settings.aiVisionOcr?.promptMode,
         custom_ai_vision_base_url: settings.aiVisionOcr?.customBaseUrl,
+        use_json_format_for_ai_vision: settings.aiVisionOcr?.isJsonMode,
         enable_hybrid_ocr: settings.hybridOcr?.enabled,
         secondary_ocr_engine: settings.hybridOcr?.secondaryEngine,
         hybrid_ocr_threshold: settings.hybridOcr?.confidenceThreshold,

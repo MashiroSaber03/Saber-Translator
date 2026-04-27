@@ -42,6 +42,7 @@ export interface AiVisionOcrProviderConfig {
   modelName?: string
   customBaseUrl?: string
   prompt?: string
+  promptMode?: 'normal' | 'json' | 'paddleocr_vl'
   rpmLimit?: number
   isJsonMode?: boolean
   /** 最小图片尺寸 */

@@ -3,6 +3,12 @@
  * 与后端 constants.js 保持一致
  */
 
+import {
+  getProviderOptionsForCapability,
+  isLocalProviderId,
+  providerSupportsCapability
+} from '@/config/aiProviders'
+
 // ============================================================
 // 默认提示词常量
 // ============================================================
@@ -203,7 +209,7 @@ export const DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE = 32
 // ============================================================
 
 /** 自定义 AI 视觉 OCR 服务商 ID（前端使用） */
-export const CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND = 'custom_openai_vision'
+export const CUSTOM_AI_VISION_PROVIDER_ID_FRONTEND = 'custom'
 
 // ============================================================
 // 文本描边默认值常量
@@ -308,18 +314,10 @@ export const STORAGE_KEY_PROVIDER_CONFIGS = 'providerConfigs'
  * 翻译服务商列表
  * 包含所有支持的翻译服务商
  */
-export const TRANSLATE_PROVIDERS = [
-  { value: 'siliconflow', label: 'SiliconFlow', type: 'cloud' },
-  { value: 'deepseek', label: 'DeepSeek', type: 'cloud' },
-  { value: 'volcano', label: '火山引擎', type: 'cloud' },
-  { value: 'caiyun', label: '彩云小译', type: 'cloud' },
-  { value: 'baidu_translate', label: '百度翻译', type: 'cloud' },
-  { value: 'youdao_translate', label: '有道翻译', type: 'cloud' },
-  { value: 'gemini', label: 'Google Gemini', type: 'cloud' },
-  { value: 'ollama', label: 'Ollama (本地)', type: 'local' },
-  { value: 'sakura', label: 'Sakura (本地)', type: 'local' },
-  { value: 'custom_openai', label: '自定义 OpenAI 兼容服务', type: 'custom' }
-] as const
+export const TRANSLATE_PROVIDERS = getProviderOptionsForCapability('translation').map(option => ({
+  ...option,
+  type: isLocalProviderId(option.value) ? 'local' : option.value === 'custom' ? 'custom' : 'cloud'
+}))
 
 /** 翻译服务商值类型 */
 export type TranslateProviderValue = (typeof TRANSLATE_PROVIDERS)[number]['value']
@@ -328,13 +326,7 @@ export type TranslateProviderValue = (typeof TRANSLATE_PROVIDERS)[number]['value
  * 高质量翻译服务商列表
  * 仅包含支持高质量翻译的服务商
  */
-export const HQ_TRANSLATE_PROVIDERS = [
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'volcano', label: '火山引擎' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'custom_openai', label: '自定义 OpenAI 兼容服务' }
-] as const
+export const HQ_TRANSLATE_PROVIDERS = getProviderOptionsForCapability('hqTranslation')
 
 /** 高质量翻译服务商值类型 */
 export type HqTranslateProviderValue = (typeof HQ_TRANSLATE_PROVIDERS)[number]['value']
@@ -343,7 +335,9 @@ export type HqTranslateProviderValue = (typeof HQ_TRANSLATE_PROVIDERS)[number]['
  * 本地翻译服务商列表
  * 不需要 API Key 的本地服务
  */
-export const LOCAL_TRANSLATE_PROVIDERS = ['ollama', 'sakura'] as const
+export const LOCAL_TRANSLATE_PROVIDERS = TRANSLATE_PROVIDERS
+  .filter(provider => provider.type === 'local')
+  .map(provider => provider.value)
 
 /**
  * 不支持 RPM 限制的服务商列表
@@ -361,13 +355,9 @@ export const NO_RPM_LIMIT_PROVIDERS = [
  * 支持获取模型列表的服务商
  * 这些服务商可以通过 API 获取可用模型列表
  */
-export const SUPPORTS_FETCH_MODELS_PROVIDERS = [
-  'siliconflow',
-  'deepseek',
-  'volcano',
-  'gemini',
-  'custom_openai'
-] as const
+export const SUPPORTS_FETCH_MODELS_PROVIDERS = TRANSLATE_PROVIDERS
+  .filter(provider => providerSupportsCapability(provider.value, 'modelFetch') && !isLocalProviderId(provider.value))
+  .map(provider => provider.value)
 
 // ============================================================
 // OCR 引擎常量
@@ -404,13 +394,7 @@ export type TextDetectorValue = (typeof TEXT_DETECTORS)[number]['value']
  * AI 视觉 OCR 服务商列表
  * 支持 AI 视觉 OCR 的云服务商
  */
-export const AI_VISION_OCR_PROVIDERS = [
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'volcano', label: '火山引擎' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'custom_openai_vision', label: '自定义 OpenAI 兼容服务' }
-] as const
+export const AI_VISION_OCR_PROVIDERS = getProviderOptionsForCapability('visionOcr')
 
 /** AI 视觉 OCR 服务商值类型 */
 export type AiVisionOcrProviderValue = (typeof AI_VISION_OCR_PROVIDERS)[number]['value']

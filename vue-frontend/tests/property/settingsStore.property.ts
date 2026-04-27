@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
+import { normalizeProviderId } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { STORAGE_KEY_TRANSLATION_SETTINGS, STORAGE_KEY_THEME } from '@/constants'
 
@@ -370,7 +371,7 @@ describe('设置状态管理属性测试', () => {
   it('高质量翻译设置持久化往返一致性', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai'),
+        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom', 'custom_openai'),
         fc.integer({ min: 1, max: 10 }),
         fc.integer({ min: 1, max: 50 }),
         fc.integer({ min: 1, max: 20 }),
@@ -385,7 +386,7 @@ describe('设置状态管理属性测试', () => {
 
           // 更新高质量翻译设置
           store.updateHqTranslation({
-            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom_openai',
+            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom' | 'custom_openai',
             batchSize,
             sessionReset,
             rpmLimit,
@@ -404,7 +405,7 @@ describe('设置状态管理属性测试', () => {
 
           // 验证设置已正确恢复
           return (
-            newStore.settings.hqTranslation.provider === provider &&
+            newStore.settings.hqTranslation.provider === normalizeProviderId(provider) &&
             newStore.settings.hqTranslation.batchSize === batchSize &&
             newStore.settings.hqTranslation.sessionReset === sessionReset &&
             newStore.settings.hqTranslation.rpmLimit === rpmLimit &&

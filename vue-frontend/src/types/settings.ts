@@ -29,6 +29,7 @@ export type TranslationProvider =
   | 'gemini'
   | 'ollama'
   | 'sakura'
+  | 'custom'
   | 'custom_openai'
 
 /**
@@ -39,6 +40,7 @@ export type HqTranslationProvider =
   | 'deepseek'
   | 'volcano'
   | 'gemini'
+  | 'custom'
   | 'custom_openai'
 
 /**
@@ -76,6 +78,7 @@ export interface AiVisionOcrSettings {
   apiKey: string
   modelName: string
   prompt: string
+  promptMode: 'normal' | 'json' | 'paddleocr_vl'
   rpmLimit: number
   customBaseUrl: string
   isJsonMode: boolean

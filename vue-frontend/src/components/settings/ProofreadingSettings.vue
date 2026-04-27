@@ -74,7 +74,7 @@
           </div>
 
           <!-- 自定义Base URL -->
-          <div v-show="round.provider === 'custom_openai'" class="settings-item">
+          <div v-show="providerRequiresBaseUrl(round.provider)" class="settings-item">
             <label>Base URL:</label>
             <input type="text" v-model="round.customBaseUrl" placeholder="例如: https://api.example.com/v1" />
           </div>
@@ -189,6 +189,11 @@
  * 管理多轮AI校对配置
  */
 import { ref, computed, watch } from 'vue'
+import {
+  getProviderOptionsForCapability,
+  providerSupportsCapability,
+  providerRequiresBaseUrl
+} from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -198,13 +203,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
-const providerOptions = [
-  { label: 'SiliconFlow', value: 'siliconflow' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: '火山引擎', value: 'volcano' },
-  { label: 'Google Gemini', value: 'gemini' },
-  { label: '自定义 OpenAI 兼容服务', value: 'custom_openai' }
-]
+const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
 /** 取消思考方法选项 */
 const noThinkingMethodOptions = [
@@ -270,8 +269,7 @@ async function fetchRoundModels(index: number) {
   }
 
   // 检查支持性
-  const supportedProviders = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai']
-  if (!supportedProviders.includes(provider)) {
+  if (!providerSupportsCapability(provider, 'modelFetch')) {
     toast.warning('当前服务商不支持获取模型列表')
     return
   }

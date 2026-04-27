@@ -33,6 +33,7 @@ import {
   DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   DEFAULT_PROOFREADING_MAX_RETRIES
 } from '@/constants'
+import { normalizeProviderId } from '@/config/aiProviders'
 import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 
 import type { ProviderConfigsCache } from './types'
@@ -54,6 +55,17 @@ import {
 // ============================================================
 
 export const useSettingsStore = defineStore('settings', () => {
+  function inferAiVisionPromptMode(prompt: unknown, isJsonMode: unknown): 'normal' | 'json' | 'paddleocr_vl' {
+    if (isJsonMode === true) {
+      return 'json'
+    }
+    const promptText = typeof prompt === 'string' ? prompt.trim() : ''
+    if (promptText.startsWith('对图中的') && promptText.endsWith('进行OCR:')) {
+      return 'paddleocr_vl'
+    }
+    return 'normal'
+  }
+
   // ============================================================
   // 核心状态定义
   // ============================================================
@@ -132,6 +144,7 @@ export const useSettingsStore = defineStore('settings', () => {
         const defaults = createDefaultSettings()
         // 深度合并，确保新增的默认值不会丢失
         settings.value = deepMerge(defaults, parsed)
+        normalizeProviderAliases()
         settings.value.textDetector = normalizeTextDetector(settings.value.textDetector)
         // 确保数值类型正确
         ensureNumericTypes()
@@ -168,6 +181,7 @@ export const useSettingsStore = defineStore('settings', () => {
           hqTranslation: parsed.hqTranslation || {},
           aiVisionOcr: parsed.aiVisionOcr || {}
         }
+        normalizeProviderConfigAliases()
         console.log('已从 localStorage 加载服务商配置缓存')
       }
     } catch (error) {
@@ -180,6 +194,12 @@ export const useSettingsStore = defineStore('settings', () => {
    * 注意：textStyle 不在这里处理，因为它会被重置为默认值（复刻原版行为）
    */
   function ensureNumericTypes(): void {
+    const parseNumberOrFallback = (value: unknown, fallback: number): number => {
+      if (value === undefined || value === null || value === '') return fallback
+      const parsed = Number(value)
+      return Number.isNaN(parsed) ? fallback : parsed
+    }
+
     const be = settings.value.boxExpand
     be.ratio = Number(be.ratio) || 1.0
     be.top = Number(be.top) || 0
@@ -222,17 +242,19 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     const tr = settings.value.translation
-    tr.rpmLimit = Number(tr.rpmLimit) || DEFAULT_RPM_TRANSLATION
-    tr.maxRetries = Number(tr.maxRetries) || DEFAULT_TRANSLATION_MAX_RETRIES
+    tr.rpmLimit = parseNumberOrFallback(tr.rpmLimit, DEFAULT_RPM_TRANSLATION)
+    tr.maxRetries = parseNumberOrFallback(tr.maxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
 
     const hq = settings.value.hqTranslation
     hq.batchSize = Number(hq.batchSize) || 10
     hq.sessionReset = Number(hq.sessionReset) || 3
-    hq.rpmLimit = Number(hq.rpmLimit) || 60
-    hq.maxRetries = Number(hq.maxRetries) || DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+    hq.rpmLimit = parseNumberOrFallback(hq.rpmLimit, 60)
+    hq.maxRetries = parseNumberOrFallback(hq.maxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
 
     const av = settings.value.aiVisionOcr
-    av.rpmLimit = Number(av.rpmLimit) || DEFAULT_RPM_AI_VISION_OCR
+    av.rpmLimit = parseNumberOrFallback(av.rpmLimit, DEFAULT_RPM_AI_VISION_OCR)
+    av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt, av.isJsonMode)
+    av.isJsonMode = av.promptMode === 'json'
     // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
     if (av.minImageSize === undefined || av.minImageSize === null || isNaN(Number(av.minImageSize))) {
       av.minImageSize = DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
@@ -277,6 +299,30 @@ export const useSettingsStore = defineStore('settings', () => {
       providerConfigs.value.translation['youdao_translate'] = { ...providerConfigs.value.translation['youdao'] }
       delete providerConfigs.value.translation['youdao']
     }
+  }
+
+  function normalizeProviderAliases(): void {
+    settings.value.translation.provider = normalizeProviderId(settings.value.translation.provider) as TranslationProvider
+    settings.value.hqTranslation.provider = normalizeProviderId(settings.value.hqTranslation.provider) as HqTranslationProvider
+    settings.value.aiVisionOcr.provider = normalizeProviderId(settings.value.aiVisionOcr.provider)
+    settings.value.proofreading.rounds = settings.value.proofreading.rounds.map(round => ({
+      ...round,
+      provider: normalizeProviderId(round.provider) as HqTranslationProvider
+    }))
+  }
+
+  function normalizeProviderConfigAliases(): void {
+    const normalizeRecord = <T>(record: Record<string, T>): Record<string, T> => {
+      const normalized: Record<string, T> = {}
+      for (const [provider, config] of Object.entries(record)) {
+        normalized[normalizeProviderId(provider)] = config
+      }
+      return normalized
+    }
+
+    providerConfigs.value.translation = normalizeRecord(providerConfigs.value.translation)
+    providerConfigs.value.hqTranslation = normalizeRecord(providerConfigs.value.hqTranslation)
+    providerConfigs.value.aiVisionOcr = normalizeRecord(providerConfigs.value.aiVisionOcr)
   }
 
   /**
@@ -513,7 +559,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // AI 视觉 OCR 设置
     if (backendSettings.aiVisionProvider) {
-      settings.value.aiVisionOcr.provider = backendSettings.aiVisionProvider as string
+      settings.value.aiVisionOcr.provider = normalizeProviderId(backendSettings.aiVisionProvider as string)
     }
     if (backendSettings.aiVisionApiKey) {
       settings.value.aiVisionOcr.apiKey = backendSettings.aiVisionApiKey as string
@@ -531,7 +577,20 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.aiVisionOcr.rpmLimit = parseNum(backendSettings.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR)
     }
     if (backendSettings.aiVisionPromptModeSelect === 'json') {
+      settings.value.aiVisionOcr.promptMode = 'json'
       settings.value.aiVisionOcr.isJsonMode = true
+    } else if (backendSettings.aiVisionPromptModeSelect === 'paddleocr_vl') {
+      settings.value.aiVisionOcr.promptMode = 'paddleocr_vl'
+      settings.value.aiVisionOcr.isJsonMode = false
+    } else if (backendSettings.aiVisionPromptModeSelect === 'normal') {
+      settings.value.aiVisionOcr.promptMode = 'normal'
+      settings.value.aiVisionOcr.isJsonMode = false
+    } else {
+      settings.value.aiVisionOcr.promptMode = inferAiVisionPromptMode(
+        settings.value.aiVisionOcr.prompt,
+        settings.value.aiVisionOcr.isJsonMode
+      )
+      settings.value.aiVisionOcr.isJsonMode = settings.value.aiVisionOcr.promptMode === 'json'
     }
     if (backendSettings.aiVisionMinImageSize !== undefined) {
       settings.value.aiVisionOcr.minImageSize = parseNum(backendSettings.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
@@ -562,7 +621,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 翻译服务设置
     if (backendSettings.modelProvider) {
-      settings.value.translation.provider = backendSettings.modelProvider as TranslationProvider
+      settings.value.translation.provider = normalizeProviderId(backendSettings.modelProvider as string) as TranslationProvider
     }
     if (backendSettings.apiKey) {
       settings.value.translation.apiKey = backendSettings.apiKey as string
@@ -620,7 +679,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 高质量翻译设置
     if (backendSettings.hqTranslateProvider) {
-      settings.value.hqTranslation.provider = backendSettings.hqTranslateProvider as HqTranslationProvider
+      settings.value.hqTranslation.provider = normalizeProviderId(backendSettings.hqTranslateProvider as string) as HqTranslationProvider
     }
     if (backendSettings.hqApiKey) {
       settings.value.hqTranslation.apiKey = backendSettings.hqApiKey as string
@@ -675,10 +734,10 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.proofreading.maxRetries = parseNum(proofConfig.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
       }
       if (Array.isArray(proofConfig.rounds)) {
-        settings.value.proofreading.rounds = proofConfig.rounds.map((round: Record<string, unknown>) => ({
-          name: (round.name as string) || '轮次',
-          provider: ((round.provider as string) || 'siliconflow') as HqTranslationProvider,
-          apiKey: (round.apiKey as string) || '',
+          settings.value.proofreading.rounds = proofConfig.rounds.map((round: Record<string, unknown>) => ({
+            name: (round.name as string) || '轮次',
+            provider: normalizeProviderId((round.provider as string) || 'siliconflow') as HqTranslationProvider,
+            apiKey: (round.apiKey as string) || '',
           modelName: (round.modelName as string) || '',
           customBaseUrl: (round.customBaseUrl as string) || '',
           prompt: (round.prompt as string) || '',
@@ -763,7 +822,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (providerSettings.modelProvider) {
         for (const [provider, config] of Object.entries(providerSettings.modelProvider)) {
-          providerConfigs.value.translation[provider] = {
+          providerConfigs.value.translation[normalizeProviderId(provider)] = {
             apiKey: config.apiKey as string,
             modelName: config.modelName as string,
             customBaseUrl: config.customBaseUrl as string,
@@ -775,7 +834,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (providerSettings.hqTranslateProvider) {
         for (const [provider, config] of Object.entries(providerSettings.hqTranslateProvider)) {
-          providerConfigs.value.hqTranslation[provider] = {
+          providerConfigs.value.hqTranslation[normalizeProviderId(provider)] = {
             apiKey: config.hqApiKey as string,
             modelName: config.hqModelName as string,
             customBaseUrl: config.hqCustomBaseUrl as string,
@@ -794,11 +853,18 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (providerSettings.aiVisionProvider) {
         for (const [provider, config] of Object.entries(providerSettings.aiVisionProvider)) {
-          providerConfigs.value.aiVisionOcr[provider] = {
+          providerConfigs.value.aiVisionOcr[normalizeProviderId(provider)] = {
             apiKey: config.aiVisionApiKey as string,
             modelName: config.aiVisionModelName as string,
             customBaseUrl: config.customAiVisionBaseUrl as string,
             prompt: config.aiVisionOcrPrompt as string,
+            promptMode: (
+              config.aiVisionPromptModeSelect === 'paddleocr_vl'
+                ? 'paddleocr_vl'
+                : config.aiVisionPromptModeSelect === 'json'
+                  ? 'json'
+                  : 'normal'
+            ),
             rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
             isJsonMode: config.aiVisionPromptModeSelect === 'json',
             minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
@@ -823,8 +889,8 @@ export const useSettingsStore = defineStore('settings', () => {
         apiKey: config.apiKey || '',
         modelName: config.modelName || '',
         customBaseUrl: config.customBaseUrl || '',
-        rpmTranslation: String(config.rpmLimit || 0),
-        translationMaxRetries: String(config.maxRetries || 3)
+        rpmTranslation: String(config.rpmLimit ?? 0),
+        translationMaxRetries: String(config.maxRetries ?? 3)
       }
     }
 
@@ -833,10 +899,10 @@ export const useSettingsStore = defineStore('settings', () => {
         hqApiKey: config.apiKey || '',
         hqModelName: config.modelName || '',
         hqCustomBaseUrl: config.customBaseUrl || '',
-        hqBatchSize: String(config.batchSize || 3),
-        hqSessionReset: String(config.sessionReset || 3),
-        hqRpmLimit: String(config.rpmLimit || 7),
-        hqMaxRetries: String(config.maxRetries || 2),
+        hqBatchSize: String(config.batchSize ?? 3),
+        hqSessionReset: String(config.sessionReset ?? 3),
+        hqRpmLimit: String(config.rpmLimit ?? 7),
+        hqMaxRetries: String(config.maxRetries ?? 2),
         hqLowReasoning: config.lowReasoning || false,
         hqNoThinkingMethod: config.noThinkingMethod || 'gemini',
         hqForceJsonOutput: config.forceJsonOutput ?? true,
@@ -851,8 +917,8 @@ export const useSettingsStore = defineStore('settings', () => {
         aiVisionModelName: config.modelName || '',
         customAiVisionBaseUrl: config.customBaseUrl || '',
         aiVisionOcrPrompt: config.prompt || '',
-        rpmAiVisionOcr: String(config.rpmLimit || 0),
-        aiVisionPromptModeSelect: config.isJsonMode ? 'json' : 'normal',
+        rpmAiVisionOcr: String(config.rpmLimit ?? 0),
+        aiVisionPromptModeSelect: config.promptMode || (config.isJsonMode ? 'json' : 'normal'),
         aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
       }
     }
@@ -904,7 +970,7 @@ export const useSettingsStore = defineStore('settings', () => {
         aiVisionOcrPrompt: settings.value.aiVisionOcr.prompt,
         customAiVisionBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
         rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
-        aiVisionPromptModeSelect: settings.value.aiVisionOcr.isJsonMode ? 'json' : 'normal',
+        aiVisionPromptModeSelect: settings.value.aiVisionOcr.promptMode,
         aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
         enableHybridOcr: settings.value.hybridOcr.enabled,
         secondaryOcrEngine: settings.value.hybridOcr.secondaryEngine,

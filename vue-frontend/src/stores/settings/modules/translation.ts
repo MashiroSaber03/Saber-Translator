@@ -4,6 +4,7 @@
  */
 
 import { computed, type Ref } from 'vue'
+import { normalizeProviderId } from '@/config/aiProviders'
 import type {
   TranslationSettings,
   TranslationServiceSettings,
@@ -36,6 +37,7 @@ export function useTranslationSettings(
    * @param provider - 服务商类型
    */
   function setTranslationProvider(provider: TranslationProvider): void {
+    provider = normalizeProviderId(provider) as TranslationProvider
     const oldProvider = settings.value.translation.provider
     if (oldProvider === provider) return
 
@@ -106,6 +108,7 @@ export function useTranslationSettings(
    */
   function saveTranslationProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const config: TranslationProviderConfig = {
       apiKey: settings.value.translation.apiKey,
@@ -128,6 +131,7 @@ export function useTranslationSettings(
    */
   function restoreTranslationProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const cached = providerConfigs.value.translation[provider]
     if (cached) {

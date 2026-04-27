@@ -17,6 +17,7 @@ from src.shared import constants
 from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
+from src.shared.ai_providers import normalize_provider_id
 # 导入rpm限制辅助函数
 from src.core.translation import _enforce_rpm_limit
 from src.core.ocr_types import OcrResult, create_ocr_result
@@ -368,6 +369,7 @@ def _recognize_with_ai_vision_results(
     ai_vision_api_key=None,
     ai_vision_model_name=None,
     ai_vision_ocr_prompt=None,
+    ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
@@ -377,6 +379,8 @@ def _recognize_with_ai_vision_results(
     fallback_used=False,
     strict_errors: bool = False,
 ) -> List[OcrResult]:
+    ai_vision_provider = normalize_provider_id(ai_vision_provider)
+
     if not all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
         logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
         if strict_errors:
@@ -392,7 +396,7 @@ def _recognize_with_ai_vision_results(
             fallback_used=fallback_used,
         )
 
-    if ai_vision_provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
+    if ai_vision_provider == "custom" and not custom_ai_vision_base_url:
         logger.error("使用自定义AI视觉OCR时，缺少Base URL。")
         if strict_errors:
             raise ValueError("AI视觉OCR需要提供自定义 Base URL")
@@ -405,12 +409,46 @@ def _recognize_with_ai_vision_results(
 
     img_np = np.array(image_pil.convert('RGB'))
     results: List[OcrResult] = []
-    current_prompt = ai_vision_ocr_prompt
-    if use_json_format_for_ai_vision:
-        if not current_prompt or '"extracted_text"' not in current_prompt:
+    current_prompt = (ai_vision_ocr_prompt or "").strip()
+    normalized_prompt_mode = (ai_vision_prompt_mode or 'normal').strip().lower()
+
+    if not current_prompt:
+        if use_json_format_for_ai_vision or normalized_prompt_mode == 'json':
             current_prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
-    elif not current_prompt:
-        current_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
+        elif normalized_prompt_mode == 'paddleocr_vl':
+            language_name_map = {
+                'japanese': '日语',
+                'japan': '日语',
+                'chinese': '简体中文',
+                'chinese_cht': '繁体中文',
+                'korean': '韩语',
+                'english': '英语',
+                'en': '英语',
+                'french': '法语',
+                'german': '德语',
+                'spanish': '西班牙语',
+                'italian': '意大利语',
+                'portuguese': '葡萄牙语',
+                'russian': '俄语',
+                'arabic': '阿拉伯语',
+                'thai': '泰语',
+                'greek': '希腊语',
+            }
+            lang_name = language_name_map.get(str(source_language).lower(), '日语')
+            current_prompt = f"对图中的{lang_name}进行OCR:"
+        else:
+            current_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
+    elif use_json_format_for_ai_vision and '"extracted_text"' not in current_prompt:
+        logger.warning("AI视觉OCR 当前为 JSON 模式，但将按用户自定义提示词原样请求；若返回非JSON，解析可能失败。")
+
+    logger.info(
+        "[AI视觉OCR] 请求配置: provider=%s, model=%s, prompt_mode=%s, json_mode=%s",
+        ai_vision_provider,
+        ai_vision_model_name,
+        normalized_prompt_mode,
+        use_json_format_for_ai_vision,
+    )
+    logger.info("[AI视觉OCR] 实际提示词开始\n%s\n[AI视觉OCR] 实际提示词结束", current_prompt)
 
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
@@ -442,6 +480,8 @@ def _recognize_with_ai_vision_results(
                 api_key=ai_vision_api_key,
                 model_name=ai_vision_model_name,
                 prompt=current_prompt,
+                prompt_mode=normalized_prompt_mode,
+                use_json_format=use_json_format_for_ai_vision,
                 custom_base_url=custom_ai_vision_base_url
             )
 
@@ -490,6 +530,7 @@ def _recognize_with_engine(
     ai_vision_api_key=None,
     ai_vision_model_name=None,
     ai_vision_ocr_prompt=None,
+    ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
@@ -562,6 +603,7 @@ def _recognize_with_engine(
             ai_vision_api_key=ai_vision_api_key,
             ai_vision_model_name=ai_vision_model_name,
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+            ai_vision_prompt_mode=ai_vision_prompt_mode,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
             use_json_format_for_ai_vision=use_json_format_for_ai_vision,
             rpm_limit_ai_vision=rpm_limit_ai_vision,
@@ -595,6 +637,7 @@ def recognize_ocr_results_in_bubbles(
     ai_vision_api_key=None,
     ai_vision_model_name=None,
     ai_vision_ocr_prompt=None,
+    ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
@@ -637,6 +680,7 @@ def recognize_ocr_results_in_bubbles(
         ai_vision_api_key=ai_vision_api_key,
         ai_vision_model_name=ai_vision_model_name,
         ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+        ai_vision_prompt_mode=ai_vision_prompt_mode,
         custom_ai_vision_base_url=custom_ai_vision_base_url,
         use_json_format_for_ai_vision=use_json_format_for_ai_vision,
         rpm_limit_ai_vision=rpm_limit_ai_vision,

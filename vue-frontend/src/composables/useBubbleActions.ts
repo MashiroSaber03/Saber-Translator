@@ -6,6 +6,7 @@
 
 import { onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { normalizeProviderId } from '@/config/aiProviders'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -535,11 +536,13 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           baidu_version: settings.baiduOcr.version,
           baidu_source_language: settings.baiduOcr.sourceLanguage,
           // AI 视觉 OCR 参数（复刻原版 edit_mode.js）
-          ai_vision_provider: settings.aiVisionOcr.provider,
+          ai_vision_provider: normalizeProviderId(settings.aiVisionOcr.provider),
           ai_vision_api_key: settings.aiVisionOcr.apiKey,
           ai_vision_model_name: settings.aiVisionOcr.modelName,
           ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
+          ai_vision_prompt_mode: settings.aiVisionOcr.promptMode,
           custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl,
+          use_json_format_for_ai_vision: settings.aiVisionOcr.isJsonMode,
           ai_vision_min_image_size: settings.aiVisionOcr.minImageSize,
           enable_hybrid_ocr: settings.hybridOcr.enabled,
           secondary_ocr_engine: settings.hybridOcr.secondaryEngine,

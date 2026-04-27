@@ -78,6 +78,7 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   apiKey: '',
   modelName: '',
   prompt: DEFAULT_AI_VISION_OCR_PROMPT,
+  promptMode: 'normal',
   rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
   customBaseUrl: '',
   isJsonMode: false,

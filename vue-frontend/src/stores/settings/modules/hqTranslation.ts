@@ -4,6 +4,7 @@
  */
 
 import { computed, type Ref } from 'vue'
+import { normalizeProviderId } from '@/config/aiProviders'
 import type {
   TranslationSettings,
   HqTranslationSettings,
@@ -37,6 +38,7 @@ export function useHqTranslationSettings(
    * @param provider - 服务商类型
    */
   function setHqProvider(provider: HqTranslationProvider): void {
+    provider = normalizeProviderId(provider) as HqTranslationProvider
     const oldProvider = settings.value.hqTranslation.provider
     if (oldProvider === provider) return
 
@@ -99,6 +101,7 @@ export function useHqTranslationSettings(
    */
   function saveHqProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const config: HqTranslationProviderConfig = {
       apiKey: settings.value.hqTranslation.apiKey,
@@ -126,6 +129,7 @@ export function useHqTranslationSettings(
    */
   function restoreHqProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const cached = providerConfigs.value.hqTranslation[provider]
     if (cached) {

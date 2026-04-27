@@ -54,4 +54,37 @@ describe('hybrid OCR settings', () => {
     expect(store.settings.hybridOcr.secondaryEngine).toBe('manga_ocr')
     expect(store.settings.hybridOcr.confidenceThreshold).toBe(0.35)
   })
+
+  it('loadFromStorage migrates legacy custom provider ids and preserves zero-valued AI settings', () => {
+    storageState['translationSettings'] = JSON.stringify({
+      translation: {
+        provider: 'custom_openai',
+        rpmLimit: 0,
+        maxRetries: 0
+      },
+      hqTranslation: {
+        provider: 'custom_openai',
+        rpmLimit: 0,
+        maxRetries: 0
+      },
+      aiVisionOcr: {
+        provider: 'custom_openai_vision',
+        rpmLimit: 0,
+        minImageSize: 0
+      }
+    })
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect(store.settings.translation.provider).toBe('custom')
+    expect(store.settings.translation.rpmLimit).toBe(0)
+    expect(store.settings.translation.maxRetries).toBe(0)
+    expect(store.settings.hqTranslation.provider).toBe('custom')
+    expect(store.settings.hqTranslation.rpmLimit).toBe(0)
+    expect(store.settings.hqTranslation.maxRetries).toBe(0)
+    expect(store.settings.aiVisionOcr.provider).toBe('custom')
+    expect(store.settings.aiVisionOcr.rpmLimit).toBe(0)
+    expect(store.settings.aiVisionOcr.minImageSize).toBe(0)
+  })
 })

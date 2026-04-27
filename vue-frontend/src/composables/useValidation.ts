@@ -10,6 +10,13 @@
  */
 
 import { ref, computed } from 'vue'
+import {
+  getProviderDisplayName as getProviderDisplayNameFromManifest,
+  isLocalProviderId,
+  normalizeProviderId,
+  providerRequiresApiKey,
+  providerRequiresBaseUrl
+} from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
 import type { TranslationProvider, HqTranslationProvider, ProofreadingRound } from '@/types/settings'
@@ -22,18 +29,6 @@ import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
 /** 本地存储键名：是否已关闭设置提醒 */
 const DISMISS_SETUP_REMINDER_KEY = 'saber_translator_dismiss_setup_reminder'
 
-/** 需要 API Key 的服务商列表 */
-const PROVIDERS_REQUIRING_API_KEY: TranslationProvider[] = [
-  'siliconflow',
-  'deepseek',
-  'volcano',
-  'caiyun',
-  'baidu_translate',
-  'youdao_translate',
-  'gemini',
-  'custom_openai'
-]
-
 /** OCR 引擎显示名称映射 */
 const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
   manga_ocr: 'MangaOCR',
@@ -42,29 +37,6 @@ const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
   baidu_ocr: '百度OCR',
   ai_vision: 'AI视觉OCR',
   '48px_ocr': '48px OCR'
-}
-
-/** 本地服务商（需要模型名称，但不需要 API Key） */
-const LOCAL_PROVIDERS: TranslationProvider[] = ['ollama', 'sakura']
-
-/** 需要自定义 Base URL 的服务商 */
-const PROVIDERS_REQUIRING_BASE_URL: TranslationProvider[] = ['custom_openai']
-
-/** 高质量翻译需要自定义 Base URL 的服务商 */
-const HQ_PROVIDERS_REQUIRING_BASE_URL: HqTranslationProvider[] = ['custom_openai']
-
-/** 服务商显示名称映射 */
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  siliconflow: 'SiliconFlow',
-  deepseek: 'DeepSeek',
-  volcano: '火山引擎',
-  caiyun: '彩云小译',
-  baidu_translate: '百度翻译',
-  youdao_translate: '有道翻译',
-  gemini: 'Google Gemini',
-  custom_openai: '自定义 OpenAI',
-  ollama: 'Ollama',
-  sakura: 'Sakura'
 }
 
 // ============================================================
@@ -134,7 +106,7 @@ export function useValidation() {
    * @returns 服务商显示名称
    */
   function getProviderDisplayName(provider: string): string {
-    return PROVIDER_DISPLAY_NAMES[provider] || provider
+    return getProviderDisplayNameFromManifest(normalizeProviderId(provider))
   }
 
   /**
@@ -143,7 +115,7 @@ export function useValidation() {
    * @returns 是否需要 API Key
    */
   function requiresApiKey(provider: TranslationProvider): boolean {
-    return PROVIDERS_REQUIRING_API_KEY.includes(provider)
+    return providerRequiresApiKey(normalizeProviderId(provider))
   }
 
   /**
@@ -152,7 +124,7 @@ export function useValidation() {
    * @returns 是否为本地服务商
    */
   function isLocalProvider(provider: TranslationProvider): boolean {
-    return LOCAL_PROVIDERS.includes(provider)
+    return isLocalProviderId(normalizeProviderId(provider))
   }
 
   /**
@@ -161,7 +133,7 @@ export function useValidation() {
    * @returns 是否需要自定义 Base URL
    */
   function requiresBaseUrl(provider: TranslationProvider): boolean {
-    return PROVIDERS_REQUIRING_BASE_URL.includes(provider)
+    return providerRequiresBaseUrl(normalizeProviderId(provider))
   }
 
   /**
@@ -170,7 +142,7 @@ export function useValidation() {
    * @returns 是否需要自定义 Base URL
    */
   function hqRequiresBaseUrl(provider: HqTranslationProvider): boolean {
-    return HQ_PROVIDERS_REQUIRING_BASE_URL.includes(provider)
+    return providerRequiresBaseUrl(normalizeProviderId(provider))
   }
 
   // ============================================================
@@ -227,7 +199,7 @@ export function useValidation() {
           missingItems.push(`${prefix}AI视觉OCR 的模型名称`)
         }
         if (
-          aiVisionOcr?.provider === 'custom_openai_vision' &&
+          normalizeProviderId(aiVisionOcr?.provider) === 'custom' &&
           (!aiVisionOcr?.customBaseUrl || aiVisionOcr.customBaseUrl.trim() === '')
         ) {
           missingItems.push(`${prefix}AI视觉OCR 的自定义 Base URL`)

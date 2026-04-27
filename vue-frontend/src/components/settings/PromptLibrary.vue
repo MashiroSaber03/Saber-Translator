@@ -16,9 +16,9 @@
       <div v-if="supportsModeSwitch" class="settings-item">
         <label for="promptMode">提示词模式:</label>
         <CustomSelect
-          :model-value="isJsonMode ? 'true' : 'false'"
-          :options="promptModeOptions"
-          @change="(v: string | number) => { isJsonMode = v === 'true'; handleModeChange() }"
+          :model-value="selectedMode"
+          :options="availablePromptModeOptions"
+          @change="(v: string | number) => { selectedMode = String(v); handleModeChange() }"
         />
         <span class="mode-hint">{{ modeHint }}</span>
       </div>
@@ -64,7 +64,7 @@
 /**
  * 提示词管理组件
  * 管理各类提示词的保存、加载和删除
- * 支持提示词模式切换（普通/JSON格式）
+ * 支持提示词模式切换（翻译: 普通/JSON；AI视觉OCR: 普通/JSON/OCR模型）
  */
 import { ref, computed, onMounted } from 'vue'
 import { configApi } from '@/api/config'
@@ -82,9 +82,15 @@ const promptTypeOptions = [
 ]
 
 /** 提示词模式选项 */
-const promptModeOptions = [
-  { label: '普通模式', value: 'false' },
-  { label: 'JSON格式模式', value: 'true' }
+const translatePromptModeOptions = [
+  { label: '普通模式', value: 'normal' },
+  { label: 'JSON格式模式', value: 'json' }
+]
+
+const aiVisionPromptModeOptions = [
+  { label: '普通模式', value: 'normal' },
+  { label: 'JSON格式模式', value: 'json' },
+  { label: 'OCR模型提示词', value: 'paddleocr_vl' }
 ]
 
 // Toast 和 Store
@@ -98,7 +104,7 @@ const selectedPrompt = ref('')
 const editingName = ref('')
 const editingContent = ref('')
 const isLoading = ref(false)
-const isJsonMode = ref(false)
+const selectedMode = ref<'normal' | 'json' | 'paddleocr_vl'>('normal')
 
 // ============================================================
 // 计算属性
@@ -109,9 +115,18 @@ const supportsModeSwitch = computed(() => {
   return selectedType.value === 'translate' || selectedType.value === 'ai_vision_ocr'
 })
 
+const availablePromptModeOptions = computed(() => {
+  return selectedType.value === 'ai_vision_ocr'
+    ? aiVisionPromptModeOptions
+    : translatePromptModeOptions
+})
+
 /** 模式提示文字 */
 const modeHint = computed(() => {
-  if (isJsonMode.value) {
+  if (selectedType.value === 'ai_vision_ocr' && selectedMode.value === 'paddleocr_vl') {
+    return '适用于 PaddleOCR-VL、GLM-OCR 等专用 OCR 模型'
+  }
+  if (selectedMode.value === 'json') {
     return '适用于需要结构化输出的场景'
   }
   return '适用于普通翻译场景'
@@ -228,11 +243,11 @@ function handleTypeChange() {
   
   // 同步模式状态
   if (selectedType.value === 'translate') {
-    isJsonMode.value = settingsStore.settings.translation.isJsonMode
+    selectedMode.value = settingsStore.settings.translation.isJsonMode ? 'json' : 'normal'
   } else if (selectedType.value === 'ai_vision_ocr') {
-    isJsonMode.value = settingsStore.settings.aiVisionOcr.isJsonMode
+    selectedMode.value = settingsStore.settings.aiVisionOcr.promptMode || 'normal'
   } else {
-    isJsonMode.value = false
+    selectedMode.value = 'normal'
   }
   
   loadPromptList()
@@ -242,12 +257,20 @@ function handleTypeChange() {
 function handleModeChange() {
   // 更新 store 中的模式状态
   if (selectedType.value === 'translate') {
-    settingsStore.updateTranslationService({ isJsonMode: isJsonMode.value })
+    settingsStore.updateTranslationService({ isJsonMode: selectedMode.value === 'json' })
   } else if (selectedType.value === 'ai_vision_ocr') {
-    settingsStore.updateAiVisionOcr({ isJsonMode: isJsonMode.value })
+    settingsStore.updateAiVisionOcr({
+      isJsonMode: selectedMode.value === 'json',
+      promptMode: selectedMode.value
+    })
   }
   
-  toast.info(`已切换到${isJsonMode.value ? 'JSON格式' : '普通'}模式`)
+  const modeLabel = selectedMode.value === 'json'
+    ? 'JSON格式'
+    : selectedMode.value === 'paddleocr_vl'
+      ? 'OCR模型提示词'
+      : '普通'
+  toast.info(`已切换到${modeLabel}模式`)
 }
 
 // ============================================================
@@ -257,7 +280,7 @@ function handleModeChange() {
 // 初始化
 onMounted(() => {
   // 同步初始模式状态
-  isJsonMode.value = settingsStore.settings.translation.isJsonMode
+  selectedMode.value = settingsStore.settings.translation.isJsonMode ? 'json' : 'normal'
   loadPromptList()
 })
 </script>

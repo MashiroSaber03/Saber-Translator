@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { normalizeProviderId } from '@/config/aiProviders'
 import type {
   ApiResponse,
   FontListResponse,
@@ -146,17 +147,16 @@ export async function resetTextboxPromptToDefault(name: string): Promise<PromptC
 
 /**
  * 从云服务商获取可用模型列表（复刻原版 doFetchModels 逻辑）
- * @param provider 服务商 (siliconflow, deepseek, volcano, gemini, custom_openai 等)
+ * @param provider 服务商 (siliconflow, deepseek, volcano, gemini, custom 等)
  * @param apiKey API Key
- * @param baseUrl 自定义服务的 Base URL（仅 custom_openai 需要）
+ * @param baseUrl 自定义服务的 Base URL（仅 custom 需要）
  */
 export async function fetchModels(
   provider: string,
   apiKey: string,
   baseUrl?: string
 ): Promise<FetchModelsResponse> {
-  // 将 custom_openai_vision 映射为 custom_openai 发送给后端（与原版一致）
-  const apiProvider = provider === 'custom_openai_vision' ? 'custom_openai' : provider
+  const apiProvider = normalizeProviderId(provider)
 
   return apiClient.post<FetchModelsResponse>('/api/fetch_models', {
     provider: apiProvider,
@@ -228,7 +228,7 @@ export async function testAiVisionOcrConnection(
   params: AiVisionOcrTestParams
 ): Promise<ConnectionTestResponse> {
   return apiClient.post<ConnectionTestResponse>('/api/test_ai_vision_ocr', {
-    provider: params.provider,
+    provider: normalizeProviderId(params.provider),
     api_key: params.apiKey,
     model_name: params.modelName,  // 后端期望 model_name
     custom_ai_vision_base_url: params.customBaseUrl,  // 后端期望 custom_ai_vision_base_url
@@ -256,7 +256,7 @@ export async function testAiTranslateConnection(
   params: AiTranslateTestParams
 ): Promise<ConnectionTestResponse> {
   return apiClient.post<ConnectionTestResponse>('/api/test_ai_translate_connection', {
-    provider: params.provider,
+    provider: normalizeProviderId(params.provider),
     api_key: params.apiKey,
     model_name: params.modelName || '',
     base_url: params.baseUrl || ''

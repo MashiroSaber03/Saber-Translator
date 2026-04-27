@@ -174,7 +174,7 @@
       </div>
 
       <!-- 自定义Base URL -->
-      <div v-show="settings.aiVisionOcr.provider === 'custom_openai_vision'" class="settings-item">
+      <div v-show="providerRequiresBaseUrl(settings.aiVisionOcr.provider)" class="settings-item">
         <label for="settingsCustomAiVisionBaseUrl">Base URL:</label>
         <input
           type="text"
@@ -275,6 +275,12 @@
  * 管理OCR引擎选择和各引擎的配置
  */
 import { ref, computed, watch } from 'vue'
+import {
+  getProviderOptionsForCapability,
+  normalizeProviderId,
+  providerRequiresBaseUrl,
+  providerSupportsCapability
+} from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -321,12 +327,7 @@ const baiduSourceLanguageOptions = [
 ]
 
 /** AI视觉服务商选项 */
-const aiVisionProviderOptions = [
-  { label: 'SiliconFlow (硅基流动)', value: 'siliconflow' },
-  { label: '火山引擎', value: 'volcano' },
-  { label: 'Google Gemini', value: 'gemini' },
-  { label: '自定义 OpenAI 兼容服务', value: 'custom_openai_vision' }
-]
+const aiVisionProviderOptions = getProviderOptionsForCapability('visionOcr')
 
 /** PaddleOCR-VL 源语言选项（分组） */
 const paddleOcrVlSourceLanguageGroups = [
@@ -428,6 +429,7 @@ const localAiVisionOcr = ref({
   modelName: settingsStore.settings.aiVisionOcr.modelName,
   customBaseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
   prompt: settingsStore.settings.aiVisionOcr.prompt,
+  promptMode: settingsStore.settings.aiVisionOcr.promptMode,
   rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
@@ -573,6 +575,7 @@ function getSourceLanguageHint(): string {
 
 // 处理AI视觉服务商切换（复刻原版逻辑：独立保存每个服务商的配置）
 function handleAiVisionProviderChange(newProvider: string) {
+  newProvider = normalizeProviderId(newProvider)
   // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
   settingsStore.setAiVisionOcrProvider(newProvider)
   // 清空模型列表
@@ -587,21 +590,13 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.modelName = settingsStore.settings.aiVisionOcr.modelName
   localAiVisionOcr.value.customBaseUrl = settingsStore.settings.aiVisionOcr.customBaseUrl
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
+  localAiVisionOcr.value.promptMode = settingsStore.settings.aiVisionOcr.promptMode
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
 // 当前提示词模式（计算属性）
 const currentPromptMode = computed(() => {
-  const prompt = settingsStore.settings.aiVisionOcr.prompt
-  // 检查是否为 PaddleOCR-VL 格式提示词
-  if (prompt && prompt.includes('进行OCR:') && !prompt.includes('助手')) {
-    return 'paddleocr_vl'
-  }
-  // 检查是否为 JSON 模式
-  if (settingsStore.settings.aiVisionOcr.isJsonMode) {
-    return 'json'
-  }
-  return 'normal'
+  return settingsStore.settings.aiVisionOcr.promptMode || 'normal'
 })
 
 // 获取提示词模式提示信息
@@ -619,33 +614,31 @@ function getPromptModeHint(): string {
 // 处理提示词模式切换
 function handlePromptModeChange(mode: string) {
   let newPrompt: string
-  let isJsonMode = false
   
   switch (mode) {
     case 'json':
       newPrompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
-      isJsonMode = true
       break
     case 'paddleocr_vl':
       // 使用当前选择的语言生成提示词
       const langName = PADDLEOCR_VL_LANG_MAP[paddleOcrVlSourceLang.value] || '日语'
       newPrompt = getPaddleOcrVlPrompt(langName)
-      isJsonMode = false
       break
     default: // 'normal'
       newPrompt = DEFAULT_AI_VISION_OCR_PROMPT
-      isJsonMode = false
       break
   }
   
   // 更新 store
   settingsStore.updateAiVisionOcr({ 
     prompt: newPrompt,
-    isJsonMode: isJsonMode
+    promptMode: mode as 'normal' | 'json' | 'paddleocr_vl',
+    isJsonMode: mode === 'json'
   })
   
   // 同步本地状态
   localAiVisionOcr.value.prompt = newPrompt
+  localAiVisionOcr.value.promptMode = mode as 'normal' | 'json' | 'paddleocr_vl'
 }
 
 // PaddleOCR-VL 源语言状态
@@ -660,10 +653,15 @@ function handlePaddleOcrVlLangChange(langCode: string) {
   const newPrompt = getPaddleOcrVlPrompt(langName)
   
   // 更新 store
-  settingsStore.updateAiVisionOcr({ prompt: newPrompt })
+  settingsStore.updateAiVisionOcr({
+    prompt: newPrompt,
+    promptMode: 'paddleocr_vl',
+    isJsonMode: false
+  })
   
   // 同步本地状态
   localAiVisionOcr.value.prompt = newPrompt
+  localAiVisionOcr.value.promptMode = 'paddleocr_vl'
 }
 
 // 测试百度OCR连接（复刻原版逻辑）
@@ -732,14 +730,13 @@ async function fetchAiVisionModels() {
   }
 
   // 检查是否支持模型获取
-  const supportedProviders = ['siliconflow', 'volcano', 'gemini', 'custom_openai_vision']
-  if (!supportedProviders.includes(provider)) {
+  if (!providerSupportsCapability(provider, 'modelFetch')) {
     toast.warning('当前服务商不支持自动获取模型列表')
     return
   }
 
   // 自定义服务需要 base_url
-  if (provider === 'custom_openai_vision' && !baseUrl) {
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
   }
@@ -764,9 +761,20 @@ async function fetchAiVisionModels() {
 
 // 处理 AI 视觉 OCR 提示词选择
 function handleAiVisionPromptSelect(content: string, name: string) {
-  settingsStore.updateAiVisionOcr({ prompt: content })
+  const inferredMode: 'normal' | 'json' | 'paddleocr_vl' =
+    content.includes('"extracted_text"')
+      ? 'json'
+      : content.startsWith('对图中的') && content.endsWith('进行OCR:')
+        ? 'paddleocr_vl'
+        : 'normal'
+  settingsStore.updateAiVisionOcr({
+    prompt: content,
+    promptMode: inferredMode,
+    isJsonMode: inferredMode === 'json'
+  })
   // 同步本地状态
   localAiVisionOcr.value.prompt = content
+  localAiVisionOcr.value.promptMode = inferredMode
   toast.success(`已应用提示词: ${name}`)
 }
 </script>

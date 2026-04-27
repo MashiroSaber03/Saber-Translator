@@ -6,7 +6,6 @@ import re
 import os
 import sys
 from pathlib import Path
-from src.shared.openai_helpers import create_openai_client
 
 # 添加项目根目录到 Python 路径
 root_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -15,6 +14,20 @@ if root_dir not in sys.path:
 
 # 导入项目内模块
 from src.shared import constants
+from src.shared.ai_adapters import (
+    run_local_chat_completion,
+    translate_with_baidu,
+    translate_with_caiyun,
+    translate_with_youdao,
+)
+from src.shared.ai_providers import (
+    TRANSLATION_CAPABILITY,
+    get_provider_manifest,
+    is_openai_compatible_provider,
+    normalize_provider_id,
+    provider_supports_capability,
+)
+from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
 from src.interfaces.baidu_translate_interface import BaiduTranslateInterface
 from src.interfaces.youdao_translate_interface import YoudaoTranslateInterface
 
@@ -24,6 +37,7 @@ youdao_translate = YoudaoTranslateInterface()
 
 logger = logging.getLogger("CoreTranslation")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_chat_transport = OpenAICompatibleChatTransport()
 
 # --- 自定义异常 ---
 class TranslationParseException(Exception):
@@ -127,6 +141,14 @@ def _safely_extract_from_json(json_str, field_name):
         # 所有方法都失败，返回原始文本
         return json_str
 
+
+def _build_text_chat_messages(prompt_content: str, text: str) -> list:
+    messages = []
+    if prompt_content:
+        messages.append({"role": "system", "content": prompt_content})
+    messages.append({"role": "user", "content": text})
+    return messages
+
 def translate_single_text(text, target_language, model_provider, 
                           api_key=None, model_name=None, prompt_content=None, 
                           use_json_format=False, custom_base_url=None,
@@ -166,7 +188,11 @@ def translate_single_text(text, target_language, model_provider,
         logger.warning("期望JSON格式输出，但提供的翻译提示词可能不是JSON格式。")
 
 
-    logger.info(f"开始翻译文本: '{text[:30]}...' (服务商: {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, 重试: {max_retries})")
+    canonical_provider = normalize_provider_id(model_provider)
+    logger.info(
+        f"开始翻译文本: '{text[:30]}...' "
+        f"(服务商: {canonical_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, 重试: {max_retries})"
+    )
 
     retry_count = 0
     translated_text = "【翻译失败】请检查终端中的错误日志"
@@ -183,201 +209,64 @@ def translate_single_text(text, target_language, model_provider,
 
     while retry_count < max_retries:
         try:
-            if model_provider == 'siliconflow':
-                # SiliconFlow (硅基流动) 使用 OpenAI 兼容 API
-                if not api_key:
-                    raise ValueError("SiliconFlow需要API Key")
-                client = create_openai_client(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": prompt_content},
-                        {"role": "user", "content": text},
-                    ]
-                )
-                translated_text = response.choices[0].message.content.strip()
-                
-            elif model_provider == 'deepseek':
-                # DeepSeek 也使用 OpenAI 兼容 API
-                if not api_key:
-                    raise ValueError("DeepSeek需要API Key")
-                client = create_openai_client(api_key=api_key, base_url="https://api.deepseek.com/v1")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": prompt_content},
-                        {"role": "user", "content": text},
-                    ]
-                )
-                translated_text = response.choices[0].message.content.strip()
-                
-            elif model_provider == 'volcano':
-                # 火山引擎，也使用 OpenAI 兼容 API
-                if not api_key: raise ValueError("火山引擎需要 API Key")
-                client = create_openai_client(api_key=api_key, base_url="https://ark.cn-beijing.volces.com/api/v3")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": prompt_content},
-                        {"role": "user", "content": text},
-                    ]
-                )
-                translated_text = response.choices[0].message.content.strip()
+            if is_openai_compatible_provider(canonical_provider) and provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
+                manifest = get_provider_manifest(canonical_provider)
+                if manifest.requires_api_key and not api_key:
+                    raise ValueError(f"{manifest.display_name}需要 API Key")
+                if manifest.requires_model and not model_name:
+                    raise ValueError(f"{manifest.display_name}需要模型名称")
+                if manifest.requires_base_url and not custom_base_url:
+                    raise ValueError(f"{manifest.display_name}需要 Base URL")
 
-            elif model_provider == 'caiyun':
+                response_format = {"type": "json_object"} if use_json_format and manifest.supports_json_response else None
+                translated_text = _chat_transport.complete(
+                    UnifiedChatRequest(
+                        provider=canonical_provider,
+                        api_key=api_key,
+                        model=model_name,
+                        base_url=custom_base_url,
+                        timeout=30.0,
+                        response_format=response_format,
+                        messages=_build_text_chat_messages(prompt_content, text),
+                    )
+                )
+
+            elif canonical_provider == 'caiyun':
                 if not api_key: raise ValueError("彩云小译需要 API Key")
-                url = "http://api.interpreter.caiyunai.com/v1/translator"
-                # 确定翻译方向，默认为 auto2zh（自动检测源语言翻译到中文）
-                trans_type = "auto2zh"
-                if target_language == 'en':
-                    trans_type = "zh2en"
-                elif target_language == 'ja':
-                    trans_type = "zh2ja"
-                # 也可以基于源语言确定翻译方向
-                if 'japan' in model_name or 'ja' in model_name:
-                    trans_type = "ja2zh"
-                elif 'en' in model_name:
-                    trans_type = "en2zh"
-                
-                headers = {
-                    "Content-Type": "application/json",
-                    "X-Authorization": f"token {api_key}"
-                }
-                payload = {
-                    "source": [text],
-                    "trans_type": trans_type,
-                    "request_id": f"comic_translator_{int(time.time())}",
-                    "detect": True,
-                    "media": "text"
-                }
-                
-                response = requests.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                result = response.json()
-                if "target" in result and len(result["target"]) > 0:
-                    translated_text = result["target"][0].strip()
-                else:
-                    raise ValueError(f"彩云小译返回格式错误: {result}")
+                translated_text = translate_with_caiyun(text, target_language, api_key, model_name or "")
 
-            elif model_provider == 'sakura':
-                url = "http://localhost:8080/v1/chat/completions"
-                headers = {"Content-Type": "application/json"}
+            elif canonical_provider == 'sakura':
                 sakura_prompt = "你是一个轻小说翻译模型，可以流畅通顺地以日本轻小说的风格将日文翻译成简体中文，并联系上下文正确使用人称代词，不擅自添加原文中没有的代词。"
-                payload = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": sakura_prompt},
-                        {"role": "user", "content": f"将下面的日文文本翻译成中文：{text}"}
-                    ]
-                }
-                response = requests.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                result = response.json()
-                choices = result.get('choices', [])
-                if not choices:
-                    raise ValueError("Sakura 返回空 choices")
-                translated_text = choices[0]['message']['content'].strip()
+                translated_text = run_local_chat_completion(
+                    "sakura",
+                    model_name,
+                    _build_text_chat_messages(sakura_prompt, f"将下面的日文文本翻译成中文：{text}"),
+                    timeout=120.0,
+                )
 
-            elif model_provider == 'ollama':
-                url = "http://localhost:11434/api/chat"
-                payload = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": prompt_content},
-                        {"role": "user", "content": text}
-                    ],
-                    "stream": False
-                }
-                response = requests.post(url, json=payload)
-                response.raise_for_status()
-                result = response.json()
-                if "message" in result and "content" in result["message"]:
-                    translated_text = result["message"]["content"].strip()
-                else:
-                    raise ValueError(f"Ollama返回格式错误: {result}")
+            elif canonical_provider == 'ollama':
+                translated_text = run_local_chat_completion(
+                    "ollama",
+                    model_name,
+                    _build_text_chat_messages(prompt_content, text),
+                    timeout=120.0,
+                )
                     
-            elif model_provider == constants.BAIDU_TRANSLATE_ENGINE_ID:
-                # 百度翻译API
+            elif canonical_provider == constants.BAIDU_TRANSLATE_ENGINE_ID:
                 if not api_key or (isinstance(api_key, str) and not api_key.strip()):
                     raise ValueError("百度翻译API需要appid")
                 if not model_name or (isinstance(model_name, str) and not model_name.strip()):
                     raise ValueError("百度翻译API需要appkey")
-                    
-                # 设置百度翻译接口的认证信息
-                baidu_translate.set_credentials(api_key, model_name)
-                
-                # 将项目内部语言代码转换为百度翻译API支持的语言代码
-                from_lang = 'auto'  # 默认自动检测源语言
-                to_lang = constants.PROJECT_TO_BAIDU_TRANSLATE_LANG_MAP.get(target_language, 'zh')
-                
-                # 调用百度翻译接口
-                translated_text = baidu_translate.translate(text, from_lang, to_lang)
+                translated_text = translate_with_baidu(text, target_language, api_key, model_name)
             
-            elif model_provider == constants.YOUDAO_TRANSLATE_ENGINE_ID:
-                # 有道翻译API
+            elif canonical_provider == constants.YOUDAO_TRANSLATE_ENGINE_ID:
                 if not api_key or (isinstance(api_key, str) and not api_key.strip()):
                     raise ValueError("有道翻译API需要AppKey")
                 if not model_name or (isinstance(model_name, str) and not model_name.strip()):
                     raise ValueError("有道翻译API需要AppSecret")
-                    
-                # 设置有道翻译接口的认证信息
-                youdao_translate.app_key = api_key
-                youdao_translate.app_secret = model_name
-                
-                # 将项目内部语言代码转换为有道翻译API支持的语言代码
-                from_lang = 'auto'  # 默认自动检测源语言
-                to_lang = constants.PROJECT_TO_YOUDAO_TRANSLATE_LANG_MAP.get(target_language, 'zh-CHS')
-                
-                # 调用有道翻译接口
-                translated_text = youdao_translate.translate(text, from_lang, to_lang)
-            elif model_provider.lower() == 'gemini':
-                if not api_key:
-                    raise ValueError("Gemini 需要 API Key")
-                if not model_name:
-                    raise ValueError("Gemini 需要模型名称 (例如 gemini-1.5-flash-latest)")
-
-                client = create_openai_client(
-                    api_key=api_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"  # 根据教程
-                )
-                
-                gemini_messages = []
-                # System prompt 对于 Gemini 的 OpenAI 兼容层是否有效需要测试
-                # 教程中的 chat completion 示例包含 system role
-                if prompt_content:
-                    gemini_messages.append({"role": "system", "content": prompt_content})
-                # 用户输入是实际的待翻译文本
-                gemini_messages.append({"role": "user", "content": text}) 
-
-                logger.debug(f"Gemini 文本翻译请求 (模型: {model_name}): {json.dumps(gemini_messages, ensure_ascii=False)}")
-
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=gemini_messages,
-                )
-                translated_text = response.choices[0].message.content.strip()
-                logger.info(f"Gemini 文本翻译成功，模型: {model_name}")
-                logger.info(f"Gemini 翻译结果 (前100字符): {translated_text[:100]}")
-            elif model_provider == constants.CUSTOM_OPENAI_PROVIDER_ID:
-                if not api_key:
-                    raise ValueError("自定义 OpenAI 兼容服务需要 API Key")
-                if not model_name:
-                    raise ValueError("自定义 OpenAI 兼容服务需要模型名称")
-                if not custom_base_url: # 检查 custom_base_url
-                    raise ValueError("自定义 OpenAI 兼容服务需要 Base URL")
-
-                logger.info(f"使用自定义 OpenAI 兼容服务: Base URL='{custom_base_url}', Model='{model_name}'")
-                client = create_openai_client(api_key=api_key, base_url=custom_base_url)  # 使用辅助函数自动处理代理
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": prompt_content},
-                        {"role": "user", "content": text},
-                    ],
-                )
-                translated_text = response.choices[0].message.content.strip()
+                translated_text = translate_with_youdao(text, target_language, api_key, model_name)
             else:
-                raise ValueError(f"不支持的翻译服务提供商: {model_provider}")
+                raise ValueError(f"不支持的翻译服务提供商: {canonical_provider}")
             
             # 如果使用 JSON 格式，尝试从响应中提取 translated_text 字段
             if use_json_format:
@@ -394,14 +283,14 @@ def translate_single_text(text, target_language, model_provider,
         except Exception as e:
             retry_count += 1
             error_message = str(e)
-            logger.error(f"翻译失败（尝试 {retry_count}/{max_retries}，服务商: {model_provider}）: {error_message}", exc_info=True)
+            logger.error(f"翻译失败（尝试 {retry_count}/{max_retries}，服务商: {canonical_provider}）: {error_message}", exc_info=True)
             translated_text = "【翻译失败】请检查终端中的错误日志"
             if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_detail = e.response.json()
-                    logger.error(f"{model_provider} API 错误详情: {error_detail}")
+                    logger.error(f"{canonical_provider} API 错误详情: {error_detail}")
                 except json.JSONDecodeError:
-                    logger.error(f"{model_provider} API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
+                    logger.error(f"{canonical_provider} API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
 
             if "API key" in error_message or "appid" in error_message or "appkey" in error_message or "authentication" in error_message.lower() or "Base URL" in error_message: # 新增 "Base URL" 检查
                 break # 凭证或配置错误，不重试
@@ -710,23 +599,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
     
     logger.info(f"批量翻译请求: {batch_size} 个文本片段 (消息数: {len(messages)})")
     
-    # 确定 API 客户端配置
-    base_url_map = {
-        'siliconflow': 'https://api.siliconflow.cn/v1',
-        'deepseek': 'https://api.deepseek.com/v1',
-        'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-        constants.CUSTOM_OPENAI_PROVIDER_ID: custom_base_url,
-    }
-    
-    # Gemini 使用特殊的 base_url
-    if model_provider.lower() == 'gemini':
-        base_url = 'https://generativelanguage.googleapis.com/v1beta/openai/'
-    else:
-        base_url = base_url_map.get(model_provider, custom_base_url)
-    
-    if not base_url and model_provider not in ['ollama', 'sakura']:
-        logger.error(f"未知的模型提供商: {model_provider}")
-        return texts  # 返回原文
+    canonical_provider = normalize_provider_id(model_provider)
     
     # 重试循环
     for attempt in range(max_retries + 1):
@@ -734,44 +607,31 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
         
         try:
             # === API 调用阶段 ===
-            if model_provider == 'ollama':
-                # Ollama 特殊处理
-                url = "http://localhost:11434/api/chat"
-                payload = {
-                    "model": model_name,
-                    "messages": messages,
-                    "stream": False
-                }
-                response = requests.post(url, json=payload, timeout=120)
-                response.raise_for_status()
-                result = response.json()
-                response_text = result.get("message", {}).get("content", "").strip()
-                
-            elif model_provider == 'sakura':
-                # Sakura 特殊处理
-                url = "http://localhost:8080/v1/chat/completions"
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "model": model_name,
-                    "messages": messages
-                }
-                response = requests.post(url, headers=headers, json=payload, timeout=120)
-                response.raise_for_status()
-                result = response.json()
-                choices = result.get('choices', [])
-                if not choices:
-                    raise ValueError("Sakura 返回空 choices")
-                response_text = choices[0]['message']['content'].strip()
-                
-            else:
-                # OpenAI 兼容 API
-                client = create_openai_client(api_key=api_key, base_url=base_url)
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    timeout=120
+            if canonical_provider in {'ollama', 'sakura'}:
+                response_text = run_local_chat_completion(
+                    canonical_provider,
+                    model_name,
+                    messages,
+                    timeout=120.0,
                 )
-                response_text = response.choices[0].message.content.strip()
+
+            elif is_openai_compatible_provider(canonical_provider):
+                manifest = get_provider_manifest(canonical_provider)
+                response_format = {"type": "json_object"} if use_json_format and manifest.supports_json_response else None
+                response_text = _chat_transport.complete(
+                    UnifiedChatRequest(
+                        provider=canonical_provider,
+                        api_key=api_key,
+                        model=model_name,
+                        messages=messages,
+                        base_url=custom_base_url,
+                        timeout=120.0,
+                        response_format=response_format,
+                    )
+                )
+
+            else:
+                raise ValueError(f"不支持批量翻译的服务商: {canonical_provider}")
             
             # 日志：输出原始响应（用于调试）
             logger.info(f"批量翻译响应（前300字符）:\n{response_text[:300]}...")
@@ -885,7 +745,8 @@ def translate_text_list(texts, target_language, model_provider,
     if not non_empty_texts:
         return final_translations
     
-    logger.info(f"开始批量翻译 {len(non_empty_texts)} 个文本片段 (使用 {model_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
+    canonical_provider = normalize_provider_id(model_provider)
+    logger.info(f"开始批量翻译 {len(non_empty_texts)} 个文本片段 (使用 {canonical_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
     
     # 特殊处理模拟翻译提供商
     if model_provider.lower() == 'mock':
@@ -903,10 +764,12 @@ def translate_text_list(texts, target_language, model_provider,
         return final_translations
     
     # 检查是否为支持批量翻译的提供商 (LLM)
-    llm_providers = {'siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'gemini', 
-                     'custom_openai'}  # 使用字符串而不是常量，便于 .lower() 比较
+    llm_providers = {
+        provider_id for provider_id in ['siliconflow', 'deepseek', 'volcano', 'ollama', 'sakura', 'gemini', 'custom']
+        if provider_supports_capability(provider_id, TRANSLATION_CAPABILITY)
+    }
     
-    if model_provider.lower() in llm_providers:
+    if canonical_provider in llm_providers and canonical_provider not in {'caiyun', constants.BAIDU_TRANSLATE_ENGINE_ID, constants.YOUDAO_TRANSLATE_ENGINE_ID}:
         # --- rpm 限制 ---
         _enforce_rpm_limit(
             rpm_limit_translation,
@@ -943,7 +806,7 @@ def translate_text_list(texts, target_language, model_provider,
             
             batch_translations = _translate_batch_with_llm(
                 batch,
-                model_provider,
+                canonical_provider,
                 api_key,
                 model_name,
                 custom_prompt=prompt_content,
@@ -964,12 +827,12 @@ def translate_text_list(texts, target_language, model_provider,
         
     else:
         # 非 LLM 提供商 (如百度翻译、有道翻译)，使用原有的逐个翻译逻辑
-        logger.info(f"提供商 {model_provider} 不支持批量翻译，使用逐个翻译模式")
+        logger.info(f"提供商 {canonical_provider} 不支持批量翻译，使用逐个翻译模式")
         for i, text in enumerate(non_empty_texts):
             translated = translate_single_text(
                 text,
                 target_language,
-                model_provider,
+                canonical_provider,
                 api_key=api_key,
                 model_name=model_name,
                 prompt_content=prompt_content,

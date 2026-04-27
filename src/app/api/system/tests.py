@@ -12,13 +12,12 @@
 """
 
 import os
-import re
 import io
 import base64
 import time
 import threading
 import logging
-from typing import Tuple, List, Dict, Any
+from typing import List, Dict, Any
 from flask import request, jsonify
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -30,8 +29,23 @@ from src.interfaces.baidu_ocr_interface import test_baidu_ocr_connection
 from src.interfaces.vision_interface import test_ai_vision_ocr
 from src.interfaces.baidu_translate_interface import baidu_translate
 from src.shared import constants
+from src.shared.ai_adapters import fetch_local_models, test_caiyun_connection as adapter_test_caiyun_connection
+from src.shared.ai_providers import (
+    CONNECTION_TEST_CAPABILITY,
+    MODEL_FETCH_CAPABILITY,
+    VISION_OCR_CAPABILITY,
+    get_provider_manifest,
+    normalize_provider_id,
+    provider_supports_capability,
+)
+from src.shared.ai_transport import (
+    OpenAICompatibleChatTransport,
+    ProviderConnectionTestRequest,
+    ProviderModelListRequest,
+)
 
 logger = logging.getLogger("SystemAPI.Tests")
+_chat_transport = OpenAICompatibleChatTransport()
 
 # 全局变量，用于存储Sakura服务状态和模型列表
 SAKURA_STATUS = {
@@ -43,6 +57,13 @@ SAKURA_STATUS = {
     ],
     'last_check_time': 0
 }
+
+
+def _request_value(data: Dict[str, Any], *keys: str, default=None):
+    for key in keys:
+        if key in data and data.get(key) is not None:
+            return data.get(key)
+    return default
 
 
 @system_bp.route('/test_ollama_connection', methods=['POST'])
@@ -367,32 +388,30 @@ def test_ai_vision_ocr_api():
                 'message': '请求数据为空'
             }), 400
             
-        provider = data.get('provider')
-        api_key = data.get('api_key')
-        model_name = data.get('model_name')
-        prompt = data.get('prompt')
-        custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
+        provider = normalize_provider_id(_request_value(data, 'provider'))
+        api_key = _request_value(data, 'api_key', 'apiKey')
+        model_name = _request_value(data, 'model_name', 'model', 'modelName')
+        prompt = _request_value(data, 'prompt')
+        custom_ai_vision_base_url = _request_value(data, 'custom_ai_vision_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
         
         # 检查必要参数
         missing = []
         if not provider: missing.append('provider')
         if not api_key: missing.append('api_key')
         if not model_name: missing.append('model_name')
-        if provider == constants.CUSTOM_AI_VISION_PROVIDER_ID and not custom_ai_vision_base_url:
+        if not provider_supports_capability(provider, VISION_OCR_CAPABILITY):
+            return jsonify({
+                'success': False,
+                'message': f'不支持的AI视觉服务商: {provider}'
+            }), 400
+        manifest = get_provider_manifest(provider)
+        if manifest.requires_base_url and not custom_ai_vision_base_url:
             missing.append('custom_ai_vision_base_url (当选择自定义服务时)')
         
         if missing:
             return jsonify({
                 'success': False,
                 'message': f'缺少必要参数: {", ".join(missing)}'
-            }), 400
-        
-        # 检查provider是否受支持
-        if provider not in constants.SUPPORTED_AI_VISION_PROVIDERS:
-            return jsonify({
-                'success': False,
-                'message': f'不支持的AI视觉服务商: {provider}，'
-                           f'支持的服务商: {", ".join(constants.SUPPORTED_AI_VISION_PROVIDERS.keys())}'
             }), 400
             
         # 获取或创建测试图片
@@ -557,7 +576,7 @@ def test_ai_translate_connection():
     
     请求体:
         {
-            'provider': 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'caiyun' | 'custom_openai',
+            'provider': 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'caiyun' | 'custom',
             'api_key': 'xxx',
             'model_name': 'xxx',  // 可选，彩云小译不需要
             'base_url': 'xxx'     // 仅自定义服务需要
@@ -571,10 +590,10 @@ def test_ai_translate_connection():
     """
     try:
         data = request.json
-        provider = data.get('provider', '').lower()
-        api_key = data.get('api_key', '').strip()
-        model_name = data.get('model_name', '').strip()
-        base_url = data.get('base_url', '').strip()
+        provider = normalize_provider_id(_request_value(data, 'provider', default=''))
+        api_key = (_request_value(data, 'api_key', 'apiKey', default='') or '').strip()
+        model_name = (_request_value(data, 'model_name', 'model', 'modelName', default='') or '').strip()
+        base_url = (_request_value(data, 'base_url', 'custom_base_url', 'baseUrl', 'customBaseUrl', default='') or '').strip()
         
         if not api_key:
             return jsonify({
@@ -584,7 +603,13 @@ def test_ai_translate_connection():
         
         # 彩云小译特殊处理
         if provider == 'caiyun':
-            return test_caiyun_connection(api_key)
+            success, result = adapter_test_caiyun_connection(api_key)
+            if success:
+                return jsonify({
+                    'success': True,
+                    'message': f'连接成功! 测试翻译: Hello → {result}'
+                })
+            return jsonify({'success': False, 'message': f'连接失败: {result}'}), 500
         
         # 其他服务需要模型名称
         if not model_name:
@@ -594,47 +619,28 @@ def test_ai_translate_connection():
             }), 400
         
         # 根据服务商确定 base_url
-        provider_urls = {
-            'siliconflow': 'https://api.siliconflow.cn/v1',
-            'deepseek': 'https://api.deepseek.com',
-            'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-        }
-        
-        if provider == 'custom_openai':
-            if not base_url:
-                return jsonify({
-                    'success': False,
-                    'message': '自定义服务需要提供Base URL'
-                }), 400
-            api_base_url = base_url
-        elif provider == 'gemini':
-            # Gemini 使用特殊处理
-            return test_gemini_connection(api_key, model_name)
-        elif provider in provider_urls:
-            api_base_url = provider_urls[provider]
-        else:
+        if not provider_supports_capability(provider, CONNECTION_TEST_CAPABILITY):
             return jsonify({
                 'success': False,
                 'message': f'不支持的服务商: {provider}'
             }), 400
-        
-        # 使用 OpenAI 兼容 API 进行测试（使用辅助函数自动处理代理问题）
-        from src.shared.openai_helpers import create_openai_client
-        
-        client = create_openai_client(api_key=api_key, base_url=api_base_url, timeout=30.0)
-        
-        # 发送简短翻译请求
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a translator. Translate to Chinese."},
-                {"role": "user", "content": "Hello"}
-            ],
-            max_tokens=50,
-            timeout=30
+        manifest = get_provider_manifest(provider)
+        if manifest.requires_base_url and not base_url:
+            return jsonify({
+                'success': False,
+                'message': '自定义服务需要提供Base URL'
+            }), 400
+
+        success, result = _chat_transport.test_connection(
+            ProviderConnectionTestRequest(
+                provider=provider,
+                api_key=api_key,
+                model=model_name,
+                base_url=base_url or None,
+            )
         )
-        
-        result = response.choices[0].message.content.strip()
+        if not success:
+            raise ValueError(result)
         
         logger.info(f"AI翻译服务测试成功 ({provider}): Hello -> {result}")
         
@@ -665,51 +671,6 @@ def test_ai_translate_connection():
         }), 500
 
 
-def test_caiyun_connection(token: str) -> tuple:
-    """测试彩云小译连接"""
-    try:
-        response = requests.post(
-            'https://api.interpreter.caiyunai.com/v1/translator',
-            headers={
-                'Content-Type': 'application/json',
-                'X-Authorization': f'token {token}'
-            },
-            json={
-                'source': ['Hello'],
-                'trans_type': 'en2zh',
-                'request_id': 'test',
-                'detect': True
-            },
-            timeout=15
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('target') and len(data['target']) > 0:
-                result = data['target'][0]
-                logger.info(f"彩云小译测试成功: Hello -> {result}")
-                return jsonify({
-                    'success': True,
-                    'message': f'连接成功! 测试翻译: Hello → {result}'
-                })
-        
-        # 处理错误响应
-        error_data = response.json() if response.text else {}
-        error_msg = error_data.get('message', response.text or f'HTTP {response.status_code}')
-        
-        return jsonify({
-            'success': False,
-            'message': f'连接失败: {error_msg}'
-        }), 500
-        
-    except Exception as e:
-        logger.error(f"测试彩云小译连接失败: {e}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'message': f'连接失败: {str(e)}'
-        }), 500
-
-
 @system_bp.route('/fetch_models', methods=['POST'])
 def fetch_models():
     """
@@ -717,7 +678,7 @@ def fetch_models():
     
     请求体:
         {
-            'provider': 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom_openai',
+            'provider': 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom',
             'api_key': 'xxx',
             'base_url': 'xxx'  // 仅自定义服务需要
         }
@@ -733,9 +694,9 @@ def fetch_models():
     """
     try:
         data = request.json
-        provider = data.get('provider', '').lower()
-        api_key = data.get('api_key', '').strip()
-        base_url = data.get('base_url', '').strip()
+        provider = normalize_provider_id(_request_value(data, 'provider', default=''))
+        api_key = (_request_value(data, 'api_key', 'apiKey', default='') or '').strip()
+        base_url = (_request_value(data, 'base_url', 'baseUrl', 'customBaseUrl', default='') or '').strip()
         
         if not api_key:
             return jsonify({
@@ -745,31 +706,28 @@ def fetch_models():
         
         models = []
         
-        # 根据服务商获取模型列表
-        if provider == 'siliconflow':
-            models = fetch_siliconflow_models(api_key)
-        elif provider == 'deepseek':
-            models = fetch_openai_compatible_models(api_key, 'https://api.deepseek.com/v1')
-        elif provider == 'volcano':
-            models = fetch_openai_compatible_models(api_key, 'https://ark.cn-beijing.volces.com/api/v3')
-        elif provider == 'gemini':
-            models = fetch_gemini_models(api_key)
-        elif provider == 'openai':
-            models = fetch_openai_compatible_models(api_key, 'https://api.openai.com/v1')
-        elif provider == 'qwen':
-            models = fetch_openai_compatible_models(api_key, 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-        elif provider == 'custom_openai':
-            if not base_url:
-                return jsonify({
-                    'success': False,
-                    'message': '自定义服务需要提供Base URL'
-                }), 400
-            models = fetch_openai_compatible_models(api_key, base_url)
-        else:
+        if not provider_supports_capability(provider, MODEL_FETCH_CAPABILITY):
             return jsonify({
                 'success': False,
                 'message': f'不支持的服务商: {provider}'
             }), 400
+
+        manifest = get_provider_manifest(provider)
+        if manifest.kind == 'local':
+            models = fetch_local_models(provider)
+        elif manifest.requires_base_url and not base_url:
+            return jsonify({
+                'success': False,
+                'message': '自定义服务需要提供Base URL'
+            }), 400
+        else:
+            models = _chat_transport.list_models(
+                ProviderModelListRequest(
+                    provider=provider,
+                    api_key=api_key,
+                    base_url=base_url or None,
+                )
+            )
         
         return jsonify({
             'success': True,
@@ -781,155 +739,6 @@ def fetch_models():
         return jsonify({
             'success': False,
             'message': f'获取模型列表失败: {str(e)}'
-        }), 500
-
-
-def fetch_siliconflow_models(api_key: str) -> List[Dict[str, str]]:
-    """获取 SiliconFlow 可用模型列表"""
-    try:
-        response = requests.get(
-            'https://api.siliconflow.cn/v1/models',
-            headers={'Authorization': f'Bearer {api_key}'},
-            timeout=15
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            models = []
-            for model in data.get('data', []):
-                model_id = model.get('id', '')
-                # 只返回文本模型（排除图像、音频等）
-                if model_id and ('chat' in model_id.lower() or 'llm' in model_id.lower() 
-                                or 'qwen' in model_id.lower() or 'deepseek' in model_id.lower()
-                                or 'glm' in model_id.lower() or 'yi-' in model_id.lower()
-                                or 'internlm' in model_id.lower() or 'gemma' in model_id.lower()):
-                    models.append({
-                        'id': model_id,
-                        'name': model_id
-                    })
-            return sorted(models, key=lambda x: x['id'])
-        else:
-            logger.warning(f"SiliconFlow API返回错误: {response.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"获取SiliconFlow模型列表失败: {e}")
-        return []
-
-
-def fetch_openai_compatible_models(api_key: str, base_url: str) -> List[Dict[str, str]]:
-    """获取 OpenAI 兼容服务的模型列表"""
-    try:
-        # 确保 base_url 格式正确
-        # 注意：某些服务商（如火山引擎）使用 /api/v3 而非 /v1，不应追加 /v1
-        has_version_path = bool(re.search(r'/v\d+/?$', base_url) or re.search(r'/api/v\d+/?$', base_url))
-        
-        if not has_version_path:
-            # 只有当 URL 不包含版本路径时才添加 /v1
-            if not base_url.endswith('/'):
-                base_url += '/'
-            base_url += 'v1'
-        
-        models_url = base_url.rstrip('/') + '/models'
-        
-        # 检测是否为本地服务，如果是则禁用代理
-        is_local = any(indicator in base_url.lower() for indicator in ['localhost', '127.0.0.1', '0.0.0.0', '::1'])
-        request_kwargs = {
-            'headers': {'Authorization': f'Bearer {api_key}'},
-            'timeout': 15
-        }
-        if is_local:
-            logger.info(f"检测到本地服务 ({base_url})，禁用代理")
-            request_kwargs['proxies'] = None  # 禁用代理
-        
-        response = requests.get(models_url, **request_kwargs)
-        
-        if response.status_code == 200:
-            data = response.json()
-            models = []
-            for model in data.get('data', []):
-                model_id = model.get('id', '')
-                if model_id:
-                    models.append({
-                        'id': model_id,
-                        'name': model_id
-                    })
-            return sorted(models, key=lambda x: x['id'])
-        else:
-            logger.warning(f"API返回错误 ({base_url}): {response.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"获取模型列表失败 ({base_url}): {e}")
-        return []
-
-
-def fetch_gemini_models(api_key: str) -> List[Dict[str, str]]:
-    """获取 Google Gemini 可用模型列表"""
-    try:
-        response = requests.get(
-            f'https://generativelanguage.googleapis.com/v1beta/models?key={api_key}',
-            timeout=15
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            models = []
-            for model in data.get('models', []):
-                model_name = model.get('name', '')
-                # 提取模型ID (去掉 'models/' 前缀)
-                model_id = model_name.replace('models/', '') if model_name.startswith('models/') else model_name
-                display_name = model.get('displayName', model_id)
-                
-                # 只返回支持内容生成的模型
-                supported_methods = model.get('supportedGenerationMethods', [])
-                if 'generateContent' in supported_methods:
-                    models.append({
-                        'id': model_id,
-                        'name': display_name
-                    })
-            return sorted(models, key=lambda x: x['id'])
-        else:
-            logger.warning(f"Gemini API返回错误: {response.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"获取Gemini模型列表失败: {e}")
-        return []
-
-
-def test_gemini_connection(api_key: str, model_name: str) -> tuple:
-    """测试 Google Gemini 连接"""
-    try:
-        # Gemini 使用 OpenAI 兼容模式（使用辅助函数自动处理代理问题）
-        from src.shared.openai_helpers import create_openai_client
-        
-        client = create_openai_client(
-            api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            timeout=30.0
-        )
-        
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a translator. Translate to Chinese."},
-                {"role": "user", "content": "Hello"}
-            ],
-            max_tokens=50,
-            timeout=30
-        )
-        
-        result = response.choices[0].message.content.strip()
-        logger.info(f"Gemini测试成功: Hello -> {result}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'连接成功! 测试翻译: Hello → {result}'
-        })
-        
-    except Exception as e:
-        logger.error(f"测试Gemini连接失败: {e}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'message': f'连接失败: {str(e)}'
         }), 500
 
 

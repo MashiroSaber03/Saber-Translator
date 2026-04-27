@@ -34,7 +34,7 @@
       </div>
 
       <!-- 自定义Base URL -->
-      <div v-show="localSettings.modelProvider === 'custom_openai'" class="settings-item">
+      <div v-show="providerRequiresBaseUrl(localSettings.modelProvider)" class="settings-item">
         <label for="settingsCustomBaseUrl">Base URL:</label>
         <input
           type="text"
@@ -227,6 +227,14 @@
  * 支持服务商配置分组存储
  */
 import { ref, computed, watch } from 'vue'
+import {
+  getProviderDisplayName as getProviderDisplayNameFromManifest,
+  getProviderOptionsForCapability,
+  isLocalProviderId,
+  normalizeProviderId,
+  providerRequiresBaseUrl,
+  providerSupportsCapability
+} from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
@@ -236,18 +244,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 翻译服务商选项 */
-const providerOptions = [
-  { label: 'SiliconFlow', value: 'siliconflow' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: '火山引擎', value: 'volcano' },
-  { label: '彩云小译', value: 'caiyun' },
-  { label: '百度翻译', value: 'baidu_translate' },
-  { label: '有道翻译', value: 'youdao_translate' },
-  { label: 'Google Gemini', value: 'gemini' },
-  { label: 'Ollama (本地)', value: 'ollama' },
-  { label: 'Sakura (本地)', value: 'sakura' },
-  { label: '自定义 OpenAI 兼容服务', value: 'custom_openai' }
-]
+const providerOptions = getProviderOptionsForCapability('translation')
 
 /** 提示词模式选项 */
 const promptModeOptions = [
@@ -279,7 +276,7 @@ const getCurrentPrompt = (): string => {
 }
 
 const localSettings = ref({
-  modelProvider: settingsStore.settings.translation.provider,
+  modelProvider: normalizeProviderId(settingsStore.settings.translation.provider),
   apiKey: settingsStore.settings.translation.apiKey,
   modelName: settingsStore.settings.translation.modelName,
   customBaseUrl: settingsStore.settings.translation.customBaseUrl,
@@ -319,7 +316,7 @@ const localModelListOptions = computed(() => {
 
 // 计算属性：是否为本地服务商
 const isLocalProvider = computed(() => {
-  return ['ollama', 'sakura'].includes(localSettings.value.modelProvider)
+  return isLocalProviderId(localSettings.value.modelProvider)
 })
 
 // 计算属性：是否显示RPM限制
@@ -329,7 +326,7 @@ const showRpmLimit = computed(() => {
 
 // 计算属性：是否支持获取模型列表
 const supportsFetchModels = computed(() => {
-  return ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai'].includes(localSettings.value.modelProvider)
+  return providerSupportsCapability(localSettings.value.modelProvider, 'modelFetch') && !isLocalProviderId(localSettings.value.modelProvider)
 })
 
 // 计算属性：API Key 标签
@@ -391,9 +388,10 @@ const modelNamePlaceholder = computed(() => {
 // 处理服务商切换
 function handleProviderChange() {
   const newProvider = localSettings.value.modelProvider as TranslationProvider
+  localSettings.value.modelProvider = normalizeProviderId(newProvider)
   
   // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
-  settingsStore.setTranslationProvider(newProvider)
+  settingsStore.setTranslationProvider(localSettings.value.modelProvider as TranslationProvider)
   
   // 从 store 同步恢复的配置到本地状态
   localSettings.value.apiKey = settingsStore.settings.translation.apiKey
@@ -550,14 +548,13 @@ async function fetchModels() {
   }
 
   // 检查是否支持模型获取（与原版一致）
-  const supportedProviders = ['siliconflow', 'deepseek', 'volcano', 'gemini', 'custom_openai']
-  if (!supportedProviders.includes(provider)) {
+  if (!providerSupportsCapability(provider, 'modelFetch') || isLocalProviderId(provider)) {
     toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
     return
   }
 
   // 自定义服务需要 base_url（与原版一致）
-  if (provider === 'custom_openai' && !baseUrl) {
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
   }
@@ -582,19 +579,7 @@ async function fetchModels() {
 
 // 获取服务商显示名称（与原版一致）
 function getProviderDisplayName(provider: string): string {
-  const names: Record<string, string> = {
-    'siliconflow': 'SiliconFlow',
-    'deepseek': 'DeepSeek',
-    'volcano': '火山引擎',
-    'gemini': 'Google Gemini',
-    'custom_openai': '自定义OpenAI',
-    'ollama': 'Ollama',
-    'sakura': 'Sakura',
-    'caiyun': '彩云小译',
-    'baidu_translate': '百度翻译',
-    'youdao_translate': '有道翻译'
-  }
-  return names[provider] || provider
+  return getProviderDisplayNameFromManifest(provider)
 }
 
 // 获取本地模型列表（Ollama 或 Sakura）
@@ -670,7 +655,7 @@ async function testCloudConnection() {
   }
 
   // 自定义服务需要 base_url
-  if (provider === 'custom_openai' && !baseUrl) {
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要填写 Base URL')
     return
   }

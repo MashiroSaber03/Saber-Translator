@@ -28,6 +28,7 @@ from src.core.config_models import BubbleState, bubble_states_to_api_response
 from src.core.color_extractor import extract_bubble_colors
 from src.shared import constants
 from src.plugins.manager import apply_after_ocr_hooks
+from src.shared.ai_providers import normalize_provider_id
 
 parallel_bp = Blueprint('parallel', __name__, url_prefix='/api')
 logger = logging.getLogger('ParallelAPI')
@@ -179,11 +180,13 @@ def parallel_ocr():
         baidu_ocr_language = data.get('baidu_ocr_language', 'JAP')
         
         # AI视觉OCR参数
-        ai_vision_provider = data.get('ai_vision_provider')
+        ai_vision_provider = normalize_provider_id(data.get('ai_vision_provider'))
         ai_vision_api_key = data.get('ai_vision_api_key')
         ai_vision_model_name = data.get('ai_vision_model_name')
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt')
+        ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
+        use_json_format_for_ai_vision = bool(data.get('use_json_format_for_ai_vision', False))
         ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
         enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
         secondary_ocr_engine = data.get('secondary_ocr_engine')
@@ -212,7 +215,9 @@ def parallel_ocr():
             ai_vision_api_key=ai_vision_api_key,
             ai_vision_model_name=ai_vision_model_name,
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+            ai_vision_prompt_mode=ai_vision_prompt_mode,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
+            use_json_format_for_ai_vision=use_json_format_for_ai_vision,
             ai_vision_min_image_size=ai_vision_min_image_size,
             enable_hybrid_ocr=enable_hybrid_ocr,
             secondary_ocr_engine=secondary_ocr_engine,
@@ -312,7 +317,7 @@ def parallel_translate():
         # 获取翻译参数
         target_language = data.get('target_language', 'zh')
         source_language = data.get('source_language', 'japanese')
-        model_provider = data.get('model_provider', 'siliconflow')
+        model_provider = normalize_provider_id(data.get('model_provider', 'siliconflow'))
         model_name = data.get('model_name')
         api_key = data.get('api_key')
         custom_base_url = data.get('custom_base_url')

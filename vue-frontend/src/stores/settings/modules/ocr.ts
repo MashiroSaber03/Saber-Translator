@@ -4,6 +4,7 @@
  */
 
 import { computed, type Ref } from 'vue'
+import { normalizeProviderId } from '@/config/aiProviders'
 import type {
   TranslationSettings,
   BaiduOcrSettings,
@@ -116,6 +117,7 @@ export function useOcrSettings(
    * @param provider - 服务商名称
    */
   function setAiVisionOcrProvider(provider: string): void {
+    provider = normalizeProviderId(provider)
     const oldProvider = settings.value.aiVisionOcr.provider
     if (oldProvider === provider) return
 
@@ -137,16 +139,18 @@ export function useOcrSettings(
    * 切换时自动更新当前提示词内容为对应模式的默认提示词
    * @param isJsonMode - 是否为JSON格式模式
    */
-  function setAiVisionOcrPromptMode(isJsonMode: boolean): void {
-    // 更新模式状态
-    settings.value.aiVisionOcr.isJsonMode = isJsonMode
+  function setAiVisionOcrPromptMode(mode: 'normal' | 'json' | 'paddleocr_vl'): void {
+    settings.value.aiVisionOcr.promptMode = mode
+    settings.value.aiVisionOcr.isJsonMode = mode === 'json'
 
-    // 根据模式切换默认提示词
-    const defaultPrompt = isJsonMode ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT
-    settings.value.aiVisionOcr.prompt = defaultPrompt
+    if (mode === 'json') {
+      settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
+    } else if (mode === 'normal') {
+      settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_PROMPT
+    }
 
     saveToStorage()
-    console.log(`AI视觉OCR提示词模式已切换为: ${isJsonMode ? 'JSON格式' : '普通模式'}`)
+    console.log(`AI视觉OCR提示词模式已切换为: ${mode}`)
   }
 
   // ============================================================
@@ -159,12 +163,14 @@ export function useOcrSettings(
    */
   function saveAiVisionOcrProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const config: AiVisionOcrProviderConfig = {
       apiKey: settings.value.aiVisionOcr.apiKey,
       modelName: settings.value.aiVisionOcr.modelName,
       customBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
       prompt: settings.value.aiVisionOcr.prompt,
+      promptMode: settings.value.aiVisionOcr.promptMode,
       rpmLimit: settings.value.aiVisionOcr.rpmLimit,
       isJsonMode: settings.value.aiVisionOcr.isJsonMode,
       minImageSize: settings.value.aiVisionOcr.minImageSize
@@ -181,6 +187,7 @@ export function useOcrSettings(
    */
   function restoreAiVisionOcrProviderConfig(provider: string): void {
     if (!provider) return
+    provider = normalizeProviderId(provider)
 
     const cached = providerConfigs.value.aiVisionOcr[provider]
     if (cached) {
@@ -188,6 +195,7 @@ export function useOcrSettings(
       if (cached.modelName !== undefined) settings.value.aiVisionOcr.modelName = cached.modelName
       if (cached.customBaseUrl !== undefined) settings.value.aiVisionOcr.customBaseUrl = cached.customBaseUrl
       if (cached.prompt !== undefined) settings.value.aiVisionOcr.prompt = cached.prompt
+      if (cached.promptMode !== undefined) settings.value.aiVisionOcr.promptMode = cached.promptMode
       if (cached.rpmLimit !== undefined) settings.value.aiVisionOcr.rpmLimit = cached.rpmLimit
       if (cached.isJsonMode !== undefined) settings.value.aiVisionOcr.isJsonMode = cached.isJsonMode
       if (cached.minImageSize !== undefined) settings.value.aiVisionOcr.minImageSize = cached.minImageSize

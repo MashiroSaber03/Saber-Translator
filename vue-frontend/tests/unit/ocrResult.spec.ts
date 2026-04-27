@@ -29,7 +29,14 @@ vi.mock('@/stores/settingsStore', () => ({
       sourceLanguage: 'japanese',
       baiduOcr: {},
       paddleOcrVl: { sourceLanguage: 'japanese' },
-      aiVisionOcr: {},
+      aiVisionOcr: {
+        provider: 'custom_openai_vision',
+        apiKey: 'vision-key',
+        modelName: 'vision-model',
+        prompt: 'ocr prompt',
+        customBaseUrl: 'https://vision.example.com/v1',
+        isJsonMode: true
+      },
       hybridOcr: {
         enabled: true,
         secondaryEngine: '48px_ocr',
@@ -158,7 +165,8 @@ describe('OCR result integration', () => {
       expect.objectContaining({
         enable_hybrid_ocr: true,
         secondary_ocr_engine: '48px_ocr',
-        hybrid_ocr_threshold: 0.2
+        hybrid_ocr_threshold: 0.2,
+        use_json_format_for_ai_vision: true
       })
     )
   })

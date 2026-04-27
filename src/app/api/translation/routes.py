@@ -21,6 +21,10 @@ from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
 from src.plugins.manager import apply_after_ocr_hooks
+from src.shared.ai_providers import normalize_provider_id
+from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+
+_hq_chat_transport = OpenAICompatibleChatTransport()
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -80,6 +84,13 @@ def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, sys
     ]
     
     return messages
+
+
+def _request_value(data, *keys, default=None):
+    for key in keys:
+        if key in data and data.get(key) is not None:
+            return data.get(key)
+    return default
 
 
 def _clamp_int(value, minimum: int, maximum: int) -> int:
@@ -834,29 +845,46 @@ def route_translate_single_text():
         if not data:
             return jsonify({'error': '请求体不能为空'}), 400
 
-        original_text = data.get('original_text')
-        target_language = data.get('target_language')
-        api_key = data.get('api_key')
-        model_name = data.get('model_name')
-        model_provider = data.get('model_provider')
-        prompt_content = data.get('prompt_content')
-        use_json_format = data.get('use_json_format', False)
-        custom_base_url = data.get('custom_base_url') # --- 新增获取 ---
+        original_text = _request_value(data, 'original_text', 'originalText')
+        target_language = _request_value(data, 'target_language', 'targetLanguage')
+        api_key = _request_value(data, 'api_key', 'apiKey')
+        model_name = _request_value(data, 'model_name', 'model', 'modelName')
+        model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
+        prompt_content = _request_value(data, 'prompt_content', 'promptContent')
+        use_json_format = bool(_request_value(data, 'use_json_format', 'useJsonFormat', default=False))
+        custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
 
         # --- 新增：获取 rpm 参数 ---
-        rpm_limit_translation = data.get('rpm_limit_translation', constants.DEFAULT_rpm_TRANSLATION)
+        rpm_limit_translation = _request_value(
+            data,
+            'rpm_limit_translation',
+            'rpmLimitTranslation',
+            default=constants.DEFAULT_rpm_TRANSLATION,
+        )
         try:
             rpm_limit_translation = int(rpm_limit_translation)
             if rpm_limit_translation < 0: rpm_limit_translation = 0
         except (ValueError, TypeError):
             rpm_limit_translation = constants.DEFAULT_rpm_TRANSLATION
         # --------------------------
+        max_retries = _request_value(
+            data,
+            'max_retries',
+            'maxRetries',
+            default=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+        )
+        try:
+            max_retries = int(max_retries)
+            if max_retries < 0:
+                max_retries = 0
+        except (ValueError, TypeError):
+            max_retries = constants.DEFAULT_TRANSLATION_MAX_RETRIES
 
         if not all([original_text, target_language, model_provider]):
             return jsonify({'error': '缺少必要的参数 (原文、目标语言、服务商)'}), 400
 
         # 参数检查
-        if model_provider == constants.CUSTOM_OPENAI_PROVIDER_ID:
+        if model_provider == 'custom':
             if not api_key:
                 return jsonify({'error': '自定义服务需要API Key'}), 400
             if not model_name:
@@ -868,19 +896,20 @@ def route_translate_single_text():
 
         try:
             # 构建日志信息
-            base_url_info = f", BaseURL: {custom_base_url}" if model_provider == constants.CUSTOM_OPENAI_PROVIDER_ID and custom_base_url else ""
+            base_url_info = f", BaseURL: {custom_base_url}" if model_provider == 'custom' and custom_base_url else ""
             logger.info(f"开始调用translate_single_text函数进行翻译... 服务商: {model_provider}, JSON模式: {use_json_format}{base_url_info}, rpm: {rpm_limit_translation}")
             logger.info(f"提示词内容: {prompt_content[:100] if prompt_content else '无(将使用默认)'}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
-                original_text, 
-                target_language, 
-                model_provider, 
-                api_key=api_key, 
-                model_name=model_name, 
+                text=original_text,
+                target_language=target_language,
+                model_provider=model_provider,
+                api_key=api_key,
+                model_name=model_name,
                 prompt_content=prompt_content,
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
-                rpm_limit_translation=rpm_limit_translation # <--- 传递rpm参数
+                rpm_limit_translation=rpm_limit_translation, # <--- 传递rpm参数
+                max_retries=max_retries,
             )
             
             return jsonify({
@@ -911,10 +940,10 @@ def hq_translate_batch():
         data = request.get_json()
         
         # 获取必要参数
-        provider = data.get('provider')
-        api_key = data.get('api_key')
-        model_name = data.get('model_name')
-        custom_base_url = data.get('custom_base_url')
+        provider = normalize_provider_id(_request_value(data, 'provider'))
+        api_key = _request_value(data, 'api_key', 'apiKey')
+        model_name = _request_value(data, 'model_name', 'model', 'modelName')
+        custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
         
         # 支持两种调用方式
         messages = data.get('messages')  # 旧方式：直接传消息
@@ -926,13 +955,13 @@ def hq_translate_batch():
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         
         # 可选参数
-        low_reasoning = data.get('low_reasoning', False)
-        force_json_output = data.get('force_json_output', False)
-        no_thinking_method = data.get('no_thinking_method', 'gemini')
-        use_stream = data.get('use_stream', False)
+        low_reasoning = bool(_request_value(data, 'low_reasoning', 'lowReasoning', default=False))
+        force_json_output = bool(_request_value(data, 'force_json_output', 'forceJsonOutput', default=False))
+        no_thinking_method = _request_value(data, 'no_thinking_method', 'noThinkingMethod', default='gemini')
+        use_stream = bool(_request_value(data, 'use_stream', 'useStream', default=False))
         
         # 重试参数
-        max_retries = data.get('max_retries', 2)
+        max_retries = _request_value(data, 'max_retries', 'maxRetries', default=2)
         try:
             max_retries = int(max_retries)
             if max_retries < 0: max_retries = 0
@@ -964,7 +993,7 @@ def hq_translate_batch():
         else:
             return jsonify({'error': '缺少必要参数: 需要 messages 或 (jsonData + imageBase64Array)'}), 400
         
-        if provider == constants.CUSTOM_OPENAI_PROVIDER_ID and not custom_base_url:
+        if provider == 'custom' and not custom_base_url:
             return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
         
         # 根据服务商设置 base_url
@@ -973,7 +1002,7 @@ def hq_translate_batch():
             'deepseek': 'https://api.deepseek.com/v1',
             'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
             'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            constants.CUSTOM_OPENAI_PROVIDER_ID: custom_base_url
+            'custom': custom_base_url
         }
         
         base_url = base_url_map.get(provider)
@@ -1012,39 +1041,13 @@ def hq_translate_batch():
             logger.info("=" * 80)
         
         
-        # 构建请求参数（在重试循环外部构建，避免重复）
-        api_params = {
-            'model': model_name,
-            'messages': messages
-        }
         if force_json_output:
-            api_params['response_format'] = {'type': 'json_object'}
             logger.info("已启用强制 JSON 输出模式")
         if low_reasoning:
-            if no_thinking_method == 'gemini':
-                api_params['extra_body'] = {'reasoning_effort': 'low'}
-                logger.info("使用 Gemini 方式取消思考: reasoning_effort=low")
-            elif no_thinking_method == 'volcano' and provider == 'volcano':
-                api_params['extra_body'] = {'thinking': None}
+            if no_thinking_method == 'volcano' and provider == 'volcano':
                 logger.info("使用火山引擎方式取消思考: thinking=null")
             else:
-                api_params['extra_body'] = {'reasoning_effort': 'low'}
                 logger.info("使用默认方式取消思考: reasoning_effort=low")
-        
-        # 流式请求参数（用于 _hq_translate_stream）
-        request_body = {
-            'model': model_name,
-            'messages': messages
-        }
-        if force_json_output:
-            request_body['response_format'] = {'type': 'json_object'}
-        if low_reasoning:
-            if no_thinking_method == 'gemini':
-                request_body['reasoning_effort'] = 'low'
-            elif no_thinking_method == 'volcano' and provider == 'volcano':
-                request_body['thinking'] = None
-            else:
-                request_body['reasoning_effort'] = 'low'
         
         # === 重试循环 ===
         last_error_msg = None
@@ -1055,20 +1058,28 @@ def hq_translate_batch():
             
             # === 第一阶段：API 调用 ===
             try:
-                # 流式调用
-                if use_stream:
-                    content = _hq_translate_stream(base_url, api_key, model_name, request_body)
-                else:
-                    # 非流式调用，使用 OpenAI SDK
-                    from src.shared.openai_helpers import create_openai_client
-                    client = create_openai_client(api_key=api_key, base_url=base_url)
-                    
-                    response = client.chat.completions.create(**api_params)
-                    
-                    if response and response.choices and len(response.choices) > 0:
-                        content = response.choices[0].message.content
-                    else:
-                        raise Exception("AI 未返回有效内容")
+                request_overrides = {}
+                if low_reasoning:
+                    request_overrides = {
+                        "reasoning_effort": "low"
+                    }
+                    if no_thinking_method == 'volcano' and provider == 'volcano':
+                        request_overrides = {"thinking": None}
+                content = _hq_chat_transport.complete(
+                    UnifiedChatRequest(
+                        provider=provider,
+                        api_key=api_key,
+                        model=model_name,
+                        base_url=base_url,
+                        timeout=300.0 if use_stream else 120.0,
+                        use_stream=use_stream,
+                        print_stream_output=use_stream,
+                        stream_output_label='AI校对' if is_proofreading else '高质量翻译',
+                        response_format={'type': 'json_object'} if force_json_output else None,
+                        request_overrides=request_overrides,
+                        messages=messages,
+                    )
+                )
                 
                 if not content:
                     raise Exception("AI 返回内容为空")
@@ -1216,61 +1227,6 @@ def hq_translate_batch():
         return jsonify({'error': f'请求处理失败: {str(e)}'}), 500
 
 
-def _hq_translate_stream(base_url: str, api_key: str, model_name: str, request_body: dict) -> str:
-    """
-    高质量翻译流式调用（同步版本）
-    参考漫画分析功能的流式实现，实时在终端显示输出
-    """
-    import json as json_module
-    import httpx
-    
-    request_body["stream"] = True
-    full_text = ""
-    chunk_count = 0
-    
-    # 确保 base_url 末尾没有斜杠，避免双斜杠问题
-    base_url = base_url.rstrip('/')
-    url = f"{base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    print(f"\n[高质量翻译-流式输出] {model_name}: ", end="", flush=True)
-    
-    # 使用同步的 httpx 客户端，设置较长的超时时间
-    from src.shared.http_config import build_httpx_kwargs
-    with httpx.Client(**build_httpx_kwargs(base_url, 300.0)) as client:
-        with client.stream("POST", url, headers=headers, json=request_body) as response:
-            if response.status_code != 200:
-                error_text = response.read().decode('utf-8', errors='ignore')[:500]
-                raise Exception(f"API 错误 {response.status_code}: {error_text}")
-            
-            for line in response.iter_lines():
-                if line.startswith("data: "):
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json_module.loads(data_str)
-                        # 安全获取 choices，防止空数组导致 index out of range
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue  # 跳过空 choices 的 chunk
-                        delta = choices[0].get("delta", {})
-                        if "content" in delta and delta["content"]:
-                            chunk_count += 1
-                            chunk_text = delta["content"]
-                            full_text += chunk_text
-                            # 实时打印到终端
-                            print(chunk_text, end="", flush=True)
-                    except json_module.JSONDecodeError:
-                        continue
-    
-    print(f"\n[高质量翻译-完成] 共 {chunk_count} 块, {len(full_text)} 字符\n")
-    return full_text
-
-
 @translate_bp.route('/ocr_single_bubble', methods=['POST'])
 def ocr_single_bubble():
     """单气泡OCR识别端点"""
@@ -1337,15 +1293,19 @@ def ocr_single_bubble():
                 bubble_height=bubble_h,
             )
             source_language = data.get('source_language', 'japanese')
-            ai_vision_provider = data.get('ai_vision_provider', 'siliconflow')
+            ai_vision_provider = normalize_provider_id(data.get('ai_vision_provider', 'siliconflow'))
             ai_vision_api_key = data.get('ai_vision_api_key', '')
             ai_vision_model_name = data.get('ai_vision_model_name', '')
             ai_vision_ocr_prompt = data.get(
                 'ai_vision_ocr_prompt',
                 constants.DEFAULT_AI_VISION_OCR_PROMPT if hasattr(constants, 'DEFAULT_AI_VISION_OCR_PROMPT') else ''
             )
+            ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
             custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
             ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+            use_json_format_for_ai_vision = bool(
+                _request_value(data, 'use_json_format_for_ai_vision', 'ai_vision_use_json_format', default=False)
+            )
 
             needs_textlines = enable_hybrid_ocr or ocr_engine == constants.OCR_ENGINE_48PX
             if needs_textlines and not bubble_textlines_local:
@@ -1378,7 +1338,9 @@ def ocr_single_bubble():
                 ai_vision_api_key=ai_vision_api_key,
                 ai_vision_model_name=ai_vision_model_name,
                 ai_vision_ocr_prompt=ai_vision_ocr_prompt,
+                ai_vision_prompt_mode=ai_vision_prompt_mode,
                 custom_ai_vision_base_url=custom_ai_vision_base_url,
+                use_json_format_for_ai_vision=use_json_format_for_ai_vision,
                 ai_vision_min_image_size=ai_vision_min_image_size,
                 textlines_per_bubble=[bubble_textlines_local] if bubble_textlines_local else None,
                 enable_hybrid_ocr=enable_hybrid_ocr,

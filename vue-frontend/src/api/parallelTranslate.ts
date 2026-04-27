@@ -55,7 +55,9 @@ export interface ParallelOcrParams {
   ai_vision_api_key?: string
   ai_vision_model_name?: string
   ai_vision_ocr_prompt?: string
+  ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
   custom_ai_vision_base_url?: string
+  use_json_format_for_ai_vision?: boolean
   ai_vision_min_image_size?: number
   enable_hybrid_ocr?: boolean
   secondary_ocr_engine?: string
