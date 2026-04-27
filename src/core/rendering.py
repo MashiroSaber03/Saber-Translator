@@ -2199,9 +2199,15 @@ def render_single_bubble_unified(
         target_state = bubble_states[bubble_index]
         target_coords = [list(target_state.coords)]
         
-        inpaint_method = target_state.inpaint_method if target_state.inpaint_method else constants.DEFAULT_INPAINT_METHOD
+        selected_inpaint_method = target_state.inpaint_method or constants.DEFAULT_INPAINT_METHOD
+        inpaint_method = 'solid' if selected_inpaint_method == 'solid' else 'lama'
+        lama_model = 'litelama' if selected_inpaint_method == 'litelama' else 'lama_mpe'
         img_to_render, generated_clean_bg = inpaint_bubbles(
-            image, target_coords, method=inpaint_method, fill_color=target_state.fill_color
+            image,
+            target_coords,
+            method=inpaint_method,
+            fill_color=target_state.fill_color,
+            lama_model=lama_model,
         )
         if generated_clean_bg:
             clean_image_base = generated_clean_bg.copy()

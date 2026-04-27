@@ -223,7 +223,7 @@ def test_sakura_connection():
         }), 500
 
 
-@system_bp.route('/test_lama_repair', methods=['GET'])
+@system_bp.route('/test_lama_repair', methods=['GET', 'POST'])
 def test_lama_repair():
     """
     测试LAMA修复功能
@@ -241,30 +241,30 @@ def test_lama_repair():
         debug_dir = get_debug_dir()
         test_img_path = os.path.join(debug_dir, "result_image.png")
         
-        if not os.path.exists(test_img_path):
-            return jsonify({
-                'success': False,
-                'error': '测试图像不存在',
-                'path': test_img_path
-            }), 404
-        
-        logger.info("开始LAMA修复功能测试")
-        
-        # 加载测试图像
-        image = Image.open(test_img_path).convert("RGB")
-        
-        # 创建一个简单的掩码
-        mask = Image.new("RGB", image.size, color=(0, 0, 0))
+        if os.path.exists(test_img_path):
+            image = Image.open(test_img_path).convert("RGB")
+            logger.info(f"开始LAMA修复功能测试，使用现有测试图: {test_img_path}")
+        else:
+            logger.info("未找到现有测试图，创建自包含的 LAMA 测试图像")
+            image = Image.new("RGB", (256, 256), color=(255, 255, 255))
+            image_draw = ImageDraw.Draw(image)
+            image_draw.rectangle([(64, 96), (192, 160)], fill=(0, 0, 0))
+            image_draw.text((78, 110), "LAMA", fill=(255, 255, 255))
+            image.save(test_img_path)
+            logger.info(f"已创建测试图像：{test_img_path}")
+
+        # 创建一个简单的掩码。clean_image_with_lama 期望黑色区域为修复区。
+        mask = Image.new("L", image.size, color=255)
         draw = ImageDraw.Draw(mask)
         
-        # 在图像中央绘制一个白色矩形作为掩码
+        # 在图像中央绘制一个黑色矩形作为掩码
         width, height = image.size
         rect_width, rect_height = width // 3, height // 3
         left = (width - rect_width) // 2
         top = (height - rect_height) // 2
         draw.rectangle(
             [(left, top), (left + rect_width, top + rect_height)],
-            fill=(255, 255, 255)
+            fill=0
         )
         
         # 保存掩码供检查
@@ -284,6 +284,11 @@ def test_lama_repair():
         logger.info("开始使用LAMA进行修复")
         try:
             repaired_image = clean_image_with_lama(image, mask)
+            if repaired_image is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'LAMA 修复返回空结果'
+                }), 500
             
             # 保存修复后的图像
             result_path = os.path.join(debug_dir, "test_lama_web_result.png")

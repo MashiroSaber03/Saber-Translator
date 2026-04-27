@@ -214,49 +214,30 @@ class LiteLamaInpainter:
             # 检查是否需要缩放（如果禁用缩放，则跳过）
             max_dim = max(width, height)
             need_resize = (not disable_resize) and (max_dim > inpainting_size)
+            processed_width = width
+            processed_height = height
             
             if need_resize:
                 # 计算缩放比例，保持宽高比
                 scale = inpainting_size / max_dim
                 new_width = int(width * scale)
                 new_height = int(height * scale)
+                processed_width = new_width
+                processed_height = new_height
                 
                 logger.info(f"litelama: 缩放图像 {width}x{height} -> {new_width}x{new_height}")
                 
-                # 🔧 修复1: 使用 OpenCV 进行缩放（比 PIL 的 LANCZOS 更稳定，减少对齐误差）
+                # 仅在这里做必要的等比缩放，8 倍数 padding 交给 litelama.predict 内部处理。
                 img_np = np.array(init_image)
                 mask_np = np.array(mask_image)
                 img_np = cv2.resize(img_np, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
                 mask_np = cv2.resize(mask_np, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
-                
-                # 🔧 修复2: Padding 到 8 的倍数（与 LAMA MPE 一致，避免 FFT 操作产生的对齐误差）
-                pad_size = 8
-                padded_w = ((new_width + pad_size - 1) // pad_size) * pad_size
-                padded_h = ((new_height + pad_size - 1) // pad_size) * pad_size
-                
-                if padded_w != new_width or padded_h != new_height:
-                    logger.info(f"litelama: Padding {new_width}x{new_height} -> {padded_w}x{padded_h}")
-                    img_np = cv2.resize(img_np, (padded_w, padded_h), interpolation=cv2.INTER_LINEAR)
-                    mask_np = cv2.resize(mask_np, (padded_w, padded_h), interpolation=cv2.INTER_NEAREST)
-                
+
                 # 转回 PIL Image
                 init_image = Image.fromarray(img_np)
                 mask_image = Image.fromarray(mask_np)
             elif disable_resize:
-                # 禁用缩放模式：仍然需要 Padding 到 8 的倍数
                 logger.info(f"litelama: 禁用缩放模式，使用原图尺寸 {width}x{height}")
-                pad_size = 8
-                padded_w = ((width + pad_size - 1) // pad_size) * pad_size
-                padded_h = ((height + pad_size - 1) // pad_size) * pad_size
-                
-                if padded_w != width or padded_h != height:
-                    logger.info(f"litelama: Padding 原图 {width}x{height} -> {padded_w}x{padded_h}")
-                    img_np = np.array(init_image)
-                    mask_np = np.array(mask_image)
-                    img_np = cv2.resize(img_np, (padded_w, padded_h), interpolation=cv2.INTER_LINEAR)
-                    mask_np = cv2.resize(mask_np, (padded_w, padded_h), interpolation=cv2.INTER_NEAREST)
-                    init_image = Image.fromarray(img_np)
-                    mask_image = Image.fromarray(mask_np)
             
             # 转换掩码为 RGB（litelama 需要 RGB 格式）
             mask_rgb = mask_image.convert("RGB")
@@ -272,15 +253,51 @@ class LiteLamaInpainter:
                 self._cleanup_memory()
                 return None
             
-            # 🔧 修复3: 缩放回原始尺寸时也使用 OpenCV（确保插值方法一致性）
-            if need_resize or (disable_resize and (padded_w != width or padded_h != height)):
-                result_np = np.array(result.convert("RGB"))
-                result_np = cv2.resize(result_np, (width, height), interpolation=cv2.INTER_LINEAR)
-                result = Image.fromarray(result_np)
-                logger.debug(f"litelama: 恢复到原始尺寸 {width}x{height}")
-            
-            # 结果混合：只在掩码区域应用修复结果，非掩码区域保持原图（与 LAMA MPE 一致）
             result_np = np.array(result.convert("RGB"))
+
+            # litelama.predict 内部会把输入 pad 到 8 的倍数，这里需要先裁回处理前尺寸。
+            if result_np.shape[:2] != (processed_height, processed_width):
+                if result_np.shape[0] >= processed_height and result_np.shape[1] >= processed_width:
+                    logger.debug(
+                        "litelama: 裁剪预测结果 %sx%s -> %sx%s",
+                        result_np.shape[1],
+                        result_np.shape[0],
+                        processed_width,
+                        processed_height,
+                    )
+                    result_np = result_np[:processed_height, :processed_width]
+                else:
+                    logger.warning(
+                        "litelama: 预测结果尺寸异常 %sx%s，使用 resize 恢复到 %sx%s",
+                        result_np.shape[1],
+                        result_np.shape[0],
+                        processed_width,
+                        processed_height,
+                    )
+                    result_np = cv2.resize(
+                        result_np,
+                        (processed_width, processed_height),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+
+            # 如果前面做过等比缩放，再恢复到原始尺寸。
+            if (processed_width, processed_height) != (width, height):
+                result_np = cv2.resize(result_np, (width, height), interpolation=cv2.INTER_LINEAR)
+                logger.debug(f"litelama: 恢复到原始尺寸 {width}x{height}")
+            # 结果混合：只在掩码区域应用修复结果，非掩码区域保持原图（与 LAMA MPE 一致）
+            if result_np.shape[:2] != img_original.shape[:2]:
+                logger.warning(
+                    "litelama: 最终结果尺寸 %sx%s 与原图 %sx%s 不一致，执行最终兜底 resize",
+                    result_np.shape[1],
+                    result_np.shape[0],
+                    img_original.shape[1],
+                    img_original.shape[0],
+                )
+                result_np = cv2.resize(
+                    result_np,
+                    (img_original.shape[1], img_original.shape[0]),
+                    interpolation=cv2.INTER_LINEAR,
+                )
             blended = (result_np * mask_original + img_original * (1 - mask_original)).astype(np.uint8)
             result = Image.fromarray(blended)
             
@@ -475,11 +492,12 @@ if __name__ == '__main__':
             from src.core.detection import get_bubble_coordinates
 
             img = Image.open(test_image_path).convert("RGB")
-            mask = Image.new("L", img.size, 0)  # 黑色背景
+            # clean_image_with_lama 期望黑色区域表示修复区，因此这里使用白底黑框。
+            mask = Image.new("L", img.size, 255)
             draw = ImageDraw.Draw(mask)
             w, h = img.size
-            # 在中间画一个白色矩形表示要修复的区域
-            draw.rectangle([(w//4, h//4), (w*3//4, h*3//4)], fill=255)
+            # 在中间画一个黑色矩形表示要修复的区域
+            draw.rectangle([(w//4, h//4), (w*3//4, h*3//4)], fill=0)
             mask_path = os.path.join(get_debug_dir(), "lama_interface_test_mask.png")
             mask.save(mask_path)
             print(f"测试掩码已保存到: {mask_path}")
