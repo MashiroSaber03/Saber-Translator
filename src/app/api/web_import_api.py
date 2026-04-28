@@ -766,22 +766,22 @@ def test_agent_connection():
         if not api_key:
             return jsonify({'success': False, 'error': '请输入 API Key'}), 400
         
+        from src.shared.ai_providers import (
+            CHAT_CAPABILITY,
+            WEB_IMPORT_AGENT_CAPABILITY,
+            normalize_provider_id,
+            provider_supports_capability,
+            resolve_provider_base_url_for_capability,
+        )
         from src.shared.openai_helpers import create_openai_client
         
-        # 获取 base_url
-        provider_urls = {
-            'openai': None,
-            'siliconflow': 'https://api.siliconflow.cn/v1',
-            'deepseek': 'https://api.deepseek.com/v1',
-            'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/'
-        }
-        
-        # 只有选择 custom_openai 时才使用自定义 URL
-        if provider == 'custom_openai':
-            final_base_url = base_url if base_url else None
+        normalized_provider = normalize_provider_id(provider)
+        if normalized_provider and not provider_supports_capability(normalized_provider, WEB_IMPORT_AGENT_CAPABILITY):
+            return jsonify({'success': False, 'error': f'不支持的服务商: {provider}'}), 400
+        if normalized_provider == 'openai':
+            final_base_url = None
         else:
-            final_base_url = provider_urls.get(provider)
+            final_base_url = resolve_provider_base_url_for_capability(normalized_provider, CHAT_CAPABILITY, base_url)
         
         # 日志：最终使用的配置
         logger.info(f"[Agent测试] 最终Base URL: {final_base_url if final_base_url else '(使用OpenAI默认)'}")

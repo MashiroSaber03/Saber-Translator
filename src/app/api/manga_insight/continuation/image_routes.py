@@ -97,7 +97,10 @@ def get_style_references(book_id: str):
         count = request.args.get('count', 3, type=int)
 
         image_gen = ImageGenerator(book_id)
-        style_refs = image_gen.get_style_reference_images(count)
+        try:
+            style_refs = image_gen.get_style_reference_images(count)
+        finally:
+            run_async(image_gen.close())
 
         return success_response(data={"images": style_refs})
 
@@ -123,16 +126,18 @@ def get_available_images(book_id: str):
         current_page = request.args.get('current_page', 0, type=int)
 
         image_gen = ImageGenerator(book_id)
-
-        # 获取原作图片列表
-        original_pages = image_gen._get_original_manga_pages()
-        original_images = []
-        for i, path in enumerate(original_pages):
-            original_images.append({
-                "page_number": i + 1,
-                "path": path,
-                "has_image": os.path.exists(path) if path else False
-            })
+        try:
+            # 获取原作图片列表
+            original_pages = image_gen._get_original_manga_pages()
+            original_images = []
+            for i, path in enumerate(original_pages):
+                original_images.append({
+                    "page_number": i + 1,
+                    "path": path,
+                    "has_image": os.path.exists(path) if path else False
+                })
+        finally:
+            run_async(image_gen.close())
 
         total_original_pages = len(original_images)
 
@@ -244,12 +249,14 @@ def generate_form_orthographic(book_id: str, character_name: str, form_id: str):
 
         # 生成三视图
         image_gen = ImageGenerator(book_id)
-
-        ortho_path = run_async(image_gen.generate_character_orthographic(
-            character_name=char_name,
-            source_image_paths=saved_paths,
-            form_id=form_id
-        ))
+        try:
+            ortho_path = run_async(image_gen.generate_character_orthographic(
+                character_name=char_name,
+                source_image_paths=saved_paths,
+                form_id=form_id
+            ))
+        finally:
+            run_async(image_gen.close())
 
         # 清理临时源图片
         for temp_path in saved_paths:
@@ -345,13 +352,16 @@ def generate_page_image(book_id: str, page_number: int):
             final_style_refs = style_refs
 
         image_gen = ImageGenerator(book_id)
-        image_path = run_async(image_gen.generate_page_image(
-            page_content=page,
-            characters=characters,
-            style_reference_images=final_style_refs,
-            session_id=session_id,
-            style_ref_count=style_ref_count
-        ))
+        try:
+            image_path = run_async(image_gen.generate_page_image(
+                page_content=page,
+                characters=characters,
+                style_reference_images=final_style_refs,
+                session_id=session_id,
+                style_ref_count=style_ref_count
+            ))
+        finally:
+            run_async(image_gen.close())
 
         return success_response(data={"image_path": image_path})
 
@@ -405,13 +415,16 @@ def regenerate_page_image(book_id: str, page_number: int):
             final_style_refs = style_refs
 
         image_gen = ImageGenerator(book_id)
-        image_path = run_async(image_gen.regenerate_page_image(
-            page_content=page,
-            characters=characters,
-            style_reference_images=final_style_refs,
-            session_id=session_id,
-            style_ref_count=style_ref_count
-        ))
+        try:
+            image_path = run_async(image_gen.regenerate_page_image(
+                page_content=page,
+                characters=characters,
+                style_reference_images=final_style_refs,
+                session_id=session_id,
+                style_ref_count=style_ref_count
+            ))
+        finally:
+            run_async(image_gen.close())
 
         return success_response(data={
             "image_path": image_path,

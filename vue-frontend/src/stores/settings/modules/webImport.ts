@@ -5,6 +5,7 @@
 import type { Ref } from 'vue'
 import type { WebImportSettings } from '@/types/webImport'
 import { DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT } from '@/constants'
+import { normalizeProviderId } from '@/config/aiProviders'
 
 // ============================================================
 // 默认值
@@ -85,7 +86,7 @@ export function useWebImportSettings(
   // ============================================================
 
   function setAgentProvider(provider: string): void {
-    webImportSettings.value.agent.provider = provider as WebImportSettings['agent']['provider']
+    webImportSettings.value.agent.provider = normalizeProviderId(provider) as WebImportSettings['agent']['provider']
     saveToStorage()
   }
 

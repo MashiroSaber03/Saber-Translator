@@ -216,7 +216,7 @@ class OpenAICompatibleChatTransport:
 
     def _list_gemini_models(self, request: ProviderModelListRequest) -> List[Dict[str, str]]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={request.api_key}"
-        with httpx.Client(timeout=request.timeout) as client:
+        with httpx.Client(**build_httpx_kwargs(url, request.timeout)) as client:
             response = client.get(url)
             response.raise_for_status()
             data = response.json()

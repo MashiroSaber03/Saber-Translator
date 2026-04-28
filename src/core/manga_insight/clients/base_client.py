@@ -96,6 +96,7 @@ class BaseAPIClient:
         provider: str,
         api_key: str,
         base_url: Optional[str] = None,
+        resolved_base_url: Optional[str] = None,
         rpm_limit: int = 0,
         timeout: float = 120.0,
         max_retries: int = 3
@@ -107,13 +108,14 @@ class BaseAPIClient:
             provider: 服务商名称
             api_key: API 密钥
             base_url: 自定义 base_url（仅 custom 服务商需要）
+            resolved_base_url: 已解析的完整 base_url（优先级高于 base_url）
             rpm_limit: RPM 限制
             timeout: 请求超时时间（秒）
             max_retries: 最大重试次数
         """
         self.provider = provider.lower()
         self.api_key = api_key
-        self._base_url = get_base_url(provider, base_url)
+        self._base_url = resolved_base_url if resolved_base_url is not None else get_base_url(provider, base_url)
         self._rpm_limiter = RPMLimiter(rpm_limit)
         self._timeout = timeout
         self._max_retries = max_retries

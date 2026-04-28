@@ -13,6 +13,13 @@ from datetime import datetime
 
 from openai import OpenAI
 
+from src.shared.ai_providers import (
+    CHAT_CAPABILITY,
+    WEB_IMPORT_AGENT_CAPABILITY,
+    normalize_provider_id,
+    provider_supports_capability,
+    resolve_provider_base_url_for_capability,
+)
 from src.shared.openai_helpers import create_openai_client
 
 from .prompts import get_system_prompt, DEFAULT_EXTRACTION_PROMPT
@@ -71,7 +78,7 @@ class MangaScraperAgent:
         self.firecrawl_api_key = config.get('firecrawl', {}).get('apiKey', '')
         
         agent_config = config.get('agent', {})
-        self.provider = agent_config.get('provider', 'openai')
+        self.provider = normalize_provider_id(agent_config.get('provider', 'openai'))
         self.api_key = agent_config.get('apiKey', '')
         self.base_url = agent_config.get('customBaseUrl', '')
         self.model_name = agent_config.get('modelName', 'gpt-4o-mini')
@@ -83,6 +90,9 @@ class MangaScraperAgent:
         extraction_config = config.get('extraction', {})
         self.custom_prompt = extraction_config.get('prompt', '')
         self.max_iterations = extraction_config.get('maxIterations', 10)
+
+        if self.provider and not provider_supports_capability(self.provider, WEB_IMPORT_AGENT_CAPABILITY):
+            raise ValueError(f"不支持的 AI Agent 服务商: {self.provider}")
         
         # 初始化 LLM 客户端
         self.client = self._init_llm_client()
@@ -100,19 +110,9 @@ class MangaScraperAgent:
     
     def _get_base_url(self) -> Optional[str]:
         """根据服务商获取 API 地址"""
-        provider_urls = {
-            'openai': None,  # 使用默认
-            'siliconflow': 'https://api.siliconflow.cn/v1',
-            'deepseek': 'https://api.deepseek.com/v1',
-            'volcano': 'https://ark.cn-beijing.volces.com/api/v3',
-            'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai/'
-        }
-        
-        # 只有选择 custom_openai 时才使用自定义 URL
-        if self.provider == 'custom_openai':
-            return self.base_url if self.base_url else None
-        else:
-            return provider_urls.get(self.provider)
+        if self.provider == 'openai':
+            return None
+        return resolve_provider_base_url_for_capability(self.provider, CHAT_CAPABILITY, self.base_url)
     
     def _create_log(self, log_type: str, message: str) -> AgentLog:
         """创建日志对象"""

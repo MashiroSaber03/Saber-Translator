@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { WebImportSettings, WebImportState, AgentLog, ExtractResult, DownloadedImage } from '@/types/webImport'
 import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
+import { normalizeProviderId } from '@/config/aiProviders'
 import { createDefaultWebImportSettings, useWebImportSettings } from './settings/modules/webImport'
 
 // 免责声明存储键
@@ -102,6 +103,7 @@ export const useWebImportStore = defineStore('webImport', () => {
         const parsed = JSON.parse(data)
         // 深度合并，确保新增字段不丢失
         settings.value = deepMerge(createDefaultWebImportSettings(), parsed)
+        settings.value.agent.provider = normalizeProviderId(settings.value.agent.provider) as WebImportSettings['agent']['provider']
       }
     } catch (e) {
       console.error('加载网页导入设置失败:', e)

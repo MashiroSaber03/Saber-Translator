@@ -2,7 +2,14 @@
  * 网页导入相关类型定义
  */
 
-import type { TranslationProvider } from './settings'
+export type WebImportAgentProvider =
+    | 'openai'
+    | 'siliconflow'
+    | 'deepseek'
+    | 'volcano'
+    | 'gemini'
+    | 'custom'
+    | 'custom_openai'
 
 /** 导入引擎类型 */
 export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'
@@ -32,7 +39,7 @@ export interface WebImportSettings {
 
     /** AI Agent 配置 */
     agent: {
-        provider: TranslationProvider
+        provider: WebImportAgentProvider
         apiKey: string
         customBaseUrl: string
         modelName: string

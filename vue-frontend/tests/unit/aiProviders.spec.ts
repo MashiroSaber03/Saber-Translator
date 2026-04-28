@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getProviderOptionsForCapability,
+  getProviderDefaultModel,
   providerSupportsRpmLimit,
   normalizeProviderId,
   providerRequiresBaseUrl,
@@ -33,5 +34,10 @@ describe('translation page AI provider manifest', () => {
     expect(providerSupportsRpmLimit('custom')).toBe(true)
     expect(providerSupportsRpmLimit('ollama')).toBe(false)
     expect(providerSupportsRpmLimit('caiyun')).toBe(false)
+  })
+
+  it('keeps frontend default chat models aligned with the shared manifest contract', () => {
+    expect(getProviderDefaultModel('openai', 'chat')).toBe('gpt-4o')
+    expect(getProviderDefaultModel('qwen', 'chat')).toBe('qwen-plus')
   })
 })

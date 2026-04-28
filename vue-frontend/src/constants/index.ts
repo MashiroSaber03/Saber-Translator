@@ -3,6 +3,8 @@
  * 与后端 constants.js 保持一致
  */
 
+import { getProviderOptionsForCapability } from '@/config/aiProviders'
+
 // ============================================================
 // 默认提示词常量
 // ============================================================
@@ -376,11 +378,4 @@ export const DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT = `你是一个专业的漫画
 /**
  * 网页导入 AI Agent 服务商列表
  */
-export const WEB_IMPORT_AGENT_PROVIDERS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'siliconflow', label: 'SiliconFlow' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'volcano', label: '火山引擎' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'custom_openai', label: '自定义 OpenAI 兼容服务' }
-] as const
+export const WEB_IMPORT_AGENT_PROVIDERS = getProviderOptionsForCapability('webImportAgent') as ReadonlyArray<{ value: string; label: string }>

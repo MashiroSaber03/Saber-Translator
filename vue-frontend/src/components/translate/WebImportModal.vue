@@ -11,6 +11,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
+import { normalizeProviderId } from '@/config/aiProviders'
 
 const webImportStore = useWebImportStore()
 const imageStore = useImageStore()
@@ -265,7 +266,7 @@ watch(urlInput, (newUrl) => {
 })
 
 // 计算属性：是否显示自定义 URL
-const showCustomUrl = computed(() => webImportStore.settings.agent.provider === 'custom_openai')
+const showCustomUrl = computed(() => normalizeProviderId(webImportStore.settings.agent.provider) === 'custom')
 
 // 测试 Firecrawl 连接
 async function handleTestFirecrawl() {
