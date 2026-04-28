@@ -81,6 +81,24 @@ export interface WebImportSettings {
     }
 }
 
+/** Agent 服务商独立配置 */
+export interface WebImportAgentProviderConfig {
+    apiKey: string
+    modelName: string
+    customBaseUrl: string
+}
+
+/** 网页导入服务商配置缓存 */
+export interface WebImportProviderConfigs {
+    agent: Record<string, WebImportAgentProviderConfig>
+}
+
+/** 网页导入设置持久化载荷 */
+export interface WebImportSettingsPayload {
+    settings: Partial<WebImportSettings>
+    providerConfigs: Partial<WebImportProviderConfigs>
+}
+
 /** 漫画页面 */
 export interface ComicPage {
     pageNumber: number

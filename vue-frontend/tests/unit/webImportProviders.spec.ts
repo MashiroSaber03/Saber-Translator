@@ -1,8 +1,12 @@
 import { ref } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
-import { createDefaultWebImportSettings, useWebImportSettings } from '@/stores/settings/modules/webImport'
+import {
+  createDefaultWebImportProviderConfigs,
+  createDefaultWebImportSettings,
+  useWebImportSettings,
+} from '@/stores/settings/modules/webImport'
 
 describe('web import provider compatibility', () => {
   it('exposes canonical custom provider in the selector list', () => {
@@ -20,12 +24,37 @@ describe('web import provider compatibility', () => {
 
   it('normalizes legacy custom provider ids before saving settings', () => {
     const settings = ref(createDefaultWebImportSettings())
-    const saveToStorage = vi.fn()
-    const { setAgentProvider } = useWebImportSettings(settings, saveToStorage)
+    const providerConfigs = ref(createDefaultWebImportProviderConfigs())
+    const { setAgentProvider } = useWebImportSettings(settings, providerConfigs)
 
     setAgentProvider('custom_openai')
 
     expect(settings.value.agent.provider).toBe('custom')
-    expect(saveToStorage).toHaveBeenCalledTimes(1)
+  })
+
+  it('stores agent credentials per provider when switching', () => {
+    const settings = ref(createDefaultWebImportSettings())
+    const providerConfigs = ref(createDefaultWebImportProviderConfigs())
+    const {
+      setAgentApiKey,
+      setAgentBaseUrl,
+      setAgentModelName,
+      setAgentProvider,
+    } = useWebImportSettings(settings, providerConfigs)
+
+    setAgentApiKey('openai-key')
+    setAgentModelName('gpt-web-import')
+    setAgentBaseUrl('https://openai.example/v1')
+
+    setAgentProvider('deepseek')
+
+    expect(providerConfigs.value.agent.openai).toEqual({
+      apiKey: 'openai-key',
+      modelName: 'gpt-web-import',
+      customBaseUrl: 'https://openai.example/v1',
+    })
+    expect(settings.value.agent.apiKey).toBe('')
+    expect(settings.value.agent.modelName).toBe('')
+    expect(settings.value.agent.customBaseUrl).toBe('')
   })
 })

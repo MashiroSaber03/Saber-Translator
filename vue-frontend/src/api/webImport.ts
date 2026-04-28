@@ -2,9 +2,28 @@
  * 网页导入 API
  */
 
-import type { WebImportSettings, ExtractResult, DownloadResult, AgentLog, ComicPage, WebImportEngine, GalleryDLSupportResult } from '@/types/webImport'
+import { apiClient } from '@/api/client'
+import type {
+  AgentLog,
+  ComicPage,
+  DownloadResult,
+  ExtractResult,
+  GalleryDLSupportResult,
+  WebImportEngine,
+  WebImportProviderConfigs,
+  WebImportSettings,
+  WebImportSettingsPayload,
+} from '@/types/webImport'
 
 const API_BASE = '/api/web-import'
+
+export interface WebImportSettingsResponse {
+  success: boolean
+  hasStoredSettings?: boolean
+  settings?: Partial<WebImportSettings>
+  providerConfigs?: Partial<WebImportProviderConfigs>
+  error?: string
+}
 
 /**
  * 检查 URL 是否支持 gallery-dl
@@ -36,6 +55,14 @@ export async function getGalleryDLImages(): Promise<{
 }> {
   const response = await fetch(`${API_BASE}/gallery-dl-images`)
   return response.json()
+}
+
+export async function getWebImportSettings(): Promise<WebImportSettingsResponse> {
+  return apiClient.get<WebImportSettingsResponse>(`${API_BASE}/settings`)
+}
+
+export async function saveWebImportSettings(payload: WebImportSettingsPayload): Promise<{ success: boolean; error?: string }> {
+  return apiClient.post<{ success: boolean; error?: string }>(`${API_BASE}/settings`, payload)
 }
 
 /**

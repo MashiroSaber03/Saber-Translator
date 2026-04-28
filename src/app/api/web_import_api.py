@@ -12,6 +12,7 @@
 
 import logging
 import json
+import os
 import httpx
 import threading
 import time
@@ -20,6 +21,9 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context, send_from_directory
 
 from src.core.web_import import MangaScraperAgent, GalleryDLRunner, check_gallery_dl_support
+from src.shared import constants
+from src.shared.ai_providers import normalize_provider_id
+from src.shared.config_loader import get_config_path, load_json_config, save_json_config
 
 logger = logging.getLogger("WebImportAPI")
 
@@ -27,6 +31,72 @@ web_import_bp = Blueprint('web_import', __name__, url_prefix='/api/web-import')
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+def _normalize_web_import_settings_payload(payload: dict | None) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    settings = payload.get('settings', {})
+    provider_configs = payload.get('providerConfigs', {})
+
+    normalized_settings = settings.copy() if isinstance(settings, dict) else {}
+    agent_settings = normalized_settings.get('agent')
+    if isinstance(agent_settings, dict) and agent_settings.get('provider') is not None:
+        normalized_settings['agent'] = {
+            **agent_settings,
+            'provider': normalize_provider_id(agent_settings.get('provider'))
+        }
+
+    normalized_agent_configs = {}
+    raw_agent_configs = provider_configs.get('agent', {}) if isinstance(provider_configs, dict) else {}
+    if isinstance(raw_agent_configs, dict):
+        for provider, config in raw_agent_configs.items():
+            canonical_provider = normalize_provider_id(provider)
+            if not canonical_provider or not isinstance(config, dict):
+                continue
+            normalized_agent_configs[canonical_provider] = {
+                'apiKey': config.get('apiKey', '') or '',
+                'modelName': config.get('modelName', '') or '',
+                'customBaseUrl': config.get('customBaseUrl', '') or '',
+            }
+
+    return {
+        'settings': normalized_settings,
+        'providerConfigs': {
+            'agent': normalized_agent_configs
+        }
+    }
+
+
+@web_import_bp.route('/settings', methods=['GET'])
+def get_web_import_settings():
+    has_stored_settings = os.path.exists(get_config_path(constants.WEB_IMPORT_SETTINGS_FILE))
+    payload = load_json_config(
+        constants.WEB_IMPORT_SETTINGS_FILE,
+        default_value={'settings': {}, 'providerConfigs': {'agent': {}}}
+    )
+    normalized = _normalize_web_import_settings_payload(payload)
+    return jsonify({'success': True, 'hasStoredSettings': has_stored_settings, **normalized})
+
+
+@web_import_bp.route('/settings', methods=['POST'])
+def save_web_import_settings():
+    data = request.get_json() or {}
+    settings = data.get('settings')
+    provider_configs = data.get('providerConfigs')
+
+    if not isinstance(settings, dict) or not isinstance(provider_configs, dict):
+        return jsonify({'success': False, 'error': '缺少设置数据'}), 400
+
+    normalized_payload = _normalize_web_import_settings_payload({
+        'settings': settings,
+        'providerConfigs': provider_configs
+    })
+
+    success = save_json_config(constants.WEB_IMPORT_SETTINGS_FILE, normalized_payload)
+    if not success:
+        return jsonify({'success': False, 'error': '保存设置失败'}), 500
+
+    return jsonify({'success': True})
 
 
 @web_import_bp.route('/static/temp/gallery_dl/<path:filename>', methods=['GET'])

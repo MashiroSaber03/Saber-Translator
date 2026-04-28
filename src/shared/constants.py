@@ -479,6 +479,7 @@ DEFAULT_PROOFREADING_MAX_RETRIES = 2  # AI校对默认重试次数
 
 # --- 用户设置 ---
 USER_SETTINGS_FILE = 'user_settings.json'
+WEB_IMPORT_SETTINGS_FILE = 'web_import_settings.json'
 
 # --- 超长图片处理 (Large Image Rearrange) ---
 # 当图片满足以下条件时自动启用切割检测:

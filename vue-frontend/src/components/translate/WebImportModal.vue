@@ -6,6 +6,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
@@ -43,7 +44,11 @@ const downloadProgress = computed(() => webImportStore.downloadProgress)
 const downloadProgressPercent = computed(() => webImportStore.downloadProgressPercent)
 const error = computed(() => webImportStore.error)
 const isProcessing = computed(() => webImportStore.isProcessing)
-const showAgentLogs = computed(() => webImportStore.settings.ui.showAgentLogs)
+const draftSettings = computed(() => webImportStore.draftSettings)
+const hasUnsavedSettings = computed(() => webImportStore.hasUnsavedSettings)
+const isSavingSettings = computed(() => webImportStore.isSavingSettings)
+const showAgentLogs = computed(() => draftSettings.value.ui.showAgentLogs)
+const agentProviderOptions = computed(() => [...WEB_IMPORT_AGENT_PROVIDERS])
 
 // 当前使用的引擎
 const currentEngine = computed(() => extractResult.value?.engine || null)
@@ -107,13 +112,57 @@ function handleClose() {
   if (isProcessing.value) {
     if (!confirm('正在处理中，确定要关闭吗？')) return
   }
+  webImportStore.discardSettingsChanges()
   webImportStore.closeModal()
   webImportStore.resetState()
   urlInput.value = ''
 }
 
+async function handleSaveSettings(showSuccessFeedback = true): Promise<boolean> {
+  const success = await webImportStore.saveSettings()
+  if (showSuccessFeedback) {
+    alert(success ? '设置已保存' : '设置保存失败，请重试')
+  }
+  return success
+}
+
+function handleDiscardSettings() {
+  if (!hasUnsavedSettings.value) return
+  webImportStore.discardSettingsChanges()
+}
+
+async function ensureSettingsReady(actionLabel: string): Promise<boolean> {
+  if (!hasUnsavedSettings.value) {
+    return true
+  }
+
+  const shouldSave = confirm(
+    `网页导入设置有未保存修改。\n点击“确定”先保存设置后再${actionLabel}；点击“取消”则进入放弃修改确认。`
+  )
+
+  if (shouldSave) {
+    const success = await handleSaveSettings(false)
+    if (!success) {
+      alert('设置保存失败，请重试')
+    }
+    return success
+  }
+
+  const shouldDiscard = confirm(`要继续${actionLabel}并放弃未保存修改吗？`)
+  if (!shouldDiscard) {
+    return false
+  }
+
+  webImportStore.discardSettingsChanges()
+  return true
+}
+
 // 开始提取
 async function handleExtract() {
+  if (!(await ensureSettingsReady('开始提取'))) {
+    return
+  }
+
   const url = urlInput.value.trim()
   if (!url) {
     alert('请输入网址')
@@ -157,6 +206,14 @@ async function handleExtract() {
         webImportStore.addPageIncremental(page)
       }
     )
+
+    if (
+      webImportStore.settings.ui.autoImport &&
+      webImportStore.status === 'extracted' &&
+      webImportStore.extractResult?.success
+    ) {
+      await handleImport()
+    }
   } catch (e) {
     webImportStore.setError(e instanceof Error ? e.message : '提取失败')
   }
@@ -174,6 +231,10 @@ function toggleAll() {
 
 // 开始下载并导入
 async function handleImport() {
+  if (!(await ensureSettingsReady('导入图片'))) {
+    return
+  }
+
   if (!extractResult.value?.pages || selectedCount.value === 0) {
     alert('请选择要导入的图片')
     return
@@ -265,19 +326,18 @@ watch(urlInput, (newUrl) => {
   checkUrlSupport(newUrl)
 })
 
-// 计算属性：是否显示自定义 URL
-const showCustomUrl = computed(() => normalizeProviderId(webImportStore.settings.agent.provider) === 'custom')
+const showCustomUrl = computed(() => normalizeProviderId(draftSettings.value.agent.provider) === 'custom')
 
 // 测试 Firecrawl 连接
 async function handleTestFirecrawl() {
-  if (!webImportStore.settings.firecrawl.apiKey) {
+  if (!draftSettings.value.firecrawl.apiKey) {
     alert('请输入 Firecrawl API Key')
     return
   }
 
   testingFirecrawl.value = true
   try {
-    const result = await testFirecrawlConnection(webImportStore.settings.firecrawl.apiKey)
+    const result = await testFirecrawlConnection(draftSettings.value.firecrawl.apiKey)
     if (result.success) {
       alert('✅ Firecrawl 连接成功')
     } else {
@@ -292,7 +352,7 @@ async function handleTestFirecrawl() {
 
 // 测试 Agent 连接
 async function handleTestAgent() {
-  if (!webImportStore.settings.agent.apiKey) {
+  if (!draftSettings.value.agent.apiKey) {
     alert('请输入 AI Agent API Key')
     return
   }
@@ -300,10 +360,10 @@ async function handleTestAgent() {
   testingAgent.value = true
   try {
     const result = await testAgentConnection(
-      webImportStore.settings.agent.provider,
-      webImportStore.settings.agent.apiKey,
-      webImportStore.settings.agent.customBaseUrl,
-      webImportStore.settings.agent.modelName
+      draftSettings.value.agent.provider,
+      draftSettings.value.agent.apiKey,
+      draftSettings.value.agent.customBaseUrl,
+      draftSettings.value.agent.modelName
     )
     if (result.success) {
       alert('✅ AI Agent 连接成功')
@@ -411,6 +471,27 @@ function handleResetPrompt() {
                 </button>
               </div>
 
+              <div class="settings-actions">
+                <span v-if="hasUnsavedSettings" class="settings-dirty">有未保存的修改</span>
+                <span v-else class="settings-clean">设置已同步</span>
+                <div class="settings-action-buttons">
+                  <button
+                    class="settings-secondary-btn"
+                    :disabled="!hasUnsavedSettings || isSavingSettings"
+                    @click="handleDiscardSettings"
+                  >
+                    取消修改
+                  </button>
+                  <button
+                    class="settings-primary-btn"
+                    :disabled="!hasUnsavedSettings || isSavingSettings"
+                    @click="() => handleSaveSettings()"
+                  >
+                    {{ isSavingSettings ? '保存中...' : '保存设置' }}
+                  </button>
+                </div>
+              </div>
+
               <!-- 基本设置 -->
               <div v-show="activeSettingsTab === 'basic'" class="settings-tab-content">
                 <!-- Firecrawl 配置 -->
@@ -418,20 +499,22 @@ function handleResetPrompt() {
                   <h4 class="group-title">Firecrawl 配置</h4>
                   <div class="form-row">
                     <label class="form-label">API Key</label>
-                    <div class="input-group">
+                    <div class="password-input-wrapper">
                       <input
                         :type="showFirecrawlKey ? 'text' : 'password'"
                         class="form-input"
-                        :value="webImportStore.settings.firecrawl.apiKey"
+                        :value="draftSettings.firecrawl.apiKey"
                         @input="webImportStore.setFirecrawlApiKey(($event.target as HTMLInputElement).value)"
                         placeholder="fc-xxxxxxxxxxxxxxxx"
                       />
-                      <button class="toggle-btn" @click="showFirecrawlKey = !showFirecrawlKey">
+                      <button type="button" class="password-toggle-btn" tabindex="-1" @click="showFirecrawlKey = !showFirecrawlKey">
                         {{ showFirecrawlKey ? '👁' : '👁‍🗨' }}
                       </button>
+                    </div>
+                    <div class="form-row test-action-row">
                       <button
-                        class="test-btn"
-                        :disabled="testingFirecrawl || !webImportStore.settings.firecrawl.apiKey"
+                        class="settings-test-btn"
+                        :disabled="testingFirecrawl || !draftSettings.firecrawl.apiKey"
                         @click="handleTestFirecrawl"
                       >
                         {{ testingFirecrawl ? '测试中...' : '测试连接' }}
@@ -446,32 +529,24 @@ function handleResetPrompt() {
                   
                   <div class="form-row">
                     <label class="form-label">服务商</label>
-                    <select
-                      class="form-select"
-                      :value="webImportStore.settings.agent.provider"
-                      @change="webImportStore.setAgentProvider(($event.target as HTMLSelectElement).value)"
-                    >
-                      <option
-                        v-for="provider in WEB_IMPORT_AGENT_PROVIDERS"
-                        :key="provider.value"
-                        :value="provider.value"
-                      >
-                        {{ provider.label }}
-                      </option>
-                    </select>
+                    <CustomSelect
+                      :model-value="draftSettings.agent.provider"
+                      :options="agentProviderOptions"
+                      @change="(value) => webImportStore.setAgentProvider(String(value))"
+                    />
                   </div>
 
                   <div class="form-row">
                     <label class="form-label">API Key</label>
-                    <div class="input-group">
+                    <div class="password-input-wrapper">
                       <input
                         :type="showAgentKey ? 'text' : 'password'"
                         class="form-input"
-                        :value="webImportStore.settings.agent.apiKey"
+                        :value="draftSettings.agent.apiKey"
                         @input="webImportStore.setAgentApiKey(($event.target as HTMLInputElement).value)"
                         placeholder="sk-xxxxxxxxxxxxxxxx"
                       />
-                      <button class="toggle-btn" @click="showAgentKey = !showAgentKey">
+                      <button type="button" class="password-toggle-btn" tabindex="-1" @click="showAgentKey = !showAgentKey">
                         {{ showAgentKey ? '👁' : '👁‍🗨' }}
                       </button>
                     </div>
@@ -482,7 +557,7 @@ function handleResetPrompt() {
                     <input
                       type="url"
                       class="form-input"
-                      :value="webImportStore.settings.agent.customBaseUrl"
+                      :value="draftSettings.agent.customBaseUrl"
                       @input="webImportStore.setAgentBaseUrl(($event.target as HTMLInputElement).value)"
                       placeholder="https://api.example.com/v1"
                     />
@@ -493,7 +568,7 @@ function handleResetPrompt() {
                     <input
                       type="text"
                       class="form-input"
-                      :value="webImportStore.settings.agent.modelName"
+                      :value="draftSettings.agent.modelName"
                       @input="webImportStore.setAgentModelName(($event.target as HTMLInputElement).value)"
                       placeholder="gpt-4o-mini"
                     />
@@ -503,7 +578,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.agent.forceJsonOutput"
+                        :checked="draftSettings.agent.forceJsonOutput"
                         @change="webImportStore.setAgentForceJson(($event.target as HTMLInputElement).checked)"
                       />
                       强制 JSON 格式
@@ -511,7 +586,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.agent.useStream"
+                        :checked="draftSettings.agent.useStream"
                         @change="webImportStore.setAgentUseStream(($event.target as HTMLInputElement).checked)"
                       />
                       流式调用
@@ -520,8 +595,8 @@ function handleResetPrompt() {
 
                   <div class="form-row">
                     <button
-                      class="test-btn full"
-                      :disabled="testingAgent || !webImportStore.settings.agent.apiKey"
+                      class="settings-test-btn full"
+                      :disabled="testingAgent || !draftSettings.agent.apiKey"
                       @click="handleTestAgent"
                     >
                       {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}
@@ -540,7 +615,7 @@ function handleResetPrompt() {
                     <label class="form-label">提取提示词</label>
                     <textarea
                       class="form-textarea"
-                      :value="webImportStore.settings.extraction.prompt"
+                      :value="draftSettings.extraction.prompt"
                       @input="webImportStore.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"
                       rows="6"
                       placeholder="输入提取提示词..."
@@ -552,7 +627,7 @@ function handleResetPrompt() {
                     <input
                       type="number"
                       class="form-input small"
-                      :value="webImportStore.settings.extraction.maxIterations"
+                      :value="draftSettings.extraction.maxIterations"
                       @input="webImportStore.setExtractionMaxIterations(Number(($event.target as HTMLInputElement).value))"
                       min="1"
                       max="20"
@@ -570,7 +645,7 @@ function handleResetPrompt() {
                       <input
                         type="number"
                         class="form-input small"
-                        :value="webImportStore.settings.download.concurrency"
+                        :value="draftSettings.download.concurrency"
                         @input="webImportStore.setDownloadConcurrency(Number(($event.target as HTMLInputElement).value))"
                         min="1"
                         max="10"
@@ -582,7 +657,7 @@ function handleResetPrompt() {
                       <input
                         type="number"
                         class="form-input small"
-                        :value="webImportStore.settings.download.timeout"
+                        :value="draftSettings.download.timeout"
                         @input="webImportStore.setDownloadTimeout(Number(($event.target as HTMLInputElement).value))"
                         min="5"
                         max="120"
@@ -594,7 +669,7 @@ function handleResetPrompt() {
                       <input
                         type="number"
                         class="form-input small"
-                        :value="webImportStore.settings.download.retries"
+                        :value="draftSettings.download.retries"
                         @input="webImportStore.setDownloadRetries(Number(($event.target as HTMLInputElement).value))"
                         min="0"
                         max="5"
@@ -606,7 +681,7 @@ function handleResetPrompt() {
                       <input
                         type="number"
                         class="form-input small"
-                        :value="webImportStore.settings.download.delay"
+                        :value="draftSettings.download.delay"
                         @input="webImportStore.setDownloadDelay(Number(($event.target as HTMLInputElement).value))"
                         min="0"
                         max="2000"
@@ -619,7 +694,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.download.useReferer"
+                        :checked="draftSettings.download.useReferer"
                         @change="webImportStore.setDownloadUseReferer(($event.target as HTMLInputElement).checked)"
                       />
                       自动添加 Referer
@@ -634,7 +709,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.ui.showAgentLogs"
+                        :checked="draftSettings.ui.showAgentLogs"
                         @change="webImportStore.setShowAgentLogs(($event.target as HTMLInputElement).checked)"
                       />
                       显示 AI 工作日志
@@ -642,7 +717,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.ui.autoImport"
+                        :checked="draftSettings.ui.autoImport"
                         @change="webImportStore.setAutoImport(($event.target as HTMLInputElement).checked)"
                       />
                       提取后自动导入
@@ -658,19 +733,19 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.imagePreprocess.enabled"
+                        :checked="draftSettings.imagePreprocess.enabled"
                         @change="webImportStore.setImagePreprocessEnabled(($event.target as HTMLInputElement).checked)"
                       />
                       启用图片预处理
                     </label>
                   </div>
 
-                  <template v-if="webImportStore.settings.imagePreprocess.enabled">
+                  <template v-if="draftSettings.imagePreprocess.enabled">
                     <div class="form-row">
                       <label class="checkbox-label">
                         <input
                           type="checkbox"
-                          :checked="webImportStore.settings.imagePreprocess.autoRotate"
+                          :checked="draftSettings.imagePreprocess.autoRotate"
                           @change="webImportStore.setImageAutoRotate(($event.target as HTMLInputElement).checked)"
                         />
                         根据 EXIF 自动旋转
@@ -682,21 +757,21 @@ function handleResetPrompt() {
                       <label class="checkbox-label">
                         <input
                           type="checkbox"
-                          :checked="webImportStore.settings.imagePreprocess.compression.enabled"
+                          :checked="draftSettings.imagePreprocess.compression.enabled"
                           @change="webImportStore.setImageCompressionEnabled(($event.target as HTMLInputElement).checked)"
                         />
                         启用压缩
                       </label>
                     </div>
 
-                    <template v-if="webImportStore.settings.imagePreprocess.compression.enabled">
+                    <template v-if="draftSettings.imagePreprocess.compression.enabled">
                       <div class="form-grid">
                         <div class="form-row">
                           <label class="form-label">质量 (0-100)</label>
                           <input
                             type="number"
                             class="form-input small"
-                            :value="webImportStore.settings.imagePreprocess.compression.quality"
+                            :value="draftSettings.imagePreprocess.compression.quality"
                             @input="webImportStore.setImageCompressionQuality(Number(($event.target as HTMLInputElement).value))"
                             min="1"
                             max="100"
@@ -707,7 +782,7 @@ function handleResetPrompt() {
                           <input
                             type="number"
                             class="form-input small"
-                            :value="webImportStore.settings.imagePreprocess.compression.maxWidth"
+                            :value="draftSettings.imagePreprocess.compression.maxWidth"
                             @input="webImportStore.setImageMaxWidth(Number(($event.target as HTMLInputElement).value))"
                             min="0"
                           />
@@ -717,7 +792,7 @@ function handleResetPrompt() {
                           <input
                             type="number"
                             class="form-input small"
-                            :value="webImportStore.settings.imagePreprocess.compression.maxHeight"
+                            :value="draftSettings.imagePreprocess.compression.maxHeight"
                             @input="webImportStore.setImageMaxHeight(Number(($event.target as HTMLInputElement).value))"
                             min="0"
                           />
@@ -730,25 +805,25 @@ function handleResetPrompt() {
                       <label class="checkbox-label">
                         <input
                           type="checkbox"
-                          :checked="webImportStore.settings.imagePreprocess.formatConvert.enabled"
+                          :checked="draftSettings.imagePreprocess.formatConvert.enabled"
                           @change="webImportStore.setImageFormatConvertEnabled(($event.target as HTMLInputElement).checked)"
                         />
                         启用格式转换
                       </label>
                     </div>
 
-                    <div v-if="webImportStore.settings.imagePreprocess.formatConvert.enabled" class="form-row">
+                    <div v-if="draftSettings.imagePreprocess.formatConvert.enabled" class="form-row">
                       <label class="form-label">目标格式</label>
-                      <select
-                        class="form-select"
-                        :value="webImportStore.settings.imagePreprocess.formatConvert.targetFormat"
-                        @change="webImportStore.setImageTargetFormat(($event.target as HTMLSelectElement).value as 'jpeg' | 'png' | 'webp' | 'original')"
-                      >
-                        <option value="original">保持原格式</option>
-                        <option value="jpeg">JPEG</option>
-                        <option value="png">PNG</option>
-                        <option value="webp">WebP</option>
-                      </select>
+                      <CustomSelect
+                        :model-value="draftSettings.imagePreprocess.formatConvert.targetFormat"
+                        :options="[
+                          { label: '保持原格式', value: 'original' },
+                          { label: 'JPEG', value: 'jpeg' },
+                          { label: 'PNG', value: 'png' },
+                          { label: 'WebP', value: 'webp' }
+                        ]"
+                        @change="(value) => webImportStore.setImageTargetFormat(String(value) as 'jpeg' | 'png' | 'webp' | 'original')"
+                      />
                     </div>
                   </template>
                 </div>
@@ -764,7 +839,7 @@ function handleResetPrompt() {
                     <input
                       type="text"
                       class="form-input"
-                      :value="webImportStore.settings.advanced.customCookie"
+                      :value="draftSettings.advanced.customCookie"
                       @input="webImportStore.setCustomCookie(($event.target as HTMLInputElement).value)"
                       placeholder="name=value; name2=value2"
                     />
@@ -774,7 +849,7 @@ function handleResetPrompt() {
                     <label class="form-label">Headers (JSON)</label>
                     <textarea
                       class="form-textarea"
-                      :value="webImportStore.settings.advanced.customHeaders"
+                      :value="draftSettings.advanced.customHeaders"
                       @input="webImportStore.setCustomHeaders(($event.target as HTMLTextAreaElement).value)"
                       rows="3"
                       placeholder='{"X-Custom-Header": "value"}'
@@ -785,7 +860,7 @@ function handleResetPrompt() {
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        :checked="webImportStore.settings.advanced.bypassProxy"
+                        :checked="draftSettings.advanced.bypassProxy"
                         @change="webImportStore.setBypassProxy(($event.target as HTMLInputElement).checked)"
                       />
                       绕过系统代理 (连接本地服务时使用)
@@ -1048,6 +1123,72 @@ function handleResetPrompt() {
   background: var(--bg-primary, #fff);
 }
 
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, #e6e6e6);
+  border-radius: 10px;
+  background: var(--bg-secondary, #fafafa);
+}
+
+.settings-dirty,
+.settings-clean {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-dirty {
+  color: #b26a00;
+}
+
+.settings-clean {
+  color: #2f7d32;
+}
+
+.settings-action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-primary-btn,
+.settings-secondary-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-primary-btn {
+  border: none;
+  background: var(--btn-primary-bg, #4a90d9);
+  color: #fff;
+}
+
+.settings-primary-btn:hover:not(:disabled) {
+  background: var(--btn-primary-hover-bg, #3a7fc8);
+}
+
+.settings-secondary-btn {
+  border: 1px solid var(--border-color, #ddd);
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #333);
+}
+
+.settings-secondary-btn:hover:not(:disabled) {
+  background: var(--bg-hover, #efefef);
+}
+
+.settings-primary-btn:disabled,
+.settings-secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .settings-tabs {
   display: flex;
   gap: 4px;
@@ -1134,7 +1275,6 @@ function handleResetPrompt() {
 }
 
 .form-input,
-.form-select,
 .form-textarea {
   width: 100%;
   padding: 8px 12px;
@@ -1148,7 +1288,6 @@ function handleResetPrompt() {
 }
 
 .form-input:focus,
-.form-select:focus,
 .form-textarea:focus {
   border-color: var(--color-primary, #4a90d9);
 }
@@ -1162,49 +1301,11 @@ function handleResetPrompt() {
   min-height: 80px;
 }
 
-.input-group {
-  display: flex;
-  gap: 8px;
+.test-action-row {
+  margin-top: 10px;
 }
 
-.input-group .form-input {
-  flex: 1;
-}
-
-.toggle-btn {
-  padding: 8px 12px;
-  background: var(--bg-secondary, #f5f5f5);
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.toggle-btn:hover {
-  background: var(--bg-hover, #efefef);
-}
-
-.test-btn {
-  padding: 8px 14px;
-  background: var(--btn-secondary-bg, #f0f0f0);
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-
-.test-btn:hover:not(:disabled) {
-  background: var(--btn-secondary-hover-bg, #e5e5e5);
-}
-
-.test-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.test-btn.full {
+.settings-test-btn.full {
   width: 100%;
 }
 

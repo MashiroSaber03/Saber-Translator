@@ -3,7 +3,11 @@
  */
 
 import type { Ref } from 'vue'
-import type { WebImportSettings } from '@/types/webImport'
+import type {
+  WebImportAgentProviderConfig,
+  WebImportProviderConfigs,
+  WebImportSettings,
+} from '@/types/webImport'
 import { DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT } from '@/constants'
 import { normalizeProviderId } from '@/config/aiProviders'
 
@@ -64,13 +68,27 @@ export function createDefaultWebImportSettings(): WebImportSettings {
   }
 }
 
+export function createDefaultWebImportProviderConfigs(): WebImportProviderConfigs {
+  return {
+    agent: {}
+  }
+}
+
+function createEmptyAgentProviderConfig(): WebImportAgentProviderConfig {
+  return {
+    apiKey: '',
+    modelName: '',
+    customBaseUrl: ''
+  }
+}
+
 // ============================================================
 // Composable
 // ============================================================
 
 export function useWebImportSettings(
   webImportSettings: Ref<WebImportSettings>,
-  saveToStorage: () => void
+  providerConfigs: Ref<WebImportProviderConfigs>
 ) {
   // ============================================================
   // Firecrawl 设置
@@ -78,7 +96,6 @@ export function useWebImportSettings(
 
   function setFirecrawlApiKey(apiKey: string): void {
     webImportSettings.value.firecrawl.apiKey = apiKey
-    saveToStorage()
   }
 
   // ============================================================
@@ -86,38 +103,37 @@ export function useWebImportSettings(
   // ============================================================
 
   function setAgentProvider(provider: string): void {
-    webImportSettings.value.agent.provider = normalizeProviderId(provider) as WebImportSettings['agent']['provider']
-    saveToStorage()
+    const canonicalProvider = normalizeProviderId(provider) as WebImportSettings['agent']['provider']
+    const oldProvider = normalizeProviderId(webImportSettings.value.agent.provider) as WebImportSettings['agent']['provider']
+    if (oldProvider === canonicalProvider) return
+
+    saveAgentProviderConfig(oldProvider)
+    webImportSettings.value.agent.provider = canonicalProvider
+    restoreAgentProviderConfig(canonicalProvider)
   }
 
   function setAgentApiKey(apiKey: string): void {
     webImportSettings.value.agent.apiKey = apiKey
-    saveToStorage()
   }
 
   function setAgentBaseUrl(baseUrl: string): void {
     webImportSettings.value.agent.customBaseUrl = baseUrl
-    saveToStorage()
   }
 
   function setAgentModelName(modelName: string): void {
     webImportSettings.value.agent.modelName = modelName
-    saveToStorage()
   }
 
   function setAgentUseStream(useStream: boolean): void {
     webImportSettings.value.agent.useStream = useStream
-    saveToStorage()
   }
 
   function setAgentForceJson(forceJson: boolean): void {
     webImportSettings.value.agent.forceJsonOutput = forceJson
-    saveToStorage()
   }
 
   function setAgentTimeout(timeout: number): void {
     webImportSettings.value.agent.timeout = timeout
-    saveToStorage()
   }
 
   // ============================================================
@@ -126,17 +142,14 @@ export function useWebImportSettings(
 
   function setExtractionPrompt(prompt: string): void {
     webImportSettings.value.extraction.prompt = prompt
-    saveToStorage()
   }
 
   function setExtractionMaxIterations(maxIterations: number): void {
     webImportSettings.value.extraction.maxIterations = maxIterations
-    saveToStorage()
   }
 
   function resetExtractionPrompt(): void {
     webImportSettings.value.extraction.prompt = DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT
-    saveToStorage()
   }
 
   // ============================================================
@@ -145,27 +158,22 @@ export function useWebImportSettings(
 
   function setDownloadConcurrency(concurrency: number): void {
     webImportSettings.value.download.concurrency = concurrency
-    saveToStorage()
   }
 
   function setDownloadTimeout(timeout: number): void {
     webImportSettings.value.download.timeout = timeout
-    saveToStorage()
   }
 
   function setDownloadRetries(retries: number): void {
     webImportSettings.value.download.retries = retries
-    saveToStorage()
   }
 
   function setDownloadDelay(delay: number): void {
     webImportSettings.value.download.delay = delay
-    saveToStorage()
   }
 
   function setDownloadUseReferer(useReferer: boolean): void {
     webImportSettings.value.download.useReferer = useReferer
-    saveToStorage()
   }
 
   // ============================================================
@@ -174,42 +182,34 @@ export function useWebImportSettings(
 
   function setImagePreprocessEnabled(enabled: boolean): void {
     webImportSettings.value.imagePreprocess.enabled = enabled
-    saveToStorage()
   }
 
   function setImageAutoRotate(autoRotate: boolean): void {
     webImportSettings.value.imagePreprocess.autoRotate = autoRotate
-    saveToStorage()
   }
 
   function setImageCompressionEnabled(enabled: boolean): void {
     webImportSettings.value.imagePreprocess.compression.enabled = enabled
-    saveToStorage()
   }
 
   function setImageCompressionQuality(quality: number): void {
     webImportSettings.value.imagePreprocess.compression.quality = quality
-    saveToStorage()
   }
 
   function setImageMaxWidth(maxWidth: number): void {
     webImportSettings.value.imagePreprocess.compression.maxWidth = maxWidth
-    saveToStorage()
   }
 
   function setImageMaxHeight(maxHeight: number): void {
     webImportSettings.value.imagePreprocess.compression.maxHeight = maxHeight
-    saveToStorage()
   }
 
   function setImageFormatConvertEnabled(enabled: boolean): void {
     webImportSettings.value.imagePreprocess.formatConvert.enabled = enabled
-    saveToStorage()
   }
 
   function setImageTargetFormat(format: 'jpeg' | 'png' | 'webp' | 'original'): void {
     webImportSettings.value.imagePreprocess.formatConvert.targetFormat = format
-    saveToStorage()
   }
 
   // ============================================================
@@ -218,17 +218,14 @@ export function useWebImportSettings(
 
   function setCustomCookie(cookie: string): void {
     webImportSettings.value.advanced.customCookie = cookie
-    saveToStorage()
   }
 
   function setCustomHeaders(headers: string): void {
     webImportSettings.value.advanced.customHeaders = headers
-    saveToStorage()
   }
 
   function setBypassProxy(bypass: boolean): void {
     webImportSettings.value.advanced.bypassProxy = bypass
-    saveToStorage()
   }
 
   // ============================================================
@@ -237,24 +234,38 @@ export function useWebImportSettings(
 
   function setShowAgentLogs(show: boolean): void {
     webImportSettings.value.ui.showAgentLogs = show
-    saveToStorage()
   }
 
   function setAutoImport(autoImport: boolean): void {
     webImportSettings.value.ui.autoImport = autoImport
-    saveToStorage()
   }
 
-  // ============================================================
-  // 批量更新
-  // ============================================================
+  function saveAgentProviderConfig(provider: string): void {
+    const canonicalProvider = normalizeProviderId(provider)
+    if (!canonicalProvider) return
 
-  function updateWebImportSettings(updates: Partial<WebImportSettings>): void {
-    webImportSettings.value = {
-      ...webImportSettings.value,
-      ...updates
+    providerConfigs.value.agent[canonicalProvider] = {
+      apiKey: webImportSettings.value.agent.apiKey,
+      modelName: webImportSettings.value.agent.modelName,
+      customBaseUrl: webImportSettings.value.agent.customBaseUrl
     }
-    saveToStorage()
+  }
+
+  function restoreAgentProviderConfig(provider: string): void {
+    const canonicalProvider = normalizeProviderId(provider)
+    const cached = canonicalProvider ? providerConfigs.value.agent[canonicalProvider] : undefined
+
+    if (cached) {
+      webImportSettings.value.agent.apiKey = cached.apiKey ?? ''
+      webImportSettings.value.agent.modelName = cached.modelName ?? ''
+      webImportSettings.value.agent.customBaseUrl = cached.customBaseUrl ?? ''
+      return
+    }
+
+    const emptyConfig = createEmptyAgentProviderConfig()
+    webImportSettings.value.agent.apiKey = emptyConfig.apiKey
+    webImportSettings.value.agent.modelName = emptyConfig.modelName
+    webImportSettings.value.agent.customBaseUrl = emptyConfig.customBaseUrl
   }
 
   return {
@@ -268,6 +279,8 @@ export function useWebImportSettings(
     setAgentUseStream,
     setAgentForceJson,
     setAgentTimeout,
+    saveAgentProviderConfig,
+    restoreAgentProviderConfig,
     // 提取
     setExtractionPrompt,
     setExtractionMaxIterations,
@@ -294,7 +307,5 @@ export function useWebImportSettings(
     // UI
     setShowAgentLogs,
     setAutoImport,
-    // 批量更新
-    updateWebImportSettings
   }
 }

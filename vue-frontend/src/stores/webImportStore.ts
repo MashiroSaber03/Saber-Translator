@@ -1,116 +1,99 @@
 /**
  * 网页导入状态管理 Store
- * 管理网页导入设置和运行时状态
+ * 管理网页导入设置、设置草稿和运行时状态
  */
 
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { WebImportSettings, WebImportState, AgentLog, ExtractResult, DownloadedImage } from '@/types/webImport'
+import type {
+  AgentLog,
+  DownloadedImage,
+  ExtractResult,
+  WebImportProviderConfigs,
+  WebImportSettings,
+  WebImportSettingsPayload,
+  WebImportState,
+} from '@/types/webImport'
 import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
 import { normalizeProviderId } from '@/config/aiProviders'
-import { createDefaultWebImportSettings, useWebImportSettings } from './settings/modules/webImport'
+import {
+  getWebImportSettings,
+  saveWebImportSettings,
+} from '@/api/webImport'
+import {
+  createDefaultWebImportProviderConfigs,
+  createDefaultWebImportSettings,
+  useWebImportSettings,
+} from './settings/modules/webImport'
 
-// 免责声明存储键
 const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'webImportDisclaimerAccepted'
 
-// ============================================================
-// Store 定义
-// ============================================================
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function serializeValue(value: unknown): string {
+  return JSON.stringify(value)
+}
 
 export const useWebImportStore = defineStore('webImport', () => {
   // ============================================================
-  // 设置状态
+  // 已提交设置
   // ============================================================
 
-  /** 网页导入设置 */
   const settings = ref<WebImportSettings>(createDefaultWebImportSettings())
+  const providerConfigs = ref<WebImportProviderConfigs>(createDefaultWebImportProviderConfigs())
+
+  // ============================================================
+  // 草稿设置
+  // ============================================================
+
+  const draftSettings = ref<WebImportSettings>(cloneValue(settings.value))
+  const draftProviderConfigs = ref<WebImportProviderConfigs>(cloneValue(providerConfigs.value))
+  const isSavingSettings = ref(false)
+  const isInitializingSettings = ref(false)
+  const hasLoadedBackendSettings = ref(false)
+  let initPromise: Promise<void> | null = null
 
   // ============================================================
   // 运行时状态
   // ============================================================
 
-  /** 导入状态 */
   const status = ref<WebImportState['status']>('idle')
-
-  /** 当前 URL */
   const url = ref('')
-
-  /** Agent 日志 */
   const logs = ref<AgentLog[]>([])
-
-  /** 提取结果 */
   const extractResult = ref<ExtractResult | null>(null)
-
-  /** 已选页面 */
   const selectedPages = ref<Set<number>>(new Set())
-
-  /** 下载进度 */
   const downloadProgress = ref({ current: 0, total: 0 })
-
-  /** 已下载图片 */
   const downloadedImages = ref<DownloadedImage[]>([])
-
-  /** 错误信息 */
   const error = ref<string | null>(null)
-
-  /** 模态框是否可见 */
   const modalVisible = ref(false)
-
-  /** 免责声明是否已接受 */
   const disclaimerAccepted = ref(false)
-
-  /** 免责声明弹窗是否可见 */
   const disclaimerVisible = ref(false)
 
   // ============================================================
   // 计算属性
   // ============================================================
 
-  /** 是否正在提取 */
   const isExtracting = computed(() => status.value === 'extracting')
-
-  /** 是否正在下载 */
   const isDownloading = computed(() => status.value === 'downloading')
-
-  /** 是否正在处理中 */
   const isProcessing = computed(() => isExtracting.value || isDownloading.value)
-
-  /** 已选页面数量 */
   const selectedCount = computed(() => selectedPages.value.size)
-
-  /** 下载进度百分比 */
   const downloadProgressPercent = computed(() => {
     if (downloadProgress.value.total === 0) return 0
     return Math.round((downloadProgress.value.current / downloadProgress.value.total) * 100)
   })
+  const hasUnsavedSettings = computed(() => {
+    return (
+      serializeValue(settings.value) !== serializeValue(draftSettings.value) ||
+      serializeValue(providerConfigs.value) !== serializeValue(draftProviderConfigs.value)
+    )
+  })
 
   // ============================================================
-  // localStorage 持久化
+  // 深度合并
   // ============================================================
 
-  function saveToStorage(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_WEB_IMPORT_SETTINGS, JSON.stringify(settings.value))
-    } catch (e) {
-      console.error('保存网页导入设置失败:', e)
-    }
-  }
-
-  function loadFromStorage(): void {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY_WEB_IMPORT_SETTINGS)
-      if (data) {
-        const parsed = JSON.parse(data)
-        // 深度合并，确保新增字段不丢失
-        settings.value = deepMerge(createDefaultWebImportSettings(), parsed)
-        settings.value.agent.provider = normalizeProviderId(settings.value.agent.provider) as WebImportSettings['agent']['provider']
-      }
-    } catch (e) {
-      console.error('加载网页导入设置失败:', e)
-    }
-  }
-
-  /** 深度合并对象 */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function deepMerge(target: any, source: any): any {
     const result = { ...target }
@@ -135,39 +118,239 @@ export const useWebImportStore = defineStore('webImport', () => {
     return result
   }
 
+  function normalizeProviderConfigsValue(
+    value: Partial<WebImportProviderConfigs> | null | undefined
+  ): WebImportProviderConfigs {
+    const merged = deepMerge(createDefaultWebImportProviderConfigs(), value || {})
+    const normalizedAgentConfigs: WebImportProviderConfigs['agent'] = {}
+
+    for (const [provider, config] of Object.entries(merged.agent || {})) {
+      const normalizedConfig = (config || {}) as Partial<WebImportProviderConfigs['agent'][string]>
+      normalizedAgentConfigs[normalizeProviderId(provider)] = {
+        apiKey: normalizedConfig.apiKey || '',
+        modelName: normalizedConfig.modelName || '',
+        customBaseUrl: normalizedConfig.customBaseUrl || ''
+      }
+    }
+
+    return {
+      agent: normalizedAgentConfigs
+    }
+  }
+
+  function normalizeSettingsValue(value: Partial<WebImportSettings> | null | undefined): WebImportSettings {
+    const merged = deepMerge(createDefaultWebImportSettings(), value || {})
+    merged.agent.provider = normalizeProviderId(merged.agent.provider) as WebImportSettings['agent']['provider']
+    return merged
+  }
+
+  function syncDraftFromCommitted(): void {
+    draftSettings.value = cloneValue(settings.value)
+    draftProviderConfigs.value = cloneValue(providerConfigs.value)
+  }
+
+  function toStoragePayload(): WebImportSettingsPayload {
+    return {
+      settings: cloneValue(settings.value),
+      providerConfigs: cloneValue(providerConfigs.value)
+    }
+  }
+
+  function applyLoadedPayload(payload: Partial<WebImportSettingsPayload>): void {
+    settings.value = normalizeSettingsValue(payload.settings)
+    providerConfigs.value = normalizeProviderConfigsValue(payload.providerConfigs)
+    syncDraftFromCommitted()
+  }
+
+  function hasMeaningfulSettingsPayload(payload: {
+    settings?: Partial<WebImportSettings>
+    providerConfigs?: Partial<WebImportProviderConfigs>
+  }): boolean {
+    const normalizedSettings = normalizeSettingsValue(payload.settings)
+    const normalizedProviderConfigs = normalizeProviderConfigsValue(payload.providerConfigs)
+
+    return (
+      serializeValue(normalizedSettings) !== serializeValue(createDefaultWebImportSettings()) ||
+      serializeValue(normalizedProviderConfigs) !== serializeValue(createDefaultWebImportProviderConfigs())
+    )
+  }
+
+  // ============================================================
+  // localStorage 持久化
+  // ============================================================
+
+  function saveToStorage(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_WEB_IMPORT_SETTINGS, JSON.stringify(toStoragePayload()))
+    } catch (e) {
+      console.error('保存网页导入设置失败:', e)
+    }
+  }
+
+  function loadFromStorage(): void {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY_WEB_IMPORT_SETTINGS)
+      if (!data) return
+
+      const parsed = JSON.parse(data)
+      const isCombinedPayload = parsed && typeof parsed === 'object' && 'settings' in parsed
+      const payload: Partial<WebImportSettingsPayload> = isCombinedPayload
+        ? {
+          settings: parsed.settings,
+          providerConfigs: parsed.providerConfigs
+        }
+        : {
+          settings: parsed,
+          providerConfigs: createDefaultWebImportProviderConfigs()
+        }
+
+      applyLoadedPayload(payload)
+    } catch (e) {
+      console.error('加载网页导入设置失败:', e)
+      syncDraftFromCommitted()
+    }
+  }
+
+  async function loadFromBackend(): Promise<boolean> {
+    try {
+      const response = await getWebImportSettings()
+      if (!response.success) return false
+
+      const hasStoredSettings = response.hasStoredSettings === true || hasMeaningfulSettingsPayload({
+        settings: response.settings,
+        providerConfigs: response.providerConfigs
+      })
+      if (!hasStoredSettings) return false
+
+      applyLoadedPayload({
+        settings: response.settings,
+        providerConfigs: response.providerConfigs
+      })
+      saveToStorage()
+      hasLoadedBackendSettings.value = true
+      return true
+    } catch (e) {
+      console.error('从后端加载网页导入设置失败:', e)
+      return false
+    }
+  }
+
+  async function saveToBackend(): Promise<boolean> {
+    try {
+      const response = await saveWebImportSettings({
+        settings: cloneValue(settings.value),
+        providerConfigs: cloneValue(providerConfigs.value)
+      })
+      return Boolean(response.success)
+    } catch (e) {
+      console.error('保存网页导入设置到后端失败:', e)
+      return false
+    }
+  }
+
+  async function initSettings(force = false): Promise<void> {
+    if (hasLoadedBackendSettings.value && !force) return
+    if (initPromise && !force) {
+      await initPromise
+      return
+    }
+
+    if (force) {
+      hasLoadedBackendSettings.value = false
+    }
+
+    initPromise = (async () => {
+      isInitializingSettings.value = true
+      try {
+        loadFromStorage()
+        await loadFromBackend()
+      } finally {
+        isInitializingSettings.value = false
+      }
+    })()
+
+    try {
+      await initPromise
+    } finally {
+      initPromise = null
+    }
+  }
+
+  // ============================================================
+  // 设置草稿操作
+  // ============================================================
+
+  function beginSettingsEdit(): void {
+    syncDraftFromCommitted()
+  }
+
+  function discardSettingsChanges(): void {
+    syncDraftFromCommitted()
+  }
+
+  async function saveSettings(): Promise<boolean> {
+    if (isSavingSettings.value) return false
+
+    settingsMethods.saveAgentProviderConfig(draftSettings.value.agent.provider)
+
+    const previousSettings = cloneValue(settings.value)
+    const previousProviderConfigs = cloneValue(providerConfigs.value)
+
+    settings.value = normalizeSettingsValue(draftSettings.value)
+    providerConfigs.value = normalizeProviderConfigsValue(draftProviderConfigs.value)
+    saveToStorage()
+
+    isSavingSettings.value = true
+    try {
+      const success = await saveToBackend()
+      if (!success) {
+        settings.value = previousSettings
+        providerConfigs.value = previousProviderConfigs
+        saveToStorage()
+        return false
+      }
+
+      syncDraftFromCommitted()
+      return true
+    } finally {
+      isSavingSettings.value = false
+    }
+  }
+
   // ============================================================
   // 运行时状态操作
   // ============================================================
 
-  /** 打开模态框 */
-  function openModal(): void {
-    // 检查是否已接受免责声明
+  async function openModal(): Promise<void> {
     if (!disclaimerAccepted.value) {
       disclaimerVisible.value = true
-    } else {
-      modalVisible.value = true
+      return
     }
+
+    await initSettings()
+    beginSettingsEdit()
+    modalVisible.value = true
   }
 
-  /** 接受免责声明 */
-  function acceptDisclaimer(): void {
+  async function acceptDisclaimer(): Promise<void> {
     disclaimerAccepted.value = true
     disclaimerVisible.value = false
-    modalVisible.value = true
-    // 保存到 localStorage
+
     try {
       localStorage.setItem(STORAGE_KEY_DISCLAIMER_ACCEPTED, 'true')
     } catch (e) {
       console.error('保存免责声明状态失败:', e)
     }
+
+    await initSettings()
+    beginSettingsEdit()
+    modalVisible.value = true
   }
 
-  /** 拒绝免责声明 */
   function rejectDisclaimer(): void {
     disclaimerVisible.value = false
   }
 
-  /** 加载免责声明状态 */
   function loadDisclaimerState(): void {
     try {
       const accepted = localStorage.getItem(STORAGE_KEY_DISCLAIMER_ACCEPTED)
@@ -177,12 +360,10 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
   }
 
-  /** 关闭模态框 */
   function closeModal(): void {
     modalVisible.value = false
   }
 
-  /** 重置运行时状态 */
   function resetState(): void {
     status.value = 'idle'
     url.value = ''
@@ -194,26 +375,20 @@ export const useWebImportStore = defineStore('webImport', () => {
     error.value = null
   }
 
-  /** 设置 URL */
   function setUrl(newUrl: string): void {
     url.value = newUrl
   }
 
-  /** 添加日志 */
   function addLog(log: AgentLog): void {
     logs.value.push(log)
   }
 
-  /** 清空日志 */
   function clearLogs(): void {
     logs.value = []
   }
 
-  /** 设置提取结果 */
   function setExtractResult(result: ExtractResult): void {
-    // 兼容分片推送模式：如果已经有增量添加的页面，不覆盖
     if (extractResult.value && extractResult.value.pages.length > 0) {
-      // 只更新元数据，保留现有的 pages
       extractResult.value.comicTitle = result.comicTitle
       extractResult.value.chapterTitle = result.chapterTitle
       extractResult.value.totalPages = result.totalPages
@@ -223,27 +398,22 @@ export const useWebImportStore = defineStore('webImport', () => {
       extractResult.value.success = result.success
       extractResult.value.error = result.error
     } else {
-      // 首次设置，直接覆盖
       extractResult.value = result
       if (result.success && result.pages) {
-        // 默认全选
         selectedPages.value = new Set(result.pages.map((p) => p.pageNumber))
       }
     }
   }
 
-  /** 切换页面选择 */
   function togglePageSelection(pageNumber: number): void {
     if (selectedPages.value.has(pageNumber)) {
       selectedPages.value.delete(pageNumber)
     } else {
       selectedPages.value.add(pageNumber)
     }
-    // 触发响应式更新
     selectedPages.value = new Set(selectedPages.value)
   }
 
-  /** 全选/取消全选 */
   function toggleSelectAll(): void {
     if (!extractResult.value?.pages) return
 
@@ -254,12 +424,10 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
   }
 
-  /** 设置状态 */
   function setStatus(newStatus: WebImportState['status']): void {
     status.value = newStatus
   }
 
-  /** 设置错误 */
   function setError(errorMsg: string | null): void {
     error.value = errorMsg
     if (errorMsg) {
@@ -267,20 +435,16 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
   }
 
-  /** 更新下载进度 */
   function updateDownloadProgress(current: number, total: number): void {
     downloadProgress.value = { current, total }
   }
 
-  /** 设置下载结果 */
   function setDownloadedImages(images: DownloadedImage[]): void {
     downloadedImages.value = images
   }
 
-  /** 增量添加页面（分片推送模式） */
   function addPageIncremental(page: { pageNumber: number; imageUrl: string; localPath?: string }): void {
     if (!extractResult.value) {
-      // 如果还没有提取结果，先创建一个
       extractResult.value = {
         success: true,
         comicTitle: '',
@@ -293,36 +457,24 @@ export const useWebImportStore = defineStore('webImport', () => {
       }
     }
 
-    // 添加新页面
     extractResult.value.pages.push(page)
     extractResult.value.totalPages = extractResult.value.pages.length
 
-    // 自动选中新页面
     selectedPages.value.add(page.pageNumber)
-    selectedPages.value = new Set(selectedPages.value)  // 触发响应式更新
+    selectedPages.value = new Set(selectedPages.value)
   }
 
-  // ============================================================
-  // 导入设置模块方法
-  // ============================================================
-
-  const settingsMethods = useWebImportSettings(settings, saveToStorage)
-
-  // ============================================================
-  // 初始化
-  // ============================================================
+  const settingsMethods = useWebImportSettings(draftSettings, draftProviderConfigs)
 
   loadFromStorage()
   loadDisclaimerState()
-
-  // ============================================================
-  // 返回
-  // ============================================================
+  syncDraftFromCommitted()
 
   return {
-    // 设置
     settings,
-    // 运行时状态
+    providerConfigs,
+    draftSettings,
+    draftProviderConfigs,
     status,
     url,
     logs,
@@ -332,19 +484,21 @@ export const useWebImportStore = defineStore('webImport', () => {
     downloadedImages,
     error,
     modalVisible,
-    // 免责声明状态
     disclaimerAccepted,
     disclaimerVisible,
-    // 计算属性
     isExtracting,
     isDownloading,
     isProcessing,
     selectedCount,
     downloadProgressPercent,
-    // 持久化
+    hasUnsavedSettings,
+    isSavingSettings,
+    isInitializingSettings,
     saveToStorage,
     loadFromStorage,
-    // 运行时操作
+    loadFromBackend,
+    saveToBackend,
+    initSettings,
     openModal,
     closeModal,
     resetState,
@@ -359,10 +513,11 @@ export const useWebImportStore = defineStore('webImport', () => {
     updateDownloadProgress,
     setDownloadedImages,
     addPageIncremental,
-    // 免责声明操作
     acceptDisclaimer,
     rejectDisclaimer,
-    // 设置方法
+    beginSettingsEdit,
+    discardSettingsChanges,
+    saveSettings,
     ...settingsMethods
   }
 })
