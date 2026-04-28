@@ -7,12 +7,13 @@
 import { ref, computed, watch } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import { configApi } from '@/api/config'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
-import { normalizeProviderId } from '@/config/aiProviders'
+import { getProviderDisplayName, normalizeProviderId, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
 
 const webImportStore = useWebImportStore()
 const imageStore = useImageStore()
@@ -30,8 +31,10 @@ const settingsExpanded = ref(false)
 const activeSettingsTab = ref<'basic' | 'preprocess' | 'advanced'>('basic')
 const testingFirecrawl = ref(false)
 const testingAgent = ref(false)
+const isFetchingModels = ref(false)
 const showFirecrawlKey = ref(false)
 const showAgentKey = ref(false)
+const modelList = ref<string[]>([])
 
 // 计算属性
 const isVisible = computed(() => webImportStore.modalVisible)
@@ -49,6 +52,8 @@ const hasUnsavedSettings = computed(() => webImportStore.hasUnsavedSettings)
 const isSavingSettings = computed(() => webImportStore.isSavingSettings)
 const showAgentLogs = computed(() => draftSettings.value.ui.showAgentLogs)
 const agentProviderOptions = computed(() => [...WEB_IMPORT_AGENT_PROVIDERS])
+const supportsFetchModels = computed(() => providerSupportsCapability(draftSettings.value.agent.provider, 'modelFetch'))
+const modelListOptions = computed(() => modelList.value.map(model => ({ label: model, value: model })))
 
 // 当前使用的引擎
 const currentEngine = computed(() => extractResult.value?.engine || null)
@@ -326,6 +331,13 @@ watch(urlInput, (newUrl) => {
   checkUrlSupport(newUrl)
 })
 
+watch(
+  () => draftSettings.value.agent.provider,
+  () => {
+    modelList.value = []
+  }
+)
+
 const showCustomUrl = computed(() => normalizeProviderId(draftSettings.value.agent.provider) === 'custom')
 
 // 测试 Firecrawl 连接
@@ -374,6 +386,44 @@ async function handleTestAgent() {
     alert(`❌ 连接失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     testingAgent.value = false
+  }
+}
+
+async function handleFetchModels() {
+  const provider = draftSettings.value.agent.provider
+  const apiKey = draftSettings.value.agent.apiKey?.trim()
+  const baseUrl = draftSettings.value.agent.customBaseUrl?.trim()
+
+  if (!apiKey) {
+    alert('请先填写 API Key')
+    return
+  }
+
+  if (!providerSupportsCapability(provider, 'modelFetch')) {
+    alert(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
+    return
+  }
+
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
+    alert('自定义服务需要先填写 Base URL')
+    return
+  }
+
+  isFetchingModels.value = true
+  try {
+    const result = await configApi.fetchModels(provider, apiKey, baseUrl || '')
+    if (result.success && result.models && result.models.length > 0) {
+      modelList.value = result.models.map(model => model.id)
+      alert(`获取到 ${result.models.length} 个模型`)
+    } else {
+      modelList.value = []
+      alert(result.message || '未获取到可用模型')
+    }
+  } catch (error: unknown) {
+    modelList.value = []
+    alert(error instanceof Error ? error.message : '获取模型列表失败')
+  } finally {
+    isFetchingModels.value = false
   }
 }
 
@@ -565,13 +615,34 @@ function handleResetPrompt() {
 
                   <div class="form-row">
                     <label class="form-label">模型名称</label>
-                    <input
-                      type="text"
-                      class="form-input"
-                      :value="draftSettings.agent.modelName"
-                      @input="webImportStore.setAgentModelName(($event.target as HTMLInputElement).value)"
-                      placeholder="gpt-4o-mini"
-                    />
+                    <div class="model-input-with-fetch">
+                      <input
+                        type="text"
+                        class="form-input"
+                        :value="draftSettings.agent.modelName"
+                        @input="webImportStore.setAgentModelName(($event.target as HTMLInputElement).value)"
+                        placeholder="gpt-4o-mini"
+                      />
+                      <button
+                        v-if="supportsFetchModels"
+                        type="button"
+                        class="fetch-models-btn"
+                        title="获取可用模型列表"
+                        :disabled="isFetchingModels"
+                        @click="handleFetchModels"
+                      >
+                        <span class="fetch-icon">🔍</span>
+                        <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
+                      </button>
+                    </div>
+                    <div v-if="modelList.length > 0" class="model-select-container">
+                      <CustomSelect
+                        :model-value="draftSettings.agent.modelName"
+                        :options="modelListOptions"
+                        @change="(value) => webImportStore.setAgentModelName(String(value))"
+                      />
+                      <span class="model-count">共 {{ modelList.length }} 个模型</span>
+                    </div>
                   </div>
 
                   <div class="form-row inline">

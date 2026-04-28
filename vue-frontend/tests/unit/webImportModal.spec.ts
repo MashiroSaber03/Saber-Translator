@@ -8,6 +8,7 @@ const {
   downloadImagesMock,
   checkGalleryDLSupportMock,
   getGalleryDLImagesMock,
+  fetchModelsMock,
   testFirecrawlConnectionMock,
   testAgentConnectionMock,
 } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const {
   downloadImagesMock: vi.fn(),
   checkGalleryDLSupportMock: vi.fn(),
   getGalleryDLImagesMock: vi.fn(),
+  fetchModelsMock: vi.fn(),
   testFirecrawlConnectionMock: vi.fn(),
   testAgentConnectionMock: vi.fn(),
 }))
@@ -29,6 +31,17 @@ vi.mock('@/api/webImport', async () => {
     getGalleryDLImages: getGalleryDLImagesMock,
     testFirecrawlConnection: testFirecrawlConnectionMock,
     testAgentConnection: testAgentConnectionMock,
+  }
+})
+
+vi.mock('@/api/config', async () => {
+  const actual = await vi.importActual<typeof import('@/api/config')>('@/api/config')
+  return {
+    ...actual,
+    configApi: {
+      ...actual.configApi,
+      fetchModels: fetchModelsMock,
+    },
   }
 })
 
@@ -78,6 +91,7 @@ describe('WebImportModal', () => {
     downloadImagesMock.mockReset()
     checkGalleryDLSupportMock.mockReset()
     getGalleryDLImagesMock.mockReset()
+    fetchModelsMock.mockReset()
     testFirecrawlConnectionMock.mockReset()
     testAgentConnectionMock.mockReset()
 
@@ -88,6 +102,13 @@ describe('WebImportModal', () => {
       failedCount: 0,
     })
     getGalleryDLImagesMock.mockResolvedValue({ success: true, images: [], total: 0 })
+    fetchModelsMock.mockResolvedValue({
+      success: true,
+      models: [
+        { id: 'gpt-4o-mini', name: 'gpt-4o-mini' },
+        { id: 'gpt-4.1-mini', name: 'gpt-4.1-mini' },
+      ],
+    })
 
     vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockImplementation(() => true)
@@ -128,5 +149,26 @@ describe('WebImportModal', () => {
     expect(downloadImagesMock).toHaveBeenCalledTimes(1)
     expect(imageStore.imageCount).toBe(1)
     expect(webImportStore.status).toBe('idle')
+  })
+
+  it('fetches available models for the selected agent provider', async () => {
+    const webImportStore = useWebImportStore()
+    webImportStore.modalVisible = true
+    webImportStore.draftSettings.agent.apiKey = 'test-key'
+    webImportStore.draftSettings.agent.provider = 'openai'
+
+    const wrapper = mount(WebImportModal)
+    await wrapper.find('.settings-header').trigger('click')
+
+    const fetchButton = wrapper.find('.fetch-models-btn')
+    expect(fetchButton.exists()).toBe(true)
+
+    await fetchButton.trigger('click')
+    await flushPromises()
+
+    expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '')
+
+    const modelOptions = wrapper.findAll('.custom-select-stub option')
+    expect(modelOptions.some(option => option.text() === 'gpt-4o-mini')).toBe(true)
   })
 })
