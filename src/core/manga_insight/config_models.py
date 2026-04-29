@@ -52,8 +52,6 @@ class VLMConfig(SerializableMixin):
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
     rpm_limit: int = 10
-    max_retries: int = 3
-    max_images_per_request: int = 10
     temperature: float = 0.3
     force_json: bool = False  # 强制 JSON 输出（OpenAI 兼容 API）
     use_stream: bool = True  # 使用流式请求（避免超时）
@@ -68,8 +66,6 @@ class ChatLLMConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
-    rpm_limit: int = 10
-    max_retries: int = 3
     use_stream: bool = True  # 使用流式请求（避免超时）
 
 
@@ -80,22 +76,17 @@ class EmbeddingConfig(SerializableMixin):
     api_key: str = ""
     model: str = "text-embedding-3-small"
     base_url: Optional[str] = None
-    dimension: int = 1536
     rpm_limit: int = 0
-    max_retries: int = 3
 
 
 @dataclass
 class RerankerConfig(SerializableMixin):
-    """重排序模型配置（默认启用，需配置 API Key 后生效）"""
-    enabled: bool = True  # 默认启用
+    """重排序模型配置（配置 API Key 后生效）"""
     provider: str = "jina"
     api_key: str = ""
     model: str = "jina-reranker-v2-base-multilingual"
     base_url: Optional[str] = None
     top_k: int = 5
-    rpm_limit: int = 60
-    max_retries: int = 3
 
 
 @dataclass

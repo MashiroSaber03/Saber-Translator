@@ -11,6 +11,8 @@ from .clients import get_rerank_url, get_default_model, BaseAPIClient
 from .config_models import RerankerConfig
 
 logger = logging.getLogger("MangaInsight.Reranker")
+DEFAULT_RERANKER_RPM_LIMIT = 60
+DEFAULT_RERANKER_MAX_RETRIES = 2
 
 
 class RerankerClient(BaseAPIClient):
@@ -52,9 +54,9 @@ class RerankerClient(BaseAPIClient):
             provider=provider,
             api_key=config.api_key,
             base_url=base_url,
-            rpm_limit=config.rpm_limit if hasattr(config, 'rpm_limit') and config.rpm_limit else 60,
+            rpm_limit=DEFAULT_RERANKER_RPM_LIMIT,
             timeout=30.0,
-            max_retries=2
+            max_retries=DEFAULT_RERANKER_MAX_RETRIES
         )
 
         logger.info(f"RerankerClient 初始化: provider={provider}, rerank_url={self._rerank_url}")
@@ -79,7 +81,7 @@ class RerankerClient(BaseAPIClient):
         if not documents:
             return []
 
-        if not self.config.enabled or not self.config.api_key or not self._rerank_url:
+        if not self.config.api_key or not self._rerank_url:
             return documents[:top_k] if top_k else documents
 
         top_k = top_k or self.config.top_k

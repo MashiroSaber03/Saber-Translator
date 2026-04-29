@@ -11,6 +11,9 @@ from .clients import BaseAPIClient
 from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
+DEFAULT_EMBEDDING_MAX_RETRIES = 3
+DEFAULT_CHAT_RPM_LIMIT = 30
+DEFAULT_CHAT_MAX_RETRIES = 3
 
 
 class EmbeddingClient(BaseAPIClient):
@@ -39,7 +42,7 @@ class EmbeddingClient(BaseAPIClient):
             base_url=config.base_url,
             rpm_limit=config.rpm_limit,
             timeout=60.0,
-            max_retries=config.max_retries
+            max_retries=DEFAULT_EMBEDDING_MAX_RETRIES
         )
 
         logger.info(f"EmbeddingClient 初始化: provider={config.provider}, base_url={self._base_url}")
@@ -124,9 +127,9 @@ class ChatClient(BaseAPIClient):
             provider=provider,
             api_key=config.api_key,
             base_url=custom_url,
-            rpm_limit=30,  # 添加 RPM 限制（之前缺失）
+            rpm_limit=DEFAULT_CHAT_RPM_LIMIT,
             timeout=120.0,
-            max_retries=3
+            max_retries=DEFAULT_CHAT_MAX_RETRIES
         )
 
         logger.info(f"ChatClient 初始化: provider={provider}, base_url={self._base_url}")

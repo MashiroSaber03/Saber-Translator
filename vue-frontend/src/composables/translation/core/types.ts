@@ -55,7 +55,6 @@ export interface BatchOptions {
     batchSize?: number
     maxRetries?: number
     rpmLimit?: number
-    sessionResetFrequency?: number
 }
 
 // ============================================================

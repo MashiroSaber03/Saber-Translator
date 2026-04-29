@@ -118,6 +118,46 @@ export const useSettingsStore = defineStore('settings', () => {
   /** 原版 localStorage 存储键（用于兼容迁移） */
   const LEGACY_STORAGE_KEY = 'saber_translator_settings'
 
+  function stripDeprecatedSettingsFields(raw: unknown): Partial<TranslationSettings> {
+    if (!raw || typeof raw !== 'object') return {}
+
+    const cloned = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>
+    const hq = cloned.hqTranslation
+    if (hq && typeof hq === 'object') {
+      delete (hq as Record<string, unknown>).sessionReset
+    }
+
+    const proofreading = cloned.proofreading
+    if (proofreading && typeof proofreading === 'object') {
+      const rounds = (proofreading as Record<string, unknown>).rounds
+      if (Array.isArray(rounds)) {
+        for (const round of rounds) {
+          if (round && typeof round === 'object') {
+            delete (round as Record<string, unknown>).sessionReset
+          }
+        }
+      }
+    }
+
+    return cloned as Partial<TranslationSettings>
+  }
+
+  function stripDeprecatedProviderConfigFields(raw: unknown): Partial<ProviderConfigsCache> {
+    if (!raw || typeof raw !== 'object') return {}
+
+    const cloned = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>
+    const hqConfigs = cloned.hqTranslation
+    if (hqConfigs && typeof hqConfigs === 'object') {
+      for (const config of Object.values(hqConfigs as Record<string, unknown>)) {
+        if (config && typeof config === 'object') {
+          delete (config as Record<string, unknown>).sessionReset
+        }
+      }
+    }
+
+    return cloned as Partial<ProviderConfigsCache>
+  }
+
   /**
    * 从 localStorage 加载设置
    * 优先读取新 Key，若不存在则尝试读取原版 Key 并迁移
@@ -140,7 +180,7 @@ export const useSettingsStore = defineStore('settings', () => {
       }
 
       if (data) {
-        const parsed = JSON.parse(data)
+        const parsed = stripDeprecatedSettingsFields(JSON.parse(data))
         const defaults = createDefaultSettings()
         // 深度合并，确保新增的默认值不会丢失
         settings.value = deepMerge(defaults, parsed)
@@ -174,7 +214,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
       if (data) {
-        const parsed = JSON.parse(data)
+        const parsed = stripDeprecatedProviderConfigFields(JSON.parse(data))
         // 确保结构完整
         providerConfigs.value = {
           translation: parsed.translation || {},
@@ -247,8 +287,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const hq = settings.value.hqTranslation
     hq.batchSize = Number(hq.batchSize) || 10
-    hq.sessionReset = Number(hq.sessionReset) || 3
-    hq.rpmLimit = parseNumberOrFallback(hq.rpmLimit, 60)
+    hq.rpmLimit = parseNumberOrFallback(hq.rpmLimit, 7)
     hq.maxRetries = parseNumberOrFallback(hq.maxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
 
     const av = settings.value.aiVisionOcr
@@ -693,9 +732,6 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.hqBatchSize !== undefined) {
       settings.value.hqTranslation.batchSize = parseNum(backendSettings.hqBatchSize, 3)
     }
-    if (backendSettings.hqSessionReset !== undefined) {
-      settings.value.hqTranslation.sessionReset = parseNum(backendSettings.hqSessionReset, 3)
-    }
     if (backendSettings.hqRpmLimit !== undefined) {
       settings.value.hqTranslation.rpmLimit = parseNum(backendSettings.hqRpmLimit, 7)
     }
@@ -742,7 +778,6 @@ export const useSettingsStore = defineStore('settings', () => {
           customBaseUrl: (round.customBaseUrl as string) || '',
           prompt: (round.prompt as string) || '',
           batchSize: parseNum(round.batchSize, 3),
-          sessionReset: parseNum(round.sessionReset, 3),
           rpmLimit: parseNum(round.rpmLimit, 7),
           maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES),
           lowReasoning: (round.lowReasoning as boolean) || false,
@@ -839,7 +874,6 @@ export const useSettingsStore = defineStore('settings', () => {
             modelName: config.hqModelName as string,
             customBaseUrl: config.hqCustomBaseUrl as string,
             batchSize: parseNum(config.hqBatchSize, 3),
-            sessionReset: parseNum(config.hqSessionReset, 3),
             rpmLimit: parseNum(config.hqRpmLimit, 7),
             maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES),
             lowReasoning: config.hqLowReasoning as boolean,
@@ -895,15 +929,14 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     for (const [provider, config] of Object.entries(providerConfigs.value.hqTranslation)) {
-      hqTranslateProviderConfigs[provider] = {
-        hqApiKey: config.apiKey || '',
-        hqModelName: config.modelName || '',
-        hqCustomBaseUrl: config.customBaseUrl || '',
-        hqBatchSize: String(config.batchSize ?? 3),
-        hqSessionReset: String(config.sessionReset ?? 3),
-        hqRpmLimit: String(config.rpmLimit ?? 7),
-        hqMaxRetries: String(config.maxRetries ?? 2),
-        hqLowReasoning: config.lowReasoning || false,
+        hqTranslateProviderConfigs[provider] = {
+          hqApiKey: config.apiKey || '',
+          hqModelName: config.modelName || '',
+          hqCustomBaseUrl: config.customBaseUrl || '',
+          hqBatchSize: String(config.batchSize ?? 3),
+          hqRpmLimit: String(config.rpmLimit ?? 7),
+          hqMaxRetries: String(config.maxRetries ?? 2),
+          hqLowReasoning: config.lowReasoning || false,
         hqNoThinkingMethod: config.noThinkingMethod || 'gemini',
         hqForceJsonOutput: config.forceJsonOutput ?? true,
         hqUseStream: config.useStream || false,
@@ -1003,7 +1036,6 @@ export const useSettingsStore = defineStore('settings', () => {
         hqModelName: settings.value.hqTranslation.modelName,
         hqCustomBaseUrl: settings.value.hqTranslation.customBaseUrl,
         hqBatchSize: String(settings.value.hqTranslation.batchSize),
-        hqSessionReset: String(settings.value.hqTranslation.sessionReset),
         hqRpmLimit: String(settings.value.hqTranslation.rpmLimit),
         hqMaxRetries: String(settings.value.hqTranslation.maxRetries),
         hqPrompt: settings.value.hqTranslation.prompt,
@@ -1026,7 +1058,6 @@ export const useSettingsStore = defineStore('settings', () => {
             customBaseUrl: round.customBaseUrl,
             prompt: round.prompt,
             batchSize: round.batchSize,
-            sessionReset: round.sessionReset,
             rpmLimit: round.rpmLimit,
             maxRetries: round.maxRetries,
             lowReasoning: round.lowReasoning,

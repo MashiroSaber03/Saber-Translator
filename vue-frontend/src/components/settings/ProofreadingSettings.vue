@@ -123,10 +123,6 @@
               <input type="number" v-model.number="round.batchSize" min="1" max="10" step="1" />
             </div>
             <div class="settings-item">
-              <label>会话重置频率:</label>
-              <input type="number" v-model.number="round.sessionReset" min="1" step="1" />
-            </div>
-            <div class="settings-item">
               <label>RPM限制:</label>
               <input type="number" v-model.number="round.rpmLimit" min="0" step="1" />
             </div>
@@ -346,7 +342,6 @@ function addRound() {
     modelName: '',
     customBaseUrl: '',
     batchSize: 3,
-    sessionReset: 3,
     rpmLimit: 7,
     lowReasoning: false,
     noThinkingMethod: 'gemini',

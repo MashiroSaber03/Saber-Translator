@@ -134,7 +134,6 @@ export interface HqTranslationSettings {
   modelName: string
   customBaseUrl: string
   batchSize: number
-  sessionReset: number
   rpmLimit: number
   maxRetries: number
   lowReasoning: boolean
@@ -154,7 +153,6 @@ export interface ProofreadingRound {
   modelName: string
   customBaseUrl: string
   batchSize: number
-  sessionReset: number
   rpmLimit: number
   maxRetries?: number  // 最大重试次数（可选，默认使用全局设置）
   lowReasoning: boolean

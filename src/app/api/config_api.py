@@ -2,6 +2,8 @@
 包含与配置相关的API端点
 """
 
+import json
+
 from flask import Blueprint, request, jsonify # 已有
 # 导入配置加载/保存函数和常量
 from src.shared.config_loader import load_json_config, save_json_config
@@ -175,14 +177,44 @@ def delete_textbox_prompt():
     return jsonify({'message': '文本框提示词删除成功'})
 
 # --- 用户设置保存/加载 ---
+def _sanitize_user_settings_payload(settings_data):
+    """清理已废弃的用户设置字段，保持平滑兼容。"""
+    if not isinstance(settings_data, dict):
+        return settings_data
+
+    sanitized = json.loads(json.dumps(settings_data))
+
+    sanitized.pop("hqSessionReset", None)
+
+    proofreading = sanitized.get("proofreading")
+    if isinstance(proofreading, dict):
+        rounds = proofreading.get("rounds")
+        if isinstance(rounds, list):
+            for round_item in rounds:
+                if isinstance(round_item, dict):
+                    round_item.pop("sessionReset", None)
+
+    provider_settings = sanitized.get("providerSettings")
+    if isinstance(provider_settings, dict):
+        hq_provider_settings = provider_settings.get("hqTranslateProvider")
+        if isinstance(hq_provider_settings, dict):
+            for provider_config in hq_provider_settings.values():
+                if isinstance(provider_config, dict):
+                    provider_config.pop("hqSessionReset", None)
+
+    return sanitized
+
+
 def load_user_settings():
     """加载用户设置"""
     default_settings = {}
-    return load_json_config(constants.USER_SETTINGS_FILE, default_value=default_settings)
+    settings = load_json_config(constants.USER_SETTINGS_FILE, default_value=default_settings)
+    return _sanitize_user_settings_payload(settings)
 
 def save_user_settings_to_file(settings_data):
     """保存用户设置到文件"""
-    success = save_json_config(constants.USER_SETTINGS_FILE, settings_data)
+    sanitized = _sanitize_user_settings_payload(settings_data)
+    success = save_json_config(constants.USER_SETTINGS_FILE, sanitized)
     if not success:
         logger.warning(f"保存用户设置失败: {constants.USER_SETTINGS_FILE}")
     return success

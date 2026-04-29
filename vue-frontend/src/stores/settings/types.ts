@@ -26,7 +26,6 @@ export interface HqTranslationProviderConfig {
   modelName?: string
   customBaseUrl?: string
   batchSize?: number
-  sessionReset?: number
   rpmLimit?: number
   maxRetries?: number
   lowReasoning?: boolean

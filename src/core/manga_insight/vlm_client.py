@@ -23,6 +23,7 @@ from .config_models import (
 from .utils.json_parser import parse_llm_json
 
 logger = logging.getLogger("MangaInsight.VLM")
+DEFAULT_VLM_MAX_RETRIES = 3
 
 
 def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
@@ -104,7 +105,7 @@ class VLMClient(BaseAPIClient):
             base_url=config.base_url,
             rpm_limit=config.rpm_limit,
             timeout=300.0,  # 批量分析需要更长超时时间（5分钟）
-            max_retries=config.max_retries
+            max_retries=DEFAULT_VLM_MAX_RETRIES
         )
 
         logger.info(f"VLMClient 初始化: provider={config.provider}, base_url={self._base_url}")
@@ -136,7 +137,7 @@ class VLMClient(BaseAPIClient):
         prompt = custom_prompt or self._build_batch_analysis_prompt(start_page, end_page, len(images), context)
         
         # 重试循环（包含 JSON 解析失败的情况）
-        for attempt in range(self.config.max_retries + 1):
+        for attempt in range(DEFAULT_VLM_MAX_RETRIES + 1):
             response_text = await self._call_vlm(
                 images=images,
                 prompt=prompt
@@ -149,11 +150,11 @@ class VLMClient(BaseAPIClient):
                 return result
             
             # JSON 解析失败，决定是否重试
-            if attempt < self.config.max_retries:
+            if attempt < DEFAULT_VLM_MAX_RETRIES:
                 logger.warning(f"第{start_page}-{end_page}页 JSON 解析失败，第 {attempt + 1} 次重试...")
                 await asyncio.sleep(2 ** attempt)
             else:
-                logger.error(f"第{start_page}-{end_page}页 JSON 解析失败，已达最大重试次数 ({self.config.max_retries})")
+                logger.error(f"第{start_page}-{end_page}页 JSON 解析失败，已达最大重试次数 ({DEFAULT_VLM_MAX_RETRIES})")
         
         return result
     

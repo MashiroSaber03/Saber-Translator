@@ -108,7 +108,6 @@ export function useHqTranslationSettings(
       modelName: settings.value.hqTranslation.modelName,
       customBaseUrl: settings.value.hqTranslation.customBaseUrl,
       batchSize: settings.value.hqTranslation.batchSize,
-      sessionReset: settings.value.hqTranslation.sessionReset,
       rpmLimit: settings.value.hqTranslation.rpmLimit,
       maxRetries: settings.value.hqTranslation.maxRetries,
       lowReasoning: settings.value.hqTranslation.lowReasoning,
@@ -137,7 +136,6 @@ export function useHqTranslationSettings(
       if (cached.modelName !== undefined) settings.value.hqTranslation.modelName = cached.modelName
       if (cached.customBaseUrl !== undefined) settings.value.hqTranslation.customBaseUrl = cached.customBaseUrl
       if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
-      if (cached.sessionReset !== undefined) settings.value.hqTranslation.sessionReset = cached.sessionReset
       if (cached.rpmLimit !== undefined) settings.value.hqTranslation.rpmLimit = cached.rpmLimit
       if (cached.maxRetries !== undefined) settings.value.hqTranslation.maxRetries = cached.maxRetries
       if (cached.lowReasoning !== undefined) settings.value.hqTranslation.lowReasoning = cached.lowReasoning

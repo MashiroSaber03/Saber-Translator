@@ -116,7 +116,6 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   modelName: '',
   customBaseUrl: '',
   batchSize: 3,
-  sessionReset: 3,
   rpmLimit: 7,
   maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   lowReasoning: false,

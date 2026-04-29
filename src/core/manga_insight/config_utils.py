@@ -68,9 +68,6 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
     if config.vlm.rpm_limit < 0:
         errors.append("VLM rpm_limit 不能为负数")
 
-    if config.vlm.max_images_per_request < 1:
-        errors.append("VLM max_images_per_request 不能小于 1")
-
     # 记录警告
     for warning in warnings:
         logger.warning(f"配置警告: {warning}")

@@ -85,11 +85,6 @@
           <input type="number" id="settingsHqBatchSize" v-model.number="localHqSettings.batchSize" min="1" max="10" step="1" />
           <div class="input-hint">每批处理的图片数量 (推荐3-5张)</div>
         </div>
-        <div class="settings-item">
-          <label for="settingsHqSessionReset">会话重置频率:</label>
-          <input type="number" id="settingsHqSessionReset" v-model.number="localHqSettings.sessionReset" min="1" step="1" />
-          <div class="input-hint">多少批次后重置上下文</div>
-        </div>
       </div>
       <div class="settings-row">
         <div class="settings-item">
@@ -166,7 +161,6 @@ import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
   getProviderOptionsForCapability,
-  normalizeProviderId,
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
@@ -199,7 +193,6 @@ const localHqSettings = ref({
   modelName: settingsStore.settings.hqTranslation.modelName,
   customBaseUrl: settingsStore.settings.hqTranslation.customBaseUrl,
   batchSize: settingsStore.settings.hqTranslation.batchSize,
-  sessionReset: settingsStore.settings.hqTranslation.sessionReset,
   rpmLimit: settingsStore.settings.hqTranslation.rpmLimit,
   maxRetries: settingsStore.settings.hqTranslation.maxRetries,
   lowReasoning: settingsStore.settings.hqTranslation.lowReasoning,
@@ -223,9 +216,6 @@ watch(() => localHqSettings.value.customBaseUrl, (val) => {
 })
 watch(() => localHqSettings.value.batchSize, (val) => {
   settingsStore.updateHqTranslation({ batchSize: val })
-})
-watch(() => localHqSettings.value.sessionReset, (val) => {
-  settingsStore.updateHqTranslation({ sessionReset: val })
 })
 watch(() => localHqSettings.value.rpmLimit, (val) => {
   settingsStore.updateHqTranslation({ rpmLimit: val })
@@ -283,7 +273,6 @@ function syncLocalHqSettings() {
   localHqSettings.value.modelName = hq.modelName
   localHqSettings.value.customBaseUrl = hq.customBaseUrl
   localHqSettings.value.batchSize = hq.batchSize
-  localHqSettings.value.sessionReset = hq.sessionReset
   localHqSettings.value.rpmLimit = hq.rpmLimit
   localHqSettings.value.maxRetries = hq.maxRetries
   localHqSettings.value.lowReasoning = hq.lowReasoning

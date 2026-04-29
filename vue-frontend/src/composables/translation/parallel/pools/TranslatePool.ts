@@ -231,6 +231,7 @@ export class TranslatePool extends TaskPool {
       force_json_output: hqTranslation.forceJsonOutput,
       no_thinking_method: hqTranslation.noThinkingMethod,
       use_stream: hqTranslation.useStream,
+      rpm_limit: hqTranslation.rpmLimit,
       max_retries: hqTranslation.maxRetries ?? 2
     })
 
@@ -328,6 +329,7 @@ export class TranslatePool extends TaskPool {
         force_json_output: round.forceJsonOutput,
         no_thinking_method: round.noThinkingMethod,
         use_stream: round.useStream ?? true,
+        rpm_limit: round.rpmLimit,
         max_retries: round.maxRetries ?? proofreading.maxRetries ?? 2
       })
 

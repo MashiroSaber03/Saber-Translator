@@ -7,9 +7,11 @@
 import logging
 import json
 import re
+import time
 from typing import Dict, Any, List, Callable, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace
 
 from openai import OpenAI
 
@@ -22,7 +24,7 @@ from src.shared.ai_providers import (
 )
 from src.shared.openai_helpers import create_openai_client
 
-from .prompts import get_system_prompt, DEFAULT_EXTRACTION_PROMPT
+from .prompts import get_system_prompt
 from .firecrawl_tools import FIRECRAWL_TOOLS, execute_firecrawl_tool_sync
 
 logger = logging.getLogger("WebImport.Agent")
@@ -48,8 +50,8 @@ class ExtractResult:
     error: Optional[str] = None
 
 
-class MaxIterationsExceeded(Exception):
-    """超过最大迭代次数异常"""
+class StreamFallbackNeeded(Exception):
+    """流式工具调用无法可靠解析，需要回退到非流式调用。"""
     pass
 
 
@@ -242,18 +244,169 @@ class MangaScraperAgent:
         Returns:
             LLM 响应
         """
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                tools=FIRECRAWL_TOOLS,
-                tool_choice="auto",
-                temperature=0.1
+        max_attempts = max(1, int(self.max_retries or 1))
+
+        for attempt in range(max_attempts):
+            try:
+                if self.use_stream:
+                    try:
+                        return self._call_llm_stream(messages)
+                    except StreamFallbackNeeded as exc:
+                        logger.warning("流式响应无法可靠解析，回退到非流式请求: %s", exc)
+                        return self._call_llm_non_stream(messages)
+
+                return self._call_llm_non_stream(messages)
+            except Exception as e:
+                logger.error(f"LLM 调用失败 (尝试 {attempt + 1}/{max_attempts}): {e}")
+                if attempt >= max_attempts - 1 or not self._should_retry_llm_error(e):
+                    raise
+                time.sleep(2 ** attempt)
+
+    def _call_llm_non_stream(self, messages: List[Dict]) -> Any:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            tools=FIRECRAWL_TOOLS,
+            tool_choice="auto",
+            temperature=0.1
+        )
+        return response.choices[0].message
+
+    def _call_llm_stream(self, messages: List[Dict]) -> Any:
+        response_stream = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            tools=FIRECRAWL_TOOLS,
+            tool_choice="auto",
+            temperature=0.1,
+            stream=True,
+        )
+
+        content_parts: List[str] = []
+        tool_calls_by_index: Dict[int, Dict[str, Any]] = {}
+        saw_tool_call_delta = False
+
+        for chunk in response_stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+
+            delta = getattr(choices[0], "delta", None)
+            if not delta:
+                continue
+
+            content = getattr(delta, "content", None)
+            if content:
+                content_parts.append(content)
+
+            delta_tool_calls = getattr(delta, "tool_calls", None) or []
+            for tool_call in delta_tool_calls:
+                saw_tool_call_delta = True
+                index = int(getattr(tool_call, "index", 0) or 0)
+                state = tool_calls_by_index.setdefault(
+                    index,
+                    {
+                        "id": "",
+                        "type": "function",
+                        "function": {
+                            "name": "",
+                            "arguments": "",
+                        },
+                    },
+                )
+
+                tool_call_id = getattr(tool_call, "id", None)
+                if tool_call_id:
+                    state["id"] = tool_call_id
+
+                tool_call_type = getattr(tool_call, "type", None)
+                if tool_call_type:
+                    state["type"] = tool_call_type
+
+                function = getattr(tool_call, "function", None)
+                if function:
+                    function_name = getattr(function, "name", None)
+                    if function_name:
+                        state["function"]["name"] = function_name
+                    function_arguments = getattr(function, "arguments", None)
+                    if function_arguments:
+                        state["function"]["arguments"] += function_arguments
+
+        tool_calls = None
+        if saw_tool_call_delta:
+            tool_calls = self._finalize_stream_tool_calls(tool_calls_by_index)
+
+        return SimpleNamespace(
+            content="".join(content_parts),
+            tool_calls=tool_calls,
+        )
+
+    def _finalize_stream_tool_calls(self, tool_calls_by_index: Dict[int, Dict[str, Any]]) -> List[Any]:
+        tool_calls: List[Any] = []
+        for index in sorted(tool_calls_by_index):
+            state = tool_calls_by_index[index]
+            tool_call_id = state.get("id") or ""
+            function_name = state.get("function", {}).get("name") or ""
+            function_arguments = state.get("function", {}).get("arguments") or ""
+
+            if not tool_call_id or not function_name or not function_arguments:
+                raise StreamFallbackNeeded("tool_call 缺少必要字段")
+
+            try:
+                json.loads(function_arguments)
+            except json.JSONDecodeError as exc:
+                raise StreamFallbackNeeded(f"tool_call 参数 JSON 不完整: {exc}") from exc
+
+            tool_calls.append(
+                SimpleNamespace(
+                    id=tool_call_id,
+                    type=state.get("type") or "function",
+                    function=SimpleNamespace(
+                        name=function_name,
+                        arguments=function_arguments,
+                    ),
+                )
             )
-            return response.choices[0].message
-        except Exception as e:
-            logger.error(f"LLM 调用失败: {e}")
-            raise
+        return tool_calls
+
+    @staticmethod
+    def _should_retry_llm_error(error: Exception) -> bool:
+        error_text = str(error).lower()
+
+        non_retryable_keywords = (
+            "api key",
+            "authentication",
+            "unauthorized",
+            "invalid_api_key",
+            "base url",
+            "not found",
+            "permission",
+            "401",
+            "forbidden",
+            "403",
+            "404",
+        )
+        if any(keyword in error_text for keyword in non_retryable_keywords):
+            return False
+
+        retryable_keywords = (
+            "timeout",
+            "timed out",
+            "connection",
+            "connect",
+            "reset",
+            "temporarily unavailable",
+            "rate limit",
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+        )
+        if any(keyword in error_text for keyword in retryable_keywords):
+            return True
+
+        return bool(re.search(r"api 错误\s*(408|429|500|502|503|504)", str(error), re.IGNORECASE))
     
     def _parse_result(self, content: str, source_url: str) -> ExtractResult:
         """

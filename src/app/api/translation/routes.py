@@ -17,7 +17,10 @@ from . import (
 )
 
 import json
+from collections import defaultdict
+
 from src.core.ocr import recognize_ocr_results_in_bubbles
+from src.core.translation import _enforce_rpm_limit
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
 from src.plugins.manager import apply_after_ocr_hooks
@@ -32,6 +35,8 @@ from src.shared.ai_providers import (
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
+_hq_rpm_last_reset_time = defaultdict(lambda: [0.0])
+_hq_rpm_request_count = defaultdict(lambda: [0])
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -102,6 +107,19 @@ def _request_value(data, *keys, default=None):
 
 def _clamp_int(value, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, int(round(value))))
+
+
+def _apply_hq_rpm_limit(provider: str, rpm_limit: int) -> None:
+    if rpm_limit <= 0:
+        return
+
+    normalized_provider = normalize_provider_id(provider) or "unknown"
+    _enforce_rpm_limit(
+        rpm_limit,
+        f"HQTranslation ({normalized_provider})",
+        _hq_rpm_last_reset_time[normalized_provider],
+        _hq_rpm_request_count[normalized_provider],
+    )
 
 
 def _normalize_single_bubble_textlines(
@@ -969,6 +987,13 @@ def hq_translate_batch():
         force_json_output = bool(_request_value(data, 'force_json_output', 'forceJsonOutput', default=False))
         no_thinking_method = _request_value(data, 'no_thinking_method', 'noThinkingMethod', default='gemini')
         use_stream = bool(_request_value(data, 'use_stream', 'useStream', default=False))
+        rpm_limit = _request_value(data, 'rpm_limit', 'rpmLimit', default=0)
+        try:
+            rpm_limit = int(rpm_limit)
+            if rpm_limit < 0:
+                rpm_limit = 0
+        except (ValueError, TypeError):
+            rpm_limit = 0
         
         # 重试参数
         max_retries = _request_value(data, 'max_retries', 'maxRetries', default=2)
@@ -979,7 +1004,11 @@ def hq_translate_batch():
         except (ValueError, TypeError):
             max_retries = 2
         
-        logger.info(f"高质量翻译批量请求: provider={provider}, model={model_name}, low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, max_retries={max_retries}, debug_logs={enable_debug_logs}")
+        logger.info(
+            f"高质量翻译批量请求: provider={provider}, model={model_name}, "
+            f"low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, "
+            f"rpm_limit={rpm_limit}, max_retries={max_retries}, debug_logs={enable_debug_logs}"
+        )
         
         # 参数验证
         if not provider or not api_key or not model_name:
@@ -1066,6 +1095,7 @@ def hq_translate_batch():
             
             # === 第一阶段：API 调用 ===
             try:
+                _apply_hq_rpm_limit(provider, rpm_limit)
                 request_overrides = {}
                 if low_reasoning:
                     request_overrides = {

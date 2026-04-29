@@ -11,7 +11,6 @@ export interface ProofreadModeOptions {
     batchSize?: number
     maxRetries?: number
     rpmLimit?: number
-    sessionResetFrequency?: number
     /** 页面范围（仅当 scope = 'range' 时使用） */
     pageRange?: PageRange
 }
@@ -32,8 +31,7 @@ export function getProofreadModeConfig(
         batchOptions: {
             batchSize: options?.batchSize ?? 3,
             maxRetries: options?.maxRetries ?? 2,
-            rpmLimit: options?.rpmLimit ?? 10,
-            sessionResetFrequency: options?.sessionResetFrequency ?? 5
+            rpmLimit: options?.rpmLimit ?? 10
         }
     }
 }

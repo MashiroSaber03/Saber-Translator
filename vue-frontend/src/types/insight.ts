@@ -102,8 +102,6 @@ export interface StoreVlmConfig {
   model: string
   baseUrl?: string
   rpmLimit?: number
-  maxRetries?: number
-  maxImagesPerRequest?: number
   temperature?: number
   forceJson?: boolean
   useStream?: boolean
@@ -119,8 +117,6 @@ export interface StoreLlmConfig {
   apiKey: string
   model: string
   baseUrl: string
-  rpmLimit?: number
-  maxRetries?: number
   useStream?: boolean
 }
 
@@ -132,23 +128,18 @@ export interface StoreEmbeddingConfig {
   apiKey: string
   model: string
   baseUrl?: string
-  dimension?: number
   rpmLimit?: number
-  maxRetries?: number
 }
 
 /**
  * Store Reranker 配置（camelCase）
  */
 export interface StoreRerankerConfig {
-  enabled?: boolean
   provider: string
   apiKey: string
   model: string
   baseUrl?: string
   topK?: number
-  rpmLimit?: number
-  maxRetries?: number
 }
 
 /**
@@ -196,8 +187,6 @@ export interface VlmConfig {
   model: string
   base_url?: string
   rpm_limit?: number
-  max_retries?: number
-  max_images_per_request?: number
   temperature?: number
   force_json?: boolean
   use_stream?: boolean
@@ -213,8 +202,6 @@ export interface LlmConfig {
   api_key?: string
   model?: string
   base_url?: string
-  rpm_limit?: number
-  max_retries?: number
   use_stream?: boolean
 }
 
@@ -226,23 +213,18 @@ export interface EmbeddingConfig {
   api_key: string
   model: string
   base_url?: string
-  dimension?: number
   rpm_limit?: number
-  max_retries?: number
 }
 
 /**
  * Reranker（重排序）配置
  */
 export interface RerankerConfig {
-  enabled?: boolean
   provider: string
   api_key: string
   model: string
   base_url?: string
   top_k?: number
-  rpm_limit?: number
-  max_retries?: number
 }
 
 /**

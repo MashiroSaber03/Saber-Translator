@@ -110,6 +110,7 @@ export interface HqTranslateParams {
   force_json_output?: boolean
   no_thinking_method?: 'gemini' | 'volcano'
   use_stream?: boolean
+  rpm_limit?: number
   max_retries?: number  // 最大重试次数
 }
 

@@ -57,7 +57,7 @@ class MangaQA:
         
         # 重排序模型（可选）
         self.reranker = None
-        if self.config.reranker.enabled and self.config.reranker.api_key:
+        if self.config.reranker.api_key:
             self.reranker = RerankerClient(self.config.reranker)
         
         # 查询预处理器
@@ -95,7 +95,7 @@ class MangaQA:
         
         # 默认启用 Reranker（如果配置了）
         if use_reranker is None:
-            use_reranker = self.config.reranker.enabled and self.reranker is not None
+            use_reranker = self.reranker is not None
         
         # 查询预处理（照搬 RAGFlow）
         processed = self.preprocessor.preprocess(question)

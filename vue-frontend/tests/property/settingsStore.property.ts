@@ -373,11 +373,10 @@ describe('设置状态管理属性测试', () => {
       fc.property(
         fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom', 'custom_openai'),
         fc.integer({ min: 1, max: 10 }),
-        fc.integer({ min: 1, max: 50 }),
         fc.integer({ min: 1, max: 20 }),
         fc.boolean(),
         fc.boolean(),
-        (provider, batchSize, sessionReset, rpmLimit, lowReasoning, forceJsonOutput) => {
+        (provider, batchSize, rpmLimit, lowReasoning, forceJsonOutput) => {
           // 每次迭代重新创建 Pinia 实例
           setActivePinia(createPinia())
           localStorageMock = {}
@@ -388,7 +387,6 @@ describe('设置状态管理属性测试', () => {
           store.updateHqTranslation({
             provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom' | 'custom_openai',
             batchSize,
-            sessionReset,
             rpmLimit,
             lowReasoning,
             forceJsonOutput
@@ -407,7 +405,6 @@ describe('设置状态管理属性测试', () => {
           return (
             newStore.settings.hqTranslation.provider === normalizeProviderId(provider) &&
             newStore.settings.hqTranslation.batchSize === batchSize &&
-            newStore.settings.hqTranslation.sessionReset === sessionReset &&
             newStore.settings.hqTranslation.rpmLimit === rpmLimit &&
             newStore.settings.hqTranslation.lowReasoning === lowReasoning &&
             newStore.settings.hqTranslation.forceJsonOutput === forceJsonOutput

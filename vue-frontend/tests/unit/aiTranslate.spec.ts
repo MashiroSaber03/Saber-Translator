@@ -50,6 +50,7 @@ describe('executeAiTranslate', () => {
     settingsStore.settings.hqTranslation.provider = '' as any
     settingsStore.settings.hqTranslation.apiKey = 'hq-key'
     settingsStore.settings.hqTranslation.modelName = 'hq-model'
+    settingsStore.settings.hqTranslation.rpmLimit = 13
     settingsStore.settings.hqTranslation.maxRetries = 0
 
     await executeAiTranslate({
@@ -70,6 +71,7 @@ describe('executeAiTranslate', () => {
     expect(hqTranslateBatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: '',
+        rpm_limit: 13,
         max_retries: 0,
       }),
     )
@@ -86,8 +88,7 @@ describe('executeAiTranslate', () => {
         modelName: 'proof-model-1',
         customBaseUrl: 'https://proof-1.example.com/v1',
         batchSize: 1,
-        sessionReset: 1,
-        rpmLimit: 0,
+        rpmLimit: 4,
         maxRetries: 0,
         lowReasoning: false,
         noThinkingMethod: 'gemini',
@@ -102,8 +103,7 @@ describe('executeAiTranslate', () => {
         modelName: 'proof-model-2',
         customBaseUrl: 'https://proof-2.example.com/v1',
         batchSize: 1,
-        sessionReset: 1,
-        rpmLimit: 0,
+        rpmLimit: 6,
         maxRetries: 0,
         lowReasoning: false,
         noThinkingMethod: 'gemini',
@@ -139,6 +139,7 @@ describe('executeAiTranslate', () => {
       1,
       expect.objectContaining({
         provider: 'custom',
+        rpm_limit: 4,
         max_retries: 0,
       }),
     )
@@ -146,6 +147,7 @@ describe('executeAiTranslate', () => {
       2,
       expect.objectContaining({
         provider: 'custom',
+        rpm_limit: 6,
         max_retries: 0,
       }),
     )
