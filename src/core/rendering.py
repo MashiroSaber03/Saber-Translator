@@ -137,6 +137,16 @@ EXTRA_VERTICAL_ROTATE_CHARS = {
     '−',   # U+2212 MINUS SIGN（视觉等同 -，应与破折号/连字符同步旋转）
 }
 
+# --- 单个线性延展标点也走块渲染路径 ---
+# 连续段（长度 >= 2）已经会被包进 <E> 块；但单个 `… / — / ― / ─` 等此前仍走
+# 单字符旋转路径，只做几何居中，容易比中文正文视觉中心偏上。把单个符号也交给
+# render_ellipsis_block 处理，可以与连续块共享同一套视觉中心对齐逻辑。
+SINGLE_LINEAR_BLOCK_CHARS = {
+    '…', '⋯',
+    '—', '–', '―', '─', '−',
+    '～', '〜', '〰',
+}
+
 # --- 特殊组合标点映射 (保留用于组合符号处理) ---
 SPECIAL_PUNCTUATION_PATTERNS = [
     ('...', '…'),      # 连续三个点先转为省略号
@@ -1263,6 +1273,24 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                 for char in part:
                     # 调用 CJK_Compatibility_Forms_translate 获取转换后的字符和旋转角度
                     converted_char, rot_degree = CJK_Compatibility_Forms_translate(char, 1)  # 1 = 竖排
+
+                    if converted_char in SINGLE_LINEAR_BLOCK_CHARS and canvas_image is not None:
+                        block_height = render_ellipsis_block(
+                            content=converted_char,
+                            font=font,
+                            font_size=font_size,
+                            fill=fill,
+                            stroke_enabled=stroke_enabled,
+                            stroke_color=stroke_color,
+                            stroke_width=stroke_width,
+                            canvas_image=canvas_image,
+                            current_x_col=current_x_col,
+                            current_y=current_y_char,
+                            line_width=line_width,
+                            line_height_unit=line_height_approx,
+                        )
+                        current_y_char += block_height
+                        continue
 
                     if (
                         rot_degree == 0
