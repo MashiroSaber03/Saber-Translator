@@ -227,9 +227,7 @@ export class TranslatePool extends TaskPool {
       isProofreading: false,
       enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
       // 其他参数
-      low_reasoning: hqTranslation.lowReasoning,
       force_json_output: hqTranslation.forceJsonOutput,
-      no_thinking_method: hqTranslation.noThinkingMethod,
       use_stream: hqTranslation.useStream,
       rpm_limit: hqTranslation.rpmLimit,
       max_retries: hqTranslation.maxRetries ?? 2
@@ -325,9 +323,7 @@ export class TranslatePool extends TaskPool {
         isProofreading: true,
         enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
         // 其他参数
-        low_reasoning: round.lowReasoning,
         force_json_output: round.forceJsonOutput,
-        no_thinking_method: round.noThinkingMethod,
         use_stream: round.useStream ?? true,
         rpm_limit: round.rpmLimit,
         max_retries: round.maxRetries ?? proofreading.maxRetries ?? 2

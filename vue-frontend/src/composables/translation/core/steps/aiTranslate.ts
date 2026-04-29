@@ -138,9 +138,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         isProofreading: isProofread,
         enableDebugLogs: settings.enableVerboseLogs,
         // 其他参数
-        low_reasoning: isProofread ? roundConfig?.lowReasoning : hqConfig.lowReasoning,
         force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
-        no_thinking_method: isProofread ? roundConfig?.noThinkingMethod : hqConfig.noThinkingMethod,
         use_stream: isProofread ? (roundConfig?.useStream ?? true) : hqConfig.useStream,
         rpm_limit: isProofread ? roundConfig?.rpmLimit : hqConfig.rpmLimit,
         max_retries: requestMaxRetries
@@ -169,9 +167,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 isProofreading: true,
                 enableDebugLogs: settings.enableVerboseLogs,
                 // 其他参数
-                low_reasoning: round.lowReasoning,
                 force_json_output: round.forceJsonOutput,
-                no_thinking_method: round.noThinkingMethod,
                 use_stream: round.useStream ?? true,
                 rpm_limit: round.rpmLimit,
                 max_retries: round.maxRetries ?? settings.proofreading.maxRetries ?? 2

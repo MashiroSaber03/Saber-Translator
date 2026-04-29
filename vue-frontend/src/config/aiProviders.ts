@@ -29,7 +29,6 @@ export interface AiProviderManifestEntry {
   isLocal: boolean
   supportsStream: boolean
   supportsJsonResponse: boolean
-  supportsReasoningControl: boolean
   legacyIds?: string[]
   defaultModels?: Partial<Record<ProviderModelType, string>>
 }

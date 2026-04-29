@@ -55,8 +55,6 @@ describe('settings store deprecated HQ/proofreading fields', () => {
         batchSize: 2,
         rpmLimit: 7,
         maxRetries: 1,
-        lowReasoning: false,
-        noThinkingMethod: 'gemini',
         forceJsonOutput: false,
         useStream: true,
       },
@@ -103,5 +101,47 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     expect('sessionReset' in (store.settings.hqTranslation as any)).toBe(false)
     expect('sessionReset' in (store.settings.proofreading.rounds[0] as any)).toBe(false)
     expect(store.settings.proofreading.rounds[0]?.rpmLimit).toBe(4)
+  })
+
+  it('strips removed low reasoning fields from persisted settings payloads', () => {
+    localStorageMock['saber_translator_settings_v2'] = JSON.stringify({
+      hqTranslation: {
+        lowReasoning: true,
+        noThinkingMethod: 'volcano',
+        forceJsonOutput: true,
+      },
+      proofreading: {
+        enabled: true,
+        maxRetries: 2,
+        rounds: [
+          {
+            name: '第1轮',
+            provider: 'siliconflow',
+            apiKey: 'proof-key',
+            modelName: 'proof-model',
+            customBaseUrl: '',
+            prompt: 'proof',
+            batchSize: 2,
+            rpmLimit: 7,
+            maxRetries: 1,
+            lowReasoning: true,
+            noThinkingMethod: 'gemini',
+            forceJsonOutput: false,
+            useStream: true,
+          },
+        ],
+      },
+    })
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect('lowReasoning' in (store.settings.hqTranslation as any)).toBe(false)
+    expect('noThinkingMethod' in (store.settings.hqTranslation as any)).toBe(false)
+    const firstRound = store.settings.proofreading.rounds[0] as Record<string, unknown> | undefined
+    if (firstRound) {
+      expect('lowReasoning' in firstRound).toBe(false)
+      expect('noThinkingMethod' in firstRound).toBe(false)
+    }
   })
 })

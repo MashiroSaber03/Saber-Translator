@@ -8,8 +8,7 @@ import { normalizeProviderId } from '@/config/aiProviders'
 import type {
   TranslationSettings,
   HqTranslationSettings,
-  HqTranslationProvider,
-  NoThinkingMethod
+  HqTranslationProvider
 } from '@/types/settings'
 import type { ProviderConfigsCache, HqTranslationProviderConfig } from '../types'
 
@@ -74,15 +73,6 @@ export function useHqTranslationSettings(
   }
 
   /**
-   * 设置高质量翻译取消思考方法
-   * @param method - 取消思考方法
-   */
-  function setHqNoThinkingMethod(method: NoThinkingMethod): void {
-    settings.value.hqTranslation.noThinkingMethod = method
-    saveToStorage()
-  }
-
-  /**
    * 设置高质量翻译强制JSON输出
    * @param forceJson - 是否强制JSON输出
    */
@@ -110,8 +100,6 @@ export function useHqTranslationSettings(
       batchSize: settings.value.hqTranslation.batchSize,
       rpmLimit: settings.value.hqTranslation.rpmLimit,
       maxRetries: settings.value.hqTranslation.maxRetries,
-      lowReasoning: settings.value.hqTranslation.lowReasoning,
-      noThinkingMethod: settings.value.hqTranslation.noThinkingMethod,
       forceJsonOutput: settings.value.hqTranslation.forceJsonOutput,
       useStream: settings.value.hqTranslation.useStream,
       prompt: settings.value.hqTranslation.prompt
@@ -138,8 +126,6 @@ export function useHqTranslationSettings(
       if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
       if (cached.rpmLimit !== undefined) settings.value.hqTranslation.rpmLimit = cached.rpmLimit
       if (cached.maxRetries !== undefined) settings.value.hqTranslation.maxRetries = cached.maxRetries
-      if (cached.lowReasoning !== undefined) settings.value.hqTranslation.lowReasoning = cached.lowReasoning
-      if (cached.noThinkingMethod !== undefined) settings.value.hqTranslation.noThinkingMethod = cached.noThinkingMethod
       if (cached.forceJsonOutput !== undefined) settings.value.hqTranslation.forceJsonOutput = cached.forceJsonOutput
       if (cached.useStream !== undefined) settings.value.hqTranslation.useStream = cached.useStream
       if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
@@ -161,7 +147,6 @@ export function useHqTranslationSettings(
     setHqProvider,
     updateHqTranslation,
     setHqUseStream,
-    setHqNoThinkingMethod,
     setHqForceJsonOutput,
     saveHqProviderConfig,
     restoreHqProviderConfig

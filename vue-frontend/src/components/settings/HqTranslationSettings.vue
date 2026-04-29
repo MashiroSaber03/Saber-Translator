@@ -105,22 +105,6 @@
       <div class="settings-row">
         <div class="settings-item">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="localHqSettings.lowReasoning" />
-            低推理模式
-          </label>
-          <div class="input-hint">减少模型推理深度，提高速度</div>
-        </div>
-        <div class="settings-item">
-          <label for="settingsHqNoThinkingMethod">取消思考方法:</label>
-          <CustomSelect
-            v-model="localHqSettings.noThinkingMethod"
-            :options="noThinkingMethodOptions"
-          />
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-item">
-          <label class="checkbox-label">
             <input type="checkbox" v-model="localHqSettings.forceJsonOutput" />
             强制JSON输出
           </label>
@@ -174,12 +158,6 @@ import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 /** 服务商选项 */
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
-/** 取消思考方法选项 */
-const noThinkingMethodOptions = [
-  { label: 'Gemini风格 (reasoning_effort=low)', value: 'gemini' },
-  { label: '火山引擎风格 (thinking=null)', value: 'volcano' }
-]
-
 // Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
@@ -195,8 +173,6 @@ const localHqSettings = ref({
   batchSize: settingsStore.settings.hqTranslation.batchSize,
   rpmLimit: settingsStore.settings.hqTranslation.rpmLimit,
   maxRetries: settingsStore.settings.hqTranslation.maxRetries,
-  lowReasoning: settingsStore.settings.hqTranslation.lowReasoning,
-  noThinkingMethod: settingsStore.settings.hqTranslation.noThinkingMethod,
   forceJsonOutput: settingsStore.settings.hqTranslation.forceJsonOutput,
   useStream: settingsStore.settings.hqTranslation.useStream,
   prompt: settingsStore.settings.hqTranslation.prompt
@@ -222,12 +198,6 @@ watch(() => localHqSettings.value.rpmLimit, (val) => {
 })
 watch(() => localHqSettings.value.maxRetries, (val) => {
   settingsStore.updateHqTranslation({ maxRetries: val })
-})
-watch(() => localHqSettings.value.lowReasoning, (val) => {
-  settingsStore.updateHqTranslation({ lowReasoning: val })
-})
-watch(() => localHqSettings.value.noThinkingMethod, (val) => {
-  settingsStore.updateHqTranslation({ noThinkingMethod: val })
 })
 watch(() => localHqSettings.value.forceJsonOutput, (val) => {
   settingsStore.updateHqTranslation({ forceJsonOutput: val })
@@ -275,8 +245,6 @@ function syncLocalHqSettings() {
   localHqSettings.value.batchSize = hq.batchSize
   localHqSettings.value.rpmLimit = hq.rpmLimit
   localHqSettings.value.maxRetries = hq.maxRetries
-  localHqSettings.value.lowReasoning = hq.lowReasoning
-  localHqSettings.value.noThinkingMethod = hq.noThinkingMethod
   localHqSettings.value.forceJsonOutput = hq.forceJsonOutput
   localHqSettings.value.useStream = hq.useStream
   localHqSettings.value.prompt = hq.prompt

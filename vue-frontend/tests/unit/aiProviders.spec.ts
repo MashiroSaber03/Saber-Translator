@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AI_PROVIDER_MANIFEST,
   getProviderOptionsForCapability,
   getProviderDefaultModel,
   providerSupportsRpmLimit,
@@ -39,5 +40,11 @@ describe('translation page AI provider manifest', () => {
   it('keeps frontend default chat models aligned with the shared manifest contract', () => {
     expect(getProviderDefaultModel('openai', 'chat')).toBe('gpt-4o')
     expect(getProviderDefaultModel('qwen', 'chat')).toBe('qwen-plus')
+  })
+
+  it('does not expose removed reasoning-control manifest fields', () => {
+    for (const entry of AI_PROVIDER_MANIFEST) {
+      expect(entry).not.toHaveProperty('supportsReasoningControl')
+    }
   })
 })

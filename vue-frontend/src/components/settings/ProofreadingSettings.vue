@@ -132,22 +132,6 @@
           <div class="settings-row">
             <div class="settings-item">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="round.lowReasoning" />
-                低推理模式
-              </label>
-              <div class="input-hint">减少模型推理深度，提高速度</div>
-            </div>
-            <div class="settings-item">
-              <label>取消思考方法:</label>
-              <CustomSelect
-                v-model="round.noThinkingMethod"
-                :options="noThinkingMethodOptions"
-              />
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-item">
-              <label class="checkbox-label">
                 <input type="checkbox" v-model="round.forceJsonOutput" />
                 强制JSON输出
               </label>
@@ -200,12 +184,6 @@ import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
-
-/** 取消思考方法选项 */
-const noThinkingMethodOptions = [
-  { label: 'Gemini风格', value: 'gemini' },
-  { label: '火山引擎风格', value: 'volcano' }
-]
 
 // Store
 const settingsStore = useSettingsStore()
@@ -343,8 +321,6 @@ function addRound() {
     customBaseUrl: '',
     batchSize: 3,
     rpmLimit: 7,
-    lowReasoning: false,
-    noThinkingMethod: 'gemini',
     forceJsonOutput: false,
     useStream: true,
     prompt: DEFAULT_PROOFREADING_PROMPT,

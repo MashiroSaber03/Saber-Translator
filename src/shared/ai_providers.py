@@ -59,7 +59,6 @@ class ProviderManifest:
     is_local: bool = False
     supports_stream: bool = False
     supports_json_response: bool = False
-    supports_reasoning_control: bool = False
     legacy_ids: FrozenSet[str] = field(default_factory=frozenset)
     capability_base_urls: Mapping[str, str] = field(default_factory=dict)
     capability_endpoints: Mapping[str, str] = field(default_factory=dict)
@@ -115,7 +114,6 @@ def _build_provider_manifest(entry: dict) -> ProviderManifest:
         is_local=entry.get("isLocal", False),
         supports_stream=entry.get("supportsStream", False),
         supports_json_response=entry.get("supportsJsonResponse", False),
-        supports_reasoning_control=entry.get("supportsReasoningControl", False),
         legacy_ids=frozenset(entry.get("legacyIds", [])),
         capability_base_urls={
             _normalize_capability_name(capability): base_url

@@ -75,6 +75,9 @@ describe('executeAiTranslate', () => {
         max_retries: 0,
       }),
     )
+    const payload = hqTranslateBatchMock.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload).not.toHaveProperty('low_reasoning')
+    expect(payload).not.toHaveProperty('no_thinking_method')
   })
 
   it('uses per-round proofreading maxRetries including explicit zero', async () => {
@@ -90,8 +93,6 @@ describe('executeAiTranslate', () => {
         batchSize: 1,
         rpmLimit: 4,
         maxRetries: 0,
-        lowReasoning: false,
-        noThinkingMethod: 'gemini',
         forceJsonOutput: false,
         useStream: true,
         prompt: '请校对译文',
@@ -105,8 +106,6 @@ describe('executeAiTranslate', () => {
         batchSize: 1,
         rpmLimit: 6,
         maxRetries: 0,
-        lowReasoning: false,
-        noThinkingMethod: 'gemini',
         forceJsonOutput: false,
         useStream: true,
         prompt: '再次校对译文',
@@ -151,5 +150,11 @@ describe('executeAiTranslate', () => {
         max_retries: 0,
       }),
     )
+    const firstPayload = hqTranslateBatchMock.mock.calls[0]?.[0] as Record<string, unknown>
+    const secondPayload = hqTranslateBatchMock.mock.calls[1]?.[0] as Record<string, unknown>
+    expect(firstPayload).not.toHaveProperty('low_reasoning')
+    expect(firstPayload).not.toHaveProperty('no_thinking_method')
+    expect(secondPayload).not.toHaveProperty('low_reasoning')
+    expect(secondPayload).not.toHaveProperty('no_thinking_method')
   })
 })

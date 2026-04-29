@@ -102,8 +102,6 @@ describe('配置验证属性测试', () => {
     customBaseUrl: fc.string(),
     batchSize: fc.integer({ min: 1, max: 10 }),
     rpmLimit: fc.integer({ min: 0, max: 100 }),
-    lowReasoning: fc.boolean(),
-    noThinkingMethod: fc.constantFrom('gemini', 'volcano') as fc.Arbitrary<'gemini' | 'volcano'>,
     forceJsonOutput: fc.boolean(),
     prompt: fc.string()
   })
@@ -119,8 +117,6 @@ describe('配置验证属性测试', () => {
       customBaseUrl: fc.string(),
       batchSize: fc.integer({ min: 1, max: 10 }),
       rpmLimit: fc.integer({ min: 0, max: 100 }),
-      lowReasoning: fc.boolean(),
-      noThinkingMethod: fc.constantFrom('gemini', 'volcano') as fc.Arbitrary<'gemini' | 'volcano'>,
       forceJsonOutput: fc.boolean(),
       prompt: fc.string()
     }),
@@ -133,8 +129,6 @@ describe('配置验证属性测试', () => {
       customBaseUrl: fc.string(),
       batchSize: fc.integer({ min: 1, max: 10 }),
       rpmLimit: fc.integer({ min: 0, max: 100 }),
-      lowReasoning: fc.boolean(),
-      noThinkingMethod: fc.constantFrom('gemini', 'volcano') as fc.Arbitrary<'gemini' | 'volcano'>,
       forceJsonOutput: fc.boolean(),
       prompt: fc.string()
     }),
@@ -147,8 +141,6 @@ describe('配置验证属性测试', () => {
       customBaseUrl: fc.string(),
       batchSize: fc.integer({ min: 1, max: 10 }),
       rpmLimit: fc.integer({ min: 0, max: 100 }),
-      lowReasoning: fc.boolean(),
-      noThinkingMethod: fc.constantFrom('gemini', 'volcano') as fc.Arbitrary<'gemini' | 'volcano'>,
       forceJsonOutput: fc.boolean(),
       prompt: fc.string()
     })

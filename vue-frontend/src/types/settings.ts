@@ -44,11 +44,6 @@ export type HqTranslationProvider =
   | 'custom_openai'
 
 /**
- * 取消思考方法类型
- */
-export type NoThinkingMethod = 'gemini' | 'volcano'
-
-/**
  * PDF 处理方式
  */
 export type PdfProcessingMethod = 'frontend' | 'backend'
@@ -136,8 +131,6 @@ export interface HqTranslationSettings {
   batchSize: number
   rpmLimit: number
   maxRetries: number
-  lowReasoning: boolean
-  noThinkingMethod: NoThinkingMethod
   forceJsonOutput: boolean
   useStream: boolean
   prompt: string
@@ -155,8 +148,6 @@ export interface ProofreadingRound {
   batchSize: number
   rpmLimit: number
   maxRetries?: number  // 最大重试次数（可选，默认使用全局设置）
-  lowReasoning: boolean
-  noThinkingMethod: NoThinkingMethod
   forceJsonOutput: boolean
   /** 是否使用流式调用 */
   useStream: boolean

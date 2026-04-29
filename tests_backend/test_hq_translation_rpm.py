@@ -151,6 +151,29 @@ class HqTranslationRpmTests(unittest.TestCase):
         rpm_mock.assert_called()
         self.assertEqual(rpm_mock.call_args.args[0], 11)
 
+    def test_hq_translate_batch_does_not_forward_removed_low_reasoning_overrides(self) -> None:
+        with mock.patch.object(
+            self.translation_module._hq_chat_transport,
+            "complete",
+            return_value='{"images":[]}',
+        ) as complete_mock:
+            response = self.client.post(
+                "/api/hq_translate_batch",
+                json={
+                    "provider": "volcano",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "low_reasoning": True,
+                    "no_thinking_method": "volcano",
+                    "force_json_output": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        request = complete_mock.call_args.args[0]
+        self.assertEqual(request.request_overrides, {})
+
 
 if __name__ == "__main__":
     unittest.main()

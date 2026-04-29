@@ -983,9 +983,7 @@ def hq_translate_batch():
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         
         # 可选参数
-        low_reasoning = bool(_request_value(data, 'low_reasoning', 'lowReasoning', default=False))
         force_json_output = bool(_request_value(data, 'force_json_output', 'forceJsonOutput', default=False))
-        no_thinking_method = _request_value(data, 'no_thinking_method', 'noThinkingMethod', default='gemini')
         use_stream = bool(_request_value(data, 'use_stream', 'useStream', default=False))
         rpm_limit = _request_value(data, 'rpm_limit', 'rpmLimit', default=0)
         try:
@@ -1006,7 +1004,7 @@ def hq_translate_batch():
         
         logger.info(
             f"高质量翻译批量请求: provider={provider}, model={model_name}, "
-            f"low_reasoning={low_reasoning}, force_json={force_json_output}, stream={use_stream}, "
+            f"force_json={force_json_output}, stream={use_stream}, "
             f"rpm_limit={rpm_limit}, max_retries={max_retries}, debug_logs={enable_debug_logs}"
         )
         
@@ -1077,14 +1075,9 @@ def hq_translate_batch():
                                 logger.info(f"\n[图片块 {item_idx + 1}] {image_preview} (长度: {len(image_url)})")
             logger.info("=" * 80)
         
-        
+
         if force_json_output:
             logger.info("已启用强制 JSON 输出模式")
-        if low_reasoning:
-            if no_thinking_method == 'volcano' and provider == 'volcano':
-                logger.info("使用火山引擎方式取消思考: thinking=null")
-            else:
-                logger.info("使用默认方式取消思考: reasoning_effort=low")
         
         # === 重试循环 ===
         last_error_msg = None
@@ -1096,13 +1089,6 @@ def hq_translate_batch():
             # === 第一阶段：API 调用 ===
             try:
                 _apply_hq_rpm_limit(provider, rpm_limit)
-                request_overrides = {}
-                if low_reasoning:
-                    request_overrides = {
-                        "reasoning_effort": "low"
-                    }
-                    if no_thinking_method == 'volcano' and provider == 'volcano':
-                        request_overrides = {"thinking": None}
                 content = _hq_chat_transport.complete(
                     UnifiedChatRequest(
                         provider=provider,
@@ -1114,7 +1100,6 @@ def hq_translate_batch():
                         print_stream_output=use_stream,
                         stream_output_label='AI校对' if is_proofreading else '高质量翻译',
                         response_format={'type': 'json_object'} if force_json_output else None,
-                        request_overrides=request_overrides,
                         messages=messages,
                     )
                 )

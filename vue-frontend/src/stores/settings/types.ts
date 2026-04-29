@@ -3,8 +3,6 @@
  * 包含所有设置模块共享的类型定义
  */
 
-import type { NoThinkingMethod } from '@/types/settings'
-
 // ============================================================
 // 服务商配置缓存类型定义
 // ============================================================
@@ -28,8 +26,6 @@ export interface HqTranslationProviderConfig {
   batchSize?: number
   rpmLimit?: number
   maxRetries?: number
-  lowReasoning?: boolean
-  noThinkingMethod?: NoThinkingMethod
   forceJsonOutput?: boolean
   useStream?: boolean
   prompt?: string

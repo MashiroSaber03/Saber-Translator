@@ -20,8 +20,7 @@ import type {
   OcrEngine,
   TextDetector,
   TranslationProvider,
-  HqTranslationProvider,
-  NoThinkingMethod
+  HqTranslationProvider
 } from '@/types/settings'
 import {
   STORAGE_KEY_TRANSLATION_SETTINGS,
@@ -125,6 +124,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const hq = cloned.hqTranslation
     if (hq && typeof hq === 'object') {
       delete (hq as Record<string, unknown>).sessionReset
+      delete (hq as Record<string, unknown>).lowReasoning
+      delete (hq as Record<string, unknown>).noThinkingMethod
     }
 
     const proofreading = cloned.proofreading
@@ -134,6 +135,8 @@ export const useSettingsStore = defineStore('settings', () => {
         for (const round of rounds) {
           if (round && typeof round === 'object') {
             delete (round as Record<string, unknown>).sessionReset
+            delete (round as Record<string, unknown>).lowReasoning
+            delete (round as Record<string, unknown>).noThinkingMethod
           }
         }
       }
@@ -151,6 +154,8 @@ export const useSettingsStore = defineStore('settings', () => {
       for (const config of Object.values(hqConfigs as Record<string, unknown>)) {
         if (config && typeof config === 'object') {
           delete (config as Record<string, unknown>).sessionReset
+          delete (config as Record<string, unknown>).lowReasoning
+          delete (config as Record<string, unknown>).noThinkingMethod
         }
       }
     }
@@ -741,12 +746,6 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.hqPrompt) {
       settings.value.hqTranslation.prompt = backendSettings.hqPrompt as string
     }
-    if (backendSettings.hqLowReasoning !== undefined) {
-      settings.value.hqTranslation.lowReasoning = backendSettings.hqLowReasoning as boolean
-    }
-    if (backendSettings.hqNoThinkingMethod) {
-      settings.value.hqTranslation.noThinkingMethod = backendSettings.hqNoThinkingMethod as NoThinkingMethod
-    }
     if (backendSettings.hqForceJsonOutput !== undefined) {
       settings.value.hqTranslation.forceJsonOutput = backendSettings.hqForceJsonOutput as boolean
     }
@@ -780,8 +779,6 @@ export const useSettingsStore = defineStore('settings', () => {
           batchSize: parseNum(round.batchSize, 3),
           rpmLimit: parseNum(round.rpmLimit, 7),
           maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES),
-          lowReasoning: (round.lowReasoning as boolean) || false,
-          noThinkingMethod: ((round.noThinkingMethod as string) || 'gemini') as NoThinkingMethod,
           forceJsonOutput: (round.forceJsonOutput as boolean) || false,
           useStream: round.useStream !== undefined ? (round.useStream as boolean) : true
         }))
@@ -876,8 +873,6 @@ export const useSettingsStore = defineStore('settings', () => {
             batchSize: parseNum(config.hqBatchSize, 3),
             rpmLimit: parseNum(config.hqRpmLimit, 7),
             maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES),
-            lowReasoning: config.hqLowReasoning as boolean,
-            noThinkingMethod: (config.hqNoThinkingMethod as NoThinkingMethod) || 'gemini',
             forceJsonOutput: config.hqForceJsonOutput as boolean,
             useStream: config.hqUseStream as boolean,
             prompt: config.hqPrompt as string
@@ -936,11 +931,9 @@ export const useSettingsStore = defineStore('settings', () => {
           hqBatchSize: String(config.batchSize ?? 3),
           hqRpmLimit: String(config.rpmLimit ?? 7),
           hqMaxRetries: String(config.maxRetries ?? 2),
-          hqLowReasoning: config.lowReasoning || false,
-        hqNoThinkingMethod: config.noThinkingMethod || 'gemini',
-        hqForceJsonOutput: config.forceJsonOutput ?? true,
-        hqUseStream: config.useStream || false,
-        hqPrompt: config.prompt || ''
+          hqForceJsonOutput: config.forceJsonOutput ?? true,
+          hqUseStream: config.useStream || false,
+          hqPrompt: config.prompt || ''
       }
     }
 
@@ -1039,8 +1032,6 @@ export const useSettingsStore = defineStore('settings', () => {
         hqRpmLimit: String(settings.value.hqTranslation.rpmLimit),
         hqMaxRetries: String(settings.value.hqTranslation.maxRetries),
         hqPrompt: settings.value.hqTranslation.prompt,
-        hqLowReasoning: settings.value.hqTranslation.lowReasoning,
-        hqNoThinkingMethod: settings.value.hqTranslation.noThinkingMethod,
         hqForceJsonOutput: settings.value.hqTranslation.forceJsonOutput,
         hqUseStream: settings.value.hqTranslation.useStream,
 
@@ -1060,8 +1051,6 @@ export const useSettingsStore = defineStore('settings', () => {
             batchSize: round.batchSize,
             rpmLimit: round.rpmLimit,
             maxRetries: round.maxRetries,
-            lowReasoning: round.lowReasoning,
-            noThinkingMethod: round.noThinkingMethod,
             forceJsonOutput: round.forceJsonOutput,
             useStream: round.useStream
           }))
@@ -1167,7 +1156,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setHqProvider: hqTranslationModule.setHqProvider,
     updateHqTranslation: hqTranslationModule.updateHqTranslation,
     setHqUseStream: hqTranslationModule.setHqUseStream,
-    setHqNoThinkingMethod: hqTranslationModule.setHqNoThinkingMethod,
     setHqForceJsonOutput: hqTranslationModule.setHqForceJsonOutput,
     saveHqProviderConfig: hqTranslationModule.saveHqProviderConfig,
     restoreHqProviderConfig: hqTranslationModule.restoreHqProviderConfig,

@@ -118,8 +118,6 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   batchSize: 3,
   rpmLimit: 7,
   maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
-  lowReasoning: false,
-  noThinkingMethod: 'gemini',
   forceJsonOutput: false,
   useStream: true,
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT

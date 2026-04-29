@@ -11,7 +11,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "embedding": "BAAI/bge-m3",
       "reranker": "BAAI/bge-reranker-v2-m3",
@@ -33,7 +32,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "vlm": "deepseek-chat",
       "chat": "deepseek-chat"
@@ -60,7 +58,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "vlm": "doubao-1.5-vision-pro-32k",
       "chat": "doubao-1.5-pro-32k",
@@ -79,7 +76,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "vlm": "gemini-2.0-flash",
       "chat": "gemini-2.0-flash",
@@ -100,7 +96,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "legacyIds": ["custom_openai", "custom_openai_vision"]
   },
   {
@@ -114,8 +109,7 @@
     "requiresBaseUrl": false,
     "isLocal": true,
     "supportsStream": false,
-    "supportsJsonResponse": false,
-    "supportsReasoningControl": false
+    "supportsJsonResponse": false
   },
   {
     "id": "sakura",
@@ -128,8 +122,7 @@
     "requiresBaseUrl": false,
     "isLocal": true,
     "supportsStream": false,
-    "supportsJsonResponse": false,
-    "supportsReasoningControl": false
+    "supportsJsonResponse": false
   },
   {
     "id": "caiyun",
@@ -141,8 +134,7 @@
     "requiresBaseUrl": false,
     "isLocal": false,
     "supportsStream": false,
-    "supportsJsonResponse": false,
-    "supportsReasoningControl": false
+    "supportsJsonResponse": false
   },
   {
     "id": "baidu_translate",
@@ -154,8 +146,7 @@
     "requiresBaseUrl": false,
     "isLocal": false,
     "supportsStream": false,
-    "supportsJsonResponse": false,
-    "supportsReasoningControl": false
+    "supportsJsonResponse": false
   },
   {
     "id": "youdao_translate",
@@ -167,8 +158,7 @@
     "requiresBaseUrl": false,
     "isLocal": false,
     "supportsStream": false,
-    "supportsJsonResponse": false,
-    "supportsReasoningControl": false
+    "supportsJsonResponse": false
   },
   {
     "id": "openai",
@@ -182,7 +172,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "vlm": "gpt-4o",
       "chat": "gpt-4o",
@@ -212,7 +201,6 @@
     "isLocal": false,
     "supportsStream": true,
     "supportsJsonResponse": true,
-    "supportsReasoningControl": true,
     "defaultModels": {
       "vlm": "qwen-vl-max",
       "chat": "qwen-plus",
@@ -236,7 +224,6 @@
     "isLocal": false,
     "supportsStream": false,
     "supportsJsonResponse": false,
-    "supportsReasoningControl": false,
     "defaultModels": {
       "reranker": "jina-reranker-v2-base-multilingual"
     }
@@ -253,7 +240,6 @@
     "isLocal": false,
     "supportsStream": false,
     "supportsJsonResponse": false,
-    "supportsReasoningControl": false,
     "defaultModels": {
       "reranker": "rerank-multilingual-v3.0"
     }

@@ -327,18 +327,6 @@ export const TEXT_DETECTORS = [
   { value: 'default', label: 'Default (DBNet)' }
 ] as const
 
-// 取消思考方法常量
-// ============================================================
-
-/**
- * 取消思考方法列表
- * 用于高质量翻译和 AI 校对的低推理模式
- */
-export const NO_THINKING_METHODS = [
-  { value: 'gemini', label: 'Gemini风格 (reasoning_effort=low)' },
-  { value: 'volcano', label: '火山引擎风格 (thinking=null)' }
-] as const
-
 // ============================================================
 // 网页导入常量
 // ============================================================
