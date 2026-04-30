@@ -13,6 +13,7 @@ from .response_builder import success_response, error_response
 from src.core.manga_insight.storage import AnalysisStorage
 from src.core.manga_insight.features.timeline import TimelineBuilder
 from src.core.manga_insight.book_pages import build_book_pages_manifest
+from src.core.manga_insight.config_utils import has_provider_model_config, load_insight_config
 
 logger = logging.getLogger("MangaInsight.API.Data")
 
@@ -306,7 +307,6 @@ def regenerate_overview(book_id: str):
     analyzer = None
     try:
         from src.core.manga_insight.analyzer import MangaAnalyzer
-        from src.core.manga_insight.config_utils import load_insight_config
         
         config = load_insight_config()
         analyzer = MangaAnalyzer(book_id, config)
@@ -420,10 +420,14 @@ def generate_template_overview(book_id: str):
         
         # 初始化 LLM 客户端
         if config.chat_llm.use_same_as_vlm:
-            if config.vlm.api_key:
+            if has_provider_model_config(config.vlm.provider, config.vlm.model, config.vlm.api_key):
                 llm_client = ChatClient(config.vlm)
         else:
-            if config.chat_llm.api_key:
+            if has_provider_model_config(
+                config.chat_llm.provider,
+                config.chat_llm.model,
+                config.chat_llm.api_key,
+            ):
                 llm_client = ChatClient(config.chat_llm)
         
         if not llm_client:
@@ -523,8 +527,12 @@ def rebuild_embeddings(book_id: str):
         config = load_insight_config()
         
         # 检查 Embedding 是否已配置
-        if not config.embedding.api_key:
-            return error_response("未配置 Embedding API Key，请先在设置中配置向量模型", 400)
+        if not has_provider_model_config(
+            config.embedding.provider,
+            config.embedding.model,
+            config.embedding.api_key,
+        ):
+            return error_response("未配置 Embedding 模型，请先在设置中配置向量模型", 400)
         
         # 1. 重新构建向量（build_embeddings 内部会先清除现有向量）
         analyzer = MangaAnalyzer(book_id, config)

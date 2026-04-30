@@ -244,14 +244,6 @@ def translate_single_text(text, target_language, model_provider,
                     timeout=120.0,
                 )
 
-            elif canonical_provider == 'ollama':
-                translated_text = run_local_chat_completion(
-                    "ollama",
-                    model_name,
-                    _build_text_chat_messages(prompt_content, text),
-                    timeout=120.0,
-                )
-                    
             elif canonical_provider == constants.BAIDU_TRANSLATE_ENGINE_ID:
                 if not api_key or (isinstance(api_key, str) and not api_key.strip()):
                     raise ValueError("百度翻译API需要appid")
@@ -607,7 +599,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
         
         try:
             # === API 调用阶段 ===
-            if canonical_provider in {'ollama', 'sakura'}:
+            if canonical_provider == 'sakura':
                 response_text = run_local_chat_completion(
                     canonical_provider,
                     model_name,

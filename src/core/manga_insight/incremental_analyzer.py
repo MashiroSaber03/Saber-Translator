@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Callable
 from tqdm import tqdm
 
 from .config_models import MangaInsightConfig
+from .config_utils import has_provider_model_config
 from .storage import AnalysisStorage
 from .change_detector import ContentChangeDetector, ChangeType, get_pages_to_analyze
 
@@ -357,7 +358,11 @@ class IncrementalAnalyzer:
         from .vector_store import MangaVectorStore
         from .embedding_client import EmbeddingClient
         
-        if not self.config.embedding.api_key:
+        if not has_provider_model_config(
+            self.config.embedding.provider,
+            self.config.embedding.model,
+            self.config.embedding.api_key,
+        ):
             return
         
         if not page_nums:

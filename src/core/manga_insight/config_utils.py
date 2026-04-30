@@ -7,6 +7,7 @@ Manga Insight 配置工具
 import logging
 from typing import Dict, Any, List, TYPE_CHECKING
 
+from src.shared.ai_providers import provider_requires_api_key
 from src.shared.config_loader import load_json_config, save_json_config
 from .config_models import MangaInsightConfig
 
@@ -17,6 +18,14 @@ logger = logging.getLogger("MangaInsight.Config")
 
 # 配置文件名
 CONFIG_FILENAME = "manga_insight_settings.json"
+
+
+def has_provider_credentials(provider: str, api_key: str = "") -> bool:
+    return bool(api_key or not provider_requires_api_key(provider))
+
+
+def has_provider_model_config(provider: str, model: str, api_key: str = "") -> bool:
+    return bool(model and has_provider_credentials(provider, api_key))
 
 
 def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[str]:
@@ -34,7 +43,7 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
     warnings = []
 
     # VLM 配置验证（警告级别 - 用户可能还没配置）
-    if config.vlm.provider and not config.vlm.api_key:
+    if config.vlm.provider and provider_requires_api_key(config.vlm.provider) and not config.vlm.api_key:
         warnings.append("VLM 已选择服务商但未配置 API Key")
 
     # base_url 格式验证（错误级别 - 格式错误会导致请求失败）
@@ -43,8 +52,8 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
             errors.append("VLM base_url 格式无效，应以 http:// 或 https:// 开头")
 
     # Embedding 配置验证
-    if config.embedding.api_key and not config.embedding.model:
-        warnings.append("Embedding 已配置 API Key 但未选择模型")
+    if has_provider_credentials(config.embedding.provider, config.embedding.api_key) and not config.embedding.model:
+        warnings.append("Embedding 已选择服务商但未选择模型")
 
     if config.embedding.base_url:
         if not config.embedding.base_url.startswith(("http://", "https://")):

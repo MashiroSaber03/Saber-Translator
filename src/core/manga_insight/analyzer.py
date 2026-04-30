@@ -21,6 +21,7 @@ from .batch_analyzer import BatchAnalyzer
 from .summary_generator import SummaryGenerator
 from .embedding_builder import EmbeddingBuilder
 from .overview_generator import OverviewGenerator
+from .config_utils import has_provider_model_config
 
 logger = logging.getLogger("MangaInsight.Analyzer")
 
@@ -38,7 +39,11 @@ class MangaAnalyzer:
         self.config = config
         self.storage = AnalysisStorage(book_id)
         self.vlm = VLMClient(config.vlm, config.prompts)
-        self.embedding = EmbeddingClient(config.embedding) if config.embedding.api_key else None
+        self.embedding = (
+            EmbeddingClient(config.embedding)
+            if has_provider_model_config(config.embedding.provider, config.embedding.model, config.embedding.api_key)
+            else None
+        )
         self.vector_store = MangaVectorStore(book_id)
         self._book_info_cache = None
 

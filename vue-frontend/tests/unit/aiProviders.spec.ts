@@ -33,8 +33,13 @@ describe('translation page AI provider manifest', () => {
   it('derives RPM-limit visibility from the shared provider manifest', () => {
     expect(providerSupportsRpmLimit('siliconflow')).toBe(true)
     expect(providerSupportsRpmLimit('custom')).toBe(true)
-    expect(providerSupportsRpmLimit('ollama')).toBe(false)
+    expect(providerSupportsRpmLimit('ollama')).toBe(true)
     expect(providerSupportsRpmLimit('caiyun')).toBe(false)
+  })
+
+  it('exposes ollama for HQ translation and AI vision OCR once declared in the shared manifest', () => {
+    expect(getProviderOptionsForCapability('hqTranslation').map(option => option.value)).toContain('ollama')
+    expect(getProviderOptionsForCapability('visionOcr').map(option => option.value)).toContain('ollama')
   })
 
   it('keeps frontend default chat models aligned with the shared manifest contract', () => {

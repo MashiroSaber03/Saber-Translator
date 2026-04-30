@@ -8,6 +8,7 @@ export type WebImportAgentProvider =
     | 'deepseek'
     | 'volcano'
     | 'gemini'
+    | 'ollama'
     | 'custom'
     | 'custom_openai'
 

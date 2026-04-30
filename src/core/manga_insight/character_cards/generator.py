@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.manga_insight.book_pages import build_book_pages_manifest
 from src.core.manga_insight.config_models import MangaInsightConfig
-from src.core.manga_insight.config_utils import load_insight_config
+from src.core.manga_insight.config_utils import has_provider_model_config, load_insight_config
 from src.core.manga_insight.embedding_client import ChatClient
 from src.core.manga_insight.storage import AnalysisStorage
 from src.core.manga_insight.utils.json_parser import parse_llm_json
@@ -73,10 +73,18 @@ class CharacterCardGenerator:
     def _init_chat_client(self) -> Optional[ChatClient]:
         try:
             if self.config.chat_llm and not self.config.chat_llm.use_same_as_vlm:
-                if self.config.chat_llm.api_key:
+                if has_provider_model_config(
+                    self.config.chat_llm.provider,
+                    self.config.chat_llm.model,
+                    self.config.chat_llm.api_key,
+                ):
                     return ChatClient(self.config.chat_llm)
                 return None
-            if self.config.vlm and self.config.vlm.api_key:
+            if self.config.vlm and has_provider_model_config(
+                self.config.vlm.provider,
+                self.config.vlm.model,
+                self.config.vlm.api_key,
+            ):
                 return ChatClient(self.config.vlm)
             return None
         except Exception as e:

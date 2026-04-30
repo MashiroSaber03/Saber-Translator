@@ -9,6 +9,7 @@ from PIL import Image
 from src.shared import constants
 from src.shared.ai_providers import (
     VISION_OCR_CAPABILITY,
+    get_provider_manifest,
     normalize_provider_id,
     provider_supports_capability,
     resolve_provider_base_url,
@@ -27,12 +28,6 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
-    if not api_key:
-        logger.error(f"未提供 {provider} 的API密钥")
-        return ""
-    if not model_name:
-        logger.error(f"未提供 {provider} 的模型名称")
-        return ""
     if not prompt:
         prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
         logger.info(f"使用默认AI视觉OCR提示词")
@@ -46,8 +41,15 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
 
     try:
         provider_lower = normalize_provider_id(provider)
+        manifest = get_provider_manifest(provider_lower)
         if not provider_supports_capability(provider_lower, VISION_OCR_CAPABILITY):
             logger.error(f"不支持的AI视觉OCR服务提供商: {provider}")
+            return ""
+        if manifest.requires_api_key and not api_key:
+            logger.error(f"未提供 {provider} 的API密钥")
+            return ""
+        if manifest.requires_model and not model_name:
+            logger.error(f"未提供 {provider} 的模型名称")
             return ""
 
         resolved_base_url = resolve_provider_base_url(provider_lower, custom_base_url)

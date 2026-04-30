@@ -12,7 +12,7 @@
             @change="(v: any) => handleProviderChange(v)"
           />
         </div>
-        <div class="settings-item">
+        <div v-show="providerRequiresApiKey(hqSettings.provider)" class="settings-item">
           <label for="settingsHqApiKey">API Key:</label>
           <div class="password-input-wrapper">
             <input
@@ -145,6 +145,7 @@ import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
   getProviderOptionsForCapability,
+  providerRequiresApiKey,
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
@@ -262,7 +263,7 @@ async function fetchModels() {
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
   // 验证（与原版一致）
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -305,7 +306,7 @@ async function testConnection() {
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
   // 验证必填字段
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }

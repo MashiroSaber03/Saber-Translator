@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 from PIL import Image
 
 from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+from src.shared.ai_providers import provider_requires_api_key
 
 from .clients.base_client import RPMLimiter
 from .clients.provider_registry import get_base_url
@@ -95,7 +96,7 @@ class VLMClient:
         await self._rpm_limiter.wait()
 
     def is_configured(self) -> bool:
-        return bool(self.config.api_key and self.config.model)
+        return bool(self.config.model and (self.config.api_key or not provider_requires_api_key(self.provider)))
 
     async def analyze_batch(
         self,

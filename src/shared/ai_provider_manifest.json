@@ -101,15 +101,15 @@
   {
     "id": "ollama",
     "label": "Ollama (本地)",
-    "kind": "local",
-    "defaultBaseUrl": "http://localhost:11434",
-    "capabilities": ["translation", "modelFetch", "connectionTest"],
+    "kind": "openai_compatible",
+    "defaultBaseUrl": "http://localhost:11434/v1",
+    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "vlm", "chat", "embedding", "webImportAgent"],
     "requiresApiKey": false,
     "requiresModel": true,
     "requiresBaseUrl": false,
     "isLocal": true,
-    "supportsStream": false,
-    "supportsJsonResponse": false
+    "supportsStream": true,
+    "supportsJsonResponse": true
   },
   {
     "id": "sakura",

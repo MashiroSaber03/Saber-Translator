@@ -9,7 +9,7 @@ import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
-from .config_utils import load_insight_config, create_chat_client
+from .config_utils import create_chat_client, has_provider_model_config, load_insight_config
 from .utils.json_parser import parse_llm_json
 from .config_models import DEFAULT_QA_SYSTEM_PROMPT, DEFAULT_QUESTION_DECOMPOSE_PROMPT
 from .storage import AnalysisStorage
@@ -49,7 +49,11 @@ class MangaQA:
         
         # 初始化客户端
         self.embedding_client = None
-        if self.config.embedding.api_key:
+        if has_provider_model_config(
+            self.config.embedding.provider,
+            self.config.embedding.model,
+            self.config.embedding.api_key,
+        ):
             self.embedding_client = EmbeddingClient(self.config.embedding)
         
         # 对话模型（使用工厂函数）
@@ -57,7 +61,11 @@ class MangaQA:
         
         # 重排序模型（可选）
         self.reranker = None
-        if self.config.reranker.api_key:
+        if has_provider_model_config(
+            self.config.reranker.provider,
+            self.config.reranker.model,
+            self.config.reranker.api_key,
+        ):
             self.reranker = RerankerClient(self.config.reranker)
         
         # 查询预处理器

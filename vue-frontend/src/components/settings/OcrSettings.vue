@@ -154,7 +154,7 @@
             @change="(v: any) => handleAiVisionProviderChange(v)"
           />
         </div>
-        <div class="settings-item">
+        <div v-show="providerRequiresApiKey(settings.aiVisionOcr.provider)" class="settings-item">
           <label for="settingsAiVisionApiKey">API Key:</label>
           <div class="password-input-wrapper">
             <input
@@ -278,6 +278,7 @@ import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
   normalizeProviderId,
+  providerRequiresApiKey,
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
@@ -724,7 +725,7 @@ async function fetchAiVisionModels() {
   const baseUrl = localAiVisionOcr.value.customBaseUrl?.trim()
 
   // 验证（与原版一致）
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }

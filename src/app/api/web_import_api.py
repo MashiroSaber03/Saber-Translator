@@ -833,12 +833,10 @@ def test_agent_connection():
         logger.info(f"[Agent测试] 自定义Base URL: {base_url if base_url else '(未设置)'}")
         logger.info(f"[Agent测试] API Key前缀: {api_key[:15]}..." if len(api_key) > 15 else f"[Agent测试] API Key: {api_key}")
         
-        if not api_key:
-            return jsonify({'success': False, 'error': '请输入 API Key'}), 400
-        
         from src.shared.ai_providers import (
             CHAT_CAPABILITY,
             WEB_IMPORT_AGENT_CAPABILITY,
+            get_provider_manifest,
             normalize_provider_id,
             provider_supports_capability,
             resolve_provider_base_url_for_capability,
@@ -848,6 +846,9 @@ def test_agent_connection():
         normalized_provider = normalize_provider_id(provider)
         if normalized_provider and not provider_supports_capability(normalized_provider, WEB_IMPORT_AGENT_CAPABILITY):
             return jsonify({'success': False, 'error': f'不支持的服务商: {provider}'}), 400
+        manifest = get_provider_manifest(normalized_provider)
+        if manifest.requires_api_key and not api_key:
+            return jsonify({'success': False, 'error': '请输入 API Key'}), 400
         if normalized_provider == 'openai':
             final_base_url = None
         else:

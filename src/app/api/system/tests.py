@@ -402,14 +402,16 @@ def test_ai_vision_ocr_api():
         # 检查必要参数
         missing = []
         if not provider: missing.append('provider')
-        if not api_key: missing.append('api_key')
-        if not model_name: missing.append('model_name')
         if not provider_supports_capability(provider, VISION_OCR_CAPABILITY):
             return jsonify({
                 'success': False,
                 'message': f'不支持的AI视觉服务商: {provider}'
             }), 400
         manifest = get_provider_manifest(provider)
+        if manifest.requires_api_key and not api_key:
+            missing.append('api_key')
+        if manifest.requires_model and not model_name:
+            missing.append('model_name')
         if manifest.requires_base_url and not custom_ai_vision_base_url:
             missing.append('custom_ai_vision_base_url (当选择自定义服务时)')
         
@@ -599,15 +601,14 @@ def test_ai_translate_connection():
         api_key = (_request_value(data, 'api_key', 'apiKey', default='') or '').strip()
         model_name = (_request_value(data, 'model_name', 'model', 'modelName', default='') or '').strip()
         base_url = (_request_value(data, 'base_url', 'custom_base_url', 'baseUrl', 'customBaseUrl', default='') or '').strip()
-        
-        if not api_key:
-            return jsonify({
-                'success': False,
-                'message': '请提供API Key'
-            }), 400
-        
+
         # 彩云小译特殊处理
         if provider == 'caiyun':
+            if not api_key:
+                return jsonify({
+                    'success': False,
+                    'message': '请提供API Key'
+                }), 400
             success, result = adapter_test_caiyun_connection(api_key)
             if success:
                 return jsonify({
@@ -630,6 +631,11 @@ def test_ai_translate_connection():
                 'message': f'不支持的服务商: {provider}'
             }), 400
         manifest = get_provider_manifest(provider)
+        if manifest.requires_api_key and not api_key:
+            return jsonify({
+                'success': False,
+                'message': '请提供API Key'
+            }), 400
         if manifest.requires_base_url and not base_url:
             return jsonify({
                 'success': False,
@@ -702,13 +708,7 @@ def fetch_models():
         provider = normalize_provider_id(_request_value(data, 'provider', default=''))
         api_key = (_request_value(data, 'api_key', 'apiKey', default='') or '').strip()
         base_url = (_request_value(data, 'base_url', 'baseUrl', 'customBaseUrl', default='') or '').strip()
-        
-        if not api_key:
-            return jsonify({
-                'success': False,
-                'message': '请提供API Key'
-            }), 400
-        
+
         models = []
         
         if not provider_supports_capability(provider, MODEL_FETCH_CAPABILITY):
@@ -718,6 +718,11 @@ def fetch_models():
             }), 400
 
         manifest = get_provider_manifest(provider)
+        if manifest.requires_api_key and not api_key:
+            return jsonify({
+                'success': False,
+                'message': '请提供API Key'
+            }), 400
         if manifest.kind == 'local':
             models = fetch_local_models(provider)
         elif manifest.requires_base_url and not base_url:

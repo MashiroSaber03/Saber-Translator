@@ -31,6 +31,29 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertTrue(provider_supports_capability("custom", "hq_translation"))
         self.assertTrue(provider_supports_capability("custom", "vision_ocr"))
 
+    def test_ollama_manifest_is_local_openai_compatible_provider(self) -> None:
+        from src.shared.ai_providers import (
+            get_provider_manifest,
+            provider_supports_capability,
+        )
+
+        manifest = get_provider_manifest("ollama")
+
+        self.assertEqual(manifest.id, "ollama")
+        self.assertEqual(manifest.kind, "openai_compatible")
+        self.assertTrue(manifest.is_local)
+        self.assertFalse(manifest.requires_api_key)
+        self.assertEqual(manifest.default_base_url, "http://localhost:11434/v1")
+        self.assertTrue(manifest.supports_stream)
+        self.assertTrue(manifest.supports_json_response)
+        self.assertTrue(provider_supports_capability("ollama", "translation"))
+        self.assertTrue(provider_supports_capability("ollama", "hq_translation"))
+        self.assertTrue(provider_supports_capability("ollama", "vision_ocr"))
+        self.assertTrue(provider_supports_capability("ollama", "vlm"))
+        self.assertTrue(provider_supports_capability("ollama", "chat"))
+        self.assertTrue(provider_supports_capability("ollama", "embedding"))
+        self.assertTrue(provider_supports_capability("ollama", "web_import_agent"))
+
     def test_ai_vision_provider_list_matches_supported_backend_capabilities(self) -> None:
         from src.shared.ai_providers import provider_supports_capability
 
@@ -165,6 +188,21 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertEqual(kwargs["top_p"], 0.8)
         self.assertNotIn("extra_body", kwargs)
 
+    def test_create_openai_client_uses_placeholder_key_for_local_services_without_api_key(self) -> None:
+        from src.shared.openai_helpers import create_openai_client
+
+        fake_http_client = mock.Mock()
+
+        with mock.patch("src.shared.openai_helpers.httpx.Client", return_value=fake_http_client), \
+             mock.patch("src.shared.openai_helpers.OpenAI") as openai_ctor:
+            create_openai_client(
+                api_key="",
+                base_url="http://localhost:11434/v1",
+                timeout=30,
+            )
+
+        self.assertEqual(openai_ctor.call_args.kwargs["api_key"], "ollama")
+
     def test_ai_vision_service_dispatches_supported_provider_through_shared_transport(self) -> None:
         from src.interfaces.vision_interface import call_ai_vision_ocr_service
 
@@ -246,6 +284,28 @@ class RouteCompatibilityTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("不支持的服务商", payload["error"])
 
+    def test_translate_single_text_accepts_ollama_without_api_key(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.routes.translate_single_text",
+            return_value="译文",
+        ) as translate_mock:
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "originalText": "hello",
+                    "targetLanguage": "zh",
+                    "provider": "ollama",
+                    "model": "llama3.2",
+                    "useJsonFormat": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["translated_text"], "译文")
+        self.assertEqual(translate_mock.call_args.kwargs["api_key"], None)
+        self.assertEqual(translate_mock.call_args.kwargs["model_provider"], "ollama")
+
     def test_fetch_models_accepts_canonical_custom_provider(self) -> None:
         with mock.patch(
             "src.app.api.system.tests._chat_transport.list_models",
@@ -269,6 +329,26 @@ class RouteCompatibilityTests(unittest.TestCase):
         self.assertEqual(request_arg.api_key, "test-key")
         self.assertEqual(request_arg.base_url, "https://example.com/v1")
 
+    def test_fetch_models_allows_ollama_without_api_key(self) -> None:
+        with mock.patch(
+            "src.app.api.system.tests._chat_transport.list_models",
+            return_value=[{"id": "llama3.2", "name": "llama3.2"}],
+        ) as fetch_mock:
+            response = self.client.post(
+                "/api/fetch_models",
+                json={
+                    "provider": "ollama",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        request_arg = fetch_mock.call_args.args[0]
+        self.assertEqual(request_arg.provider, "ollama")
+        self.assertEqual(request_arg.api_key, "")
+        self.assertIsNone(request_arg.base_url)
+
     def test_hq_translate_batch_uses_manifest_base_url_resolution(self) -> None:
         with mock.patch(
             "src.app.api.translation.routes._hq_chat_transport.complete",
@@ -291,6 +371,49 @@ class RouteCompatibilityTests(unittest.TestCase):
         request_arg = complete_mock.call_args.args[0]
         self.assertEqual(request_arg.provider, "siliconflow")
         self.assertEqual(request_arg.base_url, "https://api.siliconflow.cn/v1")
+
+    def test_hq_translate_batch_accepts_ollama_without_api_key(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.routes._hq_chat_transport.complete",
+            return_value='{"images":[]}',
+        ) as complete_mock:
+            response = self.client.post(
+                "/api/hq_translate_batch",
+                json={
+                    "provider": "ollama",
+                    "model_name": "llama3.2-vision",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "force_json_output": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        request_arg = complete_mock.call_args.args[0]
+        self.assertEqual(request_arg.provider, "ollama")
+        self.assertEqual(request_arg.api_key, "")
+        self.assertEqual(request_arg.base_url, "http://localhost:11434/v1")
+
+    def test_ai_translate_connection_accepts_ollama_without_api_key(self) -> None:
+        with mock.patch(
+            "src.app.api.system.tests._chat_transport.test_connection",
+            return_value=(True, "你好"),
+        ) as test_mock:
+            response = self.client.post(
+                "/api/test_ai_translate_connection",
+                json={
+                    "provider": "ollama",
+                    "model_name": "llama3.2",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        request_arg = test_mock.call_args.args[0]
+        self.assertEqual(request_arg.provider, "ollama")
+        self.assertEqual(request_arg.api_key, "")
 
     def test_hq_translate_batch_rejects_non_hq_provider_even_if_openai_compatible(self) -> None:
         response = self.client.post(

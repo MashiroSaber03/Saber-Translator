@@ -4,6 +4,7 @@
  */
 import { ref, computed } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import {
@@ -92,7 +93,7 @@ function onProviderChange(): void {
 }
 
 async function fetchModels(): Promise<void> {
-  if (!apiKey.value) {
+  if (providerRequiresApiKey(provider.value) && !apiKey.value) {
     emit('showMessage', '请先填写 API Key', 'error')
     return
   }
@@ -208,7 +209,7 @@ defineExpose({
       />
     </div>
     
-    <div class="form-group">
+    <div v-if="providerRequiresApiKey(provider)" class="form-group">
       <label>API Key</label>
       <input v-model="apiKey" type="password" placeholder="输入 API Key">
     </div>

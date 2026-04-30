@@ -16,6 +16,7 @@ from datetime import datetime
 
 from ..storage import AnalysisStorage
 from ..embedding_client import ChatClient
+from ..config_utils import has_provider_model_config
 from ..utils.json_parser import parse_llm_json
 from .timeline import TimelineBuilder
 # timeline_models 可用于类型提示，当前使用 Dict 返回
@@ -135,11 +136,19 @@ class EnhancedTimelineBuilder:
                 # 检查是否使用独立的对话模型
                 if config.chat_llm and not config.chat_llm.use_same_as_vlm:
                     # 检查 api_key 是否配置
-                    if config.chat_llm.api_key:
+                    if has_provider_model_config(
+                        config.chat_llm.provider,
+                        config.chat_llm.model,
+                        config.chat_llm.api_key,
+                    ):
                         self.llm = ChatClient(config.chat_llm)
                     else:
                         logger.warning("ChatLLM 未配置 API Key")
-                elif config.vlm and config.vlm.api_key:
+                elif config.vlm and has_provider_model_config(
+                    config.vlm.provider,
+                    config.vlm.model,
+                    config.vlm.api_key,
+                ):
                     # 使用 VLM 配置作为对话模型
                     self.llm = ChatClient(config.vlm)
                 else:
@@ -238,9 +247,17 @@ class EnhancedTimelineBuilder:
             if not self.llm and self.config:
                 try:
                     if self.config.chat_llm and not self.config.chat_llm.use_same_as_vlm:
-                        if self.config.chat_llm.api_key:
+                        if has_provider_model_config(
+                            self.config.chat_llm.provider,
+                            self.config.chat_llm.model,
+                            self.config.chat_llm.api_key,
+                        ):
                             self.llm = ChatClient(self.config.chat_llm)
-                    elif self.config.vlm and self.config.vlm.api_key:
+                    elif self.config.vlm and has_provider_model_config(
+                        self.config.vlm.provider,
+                        self.config.vlm.model,
+                        self.config.vlm.api_key,
+                    ):
                         self.llm = ChatClient(self.config.vlm)
                 except Exception as e:
                     logger.warning(f"重新初始化 LLM 失败: {e}")

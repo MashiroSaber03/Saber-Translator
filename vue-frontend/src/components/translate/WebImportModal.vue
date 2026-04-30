@@ -13,7 +13,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
-import { getProviderDisplayName, normalizeProviderId, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
+import { getProviderDisplayName, normalizeProviderId, providerRequiresApiKey, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
 
 const webImportStore = useWebImportStore()
 const imageStore = useImageStore()
@@ -364,7 +364,7 @@ async function handleTestFirecrawl() {
 
 // 测试 Agent 连接
 async function handleTestAgent() {
-  if (!draftSettings.value.agent.apiKey) {
+  if (providerRequiresApiKey(draftSettings.value.agent.provider) && !draftSettings.value.agent.apiKey) {
     alert('请输入 AI Agent API Key')
     return
   }
@@ -394,7 +394,7 @@ async function handleFetchModels() {
   const apiKey = draftSettings.value.agent.apiKey?.trim()
   const baseUrl = draftSettings.value.agent.customBaseUrl?.trim()
 
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     alert('请先填写 API Key')
     return
   }
@@ -586,7 +586,7 @@ function handleResetPrompt() {
                     />
                   </div>
 
-                  <div class="form-row">
+                  <div v-if="providerRequiresApiKey(draftSettings.agent.provider)" class="form-row">
                     <label class="form-label">API Key</label>
                     <div class="password-input-wrapper">
                       <input
@@ -667,7 +667,7 @@ function handleResetPrompt() {
                   <div class="form-row">
                     <button
                       class="settings-test-btn full"
-                      :disabled="testingAgent || !draftSettings.agent.apiKey"
+                      :disabled="testingAgent || (providerRequiresApiKey(draftSettings.agent.provider) && !draftSettings.agent.apiKey)"
                       @click="handleTestAgent"
                     >
                       {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}

@@ -22,7 +22,7 @@ from src.shared.ai_providers import (
     resolve_provider_endpoint_for_capability,
 )
 from src.shared.http_config import build_httpx_kwargs
-from src.shared.openai_helpers import create_openai_client
+from src.shared.openai_helpers import create_openai_client, resolve_openai_api_key
 
 logger = logging.getLogger("SharedAITransport")
 
@@ -193,6 +193,21 @@ def _calculate_backoff(
     return min(base_delay * (1 + jitter), 60.0)
 
 
+def _build_auth_headers(
+    api_key: str,
+    base_url: Optional[str],
+    *,
+    include_content_type: bool = True,
+) -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    resolved_api_key = resolve_openai_api_key(api_key, base_url)
+    if resolved_api_key:
+        headers["Authorization"] = f"Bearer {resolved_api_key}"
+    if include_content_type:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
 class OpenAICompatibleChatTransport:
     def complete(self, request: UnifiedChatRequest) -> str:
         base_url = resolve_provider_base_url(request.provider, request.base_url)
@@ -270,7 +285,7 @@ class OpenAICompatibleChatTransport:
         with httpx.Client(**build_httpx_kwargs(base_url, request.timeout)) as client:
             response = client.get(
                 models_url,
-                headers={"Authorization": f"Bearer {request.api_key}"},
+                headers=_build_auth_headers(request.api_key, base_url, include_content_type=False),
             )
             response.raise_for_status()
             data = response.json()
@@ -296,10 +311,7 @@ class OpenAICompatibleChatTransport:
             with client.stream(
                 "POST",
                 url,
-                headers={
-                    "Authorization": f"Bearer {request.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=_build_auth_headers(request.api_key, base_url),
                 json=body,
             ) as response:
                 if response.status_code != 200:
@@ -473,10 +485,7 @@ class AsyncOpenAICompatibleTransport:
                 response = await client.request(
                     method=method,
                     url=url,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=_build_auth_headers(api_key, base_url),
                     json=body,
                 )
 
@@ -537,10 +546,7 @@ class AsyncOpenAICompatibleTransport:
                 async with client.stream(
                     "POST",
                     url,
-                    headers={
-                        "Authorization": f"Bearer {request.api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=_build_auth_headers(request.api_key, base_url),
                     json=body,
                 ) as response:
                     if response.status_code in RETRYABLE_STATUS_CODES and attempt < self.max_retries:

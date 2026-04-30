@@ -590,17 +590,19 @@ async function fetchLocalModels() {
   
   try {
     let result
-    if (provider === 'ollama') {
-      result = await configApi.testOllamaConnection()
-    } else if (provider === 'sakura') {
+    if (provider === 'sakura') {
       result = await configApi.testSakuraConnection()
+    } else if (provider === 'ollama') {
+      result = await configApi.fetchModels(provider, '', '')
     } else {
       toast.error('未选择本地服务商')
       return
     }
     
     if (result.success && result.models) {
-      localModelList.value = result.models
+      localModelList.value = result.models.map((model: string | { id: string; name?: string }) =>
+        typeof model === 'string' ? model : model.id
+      )
       toast.success(`获取到 ${result.models.length} 个${provider === 'ollama' ? 'Ollama' : 'Sakura'}模型`)
     } else {
       toast.error(result.error || `${provider === 'ollama' ? 'Ollama' : 'Sakura'}连接失败`)
@@ -615,16 +617,32 @@ async function fetchLocalModels() {
 
 // 测试本地服务连接
 async function testLocalConnection() {
+  const provider = localSettings.value.modelProvider
+  const modelName = localSettings.value.modelName?.trim()
+
+  if (provider === 'ollama' && !modelName) {
+    toast.warning('请填写模型名称')
+    return
+  }
+
   isTesting.value = true
   try {
     let result
-    if (localSettings.value.modelProvider === 'ollama') {
-      result = await configApi.testOllamaConnection()
-    } else {
+    if (provider === 'sakura') {
       result = await configApi.testSakuraConnection()
+    } else if (provider === 'ollama') {
+      result = await configApi.testAiTranslateConnection({
+        provider,
+        apiKey: '',
+        modelName,
+        baseUrl: ''
+      })
+    } else {
+      toast.error('未选择本地服务商')
+      return
     }
     if (result.success) {
-      toast.success(`${localSettings.value.modelProvider === 'ollama' ? 'Ollama' : 'Sakura'} 连接成功`)
+      toast.success(`${provider === 'ollama' ? 'Ollama' : 'Sakura'} 连接成功`)
     } else {
       toast.error(result.error || '连接失败')
     }

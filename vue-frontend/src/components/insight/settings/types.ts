@@ -191,7 +191,7 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
 
 /** 支持获取模型列表的服务商 */
 export const SUPPORTED_FETCH_PROVIDERS = AI_PROVIDER_MANIFEST
-  .filter(entry => entry.capabilities.includes('modelFetch') && !entry.isLocal && entry.kind !== 'adapter')
+  .filter(entry => entry.capabilities.includes('modelFetch') && entry.kind !== 'adapter')
   .map(entry => entry.id)
 
 /**

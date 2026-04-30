@@ -192,7 +192,11 @@ export function useValidation() {
         if (!aiVisionOcr?.provider) {
           missingItems.push(`${prefix}AI视觉OCR 的服务商`)
         }
-        if (!aiVisionOcr?.apiKey || aiVisionOcr.apiKey.trim() === '') {
+        if (
+          aiVisionOcr?.provider &&
+          providerRequiresApiKey(normalizeProviderId(aiVisionOcr.provider)) &&
+          (!aiVisionOcr?.apiKey || aiVisionOcr.apiKey.trim() === '')
+        ) {
           missingItems.push(`${prefix}AI视觉OCR 的 API Key`)
         }
         if (!aiVisionOcr?.modelName || aiVisionOcr.modelName.trim() === '') {
@@ -300,7 +304,7 @@ export function useValidation() {
     }
 
     // 检查 API Key
-    if (!apiKey || apiKey.trim() === '') {
+    if (providerRequiresApiKey(provider) && (!apiKey || apiKey.trim() === '')) {
       missingItems.push('高质量翻译的 API Key')
     }
 
@@ -356,7 +360,7 @@ export function useValidation() {
         missingItems.push(`校对 ${roundName} 的服务商`)
       }
 
-      if (!round.apiKey || round.apiKey.trim() === '') {
+      if (providerRequiresApiKey(round.provider) && (!round.apiKey || round.apiKey.trim() === '')) {
         missingItems.push(`校对 ${roundName} 的 API Key`)
       }
 

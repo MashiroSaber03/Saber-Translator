@@ -151,3 +151,42 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
                 "top_n": 2,
             },
         )
+
+    async def test_async_chat_transport_uses_placeholder_authorization_for_local_provider_without_api_key(self) -> None:
+        from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {"choices": [{"message": {"content": "本地成功"}}]}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                self.request_calls = []
+
+            async def request(self, method=None, url=None, headers=None, json=None):
+                self.request_calls.append(
+                    {"method": method, "url": url, "headers": headers, "json": json}
+                )
+                return FakeResponse()
+
+            async def aclose(self):
+                return None
+
+        transport = AsyncOpenAICompatibleTransport()
+        request = UnifiedChatRequest(
+            provider="ollama",
+            api_key="",
+            model="llama3.2",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url=None,
+        )
+
+        fake_client = FakeAsyncClient()
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
+            content = await transport.complete(request)
+
+        self.assertEqual(content, "本地成功")
+        self.assertEqual(fake_client.request_calls[0]["url"], "http://localhost:11434/v1/chat/completions")
+        self.assertEqual(fake_client.request_calls[0]["headers"]["Authorization"], "Bearer ollama")

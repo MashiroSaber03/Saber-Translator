@@ -17,7 +17,7 @@ from src.shared import constants
 from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
-from src.shared.ai_providers import normalize_provider_id
+from src.shared.ai_providers import get_provider_manifest, normalize_provider_id
 # 导入rpm限制辅助函数
 from src.core.translation import _enforce_rpm_limit
 from src.core.ocr_types import OcrResult, create_ocr_result
@@ -381,14 +381,31 @@ def _recognize_with_ai_vision_results(
 ) -> List[OcrResult]:
     ai_vision_provider = normalize_provider_id(ai_vision_provider)
 
-    if not all([ai_vision_provider, ai_vision_api_key, ai_vision_model_name]):
+    if not ai_vision_provider:
         logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
         if strict_errors:
-            if not ai_vision_api_key:
-                raise ValueError("AI视觉OCR需要提供API Key")
-            if not ai_vision_model_name:
-                raise ValueError("AI视觉OCR需要提供模型名称")
             raise ValueError("AI视觉OCR配置不完整")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.AI_VISION_OCR_ENGINE_ID,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+    manifest = get_provider_manifest(ai_vision_provider)
+    if manifest.requires_api_key and not ai_vision_api_key:
+        logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
+        if strict_errors:
+            raise ValueError("AI视觉OCR需要提供API Key")
+        return _empty_ocr_results(
+            bubble_coords,
+            constants.AI_VISION_OCR_ENGINE_ID,
+            primary_engine=primary_engine,
+            fallback_used=fallback_used,
+        )
+    if manifest.requires_model and not ai_vision_model_name:
+        logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
+        if strict_errors:
+            raise ValueError("AI视觉OCR需要提供模型名称")
         return _empty_ocr_results(
             bubble_coords,
             constants.AI_VISION_OCR_ENGINE_ID,

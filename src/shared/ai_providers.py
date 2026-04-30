@@ -164,6 +164,12 @@ def provider_supports_capability(provider: Optional[str], capability: str) -> bo
     return capability in manifest.capabilities if manifest else False
 
 
+def provider_requires_api_key(provider: Optional[str]) -> bool:
+    canonical = normalize_provider_id(provider)
+    manifest = _PROVIDERS.get(canonical)
+    return manifest.requires_api_key if manifest else True
+
+
 def resolve_provider_base_url(provider: Optional[str], custom_base_url: Optional[str] = None) -> Optional[str]:
     return resolve_provider_base_url_for_capability(provider, CHAT_CAPABILITY, custom_base_url)
 

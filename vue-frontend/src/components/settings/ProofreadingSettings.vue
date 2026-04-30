@@ -55,7 +55,7 @@
                 :options="providerOptions"
               />
             </div>
-            <div class="settings-item">
+            <div v-show="providerRequiresApiKey(round.provider)" class="settings-item">
               <label>API Key:</label>
               <div class="password-input-wrapper">
                 <input
@@ -171,6 +171,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
+  providerRequiresApiKey,
   providerSupportsCapability,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
@@ -237,7 +238,7 @@ async function fetchRoundModels(index: number) {
   const apiKey = round.apiKey?.trim()
   const baseUrl = round.customBaseUrl?.trim()
 
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -275,7 +276,7 @@ async function testRoundConnection(index: number) {
   const modelName = round.modelName?.trim()
   const baseUrl = round.customBaseUrl?.trim()
 
-  if (!apiKey) {
+  if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }

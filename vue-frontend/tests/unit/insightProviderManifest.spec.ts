@@ -33,6 +33,7 @@ describe('insight provider manifest', () => {
 
     expect(providers).toContain('openai')
     expect(providers).toContain('gemini')
+    expect(providers).toContain('ollama')
     expect(providers).toContain('qwen')
     expect(providers).toContain('custom')
     expect(providers).not.toContain('jina')

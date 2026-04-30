@@ -25,6 +25,7 @@ class APIProvider(Enum):
     SILICONFLOW = "siliconflow"
     DEEPSEEK = "deepseek"
     VOLCANO = "volcano"
+    OLLAMA = "ollama"
     JINA = "jina"
     COHERE = "cohere"
     CUSTOM = "custom"

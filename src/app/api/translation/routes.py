@@ -969,9 +969,9 @@ def hq_translate_batch():
         
         # 获取必要参数
         provider = normalize_provider_id(_request_value(data, 'provider'))
-        api_key = _request_value(data, 'api_key', 'apiKey')
-        model_name = _request_value(data, 'model_name', 'model', 'modelName')
-        custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
+        api_key = _request_value(data, 'api_key', 'apiKey') or ''
+        model_name = _request_value(data, 'model_name', 'model', 'modelName') or ''
+        custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl') or ''
         
         # 支持两种调用方式
         messages = data.get('messages')  # 旧方式：直接传消息
@@ -1009,9 +1009,18 @@ def hq_translate_batch():
         )
         
         # 参数验证
-        if not provider or not api_key or not model_name:
-            return jsonify({'error': '缺少必要参数: provider, api_key, model_name'}), 400
-        
+        if not provider:
+            return jsonify({'error': '缺少必要参数: provider'}), 400
+
+        if not provider_supports_capability(provider, HQ_TRANSLATION_CAPABILITY):
+            return jsonify({'error': f'不支持的服务商: {provider}'}), 400
+
+        manifest = get_provider_manifest(provider)
+        if manifest.requires_api_key and not api_key:
+            return jsonify({'error': f'缺少必要参数: {manifest.display_name} 需要 API Key'}), 400
+        if manifest.requires_model and not model_name:
+            return jsonify({'error': f'缺少必要参数: {manifest.display_name} 需要模型名称'}), 400
+
         # 检测使用哪种调用方式
         if json_data is not None and image_base64_array is not None:
             # 新方式：后端构建消息
@@ -1030,18 +1039,12 @@ def hq_translate_batch():
         else:
             return jsonify({'error': '缺少必要参数: 需要 messages 或 (jsonData + imageBase64Array)'}), 400
         
-        if provider == 'custom' and not custom_base_url:
-            return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
-
-        if not provider_supports_capability(provider, HQ_TRANSLATION_CAPABILITY):
-            return jsonify({'error': f'不支持的服务商: {provider}'}), 400
-
         try:
             base_url = resolve_provider_base_url(provider, custom_base_url)
         except ValueError:
             return jsonify({'error': f'不支持的服务商: {provider}'}), 400
 
-        if not base_url:
+        if manifest.requires_base_url and not base_url:
             return jsonify({'error': '使用自定义服务时必须提供 Base URL'}), 400
 
         logger.info(f"使用 base_url: {base_url}")

@@ -40,6 +40,7 @@ export type HqTranslationProvider =
   | 'deepseek'
   | 'volcano'
   | 'gemini'
+  | 'ollama'
   | 'custom'
   | 'custom_openai'
 
