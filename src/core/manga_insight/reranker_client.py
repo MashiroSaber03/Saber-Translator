@@ -1,13 +1,14 @@
 """
-Manga Insight 重排序模型客户端
-
-对向量检索结果进行二次排序。
+Manga Insight reranker client backed by shared async transport.
 """
 
 import logging
 from typing import List, Dict, Optional
 
-from .clients import get_rerank_url, get_default_model, BaseAPIClient
+from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedRerankRequest
+
+from .clients import get_rerank_url, get_default_model
+from .clients.base_client import RPMLimiter
 from .config_models import RerankerConfig
 
 logger = logging.getLogger("MangaInsight.Reranker")
@@ -15,51 +16,40 @@ DEFAULT_RERANKER_RPM_LIMIT = 60
 DEFAULT_RERANKER_MAX_RETRIES = 2
 
 
-class RerankerClient(BaseAPIClient):
+class RerankerClient:
     """
-    重排序模型客户端（继承 BaseAPIClient）
-
-    继承自 BaseAPIClient，自动获得：
-    - RPM 限制（默认 60 RPM）
-    - 指数退避重试（最多 2 次）
-    - 本地服务检测和代理禁用
+    重排序模型客户端（复用共享 async transport）。
     """
 
     def __init__(self, config: RerankerConfig):
-        """
-        初始化 RerankerClient
-
-        Args:
-            config: RerankerConfig 配置对象
-        """
         self.config = config
         provider = config.provider.lower() if isinstance(config.provider, str) else config.provider.value
 
-        # 获取 rerank 专用 URL
         rerank_url = get_rerank_url(provider, config.base_url)
         self.model = config.model or get_default_model(provider, "reranker")
 
-        # 从完整 URL 中提取 base_url（去掉 /rerank 后缀）
-        # 因为 BaseAPIClient 会自动拼接 endpoint
         if rerank_url.endswith("/rerank"):
-            base_url = rerank_url[:-7]  # 去掉 "/rerank"
+            base_url = rerank_url[:-7]
+            endpoint = "/rerank"
         else:
             base_url = rerank_url.rsplit("/", 1)[0] if "/" in rerank_url else rerank_url
+            endpoint = rerank_url[len(base_url):] if base_url and rerank_url.startswith(base_url) else "/rerank"
 
-        # 保存完整的 rerank URL 供后续使用
+        self.provider = provider
+        self._base_url = base_url
         self._rerank_url = rerank_url
-
-        # 调用父类初始化
-        super().__init__(
-            provider=provider,
-            api_key=config.api_key,
-            base_url=base_url,
-            rpm_limit=DEFAULT_RERANKER_RPM_LIMIT,
-            timeout=30.0,
-            max_retries=DEFAULT_RERANKER_MAX_RETRIES
-        )
+        self._endpoint = endpoint or "/rerank"
+        self._timeout = 30.0
+        self._rpm_limiter = RPMLimiter(DEFAULT_RERANKER_RPM_LIMIT)
+        self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_RERANKER_MAX_RETRIES)
 
         logger.info(f"RerankerClient 初始化: provider={provider}, rerank_url={self._rerank_url}")
+
+    async def close(self):
+        return None
+
+    async def _enforce_rpm_limit(self):
+        await self._rpm_limiter.wait()
 
     async def rerank(
         self,
@@ -67,17 +57,6 @@ class RerankerClient(BaseAPIClient):
         documents: List[Dict],
         top_k: Optional[int] = None
     ) -> List[Dict]:
-        """
-        对文档进行重排序
-
-        Args:
-            query: 查询文本
-            documents: 待排序的文档列表
-            top_k: 返回数量
-
-        Returns:
-            List[Dict]: 重排序后的文档列表
-        """
         if not documents:
             return []
 
@@ -86,11 +65,9 @@ class RerankerClient(BaseAPIClient):
 
         top_k = top_k or self.config.top_k
 
-        # 提取文档文本
         doc_texts = []
         for doc in documents:
             if isinstance(doc, dict):
-                # 尝试不同的字段名
                 text = (
                     doc.get("page_summary") or
                     doc.get("document") or
@@ -104,24 +81,21 @@ class RerankerClient(BaseAPIClient):
                 doc_texts.append(str(doc))
 
         try:
-            # 使用父类的 _call_api 方法（带重试和 RPM 限制）
-            # 但由于 rerank API 端点格式特殊，这里直接使用完整 URL
             await self._enforce_rpm_limit()
-
-            response = await self.client.post(
-                self._rerank_url,
-                headers=self._get_headers(),
-                json={
-                    "model": self.model,
-                    "query": query,
-                    "documents": doc_texts,
-                    "top_n": min(top_k, len(documents))
-                }
+            result = await self._transport.rerank(
+                UnifiedRerankRequest(
+                    provider=self.provider,
+                    api_key=self.config.api_key,
+                    model=self.model,
+                    query=query,
+                    documents=doc_texts,
+                    top_n=min(top_k, len(documents)),
+                    base_url=self._base_url or None,
+                    timeout=self._timeout,
+                    endpoint=self._endpoint,
+                )
             )
-            response.raise_for_status()
-            result = response.json()
 
-            # 按重排序结果重新排列文档
             reranked = []
             for item in result.get("results", []):
                 idx = item.get("index", 0)
@@ -134,11 +108,9 @@ class RerankerClient(BaseAPIClient):
 
         except Exception as e:
             logger.error(f"重排序失败: {e}")
-            # 降级返回原始结果
             return documents[:top_k]
 
     async def test_connection(self) -> bool:
-        """测试连接"""
         try:
             result = await self.rerank(
                 query="测试",

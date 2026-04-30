@@ -135,6 +135,36 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIn("你好", printed)
         self.assertIn("，世界", printed)
 
+    def test_sync_chat_transport_merges_temperature_and_request_overrides_as_top_level_fields(self) -> None:
+        fake_response = mock.Mock()
+        fake_response.choices = [mock.Mock(message=mock.Mock(content="测试成功"))]
+
+        create_mock = mock.Mock(return_value=fake_response)
+        fake_client = mock.Mock()
+        fake_client.chat.completions.create = create_mock
+
+        transport = OpenAICompatibleChatTransport()
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            temperature=0.25,
+            request_overrides={"max_tokens": 123, "top_p": 0.8},
+        )
+
+        with mock.patch("src.shared.ai_transport.create_openai_client", return_value=fake_client):
+            content = transport.complete(request)
+
+        self.assertEqual(content, "测试成功")
+        create_mock.assert_called_once()
+        kwargs = create_mock.call_args.kwargs
+        self.assertEqual(kwargs["temperature"], 0.25)
+        self.assertEqual(kwargs["max_tokens"], 123)
+        self.assertEqual(kwargs["top_p"], 0.8)
+        self.assertNotIn("extra_body", kwargs)
+
     def test_ai_vision_service_dispatches_supported_provider_through_shared_transport(self) -> None:
         from src.interfaces.vision_interface import call_ai_vision_ocr_service
 
