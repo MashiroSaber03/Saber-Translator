@@ -17,7 +17,6 @@ from . import (
 )
 
 import json
-from collections import defaultdict
 
 from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.translation import _enforce_rpm_limit
@@ -33,10 +32,10 @@ from src.shared.ai_providers import (
     resolve_provider_base_url,
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+from src.shared.openai_options import build_openai_compatible_options
+from src.shared.openai_rate_limits import apply_sync_rpm_limit
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
-_hq_rpm_last_reset_time = defaultdict(lambda: [0.0])
-_hq_rpm_request_count = defaultdict(lambda: [0])
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -105,6 +104,43 @@ def _request_value(data, *keys, default=None):
     return default
 
 
+def _route_openai_options(
+    data,
+    *,
+    force_json_keys=(),
+    use_stream_keys=(),
+    rpm_limit_keys=(),
+    max_retries_keys=(),
+    temperature_keys=(),
+    default_force_json_output=False,
+    default_use_stream=False,
+    default_rpm_limit=0,
+    default_max_retries=0,
+    timeout=None,
+    print_stream_output=False,
+    stream_output_label=None,
+    request_overrides=None,
+    max_retries_maximum=None,
+):
+    return build_openai_compatible_options(
+        data,
+        force_json_keys=force_json_keys,
+        use_stream_keys=use_stream_keys,
+        rpm_limit_keys=rpm_limit_keys,
+        max_retries_keys=max_retries_keys,
+        temperature_keys=temperature_keys,
+        default_force_json_output=default_force_json_output,
+        default_use_stream=default_use_stream,
+        default_rpm_limit=default_rpm_limit,
+        default_max_retries=default_max_retries,
+        timeout=timeout,
+        print_stream_output=print_stream_output,
+        stream_output_label=stream_output_label,
+        request_overrides=request_overrides,
+        max_retries_maximum=max_retries_maximum,
+    )
+
+
 def _clamp_int(value, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, int(round(value))))
 
@@ -114,11 +150,11 @@ def _apply_hq_rpm_limit(provider: str, rpm_limit: int) -> None:
         return
 
     normalized_provider = normalize_provider_id(provider) or "unknown"
-    _enforce_rpm_limit(
+    apply_sync_rpm_limit(
+        f"hq_translation:{normalized_provider}",
         rpm_limit,
         f"HQTranslation ({normalized_provider})",
-        _hq_rpm_last_reset_time[normalized_provider],
-        _hq_rpm_request_count[normalized_provider],
+        _enforce_rpm_limit,
     )
 
 
@@ -876,34 +912,20 @@ def route_translate_single_text():
         model_name = _request_value(data, 'model_name', 'model', 'modelName')
         model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
         prompt_content = _request_value(data, 'prompt_content', 'promptContent')
-        use_json_format = bool(_request_value(data, 'use_json_format', 'useJsonFormat', default=False))
         custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
-
-        # --- 新增：获取 rpm 参数 ---
-        rpm_limit_translation = _request_value(
+        openai_options = _route_openai_options(
             data,
-            'rpm_limit_translation',
-            'rpmLimitTranslation',
-            default=constants.DEFAULT_rpm_TRANSLATION,
+            force_json_keys=('use_json_format', 'useJsonFormat'),
+            rpm_limit_keys=('rpm_limit_translation', 'rpmLimitTranslation'),
+            max_retries_keys=('max_retries', 'maxRetries'),
+            default_force_json_output=False,
+            default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
+            default_max_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+            timeout=30.0,
         )
-        try:
-            rpm_limit_translation = int(rpm_limit_translation)
-            if rpm_limit_translation < 0: rpm_limit_translation = 0
-        except (ValueError, TypeError):
-            rpm_limit_translation = constants.DEFAULT_rpm_TRANSLATION
-        # --------------------------
-        max_retries = _request_value(
-            data,
-            'max_retries',
-            'maxRetries',
-            default=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-        )
-        try:
-            max_retries = int(max_retries)
-            if max_retries < 0:
-                max_retries = 0
-        except (ValueError, TypeError):
-            max_retries = constants.DEFAULT_TRANSLATION_MAX_RETRIES
+        use_json_format = openai_options.request.force_json_output
+        rpm_limit_translation = openai_options.execution.rpm_limit
+        max_retries = openai_options.execution.max_retries
 
         if not all([original_text, target_language, model_provider]):
             return jsonify({'error': '缺少必要的参数 (原文、目标语言、服务商)'}), 400
@@ -939,6 +961,7 @@ def route_translate_single_text():
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 rpm_limit_translation=rpm_limit_translation, # <--- 传递rpm参数
                 max_retries=max_retries,
+                openai_options=openai_options,
             )
             
             return jsonify({
@@ -982,26 +1005,26 @@ def hq_translate_batch():
         is_proofreading = data.get('isProofreading', False)
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         
-        # 可选参数
-        force_json_output = bool(_request_value(data, 'force_json_output', 'forceJsonOutput', default=False))
-        use_stream = bool(_request_value(data, 'use_stream', 'useStream', default=False))
-        rpm_limit = _request_value(data, 'rpm_limit', 'rpmLimit', default=0)
-        try:
-            rpm_limit = int(rpm_limit)
-            if rpm_limit < 0:
-                rpm_limit = 0
-        except (ValueError, TypeError):
-            rpm_limit = 0
-        
-        # 重试参数
-        max_retries = _request_value(data, 'max_retries', 'maxRetries', default=2)
-        try:
-            max_retries = int(max_retries)
-            if max_retries < 0: max_retries = 0
-            if max_retries > 10: max_retries = 10  # 最大限制10次
-        except (ValueError, TypeError):
-            max_retries = 2
-        
+        openai_options = _route_openai_options(
+            data,
+            force_json_keys=('force_json_output', 'forceJsonOutput'),
+            use_stream_keys=('use_stream', 'useStream'),
+            rpm_limit_keys=('rpm_limit', 'rpmLimit'),
+            max_retries_keys=('max_retries', 'maxRetries'),
+            default_force_json_output=False,
+            default_use_stream=False,
+            default_rpm_limit=0,
+            default_max_retries=2,
+            timeout=None,
+            max_retries_maximum=10,
+            print_stream_output=False,
+            stream_output_label='AI校对' if is_proofreading else '高质量翻译',
+        )
+        force_json_output = openai_options.request.force_json_output
+        use_stream = openai_options.execution.use_stream
+        rpm_limit = openai_options.execution.rpm_limit
+        max_retries = openai_options.execution.max_retries
+
         logger.info(
             f"高质量翻译批量请求: provider={provider}, model={model_name}, "
             f"force_json={force_json_output}, stream={use_stream}, "
@@ -1092,17 +1115,15 @@ def hq_translate_batch():
             # === 第一阶段：API 调用 ===
             try:
                 _apply_hq_rpm_limit(provider, rpm_limit)
+                openai_options.print_stream_output = use_stream
+                openai_options.timeout = 300.0 if use_stream else 120.0
                 content = _hq_chat_transport.complete(
                     UnifiedChatRequest(
                         provider=provider,
                         api_key=api_key,
                         model=model_name,
                         base_url=base_url,
-                        timeout=300.0 if use_stream else 120.0,
-                        use_stream=use_stream,
-                        print_stream_output=use_stream,
-                        stream_output_label='AI校对' if is_proofreading else '高质量翻译',
-                        response_format={'type': 'json_object'} if force_json_output else None,
+                        openai_options=openai_options,
                         messages=messages,
                     )
                 )
@@ -1329,9 +1350,15 @@ def ocr_single_bubble():
             ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
             custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
             ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
-            use_json_format_for_ai_vision = bool(
-                _request_value(data, 'use_json_format_for_ai_vision', 'ai_vision_use_json_format', default=False)
+            ai_vision_openai_options = _route_openai_options(
+                data,
+                force_json_keys=('use_json_format_for_ai_vision', 'ai_vision_use_json_format'),
+                rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
+                default_force_json_output=False,
+                default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
+                timeout=120.0,
             )
+            use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
 
             needs_textlines = enable_hybrid_ocr or ocr_engine == constants.OCR_ENGINE_48PX
             if needs_textlines and not bubble_textlines_local:
@@ -1368,6 +1395,8 @@ def ocr_single_bubble():
                 custom_ai_vision_base_url=custom_ai_vision_base_url,
                 use_json_format_for_ai_vision=use_json_format_for_ai_vision,
                 ai_vision_min_image_size=ai_vision_min_image_size,
+                rpm_limit_ai_vision=ai_vision_openai_options.execution.rpm_limit,
+                ai_vision_openai_options=ai_vision_openai_options,
                 textlines_per_bubble=[bubble_textlines_local] if bubble_textlines_local else None,
                 enable_hybrid_ocr=enable_hybrid_ocr,
                 secondary_ocr_engine=secondary_ocr_engine,

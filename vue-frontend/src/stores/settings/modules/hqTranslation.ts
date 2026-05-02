@@ -60,6 +60,14 @@ export function useHqTranslationSettings(
    */
   function updateHqTranslation(updates: Partial<HqTranslationSettings>): void {
     Object.assign(settings.value.hqTranslation, updates)
+    if (updates.rpmLimit !== undefined) settings.value.hqTranslation.openaiOptions.execution.rpmLimit = updates.rpmLimit
+    if (updates.maxRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.maxRetries = updates.maxRetries
+    if (updates.forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
+    if (updates.useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = updates.useStream
+    settings.value.hqTranslation.rpmLimit = settings.value.hqTranslation.openaiOptions.execution.rpmLimit
+    settings.value.hqTranslation.maxRetries = settings.value.hqTranslation.openaiOptions.execution.maxRetries
+    settings.value.hqTranslation.forceJsonOutput = settings.value.hqTranslation.openaiOptions.request.forceJsonOutput
+    settings.value.hqTranslation.useStream = settings.value.hqTranslation.openaiOptions.execution.useStream
     saveToStorage()
   }
 
@@ -68,7 +76,7 @@ export function useHqTranslationSettings(
    * @param useStream - 是否使用流式调用
    */
   function setHqUseStream(useStream: boolean): void {
-    settings.value.hqTranslation.useStream = useStream
+    settings.value.hqTranslation.openaiOptions.execution.useStream = useStream
     saveToStorage()
   }
 
@@ -77,7 +85,7 @@ export function useHqTranslationSettings(
    * @param forceJson - 是否强制JSON输出
    */
   function setHqForceJsonOutput(forceJson: boolean): void {
-    settings.value.hqTranslation.forceJsonOutput = forceJson
+    settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJson
     saveToStorage()
   }
 
@@ -98,10 +106,7 @@ export function useHqTranslationSettings(
       modelName: settings.value.hqTranslation.modelName,
       customBaseUrl: settings.value.hqTranslation.customBaseUrl,
       batchSize: settings.value.hqTranslation.batchSize,
-      rpmLimit: settings.value.hqTranslation.rpmLimit,
-      maxRetries: settings.value.hqTranslation.maxRetries,
-      forceJsonOutput: settings.value.hqTranslation.forceJsonOutput,
-      useStream: settings.value.hqTranslation.useStream,
+      openaiOptions: JSON.parse(JSON.stringify(settings.value.hqTranslation.openaiOptions)),
       prompt: settings.value.hqTranslation.prompt
     }
 
@@ -124,10 +129,7 @@ export function useHqTranslationSettings(
       if (cached.modelName !== undefined) settings.value.hqTranslation.modelName = cached.modelName
       if (cached.customBaseUrl !== undefined) settings.value.hqTranslation.customBaseUrl = cached.customBaseUrl
       if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
-      if (cached.rpmLimit !== undefined) settings.value.hqTranslation.rpmLimit = cached.rpmLimit
-      if (cached.maxRetries !== undefined) settings.value.hqTranslation.maxRetries = cached.maxRetries
-      if (cached.forceJsonOutput !== undefined) settings.value.hqTranslation.forceJsonOutput = cached.forceJsonOutput
-      if (cached.useStream !== undefined) settings.value.hqTranslation.useStream = cached.useStream
+      if (cached.openaiOptions !== undefined) settings.value.hqTranslation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
       console.log(`[Settings] 恢复高质量翻译服务商配置: ${provider}`, cached)
     } else {

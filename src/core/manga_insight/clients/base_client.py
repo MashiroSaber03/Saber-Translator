@@ -9,65 +9,16 @@ Manga Insight API 客户端基类
 """
 
 import logging
-import time
 from typing import Dict, Optional
 
 import httpx
 
 from .provider_registry import get_base_url
+from src.shared.openai_rate_limits import SharedRPMLimiter
 
 logger = logging.getLogger("MangaInsight.BaseClient")
 
-
-class RPMLimiter:
-    """
-    RPM (Requests Per Minute) 限制器
-
-    统一的请求频率控制，避免触发 API 限流。
-    """
-
-    def __init__(self, rpm_limit: int = 0):
-        """
-        初始化 RPM 限制器
-
-        Args:
-            rpm_limit: 每分钟最大请求数，0 或负数表示不限制
-        """
-        self.rpm_limit = rpm_limit
-        self._last_reset = 0.0
-        self._count = 0
-
-    async def wait(self):
-        """
-        等待直到可以发送请求
-
-        如果已达到 RPM 限制，会阻塞等待直到下一分钟。
-        """
-        if self.rpm_limit <= 0:
-            return
-
-        current_time = time.time()
-
-        # 重置计数器（每分钟）
-        if current_time - self._last_reset >= 60:
-            self._last_reset = current_time
-            self._count = 0
-
-        # 达到限制，等待
-        if self._count >= self.rpm_limit:
-            wait_time = 60 - (current_time - self._last_reset)
-            if wait_time > 0:
-                logger.info(f"RPM 限制: 等待 {wait_time:.1f} 秒")
-                await asyncio.sleep(wait_time)
-                self._last_reset = time.time()
-                self._count = 0
-
-        self._count += 1
-
-    def reset(self):
-        """重置计数器"""
-        self._last_reset = 0.0
-        self._count = 0
+RPMLimiter = SharedRPMLimiter
 
 
 class BaseAPIClient:

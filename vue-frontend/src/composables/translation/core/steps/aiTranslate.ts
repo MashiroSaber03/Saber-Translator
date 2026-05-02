@@ -14,6 +14,7 @@
 import { hqTranslateBatch } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ImageData } from '@/types/image'
+import type { OpenAICompatibleOptions } from '@/types/settings'
 
 // ============================================================
 // 类型定义
@@ -52,6 +53,20 @@ interface TranslationJsonData {
         translated: string
         textDirection: string
     }>
+}
+
+function toApiOpenAiOptions(options: OpenAICompatibleOptions) {
+    return {
+        request: {
+            force_json_output: options.request.forceJsonOutput,
+            ...(options.request.temperature !== undefined ? { temperature: options.request.temperature } : {})
+        },
+        execution: {
+            use_stream: options.execution.useStream,
+            rpm_limit: options.execution.rpmLimit,
+            max_retries: options.execution.maxRetries
+        }
+    }
 }
 
 // ============================================================
@@ -120,9 +135,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         ? '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。'
         : '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。'
     const requestProvider = isProofread ? (roundConfig?.provider ?? '') : (hqConfig.provider ?? '')
-    const requestMaxRetries = isProofread
-        ? (roundConfig?.maxRetries ?? settings.proofreading.maxRetries ?? 2)
-        : (hqConfig.maxRetries ?? 2)
 
     // 4. 调用 API - 第一轮
     const response = await hqTranslateBatch({
@@ -137,15 +149,11 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         systemPrompt,
         isProofreading: isProofread,
         enableDebugLogs: settings.enableVerboseLogs,
-        // 其他参数
-        force_json_output: isProofread ? roundConfig?.forceJsonOutput : hqConfig.forceJsonOutput,
-        use_stream: isProofread ? (roundConfig?.useStream ?? true) : hqConfig.useStream,
-        rpm_limit: isProofread ? roundConfig?.rpmLimit : hqConfig.rpmLimit,
-        max_retries: requestMaxRetries
+        openai_options: toApiOpenAiOptions((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
     })
 
     // 5. 解析结果
-    const forceJson = isProofread ? (roundConfig?.forceJsonOutput || false) : hqConfig.forceJsonOutput
+    const forceJson = isProofread ? (roundConfig?.openaiOptions.request.forceJsonOutput || false) : hqConfig.openaiOptions.request.forceJsonOutput
     const translatedData = parseHqResponse(response, forceJson)
 
     // 6. 校对模式可能有多轮
@@ -166,14 +174,10 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 systemPrompt,
                 isProofreading: true,
                 enableDebugLogs: settings.enableVerboseLogs,
-                // 其他参数
-                force_json_output: round.forceJsonOutput,
-                use_stream: round.useStream ?? true,
-                rpm_limit: round.rpmLimit,
-                max_retries: round.maxRetries ?? settings.proofreading.maxRetries ?? 2
+                openai_options: toApiOpenAiOptions(round.openaiOptions)
             })
 
-            const roundResult = parseHqResponse(roundResponse, round.forceJsonOutput)
+            const roundResult = parseHqResponse(roundResponse, round.openaiOptions.request.forceJsonOutput)
             if (roundResult) {
                 currentData = roundResult
             }

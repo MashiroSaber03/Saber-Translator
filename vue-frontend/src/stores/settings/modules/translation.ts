@@ -59,6 +59,12 @@ export function useTranslationSettings(
    */
   function updateTranslationService(updates: Partial<TranslationServiceSettings>): void {
     Object.assign(settings.value.translation, updates)
+    if (updates.rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = updates.rpmLimit
+    if (updates.maxRetries !== undefined) settings.value.translation.openaiOptions.execution.maxRetries = updates.maxRetries
+    if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+    settings.value.translation.rpmLimit = settings.value.translation.openaiOptions.execution.rpmLimit
+    settings.value.translation.maxRetries = settings.value.translation.openaiOptions.execution.maxRetries
+    settings.value.translation.isJsonMode = settings.value.translation.openaiOptions.request.forceJsonOutput
     saveToStorage()
   }
 
@@ -78,7 +84,7 @@ export function useTranslationSettings(
    */
   function setTranslatePromptMode(isJsonMode: boolean): void {
     // 更新模式状态
-    settings.value.translation.isJsonMode = isJsonMode
+    settings.value.translation.openaiOptions.request.forceJsonOutput = isJsonMode
 
     // 根据翻译模式和提示词模式，从对应的存储字段加载提示词
     const isSingleMode = settings.value.translation.translationMode === 'single'
@@ -114,9 +120,7 @@ export function useTranslationSettings(
       apiKey: settings.value.translation.apiKey,
       modelName: settings.value.translation.modelName,
       customBaseUrl: settings.value.translation.customBaseUrl,
-      rpmLimit: settings.value.translation.rpmLimit,
-      maxRetries: settings.value.translation.maxRetries,
-      isJsonMode: settings.value.translation.isJsonMode,
+      openaiOptions: JSON.parse(JSON.stringify(settings.value.translation.openaiOptions)),
       translationMode: settings.value.translation.translationMode
     }
 
@@ -139,9 +143,7 @@ export function useTranslationSettings(
       if (cached.apiKey !== undefined) settings.value.translation.apiKey = cached.apiKey
       if (cached.modelName !== undefined) settings.value.translation.modelName = cached.modelName
       if (cached.customBaseUrl !== undefined) settings.value.translation.customBaseUrl = cached.customBaseUrl
-      if (cached.rpmLimit !== undefined) settings.value.translation.rpmLimit = cached.rpmLimit
-      if (cached.maxRetries !== undefined) settings.value.translation.maxRetries = cached.maxRetries
-      if (cached.isJsonMode !== undefined) settings.value.translation.isJsonMode = cached.isJsonMode
+      if (cached.openaiOptions !== undefined) settings.value.translation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
       console.log(`[Settings] 恢复翻译服务商配置: ${provider}`, cached)
     } else {

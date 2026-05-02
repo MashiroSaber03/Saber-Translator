@@ -40,7 +40,10 @@ class RerankerClient:
         self._rerank_url = rerank_url
         self._endpoint = endpoint or "/rerank"
         self._timeout = 30.0
-        self._rpm_limiter = RPMLimiter(DEFAULT_RERANKER_RPM_LIMIT)
+        self._rpm_limiter = RPMLimiter(
+            DEFAULT_RERANKER_RPM_LIMIT,
+            bucket_id=f"rerank:{provider}",
+        )
         self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_RERANKER_MAX_RETRIES)
 
         logger.info(f"RerankerClient 初始化: provider={provider}, rerank_url={self._rerank_url}")

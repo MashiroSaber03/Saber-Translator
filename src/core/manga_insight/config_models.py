@@ -10,6 +10,11 @@ from typing import Optional, List, Dict, Any
 from enum import Enum
 
 from .config.serialization import SerializableMixin
+from src.shared.openai_options import (
+    OpenAICompatibleExecutionOptions,
+    OpenAICompatibleOptions,
+    OpenAICompatibleRequestOptions,
+)
 
 
 class APIProvider(Enum):
@@ -52,11 +57,59 @@ class VLMConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
+    openai_options: OpenAICompatibleOptions = field(default_factory=lambda: OpenAICompatibleOptions(
+        request=OpenAICompatibleRequestOptions(
+            force_json_output=False,
+            temperature=0.3,
+        ),
+        execution=OpenAICompatibleExecutionOptions(
+            use_stream=True,
+            rpm_limit=10,
+            max_retries=3,
+        ),
+    ))
     rpm_limit: int = 10
     temperature: float = 0.3
     force_json: bool = False  # 强制 JSON 输出（OpenAI 兼容 API）
     use_stream: bool = True  # 使用流式请求（避免超时）
     image_max_size: int = 0  # 图片最大边长（像素），0 表示不压缩
+
+    def __post_init__(self):
+        default_options = OpenAICompatibleOptions(
+            request=OpenAICompatibleRequestOptions(
+                force_json_output=False,
+                temperature=0.3,
+            ),
+            execution=OpenAICompatibleExecutionOptions(
+                use_stream=True,
+                rpm_limit=10,
+                max_retries=3,
+            ),
+        )
+        legacy_override = (
+            self.rpm_limit != 10
+            or self.temperature != 0.3
+            or self.force_json is not False
+            or self.use_stream is not True
+        )
+        if self.openai_options.to_dict() == default_options.to_dict() and legacy_override:
+            self.openai_options = OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    force_json_output=self.force_json,
+                    temperature=self.temperature,
+                ),
+                execution=OpenAICompatibleExecutionOptions(
+                    use_stream=self.use_stream,
+                    rpm_limit=self.rpm_limit,
+                    max_retries=3,
+                ),
+            )
+        if self.openai_options.request.temperature is None:
+            self.openai_options.request.temperature = self.temperature
+        self.rpm_limit = self.openai_options.execution.rpm_limit
+        self.temperature = self.openai_options.request.temperature if self.openai_options.request.temperature is not None else self.temperature
+        self.force_json = self.openai_options.request.force_json_output
+        self.use_stream = self.openai_options.execution.use_stream
 
 
 @dataclass
@@ -67,7 +120,35 @@ class ChatLLMConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
+    openai_options: OpenAICompatibleOptions = field(default_factory=lambda: OpenAICompatibleOptions(
+        request=OpenAICompatibleRequestOptions(),
+        execution=OpenAICompatibleExecutionOptions(
+            use_stream=True,
+            rpm_limit=30,
+            max_retries=3,
+        ),
+    ))
     use_stream: bool = True  # 使用流式请求（避免超时）
+
+    def __post_init__(self):
+        default_options = OpenAICompatibleOptions(
+            request=OpenAICompatibleRequestOptions(),
+            execution=OpenAICompatibleExecutionOptions(
+                use_stream=True,
+                rpm_limit=30,
+                max_retries=3,
+            ),
+        )
+        if self.openai_options.to_dict() == default_options.to_dict() and self.use_stream is not True:
+            self.openai_options = OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(),
+                execution=OpenAICompatibleExecutionOptions(
+                    use_stream=self.use_stream,
+                    rpm_limit=30,
+                    max_retries=3,
+                ),
+            )
+        self.use_stream = self.openai_options.execution.use_stream
 
 
 @dataclass

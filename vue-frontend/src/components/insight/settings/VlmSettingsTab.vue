@@ -42,10 +42,10 @@ const provider = ref(insightStore.config.vlm.provider)
 const apiKey = ref(insightStore.config.vlm.apiKey)
 const model = ref(insightStore.config.vlm.model)
 const baseUrl = ref(insightStore.config.vlm.baseUrl)
-const rpmLimit = ref(insightStore.config.vlm.rpmLimit)
-const temperature = ref(insightStore.config.vlm.temperature)
-const forceJson = ref(insightStore.config.vlm.forceJson)
-const useStream = ref(insightStore.config.vlm.useStream)
+const rpmLimit = ref(insightStore.config.vlm.openaiOptions.execution.rpmLimit)
+const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature)
+const forceJson = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
+const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
 const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize)
 
 // ============================================================
@@ -66,10 +66,10 @@ function onProviderChange(): void {
     insightStore.config.vlm.apiKey = apiKey.value
     insightStore.config.vlm.model = model.value
     insightStore.config.vlm.baseUrl = baseUrl.value
-    insightStore.config.vlm.rpmLimit = rpmLimit.value
-    insightStore.config.vlm.temperature = temperature.value
-    insightStore.config.vlm.forceJson = forceJson.value
-    insightStore.config.vlm.useStream = useStream.value
+    insightStore.config.vlm.openaiOptions.execution.rpmLimit = rpmLimit.value
+    insightStore.config.vlm.openaiOptions.request.temperature = temperature.value
+    insightStore.config.vlm.openaiOptions.request.forceJsonOutput = forceJson.value
+    insightStore.config.vlm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.vlm.imageMaxSize = imageMaxSize.value
   }
   
@@ -78,10 +78,10 @@ function onProviderChange(): void {
   apiKey.value = insightStore.config.vlm.apiKey
   model.value = insightStore.config.vlm.model
   baseUrl.value = insightStore.config.vlm.baseUrl
-  rpmLimit.value = insightStore.config.vlm.rpmLimit
-  temperature.value = insightStore.config.vlm.temperature
-  forceJson.value = insightStore.config.vlm.forceJson
-  useStream.value = insightStore.config.vlm.useStream
+  rpmLimit.value = insightStore.config.vlm.openaiOptions.execution.rpmLimit
+  temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
+  forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
   
   if (!model.value) {
@@ -168,10 +168,17 @@ function getConfig() {
     apiKey: apiKey.value,
     model: model.value,
     baseUrl: provider.value === 'custom' ? baseUrl.value : '',
-    rpmLimit: rpmLimit.value,
-    temperature: temperature.value,
-    forceJson: forceJson.value,
-    useStream: useStream.value,
+    openaiOptions: {
+      request: {
+        forceJsonOutput: forceJson.value,
+        temperature: temperature.value
+      },
+      execution: {
+        useStream: useStream.value,
+        rpmLimit: rpmLimit.value,
+        maxRetries: insightStore.config.vlm.openaiOptions.execution.maxRetries
+      }
+    },
     imageMaxSize: imageMaxSize.value
   }
 }
@@ -182,10 +189,10 @@ function syncFromStore(): void {
   apiKey.value = insightStore.config.vlm.apiKey
   model.value = insightStore.config.vlm.model
   baseUrl.value = insightStore.config.vlm.baseUrl
-  rpmLimit.value = insightStore.config.vlm.rpmLimit
-  temperature.value = insightStore.config.vlm.temperature
-  forceJson.value = insightStore.config.vlm.forceJson
-  useStream.value = insightStore.config.vlm.useStream
+  rpmLimit.value = insightStore.config.vlm.openaiOptions.execution.rpmLimit
+  temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
+  forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
 }
 

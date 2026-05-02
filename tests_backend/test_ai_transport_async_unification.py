@@ -1,6 +1,11 @@
 import unittest
 from unittest import mock
 
+from src.shared.openai_options import (
+    OpenAICompatibleOptions,
+    OpenAICompatibleRequestOptions,
+)
+
 
 class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_async_chat_transport_builds_same_openai_body_shape_as_sync_transport(self) -> None:
@@ -32,9 +37,13 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
             model="gpt-test",
             messages=[{"role": "user", "content": "hello"}],
             base_url="https://example.com/v1",
-            temperature=0.35,
-            response_format={"type": "json_object"},
-            request_overrides={"max_tokens": 222},
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    force_json_output=True,
+                    temperature=0.35,
+                ),
+                request_overrides={"max_tokens": 222},
+            ),
         )
 
         fake_client = FakeAsyncClient()

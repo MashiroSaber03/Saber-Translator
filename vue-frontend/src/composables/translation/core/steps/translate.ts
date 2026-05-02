@@ -55,7 +55,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
             try {
                 // 固定使用逐气泡翻译的提示词
-                const promptContent = settings.translation.isJsonMode
+                const promptContent = settings.translation.openaiOptions.request.forceJsonOutput
                     ? settings.translation.singleJsonPrompt
                     : settings.translation.singleNormalPrompt
 
@@ -67,9 +67,16 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     custom_base_url: settings.translation.customBaseUrl,
                     target_language: settings.targetLanguage,
                     prompt_content: promptContent,
-                    use_json_format: settings.translation.isJsonMode,
-                    rpm_limit_translation: settings.translation.rpmLimit,
-                    max_retries: settings.translation.maxRetries
+                    openai_options: {
+                        request: {
+                            force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
+                        },
+                        execution: {
+                            use_stream: settings.translation.openaiOptions.execution.useStream,
+                            rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+                            max_retries: settings.translation.openaiOptions.execution.maxRetries
+                        }
+                    }
                 })
 
                 if (response.success && response.data) {
@@ -89,8 +96,16 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                         custom_base_url: settings.translation.customBaseUrl,
                         target_language: settings.targetLanguage,
                         prompt_content: settings.textboxPrompt,
-                        rpm_limit_translation: settings.translation.rpmLimit,
-                        max_retries: settings.translation.maxRetries
+                        openai_options: {
+                            request: {
+                                force_json_output: false
+                            },
+                            execution: {
+                                use_stream: settings.translation.openaiOptions.execution.useStream,
+                                rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+                                max_retries: settings.translation.openaiOptions.execution.maxRetries
+                            }
+                        }
                     })
 
                     if (textboxResponse.success && textboxResponse.data) {
@@ -131,9 +146,16 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             prompt_content: settings.translatePrompt,
             textbox_prompt_content: settings.textboxPrompt,
             use_textbox_prompt: settings.useTextboxPrompt,
-            rpm_limit: settings.translation.rpmLimit,
-            max_retries: settings.translation.maxRetries,
-            use_json_format: settings.translation.isJsonMode
+            openai_options: {
+                request: {
+                    force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
+                },
+                execution: {
+                    use_stream: settings.translation.openaiOptions.execution.useStream,
+                    rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+                    max_retries: settings.translation.openaiOptions.execution.maxRetries
+                }
+            }
         })
 
         if (!response.success) {

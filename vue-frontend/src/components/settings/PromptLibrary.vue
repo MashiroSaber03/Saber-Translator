@@ -243,7 +243,7 @@ function handleTypeChange() {
   
   // 同步模式状态
   if (selectedType.value === 'translate') {
-    selectedMode.value = settingsStore.settings.translation.isJsonMode ? 'json' : 'normal'
+    selectedMode.value = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal'
   } else if (selectedType.value === 'ai_vision_ocr') {
     selectedMode.value = settingsStore.settings.aiVisionOcr.promptMode || 'normal'
   } else {
@@ -280,7 +280,7 @@ function handleModeChange() {
 // 初始化
 onMounted(() => {
   // 同步初始模式状态
-  selectedMode.value = settingsStore.settings.translation.isJsonMode ? 'json' : 'normal'
+  selectedMode.value = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal'
   loadPromptList()
 })
 </script>

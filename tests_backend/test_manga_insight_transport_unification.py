@@ -3,6 +3,37 @@ from unittest import mock
 
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chat_client_reads_nested_openai_options_from_config(self) -> None:
+        from src.core.manga_insight.config_models import ChatLLMConfig
+        from src.core.manga_insight.embedding_client import ChatClient
+
+        config = ChatLLMConfig.from_dict(
+            {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model": "chat-model",
+                "base_url": "https://example.com/v1",
+                "openai_options": {
+                    "request": {"temperature": 0.4},
+                    "execution": {"use_stream": False, "rpm_limit": 9, "max_retries": 2},
+                },
+            }
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(return_value="统一回答"),
+        ) as complete_mock:
+            client = ChatClient(config)
+            content = await client.generate("用户问题", system="系统提示")
+
+        self.assertEqual(content, "统一回答")
+        request = complete_mock.call_args.args[0]
+        self.assertEqual(request.openai_options.request.temperature, 0.4)
+        self.assertFalse(request.openai_options.execution.use_stream)
+        self.assertEqual(request.openai_options.execution.rpm_limit, 9)
+        self.assertEqual(client._transport.max_retries, 2)
+
     async def test_chat_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
         from src.core.manga_insight.embedding_client import ChatClient
@@ -134,6 +165,39 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.response_format, {"type": "json_object"})
         self.assertEqual(request.messages[0]["role"], "user")
         self.assertEqual(request.messages[0]["content"][-1], {"type": "text", "text": "分析这页漫画"})
+
+    async def test_vlm_client_reads_nested_openai_options_from_config(self) -> None:
+        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        config = VLMConfig.from_dict(
+            {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model": "vlm-model",
+                "base_url": "https://example.com/v1",
+                "image_max_size": 0,
+                "openai_options": {
+                    "request": {"force_json_output": True, "temperature": 0.2},
+                    "execution": {"use_stream": False, "rpm_limit": 8, "max_retries": 3},
+                },
+            }
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(return_value='{"pages": []}'),
+        ) as complete_mock:
+            client = VLMClient(config, PromptsConfig())
+            content = await client._call_vlm([b"fake-image"], "分析这页漫画")
+
+        self.assertEqual(content, '{"pages": []}')
+        request = complete_mock.call_args.args[0]
+        self.assertTrue(request.openai_options.request.force_json_output)
+        self.assertEqual(request.openai_options.request.temperature, 0.2)
+        self.assertFalse(request.openai_options.execution.use_stream)
+        self.assertEqual(request.openai_options.execution.rpm_limit, 8)
+        self.assertEqual(client._transport.max_retries, 0)
 
     async def test_vlm_client_retries_non_retryable_transport_failures_at_outer_layer(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig

@@ -17,6 +17,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
   TranslationSettings,
+  OpenAICompatibleOptions,
   OcrEngine,
   TextDetector,
   TranslationProvider,
@@ -63,6 +64,21 @@ export const useSettingsStore = defineStore('settings', () => {
       return 'paddleocr_vl'
     }
     return 'normal'
+  }
+
+  function createOpenAiOptions(overrides?: Partial<OpenAICompatibleOptions>): OpenAICompatibleOptions {
+    return {
+      request: {
+        forceJsonOutput: false,
+        ...overrides?.request
+      },
+      execution: {
+        useStream: false,
+        rpmLimit: 0,
+        maxRetries: 0,
+        ...overrides?.execution
+      }
+    }
   }
 
   // ============================================================
@@ -200,9 +216,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
         const t = settings.value.translation
         if (t.translationMode === 'single') {
-          settings.value.translatePrompt = t.isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+          settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
         } else {
-          settings.value.translatePrompt = t.isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+          settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
         }
 
         console.log('已从 localStorage 加载设置（textStyle 使用默认值）')
@@ -286,19 +302,59 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.auxYoloOverlapThreshold = Number(settings.value.auxYoloOverlapThreshold)
     }
 
-    const tr = settings.value.translation
-    tr.rpmLimit = parseNumberOrFallback(tr.rpmLimit, DEFAULT_RPM_TRANSLATION)
-    tr.maxRetries = parseNumberOrFallback(tr.maxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+    const tr = settings.value.translation as typeof settings.value.translation & Record<string, unknown>
+    tr.openaiOptions = createOpenAiOptions(tr.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
+    tr.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
+      tr.openaiOptions.execution.rpmLimit ?? tr.rpmLimit,
+      DEFAULT_RPM_TRANSLATION
+    )
+    tr.openaiOptions.execution.maxRetries = parseNumberOrFallback(
+      tr.openaiOptions.execution.maxRetries ?? tr.maxRetries,
+      DEFAULT_TRANSLATION_MAX_RETRIES
+    )
+    tr.openaiOptions.request.forceJsonOutput = Boolean(
+      tr.openaiOptions.request.forceJsonOutput ?? tr.isJsonMode ?? false
+    )
+    tr.rpmLimit = tr.openaiOptions.execution.rpmLimit
+    tr.maxRetries = tr.openaiOptions.execution.maxRetries
+    tr.isJsonMode = tr.openaiOptions.request.forceJsonOutput
 
-    const hq = settings.value.hqTranslation
+    const hq = settings.value.hqTranslation as typeof settings.value.hqTranslation & Record<string, unknown>
     hq.batchSize = Number(hq.batchSize) || 10
-    hq.rpmLimit = parseNumberOrFallback(hq.rpmLimit, 7)
-    hq.maxRetries = parseNumberOrFallback(hq.maxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+    hq.openaiOptions = createOpenAiOptions(hq.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
+    hq.openaiOptions.execution.useStream = Boolean(
+      hq.openaiOptions.execution.useStream ?? hq.useStream ?? true
+    )
+    hq.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
+      hq.openaiOptions.execution.rpmLimit ?? hq.rpmLimit,
+      7
+    )
+    hq.openaiOptions.execution.maxRetries = parseNumberOrFallback(
+      hq.openaiOptions.execution.maxRetries ?? hq.maxRetries,
+      DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+    )
+    hq.openaiOptions.request.forceJsonOutput = Boolean(
+      hq.openaiOptions.request.forceJsonOutput ?? hq.forceJsonOutput ?? false
+    )
+    hq.rpmLimit = hq.openaiOptions.execution.rpmLimit
+    hq.maxRetries = hq.openaiOptions.execution.maxRetries
+    hq.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
+    hq.useStream = hq.openaiOptions.execution.useStream
 
-    const av = settings.value.aiVisionOcr
-    av.rpmLimit = parseNumberOrFallback(av.rpmLimit, DEFAULT_RPM_AI_VISION_OCR)
-    av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt, av.isJsonMode)
-    av.isJsonMode = av.promptMode === 'json'
+    const av = settings.value.aiVisionOcr as typeof settings.value.aiVisionOcr & Record<string, unknown>
+    av.openaiOptions = createOpenAiOptions(av.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
+    av.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
+      av.openaiOptions.execution.rpmLimit ?? av.rpmLimit,
+      DEFAULT_RPM_AI_VISION_OCR
+    )
+    av.openaiOptions.execution.maxRetries = parseNumberOrFallback(
+      av.openaiOptions.execution.maxRetries,
+      DEFAULT_TRANSLATION_MAX_RETRIES
+    )
+    av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt, av.openaiOptions.request.forceJsonOutput)
+    av.openaiOptions.request.forceJsonOutput = av.promptMode === 'json'
+    av.rpmLimit = av.openaiOptions.execution.rpmLimit
+    av.isJsonMode = av.openaiOptions.request.forceJsonOutput
     // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
     if (av.minImageSize === undefined || av.minImageSize === null || isNaN(Number(av.minImageSize))) {
       av.minImageSize = DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
@@ -325,6 +381,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const pr = settings.value.proofreading
     pr.maxRetries = parseNumberOrFallback(pr.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
+    pr.rounds = pr.rounds.map(round => ({
+      ...round,
+      rpmLimit: round.openaiOptions.execution.rpmLimit,
+      maxRetries: round.openaiOptions.execution.maxRetries,
+      forceJsonOutput: round.openaiOptions.request.forceJsonOutput,
+      useStream: round.openaiOptions.execution.useStream
+    }))
 
     // 迁移旧版服务商名称
     if ((tr.provider as string) === 'baidu') {
@@ -527,6 +590,7 @@ export const useSettingsStore = defineStore('settings', () => {
         const backendSettings = response.settings
         console.log('[Settings] 从后端加载设置:', backendSettings)
         applyBackendSettings(backendSettings)
+        ensureNumericTypes()
 
         // 【复刻原版】左侧边栏文字设置始终使用默认值，不从后端恢复
         const defaults = createDefaultSettings()
@@ -618,24 +682,21 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.aiVisionOcr.customBaseUrl = backendSettings.customAiVisionBaseUrl as string
     }
     if (backendSettings.rpmAiVisionOcr !== undefined) {
-      settings.value.aiVisionOcr.rpmLimit = parseNum(backendSettings.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR)
+      settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = parseNum(backendSettings.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR)
     }
     if (backendSettings.aiVisionPromptModeSelect === 'json') {
       settings.value.aiVisionOcr.promptMode = 'json'
-      settings.value.aiVisionOcr.isJsonMode = true
     } else if (backendSettings.aiVisionPromptModeSelect === 'paddleocr_vl') {
       settings.value.aiVisionOcr.promptMode = 'paddleocr_vl'
-      settings.value.aiVisionOcr.isJsonMode = false
     } else if (backendSettings.aiVisionPromptModeSelect === 'normal') {
       settings.value.aiVisionOcr.promptMode = 'normal'
-      settings.value.aiVisionOcr.isJsonMode = false
     } else {
       settings.value.aiVisionOcr.promptMode = inferAiVisionPromptMode(
         settings.value.aiVisionOcr.prompt,
-        settings.value.aiVisionOcr.isJsonMode
+        settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput
       )
-      settings.value.aiVisionOcr.isJsonMode = settings.value.aiVisionOcr.promptMode === 'json'
     }
+    settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = settings.value.aiVisionOcr.promptMode === 'json'
     if (backendSettings.aiVisionMinImageSize !== undefined) {
       settings.value.aiVisionOcr.minImageSize = parseNum(backendSettings.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
     }
@@ -677,13 +738,13 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.translation.customBaseUrl = backendSettings.customBaseUrl as string
     }
     if (backendSettings.rpmTranslation !== undefined) {
-      settings.value.translation.rpmLimit = parseNum(backendSettings.rpmTranslation, DEFAULT_RPM_TRANSLATION)
+      settings.value.translation.openaiOptions.execution.rpmLimit = parseNum(backendSettings.rpmTranslation, DEFAULT_RPM_TRANSLATION)
     }
     if (backendSettings.translationMaxRetries !== undefined) {
-      settings.value.translation.maxRetries = parseNum(backendSettings.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+      settings.value.translation.openaiOptions.execution.maxRetries = parseNum(backendSettings.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
     }
     if (backendSettings.translatePromptModeSelect === 'json') {
-      settings.value.translation.isJsonMode = true
+      settings.value.translation.openaiOptions.request.forceJsonOutput = true
     }
     if (backendSettings.translationMode) {
       settings.value.translation.translationMode = backendSettings.translationMode as 'batch' | 'single'
@@ -710,9 +771,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
     const t = settings.value.translation
     if (t.translationMode === 'single') {
-      settings.value.translatePrompt = t.isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+      settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
     } else {
-      settings.value.translatePrompt = t.isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+      settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
     }
     if (backendSettings.enableTextboxPrompt !== undefined) {
       settings.value.useTextboxPrompt = backendSettings.enableTextboxPrompt as boolean
@@ -738,19 +799,19 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.hqTranslation.batchSize = parseNum(backendSettings.hqBatchSize, 3)
     }
     if (backendSettings.hqRpmLimit !== undefined) {
-      settings.value.hqTranslation.rpmLimit = parseNum(backendSettings.hqRpmLimit, 7)
+      settings.value.hqTranslation.openaiOptions.execution.rpmLimit = parseNum(backendSettings.hqRpmLimit, 7)
     }
     if (backendSettings.hqMaxRetries !== undefined) {
-      settings.value.hqTranslation.maxRetries = parseNum(backendSettings.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+      settings.value.hqTranslation.openaiOptions.execution.maxRetries = parseNum(backendSettings.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
     }
     if (backendSettings.hqPrompt) {
       settings.value.hqTranslation.prompt = backendSettings.hqPrompt as string
     }
     if (backendSettings.hqForceJsonOutput !== undefined) {
-      settings.value.hqTranslation.forceJsonOutput = backendSettings.hqForceJsonOutput as boolean
+      settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = backendSettings.hqForceJsonOutput as boolean
     }
     if (backendSettings.hqUseStream !== undefined) {
-      settings.value.hqTranslation.useStream = backendSettings.hqUseStream as boolean
+      settings.value.hqTranslation.openaiOptions.execution.useStream = backendSettings.hqUseStream as boolean
     }
 
     // AI 校对设置
@@ -777,10 +838,16 @@ export const useSettingsStore = defineStore('settings', () => {
           customBaseUrl: (round.customBaseUrl as string) || '',
           prompt: (round.prompt as string) || '',
           batchSize: parseNum(round.batchSize, 3),
-          rpmLimit: parseNum(round.rpmLimit, 7),
-          maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES),
-          forceJsonOutput: (round.forceJsonOutput as boolean) || false,
-          useStream: round.useStream !== undefined ? (round.useStream as boolean) : true
+          openaiOptions: {
+            request: {
+              forceJsonOutput: (round.forceJsonOutput as boolean) || false
+            },
+            execution: {
+              useStream: round.useStream !== undefined ? (round.useStream as boolean) : true,
+              rpmLimit: parseNum(round.rpmLimit, 7),
+              maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
+            }
+          }
         }))
       }
     }
@@ -858,8 +925,16 @@ export const useSettingsStore = defineStore('settings', () => {
             apiKey: config.apiKey as string,
             modelName: config.modelName as string,
             customBaseUrl: config.customBaseUrl as string,
-            rpmLimit: parseNum(config.rpmTranslation, DEFAULT_RPM_TRANSLATION),
-            maxRetries: parseNum(config.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+            openaiOptions: {
+              request: {
+                forceJsonOutput: config.translatePromptModeSelect === 'json'
+              },
+              execution: {
+                useStream: false,
+                rpmLimit: parseNum(config.rpmTranslation, DEFAULT_RPM_TRANSLATION),
+                maxRetries: parseNum(config.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+              }
+            }
           }
         }
       }
@@ -871,10 +946,16 @@ export const useSettingsStore = defineStore('settings', () => {
             modelName: config.hqModelName as string,
             customBaseUrl: config.hqCustomBaseUrl as string,
             batchSize: parseNum(config.hqBatchSize, 3),
-            rpmLimit: parseNum(config.hqRpmLimit, 7),
-            maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES),
-            forceJsonOutput: config.hqForceJsonOutput as boolean,
-            useStream: config.hqUseStream as boolean,
+            openaiOptions: {
+              request: {
+                forceJsonOutput: config.hqForceJsonOutput as boolean
+              },
+              execution: {
+                useStream: config.hqUseStream as boolean,
+                rpmLimit: parseNum(config.hqRpmLimit, 7),
+                maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+              }
+            },
             prompt: config.hqPrompt as string
           }
         }
@@ -894,8 +975,16 @@ export const useSettingsStore = defineStore('settings', () => {
                   ? 'json'
                   : 'normal'
             ),
-            rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
-            isJsonMode: config.aiVisionPromptModeSelect === 'json',
+            openaiOptions: {
+              request: {
+                forceJsonOutput: config.aiVisionPromptModeSelect === 'json'
+              },
+              execution: {
+                useStream: false,
+                rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
+                maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+              }
+            },
             minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
           }
         }
@@ -918,8 +1007,9 @@ export const useSettingsStore = defineStore('settings', () => {
         apiKey: config.apiKey || '',
         modelName: config.modelName || '',
         customBaseUrl: config.customBaseUrl || '',
-        rpmTranslation: String(config.rpmLimit ?? 0),
-        translationMaxRetries: String(config.maxRetries ?? 3)
+        rpmTranslation: String(config.openaiOptions?.execution?.rpmLimit ?? 0),
+        translationMaxRetries: String(config.openaiOptions?.execution?.maxRetries ?? 3),
+        translatePromptModeSelect: config.openaiOptions?.request?.forceJsonOutput ? 'json' : 'normal'
       }
     }
 
@@ -929,10 +1019,10 @@ export const useSettingsStore = defineStore('settings', () => {
           hqModelName: config.modelName || '',
           hqCustomBaseUrl: config.customBaseUrl || '',
           hqBatchSize: String(config.batchSize ?? 3),
-          hqRpmLimit: String(config.rpmLimit ?? 7),
-          hqMaxRetries: String(config.maxRetries ?? 2),
-          hqForceJsonOutput: config.forceJsonOutput ?? true,
-          hqUseStream: config.useStream || false,
+          hqRpmLimit: String(config.openaiOptions?.execution?.rpmLimit ?? 7),
+          hqMaxRetries: String(config.openaiOptions?.execution?.maxRetries ?? 2),
+          hqForceJsonOutput: config.openaiOptions?.request?.forceJsonOutput ?? true,
+          hqUseStream: config.openaiOptions?.execution?.useStream || false,
           hqPrompt: config.prompt || ''
       }
     }
@@ -943,8 +1033,8 @@ export const useSettingsStore = defineStore('settings', () => {
         aiVisionModelName: config.modelName || '',
         customAiVisionBaseUrl: config.customBaseUrl || '',
         aiVisionOcrPrompt: config.prompt || '',
-        rpmAiVisionOcr: String(config.rpmLimit ?? 0),
-        aiVisionPromptModeSelect: config.promptMode || (config.isJsonMode ? 'json' : 'normal'),
+        rpmAiVisionOcr: String(config.openaiOptions?.execution?.rpmLimit ?? 0),
+        aiVisionPromptModeSelect: config.promptMode || (config.openaiOptions?.request?.forceJsonOutput ? 'json' : 'normal'),
         aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
       }
     }
@@ -995,7 +1085,7 @@ export const useSettingsStore = defineStore('settings', () => {
         aiVisionModelName: settings.value.aiVisionOcr.modelName,
         aiVisionOcrPrompt: settings.value.aiVisionOcr.prompt,
         customAiVisionBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
-        rpmAiVisionOcr: String(settings.value.aiVisionOcr.rpmLimit),
+        rpmAiVisionOcr: String(settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit),
         aiVisionPromptModeSelect: settings.value.aiVisionOcr.promptMode,
         aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
         enableHybridOcr: settings.value.hybridOcr.enabled,
@@ -1007,9 +1097,9 @@ export const useSettingsStore = defineStore('settings', () => {
         apiKey: settings.value.translation.apiKey,
         modelName: settings.value.translation.modelName,
         customBaseUrl: settings.value.translation.customBaseUrl,
-        rpmTranslation: String(settings.value.translation.rpmLimit),
-        translationMaxRetries: String(settings.value.translation.maxRetries),
-        translatePromptModeSelect: settings.value.translation.isJsonMode ? 'json' : 'normal',
+        rpmTranslation: String(settings.value.translation.openaiOptions.execution.rpmLimit),
+        translationMaxRetries: String(settings.value.translation.openaiOptions.execution.maxRetries),
+        translatePromptModeSelect: settings.value.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal',
         translationMode: settings.value.translation.translationMode,
 
         // 目标语言
@@ -1029,11 +1119,11 @@ export const useSettingsStore = defineStore('settings', () => {
         hqModelName: settings.value.hqTranslation.modelName,
         hqCustomBaseUrl: settings.value.hqTranslation.customBaseUrl,
         hqBatchSize: String(settings.value.hqTranslation.batchSize),
-        hqRpmLimit: String(settings.value.hqTranslation.rpmLimit),
-        hqMaxRetries: String(settings.value.hqTranslation.maxRetries),
+        hqRpmLimit: String(settings.value.hqTranslation.openaiOptions.execution.rpmLimit),
+        hqMaxRetries: String(settings.value.hqTranslation.openaiOptions.execution.maxRetries),
         hqPrompt: settings.value.hqTranslation.prompt,
-        hqForceJsonOutput: settings.value.hqTranslation.forceJsonOutput,
-        hqUseStream: settings.value.hqTranslation.useStream,
+        hqForceJsonOutput: settings.value.hqTranslation.openaiOptions.request.forceJsonOutput,
+        hqUseStream: settings.value.hqTranslation.openaiOptions.execution.useStream,
 
         // AI 校对
         proofreadingEnabled: settings.value.proofreading.enabled,
@@ -1049,10 +1139,10 @@ export const useSettingsStore = defineStore('settings', () => {
             customBaseUrl: round.customBaseUrl,
             prompt: round.prompt,
             batchSize: round.batchSize,
-            rpmLimit: round.rpmLimit,
-            maxRetries: round.maxRetries,
-            forceJsonOutput: round.forceJsonOutput,
-            useStream: round.useStream
+            rpmLimit: round.openaiOptions.execution.rpmLimit,
+            maxRetries: round.openaiOptions.execution.maxRetries,
+            forceJsonOutput: round.openaiOptions.request.forceJsonOutput,
+            useStream: round.openaiOptions.execution.useStream
           }))
         },
 

@@ -18,6 +18,12 @@ from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
 from src.shared.ai_providers import get_provider_manifest, normalize_provider_id
+from src.shared.openai_options import (
+    OpenAICompatibleExecutionOptions,
+    OpenAICompatibleOptions,
+    OpenAICompatibleRequestOptions,
+)
+from src.shared.openai_rate_limits import apply_sync_rpm_limit
 # 导入rpm限制辅助函数
 from src.core.translation import _enforce_rpm_limit
 from src.core.ocr_types import OcrResult, create_ocr_result
@@ -26,10 +32,17 @@ from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize
 logger = logging.getLogger("CoreOCR")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# --- rpm Limiting Globals for AI Vision OCR ---
-_ai_vision_ocr_rpm_last_reset_time_container = [0]
-_ai_vision_ocr_rpm_request_count_container = [0]
-# --------------------------------------------
+def _apply_ai_vision_rpm_limit(provider: str, rpm_limit: int) -> None:
+    if rpm_limit <= 0:
+        return
+
+    normalized_provider = normalize_provider_id(provider) or "unknown"
+    apply_sync_rpm_limit(
+        f"vision_ocr:{normalized_provider}",
+        rpm_limit,
+        f"AI Vision OCR ({normalized_provider})",
+        _enforce_rpm_limit,
+    )
 
 # 在解析JSON响应时增加安全提取方法
 def _safely_extract_from_json(json_str: str, field_name: str) -> str:
@@ -374,12 +387,23 @@ def _recognize_with_ai_vision_results(
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     *,
     primary_engine=constants.AI_VISION_OCR_ENGINE_ID,
     fallback_used=False,
     strict_errors: bool = False,
 ) -> List[OcrResult]:
     ai_vision_provider = normalize_provider_id(ai_vision_provider)
+    effective_options = ai_vision_openai_options or OpenAICompatibleOptions(
+        request=OpenAICompatibleRequestOptions(force_json_output=use_json_format_for_ai_vision),
+        execution=OpenAICompatibleExecutionOptions(rpm_limit=rpm_limit_ai_vision),
+        timeout=120.0,
+    )
+    if effective_options.timeout is None:
+        effective_options.timeout = 120.0
+    use_json_format_for_ai_vision = effective_options.request.force_json_output
+    rpm_limit_ai_vision = effective_options.execution.rpm_limit
+    max_retries_ai_vision = effective_options.execution.max_retries
 
     if not ai_vision_provider:
         logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
@@ -484,23 +508,31 @@ def _recognize_with_ai_vision_results(
             except Exception as save_error:
                 logger.warning(f"保存 AI视觉OCR 调试气泡图像失败: {save_error}")
 
-            _enforce_rpm_limit(
-                rpm_limit_ai_vision,
-                f"AI Vision OCR ({ai_vision_provider})",
-                _ai_vision_ocr_rpm_last_reset_time_container,
-                _ai_vision_ocr_rpm_request_count_container
-            )
+            _apply_ai_vision_rpm_limit(ai_vision_provider, rpm_limit_ai_vision)
 
-            ocr_result_raw = call_ai_vision_ocr_service(
-                bubble_img_pil,
-                provider=ai_vision_provider,
-                api_key=ai_vision_api_key,
-                model_name=ai_vision_model_name,
-                prompt=current_prompt,
-                prompt_mode=normalized_prompt_mode,
-                use_json_format=use_json_format_for_ai_vision,
-                custom_base_url=custom_ai_vision_base_url
-            )
+            ocr_result_raw = ""
+            for attempt in range(max_retries_ai_vision + 1):
+                ocr_result_raw = call_ai_vision_ocr_service(
+                    bubble_img_pil,
+                    provider=ai_vision_provider,
+                    api_key=ai_vision_api_key,
+                    model_name=ai_vision_model_name,
+                    prompt=current_prompt,
+                    prompt_mode=normalized_prompt_mode,
+                    use_json_format=use_json_format_for_ai_vision,
+                    custom_base_url=custom_ai_vision_base_url,
+                    openai_options=effective_options,
+                )
+                if ocr_result_raw:
+                    break
+                if attempt < max_retries_ai_vision:
+                    logger.warning(
+                        "AI视觉OCR 返回空结果，正在重试 (%s/%s): provider=%s",
+                        attempt + 1,
+                        max_retries_ai_vision + 1,
+                        ai_vision_provider,
+                    )
+                    time.sleep(1)
 
             extracted_text_final = ""
             if ocr_result_raw:
@@ -552,6 +584,7 @@ def _recognize_with_engine(
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     textlines_per_bubble=None,
     *,
     primary_engine=None,
@@ -625,6 +658,7 @@ def _recognize_with_engine(
             use_json_format_for_ai_vision=use_json_format_for_ai_vision,
             rpm_limit_ai_vision=rpm_limit_ai_vision,
             ai_vision_min_image_size=ai_vision_min_image_size,
+            ai_vision_openai_options=ai_vision_openai_options,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
             strict_errors=strict_errors,
@@ -659,6 +693,7 @@ def recognize_ocr_results_in_bubbles(
     use_json_format_for_ai_vision=False,
     rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
+    ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     jsonPromptMode: str = 'normal',
     textlines_per_bubble=None,
     enable_hybrid_ocr: bool = False,
@@ -702,6 +737,7 @@ def recognize_ocr_results_in_bubbles(
         use_json_format_for_ai_vision=use_json_format_for_ai_vision,
         rpm_limit_ai_vision=rpm_limit_ai_vision,
         ai_vision_min_image_size=ai_vision_min_image_size,
+        ai_vision_openai_options=ai_vision_openai_options,
         textlines_per_bubble=textlines_per_bubble,
         primary_engine=ocr_engine,
         fallback_used=False,

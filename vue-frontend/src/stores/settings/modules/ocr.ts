@@ -89,6 +89,10 @@ export function useOcrSettings(
    */
   function updateAiVisionOcr(updates: Partial<AiVisionOcrSettings>): void {
     Object.assign(settings.value.aiVisionOcr, updates)
+    if (updates.rpmLimit !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = updates.rpmLimit
+    if (updates.isJsonMode !== undefined) settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+    settings.value.aiVisionOcr.rpmLimit = settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit
+    settings.value.aiVisionOcr.isJsonMode = settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput
     saveToStorage()
   }
 
@@ -141,7 +145,7 @@ export function useOcrSettings(
    */
   function setAiVisionOcrPromptMode(mode: 'normal' | 'json' | 'paddleocr_vl'): void {
     settings.value.aiVisionOcr.promptMode = mode
-    settings.value.aiVisionOcr.isJsonMode = mode === 'json'
+    settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = mode === 'json'
 
     if (mode === 'json') {
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
@@ -171,8 +175,7 @@ export function useOcrSettings(
       customBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
       prompt: settings.value.aiVisionOcr.prompt,
       promptMode: settings.value.aiVisionOcr.promptMode,
-      rpmLimit: settings.value.aiVisionOcr.rpmLimit,
-      isJsonMode: settings.value.aiVisionOcr.isJsonMode,
+      openaiOptions: JSON.parse(JSON.stringify(settings.value.aiVisionOcr.openaiOptions)),
       minImageSize: settings.value.aiVisionOcr.minImageSize
     }
 
@@ -196,8 +199,7 @@ export function useOcrSettings(
       if (cached.customBaseUrl !== undefined) settings.value.aiVisionOcr.customBaseUrl = cached.customBaseUrl
       if (cached.prompt !== undefined) settings.value.aiVisionOcr.prompt = cached.prompt
       if (cached.promptMode !== undefined) settings.value.aiVisionOcr.promptMode = cached.promptMode
-      if (cached.rpmLimit !== undefined) settings.value.aiVisionOcr.rpmLimit = cached.rpmLimit
-      if (cached.isJsonMode !== undefined) settings.value.aiVisionOcr.isJsonMode = cached.isJsonMode
+      if (cached.openaiOptions !== undefined) settings.value.aiVisionOcr.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.minImageSize !== undefined) settings.value.aiVisionOcr.minImageSize = cached.minImageSize
       console.log(`[Settings] 恢复AI视觉OCR服务商配置: ${provider}`, cached)
     } else {

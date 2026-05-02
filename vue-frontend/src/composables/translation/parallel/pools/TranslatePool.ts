@@ -90,7 +90,7 @@ export class TranslatePool extends TaskPool {
         try {
           // 调用单文本翻译API
           // 固定使用逐气泡翻译的提示词，避免使用批量翻译提示词导致语义不匹配
-          const promptContent = settings.translation.isJsonMode
+          const promptContent = settings.translation.openaiOptions.request.forceJsonOutput
             ? settings.translation.singleJsonPrompt
             : settings.translation.singleNormalPrompt
 
@@ -102,9 +102,16 @@ export class TranslatePool extends TaskPool {
             custom_base_url: settings.translation.customBaseUrl,
             target_language: settings.targetLanguage,
             prompt_content: promptContent,  // 使用逐气泡翻译的提示词
-            use_json_format: settings.translation.isJsonMode,  // 传递 JSON 模式设置
-            rpm_limit_translation: settings.translation.rpmLimit,
-            max_retries: settings.translation.maxRetries
+            openai_options: {
+              request: {
+                force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
+              },
+              execution: {
+                use_stream: settings.translation.openaiOptions.execution.useStream,
+                rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+                  max_retries: settings.translation.openaiOptions.execution.maxRetries
+                }
+            }
           })
 
           if (response.success && response.data) {
@@ -124,8 +131,16 @@ export class TranslatePool extends TaskPool {
               custom_base_url: settings.translation.customBaseUrl,
               target_language: settings.targetLanguage,
               prompt_content: settings.textboxPrompt,
-              rpm_limit_translation: settings.translation.rpmLimit,
-              max_retries: settings.translation.maxRetries
+              openai_options: {
+                request: {
+                  force_json_output: false
+                },
+                execution: {
+                  use_stream: settings.translation.openaiOptions.execution.useStream,
+                  rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+                  max_retries: settings.translation.openaiOptions.execution.maxRetries
+                }
+              }
             })
 
             if (textboxResponse.success && textboxResponse.data) {
@@ -159,9 +174,16 @@ export class TranslatePool extends TaskPool {
         prompt_content: settings.translatePrompt,
         textbox_prompt_content: settings.textboxPrompt,
         use_textbox_prompt: settings.useTextboxPrompt,
-        rpm_limit: settings.translation.rpmLimit,
-        max_retries: settings.translation.maxRetries,
-        use_json_format: settings.translation.isJsonMode
+        openai_options: {
+          request: {
+            force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
+          },
+          execution: {
+            use_stream: settings.translation.openaiOptions.execution.useStream,
+            rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
+            max_retries: settings.translation.openaiOptions.execution.maxRetries
+          }
+        }
       })
 
       if (!response.success) {
@@ -227,14 +249,20 @@ export class TranslatePool extends TaskPool {
       isProofreading: false,
       enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
       // 其他参数
-      force_json_output: hqTranslation.forceJsonOutput,
-      use_stream: hqTranslation.useStream,
-      rpm_limit: hqTranslation.rpmLimit,
-      max_retries: hqTranslation.maxRetries ?? 2
+        openai_options: {
+          request: {
+            force_json_output: hqTranslation.openaiOptions.request.forceJsonOutput
+          },
+        execution: {
+          use_stream: hqTranslation.openaiOptions.execution.useStream,
+            rpm_limit: hqTranslation.openaiOptions.execution.rpmLimit,
+            max_retries: hqTranslation.openaiOptions.execution.maxRetries ?? 2
+          }
+      }
     })
 
     // 4. 解析结果
-    const translatedData = this.parseHqResponse(response, hqTranslation.forceJsonOutput)
+    const translatedData = this.parseHqResponse(response, hqTranslation.openaiOptions.request.forceJsonOutput)
 
     // 5. 填充结果到各任务，并批量传递给下一个池子
     for (const t of batch) {
@@ -323,13 +351,19 @@ export class TranslatePool extends TaskPool {
         isProofreading: true,
         enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
         // 其他参数
-        force_json_output: round.forceJsonOutput,
-        use_stream: round.useStream ?? true,
-        rpm_limit: round.rpmLimit,
-        max_retries: round.maxRetries ?? proofreading.maxRetries ?? 2
+        openai_options: {
+          request: {
+            force_json_output: round.openaiOptions.request.forceJsonOutput
+          },
+          execution: {
+            use_stream: round.openaiOptions.execution.useStream ?? true,
+            rpm_limit: round.openaiOptions.execution.rpmLimit,
+            max_retries: round.openaiOptions.execution.maxRetries ?? proofreading.maxRetries ?? 2
+          }
+        }
       })
 
-      const parsedResult = this.parseHqResponse(response, round.forceJsonOutput)
+      const parsedResult = this.parseHqResponse(response, round.openaiOptions.request.forceJsonOutput)
       if (parsedResult) {
         currentData = parsedResult
       }

@@ -13,6 +13,10 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from src.shared.openai_options import (
+    OpenAICompatibleOptions,
+    normalize_openai_compatible_options_for_provider,
+)
 from src.shared.ai_providers import (
     EMBEDDING_CAPABILITY,
     RERANK_CAPABILITY,
@@ -44,13 +48,37 @@ class UnifiedChatRequest:
     model: str
     messages: List[Dict[str, Any]]
     base_url: Optional[str] = None
-    timeout: float = 120.0
-    use_stream: bool = False
-    print_stream_output: bool = False
-    stream_output_label: Optional[str] = None
-    response_format: Optional[Dict[str, Any]] = None
-    temperature: Optional[float] = None
-    request_overrides: Dict[str, Any] = field(default_factory=dict)
+    openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
+
+    @property
+    def timeout(self) -> float:
+        return self.openai_options.timeout_or(120.0)
+
+    @property
+    def use_stream(self) -> bool:
+        return self.openai_options.execution.use_stream
+
+    @property
+    def print_stream_output(self) -> bool:
+        return self.openai_options.print_stream_output
+
+    @property
+    def stream_output_label(self) -> Optional[str]:
+        return self.openai_options.stream_output_label
+
+    @property
+    def temperature(self) -> Optional[float]:
+        return self.openai_options.request.temperature
+
+    @property
+    def response_format(self) -> Optional[Dict[str, Any]]:
+        if self.openai_options.request.force_json_output:
+            return {"type": "json_object"}
+        return None
+
+    @property
+    def request_overrides(self) -> Dict[str, Any]:
+        return dict(self.openai_options.request_overrides)
 
 
 @dataclass
@@ -61,10 +89,23 @@ class UnifiedVisionRequest:
     prompt: str
     image_base64: str
     base_url: Optional[str] = None
-    timeout: float = 120.0
-    use_json_format: bool = False
-    temperature: Optional[float] = None
-    request_overrides: Dict[str, Any] = field(default_factory=dict)
+    openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
+
+    @property
+    def timeout(self) -> float:
+        return self.openai_options.timeout_or(120.0)
+
+    @property
+    def use_json_format(self) -> bool:
+        return self.openai_options.request.force_json_output
+
+    @property
+    def temperature(self) -> Optional[float]:
+        return self.openai_options.request.temperature
+
+    @property
+    def request_overrides(self) -> Dict[str, Any]:
+        return dict(self.openai_options.request_overrides)
 
 
 @dataclass
@@ -111,17 +152,18 @@ class ProviderModelListRequest:
     timeout: float = 15.0
 
 
-def _build_chat_body(request: UnifiedChatRequest) -> Dict[str, Any]:
+def _build_chat_body(request: UnifiedChatRequest, options: Optional[OpenAICompatibleOptions] = None) -> Dict[str, Any]:
+    effective_options = options or request.openai_options
     body: Dict[str, Any] = {
         "model": request.model,
         "messages": request.messages,
     }
-    if request.temperature is not None:
-        body["temperature"] = request.temperature
-    if request.response_format:
-        body["response_format"] = request.response_format
-    if request.request_overrides:
-        body.update(request.request_overrides)
+    if effective_options.request.temperature is not None:
+        body["temperature"] = effective_options.request.temperature
+    if effective_options.request.force_json_output:
+        body["response_format"] = {"type": "json_object"}
+    if effective_options.request_overrides:
+        body.update(effective_options.request_overrides)
     return body
 
 
@@ -211,31 +253,28 @@ def _build_auth_headers(
 class OpenAICompatibleChatTransport:
     def complete(self, request: UnifiedChatRequest) -> str:
         base_url = resolve_provider_base_url(request.provider, request.base_url)
-        if request.use_stream:
-            return self._complete_stream(request, base_url)
+        options = normalize_openai_compatible_options_for_provider(request.provider, request.openai_options, logger_instance=logger)
+        if options.execution.use_stream:
+            return self._complete_stream(request, base_url, options)
 
         client = create_openai_client(
             api_key=request.api_key,
             base_url=base_url,
-            timeout=request.timeout,
+            timeout=options.timeout_or(120.0),
         )
-        kwargs = _build_chat_body(request)
-        kwargs["timeout"] = request.timeout
+        kwargs = _build_chat_body(request, options)
+        kwargs["timeout"] = options.timeout_or(120.0)
 
         response = client.chat.completions.create(**kwargs)
         return _extract_chat_content_from_sdk_response(response)
 
     def complete_vision(self, request: UnifiedVisionRequest) -> str:
-        response_format = {"type": "json_object"} if request.use_json_format else None
         chat_request = UnifiedChatRequest(
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
             base_url=request.base_url,
-            timeout=request.timeout,
-            response_format=response_format,
-            temperature=request.temperature,
-            request_overrides=dict(request.request_overrides),
+            openai_options=OpenAICompatibleOptions.from_dict(request.openai_options.to_dict()),
             messages=[
                 {
                     "role": "user",
@@ -263,9 +302,11 @@ class OpenAICompatibleChatTransport:
                     api_key=request.api_key,
                     model=request.model,
                     base_url=request.base_url,
-                    timeout=request.timeout,
+                    openai_options=OpenAICompatibleOptions(
+                        timeout=request.timeout,
+                        request_overrides={"max_tokens": 50},
+                    ),
                     messages=messages,
-                    request_overrides={"max_tokens": 50},
                 )
             )
             return True, content
@@ -296,18 +337,23 @@ class OpenAICompatibleChatTransport:
         ]
         return self._filter_models_for_provider(provider, models)
 
-    def _complete_stream(self, request: UnifiedChatRequest, base_url: Optional[str]) -> str:
+    def _complete_stream(
+        self,
+        request: UnifiedChatRequest,
+        base_url: Optional[str],
+        options: OpenAICompatibleOptions,
+    ) -> str:
         if not base_url:
             raise ValueError("缺少 Base URL")
         url = f"{base_url.rstrip('/')}/chat/completions"
-        body = _build_chat_body(request)
+        body = _build_chat_body(request, options)
         body["stream"] = True
 
         full_text = ""
-        if request.print_stream_output:
-            label = request.stream_output_label or request.model
+        if options.print_stream_output:
+            label = options.stream_output_label or request.model
             print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
-        with httpx.Client(**build_httpx_kwargs(base_url, request.timeout)) as client:
+        with httpx.Client(**build_httpx_kwargs(base_url, options.timeout_or(120.0))) as client:
             with client.stream(
                 "POST",
                 url,
@@ -330,10 +376,10 @@ class OpenAICompatibleChatTransport:
                     chunk = _extract_stream_chunk(data)
                     if chunk:
                         full_text += chunk
-                        if request.print_stream_output:
+                        if options.print_stream_output:
                             print(chunk, end="", flush=True)
-        if request.print_stream_output:
-            label = request.stream_output_label or request.model
+        if options.print_stream_output:
+            label = options.stream_output_label or request.model
             print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
         return full_text.strip()
 
@@ -396,33 +442,30 @@ class AsyncOpenAICompatibleTransport:
 
     async def complete(self, request: UnifiedChatRequest) -> str:
         base_url = resolve_provider_base_url(request.provider, request.base_url)
-        if request.use_stream:
-            return await self._complete_stream(request, base_url)
+        options = normalize_openai_compatible_options_for_provider(request.provider, request.openai_options, logger_instance=logger)
+        if options.execution.use_stream:
+            return await self._complete_stream(request, base_url, options)
 
         if not base_url:
             raise ValueError("缺少 Base URL")
         url = f"{base_url.rstrip('/')}/chat/completions"
         payload = await self._request_json(
             base_url=base_url,
-            timeout=request.timeout,
+            timeout=options.timeout_or(120.0),
             method="POST",
             url=url,
             api_key=request.api_key,
-            body=_build_chat_body(request),
+            body=_build_chat_body(request, options),
         )
         return _extract_chat_content_from_payload(payload)
 
     async def complete_vision(self, request: UnifiedVisionRequest) -> str:
-        response_format = {"type": "json_object"} if request.use_json_format else None
         chat_request = UnifiedChatRequest(
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
             base_url=request.base_url,
-            timeout=request.timeout,
-            response_format=response_format,
-            temperature=request.temperature,
-            request_overrides=dict(request.request_overrides),
+            openai_options=OpenAICompatibleOptions.from_dict(request.openai_options.to_dict()),
             messages=[
                 {
                     "role": "user",
@@ -527,21 +570,26 @@ class AsyncOpenAICompatibleTransport:
             raise last_exception
         raise RuntimeError("重试耗尽")
 
-    async def _complete_stream(self, request: UnifiedChatRequest, base_url: Optional[str]) -> str:
+    async def _complete_stream(
+        self,
+        request: UnifiedChatRequest,
+        base_url: Optional[str],
+        options: OpenAICompatibleOptions,
+    ) -> str:
         if not base_url:
             raise ValueError("缺少 Base URL")
 
         url = f"{base_url.rstrip('/')}/chat/completions"
-        body = _build_chat_body(request)
+        body = _build_chat_body(request, options)
         body["stream"] = True
 
         last_exception: Optional[Exception] = None
         for attempt in range(self.max_retries + 1):
             full_text = ""
-            client = httpx.AsyncClient(**build_httpx_kwargs(base_url, request.timeout))
+            client = httpx.AsyncClient(**build_httpx_kwargs(base_url, options.timeout_or(120.0)))
             try:
-                if request.print_stream_output:
-                    label = request.stream_output_label or request.model
+                if options.print_stream_output:
+                    label = options.stream_output_label or request.model
                     print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
                 async with client.stream(
                     "POST",
@@ -578,11 +626,11 @@ class AsyncOpenAICompatibleTransport:
                         chunk = _extract_stream_chunk(data)
                         if chunk:
                             full_text += chunk
-                            if request.print_stream_output:
+                            if options.print_stream_output:
                                 print(chunk, end="", flush=True)
 
-                if request.print_stream_output:
-                    label = request.stream_output_label or request.model
+                if options.print_stream_output:
+                    label = options.stream_output_label or request.model
                     print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
                 return full_text.strip()
             except RETRYABLE_EXCEPTIONS as exc:

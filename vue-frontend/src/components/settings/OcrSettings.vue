@@ -431,7 +431,7 @@ const localAiVisionOcr = ref({
   customBaseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
   prompt: settingsStore.settings.aiVisionOcr.prompt,
   promptMode: settingsStore.settings.aiVisionOcr.promptMode,
-  rpmLimit: settingsStore.settings.aiVisionOcr.rpmLimit,
+  rpmLimit: settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
 
@@ -592,7 +592,7 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.customBaseUrl = settingsStore.settings.aiVisionOcr.customBaseUrl
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
   localAiVisionOcr.value.promptMode = settingsStore.settings.aiVisionOcr.promptMode
-  localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.rpmLimit
+  localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
 // 当前提示词模式（计算属性）

@@ -266,7 +266,7 @@ const toast = useToast()
 // 本地状态（双向绑定用）
 // 根据翻译模式和JSON模式选择对应的提示词（4个独立存储字段之一）
 const currentTranslationMode = settingsStore.settings.translation.translationMode || 'batch'
-const currentIsJsonMode = settingsStore.settings.translation.isJsonMode || false
+const currentIsJsonMode = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput || false
 const getCurrentPrompt = (): string => {
   const t = settingsStore.settings.translation
   if (currentTranslationMode === 'single') {
@@ -281,8 +281,8 @@ const localSettings = ref({
   apiKey: settingsStore.settings.translation.apiKey,
   modelName: settingsStore.settings.translation.modelName,
   customBaseUrl: settingsStore.settings.translation.customBaseUrl,
-  rpmTranslation: settingsStore.settings.translation.rpmLimit,
-  translationMaxRetries: settingsStore.settings.translation.maxRetries,
+  rpmTranslation: settingsStore.settings.translation.openaiOptions.execution.rpmLimit,
+  translationMaxRetries: settingsStore.settings.translation.openaiOptions.execution.maxRetries,
   translationMode: currentTranslationMode,
   promptContent: getCurrentPrompt(),
   translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
@@ -398,8 +398,8 @@ function handleProviderChange() {
   localSettings.value.apiKey = settingsStore.settings.translation.apiKey
   localSettings.value.modelName = settingsStore.settings.translation.modelName
   localSettings.value.customBaseUrl = settingsStore.settings.translation.customBaseUrl
-  localSettings.value.rpmTranslation = settingsStore.settings.translation.rpmLimit
-  localSettings.value.translationMaxRetries = settingsStore.settings.translation.maxRetries
+  localSettings.value.rpmTranslation = settingsStore.settings.translation.openaiOptions.execution.rpmLimit
+  localSettings.value.translationMaxRetries = settingsStore.settings.translation.openaiOptions.execution.maxRetries
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
   // 清空所有模型列表（无论是云服务商还是本地服务商）

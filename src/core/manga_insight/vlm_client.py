@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 from PIL import Image
 
 from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+from src.shared.openai_options import OpenAICompatibleOptions
 from src.shared.ai_providers import provider_requires_api_key
 
 from .clients.base_client import RPMLimiter
@@ -24,9 +25,6 @@ from .config_models import (
 from .utils.json_parser import parse_llm_json
 
 logger = logging.getLogger("MangaInsight.VLM")
-DEFAULT_VLM_MAX_RETRIES = 3
-
-
 def _provider_id(value) -> str:
     if isinstance(value, str):
         return value.lower()
@@ -78,10 +76,13 @@ class VLMClient:
         self.prompts_config = prompts_config or PromptsConfig()
         self.provider = _provider_id(config.provider)
         self._base_url = get_base_url(self.provider, config.base_url)
-        self._rpm_limiter = RPMLimiter(config.rpm_limit)
+        self._rpm_limiter = RPMLimiter(
+            config.openai_options.execution.rpm_limit,
+            bucket_id=f"vlm:{self.provider}",
+        )
         self._timeout = 300.0
-        self._max_retries = DEFAULT_VLM_MAX_RETRIES
-        self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_VLM_MAX_RETRIES)
+        self._max_retries = max(0, config.openai_options.execution.max_retries)
+        self._transport = AsyncOpenAICompatibleTransport(max_retries=0)
 
         logger.info(f"VLMClient 初始化: provider={config.provider}, base_url={self._base_url}")
 
@@ -108,24 +109,27 @@ class VLMClient:
         end_page = start_page + len(images) - 1
         prompt = custom_prompt or self._build_batch_analysis_prompt(start_page, end_page, len(images), context)
 
-        for attempt in range(DEFAULT_VLM_MAX_RETRIES + 1):
+        max_attempts = self._max_retries + 1
+        last_result: Dict = {}
+        for attempt in range(max_attempts):
             response_text = await self._call_vlm(
                 images=images,
                 prompt=prompt
             )
 
             result = self._parse_batch_analysis(response_text, start_page, end_page)
+            last_result = result
 
             if not result.get("parse_error"):
                 return result
 
-            if attempt < DEFAULT_VLM_MAX_RETRIES:
+            if attempt < self._max_retries:
                 logger.warning(f"第{start_page}-{end_page}页 JSON 解析失败，第 {attempt + 1} 次重试...")
                 await asyncio.sleep(2 ** attempt)
             else:
-                logger.error(f"第{start_page}-{end_page}页 JSON 解析失败，已达最大重试次数 ({DEFAULT_VLM_MAX_RETRIES})")
+                logger.error(f"第{start_page}-{end_page}页 JSON 解析失败，已达最大重试次数 ({self._max_retries})")
 
-        return result
+        return last_result
 
     def _build_batch_analysis_prompt(self, start_page: int, end_page: int, page_count: int, context: Dict = None) -> str:
         base_prompt = self.prompts_config.batch_analysis if self.prompts_config.batch_analysis else DEFAULT_BATCH_ANALYSIS_PROMPT
@@ -182,6 +186,11 @@ class VLMClient:
         if not base_url:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
 
+        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
+        options.print_stream_output = options.execution.use_stream
+        if options.timeout is None:
+            options.timeout = self._timeout
+
         return await self._transport.complete(
             UnifiedChatRequest(
                 provider=provider,
@@ -189,11 +198,7 @@ class VLMClient:
                 model=self.config.model,
                 messages=[{"role": "user", "content": content}],
                 base_url=self.config.base_url or None,
-                timeout=self._timeout,
-                use_stream=self.config.use_stream,
-                print_stream_output=self.config.use_stream,
-                response_format={"type": "json_object"} if self.config.force_json else None,
-                temperature=self.config.temperature,
+                openai_options=options,
             )
         )
 
@@ -394,8 +399,10 @@ class VLMClient:
                     model=self.config.model,
                     messages=[{"role": "user", "content": test_prompt}],
                     base_url=self.config.base_url or None,
-                    timeout=self._timeout,
-                    request_overrides={"max_tokens": 10},
+                    openai_options=OpenAICompatibleOptions(
+                        timeout=self._timeout,
+                        request_overrides={"max_tokens": 10},
+                    ),
                 )
             )
             return True

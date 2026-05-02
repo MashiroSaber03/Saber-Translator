@@ -15,6 +15,10 @@ from src.shared.ai_providers import (
     resolve_provider_base_url,
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedVisionRequest
+from src.shared.openai_options import (
+    OpenAICompatibleOptions,
+    OpenAICompatibleRequestOptions,
+)
 from src.shared.image_helpers import image_to_base64
 
 # 设置日志
@@ -24,7 +28,8 @@ _transport = OpenAICompatibleChatTransport()
 
 def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
                                prompt_mode: str = 'normal', use_json_format: bool = False,
-                               custom_base_url=None):
+                               custom_base_url=None,
+                               openai_options: OpenAICompatibleOptions | None = None):
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
@@ -66,6 +71,12 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             resolved_base_url,
         )
         logger.info("[AI视觉OCR-请求] 实际提示词开始\n%s\n[AI视觉OCR-请求] 实际提示词结束", prompt)
+        effective_options = openai_options or OpenAICompatibleOptions(
+            request=OpenAICompatibleRequestOptions(force_json_output=use_json_format),
+            timeout=120.0,
+        )
+        if effective_options.timeout is None:
+            effective_options.timeout = 120.0
         content = _transport.complete_vision(
             UnifiedVisionRequest(
                 provider=provider_lower,
@@ -74,8 +85,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 prompt=prompt,
                 image_base64=image_base64,
                 base_url=custom_base_url if provider_lower == 'custom' else None,
-                timeout=120.0,
-                use_json_format=use_json_format,
+                openai_options=effective_options,
             )
         )
         if not content:

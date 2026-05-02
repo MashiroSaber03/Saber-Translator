@@ -9,6 +9,7 @@ import type {
   PaddleOcrVlSettings,
   AiVisionOcrSettings,
   HybridOcrSettings,
+  OpenAICompatibleOptions,
   TranslationServiceSettings,
   HqTranslationSettings,
   ProofreadingSettings,
@@ -36,6 +37,23 @@ import {
 // ============================================================
 // 默认值定义
 // ============================================================
+
+function createDefaultOpenAiOptions(
+  overrides?: Partial<OpenAICompatibleOptions>
+): OpenAICompatibleOptions {
+  return {
+    request: {
+      forceJsonOutput: false,
+      ...overrides?.request
+    },
+    execution: {
+      useStream: false,
+      rpmLimit: 0,
+      maxRetries: 0,
+      ...overrides?.execution
+    }
+  }
+}
 
 /** 默认文字样式设置 */
 export function createDefaultTextStyle(): TextStyleSettings {
@@ -79,8 +97,15 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   modelName: '',
   prompt: DEFAULT_AI_VISION_OCR_PROMPT,
   promptMode: 'normal',
-  rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
   customBaseUrl: '',
+  openaiOptions: createDefaultOpenAiOptions({
+    execution: {
+      useStream: false,
+      rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
+      maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+    }
+  }),
+  rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
   isJsonMode: false,
   minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
 }
@@ -98,6 +123,13 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
   apiKey: '',
   modelName: '',
   customBaseUrl: '',
+  openaiOptions: createDefaultOpenAiOptions({
+    execution: {
+      useStream: false,
+      rpmLimit: DEFAULT_RPM_TRANSLATION,
+      maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+    }
+  }),
   rpmLimit: DEFAULT_RPM_TRANSLATION,
   maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES,
   isJsonMode: false,
@@ -115,11 +147,18 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   apiKey: '',
   modelName: '',
   customBaseUrl: '',
-  batchSize: 3,
+  openaiOptions: createDefaultOpenAiOptions({
+    execution: {
+      useStream: true,
+      rpmLimit: 7,
+      maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+    }
+  }),
   rpmLimit: 7,
   maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   forceJsonOutput: false,
   useStream: true,
+  batchSize: 3,
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
 

@@ -112,6 +112,17 @@ export interface VlmConfig {
   api_key: string
   model: string
   base_url?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   rpm_limit?: number
   temperature?: number
   force_json?: boolean
@@ -128,6 +139,17 @@ export interface LlmConfig {
   api_key?: string
   model?: string
   base_url?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   use_stream?: boolean
 }
 

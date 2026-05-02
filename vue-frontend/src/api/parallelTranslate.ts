@@ -57,7 +57,19 @@ export interface ParallelOcrParams {
   ai_vision_ocr_prompt?: string
   ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
   custom_ai_vision_base_url?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   use_json_format_for_ai_vision?: boolean
+  rpm_limit_ai_vision?: number
   ai_vision_min_image_size?: number
   enable_hybrid_ocr?: boolean
   secondary_ocr_engine?: string
@@ -113,6 +125,17 @@ export interface ParallelTranslateParams {
   prompt_content?: string
   textbox_prompt_content?: string
   use_textbox_prompt?: boolean
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   rpm_limit?: number
   max_retries?: number
   use_json_format?: boolean

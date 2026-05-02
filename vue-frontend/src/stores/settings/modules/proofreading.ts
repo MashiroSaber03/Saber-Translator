@@ -42,6 +42,10 @@ export function useProofreadingSettings(
    * @param round - 校对轮次配置
    */
   function addProofreadingRound(round: ProofreadingRound): void {
+    round.rpmLimit = round.openaiOptions.execution.rpmLimit
+    round.maxRetries = round.openaiOptions.execution.maxRetries
+    round.forceJsonOutput = round.openaiOptions.request.forceJsonOutput
+    round.useStream = round.openaiOptions.execution.useStream
     settings.value.proofreading.rounds.push(round)
     saveToStorage()
     console.log(`已添加校对轮次: ${round.name}`)
@@ -57,6 +61,14 @@ export function useProofreadingSettings(
       const round = settings.value.proofreading.rounds[index]
       if (round) {
         Object.assign(round, updates)
+        if (updates.rpmLimit !== undefined) round.openaiOptions.execution.rpmLimit = updates.rpmLimit
+        if (updates.maxRetries !== undefined) round.openaiOptions.execution.maxRetries = updates.maxRetries
+        if (updates.forceJsonOutput !== undefined) round.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
+        if (updates.useStream !== undefined) round.openaiOptions.execution.useStream = updates.useStream
+        round.rpmLimit = round.openaiOptions.execution.rpmLimit
+        round.maxRetries = round.openaiOptions.execution.maxRetries
+        round.forceJsonOutput = round.openaiOptions.request.forceJsonOutput
+        round.useStream = round.openaiOptions.execution.useStream
         saveToStorage()
       }
     }

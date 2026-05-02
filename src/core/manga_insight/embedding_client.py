@@ -10,6 +10,7 @@ from src.shared.ai_transport import (
     UnifiedChatRequest,
     UnifiedEmbeddingRequest,
 )
+from src.shared.openai_options import OpenAICompatibleOptions
 
 from .clients.base_client import RPMLimiter
 from .clients.provider_registry import get_base_url
@@ -17,10 +18,6 @@ from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
 DEFAULT_EMBEDDING_MAX_RETRIES = 3
-DEFAULT_CHAT_RPM_LIMIT = 30
-DEFAULT_CHAT_MAX_RETRIES = 3
-
-
 def _provider_id(value) -> str:
     if isinstance(value, str):
         return value.lower()
@@ -36,7 +33,7 @@ class EmbeddingClient:
         self.config = config
         self.provider = _provider_id(config.provider)
         self._base_url = get_base_url(self.provider, config.base_url)
-        self._rpm_limiter = RPMLimiter(config.rpm_limit)
+        self._rpm_limiter = RPMLimiter(config.rpm_limit, bucket_id=f"embedding:{self.provider}")
         self._timeout = 60.0
         self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_EMBEDDING_MAX_RETRIES)
 
@@ -102,9 +99,14 @@ class ChatClient:
         custom_url = config.base_url if hasattr(config, "base_url") and config.base_url else None
         self.provider = provider
         self._base_url = get_base_url(provider, custom_url)
-        self._rpm_limiter = RPMLimiter(DEFAULT_CHAT_RPM_LIMIT)
+        self._rpm_limiter = RPMLimiter(
+            config.openai_options.execution.rpm_limit,
+            bucket_id=f"chat:{self.provider}",
+        )
         self._timeout = 120.0
-        self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_CHAT_MAX_RETRIES)
+        self._transport = AsyncOpenAICompatibleTransport(
+            max_retries=max(0, config.openai_options.execution.max_retries),
+        )
 
         logger.info(f"ChatClient 初始化: provider={provider}, base_url={self._base_url}")
 
@@ -128,7 +130,7 @@ class ChatClient:
         self,
         prompt: str,
         system: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: Optional[float] = None
     ) -> str:
         logger.debug(f"[ChatClient] provider={self.config.provider}, base_url={self._base_url}, model={self.config.model}")
 
@@ -140,7 +142,13 @@ class ChatClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        use_stream = getattr(self.config, "use_stream", True)
+        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
+        if temperature is not None:
+            options.request.temperature = temperature
+        options.print_stream_output = options.execution.use_stream
+        if options.timeout is None:
+            options.timeout = self._timeout
+        use_stream = options.execution.use_stream
         logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
 
         await self._enforce_rpm_limit()
@@ -151,10 +159,7 @@ class ChatClient:
                 model=self.config.model,
                 messages=messages,
                 base_url=getattr(self.config, "base_url", None) or None,
-                timeout=self._timeout,
-                use_stream=use_stream,
-                print_stream_output=use_stream,
-                temperature=temperature,
+                openai_options=options,
             )
         )
 

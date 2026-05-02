@@ -172,10 +172,10 @@ const localHqSettings = ref({
   modelName: settingsStore.settings.hqTranslation.modelName,
   customBaseUrl: settingsStore.settings.hqTranslation.customBaseUrl,
   batchSize: settingsStore.settings.hqTranslation.batchSize,
-  rpmLimit: settingsStore.settings.hqTranslation.rpmLimit,
-  maxRetries: settingsStore.settings.hqTranslation.maxRetries,
-  forceJsonOutput: settingsStore.settings.hqTranslation.forceJsonOutput,
-  useStream: settingsStore.settings.hqTranslation.useStream,
+  rpmLimit: settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit,
+  maxRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.maxRetries,
+  forceJsonOutput: settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput,
+  useStream: settingsStore.settings.hqTranslation.openaiOptions.execution.useStream,
   prompt: settingsStore.settings.hqTranslation.prompt
 })
 
@@ -244,10 +244,10 @@ function syncLocalHqSettings() {
   localHqSettings.value.modelName = hq.modelName
   localHqSettings.value.customBaseUrl = hq.customBaseUrl
   localHqSettings.value.batchSize = hq.batchSize
-  localHqSettings.value.rpmLimit = hq.rpmLimit
-  localHqSettings.value.maxRetries = hq.maxRetries
-  localHqSettings.value.forceJsonOutput = hq.forceJsonOutput
-  localHqSettings.value.useStream = hq.useStream
+  localHqSettings.value.rpmLimit = hq.openaiOptions.execution.rpmLimit
+  localHqSettings.value.maxRetries = hq.openaiOptions.execution.maxRetries
+  localHqSettings.value.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
+  localHqSettings.value.useStream = hq.openaiOptions.execution.useStream
   localHqSettings.value.prompt = hq.prompt
 }
 

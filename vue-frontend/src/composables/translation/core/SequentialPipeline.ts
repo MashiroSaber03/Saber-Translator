@@ -152,7 +152,7 @@ export function useSequentialPipeline() {
     // ============================================================
 
     function initRateLimiter(): void {
-        const rpm = settingsStore.settings.translation.rpmLimit
+        const rpm = settingsStore.settings.translation.openaiOptions.execution.rpmLimit
         if (!rateLimiter.value) {
             rateLimiter.value = createRateLimiter(rpm)
         } else {

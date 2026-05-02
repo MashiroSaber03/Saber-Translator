@@ -29,7 +29,7 @@ const provider = ref(insightStore.config.llm.provider)
 const apiKey = ref(insightStore.config.llm.apiKey)
 const model = ref(insightStore.config.llm.model)
 const baseUrl = ref(insightStore.config.llm.baseUrl)
-const useStream = ref(insightStore.config.llm.useStream)
+const useStream = ref(insightStore.config.llm.openaiOptions.execution.useStream)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 
@@ -41,7 +41,7 @@ function onProviderChange(): void {
     insightStore.config.llm.apiKey = apiKey.value
     insightStore.config.llm.model = model.value
     insightStore.config.llm.baseUrl = baseUrl.value
-    insightStore.config.llm.useStream = useStream.value
+    insightStore.config.llm.openaiOptions.execution.useStream = useStream.value
   }
   
   insightStore.setLlmProvider(newProvider)
@@ -49,7 +49,7 @@ function onProviderChange(): void {
   apiKey.value = insightStore.config.llm.apiKey
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
-  useStream.value = insightStore.config.llm.useStream
+  useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
   
   if (!model.value) {
     const defaultModel = LLM_DEFAULT_MODELS[newProvider]
@@ -132,7 +132,17 @@ function getConfig() {
     apiKey: apiKey.value,
     model: model.value,
     baseUrl: provider.value === 'custom' ? baseUrl.value : '',
-    useStream: useStream.value
+    openaiOptions: {
+      request: {
+        forceJsonOutput: insightStore.config.llm.openaiOptions.request.forceJsonOutput,
+        temperature: insightStore.config.llm.openaiOptions.request.temperature
+      },
+      execution: {
+        useStream: useStream.value,
+        rpmLimit: insightStore.config.llm.openaiOptions.execution.rpmLimit,
+        maxRetries: insightStore.config.llm.openaiOptions.execution.maxRetries
+      }
+    }
   }
 }
 
@@ -141,7 +151,7 @@ function syncFromStore(): void {
   apiKey.value = insightStore.config.llm.apiKey
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
-  useStream.value = insightStore.config.llm.useStream
+  useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
 }
 
 defineExpose({ getConfig, syncFromStore })

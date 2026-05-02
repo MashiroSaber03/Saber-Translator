@@ -12,9 +12,16 @@ export interface TranslationProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
-  rpmLimit?: number
-  maxRetries?: number
-  isJsonMode?: boolean
+  openaiOptions?: {
+    request?: {
+      forceJsonOutput?: boolean
+    }
+    execution?: {
+      useStream?: boolean
+      rpmLimit?: number
+      maxRetries?: number
+    }
+  }
   translationMode?: 'batch' | 'single'
 }
 
@@ -24,10 +31,17 @@ export interface HqTranslationProviderConfig {
   modelName?: string
   customBaseUrl?: string
   batchSize?: number
-  rpmLimit?: number
-  maxRetries?: number
-  forceJsonOutput?: boolean
-  useStream?: boolean
+  openaiOptions?: {
+    request?: {
+      forceJsonOutput?: boolean
+      temperature?: number
+    }
+    execution?: {
+      useStream?: boolean
+      rpmLimit?: number
+      maxRetries?: number
+    }
+  }
   prompt?: string
 }
 
@@ -38,8 +52,16 @@ export interface AiVisionOcrProviderConfig {
   customBaseUrl?: string
   prompt?: string
   promptMode?: 'normal' | 'json' | 'paddleocr_vl'
-  rpmLimit?: number
-  isJsonMode?: boolean
+  openaiOptions?: {
+    request?: {
+      forceJsonOutput?: boolean
+    }
+    execution?: {
+      useStream?: boolean
+      rpmLimit?: number
+      maxRetries?: number
+    }
+  }
   /** 最小图片尺寸 */
   minImageSize?: number
 }

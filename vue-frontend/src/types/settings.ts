@@ -50,6 +50,31 @@ export type HqTranslationProvider =
 export type PdfProcessingMethod = 'frontend' | 'backend'
 
 /**
+ * OpenAI-compatible 请求选项（前端持久化镜像）
+ */
+export interface OpenAICompatibleRequestOptions {
+  forceJsonOutput: boolean
+  temperature?: number
+}
+
+/**
+ * OpenAI-compatible 执行选项（前端持久化镜像）
+ */
+export interface OpenAICompatibleExecutionOptions {
+  useStream: boolean
+  rpmLimit: number
+  maxRetries: number
+}
+
+/**
+ * OpenAI-compatible 统一选项
+ */
+export interface OpenAICompatibleOptions {
+  request: OpenAICompatibleRequestOptions
+  execution: OpenAICompatibleExecutionOptions
+}
+
+/**
  * 百度 OCR 设置
  */
 export interface BaiduOcrSettings {
@@ -75,9 +100,10 @@ export interface AiVisionOcrSettings {
   modelName: string
   prompt: string
   promptMode: 'normal' | 'json' | 'paddleocr_vl'
-  rpmLimit: number
   customBaseUrl: string
-  isJsonMode: boolean
+  openaiOptions: OpenAICompatibleOptions
+  rpmLimit?: number
+  isJsonMode?: boolean
   /** 最小图片尺寸 (VLM 模型通常要求 >= 28px) */
   minImageSize: number
 }
@@ -106,9 +132,10 @@ export interface TranslationServiceSettings {
   apiKey: string
   modelName: string
   customBaseUrl: string
-  rpmLimit: number
-  maxRetries: number
-  isJsonMode: boolean
+  openaiOptions: OpenAICompatibleOptions
+  rpmLimit?: number
+  maxRetries?: number
+  isJsonMode?: boolean
   /** 翻译模式：batch=整页批量，single=逐气泡 */
   translationMode: TranslationMode
   /** 批量翻译 - 普通模式提示词 */
@@ -129,11 +156,12 @@ export interface HqTranslationSettings {
   apiKey: string
   modelName: string
   customBaseUrl: string
+  openaiOptions: OpenAICompatibleOptions
+  rpmLimit?: number
+  maxRetries?: number
+  forceJsonOutput?: boolean
+  useStream?: boolean
   batchSize: number
-  rpmLimit: number
-  maxRetries: number
-  forceJsonOutput: boolean
-  useStream: boolean
   prompt: string
 }
 
@@ -146,12 +174,12 @@ export interface ProofreadingRound {
   apiKey: string
   modelName: string
   customBaseUrl: string
+  openaiOptions: OpenAICompatibleOptions
+  rpmLimit?: number
+  maxRetries?: number
+  forceJsonOutput?: boolean
+  useStream?: boolean
   batchSize: number
-  rpmLimit: number
-  maxRetries?: number  // 最大重试次数（可选，默认使用全局设置）
-  forceJsonOutput: boolean
-  /** 是否使用流式调用 */
-  useStream: boolean
   prompt: string
   /** UI状态：是否显示API Key（不持久化） */
   showApiKey?: boolean

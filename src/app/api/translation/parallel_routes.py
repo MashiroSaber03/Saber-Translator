@@ -27,6 +27,7 @@ from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
 from src.core.config_models import BubbleState, bubble_states_to_api_response
 from src.core.color_extractor import extract_bubble_colors
 from src.shared import constants
+from src.shared.openai_options import build_openai_compatible_options
 from src.plugins.manager import apply_after_ocr_hooks
 from src.shared.ai_providers import normalize_provider_id
 
@@ -77,6 +78,35 @@ def decode_mask_from_base64(base64_str: str) -> np.ndarray:
     if image.mode != 'L':
         image = image.convert('L')
     return np.array(image)
+
+
+def _route_openai_options(
+    data,
+    *,
+    force_json_keys=(),
+    use_stream_keys=(),
+    rpm_limit_keys=(),
+    max_retries_keys=(),
+    temperature_keys=(),
+    default_force_json_output=False,
+    default_use_stream=False,
+    default_rpm_limit=0,
+    default_max_retries=0,
+    timeout=None,
+):
+    return build_openai_compatible_options(
+        data,
+        force_json_keys=force_json_keys,
+        use_stream_keys=use_stream_keys,
+        rpm_limit_keys=rpm_limit_keys,
+        max_retries_keys=max_retries_keys,
+        temperature_keys=temperature_keys,
+        default_force_json_output=default_force_json_output,
+        default_use_stream=default_use_stream,
+        default_rpm_limit=default_rpm_limit,
+        default_max_retries=default_max_retries,
+        timeout=timeout,
+    )
 
 
 @parallel_bp.route('/parallel/detect', methods=['POST'])
@@ -186,8 +216,16 @@ def parallel_ocr():
         ai_vision_ocr_prompt = data.get('ai_vision_ocr_prompt')
         ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
-        use_json_format_for_ai_vision = bool(data.get('use_json_format_for_ai_vision', False))
         ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+        ai_vision_openai_options = _route_openai_options(
+            data,
+            force_json_keys=('use_json_format_for_ai_vision',),
+            rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
+            default_force_json_output=False,
+            default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
+            timeout=120.0,
+        )
+        use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
         enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
         secondary_ocr_engine = data.get('secondary_ocr_engine')
         hybrid_ocr_threshold = data.get(
@@ -218,7 +256,9 @@ def parallel_ocr():
             ai_vision_prompt_mode=ai_vision_prompt_mode,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
             use_json_format_for_ai_vision=use_json_format_for_ai_vision,
+            rpm_limit_ai_vision=ai_vision_openai_options.execution.rpm_limit,
             ai_vision_min_image_size=ai_vision_min_image_size,
+            ai_vision_openai_options=ai_vision_openai_options,
             enable_hybrid_ocr=enable_hybrid_ocr,
             secondary_ocr_engine=secondary_ocr_engine,
             hybrid_ocr_threshold=hybrid_ocr_threshold,
@@ -324,9 +364,19 @@ def parallel_translate():
         prompt_content = data.get('prompt_content')
         textbox_prompt_content = data.get('textbox_prompt_content')
         use_textbox_prompt = data.get('use_textbox_prompt', False)
-        rpm_limit = data.get('rpm_limit', 60)
-        max_retries = data.get('max_retries', 3)
-        use_json_format = data.get('use_json_format', False)
+        openai_options = _route_openai_options(
+            data,
+            force_json_keys=('use_json_format',),
+            rpm_limit_keys=('rpm_limit', 'rpmLimit'),
+            max_retries_keys=('max_retries', 'maxRetries'),
+            default_force_json_output=False,
+            default_rpm_limit=60,
+            default_max_retries=3,
+            timeout=120.0,
+        )
+        rpm_limit = openai_options.execution.rpm_limit
+        max_retries = openai_options.execution.max_retries
+        use_json_format = openai_options.request.force_json_output
         
         # 执行翻译
         translated_texts = translate_text_list(
@@ -339,7 +389,8 @@ def parallel_translate():
             use_json_format=use_json_format,
             custom_base_url=custom_base_url,
             rpm_limit_translation=rpm_limit,
-            max_retries=max_retries
+            max_retries=max_retries,
+            openai_options=openai_options,
         )
         
         # 如果需要文本框翻译，执行第二次翻译
@@ -355,7 +406,8 @@ def parallel_translate():
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url,
                 rpm_limit_translation=rpm_limit,
-                max_retries=max_retries
+                max_retries=max_retries,
+                openai_options=openai_options,
             )
         
         return jsonify({

@@ -320,6 +320,16 @@ function addRound() {
     apiKey: '',
     modelName: '',
     customBaseUrl: '',
+    openaiOptions: {
+      request: {
+        forceJsonOutput: false
+      },
+      execution: {
+        useStream: true,
+        rpmLimit: 7,
+        maxRetries: settingsStore.settings.proofreading.maxRetries
+      }
+    },
     batchSize: 3,
     rpmLimit: 7,
     forceJsonOutput: false,

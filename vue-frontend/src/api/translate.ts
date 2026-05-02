@@ -106,6 +106,17 @@ export interface HqTranslateParams {
   }>
 
   // 高级选项
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   force_json_output?: boolean
   use_stream?: boolean
   rpm_limit?: number
@@ -124,6 +135,17 @@ export interface TranslateSingleTextParams {
   custom_base_url?: string
   target_language: string
   prompt_content?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   use_json_format?: boolean  // 是否使用 JSON 格式响应
   rpm_limit_translation?: number  // RPM 限制
   max_retries?: number  // 最大重试次数

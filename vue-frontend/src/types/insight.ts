@@ -91,6 +91,22 @@ export interface BatchConfig {
   customLayers: Array<{ name: string; units: number; align: boolean }>
 }
 
+export interface StoreOpenAICompatibleRequestOptions {
+  forceJsonOutput: boolean
+  temperature?: number
+}
+
+export interface StoreOpenAICompatibleExecutionOptions {
+  useStream: boolean
+  rpmLimit: number
+  maxRetries: number
+}
+
+export interface StoreOpenAICompatibleOptions {
+  request: StoreOpenAICompatibleRequestOptions
+  execution: StoreOpenAICompatibleExecutionOptions
+}
+
 // ==================== Store 专用配置类型（camelCase）====================
 
 /**
@@ -101,6 +117,7 @@ export interface StoreVlmConfig {
   apiKey: string
   model: string
   baseUrl?: string
+  openaiOptions: StoreOpenAICompatibleOptions
   rpmLimit?: number
   temperature?: number
   forceJson?: boolean
@@ -117,6 +134,7 @@ export interface StoreLlmConfig {
   apiKey: string
   model: string
   baseUrl: string
+  openaiOptions: StoreOpenAICompatibleOptions
   useStream?: boolean
 }
 
@@ -186,6 +204,17 @@ export interface VlmConfig {
   api_key: string
   model: string
   base_url?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   rpm_limit?: number
   temperature?: number
   force_json?: boolean
@@ -202,6 +231,17 @@ export interface LlmConfig {
   api_key?: string
   model?: string
   base_url?: string
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      max_retries: number
+    }
+  }
   use_stream?: boolean
 }
 

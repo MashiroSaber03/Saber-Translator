@@ -14,21 +14,38 @@ interface ProviderFieldMap {
   apiKey: string
   model: string
   baseUrl: string
-  [key: string]: string | number | boolean | undefined
+  [key: string]: unknown
 }
 
 /** VLM 配置字段 */
 interface VlmFields extends ProviderFieldMap {
-  rpmLimit: number
-  temperature: number
-  forceJson: boolean
-  useStream: boolean
+  openaiOptions: {
+    request: {
+      forceJsonOutput: boolean
+      temperature?: number
+    }
+    execution: {
+      useStream: boolean
+      rpmLimit: number
+      maxRetries: number
+    }
+  }
   imageMaxSize: number
 }
 
 /** LLM 配置字段 */
 interface LlmFields extends ProviderFieldMap {
-  useStream: boolean
+  openaiOptions: {
+    request: {
+      forceJsonOutput: boolean
+      temperature?: number
+    }
+    execution: {
+      useStream: boolean
+      rpmLimit: number
+      maxRetries: number
+    }
+  }
 }
 
 /** Embedding 配置字段 */
@@ -138,20 +155,17 @@ export function useInsightConfigManager(
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      rpmLimit: config.rpmLimit as number,
-      temperature: config.temperature as number,
-      forceJson: config.forceJson as boolean,
-      useStream: config.useStream as boolean,
+      openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
+        request: { forceJsonOutput: false, temperature: 0.3 },
+        execution: { useStream: true, rpmLimit: 10, maxRetries: 3 }
+      })),
       imageMaxSize: config.imageMaxSize as number
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
-      if (cached.rpmLimit !== undefined) config.rpmLimit = cached.rpmLimit
-      if (cached.temperature !== undefined) config.temperature = cached.temperature
-      if (cached.forceJson !== undefined) config.forceJson = cached.forceJson
-      if (cached.useStream !== undefined) config.useStream = cached.useStream
+      if (cached.openaiOptions !== undefined) config.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.imageMaxSize !== undefined) config.imageMaxSize = cached.imageMaxSize
     },
     { apiKey: '', model: '', baseUrl: '' }
@@ -164,13 +178,16 @@ export function useInsightConfigManager(
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      useStream: config.useStream as boolean
+      openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
+        request: { forceJsonOutput: false },
+        execution: { useStream: true, rpmLimit: 30, maxRetries: 3 }
+      }))
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
-      if (cached.useStream !== undefined) config.useStream = cached.useStream
+      if (cached.openaiOptions !== undefined) config.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
     },
     { apiKey: '', model: '', baseUrl: '' }
   )

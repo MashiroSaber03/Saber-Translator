@@ -51,6 +51,8 @@ class SerializableMixin:
             return None
         if isinstance(value, SerializableMixin):
             return value.to_dict()
+        if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+            return value.to_dict()
         if isinstance(value, list):
             return [self._serialize_value(item) for item in value]
         if isinstance(value, dict):
@@ -119,6 +121,11 @@ class SerializableMixin:
 
         # 处理嵌套的 SerializableMixin 类
         if isinstance(field_type, type) and issubclass(field_type, SerializableMixin):
+            if isinstance(value, dict):
+                return field_type.from_dict(value)
+            return value
+
+        if isinstance(field_type, type) and hasattr(field_type, "from_dict") and callable(getattr(field_type, "from_dict")):
             if isinstance(value, dict):
                 return field_type.from_dict(value)
             return value
