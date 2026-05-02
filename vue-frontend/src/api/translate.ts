@@ -114,7 +114,8 @@ export interface HqTranslateParams {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
   force_json_output?: boolean
@@ -143,7 +144,8 @@ export interface TranslateSingleTextParams {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
   use_json_format?: boolean  // 是否使用 JSON 格式响应

@@ -17,32 +17,22 @@ from src.shared import constants
 from src.shared.path_helpers import get_debug_dir # 用于保存调试图片
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
-from src.shared.ai_providers import get_provider_manifest, normalize_provider_id
+from src.shared.ai_providers import (
+    VISION_OCR_CAPABILITY,
+    get_provider_manifest,
+    normalize_provider_id,
+)
 from src.shared.openai_options import (
+    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
-from src.shared.openai_rate_limits import apply_sync_rpm_limit
-# 导入rpm限制辅助函数
-from src.core.translation import _enforce_rpm_limit
 from src.core.ocr_types import OcrResult, create_ocr_result
 from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
 
 logger = logging.getLogger("CoreOCR")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-def _apply_ai_vision_rpm_limit(provider: str, rpm_limit: int) -> None:
-    if rpm_limit <= 0:
-        return
-
-    normalized_provider = normalize_provider_id(provider) or "unknown"
-    apply_sync_rpm_limit(
-        f"vision_ocr:{normalized_provider}",
-        rpm_limit,
-        f"AI Vision OCR ({normalized_provider})",
-        _enforce_rpm_limit,
-    )
 
 # 在解析JSON响应时增加安全提取方法
 def _safely_extract_from_json(json_str: str, field_name: str) -> str:
@@ -396,14 +386,13 @@ def _recognize_with_ai_vision_results(
     ai_vision_provider = normalize_provider_id(ai_vision_provider)
     effective_options = ai_vision_openai_options or OpenAICompatibleOptions(
         request=OpenAICompatibleRequestOptions(force_json_output=use_json_format_for_ai_vision),
-        execution=OpenAICompatibleExecutionOptions(rpm_limit=rpm_limit_ai_vision),
-        timeout=120.0,
+        execution=OpenAICompatibleExecutionOptions(
+            rpm_limit=rpm_limit_ai_vision,
+            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+        ),
     )
-    if effective_options.timeout is None:
-        effective_options.timeout = 120.0
     use_json_format_for_ai_vision = effective_options.request.force_json_output
     rpm_limit_ai_vision = effective_options.execution.rpm_limit
-    max_retries_ai_vision = effective_options.execution.max_retries
 
     if not ai_vision_provider:
         logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
@@ -508,38 +497,17 @@ def _recognize_with_ai_vision_results(
             except Exception as save_error:
                 logger.warning(f"保存 AI视觉OCR 调试气泡图像失败: {save_error}")
 
-            _apply_ai_vision_rpm_limit(ai_vision_provider, rpm_limit_ai_vision)
-
-            ocr_result_raw = ""
-            for attempt in range(max_retries_ai_vision + 1):
-                ocr_result_raw = call_ai_vision_ocr_service(
-                    bubble_img_pil,
-                    provider=ai_vision_provider,
-                    api_key=ai_vision_api_key,
-                    model_name=ai_vision_model_name,
-                    prompt=current_prompt,
-                    prompt_mode=normalized_prompt_mode,
-                    use_json_format=use_json_format_for_ai_vision,
-                    custom_base_url=custom_ai_vision_base_url,
-                    openai_options=effective_options,
-                )
-                if ocr_result_raw:
-                    break
-                if attempt < max_retries_ai_vision:
-                    logger.warning(
-                        "AI视觉OCR 返回空结果，正在重试 (%s/%s): provider=%s",
-                        attempt + 1,
-                        max_retries_ai_vision + 1,
-                        ai_vision_provider,
-                    )
-                    time.sleep(1)
-
-            extracted_text_final = ""
-            if ocr_result_raw:
-                if use_json_format_for_ai_vision:
-                    extracted_text_final = _safely_extract_from_json(ocr_result_raw, "extracted_text")
-                else:
-                    extracted_text_final = ocr_result_raw
+            extracted_text_final = call_ai_vision_ocr_service(
+                bubble_img_pil,
+                provider=ai_vision_provider,
+                api_key=ai_vision_api_key,
+                model_name=ai_vision_model_name,
+                prompt=current_prompt,
+                prompt_mode=normalized_prompt_mode,
+                use_json_format=use_json_format_for_ai_vision,
+                custom_base_url=custom_ai_vision_base_url,
+                openai_options=effective_options,
+            )
 
             results.append(
                 create_ocr_result(

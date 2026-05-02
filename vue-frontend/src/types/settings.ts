@@ -63,7 +63,8 @@ export interface OpenAICompatibleRequestOptions {
 export interface OpenAICompatibleExecutionOptions {
   useStream: boolean
   rpmLimit: number
-  maxRetries: number
+  transportRetries: number
+  businessRetries: number
 }
 
 /**
@@ -102,8 +103,6 @@ export interface AiVisionOcrSettings {
   promptMode: 'normal' | 'json' | 'paddleocr_vl'
   customBaseUrl: string
   openaiOptions: OpenAICompatibleOptions
-  rpmLimit?: number
-  isJsonMode?: boolean
   /** 最小图片尺寸 (VLM 模型通常要求 >= 28px) */
   minImageSize: number
 }
@@ -133,9 +132,6 @@ export interface TranslationServiceSettings {
   modelName: string
   customBaseUrl: string
   openaiOptions: OpenAICompatibleOptions
-  rpmLimit?: number
-  maxRetries?: number
-  isJsonMode?: boolean
   /** 翻译模式：batch=整页批量，single=逐气泡 */
   translationMode: TranslationMode
   /** 批量翻译 - 普通模式提示词 */
@@ -157,10 +153,6 @@ export interface HqTranslationSettings {
   modelName: string
   customBaseUrl: string
   openaiOptions: OpenAICompatibleOptions
-  rpmLimit?: number
-  maxRetries?: number
-  forceJsonOutput?: boolean
-  useStream?: boolean
   batchSize: number
   prompt: string
 }
@@ -175,10 +167,6 @@ export interface ProofreadingRound {
   modelName: string
   customBaseUrl: string
   openaiOptions: OpenAICompatibleOptions
-  rpmLimit?: number
-  maxRetries?: number
-  forceJsonOutput?: boolean
-  useStream?: boolean
   batchSize: number
   prompt: string
   /** UI状态：是否显示API Key（不持久化） */
@@ -239,6 +227,7 @@ export interface TextStyleSettings {
  * 完整的翻译设置
  */
 export interface TranslationSettings {
+  settingsSchemaVersion: number
   // 文字样式设置
   textStyle: TextStyleSettings
 

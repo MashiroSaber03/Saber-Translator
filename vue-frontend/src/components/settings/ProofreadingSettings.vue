@@ -124,22 +124,32 @@
             </div>
             <div class="settings-item">
               <label>RPM限制:</label>
-              <input type="number" v-model.number="round.rpmLimit" min="0" step="1" />
+              <input type="number" v-model.number="round.openaiOptions.execution.rpmLimit" min="0" step="1" />
             </div>
           </div>
 
           <!-- 高级选项 -->
           <div class="settings-row">
             <div class="settings-item">
+              <label>业务重试:</label>
+              <input type="number" v-model.number="round.openaiOptions.execution.businessRetries" min="0" max="10" step="1" />
+            </div>
+            <div class="settings-item">
+              <label>传输重试:</label>
+              <input type="number" v-model.number="round.openaiOptions.execution.transportRetries" min="0" max="10" step="1" />
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-item">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="round.forceJsonOutput" />
+                <input type="checkbox" v-model="round.openaiOptions.request.forceJsonOutput" />
                 强制JSON输出
               </label>
               <div class="input-hint">使用 response_format: json_object</div>
             </div>
             <div class="settings-item">
               <label class="checkbox-label">
-                <input type="checkbox" v-model="round.useStream" />
+                <input type="checkbox" v-model="round.openaiOptions.execution.useStream" />
                 流式调用
               </label>
               <div class="input-hint">使用流式API调用，避免超时</div>
@@ -327,13 +337,11 @@ function addRound() {
       execution: {
         useStream: true,
         rpmLimit: 7,
-        maxRetries: settingsStore.settings.proofreading.maxRetries
+        transportRetries: 1,
+        businessRetries: settingsStore.settings.proofreading.maxRetries
       }
     },
     batchSize: 3,
-    rpmLimit: 7,
-    forceJsonOutput: false,
-    useStream: true,
     prompt: DEFAULT_PROOFREADING_PROMPT,
     showApiKey: false
   }

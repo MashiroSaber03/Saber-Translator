@@ -9,6 +9,7 @@ import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface OcrInput {
     imageIndex: number
@@ -65,16 +66,7 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
         ai_vision_ocr_prompt: settings.aiVisionOcr?.prompt,
         ai_vision_prompt_mode: settings.aiVisionOcr?.promptMode,
         custom_ai_vision_base_url: settings.aiVisionOcr?.customBaseUrl,
-        openai_options: {
-            request: {
-                force_json_output: settings.aiVisionOcr?.openaiOptions.request.forceJsonOutput || false
-            },
-            execution: {
-                use_stream: settings.aiVisionOcr?.openaiOptions.execution.useStream || false,
-                rpm_limit: settings.aiVisionOcr?.openaiOptions.execution.rpmLimit || 0,
-                max_retries: settings.aiVisionOcr?.openaiOptions.execution.maxRetries || 0
-            }
-        },
+        openai_options: serializeOpenAICompatibleOptionsForApi(settings.aiVisionOcr.openaiOptions),
         enable_hybrid_ocr: settings.hybridOcr?.enabled,
         secondary_ocr_engine: settings.hybridOcr?.secondaryEngine,
         hybrid_ocr_threshold: settings.hybridOcr?.confidenceThreshold,

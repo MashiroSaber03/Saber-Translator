@@ -19,7 +19,8 @@ export interface TranslationProviderConfig {
     execution?: {
       useStream?: boolean
       rpmLimit?: number
-      maxRetries?: number
+      transportRetries?: number
+      businessRetries?: number
     }
   }
   translationMode?: 'batch' | 'single'
@@ -39,7 +40,8 @@ export interface HqTranslationProviderConfig {
     execution?: {
       useStream?: boolean
       rpmLimit?: number
-      maxRetries?: number
+      transportRetries?: number
+      businessRetries?: number
     }
   }
   prompt?: string
@@ -59,7 +61,8 @@ export interface AiVisionOcrProviderConfig {
     execution?: {
       useStream?: boolean
       rpmLimit?: number
-      maxRetries?: number
+      transportRetries?: number
+      businessRetries?: number
     }
   }
   /** 最小图片尺寸 */

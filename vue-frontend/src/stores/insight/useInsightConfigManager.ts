@@ -5,6 +5,7 @@
  */
 
 import type { Ref } from 'vue'
+import { normalizeOpenAiOptions } from '@/utils/openaiOptions'
 
 /** localStorage 存储键 */
 const STORAGE_KEY = 'insight_provider_configs'
@@ -27,7 +28,8 @@ interface VlmFields extends ProviderFieldMap {
     execution: {
       useStream: boolean
       rpmLimit: number
-      maxRetries: number
+      transportRetries: number
+      businessRetries: number
     }
   }
   imageMaxSize: number
@@ -43,7 +45,8 @@ interface LlmFields extends ProviderFieldMap {
     execution: {
       useStream: boolean
       rpmLimit: number
-      maxRetries: number
+      transportRetries: number
+      businessRetries: number
     }
   }
 }
@@ -92,6 +95,18 @@ export function useInsightConfigManager(
           llm: parsed.llm || {},
           embedding: parsed.embedding || {},
           reranker: parsed.reranker || {}
+        }
+        for (const config of Object.values(providerConfigs.value.vlm)) {
+          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, undefined, {
+            request: { forceJsonOutput: false, temperature: 0.3 },
+            execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 }
+          })
+        }
+        for (const config of Object.values(providerConfigs.value.llm)) {
+          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, undefined, {
+            request: { forceJsonOutput: false },
+            execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 }
+          })
         }
       } catch (e) {
         console.error('[Insight] 加载服务商配置缓存失败:', e)
@@ -157,7 +172,7 @@ export function useInsightConfigManager(
       baseUrl: config.baseUrl as string,
       openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
         request: { forceJsonOutput: false, temperature: 0.3 },
-        execution: { useStream: true, rpmLimit: 10, maxRetries: 3 }
+        execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 }
       })),
       imageMaxSize: config.imageMaxSize as number
     }),
@@ -180,7 +195,7 @@ export function useInsightConfigManager(
       baseUrl: config.baseUrl as string,
       openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
         request: { forceJsonOutput: false },
-        execution: { useStream: true, rpmLimit: 30, maxRetries: 3 }
+        execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 }
       }))
     }),
     (config, cached) => {

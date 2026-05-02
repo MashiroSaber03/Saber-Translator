@@ -30,6 +30,9 @@ const apiKey = ref(insightStore.config.llm.apiKey)
 const model = ref(insightStore.config.llm.model)
 const baseUrl = ref(insightStore.config.llm.baseUrl)
 const useStream = ref(insightStore.config.llm.openaiOptions.execution.useStream)
+const rpmLimit = ref(insightStore.config.llm.openaiOptions.execution.rpmLimit)
+const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.transportRetries)
+const businessRetries = ref(insightStore.config.llm.openaiOptions.execution.businessRetries)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 
@@ -42,6 +45,9 @@ function onProviderChange(): void {
     insightStore.config.llm.model = model.value
     insightStore.config.llm.baseUrl = baseUrl.value
     insightStore.config.llm.openaiOptions.execution.useStream = useStream.value
+    insightStore.config.llm.openaiOptions.execution.rpmLimit = rpmLimit.value
+    insightStore.config.llm.openaiOptions.execution.transportRetries = transportRetries.value
+    insightStore.config.llm.openaiOptions.execution.businessRetries = businessRetries.value
   }
   
   insightStore.setLlmProvider(newProvider)
@@ -50,6 +56,9 @@ function onProviderChange(): void {
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
+  rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
+  transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
+  businessRetries.value = insightStore.config.llm.openaiOptions.execution.businessRetries
   
   if (!model.value) {
     const defaultModel = LLM_DEFAULT_MODELS[newProvider]
@@ -139,8 +148,9 @@ function getConfig() {
       },
       execution: {
         useStream: useStream.value,
-        rpmLimit: insightStore.config.llm.openaiOptions.execution.rpmLimit,
-        maxRetries: insightStore.config.llm.openaiOptions.execution.maxRetries
+        rpmLimit: rpmLimit.value,
+        transportRetries: transportRetries.value,
+        businessRetries: businessRetries.value
       }
     }
   }
@@ -152,6 +162,9 @@ function syncFromStore(): void {
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
+  rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
+  transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
+  businessRetries.value = insightStore.config.llm.openaiOptions.execution.businessRetries
 }
 
 defineExpose({ getConfig, syncFromStore })
@@ -191,6 +204,21 @@ defineExpose({ getConfig, syncFromStore })
     <div v-if="showBaseUrl" class="form-group">
       <label>Base URL</label>
       <input v-model="baseUrl" type="text" placeholder="自定义 API 地址">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>RPM 限制</label>
+        <input v-model.number="rpmLimit" type="number" min="0" max="100">
+      </div>
+      <div class="form-group">
+        <label>传输重试</label>
+        <input v-model.number="transportRetries" type="number" min="0" max="10">
+      </div>
+      <div class="form-group">
+        <label>业务重试</label>
+        <input v-model.number="businessRetries" type="number" min="0" max="10">
+      </div>
     </div>
     
     <div class="form-group">

@@ -127,14 +127,17 @@ class HqTranslationRpmTests(unittest.TestCase):
                 sys.modules[module_name] = original
 
     def test_hq_translate_batch_applies_rpm_limit_from_request(self) -> None:
+        def fake_complete(*args, **kwargs):
+            before_request = kwargs.get("before_request")
+            if before_request is not None:
+                before_request()
+            return '{"images":[]}'
+
         with mock.patch.object(
             self.translation_module._hq_chat_transport,
             "complete",
-            return_value='{"images":[]}',
-        ), mock.patch.object(
-            self.translation_module,
-            "_enforce_rpm_limit",
-        ) as rpm_mock:
+            side_effect=fake_complete,
+        ), mock.patch("src.shared.openai_execution.apply_sync_rpm_limit") as rpm_mock:
             response = self.client.post(
                 "/api/hq_translate_batch",
                 json={
@@ -149,7 +152,7 @@ class HqTranslationRpmTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         rpm_mock.assert_called()
-        self.assertEqual(rpm_mock.call_args.args[0], 11)
+        self.assertEqual(rpm_mock.call_args.args[1], 11)
 
     def test_hq_translate_batch_does_not_forward_removed_low_reasoning_overrides(self) -> None:
         with mock.patch.object(

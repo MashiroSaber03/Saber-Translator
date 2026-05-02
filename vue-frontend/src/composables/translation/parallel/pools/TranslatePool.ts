@@ -14,6 +14,7 @@ import type { ParallelProgressTracker } from '../ParallelProgressTracker'
 import { parallelTranslate } from '@/api/parallelTranslate'
 import { hqTranslateBatch, translateSingleText } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export class TranslatePool extends TaskPool {
   private mode: ParallelTranslationMode = 'standard'
@@ -102,16 +103,7 @@ export class TranslatePool extends TaskPool {
             custom_base_url: settings.translation.customBaseUrl,
             target_language: settings.targetLanguage,
             prompt_content: promptContent,  // 使用逐气泡翻译的提示词
-            openai_options: {
-              request: {
-                force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
-              },
-              execution: {
-                use_stream: settings.translation.openaiOptions.execution.useStream,
-                rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-                  max_retries: settings.translation.openaiOptions.execution.maxRetries
-                }
-            }
+            openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
           })
 
           if (response.success && response.data) {
@@ -131,16 +123,13 @@ export class TranslatePool extends TaskPool {
               custom_base_url: settings.translation.customBaseUrl,
               target_language: settings.targetLanguage,
               prompt_content: settings.textboxPrompt,
-              openai_options: {
+              openai_options: serializeOpenAICompatibleOptionsForApi({
+                ...settings.translation.openaiOptions,
                 request: {
-                  force_json_output: false
-                },
-                execution: {
-                  use_stream: settings.translation.openaiOptions.execution.useStream,
-                  rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-                  max_retries: settings.translation.openaiOptions.execution.maxRetries
+                  ...settings.translation.openaiOptions.request,
+                  forceJsonOutput: false
                 }
-              }
+              })
             })
 
             if (textboxResponse.success && textboxResponse.data) {
@@ -174,16 +163,7 @@ export class TranslatePool extends TaskPool {
         prompt_content: settings.translatePrompt,
         textbox_prompt_content: settings.textboxPrompt,
         use_textbox_prompt: settings.useTextboxPrompt,
-        openai_options: {
-          request: {
-            force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
-          },
-          execution: {
-            use_stream: settings.translation.openaiOptions.execution.useStream,
-            rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-            max_retries: settings.translation.openaiOptions.execution.maxRetries
-          }
-        }
+        openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
       })
 
       if (!response.success) {
@@ -249,16 +229,7 @@ export class TranslatePool extends TaskPool {
       isProofreading: false,
       enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
       // 其他参数
-        openai_options: {
-          request: {
-            force_json_output: hqTranslation.openaiOptions.request.forceJsonOutput
-          },
-        execution: {
-          use_stream: hqTranslation.openaiOptions.execution.useStream,
-            rpm_limit: hqTranslation.openaiOptions.execution.rpmLimit,
-            max_retries: hqTranslation.openaiOptions.execution.maxRetries ?? 2
-          }
-      }
+      openai_options: serializeOpenAICompatibleOptionsForApi(hqTranslation.openaiOptions)
     })
 
     // 4. 解析结果
@@ -351,16 +322,7 @@ export class TranslatePool extends TaskPool {
         isProofreading: true,
         enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
         // 其他参数
-        openai_options: {
-          request: {
-            force_json_output: round.openaiOptions.request.forceJsonOutput
-          },
-          execution: {
-            use_stream: round.openaiOptions.execution.useStream ?? true,
-            rpm_limit: round.openaiOptions.execution.rpmLimit,
-            max_retries: round.openaiOptions.execution.maxRetries ?? proofreading.maxRetries ?? 2
-          }
-        }
+        openai_options: serializeOpenAICompatibleOptionsForApi(round.openaiOptions)
       })
 
       const parsedResult = this.parseHqResponse(response, round.openaiOptions.request.forceJsonOutput)

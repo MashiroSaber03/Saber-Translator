@@ -110,10 +110,11 @@ describe('settings store saber yolo refine', () => {
     expect(saved).toBe(true)
     expect(saveUserSettingsMock).toHaveBeenCalledWith(expect.objectContaining({
       enableSaberYoloRefine: false,
-      saberYoloRefineOverlapThreshold: '35',
+      saberYoloRefineOverlapThreshold: 35,
       enableAuxYoloDetection: true,
-      auxYoloConfThreshold: '0.55',
-      auxYoloOverlapThreshold: '0.2'
+      auxYoloConfThreshold: 0.55,
+      auxYoloOverlapThreshold: 0.2,
+      settingsSchemaVersion: 2
     }))
   })
 })

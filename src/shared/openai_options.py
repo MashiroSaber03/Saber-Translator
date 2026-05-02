@@ -1,16 +1,13 @@
 """
-Shared OpenAI-compatible request/execution options.
+Shared persistent OpenAI-compatible request/execution options.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import logging
 from typing import Any, Mapping, Optional, Sequence
 
-from src.shared.ai_providers import get_provider_manifest
-
-logger = logging.getLogger("SharedOpenAIOptions")
+DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
 
 
 def _value_from_mapping(data: Mapping[str, Any], *keys: str, default=None):
@@ -94,13 +91,23 @@ class OpenAICompatibleRequestOptions:
 class OpenAICompatibleExecutionOptions:
     use_stream: bool = False
     rpm_limit: int = 0
-    max_retries: int = 0
+    transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES
+    business_retries: int = 0
+
+    @property
+    def max_retries(self) -> int:
+        return self.business_retries
+
+    @max_retries.setter
+    def max_retries(self, value: int) -> None:
+        self.business_retries = max(0, int(value or 0))
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "use_stream": self.use_stream,
             "rpm_limit": self.rpm_limit,
-            "max_retries": self.max_retries,
+            "transport_retries": self.transport_retries,
+            "business_retries": self.business_retries,
         }
 
     @classmethod
@@ -116,8 +123,25 @@ class OpenAICompatibleExecutionOptions:
                 0,
                 minimum=0,
             ),
-            max_retries=_coerce_int(
-                _value_from_mapping(data, "max_retries", "maxRetries", default=0),
+            transport_retries=_coerce_int(
+                _value_from_mapping(
+                    data,
+                    "transport_retries",
+                    "transportRetries",
+                    default=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                ),
+                DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                minimum=0,
+            ),
+            business_retries=_coerce_int(
+                _value_from_mapping(
+                    data,
+                    "business_retries",
+                    "businessRetries",
+                    "max_retries",
+                    "maxRetries",
+                    default=0,
+                ),
                 0,
                 minimum=0,
             ),
@@ -128,19 +152,11 @@ class OpenAICompatibleExecutionOptions:
 class OpenAICompatibleOptions:
     request: OpenAICompatibleRequestOptions = field(default_factory=OpenAICompatibleRequestOptions)
     execution: OpenAICompatibleExecutionOptions = field(default_factory=OpenAICompatibleExecutionOptions)
-    timeout: Optional[float] = None
-    print_stream_output: bool = False
-    stream_output_label: Optional[str] = None
-    request_overrides: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "request": self.request.to_dict(),
             "execution": self.execution.to_dict(),
-            "timeout": self.timeout,
-            "print_stream_output": self.print_stream_output,
-            "stream_output_label": self.stream_output_label,
-            "request_overrides": dict(self.request_overrides),
         }
 
     @classmethod
@@ -151,22 +167,11 @@ class OpenAICompatibleOptions:
         return cls(
             request=OpenAICompatibleRequestOptions.from_dict(request_data),
             execution=OpenAICompatibleExecutionOptions.from_dict(execution_data),
-            timeout=_coerce_float(_value_from_mapping(data, "timeout", default=None), None),
-            print_stream_output=_coerce_bool(
-                _value_from_mapping(data, "print_stream_output", "printStreamOutput", default=False),
-                False,
-            ),
-            stream_output_label=_value_from_mapping(
-                data,
-                "stream_output_label",
-                "streamOutputLabel",
-                default=None,
-            ),
-            request_overrides=dict(_value_from_mapping(data, "request_overrides", "requestOverrides", default={}) or {}),
         )
 
-    def timeout_or(self, default: float) -> float:
-        return float(self.timeout) if self.timeout is not None else float(default)
+
+def clone_openai_compatible_options(options: OpenAICompatibleOptions) -> OpenAICompatibleOptions:
+    return OpenAICompatibleOptions.from_dict(options.to_dict())
 
 
 def build_openai_compatible_options(
@@ -177,17 +182,16 @@ def build_openai_compatible_options(
     temperature_keys: Sequence[str] = (),
     use_stream_keys: Sequence[str] = (),
     rpm_limit_keys: Sequence[str] = (),
+    transport_retries_keys: Sequence[str] = (),
+    business_retries_keys: Sequence[str] = (),
     max_retries_keys: Sequence[str] = (),
     default_force_json_output: bool = False,
     default_temperature: Optional[float] = None,
     default_use_stream: bool = False,
     default_rpm_limit: int = 0,
-    default_max_retries: int = 0,
-    timeout: Optional[float] = None,
-    print_stream_output: bool = False,
-    stream_output_label: Optional[str] = None,
-    request_overrides: Optional[Mapping[str, Any]] = None,
-    max_retries_maximum: Optional[int] = None,
+    default_transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+    default_business_retries: int = 0,
+    business_retries_maximum: Optional[int] = None,
 ) -> OpenAICompatibleOptions:
     nested_payload = None
     for key in options_keys:
@@ -220,47 +224,33 @@ def build_openai_compatible_options(
                     default_rpm_limit,
                     minimum=0,
                 ),
-                max_retries=_coerce_int(
-                    _value_from_mapping(data, *max_retries_keys, default=default_max_retries),
-                    default_max_retries,
+                transport_retries=_coerce_int(
+                    _value_from_mapping(
+                        data,
+                        *transport_retries_keys,
+                        default=default_transport_retries,
+                    ),
+                    default_transport_retries,
                     minimum=0,
-                    maximum=max_retries_maximum,
+                ),
+                business_retries=_coerce_int(
+                    _value_from_mapping(
+                        data,
+                        *business_retries_keys,
+                        *max_retries_keys,
+                        default=default_business_retries,
+                    ),
+                    default_business_retries,
+                    minimum=0,
+                    maximum=business_retries_maximum,
                 ),
             ),
         )
 
-    if max_retries_maximum is not None:
-        options.execution.max_retries = min(options.execution.max_retries, max_retries_maximum)
+    if business_retries_maximum is not None:
+        options.execution.business_retries = min(
+            options.execution.business_retries,
+            business_retries_maximum,
+        )
 
-    if request_overrides:
-        merged_overrides = dict(options.request_overrides)
-        merged_overrides.update(request_overrides)
-        options.request_overrides = merged_overrides
-
-    options.timeout = timeout if timeout is not None else options.timeout
-    options.print_stream_output = print_stream_output
-    options.stream_output_label = stream_output_label
     return options
-
-
-def normalize_openai_compatible_options_for_provider(
-    provider: str,
-    options: OpenAICompatibleOptions,
-    *,
-    logger_instance: Optional[logging.Logger] = None,
-) -> OpenAICompatibleOptions:
-    manifest = get_provider_manifest(provider)
-    effective_logger = logger_instance or logger
-
-    normalized = OpenAICompatibleOptions.from_dict(options.to_dict())
-
-    if normalized.execution.use_stream and not manifest.supports_stream:
-        effective_logger.info("%s 不支持流式调用，自动回退为非流式模式", manifest.display_name)
-        normalized.execution.use_stream = False
-        normalized.print_stream_output = False
-
-    if normalized.request.force_json_output and not manifest.supports_json_response:
-        effective_logger.info("%s 不支持强制 JSON 输出，自动关闭 JSON 模式", manifest.display_name)
-        normalized.request.force_json_output = False
-
-    return normalized

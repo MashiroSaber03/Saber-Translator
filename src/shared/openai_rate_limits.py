@@ -11,11 +11,78 @@ import time
 from collections import defaultdict
 from typing import Callable
 
+from src.shared.ai_providers import normalize_provider_id
+
 logger = logging.getLogger("SharedOpenAIRateLimits")
+
+_CAPABILITY_SERVICE_NAMES = {
+    "translation": "Translation",
+    "hq_translation": "HQTranslation",
+    "vision_ocr": "AIVisionOCR",
+    "chat": "MangaInsightChat",
+    "vlm": "MangaInsightVLM",
+}
 
 _sync_last_reset_by_bucket = defaultdict(lambda: [0.0])
 _sync_request_count_by_bucket = defaultdict(lambda: [0])
 _sync_lock_by_bucket = defaultdict(threading.Lock)
+
+
+def build_openai_rpm_bucket_key(capability: str, provider: str) -> str:
+    normalized_provider = normalize_provider_id(provider) or "unknown"
+    return f"{capability}:{normalized_provider}"
+
+
+def build_openai_rpm_service_name(capability: str, provider: str) -> str:
+    normalized_provider = normalize_provider_id(provider) or "unknown"
+    capability_label = _CAPABILITY_SERVICE_NAMES.get(capability, capability)
+    return f"{capability_label} ({normalized_provider})"
+
+
+def enforce_sync_rpm_limit_window(
+    rpm_limit: int,
+    service_name: str,
+    last_reset_time_ref: list,
+    request_count_ref: list,
+) -> None:
+    if rpm_limit <= 0:
+        return
+
+    current_time = time.time()
+
+    if current_time - last_reset_time_ref[0] >= 60:
+        logger.info("rpm: %s - 1分钟窗口已过，重置计数器和时间。", service_name)
+        last_reset_time_ref[0] = current_time
+        request_count_ref[0] = 0
+
+    if request_count_ref[0] >= rpm_limit:
+        time_to_wait = 60 - (current_time - last_reset_time_ref[0])
+        if time_to_wait > 0:
+            logger.info(
+                "rpm: %s - 已达到每分钟 %s 次请求上限。将等待 %.2f 秒...",
+                service_name,
+                rpm_limit,
+                time_to_wait,
+            )
+            time.sleep(time_to_wait)
+            last_reset_time_ref[0] = time.time()
+            request_count_ref[0] = 0
+        else:
+            logger.info("rpm: %s - 窗口已过但计数未重置，立即重置。", service_name)
+            last_reset_time_ref[0] = current_time
+            request_count_ref[0] = 0
+
+    if request_count_ref[0] == 0 and last_reset_time_ref[0] == 0:
+        last_reset_time_ref[0] = current_time
+        logger.info("rpm: %s - 启动新的1分钟请求窗口。", service_name)
+
+    request_count_ref[0] += 1
+    logger.debug(
+        "rpm: %s - 当前窗口请求计数: %s/%s",
+        service_name,
+        request_count_ref[0],
+        rpm_limit if rpm_limit > 0 else "无限制",
+    )
 
 
 def apply_sync_rpm_limit(

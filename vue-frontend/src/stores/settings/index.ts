@@ -35,6 +35,11 @@ import {
 } from '@/constants'
 import { normalizeProviderId } from '@/config/aiProviders'
 import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
+import {
+  cloneOpenAiOptions,
+  createDefaultOpenAiOptions,
+  normalizeOpenAiOptions
+} from '@/utils/openaiOptions'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
@@ -67,18 +72,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function createOpenAiOptions(overrides?: Partial<OpenAICompatibleOptions>): OpenAICompatibleOptions {
-    return {
-      request: {
-        forceJsonOutput: false,
-        ...overrides?.request
-      },
-      execution: {
-        useStream: false,
-        rpmLimit: 0,
-        maxRetries: 0,
-        ...overrides?.execution
-      }
-    }
+    return createDefaultOpenAiOptions(overrides)
   }
 
   // ============================================================
@@ -111,6 +105,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveToStorage(): void {
     try {
+      stripLegacyOpenAiMirrorFields()
       const data = JSON.stringify(settings.value)
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, data)
     } catch (error) {
@@ -123,6 +118,7 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   function saveProviderConfigsToStorage(): void {
     try {
+      stripLegacyOpenAiMirrorFields()
       const data = JSON.stringify(providerConfigs.value)
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, data)
     } catch (error) {
@@ -243,6 +239,7 @@ export const useSettingsStore = defineStore('settings', () => {
           aiVisionOcr: parsed.aiVisionOcr || {}
         }
         normalizeProviderConfigAliases()
+        normalizeProviderConfigOpenAiOptions()
         console.log('已从 localStorage 加载服务商配置缓存')
       }
     } catch (error) {
@@ -303,58 +300,57 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     const tr = settings.value.translation as typeof settings.value.translation & Record<string, unknown>
-    tr.openaiOptions = createOpenAiOptions(tr.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
-    tr.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
-      tr.openaiOptions.execution.rpmLimit ?? tr.rpmLimit,
-      DEFAULT_RPM_TRANSLATION
+    tr.openaiOptions = normalizeOpenAiOptions(
+      tr.openaiOptions,
+      {
+        rpmLimit: tr.rpmLimit,
+        maxRetries: tr.maxRetries,
+        isJsonMode: tr.isJsonMode
+      },
+      {
+        execution: {
+          rpmLimit: DEFAULT_RPM_TRANSLATION,
+          businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+        }
+      }
     )
-    tr.openaiOptions.execution.maxRetries = parseNumberOrFallback(
-      tr.openaiOptions.execution.maxRetries ?? tr.maxRetries,
-      DEFAULT_TRANSLATION_MAX_RETRIES
-    )
-    tr.openaiOptions.request.forceJsonOutput = Boolean(
-      tr.openaiOptions.request.forceJsonOutput ?? tr.isJsonMode ?? false
-    )
-    tr.rpmLimit = tr.openaiOptions.execution.rpmLimit
-    tr.maxRetries = tr.openaiOptions.execution.maxRetries
-    tr.isJsonMode = tr.openaiOptions.request.forceJsonOutput
 
     const hq = settings.value.hqTranslation as typeof settings.value.hqTranslation & Record<string, unknown>
     hq.batchSize = Number(hq.batchSize) || 10
-    hq.openaiOptions = createOpenAiOptions(hq.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
-    hq.openaiOptions.execution.useStream = Boolean(
-      hq.openaiOptions.execution.useStream ?? hq.useStream ?? true
+    hq.openaiOptions = normalizeOpenAiOptions(
+      hq.openaiOptions,
+      {
+        rpmLimit: hq.rpmLimit,
+        maxRetries: hq.maxRetries,
+        forceJsonOutput: hq.forceJsonOutput,
+        useStream: hq.useStream
+      },
+      {
+        execution: {
+          useStream: true,
+          rpmLimit: 7,
+          businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+        }
+      }
     )
-    hq.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
-      hq.openaiOptions.execution.rpmLimit ?? hq.rpmLimit,
-      7
-    )
-    hq.openaiOptions.execution.maxRetries = parseNumberOrFallback(
-      hq.openaiOptions.execution.maxRetries ?? hq.maxRetries,
-      DEFAULT_HQ_TRANSLATION_MAX_RETRIES
-    )
-    hq.openaiOptions.request.forceJsonOutput = Boolean(
-      hq.openaiOptions.request.forceJsonOutput ?? hq.forceJsonOutput ?? false
-    )
-    hq.rpmLimit = hq.openaiOptions.execution.rpmLimit
-    hq.maxRetries = hq.openaiOptions.execution.maxRetries
-    hq.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
-    hq.useStream = hq.openaiOptions.execution.useStream
 
     const av = settings.value.aiVisionOcr as typeof settings.value.aiVisionOcr & Record<string, unknown>
-    av.openaiOptions = createOpenAiOptions(av.openaiOptions as Partial<OpenAICompatibleOptions> | undefined)
-    av.openaiOptions.execution.rpmLimit = parseNumberOrFallback(
-      av.openaiOptions.execution.rpmLimit ?? av.rpmLimit,
-      DEFAULT_RPM_AI_VISION_OCR
-    )
-    av.openaiOptions.execution.maxRetries = parseNumberOrFallback(
-      av.openaiOptions.execution.maxRetries,
-      DEFAULT_TRANSLATION_MAX_RETRIES
+    av.openaiOptions = normalizeOpenAiOptions(
+      av.openaiOptions,
+      {
+        rpmLimit: av.rpmLimit,
+        maxRetries: av.maxRetries,
+        isJsonMode: av.isJsonMode
+      },
+      {
+        execution: {
+          rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
+          businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+        }
+      }
     )
     av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt, av.openaiOptions.request.forceJsonOutput)
     av.openaiOptions.request.forceJsonOutput = av.promptMode === 'json'
-    av.rpmLimit = av.openaiOptions.execution.rpmLimit
-    av.isJsonMode = av.openaiOptions.request.forceJsonOutput
     // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
     if (av.minImageSize === undefined || av.minImageSize === null || isNaN(Number(av.minImageSize))) {
       av.minImageSize = DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
@@ -383,11 +379,25 @@ export const useSettingsStore = defineStore('settings', () => {
     pr.maxRetries = parseNumberOrFallback(pr.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
     pr.rounds = pr.rounds.map(round => ({
       ...round,
-      rpmLimit: round.openaiOptions.execution.rpmLimit,
-      maxRetries: round.openaiOptions.execution.maxRetries,
-      forceJsonOutput: round.openaiOptions.request.forceJsonOutput,
-      useStream: round.openaiOptions.execution.useStream
+      openaiOptions: normalizeOpenAiOptions(
+        round.openaiOptions,
+        {
+          rpmLimit: (round as Record<string, unknown>).rpmLimit,
+          maxRetries: (round as Record<string, unknown>).maxRetries,
+          forceJsonOutput: (round as Record<string, unknown>).forceJsonOutput,
+          useStream: (round as Record<string, unknown>).useStream
+        },
+        {
+          execution: {
+            useStream: true,
+            rpmLimit: 7,
+            businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+          }
+        }
+      )
     }))
+
+    settings.value.settingsSchemaVersion = 2
 
     // 迁移旧版服务商名称
     if ((tr.provider as string) === 'baidu') {
@@ -432,6 +442,118 @@ export const useSettingsStore = defineStore('settings', () => {
     providerConfigs.value.aiVisionOcr = normalizeRecord(providerConfigs.value.aiVisionOcr)
   }
 
+  function normalizeProviderConfigOpenAiOptions(): void {
+    for (const config of Object.values(providerConfigs.value.translation)) {
+      config.openaiOptions = normalizeOpenAiOptions(
+        config.openaiOptions,
+        {
+          forceJsonOutput: (config as Record<string, unknown>).forceJsonOutput,
+          isJsonMode: (config as Record<string, unknown>).isJsonMode,
+          useStream: (config as Record<string, unknown>).useStream,
+          rpmLimit: (config as Record<string, unknown>).rpmLimit,
+          maxRetries: (config as Record<string, unknown>).maxRetries
+        },
+        {
+          execution: {
+            rpmLimit: DEFAULT_RPM_TRANSLATION,
+            businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+          }
+        }
+      )
+    }
+
+    for (const config of Object.values(providerConfigs.value.hqTranslation)) {
+      config.openaiOptions = normalizeOpenAiOptions(
+        config.openaiOptions,
+        {
+          forceJsonOutput: (config as Record<string, unknown>).forceJsonOutput,
+          useStream: (config as Record<string, unknown>).useStream,
+          rpmLimit: (config as Record<string, unknown>).rpmLimit,
+          maxRetries: (config as Record<string, unknown>).maxRetries
+        },
+        {
+          execution: {
+            useStream: true,
+            rpmLimit: 7,
+            businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+          }
+        }
+      )
+    }
+
+    for (const config of Object.values(providerConfigs.value.aiVisionOcr)) {
+      config.openaiOptions = normalizeOpenAiOptions(
+        config.openaiOptions,
+        {
+          isJsonMode: (config as Record<string, unknown>).isJsonMode,
+          rpmLimit: (config as Record<string, unknown>).rpmLimit,
+          maxRetries: (config as Record<string, unknown>).maxRetries
+        },
+        {
+          execution: {
+            rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
+            businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+          }
+        }
+      )
+    }
+  }
+
+  function stripLegacyOpenAiMirrorFields(): void {
+    const translation = settings.value.translation as Record<string, unknown>
+    delete translation.rpmLimit
+    delete translation.maxRetries
+    delete translation.isJsonMode
+
+    const hq = settings.value.hqTranslation as Record<string, unknown>
+    delete hq.rpmLimit
+    delete hq.maxRetries
+    delete hq.forceJsonOutput
+    delete hq.useStream
+
+    const aiVision = settings.value.aiVisionOcr as Record<string, unknown>
+    delete aiVision.rpmLimit
+    delete aiVision.maxRetries
+    delete aiVision.isJsonMode
+    delete aiVision.forceJsonOutput
+    delete aiVision.useStream
+
+    settings.value.proofreading.rounds.forEach((round) => {
+      const target = round as Record<string, unknown>
+      delete target.rpmLimit
+      delete target.maxRetries
+      delete target.forceJsonOutput
+      delete target.useStream
+      delete target.showApiKey
+    })
+
+    for (const config of Object.values(providerConfigs.value.translation)) {
+      const target = config as Record<string, unknown>
+      delete target.rpmLimit
+      delete target.maxRetries
+      delete target.isJsonMode
+      delete target.forceJsonOutput
+      delete target.useStream
+    }
+
+    for (const config of Object.values(providerConfigs.value.hqTranslation)) {
+      const target = config as Record<string, unknown>
+      delete target.rpmLimit
+      delete target.maxRetries
+      delete target.forceJsonOutput
+      delete target.useStream
+    }
+
+    for (const config of Object.values(providerConfigs.value.aiVisionOcr)) {
+      const target = config as Record<string, unknown>
+      delete target.rpmLimit
+      delete target.maxRetries
+      delete target.isJsonMode
+      delete target.forceJsonOutput
+      delete target.useStream
+    }
+  }
+
   /**
    * 深度合并对象
    */
@@ -442,6 +564,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const result = { ...target }
     for (const key in source) {
       if (Object.prototype.hasOwnProperty.call(source, key)) {
+        if (!(key in target)) continue
         const k = key as keyof TranslationSettings
         const sourceValue = source[k]
         const targetValue = result[k]
@@ -620,6 +743,27 @@ export const useSettingsStore = defineStore('settings', () => {
       return isNaN(num) ? defaultVal : num
     }
 
+    if ((backendSettings.settingsSchemaVersion as number | undefined) === 2) {
+      const defaults = createDefaultSettings()
+      const mergedSettings = deepMerge(
+        defaults,
+        stripDeprecatedSettingsFields(backendSettings) as Partial<TranslationSettings>
+      )
+      settings.value = mergedSettings
+      const nestedProviderConfigs = backendSettings.providerConfigs
+      if (nestedProviderConfigs && typeof nestedProviderConfigs === 'object') {
+        providerConfigs.value = {
+          translation: (nestedProviderConfigs as ProviderConfigsCache).translation || {},
+          hqTranslation: (nestedProviderConfigs as ProviderConfigsCache).hqTranslation || {},
+          aiVisionOcr: (nestedProviderConfigs as ProviderConfigsCache).aiVisionOcr || {}
+        }
+      }
+      normalizeProviderAliases()
+      normalizeProviderConfigAliases()
+      normalizeProviderConfigOpenAiOptions()
+      return
+    }
+
     // OCR 设置
     if (backendSettings.ocrEngine) {
       settings.value.ocrEngine = backendSettings.ocrEngine as OcrEngine
@@ -741,7 +885,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.translation.openaiOptions.execution.rpmLimit = parseNum(backendSettings.rpmTranslation, DEFAULT_RPM_TRANSLATION)
     }
     if (backendSettings.translationMaxRetries !== undefined) {
-      settings.value.translation.openaiOptions.execution.maxRetries = parseNum(backendSettings.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+      settings.value.translation.openaiOptions.execution.businessRetries = parseNum(backendSettings.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
     }
     if (backendSettings.translatePromptModeSelect === 'json') {
       settings.value.translation.openaiOptions.request.forceJsonOutput = true
@@ -802,7 +946,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.hqTranslation.openaiOptions.execution.rpmLimit = parseNum(backendSettings.hqRpmLimit, 7)
     }
     if (backendSettings.hqMaxRetries !== undefined) {
-      settings.value.hqTranslation.openaiOptions.execution.maxRetries = parseNum(backendSettings.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+      settings.value.hqTranslation.openaiOptions.execution.businessRetries = parseNum(backendSettings.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
     }
     if (backendSettings.hqPrompt) {
       settings.value.hqTranslation.prompt = backendSettings.hqPrompt as string
@@ -845,7 +989,8 @@ export const useSettingsStore = defineStore('settings', () => {
             execution: {
               useStream: round.useStream !== undefined ? (round.useStream as boolean) : true,
               rpmLimit: parseNum(round.rpmLimit, 7),
-              maxRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
+              transportRetries: 1,
+              businessRetries: parseNum(round.maxRetries, DEFAULT_PROOFREADING_MAX_RETRIES)
             }
           }
         }))
@@ -932,7 +1077,8 @@ export const useSettingsStore = defineStore('settings', () => {
               execution: {
                 useStream: false,
                 rpmLimit: parseNum(config.rpmTranslation, DEFAULT_RPM_TRANSLATION),
-                maxRetries: parseNum(config.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+                transportRetries: 1,
+                businessRetries: parseNum(config.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
               }
             }
           }
@@ -953,7 +1099,8 @@ export const useSettingsStore = defineStore('settings', () => {
               execution: {
                 useStream: config.hqUseStream as boolean,
                 rpmLimit: parseNum(config.hqRpmLimit, 7),
-                maxRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+                transportRetries: 1,
+                businessRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
               }
             },
             prompt: config.hqPrompt as string
@@ -982,7 +1129,8 @@ export const useSettingsStore = defineStore('settings', () => {
               execution: {
                 useStream: false,
                 rpmLimit: parseNum(config.rpmAiVisionOcr, DEFAULT_RPM_AI_VISION_OCR),
-                maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+                transportRetries: 1,
+                businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
               }
             },
             minImageSize: parseNum(config.aiVisionMinImageSize, DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
@@ -997,54 +1145,8 @@ export const useSettingsStore = defineStore('settings', () => {
   /**
    * 构建服务商分组配置用于保存到后端
    */
-  function buildProviderSettingsForBackend(): Record<string, Record<string, Record<string, unknown>>> {
-    const modelProviderConfigs: Record<string, Record<string, unknown>> = {}
-    const hqTranslateProviderConfigs: Record<string, Record<string, unknown>> = {}
-    const aiVisionProviderConfigs: Record<string, Record<string, unknown>> = {}
-
-    for (const [provider, config] of Object.entries(providerConfigs.value.translation)) {
-      modelProviderConfigs[provider] = {
-        apiKey: config.apiKey || '',
-        modelName: config.modelName || '',
-        customBaseUrl: config.customBaseUrl || '',
-        rpmTranslation: String(config.openaiOptions?.execution?.rpmLimit ?? 0),
-        translationMaxRetries: String(config.openaiOptions?.execution?.maxRetries ?? 3),
-        translatePromptModeSelect: config.openaiOptions?.request?.forceJsonOutput ? 'json' : 'normal'
-      }
-    }
-
-    for (const [provider, config] of Object.entries(providerConfigs.value.hqTranslation)) {
-        hqTranslateProviderConfigs[provider] = {
-          hqApiKey: config.apiKey || '',
-          hqModelName: config.modelName || '',
-          hqCustomBaseUrl: config.customBaseUrl || '',
-          hqBatchSize: String(config.batchSize ?? 3),
-          hqRpmLimit: String(config.openaiOptions?.execution?.rpmLimit ?? 7),
-          hqMaxRetries: String(config.openaiOptions?.execution?.maxRetries ?? 2),
-          hqForceJsonOutput: config.openaiOptions?.request?.forceJsonOutput ?? true,
-          hqUseStream: config.openaiOptions?.execution?.useStream || false,
-          hqPrompt: config.prompt || ''
-      }
-    }
-
-    for (const [provider, config] of Object.entries(providerConfigs.value.aiVisionOcr)) {
-      aiVisionProviderConfigs[provider] = {
-        aiVisionApiKey: config.apiKey || '',
-        aiVisionModelName: config.modelName || '',
-        customAiVisionBaseUrl: config.customBaseUrl || '',
-        aiVisionOcrPrompt: config.prompt || '',
-        rpmAiVisionOcr: String(config.openaiOptions?.execution?.rpmLimit ?? 0),
-        aiVisionPromptModeSelect: config.promptMode || (config.openaiOptions?.request?.forceJsonOutput ? 'json' : 'normal'),
-        aiVisionMinImageSize: String(config.minImageSize ?? DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE)
-      }
-    }
-
-    return {
-      ocrEngine: {},
-      aiVisionProvider: aiVisionProviderConfigs,
-      modelProvider: modelProviderConfigs,
-      hqTranslateProvider: hqTranslateProviderConfigs
-    }
+  function buildProviderSettingsForBackend(): ProviderConfigsCache {
+    return JSON.parse(JSON.stringify(providerConfigs.value)) as ProviderConfigsCache
   }
 
   /**
@@ -1058,131 +1160,11 @@ export const useSettingsStore = defineStore('settings', () => {
       translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
       hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
       ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
+      stripLegacyOpenAiMirrorFields()
 
-      const backendSettings: Record<string, unknown> = {
-        // OCR 设置
-        ocrEngine: settings.value.ocrEngine,
-        sourceLanguage: settings.value.sourceLanguage,
-        textDetector: settings.value.textDetector,
-        enableAuxYoloDetection: settings.value.enableAuxYoloDetection,
-        auxYoloConfThreshold: String(settings.value.auxYoloConfThreshold),
-        auxYoloOverlapThreshold: String(settings.value.auxYoloOverlapThreshold),
-        enableSaberYoloRefine: settings.value.enableSaberYoloRefine,
-        saberYoloRefineOverlapThreshold: String(settings.value.saberYoloRefineOverlapThreshold),
-
-        // 百度 OCR
-        baiduApiKey: settings.value.baiduOcr.apiKey,
-        baiduSecretKey: settings.value.baiduOcr.secretKey,
-        baiduVersion: settings.value.baiduOcr.version,
-        baiduSourceLanguage: settings.value.baiduOcr.sourceLanguage,
-
-        // PaddleOCR-VL
-        paddleOcrVlSourceLanguage: settings.value.paddleOcrVl.sourceLanguage,
-
-        // AI 视觉 OCR
-        aiVisionProvider: settings.value.aiVisionOcr.provider,
-        aiVisionApiKey: settings.value.aiVisionOcr.apiKey,
-        aiVisionModelName: settings.value.aiVisionOcr.modelName,
-        aiVisionOcrPrompt: settings.value.aiVisionOcr.prompt,
-        customAiVisionBaseUrl: settings.value.aiVisionOcr.customBaseUrl,
-        rpmAiVisionOcr: String(settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit),
-        aiVisionPromptModeSelect: settings.value.aiVisionOcr.promptMode,
-        aiVisionMinImageSize: String(settings.value.aiVisionOcr.minImageSize),
-        enableHybridOcr: settings.value.hybridOcr.enabled,
-        secondaryOcrEngine: settings.value.hybridOcr.secondaryEngine,
-        hybridOcrConfidenceThreshold: String(settings.value.hybridOcr.confidenceThreshold),
-
-        // 翻译服务
-        modelProvider: settings.value.translation.provider,
-        apiKey: settings.value.translation.apiKey,
-        modelName: settings.value.translation.modelName,
-        customBaseUrl: settings.value.translation.customBaseUrl,
-        rpmTranslation: String(settings.value.translation.openaiOptions.execution.rpmLimit),
-        translationMaxRetries: String(settings.value.translation.openaiOptions.execution.maxRetries),
-        translatePromptModeSelect: settings.value.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal',
-        translationMode: settings.value.translation.translationMode,
-
-        // 目标语言
-        targetLanguage: settings.value.targetLanguage,
-
-        // 翻译提示词（4个独立字段）
-        batchNormalPrompt: settings.value.translation.batchNormalPrompt,
-        batchJsonPrompt: settings.value.translation.batchJsonPrompt,
-        singleNormalPrompt: settings.value.translation.singleNormalPrompt,
-        singleJsonPrompt: settings.value.translation.singleJsonPrompt,
-        enableTextboxPrompt: settings.value.useTextboxPrompt,
-        textboxPromptContent: settings.value.textboxPrompt,
-
-        // 高质量翻译
-        hqTranslateProvider: settings.value.hqTranslation.provider,
-        hqApiKey: settings.value.hqTranslation.apiKey,
-        hqModelName: settings.value.hqTranslation.modelName,
-        hqCustomBaseUrl: settings.value.hqTranslation.customBaseUrl,
-        hqBatchSize: String(settings.value.hqTranslation.batchSize),
-        hqRpmLimit: String(settings.value.hqTranslation.openaiOptions.execution.rpmLimit),
-        hqMaxRetries: String(settings.value.hqTranslation.openaiOptions.execution.maxRetries),
-        hqPrompt: settings.value.hqTranslation.prompt,
-        hqForceJsonOutput: settings.value.hqTranslation.openaiOptions.request.forceJsonOutput,
-        hqUseStream: settings.value.hqTranslation.openaiOptions.execution.useStream,
-
-        // AI 校对
-        proofreadingEnabled: settings.value.proofreading.enabled,
-        proofreadingMaxRetries: String(settings.value.proofreading.maxRetries),
-        proofreading: {
-          enabled: settings.value.proofreading.enabled,
-          maxRetries: String(settings.value.proofreading.maxRetries),
-          rounds: settings.value.proofreading.rounds.map(round => ({
-            name: round.name,
-            provider: round.provider,
-            apiKey: round.apiKey,
-            modelName: round.modelName,
-            customBaseUrl: round.customBaseUrl,
-            prompt: round.prompt,
-            batchSize: round.batchSize,
-            rpmLimit: round.openaiOptions.execution.rpmLimit,
-            maxRetries: round.openaiOptions.execution.maxRetries,
-            forceJsonOutput: round.openaiOptions.request.forceJsonOutput,
-            useStream: round.openaiOptions.execution.useStream
-          }))
-        },
-
-        // 文本框扩展
-        boxExpandRatio: String(settings.value.boxExpand.ratio),
-        boxExpandTop: String(settings.value.boxExpand.top),
-        boxExpandBottom: String(settings.value.boxExpand.bottom),
-        boxExpandLeft: String(settings.value.boxExpand.left),
-        boxExpandRight: String(settings.value.boxExpand.right),
-
-        // 精确掩膜（常驻启用，无开关）
-        usePreciseMask: true,  // 固定启用
-        maskDilateSize: String(settings.value.preciseMask.dilateSize),
-        maskBoxExpandRatio: String(settings.value.preciseMask.boxExpandRatio || 0),
-
-        // PDF 处理方式
-        pdfProcessingMethod: settings.value.pdfProcessingMethod,
-
-        // 调试
-        showDetectionDebug: settings.value.showDetectionDebug,
-
-        // 并行翻译设置
-        parallelEnabled: settings.value.parallel.enabled,
-        parallelDeepLearningLockSize: settings.value.parallel.deepLearningLockSize,
-
-        // 书架模式自动保存
-        autoSaveInBookshelfMode: settings.value.autoSaveInBookshelfMode,
-
-        // 消除文字模式OCR
-        removeTextWithOcr: settings.value.removeTextWithOcr,
-
-        // 详细日志
-        enableVerboseLogs: settings.value.enableVerboseLogs,
-
-        // LAMA修复禁用缩放
-        lamaDisableResize: settings.value.lamaDisableResize,
-
-        // 服务商分组配置缓存
-        providerSettings: buildProviderSettingsForBackend(),
-      }
+      const backendSettings: Record<string, unknown> = JSON.parse(JSON.stringify(settings.value))
+      backendSettings.settingsSchemaVersion = 2
+      backendSettings.providerConfigs = buildProviderSettingsForBackend()
 
       const response = await saveUserSettings(backendSettings)
 

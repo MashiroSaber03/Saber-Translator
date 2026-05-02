@@ -11,6 +11,7 @@ from enum import Enum
 
 from .config.serialization import SerializableMixin
 from src.shared.openai_options import (
+    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
@@ -65,7 +66,8 @@ class VLMConfig(SerializableMixin):
         execution=OpenAICompatibleExecutionOptions(
             use_stream=True,
             rpm_limit=10,
-            max_retries=3,
+            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+            business_retries=3,
         ),
     ))
     rpm_limit: int = 10
@@ -83,7 +85,8 @@ class VLMConfig(SerializableMixin):
             execution=OpenAICompatibleExecutionOptions(
                 use_stream=True,
                 rpm_limit=10,
-                max_retries=3,
+                transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                business_retries=3,
             ),
         )
         legacy_override = (
@@ -101,7 +104,8 @@ class VLMConfig(SerializableMixin):
                 execution=OpenAICompatibleExecutionOptions(
                     use_stream=self.use_stream,
                     rpm_limit=self.rpm_limit,
-                    max_retries=3,
+                    transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                    business_retries=3,
                 ),
             )
         if self.openai_options.request.temperature is None:
@@ -125,7 +129,8 @@ class ChatLLMConfig(SerializableMixin):
         execution=OpenAICompatibleExecutionOptions(
             use_stream=True,
             rpm_limit=30,
-            max_retries=3,
+            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+            business_retries=3,
         ),
     ))
     use_stream: bool = True  # 使用流式请求（避免超时）
@@ -136,7 +141,8 @@ class ChatLLMConfig(SerializableMixin):
             execution=OpenAICompatibleExecutionOptions(
                 use_stream=True,
                 rpm_limit=30,
-                max_retries=3,
+                transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                business_retries=3,
             ),
         )
         if self.openai_options.to_dict() == default_options.to_dict() and self.use_stream is not True:
@@ -145,7 +151,8 @@ class ChatLLMConfig(SerializableMixin):
                 execution=OpenAICompatibleExecutionOptions(
                     use_stream=self.use_stream,
                     rpm_limit=30,
-                    max_retries=3,
+                    transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                    business_retries=3,
                 ),
             )
         self.use_stream = self.openai_options.execution.use_stream

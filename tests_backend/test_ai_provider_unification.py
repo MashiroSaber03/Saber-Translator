@@ -9,6 +9,7 @@ from PIL import Image
 from src.app.api.system import system_bp
 from src.app.api.translation import routes as translation_routes
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+from src.shared.openai_execution import build_openai_compatible_runtime_options
 from src.shared.openai_options import (
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
@@ -18,12 +19,28 @@ from src.shared.openai_options import (
 
 class OpenAICompatibleOptionsContractTests(unittest.TestCase):
     def test_sync_chat_transport_accepts_nested_openai_options(self) -> None:
-        fake_response = mock.Mock()
-        fake_response.choices = [mock.Mock(message=mock.Mock(content="测试成功"))]
+        class FakeResponse:
+            status_code = 200
+            text = ""
 
-        create_mock = mock.Mock(return_value=fake_response)
-        fake_client = mock.Mock()
-        fake_client.chat.completions.create = create_mock
+            def __init__(self):
+                self.request_json = None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "测试成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                response = FakeResponse()
+                response.request_json = json
+                self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
+                return response
 
         transport = OpenAICompatibleChatTransport()
         request = UnifiedChatRequest(
@@ -40,36 +57,52 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 execution=OpenAICompatibleExecutionOptions(
                     use_stream=False,
                     rpm_limit=7,
-                    max_retries=4,
+                    transport_retries=4,
+                    business_retries=2,
                 ),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
                 timeout=45.0,
                 request_overrides={"max_tokens": 123, "top_p": 0.8},
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.create_openai_client", return_value=fake_client):
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
             content = transport.complete(request)
 
         self.assertEqual(content, "测试成功")
-        kwargs = create_mock.call_args.kwargs
+        kwargs = fake_client.last_request["json"]
         self.assertEqual(kwargs["temperature"], 0.25)
         self.assertEqual(kwargs["response_format"], {"type": "json_object"})
         self.assertEqual(kwargs["max_tokens"], 123)
         self.assertEqual(kwargs["top_p"], 0.8)
-        self.assertEqual(kwargs["timeout"], 45.0)
 
 class ProviderRegistryContractTests(unittest.TestCase):
     def test_ai_vision_rpm_limit_is_scoped_per_provider(self) -> None:
-        from src.core.ocr import _apply_ai_vision_rpm_limit
+        from src.shared.ai_providers import VISION_OCR_CAPABILITY
+        from src.shared.openai_rate_limits import (
+            apply_sync_rpm_limit,
+            build_openai_rpm_bucket_key,
+        )
 
         seen_refs = []
 
         def record_refs(rpm_limit, service_name, last_reset_ref, request_count_ref):
             seen_refs.append((service_name, last_reset_ref, request_count_ref))
 
-        with mock.patch("src.core.ocr._enforce_rpm_limit", side_effect=record_refs):
-            _apply_ai_vision_rpm_limit("siliconflow", 5)
-            _apply_ai_vision_rpm_limit("gemini", 5)
+        apply_sync_rpm_limit(
+            build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "siliconflow"),
+            5,
+            "AI Vision OCR (siliconflow)",
+            record_refs,
+        )
+        apply_sync_rpm_limit(
+            build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "gemini"),
+            5,
+            "AI Vision OCR (gemini)",
+            record_refs,
+        )
 
         self.assertEqual(len(seen_refs), 2)
         self.assertNotEqual(seen_refs[0][0], seen_refs[1][0])
@@ -77,7 +110,11 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIsNot(seen_refs[0][2], seen_refs[1][2])
 
     def test_ai_vision_rpm_limit_serializes_same_provider_calls(self) -> None:
-        from src.core.ocr import _apply_ai_vision_rpm_limit
+        from src.shared.ai_providers import VISION_OCR_CAPABILITY
+        from src.shared.openai_rate_limits import (
+            apply_sync_rpm_limit,
+            build_openai_rpm_bucket_key,
+        )
 
         start_event = threading.Event()
         active = 0
@@ -96,15 +133,19 @@ class ProviderRegistryContractTests(unittest.TestCase):
 
         def worker():
             start_event.wait()
-            _apply_ai_vision_rpm_limit("siliconflow", 5)
+            apply_sync_rpm_limit(
+                build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "siliconflow"),
+                5,
+                "AI Vision OCR (siliconflow)",
+                slow_limit,
+            )
 
-        with mock.patch("src.core.ocr._enforce_rpm_limit", side_effect=slow_limit):
-            threads = [threading.Thread(target=worker) for _ in range(2)]
-            for thread in threads:
-                thread.start()
-            start_event.set()
-            for thread in threads:
-                thread.join()
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        start_event.set()
+        for thread in threads:
+            thread.join()
 
         self.assertFalse(overlap_detected)
 
@@ -125,14 +166,29 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIsNot(seen_refs[0][2], seen_refs[1][2])
 
     def test_hq_translation_rpm_limit_is_scoped_per_provider(self) -> None:
+        from src.shared.ai_providers import HQ_TRANSLATION_CAPABILITY
+        from src.shared.openai_rate_limits import (
+            apply_sync_rpm_limit,
+            build_openai_rpm_bucket_key,
+        )
+
         seen_refs = []
 
         def record_refs(rpm_limit, service_name, last_reset_ref, request_count_ref):
             seen_refs.append((service_name, last_reset_ref, request_count_ref))
 
-        with mock.patch("src.app.api.translation.routes._enforce_rpm_limit", side_effect=record_refs):
-            translation_routes._apply_hq_rpm_limit("siliconflow", 5)
-            translation_routes._apply_hq_rpm_limit("gemini", 5)
+        apply_sync_rpm_limit(
+            build_openai_rpm_bucket_key(HQ_TRANSLATION_CAPABILITY, "siliconflow"),
+            5,
+            "HQTranslation (siliconflow)",
+            record_refs,
+        )
+        apply_sync_rpm_limit(
+            build_openai_rpm_bucket_key(HQ_TRANSLATION_CAPABILITY, "gemini"),
+            5,
+            "HQTranslation (gemini)",
+            record_refs,
+        )
 
         self.assertEqual(len(seen_refs), 2)
         self.assertIsNot(seen_refs[0][1], seen_refs[1][1])
@@ -264,29 +320,28 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIn('"extracted_text"', prompt)
 
     def test_ai_vision_retries_empty_results_when_max_retries_configured(self) -> None:
-        from src.core.ocr import recognize_ocr_results_in_bubbles
+        from src.interfaces.vision_interface import call_ai_vision_ocr_service
 
         with mock.patch(
-            "src.core.ocr.call_ai_vision_ocr_service",
-            side_effect=["", '{"extracted_text":"测试"}'],
-        ) as vision_mock, mock.patch("src.core.ocr.time.sleep"):
-            results = recognize_ocr_results_in_bubbles(
+            "src.interfaces.vision_interface._transport.complete_vision",
+            side_effect=[ValueError("AI 未返回有效内容"), '{"extracted_text":"测试"}'],
+        ) as complete_mock, mock.patch("src.shared.openai_execution.time.sleep"):
+            content = call_ai_vision_ocr_service(
                 Image.new("RGB", (16, 16), color="white"),
-                [(0, 0, 16, 16)],
-                ocr_engine="ai_vision",
-                source_language="japanese",
-                ai_vision_provider="custom",
-                ai_vision_api_key="vision-key",
-                ai_vision_model_name="vision-model",
-                custom_ai_vision_base_url="https://example.com/v1",
-                ai_vision_openai_options=OpenAICompatibleOptions(
+                provider="custom",
+                api_key="vision-key",
+                model_name="vision-model",
+                prompt="识别图片里的文本",
+                use_json_format=True,
+                custom_base_url="https://example.com/v1",
+                openai_options=OpenAICompatibleOptions(
                     request=OpenAICompatibleRequestOptions(force_json_output=True),
-                    execution=OpenAICompatibleExecutionOptions(max_retries=1),
+                    execution=OpenAICompatibleExecutionOptions(business_retries=1),
                 ),
             )
 
-        self.assertEqual(vision_mock.call_count, 2)
-        self.assertEqual(results[0].text, "测试")
+        self.assertEqual(complete_mock.call_count, 2)
+        self.assertEqual(content, "测试")
 
     def test_hq_stream_transport_prints_chunks_when_enabled(self) -> None:
         class FakeResponse:
@@ -325,6 +380,8 @@ class ProviderRegistryContractTests(unittest.TestCase):
             base_url="https://example.com/v1",
             openai_options=OpenAICompatibleOptions(
                 execution=OpenAICompatibleExecutionOptions(use_stream=True),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
                 print_stream_output=True,
                 stream_output_label="HQ Test",
             ),
@@ -341,12 +398,23 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIn("，世界", printed)
 
     def test_sync_chat_transport_merges_temperature_and_request_overrides_as_top_level_fields(self) -> None:
-        fake_response = mock.Mock()
-        fake_response.choices = [mock.Mock(message=mock.Mock(content="测试成功"))]
+        class FakeResponse:
+            status_code = 200
+            text = ""
 
-        create_mock = mock.Mock(return_value=fake_response)
-        fake_client = mock.Mock()
-        fake_client.chat.completions.create = create_mock
+            def json(self):
+                return {"choices": [{"message": {"content": "测试成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
+                return FakeResponse()
 
         transport = OpenAICompatibleChatTransport()
         request = UnifiedChatRequest(
@@ -357,16 +425,18 @@ class ProviderRegistryContractTests(unittest.TestCase):
             base_url="https://example.com/v1",
             openai_options=OpenAICompatibleOptions(
                 request=OpenAICompatibleRequestOptions(temperature=0.25),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
                 request_overrides={"max_tokens": 123, "top_p": 0.8},
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.create_openai_client", return_value=fake_client):
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
             content = transport.complete(request)
 
         self.assertEqual(content, "测试成功")
-        create_mock.assert_called_once()
-        kwargs = create_mock.call_args.kwargs
+        kwargs = fake_client.last_request["json"]
         self.assertEqual(kwargs["temperature"], 0.25)
         self.assertEqual(kwargs["max_tokens"], 123)
         self.assertEqual(kwargs["top_p"], 0.8)
@@ -407,7 +477,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 use_json_format=True,
             )
 
-        self.assertEqual(content, '{"extracted_text":"测试"}')
+        self.assertEqual(content, '测试')
         request_arg = complete_mock.call_args.args[0]
         self.assertEqual(request_arg.provider, "qwen")
         self.assertIsNone(request_arg.base_url)

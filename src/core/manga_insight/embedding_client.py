@@ -10,6 +10,10 @@ from src.shared.ai_transport import (
     UnifiedChatRequest,
     UnifiedEmbeddingRequest,
 )
+from src.shared.openai_execution import (
+    OpenAICompatibleAsyncExecutor,
+    build_openai_compatible_runtime_options,
+)
 from src.shared.openai_options import OpenAICompatibleOptions
 
 from .clients.base_client import RPMLimiter
@@ -99,14 +103,9 @@ class ChatClient:
         custom_url = config.base_url if hasattr(config, "base_url") and config.base_url else None
         self.provider = provider
         self._base_url = get_base_url(provider, custom_url)
-        self._rpm_limiter = RPMLimiter(
-            config.openai_options.execution.rpm_limit,
-            bucket_id=f"chat:{self.provider}",
-        )
         self._timeout = 120.0
-        self._transport = AsyncOpenAICompatibleTransport(
-            max_retries=max(0, config.openai_options.execution.max_retries),
-        )
+        self._transport = AsyncOpenAICompatibleTransport()
+        self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
         logger.info(f"ChatClient 初始化: provider={provider}, base_url={self._base_url}")
 
@@ -122,9 +121,6 @@ class ChatClient:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
-
-    async def _enforce_rpm_limit(self):
-        await self._rpm_limiter.wait()
 
     async def generate(
         self,
@@ -145,23 +141,28 @@ class ChatClient:
         options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
         if temperature is not None:
             options.request.temperature = temperature
-        options.print_stream_output = options.execution.use_stream
-        if options.timeout is None:
-            options.timeout = self._timeout
         use_stream = options.execution.use_stream
         logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
 
-        await self._enforce_rpm_limit()
-        return await self._transport.complete(
+        result = await self._executor.execute(
             UnifiedChatRequest(
                 provider=self.provider,
                 api_key=self.config.api_key,
                 model=self.config.model,
                 messages=messages,
                 base_url=getattr(self.config, "base_url", None) or None,
+                capability="chat",
                 openai_options=options,
-            )
+                runtime_options=build_openai_compatible_runtime_options(
+                    timeout=self._timeout,
+                    print_stream_output=options.execution.use_stream,
+                    stream_output_label="漫画分析对话",
+                ),
+            ),
+            capability="chat",
+            logger_instance=logger,
         )
+        return str(result.parsed)
 
     async def test_connection(self) -> bool:
         try:

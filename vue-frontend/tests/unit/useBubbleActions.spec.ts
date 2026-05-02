@@ -104,7 +104,7 @@ describe('useBubbleActions', () => {
     settingsStore.settings.aiVisionOcr.modelName = 'vision-model'
     settingsStore.settings.aiVisionOcr.prompt = '对图中的日语进行OCR:'
     settingsStore.settings.aiVisionOcr.promptMode = 'paddleocr_vl'
-    settingsStore.settings.aiVisionOcr.isJsonMode = false
+    settingsStore.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput = false
     settingsStore.settings.aiVisionOcr.customBaseUrl = 'https://example.com/v1'
 
     imageStore.setImages([
@@ -130,8 +130,18 @@ describe('useBubbleActions', () => {
       }),
     ])
 
-    const actions = useBubbleActions()
-    await actions.handleOcrRecognize(0)
+    const Harness = defineComponent({
+      setup() {
+        const actions = useBubbleActions()
+        return { ...actions }
+      },
+      render() {
+        return h('div')
+      },
+    })
+
+    const wrapper = mount(Harness)
+    await (wrapper.vm as unknown as { handleOcrRecognize: (index: number) => Promise<void> }).handleOcrRecognize(0)
 
     expect(ocrSingleBubbleMock).toHaveBeenCalledWith(
       'abc',
@@ -140,8 +150,13 @@ describe('useBubbleActions', () => {
       expect.objectContaining({
         ai_vision_provider: 'custom',
         ai_vision_ocr_prompt: '对图中的日语进行OCR:',
-        use_json_format_for_ai_vision: false,
         ai_vision_prompt_mode: 'paddleocr_vl',
+        openai_options: expect.objectContaining({
+          execution: expect.objectContaining({
+            transport_retries: 1,
+            business_retries: 3,
+          }),
+        }),
       }),
     )
   })

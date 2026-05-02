@@ -19,7 +19,6 @@ from . import (
 import json
 
 from src.core.ocr import recognize_ocr_results_in_bubbles
-from src.core.translation import _enforce_rpm_limit
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
 from src.plugins.manager import apply_after_ocr_hooks
@@ -32,10 +31,20 @@ from src.shared.ai_providers import (
     resolve_provider_base_url,
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
-from src.shared.openai_options import build_openai_compatible_options
-from src.shared.openai_rate_limits import apply_sync_rpm_limit
+from src.shared.openai_execution import (
+    OpenAICompatibleBusinessRetriesExhaustedError,
+    OpenAICompatibleBusinessRetryableError,
+    OpenAICompatibleSyncExecutor,
+    build_openai_compatible_runtime_options,
+    parse_json_block_from_text,
+)
+from src.shared.openai_options import (
+    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+    build_openai_compatible_options,
+)
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
+_hq_executor = OpenAICompatibleSyncExecutor(_hq_chat_transport)
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -110,34 +119,32 @@ def _route_openai_options(
     force_json_keys=(),
     use_stream_keys=(),
     rpm_limit_keys=(),
+    transport_retries_keys=(),
+    business_retries_keys=(),
     max_retries_keys=(),
     temperature_keys=(),
     default_force_json_output=False,
     default_use_stream=False,
     default_rpm_limit=0,
-    default_max_retries=0,
-    timeout=None,
-    print_stream_output=False,
-    stream_output_label=None,
-    request_overrides=None,
-    max_retries_maximum=None,
+    default_transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+    default_business_retries=0,
+    business_retries_maximum=None,
 ):
     return build_openai_compatible_options(
         data,
         force_json_keys=force_json_keys,
         use_stream_keys=use_stream_keys,
         rpm_limit_keys=rpm_limit_keys,
+        transport_retries_keys=transport_retries_keys,
+        business_retries_keys=business_retries_keys,
         max_retries_keys=max_retries_keys,
         temperature_keys=temperature_keys,
         default_force_json_output=default_force_json_output,
         default_use_stream=default_use_stream,
         default_rpm_limit=default_rpm_limit,
-        default_max_retries=default_max_retries,
-        timeout=timeout,
-        print_stream_output=print_stream_output,
-        stream_output_label=stream_output_label,
-        request_overrides=request_overrides,
-        max_retries_maximum=max_retries_maximum,
+        default_transport_retries=default_transport_retries,
+        default_business_retries=default_business_retries,
+        business_retries_maximum=business_retries_maximum,
     )
 
 
@@ -145,17 +152,33 @@ def _clamp_int(value, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, int(round(value))))
 
 
-def _apply_hq_rpm_limit(provider: str, rpm_limit: int) -> None:
-    if rpm_limit <= 0:
-        return
+def _parse_hq_translate_results(content: str, *, force_json_output: bool):
+    if force_json_output:
+        try:
+            parsed_content = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise OpenAICompatibleBusinessRetryableError(f"JSON 解析失败: {exc}") from exc
+    else:
+        parsed_content = parse_json_block_from_text(content)
 
-    normalized_provider = normalize_provider_id(provider) or "unknown"
-    apply_sync_rpm_limit(
-        f"hq_translation:{normalized_provider}",
-        rpm_limit,
-        f"HQTranslation ({normalized_provider})",
-        _enforce_rpm_limit,
-    )
+    if isinstance(parsed_content, dict) and 'images' in parsed_content:
+        results = parsed_content['images']
+    elif isinstance(parsed_content, list):
+        results = parsed_content
+    elif isinstance(parsed_content, dict) and 'imageIndex' in parsed_content and 'bubbles' in parsed_content:
+        logger.info("检测到单张图片格式，自动包装为数组")
+        results = [parsed_content]
+    else:
+        raise OpenAICompatibleBusinessRetryableError(
+            f"JSON 格式不正确，期望包含 'images' 字段、数组或单张图片格式(imageIndex+bubbles)，实际收到: {type(parsed_content)}"
+        )
+
+    if not results:
+        raise OpenAICompatibleBusinessRetryableError("高质量翻译返回空结果")
+
+    result_indices = [r.get('imageIndex', 'N/A') for r in results if isinstance(r, dict)]
+    logger.info("JSON 解析成功，获取到 %s 条结果，imageIndex列表: %s", len(results), result_indices)
+    return results
 
 
 def _normalize_single_bubble_textlines(
@@ -917,15 +940,16 @@ def route_translate_single_text():
             data,
             force_json_keys=('use_json_format', 'useJsonFormat'),
             rpm_limit_keys=('rpm_limit_translation', 'rpmLimitTranslation'),
+            transport_retries_keys=('transport_retries', 'transportRetries'),
+            business_retries_keys=('business_retries', 'businessRetries'),
             max_retries_keys=('max_retries', 'maxRetries'),
             default_force_json_output=False,
             default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
-            default_max_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-            timeout=30.0,
+            default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
         )
         use_json_format = openai_options.request.force_json_output
         rpm_limit_translation = openai_options.execution.rpm_limit
-        max_retries = openai_options.execution.max_retries
+        business_retries = openai_options.execution.business_retries
 
         if not all([original_text, target_language, model_provider]):
             return jsonify({'error': '缺少必要的参数 (原文、目标语言、服务商)'}), 400
@@ -948,7 +972,15 @@ def route_translate_single_text():
         try:
             # 构建日志信息
             base_url_info = f", BaseURL: {custom_base_url}" if model_provider == 'custom' and custom_base_url else ""
-            logger.info(f"开始调用translate_single_text函数进行翻译... 服务商: {model_provider}, JSON模式: {use_json_format}{base_url_info}, rpm: {rpm_limit_translation}")
+            logger.info(
+                "开始调用translate_single_text函数进行翻译... 服务商: %s, JSON模式: %s%s, rpm: %s, transport_retries: %s, business_retries: %s",
+                model_provider,
+                use_json_format,
+                base_url_info,
+                rpm_limit_translation,
+                openai_options.execution.transport_retries,
+                business_retries,
+            )
             logger.info(f"提示词内容: {prompt_content[:100] if prompt_content else '无(将使用默认)'}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
                 text=original_text,
@@ -960,7 +992,7 @@ def route_translate_single_text():
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 rpm_limit_translation=rpm_limit_translation, # <--- 传递rpm参数
-                max_retries=max_retries,
+                max_retries=business_retries,
                 openai_options=openai_options,
             )
             
@@ -1010,25 +1042,26 @@ def hq_translate_batch():
             force_json_keys=('force_json_output', 'forceJsonOutput'),
             use_stream_keys=('use_stream', 'useStream'),
             rpm_limit_keys=('rpm_limit', 'rpmLimit'),
+            transport_retries_keys=('transport_retries', 'transportRetries'),
+            business_retries_keys=('business_retries', 'businessRetries'),
             max_retries_keys=('max_retries', 'maxRetries'),
             default_force_json_output=False,
             default_use_stream=False,
             default_rpm_limit=0,
-            default_max_retries=2,
-            timeout=None,
-            max_retries_maximum=10,
-            print_stream_output=False,
-            stream_output_label='AI校对' if is_proofreading else '高质量翻译',
+            default_business_retries=2,
+            business_retries_maximum=10,
         )
         force_json_output = openai_options.request.force_json_output
         use_stream = openai_options.execution.use_stream
         rpm_limit = openai_options.execution.rpm_limit
-        max_retries = openai_options.execution.max_retries
+        transport_retries = openai_options.execution.transport_retries
+        business_retries = openai_options.execution.business_retries
 
         logger.info(
             f"高质量翻译批量请求: provider={provider}, model={model_name}, "
             f"force_json={force_json_output}, stream={use_stream}, "
-            f"rpm_limit={rpm_limit}, max_retries={max_retries}, debug_logs={enable_debug_logs}"
+            f"rpm_limit={rpm_limit}, transport_retries={transport_retries}, "
+            f"business_retries={business_retries}, debug_logs={enable_debug_logs}"
         )
         
         # 参数验证
@@ -1104,170 +1137,59 @@ def hq_translate_batch():
 
         if force_json_output:
             logger.info("已启用强制 JSON 输出模式")
-        
-        # === 重试循环 ===
-        last_error_msg = None
-        last_raw_content = None  # 保存最后一次的原始内容（用于解析失败时返回）
-        
-        for attempt in range(max_retries + 1):
-            content = None
-            
-            # === 第一阶段：API 调用 ===
-            try:
-                _apply_hq_rpm_limit(provider, rpm_limit)
-                openai_options.print_stream_output = use_stream
-                openai_options.timeout = 300.0 if use_stream else 120.0
-                content = _hq_chat_transport.complete(
-                    UnifiedChatRequest(
-                        provider=provider,
-                        api_key=api_key,
-                        model=model_name,
-                        base_url=base_url,
-                        openai_options=openai_options,
-                        messages=messages,
-                    )
-                )
-                
-                if not content:
-                    raise Exception("AI 返回内容为空")
-                
-                last_raw_content = content  # 保存原始内容
-                logger.info(f"高质量翻译 API 调用成功 (尝试 {attempt + 1}/{max_retries + 1})，返回内容长度: {len(content)}")
-                
-                # 打印原始响应的预览（仅在启用调试日志时）
-                if enable_debug_logs:
-                    content_preview = content[:1000] if len(content) > 1000 else content
-                    logger.info(f"[诊断] 模型返回的原始内容（前1000字符）:\n{content_preview}")
-                    if len(content) > 1000:
-                        logger.info(f"[诊断] 原始内容总长度: {len(content)} 字符")
-                
-            except Exception as api_error:
-                error_msg = str(api_error)
-                last_error_msg = error_msg
-                logger.error(f"[尝试 {attempt + 1}/{max_retries + 1}] 调用 AI API 失败: {error_msg}")
-                
-                # 尝试提取更详细的错误信息
-                if hasattr(api_error, 'response') and api_error.response is not None:
-                    try:
-                        error_detail = api_error.response.json()
-                        logger.error(f"API 错误详情: {error_detail}")
-                        last_error_msg = str(error_detail)
-                    except:
-                        pass
-                
-                # 检查是否为凭证/配置错误（不重试）
-                error_lower = error_msg.lower()
-                if any(keyword in error_lower for keyword in ['api key', 'authentication', 'unauthorized', 'invalid_api_key', 'base url']):
-                    logger.error("检测到凭证或配置错误，停止重试")
-                    break
-                
-                # 如果还有重试次数，等待后继续
-                if attempt < max_retries:
-                    logger.info(f"等待 1 秒后重试...")
-                    time.sleep(1)
-                    continue
-                else:
-                    # 已用完重试次数，跳出循环
-                    break
-            
-            # === 第二阶段：JSON 解析（只有 API 调用成功才会执行到这里） ===
-            try:
-                parsed_content = None
-                
-                if force_json_output:
-                    # 强制 JSON 模式：必须解析成功
-                    parsed_content = json_module.loads(content)
-                else:
-                    # 非 JSON 模式：尝试从文本中提取 JSON（支持数组和对象格式）
-                    # 先去除可能的 markdown 代码块标记
-                    cleaned_content = content.strip()
-                    if cleaned_content.startswith('```json'):
-                        cleaned_content = cleaned_content[7:].strip()
-                    if cleaned_content.startswith('```'):
-                        cleaned_content = cleaned_content[3:].strip()
-                    if cleaned_content.endswith('```'):
-                        cleaned_content = cleaned_content[:-3].strip()
-                    
-                    # 检测是数组还是对象
-                    array_start = cleaned_content.find('[')
-                    object_start = cleaned_content.find('{')
-                    
-                    if array_start != -1 and (object_start == -1 or array_start < object_start):
-                        # 数组格式 [...]
-                        end_idx = cleaned_content.rfind(']')
-                        if end_idx != -1:
-                            json_str = cleaned_content[array_start:end_idx+1]
-                            parsed_content = json_module.loads(json_str)
-                        else:
-                            raise json_module.JSONDecodeError("返回内容中未找到完整的 JSON 数组", content, 0)
-                    elif object_start != -1:
-                        # 对象格式 {...}
-                        end_idx = cleaned_content.rfind('}')
-                        if end_idx != -1:
-                            json_str = cleaned_content[object_start:end_idx+1]
-                            parsed_content = json_module.loads(json_str)
-                        else:
-                            raise json_module.JSONDecodeError("返回内容中未找到完整的 JSON 对象", content, 0)
-                    else:
-                        # 找不到 JSON 块
-                        raise json_module.JSONDecodeError("返回内容中未找到有效的 JSON 块", content, 0)
-                
-                # 将解析后的内容转换为 results 格式
-                # 支持的格式：
-                # 1. {"images": [...]} - 标准格式
-                # 2. [...] - 数组格式
-                # 3. {imageIndex, bubbles} - 单张图片格式（AI 只返回一张图时可能使用此格式）
-                if isinstance(parsed_content, dict) and 'images' in parsed_content:
-                    results = parsed_content['images']
-                elif isinstance(parsed_content, list):
-                    results = parsed_content
-                elif isinstance(parsed_content, dict) and 'imageIndex' in parsed_content and 'bubbles' in parsed_content:
-                    # 单张图片格式，包装为数组
-                    logger.info("检测到单张图片格式，自动包装为数组")
-                    results = [parsed_content]
-                else:
-                    # 格式不正确，抛出异常触发重试
-                    raise json_module.JSONDecodeError(f"JSON 格式不正确，期望包含 'images' 字段、数组或单张图片格式(imageIndex+bubbles)，实际收到: {type(parsed_content)}", str(parsed_content), 0)
-                
-                # 解析成功，返回结果
-                result_indices = [r.get('imageIndex', 'N/A') for r in results if isinstance(r, dict)]
-                logger.info(f"JSON 解析成功，获取到 {len(results)} 条结果，imageIndex列表: {result_indices}")
-                return jsonify({
-                    'success': True,
-                    'results': results
-                })
-                    
-            except json_module.JSONDecodeError as parse_error:
-                # JSON 解析失败，触发重试
-                error_msg = f"JSON 解析失败: {parse_error}"
-                last_error_msg = error_msg
-                logger.warning(f"[尝试 {attempt + 1}/{max_retries + 1}] {error_msg}")
-                
-                # 打印原始响应内容（截断到合理长度）
-                content_preview = content[:2000] if len(content) > 2000 else content
-                logger.warning(f"[诊断] 模型返回的原始内容（前2000字符）:\n{content_preview}")
-                if len(content) > 2000:
-                    logger.warning(f"[诊断] 原始内容总长度: {len(content)} 字符")
-                
-                # 如果还有重试次数，等待后继续
-                if attempt < max_retries:
-                    logger.info(f"等待 1 秒后重试...")
-                    time.sleep(1)
-                    continue
-        
-        # 所有重试都失败
-        logger.error(f"高质量翻译所有 {max_retries + 1} 次尝试都失败")
-        
-        # 如果有原始内容，返回原始内容作为降级方案
-        if last_raw_content:
-            logger.info("返回最后一次的原始内容作为降级方案")
+
+        runtime_options = build_openai_compatible_runtime_options(
+            timeout=300.0 if use_stream else 120.0,
+            print_stream_output=use_stream,
+            stream_output_label='AI校对' if is_proofreading else '高质量翻译',
+        )
+
+        try:
+            result = _hq_executor.execute(
+                UnifiedChatRequest(
+                    provider=provider,
+                    api_key=api_key,
+                    model=model_name,
+                    base_url=base_url,
+                    capability=HQ_TRANSLATION_CAPABILITY,
+                    openai_options=openai_options,
+                    runtime_options=runtime_options,
+                    messages=messages,
+                ),
+                capability=HQ_TRANSLATION_CAPABILITY,
+                parser=lambda content: _parse_hq_translate_results(
+                    content,
+                    force_json_output=force_json_output,
+                ),
+                logger_instance=logger,
+            )
+            logger.info("高质量翻译 API 调用成功，返回内容长度: %s", len(result.raw_content))
+            if enable_debug_logs:
+                content_preview = result.raw_content[:1000] if len(result.raw_content) > 1000 else result.raw_content
+                logger.info(f"[诊断] 模型返回的原始内容（前1000字符）:\n{content_preview}")
+                if len(result.raw_content) > 1000:
+                    logger.info(f"[诊断] 原始内容总长度: {len(result.raw_content)} 字符")
             return jsonify({
                 'success': True,
-                'content': last_raw_content,
-                'warning': f'JSON 解析失败，返回原始内容: {last_error_msg}'
+                'results': result.parsed,
             })
-        
-        return jsonify({'error': f'AI API 调用失败: {last_error_msg}'}), 500
+        except OpenAICompatibleBusinessRetriesExhaustedError as exhausted_error:
+            logger.error("高质量翻译业务重试耗尽: %s", exhausted_error)
+            if exhausted_error.last_raw_content:
+                logger.info("返回最后一次的原始内容作为降级方案")
+                if enable_debug_logs:
+                    content_preview = (
+                        exhausted_error.last_raw_content[:2000]
+                        if len(exhausted_error.last_raw_content) > 2000
+                        else exhausted_error.last_raw_content
+                    )
+                    logger.warning(f"[诊断] 模型返回的原始内容（前2000字符）:\n{content_preview}")
+                return jsonify({
+                    'success': True,
+                    'content': exhausted_error.last_raw_content,
+                    'warning': f'JSON 解析失败，返回原始内容: {exhausted_error}',
+                })
+            return jsonify({'error': f'AI API 调用失败: {exhausted_error}'}), 500
     
     except Exception as e:
         logger.error(f"处理高质量翻译批量请求时出错: {e}", exc_info=True)
@@ -1354,9 +1276,12 @@ def ocr_single_bubble():
                 data,
                 force_json_keys=('use_json_format_for_ai_vision', 'ai_vision_use_json_format'),
                 rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
+                transport_retries_keys=('transport_retries', 'transportRetries'),
+                business_retries_keys=('business_retries', 'businessRetries'),
+                max_retries_keys=('max_retries', 'maxRetries'),
                 default_force_json_output=False,
                 default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
-                timeout=120.0,
+                default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
             )
             use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
 

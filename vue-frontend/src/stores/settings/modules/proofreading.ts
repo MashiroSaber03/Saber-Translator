@@ -16,6 +16,13 @@ export function useProofreadingSettings(
   settings: Ref<TranslationSettings>,
   saveToStorage: () => void
 ) {
+  type ProofreadingRoundUiUpdates = Partial<ProofreadingRound> & {
+    rpmLimit?: number
+    transportRetries?: number
+    businessRetries?: number
+    forceJsonOutput?: boolean
+    useStream?: boolean
+  }
   // ============================================================
   // 计算属性
   // ============================================================
@@ -42,10 +49,6 @@ export function useProofreadingSettings(
    * @param round - 校对轮次配置
    */
   function addProofreadingRound(round: ProofreadingRound): void {
-    round.rpmLimit = round.openaiOptions.execution.rpmLimit
-    round.maxRetries = round.openaiOptions.execution.maxRetries
-    round.forceJsonOutput = round.openaiOptions.request.forceJsonOutput
-    round.useStream = round.openaiOptions.execution.useStream
     settings.value.proofreading.rounds.push(round)
     saveToStorage()
     console.log(`已添加校对轮次: ${round.name}`)
@@ -56,19 +59,16 @@ export function useProofreadingSettings(
    * @param index - 轮次索引
    * @param updates - 要更新的配置
    */
-  function updateProofreadingRound(index: number, updates: Partial<ProofreadingRound>): void {
+  function updateProofreadingRound(index: number, updates: ProofreadingRoundUiUpdates): void {
     if (index >= 0 && index < settings.value.proofreading.rounds.length) {
       const round = settings.value.proofreading.rounds[index]
       if (round) {
         Object.assign(round, updates)
         if (updates.rpmLimit !== undefined) round.openaiOptions.execution.rpmLimit = updates.rpmLimit
-        if (updates.maxRetries !== undefined) round.openaiOptions.execution.maxRetries = updates.maxRetries
+        if (updates.transportRetries !== undefined) round.openaiOptions.execution.transportRetries = updates.transportRetries
+        if (updates.businessRetries !== undefined) round.openaiOptions.execution.businessRetries = updates.businessRetries
         if (updates.forceJsonOutput !== undefined) round.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
         if (updates.useStream !== undefined) round.openaiOptions.execution.useStream = updates.useStream
-        round.rpmLimit = round.openaiOptions.execution.rpmLimit
-        round.maxRetries = round.openaiOptions.execution.maxRetries
-        round.forceJsonOutput = round.openaiOptions.request.forceJsonOutput
-        round.useStream = round.openaiOptions.execution.useStream
         saveToStorage()
       }
     }

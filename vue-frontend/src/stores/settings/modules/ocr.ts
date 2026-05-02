@@ -29,6 +29,12 @@ export function useOcrSettings(
   saveToStorage: () => void,
   saveProviderConfigsToStorage: () => void
 ) {
+  type AiVisionOcrUiUpdates = Partial<AiVisionOcrSettings> & {
+    rpmLimit?: number
+    transportRetries?: number
+    businessRetries?: number
+    isJsonMode?: boolean
+  }
   // ============================================================
   // 计算属性
   // ============================================================
@@ -87,12 +93,12 @@ export function useOcrSettings(
    * 更新AI视觉OCR设置
    * @param updates - 要更新的设置
    */
-  function updateAiVisionOcr(updates: Partial<AiVisionOcrSettings>): void {
+  function updateAiVisionOcr(updates: AiVisionOcrUiUpdates): void {
     Object.assign(settings.value.aiVisionOcr, updates)
     if (updates.rpmLimit !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = updates.rpmLimit
+    if (updates.transportRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.transportRetries = updates.transportRetries
+    if (updates.businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
-    settings.value.aiVisionOcr.rpmLimit = settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit
-    settings.value.aiVisionOcr.isJsonMode = settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput
     saveToStorage()
   }
 

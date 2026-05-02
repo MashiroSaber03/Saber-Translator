@@ -32,7 +32,8 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.openai_options.request.temperature, 0.4)
         self.assertFalse(request.openai_options.execution.use_stream)
         self.assertEqual(request.openai_options.execution.rpm_limit, 9)
-        self.assertEqual(client._transport.max_retries, 2)
+        self.assertEqual(request.openai_options.execution.business_retries, 2)
+        self.assertEqual(request.runtime_options.stream_output_label, "漫画分析对话")
 
     async def test_chat_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
@@ -197,7 +198,8 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.openai_options.request.temperature, 0.2)
         self.assertFalse(request.openai_options.execution.use_stream)
         self.assertEqual(request.openai_options.execution.rpm_limit, 8)
-        self.assertEqual(client._transport.max_retries, 0)
+        self.assertEqual(request.openai_options.execution.business_retries, 3)
+        self.assertEqual(request.runtime_options.stream_output_label, "漫画分析")
 
     async def test_vlm_client_retries_non_retryable_transport_failures_at_outer_layer(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig

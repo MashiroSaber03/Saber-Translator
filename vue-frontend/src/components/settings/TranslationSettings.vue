@@ -110,8 +110,8 @@
       </div>
 
       <!-- RPM限制 (云服务显示) -->
-      <div v-show="showRpmLimit" class="settings-row">
-        <div class="settings-item">
+      <div class="settings-row">
+        <div v-show="showRpmLimit" class="settings-item">
           <label for="settingsRpmTranslation">RPM限制:</label>
           <input type="number" id="settingsRpmTranslation" v-model.number="localSettings.rpmTranslation" min="0" step="1" />
           <div class="input-hint">每分钟请求数，0表示无限制</div>
@@ -121,11 +121,24 @@
           <input
             type="number"
             id="settingsTranslationMaxRetries"
-            v-model.number="localSettings.translationMaxRetries"
+            v-model.number="localSettings.translationBusinessRetries"
             min="0"
             max="10"
             step="1"
           />
+          <div class="input-hint">业务重试：空结果/结构解析失败</div>
+        </div>
+        <div class="settings-item">
+          <label for="settingsTranslationTransportRetries">传输重试:</label>
+          <input
+            type="number"
+            id="settingsTranslationTransportRetries"
+            v-model.number="localSettings.translationTransportRetries"
+            min="0"
+            max="10"
+            step="1"
+          />
+          <div class="input-hint">网络超时/429/5xx</div>
         </div>
       </div>
 
@@ -282,7 +295,8 @@ const localSettings = ref({
   modelName: settingsStore.settings.translation.modelName,
   customBaseUrl: settingsStore.settings.translation.customBaseUrl,
   rpmTranslation: settingsStore.settings.translation.openaiOptions.execution.rpmLimit,
-  translationMaxRetries: settingsStore.settings.translation.openaiOptions.execution.maxRetries,
+  translationTransportRetries: settingsStore.settings.translation.openaiOptions.execution.transportRetries,
+  translationBusinessRetries: settingsStore.settings.translation.openaiOptions.execution.businessRetries,
   translationMode: currentTranslationMode,
   promptContent: getCurrentPrompt(),
   translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
@@ -399,7 +413,8 @@ function handleProviderChange() {
   localSettings.value.modelName = settingsStore.settings.translation.modelName
   localSettings.value.customBaseUrl = settingsStore.settings.translation.customBaseUrl
   localSettings.value.rpmTranslation = settingsStore.settings.translation.openaiOptions.execution.rpmLimit
-  localSettings.value.translationMaxRetries = settingsStore.settings.translation.openaiOptions.execution.maxRetries
+  localSettings.value.translationTransportRetries = settingsStore.settings.translation.openaiOptions.execution.transportRetries
+  localSettings.value.translationBusinessRetries = settingsStore.settings.translation.openaiOptions.execution.businessRetries
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
   // 清空所有模型列表（无论是云服务商还是本地服务商）
@@ -502,8 +517,12 @@ watch(() => localSettings.value.rpmTranslation, (newVal) => {
   settingsStore.updateTranslationService({ rpmLimit: newVal })
 })
 
-watch(() => localSettings.value.translationMaxRetries, (newVal) => {
-  settingsStore.updateTranslationService({ maxRetries: newVal })
+watch(() => localSettings.value.translationTransportRetries, (newVal) => {
+  settingsStore.updateTranslationService({ transportRetries: newVal })
+})
+
+watch(() => localSettings.value.translationBusinessRetries, (newVal) => {
+  settingsStore.updateTranslationService({ businessRetries: newVal })
 })
 
 watch(() => localSettings.value.promptContent, (newVal) => {

@@ -5,8 +5,12 @@
 # 1. Install non-PyTorch dependencies first:
 #    pip install -r requirements-gpu.txt
 # 
-# 2. Then install GPU version of PyTorch separately:
-#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# 2. If CPU-only torch was installed before, uninstall or force-reinstall it first.
+#    pip uninstall -y torch torchvision
+# 3. Then install GPU version of PyTorch separately:
+#    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# 4. Verify:
+#    python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
 # ============================================
 
 # Flask related

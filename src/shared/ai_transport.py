@@ -8,25 +8,36 @@ import asyncio
 import json
 import logging
 import random
+import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import httpx
 
-from src.shared.openai_options import (
-    OpenAICompatibleOptions,
-    normalize_openai_compatible_options_for_provider,
-)
 from src.shared.ai_providers import (
+    CHAT_CAPABILITY,
+    CONNECTION_TEST_CAPABILITY,
     EMBEDDING_CAPABILITY,
     RERANK_CAPABILITY,
+    VISION_OCR_CAPABILITY,
     normalize_provider_id,
     resolve_provider_base_url,
     resolve_provider_base_url_for_capability,
     resolve_provider_endpoint_for_capability,
 )
 from src.shared.http_config import build_httpx_kwargs
-from src.shared.openai_helpers import create_openai_client, resolve_openai_api_key
+from src.shared.openai_execution import (
+    OpenAICompatibleRuntimeOptions,
+    ResolvedOpenAICompatibleInvocation,
+    build_openai_compatible_runtime_options,
+    clone_openai_compatible_runtime_options,
+    resolve_openai_compatible_invocation,
+)
+from src.shared.openai_helpers import resolve_openai_api_key
+from src.shared.openai_options import (
+    OpenAICompatibleOptions,
+    clone_openai_compatible_options,
+)
 
 logger = logging.getLogger("SharedAITransport")
 
@@ -49,10 +60,12 @@ class UnifiedChatRequest:
     messages: List[Dict[str, Any]]
     base_url: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
+    runtime_options: OpenAICompatibleRuntimeOptions = field(default_factory=OpenAICompatibleRuntimeOptions)
+    capability: str = CHAT_CAPABILITY
 
     @property
     def timeout(self) -> float:
-        return self.openai_options.timeout_or(120.0)
+        return self.runtime_options.timeout_or(120.0)
 
     @property
     def use_stream(self) -> bool:
@@ -60,11 +73,11 @@ class UnifiedChatRequest:
 
     @property
     def print_stream_output(self) -> bool:
-        return self.openai_options.print_stream_output
+        return self.runtime_options.print_stream_output
 
     @property
     def stream_output_label(self) -> Optional[str]:
-        return self.openai_options.stream_output_label
+        return self.runtime_options.stream_output_label
 
     @property
     def temperature(self) -> Optional[float]:
@@ -78,7 +91,7 @@ class UnifiedChatRequest:
 
     @property
     def request_overrides(self) -> Dict[str, Any]:
-        return dict(self.openai_options.request_overrides)
+        return dict(self.runtime_options.request_overrides)
 
 
 @dataclass
@@ -90,10 +103,12 @@ class UnifiedVisionRequest:
     image_base64: str
     base_url: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
+    runtime_options: OpenAICompatibleRuntimeOptions = field(default_factory=OpenAICompatibleRuntimeOptions)
+    capability: str = VISION_OCR_CAPABILITY
 
     @property
     def timeout(self) -> float:
-        return self.openai_options.timeout_or(120.0)
+        return self.runtime_options.timeout_or(120.0)
 
     @property
     def use_json_format(self) -> bool:
@@ -105,7 +120,7 @@ class UnifiedVisionRequest:
 
     @property
     def request_overrides(self) -> Dict[str, Any]:
-        return dict(self.openai_options.request_overrides)
+        return dict(self.runtime_options.request_overrides)
 
 
 @dataclass
@@ -152,8 +167,12 @@ class ProviderModelListRequest:
     timeout: float = 15.0
 
 
-def _build_chat_body(request: UnifiedChatRequest, options: Optional[OpenAICompatibleOptions] = None) -> Dict[str, Any]:
-    effective_options = options or request.openai_options
+def _build_chat_body(
+    request: UnifiedChatRequest,
+    invocation: Optional[ResolvedOpenAICompatibleInvocation] = None,
+) -> Dict[str, Any]:
+    effective_options = invocation.effective_options if invocation else request.openai_options
+    runtime_options = invocation.runtime_options if invocation else request.runtime_options
     body: Dict[str, Any] = {
         "model": request.model,
         "messages": request.messages,
@@ -162,8 +181,8 @@ def _build_chat_body(request: UnifiedChatRequest, options: Optional[OpenAICompat
         body["temperature"] = effective_options.request.temperature
     if effective_options.request.force_json_output:
         body["response_format"] = {"type": "json_object"}
-    if effective_options.request_overrides:
-        body.update(effective_options.request_overrides)
+    if runtime_options.request_overrides:
+        body.update(runtime_options.request_overrides)
     return body
 
 
@@ -187,12 +206,6 @@ def _build_rerank_body(request: UnifiedRerankRequest) -> Dict[str, Any]:
     if request.request_overrides:
         body.update(request.request_overrides)
     return body
-
-
-def _extract_chat_content_from_sdk_response(response: Any) -> str:
-    if not response or not response.choices:
-        raise ValueError("AI 未返回有效内容")
-    return (response.choices[0].message.content or "").strip()
 
 
 def _extract_chat_content_from_payload(payload: Dict[str, Any]) -> str:
@@ -250,31 +263,83 @@ def _build_auth_headers(
     return headers
 
 
+def _build_models_url(base_url: str) -> str:
+    has_version_path = bool(
+        httpx.URL(base_url).path.rstrip("/").endswith("/v1")
+        or "/api/v" in httpx.URL(base_url).path
+        or httpx.URL(base_url).path.rstrip("/").endswith("/models")
+    )
+    if base_url.rstrip("/").endswith("/models"):
+        return base_url
+    normalized = base_url.rstrip("/")
+    if not has_version_path:
+        normalized = f"{normalized}/v1"
+    return f"{normalized}/models"
+
+
+def _resolve_chat_invocation(
+    request: UnifiedChatRequest,
+    invocation: Optional[ResolvedOpenAICompatibleInvocation],
+) -> ResolvedOpenAICompatibleInvocation:
+    return invocation or resolve_openai_compatible_invocation(
+        request.provider,
+        request.capability,
+        request.openai_options,
+        request.runtime_options,
+        logger_instance=logger,
+    )
+
+
 class OpenAICompatibleChatTransport:
-    def complete(self, request: UnifiedChatRequest) -> str:
-        base_url = resolve_provider_base_url(request.provider, request.base_url)
-        options = normalize_openai_compatible_options_for_provider(request.provider, request.openai_options, logger_instance=logger)
-        if options.execution.use_stream:
-            return self._complete_stream(request, base_url, options)
+    def complete(
+        self,
+        request: UnifiedChatRequest,
+        *,
+        resolved_invocation: Optional[ResolvedOpenAICompatibleInvocation] = None,
+        before_request: Optional[Callable[[], None]] = None,
+    ) -> str:
+        invocation = _resolve_chat_invocation(request, resolved_invocation)
+        base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        if invocation.use_stream:
+            return self._complete_stream(request, base_url, invocation, before_request)
 
-        client = create_openai_client(
-            api_key=request.api_key,
+        if not base_url:
+            raise ValueError("缺少 Base URL")
+
+        payload = self._request_json(
             base_url=base_url,
-            timeout=options.timeout_or(120.0),
+            timeout=invocation.timeout,
+            method="POST",
+            url=f"{base_url.rstrip('/')}/chat/completions",
+            api_key=request.api_key,
+            body=_build_chat_body(request, invocation),
+            max_retries=invocation.effective_options.execution.transport_retries,
+            before_request=before_request,
         )
-        kwargs = _build_chat_body(request, options)
-        kwargs["timeout"] = options.timeout_or(120.0)
+        return _extract_chat_content_from_payload(payload)
 
-        response = client.chat.completions.create(**kwargs)
-        return _extract_chat_content_from_sdk_response(response)
-
-    def complete_vision(self, request: UnifiedVisionRequest) -> str:
+    def complete_vision(
+        self,
+        request: UnifiedVisionRequest,
+        *,
+        resolved_invocation: Optional[ResolvedOpenAICompatibleInvocation] = None,
+        before_request: Optional[Callable[[], None]] = None,
+    ) -> str:
+        invocation = resolved_invocation or resolve_openai_compatible_invocation(
+            request.provider,
+            request.capability,
+            request.openai_options,
+            request.runtime_options,
+            logger_instance=logger,
+        )
         chat_request = UnifiedChatRequest(
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
             base_url=request.base_url,
-            openai_options=OpenAICompatibleOptions.from_dict(request.openai_options.to_dict()),
+            capability=request.capability,
+            openai_options=clone_openai_compatible_options(request.openai_options),
+            runtime_options=clone_openai_compatible_runtime_options(request.runtime_options),
             messages=[
                 {
                     "role": "user",
@@ -288,7 +353,11 @@ class OpenAICompatibleChatTransport:
                 }
             ],
         )
-        return self.complete(chat_request)
+        return self.complete(
+            chat_request,
+            resolved_invocation=invocation,
+            before_request=before_request,
+        )
 
     def test_connection(self, request: ProviderConnectionTestRequest) -> tuple[bool, str]:
         messages: List[Dict[str, Any]] = []
@@ -302,7 +371,9 @@ class OpenAICompatibleChatTransport:
                     api_key=request.api_key,
                     model=request.model,
                     base_url=request.base_url,
-                    openai_options=OpenAICompatibleOptions(
+                    capability=CONNECTION_TEST_CAPABILITY,
+                    openai_options=OpenAICompatibleOptions(),
+                    runtime_options=build_openai_compatible_runtime_options(
                         timeout=request.timeout,
                         request_overrides={"max_tokens": 50},
                     ),
@@ -321,7 +392,7 @@ class OpenAICompatibleChatTransport:
         base_url = resolve_provider_base_url(request.provider, request.base_url)
         if not base_url:
             raise ValueError("该服务商需要提供 Base URL")
-        models_url = self._build_models_url(base_url)
+        models_url = _build_models_url(base_url)
 
         with httpx.Client(**build_httpx_kwargs(base_url, request.timeout)) as client:
             response = client.get(
@@ -337,51 +408,153 @@ class OpenAICompatibleChatTransport:
         ]
         return self._filter_models_for_provider(provider, models)
 
+    def _request_json(
+        self,
+        *,
+        base_url: str,
+        timeout: float,
+        method: str,
+        url: str,
+        api_key: str,
+        body: Dict[str, Any],
+        max_retries: int,
+        before_request: Optional[Callable[[], None]] = None,
+    ) -> Dict[str, Any]:
+        last_exception: Optional[Exception] = None
+        for attempt in range(max_retries + 1):
+            with httpx.Client(**build_httpx_kwargs(base_url, timeout)) as client:
+                try:
+                    if before_request is not None:
+                        before_request()
+                    response = client.request(
+                        method=method,
+                        url=url,
+                        headers=_build_auth_headers(api_key, base_url),
+                        json=body,
+                    )
+
+                    if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                        wait_time = _calculate_backoff(attempt, response)
+                        logger.warning(
+                            "Sync transport received %s, retrying in %.1fs (%s/%s)",
+                            response.status_code,
+                            wait_time,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(wait_time)
+                        continue
+
+                    if response.status_code != 200:
+                        error_text = response.text[:500] if response.text else "无响应内容"
+                        raise ValueError(f"API 错误 {response.status_code}: {error_text}")
+
+                    return response.json()
+                except RETRYABLE_EXCEPTIONS as exc:
+                    last_exception = exc
+                    if attempt < max_retries:
+                        wait_time = _calculate_backoff(attempt)
+                        logger.warning(
+                            "Sync transport request failed (%s), retrying in %.1fs (%s/%s)",
+                            type(exc).__name__,
+                            wait_time,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    raise
+
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("重试耗尽")
+
     def _complete_stream(
         self,
         request: UnifiedChatRequest,
         base_url: Optional[str],
-        options: OpenAICompatibleOptions,
+        invocation: ResolvedOpenAICompatibleInvocation,
+        before_request: Optional[Callable[[], None]] = None,
     ) -> str:
         if not base_url:
             raise ValueError("缺少 Base URL")
-        url = f"{base_url.rstrip('/')}/chat/completions"
-        body = _build_chat_body(request, options)
-        body["stream"] = True
 
-        full_text = ""
-        if options.print_stream_output:
-            label = options.stream_output_label or request.model
-            print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
-        with httpx.Client(**build_httpx_kwargs(base_url, options.timeout_or(120.0))) as client:
-            with client.stream(
-                "POST",
-                url,
-                headers=_build_auth_headers(request.api_key, base_url),
-                json=body,
-            ) as response:
-                if response.status_code != 200:
-                    error_text = response.read().decode("utf-8", errors="ignore")[:500]
-                    raise ValueError(f"API 错误 {response.status_code}: {error_text}")
-                for line in response.iter_lines():
-                    if not line.startswith("data: "):
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        body = _build_chat_body(request, invocation)
+        body["stream"] = True
+        max_retries = invocation.effective_options.execution.transport_retries
+
+        last_exception: Optional[Exception] = None
+        for attempt in range(max_retries + 1):
+            full_text = ""
+            with httpx.Client(**build_httpx_kwargs(base_url, invocation.timeout)) as client:
+                try:
+                    if before_request is not None:
+                        before_request()
+                    with client.stream(
+                        "POST",
+                        url,
+                        headers=_build_auth_headers(request.api_key, base_url),
+                        json=body,
+                    ) as response:
+                        if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                            wait_time = _calculate_backoff(attempt, response)
+                            logger.warning(
+                                "Sync stream transport received %s, retrying in %.1fs (%s/%s)",
+                                response.status_code,
+                                wait_time,
+                                attempt + 1,
+                                max_retries,
+                            )
+                            time.sleep(wait_time)
+                            continue
+
+                        if response.status_code != 200:
+                            error_text = response.read().decode("utf-8", errors="ignore")[:500]
+                            raise ValueError(f"API 错误 {response.status_code}: {error_text}")
+
+                        if invocation.runtime_options.print_stream_output:
+                            label = invocation.runtime_options.stream_output_label or request.model
+                            print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
+
+                        for line in response.iter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                continue
+                            chunk = _extract_stream_chunk(data)
+                            if chunk:
+                                full_text += chunk
+                                if invocation.runtime_options.print_stream_output:
+                                    print(chunk, end="", flush=True)
+
+                    if invocation.runtime_options.print_stream_output:
+                        label = invocation.runtime_options.stream_output_label or request.model
+                        print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
+                    return full_text.strip()
+                except RETRYABLE_EXCEPTIONS as exc:
+                    last_exception = exc
+                    if attempt < max_retries:
+                        wait_time = _calculate_backoff(attempt)
+                        logger.warning(
+                            "Sync stream transport failed (%s), retrying in %.1fs (%s/%s)",
+                            type(exc).__name__,
+                            wait_time,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(wait_time)
                         continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    chunk = _extract_stream_chunk(data)
-                    if chunk:
-                        full_text += chunk
-                        if options.print_stream_output:
-                            print(chunk, end="", flush=True)
-        if options.print_stream_output:
-            label = options.stream_output_label or request.model
-            print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
-        return full_text.strip()
+                    raise
+
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("重试耗尽")
 
     def _list_gemini_models(self, request: ProviderModelListRequest) -> List[Dict[str, str]]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={request.api_key}"
@@ -421,51 +594,60 @@ class OpenAICompatibleChatTransport:
                 filtered.append(model)
         return sorted(filtered, key=lambda item: item["id"])
 
-    @staticmethod
-    def _build_models_url(base_url: str) -> str:
-        has_version_path = bool(
-            httpx.URL(base_url).path.rstrip("/").endswith("/v1")
-            or "/api/v" in httpx.URL(base_url).path
-            or httpx.URL(base_url).path.rstrip("/").endswith("/models")
-        )
-        if base_url.rstrip("/").endswith("/models"):
-            return base_url
-        normalized = base_url.rstrip("/")
-        if not has_version_path:
-            normalized = f"{normalized}/v1"
-        return f"{normalized}/models"
-
 
 class AsyncOpenAICompatibleTransport:
-    def __init__(self, max_retries: int = 3):
+    def __init__(self, max_retries: int = 0):
         self.max_retries = max(0, int(max_retries))
 
-    async def complete(self, request: UnifiedChatRequest) -> str:
-        base_url = resolve_provider_base_url(request.provider, request.base_url)
-        options = normalize_openai_compatible_options_for_provider(request.provider, request.openai_options, logger_instance=logger)
-        if options.execution.use_stream:
-            return await self._complete_stream(request, base_url, options)
+    async def complete(
+        self,
+        request: UnifiedChatRequest,
+        *,
+        resolved_invocation: Optional[ResolvedOpenAICompatibleInvocation] = None,
+        before_request: Optional[Callable[[], Awaitable[None]]] = None,
+    ) -> str:
+        invocation = _resolve_chat_invocation(request, resolved_invocation)
+        base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        if invocation.use_stream:
+            return await self._complete_stream(request, base_url, invocation, before_request)
 
         if not base_url:
             raise ValueError("缺少 Base URL")
-        url = f"{base_url.rstrip('/')}/chat/completions"
+
         payload = await self._request_json(
             base_url=base_url,
-            timeout=options.timeout_or(120.0),
+            timeout=invocation.timeout,
             method="POST",
-            url=url,
+            url=f"{base_url.rstrip('/')}/chat/completions",
             api_key=request.api_key,
-            body=_build_chat_body(request, options),
+            body=_build_chat_body(request, invocation),
+            max_retries=invocation.effective_options.execution.transport_retries,
+            before_request=before_request,
         )
         return _extract_chat_content_from_payload(payload)
 
-    async def complete_vision(self, request: UnifiedVisionRequest) -> str:
+    async def complete_vision(
+        self,
+        request: UnifiedVisionRequest,
+        *,
+        resolved_invocation: Optional[ResolvedOpenAICompatibleInvocation] = None,
+        before_request: Optional[Callable[[], Awaitable[None]]] = None,
+    ) -> str:
+        invocation = resolved_invocation or resolve_openai_compatible_invocation(
+            request.provider,
+            request.capability,
+            request.openai_options,
+            request.runtime_options,
+            logger_instance=logger,
+        )
         chat_request = UnifiedChatRequest(
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
             base_url=request.base_url,
-            openai_options=OpenAICompatibleOptions.from_dict(request.openai_options.to_dict()),
+            capability=request.capability,
+            openai_options=clone_openai_compatible_options(request.openai_options),
+            runtime_options=clone_openai_compatible_runtime_options(request.runtime_options),
             messages=[
                 {
                     "role": "user",
@@ -479,7 +661,11 @@ class AsyncOpenAICompatibleTransport:
                 }
             ],
         )
-        return await self.complete(chat_request)
+        return await self.complete(
+            chat_request,
+            resolved_invocation=invocation,
+            before_request=before_request,
+        )
 
     async def embed(self, request: UnifiedEmbeddingRequest) -> List[List[float]]:
         base_url = _resolve_capability_base_url(request.provider, request.base_url, EMBEDDING_CAPABILITY)
@@ -493,6 +679,7 @@ class AsyncOpenAICompatibleTransport:
             url=url,
             api_key=request.api_key,
             body=_build_embedding_body(request),
+            max_retries=self.max_retries,
         )
         return [item["embedding"] for item in payload.get("data", [])]
 
@@ -509,6 +696,7 @@ class AsyncOpenAICompatibleTransport:
             url=url,
             api_key=request.api_key,
             body=_build_rerank_body(request),
+            max_retries=self.max_retries,
         )
 
     async def _request_json(
@@ -520,11 +708,15 @@ class AsyncOpenAICompatibleTransport:
         url: str,
         api_key: str,
         body: Dict[str, Any],
+        max_retries: int,
+        before_request: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> Dict[str, Any]:
         last_exception: Optional[Exception] = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(max_retries + 1):
             client = httpx.AsyncClient(**build_httpx_kwargs(base_url, timeout))
             try:
+                if before_request is not None:
+                    await before_request()
                 response = await client.request(
                     method=method,
                     url=url,
@@ -532,14 +724,14 @@ class AsyncOpenAICompatibleTransport:
                     json=body,
                 )
 
-                if response.status_code in RETRYABLE_STATUS_CODES and attempt < self.max_retries:
+                if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                     wait_time = _calculate_backoff(attempt, response)
                     logger.warning(
                         "Async transport received %s, retrying in %.1fs (%s/%s)",
                         response.status_code,
                         wait_time,
                         attempt + 1,
-                        self.max_retries,
+                        max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue
@@ -551,14 +743,14 @@ class AsyncOpenAICompatibleTransport:
                 return response.json()
             except RETRYABLE_EXCEPTIONS as exc:
                 last_exception = exc
-                if attempt < self.max_retries:
+                if attempt < max_retries:
                     wait_time = _calculate_backoff(attempt)
                     logger.warning(
                         "Async transport request failed (%s), retrying in %.1fs (%s/%s)",
                         type(exc).__name__,
                         wait_time,
                         attempt + 1,
-                        self.max_retries,
+                        max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue
@@ -574,37 +766,38 @@ class AsyncOpenAICompatibleTransport:
         self,
         request: UnifiedChatRequest,
         base_url: Optional[str],
-        options: OpenAICompatibleOptions,
+        invocation: ResolvedOpenAICompatibleInvocation,
+        before_request: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> str:
         if not base_url:
             raise ValueError("缺少 Base URL")
 
         url = f"{base_url.rstrip('/')}/chat/completions"
-        body = _build_chat_body(request, options)
+        body = _build_chat_body(request, invocation)
         body["stream"] = True
+        max_retries = invocation.effective_options.execution.transport_retries
 
         last_exception: Optional[Exception] = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(max_retries + 1):
             full_text = ""
-            client = httpx.AsyncClient(**build_httpx_kwargs(base_url, options.timeout_or(120.0)))
+            client = httpx.AsyncClient(**build_httpx_kwargs(base_url, invocation.timeout))
             try:
-                if options.print_stream_output:
-                    label = options.stream_output_label or request.model
-                    print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
+                if before_request is not None:
+                    await before_request()
                 async with client.stream(
                     "POST",
                     url,
                     headers=_build_auth_headers(request.api_key, base_url),
                     json=body,
                 ) as response:
-                    if response.status_code in RETRYABLE_STATUS_CODES and attempt < self.max_retries:
+                    if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                         wait_time = _calculate_backoff(attempt, response)
                         logger.warning(
                             "Async stream transport received %s, retrying in %.1fs (%s/%s)",
                             response.status_code,
                             wait_time,
                             attempt + 1,
-                            self.max_retries,
+                            max_retries,
                         )
                         await asyncio.sleep(wait_time)
                         continue
@@ -612,6 +805,10 @@ class AsyncOpenAICompatibleTransport:
                         error_bytes = await response.aread()
                         error_text = error_bytes.decode("utf-8", errors="ignore")[:500]
                         raise ValueError(f"API 错误 {response.status_code}: {error_text}")
+
+                    if invocation.runtime_options.print_stream_output:
+                        label = invocation.runtime_options.stream_output_label or request.model
+                        print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
 
                     async for line in response.aiter_lines():
                         if not line.startswith("data: "):
@@ -626,23 +823,23 @@ class AsyncOpenAICompatibleTransport:
                         chunk = _extract_stream_chunk(data)
                         if chunk:
                             full_text += chunk
-                            if options.print_stream_output:
+                            if invocation.runtime_options.print_stream_output:
                                 print(chunk, end="", flush=True)
 
-                if options.print_stream_output:
-                    label = options.stream_output_label or request.model
+                if invocation.runtime_options.print_stream_output:
+                    label = invocation.runtime_options.stream_output_label or request.model
                     print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
                 return full_text.strip()
             except RETRYABLE_EXCEPTIONS as exc:
                 last_exception = exc
-                if attempt < self.max_retries:
+                if attempt < max_retries:
                     wait_time = _calculate_backoff(attempt)
                     logger.warning(
                         "Async stream transport failed (%s), retrying in %.1fs (%s/%s)",
                         type(exc).__name__,
                         wait_time,
                         attempt + 1,
-                        self.max_retries,
+                        max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue

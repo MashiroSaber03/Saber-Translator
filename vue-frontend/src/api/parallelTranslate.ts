@@ -65,7 +65,8 @@ export interface ParallelOcrParams {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
   use_json_format_for_ai_vision?: boolean
@@ -133,7 +134,8 @@ export interface ParallelTranslateParams {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
   rpm_limit?: number

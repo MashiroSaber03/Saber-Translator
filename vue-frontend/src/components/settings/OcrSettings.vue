@@ -254,6 +254,14 @@
         <input type="number" id="settingsRpmAiVisionOcr" v-model.number="localAiVisionOcr.rpmLimit" min="0" step="1" />
         <div class="input-hint">0 表示无限制</div>
       </div>
+      <div class="settings-item">
+        <label for="settingsAiVisionBusinessRetries">业务重试:</label>
+        <input type="number" id="settingsAiVisionBusinessRetries" v-model.number="localAiVisionOcr.businessRetries" min="0" max="10" step="1" />
+      </div>
+      <div class="settings-item">
+        <label for="settingsAiVisionTransportRetries">传输重试:</label>
+        <input type="number" id="settingsAiVisionTransportRetries" v-model.number="localAiVisionOcr.transportRetries" min="0" max="10" step="1" />
+      </div>
 
       <!-- 最小图片尺寸 -->
       <div class="settings-item">
@@ -432,6 +440,8 @@ const localAiVisionOcr = ref({
   prompt: settingsStore.settings.aiVisionOcr.prompt,
   promptMode: settingsStore.settings.aiVisionOcr.promptMode,
   rpmLimit: settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit,
+  transportRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries,
+  businessRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
 
@@ -471,6 +481,12 @@ watch(() => localAiVisionOcr.value.prompt, (val) => {
 })
 watch(() => localAiVisionOcr.value.rpmLimit, (val) => {
   settingsStore.updateAiVisionOcr({ rpmLimit: val })
+})
+watch(() => localAiVisionOcr.value.transportRetries, (val) => {
+  settingsStore.updateAiVisionOcr({ transportRetries: val })
+})
+watch(() => localAiVisionOcr.value.businessRetries, (val) => {
+  settingsStore.updateAiVisionOcr({ businessRetries: val })
 })
 watch(() => localAiVisionOcr.value.minImageSize, (val) => {
   settingsStore.updateAiVisionOcr({ minImageSize: val })
@@ -593,6 +609,8 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
   localAiVisionOcr.value.promptMode = settingsStore.settings.aiVisionOcr.promptMode
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
+  localAiVisionOcr.value.transportRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries
+  localAiVisionOcr.value.businessRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
 // 当前提示词模式（计算属性）

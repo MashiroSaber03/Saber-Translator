@@ -33,27 +33,11 @@ import {
   DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
   DEFAULT_PROOFREADING_MAX_RETRIES
 } from '@/constants'
+import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 
 // ============================================================
 // 默认值定义
 // ============================================================
-
-function createDefaultOpenAiOptions(
-  overrides?: Partial<OpenAICompatibleOptions>
-): OpenAICompatibleOptions {
-  return {
-    request: {
-      forceJsonOutput: false,
-      ...overrides?.request
-    },
-    execution: {
-      useStream: false,
-      rpmLimit: 0,
-      maxRetries: 0,
-      ...overrides?.execution
-    }
-  }
-}
 
 /** 默认文字样式设置 */
 export function createDefaultTextStyle(): TextStyleSettings {
@@ -102,11 +86,10 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
     execution: {
       useStream: false,
       rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
-      maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+      transportRetries: 1,
+      businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
     }
   }),
-  rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
-  isJsonMode: false,
   minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
 }
 
@@ -127,12 +110,10 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
     execution: {
       useStream: false,
       rpmLimit: DEFAULT_RPM_TRANSLATION,
-      maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES
+      transportRetries: 1,
+      businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
     }
   }),
-  rpmLimit: DEFAULT_RPM_TRANSLATION,
-  maxRetries: DEFAULT_TRANSLATION_MAX_RETRIES,
-  isJsonMode: false,
   translationMode: 'batch',  // 默认使用整页批量翻译
   // 4个独立的提示词存储
   batchNormalPrompt: DEFAULT_TRANSLATE_PROMPT,
@@ -151,13 +132,10 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
     execution: {
       useStream: true,
       rpmLimit: 7,
-      maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+      transportRetries: 1,
+      businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
     }
   }),
-  rpmLimit: 7,
-  maxRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
-  forceJsonOutput: false,
-  useStream: true,
   batchSize: 3,
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
@@ -193,6 +171,7 @@ export const DEFAULT_PARALLEL: ParallelSettings = {
 /** 创建默认翻译设置 */
 export function createDefaultSettings(): TranslationSettings {
   return {
+    settingsSchemaVersion: 2,
     textStyle: createDefaultTextStyle(),
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',

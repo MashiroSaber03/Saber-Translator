@@ -12,10 +12,14 @@ from typing import List, Dict, Optional
 from PIL import Image
 
 from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+from src.shared.openai_execution import (
+    OpenAICompatibleAsyncExecutor,
+    OpenAICompatibleBusinessRetryableError,
+    build_openai_compatible_runtime_options,
+)
 from src.shared.openai_options import OpenAICompatibleOptions
 from src.shared.ai_providers import provider_requires_api_key
 
-from .clients.base_client import RPMLimiter
 from .clients.provider_registry import get_base_url
 from .config_models import (
     VLMConfig,
@@ -76,13 +80,9 @@ class VLMClient:
         self.prompts_config = prompts_config or PromptsConfig()
         self.provider = _provider_id(config.provider)
         self._base_url = get_base_url(self.provider, config.base_url)
-        self._rpm_limiter = RPMLimiter(
-            config.openai_options.execution.rpm_limit,
-            bucket_id=f"vlm:{self.provider}",
-        )
         self._timeout = 300.0
-        self._max_retries = max(0, config.openai_options.execution.max_retries)
-        self._transport = AsyncOpenAICompatibleTransport(max_retries=0)
+        self._transport = AsyncOpenAICompatibleTransport()
+        self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
         logger.info(f"VLMClient 初始化: provider={config.provider}, base_url={self._base_url}")
 
@@ -92,9 +92,6 @@ class VLMClient:
 
     async def close(self):
         return None
-
-    async def _enforce_rpm_limit(self):
-        await self._rpm_limiter.wait()
 
     def is_configured(self) -> bool:
         return bool(self.config.model and (self.config.api_key or not provider_requires_api_key(self.provider)))
@@ -108,28 +105,11 @@ class VLMClient:
     ) -> Dict:
         end_page = start_page + len(images) - 1
         prompt = custom_prompt or self._build_batch_analysis_prompt(start_page, end_page, len(images), context)
-
-        max_attempts = self._max_retries + 1
-        last_result: Dict = {}
-        for attempt in range(max_attempts):
-            response_text = await self._call_vlm(
-                images=images,
-                prompt=prompt
-            )
-
-            result = self._parse_batch_analysis(response_text, start_page, end_page)
-            last_result = result
-
-            if not result.get("parse_error"):
-                return result
-
-            if attempt < self._max_retries:
-                logger.warning(f"第{start_page}-{end_page}页 JSON 解析失败，第 {attempt + 1} 次重试...")
-                await asyncio.sleep(2 ** attempt)
-            else:
-                logger.error(f"第{start_page}-{end_page}页 JSON 解析失败，已达最大重试次数 ({self._max_retries})")
-
-        return last_result
+        return await self._call_vlm(
+            images=images,
+            prompt=prompt,
+            parser=self._build_batch_analysis_parser(start_page, end_page),
+        )
 
     def _build_batch_analysis_prompt(self, start_page: int, end_page: int, page_count: int, context: Dict = None) -> str:
         base_prompt = self.prompts_config.batch_analysis if self.prompts_config.batch_analysis else DEFAULT_BATCH_ANALYSIS_PROMPT
@@ -146,29 +126,23 @@ class VLMClient:
 
         return prompt
 
-    async def _call_vlm(self, images: List[bytes], prompt: str) -> str:
-        await self._enforce_rpm_limit()
-        for attempt in range(self._max_retries + 1):
-            try:
-                return await self._call_openai_compatible(images, prompt)
-            except Exception as e:
-                error_msg = str(e) if str(e) else type(e).__name__
-                if hasattr(e, "response"):
-                    try:
-                        resp = e.response
-                        if hasattr(resp, "text"):
-                            error_msg = f"{error_msg} - Response: {resp.text[:500]}"
-                        elif hasattr(resp, "content"):
-                            error_msg = f"{error_msg} - Content: {resp.content[:500]}"
-                    except Exception:
-                        pass
-                logger.warning(f"VLM 调用失败 (尝试 {attempt + 1}/{self._max_retries + 1}): {error_msg}")
-                if attempt < self._max_retries:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    raise Exception(f"VLM 调用失败: {error_msg}")
+    def _build_batch_analysis_parser(self, start_page: int, end_page: int):
+        def parser(response_text: str) -> Dict:
+            result = self._parse_batch_analysis(response_text, start_page, end_page)
+            if result.get("parse_error"):
+                raise OpenAICompatibleBusinessRetryableError(
+                    f"第{start_page}-{end_page}页 JSON 解析失败"
+                )
+            return result
 
-    async def _call_openai_compatible(self, images: List[bytes], prompt: str) -> str:
+        return parser
+
+    async def _call_vlm(
+        self,
+        images: List[bytes],
+        prompt: str,
+        parser=None,
+    ):
         provider = self.provider
         base_url = self._base_url
 
@@ -187,20 +161,26 @@ class VLMClient:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
 
         options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        options.print_stream_output = options.execution.use_stream
-        if options.timeout is None:
-            options.timeout = self._timeout
-
-        return await self._transport.complete(
+        result = await self._executor.execute(
             UnifiedChatRequest(
                 provider=provider,
                 api_key=self.config.api_key,
                 model=self.config.model,
                 messages=[{"role": "user", "content": content}],
                 base_url=self.config.base_url or None,
+                capability="vlm",
                 openai_options=options,
-            )
+                runtime_options=build_openai_compatible_runtime_options(
+                    timeout=self._timeout,
+                    print_stream_output=options.execution.use_stream,
+                    stream_output_label="漫画分析",
+                ),
+            ),
+            capability="vlm",
+            parser=parser,
+            logger_instance=logger,
         )
+        return result.parsed
 
     def _clean_thinking_tags(self, text: str) -> str:
         patterns = [
@@ -399,7 +379,9 @@ class VLMClient:
                     model=self.config.model,
                     messages=[{"role": "user", "content": test_prompt}],
                     base_url=self.config.base_url or None,
-                    openai_options=OpenAICompatibleOptions(
+                    capability="vlm",
+                    openai_options=OpenAICompatibleOptions(),
+                    runtime_options=build_openai_compatible_runtime_options(
                         timeout=self._timeout,
                         request_overrides={"max_tokens": 10},
                     ),

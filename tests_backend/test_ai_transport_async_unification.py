@@ -5,6 +5,7 @@ from src.shared.openai_options import (
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
+from src.shared.openai_execution import build_openai_compatible_runtime_options
 
 
 class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
@@ -42,6 +43,8 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
                     force_json_output=True,
                     temperature=0.35,
                 ),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
                 request_overrides={"max_tokens": 222},
             ),
         )

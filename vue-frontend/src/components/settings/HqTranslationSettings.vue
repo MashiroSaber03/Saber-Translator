@@ -94,7 +94,13 @@
         </div>
         <div class="settings-item">
           <label for="settingsHqMaxRetries">重试次数:</label>
-          <input type="number" id="settingsHqMaxRetries" v-model.number="localHqSettings.maxRetries" min="0" max="10" step="1" />
+          <input type="number" id="settingsHqMaxRetries" v-model.number="localHqSettings.businessRetries" min="0" max="10" step="1" />
+          <div class="input-hint">业务重试：空结果/结构解析失败</div>
+        </div>
+        <div class="settings-item">
+          <label for="settingsHqTransportRetries">传输重试:</label>
+          <input type="number" id="settingsHqTransportRetries" v-model.number="localHqSettings.transportRetries" min="0" max="10" step="1" />
+          <div class="input-hint">网络超时/429/5xx</div>
         </div>
       </div>
     </div>
@@ -173,7 +179,8 @@ const localHqSettings = ref({
   customBaseUrl: settingsStore.settings.hqTranslation.customBaseUrl,
   batchSize: settingsStore.settings.hqTranslation.batchSize,
   rpmLimit: settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit,
-  maxRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.maxRetries,
+  transportRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.transportRetries,
+  businessRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.businessRetries,
   forceJsonOutput: settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput,
   useStream: settingsStore.settings.hqTranslation.openaiOptions.execution.useStream,
   prompt: settingsStore.settings.hqTranslation.prompt
@@ -197,8 +204,11 @@ watch(() => localHqSettings.value.batchSize, (val) => {
 watch(() => localHqSettings.value.rpmLimit, (val) => {
   settingsStore.updateHqTranslation({ rpmLimit: val })
 })
-watch(() => localHqSettings.value.maxRetries, (val) => {
-  settingsStore.updateHqTranslation({ maxRetries: val })
+watch(() => localHqSettings.value.transportRetries, (val) => {
+  settingsStore.updateHqTranslation({ transportRetries: val })
+})
+watch(() => localHqSettings.value.businessRetries, (val) => {
+  settingsStore.updateHqTranslation({ businessRetries: val })
 })
 watch(() => localHqSettings.value.forceJsonOutput, (val) => {
   settingsStore.updateHqTranslation({ forceJsonOutput: val })
@@ -245,7 +255,8 @@ function syncLocalHqSettings() {
   localHqSettings.value.customBaseUrl = hq.customBaseUrl
   localHqSettings.value.batchSize = hq.batchSize
   localHqSettings.value.rpmLimit = hq.openaiOptions.execution.rpmLimit
-  localHqSettings.value.maxRetries = hq.openaiOptions.execution.maxRetries
+  localHqSettings.value.transportRetries = hq.openaiOptions.execution.transportRetries
+  localHqSettings.value.businessRetries = hq.openaiOptions.execution.businessRetries
   localHqSettings.value.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
   localHqSettings.value.useStream = hq.openaiOptions.execution.useStream
   localHqSettings.value.prompt = hq.prompt

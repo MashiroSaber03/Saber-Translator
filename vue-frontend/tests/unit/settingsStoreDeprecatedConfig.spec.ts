@@ -43,7 +43,7 @@ describe('settings store deprecated HQ/proofreading fields', () => {
 
   it('does not send deprecated session reset fields when saving backend settings', async () => {
     const store = useSettingsStore()
-    store.settings.hqTranslation.rpmLimit = 9
+    store.settings.hqTranslation.openaiOptions.execution.rpmLimit = 9
     store.settings.proofreading.rounds = [
       {
         name: '第1轮',
@@ -53,10 +53,17 @@ describe('settings store deprecated HQ/proofreading fields', () => {
         customBaseUrl: '',
         prompt: 'proof',
         batchSize: 2,
-        rpmLimit: 7,
-        maxRetries: 1,
-        forceJsonOutput: false,
-        useStream: true,
+        openaiOptions: {
+          request: {
+            forceJsonOutput: false,
+          },
+          execution: {
+            useStream: true,
+            rpmLimit: 7,
+            transportRetries: 1,
+            businessRetries: 1,
+          },
+        },
       },
     ]
 
@@ -66,9 +73,9 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     expect(saveUserSettingsMock).toHaveBeenCalledTimes(1)
     const payload = saveUserSettingsMock.mock.calls[0]?.[0] as Record<string, any>
     expect(payload).not.toHaveProperty('hqSessionReset')
-    expect(payload.hqRpmLimit).toBe('9')
+    expect(payload.hqTranslation.openaiOptions.execution.rpmLimit).toBe(9)
     expect(payload.proofreading.rounds[0]).not.toHaveProperty('sessionReset')
-    expect(payload.proofreading.rounds[0].rpmLimit).toBe(7)
+    expect(payload.proofreading.rounds[0].openaiOptions.execution.rpmLimit).toBe(7)
   })
 
   it('ignores deprecated session reset fields when loading backend settings', async () => {
@@ -97,10 +104,10 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     const loaded = await store.loadFromBackend()
 
     expect(loaded).toBe(true)
-    expect(store.settings.hqTranslation.rpmLimit).toBe(12)
+    expect(store.settings.hqTranslation.openaiOptions.execution.rpmLimit).toBe(12)
     expect('sessionReset' in (store.settings.hqTranslation as any)).toBe(false)
     expect('sessionReset' in (store.settings.proofreading.rounds[0] as any)).toBe(false)
-    expect(store.settings.proofreading.rounds[0]?.rpmLimit).toBe(4)
+    expect(store.settings.proofreading.rounds[0]?.openaiOptions.execution.rpmLimit).toBe(4)
   })
 
   it('strips removed low reasoning fields from persisted settings payloads', () => {

@@ -21,6 +21,13 @@ export function useHqTranslationSettings(
   saveToStorage: () => void,
   saveProviderConfigsToStorage: () => void
 ) {
+  type HqTranslationUiUpdates = Partial<HqTranslationSettings> & {
+    rpmLimit?: number
+    transportRetries?: number
+    businessRetries?: number
+    forceJsonOutput?: boolean
+    useStream?: boolean
+  }
   // ============================================================
   // 计算属性
   // ============================================================
@@ -58,16 +65,13 @@ export function useHqTranslationSettings(
    * 更新高质量翻译设置
    * @param updates - 要更新的设置
    */
-  function updateHqTranslation(updates: Partial<HqTranslationSettings>): void {
+  function updateHqTranslation(updates: HqTranslationUiUpdates): void {
     Object.assign(settings.value.hqTranslation, updates)
     if (updates.rpmLimit !== undefined) settings.value.hqTranslation.openaiOptions.execution.rpmLimit = updates.rpmLimit
-    if (updates.maxRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.maxRetries = updates.maxRetries
+    if (updates.transportRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.transportRetries = updates.transportRetries
+    if (updates.businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
     if (updates.useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = updates.useStream
-    settings.value.hqTranslation.rpmLimit = settings.value.hqTranslation.openaiOptions.execution.rpmLimit
-    settings.value.hqTranslation.maxRetries = settings.value.hqTranslation.openaiOptions.execution.maxRetries
-    settings.value.hqTranslation.forceJsonOutput = settings.value.hqTranslation.openaiOptions.request.forceJsonOutput
-    settings.value.hqTranslation.useStream = settings.value.hqTranslation.openaiOptions.execution.useStream
     saveToStorage()
   }
 

@@ -257,6 +257,7 @@ import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { executeDetection, saveDetectionResultToImage } from '@/composables/translation/core/steps'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { showToast } from '@/utils/toast'
 import BubbleOverlay from './BubbleOverlay.vue'
 import BubbleEditor from './BubbleEditor.vue'
@@ -1041,16 +1042,7 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       target_language: settings.targetLanguage,
       // 使用逐气泡翻译的提示词（无论全局翻译模式设置为什么）
       prompt_content: promptContent,
-      openai_options: {
-        request: {
-          force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
-        },
-        execution: {
-          use_stream: settings.translation.openaiOptions.execution.useStream,
-          rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-          max_retries: settings.translation.openaiOptions.execution.maxRetries
-        }
-      }
+      openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
     })
 
     if (response.success && response.data?.translated_text) {

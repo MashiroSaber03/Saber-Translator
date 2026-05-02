@@ -15,9 +15,17 @@ const {
         modelName: 'hq-model',
         customBaseUrl: 'https://hq.example.com/v1',
         prompt: '高质量翻译提示词',
-        forceJsonOutput: false,
-        useStream: true,
-        maxRetries: 0,
+        openaiOptions: {
+          request: {
+            forceJsonOutput: false,
+          },
+          execution: {
+            useStream: true,
+            rpmLimit: 0,
+            transportRetries: 1,
+            businessRetries: 0,
+          },
+        },
         batchSize: 1,
       },
       proofreading: {
@@ -30,10 +38,17 @@ const {
             modelName: 'proof-model-1',
             customBaseUrl: 'https://proof-1.example.com/v1',
             batchSize: 1,
-            rpmLimit: 0,
-            maxRetries: 0,
-            forceJsonOutput: false,
-            useStream: true,
+            openaiOptions: {
+              request: {
+                forceJsonOutput: false,
+              },
+              execution: {
+                useStream: true,
+                rpmLimit: 0,
+                transportRetries: 1,
+                businessRetries: 0,
+              },
+            },
             prompt: '请校对译文',
           },
           {
@@ -43,10 +58,17 @@ const {
             modelName: 'proof-model-2',
             customBaseUrl: 'https://proof-2.example.com/v1',
             batchSize: 1,
-            rpmLimit: 0,
-            maxRetries: 0,
-            forceJsonOutput: false,
-            useStream: true,
+            openaiOptions: {
+              request: {
+                forceJsonOutput: false,
+              },
+              execution: {
+                useStream: true,
+                rpmLimit: 0,
+                transportRetries: 1,
+                businessRetries: 0,
+              },
+            },
             prompt: '再次校对译文',
           },
         ],
@@ -112,7 +134,11 @@ describe('TranslatePool retry mapping', () => {
     expect(hqTranslateBatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'custom',
-        max_retries: 0,
+        openai_options: expect.objectContaining({
+          execution: expect.objectContaining({
+            business_retries: 0,
+          }),
+        }),
       }),
     )
   })
@@ -151,14 +177,22 @@ describe('TranslatePool retry mapping', () => {
       1,
       expect.objectContaining({
         provider: 'custom',
-        max_retries: 0,
+        openai_options: expect.objectContaining({
+          execution: expect.objectContaining({
+            business_retries: 0,
+          }),
+        }),
       }),
     )
     expect(hqTranslateBatchMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         provider: 'custom',
-        max_retries: 0,
+        openai_options: expect.objectContaining({
+          execution: expect.objectContaining({
+            business_retries: 0,
+          }),
+        }),
       }),
     )
   })

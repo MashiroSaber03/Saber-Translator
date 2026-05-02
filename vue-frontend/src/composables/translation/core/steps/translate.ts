@@ -8,6 +8,7 @@ import { parallelTranslate, type ParallelTranslateResponse } from '@/api/paralle
 import { translateSingleText } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { RateLimiter } from '@/utils/rateLimiter'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface TranslateInput {
     imageIndex: number
@@ -67,16 +68,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     custom_base_url: settings.translation.customBaseUrl,
                     target_language: settings.targetLanguage,
                     prompt_content: promptContent,
-                    openai_options: {
-                        request: {
-                            force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
-                        },
-                        execution: {
-                            use_stream: settings.translation.openaiOptions.execution.useStream,
-                            rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-                            max_retries: settings.translation.openaiOptions.execution.maxRetries
-                        }
-                    }
+                    openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
                 })
 
                 if (response.success && response.data) {
@@ -96,16 +88,13 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                         custom_base_url: settings.translation.customBaseUrl,
                         target_language: settings.targetLanguage,
                         prompt_content: settings.textboxPrompt,
-                        openai_options: {
+                        openai_options: serializeOpenAICompatibleOptionsForApi({
+                            ...settings.translation.openaiOptions,
                             request: {
-                                force_json_output: false
-                            },
-                            execution: {
-                                use_stream: settings.translation.openaiOptions.execution.useStream,
-                                rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-                                max_retries: settings.translation.openaiOptions.execution.maxRetries
+                                ...settings.translation.openaiOptions.request,
+                                forceJsonOutput: false
                             }
-                        }
+                        })
                     })
 
                     if (textboxResponse.success && textboxResponse.data) {
@@ -146,16 +135,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             prompt_content: settings.translatePrompt,
             textbox_prompt_content: settings.textboxPrompt,
             use_textbox_prompt: settings.useTextboxPrompt,
-            openai_options: {
-                request: {
-                    force_json_output: settings.translation.openaiOptions.request.forceJsonOutput
-                },
-                execution: {
-                    use_stream: settings.translation.openaiOptions.execution.useStream,
-                    rpm_limit: settings.translation.openaiOptions.execution.rpmLimit,
-                    max_retries: settings.translation.openaiOptions.execution.maxRetries
-                }
-            }
+            openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
         })
 
         if (!response.success) {

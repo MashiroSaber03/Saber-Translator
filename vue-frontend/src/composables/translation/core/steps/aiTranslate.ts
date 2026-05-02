@@ -14,7 +14,7 @@
 import { hqTranslateBatch } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ImageData } from '@/types/image'
-import type { OpenAICompatibleOptions } from '@/types/settings'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 // ============================================================
 // 类型定义
@@ -53,20 +53,6 @@ interface TranslationJsonData {
         translated: string
         textDirection: string
     }>
-}
-
-function toApiOpenAiOptions(options: OpenAICompatibleOptions) {
-    return {
-        request: {
-            force_json_output: options.request.forceJsonOutput,
-            ...(options.request.temperature !== undefined ? { temperature: options.request.temperature } : {})
-        },
-        execution: {
-            use_stream: options.execution.useStream,
-            rpm_limit: options.execution.rpmLimit,
-            max_retries: options.execution.maxRetries
-        }
-    }
 }
 
 // ============================================================
@@ -149,7 +135,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         systemPrompt,
         isProofreading: isProofread,
         enableDebugLogs: settings.enableVerboseLogs,
-        openai_options: toApiOpenAiOptions((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
+        openai_options: serializeOpenAICompatibleOptionsForApi((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
     })
 
     // 5. 解析结果
@@ -174,7 +160,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 systemPrompt,
                 isProofreading: true,
                 enableDebugLogs: settings.enableVerboseLogs,
-                openai_options: toApiOpenAiOptions(round.openaiOptions)
+                openai_options: serializeOpenAICompatibleOptionsForApi(round.openaiOptions)
             })
 
             const roundResult = parseHqResponse(roundResponse, round.openaiOptions.request.forceJsonOutput)

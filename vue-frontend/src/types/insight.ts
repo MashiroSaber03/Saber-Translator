@@ -99,7 +99,8 @@ export interface StoreOpenAICompatibleRequestOptions {
 export interface StoreOpenAICompatibleExecutionOptions {
   useStream: boolean
   rpmLimit: number
-  maxRetries: number
+  transportRetries: number
+  businessRetries: number
 }
 
 export interface StoreOpenAICompatibleOptions {
@@ -118,10 +119,6 @@ export interface StoreVlmConfig {
   model: string
   baseUrl?: string
   openaiOptions: StoreOpenAICompatibleOptions
-  rpmLimit?: number
-  temperature?: number
-  forceJson?: boolean
-  useStream?: boolean
   imageMaxSize?: number
 }
 
@@ -135,7 +132,6 @@ export interface StoreLlmConfig {
   model: string
   baseUrl: string
   openaiOptions: StoreOpenAICompatibleOptions
-  useStream?: boolean
 }
 
 /**
@@ -212,13 +208,10 @@ export interface VlmConfig {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
-  rpm_limit?: number
-  temperature?: number
-  force_json?: boolean
-  use_stream?: boolean
   image_max_size?: number
 }
 
@@ -239,10 +232,10 @@ export interface LlmConfig {
     execution: {
       use_stream: boolean
       rpm_limit: number
-      max_retries: number
+      transport_retries: number
+      business_retries: number
     }
   }
-  use_stream?: boolean
 }
 
 /**

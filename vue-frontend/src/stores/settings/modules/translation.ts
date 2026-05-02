@@ -21,6 +21,12 @@ export function useTranslationSettings(
   saveToStorage: () => void,
   saveProviderConfigsToStorage: () => void
 ) {
+  type TranslationServiceUiUpdates = Partial<TranslationServiceSettings> & {
+    rpmLimit?: number
+    transportRetries?: number
+    businessRetries?: number
+    isJsonMode?: boolean
+  }
   // ============================================================
   // 计算属性
   // ============================================================
@@ -57,14 +63,12 @@ export function useTranslationSettings(
    * 更新翻译服务设置
    * @param updates - 要更新的设置
    */
-  function updateTranslationService(updates: Partial<TranslationServiceSettings>): void {
+  function updateTranslationService(updates: TranslationServiceUiUpdates): void {
     Object.assign(settings.value.translation, updates)
     if (updates.rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = updates.rpmLimit
-    if (updates.maxRetries !== undefined) settings.value.translation.openaiOptions.execution.maxRetries = updates.maxRetries
+    if (updates.transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = updates.transportRetries
+    if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
-    settings.value.translation.rpmLimit = settings.value.translation.openaiOptions.execution.rpmLimit
-    settings.value.translation.maxRetries = settings.value.translation.openaiOptions.execution.maxRetries
-    settings.value.translation.isJsonMode = settings.value.translation.openaiOptions.request.forceJsonOutput
     saveToStorage()
   }
 

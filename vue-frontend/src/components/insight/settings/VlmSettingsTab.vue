@@ -43,6 +43,8 @@ const apiKey = ref(insightStore.config.vlm.apiKey)
 const model = ref(insightStore.config.vlm.model)
 const baseUrl = ref(insightStore.config.vlm.baseUrl)
 const rpmLimit = ref(insightStore.config.vlm.openaiOptions.execution.rpmLimit)
+const transportRetries = ref(insightStore.config.vlm.openaiOptions.execution.transportRetries)
+const businessRetries = ref(insightStore.config.vlm.openaiOptions.execution.businessRetries)
 const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature)
 const forceJson = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
 const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
@@ -67,6 +69,8 @@ function onProviderChange(): void {
     insightStore.config.vlm.model = model.value
     insightStore.config.vlm.baseUrl = baseUrl.value
     insightStore.config.vlm.openaiOptions.execution.rpmLimit = rpmLimit.value
+    insightStore.config.vlm.openaiOptions.execution.transportRetries = transportRetries.value
+    insightStore.config.vlm.openaiOptions.execution.businessRetries = businessRetries.value
     insightStore.config.vlm.openaiOptions.request.temperature = temperature.value
     insightStore.config.vlm.openaiOptions.request.forceJsonOutput = forceJson.value
     insightStore.config.vlm.openaiOptions.execution.useStream = useStream.value
@@ -79,6 +83,8 @@ function onProviderChange(): void {
   model.value = insightStore.config.vlm.model
   baseUrl.value = insightStore.config.vlm.baseUrl
   rpmLimit.value = insightStore.config.vlm.openaiOptions.execution.rpmLimit
+  transportRetries.value = insightStore.config.vlm.openaiOptions.execution.transportRetries
+  businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
   forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
@@ -176,7 +182,8 @@ function getConfig() {
       execution: {
         useStream: useStream.value,
         rpmLimit: rpmLimit.value,
-        maxRetries: insightStore.config.vlm.openaiOptions.execution.maxRetries
+        transportRetries: transportRetries.value,
+        businessRetries: businessRetries.value
       }
     },
     imageMaxSize: imageMaxSize.value
@@ -190,6 +197,8 @@ function syncFromStore(): void {
   model.value = insightStore.config.vlm.model
   baseUrl.value = insightStore.config.vlm.baseUrl
   rpmLimit.value = insightStore.config.vlm.openaiOptions.execution.rpmLimit
+  transportRetries.value = insightStore.config.vlm.openaiOptions.execution.transportRetries
+  businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
   forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
@@ -258,6 +267,16 @@ defineExpose({
         <label>RPM 限制</label>
         <input v-model.number="rpmLimit" type="number" min="1" max="100">
         <p class="form-hint">每分钟最大请求数</p>
+      </div>
+      <div class="form-group">
+        <label>传输重试</label>
+        <input v-model.number="transportRetries" type="number" min="0" max="10">
+        <p class="form-hint">网络超时/429/5xx</p>
+      </div>
+      <div class="form-group">
+        <label>业务重试</label>
+        <input v-model.number="businessRetries" type="number" min="0" max="10">
+        <p class="form-hint">空结果/结构解析失败</p>
       </div>
       <div class="form-group">
         <label>温度</label>

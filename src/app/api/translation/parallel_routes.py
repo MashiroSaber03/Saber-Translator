@@ -86,26 +86,30 @@ def _route_openai_options(
     force_json_keys=(),
     use_stream_keys=(),
     rpm_limit_keys=(),
+    transport_retries_keys=(),
+    business_retries_keys=(),
     max_retries_keys=(),
     temperature_keys=(),
     default_force_json_output=False,
     default_use_stream=False,
     default_rpm_limit=0,
-    default_max_retries=0,
-    timeout=None,
+    default_transport_retries=1,
+    default_business_retries=0,
 ):
     return build_openai_compatible_options(
         data,
         force_json_keys=force_json_keys,
         use_stream_keys=use_stream_keys,
         rpm_limit_keys=rpm_limit_keys,
+        transport_retries_keys=transport_retries_keys,
+        business_retries_keys=business_retries_keys,
         max_retries_keys=max_retries_keys,
         temperature_keys=temperature_keys,
         default_force_json_output=default_force_json_output,
         default_use_stream=default_use_stream,
         default_rpm_limit=default_rpm_limit,
-        default_max_retries=default_max_retries,
-        timeout=timeout,
+        default_transport_retries=default_transport_retries,
+        default_business_retries=default_business_retries,
     )
 
 
@@ -221,9 +225,12 @@ def parallel_ocr():
             data,
             force_json_keys=('use_json_format_for_ai_vision',),
             rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
+            transport_retries_keys=('transport_retries', 'transportRetries'),
+            business_retries_keys=('business_retries', 'businessRetries'),
+            max_retries_keys=('max_retries', 'maxRetries'),
             default_force_json_output=False,
             default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
-            timeout=120.0,
+            default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
         )
         use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
         enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
@@ -368,14 +375,15 @@ def parallel_translate():
             data,
             force_json_keys=('use_json_format',),
             rpm_limit_keys=('rpm_limit', 'rpmLimit'),
+            transport_retries_keys=('transport_retries', 'transportRetries'),
+            business_retries_keys=('business_retries', 'businessRetries'),
             max_retries_keys=('max_retries', 'maxRetries'),
             default_force_json_output=False,
             default_rpm_limit=60,
-            default_max_retries=3,
-            timeout=120.0,
+            default_business_retries=3,
         )
         rpm_limit = openai_options.execution.rpm_limit
-        max_retries = openai_options.execution.max_retries
+        business_retries = openai_options.execution.business_retries
         use_json_format = openai_options.request.force_json_output
         
         # 执行翻译
@@ -389,7 +397,7 @@ def parallel_translate():
             use_json_format=use_json_format,
             custom_base_url=custom_base_url,
             rpm_limit_translation=rpm_limit,
-            max_retries=max_retries,
+            max_retries=business_retries,
             openai_options=openai_options,
         )
         
@@ -406,7 +414,7 @@ def parallel_translate():
                 use_json_format=use_json_format,
                 custom_base_url=custom_base_url,
                 rpm_limit_translation=rpm_limit,
-                max_retries=max_retries,
+                max_retries=business_retries,
                 openai_options=openai_options,
             )
         

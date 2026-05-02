@@ -10,6 +10,7 @@ import { normalizeProviderId } from '@/config/aiProviders'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
@@ -542,16 +543,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           ai_vision_ocr_prompt: settings.aiVisionOcr.prompt,
           ai_vision_prompt_mode: settings.aiVisionOcr.promptMode,
           custom_ai_vision_base_url: settings.aiVisionOcr.customBaseUrl,
-          openai_options: {
-            request: {
-              force_json_output: settings.aiVisionOcr.openaiOptions.request.forceJsonOutput
-            },
-            execution: {
-              use_stream: settings.aiVisionOcr.openaiOptions.execution.useStream,
-              rpm_limit: settings.aiVisionOcr.openaiOptions.execution.rpmLimit,
-              max_retries: settings.aiVisionOcr.openaiOptions.execution.maxRetries
-            }
-          },
+          openai_options: serializeOpenAICompatibleOptionsForApi(settings.aiVisionOcr.openaiOptions),
           ai_vision_min_image_size: settings.aiVisionOcr.minImageSize,
           enable_hybrid_ocr: settings.hybridOcr.enabled,
           secondary_ocr_engine: settings.hybridOcr.secondaryEngine,
