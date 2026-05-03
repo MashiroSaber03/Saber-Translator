@@ -110,6 +110,7 @@ export interface HqTranslateParams {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean
@@ -136,6 +137,7 @@ export interface TranslateSingleTextParams {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean
@@ -256,6 +258,7 @@ export async function ocrSingleBubble(
       request: {
         force_json_output: boolean
         temperature?: number
+        extra_body?: Record<string, unknown>
       }
       execution: {
         use_stream: boolean

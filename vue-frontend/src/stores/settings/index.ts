@@ -299,6 +299,7 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmLimit: tr.rpmLimit,
         maxRetries: tr.maxRetries,
         isJsonMode: tr.isJsonMode,
+        extraBody: tr.extraBody,
         useStream: tr.useStream
       },
       {
@@ -319,6 +320,7 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmLimit: hq.rpmLimit,
         maxRetries: hq.maxRetries,
         forceJsonOutput: hq.forceJsonOutput,
+        extraBody: hq.extraBody,
         useStream: hq.useStream
       },
       {
@@ -338,6 +340,7 @@ export const useSettingsStore = defineStore('settings', () => {
         rpmLimit: av.rpmLimit,
         maxRetries: av.maxRetries,
         isJsonMode: av.isJsonMode,
+        extraBody: av.extraBody,
         useStream: av.useStream
       },
       {
@@ -385,6 +388,7 @@ export const useSettingsStore = defineStore('settings', () => {
           rpmLimit: (round as Record<string, unknown>).rpmLimit,
           maxRetries: (round as Record<string, unknown>).maxRetries,
           forceJsonOutput: (round as Record<string, unknown>).forceJsonOutput,
+          extraBody: (round as Record<string, unknown>).extraBody,
           useStream: (round as Record<string, unknown>).useStream
         },
         {
@@ -450,6 +454,7 @@ export const useSettingsStore = defineStore('settings', () => {
         {
           forceJsonOutput: (config as Record<string, unknown>).forceJsonOutput,
           isJsonMode: (config as Record<string, unknown>).isJsonMode,
+          extraBody: (config as Record<string, unknown>).extraBody,
           useStream: (config as Record<string, unknown>).useStream,
           rpmLimit: (config as Record<string, unknown>).rpmLimit,
           maxRetries: (config as Record<string, unknown>).maxRetries
@@ -470,6 +475,7 @@ export const useSettingsStore = defineStore('settings', () => {
         config.openaiOptions,
         {
           forceJsonOutput: (config as Record<string, unknown>).forceJsonOutput,
+          extraBody: (config as Record<string, unknown>).extraBody,
           useStream: (config as Record<string, unknown>).useStream,
           rpmLimit: (config as Record<string, unknown>).rpmLimit,
           maxRetries: (config as Record<string, unknown>).maxRetries
@@ -490,6 +496,7 @@ export const useSettingsStore = defineStore('settings', () => {
         config.openaiOptions,
         {
           isJsonMode: (config as Record<string, unknown>).isJsonMode,
+          extraBody: (config as Record<string, unknown>).extraBody,
           useStream: (config as Record<string, unknown>).useStream,
           rpmLimit: (config as Record<string, unknown>).rpmLimit,
           maxRetries: (config as Record<string, unknown>).maxRetries
@@ -512,12 +519,14 @@ export const useSettingsStore = defineStore('settings', () => {
     delete translation.maxRetries
     delete translation.isJsonMode
     delete translation.useStream
+    delete translation.extraBody
 
     const hq = settings.value.hqTranslation as Record<string, unknown>
     delete hq.rpmLimit
     delete hq.maxRetries
     delete hq.forceJsonOutput
     delete hq.useStream
+    delete hq.extraBody
 
     const aiVision = settings.value.aiVisionOcr as Record<string, unknown>
     delete aiVision.rpmLimit
@@ -525,6 +534,7 @@ export const useSettingsStore = defineStore('settings', () => {
     delete aiVision.isJsonMode
     delete aiVision.forceJsonOutput
     delete aiVision.useStream
+    delete aiVision.extraBody
 
     settings.value.proofreading.rounds.forEach((round) => {
       const target = round as Record<string, unknown>
@@ -532,6 +542,7 @@ export const useSettingsStore = defineStore('settings', () => {
       delete target.maxRetries
       delete target.forceJsonOutput
       delete target.useStream
+      delete target.extraBody
       delete target.showApiKey
     })
 
@@ -542,6 +553,7 @@ export const useSettingsStore = defineStore('settings', () => {
       delete target.isJsonMode
       delete target.forceJsonOutput
       delete target.useStream
+      delete target.extraBody
     }
 
     for (const config of Object.values(providerConfigs.value.hqTranslation)) {
@@ -550,6 +562,7 @@ export const useSettingsStore = defineStore('settings', () => {
       delete target.maxRetries
       delete target.forceJsonOutput
       delete target.useStream
+      delete target.extraBody
     }
 
     for (const config of Object.values(providerConfigs.value.aiVisionOcr)) {
@@ -559,6 +572,7 @@ export const useSettingsStore = defineStore('settings', () => {
       delete target.isJsonMode
       delete target.forceJsonOutput
       delete target.useStream
+      delete target.extraBody
     }
   }
 

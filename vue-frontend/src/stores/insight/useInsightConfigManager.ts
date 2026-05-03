@@ -24,6 +24,7 @@ interface VlmFields extends ProviderFieldMap {
     request: {
       forceJsonOutput: boolean
       temperature?: number
+      extraBody?: Record<string, unknown>
     }
     execution: {
       useStream: boolean
@@ -41,6 +42,7 @@ interface LlmFields extends ProviderFieldMap {
     request: {
       forceJsonOutput: boolean
       temperature?: number
+      extraBody?: Record<string, unknown>
     }
     execution: {
       useStream: boolean
@@ -100,6 +102,7 @@ export function useInsightConfigManager(
           config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
             forceJsonOutput: (config as Record<string, unknown>).forceJson,
             temperature: (config as Record<string, unknown>).temperature,
+            extraBody: (config as Record<string, unknown>).extraBody,
             useStream: (config as Record<string, unknown>).useStream,
             rpmLimit: (config as Record<string, unknown>).rpmLimit,
             transportRetries: (config as Record<string, unknown>).transportRetries,
@@ -112,6 +115,7 @@ export function useInsightConfigManager(
         for (const config of Object.values(providerConfigs.value.llm)) {
           config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
             forceJsonOutput: (config as Record<string, unknown>).forceJson,
+            extraBody: (config as Record<string, unknown>).extraBody,
             useStream: (config as Record<string, unknown>).useStream,
             rpmLimit: (config as Record<string, unknown>).rpmLimit,
             transportRetries: (config as Record<string, unknown>).transportRetries,

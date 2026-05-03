@@ -4,6 +4,7 @@
  */
 import { ref, computed } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
@@ -47,6 +48,7 @@ const transportRetries = ref(insightStore.config.vlm.openaiOptions.execution.tra
 const businessRetries = ref(insightStore.config.vlm.openaiOptions.execution.businessRetries)
 const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature)
 const forceJson = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
+const extraBody = ref(insightStore.config.vlm.openaiOptions.request.extraBody)
 const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
 const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize)
 
@@ -73,6 +75,7 @@ function onProviderChange(): void {
     insightStore.config.vlm.openaiOptions.execution.businessRetries = businessRetries.value
     insightStore.config.vlm.openaiOptions.request.temperature = temperature.value
     insightStore.config.vlm.openaiOptions.request.forceJsonOutput = forceJson.value
+    insightStore.config.vlm.openaiOptions.request.extraBody = extraBody.value
     insightStore.config.vlm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.vlm.imageMaxSize = imageMaxSize.value
   }
@@ -87,6 +90,7 @@ function onProviderChange(): void {
   businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
   forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  extraBody.value = insightStore.config.vlm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
   
@@ -177,7 +181,8 @@ function getConfig() {
     openaiOptions: {
       request: {
         forceJsonOutput: forceJson.value,
-        temperature: temperature.value
+        temperature: temperature.value,
+        extraBody: extraBody.value
       },
       execution: {
         useStream: useStream.value,
@@ -201,6 +206,7 @@ function syncFromStore(): void {
   businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
   forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  extraBody.value = insightStore.config.vlm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
 }
@@ -300,7 +306,11 @@ defineExpose({
       </label>
       <p class="form-hint">流式请求可避免长时间等待导致的超时问题</p>
     </div>
-    
+
+    <div class="form-group">
+      <OpenAIExtraBodyEditor v-model="extraBody" />
+    </div>
+
     <div class="form-group">
       <label>图片压缩（最大边长）</label>
       <input v-model.number="imageMaxSize" type="number" min="0" max="4096" step="128" placeholder="0 表示不压缩">

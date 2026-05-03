@@ -124,6 +124,9 @@
           <div class="input-hint">使用流式API调用</div>
         </div>
       </div>
+      <div class="settings-item">
+        <OpenAIExtraBodyEditor v-model="localHqSettings.extraBody" />
+      </div>
     </div>
 
     <!-- 高质量翻译提示词 -->
@@ -160,6 +163,7 @@ import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */
@@ -182,6 +186,7 @@ const localHqSettings = ref({
   transportRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.transportRetries,
   businessRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.businessRetries,
   forceJsonOutput: settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput,
+  extraBody: settingsStore.settings.hqTranslation.openaiOptions.request.extraBody,
   useStream: settingsStore.settings.hqTranslation.openaiOptions.execution.useStream,
   prompt: settingsStore.settings.hqTranslation.prompt
 })
@@ -212,6 +217,9 @@ watch(() => localHqSettings.value.businessRetries, (val) => {
 })
 watch(() => localHqSettings.value.forceJsonOutput, (val) => {
   settingsStore.updateHqTranslation({ forceJsonOutput: val })
+})
+watch(() => localHqSettings.value.extraBody, (val) => {
+  settingsStore.updateHqTranslation({ extraBody: val })
 })
 watch(() => localHqSettings.value.useStream, (val) => {
   settingsStore.updateHqTranslation({ useStream: val })
@@ -258,6 +266,7 @@ function syncLocalHqSettings() {
   localHqSettings.value.transportRetries = hq.openaiOptions.execution.transportRetries
   localHqSettings.value.businessRetries = hq.openaiOptions.execution.businessRetries
   localHqSettings.value.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
+  localHqSettings.value.extraBody = hq.openaiOptions.request.extraBody
   localHqSettings.value.useStream = hq.openaiOptions.execution.useStream
   localHqSettings.value.prompt = hq.prompt
 }

@@ -61,6 +61,7 @@ export interface ParallelOcrParams {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean
@@ -128,6 +129,7 @@ export interface ParallelTranslateParams {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean

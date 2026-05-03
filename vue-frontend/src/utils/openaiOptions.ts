@@ -2,6 +2,11 @@ import type { OpenAICompatibleOptions } from '@/types/settings'
 
 export const DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
 
+function cloneRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+}
+
 function parseNumberOrFallback(value: unknown, fallback: number): number {
   if (value === undefined || value === null || value === '') return fallback
   const parsed = Number(value)
@@ -36,6 +41,7 @@ export function normalizeOpenAiOptions(
     forceJsonOutput?: unknown
     isJsonMode?: unknown
     temperature?: unknown
+    extraBody?: unknown
     useStream?: unknown
     rpmLimit?: unknown
     maxRetries?: unknown
@@ -61,6 +67,12 @@ export function normalizeOpenAiOptions(
   if (temperature !== undefined && temperature !== null && temperature !== '') {
     normalized.request.temperature = Number(temperature)
   }
+
+  normalized.request.extraBody = cloneRecordOrUndefined(
+    request.extraBody
+    ?? request.extra_body
+    ?? legacy?.extraBody
+  )
 
   normalized.execution.useStream = Boolean(
     execution.useStream
@@ -100,7 +112,8 @@ export function serializeOpenAICompatibleOptionsForApi(options: OpenAICompatible
   return {
     request: {
       force_json_output: options.request.forceJsonOutput,
-      ...(options.request.temperature !== undefined ? { temperature: options.request.temperature } : {})
+      ...(options.request.temperature !== undefined ? { temperature: options.request.temperature } : {}),
+      ...(options.request.extraBody !== undefined ? { extra_body: cloneRecordOrUndefined(options.request.extraBody) } : {})
     },
     execution: {
       use_stream: options.execution.useStream,

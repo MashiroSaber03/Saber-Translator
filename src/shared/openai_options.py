@@ -4,17 +4,25 @@ Shared persistent OpenAI-compatible request/execution options.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
 DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
 _OPENAI_OPTIONS_TOP_LEVEL_KEYS = {"request", "execution"}
-_OPENAI_OPTIONS_REQUEST_KEYS = {"force_json_output", "temperature"}
+_OPENAI_OPTIONS_REQUEST_KEYS = {"force_json_output", "temperature", "extra_body"}
 _OPENAI_OPTIONS_EXECUTION_KEYS = {
     "use_stream",
     "rpm_limit",
     "transport_retries",
     "business_retries",
+}
+_OPENAI_EXTRA_BODY_RESERVED_KEYS = {
+    "model",
+    "messages",
+    "temperature",
+    "response_format",
+    "stream",
 }
 
 
@@ -65,15 +73,52 @@ def _coerce_float(value: Any, default: Optional[float] = None) -> Optional[float
         return default
 
 
+def _clone_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return copy.deepcopy(dict(value))
+    return {}
+
+
+def _validate_extra_body_payload(value: Any, *, prefix: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, Mapping):
+        return [prefix]
+
+    invalid_keys: list[str] = []
+    for key in value.keys():
+        if key in _OPENAI_EXTRA_BODY_RESERVED_KEYS:
+            invalid_keys.append(f"{prefix}.{key}")
+    return invalid_keys
+
+
+def validate_and_clone_openai_extra_body(
+    value: Any,
+    *,
+    prefix: str = "openai_options.request.extra_body",
+) -> dict[str, Any]:
+    invalid_keys = _validate_extra_body_payload(value, prefix=prefix)
+    if invalid_keys:
+        if invalid_keys == [prefix]:
+            raise ValueError(f"{prefix} 必须是 JSON 对象")
+
+        reserved_keys = ", ".join(key.split(".")[-1] for key in invalid_keys)
+        raise ValueError(f"{prefix} 包含不允许覆盖的保留字段: {reserved_keys}")
+
+    return _clone_mapping(value)
+
+
 @dataclass
 class OpenAICompatibleRequestOptions:
     force_json_output: bool = False
     temperature: Optional[float] = None
+    extra_body: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "force_json_output": self.force_json_output,
             "temperature": self.temperature,
+            "extra_body": _clone_mapping(self.extra_body),
         }
 
     @classmethod
@@ -82,6 +127,7 @@ class OpenAICompatibleRequestOptions:
         return cls(
             force_json_output=_coerce_bool(data.get("force_json_output"), False),
             temperature=_coerce_float(data.get("temperature"), None),
+            extra_body=validate_and_clone_openai_extra_body(data.get("extra_body")),
         )
 
 
@@ -149,6 +195,7 @@ def create_openai_compatible_options(
     *,
     force_json_output: bool = False,
     temperature: Optional[float] = None,
+    extra_body: Optional[Mapping[str, Any]] = None,
     use_stream: bool = False,
     rpm_limit: int = 0,
     transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
@@ -158,6 +205,7 @@ def create_openai_compatible_options(
         request=OpenAICompatibleRequestOptions(
             force_json_output=force_json_output,
             temperature=temperature,
+            extra_body=validate_and_clone_openai_extra_body(extra_body),
         ),
         execution=OpenAICompatibleExecutionOptions(
             use_stream=use_stream,
@@ -189,6 +237,10 @@ def merge_openai_compatible_options(
             options.request.temperature = _coerce_float(
                 request_data.get("temperature"),
                 options.request.temperature,
+            )
+        if "extra_body" in request_data:
+            options.request.extra_body = validate_and_clone_openai_extra_body(
+                request_data.get("extra_body")
             )
 
     execution_data = payload.get("execution")
@@ -245,6 +297,12 @@ def validate_openai_options_payload(payload: Optional[Mapping[str, Any]]) -> lis
             for key in request_data.keys():
                 if key not in _OPENAI_OPTIONS_REQUEST_KEYS:
                     invalid_keys.append(f"openai_options.request.{key}")
+            invalid_keys.extend(
+                _validate_extra_body_payload(
+                    request_data.get("extra_body"),
+                    prefix="openai_options.request.extra_body",
+                )
+            )
 
     execution_data = payload.get("execution")
     if execution_data is not None:

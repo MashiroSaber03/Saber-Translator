@@ -27,6 +27,7 @@ export function useHqTranslationSettings(
     businessRetries?: number
     forceJsonOutput?: boolean
     useStream?: boolean
+    extraBody?: Record<string, unknown>
   }
   // ============================================================
   // 计算属性
@@ -72,6 +73,7 @@ export function useHqTranslationSettings(
     if (updates.businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
     if (updates.useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = updates.useStream
+    if (updates.extraBody !== undefined) settings.value.hqTranslation.openaiOptions.request.extraBody = updates.extraBody
     saveToStorage()
   }
 

@@ -269,6 +269,9 @@
         </label>
         <div class="input-hint">使用流式请求并在终端输出流式日志</div>
       </div>
+      <div class="settings-item">
+        <OpenAIExtraBodyEditor v-model="localAiVisionOcr.extraBody" />
+      </div>
 
       <!-- 最小图片尺寸 -->
       <div class="settings-item">
@@ -308,6 +311,7 @@ import {
 } from '@/constants'
 import type { OcrEngine } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import {
   isSupportedHybridOcrEngine,
@@ -449,6 +453,7 @@ const localAiVisionOcr = ref({
   rpmLimit: settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit,
   transportRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries,
   businessRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries,
+  extraBody: settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody,
   useStream: settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
@@ -495,6 +500,9 @@ watch(() => localAiVisionOcr.value.transportRetries, (val) => {
 })
 watch(() => localAiVisionOcr.value.businessRetries, (val) => {
   settingsStore.updateAiVisionOcr({ businessRetries: val })
+})
+watch(() => localAiVisionOcr.value.extraBody, (val) => {
+  settingsStore.updateAiVisionOcr({ extraBody: val })
 })
 watch(() => localAiVisionOcr.value.useStream, (val) => {
   settingsStore.updateAiVisionOcr({ useStream: val })
@@ -622,6 +630,7 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
   localAiVisionOcr.value.transportRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries
   localAiVisionOcr.value.businessRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries
+  localAiVisionOcr.value.extraBody = settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody
   localAiVisionOcr.value.useStream = settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }

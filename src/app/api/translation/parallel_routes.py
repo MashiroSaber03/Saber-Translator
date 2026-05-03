@@ -116,7 +116,7 @@ def _route_openai_options(
         joined = ", ".join(invalid_keys)
         raise ValueError(
             f"openai_options 格式无效: {joined}。"
-            "只支持 openai_options.request(force_json_output, temperature) "
+            "只支持 openai_options.request(force_json_output, temperature, extra_body) "
             "和 openai_options.execution(use_stream, rpm_limit, transport_retries, business_retries)。"
         )
     return merge_openai_compatible_options(payload, defaults=defaults)

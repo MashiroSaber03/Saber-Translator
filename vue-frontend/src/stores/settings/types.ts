@@ -15,6 +15,7 @@ export interface TranslationProviderConfig {
   openaiOptions?: {
     request?: {
       forceJsonOutput?: boolean
+      extraBody?: Record<string, unknown>
     }
     execution?: {
       useStream?: boolean
@@ -36,6 +37,7 @@ export interface HqTranslationProviderConfig {
     request?: {
       forceJsonOutput?: boolean
       temperature?: number
+      extraBody?: Record<string, unknown>
     }
     execution?: {
       useStream?: boolean
@@ -57,6 +59,7 @@ export interface AiVisionOcrProviderConfig {
   openaiOptions?: {
     request?: {
       forceJsonOutput?: boolean
+      extraBody?: Record<string, unknown>
     }
     execution?: {
       useStream?: boolean

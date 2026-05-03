@@ -41,6 +41,38 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.openai_options.execution.business_retries, 2)
         self.assertEqual(request.runtime_options.stream_output_label, "漫画分析对话")
 
+    async def test_chat_client_preserves_request_extra_body_from_config(self) -> None:
+        from src.core.manga_insight.config_models import ChatLLMConfig
+        from src.core.manga_insight.embedding_client import ChatClient
+
+        config = ChatLLMConfig.from_dict(
+            {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model": "chat-model",
+                "base_url": "https://example.com/v1",
+                "openai_options": {
+                    "request": {
+                        "extra_body": {"thinking": {"type": "disabled"}},
+                    },
+                    "execution": {"use_stream": False},
+                },
+            }
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(return_value="统一回答"),
+        ) as complete_mock:
+            client = ChatClient(config)
+            await client.generate("用户问题", system="系统提示")
+
+        request = complete_mock.call_args.args[0]
+        self.assertEqual(
+            request.openai_options.request.extra_body,
+            {"thinking": {"type": "disabled"}},
+        )
+
     async def test_chat_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
         from src.core.manga_insight.embedding_client import ChatClient
@@ -178,6 +210,37 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.response_format, {"type": "json_object"})
         self.assertEqual(request.messages[0]["role"], "user")
         self.assertEqual(request.messages[0]["content"][-1], {"type": "text", "text": "分析这页漫画"})
+
+    async def test_vlm_client_preserves_request_extra_body(self) -> None:
+        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        config = VLMConfig(
+            provider="custom",
+            api_key="test-key",
+            model="vlm-model",
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    extra_body={"thinking": {"type": "disabled"}},
+                ),
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
+            image_max_size=0,
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(return_value='{"pages": []}'),
+        ) as complete_mock:
+            client = VLMClient(config, PromptsConfig())
+            await client._call_vlm([b"fake-image"], "分析这页漫画")
+
+        request = complete_mock.call_args.args[0]
+        self.assertEqual(
+            request.openai_options.request.extra_body,
+            {"thinking": {"type": "disabled"}},
+        )
 
     async def test_vlm_client_reads_nested_openai_options_from_config(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig

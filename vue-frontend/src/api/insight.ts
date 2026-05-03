@@ -116,6 +116,7 @@ export interface VlmConfig {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean
@@ -140,6 +141,7 @@ export interface LlmConfig {
     request: {
       force_json_output: boolean
       temperature?: number
+      extra_body?: Record<string, unknown>
     }
     execution: {
       use_stream: boolean

@@ -37,6 +37,7 @@ from src.shared.openai_helpers import resolve_openai_api_key
 from src.shared.openai_options import (
     OpenAICompatibleOptions,
     clone_openai_compatible_options,
+    validate_and_clone_openai_extra_body,
 )
 
 logger = logging.getLogger("SharedAITransport")
@@ -181,6 +182,12 @@ def _build_chat_body(
         body["temperature"] = effective_options.request.temperature
     if effective_options.request.force_json_output:
         body["response_format"] = {"type": "json_object"}
+    extra_body = validate_and_clone_openai_extra_body(
+        effective_options.request.extra_body,
+        prefix="openai_options.request.extra_body",
+    )
+    if extra_body:
+        body.update(extra_body)
     if runtime_options.request_overrides:
         body.update(runtime_options.request_overrides)
     return body

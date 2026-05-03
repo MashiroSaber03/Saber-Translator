@@ -55,6 +55,7 @@ export type PdfProcessingMethod = 'frontend' | 'backend'
 export interface OpenAICompatibleRequestOptions {
   forceJsonOutput: boolean
   temperature?: number
+  extraBody?: Record<string, unknown>
 }
 
 /**

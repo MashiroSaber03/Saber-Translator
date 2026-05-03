@@ -27,6 +27,7 @@ export function useTranslationSettings(
     businessRetries?: number
     isJsonMode?: boolean
     useStream?: boolean
+    extraBody?: Record<string, unknown>
   }
   // ============================================================
   // 计算属性
@@ -71,6 +72,7 @@ export function useTranslationSettings(
     if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
     if (updates.useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = updates.useStream
+    if (updates.extraBody !== undefined) settings.value.translation.openaiOptions.request.extraBody = updates.extraBody
     saveToStorage()
   }
 

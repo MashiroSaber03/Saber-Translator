@@ -35,6 +35,7 @@ export function useOcrSettings(
     businessRetries?: number
     isJsonMode?: boolean
     useStream?: boolean
+    extraBody?: Record<string, unknown>
   }
   // ============================================================
   // 计算属性
@@ -101,6 +102,7 @@ export function useOcrSettings(
     if (updates.businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
     if (updates.useStream !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.useStream = updates.useStream
+    if (updates.extraBody !== undefined) settings.value.aiVisionOcr.openaiOptions.request.extraBody = updates.extraBody
     saveToStorage()
   }
 

@@ -78,6 +78,75 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         self.assertEqual(kwargs["max_tokens"], 123)
         self.assertEqual(kwargs["top_p"], 0.8)
 
+    def test_sync_chat_transport_merges_extra_body_into_top_level_request_body(self) -> None:
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"choices": [{"message": {"content": "测试成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
+                return FakeResponse()
+
+        transport = OpenAICompatibleChatTransport()
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    temperature=0.25,
+                    extra_body={
+                        "thinking": {"type": "disabled"},
+                        "reasoning_effort": "low",
+                    },
+                ),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
+                request_overrides={"max_tokens": 123},
+            ),
+        )
+
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+            content = transport.complete(request)
+
+        self.assertEqual(content, "测试成功")
+        kwargs = fake_client.last_request["json"]
+        self.assertEqual(kwargs["temperature"], 0.25)
+        self.assertEqual(kwargs["thinking"], {"type": "disabled"})
+        self.assertEqual(kwargs["reasoning_effort"], "low")
+        self.assertEqual(kwargs["max_tokens"], 123)
+
+    def test_sync_chat_transport_rejects_reserved_extra_body_keys(self) -> None:
+        transport = OpenAICompatibleChatTransport()
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    extra_body={"model": "override-model"},
+                ),
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "extra_body"):
+            transport.complete(request)
+
 class ProviderRegistryContractTests(unittest.TestCase):
     def test_ai_vision_rpm_limit_is_scoped_per_provider(self) -> None:
         from src.shared.ai_providers import VISION_OCR_CAPABILITY
@@ -535,6 +604,101 @@ class RouteCompatibilityTests(unittest.TestCase):
         self.assertNotIn("max_retries", kwargs)
         self.assertNotIn("use_json_format", kwargs)
         self.assertNotIn("rpm_limit_translation", kwargs)
+
+    def test_translate_single_text_accepts_extra_body_in_openai_options(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.routes.translate_single_text",
+            return_value="译文",
+        ) as translate_mock:
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "originalText": "hello",
+                    "targetLanguage": "zh",
+                    "provider": "custom",
+                    "apiKey": "test-key",
+                    "model": "gpt-test",
+                    "baseUrl": "https://example.com/v1",
+                    "promptContent": "translate",
+                    "openai_options": {
+                        "request": {
+                            "extra_body": {
+                                "thinking": {"type": "disabled"},
+                            },
+                        },
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            translate_mock.call_args.kwargs["openai_options"].request.extra_body,
+            {"thinking": {"type": "disabled"}},
+        )
+
+    def test_translate_single_text_rejects_non_object_extra_body(self) -> None:
+        with mock.patch("src.app.api.translation.routes.translate_single_text") as translate_mock:
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "originalText": "hello",
+                    "targetLanguage": "zh",
+                    "provider": "custom",
+                    "apiKey": "test-key",
+                    "model": "gpt-test",
+                    "baseUrl": "https://example.com/v1",
+                    "promptContent": "translate",
+                    "openai_options": {
+                        "request": {"extra_body": []},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options.request.extra_body", payload["error"])
+        translate_mock.assert_not_called()
+
+    def test_translate_single_text_rejects_reserved_extra_body_keys(self) -> None:
+        with mock.patch("src.app.api.translation.routes.translate_single_text") as translate_mock:
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "originalText": "hello",
+                    "targetLanguage": "zh",
+                    "provider": "custom",
+                    "apiKey": "test-key",
+                    "model": "gpt-test",
+                    "baseUrl": "https://example.com/v1",
+                    "promptContent": "translate",
+                    "openai_options": {
+                        "request": {"extra_body": {"stream": True}},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options.request.extra_body.stream", payload["error"])
+        translate_mock.assert_not_called()
 
     def test_translate_single_text_rejects_legacy_openai_request_fields(self) -> None:
         with mock.patch("src.app.api.translation.routes.translate_single_text") as translate_mock:

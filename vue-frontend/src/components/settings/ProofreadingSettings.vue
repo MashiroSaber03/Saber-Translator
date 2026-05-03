@@ -152,8 +152,11 @@
                 <input type="checkbox" v-model="round.openaiOptions.execution.useStream" />
                 流式调用
               </label>
-              <div class="input-hint">使用流式API调用，避免超时</div>
+                <div class="input-hint">使用流式API调用，避免超时</div>
+              </div>
             </div>
+          <div class="settings-item">
+            <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
           </div>
 
           <!-- 校对提示词 -->
@@ -191,6 +194,7 @@ import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 服务商选项 */

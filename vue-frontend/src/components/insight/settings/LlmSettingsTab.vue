@@ -4,6 +4,7 @@
  */
 import { ref, computed } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
@@ -30,6 +31,7 @@ const apiKey = ref(insightStore.config.llm.apiKey)
 const model = ref(insightStore.config.llm.model)
 const baseUrl = ref(insightStore.config.llm.baseUrl)
 const forceJson = ref(insightStore.config.llm.openaiOptions.request.forceJsonOutput)
+const extraBody = ref(insightStore.config.llm.openaiOptions.request.extraBody)
 const useStream = ref(insightStore.config.llm.openaiOptions.execution.useStream)
 const rpmLimit = ref(insightStore.config.llm.openaiOptions.execution.rpmLimit)
 const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.transportRetries)
@@ -46,6 +48,7 @@ function onProviderChange(): void {
     insightStore.config.llm.model = model.value
     insightStore.config.llm.baseUrl = baseUrl.value
     insightStore.config.llm.openaiOptions.request.forceJsonOutput = forceJson.value
+    insightStore.config.llm.openaiOptions.request.extraBody = extraBody.value
     insightStore.config.llm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.llm.openaiOptions.execution.rpmLimit = rpmLimit.value
     insightStore.config.llm.openaiOptions.execution.transportRetries = transportRetries.value
@@ -58,6 +61,7 @@ function onProviderChange(): void {
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
   forceJson.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
+  extraBody.value = insightStore.config.llm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
   rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
   transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
@@ -147,7 +151,8 @@ function getConfig() {
     openaiOptions: {
       request: {
         forceJsonOutput: forceJson.value,
-        temperature: insightStore.config.llm.openaiOptions.request.temperature
+        temperature: insightStore.config.llm.openaiOptions.request.temperature,
+        extraBody: extraBody.value
       },
       execution: {
         useStream: useStream.value,
@@ -165,6 +170,7 @@ function syncFromStore(): void {
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
   forceJson.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
+  extraBody.value = insightStore.config.llm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
   rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
   transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
@@ -239,7 +245,11 @@ defineExpose({ getConfig, syncFromStore })
         <span>使用流式请求</span>
       </label>
     </div>
-    
+
+    <div class="form-group">
+      <OpenAIExtraBodyEditor v-model="extraBody" />
+    </div>
+
     <button class="btn btn-secondary" :disabled="isTesting" @click="testConnection">
       {{ isTesting ? '测试中...' : '测试连接' }}
     </button>

@@ -148,6 +148,9 @@
         </label>
         <div class="input-hint">同时作用于整页批量和逐气泡翻译</div>
       </div>
+      <div v-show="showRpmLimit" class="settings-item">
+        <OpenAIExtraBodyEditor v-model="localSettings.extraBody" />
+      </div>
 
       <!-- 翻译模式选择 -->
       <div class="settings-item">
@@ -262,6 +265,7 @@ import { useToast } from '@/utils/toast'
 import { DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_JSON_PROMPT, DEFAULT_SINGLE_BUBBLE_PROMPT, DEFAULT_SINGLE_BUBBLE_JSON_PROMPT } from '@/constants'
 import type { TranslationProvider } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
 /** 翻译服务商选项 */
@@ -305,6 +309,7 @@ const localSettings = ref({
   translationTransportRetries: settingsStore.settings.translation.openaiOptions.execution.transportRetries,
   translationBusinessRetries: settingsStore.settings.translation.openaiOptions.execution.businessRetries,
   useStream: settingsStore.settings.translation.openaiOptions.execution.useStream,
+  extraBody: settingsStore.settings.translation.openaiOptions.request.extraBody,
   translationMode: currentTranslationMode,
   promptContent: getCurrentPrompt(),
   translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
@@ -424,6 +429,7 @@ function handleProviderChange() {
   localSettings.value.translationTransportRetries = settingsStore.settings.translation.openaiOptions.execution.transportRetries
   localSettings.value.translationBusinessRetries = settingsStore.settings.translation.openaiOptions.execution.businessRetries
   localSettings.value.useStream = settingsStore.settings.translation.openaiOptions.execution.useStream
+  localSettings.value.extraBody = settingsStore.settings.translation.openaiOptions.request.extraBody
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
   // 清空所有模型列表（无论是云服务商还是本地服务商）
@@ -536,6 +542,10 @@ watch(() => localSettings.value.translationBusinessRetries, (newVal) => {
 
 watch(() => localSettings.value.useStream, (newVal) => {
   settingsStore.updateTranslationService({ useStream: newVal })
+})
+
+watch(() => localSettings.value.extraBody, (newVal) => {
+  settingsStore.updateTranslationService({ extraBody: newVal })
 })
 
 watch(() => localSettings.value.promptContent, (newVal) => {
