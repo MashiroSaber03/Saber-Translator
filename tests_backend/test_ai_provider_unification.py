@@ -7,7 +7,7 @@ from flask import Flask
 from PIL import Image
 
 from src.app.api.system import system_bp
-from src.app.api.translation import routes as translation_routes
+from src.app.api.translation import parallel_routes, routes as translation_routes
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
 from src.shared.openai_execution import build_openai_compatible_runtime_options
 from src.shared.openai_options import (
@@ -208,12 +208,10 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 model_provider="siliconflow",
                 api_key="test-key",
                 model_name="test-model",
-                use_json_format=True,
-                max_retries=0,
                 openai_options=OpenAICompatibleOptions.from_dict(
                     {
                         "request": {"force_json_output": True},
-                        "execution": {"max_retries": 0, "rpm_limit": 0, "use_stream": False},
+                        "execution": {"business_retries": 0, "rpm_limit": 0, "use_stream": False},
                     }
                 ),
             )
@@ -289,8 +287,10 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 ai_vision_model_name="vision-model",
                 ai_vision_ocr_prompt=custom_prompt,
                 ai_vision_prompt_mode="paddleocr_vl",
-                use_json_format_for_ai_vision=True,
                 custom_ai_vision_base_url="https://example.com/v1",
+                ai_vision_openai_options=OpenAICompatibleOptions(
+                    request=OpenAICompatibleRequestOptions(force_json_output=True),
+                ),
             )
 
         self.assertEqual(vision_mock.call_args.kwargs["prompt"], custom_prompt)
@@ -312,8 +312,10 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 ai_vision_model_name="vision-model",
                 ai_vision_ocr_prompt="",
                 ai_vision_prompt_mode="json",
-                use_json_format_for_ai_vision=True,
                 custom_ai_vision_base_url="https://example.com/v1",
+                ai_vision_openai_options=OpenAICompatibleOptions(
+                    request=OpenAICompatibleRequestOptions(force_json_output=True),
+                ),
             )
 
         prompt = vision_mock.call_args.kwargs["prompt"]
@@ -332,7 +334,6 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 api_key="vision-key",
                 model_name="vision-model",
                 prompt="识别图片里的文本",
-                use_json_format=True,
                 custom_base_url="https://example.com/v1",
                 openai_options=OpenAICompatibleOptions(
                     request=OpenAICompatibleRequestOptions(force_json_output=True),
@@ -474,7 +475,9 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 model_name="qwen-vl-max",
                 prompt="识别图片里的文本",
                 prompt_mode="normal",
-                use_json_format=True,
+                openai_options=OpenAICompatibleOptions(
+                    request=OpenAICompatibleRequestOptions(force_json_output=True),
+                ),
             )
 
         self.assertEqual(content, '测试')
@@ -488,10 +491,11 @@ class RouteCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = Flask(__name__)
         self.app.register_blueprint(translation_routes.translate_bp)
+        self.app.register_blueprint(parallel_routes.parallel_bp)
         self.app.register_blueprint(system_bp)
         self.client = self.app.test_client()
 
-    def test_translate_single_text_accepts_canonical_custom_and_camel_case_aliases(self) -> None:
+    def test_translate_single_text_accepts_nested_openai_options(self) -> None:
         with mock.patch(
             "src.app.api.translation.routes.translate_single_text",
             return_value="译文",
@@ -506,9 +510,15 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "model": "gpt-test",
                     "baseUrl": "https://example.com/v1",
                     "promptContent": "translate",
-                    "useJsonFormat": True,
-                    "rpmLimitTranslation": 0,
-                    "maxRetries": 0,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
                 },
             )
 
@@ -520,7 +530,33 @@ class RouteCompatibilityTests(unittest.TestCase):
         self.assertEqual(kwargs["model_name"], "gpt-test")
         self.assertEqual(kwargs["custom_base_url"], "https://example.com/v1")
         self.assertEqual(kwargs["model_provider"], "custom")
-        self.assertEqual(kwargs["max_retries"], 0)
+        self.assertTrue(kwargs["openai_options"].request.force_json_output)
+        self.assertEqual(kwargs["openai_options"].execution.business_retries, 0)
+        self.assertNotIn("max_retries", kwargs)
+        self.assertNotIn("use_json_format", kwargs)
+        self.assertNotIn("rpm_limit_translation", kwargs)
+
+    def test_translate_single_text_rejects_legacy_openai_request_fields(self) -> None:
+        with mock.patch("src.app.api.translation.routes.translate_single_text") as translate_mock:
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "original_text": "hello",
+                    "target_language": "zh",
+                    "model_provider": "custom",
+                    "api_key": "test-key",
+                    "model_name": "gpt-test",
+                    "custom_base_url": "https://example.com/v1",
+                    "use_json_format": True,
+                    "rpm_limit_translation": 0,
+                    "max_retries": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options", payload["error"])
+        translate_mock.assert_not_called()
 
     def test_translate_single_text_rejects_provider_without_translation_capability(self) -> None:
         response = self.client.post(
@@ -550,7 +586,15 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "targetLanguage": "zh",
                     "provider": "ollama",
                     "model": "llama3.2",
-                    "useJsonFormat": True,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
                 },
             )
 
@@ -615,7 +659,15 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "api_key": "test-key",
                     "model_name": "test-model",
                     "messages": [{"role": "user", "content": "hello"}],
-                    "force_json_output": True,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
                 },
             )
 
@@ -637,7 +689,15 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "provider": "ollama",
                     "model_name": "llama3.2-vision",
                     "messages": [{"role": "user", "content": "hello"}],
-                    "force_json_output": True,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
                 },
             )
 
@@ -684,7 +744,7 @@ class RouteCompatibilityTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("不支持的服务商", payload["error"])
 
-    def test_hq_translate_batch_prefers_new_openai_options_payload(self) -> None:
+    def test_hq_translate_batch_rejects_legacy_openai_request_fields(self) -> None:
         with mock.patch(
             "src.app.api.translation.routes._hq_chat_transport.complete",
             return_value='{"images":[]}',
@@ -700,21 +760,13 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "use_stream": False,
                     "rpm_limit": 1,
                     "max_retries": 1,
-                    "openai_options": {
-                        "request": {"force_json_output": True},
-                        "execution": {
-                            "use_stream": True,
-                            "rpm_limit": 9,
-                            "max_retries": 5,
-                        },
-                    },
                 },
             )
 
-        self.assertEqual(response.status_code, 200)
-        request_arg = complete_mock.call_args.args[0]
-        self.assertTrue(request_arg.openai_options.request.force_json_output)
-        self.assertTrue(request_arg.openai_options.execution.use_stream)
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options", payload["error"])
+        complete_mock.assert_not_called()
 
     def test_ocr_single_bubble_accepts_new_openai_options_payload(self) -> None:
         with mock.patch(
@@ -740,5 +792,73 @@ class RouteCompatibilityTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         kwargs = recognize_mock.call_args.kwargs
-        self.assertTrue(kwargs["use_json_format_for_ai_vision"])
-        self.assertEqual(kwargs["rpm_limit_ai_vision"], 13)
+        self.assertTrue(kwargs["ai_vision_openai_options"].request.force_json_output)
+        self.assertEqual(kwargs["ai_vision_openai_options"].execution.rpm_limit, 13)
+        self.assertNotIn("use_json_format_for_ai_vision", kwargs)
+        self.assertNotIn("rpm_limit_ai_vision", kwargs)
+
+    def test_ocr_single_bubble_rejects_legacy_openai_request_fields(self) -> None:
+        with mock.patch("src.app.api.translation.routes.recognize_ocr_results_in_bubbles") as recognize_mock:
+            response = self.client.post(
+                "/api/ocr_single_bubble",
+                json={
+                    "bubble_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5N0X8AAAAASUVORK5CYII=",
+                    "bubble_coords": [0, 0, 1, 1],
+                    "ocr_engine": "ai_vision",
+                    "source_language": "japanese",
+                    "ai_vision_provider": "gemini",
+                    "ai_vision_api_key": "vision-key",
+                    "ai_vision_model_name": "gemini-2.0-flash",
+                    "use_json_format_for_ai_vision": True,
+                    "rpm_limit_ai_vision": 13,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options", payload["error"])
+        recognize_mock.assert_not_called()
+
+    def test_parallel_translate_rejects_legacy_openai_request_fields(self) -> None:
+        with mock.patch("src.app.api.translation.parallel_routes.translate_text_list") as translate_mock:
+            response = self.client.post(
+                "/api/parallel/translate",
+                json={
+                    "original_texts": ["hello"],
+                    "target_language": "zh",
+                    "model_provider": "custom",
+                    "api_key": "test-key",
+                    "model_name": "gpt-test",
+                    "custom_base_url": "https://example.com/v1",
+                    "use_json_format": True,
+                    "rpm_limit": 0,
+                    "max_retries": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options", payload["error"])
+        translate_mock.assert_not_called()
+
+    def test_parallel_ocr_rejects_legacy_openai_request_fields(self) -> None:
+        with mock.patch("src.app.api.translation.parallel_routes.recognize_ocr_results_in_bubbles") as recognize_mock:
+            response = self.client.post(
+                "/api/parallel/ocr",
+                json={
+                    "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5N0X8AAAAASUVORK5CYII=",
+                    "bubble_coords": [[0, 0, 1, 1]],
+                    "ocr_engine": "ai_vision",
+                    "source_language": "japanese",
+                    "ai_vision_provider": "gemini",
+                    "ai_vision_api_key": "vision-key",
+                    "ai_vision_model_name": "gemini-2.0-flash",
+                    "use_json_format_for_ai_vision": True,
+                    "rpm_limit_ai_vision": 13,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("openai_options", payload["error"])
+        recognize_mock.assert_not_called()

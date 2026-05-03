@@ -145,8 +145,15 @@ class HqTranslationRpmTests(unittest.TestCase):
                     "api_key": "test-key",
                     "model_name": "test-model",
                     "messages": [{"role": "user", "content": "hello"}],
-                    "rpm_limit": 11,
-                    "force_json_output": True,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 11,
+                            "transport_retries": 1,
+                            "business_retries": 2,
+                        },
+                    },
                 },
             )
 
@@ -169,7 +176,15 @@ class HqTranslationRpmTests(unittest.TestCase):
                     "messages": [{"role": "user", "content": "hello"}],
                     "low_reasoning": True,
                     "no_thinking_method": "volcano",
-                    "force_json_output": True,
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 2,
+                        },
+                    },
                 },
             )
 

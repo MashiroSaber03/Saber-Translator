@@ -86,8 +86,8 @@ class TaskExecutor:
         config = load_insight_config()
         pages_per_batch = config.analysis.batch.pages_per_batch
 
-        force_json = config.vlm.force_json
-        use_stream = config.vlm.use_stream
+        force_json = config.vlm.openai_options.request.force_json_output
+        use_stream = config.vlm.openai_options.execution.use_stream
         logger.info(f"批量分析: 每批 {pages_per_batch} 页, 强制JSON: {'是' if force_json else '否'}, 流式请求: {'是' if use_stream else '否'}")
 
         batch_warnings, had_batch_failures = await self._execute_full_book_batch_analysis(task, analyzer, book_info)

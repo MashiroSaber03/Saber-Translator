@@ -23,9 +23,8 @@ from src.shared.openai_execution import (
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
-    OpenAICompatibleRequestOptions,
+    create_openai_compatible_options,
 )
 from src.shared.image_helpers import image_to_base64
 
@@ -49,15 +48,12 @@ def _parse_ai_vision_ocr_response(content: str, *, use_json_format: bool) -> str
 
 
 def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
-                               prompt_mode: str = 'normal', use_json_format: bool = False,
+                               prompt_mode: str = 'normal',
                                custom_base_url=None,
                                openai_options: OpenAICompatibleOptions | None = None):
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
-    if not prompt:
-        prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
-        logger.info(f"使用默认AI视觉OCR提示词")
 
     start_time = time.time()
     try:
@@ -84,21 +80,30 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             logger.error(f"未提供 {provider_lower} 的 Base URL")
             return ""
 
+        effective_options = openai_options or create_openai_compatible_options(
+            force_json_output=False,
+            use_stream=False,
+            rpm_limit=0,
+            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+            business_retries=0,
+        )
+        if not prompt:
+            if effective_options.request.force_json_output or (prompt_mode or "").strip().lower() == "json":
+                prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
+            else:
+                prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
+            logger.info("使用默认AI视觉OCR提示词")
+
         logger.info(
             "[AI视觉OCR-请求] provider=%s, model=%s, prompt_mode=%s, json_mode=%s, base_url=%s",
             provider_lower,
             model_name,
             prompt_mode,
-            use_json_format,
+            effective_options.request.force_json_output,
             resolved_base_url,
         )
         logger.info("[AI视觉OCR-请求] 实际提示词开始\n%s\n[AI视觉OCR-请求] 实际提示词结束", prompt)
-        effective_options = openai_options or OpenAICompatibleOptions(
-            request=OpenAICompatibleRequestOptions(force_json_output=use_json_format),
-            execution=OpenAICompatibleExecutionOptions(
-                transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            ),
-        )
+        use_json_format = effective_options.request.force_json_output
         result = _sync_executor.execute(
             UnifiedVisionRequest(
                 provider=provider_lower,
@@ -145,7 +150,6 @@ def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
                 model_name,
                 prompt,
                 prompt_mode='normal',
-                use_json_format=False,
                 custom_base_url=custom_base_url # <<< 传递自定义 Base URL
             )
 

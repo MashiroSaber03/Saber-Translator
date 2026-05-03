@@ -35,7 +35,17 @@ vi.mock('@/stores/settingsStore', () => ({
         modelName: 'vision-model',
         prompt: 'ocr prompt',
         customBaseUrl: 'https://vision.example.com/v1',
-        isJsonMode: true
+        openaiOptions: {
+          request: {
+            forceJsonOutput: true
+          },
+          execution: {
+            useStream: false,
+            rpmLimit: 0,
+            transportRetries: 1,
+            businessRetries: 0
+          }
+        }
       },
       hybridOcr: {
         enabled: true,
@@ -166,7 +176,11 @@ describe('OCR result integration', () => {
         enable_hybrid_ocr: true,
         secondary_ocr_engine: '48px_ocr',
         hybrid_ocr_threshold: 0.2,
-        use_json_format_for_ai_vision: true
+        openai_options: expect.objectContaining({
+          request: expect.objectContaining({
+            force_json_output: true
+          })
+        })
       })
     )
   })

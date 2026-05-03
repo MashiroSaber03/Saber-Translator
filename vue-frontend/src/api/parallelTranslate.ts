@@ -69,8 +69,6 @@ export interface ParallelOcrParams {
       business_retries: number
     }
   }
-  use_json_format_for_ai_vision?: boolean
-  rpm_limit_ai_vision?: number
   ai_vision_min_image_size?: number
   enable_hybrid_ocr?: boolean
   secondary_ocr_engine?: string
@@ -138,9 +136,6 @@ export interface ParallelTranslateParams {
       business_retries: number
     }
   }
-  rpm_limit?: number
-  max_retries?: number
-  use_json_format?: boolean
 }
 
 export interface ParallelTranslateResponse {

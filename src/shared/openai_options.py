@@ -5,9 +5,17 @@ Shared persistent OpenAI-compatible request/execution options.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional
 
 DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
+_OPENAI_OPTIONS_TOP_LEVEL_KEYS = {"request", "execution"}
+_OPENAI_OPTIONS_REQUEST_KEYS = {"force_json_output", "temperature"}
+_OPENAI_OPTIONS_EXECUTION_KEYS = {
+    "use_stream",
+    "rpm_limit",
+    "transport_retries",
+    "business_retries",
+}
 
 
 def _value_from_mapping(data: Mapping[str, Any], *keys: str, default=None):
@@ -72,18 +80,8 @@ class OpenAICompatibleRequestOptions:
     def from_dict(cls, data: Optional[Mapping[str, Any]]) -> "OpenAICompatibleRequestOptions":
         data = data or {}
         return cls(
-            force_json_output=_coerce_bool(
-                _value_from_mapping(
-                    data,
-                    "force_json_output",
-                    "force_json",
-                    "forceJsonOutput",
-                    "forceJson",
-                    default=False,
-                ),
-                False,
-            ),
-            temperature=_coerce_float(_value_from_mapping(data, "temperature", default=None), None),
+            force_json_output=_coerce_bool(data.get("force_json_output"), False),
+            temperature=_coerce_float(data.get("temperature"), None),
         )
 
 
@@ -93,14 +91,6 @@ class OpenAICompatibleExecutionOptions:
     rpm_limit: int = 0
     transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES
     business_retries: int = 0
-
-    @property
-    def max_retries(self) -> int:
-        return self.business_retries
-
-    @max_retries.setter
-    def max_retries(self, value: int) -> None:
-        self.business_retries = max(0, int(value or 0))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,34 +104,15 @@ class OpenAICompatibleExecutionOptions:
     def from_dict(cls, data: Optional[Mapping[str, Any]]) -> "OpenAICompatibleExecutionOptions":
         data = data or {}
         return cls(
-            use_stream=_coerce_bool(
-                _value_from_mapping(data, "use_stream", "useStream", default=False),
-                False,
-            ),
-            rpm_limit=_coerce_int(
-                _value_from_mapping(data, "rpm_limit", "rpmLimit", default=0),
-                0,
-                minimum=0,
-            ),
+            use_stream=_coerce_bool(data.get("use_stream"), False),
+            rpm_limit=_coerce_int(data.get("rpm_limit"), 0, minimum=0),
             transport_retries=_coerce_int(
-                _value_from_mapping(
-                    data,
-                    "transport_retries",
-                    "transportRetries",
-                    default=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-                ),
+                data.get("transport_retries"),
                 DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
                 minimum=0,
             ),
             business_retries=_coerce_int(
-                _value_from_mapping(
-                    data,
-                    "business_retries",
-                    "businessRetries",
-                    "max_retries",
-                    "maxRetries",
-                    default=0,
-                ),
+                data.get("business_retries"),
                 0,
                 minimum=0,
             ),
@@ -174,78 +145,77 @@ def clone_openai_compatible_options(options: OpenAICompatibleOptions) -> OpenAIC
     return OpenAICompatibleOptions.from_dict(options.to_dict())
 
 
-def build_openai_compatible_options(
-    data: Mapping[str, Any],
+def create_openai_compatible_options(
     *,
-    options_keys: Sequence[str] = ("openai_options", "openaiOptions"),
-    force_json_keys: Sequence[str] = (),
-    temperature_keys: Sequence[str] = (),
-    use_stream_keys: Sequence[str] = (),
-    rpm_limit_keys: Sequence[str] = (),
-    transport_retries_keys: Sequence[str] = (),
-    business_retries_keys: Sequence[str] = (),
-    max_retries_keys: Sequence[str] = (),
-    default_force_json_output: bool = False,
-    default_temperature: Optional[float] = None,
-    default_use_stream: bool = False,
-    default_rpm_limit: int = 0,
-    default_transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    default_business_retries: int = 0,
+    force_json_output: bool = False,
+    temperature: Optional[float] = None,
+    use_stream: bool = False,
+    rpm_limit: int = 0,
+    transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+    business_retries: int = 0,
+) -> OpenAICompatibleOptions:
+    return OpenAICompatibleOptions(
+        request=OpenAICompatibleRequestOptions(
+            force_json_output=force_json_output,
+            temperature=temperature,
+        ),
+        execution=OpenAICompatibleExecutionOptions(
+            use_stream=use_stream,
+            rpm_limit=max(0, int(rpm_limit or 0)),
+            transport_retries=max(0, int(transport_retries or 0)),
+            business_retries=max(0, int(business_retries or 0)),
+        ),
+    )
+
+
+def merge_openai_compatible_options(
+    payload: Optional[Mapping[str, Any]],
+    *,
+    defaults: Optional[OpenAICompatibleOptions] = None,
     business_retries_maximum: Optional[int] = None,
 ) -> OpenAICompatibleOptions:
-    nested_payload = None
-    for key in options_keys:
-        candidate = data.get(key)
-        if isinstance(candidate, Mapping):
-            nested_payload = candidate
-            break
+    options = clone_openai_compatible_options(defaults or OpenAICompatibleOptions())
+    if not isinstance(payload, Mapping):
+        return options
 
-    if nested_payload is not None:
-        options = OpenAICompatibleOptions.from_dict(nested_payload)
-    else:
-        options = OpenAICompatibleOptions(
-            request=OpenAICompatibleRequestOptions(
-                force_json_output=_coerce_bool(
-                    _value_from_mapping(data, *force_json_keys, default=default_force_json_output),
-                    default_force_json_output,
-                ),
-                temperature=_coerce_float(
-                    _value_from_mapping(data, *temperature_keys, default=default_temperature),
-                    default_temperature,
-                ),
-            ),
-            execution=OpenAICompatibleExecutionOptions(
-                use_stream=_coerce_bool(
-                    _value_from_mapping(data, *use_stream_keys, default=default_use_stream),
-                    default_use_stream,
-                ),
-                rpm_limit=_coerce_int(
-                    _value_from_mapping(data, *rpm_limit_keys, default=default_rpm_limit),
-                    default_rpm_limit,
-                    minimum=0,
-                ),
-                transport_retries=_coerce_int(
-                    _value_from_mapping(
-                        data,
-                        *transport_retries_keys,
-                        default=default_transport_retries,
-                    ),
-                    default_transport_retries,
-                    minimum=0,
-                ),
-                business_retries=_coerce_int(
-                    _value_from_mapping(
-                        data,
-                        *business_retries_keys,
-                        *max_retries_keys,
-                        default=default_business_retries,
-                    ),
-                    default_business_retries,
-                    minimum=0,
-                    maximum=business_retries_maximum,
-                ),
-            ),
-        )
+    request_data = payload.get("request")
+    if isinstance(request_data, Mapping):
+        if "force_json_output" in request_data:
+            options.request.force_json_output = _coerce_bool(
+                request_data.get("force_json_output"),
+                options.request.force_json_output,
+            )
+        if "temperature" in request_data:
+            options.request.temperature = _coerce_float(
+                request_data.get("temperature"),
+                options.request.temperature,
+            )
+
+    execution_data = payload.get("execution")
+    if isinstance(execution_data, Mapping):
+        if "use_stream" in execution_data:
+            options.execution.use_stream = _coerce_bool(
+                execution_data.get("use_stream"),
+                options.execution.use_stream,
+            )
+        if "rpm_limit" in execution_data:
+            options.execution.rpm_limit = _coerce_int(
+                execution_data.get("rpm_limit"),
+                options.execution.rpm_limit,
+                minimum=0,
+            )
+        if "transport_retries" in execution_data:
+            options.execution.transport_retries = _coerce_int(
+                execution_data.get("transport_retries"),
+                options.execution.transport_retries,
+                minimum=0,
+            )
+        if "business_retries" in execution_data:
+            options.execution.business_retries = _coerce_int(
+                execution_data.get("business_retries"),
+                options.execution.business_retries,
+                minimum=0,
+            )
 
     if business_retries_maximum is not None:
         options.execution.business_retries = min(
@@ -254,3 +224,35 @@ def build_openai_compatible_options(
         )
 
     return options
+
+
+def validate_openai_options_payload(payload: Optional[Mapping[str, Any]]) -> list[str]:
+    if payload is None:
+        return []
+    if not isinstance(payload, Mapping):
+        return ["openai_options"]
+
+    invalid_keys: list[str] = []
+    for key in payload.keys():
+        if key not in _OPENAI_OPTIONS_TOP_LEVEL_KEYS:
+            invalid_keys.append(f"openai_options.{key}")
+
+    request_data = payload.get("request")
+    if request_data is not None:
+        if not isinstance(request_data, Mapping):
+            invalid_keys.append("openai_options.request")
+        else:
+            for key in request_data.keys():
+                if key not in _OPENAI_OPTIONS_REQUEST_KEYS:
+                    invalid_keys.append(f"openai_options.request.{key}")
+
+    execution_data = payload.get("execution")
+    if execution_data is not None:
+        if not isinstance(execution_data, Mapping):
+            invalid_keys.append("openai_options.execution")
+        else:
+            for key in execution_data.keys():
+                if key not in _OPENAI_OPTIONS_EXECUTION_KEYS:
+                    invalid_keys.append(f"openai_options.execution.{key}")
+
+    return invalid_keys

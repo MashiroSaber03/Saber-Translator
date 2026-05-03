@@ -35,9 +35,8 @@ from src.shared.openai_execution import (
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
-    OpenAICompatibleRequestOptions,
+    create_openai_compatible_options,
 )
 from src.shared.openai_rate_limits import (
     apply_sync_rpm_limit,
@@ -140,26 +139,22 @@ def _apply_translation_rpm_limit(provider: str, rpm_limit: int, *, batch: bool =
 
 def _build_translation_openai_options(
     *,
-    use_json_format: bool,
-    rpm_limit_translation: int,
-    max_retries: int,
-    temperature: float | None = None,
     openai_options: OpenAICompatibleOptions | None = None,
+    default_force_json_output: bool = False,
+    default_rpm_limit: int = constants.DEFAULT_rpm_TRANSLATION,
+    default_business_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+    temperature: float | None = None,
 ) -> OpenAICompatibleOptions:
     if openai_options is not None:
         effective = OpenAICompatibleOptions.from_dict(openai_options.to_dict())
     else:
-        effective = OpenAICompatibleOptions(
-            request=OpenAICompatibleRequestOptions(
-                force_json_output=use_json_format,
-                temperature=temperature,
-            ),
-            execution=OpenAICompatibleExecutionOptions(
-                use_stream=False,
-                rpm_limit=rpm_limit_translation,
-                transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-                business_retries=max_retries,
-            ),
+        effective = create_openai_compatible_options(
+            force_json_output=default_force_json_output,
+            temperature=temperature,
+            use_stream=False,
+            rpm_limit=default_rpm_limit,
+            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+            business_retries=default_business_retries,
         )
 
     if effective.request.temperature is None:
@@ -218,12 +213,16 @@ def _parse_batch_translation_response(
 
     return [trans if trans else "【翻译失败】请检查终端中的错误日志" for trans in translations]
 
-def translate_single_text(text, target_language, model_provider, 
-                          api_key=None, model_name=None, prompt_content=None, 
-                          use_json_format=False, custom_base_url=None,
-                          rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
-                          max_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-                          openai_options: OpenAICompatibleOptions | None = None):
+def translate_single_text(
+    text,
+    target_language,
+    model_provider,
+    api_key=None,
+    model_name=None,
+    prompt_content=None,
+    custom_base_url=None,
+    openai_options: OpenAICompatibleOptions | None = None,
+):
     """
     使用指定的大模型翻译单段文本。
     
@@ -237,10 +236,7 @@ def translate_single_text(text, target_language, model_provider,
         api_key (str, optional): API 密钥 (对于非本地部署是必需的)。
         model_name (str, optional): 模型名称。
         prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
-        use_json_format (bool): 是否期望并解析 JSON 格式的响应。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
-        max_retries (int): 翻译失败时的最大重试次数。
     Returns:
         str: 翻译后的文本，如果失败则返回 "翻译失败: [原因]"。
     """
@@ -248,10 +244,10 @@ def translate_single_text(text, target_language, model_provider,
         return ""
 
     effective_options = _build_translation_openai_options(
-        use_json_format=use_json_format,
-        rpm_limit_translation=rpm_limit_translation,
-        max_retries=max_retries,
         openai_options=openai_options,
+        default_force_json_output=False,
+        default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
+        default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
     )
     use_json_format = effective_options.request.force_json_output
     rpm_limit_translation = effective_options.execution.rpm_limit
@@ -637,8 +633,7 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
 
 def _translate_batch_with_llm(texts: list, model_provider: str,
                                api_key: str, model_name: str, custom_prompt: str = None,
-                               custom_base_url: str = None, max_retries: int = 2,
-                               use_json_format: bool = False,
+                               custom_base_url: str = None,
                                openai_options: OpenAICompatibleOptions | None = None) -> list:
     """
     使用 LLM 进行批量翻译
@@ -650,22 +645,17 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
         model_name: 模型名称
         custom_prompt: 自定义提示词
         custom_base_url: 自定义 API Base URL
-        max_retries: 最大重试次数
-        use_json_format: 是否使用 JSON 输出格式
-        
     Returns:
         list: 翻译结果列表
     """
     if not texts:
         return []
-    
-    # 初始化结果列表
-    results = [''] * len(texts)
+
     effective_options = _build_translation_openai_options(
-        use_json_format=use_json_format,
-        rpm_limit_translation=0,
-        max_retries=max_retries,
         openai_options=openai_options,
+        default_force_json_output=False,
+        default_rpm_limit=0,
+        default_business_retries=2,
     )
     use_json_format = effective_options.request.force_json_output
     business_retries = effective_options.execution.business_retries
@@ -741,12 +731,16 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
     return result.parsed
 
 
-def translate_text_list(texts, target_language, model_provider, 
-                        api_key=None, model_name=None, prompt_content=None, 
-                        use_json_format=False, custom_base_url=None,
-                        rpm_limit_translation: int = constants.DEFAULT_rpm_TRANSLATION,
-                        max_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-                        openai_options: OpenAICompatibleOptions | None = None):
+def translate_text_list(
+    texts,
+    target_language,
+    model_provider,
+    api_key=None,
+    model_name=None,
+    prompt_content=None,
+    custom_base_url=None,
+    openai_options: OpenAICompatibleOptions | None = None,
+):
     """
     翻译文本列表 - 使用批量翻译策略
     
@@ -763,10 +757,7 @@ def translate_text_list(texts, target_language, model_provider,
         api_key (str, optional): API 密钥。
         model_name (str, optional): 模型名称。
         prompt_content (str, optional): 自定义提示词，可覆盖默认提示词。
-        use_json_format (bool): 是否使用 JSON 格式输出。True 时使用结构化 JSON 格式，False 时使用 <|n|> 编号格式。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
-        rpm_limit_translation (int): 翻译服务的每分钟请求数限制。
-        max_retries (int): 翻译失败时的最大重试次数。
     Returns:
         list: 包含翻译后文本的列表，顺序与输入列表一致。失败的项包含错误信息。
     """
@@ -789,10 +780,10 @@ def translate_text_list(texts, target_language, model_provider,
         return final_translations
     
     effective_options = _build_translation_openai_options(
-        use_json_format=use_json_format,
-        rpm_limit_translation=rpm_limit_translation,
-        max_retries=max_retries,
         openai_options=openai_options,
+        default_force_json_output=False,
+        default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
+        default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
     )
     use_json_format = effective_options.request.force_json_output
     rpm_limit_translation = effective_options.execution.rpm_limit
@@ -856,8 +847,6 @@ def translate_text_list(texts, target_language, model_provider,
                 model_name,
                 custom_prompt=prompt_content,
                 custom_base_url=custom_base_url,
-                max_retries=business_retries,
-                use_json_format=use_json_format,
                 openai_options=effective_options,
             )
             all_translations.extend(batch_translations)
@@ -882,10 +871,7 @@ def translate_text_list(texts, target_language, model_provider,
                 api_key=api_key,
                 model_name=model_name,
                 prompt_content=prompt_content,
-                use_json_format=use_json_format,
                 custom_base_url=custom_base_url,
-                rpm_limit_translation=rpm_limit_translation,
-                max_retries=business_retries,
                 openai_options=effective_options,
             )
             final_translations[non_empty_indices[i]] = translated

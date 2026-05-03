@@ -24,9 +24,8 @@ from src.shared.ai_providers import (
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
-    OpenAICompatibleRequestOptions,
+    create_openai_compatible_options,
 )
 from src.core.ocr_types import OcrResult, create_ocr_result
 from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
@@ -374,8 +373,6 @@ def _recognize_with_ai_vision_results(
     ai_vision_ocr_prompt=None,
     ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
-    use_json_format_for_ai_vision=False,
-    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     *,
@@ -384,15 +381,14 @@ def _recognize_with_ai_vision_results(
     strict_errors: bool = False,
 ) -> List[OcrResult]:
     ai_vision_provider = normalize_provider_id(ai_vision_provider)
-    effective_options = ai_vision_openai_options or OpenAICompatibleOptions(
-        request=OpenAICompatibleRequestOptions(force_json_output=use_json_format_for_ai_vision),
-        execution=OpenAICompatibleExecutionOptions(
-            rpm_limit=rpm_limit_ai_vision,
-            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-        ),
+    effective_options = ai_vision_openai_options or create_openai_compatible_options(
+        force_json_output=False,
+        use_stream=False,
+        rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
+        transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+        business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
     )
     use_json_format_for_ai_vision = effective_options.request.force_json_output
-    rpm_limit_ai_vision = effective_options.execution.rpm_limit
 
     if not ai_vision_provider:
         logger.error("使用 AI视觉OCR 时，缺少必要参数(provider/api_key/model_name)，OCR步骤跳过。")
@@ -504,7 +500,6 @@ def _recognize_with_ai_vision_results(
                 model_name=ai_vision_model_name,
                 prompt=current_prompt,
                 prompt_mode=normalized_prompt_mode,
-                use_json_format=use_json_format_for_ai_vision,
                 custom_base_url=custom_ai_vision_base_url,
                 openai_options=effective_options,
             )
@@ -549,8 +544,6 @@ def _recognize_with_engine(
     ai_vision_ocr_prompt=None,
     ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
-    use_json_format_for_ai_vision=False,
-    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     textlines_per_bubble=None,
@@ -623,8 +616,6 @@ def _recognize_with_engine(
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
             ai_vision_prompt_mode=ai_vision_prompt_mode,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
-            use_json_format_for_ai_vision=use_json_format_for_ai_vision,
-            rpm_limit_ai_vision=rpm_limit_ai_vision,
             ai_vision_min_image_size=ai_vision_min_image_size,
             ai_vision_openai_options=ai_vision_openai_options,
             primary_engine=effective_primary_engine,
@@ -658,8 +649,6 @@ def recognize_ocr_results_in_bubbles(
     ai_vision_ocr_prompt=None,
     ai_vision_prompt_mode: str = 'normal',
     custom_ai_vision_base_url=None,
-    use_json_format_for_ai_vision=False,
-    rpm_limit_ai_vision: int = constants.DEFAULT_rpm_AI_VISION_OCR,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
     jsonPromptMode: str = 'normal',
@@ -702,8 +691,6 @@ def recognize_ocr_results_in_bubbles(
         ai_vision_ocr_prompt=ai_vision_ocr_prompt,
         ai_vision_prompt_mode=ai_vision_prompt_mode,
         custom_ai_vision_base_url=custom_ai_vision_base_url,
-        use_json_format_for_ai_vision=use_json_format_for_ai_vision,
-        rpm_limit_ai_vision=rpm_limit_ai_vision,
         ai_vision_min_image_size=ai_vision_min_image_size,
         ai_vision_openai_options=ai_vision_openai_options,
         textlines_per_bubble=textlines_per_bubble,

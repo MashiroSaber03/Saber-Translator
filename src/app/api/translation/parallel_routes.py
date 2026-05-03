@@ -27,7 +27,11 @@ from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
 from src.core.config_models import BubbleState, bubble_states_to_api_response
 from src.core.color_extractor import extract_bubble_colors
 from src.shared import constants
-from src.shared.openai_options import build_openai_compatible_options
+from src.shared.openai_options import (
+    create_openai_compatible_options,
+    merge_openai_compatible_options,
+    validate_openai_options_payload,
+)
 from src.plugins.manager import apply_after_ocr_hooks
 from src.shared.ai_providers import normalize_provider_id
 
@@ -80,37 +84,42 @@ def decode_mask_from_base64(base64_str: str) -> np.ndarray:
     return np.array(image)
 
 
+def _present_request_keys(
+    data,
+    *,
+    keys,
+):
+    return [key for key in keys if key in data and data.get(key) is not None]
+
+
+def _reject_legacy_openai_request_fields(data, *legacy_keys):
+    present_keys = _present_request_keys(data, keys=legacy_keys)
+    if "openaiOptions" in data:
+        present_keys.append("openaiOptions")
+    if not present_keys:
+        return
+    joined = ", ".join(sorted(set(present_keys)))
+    raise ValueError(
+        f"检测到已废弃的 OpenAI 请求字段: {joined}。"
+        "请改用 openai_options.request / openai_options.execution。"
+    )
+
+
 def _route_openai_options(
     data,
     *,
-    force_json_keys=(),
-    use_stream_keys=(),
-    rpm_limit_keys=(),
-    transport_retries_keys=(),
-    business_retries_keys=(),
-    max_retries_keys=(),
-    temperature_keys=(),
-    default_force_json_output=False,
-    default_use_stream=False,
-    default_rpm_limit=0,
-    default_transport_retries=1,
-    default_business_retries=0,
+    defaults,
 ):
-    return build_openai_compatible_options(
-        data,
-        force_json_keys=force_json_keys,
-        use_stream_keys=use_stream_keys,
-        rpm_limit_keys=rpm_limit_keys,
-        transport_retries_keys=transport_retries_keys,
-        business_retries_keys=business_retries_keys,
-        max_retries_keys=max_retries_keys,
-        temperature_keys=temperature_keys,
-        default_force_json_output=default_force_json_output,
-        default_use_stream=default_use_stream,
-        default_rpm_limit=default_rpm_limit,
-        default_transport_retries=default_transport_retries,
-        default_business_retries=default_business_retries,
-    )
+    payload = data.get("openai_options")
+    invalid_keys = validate_openai_options_payload(payload)
+    if invalid_keys:
+        joined = ", ".join(invalid_keys)
+        raise ValueError(
+            f"openai_options 格式无效: {joined}。"
+            "只支持 openai_options.request(force_json_output, temperature) "
+            "和 openai_options.execution(use_stream, rpm_limit, transport_retries, business_retries)。"
+        )
+    return merge_openai_compatible_options(payload, defaults=defaults)
 
 
 @parallel_bp.route('/parallel/detect', methods=['POST'])
@@ -221,18 +230,30 @@ def parallel_ocr():
         ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
         custom_ai_vision_base_url = data.get('custom_ai_vision_base_url')
         ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+        _reject_legacy_openai_request_fields(
+            data,
+            "use_json_format_for_ai_vision",
+            "rpm_limit_ai_vision",
+            "rpmLimitAiVision",
+            "rpm_limit",
+            "rpmLimit",
+            "transport_retries",
+            "transportRetries",
+            "business_retries",
+            "businessRetries",
+            "max_retries",
+            "maxRetries",
+        )
         ai_vision_openai_options = _route_openai_options(
             data,
-            force_json_keys=('use_json_format_for_ai_vision',),
-            rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
-            transport_retries_keys=('transport_retries', 'transportRetries'),
-            business_retries_keys=('business_retries', 'businessRetries'),
-            max_retries_keys=('max_retries', 'maxRetries'),
-            default_force_json_output=False,
-            default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
-            default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+            defaults=create_openai_compatible_options(
+                force_json_output=False,
+                use_stream=False,
+                rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
+                transport_retries=1,
+                business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+            ),
         )
-        use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
         enable_hybrid_ocr = data.get('enable_hybrid_ocr', False)
         secondary_ocr_engine = data.get('secondary_ocr_engine')
         hybrid_ocr_threshold = data.get(
@@ -262,8 +283,6 @@ def parallel_ocr():
             ai_vision_ocr_prompt=ai_vision_ocr_prompt,
             ai_vision_prompt_mode=ai_vision_prompt_mode,
             custom_ai_vision_base_url=custom_ai_vision_base_url,
-            use_json_format_for_ai_vision=use_json_format_for_ai_vision,
-            rpm_limit_ai_vision=ai_vision_openai_options.execution.rpm_limit,
             ai_vision_min_image_size=ai_vision_min_image_size,
             ai_vision_openai_options=ai_vision_openai_options,
             enable_hybrid_ocr=enable_hybrid_ocr,
@@ -289,6 +308,8 @@ def parallel_ocr():
             'textlines_per_bubble': textlines_per_bubble
         })
         
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -371,20 +392,28 @@ def parallel_translate():
         prompt_content = data.get('prompt_content')
         textbox_prompt_content = data.get('textbox_prompt_content')
         use_textbox_prompt = data.get('use_textbox_prompt', False)
+        _reject_legacy_openai_request_fields(
+            data,
+            "use_json_format",
+            "rpm_limit",
+            "rpmLimit",
+            "transport_retries",
+            "transportRetries",
+            "business_retries",
+            "businessRetries",
+            "max_retries",
+            "maxRetries",
+        )
         openai_options = _route_openai_options(
             data,
-            force_json_keys=('use_json_format',),
-            rpm_limit_keys=('rpm_limit', 'rpmLimit'),
-            transport_retries_keys=('transport_retries', 'transportRetries'),
-            business_retries_keys=('business_retries', 'businessRetries'),
-            max_retries_keys=('max_retries', 'maxRetries'),
-            default_force_json_output=False,
-            default_rpm_limit=60,
-            default_business_retries=3,
+            defaults=create_openai_compatible_options(
+                force_json_output=False,
+                use_stream=False,
+                rpm_limit=60,
+                transport_retries=1,
+                business_retries=3,
+            ),
         )
-        rpm_limit = openai_options.execution.rpm_limit
-        business_retries = openai_options.execution.business_retries
-        use_json_format = openai_options.request.force_json_output
         
         # 执行翻译
         translated_texts = translate_text_list(
@@ -394,10 +423,7 @@ def parallel_translate():
             api_key=api_key,
             model_name=model_name,
             prompt_content=prompt_content,
-            use_json_format=use_json_format,
             custom_base_url=custom_base_url,
-            rpm_limit_translation=rpm_limit,
-            max_retries=business_retries,
             openai_options=openai_options,
         )
         
@@ -411,10 +437,7 @@ def parallel_translate():
                 api_key=api_key,
                 model_name=model_name,
                 prompt_content=textbox_prompt_content,
-                use_json_format=use_json_format,
                 custom_base_url=custom_base_url,
-                rpm_limit_translation=rpm_limit,
-                max_retries=business_retries,
                 openai_options=openai_options,
             )
         
@@ -424,6 +447,8 @@ def parallel_translate():
             'textbox_texts': textbox_texts
         })
         
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 

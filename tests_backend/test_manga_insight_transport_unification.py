@@ -1,6 +1,12 @@
 import unittest
 from unittest import mock
 
+from src.shared.openai_options import (
+    OpenAICompatibleExecutionOptions,
+    OpenAICompatibleOptions,
+    OpenAICompatibleRequestOptions,
+)
+
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_chat_client_reads_nested_openai_options_from_config(self) -> None:
@@ -15,7 +21,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "base_url": "https://example.com/v1",
                 "openai_options": {
                     "request": {"temperature": 0.4},
-                    "execution": {"use_stream": False, "rpm_limit": 9, "max_retries": 2},
+                    "execution": {"use_stream": False, "rpm_limit": 9, "business_retries": 2},
                 },
             }
         )
@@ -44,7 +50,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             model="chat-model",
             base_url="https://example.com/v1",
-            use_stream=False,
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
         )
 
         with mock.patch(
@@ -143,9 +151,13 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             model="vlm-model",
             base_url="https://example.com/v1",
-            use_stream=False,
-            force_json=True,
-            temperature=0.2,
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    force_json_output=True,
+                    temperature=0.2,
+                ),
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
             image_max_size=0,
         )
 
@@ -180,7 +192,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "image_max_size": 0,
                 "openai_options": {
                     "request": {"force_json_output": True, "temperature": 0.2},
-                    "execution": {"use_stream": False, "rpm_limit": 8, "max_retries": 3},
+                    "execution": {"use_stream": False, "rpm_limit": 8, "business_retries": 3},
                 },
             }
         )
@@ -210,7 +222,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             model="vlm-model",
             base_url="https://example.com/v1",
-            use_stream=False,
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=False, business_retries=1),
+            ),
         )
 
         complete_mock = mock.AsyncMock(side_effect=[ValueError("empty choices"), '{"pages": []}'])
@@ -233,7 +247,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             model="vlm-model",
             base_url="https://example.com/v1",
-            use_stream=False,
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
         )
         client = VLMClient(config, PromptsConfig())
 
@@ -256,7 +272,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             model="vlm-model",
             base_url="https://example.com/v1",
-            use_stream=False,
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
         )
         client = VLMClient(config, PromptsConfig())
 

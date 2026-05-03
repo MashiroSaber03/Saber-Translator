@@ -40,7 +40,10 @@ from src.shared.openai_execution import (
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    build_openai_compatible_options,
+    OpenAICompatibleOptions,
+    create_openai_compatible_options,
+    merge_openai_compatible_options,
+    validate_openai_options_payload,
 )
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
@@ -113,37 +116,45 @@ def _request_value(data, *keys, default=None):
     return default
 
 
+def _present_request_keys(
+    data,
+    *,
+    keys,
+):
+    return [key for key in keys if key in data and data.get(key) is not None]
+
+
+def _reject_legacy_openai_request_fields(data, *legacy_keys):
+    present_keys = _present_request_keys(data, keys=legacy_keys)
+    if "openaiOptions" in data:
+        present_keys.append("openaiOptions")
+    if not present_keys:
+        return
+    joined = ", ".join(sorted(set(present_keys)))
+    raise ValueError(
+        f"检测到已废弃的 OpenAI 请求字段: {joined}。"
+        "请改用 openai_options.request / openai_options.execution。"
+    )
+
+
 def _route_openai_options(
     data,
     *,
-    force_json_keys=(),
-    use_stream_keys=(),
-    rpm_limit_keys=(),
-    transport_retries_keys=(),
-    business_retries_keys=(),
-    max_retries_keys=(),
-    temperature_keys=(),
-    default_force_json_output=False,
-    default_use_stream=False,
-    default_rpm_limit=0,
-    default_transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    default_business_retries=0,
+    defaults: OpenAICompatibleOptions,
     business_retries_maximum=None,
 ):
-    return build_openai_compatible_options(
-        data,
-        force_json_keys=force_json_keys,
-        use_stream_keys=use_stream_keys,
-        rpm_limit_keys=rpm_limit_keys,
-        transport_retries_keys=transport_retries_keys,
-        business_retries_keys=business_retries_keys,
-        max_retries_keys=max_retries_keys,
-        temperature_keys=temperature_keys,
-        default_force_json_output=default_force_json_output,
-        default_use_stream=default_use_stream,
-        default_rpm_limit=default_rpm_limit,
-        default_transport_retries=default_transport_retries,
-        default_business_retries=default_business_retries,
+    payload = data.get("openai_options")
+    invalid_keys = validate_openai_options_payload(payload)
+    if invalid_keys:
+        joined = ", ".join(invalid_keys)
+        raise ValueError(
+            f"openai_options 格式无效: {joined}。"
+            "只支持 openai_options.request(force_json_output, temperature) "
+            "和 openai_options.execution(use_stream, rpm_limit, transport_retries, business_retries)。"
+        )
+    return merge_openai_compatible_options(
+        payload,
+        defaults=defaults,
         business_retries_maximum=business_retries_maximum,
     )
 
@@ -936,17 +947,32 @@ def route_translate_single_text():
         model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
         prompt_content = _request_value(data, 'prompt_content', 'promptContent')
         custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
-        openai_options = _route_openai_options(
-            data,
-            force_json_keys=('use_json_format', 'useJsonFormat'),
-            rpm_limit_keys=('rpm_limit_translation', 'rpmLimitTranslation'),
-            transport_retries_keys=('transport_retries', 'transportRetries'),
-            business_retries_keys=('business_retries', 'businessRetries'),
-            max_retries_keys=('max_retries', 'maxRetries'),
-            default_force_json_output=False,
-            default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
-            default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-        )
+        try:
+            _reject_legacy_openai_request_fields(
+                data,
+                "use_json_format",
+                "useJsonFormat",
+                "rpm_limit_translation",
+                "rpmLimitTranslation",
+                "transport_retries",
+                "transportRetries",
+                "business_retries",
+                "businessRetries",
+                "max_retries",
+                "maxRetries",
+            )
+            openai_options = _route_openai_options(
+                data,
+                defaults=create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
+                    transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                    business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+                ),
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
         use_json_format = openai_options.request.force_json_output
         rpm_limit_translation = openai_options.execution.rpm_limit
         business_retries = openai_options.execution.business_retries
@@ -989,10 +1015,7 @@ def route_translate_single_text():
                 api_key=api_key,
                 model_name=model_name,
                 prompt_content=prompt_content,
-                use_json_format=use_json_format,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
-                rpm_limit_translation=rpm_limit_translation, # <--- 传递rpm参数
-                max_retries=business_retries,
                 openai_options=openai_options,
             )
             
@@ -1037,20 +1060,35 @@ def hq_translate_batch():
         is_proofreading = data.get('isProofreading', False)
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         
-        openai_options = _route_openai_options(
-            data,
-            force_json_keys=('force_json_output', 'forceJsonOutput'),
-            use_stream_keys=('use_stream', 'useStream'),
-            rpm_limit_keys=('rpm_limit', 'rpmLimit'),
-            transport_retries_keys=('transport_retries', 'transportRetries'),
-            business_retries_keys=('business_retries', 'businessRetries'),
-            max_retries_keys=('max_retries', 'maxRetries'),
-            default_force_json_output=False,
-            default_use_stream=False,
-            default_rpm_limit=0,
-            default_business_retries=2,
-            business_retries_maximum=10,
-        )
+        try:
+            _reject_legacy_openai_request_fields(
+                data,
+                "force_json_output",
+                "forceJsonOutput",
+                "use_stream",
+                "useStream",
+                "rpm_limit",
+                "rpmLimit",
+                "transport_retries",
+                "transportRetries",
+                "business_retries",
+                "businessRetries",
+                "max_retries",
+                "maxRetries",
+            )
+            openai_options = _route_openai_options(
+                data,
+                defaults=create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=0,
+                    transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                    business_retries=2,
+                ),
+                business_retries_maximum=10,
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
         force_json_output = openai_options.request.force_json_output
         use_stream = openai_options.execution.use_stream
         rpm_limit = openai_options.execution.rpm_limit
@@ -1272,18 +1310,31 @@ def ocr_single_bubble():
             ai_vision_prompt_mode = data.get('ai_vision_prompt_mode', 'normal')
             custom_ai_vision_base_url = data.get('custom_ai_vision_base_url', '')
             ai_vision_min_image_size = data.get('ai_vision_min_image_size', constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE)
+            _reject_legacy_openai_request_fields(
+                data,
+                "use_json_format_for_ai_vision",
+                "ai_vision_use_json_format",
+                "rpm_limit_ai_vision",
+                "rpmLimitAiVision",
+                "rpm_limit",
+                "rpmLimit",
+                "transport_retries",
+                "transportRetries",
+                "business_retries",
+                "businessRetries",
+                "max_retries",
+                "maxRetries",
+            )
             ai_vision_openai_options = _route_openai_options(
                 data,
-                force_json_keys=('use_json_format_for_ai_vision', 'ai_vision_use_json_format'),
-                rpm_limit_keys=('rpm_limit_ai_vision', 'rpmLimitAiVision', 'rpm_limit', 'rpmLimit'),
-                transport_retries_keys=('transport_retries', 'transportRetries'),
-                business_retries_keys=('business_retries', 'businessRetries'),
-                max_retries_keys=('max_retries', 'maxRetries'),
-                default_force_json_output=False,
-                default_rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
-                default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+                defaults=create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=constants.DEFAULT_rpm_AI_VISION_OCR,
+                    transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+                    business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
+                ),
             )
-            use_json_format_for_ai_vision = ai_vision_openai_options.request.force_json_output
 
             needs_textlines = enable_hybrid_ocr or ocr_engine == constants.OCR_ENGINE_48PX
             if needs_textlines and not bubble_textlines_local:
@@ -1318,9 +1369,7 @@ def ocr_single_bubble():
                 ai_vision_ocr_prompt=ai_vision_ocr_prompt,
                 ai_vision_prompt_mode=ai_vision_prompt_mode,
                 custom_ai_vision_base_url=custom_ai_vision_base_url,
-                use_json_format_for_ai_vision=use_json_format_for_ai_vision,
                 ai_vision_min_image_size=ai_vision_min_image_size,
-                rpm_limit_ai_vision=ai_vision_openai_options.execution.rpm_limit,
                 ai_vision_openai_options=ai_vision_openai_options,
                 textlines_per_bubble=[bubble_textlines_local] if bubble_textlines_local else None,
                 enable_hybrid_ocr=enable_hybrid_ocr,

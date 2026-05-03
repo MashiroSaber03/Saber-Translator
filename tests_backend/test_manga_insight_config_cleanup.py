@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -30,6 +31,11 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("enabled", payload["reranker"])
         self.assertNotIn("rpm_limit", payload["reranker"])
         self.assertNotIn("max_retries", payload["reranker"])
+        self.assertNotIn("rpm_limit", payload["vlm"])
+        self.assertNotIn("temperature", payload["vlm"])
+        self.assertNotIn("force_json", payload["vlm"])
+        self.assertNotIn("use_stream", payload["vlm"])
+        self.assertNotIn("use_stream", payload["chat_llm"])
 
     def test_from_dict_ignores_removed_legacy_fields(self) -> None:
         from src.core.manga_insight.config_models import MangaInsightConfig
@@ -42,6 +48,10 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
                     "model": "gemini-2.0-flash",
                     "max_retries": 9,
                     "max_images_per_request": 4,
+                    "rpm_limit": 12,
+                    "temperature": 0.6,
+                    "force_json": True,
+                    "use_stream": False,
                 },
                 "chat_llm": {
                     "provider": "gemini",
@@ -49,6 +59,7 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
                     "model": "gemini-2.0-flash",
                     "rpm_limit": 123,
                     "max_retries": 6,
+                    "use_stream": False,
                 },
                 "embedding": {
                     "provider": "openai",
@@ -78,3 +89,60 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("enabled", serialized["reranker"])
         self.assertNotIn("rpm_limit", serialized["reranker"])
         self.assertNotIn("max_retries", serialized["reranker"])
+        self.assertNotIn("rpm_limit", serialized["vlm"])
+        self.assertNotIn("temperature", serialized["vlm"])
+        self.assertNotIn("force_json", serialized["vlm"])
+        self.assertNotIn("use_stream", serialized["vlm"])
+        self.assertNotIn("use_stream", serialized["chat_llm"])
+        self.assertFalse(hasattr(config.vlm, "force_json"))
+        self.assertFalse(hasattr(config.vlm, "use_stream"))
+        self.assertFalse(hasattr(config.chat_llm, "use_stream"))
+
+    def test_load_insight_config_migrates_legacy_openai_fields_and_rewrites_file(self) -> None:
+        from src.core.manga_insight.config_utils import load_insight_config
+
+        legacy_payload = {
+            "vlm": {
+                "provider": "custom",
+                "api_key": "key",
+                "model": "vlm-model",
+                "base_url": "https://example.com/v1",
+                "rpm_limit": 12,
+                "temperature": 0.6,
+                "force_json": True,
+                "use_stream": False,
+                "max_retries": 4,
+            },
+            "chat_llm": {
+                "provider": "custom",
+                "api_key": "key",
+                "model": "chat-model",
+                "base_url": "https://example.com/v1",
+                "use_stream": False,
+            },
+        }
+
+        with mock.patch(
+            "src.core.manga_insight.config_utils.load_json_config",
+            return_value=legacy_payload,
+        ), mock.patch(
+            "src.core.manga_insight.config_utils.save_json_config",
+            return_value=True,
+        ) as save_mock:
+            config = load_insight_config()
+
+        self.assertEqual(config.vlm.openai_options.execution.rpm_limit, 12)
+        self.assertEqual(config.vlm.openai_options.request.temperature, 0.6)
+        self.assertTrue(config.vlm.openai_options.request.force_json_output)
+        self.assertFalse(config.vlm.openai_options.execution.use_stream)
+        self.assertEqual(config.vlm.openai_options.execution.business_retries, 4)
+        self.assertFalse(config.chat_llm.openai_options.execution.use_stream)
+        save_mock.assert_called_once()
+        saved_payload = save_mock.call_args.args[1]
+        self.assertEqual(saved_payload["schema_version"], 2)
+        self.assertEqual(saved_payload["vlm"]["openai_options"]["execution"]["rpm_limit"], 12)
+        self.assertNotIn("force_json", saved_payload["vlm"])
+        self.assertNotIn("use_stream", saved_payload["vlm"])
+        self.assertNotIn("rpm_limit", saved_payload["vlm"])
+        self.assertNotIn("temperature", saved_payload["vlm"])
+        self.assertNotIn("use_stream", saved_payload["chat_llm"])

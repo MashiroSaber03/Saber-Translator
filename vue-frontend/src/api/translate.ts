@@ -118,10 +118,6 @@ export interface HqTranslateParams {
       business_retries: number
     }
   }
-  force_json_output?: boolean
-  use_stream?: boolean
-  rpm_limit?: number
-  max_retries?: number  // 最大重试次数
 }
 
 /**
@@ -148,9 +144,6 @@ export interface TranslateSingleTextParams {
       business_retries: number
     }
   }
-  use_json_format?: boolean  // 是否使用 JSON 格式响应
-  rpm_limit_translation?: number  // RPM 限制
-  max_retries?: number  // 最大重试次数
 }
 
 // ==================== 渲染 API ====================
@@ -259,7 +252,18 @@ export async function ocrSingleBubble(
     ai_vision_ocr_prompt?: string
     ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
     custom_ai_vision_base_url?: string
-    use_json_format_for_ai_vision?: boolean
+    openai_options?: {
+      request: {
+        force_json_output: boolean
+        temperature?: number
+      }
+      execution: {
+        use_stream: boolean
+        rpm_limit: number
+        transport_retries: number
+        business_retries: number
+      }
+    }
     ai_vision_min_image_size?: number
     enable_hybrid_ocr?: boolean
     secondary_ocr_engine?: string
