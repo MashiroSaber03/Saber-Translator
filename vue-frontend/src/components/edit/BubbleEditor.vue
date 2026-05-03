@@ -74,7 +74,6 @@
       ></textarea>
       <div class="text-actions">
         <button class="copy-btn" @click="copyTranslatedText">📋 复制</button>
-        <button class="apply-text-btn" @click="handleApplyBubble">✓ 应用文本</button>
       </div>
     </div>
 
@@ -425,8 +424,7 @@
 
       <!-- 操作按钮 -->
       <div class="edit-action-buttons">
-        <button class="btn-apply" @click="handleApplyBubble">应用</button>
-        <button class="btn-apply-all" @click="applyToAll">应用全部</button>
+        <button class="btn-apply-all" @click="applyToAll">样式同步到本页全部气泡</button>
         <button class="btn-reset" @click="resetBubbleEdit">重置</button>
       </div>
     </div>
@@ -478,8 +476,6 @@ const emit = defineEmits<{
   (e: 'ocrRecognize', index: number): void
   /** 重新翻译单个气泡 */
   (e: 'reTranslate', index: number): void
-  /** 应用当前气泡更改 */
-  (e: 'applyBubble', index: number): void
   /** 【复刻原版 4.3】重置当前气泡到初始状态 */
   (e: 'resetCurrent', index: number): void
 }>()
@@ -828,11 +824,6 @@ function resetPosition(): void {
 // 事件处理 - 操作按钮
 // ============================================================
 
-/** 应用当前气泡更改 */
-function handleApplyBubble(): void {
-  emit('applyBubble', props.bubbleIndex)
-}
-
 /** 应用到全部气泡 */
 function applyToAll(): void {
   bubbleStore.updateAllBubbles({
@@ -1133,21 +1124,6 @@ onMounted(() => {
 .text-actions button:hover {
   background: var(--bg-color, #f8f9fa);
   border-color: #adb5bd;
-}
-
-.text-actions .apply-text-btn {
-  background: #27ae60 !important;
-  background-color: #27ae60 !important;
-  color: #fff !important;
-  border-color: #27ae60 !important;
-  font-weight: 600;
-}
-
-.text-actions .apply-text-btn:hover {
-  background: #219a52 !important;
-  background-color: #219a52 !important;
-  border-color: #219a52 !important;
-  color: #fff !important;
 }
 
 .keyboard-toggle-btn {
@@ -1552,7 +1528,6 @@ onMounted(() => {
   border-top: 1px solid var(--border-color, #e0e0e0);
 }
 
-.btn-apply,
 .btn-apply-all,
 .btn-reset {
   flex: 1;
@@ -1562,17 +1537,6 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.btn-apply {
-  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
-  border: none;
-  color: white;
-}
-
-.btn-apply:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(39, 174, 96, 0.3);
 }
 
 .btn-apply-all {

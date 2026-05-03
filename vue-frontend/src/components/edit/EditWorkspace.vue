@@ -232,7 +232,6 @@
           @re-render="handleReRender"
           @ocr-recognize="handleOcrRecognize"
           @re-translate="handleReTranslateBubble"
-          @apply-bubble="handleApplyBubble"
           @reset-current="handleResetCurrentBubble"
         />
       </div>
@@ -957,15 +956,6 @@ function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
   if (selectedBubbleIndex.value >= 0) {
     handleBubbleUpdate(updates)
   }
-}
-
-/** 处理应用单个气泡更改 */
-function handleApplyBubble(_index: number): void {
-  // 【复刻原版 4.5】应用文本时显示 toast 提示
-  // 旧版 applyCurrentText() 会 toast "文本已应用"
-  showToast('文本已应用', 'success')
-  // 应用气泡更改后触发重新渲染
-  reRenderFullImage()
 }
 
 /**
