@@ -28,6 +28,23 @@ logger = logging.getLogger("ColorExtractor")
 _color_extractor_instance = None
 
 
+def _resolve_preferred_device(device: Optional[str] = None) -> str:
+    """
+    解析颜色提取使用的设备。
+
+    与项目中其他本地模型保持一致：默认优先使用 CUDA，否则回退到 CPU。
+    """
+    if device:
+        return device
+
+    try:
+        import torch
+
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+    except Exception:
+        return 'cpu'
+
+
 class ColorExtractionResult:
     """颜色提取结果"""
     
@@ -81,7 +98,7 @@ class ColorExtractor:
         self._initialized = False
         self._device = 'cpu'
     
-    def initialize(self, device: str = 'cpu') -> bool:
+    def initialize(self, device: Optional[str] = None) -> bool:
         """
         初始化颜色提取器
         
@@ -91,7 +108,16 @@ class ColorExtractor:
         Returns:
             是否初始化成功
         """
-        if self._initialized:
+        device = _resolve_preferred_device(device)
+
+        if self._initialized and self._ocr_handler is not None:
+            if self._device == device:
+                return True
+            if not self._ocr_handler.initialize(device):
+                logger.error(f"48px OCR 模型切换到 {device} 失败，颜色提取不可用")
+                return False
+            self._device = device
+            logger.info(f"✅ 颜色提取器已切换到设备: {device}")
             return True
         
         try:
@@ -205,7 +231,7 @@ def extract_bubble_colors(
     image: Image.Image,
     bubble_coords: List[Tuple[int, int, int, int]],
     textlines_per_bubble: Optional[List[List[Dict]]] = None,
-    device: str = 'cpu'
+    device: Optional[str] = None
 ) -> List[Dict]:
     """
     便捷函数：提取气泡颜色并返回字典格式
@@ -229,9 +255,10 @@ def extract_bubble_colors(
         ]
     """
     extractor = get_color_extractor()
-    
-    if not extractor.is_initialized:
-        if not extractor.initialize(device):
+    resolved_device = _resolve_preferred_device(device)
+
+    if (not extractor.is_initialized) or getattr(extractor, "_device", None) != resolved_device:
+        if not extractor.initialize(resolved_device):
             logger.error("颜色提取器初始化失败")
             return [{'fg_color': None, 'bg_color': None, 'confidence': 0.0} for _ in bubble_coords]
     

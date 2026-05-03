@@ -130,6 +130,14 @@ class Model48pxOCR:
     def initialize(self, device='cpu') -> bool:
         """加载模型"""
         if self.initialized:
+            if self.model is not None and self.device != device:
+                try:
+                    self.model.to(device)
+                    self.device = device
+                    logger.info(f"✅ 48px OCR 已切换到设备: {device}")
+                except Exception as e:
+                    logger.error(f"❌ 48px OCR 切换设备失败: {e}", exc_info=True)
+                    return False
             return True
             
         try:
