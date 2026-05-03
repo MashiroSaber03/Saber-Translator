@@ -1,34 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h } from 'vue'
 import BubbleEditor from '@/components/edit/BubbleEditor.vue'
 import type { BubbleState } from '@/types/bubble'
 
 vi.mock('@/api/config', () => ({
   getFontListApi: vi.fn().mockResolvedValue({ fonts: [] }),
 }))
-
-const CustomSelectStub = defineComponent({
-  name: 'CustomSelect',
-  props: {
-    modelValue: {
-      type: String,
-      default: '',
-    },
-  },
-  emits: ['update:modelValue', 'change'],
-  setup(props) {
-    return () => h('div', { class: 'custom-select-stub' }, String(props.modelValue))
-  },
-})
-
-const JapaneseKeyboardStub = defineComponent({
-  name: 'JapaneseKeyboard',
-  setup() {
-    return () => h('div', { class: 'jp-keyboard-stub' })
-  },
-})
 
 function makeBubble(): BubbleState {
   return {
@@ -76,8 +54,18 @@ describe('BubbleEditor button labels', () => {
       },
       global: {
         stubs: {
-          CustomSelect: CustomSelectStub,
-          JapaneseKeyboard: JapaneseKeyboardStub,
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            template: '<div class="jp-keyboard-stub"></div>',
+          },
         },
       },
     })

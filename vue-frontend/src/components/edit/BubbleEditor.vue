@@ -396,8 +396,7 @@
               </svg>
             </button>
             <span class="toolbar-position-value">
-              <span>{{ positionX }}</span
-              >,<span>{{ positionY }}</span>
+              <span>{{ positionX }}</span>,<span>{{ positionY }}</span>
             </span>
             <button class="toolbar-btn toolbar-small-btn" @click="resetPosition" title="重置位置">
               ⌂

@@ -1,11 +1,11 @@
 /**
  * 自动保存步骤实现 - 重构版
- * 
+ *
  * 使用新的单页独立保存架构：
  * 1. 预保存阶段：保存所有页面的当前状态（原图 + 元数据）
  * 2. 单页保存阶段：每页翻译完成后只更新该页的译图和干净背景
  * 3. 完成阶段：更新会话元数据
- * 
+ *
  * 优势：
  * - 每页独立保存，无竞态问题
  * - 增量更新，只保存变化的内容
@@ -16,9 +16,13 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import {
+    loadSessionMeta,
+    saveAllPagesSequentially,
     saveTranslatedPage,
-    saveSessionMeta
+    saveSessionMeta,
+    type ImageDataForSave
 } from '@/api/pageStorage'
+import { apiClient } from '@/api/client'
 
 // ============================================================
 // 模块状态
@@ -60,6 +64,24 @@ export function getSessionPath(): string | null {
     return `bookshelf/${bookId}/chapters/${chapterId}/session`
 }
 
+function getResolvedSessionPath(): string | null {
+    const currentSessionPath = getSessionPath()
+    if (currentSessionPath) {
+        if (sessionPathCache !== currentSessionPath) {
+            sessionPathCache = currentSessionPath
+        }
+        return currentSessionPath
+    }
+    return sessionPathCache
+}
+
+function isNotFoundError(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'status' in error
+        && (error as { status?: unknown }).status === 404
+}
+
 /**
  * 构建 UI 设置对象（仅保存文本样式设置）
  */
@@ -84,33 +106,83 @@ function buildUiSettings(): Record<string, unknown> {
     }
 }
 
-// ============================================================
-// 预保存阶段
-// ============================================================
-
-/** 预保存进度回调 */
-export interface PreSaveProgressCallback {
-    onStart?: (totalImages: number) => void
-    onProgress?: (current: number, total: number) => void
-    onComplete?: () => void
-    onError?: (error: string) => void
+async function updateChapterImageCount(totalImages: number): Promise<void> {
+    const sessionStore = useSessionStore()
+    const bookId = sessionStore.currentBookId
+    const chapterId = sessionStore.currentChapterId
+    if (bookId && chapterId) {
+        try {
+            await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
+                count: totalImages
+            })
+            console.log(`[AutoSave] 已更新章节图片数量为 ${totalImages}`)
+        } catch (e) {
+            console.warn('[AutoSave] 更新章节图片数量失败（非致命）:', e)
+        }
+    }
 }
 
-/**
- * 预保存所有页面（逐页保存，显示进度）
- * 
- * 保存所有图片的当前状态（原图、已有的译图、元数据）
- * 
- * @param progressCallback 进度回调
- * @returns 是否成功
- */
-export async function preSaveOriginalImages(
-    progressCallback?: PreSaveProgressCallback
-): Promise<boolean> {
-    const imageStore = useImageStore()
+function buildTranslatedPageSaveData(img: Record<string, unknown>): {
+    translated?: string
+    clean?: string
+    meta: Record<string, unknown>
+} {
+    const saveData: {
+        translated?: string
+        clean?: string
+        meta: Record<string, unknown>
+    } = {
+        meta: {}
+    }
 
-    // 检查是否应该启用
-    if (!shouldEnableAutoSave()) {
+    if (typeof img.translatedDataURL === 'string' && img.translatedDataURL.startsWith('data:')) {
+        saveData.translated = img.translatedDataURL
+    }
+
+    if (typeof img.cleanImageData === 'string' && !img.cleanImageData.startsWith('/api/')) {
+        saveData.clean = img.cleanImageData.startsWith('data:')
+            ? img.cleanImageData
+            : `data:image/png;base64,${img.cleanImageData}`
+    }
+
+    for (const key of Object.keys(img)) {
+        if (!['originalDataURL', 'translatedDataURL', 'cleanImageData'].includes(key)) {
+            saveData.meta[key] = img[key]
+        }
+    }
+
+    return saveData
+}
+
+async function savePageToSession(sessionPath: string, pageIndex: number): Promise<void> {
+    const imageStore = useImageStore()
+    const img = imageStore.images[pageIndex]
+    if (!img) {
+        throw new Error(`页面 ${pageIndex + 1} 不存在`)
+    }
+
+    const saveData = buildTranslatedPageSaveData(img as Record<string, unknown>)
+    const result = await saveTranslatedPage(sessionPath, pageIndex, saveData)
+
+    if (!result.success) {
+        throw new Error(result.error || '保存失败')
+    }
+
+    imageStore.updateImageByIndex(pageIndex, { hasUnsavedChanges: false })
+    console.log(`[AutoSave] 页面 ${pageIndex + 1} 已保存`)
+}
+
+interface InitializeSessionOptions {
+    respectAutoSaveSetting: boolean
+    markPreSaveCompleted?: boolean
+    progressCallback?: PreSaveProgressCallback
+}
+
+async function initializeBookshelfSession(options: InitializeSessionOptions): Promise<boolean> {
+    const imageStore = useImageStore()
+    const { progressCallback, respectAutoSaveSetting, markPreSaveCompleted = false } = options
+
+    if (respectAutoSaveSetting && !shouldEnableAutoSave()) {
         console.log('[AutoSave] 自动保存未启用或非书架模式，跳过预保存')
         return true
     }
@@ -134,15 +206,11 @@ export async function preSaveOriginalImages(
     progressCallback?.onStart?.(totalImages)
 
     try {
-        // 导入公共保存函数
-        const { saveAllPagesSequentially, saveSessionMeta } = await import('@/api/pageStorage')
-
         const uiSettings = buildUiSettings()
 
-        // 使用公共函数逐页保存
         const savedCount = await saveAllPagesSequentially(
             sessionPath,
-            allImages as unknown as import('@/api/pageStorage').ImageDataForSave[],
+            allImages as unknown as ImageDataForSave[],
             {
                 onProgress: (current, total) => {
                     progressCallback?.onProgress?.(current, total)
@@ -150,37 +218,26 @@ export async function preSaveOriginalImages(
             }
         )
 
-        // 保存会话元数据
-        await saveSessionMeta(sessionPath, {
+        const sessionMetaResult = await saveSessionMeta(sessionPath, {
             ui_settings: uiSettings,
             total_pages: totalImages,
             currentImageIndex: imageStore.currentImageIndex
         })
-
-        // 更新书架章节的图片数量
-        const sessionStore = useSessionStore()
-        const bookId = sessionStore.currentBookId
-        const chapterId = sessionStore.currentChapterId
-        if (bookId && chapterId) {
-            try {
-                const { apiClient } = await import('@/api/client')
-                await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
-                    count: totalImages
-                })
-                console.log(`[AutoSave] 已更新章节图片数量为 ${totalImages}`)
-            } catch (e) {
-                console.warn('[AutoSave] 更新章节图片数量失败（非致命）:', e)
-            }
+        if (!sessionMetaResult.success) {
+            throw new Error(sessionMetaResult.error || '保存会话元数据失败')
         }
 
+        await updateChapterImageCount(totalImages)
+
         sessionPathCache = sessionPath
-        preSaveCompleted = true
+        if (markPreSaveCompleted) {
+            preSaveCompleted = true
+        }
 
         console.log(`[AutoSave] 预保存完成，共保存 ${savedCount}/${totalImages} 页`)
         progressCallback?.onComplete?.()
 
         return true
-
     } catch (error) {
         console.error('[AutoSave] 预保存失败:', error)
         const errorMsg = error instanceof Error ? error.message : '预保存失败'
@@ -192,14 +249,44 @@ export async function preSaveOriginalImages(
 }
 
 // ============================================================
+// 预保存阶段
+// ============================================================
+
+/** 预保存进度回调 */
+export interface PreSaveProgressCallback {
+    onStart?: (totalImages: number) => void
+    onProgress?: (current: number, total: number) => void
+    onComplete?: () => void
+    onError?: (error: string) => void
+}
+
+/**
+ * 预保存所有页面（逐页保存，显示进度）
+ *
+ * 保存所有图片的当前状态（原图、已有的译图、元数据）
+ *
+ * @param progressCallback 进度回调
+ * @returns 是否成功
+ */
+export async function preSaveOriginalImages(
+    progressCallback?: PreSaveProgressCallback
+): Promise<boolean> {
+    return initializeBookshelfSession({
+        respectAutoSaveSetting: true,
+        markPreSaveCompleted: true,
+        progressCallback
+    })
+}
+
+// ============================================================
 // 单页保存阶段
 // ============================================================
 
 /**
  * 保存翻译完成的页面
- * 
+ *
  * 在每页翻译完成后调用，只保存该页的译图和干净背景
- * 
+ *
  * @param pageIndex 页面索引（原始索引，0-based）
  */
 export async function saveTranslatedImage(pageIndex: number): Promise<void> {
@@ -208,63 +295,65 @@ export async function saveTranslatedImage(pageIndex: number): Promise<void> {
         return
     }
 
-    const sessionPath = sessionPathCache || getSessionPath()
+    const sessionPath = getResolvedSessionPath()
     if (!sessionPath) {
         console.warn('[AutoSave] 会话路径不存在，跳过保存')
         return
     }
 
-    const imageStore = useImageStore()
-    const img = imageStore.images[pageIndex]
-    if (!img) {
-        console.warn(`[AutoSave] 页面 ${pageIndex} 不存在`)
-        return
-    }
-
     try {
-        // 准备要保存的数据
-        const saveData: {
-            translated?: string
-            clean?: string
-            meta?: Record<string, unknown>
-        } = {}
-
-        // 译图
-        if (img.translatedDataURL?.startsWith('data:')) {
-            saveData.translated = img.translatedDataURL
-        }
-
-        // 干净背景
-        if (img.cleanImageData && typeof img.cleanImageData === 'string' && !img.cleanImageData.startsWith('/api/')) {
-            saveData.clean = img.cleanImageData.startsWith('data:')
-                ? img.cleanImageData
-                : `data:image/png;base64,${img.cleanImageData}`
-        }
-
-        // 页面元数据（不含图片数据）
-        const pageMeta: Record<string, unknown> = {}
-        for (const key of Object.keys(img)) {
-            if (!['originalDataURL', 'translatedDataURL', 'cleanImageData'].includes(key)) {
-                pageMeta[key] = img[key as keyof typeof img]
-            }
-        }
-        saveData.meta = pageMeta
-
-        // 调用保存 API
-        const result = await saveTranslatedPage(sessionPath, pageIndex, saveData)
-
-        if (!result.success) {
-            throw new Error(result.error || '保存失败')
-        }
-
-        // 标记该页已保存
-        imageStore.updateImageByIndex(pageIndex, { hasUnsavedChanges: false })
-
-        console.log(`[AutoSave] 页面 ${pageIndex + 1} 已保存`)
-
+        await savePageToSession(sessionPath, pageIndex)
     } catch (error) {
         console.error(`[AutoSave] 保存页面 ${pageIndex + 1} 失败:`, error)
         throw error
+    }
+}
+
+export async function isBookshelfSessionInitialized(): Promise<boolean> {
+    const sessionPath = getSessionPath()
+    if (!sessionPath) {
+        return false
+    }
+
+    try {
+        const result = await loadSessionMeta(sessionPath)
+        if (result.success && result.data) {
+            sessionPathCache = sessionPath
+            return true
+        }
+        return false
+    } catch (error) {
+        if (isNotFoundError(error)) {
+            return false
+        }
+        throw error
+    }
+}
+
+export async function forceInitializeBookshelfSession(): Promise<boolean> {
+    return initializeBookshelfSession({
+        respectAutoSaveSetting: false,
+        markPreSaveCompleted: false
+    })
+}
+
+export async function saveBookshelfPageProgress(pageIndex: number, currentImageIndex: number): Promise<void> {
+    const sessionPath = getResolvedSessionPath()
+    if (!sessionPath) {
+        throw new Error('当前不在书架模式，无法保存到章节存档')
+    }
+
+    await savePageToSession(sessionPath, pageIndex)
+
+    const imageStore = useImageStore()
+    const sessionMetaResult = await saveSessionMeta(sessionPath, {
+        ui_settings: buildUiSettings(),
+        total_pages: imageStore.images.length,
+        currentImageIndex
+    })
+
+    if (!sessionMetaResult.success) {
+        throw new Error(sessionMetaResult.error || '保存会话进度失败')
     }
 }
 
@@ -274,7 +363,7 @@ export async function saveTranslatedImage(pageIndex: number): Promise<void> {
 
 /**
  * 完成保存
- * 
+ *
  * 在所有翻译完成后调用，更新会话元数据
  */
 export async function finalizeSave(): Promise<void> {
@@ -283,7 +372,7 @@ export async function finalizeSave(): Promise<void> {
         return
     }
 
-    const sessionPath = sessionPathCache || getSessionPath()
+    const sessionPath = getResolvedSessionPath()
     if (!sessionPath || !preSaveCompleted) {
         console.log('[AutoSave] 未执行预保存，跳过完成保存')
         return
@@ -292,31 +381,20 @@ export async function finalizeSave(): Promise<void> {
     console.log('[AutoSave] 完成保存...')
 
     const imageStore = useImageStore()
-    const sessionStore = useSessionStore()
     const totalImages = imageStore.images.length
 
     try {
         // 更新会话元数据
-        await saveSessionMeta(sessionPath, {
+        const sessionMetaResult = await saveSessionMeta(sessionPath, {
             ui_settings: buildUiSettings(),
             total_pages: totalImages,
             currentImageIndex: imageStore.currentImageIndex
         })
-
-        // 更新书架章节的图片数量
-        const bookId = sessionStore.currentBookId
-        const chapterId = sessionStore.currentChapterId
-        if (bookId && chapterId) {
-            try {
-                const { apiClient } = await import('@/api/client')
-                await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
-                    count: totalImages
-                })
-                console.log(`[AutoSave] 已更新章节图片数量为 ${totalImages}`)
-            } catch (e) {
-                console.warn('[AutoSave] 更新章节图片数量失败（非致命）:', e)
-            }
+        if (!sessionMetaResult.success) {
+            throw new Error(sessionMetaResult.error || '保存会话元数据失败')
         }
+
+        await updateChapterImageCount(totalImages)
 
         console.log('[AutoSave] 会话保存完成')
 
@@ -340,18 +418,4 @@ export function resetSaveState(): void {
     sessionPathCache = null
     preSaveCompleted = false
     console.log('[AutoSave] 保存状态已重置')
-}
-
-/**
- * 检查是否已完成预保存
- */
-export function isPreSaveCompleted(): boolean {
-    return preSaveCompleted
-}
-
-/**
- * 获取当前会话路径
- */
-export function getCurrentSessionPath(): string | null {
-    return sessionPathCache
 }

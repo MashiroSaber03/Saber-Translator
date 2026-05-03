@@ -249,12 +249,18 @@ import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick
 import { storeToRefs } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import { useImageViewer } from '@/composables/useImageViewer'
 import { useBrush } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { executeDetection, saveDetectionResultToImage } from '@/composables/translation/core/steps'
+import {
+  forceInitializeBookshelfSession,
+  isBookshelfSessionInitialized,
+  saveBookshelfPageProgress
+} from '@/composables/translation/core/saveStep'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { showToast } from '@/utils/toast'
@@ -286,6 +292,7 @@ const emit = defineEmits<{
 
 const imageStore = useImageStore()
 const bubbleStore = useBubbleStore()
+const sessionStore = useSessionStore()
 
 // 使用翻译 composable（用于"使用当前气泡翻译"功能）
 const {
@@ -375,6 +382,8 @@ const {
   hasBubbles,
   hasSelection
 } = storeToRefs(bubbleStore)
+
+const { isBookshelfMode } = storeToRefs(sessionStore)
 
 /** 当前图片宽度（从 Store 响应式获取） */
 const currentImageWidth = computed(() => currentImage.value?.width || 0)
@@ -1554,10 +1563,43 @@ async function applyAndNext(): Promise<void> {
     showToast('应用失败，已停留在当前图片，请重试', 'warning')
     return
   }
+
+  const sourceImageIndex = currentImageIndex.value
+  const targetImageIndex = canGoNext.value ? sourceImageIndex + 1 : sourceImageIndex
+
+  if (isBookshelfMode.value) {
+    try {
+      let initialized = await isBookshelfSessionInitialized()
+      if (!initialized) {
+        const shouldInitialize = confirm('当前章节尚未初始化存档。首次使用“应用并下一张”需要先保存整章原图和基础元数据，是否继续？')
+        if (!shouldInitialize) {
+          return
+        }
+
+        initialized = await forceInitializeBookshelfSession()
+        if (!initialized) {
+          showToast('初始化章节存档失败，未跳转到下一张', 'error')
+          return
+        }
+      }
+
+      await saveBookshelfPageProgress(sourceImageIndex, targetImageIndex)
+    } catch (error) {
+      console.error('[EditWorkspace] 书架模式持久化保存失败:', error)
+      const message = error instanceof Error
+        ? error.message
+        : '当前页保存失败，未跳转到下一张'
+      showToast(message, 'error')
+      return
+    }
+  }
   
   // 【复刻原版】检查是否是最后一张
   if (canGoNext.value) {
-    goToNextImage()
+    if (brushMode.value) {
+      exitBrushMode()
+    }
+    imageStore.goToNext()
   } else {
     showToast('已是最后一张图片', 'info')
   }
