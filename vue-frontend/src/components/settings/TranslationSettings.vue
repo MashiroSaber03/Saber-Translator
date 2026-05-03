@@ -141,6 +141,13 @@
           <div class="input-hint">网络超时/429/5xx</div>
         </div>
       </div>
+      <div v-show="showRpmLimit" class="settings-item">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="localSettings.useStream" />
+          流式调用
+        </label>
+        <div class="input-hint">同时作用于整页批量和逐气泡翻译</div>
+      </div>
 
       <!-- 翻译模式选择 -->
       <div class="settings-item">
@@ -297,6 +304,7 @@ const localSettings = ref({
   rpmTranslation: settingsStore.settings.translation.openaiOptions.execution.rpmLimit,
   translationTransportRetries: settingsStore.settings.translation.openaiOptions.execution.transportRetries,
   translationBusinessRetries: settingsStore.settings.translation.openaiOptions.execution.businessRetries,
+  useStream: settingsStore.settings.translation.openaiOptions.execution.useStream,
   translationMode: currentTranslationMode,
   promptContent: getCurrentPrompt(),
   translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
@@ -415,6 +423,7 @@ function handleProviderChange() {
   localSettings.value.rpmTranslation = settingsStore.settings.translation.openaiOptions.execution.rpmLimit
   localSettings.value.translationTransportRetries = settingsStore.settings.translation.openaiOptions.execution.transportRetries
   localSettings.value.translationBusinessRetries = settingsStore.settings.translation.openaiOptions.execution.businessRetries
+  localSettings.value.useStream = settingsStore.settings.translation.openaiOptions.execution.useStream
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
   
   // 清空所有模型列表（无论是云服务商还是本地服务商）
@@ -523,6 +532,10 @@ watch(() => localSettings.value.translationTransportRetries, (newVal) => {
 
 watch(() => localSettings.value.translationBusinessRetries, (newVal) => {
   settingsStore.updateTranslationService({ businessRetries: newVal })
+})
+
+watch(() => localSettings.value.useStream, (newVal) => {
+  settingsStore.updateTranslationService({ useStream: newVal })
 })
 
 watch(() => localSettings.value.promptContent, (newVal) => {

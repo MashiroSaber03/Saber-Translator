@@ -34,6 +34,7 @@ export function useOcrSettings(
     transportRetries?: number
     businessRetries?: number
     isJsonMode?: boolean
+    useStream?: boolean
   }
   // ============================================================
   // 计算属性
@@ -99,6 +100,7 @@ export function useOcrSettings(
     if (updates.transportRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.transportRetries = updates.transportRetries
     if (updates.businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+    if (updates.useStream !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.useStream = updates.useStream
     saveToStorage()
   }
 

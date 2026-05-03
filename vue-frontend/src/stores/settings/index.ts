@@ -17,7 +17,6 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
   TranslationSettings,
-  OpenAICompatibleOptions,
   OcrEngine,
   TextDetector,
   TranslationProvider,
@@ -36,8 +35,6 @@ import {
 import { normalizeProviderId } from '@/config/aiProviders'
 import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 import {
-  cloneOpenAiOptions,
-  createDefaultOpenAiOptions,
   normalizeOpenAiOptions
 } from '@/utils/openaiOptions'
 
@@ -69,10 +66,6 @@ export const useSettingsStore = defineStore('settings', () => {
       return 'paddleocr_vl'
     }
     return 'normal'
-  }
-
-  function createOpenAiOptions(overrides?: Partial<OpenAICompatibleOptions>): OpenAICompatibleOptions {
-    return createDefaultOpenAiOptions(overrides)
   }
 
   // ============================================================
@@ -305,11 +298,14 @@ export const useSettingsStore = defineStore('settings', () => {
       {
         rpmLimit: tr.rpmLimit,
         maxRetries: tr.maxRetries,
-        isJsonMode: tr.isJsonMode
+        isJsonMode: tr.isJsonMode,
+        useStream: tr.useStream
       },
       {
         execution: {
+          useStream: false,
           rpmLimit: DEFAULT_RPM_TRANSLATION,
+          transportRetries: 1,
           businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
         }
       }
@@ -329,6 +325,7 @@ export const useSettingsStore = defineStore('settings', () => {
         execution: {
           useStream: true,
           rpmLimit: 7,
+          transportRetries: 1,
           businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
         }
       }
@@ -340,11 +337,14 @@ export const useSettingsStore = defineStore('settings', () => {
       {
         rpmLimit: av.rpmLimit,
         maxRetries: av.maxRetries,
-        isJsonMode: av.isJsonMode
+        isJsonMode: av.isJsonMode,
+        useStream: av.useStream
       },
       {
         execution: {
+          useStream: false,
           rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
+          transportRetries: 1,
           businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
         }
       }
@@ -391,6 +391,7 @@ export const useSettingsStore = defineStore('settings', () => {
           execution: {
             useStream: true,
             rpmLimit: 7,
+            transportRetries: 1,
             businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
           }
         }
@@ -455,7 +456,9 @@ export const useSettingsStore = defineStore('settings', () => {
         },
         {
           execution: {
+            useStream: false,
             rpmLimit: DEFAULT_RPM_TRANSLATION,
+            transportRetries: 1,
             businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
           }
         }
@@ -475,6 +478,7 @@ export const useSettingsStore = defineStore('settings', () => {
           execution: {
             useStream: true,
             rpmLimit: 7,
+            transportRetries: 1,
             businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
           }
         }
@@ -486,12 +490,15 @@ export const useSettingsStore = defineStore('settings', () => {
         config.openaiOptions,
         {
           isJsonMode: (config as Record<string, unknown>).isJsonMode,
+          useStream: (config as Record<string, unknown>).useStream,
           rpmLimit: (config as Record<string, unknown>).rpmLimit,
           maxRetries: (config as Record<string, unknown>).maxRetries
         },
         {
           execution: {
+            useStream: false,
             rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
+            transportRetries: 1,
             businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
           }
         }
@@ -504,6 +511,7 @@ export const useSettingsStore = defineStore('settings', () => {
     delete translation.rpmLimit
     delete translation.maxRetries
     delete translation.isJsonMode
+    delete translation.useStream
 
     const hq = settings.value.hqTranslation as Record<string, unknown>
     delete hq.rpmLimit

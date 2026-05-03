@@ -24,7 +24,6 @@ import type {
   StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
 } from '@/types/insight'
 import {
-  createDefaultOpenAiOptions,
   normalizeOpenAiOptions
 } from '@/utils/openaiOptions'
 
@@ -193,6 +192,7 @@ export const useInsightStore = defineStore('insight', () => {
   }
   function updateLlmConfig(c: Partial<LlmConfig>): void {
     config.value.llm = syncLlmAliases({ ...config.value.llm, ...c })
+    if ((c as Record<string, unknown>).forceJson !== undefined) config.value.llm.openaiOptions.request.forceJsonOutput = Boolean((c as Record<string, any>).forceJson)
     if ((c as Record<string, unknown>).useStream !== undefined) config.value.llm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
     config.value.llm = syncLlmAliases(config.value.llm)
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
@@ -214,7 +214,7 @@ export const useInsightStore = defineStore('insight', () => {
   function loadConfigFromStorage(): void {
     configManager.loadFromStorage()
     const stored = localStorage.getItem('manga_insight_config')
-      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: { ...config.value.reranker, ...p.reranker }, imageGen: { ...config.value.imageGen, ...p.imageGen }, batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
+      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: { ...config.value.reranker, ...p.reranker }, imageGen: { ...config.value.imageGen, ...p.imageGen }, batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -245,7 +245,7 @@ export const useInsightStore = defineStore('insight', () => {
     const imageGen = apiConfig.image_gen as Record<string, unknown> | undefined
 
     if (vlm) config.value.vlm = syncVlmAliases({ provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((vlm.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 } }), imageMaxSize: (vlm.image_max_size as number) || 0 })
-    if (chatLlm) config.value.llm = syncLlmAliases({ useSameAsVlm: chatLlm.use_same_as_vlm !== false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl, openaiOptions: normalizeOpenAiOptions((chatLlm.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 } }) })
+    if (chatLlm) config.value.llm = syncLlmAliases({ useSameAsVlm: chatLlm.use_same_as_vlm !== false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: normalizeOpenAiOptions((chatLlm.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 } }) })
     if (embedding) config.value.embedding = { provider: (embedding.provider as string) || 'openai', apiKey: (embedding.api_key as string) || '', model: (embedding.model as string) || '', baseUrl: (embedding.base_url as string) || '', rpmLimit: (embedding.rpm_limit as number) ?? 0 }
     if (reranker) config.value.reranker = { provider: (reranker.provider as string) || 'jina', apiKey: (reranker.api_key as string) || '', model: (reranker.model as string) || '', baseUrl: (reranker.base_url as string) || '', topK: (reranker.top_k as number) || 5 }
     if (batch) { const cl = batch.custom_layers as Array<Record<string, unknown>> | undefined; config.value.batch = { pagesPerBatch: (batch.pages_per_batch as number) || 5, contextBatchCount: (batch.context_batch_count as number) ?? 1, architecturePreset: (batch.architecture_preset as string) || 'standard', customLayers: cl?.map(l => ({ name: (l.name as string) || '', units: (l.units_per_group as number) || 1, align: (l.align_to_chapter as boolean) || false })) || [] } }
@@ -253,8 +253,8 @@ export const useInsightStore = defineStore('insight', () => {
 
     const ps = apiConfig.providerSettings as Record<string, Record<string, Record<string, unknown>>> | undefined
     if (ps) {
-      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = syncVlmAliases({ apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 } }), imageMaxSize: (c.image_max_size as number) ?? 0 } as any)
-      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = syncLlmAliases({ apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 } }) } as any)
+      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 } }), imageMaxSize: (c.image_max_size as number) ?? 0 }
+      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 } }) }
       if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', rpmLimit: (c.rpm_limit as number) ?? 0 }
       if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5 }
       configManager.saveToStorage()

@@ -19,7 +19,6 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useValidation } from '../../useValidation'
 import { useToast } from '@/utils/toast'
-import { createRateLimiter, type RateLimiter } from '@/utils/rateLimiter'
 import { createProgressManager } from './progressManager'
 import type {
     PipelineConfig,
@@ -140,7 +139,6 @@ export function useSequentialPipeline() {
 
     const { progress, reporter } = createProgressManager()
     const isExecuting = ref(false)
-    const rateLimiter = ref<RateLimiter | null>(null)
     let savedTextStyles: SavedTextStyles | null = null
     let currentMode: TranslationMode = 'standard'
 
@@ -150,15 +148,6 @@ export function useSequentialPipeline() {
     // ============================================================
     // 工具函数
     // ============================================================
-
-    function initRateLimiter(): void {
-        const rpm = settingsStore.settings.translation.openaiOptions.execution.rpmLimit
-        if (!rateLimiter.value) {
-            rateLimiter.value = createRateLimiter(rpm)
-        } else {
-            rateLimiter.value.setRpm(rpm)
-        }
-    }
 
     function validateConfig(config: PipelineConfig): boolean {
         const validationType = config.mode === 'hq' ? 'hq'
@@ -278,8 +267,7 @@ export function useSequentialPipeline() {
     async function stepTranslate(task: TaskState): Promise<void> {
         const result = await executeTranslate({
             imageIndex: task.imageIndex,
-            originalTexts: task.originalTexts,
-            rateLimiter: rateLimiter.value
+            originalTexts: task.originalTexts
         })
 
         task.translatedTexts = result.translatedTexts
@@ -499,10 +487,6 @@ export function useSequentialPipeline() {
 
                 if (taskFailed) break
 
-                if (rateLimiter.value) {
-                    await rateLimiter.value.acquire()
-                }
-
                 try {
                     const stepProgress = imageProgress + Math.floor((stepIdx / stepChain.length) * (90 / tasks.length))
                     reporter.setPercentage(stepProgress, `图片 ${imageIdx + 1}: ${STEP_LABELS[step]}`)
@@ -592,10 +576,6 @@ export function useSequentialPipeline() {
                 for (const step of stepsBeforeAi) {
                     if (batchFailedIndices.has(task.imageIndex)) break
 
-                    if (rateLimiter.value) {
-                        await rateLimiter.value.acquire()
-                    }
-
                     try {
                         const stepProgress = batchProgress + Math.floor((i / batchTasks.length) * 30)
                         reporter.setPercentage(stepProgress, `图片 ${batchStart + i + 1}: ${STEP_LABELS[step]}`)
@@ -640,10 +620,6 @@ export function useSequentialPipeline() {
 
                 for (const step of stepsAfterAi) {
                     if (batchFailedIndices.has(task.imageIndex)) break
-
-                    if (rateLimiter.value) {
-                        await rateLimiter.value.acquire()
-                    }
 
                     try {
                         const stepProgress = batchProgress + 50 + Math.floor((i / batchTasks.length) * 40)
@@ -692,7 +668,6 @@ export function useSequentialPipeline() {
         if (config.scope === 'all' || config.scope === 'failed') {
             imageStore.setBatchTranslationInProgress(true)
         }
-        initRateLimiter()
         saveCurrentStyles()
 
         const imagesToProcess = getImagesToProcess(config)

@@ -97,13 +97,26 @@ export function useInsightConfigManager(
           reranker: parsed.reranker || {}
         }
         for (const config of Object.values(providerConfigs.value.vlm)) {
-          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, undefined, {
+          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
+            forceJsonOutput: (config as Record<string, unknown>).forceJson,
+            temperature: (config as Record<string, unknown>).temperature,
+            useStream: (config as Record<string, unknown>).useStream,
+            rpmLimit: (config as Record<string, unknown>).rpmLimit,
+            transportRetries: (config as Record<string, unknown>).transportRetries,
+            businessRetries: (config as Record<string, unknown>).businessRetries
+          }, {
             request: { forceJsonOutput: false, temperature: 0.3 },
             execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 }
           })
         }
         for (const config of Object.values(providerConfigs.value.llm)) {
-          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, undefined, {
+          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
+            forceJsonOutput: (config as Record<string, unknown>).forceJson,
+            useStream: (config as Record<string, unknown>).useStream,
+            rpmLimit: (config as Record<string, unknown>).rpmLimit,
+            transportRetries: (config as Record<string, unknown>).transportRetries,
+            businessRetries: (config as Record<string, unknown>).businessRetries
+          }, {
             request: { forceJsonOutput: false },
             execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 }
           })

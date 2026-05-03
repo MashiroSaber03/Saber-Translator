@@ -262,6 +262,13 @@
         <label for="settingsAiVisionTransportRetries">传输重试:</label>
         <input type="number" id="settingsAiVisionTransportRetries" v-model.number="localAiVisionOcr.transportRetries" min="0" max="10" step="1" />
       </div>
+      <div class="settings-item">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="localAiVisionOcr.useStream" />
+          流式调用
+        </label>
+        <div class="input-hint">使用流式请求并在终端输出流式日志</div>
+      </div>
 
       <!-- 最小图片尺寸 -->
       <div class="settings-item">
@@ -442,6 +449,7 @@ const localAiVisionOcr = ref({
   rpmLimit: settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit,
   transportRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries,
   businessRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries,
+  useStream: settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
 
@@ -487,6 +495,9 @@ watch(() => localAiVisionOcr.value.transportRetries, (val) => {
 })
 watch(() => localAiVisionOcr.value.businessRetries, (val) => {
   settingsStore.updateAiVisionOcr({ businessRetries: val })
+})
+watch(() => localAiVisionOcr.value.useStream, (val) => {
+  settingsStore.updateAiVisionOcr({ useStream: val })
 })
 watch(() => localAiVisionOcr.value.minImageSize, (val) => {
   settingsStore.updateAiVisionOcr({ minImageSize: val })
@@ -611,6 +622,7 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
   localAiVisionOcr.value.transportRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries
   localAiVisionOcr.value.businessRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries
+  localAiVisionOcr.value.useStream = settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
 // 当前提示词模式（计算属性）

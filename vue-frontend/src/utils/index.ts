@@ -20,14 +20,6 @@ export {
   isPointInBubbleArea
 } from './bubbleFactory'
 
-// RPM 限速器
-export {
-  createRateLimiter,
-  createRateLimitedExecutor,
-  executeBatchWithRateLimit,
-  type RateLimiter
-} from './rateLimiter'
-
 // 图片显示指标计算
 export {
   calculateImageDisplayMetrics,

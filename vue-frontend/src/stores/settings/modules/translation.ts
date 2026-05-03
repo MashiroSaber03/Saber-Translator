@@ -26,6 +26,7 @@ export function useTranslationSettings(
     transportRetries?: number
     businessRetries?: number
     isJsonMode?: boolean
+    useStream?: boolean
   }
   // ============================================================
   // 计算属性
@@ -69,6 +70,7 @@ export function useTranslationSettings(
     if (updates.transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = updates.transportRetries
     if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+    if (updates.useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = updates.useStream
     saveToStorage()
   }
 

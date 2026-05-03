@@ -7,13 +7,11 @@
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { RateLimiter } from '@/utils/rateLimiter'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface TranslateInput {
     imageIndex: number
     originalTexts: string[]
-    rateLimiter?: RateLimiter | null
 }
 
 export interface TranslateOutput {
@@ -22,7 +20,7 @@ export interface TranslateOutput {
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
-    const { originalTexts, rateLimiter = null } = input
+    const { originalTexts } = input
 
     if (originalTexts.length === 0) {
         return {
@@ -104,10 +102,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     }
                 }
 
-                // RPM限制等待
-                if (rateLimiter && i < originalTexts.length - 1) {
-                    await rateLimiter.acquire()
-                }
             } catch (error) {
                 console.error(`[翻译] 气泡 ${i + 1} 翻译出错:`, error)
                 translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)

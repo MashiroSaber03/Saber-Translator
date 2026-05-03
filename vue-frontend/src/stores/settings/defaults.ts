@@ -9,7 +9,6 @@ import type {
   PaddleOcrVlSettings,
   AiVisionOcrSettings,
   HybridOcrSettings,
-  OpenAICompatibleOptions,
   TranslationServiceSettings,
   HqTranslationSettings,
   ProofreadingSettings,

@@ -29,6 +29,7 @@ const provider = ref(insightStore.config.llm.provider)
 const apiKey = ref(insightStore.config.llm.apiKey)
 const model = ref(insightStore.config.llm.model)
 const baseUrl = ref(insightStore.config.llm.baseUrl)
+const forceJson = ref(insightStore.config.llm.openaiOptions.request.forceJsonOutput)
 const useStream = ref(insightStore.config.llm.openaiOptions.execution.useStream)
 const rpmLimit = ref(insightStore.config.llm.openaiOptions.execution.rpmLimit)
 const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.transportRetries)
@@ -44,6 +45,7 @@ function onProviderChange(): void {
     insightStore.config.llm.apiKey = apiKey.value
     insightStore.config.llm.model = model.value
     insightStore.config.llm.baseUrl = baseUrl.value
+    insightStore.config.llm.openaiOptions.request.forceJsonOutput = forceJson.value
     insightStore.config.llm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.llm.openaiOptions.execution.rpmLimit = rpmLimit.value
     insightStore.config.llm.openaiOptions.execution.transportRetries = transportRetries.value
@@ -55,6 +57,7 @@ function onProviderChange(): void {
   apiKey.value = insightStore.config.llm.apiKey
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
+  forceJson.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
   rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
   transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
@@ -143,7 +146,7 @@ function getConfig() {
     baseUrl: provider.value === 'custom' ? baseUrl.value : '',
     openaiOptions: {
       request: {
-        forceJsonOutput: insightStore.config.llm.openaiOptions.request.forceJsonOutput,
+        forceJsonOutput: forceJson.value,
         temperature: insightStore.config.llm.openaiOptions.request.temperature
       },
       execution: {
@@ -161,6 +164,7 @@ function syncFromStore(): void {
   apiKey.value = insightStore.config.llm.apiKey
   model.value = insightStore.config.llm.model
   baseUrl.value = insightStore.config.llm.baseUrl
+  forceJson.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
   useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
   rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
   transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
@@ -220,7 +224,15 @@ defineExpose({ getConfig, syncFromStore })
         <input v-model.number="businessRetries" type="number" min="0" max="10">
       </div>
     </div>
-    
+
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input v-model="forceJson" type="checkbox">
+        <span>强制 JSON 输出</span>
+      </label>
+      <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
+    </div>
+     
     <div class="form-group">
       <label class="checkbox-label">
         <input v-model="useStream" type="checkbox">
