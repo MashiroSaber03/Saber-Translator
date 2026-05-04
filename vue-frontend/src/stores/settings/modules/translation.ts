@@ -72,7 +72,9 @@ export function useTranslationSettings(
     if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
     if (updates.useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = updates.useStream
-    if (updates.extraBody !== undefined) settings.value.translation.openaiOptions.request.extraBody = updates.extraBody
+    if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
+      settings.value.translation.openaiOptions.request.extraBody = updates.extraBody
+    }
     saveToStorage()
   }
 

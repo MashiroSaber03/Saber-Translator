@@ -73,7 +73,9 @@ export function useHqTranslationSettings(
     if (updates.businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = updates.businessRetries
     if (updates.forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
     if (updates.useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = updates.useStream
-    if (updates.extraBody !== undefined) settings.value.hqTranslation.openaiOptions.request.extraBody = updates.extraBody
+    if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
+      settings.value.hqTranslation.openaiOptions.request.extraBody = updates.extraBody
+    }
     saveToStorage()
   }
 

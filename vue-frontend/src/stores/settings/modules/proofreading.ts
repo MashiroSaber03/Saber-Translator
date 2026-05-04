@@ -70,7 +70,9 @@ export function useProofreadingSettings(
         if (updates.businessRetries !== undefined) round.openaiOptions.execution.businessRetries = updates.businessRetries
         if (updates.forceJsonOutput !== undefined) round.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
         if (updates.useStream !== undefined) round.openaiOptions.execution.useStream = updates.useStream
-        if (updates.extraBody !== undefined) round.openaiOptions.request.extraBody = updates.extraBody
+        if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
+          round.openaiOptions.request.extraBody = updates.extraBody
+        }
         saveToStorage()
       }
     }

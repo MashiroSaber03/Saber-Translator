@@ -185,7 +185,9 @@ export const useInsightStore = defineStore('insight', () => {
     if ((c as Record<string, unknown>).rpmLimit !== undefined) config.value.vlm.openaiOptions.execution.rpmLimit = (c as Record<string, any>).rpmLimit
     if ((c as Record<string, unknown>).temperature !== undefined) config.value.vlm.openaiOptions.request.temperature = (c as Record<string, any>).temperature
     if ((c as Record<string, unknown>).forceJson !== undefined) config.value.vlm.openaiOptions.request.forceJsonOutput = Boolean((c as Record<string, any>).forceJson)
-    if ((c as Record<string, unknown>).extraBody !== undefined) config.value.vlm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
+      config.value.vlm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    }
     if ((c as Record<string, unknown>).useStream !== undefined) config.value.vlm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
     config.value.vlm = syncVlmAliases(config.value.vlm)
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)
@@ -194,7 +196,9 @@ export const useInsightStore = defineStore('insight', () => {
   function updateLlmConfig(c: Partial<LlmConfig>): void {
     config.value.llm = syncLlmAliases({ ...config.value.llm, ...c })
     if ((c as Record<string, unknown>).forceJson !== undefined) config.value.llm.openaiOptions.request.forceJsonOutput = Boolean((c as Record<string, any>).forceJson)
-    if ((c as Record<string, unknown>).extraBody !== undefined) config.value.llm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
+      config.value.llm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    }
     if ((c as Record<string, unknown>).useStream !== undefined) config.value.llm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
     config.value.llm = syncLlmAliases(config.value.llm)
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
