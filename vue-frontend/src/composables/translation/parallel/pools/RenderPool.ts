@@ -233,6 +233,7 @@ export class RenderPool extends TaskPool {
       translatedDataURL: `data:image/png;base64,${task.renderResult!.finalImage}`,
       cleanImageData: task.inpaintResult?.cleanImage || null,
       bubbleStates: task.renderResult!.bubbleStates,
+      translationWarnings: task.translateResult?.warnings || [],
       textMask: task.detectionResult?.textMask || null,  // 保存精确文字掩膜
       userMask: task.imageData.userMask || null,  // 【重要】保留用户笔刷掩膜
       translationStatus: 'completed',

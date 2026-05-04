@@ -13,6 +13,11 @@ import type {
   BubbleState,
   BubbleCoords,
 } from '@/types'
+import type {
+  GlossarySettings,
+  NonTranslateSettings,
+  TranslationWarning,
+} from '@/types/translationConstraints'
 
 // ==================== 请求参数类型 ====================
 
@@ -88,10 +93,13 @@ export interface HqTranslateParams {
   // 新方式：传数据，后端构建消息
   jsonData?: any[]
   imageBase64Array?: string[]
+  target_language?: string
   prompt?: string
   systemPrompt?: string
   isProofreading?: boolean
   enableDebugLogs?: boolean  // 是否启用调试日志
+  glossary_settings?: GlossarySettings
+  non_translate_settings?: NonTranslateSettings
 
   // 旧方式：直接传消息（向后兼容）
   messages?: Array<{
@@ -133,6 +141,8 @@ export interface TranslateSingleTextParams {
   custom_base_url?: string
   target_language: string
   prompt_content?: string
+  glossary_settings?: GlossarySettings
+  non_translate_settings?: NonTranslateSettings
   openai_options?: {
     request: {
       force_json_output: boolean
@@ -204,7 +214,7 @@ export async function applySettingsToAllImages(
  */
 export async function translateSingleText(
   params: TranslateSingleTextParams
-): Promise<ApiResponse<{ translated_text: string }>> {
+): Promise<ApiResponse<{ translated_text: string; warnings?: TranslationWarning[] }>> {
   try {
     const result = await apiClient.post<{ translated_text: string }>('/api/translate_single_text', params)
     return {

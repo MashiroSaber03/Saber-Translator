@@ -4,6 +4,10 @@
  */
 
 import type { TextDirection, InpaintMethod, TextAlign } from './bubble'
+import type {
+  GlossarySettings,
+  NonTranslateSettings,
+} from './translationConstraints'
 
 /**
  * OCR 引擎类型
@@ -248,6 +252,8 @@ export interface TranslationSettings {
 
   // 翻译服务设置
   translation: TranslationServiceSettings
+  glossary: GlossarySettings
+  nonTranslate: NonTranslateSettings
   targetLanguage: string
   translatePrompt: string
   useTextboxPrompt: boolean

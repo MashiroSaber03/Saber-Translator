@@ -45,6 +45,7 @@ import { createDefaultSettings } from './defaults'
 import {
   useOcrSettings,
   useTranslationSettings,
+  useTranslationConstraintsSettings,
   useDetectionSettings,
   useHqTranslationSettings,
   useProofreadingSettings,
@@ -631,6 +632,11 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
+  const translationConstraintsModule = useTranslationConstraintsSettings(
+    settings,
+    saveToStorage
+  )
+
   // 检测设置模块
   const detectionModule = useDetectionSettings(settings, saveToStorage)
 
@@ -765,7 +771,7 @@ export const useSettingsStore = defineStore('settings', () => {
       return isNaN(num) ? defaultVal : num
     }
 
-    if ((backendSettings.settingsSchemaVersion as number | undefined) === 2) {
+    if ((backendSettings.settingsSchemaVersion as number | undefined) >= 2) {
       const defaults = createDefaultSettings()
       const mergedSettings = deepMerge(
         defaults,
@@ -1185,7 +1191,7 @@ export const useSettingsStore = defineStore('settings', () => {
       stripLegacyOpenAiMirrorFields()
 
       const backendSettings: Record<string, unknown> = JSON.parse(JSON.stringify(settings.value))
-      backendSettings.settingsSchemaVersion = 2
+      backendSettings.settingsSchemaVersion = 3
       backendSettings.providerConfigs = buildProviderSettingsForBackend()
 
       const response = await saveUserSettings(backendSettings)
@@ -1234,6 +1240,16 @@ export const useSettingsStore = defineStore('settings', () => {
     setTranslatePromptMode: translationModule.setTranslatePromptMode,
     saveTranslationProviderConfig: translationModule.saveTranslationProviderConfig,
     restoreTranslationProviderConfig: translationModule.restoreTranslationProviderConfig,
+
+    // 术语表 / 禁翻表模块
+    glossary: translationConstraintsModule.glossary,
+    nonTranslate: translationConstraintsModule.nonTranslate,
+    setGlossaryEnabled: translationConstraintsModule.setGlossaryEnabled,
+    setGlossaryEntries: translationConstraintsModule.setGlossaryEntries,
+    updateGlossary: translationConstraintsModule.updateGlossary,
+    setNonTranslateEnabled: translationConstraintsModule.setNonTranslateEnabled,
+    setNonTranslateEntries: translationConstraintsModule.setNonTranslateEntries,
+    updateNonTranslate: translationConstraintsModule.updateNonTranslate,
 
     // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,

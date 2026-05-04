@@ -7,6 +7,7 @@
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
+import type { TranslationWarning } from '@/types/translationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface TranslateInput {
@@ -17,6 +18,7 @@ export interface TranslateInput {
 export interface TranslateOutput {
     translatedTexts: string[]
     textboxTexts: string[]
+    warnings: TranslationWarning[]
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
@@ -25,7 +27,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
     if (originalTexts.length === 0) {
         return {
             translatedTexts: [],
-            textboxTexts: []
+            textboxTexts: [],
+            warnings: []
         }
     }
 
@@ -39,6 +42,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
         const translatedTexts: string[] = []
         const textboxTexts: string[] = []
+        const warnings: TranslationWarning[] = []
 
         for (let i = 0; i < originalTexts.length; i++) {
             const originalText = originalTexts[i]
@@ -66,11 +70,20 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     custom_base_url: settings.translation.customBaseUrl,
                     target_language: settings.targetLanguage,
                     prompt_content: promptContent,
+                    glossary_settings: settings.glossary,
+                    non_translate_settings: settings.nonTranslate,
                     openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
                 })
 
                 if (response.success && response.data) {
                     translatedTexts.push(response.data.translated_text || '')
+                    warnings.push(...(response.data.warnings || []).map(warning => ({
+                        imageIndex: warning.imageIndex ?? input.imageIndex,
+                        bubbleIndex: warning.bubbleIndex ?? i,
+                        source: warning.source,
+                        expectedTarget: warning.expectedTarget,
+                        actualTranslation: warning.actualTranslation,
+                    })))
                 } else {
                     console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
                     translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
@@ -86,6 +99,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                         custom_base_url: settings.translation.customBaseUrl,
                         target_language: settings.targetLanguage,
                         prompt_content: settings.textboxPrompt,
+                        non_translate_settings: settings.nonTranslate,
                         openai_options: serializeOpenAICompatibleOptionsForApi({
                             ...settings.translation.openaiOptions,
                             request: {
@@ -112,7 +126,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         }
 
         console.log(`[翻译] 逐气泡翻译完成，成功 ${translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${originalTexts.length}`)
-        return { translatedTexts, textboxTexts }
+        return { translatedTexts, textboxTexts, warnings }
 
     } else {
         // ==================== 整页批量翻译模式 ====================
@@ -129,6 +143,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             prompt_content: settings.translatePrompt,
             textbox_prompt_content: settings.textboxPrompt,
             use_textbox_prompt: settings.useTextboxPrompt,
+            glossary_settings: settings.glossary,
+            non_translate_settings: settings.nonTranslate,
             openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
         })
 
@@ -138,7 +154,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
         return {
             translatedTexts: response.translated_texts || [],
-            textboxTexts: response.textbox_texts || []
+            textboxTexts: response.textbox_texts || [],
+            warnings: response.warnings || []
         }
     }
 }

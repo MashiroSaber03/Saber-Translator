@@ -1041,6 +1041,8 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       target_language: settings.targetLanguage,
       // 使用逐气泡翻译的提示词（无论全局翻译模式设置为什么）
       prompt_content: promptContent,
+      glossary_settings: settings.glossary,
+      non_translate_settings: settings.nonTranslate,
       openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
     })
 
@@ -1051,6 +1053,10 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       }
       bubbleStore.updateBubble(index, { translatedText: response.data.translated_text })
       console.log(`翻译成功: "${response.data.translated_text}"`)
+      if (response.data.warnings && response.data.warnings.length > 0) {
+        showToast(`有 ${response.data.warnings.length} 处术语未遵守`, 'warning')
+        console.warn('[SingleBubbleTranslationWarnings]', response.data.warnings)
+      }
       reRenderFullImage()
     } else {
       if (!expectedImageId || currentImage.value?.id !== expectedImageId || bubbles.value[index] !== expectedBubble) {

@@ -16,12 +16,26 @@ from . import (
     constants, get_font_path
 )
 
+import copy
 import json
 
 from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
 from src.plugins.manager import apply_after_ocr_hooks
+from src.core.translation_constraints import (
+    append_prompt_sections,
+    build_glossary_prompt,
+    build_non_translate_guard_prompt,
+    build_non_translate_prompt,
+    collect_glossary_warnings,
+    normalize_glossary_settings,
+    normalize_non_translate_settings,
+    protect_hq_json_data,
+    protect_texts_with_non_translate,
+    restore_hq_result_data,
+    restore_texts_with_non_translate,
+)
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
     TRANSLATION_CAPABILITY,
@@ -190,6 +204,12 @@ def _parse_hq_translate_results(content: str, *, force_json_output: bool):
     result_indices = [r.get('imageIndex', 'N/A') for r in results if isinstance(r, dict)]
     logger.info("JSON 解析成功，获取到 %s 条结果，imageIndex列表: %s", len(results), result_indices)
     return results
+
+
+def _default_single_translation_prompt(*, use_json_format: bool) -> str:
+    if use_json_format:
+        return constants.DEFAULT_TRANSLATE_JSON_PROMPT
+    return constants.DEFAULT_PROMPT
 
 
 def _normalize_single_bubble_textlines(
@@ -947,6 +967,8 @@ def route_translate_single_text():
         model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
         prompt_content = _request_value(data, 'prompt_content', 'promptContent')
         custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
+        glossary_settings = normalize_glossary_settings(data.get('glossary_settings'))
+        non_translate_settings = normalize_non_translate_settings(data.get('non_translate_settings'))
         try:
             _reject_legacy_openai_request_fields(
                 data,
@@ -1007,20 +1029,36 @@ def route_translate_single_text():
                 openai_options.execution.transport_retries,
                 business_retries,
             )
-            logger.info(f"提示词内容: {prompt_content[:100] if prompt_content else '无(将使用默认)'}")
+            glossary_prompt = build_glossary_prompt(glossary_settings, [original_text], target_language=target_language)
+            non_translate_prompt = build_non_translate_prompt(non_translate_settings, [original_text], target_language=target_language)
+            protected_texts, protected_mappings = protect_texts_with_non_translate([original_text], non_translate_settings)
+            effective_prompt_content = append_prompt_sections(
+                prompt_content or _default_single_translation_prompt(use_json_format=use_json_format),
+                glossary_prompt,
+                non_translate_prompt,
+                build_non_translate_guard_prompt(protected_mappings, target_language=target_language),
+            )
+            logger.info(f"提示词内容: {effective_prompt_content[:100] if effective_prompt_content else '无(将使用默认)'}")
             translated = translate_single_text( # 调用 src.core.translation 中的函数
-                text=original_text,
+                text=protected_texts[0],
                 target_language=target_language,
                 model_provider=model_provider,
                 api_key=api_key,
                 model_name=model_name,
-                prompt_content=prompt_content,
+                prompt_content=effective_prompt_content,
                 custom_base_url=custom_base_url, # --- 传递 custom_base_url ---
                 openai_options=openai_options,
             )
+            translated = restore_texts_with_non_translate([translated], protected_mappings)[0]
+            warnings = collect_glossary_warnings(
+                glossary_settings,
+                original_text,
+                translated,
+            )
             
             return jsonify({
-                'translated_text': translated
+                'translated_text': translated,
+                'warnings': warnings,
             })
 
         except Exception as e:
@@ -1055,10 +1093,15 @@ def hq_translate_batch():
         messages = data.get('messages')  # 旧方式：直接传消息
         json_data = data.get('jsonData')  # 新方式：传数据，后端构建消息
         image_base64_array = data.get('imageBase64Array')
+        target_language = _request_value(data, 'target_language', 'targetLanguage', default='zh')
         user_prompt = data.get('prompt', '')
         system_prompt = data.get('systemPrompt', '你是一个专业的漫画翻译助手。')
         is_proofreading = data.get('isProofreading', False)
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
+        glossary_settings = normalize_glossary_settings(data.get('glossary_settings'))
+        non_translate_settings = normalize_non_translate_settings(data.get('non_translate_settings'))
+        bubble_restore_mappings = {}
+        bubble_source_texts = {}
         
         try:
             _reject_legacy_openai_request_fields(
@@ -1120,6 +1163,40 @@ def hq_translate_batch():
             # 新方式：后端构建消息
             if enable_debug_logs:
                 logger.info("[新接口] 检测到 jsonData + imageBase64Array，由后端构建消息")
+            original_json_data = copy.deepcopy(json_data)
+            glossary_source_texts = []
+            non_translate_source_texts = []
+            for image_idx, image_item in enumerate(original_json_data):
+                if not isinstance(image_item, dict):
+                    continue
+                actual_image_index = int(image_item.get('imageIndex', image_idx))
+                bubbles = image_item.get('bubbles', [])
+                if not isinstance(bubbles, list):
+                    continue
+                for bubble_idx, bubble in enumerate(bubbles):
+                    if not isinstance(bubble, dict):
+                        continue
+                    actual_bubble_index = int(bubble.get('bubbleIndex', bubble_idx))
+                    original_text = str(bubble.get('original', '') or '')
+                    translated_text = str(bubble.get('translated', '') or '')
+                    bubble_source_texts[(actual_image_index, actual_bubble_index)] = original_text
+                    if original_text:
+                        glossary_source_texts.append(original_text)
+                        non_translate_source_texts.append(original_text)
+                    if translated_text:
+                        non_translate_source_texts.append(translated_text)
+
+            json_data, bubble_restore_mappings = protect_hq_json_data(
+                json_data,
+                non_translate_settings,
+                fields=('original', 'translated'),
+            )
+            user_prompt = append_prompt_sections(
+                user_prompt,
+                build_glossary_prompt(glossary_settings, glossary_source_texts, target_language=target_language),
+                build_non_translate_prompt(non_translate_settings, non_translate_source_texts, target_language=target_language),
+                build_non_translate_guard_prompt(bubble_restore_mappings.values(), target_language=target_language),
+            )
             messages = _build_hq_translate_messages(
                 json_data, 
                 image_base64_array, 
@@ -1130,6 +1207,17 @@ def hq_translate_batch():
             # 旧方式：直接使用传入的消息
             if enable_debug_logs:
                 logger.info("[旧接口] 使用前端传入的 messages")
+            constraint_prompt = append_prompt_sections(
+                '',
+                build_glossary_prompt(glossary_settings, [], target_language=target_language),
+                build_non_translate_prompt(non_translate_settings, [], target_language=target_language),
+            )
+            if constraint_prompt:
+                if messages and isinstance(messages[0], dict) and messages[0].get('role') == 'system' and isinstance(messages[0].get('content'), str):
+                    messages = copy.deepcopy(messages)
+                    messages[0]['content'] = append_prompt_sections(messages[0].get('content'), constraint_prompt)
+                else:
+                    messages = [{'role': 'system', 'content': constraint_prompt}, *messages]
         else:
             return jsonify({'error': '缺少必要参数: 需要 messages 或 (jsonData + imageBase64Array)'}), 400
         
@@ -1207,9 +1295,37 @@ def hq_translate_batch():
                 logger.info(f"[诊断] 模型返回的原始内容（前1000字符）:\n{content_preview}")
                 if len(result.raw_content) > 1000:
                     logger.info(f"[诊断] 原始内容总长度: {len(result.raw_content)} 字符")
+            final_results = result.parsed
+            if bubble_restore_mappings:
+                final_results = restore_hq_result_data(final_results, bubble_restore_mappings)
+            warnings = []
+            if bubble_source_texts:
+                for image_idx, image_item in enumerate(final_results):
+                    if not isinstance(image_item, dict):
+                        continue
+                    actual_image_index = int(image_item.get('imageIndex', image_idx))
+                    bubbles = image_item.get('bubbles', [])
+                    if not isinstance(bubbles, list):
+                        continue
+                    for bubble_idx, bubble in enumerate(bubbles):
+                        if not isinstance(bubble, dict):
+                            continue
+                        actual_bubble_index = int(bubble.get('bubbleIndex', bubble_idx))
+                        source_text = bubble_source_texts.get((actual_image_index, actual_bubble_index), '')
+                        translated_text = str(bubble.get('translated', '') or '')
+                        warnings.extend(
+                            collect_glossary_warnings(
+                                glossary_settings,
+                                source_text,
+                                translated_text,
+                                image_index=actual_image_index,
+                                bubble_index=actual_bubble_index,
+                            )
+                        )
             return jsonify({
                 'success': True,
-                'results': result.parsed,
+                'results': final_results,
+                'warnings': warnings,
             })
         except OpenAICompatibleBusinessRetriesExhaustedError as exhausted_error:
             logger.error("高质量翻译业务重试耗尽: %s", exhausted_error)

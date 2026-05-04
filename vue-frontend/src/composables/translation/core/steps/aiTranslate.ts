@@ -14,6 +14,7 @@
 import { hqTranslateBatch } from '@/api/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ImageData } from '@/types/image'
+import type { TranslationWarning } from '@/types/translationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 // ============================================================
@@ -41,6 +42,7 @@ export interface AiTranslateOutput {
         imageIndex: number
         translatedTexts: string[]
         textboxTexts: string[]
+        warnings: TranslationWarning[]
     }>
 }
 
@@ -131,16 +133,20 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         // 新接口：传数据，后端构建消息
         jsonData,
         imageBase64Array,
+        target_language: settings.targetLanguage,
         prompt: prompt || '',
         systemPrompt,
         isProofreading: isProofread,
         enableDebugLogs: settings.enableVerboseLogs,
+        glossary_settings: settings.glossary,
+        non_translate_settings: settings.nonTranslate,
         openai_options: serializeOpenAICompatibleOptionsForApi((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
     })
 
     // 5. 解析结果
     const forceJson = isProofread ? (roundConfig?.openaiOptions.request.forceJsonOutput || false) : hqConfig.openaiOptions.request.forceJsonOutput
     const translatedData = parseHqResponse(response, forceJson)
+    let latestWarnings = response.warnings || []
 
     // 6. 校对模式可能有多轮
     let currentData = translatedData || jsonData
@@ -156,14 +162,18 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 // 使用新接口
                 jsonData: currentData as any[],
                 imageBase64Array,
+                target_language: settings.targetLanguage,
                 prompt: round.prompt,
                 systemPrompt,
                 isProofreading: true,
                 enableDebugLogs: settings.enableVerboseLogs,
+                glossary_settings: settings.glossary,
+                non_translate_settings: settings.nonTranslate,
                 openai_options: serializeOpenAICompatibleOptionsForApi(round.openaiOptions)
             })
 
             const roundResult = parseHqResponse(roundResponse, round.openaiOptions.request.forceJsonOutput)
+            latestWarnings = roundResponse.warnings || latestWarnings
             if (roundResult) {
                 currentData = roundResult
             }
@@ -173,17 +183,20 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     // 7. 构建输出结果
     const results = input.tasks.map(t => {
         const taskData = (currentData as any[])?.find((d: any) => d.imageIndex === t.imageIndex)
+        const taskWarnings = latestWarnings.filter((warning) => warning.imageIndex === t.imageIndex)
         if (taskData) {
             return {
                 imageIndex: t.imageIndex,
                 translatedTexts: taskData.bubbles.map((b: any) => b.translated),
-                textboxTexts: [] as string[]
+                textboxTexts: [] as string[],
+                warnings: taskWarnings
             }
         } else {
             return {
                 imageIndex: t.imageIndex,
                 translatedTexts: [] as string[],
-                textboxTexts: [] as string[]
+                textboxTexts: [] as string[],
+                warnings: taskWarnings
             }
         }
     })

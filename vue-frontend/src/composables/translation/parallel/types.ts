@@ -5,6 +5,7 @@
 import type { ImageData } from '@/types/image'
 import type { BubbleState, BubbleTextline } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
+import type { TranslationWarning } from '@/types/translationConstraints'
 
 /**
  * 翻译模式
@@ -58,6 +59,7 @@ export interface PipelineTask {
   translateResult?: {
     translatedTexts: string[]
     textboxTexts: string[]
+    warnings: TranslationWarning[]
   }
 
   // 修复结果

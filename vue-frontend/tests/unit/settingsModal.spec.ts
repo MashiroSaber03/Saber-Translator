@@ -47,6 +47,28 @@ vi.mock('@/components/settings/HqTranslationSettings.vue', () => ({
 vi.mock('@/components/settings/ProofreadingSettings.vue', () => ({
   default: defineComponent({ name: 'ProofreadingSettings', setup: () => () => h('div', 'ProofreadingSettings stub') }),
 }))
+vi.mock('@/components/settings/GlossarySettings.vue', () => ({
+  default: defineComponent({
+    name: 'GlossarySettings',
+    setup(_props, { expose }) {
+      expose({
+        validateSettings: () => ({ success: true }),
+      })
+      return () => h('div', 'GlossarySettings stub')
+    },
+  }),
+}))
+vi.mock('@/components/settings/NonTranslateSettings.vue', () => ({
+  default: defineComponent({
+    name: 'NonTranslateSettings',
+    setup(_props, { expose }) {
+      expose({
+        validateSettings: () => ({ success: true }),
+      })
+      return () => h('div', 'NonTranslateSettings stub')
+    },
+  }),
+}))
 vi.mock('@/components/settings/PromptLibrary.vue', () => ({
   default: defineComponent({ name: 'PromptLibrary', setup: () => () => h('div', 'PromptLibrary stub') }),
 }))
@@ -97,5 +119,17 @@ describe('SettingsModal', () => {
     expect(saveToStorageMock).toHaveBeenCalledTimes(1)
     expect(saveToBackendMock).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ textDefaultsChanged: true })
+  })
+
+  it('renders glossary and non-translate tabs', () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+
+    const tabTexts = wrapper.findAll('.settings-tab').map(tab => tab.text())
+    expect(tabTexts).toContain('术语表')
+    expect(tabTexts).toContain('禁翻表')
   })
 })

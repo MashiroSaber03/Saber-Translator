@@ -26,6 +26,17 @@ from src.core.inpainting import inpaint_bubbles
 from src.core.rendering import render_bubbles_unified, calculate_auto_font_size
 from src.core.config_models import BubbleState, bubble_states_to_api_response
 from src.core.color_extractor import extract_bubble_colors
+from src.core.translation_constraints import (
+    append_prompt_sections,
+    build_glossary_prompt,
+    build_non_translate_guard_prompt,
+    build_non_translate_prompt,
+    collect_glossary_warnings,
+    normalize_glossary_settings,
+    normalize_non_translate_settings,
+    protect_texts_with_non_translate,
+    restore_texts_with_non_translate,
+)
 from src.shared import constants
 from src.shared.openai_options import (
     create_openai_compatible_options,
@@ -118,8 +129,14 @@ def _route_openai_options(
             f"openai_options 格式无效: {joined}。"
             "只支持 openai_options.request(force_json_output, temperature, extra_body) "
             "和 openai_options.execution(use_stream, rpm_limit, transport_retries, business_retries)。"
-        )
+    )
     return merge_openai_compatible_options(payload, defaults=defaults)
+
+
+def _default_batch_prompt(*, use_json_format: bool) -> str:
+    if use_json_format:
+        return constants.BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE
+    return constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
 
 
 @parallel_bp.route('/parallel/detect', methods=['POST'])
@@ -392,6 +409,8 @@ def parallel_translate():
         prompt_content = data.get('prompt_content')
         textbox_prompt_content = data.get('textbox_prompt_content')
         use_textbox_prompt = data.get('use_textbox_prompt', False)
+        glossary_settings = normalize_glossary_settings(data.get('glossary_settings'))
+        non_translate_settings = normalize_non_translate_settings(data.get('non_translate_settings'))
         _reject_legacy_openai_request_fields(
             data,
             "use_json_format",
@@ -414,37 +433,72 @@ def parallel_translate():
                 business_retries=3,
             ),
         )
+
+        glossary_prompt = build_glossary_prompt(glossary_settings, original_texts, target_language=target_language)
+        non_translate_prompt = build_non_translate_prompt(non_translate_settings, original_texts, target_language=target_language)
+        protected_original_texts, protected_original_mappings = protect_texts_with_non_translate(
+            original_texts,
+            non_translate_settings,
+        )
+        effective_prompt_content = append_prompt_sections(
+            prompt_content or _default_batch_prompt(use_json_format=openai_options.request.force_json_output),
+            glossary_prompt,
+            non_translate_prompt,
+            build_non_translate_guard_prompt(protected_original_mappings, target_language=target_language),
+        )
         
         # 执行翻译
         translated_texts = translate_text_list(
-            original_texts,
+            protected_original_texts,
             target_language=target_language,
             model_provider=model_provider,
             api_key=api_key,
             model_name=model_name,
-            prompt_content=prompt_content,
+            prompt_content=effective_prompt_content,
             custom_base_url=custom_base_url,
             openai_options=openai_options,
         )
+        translated_texts = restore_texts_with_non_translate(translated_texts, protected_original_mappings)
         
         # 如果需要文本框翻译，执行第二次翻译
         textbox_texts = []
         if use_textbox_prompt and textbox_prompt_content:
-            textbox_texts = translate_text_list(
+            protected_textbox_originals, protected_textbox_mappings = protect_texts_with_non_translate(
                 original_texts,
+                non_translate_settings,
+            )
+            textbox_texts = translate_text_list(
+                protected_textbox_originals,
                 target_language=target_language,
                 model_provider=model_provider,
                 api_key=api_key,
                 model_name=model_name,
-                prompt_content=textbox_prompt_content,
+                prompt_content=append_prompt_sections(
+                    textbox_prompt_content,
+                    non_translate_prompt,
+                    build_non_translate_guard_prompt(protected_textbox_mappings, target_language=target_language),
+                ),
                 custom_base_url=custom_base_url,
                 openai_options=openai_options,
+            )
+            textbox_texts = restore_texts_with_non_translate(textbox_texts, protected_textbox_mappings)
+
+        warnings = []
+        for index, (source_text, translated_text) in enumerate(zip(original_texts, translated_texts)):
+            warnings.extend(
+                collect_glossary_warnings(
+                    glossary_settings,
+                    source_text,
+                    translated_text,
+                    bubble_index=index,
+                )
             )
         
         return jsonify({
             'success': True,
             'translated_texts': translated_texts,
-            'textbox_texts': textbox_texts
+            'textbox_texts': textbox_texts,
+            'warnings': warnings,
         })
         
     except ValueError as e:

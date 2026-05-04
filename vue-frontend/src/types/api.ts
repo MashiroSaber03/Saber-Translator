@@ -6,6 +6,7 @@
 import type { BubbleState, BubbleCoords, BubbleTextline } from './bubble'
 
 import type { OcrResult } from './ocr'
+import type { TranslationWarning } from './translationConstraints'
 
 /**
  * 通用 API 响应
@@ -64,9 +65,17 @@ export interface InpaintSingleBubbleResponse {
 export interface HqTranslateResponse {
   success: boolean
   results?: Array<{
-    index: number
-    translations: string[]
+    imageIndex: number
+    bubbles: Array<{
+      bubbleIndex?: number
+      original?: string
+      translated: string
+      textDirection?: string
+    }>
   }>
+  content?: string
+  warning?: string
+  warnings?: TranslationWarning[]
   error?: string
 }
 

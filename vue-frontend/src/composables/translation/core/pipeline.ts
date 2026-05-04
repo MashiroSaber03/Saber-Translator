@@ -219,6 +219,15 @@ export function usePipeline() {
                 toast.error('并行翻译失败')
             }
 
+            const warningCount = imagesToProcess.reduce(
+                (total, image) => total + (image.translationWarnings?.length || 0),
+                0
+            )
+            if (warningCount > 0) {
+                toast.warning(`有 ${warningCount} 处术语未遵守`)
+                console.warn('[TranslationWarnings]', imagesToProcess.flatMap(image => image.translationWarnings || []))
+            }
+
             return {
                 success: result.failed === 0,
                 completed: result.success,

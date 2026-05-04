@@ -4,6 +4,7 @@
 
 export { useOcrSettings } from './ocr'
 export { useTranslationSettings } from './translation'
+export { useTranslationConstraintsSettings } from './translationConstraints'
 export { useDetectionSettings } from './detection'
 export { useHqTranslationSettings } from './hqTranslation'
 export { useProofreadingSettings } from './proofreading'

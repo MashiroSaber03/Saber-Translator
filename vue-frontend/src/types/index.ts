@@ -29,3 +29,6 @@ export * from './workflow'
 
 // 角色卡工坊类型
 export * from './characterCard'
+
+// 术语表 / 禁翻表类型
+export * from './translationConstraints'

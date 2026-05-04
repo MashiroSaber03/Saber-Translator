@@ -7,6 +7,11 @@
 import { apiClient } from './client'
 import type { BubbleState } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
+import type {
+  GlossarySettings,
+  NonTranslateSettings,
+  TranslationWarning,
+} from '@/types/translationConstraints'
 
 // ==================== 检测 API ====================
 
@@ -125,6 +130,8 @@ export interface ParallelTranslateParams {
   prompt_content?: string
   textbox_prompt_content?: string
   use_textbox_prompt?: boolean
+  glossary_settings?: GlossarySettings
+  non_translate_settings?: NonTranslateSettings
   openai_options?: {
     request: {
       force_json_output: boolean
@@ -144,6 +151,7 @@ export interface ParallelTranslateResponse {
   success: boolean
   translated_texts?: string[]
   textbox_texts?: string[]
+  warnings?: TranslationWarning[]
   error?: string
 }
 

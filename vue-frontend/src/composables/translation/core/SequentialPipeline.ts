@@ -29,6 +29,7 @@ import type {
 import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
+import type { TranslationWarning } from '@/types/translationConstraints'
 
 // 原子步骤模块
 import {
@@ -117,6 +118,7 @@ interface TaskState {
     // 翻译结果
     translatedTexts: string[]
     textboxTexts: string[]
+    warnings: TranslationWarning[]
 
     // 修复结果
     cleanImage?: string
@@ -272,6 +274,7 @@ export function useSequentialPipeline() {
 
         task.translatedTexts = result.translatedTexts
         task.textboxTexts = result.textboxTexts
+        task.warnings = result.warnings
     }
 
     /**
@@ -297,9 +300,11 @@ export function useSequentialPipeline() {
             if (taskResult) {
                 t.translatedTexts = taskResult.translatedTexts
                 t.textboxTexts = taskResult.textboxTexts
+                t.warnings = taskResult.warnings
             } else {
                 t.translatedTexts = []
                 t.textboxTexts = []
+                t.warnings = []
             }
         }
     }
@@ -396,6 +401,7 @@ export function useSequentialPipeline() {
             bubbleStates: task.bubbleStates,
             textMask: task.textMask || null,  // 保存精确文字掩膜
             userMask: task.image.userMask || null,  // 【重要】保留用户笔刷掩膜
+            translationWarnings: task.warnings,
             translationStatus: 'completed',
             translationFailed: false,
             showOriginal: false,
@@ -700,7 +706,7 @@ export function useSequentialPipeline() {
         const enableAutoSave = shouldEnableAutoSave()
 
         // 动态生成步骤链
-        let stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
+        const stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
 
         // 消除文字模式：根据设置决定是否包含 OCR 步骤
         if (config.mode === 'removeText' && settingsStore.settings.removeTextWithOcr) {
@@ -737,7 +743,8 @@ export function useSequentialPipeline() {
                 ocrResults: image.ocrResults || [],
                 colors: [],
                 translatedTexts: [],
-                textboxTexts: []
+                textboxTexts: [],
+                warnings: []
             }
 
             // 校对模式需要从已有数据初始化
@@ -818,6 +825,12 @@ export function useSequentialPipeline() {
                 removeText: '消除文字'
             }
             toast.success(`${modeLabels[config.mode]}完成！`)
+
+            const warningCount = tasks.reduce((total, task) => total + task.warnings.length, 0)
+            if (warningCount > 0) {
+                toast.warning(`有 ${warningCount} 处术语未遵守`)
+                console.warn('[TranslationWarnings]', tasks.flatMap(task => task.warnings))
+            }
 
             return {
                 success: result.failed === 0,

@@ -61,7 +61,7 @@ export class TranslatePool extends TaskPool {
     const settings = settingsStore.settings
 
     if (!task.ocrResult || task.ocrResult.originalTexts.length === 0) {
-      task.translateResult = { translatedTexts: [], textboxTexts: [] }
+      task.translateResult = { translatedTexts: [], textboxTexts: [], warnings: [] }
       task.status = 'processing'
       return task
     }
@@ -75,6 +75,7 @@ export class TranslatePool extends TaskPool {
 
       const translatedTexts: string[] = []
       const textboxTexts: string[] = []
+      const warnings = []
 
       for (let i = 0; i < originalTexts.length; i++) {
         const originalText = originalTexts[i]
@@ -103,11 +104,20 @@ export class TranslatePool extends TaskPool {
             custom_base_url: settings.translation.customBaseUrl,
             target_language: settings.targetLanguage,
             prompt_content: promptContent,  // 使用逐气泡翻译的提示词
+            glossary_settings: settings.glossary,
+            non_translate_settings: settings.nonTranslate,
             openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
           })
 
           if (response.success && response.data) {
             translatedTexts.push(response.data.translated_text || '')
+            warnings.push(...(response.data.warnings || []).map(warning => ({
+              imageIndex: warning.imageIndex ?? task.imageIndex,
+              bubbleIndex: warning.bubbleIndex ?? i,
+              source: warning.source,
+              expectedTarget: warning.expectedTarget,
+              actualTranslation: warning.actualTranslation,
+            })))
           } else {
             console.warn(`[并行翻译池] 气泡 ${i + 1} 翻译失败: ${response.error}`)
             translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
@@ -123,6 +133,7 @@ export class TranslatePool extends TaskPool {
               custom_base_url: settings.translation.customBaseUrl,
               target_language: settings.targetLanguage,
               prompt_content: settings.textboxPrompt,
+              non_translate_settings: settings.nonTranslate,
               openai_options: serializeOpenAICompatibleOptionsForApi({
                 ...settings.translation.openaiOptions,
                 request: {
@@ -147,7 +158,7 @@ export class TranslatePool extends TaskPool {
         }
       }
 
-      task.translateResult = { translatedTexts, textboxTexts }
+      task.translateResult = { translatedTexts, textboxTexts, warnings }
     } else {
       // ==================== 整页批量翻译模式 ====================
       console.log(`[并行翻译池] 使用整页批量翻译模式，图片 ${task.imageIndex}，共 ${originalTexts.length} 个气泡`)
@@ -163,6 +174,8 @@ export class TranslatePool extends TaskPool {
         prompt_content: settings.translatePrompt,
         textbox_prompt_content: settings.textboxPrompt,
         use_textbox_prompt: settings.useTextboxPrompt,
+        glossary_settings: settings.glossary,
+        non_translate_settings: settings.nonTranslate,
         openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
       })
 
@@ -172,7 +185,8 @@ export class TranslatePool extends TaskPool {
 
       task.translateResult = {
         translatedTexts: response.translated_texts || [],
-        textboxTexts: response.textbox_texts || []
+        textboxTexts: response.textbox_texts || [],
+        warnings: response.warnings || []
       }
     }
 
@@ -224,10 +238,13 @@ export class TranslatePool extends TaskPool {
       // 新接口：传数据，后端构建消息
       jsonData,
       imageBase64Array,
+      target_language: settingsStore.settings.targetLanguage,
       prompt: hqTranslation.prompt,
       systemPrompt: '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。',
       isProofreading: false,
       enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
+      glossary_settings: settingsStore.settings.glossary,
+      non_translate_settings: settingsStore.settings.nonTranslate,
       // 其他参数
       openai_options: serializeOpenAICompatibleOptionsForApi(hqTranslation.openaiOptions)
     })
@@ -241,10 +258,15 @@ export class TranslatePool extends TaskPool {
       if (taskData) {
         t.translateResult = {
           translatedTexts: taskData.bubbles.map(b => b.translated),
-          textboxTexts: []
+          textboxTexts: [],
+          warnings: (response.warnings || []).filter(warning => warning.imageIndex === t.imageIndex)
         }
       } else {
-        t.translateResult = { translatedTexts: [], textboxTexts: [] }
+        t.translateResult = {
+          translatedTexts: [],
+          textboxTexts: [],
+          warnings: (response.warnings || []).filter(warning => warning.imageIndex === t.imageIndex)
+        }
       }
       t.status = 'processing'
 
@@ -306,6 +328,13 @@ export class TranslatePool extends TaskPool {
 
     // 3. 遍历所有校对轮次
     let currentData = jsonData
+    let latestWarnings: Array<{
+      imageIndex?: number
+      bubbleIndex?: number
+      source: string
+      expectedTarget: string
+      actualTranslation: string
+    }> = []
     for (const round of proofreading.rounds) {
       // 使用新接口，不再手动构建messages
 
@@ -317,15 +346,19 @@ export class TranslatePool extends TaskPool {
         // 使用新接口：传数据，后端构建消息
         jsonData: currentData as any[],
         imageBase64Array,
+        target_language: settingsStore.settings.targetLanguage,
         prompt: round.prompt,
         systemPrompt: '你是一个专业的漫画翻译校对助手，能够根据漫画图像内容检查和修正翻译。',
         isProofreading: true,
         enableDebugLogs: settingsStore.settings.enableVerboseLogs,  // 使用全局的详细日志开关
+        glossary_settings: settingsStore.settings.glossary,
+        non_translate_settings: settingsStore.settings.nonTranslate,
         // 其他参数
         openai_options: serializeOpenAICompatibleOptionsForApi(round.openaiOptions)
       })
 
       const parsedResult = this.parseHqResponse(response, round.openaiOptions.request.forceJsonOutput)
+      latestWarnings = response.warnings || latestWarnings
       if (parsedResult) {
         currentData = parsedResult
       }
@@ -337,10 +370,15 @@ export class TranslatePool extends TaskPool {
       if (taskData) {
         t.translateResult = {
           translatedTexts: taskData.bubbles.map(b => b.translated),
-          textboxTexts: []
+          textboxTexts: [],
+          warnings: latestWarnings.filter(warning => warning.imageIndex === t.imageIndex)
         }
       } else {
-        t.translateResult = { translatedTexts: [], textboxTexts: [] }
+        t.translateResult = {
+          translatedTexts: [],
+          textboxTexts: [],
+          warnings: latestWarnings.filter(warning => warning.imageIndex === t.imageIndex)
+        }
       }
       t.status = 'processing'
 

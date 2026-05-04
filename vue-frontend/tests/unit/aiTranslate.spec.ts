@@ -50,6 +50,14 @@ describe('executeAiTranslate', () => {
     settingsStore.settings.hqTranslation.provider = '' as any
     settingsStore.settings.hqTranslation.apiKey = 'hq-key'
     settingsStore.settings.hqTranslation.modelName = 'hq-model'
+    settingsStore.settings.glossary.enabled = true
+    settingsStore.settings.glossary.entries = [
+      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
+    ]
+    settingsStore.settings.nonTranslate.enabled = true
+    settingsStore.settings.nonTranslate.entries = [
+      { pattern: '<keep>', note: '', matchMode: 'text' } as any,
+    ]
     settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit = 13
     settingsStore.settings.hqTranslation.openaiOptions.execution.businessRetries = 0
 
@@ -71,6 +79,8 @@ describe('executeAiTranslate', () => {
     expect(hqTranslateBatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: '',
+        glossary_settings: settingsStore.settings.glossary,
+        non_translate_settings: settingsStore.settings.nonTranslate,
         openai_options: expect.objectContaining({
           execution: expect.objectContaining({
             rpm_limit: 13,

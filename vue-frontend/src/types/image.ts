@@ -5,6 +5,7 @@
 
 import type { BubbleState, BubbleCoords, BubbleTextline, TextDirection, InpaintMethod } from './bubble'
 import type { OcrResult } from './ocr'
+import type { TranslationWarning } from './translationConstraints'
 
 /**
  * 翻译状态
@@ -71,6 +72,8 @@ export interface ImageData {
   translationFailed: boolean
   /** 错误信息 */
   errorMessage?: string
+  /** 术语检查告警 */
+  translationWarnings?: TranslationWarning[]
 
   // 图片级别设置
   /** 字号 */
