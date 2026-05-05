@@ -98,6 +98,8 @@ export class TranslatePool extends TaskPool {
 
           const response = await translateSingleText({
             original_text: originalText,
+            translation_mode: task.translationMode,
+            translation_scope: 'bubble',
             model_provider: settings.translation.provider,
             model_name: settings.translation.modelName,
             api_key: settings.translation.apiKey,
@@ -127,6 +129,8 @@ export class TranslatePool extends TaskPool {
           if (settings.useTextboxPrompt && settings.textboxPrompt) {
             const textboxResponse = await translateSingleText({
               original_text: originalText,
+              translation_mode: task.translationMode,
+              translation_scope: 'bubble',
               model_provider: settings.translation.provider,
               model_name: settings.translation.modelName,
               api_key: settings.translation.apiKey,
@@ -165,6 +169,8 @@ export class TranslatePool extends TaskPool {
 
       const response = await parallelTranslate({
         original_texts: originalTexts,
+        translation_mode: task.translationMode,
+        translation_scope: 'image',
         target_language: settings.targetLanguage,
         source_language: settings.sourceLanguage,
         model_provider: settings.translation.provider,
@@ -235,6 +241,8 @@ export class TranslatePool extends TaskPool {
       api_key: hqTranslation.apiKey,
       model_name: hqTranslation.modelName,
       custom_base_url: hqTranslation.customBaseUrl,
+      translation_mode: 'hq',
+      translation_scope: 'batch',
       // 新接口：传数据，后端构建消息
       jsonData,
       imageBase64Array,
@@ -343,6 +351,8 @@ export class TranslatePool extends TaskPool {
         api_key: round.apiKey,
         model_name: round.modelName,
         custom_base_url: round.customBaseUrl,
+        translation_mode: 'proofread',
+        translation_scope: 'batch',
         // 使用新接口：传数据，后端构建消息
         jsonData: currentData as any[],
         imageBase64Array,

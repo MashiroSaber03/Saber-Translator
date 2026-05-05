@@ -1,8 +1,12 @@
 import base64
+import copy
 import io
 import os
+import stat
 import sys
+import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from flask import Flask
@@ -16,16 +20,118 @@ if PROJECT_ROOT not in sys.path:
 
 from src.app.api.translation.parallel_routes import parallel_bp
 from src.app.api.translation import routes as translation_routes
+from src.app.api.system import system_bp
 from src.core.config_models import BubbleState
 from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.ocr_types import OcrResult, create_ocr_result, create_ocr_textline_result
-from src.plugins.manager import get_plugin_manager
+from src.plugins.base import PluginBase
+from src.plugins.manager import PluginManager, get_plugin_manager
 
 
 def create_tiny_png_base64() -> str:
     buffer = io.BytesIO()
     Image.new("RGB", (8, 8), color="white").save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+class StepHookFixturePlugin(PluginBase):
+    plugin_id = "fixture_plugin"
+    display_name = "Fixture Plugin"
+    plugin_version = "1.0"
+    plugin_author = "Tests"
+    plugin_description = "用于验证 v2 插件步骤钩子。"
+    default_enabled = True
+    supported_steps = (
+        "detect",
+        "ocr",
+        "translate",
+        "ai_translate",
+        "inpaint",
+        "render",
+    )
+    supported_modes = (
+        "standard",
+        "hq",
+        "proofread",
+    )
+
+    def __init__(self, plugin_manager, app=None):
+        super().__init__(plugin_manager, app=app)
+        self.seen_contexts = []
+
+    def get_config_schema(self):
+        return {
+            "suffix": {
+                "type": "text",
+                "label": "Suffix",
+                "default": "-cfg",
+                "description": "追加到原文的测试后缀",
+            }
+        }
+
+    def before_detect(self, context, payload):
+        self.seen_contexts.append((context.step, context.mode))
+        updated = dict(payload)
+        updated["detector_type"] = "plugin_detector"
+        return updated
+
+    def after_detect(self, context, result):
+        updated = copy.deepcopy(result)
+        updated["bubble_coords"] = list(updated.get("bubble_coords", [])) + [[9, 9, 10, 10]]
+        return updated
+
+    def after_ocr(self, context, result):
+        updated = copy.deepcopy(result)
+        updated["original_texts"] = ["插件OCR"]
+        if updated.get("ocr_results"):
+            updated["ocr_results"][0]["text"] = "插件OCR"
+        return updated
+
+    def before_translate(self, context, payload):
+        self.seen_contexts.append((context.step, context.mode))
+        updated = dict(payload)
+        suffix = self.config.get("suffix", "")
+        updated["original_texts"] = [
+            f"{text}{suffix}" for text in payload.get("original_texts", [])
+        ]
+        return updated
+
+    def after_translate(self, context, result):
+        updated = copy.deepcopy(result)
+        updated["translated_texts"] = [
+            f"{text}|after" for text in updated.get("translated_texts", [])
+        ]
+        return updated
+
+    def after_ai_translate(self, context, result):
+        self.seen_contexts.append((context.step, context.mode))
+        updated = copy.deepcopy(result)
+        updated["results"][0]["bubbles"][0]["translated"] += "|after_ai"
+        return updated
+
+    def after_inpaint(self, context, result):
+        self.seen_contexts.append((context.step, context.mode))
+        updated = copy.deepcopy(result)
+        updated["clean_image"] = "plugin-clean-image"
+        return updated
+
+    def after_render(self, context, result):
+        self.seen_contexts.append((context.step, context.mode))
+        updated = copy.deepcopy(result)
+        if "final_image" in updated:
+            updated["final_image"] = "plugin-render-image"
+        if "rendered_images" in updated and updated["rendered_images"]:
+            updated["rendered_images"][0] = "plugin-render-image"
+        return updated
+
+
+class AliasMetadataPlugin(PluginBase):
+    plugin_id = "alias_plugin"
+    display_name = ""
+    plugin_description = "  alias test  "
+    supported_steps = ("aiTranslate", "ocr")
+    supported_modes = ("removeText", "hq")
+    failure_policy = "CONTINUE"
 
 
 class HybridOcrCoreTests(unittest.TestCase):
@@ -204,16 +310,92 @@ class HybridOcrCoreTests(unittest.TestCase):
         self.assertEqual(called_args[1], bubble_textlines[0] + bubble_textlines[1])
         self.assertEqual(called_kwargs["primary_engine"], "48px_ocr")
 
+    def test_plugin_manager_can_load_external_plugin_without_root_package(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            plugin_dir = os.path.join(plugin_root, "sample-plugin")
+            os.makedirs(plugin_dir, exist_ok=True)
+            with open(os.path.join(plugin_dir, "__init__.py"), "w", encoding="utf-8") as file:
+                file.write("")
+            with open(os.path.join(plugin_dir, "plugin.py"), "w", encoding="utf-8") as file:
+                file.write(
+                    "from src.plugins.base import PluginBase\n"
+                    "class TempPlugin(PluginBase):\n"
+                    "    plugin_id = 'temp_plugin'\n"
+                    "    display_name = 'Temp Plugin'\n"
+                    "    supported_steps = ('ocr',)\n"
+                    "    supported_modes = ('standard',)\n"
+                )
+
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.discover_and_load_plugins()
+
+            plugin = manager.get_plugin("temp_plugin")
+            self.assertIsNotNone(plugin)
+            self.assertEqual(plugin.display_name, "Temp Plugin")
+
+    def test_remove_plugin_deletes_orphaned_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as config_root:
+            manager = PluginManager(plugin_dirs=[])
+            manager.plugin_config_dir = config_root
+            plugin = StepHookFixturePlugin(manager)
+            manager.register_plugin_instance(plugin, source_path="tests://fixture_plugin", enabled=True)
+            self.assertTrue(manager.save_plugin_config("fixture_plugin", {"suffix": "-saved"}))
+
+            config_path = os.path.join(config_root, "fixture_plugin.json")
+            self.assertTrue(os.path.exists(config_path))
+
+            manager.remove_plugin("fixture_plugin")
+
+            self.assertFalse(os.path.exists(config_path))
+
+    def test_get_plugin_manager_updates_app_reference_for_loaded_plugins(self) -> None:
+        first_app = Flask("first")
+        second_app = Flask("second")
+
+        manager = get_plugin_manager(first_app)
+        manager.reset_for_testing()
+        plugin = StepHookFixturePlugin(manager, app=first_app)
+        manager.register_plugin_instance(plugin, source_path="tests://fixture_plugin", enabled=True)
+
+        updated_manager = get_plugin_manager(second_app)
+
+        self.assertIs(updated_manager.app, second_app)
+        self.assertIs(updated_manager.get_plugin("fixture_plugin").app, second_app)
+
+    def test_plugin_metadata_validation_accepts_alias_step_and_mode_names(self) -> None:
+        manager = PluginManager(plugin_dirs=[])
+        plugin = AliasMetadataPlugin(manager)
+        plugin.validate_metadata()
+
+        self.assertEqual(plugin.display_name, "alias_plugin")
+        self.assertEqual(plugin.plugin_description, "alias test")
+        self.assertEqual(plugin.supported_steps, ("ai_translate", "ocr"))
+        self.assertEqual(plugin.supported_modes, ("remove_text", "hq"))
+        self.assertEqual(plugin.failure_policy, "continue")
+
 
 class HybridOcrRouteContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = Flask(__name__)
         self.app.register_blueprint(parallel_bp)
         self.app.register_blueprint(translation_routes.translate_bp)
+        self.app.register_blueprint(system_bp)
         self.client = self.app.test_client()
         plugin_manager = get_plugin_manager(self.app)
-        plugin_manager.plugins = {}
-        plugin_manager.hooks = {}
+        plugin_manager.reset_for_testing()
+
+    def tearDown(self) -> None:
+        get_plugin_manager().reset_for_testing()
+
+    def register_fixture_plugin(self) -> StepHookFixturePlugin:
+        plugin_manager = get_plugin_manager(self.app)
+        plugin = StepHookFixturePlugin(plugin_manager, app=self.app)
+        plugin_manager.register_plugin_instance(
+            plugin,
+            source_path="tests://fixture_plugin",
+            enabled=True,
+        )
+        return plugin
 
     def test_parallel_ocr_returns_structured_results_and_legacy_texts(self) -> None:
         mocked_results = [
@@ -456,6 +638,148 @@ class HybridOcrRouteContractTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("AI视觉OCR需要提供API Key", payload["error"])
 
+    def test_plugins_api_returns_v2_metadata_and_keyed_schema(self) -> None:
+        self.register_fixture_plugin()
+
+        list_response = self.client.get("/api/plugins")
+        self.assertEqual(list_response.status_code, 200)
+        list_payload = list_response.get_json()
+        self.assertTrue(list_payload["success"])
+        self.assertEqual(len(list_payload["plugins"]), 1)
+
+        plugin = list_payload["plugins"][0]
+        self.assertEqual(plugin["id"], "fixture_plugin")
+        self.assertEqual(plugin["display_name"], "Fixture Plugin")
+        self.assertTrue(plugin["enabled"])
+        self.assertTrue(plugin["default_enabled"])
+        self.assertTrue(plugin["has_config"])
+        self.assertEqual(plugin["supported_steps"], ["detect", "ocr", "translate", "ai_translate", "inpaint", "render"])
+        self.assertEqual(plugin["supported_modes"], ["standard", "hq", "proofread"])
+
+        schema_response = self.client.get("/api/plugins/fixture_plugin/config_schema")
+        self.assertEqual(schema_response.status_code, 200)
+        schema_payload = schema_response.get_json()
+        self.assertTrue(schema_payload["success"])
+        self.assertEqual(schema_payload["schema"]["suffix"]["default"], "-cfg")
+
+        config_response = self.client.get("/api/plugins/fixture_plugin/config")
+        self.assertEqual(config_response.status_code, 200)
+        config_payload = config_response.get_json()
+        self.assertEqual(config_payload["config"]["suffix"], "-cfg")
+
+    def test_delete_plugin_api_removes_plugin_directory_and_config(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            plugin_dir = os.path.join(plugin_root, "fixture_plugin_dir")
+            os.makedirs(plugin_dir, exist_ok=True)
+
+            plugin_manager = get_plugin_manager(self.app)
+            plugin_manager.reset_for_testing()
+            plugin_manager.plugin_config_dir = plugin_root
+
+            plugin = StepHookFixturePlugin(plugin_manager, app=self.app)
+            plugin_manager.register_plugin_instance(
+                plugin,
+                source_path=plugin_dir,
+                enabled=True,
+            )
+            plugin_manager.save_plugin_config("fixture_plugin", {"suffix": "-saved"})
+
+            response = self.client.delete("/api/plugins/fixture_plugin")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertFalse(os.path.exists(plugin_dir))
+            self.assertFalse(os.path.exists(os.path.join(plugin_root, "fixture_plugin.json")))
+            self.assertIsNone(plugin_manager.get_plugin("fixture_plugin"))
+
+    def test_delete_plugin_api_cleans_runtime_when_directory_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            missing_plugin_dir = os.path.join(plugin_root, "missing_plugin_dir")
+
+            plugin_manager = get_plugin_manager(self.app)
+            plugin_manager.reset_for_testing()
+            plugin_manager.plugin_config_dir = plugin_root
+
+            plugin = StepHookFixturePlugin(plugin_manager, app=self.app)
+            plugin_manager.register_plugin_instance(
+                plugin,
+                source_path=missing_plugin_dir,
+                enabled=True,
+            )
+            plugin_manager.save_plugin_config("fixture_plugin", {"suffix": "-saved"})
+
+            response = self.client.delete("/api/plugins/fixture_plugin")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertIn("目录不存在", payload["message"])
+            self.assertFalse(os.path.exists(os.path.join(plugin_root, "fixture_plugin.json")))
+            self.assertIsNone(plugin_manager.get_plugin("fixture_plugin"))
+
+    def test_delete_plugin_api_removes_readonly_pycache_directory_on_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            plugin_dir = os.path.join(plugin_root, "fixture_plugin_dir")
+            pycache_dir = os.path.join(plugin_dir, "__pycache__")
+            os.makedirs(pycache_dir, exist_ok=True)
+            pycache_file = os.path.join(pycache_dir, "plugin.cpython-312.pyc")
+            with open(pycache_file, "wb") as handle:
+                handle.write(b"stub")
+
+            os.chmod(pycache_file, stat.S_IREAD)
+            os.chmod(pycache_dir, stat.S_IREAD)
+
+            plugin_manager = get_plugin_manager(self.app)
+            plugin_manager.reset_for_testing()
+            plugin_manager.plugin_config_dir = plugin_root
+
+            plugin = StepHookFixturePlugin(plugin_manager, app=self.app)
+            plugin_manager.register_plugin_instance(
+                plugin,
+                source_path=plugin_dir,
+                enabled=True,
+            )
+
+            response = self.client.delete("/api/plugins/fixture_plugin")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertFalse(os.path.exists(plugin_dir))
+
+    def test_parallel_detect_hooks_can_modify_request_and_response(self) -> None:
+        self.register_fixture_plugin()
+        captured_kwargs = {}
+
+        def _fake_detect(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return {
+                "coords": [[0, 0, 1, 1]],
+                "angles": [0],
+                "polygons": [[[0, 0], [1, 0], [1, 1], [0, 1]]],
+                "auto_directions": ["v"],
+                "textlines_per_bubble": [],
+                "raw_mask": None,
+            }
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.get_bubble_detection_result_with_auto_directions",
+            side_effect=_fake_detect,
+        ):
+            response = self.client.post(
+                "/api/parallel/detect",
+                json={
+                    "image": create_tiny_png_base64(),
+                    "detector_type": "default",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured_kwargs["detector_type"], "plugin_detector")
+        payload = response.get_json()
+        self.assertEqual(payload["bubble_coords"], [[0, 0, 1, 1], [9, 9, 10, 10]])
+
     def test_parallel_ocr_plugin_can_modify_legacy_texts_and_structured_results(self) -> None:
         mocked_results = [
             OcrResult(
@@ -468,9 +792,7 @@ class HybridOcrRouteContractTests(unittest.TestCase):
             )
         ]
 
-        plugin_manager = get_plugin_manager(self.app)
-        hook_mock = mock.Mock(return_value=["插件改写"])
-        plugin_manager.hooks["after_ocr"] = [("mock_plugin", hook_mock)]
+        self.register_fixture_plugin()
 
         with mock.patch(
             "src.app.api.translation.parallel_routes.recognize_ocr_results_in_bubbles",
@@ -488,9 +810,319 @@ class HybridOcrRouteContractTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload["original_texts"], ["插件改写"])
-        self.assertEqual(payload["ocr_results"][0]["text"], "插件改写")
-        self.assertTrue(hook_mock.called)
-        hook_args = hook_mock.call_args[0]
-        self.assertEqual(hook_args[1], ["原文"])
-        self.assertEqual(hook_args[3]["ocr_results"][0]["text"], "原文")
+        self.assertEqual(payload["original_texts"], ["插件OCR"])
+        self.assertEqual(payload["ocr_results"][0]["text"], "插件OCR")
+
+    def test_single_bubble_ocr_plugin_can_modify_response_with_v2_shape(self) -> None:
+        mocked_results = [
+            OcrResult(
+                text="原文",
+                confidence=0.5,
+                confidence_supported=True,
+                engine="manga_ocr",
+                primary_engine="manga_ocr",
+                fallback_used=False,
+            )
+        ]
+
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.routes.recognize_ocr_results_in_bubbles",
+            return_value=mocked_results,
+        ), mock.patch(
+            "src.app.api.translation.routes.detect_textlines",
+            return_value=[],
+        ):
+            response = self.client.post(
+                "/api/ocr_single_bubble",
+                json={
+                    "bubble_image": create_tiny_png_base64(),
+                    "ocr_engine": "manga_ocr",
+                    "source_language": "japanese",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["text"], "插件OCR")
+        self.assertEqual(payload["ocr_result"]["text"], "插件OCR")
+
+    def test_parallel_translate_hooks_can_modify_request_and_response(self) -> None:
+        self.register_fixture_plugin()
+        captured_texts = []
+
+        def _fake_translate(texts, **kwargs):
+            captured_texts.extend(texts)
+            return [f"translated:{text}" for text in texts]
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.translate_text_list",
+            side_effect=_fake_translate,
+        ):
+            response = self.client.post(
+                "/api/parallel/translate",
+                json={
+                    "original_texts": ["hello"],
+                    "target_language": "zh",
+                    "source_language": "japanese",
+                    "model_provider": "openai",
+                    "api_key": "test-key",
+                    "model_name": "gpt-4.1-mini",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured_texts, ["hello-cfg"])
+        payload = response.get_json()
+        self.assertEqual(payload["translated_texts"], ["translated:hello-cfg|after"])
+
+    def test_single_text_translate_hooks_use_canonical_v2_shape(self) -> None:
+        self.register_fixture_plugin()
+        captured = {}
+
+        def _fake_translate_single_text(**kwargs):
+            captured["text"] = kwargs["text"]
+            return "译文"
+
+        with mock.patch.object(
+            translation_routes,
+            "translate_single_text",
+            side_effect=_fake_translate_single_text,
+        ):
+            response = self.client.post(
+                "/api/translate_single_text",
+                json={
+                    "original_text": "hello",
+                    "target_language": "zh",
+                    "model_provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured["text"], "hello-cfg")
+        payload = response.get_json()
+        self.assertEqual(payload["translated_text"], "译文|after")
+
+    def test_hq_translate_batch_after_hook_can_modify_results(self) -> None:
+        plugin = self.register_fixture_plugin()
+        mocked_result = SimpleNamespace(
+            raw_content='[{"imageIndex":0,"bubbles":[{"bubbleIndex":0,"translated":"译文"}]}]',
+            parsed=[{
+                "imageIndex": 0,
+                "bubbles": [{
+                    "bubbleIndex": 0,
+                    "translated": "译文",
+                }],
+            }],
+        )
+
+        with mock.patch(
+            "src.app.api.translation.routes._hq_executor.execute",
+            return_value=mocked_result,
+        ):
+            response = self.client.post(
+                "/api/hq_translate_batch",
+                json={
+                    "provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "gpt-4.1-mini",
+                    "jsonData": [{
+                        "imageIndex": 0,
+                        "bubbles": [{
+                            "bubbleIndex": 0,
+                            "original": "原文",
+                            "translated": "",
+                            "textDirection": "vertical",
+                        }],
+                    }],
+                    "imageBase64Array": [create_tiny_png_base64()],
+                    "target_language": "zh",
+                    "prompt": "translate",
+                    "systemPrompt": "system",
+                    "isProofreading": False,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["results"][0]["bubbles"][0]["translated"], "译文|after_ai")
+        self.assertIn(("ai_translate", "hq"), plugin.seen_contexts)
+
+    def test_re_render_image_route_uses_render_plugin_hooks(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.routes.re_render_with_states",
+            return_value=Image.new("RGB", (8, 8), color="white"),
+        ):
+            response = self.client.post(
+                "/api/re_render_image",
+                json={
+                    "image": create_tiny_png_base64(),
+                    "clean_image": create_tiny_png_base64(),
+                    "bubble_texts": ["译文"],
+                    "bubble_coords": [[0, 0, 4, 4]],
+                    "bubble_states": [{
+                        "coords": [0, 0, 4, 4],
+                        "translatedText": "译文",
+                    }],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["rendered_image"], "plugin-render-image")
+
+    def test_re_render_single_bubble_returns_effective_bubble_states(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.routes.render_single_bubble",
+            return_value=Image.new("RGB", (8, 8), color="white"),
+        ):
+            response = self.client.post(
+                "/api/re_render_single_bubble",
+                json={
+                    "image": create_tiny_png_base64(),
+                    "clean_image": create_tiny_png_base64(),
+                    "bubble_index": 0,
+                    "all_texts": ["译文"],
+                    "bubble_coords": [[0, 0, 4, 4]],
+                    "bubble_states": [{
+                        "coords": [0, 0, 4, 4],
+                        "translatedText": "译文",
+                        "fontSize": 18,
+                    }],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["rendered_image"], "plugin-render-image")
+        self.assertEqual(payload["bubble_states"][0]["translatedText"], "译文")
+        self.assertEqual(payload["bubble_states"][0]["fontSize"], 18)
+
+    def test_parallel_inpaint_route_uses_inpaint_plugin_hooks(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.inpaint_bubbles",
+            return_value=(Image.new("RGB", (8, 8), color="white"), None),
+        ):
+            response = self.client.post(
+                "/api/parallel/inpaint",
+                json={
+                    "image": create_tiny_png_base64(),
+                    "bubble_coords": [[0, 0, 4, 4]],
+                    "method": "solid",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["clean_image"], "plugin-clean-image")
+
+    def test_parallel_inpaint_noop_result_still_runs_after_hook(self) -> None:
+        self.register_fixture_plugin()
+
+        response = self.client.post(
+            "/api/parallel/inpaint",
+            json={
+                "image": create_tiny_png_base64(),
+                "bubble_coords": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["clean_image"], "plugin-clean-image")
+
+    def test_parallel_render_route_uses_render_plugin_hooks(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.render_bubbles_unified",
+            side_effect=lambda image, states: image,
+        ):
+            response = self.client.post(
+                "/api/parallel/render",
+                json={
+                    "clean_image": create_tiny_png_base64(),
+                    "bubble_states": [{
+                        "coords": [0, 0, 4, 4],
+                        "translatedText": "译文",
+                    }],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["final_image"], "plugin-render-image")
+
+    def test_parallel_render_noop_result_still_runs_after_hook(self) -> None:
+        self.register_fixture_plugin()
+
+        response = self.client.post(
+            "/api/parallel/render",
+            json={
+                "clean_image": create_tiny_png_base64(),
+                "bubble_states": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["final_image"], "plugin-render-image")
+
+    def test_inpaint_single_bubble_route_uses_inpaint_plugin_hooks(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch("src.app.api.translation.routes.LAMA_AVAILABLE", True), \
+             mock.patch(
+                 "src.core.inpainting.inpaint_bubbles",
+                 return_value=(Image.new("RGB", (8, 8), color="white"), None),
+             ):
+            response = self.client.post(
+                "/api/inpaint_single_bubble",
+                json={
+                    "image_data": create_tiny_png_base64(),
+                    "bubble_coords": [0, 0, 4, 4],
+                    "method": "lama",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["inpainted_image"], "plugin-clean-image")
+
+    def test_apply_settings_to_all_images_route_uses_render_plugin_hooks(self) -> None:
+        self.register_fixture_plugin()
+
+        with mock.patch(
+            "src.app.api.translation.routes.re_render_text_in_bubbles",
+            return_value=Image.new("RGB", (8, 8), color="white"),
+        ):
+            response = self.client.post(
+                "/api/apply_settings_to_all_images",
+                json={
+                    "all_images": [create_tiny_png_base64()],
+                    "all_clean_images": [create_tiny_png_base64()],
+                    "all_texts": [["译文"]],
+                    "all_bubble_coords": [[[0, 0, 4, 4]]],
+                    "fontSize": 18,
+                    "fontFamily": "fonts/Arial.ttf",
+                    "textDirection": "vertical",
+                    "textColor": "#000000",
+                    "rotationAngle": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["rendered_images"][0], "plugin-render-image")

@@ -173,6 +173,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     const response: ParallelRenderResponse = await parallelRender({
         clean_image: cleanImage,
         bubble_states: bubbleStates,
+        translation_mode: currentMode,
+        translation_scope: 'image',
         fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
         fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
         textDirection: savedTextStyles?.textDirection || textStyle.layoutDirection,

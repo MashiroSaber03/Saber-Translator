@@ -43,6 +43,7 @@ export class InpaintPool extends TaskPool {
     const result = await executeInpaint({
       imageIndex: task.imageIndex,
       image: imageData,
+      translationMode: task.translationMode,
       bubbleCoords: detectionResult.bubbleCoords as any,
       bubblePolygons: detectionResult.bubblePolygons,
       textMask: detectionResult.textMask,

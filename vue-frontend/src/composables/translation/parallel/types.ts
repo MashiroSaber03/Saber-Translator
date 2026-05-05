@@ -24,6 +24,7 @@ export interface PipelineTask {
   id: string
   imageIndex: number
   imageData: ImageData
+  translationMode: ParallelTranslationMode
   status: TaskStatus
   error?: string
 

@@ -130,6 +130,8 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         api_key: (isProofread ? roundConfig?.apiKey : hqConfig.apiKey) || '',
         model_name: (isProofread ? roundConfig?.modelName : hqConfig.modelName) || '',
         custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
+        translation_mode: isProofread ? 'proofread' : 'hq',
+        translation_scope: 'batch',
         // 新接口：传数据，后端构建消息
         jsonData,
         imageBase64Array,
@@ -159,6 +161,8 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 api_key: round.apiKey,
                 model_name: round.modelName,
                 custom_base_url: round.customBaseUrl,
+                translation_mode: 'proofread',
+                translation_scope: 'batch',
                 // 使用新接口
                 jsonData: currentData as any[],
                 imageBase64Array,

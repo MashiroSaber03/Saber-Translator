@@ -241,10 +241,24 @@ PLUGIN_LIST_SPEC = {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "name": {"type": "string"},
+                                "id": {"type": "string"},
+                                "display_name": {"type": "string"},
                                 "version": {"type": "string"},
+                                "author": {"type": "string"},
                                 "enabled": {"type": "boolean"},
-                                "description": {"type": "string"}
+                                "default_enabled": {"type": "boolean"},
+                                "description": {"type": "string"},
+                                "has_config": {"type": "boolean"},
+                                "priority": {"type": "integer"},
+                                "failure_policy": {"type": "string"},
+                                "supported_steps": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "supported_modes": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                }
                             }
                         }
                     }

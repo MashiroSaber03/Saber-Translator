@@ -10,6 +10,7 @@ import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 export interface ColorInput {
     imageIndex: number
     image: AppImageData
+    translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubbleStates?: BubbleState[] | null
     textlinesPerBubble?: any[]
@@ -25,7 +26,7 @@ export interface ColorOutput {
 }
 
 export async function executeColor(input: ColorInput): Promise<ColorOutput> {
-    const { image, bubbleCoords, bubbleStates, textlinesPerBubble } = input
+    const { image, bubbleCoords, bubbleStates, textlinesPerBubble, translationMode = 'standard' } = input
 
     if (bubbleCoords.length === 0) {
         return { colors: [] }
@@ -47,6 +48,8 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
     const response: ParallelColorResponse = await parallelColor({
         image: base64,
         bubble_coords: bubbleCoords,
+        translation_mode: translationMode,
+        translation_scope: 'image',
         textlines_per_bubble: preferredTextlines
     })
 

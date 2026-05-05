@@ -14,6 +14,7 @@ import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 export interface OcrInput {
     imageIndex: number
     image: AppImageData
+    translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubbleStates?: BubbleState[] | null
     textlinesPerBubble?: any[]
@@ -25,7 +26,7 @@ export interface OcrOutput {
 }
 
 export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
-    const { image, bubbleCoords, bubbleStates, textlinesPerBubble } = input
+    const { image, bubbleCoords, bubbleStates, textlinesPerBubble, translationMode = 'standard' } = input
 
     if (bubbleCoords.length === 0) {
         return { originalTexts: [], ocrResults: [] }
@@ -54,6 +55,8 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     const response: ParallelOcrResponse = await parallelOcr({
         image: base64,
         bubble_coords: bubbleCoords,
+        translation_mode: translationMode,
+        translation_scope: 'image',
         source_language: ocrSourceLanguage,
         ocr_engine: settings.ocrEngine,
         baidu_api_key: settings.baiduOcr?.apiKey,

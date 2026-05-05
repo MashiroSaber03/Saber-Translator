@@ -17,6 +17,8 @@ import type {
 
 export interface ParallelDetectParams {
   image: string
+  translation_mode?: string
+  translation_scope?: string
   detector_type?: string
   enable_aux_yolo_detection?: boolean
   aux_yolo_conf_threshold?: number
@@ -50,6 +52,8 @@ export async function parallelDetect(params: ParallelDetectParams): Promise<Para
 export interface ParallelOcrParams {
   image: string
   bubble_coords: number[][]
+  translation_mode?: string
+  translation_scope?: string
   source_language?: string
   ocr_engine?: string
   baidu_api_key?: string
@@ -99,6 +103,8 @@ export async function parallelOcr(params: ParallelOcrParams): Promise<ParallelOc
 export interface ParallelColorParams {
   image: string
   bubble_coords: number[][]
+  translation_mode?: string
+  translation_scope?: string
   textlines_per_bubble?: any[]
 }
 
@@ -121,6 +127,8 @@ export async function parallelColor(params: ParallelColorParams): Promise<Parall
 
 export interface ParallelTranslateParams {
   original_texts: string[]
+  translation_mode?: string
+  translation_scope?: string
   target_language: string
   source_language?: string
   model_provider: string
@@ -164,6 +172,8 @@ export async function parallelTranslate(params: ParallelTranslateParams): Promis
 export interface ParallelInpaintParams {
   image: string
   bubble_coords: number[][]
+  translation_mode?: string
+  translation_scope?: string
   bubble_polygons?: number[][][]
   raw_mask?: string       // 文字检测掩膜
   user_mask?: string      // 用户笔刷掩膜（新增）
@@ -189,6 +199,8 @@ export async function parallelInpaint(params: ParallelInpaintParams): Promise<Pa
 export interface ParallelRenderParams {
   clean_image: string
   bubble_states: BubbleState[]
+  translation_mode?: string
+  translation_scope?: string
   fontSize?: number
   fontFamily?: string
   textDirection?: string

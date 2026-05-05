@@ -109,7 +109,7 @@ export class RenderPool extends TaskPool {
         textboxTexts: textboxTexts,
         colors: colors,
         savedTextStyles: null,
-        currentMode: 'proofread'
+        currentMode: task.translationMode
       })
 
       task.renderResult = {
@@ -195,7 +195,7 @@ export class RenderPool extends TaskPool {
       textboxTexts: textboxTexts,
       colors: colors,
       savedTextStyles: null,  // 并行翻译不使用savedTextStyles
-      currentMode: 'standard'  // 固定为standard模式
+      currentMode: task.translationMode
     })
 
     task.renderResult = {

@@ -43,7 +43,7 @@ from src.shared.openai_options import (
     merge_openai_compatible_options,
     validate_openai_options_payload,
 )
-from src.plugins.manager import apply_after_ocr_hooks
+from src.plugins.http_helpers import finalize_plugin_result, prepare_plugin_payload
 from src.shared.ai_providers import normalize_provider_id
 
 parallel_bp = Blueprint('parallel', __name__, url_prefix='/api')
@@ -143,7 +143,14 @@ def _default_batch_prompt(*, use_json_format: bool) -> str:
 def parallel_detect():
     """仅执行检测步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "detect",
+            "/api/parallel/detect",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         image_data = data.get('image')
         
         if not image_data:
@@ -193,7 +200,7 @@ def parallel_detect():
         if result.get('raw_mask') is not None:
             raw_mask = encode_mask_to_base64(result['raw_mask'])
         
-        return jsonify({
+        response_payload = {
             'success': True,
             'bubble_coords': result.get('coords', []),
             'bubble_angles': result.get('angles', []),
@@ -201,7 +208,16 @@ def parallel_detect():
             'auto_directions': result.get('auto_directions', []),
             'raw_mask': raw_mask,
             'textlines_per_bubble': result.get('textlines_per_bubble', [])
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "detect",
+            "/api/parallel/detect",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(response_payload["bubble_coords"])},
+        )
+        return jsonify(response_payload)
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -211,7 +227,14 @@ def parallel_detect():
 def parallel_ocr():
     """仅执行OCR步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "ocr",
+            "/api/parallel/ocr",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         image_data = data.get('image')
         bubble_coords = data.get('bubble_coords', [])
         
@@ -219,12 +242,21 @@ def parallel_ocr():
             return jsonify({'success': False, 'error': '缺少图片数据'})
         
         if not bubble_coords:
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'original_texts': [],
                 'ocr_results': [],
                 'textlines_per_bubble': []
-            })
+            }
+            response_payload = finalize_plugin_result(
+                "ocr",
+                "/api/parallel/ocr",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={"bubble_count": 0},
+            )
+            return jsonify(response_payload)
         
         img = decode_base64_image(image_data)
         
@@ -306,24 +338,25 @@ def parallel_ocr():
             secondary_ocr_engine=secondary_ocr_engine,
             hybrid_ocr_threshold=hybrid_ocr_threshold,
         )
-        original_texts = extract_texts_from_ocr_results(ocr_results)
-        hook_params = {
-            "source_language": source_language,
-            "ocr_engine": ocr_engine,
-            "ocr_results": ocr_results_to_dicts(ocr_results),
-        }
-        modified_texts = apply_after_ocr_hooks(img_pil, original_texts, bubble_coords, hook_params)
-        if modified_texts != original_texts and len(modified_texts) == len(ocr_results):
-            original_texts = modified_texts
-            for index, text in enumerate(modified_texts):
-                ocr_results[index].text = text
-        
-        return jsonify({
+        response_payload = {
             'success': True,
-            'original_texts': original_texts,
+            'original_texts': extract_texts_from_ocr_results(ocr_results),
             'ocr_results': ocr_results_to_dicts(ocr_results),
             'textlines_per_bubble': textlines_per_bubble
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "ocr",
+            "/api/parallel/ocr",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={
+                "ocr_engine": ocr_engine,
+                "source_language": source_language,
+                "bubble_count": len(bubble_coords),
+            },
+        )
+        return jsonify(response_payload)
         
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -335,7 +368,14 @@ def parallel_ocr():
 def parallel_color():
     """仅执行颜色提取步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "color",
+            "/api/parallel/color",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         image_data = data.get('image')
         bubble_coords = data.get('bubble_coords', [])
         
@@ -343,10 +383,19 @@ def parallel_color():
             return jsonify({'success': False, 'error': '缺少图片数据'})
         
         if not bubble_coords:
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'colors': []
-            })
+            }
+            response_payload = finalize_plugin_result(
+                "color",
+                "/api/parallel/color",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={"bubble_count": 0},
+            )
+            return jsonify(response_payload)
         
         img = decode_base64_image(image_data)
         textlines_per_bubble = data.get('textlines_per_bubble', [])
@@ -376,10 +425,19 @@ def parallel_color():
                 'autoBgColor': bg_color
             })
         
-        return jsonify({
+        response_payload = {
             'success': True,
             'colors': colors
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "color",
+            "/api/parallel/color",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(bubble_coords)},
+        )
+        return jsonify(response_payload)
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -389,15 +447,32 @@ def parallel_color():
 def parallel_translate():
     """仅执行翻译步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "translate",
+            "/api/parallel/translate",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         original_texts = data.get('original_texts', [])
         
         if not original_texts:
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'translated_texts': [],
-                'textbox_texts': []
-            })
+                'textbox_texts': [],
+                'warnings': [],
+            }
+            response_payload = finalize_plugin_result(
+                "translate",
+                "/api/parallel/translate",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={"text_count": 0},
+            )
+            return jsonify(response_payload)
         
         # 获取翻译参数
         target_language = data.get('target_language', 'zh')
@@ -494,12 +569,25 @@ def parallel_translate():
                 )
             )
         
-        return jsonify({
+        response_payload = {
             'success': True,
             'translated_texts': translated_texts,
             'textbox_texts': textbox_texts,
             'warnings': warnings,
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "translate",
+            "/api/parallel/translate",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={
+                "target_language": target_language,
+                "source_language": source_language,
+                "text_count": len(original_texts),
+            },
+        )
+        return jsonify(response_payload)
         
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -511,7 +599,14 @@ def parallel_translate():
 def parallel_inpaint():
     """仅执行修复步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "inpaint",
+            "/api/parallel/inpaint",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         image_data = data.get('image')
         bubble_coords = data.get('bubble_coords', [])
         
@@ -522,10 +617,19 @@ def parallel_inpaint():
         
         if not bubble_coords:
             # 没有气泡，返回原图
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'clean_image': encode_image_to_base64(img)
-            })
+            }
+            response_payload = finalize_plugin_result(
+                "inpaint",
+                "/api/parallel/inpaint",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={"bubble_count": 0},
+            )
+            return jsonify(response_payload)
         
         # 获取修复参数
         bubble_polygons = data.get('bubble_polygons', [])
@@ -565,10 +669,19 @@ def parallel_inpaint():
         )
         clean_image = np.array(clean_image_pil)
         
-        return jsonify({
+        response_payload = {
             'success': True,
             'clean_image': encode_image_to_base64(clean_image)
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "inpaint",
+            "/api/parallel/inpaint",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(bubble_coords)},
+        )
+        return jsonify(response_payload)
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -578,7 +691,14 @@ def parallel_inpaint():
 def parallel_render():
     """仅执行渲染步骤"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "render",
+            "/api/parallel/render",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
         clean_image_data = data.get('clean_image')
         bubble_states_data = data.get('bubble_states', [])
         
@@ -589,11 +709,20 @@ def parallel_render():
         
         if not bubble_states_data:
             # 没有气泡，返回干净图
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'final_image': encode_image_to_base64(clean_image),
                 'bubble_states': []
-            })
+            }
+            response_payload = finalize_plugin_result(
+                "render",
+                "/api/parallel/render",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={"bubble_count": 0},
+            )
+            return jsonify(response_payload)
         
         # 获取全局样式参数
         font_size = data.get('fontSize', 25)
@@ -647,11 +776,20 @@ def parallel_render():
         final_image = np.array(final_image_pil)
         updated_states = bubble_states
         
-        return jsonify({
+        response_payload = {
             'success': True,
             'final_image': encode_image_to_base64(final_image),
             'bubble_states': bubble_states_to_api_response(updated_states)
-        })
+        }
+        response_payload = finalize_plugin_result(
+            "render",
+            "/api/parallel/render",
+            response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(bubble_states_data)},
+        )
+        return jsonify(response_payload)
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})

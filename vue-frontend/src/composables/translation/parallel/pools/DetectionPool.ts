@@ -27,6 +27,7 @@ export class DetectionPool extends TaskPool {
     const result = await executeDetection({
       imageIndex: task.imageIndex,
       image: imageData,
+      translationMode: task.translationMode,
       forceDetect: false
     })
 

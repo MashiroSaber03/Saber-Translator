@@ -10,7 +10,6 @@ import type {
   OcrSingleBubbleResponse,
   InpaintSingleBubbleResponse,
   HqTranslateResponse,
-  BubbleState,
   BubbleCoords,
 } from '@/types'
 import type {
@@ -28,6 +27,8 @@ export interface ReRenderParams {
   // 图片数据
   clean_image: string // 干净背景 Base64
   image?: string // 当前图片 Base64（可选）
+  translation_mode?: string
+  translation_scope?: string
 
   // 气泡数据（必需）
   bubble_texts: string[] // 文本数组
@@ -68,17 +69,6 @@ export interface ReRenderParams {
 }
 
 /**
- * 单气泡重新渲染请求参数
- */
-export interface ReRenderSingleBubbleParams {
-  original_image: string
-  clean_image: string
-  bubble_state: BubbleState
-  bubble_index: number
-  current_translated_image: string
-}
-
-/**
  * 高质量翻译请求参数
  * 与原版 high_quality_translation.js 的 hqTranslateBatchApi 参数格式保持一致
  * 后端期望接收 messages 而不是 images
@@ -89,6 +79,8 @@ export interface HqTranslateParams {
   api_key: string
   model_name: string  // 后端期望 model_name 而不是 model
   custom_base_url?: string
+  translation_mode?: string
+  translation_scope?: string
 
   // 新方式：传数据，后端构建消息
   jsonData?: any[]
@@ -135,6 +127,8 @@ export interface HqTranslateParams {
  */
 export interface TranslateSingleTextParams {
   original_text: string
+  translation_mode?: string
+  translation_scope?: string
   model_provider: string
   api_key?: string
   model_name?: string
@@ -166,46 +160,6 @@ export interface TranslateSingleTextParams {
  */
 export async function reRenderImage(params: ReRenderParams): Promise<ReRenderResponse> {
   return apiClient.post<ReRenderResponse>('/api/re_render_image', params)
-}
-
-/**
- * 重新渲染单个气泡
- * @param params 渲染参数
- */
-export async function reRenderSingleBubble(
-  params: ReRenderSingleBubbleParams
-): Promise<ReRenderResponse> {
-  return apiClient.post<ReRenderResponse>('/api/re_render_single_bubble', params)
-}
-
-/**
- * 应用设置到所有图片
- * @param images 图片数据数组
- * @param settings 要应用的设置
- */
-export async function applySettingsToAllImages(
-  images: Array<{
-    original_image: string
-    clean_image: string
-    bubble_states: BubbleState[]
-  }>,
-  settings: {
-    font_size?: number
-    font_family?: string
-    text_direction?: string
-    text_color?: string
-    fill_color?: string
-    stroke_enabled?: boolean
-    stroke_color?: string
-    stroke_width?: number
-    line_spacing?: number
-    text_align?: 'start' | 'center' | 'end'
-  }
-): Promise<ApiResponse<{ translated_images: string[] }>> {
-  return apiClient.post('/api/apply_settings_to_all_images', {
-    images,
-    settings,
-  })
 }
 
 /**

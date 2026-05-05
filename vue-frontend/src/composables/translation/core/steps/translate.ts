@@ -12,6 +12,7 @@ import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface TranslateInput {
     imageIndex: number
+    translationMode?: string
     originalTexts: string[]
 }
 
@@ -22,7 +23,7 @@ export interface TranslateOutput {
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
-    const { originalTexts } = input
+    const { originalTexts, translationMode: pluginMode = 'standard' } = input
 
     if (originalTexts.length === 0) {
         return {
@@ -34,9 +35,9 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
-    const translationMode = settings.translation.translationMode || 'batch'
+    const requestMode = settings.translation.translationMode || 'batch'
 
-    if (translationMode === 'single') {
+    if (requestMode === 'single') {
         // ==================== 逐气泡翻译模式 ====================
         console.log(`[翻译] 使用逐气泡翻译模式，共 ${originalTexts.length} 个气泡`)
 
@@ -64,6 +65,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
                 const response = await translateSingleText({
                     original_text: originalText,
+                    translation_mode: pluginMode,
+                    translation_scope: 'bubble',
                     model_provider: settings.translation.provider,
                     model_name: settings.translation.modelName,
                     api_key: settings.translation.apiKey,
@@ -93,6 +96,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                 if (settings.useTextboxPrompt && settings.textboxPrompt) {
                     const textboxResponse = await translateSingleText({
                         original_text: originalText,
+                        translation_mode: pluginMode,
+                        translation_scope: 'bubble',
                         model_provider: settings.translation.provider,
                         model_name: settings.translation.modelName,
                         api_key: settings.translation.apiKey,
@@ -134,6 +139,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
         const response: ParallelTranslateResponse = await parallelTranslate({
             original_texts: originalTexts,
+            translation_mode: pluginMode,
+            translation_scope: 'image',
             target_language: settings.targetLanguage,
             source_language: settings.sourceLanguage,
             model_provider: settings.translation.provider,

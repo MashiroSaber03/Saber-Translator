@@ -12,6 +12,7 @@ import { createBubbleState } from '@/utils/bubbleFactory'
 export interface DetectionInput {
     imageIndex: number
     image: AppImageData
+    translationMode?: string
     forceDetect?: boolean
 }
 
@@ -76,7 +77,7 @@ function createBubbleStatesFromDetection(
 }
 
 export async function executeDetection(input: DetectionInput): Promise<DetectionOutput> {
-    const { imageIndex, image, forceDetect = false } = input
+    const { imageIndex, image, translationMode = 'standard', forceDetect = false } = input
     const settingsStore = useSettingsStore()
 
     // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
@@ -125,6 +126,8 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     // 步骤1: 使用用户选择的检测器进行检测（获取文本框）
     const response: ParallelDetectResponse = await parallelDetect({
         image: base64,
+        translation_mode: translationMode,
+        translation_scope: 'image',
         detector_type: settings.textDetector,
         enable_aux_yolo_detection: settings.enableAuxYoloDetection,
         aux_yolo_conf_threshold: settings.auxYoloConfThreshold,
@@ -151,6 +154,8 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     try {
         const maskResponse: ParallelDetectResponse = await parallelDetect({
             image: base64,
+            translation_mode: translationMode,
+            translation_scope: 'image',
             detector_type: 'default',  // 固定使用 Default 检测器生成掩膜
             enable_aux_yolo_detection: false,  // 掩膜路径不需要辅助检测
             enable_saber_yolo_refine: false,  // 掩膜路径不需要二阶段纠错

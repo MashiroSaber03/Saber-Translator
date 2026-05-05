@@ -1,34 +1,100 @@
-# src/plugins/hooks.py
-
 """
-定义插件系统可用的钩子点名称常量。
-插件管理器和核心代码将使用这些常量来触发和注册钩子。
+插件 v2 契约定义。
+
+当前插件系统围绕原子步骤工作，而不是旧的一体化流程钩子。
 """
 
-# --- 处理流程钩子 ---
-BEFORE_PROCESSING = "before_processing"
-AFTER_DETECTION = "after_detection"
-BEFORE_OCR = "before_ocr"
-AFTER_OCR = "after_ocr"
-BEFORE_TRANSLATION = "before_translation"
-AFTER_TRANSLATION = "after_translation"
-BEFORE_INPAINTING = "before_inpainting"
-AFTER_INPAINTING = "after_inpainting"
-BEFORE_RENDERING = "before_rendering"
-AFTER_PROCESSING = "after_processing"
+from dataclasses import dataclass, field
+from typing import Any, Dict, Tuple
 
-# --- 应用生命周期钩子 (示例) ---
-# ON_APP_STARTUP = "on_app_startup"
-# ON_APP_SHUTDOWN = "on_app_shutdown"
 
-# --- 其他可能的钩子 ---
-# MODIFY_TRANSLATION_PARAMS = "modify_translation_params"
-# MODIFY_RENDERING_STYLE = "modify_rendering_style"
+PLUGIN_STEPS: Tuple[str, ...] = (
+    "detect",
+    "ocr",
+    "color",
+    "translate",
+    "ai_translate",
+    "inpaint",
+    "render",
+)
 
-# 获取所有已定义的钩子名称列表 (可选)
-ALL_HOOKS = [
-    BEFORE_PROCESSING, AFTER_DETECTION, BEFORE_OCR, AFTER_OCR,
-    BEFORE_TRANSLATION, AFTER_TRANSLATION, BEFORE_INPAINTING, AFTER_INPAINTING,
-    BEFORE_RENDERING, AFTER_PROCESSING,
-    # ON_APP_STARTUP, ON_APP_SHUTDOWN, # 如果添加了生命周期钩子
-]
+PLUGIN_MODES: Tuple[str, ...] = (
+    "standard",
+    "hq",
+    "proofread",
+    "remove_text",
+)
+
+FAILURE_POLICIES: Tuple[str, ...] = (
+    "continue",
+    "fail",
+)
+
+STEP_HOOK_METHODS: Dict[str, Dict[str, str]] = {
+    "detect": {
+        "before": "before_detect",
+        "after": "after_detect",
+    },
+    "ocr": {
+        "before": "before_ocr",
+        "after": "after_ocr",
+    },
+    "color": {
+        "before": "before_color",
+        "after": "after_color",
+    },
+    "translate": {
+        "before": "before_translate",
+        "after": "after_translate",
+    },
+    "ai_translate": {
+        "before": "before_ai_translate",
+        "after": "after_ai_translate",
+    },
+    "inpaint": {
+        "before": "before_inpaint",
+        "after": "after_inpaint",
+    },
+    "render": {
+        "before": "before_render",
+        "after": "after_render",
+    },
+}
+
+HOOK_METHOD_TO_STEP_PHASE: Dict[str, Tuple[str, str]] = {
+    method_name: (step, phase)
+    for step, phase_mapping in STEP_HOOK_METHODS.items()
+    for phase, method_name in phase_mapping.items()
+}
+
+
+def normalize_plugin_mode(mode: str | None) -> str:
+    if not mode:
+        return "standard"
+
+    normalized = str(mode).strip().lower()
+    alias_mapping = {
+        "remove-text": "remove_text",
+        "removetext": "remove_text",
+        "ai-translate": "ai_translate",
+        "aitranslate": "ai_translate",
+    }
+    return alias_mapping.get(normalized, normalized.replace("-", "_"))
+
+
+def normalize_plugin_step(step: str) -> str:
+    normalized = str(step or "").strip().lower()
+    alias_mapping = {
+        "aitranslate": "ai_translate",
+        "ai-translate": "ai_translate",
+    }
+    return alias_mapping.get(normalized, normalized.replace("-", "_"))
+
+
+@dataclass
+class PluginContext:
+    step: str
+    mode: str
+    route: str
+    scope: str
+    metadata: Dict[str, Any] = field(default_factory=dict)

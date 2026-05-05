@@ -33,6 +33,7 @@ export class ColorPool extends TaskPool {
     const result = await executeColor({
       imageIndex: task.imageIndex,
       image: imageData,
+      translationMode: task.translationMode,
       bubbleCoords: detectionResult.bubbleCoords as any,
       bubbleStates: imageData.bubbleStates,
       textlinesPerBubble: ocrResult?.textlinesPerBubble || detectionResult.textlinesPerBubble || []

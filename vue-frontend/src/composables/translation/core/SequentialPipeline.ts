@@ -217,6 +217,7 @@ export function useSequentialPipeline() {
         const result = await executeDetection({
             imageIndex: task.imageIndex,
             image: task.image,
+            translationMode: currentMode,
             forceDetect: false
         })
 
@@ -237,6 +238,7 @@ export function useSequentialPipeline() {
         const result = await executeOcr({
             imageIndex: task.imageIndex,
             image: task.image,
+            translationMode: currentMode,
             bubbleCoords: task.bubbleCoords,
             bubbleStates: task.image.bubbleStates,
             textlinesPerBubble: task.textlinesPerBubble
@@ -258,6 +260,7 @@ export function useSequentialPipeline() {
         const result = await executeColor({
             imageIndex: task.imageIndex,
             image: task.image,
+            translationMode: currentMode,
             bubbleCoords: task.bubbleCoords,
             bubbleStates: task.image.bubbleStates,
             textlinesPerBubble: task.textlinesPerBubble
@@ -269,6 +272,7 @@ export function useSequentialPipeline() {
     async function stepTranslate(task: TaskState): Promise<void> {
         const result = await executeTranslate({
             imageIndex: task.imageIndex,
+            translationMode: currentMode,
             originalTexts: task.originalTexts
         })
 
@@ -313,6 +317,7 @@ export function useSequentialPipeline() {
         const result = await executeInpaint({
             imageIndex: task.imageIndex,
             image: task.image,
+            translationMode: currentMode,
             bubbleCoords: task.bubbleCoords,
             bubblePolygons: task.bubblePolygons,
             textMask: task.textMask,

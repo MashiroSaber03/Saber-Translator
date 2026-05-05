@@ -10,6 +10,7 @@ import type { ImageData as AppImageData } from '@/types/image'
 export interface InpaintInput {
     imageIndex: number
     image: AppImageData
+    translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubblePolygons: number[][][]
     textMask?: string      // 文字检测掩膜
@@ -21,7 +22,7 @@ export interface InpaintOutput {
 }
 
 export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput> {
-    const { image, bubbleCoords, bubblePolygons, textMask, userMask } = input
+    const { image, bubbleCoords, bubblePolygons, textMask, userMask, translationMode = 'standard' } = input
 
     if (bubbleCoords.length === 0) {
         return { cleanImage: extractBase64(image.originalDataURL) }
@@ -38,6 +39,8 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     const response: ParallelInpaintResponse = await parallelInpaint({
         image: base64,
         bubble_coords: bubbleCoords,
+        translation_mode: translationMode,
+        translation_scope: 'image',
         bubble_polygons: bubblePolygons,
         raw_mask: textMask || undefined,      // 文字检测掩膜
         user_mask: userMask || undefined,     // 用户笔刷掩膜（新增）

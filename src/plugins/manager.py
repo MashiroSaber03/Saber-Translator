@@ -1,494 +1,600 @@
-import os
 import importlib
+import importlib.util
 import inspect
+import hashlib
+import json
 import logging
-import json # 需要 json 来读写配置文件
-from .base import PluginBase # 导入插件基类
-from .hooks import ALL_HOOKS, BEFORE_PROCESSING, AFTER_OCR # 导入所有钩子名称常量
-from src.shared.path_helpers import resource_path # 需要路径助手
-from src.shared.config_loader import get_config_path, load_json_config, save_json_config # 导入 config_loader 函数
+import os
+import shutil
+import stat
+import sys
+from typing import Any, Dict, List, Optional, Tuple
+
+from src.shared.config_loader import get_config_path, load_json_config, save_json_config
+from src.shared.exceptions import PluginException
+from src.shared.path_helpers import resource_path
+
+from .base import PluginBase
+from .hooks import (
+    HOOK_METHOD_TO_STEP_PHASE,
+    STEP_HOOK_METHODS,
+    PluginContext,
+    normalize_plugin_mode,
+    normalize_plugin_step,
+)
 
 logger = logging.getLogger("PluginManager")
 
-# --- 新增常量 ---
-PLUGIN_DEFAULT_STATES_FILE = 'plugin_default_states.json'
-# ---------------
+PLUGIN_DEFAULT_STATES_FILE = "plugin_default_states.json"
+
 
 class PluginManager:
     """
-    负责发现、加载、管理和执行插件。
+    负责发现、加载、管理并执行 v2 插件。
     """
+
     def __init__(self, app=None, plugin_dirs=None):
-        """
-        初始化插件管理器。
-
-        Args:
-            app: Flask 应用实例 (可选)。
-            plugin_dirs (list, optional): 包含插件的目录列表。
-                                         默认为 ['src/plugins', 'plugins']。
-        """
         self.app = app
-        self.plugins = {} # 存储加载的插件实例 {plugin_name: instance}
-        self.hooks = {hook_name: [] for hook_name in ALL_HOOKS} # 存储每个钩子点注册的插件方法
-        self.plugin_metadata = {} # 存储插件元数据
+        self.plugins: Dict[str, PluginBase] = {}
+        self.hooks: Dict[str, List[Tuple[int, str, Any]]] = {
+            method_name: [] for method_name in HOOK_METHOD_TO_STEP_PHASE
+        }
+        self.plugin_metadata: Dict[str, Dict[str, Any]] = {}
+        self.plugin_sources: Dict[str, str] = {}
+        self.plugin_module_names: Dict[str, List[str]] = {}
         self.plugin_dirs = plugin_dirs or [
-            resource_path('src/plugins'), # 内置插件目录
-            resource_path('plugins')      # 用户自定义插件目录 (根目录下)
+            resource_path("src/plugins"),
+            resource_path("plugins"),
         ]
-        self.plugin_config_dir = get_config_path('plugin_configs') # config/plugin_configs/
+        self.plugin_config_dir = get_config_path("plugin_configs")
         os.makedirs(self.plugin_config_dir, exist_ok=True)
-        # 确保用户插件目录存在
-        os.makedirs(resource_path('plugins'), exist_ok=True)
-
-        # --- 新增: 加载用户设置的默认状态 ---
+        os.makedirs(resource_path("plugins"), exist_ok=True)
         self.plugin_default_states = self._load_plugin_default_states()
-        # ----------------------------------
+        logger.debug("插件管理器初始化，扫描目录: %s", self.plugin_dirs)
 
-        logger.debug(f"插件管理器初始化，扫描目录: {self.plugin_dirs}")
+    def reset_for_testing(self, *, clear_defaults: bool = True) -> None:
+        for plugin in self.plugins.values():
+            try:
+                plugin.disable()
+            except Exception:
+                logger.debug("测试重置时禁用插件失败: %s", plugin.plugin_id, exc_info=True)
+        self.plugins.clear()
+        self.plugin_metadata.clear()
+        self.plugin_sources.clear()
+        self.plugin_module_names.clear()
+        self.hooks = {method_name: [] for method_name in HOOK_METHOD_TO_STEP_PHASE}
+        if clear_defaults:
+            self.plugin_default_states = {}
 
-    # --- 新增: 加载默认状态文件 ---
-    def _load_plugin_default_states(self):
-        # 注意：plugin_default_states.json 不在 plugin_configs 子目录，直接在 config/ 下
-        config_path = get_config_path(PLUGIN_DEFAULT_STATES_FILE)
-        # 使用 config_loader 中的函数，如果文件不存在返回 {}
+    def _load_plugin_default_states(self) -> Dict[str, bool]:
         loaded_states = load_json_config(PLUGIN_DEFAULT_STATES_FILE, default_value={})
-        logger.debug(f"已加载插件默认启用状态: {loaded_states}")
-        return loaded_states
-    # -----------------------------
+        if not isinstance(loaded_states, dict):
+            return {}
+        normalized_states: Dict[str, bool] = {}
+        for plugin_id, enabled in loaded_states.items():
+            if plugin_id:
+                normalized_states[str(plugin_id)] = bool(enabled)
+        logger.debug("已加载插件默认启用状态: %s", normalized_states)
+        return normalized_states
 
-    # --- 新增: 保存默认状态文件 ---
-    def save_plugin_default_states(self):
-        config_path = get_config_path(PLUGIN_DEFAULT_STATES_FILE)
-        # 使用 config_loader 中的函数
+    def save_plugin_default_states(self) -> bool:
         success = save_json_config(PLUGIN_DEFAULT_STATES_FILE, self.plugin_default_states)
         if success:
             logger.info("插件默认启用状态已保存。")
         else:
             logger.error("保存插件默认启用状态失败。")
         return success
-    # -----------------------------
 
-    # --- 新增: 设置单个插件的默认状态 ---
-    def set_plugin_default_state(self, plugin_name, enabled):
-        if plugin_name not in self.plugins:
-            logger.warning(f"尝试设置未加载插件 '{plugin_name}' 的默认状态。")
+    def set_plugin_default_state(self, plugin_id: str, enabled: bool) -> bool:
+        if plugin_id not in self.plugins:
+            logger.warning("尝试设置未加载插件 '%s' 的默认状态。", plugin_id)
             return False
+        self.plugin_default_states[plugin_id] = bool(enabled)
+        self._refresh_metadata(plugin_id)
+        return self.save_plugin_default_states()
 
-        logger.info(f"设置插件 '{plugin_name}' 的默认启用状态为: {enabled}")
-        self.plugin_default_states[plugin_name] = bool(enabled) # 确保是布尔值
-        return self.save_plugin_default_states() # 保存更改
-    # ---------------------------------
-
-    def discover_and_load_plugins(self):
-        """
-        扫描指定目录，发现并加载所有有效的插件。
-        """
+    def discover_and_load_plugins(self) -> None:
         logger.debug("开始发现和加载插件...")
+        needs_saving_defaults = False
         loaded_count = 0
-        potential_plugins = self._find_potential_plugins()
-        needs_saving_defaults = False # 标记是否有新插件需要保存默认值
 
-        for name, module_path, package_path in potential_plugins:
+        for plugin_name, package_path in self._find_potential_plugins():
             try:
-                logger.debug(f"尝试加载插件模块: {name} 从 {module_path}")
-                # 动态导入插件模块
-                # 需要将包路径添加到 sys.path 吗？通常 importlib 能处理
-                # spec = importlib.util.spec_from_file_location(name, module_path)
-                # plugin_module = importlib.util.module_from_spec(spec)
-                # spec.loader.exec_module(plugin_module)
-                # 使用更简单的方式导入，假设目录结构允许
-                module_import_path = self._get_module_import_path(package_path, name)
-                if not module_import_path: continue # 无法确定导入路径
-
-                plugin_module = importlib.import_module(module_import_path)
-
-                # 在模块中查找继承自 PluginBase 的类
+                plugin_module = self._load_plugin_module(package_path, plugin_name)
                 for attr_name in dir(plugin_module):
                     attr = getattr(plugin_module, attr_name)
                     if inspect.isclass(attr) and issubclass(attr, PluginBase) and attr is not PluginBase:
-                        logger.debug(f"发现插件类: {attr.__name__} in {name}")
-                        # --- 修改: 传递 needs_saving_defaults 标记 ---
-                        plugin_loaded, default_saved = self._load_plugin_class(attr)
+                        plugin_loaded, default_added = self._load_plugin_class(attr, source_path=package_path)
                         if plugin_loaded:
                             loaded_count += 1
-                            if default_saved:
-                                needs_saving_defaults = True
-                        # -------------------------------------------
-                        break # 每个模块只加载第一个找到的插件类
+                        if default_added:
+                            needs_saving_defaults = True
+                        break
+            except Exception as exc:
+                logger.error("加载插件目录 '%s' 失败: %s", plugin_name, exc, exc_info=True)
 
-            except ImportError as e:
-                 logger.error(f"导入插件模块 '{module_import_path}' 失败: {e}", exc_info=True)
-            except Exception as e:
-                logger.error(f"加载插件 '{name}' 时发生未知错误: {e}", exc_info=True)
-
-        logger.info(f"插件加载完成，共加载 {loaded_count} 个插件。")
-        # --- 修改: 如果有新插件添加了默认状态，则保存文件 ---
+        logger.info("插件加载完成，共加载 %s 个插件。", loaded_count)
         if needs_saving_defaults:
             self.save_plugin_default_states()
-        # ---------------------------------------------
-        self._enable_plugins_based_on_defaults() # 使用新方法启用
 
-    def _find_potential_plugins(self):
-        """在插件目录中查找可能的插件模块。"""
-        potential_plugins = []
+    def _find_potential_plugins(self) -> List[Tuple[str, str]]:
+        potential_plugins: List[Tuple[str, str]] = []
         for plugin_dir in self.plugin_dirs:
             if not os.path.isdir(plugin_dir):
-                logger.warning(f"插件目录不存在或不是目录: {plugin_dir}")
+                logger.warning("插件目录不存在或不是目录: %s", plugin_dir)
                 continue
-            logger.debug(f"扫描插件目录: {plugin_dir}")
             for item in os.listdir(plugin_dir):
                 item_path = os.path.join(plugin_dir, item)
-                # 插件通常是一个包含 __init__.py 和 plugin.py 的目录
-                if os.path.isdir(item_path) and \
-                   os.path.exists(os.path.join(item_path, '__init__.py')) and \
-                   os.path.exists(os.path.join(item_path, 'plugin.py')):
-                    plugin_name = item
-                    module_file_path = os.path.join(item_path, 'plugin.py')
-                    # 记录插件包路径和模块文件名
-                    potential_plugins.append((plugin_name, module_file_path, item_path))
-                    logger.debug(f"  发现潜在插件目录: {plugin_name}")
+                if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "__init__.py")) and os.path.exists(os.path.join(item_path, "plugin.py")):
+                    potential_plugins.append((item, item_path))
         return potential_plugins
 
-    def _get_module_import_path(self, package_path, plugin_name):
-        """根据包路径和插件名生成 Python 导入路径。"""
-        # 简化的路径处理
-        normalized_path = package_path.replace('\\', '/')
-        if 'src/plugins' in normalized_path:
+    def _get_module_import_path(self, package_path: str, plugin_name: str) -> Optional[str]:
+        normalized_path = package_path.replace("\\", "/")
+        if "src/plugins" in normalized_path:
             return f"src.plugins.{plugin_name}.plugin"
-        elif 'plugins' in normalized_path and not normalized_path.startswith('src'):
-            return f"plugins.{plugin_name}.plugin"
-        else:
-            logger.warning(f"无法确定插件 '{plugin_name}' 的导入路径: {package_path}")
-            return None
+        logger.warning("无法确定插件 '%s' 的导入路径: %s", plugin_name, package_path)
+        return None
 
+    def _load_plugin_module(self, package_path: str, plugin_name: str):
+        normalized_path = package_path.replace("\\", "/")
+        if "src/plugins" not in normalized_path:
+            return self._load_external_plugin_module(package_path, plugin_name)
+        module_import_path = self._get_module_import_path(package_path, plugin_name)
+        if module_import_path:
+            return importlib.import_module(module_import_path)
+        return self._load_external_plugin_module(package_path, plugin_name)
 
-    def _load_plugin_class(self, plugin_class):
-        """
-        实例化插件类，注册钩子，并处理默认启用状态。
-        返回: (bool: 是否加载成功, bool: 是否为该插件添加了新的默认状态)
-        """
+    def _load_external_plugin_module(self, package_path: str, plugin_name: str):
+        init_path = os.path.join(package_path, "__init__.py")
+        plugin_path = os.path.join(package_path, "plugin.py")
+        module_suffix = self._build_external_module_suffix(package_path, plugin_name)
+        self._ensure_external_plugins_namespace()
+        package_module_name = f"_saber_user_plugins.{module_suffix}"
+        plugin_module_name = f"{package_module_name}.plugin"
+
+        package_module = sys.modules.get(package_module_name)
+        if package_module is None:
+            package_spec = importlib.util.spec_from_file_location(
+                package_module_name,
+                init_path,
+                submodule_search_locations=[package_path],
+            )
+            if package_spec is None or package_spec.loader is None:
+                raise PluginException(f"无法加载插件包: {package_path}")
+            package_module = importlib.util.module_from_spec(package_spec)
+            sys.modules[package_module_name] = package_module
+            package_spec.loader.exec_module(package_module)
+
+        if plugin_module_name in sys.modules:
+            return sys.modules[plugin_module_name]
+
+        plugin_spec = importlib.util.spec_from_file_location(
+            plugin_module_name,
+            plugin_path,
+        )
+        if plugin_spec is None or plugin_spec.loader is None:
+            raise PluginException(f"无法加载插件模块: {plugin_path}")
+        plugin_module = importlib.util.module_from_spec(plugin_spec)
+        sys.modules[plugin_module_name] = plugin_module
+        plugin_spec.loader.exec_module(plugin_module)
+        return plugin_module
+
+    def _ensure_external_plugins_namespace(self) -> None:
+        namespace_name = "_saber_user_plugins"
+        if namespace_name in sys.modules:
+            return
+        namespace_spec = importlib.util.spec_from_loader(namespace_name, loader=None)
+        namespace_module = importlib.util.module_from_spec(namespace_spec)
+        namespace_module.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[namespace_name] = namespace_module
+
+    def _build_external_module_suffix(self, package_path: str, plugin_name: str) -> str:
+        normalized_name = "".join(
+            character if character.isalnum() else "_"
+            for character in plugin_name
+        ).strip("_") or "plugin"
+        package_digest = hashlib.sha1(
+            os.path.abspath(package_path).encode("utf-8")
+        ).hexdigest()[:12]
+        return f"{normalized_name}_{package_digest}"
+
+    def _load_plugin_class(self, plugin_class, *, source_path: str) -> Tuple[bool, bool]:
         try:
             plugin_instance = plugin_class(plugin_manager=self, app=self.app)
-            plugin_name = plugin_instance.plugin_name
-
-            if plugin_name in self.plugins:
-                logger.warning(f"插件名称冲突: '{plugin_name}' 已存在，跳过 {plugin_class.__name__}。")
-                return False, False
-
-            if plugin_instance.setup():
-                self.plugins[plugin_name] = plugin_instance
-                self.plugin_metadata[plugin_name] = plugin_instance.get_metadata()
-                # --- 加载插件配置 ---
-                config_data = self._load_plugin_config_file(plugin_name)
-                plugin_instance.load_config(config_data)
-                # --------------------
-                self._register_hooks(plugin_instance)
-                logger.debug(f"插件 '{plugin_name}' 加载成功")
-
-                # --- 新增: 处理默认启用状态持久化 ---
-                default_added = False
-                if plugin_name not in self.plugin_default_states:
-                    # 如果用户的偏好设置里没有这个插件，使用插件自身的默认值，并记录下来
-                    self.plugin_default_states[plugin_name] = plugin_instance.plugin_enabled_by_default
-                    default_added = True
-                    logger.debug(f"为新插件 '{plugin_name}' 添加默认启用状态: {self.plugin_default_states[plugin_name]}")
-                # -----------------------------------
-
-                return True, default_added
-            else:
-                logger.error(f"插件 '{plugin_name}' 的 setup 方法返回 False，加载失败。")
-                return False, False
-
-        except Exception as e:
-            logger.error(f"实例化或设置插件类 '{plugin_class.__name__}' 失败: {e}", exc_info=True)
+            default_added = plugin_instance.plugin_id not in self.plugin_default_states
+            self.register_plugin_instance(plugin_instance, source_path=source_path)
+            return True, default_added
+        except Exception as exc:
+            logger.error(
+                "实例化或设置插件类 '%s' 失败: %s",
+                plugin_class.__name__,
+                exc,
+                exc_info=True,
+            )
             return False, False
 
-    def _register_hooks(self, plugin_instance):
-        """检查插件实例并注册其实现的钩子方法。"""
-        plugin_name = plugin_instance.plugin_name
-        for hook_name in ALL_HOOKS:
-            if hasattr(plugin_instance, hook_name) and callable(getattr(plugin_instance, hook_name)):
-                # 确保方法不是基类中的默认 pass 方法
-                method = getattr(plugin_instance, hook_name)
-                base_method = getattr(PluginBase, hook_name, None)
-                if method.__code__ is not base_method.__code__: # 比较字节码判断是否被覆盖
-                    self.hooks[hook_name].append(method)
-                    logger.debug(f"插件 '{plugin_name}' 注册了钩子: {hook_name}")
+    def register_plugin_instance(
+        self,
+        plugin_instance: PluginBase,
+        *,
+        source_path: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> PluginBase:
+        plugin_instance.validate_metadata()
+        plugin_id = plugin_instance.plugin_id
 
-    def _enable_plugins_based_on_defaults(self):
-        """根据用户配置或插件自身默认值启用插件。"""
-        logger.debug("根据用户设置启用插件...")
-        enabled_count = 0
-        for name, instance in self.plugins.items():
-            # 从已加载的 self.plugin_default_states 中获取状态
-            should_enable = self.plugin_default_states.get(name, instance.plugin_enabled_by_default) # 提供后备
-            if should_enable:
-                try:
-                    instance.enable()
-                    enabled_count += 1
-                except Exception as e:
-                     logger.error(f"启用插件 '{name}' 时出错: {e}", exc_info=True)
-            else:
-                 # 确保插件状态是禁用的 (即使默认是启用，用户设置了禁用)
-                 instance.disable() # 调用 disable 确保状态正确
+        if plugin_id in self.plugins:
+            raise PluginException(f"插件 ID 冲突: '{plugin_id}' 已存在。")
 
-        if enabled_count > 0:
-            logger.debug(f"已启用 {enabled_count} 个插件")
+        if plugin_instance.setup() is False:
+            raise PluginException(f"插件 '{plugin_id}' 的 setup 方法返回 False。")
 
-    def get_plugin(self, name):
-        """获取指定名称的插件实例。"""
-        return self.plugins.get(name)
+        self.plugins[plugin_id] = plugin_instance
+        if source_path:
+            self.plugin_sources[plugin_id] = source_path
+        self.plugin_module_names[plugin_id] = self._collect_plugin_module_names(plugin_instance)
 
-    def get_all_plugins(self):
-        """获取所有已加载的插件实例。"""
-        return list(self.plugins.values())
+        config_data = self._load_plugin_config_file(plugin_id)
+        plugin_instance.load_config(config_data)
+        self._register_hooks(plugin_instance)
 
-    def get_all_metadata(self):
-        """获取所有插件的元数据。"""
-        return list(self.plugin_metadata.values())
+        if plugin_id not in self.plugin_default_states:
+            self.plugin_default_states[plugin_id] = bool(plugin_instance.default_enabled)
 
-    def enable_plugin(self, name):
-        """启用指定名称的插件。"""
-        plugin = self.get_plugin(name)
-        if plugin:
-            plugin.enable()
+        should_enable = (
+            self.plugin_default_states.get(plugin_id, bool(plugin_instance.default_enabled))
+            if enabled is None
+            else bool(enabled)
+        )
+
+        if should_enable:
+            plugin_instance.enable()
         else:
-            logger.warning(f"尝试启用未找到的插件: {name}")
+            plugin_instance.disable()
 
-    def disable_plugin(self, name):
-        """禁用指定名称的插件。"""
-        plugin = self.get_plugin(name)
-        if plugin:
-            plugin.disable()
-        else:
-            logger.warning(f"尝试禁用未找到的插件: {name}")
+        self._refresh_metadata(plugin_id)
+        logger.debug("插件 '%s' 注册成功。", plugin_id)
+        return plugin_instance
 
-    def unregister_plugin_hooks(self, plugin_name_to_remove):
-        """注销指定插件的所有钩子"""
-        removed_count = 0
-        for hook_name in self.hooks:
-            original_len = len(self.hooks[hook_name])
-            self.hooks[hook_name] = [
-                method for method in self.hooks[hook_name]
-                if not (hasattr(method, '__self__') and hasattr(method.__self__, 'plugin_name') and method.__self__.plugin_name == plugin_name_to_remove)
+    def _register_hooks(self, plugin_instance: PluginBase) -> None:
+        for method_name in HOOK_METHOD_TO_STEP_PHASE:
+            method = getattr(plugin_instance, method_name, None)
+            base_method = getattr(PluginBase, method_name, None)
+            if not callable(method) or base_method is None:
+                continue
+            if getattr(method, "__code__", None) is getattr(base_method, "__code__", None):
+                continue
+            self.hooks[method_name].append(
+                (int(plugin_instance.priority), plugin_instance.plugin_id, method)
+            )
+            self.hooks[method_name].sort(key=lambda item: (item[0], item[1]))
+
+    def unregister_plugin_hooks(self, plugin_id_to_remove: str) -> None:
+        for method_name in self.hooks:
+            self.hooks[method_name] = [
+                entry for entry in self.hooks[method_name]
+                if entry[1] != plugin_id_to_remove
             ]
-            removed_count += original_len - len(self.hooks[hook_name])
-        if removed_count > 0:
-            logger.info(f"已注销插件 '{plugin_name_to_remove}' 的 {removed_count} 个钩子。")
 
-    def trigger_hook(self, hook_name, *args, **kwargs):
-        """
-        触发指定的钩子点，并按顺序执行所有注册的方法。
-        对于需要修改数据的钩子，它会传递修改后的结果。
+    def _refresh_metadata(self, plugin_id: str) -> None:
+        plugin = self.plugins.get(plugin_id)
+        if not plugin:
+            self.plugin_metadata.pop(plugin_id, None)
+            return
+        metadata = plugin.get_metadata()
+        metadata["enabled"] = plugin.is_enabled()
+        self.plugin_metadata[plugin_id] = metadata
 
-        Args:
-            hook_name (str): 要触发的钩子名称 (使用 hooks.py 中的常量)。
-            *args: 传递给钩子函数的参数。
-            **kwargs: 传递给钩子函数的关键字参数。
+    def get_plugin(self, plugin_id: str) -> Optional[PluginBase]:
+        return self.plugins.get(plugin_id)
 
-        Returns:
-            Any: 对于需要修改数据的钩子，返回最后一个插件修改后的结果；
-                 对于通知类钩子，返回 None。
-        """
-        if hook_name not in self.hooks:
-            logger.warning(f"尝试触发未知的钩子: {hook_name}")
-            return args if args else None # 返回原始参数或 None
+    def get_plugin_records(self) -> List[Dict[str, Any]]:
+        for plugin_id in list(self.plugins):
+            self._refresh_metadata(plugin_id)
+        return sorted(
+            self.plugin_metadata.values(),
+            key=lambda record: (str(record.get("display_name", "")), str(record.get("id", ""))),
+        )
 
-        if not self.hooks[hook_name]:
-            # logger.debug(f"钩子 '{hook_name}' 没有注册的处理函数。")
-            return args if args else None
+    def get_plugin_source_path(self, plugin_id: str) -> Optional[str]:
+        return self.plugin_sources.get(plugin_id)
 
-        logger.debug(f"触发钩子: {hook_name} (有 {len(self.hooks[hook_name])} 个处理函数)")
+    def _collect_plugin_module_names(self, plugin_instance: PluginBase) -> List[str]:
+        module_name = plugin_instance.__class__.__module__
+        module_names = {module_name}
+        package_name = module_name.rpartition(".")[0]
+        while package_name:
+            module_names.add(package_name)
+            package_name = package_name.rpartition(".")[0]
+        return sorted(module_names, key=len, reverse=True)
 
-        # 确定钩子是否需要修改数据 (基于钩子名称约定或显式定义)
-        # 假设需要修改数据的钩子返回修改后的参数元组，否则返回 None
-        modifies_data = hook_name not in ["on_enable", "on_disable"] # 简单示例
+    def unload_plugin_modules(self, plugin_id: str) -> None:
+        for module_name in self.plugin_module_names.get(plugin_id, []):
+            sys.modules.pop(module_name, None)
+        importlib.invalidate_caches()
 
-        current_args = args
-        current_kwargs = kwargs # 允许插件修改 kwargs 吗？暂时不允许
+    def _handle_remove_readonly(self, func, path, exc_info) -> None:
+        try:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        except OSError:
+            parent_dir = os.path.dirname(path)
+            if parent_dir:
+                try:
+                    os.chmod(parent_dir, stat.S_IWRITE | stat.S_IREAD)
+                except OSError:
+                    pass
+        func(path)
 
-        for hook_method in self.hooks[hook_name]:
+    def delete_plugin_directory(self, plugin_id: str) -> bool:
+        plugin_path = self.get_plugin_source_path(plugin_id)
+        if not plugin_path or not os.path.exists(plugin_path):
+            return False
+
+        plugin = self.get_plugin(plugin_id)
+        if plugin:
             try:
-                # 只调用启用的插件的钩子
-                plugin_instance = hook_method.__self__ # 获取方法所属的实例
-                if isinstance(plugin_instance, PluginBase) and plugin_instance.is_enabled():
-                    logger.debug(f"  执行插件 '{plugin_instance.plugin_name}' 的钩子: {hook_name}")
-                    result = hook_method(*current_args, **current_kwargs)
+                plugin.disable()
+            except Exception:
+                logger.debug("删除插件 '%s' 前禁用失败。", plugin_id, exc_info=True)
 
-                    # 如果钩子设计为修改数据，则更新 current_args
-                    if modifies_data and result is not None:
-                        if isinstance(result, tuple):
-                            # 使用插件返回的结果作为下一个插件的输入
-                            # 如果元素过多，只使用前 n 个元素；如果元素过少，用原始输入补充
-                            if len(result) >= len(current_args):
-                                # 仅使用需要的元素数量
-                                current_args = result[:len(current_args)]
-                                logger.debug(f"    钩子返回了修改后的数据。")
-                            elif len(result) > 0:
-                                # 如果返回的元素数量不足，但还有一些元素，那么我们将这些元素替换到当前参数中
-                                new_args = list(current_args)
-                                for i, val in enumerate(result):
-                                    new_args[i] = val
-                                current_args = tuple(new_args)
-                                logger.debug(f"    钩子返回了部分修改后的数据。")
-                            else:
-                                logger.warning(f"    插件 '{plugin_instance.plugin_name}' 的钩子 '{hook_name}' 返回了空元组，已忽略。")
-                        else:
-                             logger.warning(f"    插件 '{plugin_instance.plugin_name}' 的钩子 '{hook_name}' 返回了非元组数据，已忽略。")
+        self.unload_plugin_modules(plugin_id)
+        shutil.rmtree(plugin_path, onerror=self._handle_remove_readonly)
+        return True
 
-                # else: # 插件未启用
-                #     logger.debug(f"  跳过禁用的插件 '{plugin_instance.plugin_name}' 的钩子: {hook_name}")
+    def enable_plugin(self, plugin_id: str) -> bool:
+        plugin = self.get_plugin(plugin_id)
+        if not plugin:
+            return False
+        plugin.enable()
+        self._refresh_metadata(plugin_id)
+        return True
 
-            except Exception as e:
-                logger.error(f"执行插件 '{hook_method.__self__.plugin_name}' 的钩子 '{hook_name}' 时出错: {e}", exc_info=True)
-                # 选择继续执行其他插件还是中断？这里选择继续
+    def disable_plugin(self, plugin_id: str) -> bool:
+        plugin = self.get_plugin(plugin_id)
+        if not plugin:
+            return False
+        plugin.disable()
+        self._refresh_metadata(plugin_id)
+        return True
+
+    def remove_plugin(self, plugin_id: str) -> None:
+        plugin = self.plugins.pop(plugin_id, None)
+        if plugin:
+            try:
+                plugin.disable()
+            except Exception:
+                logger.debug("移除插件 '%s' 时禁用失败。", plugin_id, exc_info=True)
+        self.unregister_plugin_hooks(plugin_id)
+        self.plugin_metadata.pop(plugin_id, None)
+        self.plugin_sources.pop(plugin_id, None)
+        self.plugin_module_names.pop(plugin_id, None)
+        self.plugin_default_states.pop(plugin_id, None)
+        self._delete_plugin_config_file(plugin_id)
+
+    def run_before_step(
+        self,
+        step: str,
+        payload: Any,
+        *,
+        mode: str = "standard",
+        route: str,
+        scope: str = "image",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        return self._run_step_phase(
+            step,
+            "before",
+            payload,
+            mode=mode,
+            route=route,
+            scope=scope,
+            metadata=metadata,
+        )
+
+    def run_after_step(
+        self,
+        step: str,
+        result: Any,
+        *,
+        mode: str = "standard",
+        route: str,
+        scope: str = "image",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        return self._run_step_phase(
+            step,
+            "after",
+            result,
+            mode=mode,
+            route=route,
+            scope=scope,
+            metadata=metadata,
+        )
+
+    def _run_step_phase(
+        self,
+        step: str,
+        phase: str,
+        data: Any,
+        *,
+        mode: str,
+        route: str,
+        scope: str,
+        metadata: Optional[Dict[str, Any]],
+    ) -> Any:
+        normalized_step = normalize_plugin_step(step)
+        normalized_mode = normalize_plugin_mode(mode)
+
+        if normalized_step not in STEP_HOOK_METHODS:
+            logger.warning("忽略未知插件步骤: %s", normalized_step)
+            return data
+
+        method_name = STEP_HOOK_METHODS[normalized_step][phase]
+        hook_entries = self.hooks.get(method_name, [])
+        if not hook_entries:
+            return data
+
+        context = PluginContext(
+            step=normalized_step,
+            mode=normalized_mode,
+            route=route,
+            scope=scope,
+            metadata=metadata or {},
+        )
+        current_data = data
+
+        for _, plugin_id, hook_method in hook_entries:
+            plugin = self.plugins.get(plugin_id)
+            if not plugin or not plugin.is_enabled():
+                continue
+            if normalized_step not in plugin.supported_steps:
+                continue
+            if normalized_mode not in plugin.supported_modes:
                 continue
 
-        # 如果钩子修改数据，返回最终结果；否则返回 None
-        return current_args if modifies_data else None
+            try:
+                result = hook_method(context, current_data)
+                if result is not None:
+                    current_data = result
+            except Exception as exc:
+                logger.error(
+                    "执行插件 '%s' 的钩子 '%s' 时出错: %s",
+                    plugin_id,
+                    method_name,
+                    exc,
+                    exc_info=True,
+                )
+                if plugin.failure_policy == "fail":
+                    raise PluginException(
+                        f"插件 '{plugin_id}' 在步骤 '{normalized_step}' 执行失败",
+                        details={
+                            "hook": method_name,
+                            "route": route,
+                            "mode": normalized_mode,
+                        },
+                    ) from exc
 
-    def _get_plugin_config_filepath(self, plugin_name):
-        """获取插件配置文件的路径"""
-        # 使用插件名称作为文件名，确保文件名安全
-        safe_filename = "".join(c for c in plugin_name if c.isalnum() or c in ('_', '-')).rstrip()
+        return current_data
+
+    def _get_plugin_config_filepath(self, plugin_id: str) -> str:
+        safe_filename = "".join(
+            c for c in plugin_id
+            if c.isalnum() or c in ("_", "-")
+        ).rstrip()
         if not safe_filename:
-            safe_filename = f"plugin_{hash(plugin_name)}" # 如果名称无效，使用哈希值
+            plugin_digest = hashlib.sha1(
+                plugin_id.encode("utf-8")
+            ).hexdigest()[:12]
+            safe_filename = f"plugin_{plugin_digest}"
         return os.path.join(self.plugin_config_dir, f"{safe_filename}.json")
-    
-    def _load_plugin_config_file(self, plugin_name):
-        """从文件加载指定插件的配置"""
-        config_path = self._get_plugin_config_filepath(plugin_name)
+
+    def _load_plugin_config_file(self, plugin_id: str) -> Dict[str, Any]:
+        config_path = self._get_plugin_config_filepath(plugin_id)
         if os.path.exists(config_path):
             try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                logger.error(f"加载插件 '{plugin_name}' 配置文件 '{config_path}' 失败: {e}")
-        return {} # 文件不存在或加载失败，返回空字典
-    
-    def save_plugin_config(self, plugin_name, config_data):
-        """保存指定插件的配置到文件"""
-        plugin = self.get_plugin(plugin_name)
+                with open(config_path, "r", encoding="utf-8") as file:
+                    loaded = json.load(file)
+                    if isinstance(loaded, dict):
+                        return loaded
+            except (json.JSONDecodeError, IOError) as exc:
+                logger.error(
+                    "加载插件 '%s' 配置文件 '%s' 失败: %s",
+                    plugin_id,
+                    config_path,
+                    exc,
+                )
+        return {}
+
+    def save_plugin_config(self, plugin_id: str, config_data: Dict[str, Any]) -> bool:
+        plugin = self.get_plugin(plugin_id)
         if not plugin:
-            logger.error(f"尝试保存未加载插件 '{plugin_name}' 的配置。")
+            logger.error("尝试保存未加载插件 '%s' 的配置。", plugin_id)
             return False
-    
-        config_path = self._get_plugin_config_filepath(plugin_name)
+
+        config_path = self._get_plugin_config_filepath(plugin_id)
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, indent=2, ensure_ascii=False)
-            logger.info(f"插件 '{plugin_name}' 的配置已保存到 '{config_path}'。")
-            # 保存后，让插件实例重新加载配置
+            with open(config_path, "w", encoding="utf-8") as file:
+                json.dump(config_data, file, indent=2, ensure_ascii=False)
             plugin.load_config(config_data)
+            self._refresh_metadata(plugin_id)
+            logger.info("插件 '%s' 的配置已保存到 '%s'。", plugin_id, config_path)
             return True
-        except IOError as e:
-            logger.error(f"保存插件 '{plugin_name}' 配置文件 '{config_path}' 失败: {e}")
+        except IOError as exc:
+            logger.error(
+                "保存插件 '%s' 配置文件 '%s' 失败: %s",
+                plugin_id,
+                config_path,
+                exc,
+            )
             return False
 
-# --- 全局插件管理器实例 ---
-# 可以在应用启动时创建
-plugin_manager_instance = None
+    def _delete_plugin_config_file(self, plugin_id: str) -> None:
+        config_path = self._get_plugin_config_filepath(plugin_id)
+        if not os.path.exists(config_path):
+            return
+        try:
+            os.remove(config_path)
+        except OSError as exc:
+            logger.warning(
+                "删除插件 '%s' 的配置文件 '%s' 失败: %s",
+                plugin_id,
+                config_path,
+                exc,
+            )
 
-def get_plugin_manager(app=None):
-    """获取插件管理器的单例实例。"""
+
+plugin_manager_instance: Optional[PluginManager] = None
+
+
+def get_plugin_manager(app=None) -> PluginManager:
     global plugin_manager_instance
     if plugin_manager_instance is None:
         logger.info("创建插件管理器实例...")
         plugin_manager_instance = PluginManager(app=app)
-        plugin_manager_instance.discover_and_load_plugins() # 创建时自动加载插件
-    elif app and plugin_manager_instance.app is None:
-         # 如果之前没有 app 实例，现在传入了，则更新
-         plugin_manager_instance.app = app
+        plugin_manager_instance.discover_and_load_plugins()
+    elif app and plugin_manager_instance.app is not app:
+        plugin_manager_instance.app = app
+        for plugin in plugin_manager_instance.plugins.values():
+            plugin.app = app
     return plugin_manager_instance
 
 
-def apply_after_ocr_hooks(image_pil, original_texts, bubble_coords, params):
-    """
-    兼容旧插件签名的 after_ocr 钩子调用辅助函数。
-
-    旧插件接口约定返回 list[str]，这里直接串行调用并回传修改后的文本列表。
-    """
+def apply_before_step_hooks(
+    step: str,
+    payload: Any,
+    *,
+    mode: str = "standard",
+    route: str,
+    scope: str = "image",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
     manager = get_plugin_manager()
-    current_texts = list(original_texts)
-    hook_methods = manager.hooks.get(AFTER_OCR, []) if manager else []
-    if not hook_methods:
-        return current_texts
+    return manager.run_before_step(
+        step,
+        payload,
+        mode=mode,
+        route=route,
+        scope=scope,
+        metadata=metadata,
+    )
 
-    for hook_entry in hook_methods:
-        try:
-            actual_plugin_name = "unknown_plugin"
-            actual_hook_method = hook_entry
-            if isinstance(hook_entry, tuple) and len(hook_entry) == 2:
-                actual_plugin_name = str(hook_entry[0])
-                actual_hook_method = hook_entry[1]
 
-            plugin_instance = getattr(actual_hook_method, "__self__", None)
-            if plugin_instance is not None:
-                actual_plugin_name = getattr(plugin_instance, "plugin_name", actual_plugin_name)
-                if isinstance(plugin_instance, PluginBase) and plugin_instance.is_enabled():
-                    result = actual_hook_method(image_pil, current_texts, bubble_coords, params)
-                    if isinstance(result, list):
-                        current_texts = [str(item or "") for item in result]
-            else:
-                result = actual_hook_method(image_pil, current_texts, bubble_coords, params)
-                if isinstance(result, list):
-                    current_texts = [str(item or "") for item in result]
-        except Exception as error:
-            logger.error(f"执行插件 '{actual_plugin_name}' 的 OCR 钩子时出错: {error}", exc_info=True)
-            continue
-
-    return current_texts
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    print("--- 测试插件管理器 ---")
-    # 需要先创建示例插件 src/plugins/example_plugin/plugin.py
-    
-    # 确保在 example_plugin/__init__.py 中可以导入 ExamplePlugin 类
-    # 例如: from .plugin import ExamplePlugin
-
-    # 初始化日志以便查看输出
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    print("初始化插件管理器...")
+def apply_after_step_hooks(
+    step: str,
+    result: Any,
+    *,
+    mode: str = "standard",
+    route: str,
+    scope: str = "image",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
     manager = get_plugin_manager()
-
-    print("\n已加载插件:")
-    for plugin in manager.get_all_plugins():
-        meta = plugin.get_metadata()
-        print(f"  - {meta['name']} v{meta['version']} by {meta['author']} (Enabled: {plugin.is_enabled()})")
-        print(f"    {meta['description']}")
-
-    print("\n测试触发钩子:")
-    # 模拟触发钩子，需要伪造参数
-    try:
-        from PIL import Image
-        dummy_image = Image.new('RGB', (10, 10))
-        dummy_params = {'target_language': 'zh'}
-        dummy_coords = [(0,0,5,5)]
-        dummy_texts = ["原始文本"]
-
-        print(f"\n触发 {BEFORE_PROCESSING}...")
-        manager.trigger_hook(BEFORE_PROCESSING, dummy_image, dummy_params)
-
-        print(f"\n触发 {AFTER_OCR}...")
-        manager.trigger_hook(AFTER_OCR, dummy_image, dummy_texts, dummy_coords, dummy_params)
-
-        print("\n测试禁用插件:")
-        manager.disable_plugin("示例插件")
-        plugin = manager.get_plugin("示例插件")
-        if plugin: print(f"示例插件启用状态: {plugin.is_enabled()}")
-
-        print(f"\n再次触发 {AFTER_OCR} (插件应被跳过)...")
-        manager.trigger_hook(AFTER_OCR, dummy_image, dummy_texts, dummy_coords, dummy_params)
-
-        print("\n测试启用插件:")
-        manager.enable_plugin("示例插件")
-        if plugin: print(f"示例插件启用状态: {plugin.is_enabled()}")
-
-        print(f"\n再次触发 {AFTER_OCR} (插件应执行)...")
-        manager.trigger_hook(AFTER_OCR, dummy_image, dummy_texts, dummy_coords, dummy_params)
-    except ImportError as e:
-        print(f"测试需要PIL库: {e}")
-    except Exception as e:
-        print(f"测试过程中出错: {e}")
+    return manager.run_after_step(
+        step,
+        result,
+        mode=mode,
+        route=route,
+        scope=scope,
+        metadata=metadata,
+    )

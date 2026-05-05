@@ -22,7 +22,12 @@ import json
 from src.core.ocr import recognize_ocr_results_in_bubbles
 from src.core.detection import detect_textlines
 from src.core.ocr_hybrid_manga_48 import validate_manga_48_hybrid_combo
-from src.plugins.manager import apply_after_ocr_hooks
+from src.plugins.http_helpers import (
+    finalize_plugin_result,
+    prepare_plugin_payload,
+    resolve_plugin_request_context,
+    run_before_step_hooks,
+)
 from src.core.translation_constraints import (
     append_prompt_sections,
     build_glossary_prompt,
@@ -290,6 +295,13 @@ def re_render_image():
         data = request.get_json()
         if not data:
             return jsonify({'error': '请求体不能为空'}), 400
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "render",
+            "/api/re_render_image",
+            data,
+            default_mode="standard",
+            default_scope="image",
+        )
 
         image_data = data.get('image')  # 当前带翻译的图片
         clean_image_data = data.get('clean_image')  # 获取消除文字后的干净图片
@@ -434,7 +446,7 @@ def re_render_image():
         
         if bubble_states_data and len(bubble_states_data) == len(bubble_coords):
             # 新格式：直接从 bubble_states 创建 BubbleState 列表
-            print(f"使用新的 bubble_states 格式，共 {len(bubble_states_data)} 个")
+            logger.info("使用新的 bubble_states 格式，共 %s 个", len(bubble_states_data))
             bubble_states = []
             for i, state_data in enumerate(bubble_states_data):
                 # 确保文本内容与 bubble_texts 同步
@@ -446,7 +458,7 @@ def re_render_image():
                 bubble_states.append(BubbleState.from_dict(state_data))
         elif all_bubble_states and len(all_bubble_states) == len(bubble_coords):
             # 旧格式：从 all_bubble_states 转换
-            print(f"使用旧的 all_bubble_states 格式，共 {len(all_bubble_states)} 个")
+            logger.info("使用旧的 all_bubble_states 格式，共 %s 个", len(all_bubble_states))
             bubble_states = []
             for i, style in enumerate(all_bubble_states):
                 font_path = get_font_path(style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH))
@@ -508,9 +520,24 @@ def re_render_image():
         bubble_states_response = bubble_states_to_api_response(bubble_states)
         logger.info(f"返回 {len(bubble_states_response)} 个气泡的状态信息")
 
-        return jsonify({
-            'rendered_image': img_str,
+        plugin_response_payload = {
+            'success': True,
+            'final_image': img_str,
             'bubble_states': bubble_states_response
+        }
+        plugin_response_payload = finalize_plugin_result(
+            "render",
+            "/api/re_render_image",
+            plugin_response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(bubble_states_response)},
+        )
+
+        return jsonify({
+            'success': True,
+            'rendered_image': plugin_response_payload.get('final_image', img_str),
+            'bubble_states': plugin_response_payload.get('bubble_states', bubble_states_response)
         })
 
     except Exception as e:
@@ -526,6 +553,15 @@ def re_render_single_bubble():
     try:
         logger.info("接收到单个气泡渲染请求")
         data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求体不能为空'}), 400
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "render",
+            "/api/re_render_single_bubble",
+            data,
+            default_mode="standard",
+            default_scope="bubble",
+        )
         
         # 获取必要参数
         bubble_index = data.get('bubble_index')
@@ -637,16 +673,7 @@ def re_render_single_bubble():
         }
         logger.info(f"当前气泡 {bubble_index} 的样式设置: {bubble_style}")
         logger.info(f"特别检查排版方向: text_direction={text_direction}")
-        
-        # 获取干净背景图像数据
-        clean_image_data = data.get('clean_image', '')
-        use_inpainting = data.get('use_inpainting', False)
-        use_lama = data.get('use_lama', False)  # 添加LAMA修复选项
-        is_single_bubble_style = data.get('is_single_bubble_style', False)
-        
-        logger.info(f"使用MI-GAN修复={use_inpainting}, 使用LAMA修复={use_lama}")
-        logger.info(f"单个气泡样式设置={is_single_bubble_style}")
-        
+
         # 尝试使用干净背景图片
         clean_image = None
         if clean_image_data:
@@ -767,6 +794,16 @@ def re_render_single_bubble():
         rendered_image.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
         logger.info(f"图像转换完成，base64字符串长度: {len(img_str)}")
+
+        bubble_states_response = []
+        for index, coords in enumerate(bubble_coords):
+            state_payload = {
+                **bubble_states.get(str(index), {}),
+                'coords': coords,
+                'translatedText': all_texts[index] if index < len(all_texts) else "",
+            }
+            bubble_states_response.append(BubbleState.from_dict(state_payload))
+        bubble_states_response = bubble_states_to_api_response(bubble_states_response)
         
         # 如果使用智能修复但没有干净背景，提供警告
         if use_inpainting and not clean_image:
@@ -774,10 +811,25 @@ def re_render_single_bubble():
         
         # 返回成功响应
         logger.info(f"返回渲染结果: 气泡索引={bubble_index}")
+        plugin_response_payload = {
+            'success': True,
+            'final_image': img_str,
+            'bubble_states': bubble_states_response,
+        }
+        plugin_response_payload = finalize_plugin_result(
+            "render",
+            "/api/re_render_single_bubble",
+            plugin_response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"bubble_count": len(bubble_coords), "bubble_index": bubble_index},
+        )
+
         return jsonify({
             'success': True,
-            'rendered_image': img_str,
+            'rendered_image': plugin_response_payload.get('final_image', img_str),
             'bubble_index': bubble_index,
+            'bubble_states': plugin_response_payload.get('bubble_states', bubble_states_response),
             'message': f'气泡 {bubble_index} 的文本已成功渲染'
         })
         
@@ -794,6 +846,15 @@ def apply_settings_to_all_images():
     try:
         logger.info("接收到应用设置到所有图片的请求")
         data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求体不能为空'}), 400
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "render",
+            "/api/apply_settings_to_all_images",
+            data,
+            default_mode="standard",
+            default_scope="batch",
+        )
         
         # 获取字体设置参数
         fontSize = data.get('fontSize', constants.DEFAULT_FONT_SIZE)
@@ -941,9 +1002,22 @@ def apply_settings_to_all_images():
         # 统计成功渲染的图片数量
         success_count = sum(1 for img in rendered_images if img is not None)
         
-        return jsonify({
+        plugin_response_payload = {
             'success': True,
             'rendered_images': rendered_images,
+        }
+        plugin_response_payload = finalize_plugin_result(
+            "render",
+            "/api/apply_settings_to_all_images",
+            plugin_response_payload,
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"image_count": len(all_images)},
+        )
+
+        return jsonify({
+            'success': True,
+            'rendered_images': plugin_response_payload.get('rendered_images', rendered_images),
             'message': f'已成功将设置应用到 {success_count}/{len(all_images)} 张图片'
         })
         
@@ -956,9 +1030,15 @@ def apply_settings_to_all_images():
 def route_translate_single_text():
     """单条文本翻译端点"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         if not data:
             return jsonify({'error': '请求体不能为空'}), 400
+
+        plugin_mode, plugin_scope = resolve_plugin_request_context(
+            data,
+            default_mode="standard",
+            default_scope="bubble",
+        )
 
         original_text = _request_value(data, 'original_text', 'originalText')
         target_language = _request_value(data, 'target_language', 'targetLanguage')
@@ -998,6 +1078,36 @@ def route_translate_single_text():
         use_json_format = openai_options.request.force_json_output
         rpm_limit_translation = openai_options.execution.rpm_limit
         business_retries = openai_options.execution.business_retries
+
+        plugin_request_payload = run_before_step_hooks(
+            "translate",
+            "/api/translate_single_text",
+            {
+                **data,
+                "original_texts": [original_text] if original_text else [],
+                "target_language": target_language,
+                "model_provider": model_provider,
+                "model_name": model_name,
+                "custom_base_url": custom_base_url,
+            },
+            mode=plugin_mode,
+            scope=plugin_scope,
+            metadata={"text_count": 1},
+        )
+
+        original_texts = plugin_request_payload.get("original_texts")
+        if isinstance(original_texts, list) and original_texts:
+            original_text = str(original_texts[0] or "")
+        else:
+            original_text = _request_value(plugin_request_payload, 'original_text', 'originalText') or original_text
+        target_language = _request_value(plugin_request_payload, 'target_language', 'targetLanguage', default=target_language)
+        api_key = _request_value(plugin_request_payload, 'api_key', 'apiKey', default=api_key)
+        model_name = _request_value(plugin_request_payload, 'model_name', 'model', 'modelName', default=model_name)
+        model_provider = normalize_provider_id(_request_value(plugin_request_payload, 'model_provider', 'provider', default=model_provider))
+        prompt_content = _request_value(plugin_request_payload, 'prompt_content', 'promptContent', default=prompt_content)
+        custom_base_url = _request_value(plugin_request_payload, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl', default=custom_base_url)
+        glossary_settings = normalize_glossary_settings(plugin_request_payload.get('glossary_settings', glossary_settings))
+        non_translate_settings = normalize_non_translate_settings(plugin_request_payload.get('non_translate_settings', non_translate_settings))
 
         if not all([original_text, target_language, model_provider]):
             return jsonify({'error': '缺少必要的参数 (原文、目标语言、服务商)'}), 400
@@ -1056,10 +1166,29 @@ def route_translate_single_text():
                 translated,
             )
             
-            return jsonify({
-                'translated_text': translated,
+            plugin_response_payload = {
+                'success': True,
+                'translated_texts': [translated],
+                'textbox_texts': [],
                 'warnings': warnings,
-            })
+            }
+            plugin_response_payload = finalize_plugin_result(
+                "translate",
+                "/api/translate_single_text",
+                plugin_response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={
+                    "target_language": target_language,
+                    "text_count": 1,
+                },
+            )
+            translated_texts = plugin_response_payload.get('translated_texts') or [translated]
+            response_payload = {
+                'translated_text': translated_texts[0] if translated_texts else '',
+                'warnings': plugin_response_payload.get('warnings', warnings),
+            }
+            return jsonify(response_payload)
 
         except Exception as e:
             logger.error(f"翻译单条文本时出错: {e}")
@@ -1081,7 +1210,15 @@ def hq_translate_batch():
     import time  # 用于重试等待
     
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        initial_mode = 'proofread' if data.get('isProofreading', False) else 'hq'
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "ai_translate",
+            "/api/hq_translate_batch",
+            data,
+            default_mode=initial_mode,
+            default_scope="batch",
+        )
         
         # 获取必要参数
         provider = normalize_provider_id(_request_value(data, 'provider'))
@@ -1097,6 +1234,7 @@ def hq_translate_batch():
         user_prompt = data.get('prompt', '')
         system_prompt = data.get('systemPrompt', '你是一个专业的漫画翻译助手。')
         is_proofreading = data.get('isProofreading', False)
+        plugin_mode = 'proofread' if is_proofreading else plugin_mode
         enable_debug_logs = data.get('enableDebugLogs', False)  # 接收调试日志开关
         glossary_settings = normalize_glossary_settings(data.get('glossary_settings'))
         non_translate_settings = normalize_non_translate_settings(data.get('non_translate_settings'))
@@ -1322,11 +1460,24 @@ def hq_translate_batch():
                                 bubble_index=actual_bubble_index,
                             )
                         )
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'results': final_results,
                 'warnings': warnings,
-            })
+            }
+            response_payload = finalize_plugin_result(
+                "ai_translate",
+                "/api/hq_translate_batch",
+                response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={
+                    "image_count": len(image_base64_array or []),
+                    "is_proofreading": is_proofreading,
+                    "provider": provider,
+                },
+            )
+            return jsonify(response_payload)
         except OpenAICompatibleBusinessRetriesExhaustedError as exhausted_error:
             logger.error("高质量翻译业务重试耗尽: %s", exhausted_error)
             if exhausted_error.last_raw_content:
@@ -1354,7 +1505,14 @@ def hq_translate_batch():
 def ocr_single_bubble():
     """单气泡OCR识别端点"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "ocr",
+            "/api/ocr_single_bubble",
+            data,
+            default_mode="standard",
+            default_scope="bubble",
+        )
         
         # 获取参数
         image_data = data.get('image_data')  # base64 图片数据
@@ -1495,23 +1653,36 @@ def ocr_single_bubble():
             )
             ocr_result = ocr_results[0] if ocr_results else None
             recognized_text = ocr_result.text if ocr_result else ""
-            hook_params = {
-                "source_language": source_language,
-                "ocr_engine": ocr_engine,
-                "ocr_results": [ocr_result.to_dict()] if ocr_result else [],
-            }
-            modified_texts = apply_after_ocr_hooks(bubble_image, [recognized_text], single_coords, hook_params)
-            if ocr_result and modified_texts and len(modified_texts) == 1:
-                recognized_text = modified_texts[0]
-                ocr_result.text = recognized_text
-            logger.info(f"单气泡OCR识别结果: {recognized_text[:50]}..." if len(recognized_text) > 50 else f"单气泡OCR识别结果: {recognized_text}")
-
-            return jsonify({
+            plugin_response_payload = {
                 'success': True,
-                'text': recognized_text,
-                'ocr_result': ocr_result.to_dict() if ocr_result else None,
-                'textlines': bubble_textlines_local
-            })
+                'original_texts': [recognized_text],
+                'ocr_results': [ocr_result.to_dict()] if ocr_result else [],
+                'textlines_per_bubble': [bubble_textlines_local],
+            }
+            plugin_response_payload = finalize_plugin_result(
+                "ocr",
+                "/api/ocr_single_bubble",
+                plugin_response_payload,
+                mode=plugin_mode,
+                scope=plugin_scope,
+                metadata={
+                    "ocr_engine": ocr_engine,
+                    "source_language": source_language,
+                    "bubble_count": 1,
+                },
+            )
+            updated_texts = plugin_response_payload.get('original_texts') or [recognized_text]
+            updated_ocr_results = plugin_response_payload.get('ocr_results') or ([ocr_result.to_dict()] if ocr_result else [])
+            updated_textlines = plugin_response_payload.get('textlines_per_bubble') or [bubble_textlines_local]
+            response_payload = {
+                'success': True,
+                'text': updated_texts[0] if updated_texts else '',
+                'ocr_result': updated_ocr_results[0] if updated_ocr_results else None,
+                'textlines': updated_textlines[0] if updated_textlines else [],
+            }
+            recognized_text = response_payload.get('text', recognized_text)
+            logger.info(f"单气泡OCR识别结果: {recognized_text[:50]}..." if len(recognized_text) > 50 else f"单气泡OCR识别结果: {recognized_text}")
+            return jsonify(response_payload)
             
         except ValueError as e:
             logger.error(f"OCR识别参数错误: {e}", exc_info=True)
@@ -1535,6 +1706,15 @@ def inpaint_single_bubble():
     """
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求体不能为空'}), 400
+        data, plugin_mode, plugin_scope = prepare_plugin_payload(
+            "inpaint",
+            "/api/inpaint_single_bubble",
+            data,
+            default_mode="standard",
+            default_scope="bubble",
+        )
         
         # 获取参数
         image_data = data.get('image_data')  # base64 图片数据
@@ -1620,9 +1800,21 @@ def inpaint_single_bubble():
                     
                     logger.info(f"单气泡LAMA修复完成: coords={bubble_coords}, used_precise_mask={precise_mask is not None}")
                     
+                    plugin_response_payload = {
+                        'success': True,
+                        'clean_image': inpainted_base64,
+                    }
+                    plugin_response_payload = finalize_plugin_result(
+                        "inpaint",
+                        "/api/inpaint_single_bubble",
+                        plugin_response_payload,
+                        mode=plugin_mode,
+                        scope=plugin_scope,
+                        metadata={"bubble_count": 1},
+                    )
                     return jsonify({
                         'success': True,
-                        'inpainted_image': inpainted_base64
+                        'inpainted_image': plugin_response_payload.get('clean_image', inpainted_base64)
                     })
                 else:
                     return jsonify({'error': 'LAMA 修复返回空结果'}), 500

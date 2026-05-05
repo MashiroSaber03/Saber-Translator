@@ -3,7 +3,7 @@
  * 定义与后端 API 交互的数据结构
  */
 
-import type { BubbleState, BubbleCoords, BubbleTextline } from './bubble'
+import type { BubbleState, BubbleTextline } from './bubble'
 
 import type { OcrResult } from './ocr'
 import type { TranslationWarning } from './translationConstraints'
@@ -168,12 +168,18 @@ export interface TagData {
  * 插件数据
  */
 export interface PluginData {
-  name: string
-  displayName: string
+  id: string
+  display_name: string
   description: string
   version: string
+  author?: string
   enabled: boolean
-  defaultEnabled: boolean
+  default_enabled: boolean
+  has_config: boolean
+  supported_steps: string[]
+  supported_modes: string[]
+  priority?: number
+  failure_policy?: string
   configSchema?: Record<string, unknown>
   config?: Record<string, unknown>
 }

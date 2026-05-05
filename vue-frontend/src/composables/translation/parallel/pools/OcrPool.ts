@@ -38,6 +38,7 @@ export class OcrPool extends TaskPool {
     const result = await executeOcr({
       imageIndex: task.imageIndex,
       image: imageData,
+      translationMode: task.translationMode,
       bubbleCoords: detectionResult.bubbleCoords as any,
       bubbleStates: imageData.bubbleStates,
       textlinesPerBubble: detectionResult.textlinesPerBubble || []

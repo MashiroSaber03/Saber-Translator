@@ -97,7 +97,8 @@ class TranslationRouteConstraintTests(unittest.TestCase):
         sys.modules["src.core.ocr_hybrid_manga_48"] = hybrid_stub
 
         plugins_stub = types.ModuleType("src.plugins.manager")
-        plugins_stub.apply_after_ocr_hooks = lambda _image, texts, _coords, _params: texts
+        plugins_stub.apply_before_step_hooks = lambda _step, payload, **_kwargs: payload
+        plugins_stub.apply_after_step_hooks = lambda _step, result, **_kwargs: result
         sys.modules["src.plugins.manager"] = plugins_stub
 
         package_dir = os.path.join(PROJECT_ROOT, "src", "app", "api", "translation")

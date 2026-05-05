@@ -156,6 +156,7 @@ export class ParallelPipeline {
     const tasks: PipelineTask[] = images.map((imageData, localIndex) => ({
       id: `task-${startIndex + localIndex}`,
       imageIndex: startIndex + localIndex,  // 使用原始索引
+      translationMode: mode,
       imageData,
       status: 'pending'
     }))
