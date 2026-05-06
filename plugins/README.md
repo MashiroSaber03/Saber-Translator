@@ -23,6 +23,7 @@ Saber Translator 的翻译流程已经拆成多个原子步骤。插件不是“
 - `ai_translate`
 - `inpaint`
 - `render`
+- `pipeline` ← **全局生命周期钩子**，每次完整翻译任务只触发一次
 
 每个步骤都支持两类 hook：
 
@@ -40,6 +41,51 @@ Saber Translator 的翻译流程已经拆成多个原子步骤。插件不是“
 - 在 `after_ocr` 里清洗 OCR 结果
 - 在 `before_render` 里统一修改文字颜色
 - 在 `after_detect` 里过滤掉你不想要的检测框
+
+### `pipeline` 步骤说明
+
+`pipeline` 是一个特殊步骤，区别于上面 7 个原子步骤：
+
+- **触发时机**：用户点击「翻译当前图片 / 翻译全部 / 翻译范围 / 重试失败 / 校对 / 消除文字」等任何一次完整翻译任务时，`before_pipeline` 在所有图片所有原子步骤之前触发**一次**，`after_pipeline` 在所有原子步骤完成后触发**一次**
+- **不会触发**：单气泡 OCR、单气泡修复、重渲染、应用样式到全部等「步骤级小操作」不算一次 pipeline，不会触发
+- **payload 字段**：
+  - `before_pipeline`：`pipeline_id` / `mode` / `scope` / `page_indexes` / `total_images`
+  - `after_pipeline`：`pipeline_id` / `mode` / `scope` / `completed` / `failed` / `errors` / `warnings_count` / `duration_ms`
+- **取消任务**：在 `before_pipeline` 里 `raise PluginException("...")`（且 `failure_policy="fail"`）会立即取消本次翻译，前端会收到 toast 错误并不会执行任何原子步骤
+- **配对上下文**：每次任务有唯一的 `pipeline_id`，before 和 after 共享同一个 ID，便于做缓存、统计、合规审计
+
+最小示例：
+
+```python
+from src.plugins.base import PluginBase
+
+
+class MyLifecyclePlugin(PluginBase):
+    plugin_id = "my_lifecycle_plugin"
+    display_name = "我的生命周期插件"
+    plugin_version = "1.0.0"
+    plugin_author = "Your Name"
+    plugin_description = "演示 pipeline 钩子"
+    default_enabled = False
+    supported_steps = ("pipeline",)
+    supported_modes = ("standard", "hq", "proofread", "remove_text")
+    priority = 10
+
+    def before_pipeline(self, context, payload):
+        self.logger.info("一次任务开始: pipeline_id=%s total_images=%s",
+                         payload.get("pipeline_id"), payload.get("total_images"))
+        return None
+
+    def after_pipeline(self, context, result):
+        self.logger.info("一次任务结束: pipeline_id=%s 成功=%s 失败=%s 耗时=%sms",
+                         result.get("pipeline_id"),
+                         result.get("completed"),
+                         result.get("failed"),
+                         result.get("duration_ms"))
+        return None
+```
+
+更完整的示例可以参考 [plugins/pipeline_lifecycle_plugin/plugin.py](C:/Users/33252/Desktop/Saber-Translator/plugins/pipeline_lifecycle_plugin/plugin.py)。
 
 ---
 
@@ -301,11 +347,18 @@ default_enabled = False
 - `ai_translate`
 - `inpaint`
 - `render`
+- `pipeline` ← 全局生命周期钩子
 
 例如：
 
 ```python
 supported_steps = ("ocr", "translate")
+```
+
+如果你写的是只关心一次任务起止的「生命周期插件」（统计、配额、缓存、审计等），就只需要：
+
+```python
+supported_steps = ("pipeline",)
 ```
 
 ### `supported_modes`

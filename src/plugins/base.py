@@ -16,7 +16,7 @@ class PluginBase:
     插件 v2 基类。
 
     插件围绕原子步骤工作：detect / ocr / color / translate /
-    ai_translate / inpaint / render。
+    ai_translate / inpaint / render，外加一对 pipeline 全局生命周期钩子。
     """
 
     plugin_id = "unnamed_plugin"
@@ -122,6 +122,12 @@ class PluginBase:
         return None
 
     def after_render(self, context: PluginContext, result: Dict[str, Any]):
+        return None
+
+    def before_pipeline(self, context: PluginContext, payload: Dict[str, Any]):
+        return None
+
+    def after_pipeline(self, context: PluginContext, result: Dict[str, Any]):
         return None
 
     def get_config_schema(self) -> Dict[str, Dict[str, Any]]:

@@ -39,5 +39,6 @@ translate_bp = Blueprint('translate_api', __name__, url_prefix='/api')
 
 # 导入所有路由
 from . import routes
+from . import pipeline_routes  # 注册 /api/pipeline/before|after
 
 __all__ = ['translate_bp']

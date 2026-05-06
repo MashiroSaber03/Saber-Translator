@@ -1,6 +1,11 @@
 from typing import Any, Dict, Optional, Tuple
 
-from .manager import apply_after_step_hooks, apply_before_step_hooks
+from .manager import (
+    apply_after_pipeline_hooks,
+    apply_after_step_hooks,
+    apply_before_pipeline_hooks,
+    apply_before_step_hooks,
+)
 
 
 def resolve_plugin_request_context(
@@ -80,4 +85,48 @@ def finalize_plugin_result(
     )
     if not isinstance(updated, dict):
         raise ValueError(f"插件 after_{step} 必须返回对象")
+    return updated
+
+
+def run_before_pipeline_hooks(
+    payload: Dict[str, Any],
+    *,
+    mode: str,
+    scope: str,
+    pipeline_id: str,
+    route: str = "/api/pipeline/before",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    updated = apply_before_pipeline_hooks(
+        payload,
+        mode=mode,
+        scope=scope,
+        pipeline_id=pipeline_id,
+        route=route,
+        metadata=metadata,
+    )
+    if not isinstance(updated, dict):
+        raise ValueError("插件 before_pipeline 必须返回对象")
+    return updated
+
+
+def run_after_pipeline_hooks(
+    result: Dict[str, Any],
+    *,
+    mode: str,
+    scope: str,
+    pipeline_id: str,
+    route: str = "/api/pipeline/after",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    updated = apply_after_pipeline_hooks(
+        result,
+        mode=mode,
+        scope=scope,
+        pipeline_id=pipeline_id,
+        route=route,
+        metadata=metadata,
+    )
+    if not isinstance(updated, dict):
+        raise ValueError("插件 after_pipeline 必须返回对象")
     return updated

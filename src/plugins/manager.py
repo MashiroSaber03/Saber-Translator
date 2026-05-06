@@ -412,6 +412,50 @@ class PluginManager:
             metadata=metadata,
         )
 
+    def run_before_pipeline(
+        self,
+        payload: Any,
+        *,
+        mode: str = "standard",
+        scope: str = "all",
+        pipeline_id: str,
+        route: str = "/api/pipeline/before",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        merged_metadata = dict(metadata or {})
+        merged_metadata["pipeline_id"] = pipeline_id
+        return self._run_step_phase(
+            "pipeline",
+            "before",
+            payload,
+            mode=mode,
+            route=route,
+            scope=scope,
+            metadata=merged_metadata,
+        )
+
+    def run_after_pipeline(
+        self,
+        result: Any,
+        *,
+        mode: str = "standard",
+        scope: str = "all",
+        pipeline_id: str,
+        route: str = "/api/pipeline/after",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        merged_metadata = dict(metadata or {})
+        merged_metadata["pipeline_id"] = pipeline_id
+        return self._run_step_phase(
+            "pipeline",
+            "after",
+            result,
+            mode=mode,
+            route=route,
+            scope=scope,
+            metadata=merged_metadata,
+        )
+
     def _run_step_phase(
         self,
         step: str,
@@ -596,5 +640,45 @@ def apply_after_step_hooks(
         mode=mode,
         route=route,
         scope=scope,
+        metadata=metadata,
+    )
+
+
+def apply_before_pipeline_hooks(
+    payload: Any,
+    *,
+    mode: str = "standard",
+    scope: str = "all",
+    pipeline_id: str,
+    route: str = "/api/pipeline/before",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
+    manager = get_plugin_manager()
+    return manager.run_before_pipeline(
+        payload,
+        mode=mode,
+        scope=scope,
+        pipeline_id=pipeline_id,
+        route=route,
+        metadata=metadata,
+    )
+
+
+def apply_after_pipeline_hooks(
+    result: Any,
+    *,
+    mode: str = "standard",
+    scope: str = "all",
+    pipeline_id: str,
+    route: str = "/api/pipeline/after",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
+    manager = get_plugin_manager()
+    return manager.run_after_pipeline(
+        result,
+        mode=mode,
+        scope=scope,
+        pipeline_id=pipeline_id,
+        route=route,
         metadata=metadata,
     )

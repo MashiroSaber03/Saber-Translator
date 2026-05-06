@@ -1,7 +1,7 @@
 """
 插件 v2 契约定义。
 
-当前插件系统围绕原子步骤工作，而不是旧的一体化流程钩子。
+围绕 7 个原子翻译步骤外加一对 pipeline 全局生命周期钩子工作。
 """
 
 from dataclasses import dataclass, field
@@ -16,6 +16,7 @@ PLUGIN_STEPS: Tuple[str, ...] = (
     "ai_translate",
     "inpaint",
     "render",
+    "pipeline",
 )
 
 PLUGIN_MODES: Tuple[str, ...] = (
@@ -58,6 +59,10 @@ STEP_HOOK_METHODS: Dict[str, Dict[str, str]] = {
     "render": {
         "before": "before_render",
         "after": "after_render",
+    },
+    "pipeline": {
+        "before": "before_pipeline",
+        "after": "after_pipeline",
     },
 }
 

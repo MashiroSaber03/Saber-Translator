@@ -24,8 +24,55 @@ import {
     finalizeSave,
     resetSaveState
 } from './saveStep'
-import type { PipelineConfig, PipelineResult } from './types'
+import type { PipelineConfig, PipelineResult, TranslationMode } from './types'
 import type { ParallelTranslationMode } from '../parallel/types'
+import {
+    notifyPipelineAfter,
+    notifyPipelineBefore,
+    PipelineCancelledError,
+    type PipelineMode,
+    type PipelineScope,
+} from '@/api/pipeline'
+
+/** 把前端 TranslationMode 映射为后端 PLUGIN_MODES（仅 'removeText' → 'remove_text'）。 */
+function toBackendMode(mode: TranslationMode): PipelineMode {
+    return mode === 'removeText' ? 'remove_text' : (mode as PipelineMode)
+}
+
+/**
+ * 计算本次任务的 0-based 页面索引数组。
+ * 与 SequentialPipeline.getImagesToProcess 语义保持一致。
+ */
+function resolvePageIndexes(
+    config: PipelineConfig,
+    totalImages: number,
+    currentIndex: number,
+    failedIndices: number[]
+): number[] {
+    if (totalImages === 0) {
+        return []
+    }
+    if (config.scope === 'current') {
+        return currentIndex >= 0 && currentIndex < totalImages ? [currentIndex] : []
+    }
+    if (config.scope === 'failed') {
+        return failedIndices.filter(idx => idx >= 0 && idx < totalImages)
+    }
+    if (config.scope === 'range' && config.pageRange) {
+        const start = Math.max(0, config.pageRange.startPage - 1)
+        const end = Math.min(totalImages - 1, config.pageRange.endPage - 1)
+        if (start > end || start >= totalImages) {
+            return []
+        }
+        const result: number[] = []
+        for (let i = start; i <= end; i++) {
+            result.push(i)
+        }
+        return result
+    }
+    // 'all'
+    return Array.from({ length: totalImages }, (_, i) => i)
+}
 
 /**
  * 翻译管线 composable - 统一入口
@@ -61,10 +108,12 @@ export function usePipeline() {
 
     /**
      * 执行翻译管线
-     * 
+     *
      * 自动选择执行引擎：
      * - 并行模式开启 + 批量操作 → 使用 ParallelPipeline
      * - 其他情况 → 使用 SequentialPipeline
+     *
+     * 调用前后统一触发后端的 before_pipeline / after_pipeline 钩子。
      */
     async function execute(config: PipelineConfig): Promise<PipelineResult> {
         // 检查图片
@@ -73,20 +122,83 @@ export function usePipeline() {
             return { success: false, completed: 0, failed: 0, errors: ['没有图片'] }
         }
 
-        // 检查是否使用并行模式
-        // 'all' 和 'range' 都是批量操作，都可以使用并行模式
-        const parallelConfig = settingsStore.settings.parallel
-        const isBatchScope = config.scope === 'all' || config.scope === 'range'
-        const shouldUseParallel = parallelConfig?.enabled && isBatchScope
+        // 1. 生成 pipeline_id 并通知 before_pipeline
+        const pipelineId =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
-        if (shouldUseParallel) {
-            console.log(`🚀 使用并行管线，模式: ${config.mode}, 范围: ${config.scope}`)
-            return executeParallelMode(config)
+        const failedIndices = imageStore.getFailedImageIndices()
+        const pageIndexes = resolvePageIndexes(
+            config,
+            imageStore.images.length,
+            imageStore.currentImageIndex,
+            failedIndices
+        )
+        const backendMode = toBackendMode(config.mode)
+        const backendScope = config.scope as PipelineScope
+
+        try {
+            await notifyPipelineBefore({
+                pipeline_id: pipelineId,
+                mode: backendMode,
+                scope: backendScope,
+                page_indexes: pageIndexes,
+                total_images: pageIndexes.length,
+            })
+        } catch (err) {
+            if (err instanceof PipelineCancelledError) {
+                toast.error(`翻译被插件取消：${err.message}`)
+                console.warn('[pipeline.before] 插件取消任务', err.details)
+                return {
+                    success: false,
+                    completed: 0,
+                    failed: 0,
+                    errors: [`插件取消任务: ${err.message}`],
+                }
+            }
+            console.warn('[pipeline.before] 通知失败（继续执行翻译）:', err)
         }
 
-        // 使用顺序管线
-        console.log(`🚀 使用顺序管线，模式: ${config.mode}`)
-        return sequentialPipeline.execute(config)
+        // 2. 执行真实翻译；3. 无论成败都通知 after_pipeline
+        const startedAt = Date.now()
+        const sumWarnings = () => imageStore.images.reduce(
+            (total, image) => total + (image.translationWarnings?.length || 0),
+            0
+        )
+        const sendAfter = (r: PipelineResult) => notifyPipelineAfter({
+            pipeline_id: pipelineId,
+            mode: backendMode,
+            scope: backendScope,
+            completed: r.completed,
+            failed: r.failed,
+            errors: r.errors,
+            warnings_count: sumWarnings(),
+            duration_ms: Date.now() - startedAt,
+        })
+
+        try {
+            const parallelConfig = settingsStore.settings.parallel
+            const isBatchScope = config.scope === 'all' || config.scope === 'range'
+            const shouldUseParallel = parallelConfig?.enabled && isBatchScope
+
+            const result = shouldUseParallel
+                ? await executeParallelMode(config)
+                : await sequentialPipeline.execute(config)
+
+            console.log(`🚀 ${shouldUseParallel ? '并行' : '顺序'}管线完成，模式: ${config.mode}, pipeline_id=${pipelineId}`)
+            void sendAfter(result)
+            return result
+        } catch (err) {
+            const message = err instanceof Error ? err.message : '翻译执行出错'
+            void sendAfter({
+                success: false,
+                completed: 0,
+                failed: pageIndexes.length,
+                errors: [message],
+            })
+            throw err
+        }
     }
 
     /**

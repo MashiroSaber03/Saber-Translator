@@ -44,6 +44,9 @@ export * from './insight'
 // 插件 API
 export * from './plugin'
 
+// 翻译 Pipeline 生命周期 API（before/after pipeline 钩子）
+export * from './pipeline'
+
 // 配置 API
 export * from './config'
 
