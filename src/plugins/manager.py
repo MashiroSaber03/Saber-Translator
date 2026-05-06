@@ -8,6 +8,8 @@ import os
 import shutil
 import stat
 import sys
+import threading
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.shared.config_loader import get_config_path, load_json_config, save_json_config
@@ -35,6 +37,7 @@ class PluginManager:
 
     def __init__(self, app=None, plugin_dirs=None):
         self.app = app
+        self._lock = threading.RLock()
         self.plugins: Dict[str, PluginBase] = {}
         self.hooks: Dict[str, List[Tuple[int, str, Any]]] = {
             method_name: [] for method_name in HOOK_METHOD_TO_STEP_PHASE
@@ -42,29 +45,37 @@ class PluginManager:
         self.plugin_metadata: Dict[str, Dict[str, Any]] = {}
         self.plugin_sources: Dict[str, str] = {}
         self.plugin_module_names: Dict[str, List[str]] = {}
-        self.plugin_dirs = plugin_dirs or [
+        raw_plugin_dirs = plugin_dirs or [
             resource_path("src/plugins"),
             resource_path("plugins"),
         ]
+        self.plugin_dirs = [self._normalize_source_path(path) for path in raw_plugin_dirs]
         self.plugin_config_dir = get_config_path("plugin_configs")
         os.makedirs(self.plugin_config_dir, exist_ok=True)
         os.makedirs(resource_path("plugins"), exist_ok=True)
         self.plugin_default_states = self._load_plugin_default_states()
         logger.debug("插件管理器初始化，扫描目录: %s", self.plugin_dirs)
 
+    def _normalize_source_path(self, path: str) -> str:
+        return os.path.abspath(path)
+
+    def _source_identity(self, path: str) -> str:
+        return os.path.normcase(self._normalize_source_path(path))
+
     def reset_for_testing(self, *, clear_defaults: bool = True) -> None:
-        for plugin in self.plugins.values():
-            try:
-                plugin.disable()
-            except Exception:
-                logger.debug("测试重置时禁用插件失败: %s", plugin.plugin_id, exc_info=True)
-        self.plugins.clear()
-        self.plugin_metadata.clear()
-        self.plugin_sources.clear()
-        self.plugin_module_names.clear()
-        self.hooks = {method_name: [] for method_name in HOOK_METHOD_TO_STEP_PHASE}
-        if clear_defaults:
-            self.plugin_default_states = {}
+        with self._lock:
+            for plugin in self.plugins.values():
+                try:
+                    plugin.disable()
+                except Exception:
+                    logger.debug("测试重置时禁用插件失败: %s", plugin.plugin_id, exc_info=True)
+            self.plugins.clear()
+            self.plugin_metadata.clear()
+            self.plugin_sources.clear()
+            self.plugin_module_names.clear()
+            self.hooks = {method_name: [] for method_name in HOOK_METHOD_TO_STEP_PHASE}
+            if clear_defaults:
+                self.plugin_default_states = {}
 
     def _load_plugin_default_states(self) -> Dict[str, bool]:
         loaded_states = load_json_config(PLUGIN_DEFAULT_STATES_FILE, default_value={})
@@ -78,7 +89,9 @@ class PluginManager:
         return normalized_states
 
     def save_plugin_default_states(self) -> bool:
-        success = save_json_config(PLUGIN_DEFAULT_STATES_FILE, self.plugin_default_states)
+        with self._lock:
+            states_snapshot = dict(self.plugin_default_states)
+        success = save_json_config(PLUGIN_DEFAULT_STATES_FILE, states_snapshot)
         if success:
             logger.info("插件默认启用状态已保存。")
         else:
@@ -86,11 +99,12 @@ class PluginManager:
         return success
 
     def set_plugin_default_state(self, plugin_id: str, enabled: bool) -> bool:
-        if plugin_id not in self.plugins:
-            logger.warning("尝试设置未加载插件 '%s' 的默认状态。", plugin_id)
-            return False
-        self.plugin_default_states[plugin_id] = bool(enabled)
-        self._refresh_metadata(plugin_id)
+        with self._lock:
+            if plugin_id not in self.plugins:
+                logger.warning("尝试设置未加载插件 '%s' 的默认状态。", plugin_id)
+                return False
+            self.plugin_default_states[plugin_id] = bool(enabled)
+            self._refresh_metadata(plugin_id)
         return self.save_plugin_default_states()
 
     def discover_and_load_plugins(self) -> None:
@@ -100,16 +114,12 @@ class PluginManager:
 
         for plugin_name, package_path in self._find_potential_plugins():
             try:
-                plugin_module = self._load_plugin_module(package_path, plugin_name)
-                for attr_name in dir(plugin_module):
-                    attr = getattr(plugin_module, attr_name)
-                    if inspect.isclass(attr) and issubclass(attr, PluginBase) and attr is not PluginBase:
-                        plugin_loaded, default_added = self._load_plugin_class(attr, source_path=package_path)
-                        if plugin_loaded:
-                            loaded_count += 1
-                        if default_added:
-                            needs_saving_defaults = True
-                        break
+                plugin_instance = self._prepare_plugin_from_source_path(package_path, plugin_name)
+                default_added = plugin_instance.plugin_id not in self.plugin_default_states
+                self._attach_prepared_plugin_instance(plugin_instance, source_path=package_path)
+                loaded_count += 1
+                if default_added:
+                    needs_saving_defaults = True
             except Exception as exc:
                 logger.error("加载插件目录 '%s' 失败: %s", plugin_name, exc, exc_info=True)
 
@@ -123,10 +133,10 @@ class PluginManager:
             if not os.path.isdir(plugin_dir):
                 logger.warning("插件目录不存在或不是目录: %s", plugin_dir)
                 continue
-            for item in os.listdir(plugin_dir):
+            for item in sorted(os.listdir(plugin_dir)):
                 item_path = os.path.join(plugin_dir, item)
                 if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "__init__.py")) and os.path.exists(os.path.join(item_path, "plugin.py")):
-                    potential_plugins.append((item, item_path))
+                    potential_plugins.append((item, self._normalize_source_path(item_path)))
         return potential_plugins
 
     def _get_module_import_path(self, package_path: str, plugin_name: str) -> Optional[str]:
@@ -136,8 +146,15 @@ class PluginManager:
         logger.warning("无法确定插件 '%s' 的导入路径: %s", plugin_name, package_path)
         return None
 
-    def _load_plugin_module(self, package_path: str, plugin_name: str):
+    def _load_plugin_module(self, package_path: str, plugin_name: str, *, force_reload: bool = False):
         normalized_path = package_path.replace("\\", "/")
+        if force_reload:
+            return self._load_namespaced_plugin_module(
+                package_path,
+                plugin_name,
+                namespace_name="_saber_hot_reload_plugins",
+                cache_bust_token=uuid.uuid4().hex[:12],
+            )
         if "src/plugins" not in normalized_path:
             return self._load_external_plugin_module(package_path, plugin_name)
         module_import_path = self._get_module_import_path(package_path, plugin_name)
@@ -146,12 +163,31 @@ class PluginManager:
         return self._load_external_plugin_module(package_path, plugin_name)
 
     def _load_external_plugin_module(self, package_path: str, plugin_name: str):
+        return self._load_namespaced_plugin_module(
+            package_path,
+            plugin_name,
+            namespace_name="_saber_user_plugins",
+        )
+
+    def _load_namespaced_plugin_module(
+        self,
+        package_path: str,
+        plugin_name: str,
+        *,
+        namespace_name: str,
+        cache_bust_token: Optional[str] = None,
+    ):
         init_path = os.path.join(package_path, "__init__.py")
         plugin_path = os.path.join(package_path, "plugin.py")
-        module_suffix = self._build_external_module_suffix(package_path, plugin_name)
-        self._ensure_external_plugins_namespace()
-        package_module_name = f"_saber_user_plugins.{module_suffix}"
+        module_suffix = self._build_external_module_suffix(
+            package_path,
+            plugin_name,
+            cache_bust_token=cache_bust_token,
+        )
+        self._ensure_external_plugins_namespace(namespace_name)
+        package_module_name = f"{namespace_name}.{module_suffix}"
         plugin_module_name = f"{package_module_name}.plugin"
+        loaded_module_names: List[str] = []
 
         package_module = sys.modules.get(package_module_name)
         if package_module is None:
@@ -164,7 +200,12 @@ class PluginManager:
                 raise PluginException(f"无法加载插件包: {package_path}")
             package_module = importlib.util.module_from_spec(package_spec)
             sys.modules[package_module_name] = package_module
-            package_spec.loader.exec_module(package_module)
+            loaded_module_names.append(package_module_name)
+            try:
+                package_spec.loader.exec_module(package_module)
+            except Exception:
+                self._unload_module_names(loaded_module_names)
+                raise
 
         if plugin_module_name in sys.modules:
             return sys.modules[plugin_module_name]
@@ -177,11 +218,15 @@ class PluginManager:
             raise PluginException(f"无法加载插件模块: {plugin_path}")
         plugin_module = importlib.util.module_from_spec(plugin_spec)
         sys.modules[plugin_module_name] = plugin_module
-        plugin_spec.loader.exec_module(plugin_module)
+        loaded_module_names.append(plugin_module_name)
+        try:
+            plugin_spec.loader.exec_module(plugin_module)
+        except Exception:
+            self._unload_module_names(loaded_module_names)
+            raise
         return plugin_module
 
-    def _ensure_external_plugins_namespace(self) -> None:
-        namespace_name = "_saber_user_plugins"
+    def _ensure_external_plugins_namespace(self, namespace_name: str = "_saber_user_plugins") -> None:
         if namespace_name in sys.modules:
             return
         namespace_spec = importlib.util.spec_from_loader(namespace_name, loader=None)
@@ -189,7 +234,13 @@ class PluginManager:
         namespace_module.__path__ = []  # type: ignore[attr-defined]
         sys.modules[namespace_name] = namespace_module
 
-    def _build_external_module_suffix(self, package_path: str, plugin_name: str) -> str:
+    def _build_external_module_suffix(
+        self,
+        package_path: str,
+        plugin_name: str,
+        *,
+        cache_bust_token: Optional[str] = None,
+    ) -> str:
         normalized_name = "".join(
             character if character.isalnum() else "_"
             for character in plugin_name
@@ -197,22 +248,46 @@ class PluginManager:
         package_digest = hashlib.sha1(
             os.path.abspath(package_path).encode("utf-8")
         ).hexdigest()[:12]
-        return f"{normalized_name}_{package_digest}"
+        suffix = f"{normalized_name}_{package_digest}"
+        if cache_bust_token:
+            suffix = f"{suffix}_{cache_bust_token}"
+        return suffix
 
-    def _load_plugin_class(self, plugin_class, *, source_path: str) -> Tuple[bool, bool]:
+    def _resolve_plugin_class(self, plugin_module):
+        for attr_name in dir(plugin_module):
+            attr = getattr(plugin_module, attr_name)
+            if inspect.isclass(attr) and issubclass(attr, PluginBase) and attr is not PluginBase:
+                return attr
+        raise PluginException(f"插件模块 '{plugin_module.__name__}' 中未找到有效的插件类。")
+
+    def _collect_module_names_for_module(self, plugin_module) -> List[str]:
+        return self._collect_module_hierarchy(plugin_module.__name__)
+
+    def _prepare_plugin_from_source_path(
+        self,
+        source_path: str,
+        plugin_name: str,
+        *,
+        force_reload: bool = False,
+    ) -> PluginBase:
+        plugin_module = self._load_plugin_module(
+            source_path,
+            plugin_name,
+            force_reload=force_reload,
+        )
+        loaded_module_names = self._collect_module_names_for_module(plugin_module)
         try:
+            plugin_class = self._resolve_plugin_class(plugin_module)
             plugin_instance = plugin_class(plugin_manager=self, app=self.app)
-            default_added = plugin_instance.plugin_id not in self.plugin_default_states
-            self.register_plugin_instance(plugin_instance, source_path=source_path)
-            return True, default_added
-        except Exception as exc:
-            logger.error(
-                "实例化或设置插件类 '%s' 失败: %s",
-                plugin_class.__name__,
-                exc,
-                exc_info=True,
-            )
-            return False, False
+            plugin_instance.validate_metadata()
+            if plugin_instance.setup() is False:
+                raise PluginException(f"插件 '{plugin_instance.plugin_id}' 的 setup 方法返回 False。")
+            config_data = self._load_plugin_config_file(plugin_instance.plugin_id)
+            plugin_instance.load_config(config_data)
+            return plugin_instance
+        except Exception:
+            self._unload_module_names(loaded_module_names)
+            raise
 
     def register_plugin_instance(
         self,
@@ -224,36 +299,69 @@ class PluginManager:
         plugin_instance.validate_metadata()
         plugin_id = plugin_instance.plugin_id
 
-        if plugin_id in self.plugins:
-            raise PluginException(f"插件 ID 冲突: '{plugin_id}' 已存在。")
-
         if plugin_instance.setup() is False:
             raise PluginException(f"插件 '{plugin_id}' 的 setup 方法返回 False。")
 
-        self.plugins[plugin_id] = plugin_instance
-        if source_path:
-            self.plugin_sources[plugin_id] = source_path
-        self.plugin_module_names[plugin_id] = self._collect_plugin_module_names(plugin_instance)
-
         config_data = self._load_plugin_config_file(plugin_id)
         plugin_instance.load_config(config_data)
-        self._register_hooks(plugin_instance)
-
-        if plugin_id not in self.plugin_default_states:
-            self.plugin_default_states[plugin_id] = bool(plugin_instance.default_enabled)
-
-        should_enable = (
-            self.plugin_default_states.get(plugin_id, bool(plugin_instance.default_enabled))
-            if enabled is None
-            else bool(enabled)
+        return self._attach_prepared_plugin_instance(
+            plugin_instance,
+            source_path=source_path,
+            enabled=enabled,
         )
 
-        if should_enable:
-            plugin_instance.enable()
-        else:
-            plugin_instance.disable()
+    def _attach_prepared_plugin_instance(
+        self,
+        plugin_instance: PluginBase,
+        *,
+        source_path: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> PluginBase:
+        plugin_id = plugin_instance.plugin_id
+        normalized_source_path = (
+            self._normalize_source_path(source_path)
+            if source_path
+            else None
+        )
 
-        self._refresh_metadata(plugin_id)
+        with self._lock:
+            if plugin_id in self.plugins:
+                raise PluginException(f"插件 ID 冲突: '{plugin_id}' 已存在。")
+
+            self.plugins[plugin_id] = plugin_instance
+            default_state_added = False
+            if normalized_source_path:
+                self.plugin_sources[plugin_id] = normalized_source_path
+            self.plugin_module_names[plugin_id] = self._collect_plugin_module_names(plugin_instance)
+            self._register_hooks(plugin_instance)
+
+            if plugin_id not in self.plugin_default_states:
+                self.plugin_default_states[plugin_id] = bool(plugin_instance.default_enabled)
+                default_state_added = True
+
+            try:
+                should_enable = (
+                    self.plugin_default_states.get(plugin_id, bool(plugin_instance.default_enabled))
+                    if enabled is None
+                    else bool(enabled)
+                )
+
+                if should_enable:
+                    plugin_instance.enable()
+                else:
+                    plugin_instance.disable()
+
+                self._refresh_metadata(plugin_id)
+            except Exception:
+                self.unregister_plugin_hooks(plugin_id)
+                self.plugins.pop(plugin_id, None)
+                self.plugin_sources.pop(plugin_id, None)
+                self.plugin_module_names.pop(plugin_id, None)
+                self.plugin_metadata.pop(plugin_id, None)
+                if default_state_added:
+                    self.plugin_default_states.pop(plugin_id, None)
+                raise
+
         logger.debug("插件 '%s' 注册成功。", plugin_id)
         return plugin_instance
 
@@ -287,21 +395,23 @@ class PluginManager:
         self.plugin_metadata[plugin_id] = metadata
 
     def get_plugin(self, plugin_id: str) -> Optional[PluginBase]:
-        return self.plugins.get(plugin_id)
+        with self._lock:
+            return self.plugins.get(plugin_id)
 
     def get_plugin_records(self) -> List[Dict[str, Any]]:
-        for plugin_id in list(self.plugins):
-            self._refresh_metadata(plugin_id)
-        return sorted(
-            self.plugin_metadata.values(),
-            key=lambda record: (str(record.get("display_name", "")), str(record.get("id", ""))),
-        )
+        with self._lock:
+            for plugin_id in list(self.plugins):
+                self._refresh_metadata(plugin_id)
+            return sorted(
+                self.plugin_metadata.values(),
+                key=lambda record: (str(record.get("display_name", "")), str(record.get("id", ""))),
+            )
 
     def get_plugin_source_path(self, plugin_id: str) -> Optional[str]:
-        return self.plugin_sources.get(plugin_id)
+        with self._lock:
+            return self.plugin_sources.get(plugin_id)
 
-    def _collect_plugin_module_names(self, plugin_instance: PluginBase) -> List[str]:
-        module_name = plugin_instance.__class__.__module__
+    def _collect_module_hierarchy(self, module_name: str) -> List[str]:
         module_names = {module_name}
         package_name = module_name.rpartition(".")[0]
         while package_name:
@@ -309,10 +419,44 @@ class PluginManager:
             package_name = package_name.rpartition(".")[0]
         return sorted(module_names, key=len, reverse=True)
 
-    def unload_plugin_modules(self, plugin_id: str) -> None:
-        for module_name in self.plugin_module_names.get(plugin_id, []):
+    def _collect_plugin_module_names(self, plugin_instance: PluginBase) -> List[str]:
+        return self._collect_module_hierarchy(plugin_instance.__class__.__module__)
+
+    def _unload_module_names(self, module_names: List[str]) -> None:
+        for module_name in module_names:
             sys.modules.pop(module_name, None)
         importlib.invalidate_caches()
+
+    def unload_plugin_modules(self, plugin_id: str) -> None:
+        with self._lock:
+            module_names = list(self.plugin_module_names.get(plugin_id, []))
+        self._unload_module_names(module_names)
+
+    def _cleanup_prepared_plugin_instance(self, plugin_instance: PluginBase) -> None:
+        self._unload_module_names(self._collect_plugin_module_names(plugin_instance))
+
+    def _remove_plugin_runtime(self, plugin_id: str) -> None:
+        with self._lock:
+            plugin = self.plugins.pop(plugin_id, None)
+            module_names = list(self.plugin_module_names.pop(plugin_id, []))
+            if plugin:
+                try:
+                    plugin.disable()
+                except Exception:
+                    logger.debug("移除插件 '%s' 时禁用失败。", plugin_id, exc_info=True)
+            self.unregister_plugin_hooks(plugin_id)
+            self.plugin_metadata.pop(plugin_id, None)
+            self.plugin_sources.pop(plugin_id, None)
+        self._unload_module_names(module_names)
+
+    def _clear_plugin_persistence(self, plugin_id: str) -> None:
+        with self._lock:
+            self.plugin_default_states.pop(plugin_id, None)
+        self._delete_plugin_config_file(plugin_id)
+
+    def remove_plugin(self, plugin_id: str) -> None:
+        self._remove_plugin_runtime(plugin_id)
+        self._clear_plugin_persistence(plugin_id)
 
     def _handle_remove_readonly(self, func, path, exc_info) -> None:
         try:
@@ -343,34 +487,22 @@ class PluginManager:
         return True
 
     def enable_plugin(self, plugin_id: str) -> bool:
-        plugin = self.get_plugin(plugin_id)
-        if not plugin:
-            return False
-        plugin.enable()
-        self._refresh_metadata(plugin_id)
-        return True
+        with self._lock:
+            plugin = self.plugins.get(plugin_id)
+            if not plugin:
+                return False
+            plugin.enable()
+            self._refresh_metadata(plugin_id)
+            return True
 
     def disable_plugin(self, plugin_id: str) -> bool:
-        plugin = self.get_plugin(plugin_id)
-        if not plugin:
-            return False
-        plugin.disable()
-        self._refresh_metadata(plugin_id)
-        return True
-
-    def remove_plugin(self, plugin_id: str) -> None:
-        plugin = self.plugins.pop(plugin_id, None)
-        if plugin:
-            try:
-                plugin.disable()
-            except Exception:
-                logger.debug("移除插件 '%s' 时禁用失败。", plugin_id, exc_info=True)
-        self.unregister_plugin_hooks(plugin_id)
-        self.plugin_metadata.pop(plugin_id, None)
-        self.plugin_sources.pop(plugin_id, None)
-        self.plugin_module_names.pop(plugin_id, None)
-        self.plugin_default_states.pop(plugin_id, None)
-        self._delete_plugin_config_file(plugin_id)
+        with self._lock:
+            plugin = self.plugins.get(plugin_id)
+            if not plugin:
+                return False
+            plugin.disable()
+            self._refresh_metadata(plugin_id)
+            return True
 
     def run_before_step(
         self,
@@ -475,8 +607,19 @@ class PluginManager:
             return data
 
         method_name = STEP_HOOK_METHODS[normalized_step][phase]
-        hook_entries = self.hooks.get(method_name, [])
-        if not hook_entries:
+        with self._lock:
+            hook_entries = list(self.hooks.get(method_name, []))
+            runnable_hooks: List[Tuple[str, str, Any]] = []
+            for _, plugin_id, hook_method in hook_entries:
+                plugin = self.plugins.get(plugin_id)
+                if not plugin or not plugin.is_enabled():
+                    continue
+                if normalized_step not in plugin.supported_steps:
+                    continue
+                if normalized_mode not in plugin.supported_modes:
+                    continue
+                runnable_hooks.append((plugin_id, plugin.failure_policy, hook_method))
+        if not runnable_hooks:
             return data
 
         context = PluginContext(
@@ -488,15 +631,7 @@ class PluginManager:
         )
         current_data = data
 
-        for _, plugin_id, hook_method in hook_entries:
-            plugin = self.plugins.get(plugin_id)
-            if not plugin or not plugin.is_enabled():
-                continue
-            if normalized_step not in plugin.supported_steps:
-                continue
-            if normalized_mode not in plugin.supported_modes:
-                continue
-
+        for plugin_id, failure_policy, hook_method in runnable_hooks:
             try:
                 result = hook_method(context, current_data)
                 if result is not None:
@@ -509,7 +644,7 @@ class PluginManager:
                     exc,
                     exc_info=True,
                 )
-                if plugin.failure_policy == "fail":
+                if failure_policy == "fail":
                     raise PluginException(
                         f"插件 '{plugin_id}' 在步骤 '{normalized_step}' 执行失败",
                         details={
@@ -520,6 +655,136 @@ class PluginManager:
                     ) from exc
 
         return current_data
+
+    def refresh_plugins(self) -> Dict[str, Any]:
+        logger.info("开始刷新插件...")
+        summary = {
+            "added": 0,
+            "reloaded": 0,
+            "removed": 0,
+            "failed": 0,
+        }
+        failures: List[Dict[str, Any]] = []
+        discovered_plugins = self._find_potential_plugins()
+        discovered_by_identity = {
+            self._source_identity(path): (plugin_name, path)
+            for plugin_name, path in discovered_plugins
+        }
+
+        with self._lock:
+            current_sources = {
+                self._source_identity(path): (plugin_id, path)
+                for plugin_id, path in self.plugin_sources.items()
+                if path
+            }
+
+        for source_identity, (plugin_name, source_path) in discovered_by_identity.items():
+            current_plugin_info = current_sources.get(source_identity)
+            current_plugin_id = current_plugin_info[0] if current_plugin_info else None
+            current_plugin = self.get_plugin(current_plugin_id) if current_plugin_id else None
+            runtime_enabled = bool(current_plugin.is_enabled()) if current_plugin else False
+
+            try:
+                prepared_plugin = self._prepare_plugin_from_source_path(
+                    source_path,
+                    plugin_name,
+                    force_reload=bool(current_plugin_id),
+                )
+            except Exception as exc:
+                summary["failed"] += 1
+                failures.append({
+                    "plugin_name": plugin_name,
+                    "source_path": source_path,
+                    "plugin_id": current_plugin_id,
+                    "error": str(exc),
+                })
+                continue
+
+            try:
+                if current_plugin_id is not None:
+                    if prepared_plugin.plugin_id == current_plugin_id:
+                        self._remove_plugin_runtime(current_plugin_id)
+                        self._attach_prepared_plugin_instance(
+                            prepared_plugin,
+                            source_path=source_path,
+                            enabled=runtime_enabled,
+                        )
+                        summary["reloaded"] += 1
+                        continue
+
+                    conflicting_plugin = self.get_plugin(prepared_plugin.plugin_id)
+                    if conflicting_plugin is not None:
+                        raise PluginException(
+                            f"插件 ID 冲突: '{prepared_plugin.plugin_id}' 已存在。"
+                        )
+
+                    self._remove_plugin_runtime(current_plugin_id)
+                    self._attach_prepared_plugin_instance(
+                        prepared_plugin,
+                        source_path=source_path,
+                    )
+                    self._clear_plugin_persistence(current_plugin_id)
+                    summary["removed"] += 1
+                    summary["added"] += 1
+                    continue
+
+                if self.get_plugin(prepared_plugin.plugin_id) is not None:
+                    raise PluginException(
+                        f"插件 ID 冲突: '{prepared_plugin.plugin_id}' 已存在。"
+                    )
+
+                self._attach_prepared_plugin_instance(
+                    prepared_plugin,
+                    source_path=source_path,
+                )
+                summary["added"] += 1
+            except Exception as exc:
+                summary["failed"] += 1
+                failures.append({
+                    "plugin_name": plugin_name,
+                    "source_path": source_path,
+                    "plugin_id": current_plugin_id or prepared_plugin.plugin_id,
+                    "error": str(exc),
+                })
+                self._cleanup_prepared_plugin_instance(prepared_plugin)
+                if current_plugin_id and current_plugin and self.get_plugin(current_plugin_id) is None:
+                    try:
+                        self._attach_prepared_plugin_instance(
+                            current_plugin,
+                            source_path=current_plugin_info[1],
+                            enabled=runtime_enabled,
+                        )
+                    except Exception:
+                        logger.error(
+                            "恢复旧插件 '%s' 失败。",
+                            current_plugin_id,
+                            exc_info=True,
+                        )
+
+        missing_source_identities = [
+            source_identity
+            for source_identity in current_sources
+            if source_identity not in discovered_by_identity
+        ]
+        for source_identity in missing_source_identities:
+            plugin_id, _ = current_sources[source_identity]
+            self._remove_plugin_runtime(plugin_id)
+            self._clear_plugin_persistence(plugin_id)
+            summary["removed"] += 1
+
+        if summary["added"] or summary["removed"]:
+            self.save_plugin_default_states()
+
+        with self._lock:
+            default_states_snapshot = dict(self.plugin_default_states)
+
+        return {
+            "partial_success": bool(failures),
+            "plugins": self.get_plugin_records(),
+            "default_states": default_states_snapshot,
+            "summary": summary,
+            "failures": failures,
+        }
 
     def _get_plugin_config_filepath(self, plugin_id: str) -> str:
         safe_filename = "".join(
@@ -599,7 +864,9 @@ def get_plugin_manager(app=None) -> PluginManager:
         plugin_manager_instance.discover_and_load_plugins()
     elif app and plugin_manager_instance.app is not app:
         plugin_manager_instance.app = app
-        for plugin in plugin_manager_instance.plugins.values():
+        with plugin_manager_instance._lock:
+            plugins = list(plugin_manager_instance.plugins.values())
+        for plugin in plugins:
             plugin.app = app
     return plugin_manager_instance
 

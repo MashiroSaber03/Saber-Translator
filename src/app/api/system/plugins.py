@@ -3,6 +3,7 @@
 
 包含所有与插件管理相关的API端点：
 - 获取插件列表
+- 刷新并热重载插件
 - 启用/禁用插件
 - 删除插件
 - 插件配置管理
@@ -30,6 +31,21 @@ def get_plugins_list():
     except Exception as e:
         logger.error(f"获取插件列表失败: {e}", exc_info=True)
         return jsonify({'success': False, 'error': '无法获取插件列表'}), 500
+
+
+@system_bp.route('/plugins/refresh', methods=['POST'])
+def refresh_plugins_api():
+    """重新扫描插件目录并热重载插件。"""
+    try:
+        plugin_mgr = get_plugin_manager()
+        refresh_result = plugin_mgr.refresh_plugins()
+        return jsonify({
+            'success': True,
+            **refresh_result,
+        })
+    except Exception as e:
+        logger.error(f"刷新插件失败: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': '刷新插件时出错'}), 500
 
 
 @system_bp.route('/plugins/<plugin_id>/enable', methods=['POST'])

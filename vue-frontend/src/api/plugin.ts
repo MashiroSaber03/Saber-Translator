@@ -1,6 +1,6 @@
 /**
  * 插件 API
- * 包含插件列表、启用/禁用、配置管理等功能
+ * 包含插件列表、热重载刷新、启用/禁用、配置管理等功能
  * 
  * 所有涉及插件 ID 拼接 URL 的函数都使用 encodeURIComponent 编码，
  * 以防止插件标识包含特殊字符时请求失败。
@@ -47,6 +47,30 @@ export interface PluginDefaultStatesResponse {
   error?: string
 }
 
+export interface PluginRefreshSummary {
+  added: number
+  reloaded: number
+  removed: number
+  failed: number
+}
+
+export interface PluginRefreshFailure {
+  plugin_name?: string
+  plugin_id?: string
+  source_path?: string
+  error: string
+}
+
+export interface PluginRefreshResponse {
+  success: boolean
+  partial_success?: boolean
+  plugins?: PluginData[]
+  default_states?: Record<string, boolean>
+  summary?: PluginRefreshSummary
+  failures?: PluginRefreshFailure[]
+  error?: string
+}
+
 // ==================== 插件列表 API ====================
 
 /**
@@ -54,6 +78,13 @@ export interface PluginDefaultStatesResponse {
  */
 export async function getPlugins(): Promise<PluginListResponse> {
   return apiClient.get<PluginListResponse>('/api/plugins')
+}
+
+/**
+ * 刷新插件列表并热重载插件目录
+ */
+export async function refreshPlugins(): Promise<PluginRefreshResponse> {
+  return apiClient.post<PluginRefreshResponse>('/api/plugins/refresh')
 }
 
 // ==================== 插件启用/禁用 API ====================

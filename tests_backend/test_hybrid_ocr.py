@@ -2,6 +2,7 @@ import base64
 import copy
 import io
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -32,6 +33,69 @@ def create_tiny_png_base64() -> str:
     buffer = io.BytesIO()
     Image.new("RGB", (8, 8), color="white").save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def build_external_plugin_code(
+    *,
+    plugin_id: str,
+    display_name: str,
+    default_enabled: bool = False,
+    after_ocr_text: str = "",
+) -> str:
+    return (
+        "import copy\n"
+        "from src.plugins.base import PluginBase\n"
+        "\n"
+        "\n"
+        "class TempPlugin(PluginBase):\n"
+        f"    plugin_id = {plugin_id!r}\n"
+        f"    display_name = {display_name!r}\n"
+        "    plugin_version = '1.0.0'\n"
+        "    plugin_author = 'Tests'\n"
+        "    plugin_description = 'refresh fixture'\n"
+        f"    default_enabled = {default_enabled!r}\n"
+        "    supported_steps = ('ocr',)\n"
+        "    supported_modes = ('standard',)\n"
+        "\n"
+        "    def after_ocr(self, context, result):\n"
+        "        updated = copy.deepcopy(result)\n"
+        f"        updated['original_texts'] = [{after_ocr_text!r}]\n"
+        "        if updated.get('ocr_results'):\n"
+        f"            updated['ocr_results'][0]['text'] = {after_ocr_text!r}\n"
+        "        return updated\n"
+    )
+
+
+def write_external_plugin_package(
+    plugin_root: str,
+    dir_name: str,
+    *,
+    plugin_id: str,
+    display_name: str,
+    default_enabled: bool = False,
+    after_ocr_text: str = "",
+    syntax_error: bool = False,
+) -> str:
+    plugin_dir = os.path.join(plugin_root, dir_name)
+    os.makedirs(plugin_dir, exist_ok=True)
+
+    with open(os.path.join(plugin_dir, "__init__.py"), "w", encoding="utf-8") as file:
+        file.write("from .plugin import TempPlugin\n")
+
+    with open(os.path.join(plugin_dir, "plugin.py"), "w", encoding="utf-8") as file:
+        if syntax_error:
+            file.write("def broken(\n")
+        else:
+            file.write(
+                build_external_plugin_code(
+                    plugin_id=plugin_id,
+                    display_name=display_name,
+                    default_enabled=default_enabled,
+                    after_ocr_text=after_ocr_text,
+                )
+            )
+
+    return plugin_dir
 
 
 class StepHookFixturePlugin(PluginBase):
@@ -372,6 +436,165 @@ class HybridOcrCoreTests(unittest.TestCase):
         self.assertEqual(plugin.supported_steps, ("ai_translate", "ocr"))
         self.assertEqual(plugin.supported_modes, ("remove_text", "hq"))
         self.assertEqual(plugin.failure_policy, "continue")
+
+    def test_refresh_plugins_loads_new_plugin_from_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.discover_and_load_plugins()
+
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Refreshable Plugin",
+                after_ocr_text="v1",
+            )
+
+            result = manager.refresh_plugins()
+
+            self.assertFalse(result["partial_success"])
+            self.assertEqual(result["summary"]["added"], 1)
+            self.assertEqual(result["summary"]["reloaded"], 0)
+            self.assertEqual(result["summary"]["removed"], 0)
+            self.assertEqual(result["summary"]["failed"], 0)
+            self.assertEqual(manager.get_plugin("refreshable_plugin").display_name, "Refreshable Plugin")
+
+    def test_refresh_plugins_reloads_modified_plugin_and_preserves_runtime_enabled_state(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Refreshable Plugin",
+                after_ocr_text="v1",
+            )
+
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.discover_and_load_plugins()
+            self.assertTrue(manager.enable_plugin("refreshable_plugin"))
+
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Refreshable Plugin Reloaded",
+                after_ocr_text="v2",
+            )
+
+            result = manager.refresh_plugins()
+            hook_result = manager.run_after_step(
+                "ocr",
+                {"success": True, "original_texts": ["old"], "ocr_results": [{"text": "old"}]},
+                mode="standard",
+                route="/tests/ocr",
+            )
+
+            self.assertFalse(result["partial_success"])
+            self.assertEqual(result["summary"]["added"], 0)
+            self.assertEqual(result["summary"]["reloaded"], 1)
+            self.assertTrue(manager.get_plugin("refreshable_plugin").is_enabled())
+            self.assertEqual(manager.get_plugin("refreshable_plugin").display_name, "Refreshable Plugin Reloaded")
+            self.assertEqual(hook_result["original_texts"], ["v2"])
+            self.assertEqual(hook_result["ocr_results"][0]["text"], "v2")
+
+    def test_refresh_plugins_keeps_existing_plugin_when_reloaded_code_is_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root:
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Refreshable Plugin",
+                after_ocr_text="v1",
+            )
+
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.discover_and_load_plugins()
+            original_plugin = manager.get_plugin("refreshable_plugin")
+            self.assertTrue(manager.enable_plugin("refreshable_plugin"))
+
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Broken Plugin",
+                syntax_error=True,
+            )
+
+            result = manager.refresh_plugins()
+            hook_result = manager.run_after_step(
+                "ocr",
+                {"success": True, "original_texts": ["old"], "ocr_results": [{"text": "old"}]},
+                mode="standard",
+                route="/tests/ocr",
+            )
+
+            self.assertTrue(result["partial_success"])
+            self.assertEqual(result["summary"]["failed"], 1)
+            self.assertEqual(len(result["failures"]), 1)
+            self.assertIs(manager.get_plugin("refreshable_plugin"), original_plugin)
+            self.assertTrue(manager.get_plugin("refreshable_plugin").is_enabled())
+            self.assertEqual(hook_result["original_texts"], ["v1"])
+
+    def test_refresh_plugins_removes_missing_plugin_and_cleans_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root, tempfile.TemporaryDirectory() as config_root:
+            plugin_dir = write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin",
+                display_name="Refreshable Plugin",
+                after_ocr_text="v1",
+            )
+
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.plugin_config_dir = config_root
+            manager.discover_and_load_plugins()
+            self.assertTrue(manager.save_plugin_config("refreshable_plugin", {"suffix": "saved"}))
+            config_path = os.path.join(config_root, "refreshable_plugin.json")
+            self.assertTrue(os.path.exists(config_path))
+            self.assertIn("refreshable_plugin", manager.plugin_default_states)
+
+            shutil.rmtree(plugin_dir)
+            result = manager.refresh_plugins()
+
+            self.assertFalse(result["partial_success"])
+            self.assertEqual(result["summary"]["removed"], 1)
+            self.assertIsNone(manager.get_plugin("refreshable_plugin"))
+            self.assertNotIn("refreshable_plugin", manager.plugin_default_states)
+            self.assertFalse(os.path.exists(config_path))
+
+    def test_refresh_plugins_treats_plugin_id_change_as_remove_and_add(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root, tempfile.TemporaryDirectory() as config_root:
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin_v1",
+                display_name="Refreshable Plugin",
+                after_ocr_text="v1",
+            )
+
+            manager = PluginManager(plugin_dirs=[plugin_root])
+            manager.plugin_config_dir = config_root
+            manager.discover_and_load_plugins()
+            self.assertTrue(manager.save_plugin_config("refreshable_plugin_v1", {"suffix": "saved"}))
+
+            write_external_plugin_package(
+                plugin_root,
+                "refreshable_plugin",
+                plugin_id="refreshable_plugin_v2",
+                display_name="Refreshable Plugin V2",
+                after_ocr_text="v2",
+            )
+
+            result = manager.refresh_plugins()
+
+            self.assertFalse(result["partial_success"])
+            self.assertEqual(result["summary"]["added"], 1)
+            self.assertEqual(result["summary"]["removed"], 1)
+            self.assertIsNone(manager.get_plugin("refreshable_plugin_v1"))
+            self.assertIsNotNone(manager.get_plugin("refreshable_plugin_v2"))
+            self.assertFalse(os.path.exists(os.path.join(config_root, "refreshable_plugin_v1.json")))
+            self.assertNotIn("refreshable_plugin_v1", manager.plugin_default_states)
+            self.assertIn("refreshable_plugin_v2", manager.plugin_default_states)
 
 
 class HybridOcrRouteContractTests(unittest.TestCase):
@@ -747,6 +970,41 @@ class HybridOcrRouteContractTests(unittest.TestCase):
             payload = response.get_json()
             self.assertTrue(payload["success"])
             self.assertFalse(os.path.exists(plugin_dir))
+
+    def test_refresh_plugins_api_returns_updated_plugins_and_partial_failure_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as plugin_root, tempfile.TemporaryDirectory() as config_root:
+            plugin_manager = get_plugin_manager(self.app)
+            plugin_manager.reset_for_testing()
+            plugin_manager.plugin_dirs = [plugin_root]
+            plugin_manager.plugin_config_dir = config_root
+
+            write_external_plugin_package(
+                plugin_root,
+                "good_plugin",
+                plugin_id="good_plugin",
+                display_name="Good Plugin",
+                after_ocr_text="good",
+            )
+            write_external_plugin_package(
+                plugin_root,
+                "broken_plugin",
+                plugin_id="broken_plugin",
+                display_name="Broken Plugin",
+                syntax_error=True,
+            )
+
+            response = self.client.post("/api/plugins/refresh")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertTrue(payload["partial_success"])
+            self.assertEqual(payload["summary"]["added"], 1)
+            self.assertEqual(payload["summary"]["failed"], 1)
+            self.assertEqual(len(payload["plugins"]), 1)
+            self.assertEqual(payload["plugins"][0]["id"], "good_plugin")
+            self.assertEqual(len(payload["failures"]), 1)
+            self.assertEqual(payload["failures"][0]["plugin_name"], "broken_plugin")
 
     def test_parallel_detect_hooks_can_modify_request_and_response(self) -> None:
         self.register_fixture_plugin()

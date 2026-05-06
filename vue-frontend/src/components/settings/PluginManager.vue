@@ -2,7 +2,12 @@
   <div class="plugin-manager">
     <!-- 插件列表 -->
     <div class="settings-group">
-      <div class="settings-group-title">已安装插件</div>
+      <div class="settings-group-header">
+        <div class="settings-group-title">已安装插件</div>
+        <button class="btn btn-sm" :disabled="isRefreshing" @click="refreshPluginList">
+          {{ isRefreshing ? '刷新中...' : '刷新插件' }}
+        </button>
+      </div>
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="plugins.length === 0" class="empty-hint">暂无已安装的插件</div>
       <div v-else class="plugin-list">
@@ -106,7 +111,7 @@
 <script setup lang="ts">
 /**
  * 插件管理组件
- * 管理插件的启用/禁用、配置和删除
+ * 管理插件的刷新、启用/禁用、配置和删除
  */
 import { ref, onMounted } from 'vue'
 import * as pluginApi from '@/api/plugin'
@@ -134,6 +139,7 @@ const toast = useToast()
 const plugins = ref<Plugin[]>([])
 const defaultStates = ref<Record<string, boolean>>({})
 const isLoading = ref(false)
+const isRefreshing = ref(false)
 
 // 配置模态框状态
 const showConfigModal = ref(false)
@@ -162,6 +168,33 @@ async function loadDefaultStates() {
     defaultStates.value = result.default_states || {}
   } catch (error: unknown) {
     console.error('加载默认状态失败:', error)
+  }
+}
+
+// 刷新插件列表并触发后端热重载
+async function refreshPluginList() {
+  isRefreshing.value = true
+  closeConfigModal()
+  try {
+    const result = await pluginApi.refreshPlugins()
+    plugins.value = result.plugins || []
+    defaultStates.value = result.default_states || {}
+
+    if (result.partial_success) {
+      const failedCount = result.summary?.failed ?? result.failures?.length ?? 0
+      toast.warning(
+        failedCount > 0
+          ? `部分插件刷新失败（${failedCount} 个）`
+          : '部分插件刷新失败'
+      )
+    } else {
+      toast.success('插件列表已刷新')
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '刷新插件失败'
+    toast.error(errorMessage)
+  } finally {
+    isRefreshing.value = false
   }
 }
 
@@ -263,6 +296,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.settings-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .plugin-list {
   border: 1px solid var(--border-color);
   border-radius: 4px;
