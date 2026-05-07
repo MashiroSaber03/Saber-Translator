@@ -49,6 +49,11 @@ export type HqTranslationProvider =
   | 'custom_openai'
 
 /**
+ * 插件 Agent 服务商类型
+ */
+export type PluginAgentProvider = HqTranslationProvider
+
+/**
  * PDF 处理方式
  */
 export type PdfProcessingMethod = 'frontend' | 'backend'
@@ -163,6 +168,17 @@ export interface HqTranslationSettings {
 }
 
 /**
+ * 插件 Agent 设置
+ */
+export interface PluginAgentSettings {
+  provider: PluginAgentProvider
+  apiKey: string
+  modelName: string
+  customBaseUrl: string
+  openaiOptions: OpenAICompatibleOptions
+}
+
+/**
  * AI 校对轮次配置
  */
 export interface ProofreadingRound {
@@ -261,6 +277,9 @@ export interface TranslationSettings {
 
   // 高质量翻译设置
   hqTranslation: HqTranslationSettings
+
+  // 插件 Agent 设置
+  pluginAgent: PluginAgentSettings
 
   // AI 校对设置
   proofreading: ProofreadingSettings

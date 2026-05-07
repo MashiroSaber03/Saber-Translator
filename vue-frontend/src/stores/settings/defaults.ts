@@ -11,6 +11,7 @@ import type {
   HybridOcrSettings,
   TranslationServiceSettings,
   HqTranslationSettings,
+  PluginAgentSettings,
   ProofreadingSettings,
   BoxExpandSettings,
   PreciseMaskSettings,
@@ -155,6 +156,22 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
 
+/** 默认插件 Agent 设置 */
+export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
+  provider: 'siliconflow',
+  apiKey: '',
+  modelName: '',
+  customBaseUrl: '',
+  openaiOptions: createDefaultOpenAiOptions({
+    execution: {
+      useStream: true,
+      rpmLimit: 7,
+      transportRetries: 1,
+      businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+    }
+  })
+}
+
 /** 默认AI校对设置 */
 export const DEFAULT_PROOFREADING: ProofreadingSettings = {
   enabled: false,
@@ -208,6 +225,7 @@ export function createDefaultSettings(): TranslationSettings {
     useTextboxPrompt: false,
     textboxPrompt: '',
     hqTranslation: { ...DEFAULT_HQ_TRANSLATION },
+    pluginAgent: { ...DEFAULT_PLUGIN_AGENT },
     proofreading: { ...DEFAULT_PROOFREADING },
     boxExpand: { ...DEFAULT_BOX_EXPAND },
     preciseMask: { ...DEFAULT_PRECISE_MASK },

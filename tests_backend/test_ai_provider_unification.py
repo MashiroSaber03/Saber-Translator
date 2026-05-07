@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 import threading
 import time
+import tempfile
 
 from flask import Flask
 from PIL import Image
@@ -558,11 +559,27 @@ class ProviderRegistryContractTests(unittest.TestCase):
 
 class RouteCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
+        from src.plugins.manager import PluginManager
+
         self.app = Flask(__name__)
         self.app.register_blueprint(translation_routes.translate_bp)
         self.app.register_blueprint(parallel_routes.parallel_bp)
         self.app.register_blueprint(system_bp)
         self.client = self.app.test_client()
+        self._temp_dir = tempfile.TemporaryDirectory()
+        isolated_manager = PluginManager(
+            plugin_dirs=[self._temp_dir.name],
+        )
+        isolated_manager.reset_for_testing(clear_defaults=True)
+        self._plugin_manager_patch = mock.patch(
+            "src.plugins.manager.plugin_manager_instance",
+            isolated_manager,
+        )
+        self._plugin_manager_patch.start()
+
+    def tearDown(self) -> None:
+        self._plugin_manager_patch.stop()
+        self._temp_dir.cleanup()
 
     def test_translate_single_text_accepts_nested_openai_options(self) -> None:
         with mock.patch(

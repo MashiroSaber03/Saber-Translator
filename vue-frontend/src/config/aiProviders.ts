@@ -4,6 +4,7 @@ export type ProviderKind = 'openai_compatible' | 'local' | 'adapter'
 export type ProviderCapability =
   | 'translation'
   | 'hqTranslation'
+  | 'pluginAgent'
   | 'visionOcr'
   | 'modelFetch'
   | 'connectionTest'

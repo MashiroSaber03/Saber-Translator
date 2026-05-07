@@ -49,6 +49,26 @@ export interface HqTranslationProviderConfig {
   prompt?: string
 }
 
+/** 插件 Agent 服务配置缓存项 */
+export interface PluginAgentProviderConfig {
+  apiKey?: string
+  modelName?: string
+  customBaseUrl?: string
+  openaiOptions?: {
+    request?: {
+      forceJsonOutput?: boolean
+      temperature?: number
+      extraBody?: Record<string, unknown>
+    }
+    execution?: {
+      useStream?: boolean
+      rpmLimit?: number
+      transportRetries?: number
+      businessRetries?: number
+    }
+  }
+}
+
 /** AI视觉OCR服务配置缓存项 */
 export interface AiVisionOcrProviderConfig {
   apiKey?: string
@@ -76,5 +96,6 @@ export interface AiVisionOcrProviderConfig {
 export interface ProviderConfigsCache {
   translation: Record<string, TranslationProviderConfig>
   hqTranslation: Record<string, HqTranslationProviderConfig>
+  pluginAgent: Record<string, PluginAgentProviderConfig>
   aiVisionOcr: Record<string, AiVisionOcrProviderConfig>
 }

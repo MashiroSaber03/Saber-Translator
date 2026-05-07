@@ -365,6 +365,34 @@ class PluginManager:
         logger.debug("插件 '%s' 注册成功。", plugin_id)
         return plugin_instance
 
+    def validate_plugin_source_path(
+        self,
+        source_path: str,
+        *,
+        plugin_name: Optional[str] = None,
+        force_reload: bool = True,
+    ) -> Dict[str, Any]:
+        normalized_source_path = self._normalize_source_path(source_path)
+        resolved_plugin_name = plugin_name or os.path.basename(normalized_source_path)
+        plugin_instance = self._prepare_plugin_from_source_path(
+            normalized_source_path,
+            resolved_plugin_name,
+            force_reload=force_reload,
+        )
+        try:
+            config_schema = plugin_instance.get_config_schema() or {}
+            if not isinstance(config_schema, dict):
+                raise PluginException(
+                    f"插件 '{plugin_instance.plugin_id}' 的 get_config_schema 必须返回对象。"
+                )
+            return {
+                "success": True,
+                "plugin": plugin_instance.get_metadata(),
+                "config_schema": config_schema,
+            }
+        finally:
+            self._cleanup_prepared_plugin_instance(plugin_instance)
+
     def _register_hooks(self, plugin_instance: PluginBase) -> None:
         for method_name in HOOK_METHOD_TO_STEP_PHASE:
             method = getattr(plugin_instance, method_name, None)

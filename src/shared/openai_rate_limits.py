@@ -19,6 +19,7 @@ _CAPABILITY_SERVICE_NAMES = {
     "translation": "Translation",
     "hq_translation": "HQTranslation",
     "vision_ocr": "AIVisionOCR",
+    "plugin_agent": "PluginAgent",
     "chat": "MangaInsightChat",
     "vlm": "MangaInsightVLM",
 }

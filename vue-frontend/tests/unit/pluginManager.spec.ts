@@ -60,6 +60,23 @@ vi.mock('@/components/common/CustomSelect.vue', () => ({
   }),
 }))
 
+vi.mock('@/components/settings/PluginAgentModal.vue', () => ({
+  default: defineComponent({
+    name: 'PluginAgentModal',
+    props: ['modelValue'],
+    setup(props) {
+      return () => h(
+        'div',
+        {
+          class: 'plugin-agent-modal-stub',
+          'data-open': String(Boolean(props.modelValue)),
+        },
+        'PluginAgentModal stub',
+      )
+    },
+  }),
+}))
+
 import PluginManager from '@/components/settings/PluginManager.vue'
 
 describe('PluginManager', () => {
@@ -144,5 +161,20 @@ describe('PluginManager', () => {
     expect(refreshPluginsMock).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Plugin Two')
     expect(toastWarningMock).toHaveBeenCalledWith(expect.stringContaining('部分插件刷新失败'))
+  })
+
+  it('opens the plugin agent modal from the auto-generate button', async () => {
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const agentButton = wrapper.findAll('button').find(
+      button => button.text().includes('自动生成插件'),
+    )
+    expect(agentButton).toBeTruthy()
+
+    await agentButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.plugin-agent-modal-stub').attributes('data-open')).toBe('true')
   })
 })

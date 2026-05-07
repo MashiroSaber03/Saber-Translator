@@ -20,7 +20,8 @@ import type {
   OcrEngine,
   TextDetector,
   TranslationProvider,
-  HqTranslationProvider
+  HqTranslationProvider,
+  PluginAgentProvider,
 } from '@/types/settings'
 import {
   STORAGE_KEY_TRANSLATION_SETTINGS,
@@ -48,6 +49,7 @@ import {
   useTranslationConstraintsSettings,
   useDetectionSettings,
   useHqTranslationSettings,
+  usePluginAgentSettings,
   useProofreadingSettings,
   usePromptsSettings,
   useMiscSettings
@@ -80,6 +82,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const providerConfigs = ref<ProviderConfigsCache>({
     translation: {},
     hqTranslation: {},
+    pluginAgent: {},
     aiVisionOcr: {}
   })
 
@@ -230,6 +233,7 @@ export const useSettingsStore = defineStore('settings', () => {
         providerConfigs.value = {
           translation: parsed.translation || {},
           hqTranslation: parsed.hqTranslation || {},
+          pluginAgent: parsed.pluginAgent || {},
           aiVisionOcr: parsed.aiVisionOcr || {}
         }
         normalizeProviderConfigAliases()
@@ -334,6 +338,26 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     )
 
+    const pluginAgent = settings.value.pluginAgent as typeof settings.value.pluginAgent & Record<string, unknown>
+    pluginAgent.openaiOptions = normalizeOpenAiOptions(
+      pluginAgent.openaiOptions,
+      {
+        rpmLimit: pluginAgent.rpmLimit,
+        maxRetries: pluginAgent.maxRetries,
+        forceJsonOutput: pluginAgent.forceJsonOutput,
+        extraBody: pluginAgent.extraBody,
+        useStream: pluginAgent.useStream
+      },
+      {
+        execution: {
+          useStream: true,
+          rpmLimit: 7,
+          transportRetries: 1,
+          businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+        }
+      }
+    )
+
     const av = settings.value.aiVisionOcr as typeof settings.value.aiVisionOcr & Record<string, unknown>
     av.openaiOptions = normalizeOpenAiOptions(
       av.openaiOptions,
@@ -427,6 +451,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function normalizeProviderAliases(): void {
     settings.value.translation.provider = normalizeProviderId(settings.value.translation.provider) as TranslationProvider
     settings.value.hqTranslation.provider = normalizeProviderId(settings.value.hqTranslation.provider) as HqTranslationProvider
+    settings.value.pluginAgent.provider = normalizeProviderId(settings.value.pluginAgent.provider) as PluginAgentProvider
     settings.value.aiVisionOcr.provider = normalizeProviderId(settings.value.aiVisionOcr.provider)
     settings.value.proofreading.rounds = settings.value.proofreading.rounds.map(round => ({
       ...round,
@@ -445,6 +470,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     providerConfigs.value.translation = normalizeRecord(providerConfigs.value.translation)
     providerConfigs.value.hqTranslation = normalizeRecord(providerConfigs.value.hqTranslation)
+    providerConfigs.value.pluginAgent = normalizeRecord(providerConfigs.value.pluginAgent)
     providerConfigs.value.aiVisionOcr = normalizeRecord(providerConfigs.value.aiVisionOcr)
   }
 
@@ -472,6 +498,27 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     for (const config of Object.values(providerConfigs.value.hqTranslation)) {
+      config.openaiOptions = normalizeOpenAiOptions(
+        config.openaiOptions,
+        {
+          forceJsonOutput: (config as Record<string, unknown>).forceJsonOutput,
+          extraBody: (config as Record<string, unknown>).extraBody,
+          useStream: (config as Record<string, unknown>).useStream,
+          rpmLimit: (config as Record<string, unknown>).rpmLimit,
+          maxRetries: (config as Record<string, unknown>).maxRetries
+        },
+        {
+          execution: {
+            useStream: true,
+            rpmLimit: 7,
+            transportRetries: 1,
+            businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+          }
+        }
+      )
+    }
+
+    for (const config of Object.values(providerConfigs.value.pluginAgent)) {
       config.openaiOptions = normalizeOpenAiOptions(
         config.openaiOptions,
         {
@@ -529,6 +576,13 @@ export const useSettingsStore = defineStore('settings', () => {
     delete hq.useStream
     delete hq.extraBody
 
+    const pluginAgent = settings.value.pluginAgent as Record<string, unknown>
+    delete pluginAgent.rpmLimit
+    delete pluginAgent.maxRetries
+    delete pluginAgent.forceJsonOutput
+    delete pluginAgent.useStream
+    delete pluginAgent.extraBody
+
     const aiVision = settings.value.aiVisionOcr as Record<string, unknown>
     delete aiVision.rpmLimit
     delete aiVision.maxRetries
@@ -558,6 +612,15 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     for (const config of Object.values(providerConfigs.value.hqTranslation)) {
+      const target = config as Record<string, unknown>
+      delete target.rpmLimit
+      delete target.maxRetries
+      delete target.forceJsonOutput
+      delete target.useStream
+      delete target.extraBody
+    }
+
+    for (const config of Object.values(providerConfigs.value.pluginAgent)) {
       const target = config as Record<string, unknown>
       delete target.rpmLimit
       delete target.maxRetries
@@ -648,6 +711,13 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
+  const pluginAgentModule = usePluginAgentSettings(
+    settings,
+    providerConfigs,
+    saveToStorage,
+    saveProviderConfigsToStorage
+  )
+
   // AI校对设置模块
   const proofreadingModule = useProofreadingSettings(settings, saveToStorage)
 
@@ -669,6 +739,8 @@ export const useSettingsStore = defineStore('settings', () => {
       translationModule.saveTranslationProviderConfig(provider)
     } else if (category === 'hqTranslation') {
       hqTranslationModule.saveHqProviderConfig(provider)
+    } else if (category === 'pluginAgent') {
+      pluginAgentModule.savePluginAgentProviderConfig(provider)
     } else if (category === 'aiVisionOcr') {
       ocrModule.saveAiVisionOcrProviderConfig(provider)
     }
@@ -682,6 +754,8 @@ export const useSettingsStore = defineStore('settings', () => {
       translationModule.restoreTranslationProviderConfig(provider)
     } else if (category === 'hqTranslation') {
       hqTranslationModule.restoreHqProviderConfig(provider)
+    } else if (category === 'pluginAgent') {
+      pluginAgentModule.restorePluginAgentProviderConfig(provider)
     } else if (category === 'aiVisionOcr') {
       ocrModule.restoreAiVisionOcrProviderConfig(provider)
     }
@@ -783,6 +857,7 @@ export const useSettingsStore = defineStore('settings', () => {
         providerConfigs.value = {
           translation: (nestedProviderConfigs as ProviderConfigsCache).translation || {},
           hqTranslation: (nestedProviderConfigs as ProviderConfigsCache).hqTranslation || {},
+          pluginAgent: (nestedProviderConfigs as ProviderConfigsCache).pluginAgent || {},
           aiVisionOcr: (nestedProviderConfigs as ProviderConfigsCache).aiVisionOcr || {}
         }
       }
@@ -1187,6 +1262,7 @@ export const useSettingsStore = defineStore('settings', () => {
       // 保存当前所有服务商的配置到缓存
       translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
       hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
+      pluginAgentModule.savePluginAgentProviderConfig(settings.value.pluginAgent.provider)
       ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
       stripLegacyOpenAiMirrorFields()
 
@@ -1269,6 +1345,13 @@ export const useSettingsStore = defineStore('settings', () => {
     setHqForceJsonOutput: hqTranslationModule.setHqForceJsonOutput,
     saveHqProviderConfig: hqTranslationModule.saveHqProviderConfig,
     restoreHqProviderConfig: hqTranslationModule.restoreHqProviderConfig,
+
+    // 插件 Agent 模块
+    pluginAgentProvider: pluginAgentModule.pluginAgentProvider,
+    setPluginAgentProvider: pluginAgentModule.setPluginAgentProvider,
+    updatePluginAgent: pluginAgentModule.updatePluginAgent,
+    savePluginAgentProviderConfig: pluginAgentModule.savePluginAgentProviderConfig,
+    restorePluginAgentProviderConfig: pluginAgentModule.restorePluginAgentProviderConfig,
 
     // AI校对模块
     isProofreadingEnabled: proofreadingModule.isProofreadingEnabled,

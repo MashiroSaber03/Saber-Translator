@@ -4,9 +4,14 @@
     <div class="settings-group">
       <div class="settings-group-header">
         <div class="settings-group-title">已安装插件</div>
-        <button class="btn btn-sm" :disabled="isRefreshing" @click="refreshPluginList">
-          {{ isRefreshing ? '刷新中...' : '刷新插件' }}
-        </button>
+        <div class="plugin-header-actions">
+          <button class="btn btn-sm" @click="showAgentModal = true">
+            自动生成插件
+          </button>
+          <button class="btn btn-sm" :disabled="isRefreshing" @click="refreshPluginList">
+            {{ isRefreshing ? '刷新中...' : '刷新插件' }}
+          </button>
+        </div>
       </div>
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="plugins.length === 0" class="empty-hint">暂无已安装的插件</div>
@@ -105,6 +110,11 @@
         </div>
       </div>
     </div>
+
+    <PluginAgentModal
+      v-model="showAgentModal"
+      @plugins-changed="handlePluginAgentRefresh"
+    />
   </div>
 </template>
 
@@ -118,6 +128,7 @@ import * as pluginApi from '@/api/plugin'
 import type { PluginData } from '@/types'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
 
 type Plugin = PluginData
 
@@ -146,6 +157,7 @@ const showConfigModal = ref(false)
 const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
+const showAgentModal = ref(false)
 
 // 加载插件列表
 async function loadPlugins() {
@@ -288,6 +300,11 @@ async function deletePlugin(plugin: Plugin) {
   }
 }
 
+async function handlePluginAgentRefresh() {
+  await loadPlugins()
+  await loadDefaultStates()
+}
+
 // 初始化
 onMounted(() => {
   loadPlugins()
@@ -302,6 +319,12 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+.plugin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .plugin-list {

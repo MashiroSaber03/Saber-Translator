@@ -24,6 +24,7 @@ VISION_OCR_CAPABILITY = "vision_ocr"
 MODEL_FETCH_CAPABILITY = "model_fetch"
 CONNECTION_TEST_CAPABILITY = "connection_test"
 WEB_IMPORT_AGENT_CAPABILITY = "web_import_agent"
+PLUGIN_AGENT_CAPABILITY = "plugin_agent"
 
 CHAT_CAPABILITY = "chat"
 VLM_CAPABILITY = "vlm"
@@ -38,6 +39,7 @@ _CAPABILITY_NAME_MAP = {
     "connectionTest": CONNECTION_TEST_CAPABILITY,
     "imageGen": IMAGE_GEN_CAPABILITY,
     "webImportAgent": WEB_IMPORT_AGENT_CAPABILITY,
+    "pluginAgent": PLUGIN_AGENT_CAPABILITY,
 }
 
 _MODEL_TYPE_NAME_MAP = {
