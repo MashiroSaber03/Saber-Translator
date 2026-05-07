@@ -537,6 +537,8 @@ class OpenAICompatibleChatTransport:
                             chunk = _extract_stream_chunk(data)
                             if chunk:
                                 full_text += chunk
+                                if invocation.runtime_options.on_stream_chunk:
+                                    invocation.runtime_options.on_stream_chunk(chunk, full_text)
                                 if invocation.runtime_options.print_stream_output:
                                     print(chunk, end="", flush=True)
 
@@ -830,6 +832,8 @@ class AsyncOpenAICompatibleTransport:
                         chunk = _extract_stream_chunk(data)
                         if chunk:
                             full_text += chunk
+                            if invocation.runtime_options.on_stream_chunk:
+                                invocation.runtime_options.on_stream_chunk(chunk, full_text)
                             if invocation.runtime_options.print_stream_output:
                                 print(chunk, end="", flush=True)
 

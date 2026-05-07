@@ -32,9 +32,96 @@ export interface PluginAgentMessage {
   timestamp: string
 }
 
-export interface PluginAgentEvent<T = Record<string, unknown>> {
+export type PluginAgentEventType =
+  | 'assistant'
+  | 'assistant_delta'
+  | 'done'
+  | 'error'
+  | 'log'
+  | 'state'
+  | 'tool_call'
+  | 'tool_result'
+  | 'validation'
+
+export interface PluginAgentAssistantDeltaPayload {
+  stream_id: string
+  phase: string
+  delta: string
+  content: string
+}
+
+export interface PluginAgentAssistantPayload {
+  stream_id?: string
+  phase?: string
+  message: string
+}
+
+export interface PluginAgentStatePayload {
+  run_state: PluginAgentRunState
+  label?: string
+  message?: string
+  locked_target?: PluginAgentLockedTarget | null
+  pending_target?: PluginAgentTargetProposal | null
+}
+
+export interface PluginAgentToolCallPayload {
+  group_id: string
+  tool: string
+  summary: string
+  args_preview?: Record<string, unknown>
+}
+
+export interface PluginAgentToolResultPayload {
+  group_id: string
+  tool: string
+  summary: string
+  success: boolean
+  changed_files?: string[]
+  file_previews?: Record<string, string>
+  debug_result?: Record<string, unknown>
+}
+
+export interface PluginAgentValidationPayload {
+  summary: string
+  success: boolean
+  details: Record<string, unknown>
+}
+
+export interface PluginAgentDonePayload {
+  summary?: string
+  message: string
+  validation?: Record<string, unknown>
+  refresh_result?: Record<string, unknown> | null
+  run_state: PluginAgentRunState
+}
+
+export interface PluginAgentErrorPayload {
+  summary?: string
+  message: string
+  run_state: PluginAgentRunState
+}
+
+export interface PluginAgentLogPayload {
+  message: string
+  phase?: string
+  refresh_result?: Record<string, unknown> | null
+}
+
+export type PluginAgentEventPayload =
+  | PluginAgentAssistantDeltaPayload
+  | PluginAgentAssistantPayload
+  | PluginAgentDonePayload
+  | PluginAgentErrorPayload
+  | PluginAgentLogPayload
+  | PluginAgentStatePayload
+  | PluginAgentToolCallPayload
+  | PluginAgentToolResultPayload
+  | PluginAgentValidationPayload
+  | Record<string, unknown>
+
+export interface PluginAgentEvent<T = PluginAgentEventPayload> {
   id: number
-  type: string
+  type: PluginAgentEventType | string
   payload: T
   timestamp: string
 }

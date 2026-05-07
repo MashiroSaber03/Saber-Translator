@@ -43,6 +43,7 @@ class OpenAICompatibleRuntimeOptions:
     print_stream_output: bool = False
     stream_output_label: Optional[str] = None
     request_overrides: dict[str, Any] = field(default_factory=dict)
+    on_stream_chunk: Optional[Callable[[str, str], None]] = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -109,19 +110,27 @@ def build_openai_compatible_runtime_options(
     print_stream_output: bool = False,
     stream_output_label: Optional[str] = None,
     request_overrides: Optional[dict[str, Any]] = None,
+    on_stream_chunk: Optional[Callable[[str, str], None]] = None,
 ) -> OpenAICompatibleRuntimeOptions:
     return OpenAICompatibleRuntimeOptions(
         timeout=timeout,
         print_stream_output=print_stream_output,
         stream_output_label=stream_output_label,
         request_overrides=dict(request_overrides or {}),
+        on_stream_chunk=on_stream_chunk,
     )
 
 
 def clone_openai_compatible_runtime_options(
     options: OpenAICompatibleRuntimeOptions,
 ) -> OpenAICompatibleRuntimeOptions:
-    return OpenAICompatibleRuntimeOptions.from_dict(options.to_dict())
+    return OpenAICompatibleRuntimeOptions(
+        timeout=options.timeout,
+        print_stream_output=options.print_stream_output,
+        stream_output_label=options.stream_output_label,
+        request_overrides=dict(options.request_overrides),
+        on_stream_chunk=options.on_stream_chunk,
+    )
 
 
 def resolve_openai_compatible_invocation(

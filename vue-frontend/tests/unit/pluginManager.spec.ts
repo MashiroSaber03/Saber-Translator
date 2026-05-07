@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
@@ -63,7 +64,12 @@ vi.mock('@/components/common/CustomSelect.vue', () => ({
 vi.mock('@/components/settings/PluginAgentModal.vue', () => ({
   default: defineComponent({
     name: 'PluginAgentModal',
-    props: ['modelValue'],
+    props: {
+      modelValue: {
+        type: Boolean,
+        default: false,
+      },
+    },
     setup(props) {
       return () => h(
         'div',

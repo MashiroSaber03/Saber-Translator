@@ -87,6 +87,8 @@ describe('settings store plugin agent configuration', () => {
     expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toEqual({
       reasoning_effort: 'low',
     })
+    expect((store.settings.pluginAgent as Record<string, unknown>).rpmLimit).toBeUndefined()
+    expect((store.settings.pluginAgent as Record<string, unknown>).useStream).toBeUndefined()
   })
 
   it('saves only plugin agent settings to backend payload', async () => {
@@ -115,5 +117,28 @@ describe('settings store plugin agent configuration', () => {
         customBaseUrl: 'https://agent.example/v1',
       }),
     )
+    expect(payload.pluginAgent.rpmLimit).toBeUndefined()
+    expect(payload.pluginAgent.useStream).toBeUndefined()
+    expect(payload.settingsSchemaVersion).toBe(3)
+  })
+
+  it('resets plugin agent openai options to defaults when switching to uncached provider', () => {
+    const store = useSettingsStore()
+
+    store.updatePluginAgent({
+      rpmLimit: 23,
+      businessRetries: 5,
+      forceJsonOutput: true,
+      useStream: false,
+      extraBody: { reasoning_effort: 'high' },
+    })
+
+    store.setPluginAgentProvider('deepseek')
+
+    expect(store.settings.pluginAgent.openaiOptions.execution.rpmLimit).toBe(7)
+    expect(store.settings.pluginAgent.openaiOptions.execution.businessRetries).toBe(2)
+    expect(store.settings.pluginAgent.openaiOptions.execution.useStream).toBe(true)
+    expect(store.settings.pluginAgent.openaiOptions.request.forceJsonOutput).toBe(false)
+    expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toBeUndefined()
   })
 })

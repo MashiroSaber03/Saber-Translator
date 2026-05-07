@@ -468,6 +468,63 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertIn("你好", printed)
         self.assertIn("，世界", printed)
 
+    def test_hq_stream_transport_invokes_stream_callback_with_cumulative_text(self) -> None:
+        class FakeResponse:
+            status_code = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b""
+
+            def iter_lines(self):
+                yield 'data: {"choices":[{"delta":{"content":"你好"}}]}'
+                yield 'data: {"choices":[{"delta":{"content":"，世界"}}]}'
+                yield 'data: [DONE]'
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, *args, **kwargs):
+                return FakeResponse()
+
+        seen_chunks: list[tuple[str, str]] = []
+
+        transport = OpenAICompatibleChatTransport()
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=True),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
+                on_stream_chunk=lambda chunk, content: seen_chunks.append((chunk, content)),
+            ),
+        )
+
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()):
+            content = transport.complete(request)
+
+        self.assertEqual(content, "你好，世界")
+        self.assertEqual(
+            seen_chunks,
+            [
+                ("你好", "你好"),
+                ("，世界", "你好，世界"),
+            ],
+        )
+
     def test_sync_chat_transport_merges_temperature_and_request_overrides_as_top_level_fields(self) -> None:
         class FakeResponse:
             status_code = 200

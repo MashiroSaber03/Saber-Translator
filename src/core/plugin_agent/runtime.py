@@ -85,11 +85,7 @@ class PluginAgentRuntime:
             self._append_event_locked(
                 session,
                 "state",
-                {
-                    "run_state": session.run_state,
-                    "locked_target": session.locked_target.to_dict() if session.locked_target else None,
-                    "pending_target": None,
-                },
+                self._build_state_payload(session),
             )
             return session
 
@@ -112,11 +108,7 @@ class PluginAgentRuntime:
                     self._append_event_locked(
                         session,
                         "state",
-                        {
-                            "run_state": session.run_state,
-                            "locked_target": session.locked_target.to_dict() if session.locked_target else None,
-                            "pending_target": session.pending_target.to_dict() if session.pending_target else None,
-                        },
+                        self._build_state_payload(session, message="任务已取消，正在等待当前执行线程退出。"),
                     )
                 self._delete_after_stop.add(session_id)
                 return existed
@@ -178,11 +170,7 @@ class PluginAgentRuntime:
             self._append_event_locked(
                 session,
                 "state",
-                {
-                    "run_state": session.run_state,
-                    "locked_target": session.locked_target.to_dict() if session.locked_target else None,
-                    "pending_target": session.pending_target.to_dict() if session.pending_target else None,
-                },
+                self._build_state_payload(session),
             )
             return session
 
@@ -217,11 +205,7 @@ class PluginAgentRuntime:
             self._append_event_locked(
                 session,
                 "state",
-                {
-                    "run_state": session.run_state,
-                    "locked_target": session.locked_target.to_dict(),
-                    "pending_target": None,
-                },
+                self._build_state_payload(session, message=f"目标插件 {display_name} 已锁定，可以开始执行。"),
             )
             return session
 
@@ -245,11 +229,7 @@ class PluginAgentRuntime:
             self._append_event_locked(
                 session,
                 "state",
-                {
-                    "run_state": session.run_state,
-                    "locked_target": session.locked_target.to_dict(),
-                    "pending_target": None,
-                },
+                self._build_state_payload(session, message="Agent 已开始在锁定插件目录中执行。"),
             )
             thread = threading.Thread(
                 target=self._run_execution,
@@ -385,17 +365,11 @@ class PluginAgentRuntime:
                 active_session.execution_finished_at = utcnow_iso()
                 active_session.touch()
                 final_message = str(result.get("assistant_message") or "插件任务完成。").strip()
-                active_session.messages.append(
-                    PluginAgentMessage(
-                        id=f"assistant_{uuid.uuid4().hex[:8]}",
-                        role="assistant",
-                        content=final_message,
-                    )
-                )
                 self._append_event_locked(
                     active_session,
                     "done",
                     {
+                        "summary": "插件开发任务已完成",
                         "message": final_message,
                         "validation": validation,
                         "refresh_result": refresh_result,
@@ -415,6 +389,7 @@ class PluginAgentRuntime:
                     active_session,
                     "error",
                     {
+                        "summary": "插件开发任务失败",
                         "message": str(exc),
                         "run_state": active_session.run_state,
                     },
@@ -487,3 +462,31 @@ class PluginAgentRuntime:
             self._cancel_flags.pop(session_id, None)
             self._running_threads.pop(session_id, None)
             self._delete_after_stop.discard(session_id)
+
+    @staticmethod
+    def _build_state_payload(session: PluginAgentSession, message: Optional[str] = None) -> Dict[str, Any]:
+        labels = {
+            "drafting": "等待需求描述",
+            "awaiting_target_lock": "等待锁定目标插件",
+            "ready": "已就绪",
+            "running": "执行中",
+            "completed": "已完成",
+            "failed": "执行失败",
+            "cancelled": "已取消",
+        }
+        default_messages = {
+            "drafting": "请先描述插件需求，Agent 会先给出方案。",
+            "awaiting_target_lock": "Agent 已提出插件方案，等待你锁定目标插件。",
+            "ready": "目标插件已确认，可以开始执行。",
+            "running": "Agent 正在当前锁定的插件目录中执行任务。",
+            "completed": "插件任务已经完成。",
+            "failed": session.last_error or "插件任务执行失败。",
+            "cancelled": session.last_error or "插件任务已取消。",
+        }
+        return {
+            "run_state": session.run_state,
+            "label": labels.get(session.run_state, session.run_state),
+            "message": message or default_messages.get(session.run_state) or "",
+            "locked_target": session.locked_target.to_dict() if session.locked_target else None,
+            "pending_target": session.pending_target.to_dict() if session.pending_target else None,
+        }

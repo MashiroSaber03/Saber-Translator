@@ -39,6 +39,10 @@ import {
 } from '@/constants'
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 // ============================================================
 // 默认值定义
 // ============================================================
@@ -213,25 +217,25 @@ export function createDefaultSettings(): TranslationSettings {
     auxYoloOverlapThreshold: 0.1,
     enableSaberYoloRefine: true,
     saberYoloRefineOverlapThreshold: 50,
-    baiduOcr: { ...DEFAULT_BAIDU_OCR },
-    paddleOcrVl: { ...DEFAULT_PADDLEOCR_VL },
-    aiVisionOcr: { ...DEFAULT_AI_VISION_OCR },
-    hybridOcr: { ...DEFAULT_HYBRID_OCR },
-    translation: { ...DEFAULT_TRANSLATION_SERVICE },
-    glossary: { ...DEFAULT_GLOSSARY },
-    nonTranslate: { ...DEFAULT_NON_TRANSLATE },
+    baiduOcr: cloneJson(DEFAULT_BAIDU_OCR),
+    paddleOcrVl: cloneJson(DEFAULT_PADDLEOCR_VL),
+    aiVisionOcr: cloneJson(DEFAULT_AI_VISION_OCR),
+    hybridOcr: cloneJson(DEFAULT_HYBRID_OCR),
+    translation: cloneJson(DEFAULT_TRANSLATION_SERVICE),
+    glossary: cloneJson(DEFAULT_GLOSSARY),
+    nonTranslate: cloneJson(DEFAULT_NON_TRANSLATE),
     targetLanguage: 'zh',
     translatePrompt: DEFAULT_TRANSLATE_PROMPT,
     useTextboxPrompt: false,
     textboxPrompt: '',
-    hqTranslation: { ...DEFAULT_HQ_TRANSLATION },
-    pluginAgent: { ...DEFAULT_PLUGIN_AGENT },
-    proofreading: { ...DEFAULT_PROOFREADING },
-    boxExpand: { ...DEFAULT_BOX_EXPAND },
-    preciseMask: { ...DEFAULT_PRECISE_MASK },
+    hqTranslation: cloneJson(DEFAULT_HQ_TRANSLATION),
+    pluginAgent: cloneJson(DEFAULT_PLUGIN_AGENT),
+    proofreading: cloneJson(DEFAULT_PROOFREADING),
+    boxExpand: cloneJson(DEFAULT_BOX_EXPAND),
+    preciseMask: cloneJson(DEFAULT_PRECISE_MASK),
     pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
-    parallel: { ...DEFAULT_PARALLEL },
+    parallel: cloneJson(DEFAULT_PARALLEL),
     autoSaveInBookshelfMode: false,
     removeTextWithOcr: false,
     enableVerboseLogs: false,  // 默认关闭详细日志

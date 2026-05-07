@@ -135,17 +135,45 @@ class SlowCancelAwareController:
         }
 
 
+class FakeStreamingTransport:
+    def __init__(self, payloads, chunk_splits):
+        self.payloads = list(payloads)
+        self.chunk_splits = list(chunk_splits)
+
+    def complete(self, request, resolved_invocation=None, before_request=None):
+        if before_request is not None:
+            before_request()
+        payload = self.payloads.pop(0)
+        chunks = self.chunk_splits.pop(0)
+        callback = getattr(request.runtime_options, "on_stream_chunk", None)
+        if callback:
+            full_text = ""
+            for size in chunks:
+                segment = payload[len(full_text): len(full_text) + size]
+                full_text += segment
+                callback(segment, full_text)
+            if len(full_text) < len(payload):
+                segment = payload[len(full_text):]
+                full_text += segment
+                callback(segment, full_text)
+        return payload
+
+
 class PluginAgentRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
         _install_dependency_stubs()
+        from src.core.plugin_agent.controller import PluginAgentController
         from src.core.plugin_agent.runtime import PluginAgentRuntime
         from src.core.plugin_agent.models import PluginAgentMessage
         from src.core.plugin_agent.tools import LockedPluginTarget, PluginAgentToolExecutor
+        from src.shared.openai_options import create_openai_compatible_options
 
+        self.PluginAgentController = PluginAgentController
         self.PluginAgentRuntime = PluginAgentRuntime
         self.PluginAgentMessage = PluginAgentMessage
         self.LockedPluginTarget = LockedPluginTarget
         self.PluginAgentToolExecutor = PluginAgentToolExecutor
+        self.create_openai_compatible_options = create_openai_compatible_options
 
     def test_tool_executor_rejects_path_escape_outside_locked_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -276,6 +304,262 @@ class PluginAgentRuntimeTests(unittest.TestCase):
             self.assertNotIn(session.session_id, runtime._running_threads)
             self.assertNotIn(session.session_id, runtime._cancel_flags)
             self.assertIsNone(runtime.get_session(session.session_id))
+
+    def test_controller_streams_only_assistant_message_and_tool_result_includes_file_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_root = os.path.join(temp_dir, "plugins")
+            plugin_dir = os.path.join(plugins_root, "stream_plugin")
+            payloads = [
+                json.dumps(
+                    {
+                        "assistant_message": "正在创建插件\n```python\nprint(\"ok\")\n```",
+                        "action": {
+                            "tool": "write_file",
+                            "args": {
+                                "path": "__init__.py",
+                                "content": "from .plugin import StreamPlugin\n",
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "继续写入主插件文件",
+                        "action": {
+                            "tool": "write_file",
+                            "args": {
+                                "path": "plugin.py",
+                                "content": (
+                                    "from src.plugins.base import PluginBase\n\n"
+                                    "class StreamPlugin(PluginBase):\n"
+                                    "    plugin_id = 'stream_plugin'\n"
+                                    "    display_name = 'Stream Plugin'\n"
+                                    "    plugin_version = '1.0.0'\n"
+                                    "    plugin_author = 'Tests'\n"
+                                    "    plugin_description = 'streamed plugin'\n"
+                                    "    default_enabled = False\n"
+                                    "    supported_steps = ('ocr',)\n"
+                                    "    supported_modes = ('standard',)\n"
+                                    "    def after_ocr(self, context, result):\n"
+                                    "        return result\n"
+                                ),
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "开始校验插件",
+                        "action": {
+                            "tool": "validate_plugin",
+                            "args": {},
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "插件已经完成",
+                        "action": {
+                            "tool": "finish",
+                            "args": {},
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+
+            controller = self.PluginAgentController(
+                transport=FakeStreamingTransport(
+                    payloads=payloads,
+                    chunk_splits=[
+                        [24, 12, 8, 15],
+                        [18, 9, 7, 11],
+                        [10, 8, 6],
+                        [12, 7, 5],
+                    ],
+                )
+            )
+            target = self.LockedPluginTarget(
+                mode="create",
+                plugin_id="stream_plugin",
+                display_name="Stream Plugin",
+                plugin_dir=plugin_dir,
+            )
+            executor = self.PluginAgentToolExecutor(target=target, skill_markdown="skill")
+            session = self.PluginAgentRuntime(
+                plugins_root=plugins_root,
+                controller=controller,
+                finalize_refresh=lambda _target: None,
+                skill_markdown="skill",
+            ).create_session("create")
+            session.locked_target = target
+            session.run_state = "ready"
+            session.messages.append(
+                self.PluginAgentMessage(
+                    id="user_1",
+                    role="user",
+                    content="做一个流式插件",
+                )
+            )
+            events = []
+            agent_config = {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model_name": "gpt-test",
+                "custom_base_url": "https://example.com/v1",
+                "openai_options": self.create_openai_compatible_options(
+                    use_stream=True,
+                    transport_retries=0,
+                    business_retries=0,
+                ),
+            }
+
+            result = controller.execute(
+                session,
+                "skill",
+                agent_config,
+                executor,
+                lambda event_type, payload: events.append((event_type, payload)),
+            )
+
+            assistant_delta_events = [payload for event_type, payload in events if event_type == "assistant_delta"]
+            self.assertGreaterEqual(len(assistant_delta_events), 1)
+            self.assertTrue(any("print(\"ok\")" in payload["content"] for payload in assistant_delta_events))
+            self.assertTrue(all('"tool"' not in payload["content"] for payload in assistant_delta_events))
+
+            tool_results = [payload for event_type, payload in events if event_type == "tool_result"]
+            self.assertGreaterEqual(len(tool_results), 2)
+            self.assertTrue(any("__init__.py" in payload.get("changed_files", []) for payload in tool_results))
+            self.assertTrue(any("plugin.py" in payload.get("changed_files", []) for payload in tool_results))
+            self.assertTrue(any(payload.get("file_previews", {}).get("plugin.py") for payload in tool_results))
+
+            validation_events = [payload for event_type, payload in events if event_type == "validation"]
+            self.assertEqual(len(validation_events), 1)
+            self.assertTrue(validation_events[0]["success"])
+            self.assertEqual(result["assistant_message"], "插件已经完成")
+
+    def test_controller_emits_multiple_assistant_deltas_for_short_fast_stream_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_root = os.path.join(temp_dir, "plugins")
+            plugin_dir = os.path.join(plugins_root, "stream_plugin")
+            plugin_content = (
+                "from src.plugins.base import PluginBase\n\n"
+                "class StreamPlugin(PluginBase):\n"
+                "    plugin_id = 'stream_plugin'\n"
+                "    display_name = 'Stream Plugin'\n"
+                "    plugin_version = '1.0.0'\n"
+                "    plugin_author = 'Tests'\n"
+                "    plugin_description = 'streamed plugin'\n"
+                "    default_enabled = False\n"
+                "    supported_steps = ('ocr',)\n"
+                "    supported_modes = ('standard',)\n"
+                "    def after_ocr(self, context, result):\n"
+                "        return result\n"
+            )
+            payloads = [
+                json.dumps(
+                    {
+                        "assistant_message": "开始写。",
+                        "action": {
+                            "tool": "write_file",
+                            "args": {
+                                "path": "__init__.py",
+                                "content": "from .plugin import StreamPlugin\n",
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "继续。",
+                        "action": {
+                            "tool": "write_file",
+                            "args": {
+                                "path": "plugin.py",
+                                "content": plugin_content,
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "校验。",
+                        "action": {"tool": "validate_plugin", "args": {}},
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "assistant_message": "完成。",
+                        "action": {"tool": "finish", "args": {}},
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+            controller = self.PluginAgentController(
+                transport=FakeStreamingTransport(
+                    payloads=payloads,
+                    chunk_splits=[
+                        [1] * len(payloads[0]),
+                        [1] * len(payloads[1]),
+                        [1] * len(payloads[2]),
+                        [1] * len(payloads[3]),
+                    ],
+                )
+            )
+            target = self.LockedPluginTarget(
+                mode="create",
+                plugin_id="stream_plugin",
+                display_name="Stream Plugin",
+                plugin_dir=plugin_dir,
+            )
+            executor = self.PluginAgentToolExecutor(target=target, skill_markdown="skill")
+            session = self.PluginAgentRuntime(
+                plugins_root=plugins_root,
+                controller=controller,
+                finalize_refresh=lambda _target: None,
+                skill_markdown="skill",
+            ).create_session("create")
+            session.locked_target = target
+            session.run_state = "ready"
+            session.messages.append(
+                self.PluginAgentMessage(
+                    id="user_1",
+                    role="user",
+                    content="做一个流式插件",
+                )
+            )
+            events = []
+            agent_config = {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model_name": "gpt-test",
+                "custom_base_url": "https://example.com/v1",
+                "openai_options": self.create_openai_compatible_options(
+                    use_stream=True,
+                    transport_retries=0,
+                    business_retries=0,
+                ),
+            }
+
+            controller.execute(
+                session,
+                "skill",
+                agent_config,
+                executor,
+                lambda event_type, payload: events.append((event_type, payload)),
+            )
+
+            first_iteration_deltas = [
+                payload for event_type, payload in events
+                if event_type == "assistant_delta" and payload.get("stream_id") == "execution-1"
+            ]
+            self.assertGreaterEqual(len(first_iteration_deltas), 3)
 
 
 class PluginAgentApiTests(unittest.TestCase):

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.shared.ai_providers import (
     PLUGIN_AGENT_CAPABILITY,
@@ -21,6 +22,61 @@ from src.shared.openai_options import OpenAICompatibleOptions
 from .models import PluginAgentSession
 
 logger = logging.getLogger("PluginAgent.Controller")
+_ASSISTANT_MESSAGE_PATTERN = re.compile(r'"assistant_message"\s*:\s*"')
+
+
+def _decode_json_string_prefix(raw_text: str) -> Tuple[str, bool]:
+    decoded: List[str] = []
+    index = 0
+    while index < len(raw_text):
+        character = raw_text[index]
+        if character == '"':
+            return "".join(decoded), True
+        if character != "\\":
+            decoded.append(character)
+            index += 1
+            continue
+
+        index += 1
+        if index >= len(raw_text):
+            return "".join(decoded), False
+        escaped = raw_text[index]
+        if escaped == "n":
+            decoded.append("\n")
+            index += 1
+            continue
+        if escaped == "r":
+            decoded.append("\r")
+            index += 1
+            continue
+        if escaped == "t":
+            decoded.append("\t")
+            index += 1
+            continue
+        if escaped == "b":
+            decoded.append("\b")
+            index += 1
+            continue
+        if escaped == "f":
+            decoded.append("\f")
+            index += 1
+            continue
+        if escaped in {'"', "\\", "/"}:
+            decoded.append(escaped)
+            index += 1
+            continue
+        if escaped == "u":
+            if index + 4 >= len(raw_text):
+                return "".join(decoded), False
+            code = raw_text[index + 1 : index + 5]
+            if not all(character in "0123456789abcdefABCDEF" for character in code):
+                return "".join(decoded), False
+            decoded.append(chr(int(code, 16)))
+            index += 5
+            continue
+        decoded.append(escaped)
+        index += 1
+    return "".join(decoded), False
 
 
 class PluginAgentController:
@@ -55,11 +111,46 @@ class PluginAgentController:
 
             system_prompt = self._build_execution_system_prompt(session, recent_results, iteration)
             messages = self._build_execution_messages(session, system_prompt, skill_markdown)
-            envelope = self._call_agent_json(messages, agent_config, label="PluginAgent-Execution")
+            stream_id = f"execution-{iteration}"
+            last_stream_content = ""
+
+            def emit_streaming_assistant(raw_stream_content: str, *, force: bool = False) -> None:
+                nonlocal last_stream_content
+                content, _completed = self._extract_assistant_message_prefix(raw_stream_content)
+                if content is None or content == last_stream_content:
+                    return
+                delta = content[len(last_stream_content) :] if content.startswith(last_stream_content) else content
+                last_stream_content = content
+                if not delta and not force:
+                    return
+                emit_event(
+                    "assistant_delta",
+                    {
+                        "stream_id": stream_id,
+                        "phase": "execution",
+                        "delta": delta,
+                        "content": content,
+                    },
+                )
+
+            envelope = self._call_agent_json(
+                messages,
+                agent_config,
+                label="PluginAgent-Execution",
+                on_stream_chunk=lambda _chunk, content: emit_streaming_assistant(content),
+            )
 
             assistant_message = str(envelope.get("assistant_message") or "").strip()
             if assistant_message:
-                emit_event("assistant", {"message": assistant_message, "phase": "execution"})
+                emit_streaming_assistant(json.dumps({"assistant_message": assistant_message}, ensure_ascii=False), force=True)
+                emit_event(
+                    "assistant",
+                    {
+                        "stream_id": stream_id,
+                        "message": assistant_message,
+                        "phase": "execution",
+                    },
+                )
 
             action = envelope.get("action") or {}
             tool_name = str(action.get("tool") or "").strip()
@@ -77,12 +168,14 @@ class PluginAgentController:
                 }
 
             tool_args = action.get("args") if isinstance(action.get("args"), dict) else {}
-            emit_event("tool_call", {"tool": tool_name, "args": tool_args})
+            group_id = f"tool-{iteration}"
+            emit_event("tool_call", self._build_tool_call_payload(tool_name, tool_args, group_id))
             tool_result = tool_executor.run_tool(tool_name, tool_args)
-            emit_event("tool_result", {"tool": tool_name, "result": tool_result})
+            emit_event("tool_result", self._build_tool_result_payload(tool_name, tool_result, group_id))
 
             if tool_name == "validate_plugin":
                 last_validation = tool_result
+                emit_event("validation", self._build_validation_payload(tool_result))
 
             recent_results.append(
                 {
@@ -95,7 +188,14 @@ class PluginAgentController:
 
         raise RuntimeError("Agent 超过最大迭代次数仍未完成")
 
-    def _call_agent_json(self, messages: List[Dict[str, Any]], agent_config: Dict[str, Any], *, label: str) -> Dict[str, Any]:
+    def _call_agent_json(
+        self,
+        messages: List[Dict[str, Any]],
+        agent_config: Dict[str, Any],
+        *,
+        label: str,
+        on_stream_chunk: Optional[Callable[[str, str], None]] = None,
+    ) -> Dict[str, Any]:
         provider = normalize_provider_id(agent_config.get("provider"))
         api_key = agent_config.get("api_key", "")
         model_name = agent_config.get("model_name", "")
@@ -127,6 +227,7 @@ class PluginAgentController:
                     timeout=180.0,
                     print_stream_output=openai_options.execution.use_stream,
                     stream_output_label=label,
+                    on_stream_chunk=on_stream_chunk,
                 ),
                 messages=messages,
             ),
@@ -168,6 +269,7 @@ class PluginAgentController:
             "  }\n"
             "}\n\n"
             "规则：\n"
+            '- assistant_message 必须放在返回 JSON 的第一个字段。\n'
             "- modify 模式下不要重新选择其他插件。\n"
             "- create 模式下，若信息不足可让用户补充；若信息足够则给出一个明确 target_proposal。\n"
             "- assistant_message 要指出插件将作用于哪些步骤、预计做什么、缺什么信息。\n"
@@ -218,6 +320,7 @@ class PluginAgentController:
             "  }\n"
             "}\n\n"
             "规则：\n"
+            '- assistant_message 必须放在返回 JSON 的第一个字段，action 必须紧随其后。\n'
             "- 修改文件时必须提供完整文件内容，不要只给 diff。\n"
             "- finish 前至少应完成一次 validate_plugin 并确保成功。\n"
             "- 优先保持实现简单、符合项目插件规范。\n"
@@ -250,3 +353,98 @@ class PluginAgentController:
         if isinstance(preview, str) and len(preview) > 1200:
             raw["preview"] = preview[:1200] + "\n...[truncated]..."
         return raw
+
+    @staticmethod
+    def _extract_assistant_message_prefix(raw_text: str) -> Tuple[Optional[str], bool]:
+        match = _ASSISTANT_MESSAGE_PATTERN.search(raw_text)
+        if not match:
+            return None, False
+        return _decode_json_string_prefix(raw_text[match.end() :])
+
+    @staticmethod
+    def _build_tool_call_payload(tool_name: str, tool_args: Dict[str, Any], group_id: str) -> Dict[str, Any]:
+        path = str(tool_args.get("path") or tool_args.get("base_path") or "").strip()
+        if tool_name == "write_file":
+            summary = f"准备写入文件 {path or '未指定路径'}"
+        elif tool_name == "read_file":
+            summary = f"读取文件 {path or '未指定路径'}"
+        elif tool_name == "list_files":
+            summary = f"查看目录 {path or '.'}"
+        elif tool_name == "delete_file":
+            summary = f"删除文件 {path or '未指定路径'}"
+        elif tool_name == "read_skill":
+            summary = "读取内置插件开发 skill"
+        elif tool_name == "validate_plugin":
+            summary = "校验当前插件实现"
+        else:
+            summary = f"执行工具 {tool_name}"
+
+        args_preview: Dict[str, Any] = {}
+        if path:
+            args_preview["path"] = path
+        if tool_name == "write_file":
+            args_preview["content_length"] = len(str(tool_args.get("content") or ""))
+
+        return {
+            "group_id": group_id,
+            "tool": tool_name,
+            "summary": summary,
+            "args_preview": args_preview,
+        }
+
+    @classmethod
+    def _build_tool_result_payload(cls, tool_name: str, tool_result: Dict[str, Any], group_id: str) -> Dict[str, Any]:
+        success = bool(tool_result.get("success", True))
+        path = str(tool_result.get("path") or "").strip()
+        summary = cls._summarize_tool_result(tool_name, tool_result, success)
+        changed_files: List[str] = []
+        file_previews: Dict[str, str] = {}
+        if tool_name == "write_file" and path:
+            changed_files.append(path)
+            preview = tool_result.get("preview")
+            if isinstance(preview, str):
+                file_previews[path] = preview
+        elif tool_name == "delete_file" and path:
+            changed_files.append(path)
+        return {
+            "group_id": group_id,
+            "tool": tool_name,
+            "summary": summary,
+            "success": success,
+            "changed_files": changed_files,
+            "file_previews": file_previews,
+            "debug_result": cls._shrink_tool_result(tool_result),
+            "result": cls._shrink_tool_result(tool_result),
+        }
+
+    @staticmethod
+    def _build_validation_payload(validation_result: Dict[str, Any]) -> Dict[str, Any]:
+        success = bool(validation_result.get("success"))
+        if success:
+            plugin_meta = validation_result.get("plugin") or {}
+            plugin_label = str(plugin_meta.get("display_name") or plugin_meta.get("id") or "当前插件")
+            summary = f"插件校验通过：{plugin_label}"
+        else:
+            summary = f"插件校验失败：{validation_result.get('error') or '未知错误'}"
+        return {
+            "summary": summary,
+            "success": success,
+            "details": validation_result,
+        }
+
+    @staticmethod
+    def _summarize_tool_result(tool_name: str, tool_result: Dict[str, Any], success: bool) -> str:
+        if tool_name == "write_file":
+            return f"{'已写入' if success else '写入失败'} {tool_result.get('path') or '文件'}"
+        if tool_name == "read_file":
+            return f"{'已读取' if success else '读取失败'} {tool_result.get('path') or '文件'}"
+        if tool_name == "list_files":
+            entries = tool_result.get("entries") or []
+            return f"目录扫描完成，共 {len(entries)} 项"
+        if tool_name == "delete_file":
+            return f"{'已删除' if success else '删除失败'} {tool_result.get('path') or '文件'}"
+        if tool_name == "read_skill":
+            return "已读取内置插件开发 skill"
+        if tool_name == "validate_plugin":
+            return "插件校验通过" if success else f"插件校验失败：{tool_result.get('error') or '未知错误'}"
+        return f"{tool_name} {'执行成功' if success else '执行失败'}"

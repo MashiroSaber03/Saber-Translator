@@ -166,8 +166,8 @@
             </div>
           </div>
 
-          <div class="plugin-agent-messages">
-            <div v-if="messages.length === 0" class="plugin-agent-empty">
+          <div ref="messagesContainer" class="plugin-agent-messages">
+            <div v-if="messages.length === 0 && timelineItems.length === 0" class="plugin-agent-empty">
               描述你想创建或修改的插件需求，agent 会先给出方案，再在你确认后执行。
             </div>
             <div
@@ -179,13 +179,58 @@
               <div class="plugin-agent-message-role">{{ message.role === 'user' ? '你' : 'Agent' }}</div>
               <div
                 class="plugin-agent-message-content"
-                v-html="message.role === 'assistant' ? renderMarkdown(message.content) : escapeHtml(message.content)"
+                v-html="message.role === 'assistant'
+                  ? renderMarkdown(getAssistantMessageContent(message.id, message.content))
+                  : escapeHtml(message.content)"
               />
             </div>
 
-            <div v-for="event in eventFeed" :key="`event-${event.id}`" class="plugin-agent-event">
-              <div class="plugin-agent-event-type">{{ event.type }}</div>
-              <pre class="plugin-agent-event-payload">{{ formatEventPayload(event.payload) }}</pre>
+            <div
+              v-for="item in timelineItems"
+              :key="item.id"
+              class="plugin-agent-step-card"
+              :class="[
+                `plugin-agent-step-card-${item.kind}`,
+                `status-${item.status}`,
+                { streaming: item.status === 'streaming' },
+              ]"
+            >
+              <div class="plugin-agent-step-card-header">
+                <div class="plugin-agent-step-badge">{{ item.badge }}</div>
+                <div class="plugin-agent-step-meta">
+                  <div class="plugin-agent-step-title">{{ item.title }}</div>
+                  <div v-if="item.timestampLabel" class="plugin-agent-step-time">{{ item.timestampLabel }}</div>
+                </div>
+              </div>
+              <div v-if="item.summary" class="plugin-agent-step-summary">{{ item.summary }}</div>
+              <div
+                v-if="item.content"
+                class="plugin-agent-step-content"
+                v-html="item.markdown ? renderMarkdown(item.content) : escapeHtml(item.content)"
+              />
+              <details v-if="item.details.length" class="plugin-agent-step-details">
+                <summary>查看细节</summary>
+                <div v-for="detail in item.details" :key="detail.label" class="plugin-agent-step-detail">
+                  <div class="plugin-agent-step-detail-label">{{ detail.label }}</div>
+                  <pre class="plugin-agent-step-detail-content">{{ detail.content }}</pre>
+                </div>
+              </details>
+            </div>
+
+            <div v-if="eventFeed.length > 0" class="plugin-agent-debug-shell">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm plugin-agent-debug-toggle"
+                @click="isDebugExpanded = !isDebugExpanded"
+              >
+                {{ isDebugExpanded ? '隐藏调试事件' : '查看调试事件' }}
+              </button>
+              <div v-if="isDebugExpanded" class="plugin-agent-debug-panel">
+                <div v-for="event in eventFeed" :key="`event-${event.id}`" class="plugin-agent-event">
+                  <div class="plugin-agent-event-type">{{ event.type }}</div>
+                  <pre class="plugin-agent-event-payload">{{ formatEventPayload(event.payload) }}</pre>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -217,7 +262,7 @@
           <h3>本轮任务工件</h3>
           <div class="plugin-agent-meta-row">
             <span>状态</span>
-            <strong>{{ session?.run_state || 'drafting' }}</strong>
+            <strong>{{ currentRunStateLabel }}</strong>
           </div>
           <div class="plugin-agent-meta-row">
             <span>锁定目标</span>
@@ -247,7 +292,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { marked } from 'marked'
 
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -259,14 +304,22 @@ import {
   createPluginAgentSession,
   deletePluginAgentSession,
   getPluginAgentSettings,
-  getPluginAgentSession,
   lockPluginAgentTarget,
   sendPluginAgentMessage,
   startPluginAgentExecution,
   subscribePluginAgentEvents,
+  type PluginAgentAssistantDeltaPayload,
+  type PluginAgentAssistantPayload,
+  type PluginAgentDonePayload,
+  type PluginAgentErrorPayload,
   type PluginAgentEvent,
   type PluginAgentAgentConfig,
+  type PluginAgentLogPayload,
   type PluginAgentSession,
+  type PluginAgentStatePayload,
+  type PluginAgentToolCallPayload,
+  type PluginAgentToolResultPayload,
+  type PluginAgentValidationPayload,
 } from '@/api/pluginAgent'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { PluginAgentProvider } from '@/types/settings'
@@ -284,6 +337,37 @@ const emit = defineEmits<{
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
+interface PluginAgentStepDetail {
+  label: string
+  content: string
+}
+
+interface PluginAgentTimelineItem {
+  id: string
+  kind: 'assistant' | 'done' | 'error' | 'log' | 'state' | 'tool' | 'validation'
+  badge: string
+  title: string
+  summary: string
+  content: string
+  markdown: boolean
+  status: 'error' | 'info' | 'streaming' | 'success' | 'waiting'
+  timestampLabel: string
+  details: PluginAgentStepDetail[]
+}
+
+const stateLabelMap: Record<string, string> = {
+  drafting: '等待需求描述',
+  awaiting_target_lock: '等待锁定目标插件',
+  ready: '已就绪',
+  running: '执行中',
+  completed: '已完成',
+  failed: '执行失败',
+  cancelled: '已取消',
+}
+const shouldAnimateAssistantStream = typeof navigator !== 'undefined'
+  ? !navigator.userAgent.toLowerCase().includes('jsdom')
+  : true
+
 const isOpen = ref(props.modelValue)
 const mode = ref<'create' | 'modify'>('create')
 const selectedPluginId = ref('')
@@ -294,9 +378,17 @@ const pluginOptions = ref<Array<{ value: string; label: string }>>([])
 const session = ref<PluginAgentSession | null>(null)
 const messageInput = ref('')
 const eventFeed = ref<PluginAgentEvent[]>([])
+const messagesContainer = ref<HTMLElement | null>(null)
+const isDebugExpanded = ref(false)
 const isFetchingModels = ref(false)
 const isTestingConnection = ref(false)
 const isSavingAgentSettings = ref(false)
+const assistantMessageDisplayContent = ref<Record<string, string>>({})
+const assistantMessageDisplayTargets = ref<Record<string, string>>({})
+const assistantDisplayContent = ref<Record<string, string>>({})
+const assistantDisplayTargets = ref<Record<string, string>>({})
+const assistantMessageDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
+const assistantDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
 let streamAbortController: AbortController | null = null
 
 const localAgentSettings = ref({
@@ -313,6 +405,9 @@ const localAgentSettings = ref({
 })
 
 const messages = computed(() => session.value?.messages || [])
+const timelineItems = computed<PluginAgentTimelineItem[]>(() => (
+  buildTimelineItems(eventFeed.value, assistantDisplayContent.value, assistantDisplayTargets.value)
+))
 const canBeginConversation = computed(() => {
   if (mode.value === 'modify') {
     return Boolean(selectedPluginId.value && messageInput.value.trim())
@@ -325,6 +420,9 @@ const canStartExecution = computed(() => (
   && messages.value.some(message => message.role === 'user')
 ))
 const isRunning = computed(() => session.value?.run_state === 'running')
+const currentRunStateLabel = computed(() => {
+  return stateLabelMap[session.value?.run_state || 'drafting'] || '等待需求描述'
+})
 const lockedTargetLabel = computed(() => {
   if (session.value?.locked_target) {
     return `${session.value.locked_target.display_name} (${session.value.locked_target.plugin_id})`
@@ -333,19 +431,187 @@ const lockedTargetLabel = computed(() => {
 })
 
 function applySession(nextSession: PluginAgentSession | null): void {
+  const previousSession = session.value
   session.value = nextSession
   if (!nextSession) {
     eventFeed.value = []
+    isDebugExpanded.value = false
+    clearAssistantDisplayAnimation()
     return
   }
+  if ((!nextSession.messages || nextSession.messages.length === 0) && previousSession?.messages?.length) {
+    session.value = {
+      ...nextSession,
+      messages: [...previousSession.messages],
+    }
+  }
   selectedPluginId.value = nextSession.selected_plugin_id || nextSession.locked_target?.plugin_id || selectedPluginId.value
-  eventFeed.value = nextSession.events || []
+  if (previousSession?.session_id === nextSession.session_id && eventFeed.value.length > 0) {
+    const merged = [...eventFeed.value]
+    for (const event of nextSession.events || []) {
+      if (!merged.some(existing => existing.id === event.id)) {
+        merged.push(event)
+      }
+    }
+    eventFeed.value = merged.sort((left, right) => left.id - right.id)
+  } else {
+    eventFeed.value = [...(nextSession.events || [])]
+  }
+
+  const previousMessageIds = new Set((previousSession?.messages || []).map(message => message.id))
+  const shouldAnimatePlanningMessages = previousSession?.session_id === nextSession.session_id
+  for (const message of session.value.messages || []) {
+    if (message.role !== 'assistant') {
+      continue
+    }
+    if (shouldAnimatePlanningMessages && !previousMessageIds.has(message.id)) {
+      setAssistantMessageDisplayTarget(message.id, message.content, { animate: true })
+    } else {
+      setAssistantMessageDisplayTarget(message.id, message.content, { animate: false })
+    }
+  }
 }
 
-function getLastEventId(activeSession: PluginAgentSession): number {
-  const events = activeSession.events || []
+function getLastEventId(): number {
+  const events = eventFeed.value
   if (events.length === 0) return 0
   return events[events.length - 1]?.id || 0
+}
+
+function scrollHistoryToBottom(): void {
+  const element = messagesContainer.value
+  if (!element) return
+  element.scrollTop = element.scrollHeight
+}
+
+async function syncHistoryScrollToBottom(): Promise<void> {
+  await nextTick()
+  scrollHistoryToBottom()
+}
+
+function clearAssistantDisplayAnimation(): void {
+  for (const timer of assistantMessageDisplayTimers.values()) {
+    clearInterval(timer)
+  }
+  assistantMessageDisplayTimers.clear()
+  assistantMessageDisplayContent.value = {}
+  assistantMessageDisplayTargets.value = {}
+
+  for (const timer of assistantDisplayTimers.values()) {
+    clearInterval(timer)
+  }
+  assistantDisplayTimers.clear()
+  assistantDisplayContent.value = {}
+  assistantDisplayTargets.value = {}
+}
+
+function setAssistantMessageDisplayTarget(
+  messageId: string,
+  targetContent: string,
+  options: { animate: boolean },
+): void {
+  assistantMessageDisplayTargets.value = {
+    ...assistantMessageDisplayTargets.value,
+    [messageId]: targetContent,
+  }
+
+  if (!options.animate || !shouldAnimateAssistantStream) {
+    assistantMessageDisplayContent.value = {
+      ...assistantMessageDisplayContent.value,
+      [messageId]: targetContent,
+    }
+    const existingTimer = assistantMessageDisplayTimers.get(messageId)
+    if (existingTimer) {
+      clearInterval(existingTimer)
+      assistantMessageDisplayTimers.delete(messageId)
+    }
+    return
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(assistantMessageDisplayContent.value, messageId)) {
+    assistantMessageDisplayContent.value = {
+      ...assistantMessageDisplayContent.value,
+      [messageId]: '',
+    }
+  }
+
+  if (assistantMessageDisplayTimers.has(messageId)) {
+    return
+  }
+
+  const tick = () => {
+    const current = assistantMessageDisplayContent.value[messageId] || ''
+    const target = assistantMessageDisplayTargets.value[messageId] || ''
+    if (current === target) {
+      const timer = assistantMessageDisplayTimers.get(messageId)
+      if (timer) {
+        clearInterval(timer)
+      }
+      assistantMessageDisplayTimers.delete(messageId)
+      return
+    }
+
+    const step = Math.max(1, Math.ceil((target.length - current.length) / 6))
+    assistantMessageDisplayContent.value = {
+      ...assistantMessageDisplayContent.value,
+      [messageId]: target.slice(0, current.length + step),
+    }
+    void syncHistoryScrollToBottom()
+  }
+
+  tick()
+  const timer = setInterval(tick, 16)
+  assistantMessageDisplayTimers.set(messageId, timer)
+}
+
+function setAssistantDisplayTarget(streamId: string, targetContent: string): void {
+  assistantDisplayTargets.value = {
+    ...assistantDisplayTargets.value,
+    [streamId]: targetContent,
+  }
+
+  if (!shouldAnimateAssistantStream) {
+    assistantDisplayContent.value = {
+      ...assistantDisplayContent.value,
+      [streamId]: targetContent,
+    }
+    return
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(assistantDisplayContent.value, streamId)) {
+    assistantDisplayContent.value = {
+      ...assistantDisplayContent.value,
+      [streamId]: '',
+    }
+  }
+
+  if (assistantDisplayTimers.has(streamId)) {
+    return
+  }
+
+  const tick = () => {
+    const current = assistantDisplayContent.value[streamId] || ''
+    const target = assistantDisplayTargets.value[streamId] || ''
+    if (current === target) {
+      const timer = assistantDisplayTimers.get(streamId)
+      if (timer) {
+        clearInterval(timer)
+      }
+      assistantDisplayTimers.delete(streamId)
+      return
+    }
+
+    const step = Math.max(1, Math.ceil((target.length - current.length) / 6))
+    assistantDisplayContent.value = {
+      ...assistantDisplayContent.value,
+      [streamId]: target.slice(0, current.length + step),
+    }
+    void syncHistoryScrollToBottom()
+  }
+
+  tick()
+  const timer = setInterval(tick, 16)
+  assistantDisplayTimers.set(streamId, timer)
 }
 
 watch(
@@ -406,7 +672,7 @@ watch(selectedPluginId, async (value, previousValue) => {
     } catch {
       // 忽略切换目标插件时的清理失败
     }
-    session.value = null
+    applySession(null)
     messageInput.value = ''
     stopStreaming()
   }
@@ -414,6 +680,7 @@ watch(selectedPluginId, async (value, previousValue) => {
 
 onBeforeUnmount(() => {
   stopStreaming()
+  clearAssistantDisplayAnimation()
 })
 
 function buildAgentConfig(): PluginAgentAgentConfig {
@@ -455,8 +722,14 @@ async function initializeModal(): Promise<void> {
       value: plugin.id,
       label: plugin.display_name,
     }))]
+    if (result.session) {
+      applySession(result.session)
+    }
     if (session.value) {
       selectedPluginId.value = session.value.selected_plugin_id || session.value.locked_target?.plugin_id || selectedPluginId.value
+      if (session.value.run_state === 'running') {
+        void startStreaming()
+      }
     }
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '加载插件 Agent 设置失败')
@@ -475,7 +748,7 @@ async function handleModeChange(nextMode: 'create' | 'modify'): Promise<void> {
     }
   }
   mode.value = nextMode
-  session.value = null
+  applySession(null)
   selectedPluginId.value = ''
   messageInput.value = ''
   stopStreaming()
@@ -542,6 +815,7 @@ async function beginConversation(): Promise<void> {
 
     applySession(result.session)
     messageInput.value = ''
+    await syncHistoryScrollToBottom()
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '发送消息失败')
   }
@@ -573,9 +847,80 @@ async function startExecution(): Promise<void> {
     }
 
     applySession(result.session)
+    await syncHistoryScrollToBottom()
     await startStreaming()
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '启动执行失败')
+  }
+}
+
+function appendEvent(event: PluginAgentEvent): void {
+  eventFeed.value = [...eventFeed.value, event]
+  applyEventToSession(event)
+}
+
+function applyEventToSession(event: PluginAgentEvent): void {
+  if (!session.value) return
+
+  if (event.type === 'assistant_delta') {
+    const payload = event.payload as PluginAgentAssistantDeltaPayload
+    setAssistantDisplayTarget(payload.stream_id, payload.content || payload.delta || '')
+    return
+  }
+
+  if (event.type === 'assistant') {
+    const payload = event.payload as PluginAgentAssistantPayload
+    if (payload.stream_id) {
+      setAssistantDisplayTarget(payload.stream_id, payload.message)
+    }
+  }
+
+  if (event.type === 'state') {
+    const payload = event.payload as PluginAgentStatePayload
+    if (payload.run_state) {
+      session.value.run_state = payload.run_state
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'locked_target')) {
+      session.value.locked_target = payload.locked_target ?? null
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'pending_target')) {
+      session.value.pending_target = payload.pending_target ?? null
+    }
+    return
+  }
+
+  if (event.type === 'tool_result') {
+    const payload = event.payload as PluginAgentToolResultPayload
+    for (const filePath of payload.changed_files || []) {
+      if (!session.value.touched_files.includes(filePath)) {
+        session.value.touched_files.push(filePath)
+      }
+    }
+    const previews = payload.file_previews || {}
+    for (const [filePath, preview] of Object.entries(previews)) {
+      session.value.file_previews[filePath] = preview
+    }
+    return
+  }
+
+  if (event.type === 'validation') {
+    const payload = event.payload as PluginAgentValidationPayload
+    session.value.last_validation = payload.details
+    return
+  }
+
+  if (event.type === 'done') {
+    const payload = event.payload as PluginAgentDonePayload
+    session.value.run_state = payload.run_state
+    session.value.last_validation = payload.validation || session.value.last_validation || null
+    session.value.last_error = null
+    return
+  }
+
+  if (event.type === 'error') {
+    const payload = event.payload as PluginAgentErrorPayload
+    session.value.run_state = payload.run_state
+    session.value.last_error = payload.message
   }
 }
 
@@ -588,10 +933,11 @@ async function startStreaming(): Promise<void> {
     const activeSession = session.value
     if (!activeSession) break
     await subscribePluginAgentEvents(activeSession.session_id, {
-      afterId: getLastEventId(activeSession),
+      afterId: getLastEventId(),
       signal: streamAbortController.signal,
       onEvent: async (event) => {
-        await refreshSession()
+        appendEvent(event)
+        await syncHistoryScrollToBottom()
         if (event.type === 'done') {
           emit('pluginsChanged')
           await initializeModal()
@@ -603,15 +949,6 @@ async function startStreaming(): Promise<void> {
         }
       },
     })
-    await refreshSession()
-  }
-}
-
-async function refreshSession(): Promise<void> {
-  if (!session.value) return
-  const result = await getPluginAgentSession(session.value.session_id)
-  if (result.success) {
-    applySession(result.session)
   }
 }
 
@@ -700,12 +1037,254 @@ async function saveAgentSettings(): Promise<void> {
   }
 }
 
+function buildTimelineItems(
+  events: PluginAgentEvent[],
+  displayContentMap: Record<string, string>,
+  displayTargetMap: Record<string, string>,
+): PluginAgentTimelineItem[] {
+  const items: PluginAgentTimelineItem[] = []
+  const assistantItems = new Map<string, PluginAgentTimelineItem>()
+  const toolItems = new Map<string, PluginAgentTimelineItem>()
+
+  for (const event of events) {
+    if (event.type === 'assistant_delta') {
+      const payload = event.payload as PluginAgentAssistantDeltaPayload
+      let item = assistantItems.get(payload.stream_id)
+      const displayContent = displayContentMap[payload.stream_id] || payload.content || payload.delta
+      if (!item) {
+        item = {
+          id: `assistant-${payload.stream_id}`,
+          kind: 'assistant',
+          badge: 'Agent',
+          title: '正在编写插件',
+          summary: 'Agent 正在输出当前开发说明',
+          content: displayContent,
+          markdown: true,
+          status: 'streaming',
+          timestampLabel: formatTimestamp(event.timestamp),
+          details: [],
+        }
+        assistantItems.set(payload.stream_id, item)
+        items.push(item)
+      } else {
+        item.content = displayContent
+        item.timestampLabel = formatTimestamp(event.timestamp)
+      }
+      continue
+    }
+
+    if (event.type === 'assistant') {
+      const payload = event.payload as PluginAgentAssistantPayload
+      if (payload.phase === 'planning') {
+        continue
+      }
+      const streamId = payload.stream_id || `assistant-${event.id}`
+      const displayContent = displayContentMap[streamId] || payload.message
+      const targetContent = displayTargetMap[streamId] || payload.message
+      let item = assistantItems.get(streamId)
+      if (!item) {
+        item = {
+          id: `assistant-${streamId}`,
+          kind: 'assistant',
+          badge: 'Agent',
+          title: '开发说明',
+          summary: 'Agent 给出了当前执行说明',
+          content: displayContent,
+          markdown: true,
+          status: displayContent === targetContent ? 'success' : 'streaming',
+          timestampLabel: formatTimestamp(event.timestamp),
+          details: [],
+        }
+        assistantItems.set(streamId, item)
+        items.push(item)
+      } else {
+        item.content = displayContent
+        item.status = displayContent === targetContent ? 'success' : 'streaming'
+        item.timestampLabel = formatTimestamp(event.timestamp)
+      }
+      continue
+    }
+
+    if (event.type === 'tool_call') {
+      const payload = event.payload as PluginAgentToolCallPayload
+      const details: PluginAgentStepDetail[] = []
+      if (payload.args_preview && Object.keys(payload.args_preview).length > 0) {
+        details.push({
+          label: '参数摘要',
+          content: formatEventPayload(payload.args_preview),
+        })
+      }
+      const item: PluginAgentTimelineItem = {
+        id: `tool-${payload.group_id}`,
+        kind: 'tool',
+        badge: '工具',
+        title: payload.summary || payload.tool,
+        summary: payload.summary || payload.tool,
+        content: '',
+        markdown: false,
+        status: 'streaming',
+        timestampLabel: formatTimestamp(event.timestamp),
+        details,
+      }
+      toolItems.set(payload.group_id, item)
+      items.push(item)
+      continue
+    }
+
+    if (event.type === 'tool_result') {
+      const payload = event.payload as PluginAgentToolResultPayload
+      const item = toolItems.get(payload.group_id)
+      const details: PluginAgentStepDetail[] = []
+      if (payload.changed_files && payload.changed_files.length > 0) {
+        details.push({
+          label: '触达文件',
+          content: payload.changed_files.join('\n'),
+        })
+      }
+      if (item) {
+        item.summary = payload.summary
+        item.status = payload.success ? 'success' : 'error'
+        item.timestampLabel = formatTimestamp(event.timestamp)
+        item.details = [...item.details, ...details]
+      } else {
+        items.push({
+          id: `tool-result-${payload.group_id}`,
+          kind: 'tool',
+          badge: '工具',
+          title: payload.summary || payload.tool,
+          summary: payload.summary || payload.tool,
+          content: '',
+          markdown: false,
+          status: payload.success ? 'success' : 'error',
+          timestampLabel: formatTimestamp(event.timestamp),
+          details,
+        })
+      }
+      continue
+    }
+
+    if (event.type === 'validation') {
+      const payload = event.payload as PluginAgentValidationPayload
+      items.push({
+        id: `validation-${event.id}`,
+        kind: 'validation',
+        badge: '校验',
+        title: payload.success ? '插件校验通过' : '插件校验失败',
+        summary: payload.summary,
+        content: '',
+        markdown: false,
+        status: payload.success ? 'success' : 'error',
+        timestampLabel: formatTimestamp(event.timestamp),
+        details: [],
+      })
+      continue
+    }
+
+    if (event.type === 'done') {
+      const payload = event.payload as PluginAgentDonePayload
+      items.push({
+        id: `done-${event.id}`,
+        kind: 'done',
+        badge: '完成',
+        title: payload.summary || '插件开发任务已完成',
+        summary: '插件已通过校验并完成刷新。',
+        content: payload.message,
+        markdown: true,
+        status: 'success',
+        timestampLabel: formatTimestamp(event.timestamp),
+        details: [],
+      })
+      continue
+    }
+
+    if (event.type === 'error') {
+      const payload = event.payload as PluginAgentErrorPayload
+      items.push({
+        id: `error-${event.id}`,
+        kind: 'error',
+        badge: '错误',
+        title: payload.summary || '插件开发任务失败',
+        summary: payload.message,
+        content: '',
+        markdown: false,
+        status: 'error',
+        timestampLabel: formatTimestamp(event.timestamp),
+        details: [],
+      })
+      continue
+    }
+
+    if (event.type === 'log') {
+      const payload = event.payload as PluginAgentLogPayload
+      items.push({
+        id: `log-${event.id}`,
+        kind: 'log',
+        badge: '日志',
+        title: '运行日志',
+        summary: payload.message,
+        content: '',
+        markdown: false,
+        status: 'info',
+        timestampLabel: formatTimestamp(event.timestamp),
+        details: [],
+      })
+      continue
+    }
+
+    if (event.type === 'state') {
+      const payload = event.payload as PluginAgentStatePayload
+      if (payload.run_state === 'drafting') {
+        continue
+      }
+      items.push({
+        id: `state-${event.id}`,
+        kind: 'state',
+        badge: '状态',
+        title: payload.label || payload.run_state,
+        summary: payload.message || '',
+        content: '',
+        markdown: false,
+        status: mapRunStateToCardStatus(payload.run_state),
+        timestampLabel: formatTimestamp(event.timestamp),
+        details: [],
+      })
+    }
+  }
+
+  return items
+}
+
+function mapRunStateToCardStatus(runState: string): PluginAgentTimelineItem['status'] {
+  if (runState === 'failed' || runState === 'cancelled') {
+    return 'error'
+  }
+  if (runState === 'completed') {
+    return 'success'
+  }
+  if (runState === 'running') {
+    return 'streaming'
+  }
+  if (runState === 'awaiting_target_lock' || runState === 'ready') {
+    return 'waiting'
+  }
+  return 'info'
+}
+
+function formatTimestamp(timestamp: string): string {
+  const match = timestamp.match(/T(\d{2}:\d{2}:\d{2})/)
+  return match?.[1] || timestamp
+}
+
 function handleClose(): void {
   isOpen.value = false
 }
 
 function renderMarkdown(content: string): string {
   return marked.parse(content) as string
+}
+
+function getAssistantMessageContent(messageId: string, fallback: string): string {
+  return assistantMessageDisplayContent.value[messageId] ?? fallback
 }
 
 function escapeHtml(content: string): string {
@@ -870,7 +1449,6 @@ function formatEventPayload(payload: unknown): string {
 }
 
 .plugin-agent-message,
-.plugin-agent-event,
 .plugin-agent-file-card {
   border: 1px solid var(--border-color);
   border-radius: 10px;
@@ -883,7 +1461,6 @@ function formatEventPayload(payload: unknown): string {
 }
 
 .plugin-agent-message-role,
-.plugin-agent-event-type,
 .plugin-agent-file-name {
   font-size: 12px;
   font-weight: 700;
@@ -899,6 +1476,129 @@ function formatEventPayload(payload: unknown): string {
   margin-bottom: 0;
 }
 
+.plugin-agent-step-card {
+  position: relative;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    var(--bg-secondary);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.plugin-agent-step-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.plugin-agent-step-card.status-streaming::before {
+  background: linear-gradient(180deg, #2563eb, #38bdf8);
+}
+
+.plugin-agent-step-card.status-success::before {
+  background: linear-gradient(180deg, #16a34a, #4ade80);
+}
+
+.plugin-agent-step-card.status-error::before {
+  background: linear-gradient(180deg, #dc2626, #fb7185);
+}
+
+.plugin-agent-step-card.status-waiting::before {
+  background: linear-gradient(180deg, #d97706, #fbbf24);
+}
+
+.plugin-agent-step-card-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.plugin-agent-step-badge {
+  flex-shrink: 0;
+  min-width: 46px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.plugin-agent-step-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-agent-step-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.plugin-agent-step-time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.plugin-agent-step-summary {
+  margin-top: 10px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.plugin-agent-step-content {
+  margin-top: 10px;
+  color: var(--text-primary);
+}
+
+.plugin-agent-step-content :deep(p) {
+  margin: 0 0 8px;
+}
+
+.plugin-agent-step-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.plugin-agent-step-card-assistant.streaming .plugin-agent-step-title::after {
+  content: ' ...';
+  color: #1d4ed8;
+}
+
+.plugin-agent-step-details {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 12px;
+}
+
+.plugin-agent-step-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.plugin-agent-step-detail {
+  margin-top: 10px;
+}
+
+.plugin-agent-step-detail-label,
+.plugin-agent-event-type {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.plugin-agent-step-detail-content,
 .plugin-agent-event-payload,
 .plugin-agent-file-preview,
 .plugin-agent-validation pre {
@@ -906,6 +1606,29 @@ function formatEventPayload(payload: unknown): string {
   word-break: break-word;
   margin: 0;
   font-size: 12px;
+}
+
+.plugin-agent-debug-shell {
+  margin-top: 4px;
+}
+
+.plugin-agent-debug-panel {
+  margin-top: 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.plugin-agent-event {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg-secondary);
+}
+
+.plugin-agent-event + .plugin-agent-event {
+  margin-top: 10px;
 }
 
 .plugin-agent-composer {

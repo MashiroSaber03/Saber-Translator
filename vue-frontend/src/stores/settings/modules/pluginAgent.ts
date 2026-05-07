@@ -4,6 +4,7 @@
 
 import { computed, type Ref } from 'vue'
 import { normalizeProviderId } from '@/config/aiProviders'
+import { createDefaultSettings } from '../defaults'
 import type {
   PluginAgentProvider,
   PluginAgentSettings,
@@ -27,6 +28,7 @@ export function usePluginAgentSettings(
   }
 
   const pluginAgentProvider = computed(() => settings.value.pluginAgent.provider)
+  const getDefaultOpenAiOptions = () => JSON.parse(JSON.stringify(createDefaultSettings().pluginAgent.openaiOptions))
 
   function setPluginAgentProvider(provider: PluginAgentProvider): void {
     provider = normalizeProviderId(provider) as PluginAgentProvider
@@ -40,7 +42,13 @@ export function usePluginAgentSettings(
   }
 
   function updatePluginAgent(updates: PluginAgentUiUpdates): void {
-    Object.assign(settings.value.pluginAgent, updates)
+    if (updates.provider !== undefined) settings.value.pluginAgent.provider = updates.provider
+    if (updates.apiKey !== undefined) settings.value.pluginAgent.apiKey = updates.apiKey
+    if (updates.modelName !== undefined) settings.value.pluginAgent.modelName = updates.modelName
+    if (updates.customBaseUrl !== undefined) settings.value.pluginAgent.customBaseUrl = updates.customBaseUrl
+    if (updates.openaiOptions !== undefined) {
+      settings.value.pluginAgent.openaiOptions = JSON.parse(JSON.stringify(updates.openaiOptions))
+    }
     if (updates.rpmLimit !== undefined) settings.value.pluginAgent.openaiOptions.execution.rpmLimit = updates.rpmLimit
     if (updates.transportRetries !== undefined) settings.value.pluginAgent.openaiOptions.execution.transportRetries = updates.transportRetries
     if (updates.businessRetries !== undefined) settings.value.pluginAgent.openaiOptions.execution.businessRetries = updates.businessRetries
@@ -76,11 +84,14 @@ export function usePluginAgentSettings(
       if (cached.apiKey !== undefined) settings.value.pluginAgent.apiKey = cached.apiKey
       if (cached.modelName !== undefined) settings.value.pluginAgent.modelName = cached.modelName
       if (cached.customBaseUrl !== undefined) settings.value.pluginAgent.customBaseUrl = cached.customBaseUrl
-      if (cached.openaiOptions !== undefined) settings.value.pluginAgent.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
+      settings.value.pluginAgent.openaiOptions = cached.openaiOptions !== undefined
+        ? JSON.parse(JSON.stringify(cached.openaiOptions))
+        : getDefaultOpenAiOptions()
     } else {
       settings.value.pluginAgent.apiKey = ''
       settings.value.pluginAgent.modelName = ''
       settings.value.pluginAgent.customBaseUrl = ''
+      settings.value.pluginAgent.openaiOptions = getDefaultOpenAiOptions()
     }
   }
 

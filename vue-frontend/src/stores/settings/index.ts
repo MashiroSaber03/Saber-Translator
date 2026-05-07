@@ -125,6 +125,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function savePluginAgentSettingsToStorage(): void {
     try {
+      stripLegacyOpenAiMirrorFields()
       const defaults = createDefaultSettings()
       const stored = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
       const baseSettings = stored
@@ -140,6 +141,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function savePluginAgentProviderConfigsToStorage(): void {
     try {
+      stripLegacyOpenAiMirrorFields()
       const stored = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
       const parsed = stored
         ? stripDeprecatedProviderConfigFields(JSON.parse(stored))
@@ -1322,6 +1324,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function savePluginAgentSettings(): Promise<boolean> {
     try {
+      stripLegacyOpenAiMirrorFields()
       const currentProvider = normalizeProviderId(settings.value.pluginAgent.provider)
       providerConfigs.value.pluginAgent[currentProvider] = {
         apiKey: settings.value.pluginAgent.apiKey,
@@ -1354,9 +1357,7 @@ export const useSettingsStore = defineStore('settings', () => {
       backendProviderConfigs.pluginAgent = JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent))
       backendSettings.providerConfigs = backendProviderConfigs
 
-      if (backendSettings.settingsSchemaVersion === undefined) {
-        backendSettings.settingsSchemaVersion = settings.value.settingsSchemaVersion || 3
-      }
+      backendSettings.settingsSchemaVersion = 3
 
       const saveResponse = await saveUserSettings(backendSettings)
       if (saveResponse.success) {
