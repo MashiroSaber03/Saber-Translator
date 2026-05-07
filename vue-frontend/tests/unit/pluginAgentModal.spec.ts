@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 const {
   getPluginAgentSettingsMock,
@@ -251,5 +252,29 @@ describe('PluginAgentModal', () => {
 
     expect(wrapper.text()).toContain('state')
     expect(wrapper.text()).toContain('awaiting_target_lock')
+  })
+
+  it('splits history and composer into separate panels and saves only agent settings', async () => {
+    const store = useSettingsStore()
+    const saveSpy = vi.spyOn(store, 'savePluginAgentSettings').mockResolvedValue(true)
+
+    const wrapper = mount(PluginAgentModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.plugin-agent-history-panel').exists()).toBe(true)
+    expect(wrapper.find('.plugin-agent-composer-panel').exists()).toBe(true)
+    expect(wrapper.find('.plugin-agent-scroll-column').exists()).toBe(true)
+
+    const saveButton = wrapper.find('.plugin-agent-save-settings-btn')
+    expect(saveButton.exists()).toBe(true)
+
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    expect(saveSpy).toHaveBeenCalledTimes(1)
   })
 })

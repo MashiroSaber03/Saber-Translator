@@ -1,5 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+
+const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
+  getUserSettingsMock: vi.fn(),
+  saveUserSettingsMock: vi.fn(),
+}))
+
+vi.mock('@/api/config', () => ({
+  getUserSettings: getUserSettingsMock,
+  saveUserSettings: saveUserSettingsMock,
+}))
 
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -7,6 +17,31 @@ describe('settings store plugin agent configuration', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    getUserSettingsMock.mockReset()
+    saveUserSettingsMock.mockReset()
+    getUserSettingsMock.mockResolvedValue({
+      success: true,
+      settings: {
+        settingsSchemaVersion: 3,
+        translation: {
+          modelName: 'backend-translation-model',
+        },
+        pluginAgent: {
+          provider: 'siliconflow',
+          modelName: 'backend-agent-model',
+        },
+        providerConfigs: {
+          pluginAgent: {
+            siliconflow: {
+              modelName: 'backend-agent-model',
+            },
+          },
+        },
+      },
+    })
+    saveUserSettingsMock.mockResolvedValue({
+      success: true,
+    })
   })
 
   it('keeps plugin agent credentials isolated per provider', () => {
@@ -52,5 +87,33 @@ describe('settings store plugin agent configuration', () => {
     expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toEqual({
       reasoning_effort: 'low',
     })
+  })
+
+  it('saves only plugin agent settings to backend payload', async () => {
+    const store = useSettingsStore()
+
+    store.settings.translation.modelName = 'unsaved-local-translation-change'
+    store.updatePluginAgent({
+      apiKey: 'agent-key',
+      modelName: 'agent-model',
+      customBaseUrl: 'https://agent.example/v1',
+    })
+
+    const success = await store.savePluginAgentSettings()
+
+    expect(success).toBe(true)
+    expect(getUserSettingsMock).toHaveBeenCalledTimes(1)
+    expect(saveUserSettingsMock).toHaveBeenCalledTimes(1)
+
+    const payload = saveUserSettingsMock.mock.calls[0]?.[0] as Record<string, any>
+    expect(payload.translation.modelName).toBe('backend-translation-model')
+    expect(payload.pluginAgent.modelName).toBe('agent-model')
+    expect(payload.providerConfigs.pluginAgent.siliconflow).toEqual(
+      expect.objectContaining({
+        apiKey: 'agent-key',
+        modelName: 'agent-model',
+        customBaseUrl: 'https://agent.example/v1',
+      }),
+    )
   })
 })

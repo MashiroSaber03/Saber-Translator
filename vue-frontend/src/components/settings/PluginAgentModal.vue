@@ -7,7 +7,7 @@
     @close="handleClose"
   >
     <div class="plugin-agent-layout">
-      <section class="plugin-agent-column plugin-agent-column-left">
+      <section class="plugin-agent-column plugin-agent-column-left plugin-agent-scroll-column">
         <div class="plugin-agent-block">
           <h3>任务模式</h3>
           <div class="plugin-agent-mode-switch">
@@ -98,9 +98,12 @@
           <div class="plugin-agent-field">
             <OpenAIExtraBodyEditor v-model="localAgentSettings.extraBody" :disabled="isRunning" />
           </div>
-          <div class="plugin-agent-inline">
+          <div class="plugin-agent-actions">
             <button type="button" class="btn btn-secondary btn-sm" @click="testConnection" :disabled="isTestingConnection || isRunning">
               {{ isTestingConnection ? '测试中...' : '测试连接' }}
+            </button>
+            <button type="button" class="btn btn-primary btn-sm plugin-agent-save-settings-btn" @click="saveAgentSettings" :disabled="isSavingAgentSettings || isRunning">
+              {{ isSavingAgentSettings ? '保存中...' : '保存设置' }}
             </button>
           </div>
         </div>
@@ -124,7 +127,7 @@
       </section>
 
       <section class="plugin-agent-column plugin-agent-column-center">
-        <div class="plugin-agent-block plugin-agent-chat-block">
+        <div class="plugin-agent-block plugin-agent-history-panel">
           <div class="plugin-agent-chat-header">
             <h3>对话与过程</h3>
             <div class="plugin-agent-inline">
@@ -185,7 +188,10 @@
               <pre class="plugin-agent-event-payload">{{ formatEventPayload(event.payload) }}</pre>
             </div>
           </div>
+        </div>
 
+        <div class="plugin-agent-block plugin-agent-composer-panel">
+          <h3>输入</h3>
           <div class="plugin-agent-composer">
             <textarea
               v-model="messageInput"
@@ -206,7 +212,7 @@
         </div>
       </section>
 
-      <section class="plugin-agent-column plugin-agent-column-right">
+      <section class="plugin-agent-column plugin-agent-column-right plugin-agent-scroll-column">
         <div class="plugin-agent-block">
           <h3>本轮任务工件</h3>
           <div class="plugin-agent-meta-row">
@@ -290,6 +296,7 @@ const messageInput = ref('')
 const eventFeed = ref<PluginAgentEvent[]>([])
 const isFetchingModels = ref(false)
 const isTestingConnection = ref(false)
+const isSavingAgentSettings = ref(false)
 let streamAbortController: AbortController | null = null
 
 const localAgentSettings = ref({
@@ -677,6 +684,22 @@ async function testConnection(): Promise<void> {
   }
 }
 
+async function saveAgentSettings(): Promise<void> {
+  isSavingAgentSettings.value = true
+  try {
+    const success = await settingsStore.savePluginAgentSettings()
+    if (success) {
+      toast.success('Agent 设置已保存')
+    } else {
+      toast.error('保存 Agent 设置失败')
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '保存 Agent 设置失败')
+  } finally {
+    isSavingAgentSettings.value = false
+  }
+}
+
 function handleClose(): void {
   isOpen.value = false
 }
@@ -699,18 +722,47 @@ function formatEventPayload(payload: unknown): string {
 </script>
 
 <style scoped>
+:deep(.plugin-agent-modal) {
+  width: 95vw;
+  height: 90vh;
+  max-height: 90vh;
+}
+
+:deep(.plugin-agent-modal .modal-body) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .plugin-agent-layout {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
   gap: 16px;
-  min-height: 70vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .plugin-agent-column {
   min-width: 0;
+  min-height: 0;
+}
+
+.plugin-agent-scroll-column {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.plugin-agent-column-center {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+  overflow: hidden;
 }
 
 .plugin-agent-block {
@@ -720,11 +772,11 @@ function formatEventPayload(payload: unknown): string {
   padding: 16px;
 }
 
-.plugin-agent-chat-block {
+.plugin-agent-history-panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .plugin-agent-chat-header,
@@ -734,6 +786,13 @@ function formatEventPayload(payload: unknown): string {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.plugin-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .plugin-agent-mode-switch {
@@ -852,11 +911,16 @@ function formatEventPayload(payload: unknown): string {
 .plugin-agent-composer {
   display: flex;
   gap: 12px;
-  margin-top: 16px;
 }
 
 .plugin-agent-composer textarea {
   flex: 1;
+}
+
+.plugin-agent-composer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .plugin-agent-empty {
@@ -869,8 +933,20 @@ function formatEventPayload(payload: unknown): string {
 }
 
 @media (max-width: 1180px) {
+  :deep(.plugin-agent-modal .modal-body) {
+    overflow-y: auto;
+  }
+
   .plugin-agent-layout {
     grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  .plugin-agent-scroll-column,
+  .plugin-agent-column-center {
+    overflow: visible;
+    padding-right: 0;
   }
 }
 </style>

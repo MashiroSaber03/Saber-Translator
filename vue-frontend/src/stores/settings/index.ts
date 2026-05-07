@@ -123,6 +123,41 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function savePluginAgentSettingsToStorage(): void {
+    try {
+      const defaults = createDefaultSettings()
+      const stored = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
+      const baseSettings = stored
+        ? deepMerge(defaults, stripDeprecatedSettingsFields(JSON.parse(stored)) as Partial<TranslationSettings>)
+        : defaults
+
+      baseSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
+      localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
+    } catch (error) {
+      console.error('保存插件 Agent 设置到 localStorage 失败:', error)
+    }
+  }
+
+  function savePluginAgentProviderConfigsToStorage(): void {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
+      const parsed = stored
+        ? stripDeprecatedProviderConfigFields(JSON.parse(stored))
+        : {}
+
+      const nextProviderConfigs: ProviderConfigsCache = {
+        translation: parsed.translation || {},
+        hqTranslation: parsed.hqTranslation || {},
+        pluginAgent: JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent)),
+        aiVisionOcr: parsed.aiVisionOcr || {}
+      }
+
+      localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, JSON.stringify(nextProviderConfigs))
+    } catch (error) {
+      console.error('保存插件 Agent 服务商配置缓存失败:', error)
+    }
+  }
+
   /** 原版 localStorage 存储键（用于兼容迁移） */
   const LEGACY_STORAGE_KEY = 'saber_translator_settings'
 
@@ -1285,6 +1320,57 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function savePluginAgentSettings(): Promise<boolean> {
+    try {
+      const currentProvider = normalizeProviderId(settings.value.pluginAgent.provider)
+      providerConfigs.value.pluginAgent[currentProvider] = {
+        apiKey: settings.value.pluginAgent.apiKey,
+        modelName: settings.value.pluginAgent.modelName,
+        customBaseUrl: settings.value.pluginAgent.customBaseUrl,
+        openaiOptions: JSON.parse(JSON.stringify(settings.value.pluginAgent.openaiOptions))
+      }
+
+      savePluginAgentSettingsToStorage()
+      savePluginAgentProviderConfigsToStorage()
+
+      const { getUserSettings, saveUserSettings } = await import('@/api/config')
+      let backendSettings: Record<string, unknown> = {}
+
+      try {
+        const response = await getUserSettings()
+        if (response.success && response.settings && typeof response.settings === 'object') {
+          backendSettings = JSON.parse(JSON.stringify(response.settings))
+        }
+      } catch (error) {
+        console.warn('[Settings] 读取后端设置失败，插件 Agent 将基于空设置保存:', error)
+      }
+
+      backendSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
+      const backendProviderConfigs = (
+        backendSettings.providerConfigs && typeof backendSettings.providerConfigs === 'object'
+          ? JSON.parse(JSON.stringify(backendSettings.providerConfigs))
+          : {}
+      ) as Record<string, unknown>
+      backendProviderConfigs.pluginAgent = JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent))
+      backendSettings.providerConfigs = backendProviderConfigs
+
+      if (backendSettings.settingsSchemaVersion === undefined) {
+        backendSettings.settingsSchemaVersion = settings.value.settingsSchemaVersion || 3
+      }
+
+      const saveResponse = await saveUserSettings(backendSettings)
+      if (saveResponse.success) {
+        return true
+      }
+
+      console.error('[Settings] 保存插件 Agent 设置到后端失败:', saveResponse)
+      return false
+    } catch (error) {
+      console.error('[Settings] 保存插件 Agent 设置时出错:', error)
+      return false
+    }
+  }
+
   // ============================================================
   // 返回 Store
   // ============================================================
@@ -1389,7 +1475,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 后端同步方法
     loadFromBackend,
-    saveToBackend
+    saveToBackend,
+    savePluginAgentSettings
   }
 })
 
