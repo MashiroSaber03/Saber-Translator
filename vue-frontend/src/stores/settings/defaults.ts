@@ -170,8 +170,8 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
     execution: {
       useStream: true,
       rpmLimit: 7,
-      transportRetries: 1,
-      businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+      transportRetries: 10,
+      businessRetries: 10
     }
   })
 }

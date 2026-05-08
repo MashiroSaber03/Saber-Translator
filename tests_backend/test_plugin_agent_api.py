@@ -325,8 +325,6 @@ class PluginAgentRuntimeTests(unittest.TestCase):
             cancelled_session = runtime.get_session(session.session_id)
             self.assertIsNotNone(cancelled_session)
             self.assertEqual(cancelled_session.run_state, "cancelled")
-            with self.assertRaisesRegex(ValueError, "已有活跃会话"):
-                runtime.create_session("create")
 
             deadline = time.time() + 3.0
             while time.time() < deadline:

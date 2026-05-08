@@ -47,6 +47,9 @@ describe('settings store plugin agent configuration', () => {
   it('keeps plugin agent credentials isolated per provider', () => {
     const store = useSettingsStore()
 
+    expect(store.settings.pluginAgent.openaiOptions.execution.transportRetries).toBe(10)
+    expect(store.settings.pluginAgent.openaiOptions.execution.businessRetries).toBe(10)
+
     store.updatePluginAgent({
       apiKey: 'sf-key',
       modelName: 'sf-model',
@@ -136,7 +139,7 @@ describe('settings store plugin agent configuration', () => {
     store.setPluginAgentProvider('deepseek')
 
     expect(store.settings.pluginAgent.openaiOptions.execution.rpmLimit).toBe(7)
-    expect(store.settings.pluginAgent.openaiOptions.execution.businessRetries).toBe(2)
+    expect(store.settings.pluginAgent.openaiOptions.execution.businessRetries).toBe(10)
     expect(store.settings.pluginAgent.openaiOptions.execution.useStream).toBe(true)
     expect(store.settings.pluginAgent.openaiOptions.request.forceJsonOutput).toBe(false)
     expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toBeUndefined()

@@ -26,7 +26,6 @@ from src.shared.ai_providers import (
     normalize_provider_id,
 )
 from src.shared.openai_options import (
-    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     create_openai_compatible_options,
     merge_openai_compatible_options,
     validate_openai_options_payload,
@@ -88,8 +87,8 @@ def _parse_agent_config(data: Dict[str, Any]) -> Dict[str, Any]:
             force_json_output=False,
             use_stream=True,
             rpm_limit=7,
-            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            business_retries=2,
+            transport_retries=10,
+            business_retries=10,
         ),
         business_retries_maximum=10,
     )
