@@ -414,7 +414,6 @@ class PluginAgentController:
             "changed_files": changed_files,
             "file_previews": file_previews,
             "debug_result": cls._shrink_tool_result(tool_result),
-            "result": cls._shrink_tool_result(tool_result),
         }
 
     @staticmethod
