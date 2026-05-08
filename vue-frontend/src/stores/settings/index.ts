@@ -389,8 +389,8 @@ export const useSettingsStore = defineStore('settings', () => {
         execution: {
           useStream: true,
           rpmLimit: 7,
-          transportRetries: 1,
-          businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+          transportRetries: 10,
+          businessRetries: 10
         }
       }
     )
@@ -569,8 +569,8 @@ export const useSettingsStore = defineStore('settings', () => {
           execution: {
             useStream: true,
             rpmLimit: 7,
-            transportRetries: 1,
-            businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
+            transportRetries: 10,
+            businessRetries: 10
           }
         }
       )

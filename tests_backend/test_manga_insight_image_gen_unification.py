@@ -144,6 +144,49 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("create", calls)
         self.assertIn("close", calls)
 
+    async def test_openai_image_gen_client_does_not_send_default_max_tokens(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        class FakeCompletions:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="data:image/png;base64,aGVsbG8="))]
+                )
+
+        class FakeClient:
+            def __init__(self):
+                self.completions = FakeCompletions()
+                self.chat = types.SimpleNamespace(completions=self.completions)
+
+            def close(self):
+                return None
+
+        fake_client = FakeClient()
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="openai",
+                api_key="test-key",
+                model="dall-e-3",
+            )
+        )
+        try:
+            with mock.patch(
+                "src.core.manga_insight.clients.image_gen_client.create_openai_client",
+                return_value=fake_client,
+            ):
+                result = await client.generate("draw something")
+        finally:
+            await client.close()
+
+        self.assertEqual(result, b"hello")
+        self.assertEqual(len(fake_client.completions.calls), 1)
+        self.assertNotIn("max_tokens", fake_client.completions.calls[0])
+
 
 class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
     async def test_image_generator_delegates_page_generation_to_image_gen_client(self) -> None:

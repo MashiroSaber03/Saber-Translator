@@ -382,7 +382,6 @@ class OpenAICompatibleChatTransport:
                     openai_options=OpenAICompatibleOptions(),
                     runtime_options=build_openai_compatible_runtime_options(
                         timeout=request.timeout,
-                        request_overrides={"max_tokens": 50},
                     ),
                     messages=messages,
                 )

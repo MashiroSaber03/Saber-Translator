@@ -4,6 +4,8 @@ import types
 import unittest
 from unittest import mock
 
+from flask import Flask
+
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -104,6 +106,47 @@ class WebImportAgentRuntimeTests(unittest.TestCase):
         self.assertEqual(message.tool_calls[0].id, "call_1")
         self.assertEqual(message.tool_calls[0].function.name, "search")
         self.assertEqual(message.tool_calls[0].function.arguments, '{"query":"hello"}')
+
+    def test_test_agent_route_does_not_send_default_max_tokens(self) -> None:
+        from src.app.api.web_import_api import web_import_bp
+
+        class FakeCompletions:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="Hi"))]
+                )
+
+        fake_completions = FakeCompletions()
+        fake_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=fake_completions)
+        )
+
+        app = Flask(__name__)
+        app.register_blueprint(web_import_bp)
+        client = app.test_client()
+
+        with mock.patch(
+            "src.shared.openai_helpers.create_openai_client",
+            return_value=fake_client,
+        ):
+            response = client.post(
+                "/api/web-import/test-agent",
+                json={
+                    "provider": "custom",
+                    "apiKey": "test-key",
+                    "customBaseUrl": "https://example.com/v1",
+                    "modelName": "gpt-test",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        self.assertEqual(len(fake_completions.calls), 1)
+        self.assertNotIn("max_tokens", fake_completions.calls[0])
 
 
 if __name__ == "__main__":

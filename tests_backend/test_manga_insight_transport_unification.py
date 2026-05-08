@@ -301,6 +301,31 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content, '{"pages": []}')
         self.assertEqual(complete_mock.await_count, 2)
 
+    async def test_vlm_test_connection_does_not_send_default_max_tokens(self) -> None:
+        from src.core.manga_insight.config_models import VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        config = VLMConfig(
+            provider="custom",
+            api_key="test-key",
+            model="vlm-model",
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(use_stream=False),
+            ),
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(return_value="连接成功"),
+        ) as complete_mock:
+            client = VLMClient(config)
+            success = await client.test_connection()
+
+        self.assertTrue(success)
+        request = complete_mock.call_args.args[0]
+        self.assertNotIn("max_tokens", request.runtime_options.request_overrides)
+
     def test_vlm_parse_batch_analysis_accepts_page_analyses_fallback_key(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient

@@ -57,6 +57,7 @@ class TranslationRouteConstraintTests(unittest.TestCase):
             "src.core.ocr",
             "src.core.detection",
             "src.core.ocr_hybrid_manga_48",
+            "src.plugins.http_helpers",
             "src.plugins.manager",
             "isolated_translation_pkg",
             "isolated_translation_pkg.routes",
@@ -100,6 +101,26 @@ class TranslationRouteConstraintTests(unittest.TestCase):
         plugins_stub.apply_before_step_hooks = lambda _step, payload, **_kwargs: payload
         plugins_stub.apply_after_step_hooks = lambda _step, result, **_kwargs: result
         sys.modules["src.plugins.manager"] = plugins_stub
+
+        http_helpers_stub = types.ModuleType("src.plugins.http_helpers")
+        http_helpers_stub.resolve_plugin_request_context = (
+            lambda data, *, default_mode, default_scope: (
+                data.get("translation_mode") or data.get("translationMode") or default_mode,
+                data.get("translation_scope") or data.get("translationScope") or default_scope,
+            )
+        )
+        http_helpers_stub.prepare_plugin_payload = (
+            lambda _step, _route, data, *, default_mode, default_scope, metadata=None: (
+                data,
+                data.get("translation_mode") or data.get("translationMode") or default_mode,
+                data.get("translation_scope") or data.get("translationScope") or default_scope,
+            )
+        )
+        http_helpers_stub.run_before_step_hooks = lambda _step, _route, data, **_kwargs: data
+        http_helpers_stub.finalize_plugin_result = lambda _step, _route, result, **_kwargs: result
+        http_helpers_stub.run_before_pipeline_hooks = lambda payload, **_kwargs: payload
+        http_helpers_stub.run_after_pipeline_hooks = lambda result, **_kwargs: result
+        sys.modules["src.plugins.http_helpers"] = http_helpers_stub
 
         package_dir = os.path.join(PROJECT_ROOT, "src", "app", "api", "translation")
         init_path = os.path.join(package_dir, "__init__.py")

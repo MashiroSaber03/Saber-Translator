@@ -45,7 +45,7 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             runtime_options=build_openai_compatible_runtime_options(
-                request_overrides={"max_tokens": 222},
+                request_overrides={"seed": 222},
             ),
         )
 
@@ -60,7 +60,7 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["url"], "https://example.com/v1/chat/completions")
         self.assertEqual(call["json"]["temperature"], 0.35)
         self.assertEqual(call["json"]["response_format"], {"type": "json_object"})
-        self.assertEqual(call["json"]["max_tokens"], 222)
+        self.assertEqual(call["json"]["seed"], 222)
 
     async def test_async_transport_supports_embedding_requests(self) -> None:
         from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedEmbeddingRequest

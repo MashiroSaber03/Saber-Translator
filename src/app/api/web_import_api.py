@@ -869,7 +869,6 @@ def test_agent_connection():
         response = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=5
         )
         
         logger.info(f"[Agent测试] ✅ 连接成功！响应: {response.choices[0].message.content if response.choices else '(无内容)'}")

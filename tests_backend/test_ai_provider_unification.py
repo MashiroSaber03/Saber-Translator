@@ -64,7 +64,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
             ),
             runtime_options=build_openai_compatible_runtime_options(
                 timeout=45.0,
-                request_overrides={"max_tokens": 123, "top_p": 0.8},
+                request_overrides={"seed": 123, "presence_penalty": 0.8},
             ),
         )
 
@@ -76,8 +76,8 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         kwargs = fake_client.last_request["json"]
         self.assertEqual(kwargs["temperature"], 0.25)
         self.assertEqual(kwargs["response_format"], {"type": "json_object"})
-        self.assertEqual(kwargs["max_tokens"], 123)
-        self.assertEqual(kwargs["top_p"], 0.8)
+        self.assertEqual(kwargs["seed"], 123)
+        self.assertEqual(kwargs["presence_penalty"], 0.8)
 
     def test_sync_chat_transport_merges_extra_body_into_top_level_request_body(self) -> None:
         class FakeResponse:
@@ -115,7 +115,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 ),
             ),
             runtime_options=build_openai_compatible_runtime_options(
-                request_overrides={"max_tokens": 123},
+                request_overrides={"seed": 123},
             ),
         )
 
@@ -128,7 +128,52 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         self.assertEqual(kwargs["temperature"], 0.25)
         self.assertEqual(kwargs["thinking"], {"type": "disabled"})
         self.assertEqual(kwargs["reasoning_effort"], "low")
-        self.assertEqual(kwargs["max_tokens"], 123)
+        self.assertEqual(kwargs["seed"], 123)
+
+    def test_sync_chat_transport_preserves_provider_specific_limits_from_extra_body(self) -> None:
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"choices": [{"message": {"content": "测试成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
+                return FakeResponse()
+
+        transport = OpenAICompatibleChatTransport()
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                request=OpenAICompatibleRequestOptions(
+                    extra_body={
+                        "max_tokens": 321,
+                        "top_p": 0.6,
+                    },
+                ),
+            ),
+        )
+
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+            content = transport.complete(request)
+
+        self.assertEqual(content, "测试成功")
+        kwargs = fake_client.last_request["json"]
+        self.assertEqual(kwargs["max_tokens"], 321)
+        self.assertEqual(kwargs["top_p"], 0.6)
 
     def test_sync_chat_transport_rejects_reserved_extra_body_keys(self) -> None:
         transport = OpenAICompatibleChatTransport()
@@ -147,6 +192,44 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "extra_body"):
             transport.complete(request)
+
+    def test_sync_chat_transport_connection_test_does_not_send_default_max_tokens(self) -> None:
+        from src.shared.ai_transport import ProviderConnectionTestRequest
+
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"choices": [{"message": {"content": "测试成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
+                return FakeResponse()
+
+        transport = OpenAICompatibleChatTransport()
+        fake_client = FakeClient()
+
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+            success, message = transport.test_connection(
+                ProviderConnectionTestRequest(
+                    provider="custom",
+                    api_key="test-key",
+                    model="gpt-test",
+                    base_url="https://example.com/v1",
+                )
+            )
+
+        self.assertTrue(success)
+        self.assertEqual(message, "测试成功")
+        self.assertNotIn("max_tokens", fake_client.last_request["json"])
 
 class ProviderRegistryContractTests(unittest.TestCase):
     def test_ai_vision_rpm_limit_is_scoped_per_provider(self) -> None:
@@ -555,7 +638,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 request=OpenAICompatibleRequestOptions(temperature=0.25),
             ),
             runtime_options=build_openai_compatible_runtime_options(
-                request_overrides={"max_tokens": 123, "top_p": 0.8},
+                request_overrides={"seed": 123, "presence_penalty": 0.8},
             ),
         )
 
@@ -566,8 +649,8 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertEqual(content, "测试成功")
         kwargs = fake_client.last_request["json"]
         self.assertEqual(kwargs["temperature"], 0.25)
-        self.assertEqual(kwargs["max_tokens"], 123)
-        self.assertEqual(kwargs["top_p"], 0.8)
+        self.assertEqual(kwargs["seed"], 123)
+        self.assertEqual(kwargs["presence_penalty"], 0.8)
         self.assertNotIn("extra_body", kwargs)
 
     def test_create_openai_client_uses_placeholder_key_for_local_services_without_api_key(self) -> None:

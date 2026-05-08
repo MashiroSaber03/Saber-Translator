@@ -112,7 +112,6 @@ class ImageGenClient(BaseAPIClient):
                         client.chat.completions.create,
                         model=self.config.model,
                         messages=messages,
-                        max_tokens=4096,
                         n=1,
                     )
                     result = response.choices[0].message.content if response.choices else ""

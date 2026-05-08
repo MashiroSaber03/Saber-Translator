@@ -383,7 +383,6 @@ class VLMClient:
                     openai_options=OpenAICompatibleOptions(),
                     runtime_options=build_openai_compatible_runtime_options(
                         timeout=self._timeout,
-                        request_overrides={"max_tokens": 10},
                     ),
                 )
             )
