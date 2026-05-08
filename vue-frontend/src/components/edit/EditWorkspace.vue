@@ -120,13 +120,10 @@
                 @select="handleBubbleSelect"
                 @multi-select="handleBubbleMultiSelect"
                 @drag-start="handleBubbleDragStart"
-                @dragging="handleBubbleDragging"
                 @drag-end="handleBubbleDragEnd"
                 @resize-start="handleBubbleResizeStart"
-                @resizing="handleBubbleResizing"
                 @resize-end="handleBubbleResizeEnd"
                 @rotate-start="handleBubbleRotateStart"
-                @rotating="handleBubbleRotating"
                 @rotate-end="handleBubbleRotateEnd"
                 @draw-bubble="handleDrawBubble"
               />
@@ -192,13 +189,10 @@
                 @select="handleBubbleSelect"
                 @multi-select="handleBubbleMultiSelect"
                 @drag-start="handleBubbleDragStart"
-                @dragging="handleBubbleDragging"
                 @drag-end="handleBubbleDragEnd"
                 @resize-start="handleBubbleResizeStart"
-                @resizing="handleBubbleResizing"
                 @resize-end="handleBubbleResizeEnd"
                 @rotate-start="handleBubbleRotateStart"
-                @rotating="handleBubbleRotating"
                 @rotate-end="handleBubbleRotateEnd"
                 @draw-bubble="handleDrawBubble"
               />
@@ -318,13 +312,10 @@ const {
   handleBubbleMultiSelect,
   handleClearMultiSelect,
   handleBubbleDragStart,
-  handleBubbleDragging,
   handleBubbleDragEnd,
   handleBubbleResizeStart,
-  handleBubbleResizing,
   handleBubbleResizeEnd,
   handleBubbleRotateStart,
-  handleBubbleRotating,
   handleBubbleRotateEnd,
   toggleDrawingMode,
   handleDrawBubble,

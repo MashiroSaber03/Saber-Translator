@@ -104,12 +104,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     console.log(`开始拖动气泡 #${index + 1}`)
   }
 
-  /** 处理气泡拖动中 */
-  function handleBubbleDragging(_deltaX: number, _deltaY: number): void {
-    // 视觉反馈由BubbleOverlay内部处理，这里不更新store
-    // 只在dragEnd时更新最终坐标
-  }
-
   /** 处理气泡拖动结束 */
   function handleBubbleDragEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
@@ -127,14 +121,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     console.log(`开始调整气泡 #${index + 1} 大小，手柄: ${handle}`)
   }
 
-  /** 处理气泡调整大小中 */
-  // 【复刻原版】调整大小过程中只更新视觉显示（通过 resizeCurrentCoords），不更新实际坐标数据
-  // 原版 edit_mode.js 在调整过程中只更新 CSS，完成时才调用 updateBubbleCoords
-  // 这样可以避免存储浮点数坐标，因为只有 finishResizing 中有 Math.round() 转换
-  function handleBubbleResizing(_newCoords: BubbleCoords): void {
-    // 不在过程中更新 bubbleStore，视觉反馈由 BubbleOverlay 的 resizeCurrentCoords 处理
-  }
-
   /** 处理气泡调整大小结束 */
   function handleBubbleResizeEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
@@ -150,13 +136,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   /** 处理气泡旋转开始 */
   function handleBubbleRotateStart(index: number, _event: MouseEvent): void {
     console.log(`开始旋转气泡 #${index + 1}`)
-  }
-
-  /** 处理气泡旋转中 */
-  // 【复刻原版】旋转过程中只更新视觉显示（通过 rotateCurrentAngle），不更新实际角度数据
-  // 原版 edit_mode.js 在旋转结束 handleRotateMouseUp 时才调用 updateSingleBubbleState
-  function handleBubbleRotating(_angle: number): void {
-    // 不在过程中更新 bubbleStore，视觉反馈由 BubbleOverlay 的 rotateCurrentAngle 处理
   }
 
   /** 处理气泡旋转结束 */
@@ -607,17 +586,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
     // 气泡拖拽
     handleBubbleDragStart,
-    handleBubbleDragging,
     handleBubbleDragEnd,
 
     // 气泡调整大小
     handleBubbleResizeStart,
-    handleBubbleResizing,
     handleBubbleResizeEnd,
 
     // 气泡旋转
     handleBubbleRotateStart,
-    handleBubbleRotating,
     handleBubbleRotateEnd,
 
     // 气泡绘制

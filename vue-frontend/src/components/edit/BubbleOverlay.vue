@@ -115,6 +115,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { calculateResizedCoords, type ResizeHandle } from '@/utils/bubbleResize'
 
 // ============================================================
 // Store
@@ -166,20 +167,14 @@ const emit = defineEmits<{
   (e: 'multiSelect', index: number): void
   /** 开始拖拽 */
   (e: 'dragStart', index: number, event: MouseEvent): void
-  /** 拖拽中 */
-  (e: 'dragging', deltaX: number, deltaY: number): void
   /** 拖拽结束 */
   (e: 'dragEnd', index: number, newCoords: BubbleCoords): void
   /** 开始调整大小 */
   (e: 'resizeStart', index: number, handle: string, event: MouseEvent): void
-  /** 调整大小中 */
-  (e: 'resizing', newCoords: BubbleCoords): void
   /** 调整大小结束 */
   (e: 'resizeEnd', index: number, newCoords: BubbleCoords): void
   /** 开始旋转 */
   (e: 'rotateStart', index: number, event: MouseEvent): void
-  /** 旋转中 */
-  (e: 'rotating', angle: number): void
   /** 旋转结束 */
   (e: 'rotateEnd', index: number, angle: number): void
   /** 绘制新气泡 */
@@ -198,7 +193,7 @@ const dragStartX = ref(0)
 const dragStartY = ref(0)
 
 // 调整大小辅助状态（本地）
-const resizeHandle = ref('')
+const resizeHandle = ref<ResizeHandle | ''>('')
 const resizeStartX = ref(0)
 const resizeStartY = ref(0)
 const resizeInitialCoords = ref<BubbleCoords | null>(null)
@@ -491,7 +486,7 @@ function handleResizeStart(handle: string, index: number, event: MouseEvent): vo
 
   isResizing.value = true
   resizingIndex.value = index
-  resizeHandle.value = handle
+  resizeHandle.value = handle as ResizeHandle
   resizeStartX.value = event.clientX
   resizeStartY.value = event.clientY
 
@@ -513,81 +508,73 @@ function handleResizeStart(handle: string, index: number, event: MouseEvent): vo
  * 使用Vue响应式更新
  */
 function updateResizing(event: MouseEvent): void {
-  if (!resizeInitialCoords.value) return
+  if (!resizeInitialCoords.value || !resizeHandle.value) return
 
   const scale = props.scale || 1
   const deltaX = (event.clientX - resizeStartX.value) / scale
   const deltaY = (event.clientY - resizeStartY.value) / scale
+  const bubble = props.bubbles[resizingIndex.value]
+  const nextCoords = calculateResizedCoords(
+    resizeInitialCoords.value,
+    resizeHandle.value,
+    deltaX,
+    deltaY,
+    {
+      rotationAngle: bubble?.rotationAngle || 0,
+      minSize: 10,
+    }
+  )
 
-  let [x1, y1, x2, y2] = resizeInitialCoords.value
-
-  // 根据手柄类型调整坐标
-  const handle = resizeHandle.value
-  if (handle.includes('w')) x1 += deltaX
-  if (handle.includes('e')) x2 += deltaX
-  if (handle.includes('n')) y1 += deltaY
-  if (handle.includes('s')) y2 += deltaY
-
-  // 确保有效性（交换坐标如果反转）
-  if (x1 > x2) [x1, x2] = [x2, x1]
-  if (y1 > y2) [y1, y2] = [y2, y1]
-
-  // 最小尺寸限制
-  const minSize = 10
-  if (x2 - x1 < minSize || y2 - y1 < minSize) return
+  if (!nextCoords) return
 
   // 直接更新ref值，Vue会自动触发重新渲染
-  resizeCurrentCoords.value = [x1, y1, x2, y2]
+  resizeCurrentCoords.value = nextCoords
 }
 
 /**
  * 完成调整大小
  */
 function finishResizing(event: MouseEvent): void {
-  if (!resizeInitialCoords.value) return
+  if (!resizeInitialCoords.value || !resizeHandle.value) return
 
   const scale = props.scale || 1
   const deltaX = (event.clientX - resizeStartX.value) / scale
   const deltaY = (event.clientY - resizeStartY.value) / scale
-
-  let [x1, y1, x2, y2] = resizeInitialCoords.value
-
-  // 根据手柄类型调整坐标
-  const handle = resizeHandle.value
-  if (handle.includes('w')) x1 += deltaX
-  if (handle.includes('e')) x2 += deltaX
-  if (handle.includes('n')) y1 += deltaY
-  if (handle.includes('s')) y2 += deltaY
-
-  // 确保有效性
-  if (x1 > x2) [x1, x2] = [x2, x1]
-  if (y1 > y2) [y1, y2] = [y2, y1]
-
-  // 边界约束
   const imgWidth = props.imageWidth || 2000
   const imgHeight = props.imageHeight || 2000
+  const bubble = props.bubbles[resizingIndex.value]
+  const nextCoords = calculateResizedCoords(
+    resizeInitialCoords.value,
+    resizeHandle.value,
+    deltaX,
+    deltaY,
+    {
+      rotationAngle: bubble?.rotationAngle || 0,
+      minSize: 10,
+      imageWidth: imgWidth,
+      imageHeight: imgHeight,
+      clampToImage: true,
+      round: true,
+    }
+  )
 
-  x1 = Math.max(0, Math.round(x1))
-  y1 = Math.max(0, Math.round(y1))
-  x2 = Math.min(imgWidth, Math.round(x2))
-  y2 = Math.min(imgHeight, Math.round(y2))
-
-  // 最小尺寸检查
-  const minSize = 10
-  if (x2 - x1 < minSize || y2 - y1 < minSize) {
+  if (!nextCoords) {
     console.warn('调整后尺寸过小，已撤销')
     isResizing.value = false
     resizingIndex.value = -1
     resizeInitialCoords.value = null
+    resizeCurrentCoords.value = null
+    resizeHandle.value = ''
     return
   }
 
-  emit('resizeEnd', resizingIndex.value, [x1, y1, x2, y2])
+  emit('resizeEnd', resizingIndex.value, nextCoords)
 
   isResizing.value = false
   resizingIndex.value = -1
   resizeInitialCoords.value = null
   resizeCurrentCoords.value = null
+  resizeHandle.value = ''
 }
 
 // ============================================================

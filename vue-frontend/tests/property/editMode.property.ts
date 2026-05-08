@@ -16,6 +16,10 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords } from '@/types/bubble'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import {
+  calculateResizedCoords as calculateResizeGeometry,
+  type ResizeHandle,
+} from '@/utils/bubbleResize'
 
 // ============================================================
 // 测试数据生成器
@@ -45,7 +49,7 @@ const dragDeltaArb = fc.record({
 /**
  * 生成调整大小的手柄类型
  */
-const resizeHandleArb = fc.constantFrom(
+const resizeHandleArb = fc.constantFrom<ResizeHandle>(
   'nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'
 )
 
@@ -93,51 +97,6 @@ function calculateDraggedCoords(
   newY1 = Math.max(0, Math.min(newY1, imageHeight - safeHeight))
 
   return [newX1, newY1, newX1 + safeWidth, newY1 + safeHeight]
-}
-
-/**
- * 计算调整大小后的新坐标
- * @param coords 原始坐标
- * @param handle 调整手柄类型
- * @param deltaX X轴偏移
- * @param deltaY Y轴偏移
- * @param imageWidth 图片宽度
- * @param imageHeight 图片高度
- * @returns 新坐标或 null（如果尺寸无效）
- */
-function calculateResizedCoords(
-  coords: BubbleCoords,
-  handle: string,
-  deltaX: number,
-  deltaY: number,
-  imageWidth: number,
-  imageHeight: number
-): BubbleCoords | null {
-  let [x1, y1, x2, y2] = coords
-
-  // 根据手柄类型调整坐标
-  if (handle.includes('w')) x1 += deltaX
-  if (handle.includes('e')) x2 += deltaX
-  if (handle.includes('n')) y1 += deltaY
-  if (handle.includes('s')) y2 += deltaY
-
-  // 确保有效性（交换坐标如果反转）
-  if (x1 > x2) [x1, x2] = [x2, x1]
-  if (y1 > y2) [y1, y2] = [y2, y1]
-
-  // 边界约束
-  x1 = Math.max(0, Math.round(x1))
-  y1 = Math.max(0, Math.round(y1))
-  x2 = Math.min(imageWidth, Math.round(x2))
-  y2 = Math.min(imageHeight, Math.round(y2))
-
-  // 最小尺寸检查
-  const minSize = 10
-  if (x2 - x1 < minSize || y2 - y1 < minSize) {
-    return null
-  }
-
-  return [x1, y1, x2, y2]
 }
 
 function makeBubble(coords: BubbleCoords) {
@@ -358,13 +317,19 @@ describe('编辑模式属性测试', () => {
           bubbleStore.setBubbles([bubble])
 
           // 计算调整后的坐标
-          const newCoords = calculateResizedCoords(
+          const newCoords = calculateResizeGeometry(
             coords,
             handle,
             delta.deltaX,
             delta.deltaY,
-            imageSize.width,
-            imageSize.height
+            {
+              rotationAngle: 0,
+              minSize: 10,
+              imageWidth: imageSize.width,
+              imageHeight: imageSize.height,
+              clampToImage: true,
+              round: true,
+            }
           )
 
           // 如果新坐标有效，更新并验证
@@ -406,7 +371,13 @@ describe('编辑模式属性测试', () => {
    * 8个调整手柄方向正确性测试
    */
   it('8个调整手柄应当按正确方向调整坐标', () => {
-    const testCases = [
+    const testCases: Array<{
+      handle: ResizeHandle
+      expectX1Change: boolean
+      expectY1Change: boolean
+      expectX2Change: boolean
+      expectY2Change: boolean
+    }> = [
       { handle: 'nw', expectX1Change: true, expectY1Change: true, expectX2Change: false, expectY2Change: false },
       { handle: 'n', expectX1Change: false, expectY1Change: true, expectX2Change: false, expectY2Change: false },
       { handle: 'ne', expectX1Change: false, expectY1Change: true, expectX2Change: true, expectY2Change: false },
@@ -423,13 +394,19 @@ describe('编辑模式属性测试', () => {
       const imageSize = { width: 1000, height: 1000 }
 
       // 计算调整后的坐标
-      const newCoords = calculateResizedCoords(
+      const newCoords = calculateResizeGeometry(
         coords,
         testCase.handle,
         testCase.handle.includes('w') ? -delta : (testCase.handle.includes('e') ? delta : 0),
         testCase.handle.includes('n') ? -delta : (testCase.handle.includes('s') ? delta : 0),
-        imageSize.width,
-        imageSize.height
+        {
+          rotationAngle: 0,
+          minSize: 10,
+          imageWidth: imageSize.width,
+          imageHeight: imageSize.height,
+          clampToImage: true,
+          round: true,
+        }
       )
 
       expect(newCoords).not.toBeNull()
@@ -480,7 +457,14 @@ describe('编辑模式属性测试', () => {
     const imageSize = { width: 1000, height: 1000 }
 
     // 尝试将宽度缩小到小于最小尺寸
-    const newCoords = calculateResizedCoords(coords, 'e', -45, 0, imageSize.width, imageSize.height)
+    const newCoords = calculateResizeGeometry(coords, 'e', -45, 0, {
+      rotationAngle: 0,
+      minSize: 10,
+      imageWidth: imageSize.width,
+      imageHeight: imageSize.height,
+      clampToImage: true,
+      round: true,
+    })
     
     // 应当返回 null 因为尺寸太小
     expect(newCoords).toBeNull()
