@@ -197,10 +197,14 @@
               v-for="message in messages"
               :key="message.id"
               class="plugin-agent-message"
-              :class="`role-${message.role}`"
+              :class="[`role-${message.role}`, { 'is-loading': message.isLoading }]"
             >
               <div class="plugin-agent-message-role">{{ message.role === 'user' ? '你' : 'Agent' }}</div>
+              <div v-if="message.isLoading" class="plugin-agent-message-content plugin-agent-message-loading">
+                {{ message.content }}<span class="plugin-agent-loading-dots"></span>
+              </div>
               <div
+                v-else
                 class="plugin-agent-message-content"
                 v-html="message.role === 'assistant'
                   ? renderMarkdown(getAssistantMessageContent(message.id, message.content))
@@ -264,17 +268,17 @@
             <textarea
               v-model="messageInput"
               class="plugin-agent-input"
-              :disabled="isRunning"
+              :disabled="isConversationPending"
               rows="4"
               placeholder="例如：做一个 after_translate 插件，把译文里的敏感词替换成更自然的说法。"
             />
             <button
               type="button"
               class="btn btn-primary plugin-agent-begin-btn"
-              :disabled="!canBeginConversation || isRunning"
+              :disabled="!canBeginConversation || isConversationPending"
               @click="beginConversation"
             >
-              {{ session ? '继续对话' : '开始会话' }}
+              {{ isAwaitingPlanningReply ? '等待回复...' : (session ? '继续对话' : '开始会话') }}
             </button>
           </div>
         </div>
@@ -326,6 +330,7 @@ import {
   cancelPluginAgentExecution,
   createPluginAgentSession,
   deletePluginAgentSession,
+  getPluginAgentSession,
   getPluginAgentSettings,
   lockPluginAgentTarget,
   sendPluginAgentMessage,
@@ -364,6 +369,15 @@ const toast = useToast()
 interface PluginAgentStepDetail {
   label: string
   content: string
+}
+
+interface PluginAgentConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+  isLoading?: boolean
+  isOptimistic?: boolean
 }
 
 interface PluginAgentTimelineItem {
@@ -409,6 +423,8 @@ const isDebugExpanded = ref(false)
 const isFetchingModels = ref(false)
 const isTestingConnection = ref(false)
 const isSavingAgentSettings = ref(false)
+const isAwaitingPlanningReply = ref(false)
+const optimisticMessages = ref<PluginAgentConversationMessage[]>([])
 const assistantMessageDisplayContent = ref<Record<string, string>>({})
 const assistantMessageDisplayTargets = ref<Record<string, string>>({})
 const assistantDisplayContent = ref<Record<string, string>>({})
@@ -430,7 +446,14 @@ const localAgentSettings = ref({
   extraBody: settingsStore.settings.pluginAgent.openaiOptions.request.extraBody,
 })
 
-const messages = computed(() => session.value?.messages || [])
+const messages = computed<PluginAgentConversationMessage[]>(() => {
+  const sessionMessages = (session.value?.messages || []).map(message => ({
+    ...message,
+    isLoading: false,
+    isOptimistic: false,
+  }))
+  return [...sessionMessages, ...optimisticMessages.value]
+})
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   for (const model of fetchedModels.value) {
@@ -456,6 +479,7 @@ const canStartExecution = computed(() => (
   && messages.value.some(message => message.role === 'user')
 ))
 const isRunning = computed(() => session.value?.run_state === 'running')
+const isConversationPending = computed(() => isRunning.value || isAwaitingPlanningReply.value)
 const currentRunStateLabel = computed(() => {
   return stateLabelMap[session.value?.run_state || 'drafting'] || '等待需求描述'
 })
@@ -472,6 +496,8 @@ function applySession(nextSession: PluginAgentSession | null): void {
   if (!nextSession) {
     eventFeed.value = []
     isDebugExpanded.value = false
+    optimisticMessages.value = []
+    isAwaitingPlanningReply.value = false
     clearAssistantDisplayAnimation()
     return
   }
@@ -523,6 +549,39 @@ function scrollHistoryToBottom(): void {
 async function syncHistoryScrollToBottom(): Promise<void> {
   await nextTick()
   scrollHistoryToBottom()
+}
+
+function buildOptimisticPlanningMessages(userContent: string): PluginAgentConversationMessage[] {
+  const now = new Date().toISOString()
+  return [
+    {
+      id: `optimistic-user-${Date.now()}`,
+      role: 'user',
+      content: userContent,
+      timestamp: now,
+      isOptimistic: true,
+    },
+    {
+      id: `optimistic-assistant-${Date.now() + 1}`,
+      role: 'assistant',
+      content: 'Agent 正在分析需求',
+      timestamp: now,
+      isLoading: true,
+      isOptimistic: true,
+    },
+  ]
+}
+
+function clearPlanningOptimisticState(): void {
+  optimisticMessages.value = []
+  isAwaitingPlanningReply.value = false
+}
+
+async function syncSessionFromServer(sessionId: string): Promise<void> {
+  const result = await getPluginAgentSession(sessionId)
+  if (result.success) {
+    applySession(result.session)
+  }
 }
 
 function clearAssistantDisplayAnimation(): void {
@@ -821,8 +880,19 @@ function applyExamplePrompt(example: string): void {
 }
 
 async function beginConversation(): Promise<void> {
+  let activeSessionId = session.value?.session_id || ''
+  let hadExistingSession = Boolean(session.value?.session_id)
   try {
     if (!canBeginConversation.value) return
+    const userContent = messageInput.value.trim()
+    if (!userContent) {
+      return
+    }
+
+    optimisticMessages.value = buildOptimisticPlanningMessages(userContent)
+    isAwaitingPlanningReply.value = true
+    messageInput.value = ''
+    await syncHistoryScrollToBottom()
 
     if (!session.value) {
       const createResult = await createPluginAgentSession({
@@ -830,36 +900,51 @@ async function beginConversation(): Promise<void> {
         ...(mode.value === 'modify' ? { plugin_id: selectedPluginId.value } : {}),
       })
       if (!createResult.success) {
+        clearPlanningOptimisticState()
         toast.error(createResult.error || '创建会话失败')
         return
       }
       applySession(createResult.session)
-    }
-
-    if (!messageInput.value.trim()) {
-      return
+      activeSessionId = createResult.session.session_id
+      hadExistingSession = false
     }
 
     const activeSession = session.value
     if (!activeSession) {
+      clearPlanningOptimisticState()
       toast.error('会话初始化失败')
       return
     }
 
+    activeSessionId = activeSession.session_id
+
     const result = await sendPluginAgentMessage(activeSession.session_id, {
-      content: messageInput.value.trim(),
+      content: userContent,
       agentConfig: buildAgentConfig(),
     })
 
     if (!result.success) {
+      clearPlanningOptimisticState()
       toast.error(result.error || '发送消息失败')
       return
     }
 
+    clearPlanningOptimisticState()
     applySession(result.session)
-    messageInput.value = ''
     await syncHistoryScrollToBottom()
   } catch (error) {
+    if (activeSessionId) {
+      try {
+        await syncSessionFromServer(activeSessionId)
+      } catch {
+        if (!hadExistingSession) {
+          applySession(null)
+        }
+      }
+    } else if (!hadExistingSession) {
+      applySession(null)
+    }
+    clearPlanningOptimisticState()
     toast.error(error instanceof Error ? error.message : '发送消息失败')
   }
 }
@@ -1549,6 +1634,10 @@ function formatEventPayload(payload: unknown): string {
   background: rgba(37, 99, 235, 0.08);
 }
 
+.plugin-agent-message.is-loading {
+  border-style: dashed;
+}
+
 .plugin-agent-message-role,
 .plugin-agent-file-name {
   font-size: 12px;
@@ -1563,6 +1652,22 @@ function formatEventPayload(payload: unknown): string {
 
 .plugin-agent-message-content :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.plugin-agent-message-loading {
+  color: var(--text-secondary);
+}
+
+.plugin-agent-loading-dots::after {
+  content: '';
+  animation: plugin-agent-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes plugin-agent-dots {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
 }
 
 .plugin-agent-step-card {

@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 
 const {
   getPluginAgentSettingsMock,
+  getPluginAgentSessionMock,
   createPluginAgentSessionMock,
   deletePluginAgentSessionMock,
   sendPluginAgentMessageMock,
@@ -17,6 +18,7 @@ const {
   testAiTranslateConnectionMock,
 } = vi.hoisted(() => ({
   getPluginAgentSettingsMock: vi.fn(),
+  getPluginAgentSessionMock: vi.fn(),
   createPluginAgentSessionMock: vi.fn(),
   deletePluginAgentSessionMock: vi.fn(),
   sendPluginAgentMessageMock: vi.fn(),
@@ -29,6 +31,7 @@ const {
 
 vi.mock('@/api/pluginAgent', () => ({
   getPluginAgentSettings: getPluginAgentSettingsMock,
+  getPluginAgentSession: getPluginAgentSessionMock,
   createPluginAgentSession: createPluginAgentSessionMock,
   deletePluginAgentSession: deletePluginAgentSessionMock,
   sendPluginAgentMessage: sendPluginAgentMessageMock,
@@ -106,6 +109,7 @@ describe('PluginAgentModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     getPluginAgentSettingsMock.mockReset()
+    getPluginAgentSessionMock.mockReset()
     createPluginAgentSessionMock.mockReset()
     deletePluginAgentSessionMock.mockReset()
     sendPluginAgentMessageMock.mockReset()
@@ -155,6 +159,20 @@ describe('PluginAgentModal', () => {
         mode: 'create',
         run_state: 'drafting',
         messages: [],
+        events: [],
+        touched_files: [],
+        file_previews: {},
+      },
+    })
+    getPluginAgentSessionMock.mockResolvedValue({
+      success: true,
+      session: {
+        session_id: 'session-1',
+        mode: 'create',
+        run_state: 'drafting',
+        messages: [
+          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
+        ],
         events: [],
         touched_files: [],
         file_previews: {},
@@ -381,6 +399,55 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     expect(wrapper.find('.plugin-agent-start-btn').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows the user message immediately and renders a waiting animation while the agent is replying', async () => {
+    let resolveSend: ((value: unknown) => void) | null = null
+    sendPluginAgentMessageMock.mockImplementation(
+      () => new Promise((resolve) => { resolveSend = resolve }),
+    )
+
+    const wrapper = mount(PluginAgentModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.find('.plugin-agent-input').setValue('做一个 OCR 插件')
+    await wrapper.find('.plugin-agent-begin-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('做一个 OCR 插件')
+    expect(wrapper.text()).toContain('Agent 正在分析需求')
+    expect(wrapper.find('.plugin-agent-message-loading').exists()).toBe(true)
+    expect(wrapper.find('.plugin-agent-begin-btn').text()).toContain('等待回复...')
+
+    resolveSend?.({
+      success: true,
+      session: {
+        session_id: 'session-1',
+        mode: 'create',
+        run_state: 'awaiting_target_lock',
+        pending_target: {
+          plugin_id: 'auto_plugin',
+          display_name: 'Auto Plugin',
+          supported_steps: ['ocr'],
+          supported_modes: ['standard'],
+        },
+        messages: [
+          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
+          { id: 'assistant-1', role: 'assistant', content: '建议创建新插件。', timestamp: '2026-01-01T00:00:01Z' },
+        ],
+        events: [],
+        touched_files: [],
+        file_previews: {},
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.plugin-agent-message-loading').exists()).toBe(false)
+    expect(wrapper.text()).toContain('建议创建新插件。')
   })
 
   it('renders friendly timeline cards instead of raw json events after conversation starts', async () => {
