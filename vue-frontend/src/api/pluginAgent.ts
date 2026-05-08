@@ -145,9 +145,15 @@ export interface PluginAgentSession {
   execution_finished_at?: string | null
 }
 
+export interface PluginAgentOverviewSection {
+  title: string
+  items: string[]
+}
+
 export interface PluginAgentSettingsResponse {
   success: boolean
   overview: string[]
+  overview_sections?: PluginAgentOverviewSection[]
   prompt_examples: string[]
   providers: Array<{ value: string; label: string }>
   plugins: PluginData[]

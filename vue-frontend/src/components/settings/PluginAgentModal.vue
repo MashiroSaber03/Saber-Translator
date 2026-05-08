@@ -110,7 +110,21 @@
 
         <div class="plugin-agent-block">
           <h3>插件开发提示</h3>
-          <ul class="plugin-agent-list">
+          <div v-if="overviewSections.length" class="plugin-agent-overview-sections">
+            <section
+              v-for="section in overviewSections"
+              :key="section.title"
+              class="plugin-agent-overview-section"
+            >
+              <h4>{{ section.title }}</h4>
+              <ul class="plugin-agent-list">
+                <li v-for="item in section.items" :key="`${section.title}-${item}`">
+                  <div class="plugin-agent-overview-item" v-html="renderMarkdown(item)" />
+                </li>
+              </ul>
+            </section>
+          </div>
+          <ul v-else class="plugin-agent-list">
             <li v-for="item in overview" :key="item">{{ item }}</li>
           </ul>
           <h4>示例描述</h4>
@@ -315,6 +329,7 @@ import {
   type PluginAgentEvent,
   type PluginAgentAgentConfig,
   type PluginAgentLogPayload,
+  type PluginAgentOverviewSection,
   type PluginAgentSession,
   type PluginAgentStatePayload,
   type PluginAgentToolCallPayload,
@@ -372,6 +387,7 @@ const isOpen = ref(props.modelValue)
 const mode = ref<'create' | 'modify'>('create')
 const selectedPluginId = ref('')
 const overview = ref<string[]>([])
+const overviewSections = ref<PluginAgentOverviewSection[]>([])
 const promptExamples = ref<string[]>([])
 const providerOptions = ref<Array<{ value: string; label: string }>>([])
 const pluginOptions = ref<Array<{ value: string; label: string }>>([])
@@ -716,6 +732,7 @@ async function initializeModal(): Promise<void> {
     }
 
     overview.value = result.overview || []
+    overviewSections.value = result.overview_sections || []
     promptExamples.value = result.prompt_examples || []
     providerOptions.value = result.providers || []
     pluginOptions.value = [{ value: '', label: '-- 选择插件 --' }, ...(result.plugins || []).map(plugin => ({
@@ -1425,6 +1442,46 @@ function formatEventPayload(payload: unknown): string {
 .plugin-agent-list {
   margin: 0;
   padding-left: 18px;
+}
+
+.plugin-agent-overview-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plugin-agent-overview-section {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg-secondary);
+}
+
+.plugin-agent-overview-section h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.plugin-agent-overview-section .plugin-agent-list {
+  margin: 0;
+}
+
+.plugin-agent-overview-section .plugin-agent-list li + li {
+  margin-top: 8px;
+}
+
+.plugin-agent-overview-section .plugin-agent-list li {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.plugin-agent-overview-item :deep(p) {
+  margin: 0;
+}
+
+.plugin-agent-overview-item :deep(strong) {
+  font-weight: 700;
 }
 
 .plugin-agent-example {

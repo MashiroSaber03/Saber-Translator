@@ -269,6 +269,10 @@ class PluginAgentController:
             "  }\n"
             "}\n\n"
             "规则：\n"
+            "- 你的回答必须且只能是一个合法 JSON 对象。\n"
+            "- JSON 的第一个非空字符必须是 `{`，最后一个非空字符必须是 `}`。\n"
+            "- JSON 外面禁止输出任何额外内容，包括解释、前言、结语、Markdown 代码块、反引号、注释和空行。\n"
+            "- 不要输出“下面是 JSON”“好的”之类的文字。\n"
             '- assistant_message 必须放在返回 JSON 的第一个字段。\n'
             "- modify 模式下不要重新选择其他插件。\n"
             "- create 模式下，若信息不足可让用户补充；若信息足够则给出一个明确 target_proposal。\n"
@@ -320,6 +324,10 @@ class PluginAgentController:
             "  }\n"
             "}\n\n"
             "规则：\n"
+            "- 你的回答必须且只能是一个合法 JSON 对象。\n"
+            "- JSON 的第一个非空字符必须是 `{`，最后一个非空字符必须是 `}`。\n"
+            "- JSON 外面禁止输出任何额外内容，包括解释、前言、结语、Markdown 代码块、反引号、注释和空行。\n"
+            "- 不要输出“下面是 JSON”“好的”之类的文字。\n"
             '- assistant_message 必须放在返回 JSON 的第一个字段，action 必须紧随其后。\n'
             "- 修改文件时必须提供完整文件内容，不要只给 diff。\n"
             "- finish 前至少应完成一次 validate_plugin 并确保成功。\n"

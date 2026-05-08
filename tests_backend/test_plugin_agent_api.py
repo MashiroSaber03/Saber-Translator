@@ -195,6 +195,40 @@ class PluginAgentRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "插件目录"):
                 executor.write_file("..\\outside.py", "print('bad')")
 
+    def test_controller_prompts_require_json_only_output_without_outer_text(self) -> None:
+        controller = self.PluginAgentController()
+        planning_runtime = self.PluginAgentRuntime(
+            plugins_root=os.path.join(tempfile.gettempdir(), "plugin-agent-tests"),
+            controller=controller,
+            finalize_refresh=lambda _target: None,
+            skill_markdown="skill",
+        )
+        planning_session = planning_runtime.create_session("create")
+        planning_prompt = controller._build_planning_system_prompt(planning_session)
+
+        self.assertIn("你的回答必须且只能是一个合法 JSON 对象", planning_prompt)
+        self.assertIn("JSON 的第一个非空字符必须是 `{`", planning_prompt)
+        self.assertIn("JSON 外面禁止输出任何额外内容", planning_prompt)
+        self.assertIn("不要输出“下面是 JSON”", planning_prompt)
+
+        locked_target = self.LockedPluginTarget(
+            mode="create",
+            plugin_id="strict_json_plugin",
+            display_name="Strict JSON Plugin",
+            plugin_dir=os.path.join(tempfile.gettempdir(), "strict_json_plugin"),
+        )
+        planning_session.locked_target = locked_target
+        execution_prompt = controller._build_execution_system_prompt(
+            planning_session,
+            recent_results=[],
+            iteration=1,
+        )
+
+        self.assertIn("你的回答必须且只能是一个合法 JSON 对象", execution_prompt)
+        self.assertIn("JSON 的第一个非空字符必须是 `{`", execution_prompt)
+        self.assertIn("JSON 外面禁止输出任何额外内容", execution_prompt)
+        self.assertIn("不要输出“下面是 JSON”", execution_prompt)
+
     def test_validate_plugin_runs_in_isolated_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             plugins_root = os.path.join(temp_dir, "plugins")

@@ -105,6 +105,16 @@ describe('PluginAgentModal', () => {
     getPluginAgentSettingsMock.mockResolvedValue({
       success: true,
       overview: ['插件只能操作单个目录'],
+      overview_sections: [
+        {
+          title: '基础规则',
+          items: ['插件只能操作单个目录'],
+        },
+        {
+          title: '翻译与渲染类 Hook',
+          items: ['`before_translate` / `after_translate`：普通翻译前 / 普通翻译后。'],
+        },
+      ],
       prompt_examples: ['做一个 OCR 插件'],
       providers: [
         { value: 'siliconflow', label: 'SiliconFlow' },
@@ -392,6 +402,8 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     expect(saveSpy).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('基础规则')
+    expect(wrapper.text()).toContain('翻译与渲染类 Hook')
   })
 
   it('streams assistant output into a single timeline card and keeps raw debug json collapsed', async () => {
