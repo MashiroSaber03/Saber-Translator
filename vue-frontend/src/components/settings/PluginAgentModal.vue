@@ -68,6 +68,15 @@
                 {{ isFetchingModels ? '获取中...' : '获取模型' }}
               </button>
             </div>
+            <div v-if="modelListOptions.length > 1" class="plugin-agent-model-select">
+              <CustomSelect
+                :model-value="localAgentSettings.modelName"
+                :options="modelListOptions"
+                :disabled="isRunning"
+                @change="handleModelSelected"
+              />
+              <span class="plugin-agent-model-count">共 {{ modelListOptions.length - 1 }} 个模型</span>
+            </div>
           </div>
           <div class="plugin-agent-field plugin-agent-grid-two">
             <div>
@@ -391,6 +400,7 @@ const overviewSections = ref<PluginAgentOverviewSection[]>([])
 const promptExamples = ref<string[]>([])
 const providerOptions = ref<Array<{ value: string; label: string }>>([])
 const pluginOptions = ref<Array<{ value: string; label: string }>>([])
+const fetchedModels = ref<Array<{ id: string; name: string }>>([])
 const session = ref<PluginAgentSession | null>(null)
 const messageInput = ref('')
 const eventFeed = ref<PluginAgentEvent[]>([])
@@ -421,6 +431,16 @@ const localAgentSettings = ref({
 })
 
 const messages = computed(() => session.value?.messages || [])
+const modelListOptions = computed(() => {
+  const options = [{ label: '-- 选择模型 --', value: '' }]
+  for (const model of fetchedModels.value) {
+    options.push({
+      label: model.name || model.id,
+      value: model.id,
+    })
+  }
+  return options
+})
 const timelineItems = computed<PluginAgentTimelineItem[]>(() => (
   buildTimelineItems(eventFeed.value, assistantDisplayContent.value, assistantDisplayTargets.value)
 ))
@@ -476,7 +496,7 @@ function applySession(nextSession: PluginAgentSession | null): void {
 
   const previousMessageIds = new Set((previousSession?.messages || []).map(message => message.id))
   const shouldAnimatePlanningMessages = previousSession?.session_id === nextSession.session_id
-  for (const message of session.value.messages || []) {
+  for (const message of nextSession.messages || []) {
     if (message.role !== 'assistant') {
       continue
     }
@@ -725,6 +745,7 @@ function syncLocalAgentSettingsFromStore(): void {
 async function initializeModal(): Promise<void> {
   try {
     syncLocalAgentSettingsFromStore()
+    fetchedModels.value = []
     const result = await getPluginAgentSettings()
     if (!result.success) {
       toast.error(result.error || '加载插件 Agent 设置失败')
@@ -774,6 +795,7 @@ async function handleModeChange(nextMode: 'create' | 'modify'): Promise<void> {
 function handleProviderChange(value: string | number): void {
   const provider = String(value || '') as PluginAgentProvider
   localAgentSettings.value.provider = provider
+  fetchedModels.value = []
   settingsStore.setPluginAgentProvider(provider)
   localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
   localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
@@ -788,6 +810,10 @@ function handleProviderChange(value: string | number): void {
 
 function handleSelectedPluginChange(value: string | number): void {
   selectedPluginId.value = String(value || '')
+}
+
+function handleModelSelected(value: string | number): void {
+  localAgentSettings.value.modelName = String(value || '')
 }
 
 function applyExamplePrompt(example: string): void {
@@ -1006,11 +1032,17 @@ async function fetchModels(): Promise<void> {
       localAgentSettings.value.customBaseUrl,
     )
     if (result.success && result.models?.length) {
+      fetchedModels.value = result.models.map(model => ({
+        id: typeof model === 'string' ? model : model.id,
+        name: typeof model === 'string' ? model : (model.name || model.id),
+      }))
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
+      fetchedModels.value = []
       toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error) {
+    fetchedModels.value = []
     toast.error(error instanceof Error ? error.message : '获取模型失败')
   } finally {
     isFetchingModels.value = false

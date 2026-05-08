@@ -13,6 +13,8 @@ const {
   lockPluginAgentTargetMock,
   startPluginAgentExecutionMock,
   subscribePluginAgentEventsMock,
+  fetchModelsMock,
+  testAiTranslateConnectionMock,
 } = vi.hoisted(() => ({
   getPluginAgentSettingsMock: vi.fn(),
   createPluginAgentSessionMock: vi.fn(),
@@ -21,6 +23,8 @@ const {
   lockPluginAgentTargetMock: vi.fn(),
   startPluginAgentExecutionMock: vi.fn(),
   subscribePluginAgentEventsMock: vi.fn(),
+  fetchModelsMock: vi.fn(),
+  testAiTranslateConnectionMock: vi.fn(),
 }))
 
 vi.mock('@/api/pluginAgent', () => ({
@@ -89,6 +93,13 @@ vi.mock('@/utils/toast', () => ({
   }),
 }))
 
+vi.mock('@/api/config', () => ({
+  configApi: {
+    fetchModels: fetchModelsMock,
+    testAiTranslateConnection: testAiTranslateConnectionMock,
+  },
+}))
+
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
 
 describe('PluginAgentModal', () => {
@@ -101,6 +112,8 @@ describe('PluginAgentModal', () => {
     lockPluginAgentTargetMock.mockReset()
     startPluginAgentExecutionMock.mockReset()
     subscribePluginAgentEventsMock.mockReset()
+    fetchModelsMock.mockReset()
+    testAiTranslateConnectionMock.mockReset()
 
     getPluginAgentSettingsMock.mockResolvedValue({
       success: true,
@@ -310,6 +323,15 @@ describe('PluginAgentModal', () => {
         timestamp: '2026-01-01T00:00:08Z',
       })
     })
+
+    fetchModelsMock.mockResolvedValue({
+      success: true,
+      models: [
+        { id: 'glm-4.5', name: 'GLM-4.5' },
+        { id: 'glm-5.1', name: 'GLM-5.1' },
+      ],
+    })
+    testAiTranslateConnectionMock.mockResolvedValue({ success: true, message: '连接成功' })
   })
 
   it('requires selecting an existing plugin before starting a modify session', async () => {
@@ -404,6 +426,34 @@ describe('PluginAgentModal', () => {
     expect(saveSpy).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('基础规则')
     expect(wrapper.text()).toContain('翻译与渲染类 Hook')
+  })
+
+  it('shows a fetched model selector and lets the user choose a fetched model', async () => {
+    const wrapper = mount(PluginAgentModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+    await flushPromises()
+
+    const fetchButton = wrapper.findAll('button').find(button => button.text().includes('获取模型'))
+    expect(fetchButton).toBeTruthy()
+
+    await fetchButton!.trigger('click')
+    await flushPromises()
+
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', '', '')
+    expect(wrapper.text()).toContain('共 2 个模型')
+
+    const selects = wrapper.findAll('.custom-select-stub')
+    const modelSelect = selects.at(-1)
+    expect(modelSelect?.exists()).toBe(true)
+
+    await modelSelect!.setValue('glm-5.1')
+    await flushPromises()
+
+    const modelInput = wrapper.find('input[placeholder="请输入模型名称"]')
+    expect((modelInput.element as HTMLInputElement).value).toBe('glm-5.1')
   })
 
   it('streams assistant output into a single timeline card and keeps raw debug json collapsed', async () => {
