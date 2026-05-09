@@ -32,11 +32,17 @@ export interface RenderInput {
     savedTextStyles?: SavedTextStyles | null
     currentMode: string
     settingsSnapshot: TranslationSettings
+    renderStylePolicy: RenderStylePolicy
 }
 
 export interface RenderOutput {
     finalImage: string
     bubbleStates: BubbleState[]
+}
+
+export interface RenderStylePolicy {
+    fontSize: 'preserve' | 'initialize_auto'
+    color: 'preserve' | 'initialize_auto'
 }
 
 function hasOwn(object: object, key: string): boolean {
@@ -93,6 +99,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         savedTextStyles,
         currentMode,
         settingsSnapshot,
+        renderStylePolicy,
     } = input
 
     if (!cleanImage) {
@@ -104,6 +111,10 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     }
 
     const { textStyle } = settingsSnapshot
+    const autoFontSizeEnabled = savedTextStyles?.autoFontSize ?? textStyle.autoFontSize
+    const autoTextColorEnabled = savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
+    const shouldInitializeAutoFontSize = renderStylePolicy.fontSize === 'initialize_auto' && autoFontSizeEnabled
+    const shouldInitializeAutoColor = renderStylePolicy.color === 'initialize_auto' && autoTextColorEnabled
 
     // 【简化设计】计算 textDirection：
     // - 如果全局设置是 'auto'，使用检测结果
@@ -133,13 +144,12 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
                     ? globalTextDir
                     : mappedAutoDir
 
-        // 【修复】颜色处理：根据 useAutoTextColor 设置决定是否使用自动提取的颜色
-        const useAutoColor = baseState?.useAutoTextColor ?? savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
-        let finalTextColor = baseState?.textColor || savedTextStyles?.textColor || textStyle.textColor
-        let finalFillColor = baseState?.fillColor || savedTextStyles?.fillColor || textStyle.fillColor
+        // 只有显式初始化自动颜色时，才把 autoFgColor/autoBgColor 物化为当前渲染颜色。
+        let finalTextColor = baseState?.textColor ?? savedTextStyles?.textColor ?? textStyle.textColor
+        let finalFillColor = baseState?.fillColor ?? savedTextStyles?.fillColor ?? textStyle.fillColor
         const colorInfo = colors[idx]
 
-        if (useAutoColor && colorInfo) {
+        if (shouldInitializeAutoColor && colorInfo) {
             if (colorInfo.textColor) finalTextColor = colorInfo.textColor
             if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
         }
@@ -159,7 +169,6 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',  // 备份检测结果
             fontSize: baseState?.fontSize ?? savedTextStyles?.fontSize ?? textStyle.fontSize,
             fontFamily: baseState?.fontFamily ?? savedTextStyles?.fontFamily ?? textStyle.fontFamily,
-            autoFontSize: baseState?.autoFontSize ?? savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
             textColor: finalTextColor,
             fillColor: finalFillColor,
             strokeEnabled: baseState?.strokeEnabled ?? savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
@@ -187,7 +196,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         strokeWidth: bubbleStates[0]?.strokeWidth ?? savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
         lineSpacing: bubbleStates[0]?.lineSpacing ?? savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
         textAlign: bubbleStates[0]?.textAlign ?? savedTextStyles?.textAlign ?? textStyle.textAlign,
-        autoFontSize: bubbleStates[0]?.autoFontSize ?? savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+        autoFontSize: shouldInitializeAutoFontSize,
         use_individual_styles: true
     })
 

@@ -172,6 +172,10 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
         currentMode: 'standard',
         settingsSnapshot: settingsStore.settings,
+        renderStylePolicy: {
+          fontSize: 'preserve',
+          color: 'preserve',
+        },
       } as any)
 
       // 检查token是否过期（被新的渲染请求取代）

@@ -61,6 +61,7 @@ const translation = useTranslation()
 const {
   handleTextStyleChanged,
   handleAutoFontSizeChanged,
+  handleAutoTextColorChanged,
   handleApplyToAll,
 } = useTextStyleSync()
 
@@ -664,6 +665,7 @@ function selectImage(index: number) {
         @apply-to-all="handleApplyToAll"
         @text-style-changed="handleTextStyleChanged"
         @auto-font-size-changed="handleAutoFontSizeChanged"
+        @auto-text-color-changed="handleAutoTextColorChanged"
       />
 
       <!-- 主内容区 -->

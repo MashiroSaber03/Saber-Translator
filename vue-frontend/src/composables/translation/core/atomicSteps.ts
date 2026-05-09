@@ -145,6 +145,10 @@ export async function executeAtomicStep(
         savedTextStyles: runtime.savedTextStyles,
         currentMode: runtime.mode,
         settingsSnapshot: runtime.settingsSnapshot,
+        renderStylePolicy: {
+          fontSize: runtime.savedTextStyles?.autoFontSize ? 'initialize_auto' : 'preserve',
+          color: runtime.savedTextStyles?.useAutoTextColor ? 'initialize_auto' : 'preserve',
+        },
       })
       return {
         ...context,

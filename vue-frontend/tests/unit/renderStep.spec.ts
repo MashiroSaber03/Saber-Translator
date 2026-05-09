@@ -131,6 +131,10 @@ describe('executeRender', () => {
       savedTextStyles: null,
       currentMode: 'standard',
       settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
     })
 
     expect(result.finalImage).toBe('rendered')
@@ -210,6 +214,10 @@ describe('executeRender', () => {
       savedTextStyles: null,
       currentMode: 'standard',
       settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
     })
 
     expect(result.finalImage).toBe('rendered-complete')
@@ -292,6 +300,10 @@ describe('executeRender', () => {
       },
       currentMode: 'standard',
       settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
     })
 
     expect(result.finalImage).toBe('rendered-preserve')
@@ -301,5 +313,199 @@ describe('executeRender', () => {
     expect(result.bubbleStates[0]?.textColor).toBe('#123456')
     expect(result.bubbleStates[0]?.strokeEnabled).toBe(true)
     expect(result.bubbleStates[0]?.textAlign).toBe('center')
+  })
+
+  it('keeps auto font size disabled during ordinary preserve renders even when page settings still remember auto mode', async () => {
+    parallelRenderMock.mockResolvedValue({
+      success: true,
+      final_image: 'rendered-manual-font',
+      bubble_states: []
+    })
+
+    const { executeRender } = await import('@/composables/translation/core/steps/render')
+    await executeRender({
+      imageIndex: 0,
+      cleanImage: 'clean-image',
+      bubbleCoords: [[0, 0, 20, 20]],
+      bubbleAngles: [0],
+      autoDirections: ['vertical'],
+      textlinesPerBubble: [[]],
+      existingBubbleStates: [{
+        coords: [0, 0, 20, 20],
+        polygon: [],
+        originalText: '原文',
+        translatedText: '译文',
+        textboxText: '',
+        fontSize: 26,
+        fontFamily: 'fonts/CUSTOM.TTF',
+        textDirection: 'vertical',
+        autoTextDirection: 'vertical',
+        textColor: '#123456',
+        fillColor: '#abcdef',
+        rotationAngle: 0,
+        position: { x: 0, y: 0 },
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1.1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        autoFgColor: [1, 2, 3],
+        autoBgColor: [10, 11, 12],
+        textlines: [],
+        ocrResult: null
+      }],
+      originalTexts: ['原文'],
+      ocrResults: [],
+      translatedTexts: ['译文'],
+      textboxTexts: [''],
+      colors: [{ textColor: '#010203', bgColor: '#0a0b0c' }],
+      savedTextStyles: {
+        fontFamily: 'fonts/GLOBAL.TTF',
+        fontSize: 99,
+        autoFontSize: true,
+        textDirection: 'vertical',
+        autoTextDirection: false,
+        layoutDirection: 'vertical',
+        fillColor: '#ffffff',
+        textColor: '#000000',
+        rotationAngle: 0,
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        useAutoTextColor: true,
+        inpaintMethod: 'solid',
+        lineSpacing: 1.1,
+        textAlign: 'start'
+      },
+      currentMode: 'standard',
+      settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
+    } as any)
+
+    expect(parallelRenderMock).toHaveBeenCalledWith(expect.objectContaining({
+      autoFontSize: false,
+      bubble_states: [
+        expect.objectContaining({
+          fontSize: 26,
+          textColor: '#123456',
+          fillColor: '#abcdef',
+        })
+      ],
+    }))
+  })
+
+  it('re-applies auto font size and auto colors only when explicitly requested', async () => {
+    parallelRenderMock.mockResolvedValue({
+      success: true,
+      final_image: 'rendered-auto-init',
+      bubble_states: [
+        {
+          coords: [0, 0, 20, 20],
+          polygon: [],
+          originalText: '原文',
+          translatedText: '译文',
+          textboxText: '',
+          fontSize: 34,
+          fontFamily: 'fonts/CUSTOM.TTF',
+          textDirection: 'vertical',
+          autoTextDirection: 'vertical',
+          textColor: '#010203',
+          fillColor: '#0a0b0c',
+          rotationAngle: 0,
+          position: { x: 0, y: 0 },
+          strokeEnabled: false,
+          strokeColor: '#000000',
+          strokeWidth: 1,
+          lineSpacing: 1.1,
+          textAlign: 'start',
+          inpaintMethod: 'solid',
+          autoFgColor: [1, 2, 3],
+          autoBgColor: [10, 11, 12],
+          textlines: [],
+          ocrResult: null
+        }
+      ]
+    })
+
+    const { executeRender } = await import('@/composables/translation/core/steps/render')
+    const result = await executeRender({
+      imageIndex: 0,
+      cleanImage: 'clean-image',
+      bubbleCoords: [[0, 0, 20, 20]],
+      bubbleAngles: [0],
+      autoDirections: ['vertical'],
+      textlinesPerBubble: [[]],
+      existingBubbleStates: [{
+        coords: [0, 0, 20, 20],
+        polygon: [],
+        originalText: '原文',
+        translatedText: '译文',
+        textboxText: '',
+        fontSize: 26,
+        fontFamily: 'fonts/CUSTOM.TTF',
+        textDirection: 'vertical',
+        autoTextDirection: 'vertical',
+        textColor: '#123456',
+        fillColor: '#abcdef',
+        rotationAngle: 0,
+        position: { x: 0, y: 0 },
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1.1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        autoFgColor: [1, 2, 3],
+        autoBgColor: [10, 11, 12],
+        textlines: [],
+        ocrResult: null
+      }],
+      originalTexts: ['原文'],
+      ocrResults: [],
+      translatedTexts: ['译文'],
+      textboxTexts: [''],
+      colors: [{ textColor: '#010203', bgColor: '#0a0b0c' }],
+      savedTextStyles: {
+        fontFamily: 'fonts/GLOBAL.TTF',
+        fontSize: 99,
+        autoFontSize: true,
+        textDirection: 'vertical',
+        autoTextDirection: false,
+        layoutDirection: 'vertical',
+        fillColor: '#ffffff',
+        textColor: '#000000',
+        rotationAngle: 0,
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        useAutoTextColor: true,
+        inpaintMethod: 'solid',
+        lineSpacing: 1.1,
+        textAlign: 'start'
+      },
+      currentMode: 'standard',
+      settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'initialize_auto',
+        color: 'initialize_auto',
+      },
+    } as any)
+
+    expect(parallelRenderMock).toHaveBeenCalledWith(expect.objectContaining({
+      autoFontSize: true,
+      bubble_states: [
+        expect.objectContaining({
+          textColor: '#010203',
+          fillColor: '#0a0b0c',
+        })
+      ],
+    }))
+    expect(result.bubbleStates[0]?.fontSize).toBe(34)
+    expect(result.bubbleStates[0]?.textColor).toBe('#010203')
+    expect(result.bubbleStates[0]?.fillColor).toBe('#0a0b0c')
   })
 })

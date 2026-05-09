@@ -35,6 +35,15 @@ export interface ApplySettingsOptions {
     textAlign: boolean
 }
 
+function rgbToHex(rgb: [number, number, number] | null | undefined): string | null {
+    if (!rgb || rgb.length !== 3) return null
+    const [r, g, b] = rgb
+    return '#' + [r, g, b].map(x => {
+        const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16)
+        return hex.length === 1 ? '0' + hex : hex
+    }).join('')
+}
+
 /**
  * 文字样式同步与应用 composable
  */
@@ -108,7 +117,14 @@ export function useTextStyleSync() {
 
     async function renderWithCurrentBubbleStates(
         bubbleStates: typeof bubbleStore.bubbles,
-        cleanImageBase64: string
+        cleanImageBase64: string,
+        renderStylePolicy: {
+            fontSize: 'preserve' | 'initialize_auto'
+            color: 'preserve' | 'initialize_auto'
+        } = {
+            fontSize: 'preserve',
+            color: 'preserve'
+        }
     ) {
         return await executeRender({
             imageIndex: imageStore.currentImageIndex,
@@ -138,6 +154,7 @@ export function useTextStyleSync() {
             savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
             currentMode: 'standard',
             settingsSnapshot: settingsStore.settings,
+            renderStylePolicy,
         })
     }
 
@@ -367,7 +384,14 @@ export function useTextStyleSync() {
                     return
                 }
 
-                const result = await renderWithCurrentBubbleStates(bubbleStates as any, cleanImageBase64)
+                const result = await renderWithCurrentBubbleStates(
+                    bubbleStates as any,
+                    cleanImageBase64,
+                    {
+                        fontSize: 'initialize_auto',
+                        color: 'preserve'
+                    }
+                )
 
                 if (result.finalImage) {
                     if (result.bubbleStates && Array.isArray(result.bubbleStates)) {
@@ -409,6 +433,79 @@ export function useTextStyleSync() {
 
             // 触发重渲染（复用 handleTextStyleChanged 的逻辑）
             await handleTextStyleChanged('fontSize', fixedFontSize)
+        }
+    }
+
+    async function handleAutoTextColorChanged(isAutoTextColor: boolean) {
+        const image = currentImage.value
+        if (!image || !image.translatedDataURL) {
+            console.log(`自动文字颜色设置变更: ${isAutoTextColor} (仅影响下次翻译)`)
+            return
+        }
+
+        const bubbleStates = image.bubbleStates
+        if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
+            console.log('当前图片没有 bubbleStates，跳过自动文字颜色应用')
+            return
+        }
+
+        if (!isAutoTextColor) {
+            console.log('自动文字颜色已关闭，保留当前已物化的具体颜色')
+            return
+        }
+
+        console.log('自动文字颜色已开启，重新应用自动识别颜色...')
+
+        const updatedBubbles = bubbleStates.map((bubble) => ({
+            ...bubble,
+            textColor: rgbToHex(bubble.autoFgColor) ?? bubble.textColor ?? settingsStore.settings.textStyle.textColor,
+            fillColor: rgbToHex(bubble.autoBgColor) ?? bubble.fillColor ?? settingsStore.settings.textStyle.fillColor
+        }))
+
+        imageStore.updateCurrentImage({
+            bubbleStates: updatedBubbles,
+            hasUnsavedChanges: true
+        })
+        bubbleStore.setBubbles(updatedBubbles)
+
+        try {
+            let cleanImageBase64 = ''
+            if (image.cleanImageData) {
+                const cleanData = image.cleanImageData
+                cleanImageBase64 = cleanData.includes('base64,')
+                    ? (cleanData.split('base64,')[1] || '')
+                    : cleanData
+            } else if (image.originalDataURL) {
+                cleanImageBase64 = image.originalDataURL.includes('base64,')
+                    ? (image.originalDataURL.split('base64,')[1] || '')
+                    : image.originalDataURL
+            }
+
+            if (!cleanImageBase64) {
+                console.log('没有可用的背景图，跳过自动文字颜色重渲染')
+                return
+            }
+
+            const result = await renderWithCurrentBubbleStates(
+                updatedBubbles as any,
+                cleanImageBase64,
+                {
+                    fontSize: 'preserve',
+                    color: 'preserve'
+                }
+            )
+
+            if (result.finalImage) {
+                imageStore.updateCurrentImage({
+                    translatedDataURL: `data:image/png;base64,${result.finalImage}`,
+                    bubbleStates: result.bubbleStates,
+                    hasUnsavedChanges: true
+                })
+                bubbleStore.setBubbles(result.bubbleStates)
+                console.log('自动文字颜色渲染成功')
+            }
+        } catch (error) {
+            console.error('自动文字颜色渲染出错:', error)
         }
     }
 
@@ -479,18 +576,6 @@ export function useTextStyleSync() {
                 strokeWidth: textStyle.strokeWidth,
                 lineSpacing: textStyle.lineSpacing,
                 textAlign: textStyle.textAlign,
-            }
-
-            /**
-             * 辅助函数：RGB数组转十六进制颜色
-             */
-            const rgbToHex = (rgb: [number, number, number] | null | undefined): string | null => {
-                if (!rgb || rgb.length !== 3) return null
-                const [r, g, b] = rgb
-                return '#' + [r, g, b].map(x => {
-                    const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16)
-                    return hex.length === 1 ? '0' + hex : hex
-                }).join('')
             }
 
             /**
@@ -702,6 +787,10 @@ export function useTextStyleSync() {
                             savedTextStyles: savedTextStyles as any,
                             currentMode: 'standard',
                             settingsSnapshot: settingsStore.settings,
+                            renderStylePolicy: {
+                                fontSize: options.fontSize && isAutoFontSize ? 'initialize_auto' : 'preserve',
+                                color: 'preserve'
+                            }
                         })
 
                         if (result.finalImage) {
@@ -763,6 +852,7 @@ export function useTextStyleSync() {
         // 文字样式操作
         handleTextStyleChanged,
         handleAutoFontSizeChanged,
+        handleAutoTextColorChanged,
         handleApplyToAll,
     }
 }

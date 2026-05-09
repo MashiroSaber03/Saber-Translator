@@ -51,6 +51,8 @@ const emit = defineEmits<{
   (e: 'textStyleChanged', settingKey: string, newValue: unknown): void
   /** 【复刻原版修复A】自动字号开关变更（需要特殊处理：重新计算字号或应用固定字号） */
   (e: 'autoFontSizeChanged', isAutoFontSize: boolean): void
+  /** 自动文字颜色开关变更（已翻译图片需要显式重新应用自动颜色） */
+  (e: 'autoTextColorChanged', isAutoTextColor: boolean): void
 }>()
 
 // ============================================================
@@ -464,6 +466,7 @@ function updateTextAlign(value: string | number) {
 function updateUseAutoTextColor(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   settingsStore.updateTextStyle({ useAutoTextColor: checked })
+  emit('autoTextColorChanged', checked)
 }
 
 /**

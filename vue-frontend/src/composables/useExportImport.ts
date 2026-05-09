@@ -424,6 +424,10 @@ export function useExportImport() {
               savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
               currentMode: 'standard',
               settingsSnapshot: settingsStore.settings,
+              renderStylePolicy: {
+                fontSize: 'preserve',
+                color: 'preserve',
+              },
             })
 
             if (result.finalImage) {
