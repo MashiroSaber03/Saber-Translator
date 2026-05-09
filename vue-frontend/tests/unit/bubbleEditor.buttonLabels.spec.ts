@@ -76,4 +76,38 @@ describe('BubbleEditor button labels', () => {
     expect(buttonLabels).not.toContain('应用')
     expect(buttonLabels).toContain('样式同步到本页全部气泡')
   })
+
+  it('uses the shorter panel titles for source and translation text', () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+        isOcrLoading: false,
+        isTranslateLoading: false,
+      },
+      global: {
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            template: '<div class="jp-keyboard-stub"></div>',
+          },
+        },
+      },
+    })
+
+    const columnTitles = wrapper.findAll('.column-title').map(title => title.text().trim())
+
+    expect(columnTitles).toContain('漫画原文')
+    expect(columnTitles).toContain('译文')
+    expect(columnTitles).not.toContain('🇯🇵 日语原文')
+    expect(columnTitles).not.toContain('🇨🇳 中文译文')
+  })
 })

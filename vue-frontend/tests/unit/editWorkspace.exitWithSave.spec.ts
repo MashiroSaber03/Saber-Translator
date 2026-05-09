@@ -176,6 +176,7 @@ describe('EditWorkspace exit with save', () => {
     await wrapper.find('.exit-edit-mode-trigger').trigger('click')
 
     expect(wrapper.emitted('exit')).toBeUndefined()
+    expect(wrapper.text()).toContain('是否进行全量保存（避免丢失编辑数据）')
     expect(wrapper.text()).toContain('直接退出')
     expect(wrapper.text()).toContain('保存后退出')
   })

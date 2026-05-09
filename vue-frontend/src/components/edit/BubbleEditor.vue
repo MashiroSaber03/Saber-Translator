@@ -14,7 +14,7 @@
     <!-- 原文编辑区 -->
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
-        <span class="column-title">🇯🇵 日语原文</span>
+        <span class="column-title">漫画原文</span>
         <button 
           class="re-ocr-btn" 
           :class="{ 'is-loading': isOcrLoading }"
@@ -53,7 +53,7 @@
     <!-- 译文编辑区 -->
     <div class="text-column translated-text-column text-block">
       <div class="text-column-header">
-        <span class="column-title">🇨🇳 中文译文</span>
+        <span class="column-title">译文</span>
         <button 
           class="re-translate-btn" 
           :class="{ 'is-loading': isTranslateLoading }"

@@ -77,9 +77,7 @@
       >
         <template v-if="exitDialogState === 'confirm'">
           <div class="exit-save-dialog-title">退出编辑</div>
-          <p class="exit-save-dialog-text">
-            当前章节已开启自动保存。你可以直接退出，或先保存整章进度后再退出编辑模式。
-          </p>
+          <p class="exit-save-dialog-text">是否进行全量保存（避免丢失编辑数据）</p>
           <div class="exit-save-dialog-actions">
             <button
               type="button"
