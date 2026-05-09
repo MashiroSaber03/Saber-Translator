@@ -27,39 +27,20 @@ import {
 import { executeAtomicStep, executeBatchAtomicStep, type AtomicStepName } from './atomicSteps'
 import { projectTaskContext } from './taskProjector'
 import {
+  STEP_CHAIN_CONFIGS as BASE_STEP_CHAIN_CONFIGS,
+  getStepLabel,
+  resolveSequentialStepChain,
+  type AtomicStepType,
+} from './pipelineRegistry'
+import {
   shouldEnableAutoSave,
   preSaveOriginalImages,
   finalizeSave,
   resetSaveState,
 } from './saveStep'
 
-export type AtomicStepType =
-  | 'detection'
-  | 'ocr'
-  | 'color'
-  | 'translate'
-  | 'aiTranslate'
-  | 'inpaint'
-  | 'render'
-  | 'save'
-
-export const STEP_CHAIN_CONFIGS: Record<TranslationMode, AtomicStepType[]> = {
-  standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
-  hq: ['detection', 'ocr', 'color', 'aiTranslate', 'inpaint', 'render'],
-  proofread: ['aiTranslate', 'render'],
-  removeText: ['detection', 'inpaint', 'render'],
-}
-
-const STEP_LABELS: Record<AtomicStepType, string> = {
-  detection: '气泡检测',
-  ocr: '文字识别',
-  color: '颜色提取',
-  translate: '翻译',
-  aiTranslate: 'AI翻译',
-  inpaint: '背景修复',
-  render: '渲染',
-  save: '保存',
-}
+export type { AtomicStepType } from './pipelineRegistry'
+export const STEP_CHAIN_CONFIGS = BASE_STEP_CHAIN_CONFIGS
 
 export function useSequentialPipeline() {
   const imageStore = useImageStore()
@@ -173,7 +154,7 @@ export function useSequentialPipeline() {
 
         try {
           const stepProgress = imageProgress + Math.floor((stepIdx / stepChain.length) * (90 / tasks.length))
-          reporter.setPercentage(stepProgress, `图片 ${imageIdx + 1}: ${STEP_LABELS[step]}`)
+          reporter.setPercentage(stepProgress, `图片 ${imageIdx + 1}: ${getStepLabel(step)}`)
           task = await executeSingleStep(step, task, runtime)
           tasks[imageIdx] = task
           projectAfterStep(step, task, runtime)
@@ -238,7 +219,7 @@ export function useSequentialPipeline() {
           if (failedIndices.has(task.imageIndex)) break
           try {
             const stepProgress = batchProgress + Math.floor((index / batchTasks.length) * 30)
-            reporter.setPercentage(stepProgress, `图片 ${batchStart + index + 1}: ${STEP_LABELS[step]}`)
+            reporter.setPercentage(stepProgress, `图片 ${batchStart + index + 1}: ${getStepLabel(step)}`)
             task = await executeSingleStep(step, task, runtime)
             tasks[batchStart + index] = task
             projectAfterStep(step, task, runtime)
@@ -285,7 +266,7 @@ export function useSequentialPipeline() {
           if (failedIndices.has(task.imageIndex)) break
           try {
             const stepProgress = batchProgress + 50 + Math.floor((index / batchTasks.length) * 40)
-            reporter.setPercentage(stepProgress, `图片 ${batchStart + index + 1}: ${STEP_LABELS[step]}`)
+            reporter.setPercentage(stepProgress, `图片 ${batchStart + index + 1}: ${getStepLabel(step)}`)
             task = await executeSingleStep(step, task, runtime)
             tasks[batchStart + index] = task
             projectAfterStep(step, task, runtime)
@@ -361,16 +342,10 @@ export function useSequentialPipeline() {
       autoSaveEnabled: enableAutoSave,
     })
 
-    const stepChain = [...STEP_CHAIN_CONFIGS[config.mode]]
-    if (config.mode === 'removeText' && runtime.settingsSnapshot.removeTextWithOcr) {
-      const detectionIdx = stepChain.indexOf('detection')
-      if (detectionIdx !== -1) {
-        stepChain.splice(detectionIdx + 1, 0, 'ocr')
-      }
-    }
-    if (enableAutoSave) {
-      stepChain.push('save')
-    }
+    const stepChain = resolveSequentialStepChain(config.mode, {
+      removeTextWithOcr: runtime.settingsSnapshot.removeTextWithOcr,
+      autoSaveEnabled: enableAutoSave,
+    })
 
     console.log('🚀 顺序管线启动')
     console.log(`   模式: ${config.mode}`)

@@ -20,14 +20,8 @@ import {
   SavePool,
 } from './pools'
 import { useImageStore } from '@/stores/imageStore'
-import { createPipelineRuntime, hydrateTaskContextFromImage, type PipelineRuntime } from '@/composables/translation/core/runtime'
-
-export const POOL_CHAIN_CONFIGS: Record<ParallelTranslationMode, string[]> = {
-  standard: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
-  hq: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
-  proofread: ['translate', 'render'],
-  removeText: ['detection', 'inpaint', 'render'],
-}
+import { createPipelineRuntime, hydrateTaskContextFromImage } from '@/composables/translation/core/runtime'
+import { resolveParallelPoolChain, type ParallelPoolStepName } from '@/composables/translation/core/pipelineRegistry'
 
 export class ParallelPipeline {
   private lock: DeepLearningLock
@@ -131,7 +125,11 @@ export class ParallelPipeline {
     this.resultCollector.init(images.length)
 
     const runtime = createPipelineRuntime(mode)
-    this.setupPoolChain(mode, images.length, runtime)
+    const chainConfig = resolveParallelPoolChain(mode, {
+      removeTextWithOcr: runtime.settingsSnapshot.removeTextWithOcr,
+      autoSaveEnabled: runtime.autoSaveEnabled,
+    })
+    this.setupPoolChain(mode, images.length, chainConfig)
 
     const tasks: PipelineTask[] = images.map((imageData, localIndex) =>
       hydrateTaskContextFromImage(startIndex + localIndex, imageData, mode, runtime),
@@ -142,7 +140,7 @@ export class ParallelPipeline {
       imageStore.setTranslationStatus(task.imageIndex, 'processing')
     }
 
-    const entryPool = this.getEntryPool(mode)
+    const entryPool = this.getEntryPool(chainConfig)
     for (const task of tasks) {
       entryPool.enqueue(task)
     }
@@ -157,25 +155,16 @@ export class ParallelPipeline {
     }
   }
 
-  private setupPoolChain(mode: ParallelTranslationMode, totalTasks: number, runtime: PipelineRuntime): void {
-    const chainConfig = [...POOL_CHAIN_CONFIGS[mode]]
-
-    if (mode === 'removeText' && runtime.settingsSnapshot.removeTextWithOcr) {
-      const detectionIdx = chainConfig.indexOf('detection')
-      if (detectionIdx !== -1 && !chainConfig.includes('ocr')) {
-        chainConfig.splice(detectionIdx + 1, 0, 'ocr')
-      }
-    }
-
-    if (runtime.autoSaveEnabled) {
-      chainConfig.push('save')
-    }
-
+  private setupPoolChain(
+    mode: ParallelTranslationMode,
+    totalTasks: number,
+    chainConfig: ParallelPoolStepName[],
+  ): void {
     const poolMap = this.getPoolMap()
 
     for (let i = 0; i < chainConfig.length - 1; i++) {
-      const currentPoolName = chainConfig[i] as string
-      const nextPoolName = chainConfig[i + 1] as string
+      const currentPoolName = chainConfig[i]!
+      const nextPoolName = chainConfig[i + 1]!
       const currentPool = poolMap[currentPoolName]
       const nextPool = poolMap[nextPoolName]
       if (currentPool && nextPool) {
@@ -183,7 +172,7 @@ export class ParallelPipeline {
       }
     }
 
-    const lastPoolName = chainConfig[chainConfig.length - 1] as string
+    const lastPoolName = chainConfig[chainConfig.length - 1]!
     const lastPool = poolMap[lastPoolName]
     if (lastPool) {
       lastPool.setNextPool(null)
@@ -191,14 +180,14 @@ export class ParallelPipeline {
 
     const translateIndex = chainConfig.indexOf('translate')
     if (translateIndex >= 0 && translateIndex < chainConfig.length - 1) {
-      const nextPoolName = chainConfig[translateIndex + 1] as string
+      const nextPoolName = chainConfig[translateIndex + 1]!
       this.translatePool.setMode(mode, totalTasks, poolMap[nextPoolName] || null)
     } else if (translateIndex === chainConfig.length - 1) {
       this.translatePool.setMode(mode, totalTasks, null)
     }
   }
 
-  private getPoolMap(): Record<string, TaskPool> {
+  private getPoolMap(): Record<ParallelPoolStepName, TaskPool> {
     return {
       detection: this.detectionPool,
       ocr: this.ocrPool,
@@ -210,9 +199,8 @@ export class ParallelPipeline {
     }
   }
 
-  private getEntryPool(mode: ParallelTranslationMode): TaskPool {
-    const chainConfig = POOL_CHAIN_CONFIGS[mode]
-    const firstPoolName = chainConfig[0] as string
+  private getEntryPool(chainConfig: ParallelPoolStepName[]): TaskPool {
+    const firstPoolName = chainConfig[0]!
     const poolMap = this.getPoolMap()
     return poolMap[firstPoolName] || this.detectionPool
   }

@@ -1,7 +1,7 @@
 /**
  * 仅消除文字模式配置
  * 
- * 步骤链由 SequentialPipeline.ts 中的 STEP_CHAIN_CONFIGS 定义
+ * 步骤链由 core/pipelineRegistry.ts 中的统一注册表定义
  */
 
 import type { PipelineConfig, ExecutionScope, PageRange } from '../core/types'
