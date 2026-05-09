@@ -1,5 +1,8 @@
 # 漫画分析角色卡兼容性回归清单
 
+> 最后更新：2026-05-09
+> 适用范围：当前角色卡导出与兼容性回归检查
+
 ## 目标范围
 - 角色卡标准：SillyTavern `chara_card_v2`（V2 稳定）
 - 扩展目标：Tavern Helper（通过 `data.extensions.saber_tavern` 读取增强载荷）

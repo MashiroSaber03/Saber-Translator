@@ -21,6 +21,7 @@ Your job is to create or modify exactly one plugin under the project's `plugins/
    - `inpaint`
    - `render`
    - `pipeline`
+   - `save` is currently not a plugin hook step
 8. Use canonical mode names only:
    - `standard`
    - `hq`
