@@ -1,9 +1,13 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
+  <div
+    ref="overlayRef"
+    class="modal-overlay"
+    @mousedown.self="handleOverlayMouseDown"
+  >
     <div class="modal-dialog ortho-dialog">
       <div class="modal-header">
         <h3>🎨 生成三视图 - {{ characterName }} <span v-if="formName && formName !== '默认'">({{ formName }})</span></h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">
@@ -54,7 +58,7 @@
       </div>
       
       <div class="modal-footer">
-        <button class="btn secondary" @click="$emit('close')">取消</button>
+        <button class="btn secondary" @click="close">取消</button>
         <button 
           v-if="!resultImagePath"
           class="btn primary"
@@ -74,6 +78,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const props = defineProps<{
   characterName: string
@@ -93,6 +98,8 @@ const isDragging = ref(false)
 const isGenerating = ref(false)
 const progressMessage = ref('')
 const resultImagePath = ref<string | null>(null)
+const close = () => emit('close')
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(close)
 
 function selectImages(event: Event) {
   const input = event.target as HTMLInputElement

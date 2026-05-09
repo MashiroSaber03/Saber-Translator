@@ -1,5 +1,10 @@
 <template>
-  <div class="reference-selector-overlay" v-if="visible" @click.self="handleCancel">
+  <div
+    v-if="visible"
+    ref="overlayRef"
+    class="reference-selector-overlay"
+    @mousedown.self="handleOverlayMouseDown"
+  >
     <div class="reference-selector-modal">
       <!-- 标题栏 -->
       <div class="modal-header">
@@ -88,6 +93,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import type { MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import * as insightApi from '@/api/insight'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const props = defineProps<{
   visible: boolean
@@ -108,6 +114,9 @@ const emit = defineEmits<{
 
 // 选中的图片路径列表（按选择顺序）
 const selectedPaths = ref<string[]>([])
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(handleCancel, {
+  enabled: () => props.visible,
+})
 
 // 缩略图网格引用
 const thumbnailsGrid = ref<HTMLElement | null>(null)

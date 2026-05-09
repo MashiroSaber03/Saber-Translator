@@ -8,6 +8,7 @@ import { ref, computed, nextTick, onMounted } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 // ============================================================
 // 状态
@@ -250,6 +251,12 @@ const pendingQAData = ref<{
 const noteTitle = ref('')
 /** 笔记补充说明 */
 const noteComment = ref('')
+const {
+  overlayRef: noteModalOverlayRef,
+  handleOverlayMouseDown: handleNoteModalOverlayMouseDown,
+} = useOverlayDismiss(closeNoteModal, {
+  enabled: showNoteModal,
+})
 
 /**
  * 打开笔记弹窗
@@ -494,7 +501,11 @@ onMounted(() => {
     
     <!-- 笔记弹窗 -->
     <div v-if="showNoteModal" class="modal note-modal show">
-      <div class="modal-overlay" @click="closeNoteModal"></div>
+      <div
+        ref="noteModalOverlayRef"
+        class="modal-overlay"
+        @mousedown.self="handleNoteModalOverlayMouseDown"
+      ></div>
       <div class="modal-content note-modal-content">
         <div class="modal-header">
           <h2>📝 添加笔记</h2>

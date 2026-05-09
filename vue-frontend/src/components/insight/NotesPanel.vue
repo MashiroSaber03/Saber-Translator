@@ -7,6 +7,7 @@
 import { ref, computed } from 'vue'
 import { useInsightStore, type NoteType, type NoteData } from '@/stores/insightStore'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 /** 笔记筛选类型选项 */
 const noteFilterOptions = [
@@ -47,6 +48,12 @@ const newNotePageNum = ref<number | null>(null)
 
 /** 新笔记标签 */
 const newNoteTags = ref('')
+const {
+  overlayRef: noteModalOverlayRef,
+  handleOverlayMouseDown: handleNoteModalOverlayMouseDown,
+} = useOverlayDismiss(closeNoteModal, {
+  enabled: showNoteModal,
+})
 
 // ============================================================
 // 计算属性
@@ -273,7 +280,12 @@ function getNoteTypeIcon(type: NoteType): string {
     </button>
     
     <!-- 笔记模态框 -->
-    <div v-if="showNoteModal" class="modal show" @click.self="closeNoteModal">
+    <div
+      v-if="showNoteModal"
+      ref="noteModalOverlayRef"
+      class="modal show"
+      @mousedown.self="handleNoteModalOverlayMouseDown"
+    >
       <div class="modal-content modal-sm">
         <div class="modal-header">
           <h3>{{ editingNote ? '编辑笔记' : '添加笔记' }}</h3>

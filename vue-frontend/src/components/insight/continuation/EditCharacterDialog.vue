@@ -1,9 +1,13 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
+  <div
+    ref="overlayRef"
+    class="modal-overlay"
+    @mousedown.self="handleOverlayMouseDown"
+  >
     <div class="modal-dialog edit-char-dialog">
       <div class="modal-header">
         <h3>✏️ 编辑角色</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">
@@ -30,7 +34,7 @@
       </div>
       
       <div class="modal-footer">
-        <button class="btn secondary" @click="$emit('close')">取消</button>
+        <button class="btn secondary" @click="close">取消</button>
         <button class="btn primary" @click="save">💾 保存</button>
       </div>
     </div>
@@ -40,6 +44,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { CharacterProfile } from '@/api/continuation'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const props = defineProps<{
   character: CharacterProfile
@@ -52,6 +57,8 @@ const emit = defineEmits<{
 
 const localName = ref(props.character.name)
 const localAliases = ref(props.character.aliases.join(', '))
+const close = () => emit('close')
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(close)
 
 // 监听character变化，更新本地值
 watch(() => props.character, (newChar) => {

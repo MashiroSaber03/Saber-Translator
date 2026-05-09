@@ -52,7 +52,12 @@
     </div>
 
     <!-- 插件配置模态框 -->
-    <div v-if="showConfigModal" class="plugin-config-modal" @click.self="closeConfigModal">
+    <div
+      v-if="showConfigModal"
+      ref="configModalOverlayRef"
+      class="plugin-config-modal"
+      @mousedown.self="handleConfigModalOverlayMouseDown"
+    >
       <div class="plugin-config-content">
         <div class="plugin-config-header">
           <h4>{{ configPlugin?.display_name }} 配置</h4>
@@ -129,6 +134,7 @@ import type { PluginData } from '@/types'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 type Plugin = PluginData
 
@@ -158,6 +164,12 @@ const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
 const showAgentModal = ref(false)
+const {
+  overlayRef: configModalOverlayRef,
+  handleOverlayMouseDown: handleConfigModalOverlayMouseDown,
+} = useOverlayDismiss(closeConfigModal, {
+  enabled: showConfigModal,
+})
 
 // 加载插件列表
 async function loadPlugins() {

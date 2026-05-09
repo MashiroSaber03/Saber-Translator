@@ -1,9 +1,13 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
+  <div
+    ref="overlayRef"
+    class="modal-overlay"
+    @mousedown.self="handleOverlayMouseDown"
+  >
     <div class="modal-dialog add-form-dialog">
       <div class="modal-header">
         <h3>➕ 新增形态</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">        
@@ -29,7 +33,7 @@
       </div>
       
       <div class="modal-footer">
-        <button class="btn secondary" @click="$emit('close')">取消</button>
+        <button class="btn secondary" @click="close">取消</button>
         <button 
           class="btn primary" 
           :disabled="!formName.trim() || isAdding"
@@ -44,6 +48,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const emit = defineEmits<{
   'close': []
@@ -53,6 +58,8 @@ const emit = defineEmits<{
 const formName = ref('')
 const description = ref('')
 const isAdding = ref(false)
+const close = () => emit('close')
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(close)
 
 function add() {
   const name = formName.value.trim()

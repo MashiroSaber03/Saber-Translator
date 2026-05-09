@@ -5,6 +5,7 @@
  */
 import { ref, computed } from 'vue'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const webImportStore = useWebImportStore()
 
@@ -35,11 +36,20 @@ function handleCancel() {
   webImportStore.rejectDisclaimer()
   userInput.value = ''
 }
+
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(handleCancel, {
+  enabled: isVisible,
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="isVisible" class="disclaimer-overlay" @click.self="handleCancel">
+    <div
+      v-if="isVisible"
+      ref="overlayRef"
+      class="disclaimer-overlay"
+      @mousedown.self="handleOverlayMouseDown"
+    >
       <div class="disclaimer-container">
         <!-- 标题 -->
         <div class="disclaimer-header">

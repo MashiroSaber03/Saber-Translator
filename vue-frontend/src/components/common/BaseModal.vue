@@ -1,7 +1,12 @@
 <template>
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div v-if="modelValue" class="modal-overlay" @click.self="handleOverlayClick">
+      <div
+        v-if="modelValue"
+        ref="overlayRef"
+        class="modal-overlay"
+        @mousedown.self="handleOverlayMouseDown"
+      >
         <div class="modal-container" :class="[sizeClass, customClass]" :style="customStyle">
           <!-- 模态框头部 -->
           <div v-if="showHeader" class="modal-header">
@@ -30,6 +35,7 @@
 
 <script setup lang="ts">
 import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 // Props 定义
 interface Props {
@@ -86,12 +92,9 @@ const close = () => {
   emit('close')
 }
 
-// 处理遮罩层点击
-const handleOverlayClick = () => {
-  if (props.closeOnOverlay) {
-    close()
-  }
-}
+const { overlayRef, handleOverlayMouseDown, resetOverlayDismissState } = useOverlayDismiss(close, {
+  enabled: () => props.closeOnOverlay && props.modelValue,
+})
 
 // 处理键盘事件
 const handleKeydown = (event: KeyboardEvent) => {
@@ -109,6 +112,7 @@ watch(
       // 打开时禁止背景滚动
       document.body.style.overflow = 'hidden'
     } else {
+      resetOverlayDismissState()
       // 关闭时恢复背景滚动
       document.body.style.overflow = ''
     }

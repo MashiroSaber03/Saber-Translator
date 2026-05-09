@@ -1,9 +1,13 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
+  <div
+    ref="overlayRef"
+    class="modal-overlay"
+    @mousedown.self="handleOverlayMouseDown"
+  >
     <div class="modal-dialog edit-form-dialog">
       <div class="modal-header">
         <h3>✏️ 编辑形态</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">
@@ -29,7 +33,7 @@
       </div>
       
       <div class="modal-footer">
-        <button class="btn secondary" @click="$emit('close')">取消</button>
+        <button class="btn secondary" @click="close">取消</button>
         <button 
           class="btn primary" 
           :disabled="isSaving"
@@ -45,6 +49,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { CharacterForm } from '@/api/continuation'
+import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 const props = defineProps<{
   form: CharacterForm
@@ -58,6 +63,8 @@ const emit = defineEmits<{
 const localFormName = ref(props.form.form_name)
 const localDescription = ref(props.form.description)
 const isSaving = ref(false)
+const close = () => emit('close')
+const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(close)
 
 watch(() => props.form, (newForm) => {
   localFormName.value = newForm.form_name
