@@ -508,4 +508,79 @@ describe('executeRender', () => {
     expect(result.bubbleStates[0]?.textColor).toBe('#010203')
     expect(result.bubbleStates[0]?.fillColor).toBe('#0a0b0c')
   })
+
+  it('preserves existing auto color backups when render runs without fresh color extraction data', async () => {
+    parallelRenderMock.mockResolvedValue({
+      success: true,
+      final_image: 'rendered-proofread',
+      bubble_states: []
+    })
+
+    const { executeRender } = await import('@/composables/translation/core/steps/render')
+    const result = await executeRender({
+      imageIndex: 0,
+      cleanImage: 'clean-image',
+      bubbleCoords: [[0, 0, 20, 20]],
+      bubbleAngles: [0],
+      autoDirections: ['vertical'],
+      textlinesPerBubble: [[]],
+      existingBubbleStates: [{
+        coords: [0, 0, 20, 20],
+        polygon: [],
+        originalText: '原文',
+        translatedText: '译文',
+        textboxText: '',
+        fontSize: 26,
+        fontFamily: 'fonts/CUSTOM.TTF',
+        textDirection: 'vertical',
+        autoTextDirection: 'vertical',
+        textColor: '#123456',
+        fillColor: '#abcdef',
+        rotationAngle: 0,
+        position: { x: 0, y: 0 },
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1.1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        autoFgColor: [1, 2, 3],
+        autoBgColor: [10, 11, 12],
+        textlines: [],
+        ocrResult: null
+      }],
+      originalTexts: ['原文'],
+      ocrResults: [],
+      translatedTexts: ['译文'],
+      textboxTexts: [''],
+      colors: [],
+      savedTextStyles: {
+        fontFamily: 'fonts/GLOBAL.TTF',
+        fontSize: 99,
+        autoFontSize: false,
+        textDirection: 'vertical',
+        autoTextDirection: false,
+        layoutDirection: 'vertical',
+        fillColor: '#ffffff',
+        textColor: '#000000',
+        rotationAngle: 0,
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        useAutoTextColor: false,
+        inpaintMethod: 'solid',
+        lineSpacing: 1.1,
+        textAlign: 'start'
+      },
+      currentMode: 'proofread',
+      settingsSnapshot: settingsStoreMock.settings as any,
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
+    } as any)
+
+    expect(result.bubbleStates[0]?.autoFgColor).toEqual([1, 2, 3])
+    expect(result.bubbleStates[0]?.autoBgColor).toEqual([10, 11, 12])
+  })
 })

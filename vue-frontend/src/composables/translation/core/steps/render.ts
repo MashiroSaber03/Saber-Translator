@@ -177,8 +177,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             lineSpacing: baseState?.lineSpacing ?? savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
             textAlign: baseState?.textAlign ?? savedTextStyles?.textAlign ?? textStyle.textAlign,
             inpaintMethod: baseState?.inpaintMethod ?? savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod,
-            autoFgColor: colors[idx]?.autoFgColor || null,
-            autoBgColor: colors[idx]?.autoBgColor || null
+            autoFgColor: colors[idx]?.autoFgColor ?? baseState?.autoFgColor ?? null,
+            autoBgColor: colors[idx]?.autoBgColor ?? baseState?.autoBgColor ?? null
         }
     })
 
