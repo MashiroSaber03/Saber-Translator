@@ -44,6 +44,13 @@ function rgbToHex(rgb: [number, number, number] | null | undefined): string | nu
     }).join('')
 }
 
+function extractBase64Payload(imageData: string | null | undefined): string {
+    if (!imageData) return ''
+    return imageData.includes('base64,')
+        ? (imageData.split('base64,')[1] || '')
+        : imageData
+}
+
 /**
  * 文字样式同步与应用 composable
  */
@@ -113,6 +120,11 @@ export function useTextStyleSync() {
             inpaintMethod: style.inpaintMethod,
             useAutoTextColor: style.useAutoTextColor
         })
+    }
+
+    function getRenderableBackgroundBase64(image: typeof imageStore.currentImage): string {
+        if (!image) return ''
+        return extractBase64Payload(image.cleanImageData) || extractBase64Payload(image.originalDataURL)
     }
 
     async function renderWithCurrentBubbleStates(
@@ -284,8 +296,7 @@ export function useTextStyleSync() {
             }
         }
 
-        // 触发重新渲染（调用 reRenderImage API）
-        // 后端需要的参数格式：clean_image, bubble_texts, bubble_coords, bubble_states
+        // 触发共享 render step 重渲染，普通样式变更一律保留当前气泡具体值。
         try {
             // 获取最新的 bubbleStates（可能刚刚被更新）
             const latestImage = imageStore.currentImage
@@ -298,19 +309,7 @@ export function useTextStyleSync() {
             }
 
             // 【修复P1】提取 clean_image 的 base64 部分，原版兜底策略：clean → original
-            let cleanImageBase64 = ''
-            if (image.cleanImageData) {
-                const cleanData = image.cleanImageData
-                cleanImageBase64 = cleanData.includes('base64,')
-                    ? (cleanData.split('base64,')[1] || '')
-                    : cleanData
-            } else if (image.originalDataURL) {
-                // 兜底：使用原图作为背景
-                cleanImageBase64 = image.originalDataURL.includes('base64,')
-                    ? (image.originalDataURL.split('base64,')[1] || '')
-                    : image.originalDataURL
-                console.log('handleTextStyleChanged: 使用原图作为背景（兜底）')
-            }
+            const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
             if (!cleanImageBase64) {
                 console.log('没有可用的背景图，跳过重渲染')
@@ -340,7 +339,7 @@ export function useTextStyleSync() {
      * 处理自动字号开关变更
      * 【复刻原版 events.js handleAutoFontSizeChange】
      * 核心逻辑：
-     * - 开启自动字号：调用 reRenderFullImage(..., useAutoFontSize=true) 重新计算字号并渲染
+     * - 开启自动字号：显式重新计算每个气泡的初始字号
      * - 关闭自动字号：将所有气泡设为输入框中的固定字号，然后渲染
      * @param isAutoFontSize - 自动字号是否启用
      */
@@ -361,23 +360,11 @@ export function useTextStyleSync() {
         console.log(`自动字号设置变更: ${isAutoFontSize}，将重新渲染...`)
 
         if (isAutoFontSize) {
-            // 【复刻原版】开启自动字号：重新计算每个气泡的字号
-            // 原版调用 editMode.reRenderFullImage(false, false, true)
-            // 第三个参数 true 表示 useAutoFontSize，对应后端 autoFontSize 参数
+            // 【复刻原版语义】开启自动字号时，显式触发一次字号初始化。
             console.log('自动字号已开启，重新计算字号并渲染...')
 
             try {
-                let cleanImageBase64 = ''
-                if (image.cleanImageData) {
-                    const cleanData = image.cleanImageData
-                    cleanImageBase64 = cleanData.includes('base64,')
-                        ? (cleanData.split('base64,')[1] || '')
-                        : cleanData
-                } else if (image.originalDataURL) {
-                    cleanImageBase64 = image.originalDataURL.includes('base64,')
-                        ? (image.originalDataURL.split('base64,')[1] || '')
-                        : image.originalDataURL
-                }
+                const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
                 if (!cleanImageBase64) {
                     console.log('没有可用的背景图，跳过重渲染')
@@ -469,17 +456,7 @@ export function useTextStyleSync() {
         bubbleStore.setBubbles(updatedBubbles)
 
         try {
-            let cleanImageBase64 = ''
-            if (image.cleanImageData) {
-                const cleanData = image.cleanImageData
-                cleanImageBase64 = cleanData.includes('base64,')
-                    ? (cleanData.split('base64,')[1] || '')
-                    : cleanData
-            } else if (image.originalDataURL) {
-                cleanImageBase64 = image.originalDataURL.includes('base64,')
-                    ? (image.originalDataURL.split('base64,')[1] || '')
-                    : image.originalDataURL
-            }
+            const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
             if (!cleanImageBase64) {
                 console.log('没有可用的背景图，跳过自动文字颜色重渲染')
@@ -711,8 +688,6 @@ export function useTextStyleSync() {
                     percentage: 0
                 }
 
-                // 使用独立的渲染步骤模块
-                const { executeRender } = await import('@/composables/translation/core/steps')
                 let completedCount = 0
 
                 for (const imageIndex of imagesToReRender) {
@@ -721,17 +696,7 @@ export function useTextStyleSync() {
 
                     try {
                         // 背景兜底策略：clean → original
-                        let cleanImageBase64 = ''
-                        if (img.cleanImageData) {
-                            cleanImageBase64 = img.cleanImageData.includes('base64,')
-                                ? (img.cleanImageData.split('base64,')[1] || '')
-                                : img.cleanImageData
-                        } else if (img.originalDataURL) {
-                            cleanImageBase64 = img.originalDataURL.includes('base64,')
-                                ? (img.originalDataURL.split('base64,')[1] || '')
-                                : img.originalDataURL
-                            console.log(`handleApplyToAll: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
-                        }
+                        const cleanImageBase64 = getRenderableBackgroundBase64(img)
 
                         if (!cleanImageBase64) {
                             console.log(`handleApplyToAll: 图片 ${imageIndex} 没有可用的背景图，跳过`)
@@ -773,7 +738,6 @@ export function useTextStyleSync() {
                             useAutoTextColor: img.useAutoTextColor
                         }
 
-                        // 调用独立的渲染步骤模块
                         const result = await executeRender({
                             imageIndex: imageIndex,
                             cleanImage: cleanImageBase64,
