@@ -123,17 +123,20 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
             : autoDir === 'h' ? 'horizontal'
                 : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
+        const baseState = bubbleStatesSource?.[idx]
 
         // 【简化设计】textDirection 直接使用具体方向值
         const textDirection =
-            (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
-                ? globalTextDir
-                : mappedAutoDir
+            (baseState?.textDirection === 'vertical' || baseState?.textDirection === 'horizontal')
+                ? baseState.textDirection
+                : (globalTextDir === 'vertical' || globalTextDir === 'horizontal')
+                    ? globalTextDir
+                    : mappedAutoDir
 
         // 【修复】颜色处理：根据 useAutoTextColor 设置决定是否使用自动提取的颜色
-        const useAutoColor = savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
-        let finalTextColor = savedTextStyles?.textColor || textStyle.textColor
-        let finalFillColor = savedTextStyles?.fillColor || textStyle.fillColor
+        const useAutoColor = baseState?.useAutoTextColor ?? savedTextStyles?.useAutoTextColor ?? textStyle.useAutoTextColor
+        let finalTextColor = baseState?.textColor || savedTextStyles?.textColor || textStyle.textColor
+        let finalFillColor = baseState?.fillColor || savedTextStyles?.fillColor || textStyle.fillColor
         const colorInfo = colors[idx]
 
         if (useAutoColor && colorInfo) {
@@ -141,7 +144,6 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             if (colorInfo.bgColor) finalFillColor = colorInfo.bgColor
         }
 
-        const baseState = bubbleStatesSource?.[idx]
         return {
             ...(baseState || {}),
             coords,
@@ -155,17 +157,17 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             textboxText: textboxTexts[idx] || '',
             textDirection: textDirection as 'vertical' | 'horizontal',  // 渲染用的具体方向
             autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',  // 备份检测结果
-            fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
-            fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
-            autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+            fontSize: baseState?.fontSize ?? savedTextStyles?.fontSize ?? textStyle.fontSize,
+            fontFamily: baseState?.fontFamily ?? savedTextStyles?.fontFamily ?? textStyle.fontFamily,
+            autoFontSize: baseState?.autoFontSize ?? savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
             textColor: finalTextColor,
             fillColor: finalFillColor,
-            strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-            strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
-            strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-            lineSpacing: savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
-            textAlign: savedTextStyles?.textAlign || textStyle.textAlign,
-            inpaintMethod: savedTextStyles?.inpaintMethod || textStyle.inpaintMethod,
+            strokeEnabled: baseState?.strokeEnabled ?? savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
+            strokeColor: baseState?.strokeColor ?? savedTextStyles?.strokeColor ?? textStyle.strokeColor,
+            strokeWidth: baseState?.strokeWidth ?? savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
+            lineSpacing: baseState?.lineSpacing ?? savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
+            textAlign: baseState?.textAlign ?? savedTextStyles?.textAlign ?? textStyle.textAlign,
+            inpaintMethod: baseState?.inpaintMethod ?? savedTextStyles?.inpaintMethod ?? textStyle.inpaintMethod,
             autoFgColor: colors[idx]?.autoFgColor || null,
             autoBgColor: colors[idx]?.autoBgColor || null
         }
@@ -176,16 +178,16 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         bubble_states: bubbleStates,
         translation_mode: currentMode,
         translation_scope: 'image',
-        fontSize: savedTextStyles?.fontSize || textStyle.fontSize,
-        fontFamily: savedTextStyles?.fontFamily || textStyle.fontFamily,
-        textDirection: savedTextStyles?.textDirection || textStyle.layoutDirection,
-        textColor: savedTextStyles?.textColor || textStyle.textColor,
-        strokeEnabled: savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
-        strokeColor: savedTextStyles?.strokeColor || textStyle.strokeColor,
-        strokeWidth: savedTextStyles?.strokeWidth || textStyle.strokeWidth,
-        lineSpacing: savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
-        textAlign: savedTextStyles?.textAlign || textStyle.textAlign,
-        autoFontSize: savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
+        fontSize: bubbleStates[0]?.fontSize ?? savedTextStyles?.fontSize ?? textStyle.fontSize,
+        fontFamily: bubbleStates[0]?.fontFamily ?? savedTextStyles?.fontFamily ?? textStyle.fontFamily,
+        textDirection: bubbleStates[0]?.textDirection ?? savedTextStyles?.textDirection ?? textStyle.layoutDirection,
+        textColor: bubbleStates[0]?.textColor ?? savedTextStyles?.textColor ?? textStyle.textColor,
+        strokeEnabled: bubbleStates[0]?.strokeEnabled ?? savedTextStyles?.strokeEnabled ?? textStyle.strokeEnabled,
+        strokeColor: bubbleStates[0]?.strokeColor ?? savedTextStyles?.strokeColor ?? textStyle.strokeColor,
+        strokeWidth: bubbleStates[0]?.strokeWidth ?? savedTextStyles?.strokeWidth ?? textStyle.strokeWidth,
+        lineSpacing: bubbleStates[0]?.lineSpacing ?? savedTextStyles?.lineSpacing ?? textStyle.lineSpacing,
+        textAlign: bubbleStates[0]?.textAlign ?? savedTextStyles?.textAlign ?? textStyle.textAlign,
+        autoFontSize: bubbleStates[0]?.autoFontSize ?? savedTextStyles?.autoFontSize ?? textStyle.autoFontSize,
         use_individual_styles: true
     })
 

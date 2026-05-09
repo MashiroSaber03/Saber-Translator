@@ -224,4 +224,82 @@ describe('executeRender', () => {
     expect(result.bubbleStates[0]?.ocrResult?.engine).toBe('manga_ocr')
     expect(result.bubbleStates[0]?.colorConfidence).toBe(0.75)
   })
+
+  it('preserves existing per-bubble style fields instead of overwriting them with global saved styles', async () => {
+    parallelRenderMock.mockResolvedValue({
+      success: true,
+      final_image: 'rendered-preserve',
+      bubble_states: []
+    })
+
+    const { executeRender } = await import('@/composables/translation/core/steps/render')
+    const result = await executeRender({
+      imageIndex: 0,
+      cleanImage: 'clean-image',
+      bubbleCoords: [[0, 0, 20, 20]],
+      bubbleAngles: [15],
+      autoDirections: ['horizontal'],
+      textlinesPerBubble: [],
+      existingBubbleStates: [{
+        coords: [0, 0, 20, 20],
+        polygon: [],
+        originalText: '原文',
+        translatedText: '旧译文',
+        textboxText: '',
+        fontSize: 22,
+        fontFamily: 'fonts/CUSTOM.TTF',
+        textDirection: 'horizontal',
+        autoTextDirection: 'horizontal',
+        textColor: '#123456',
+        fillColor: '#abcdef',
+        rotationAngle: 15,
+        position: { x: 1, y: 2 },
+        strokeEnabled: true,
+        strokeColor: '#654321',
+        strokeWidth: 3,
+        lineSpacing: 1.4,
+        textAlign: 'center',
+        inpaintMethod: 'solid',
+        useAutoTextColor: false,
+        autoFgColor: null,
+        autoBgColor: null,
+        colorConfidence: 0.6,
+        textlines: [],
+        ocrResult: null
+      }],
+      originalTexts: ['原文'],
+      ocrResults: [],
+      translatedTexts: ['新译文'],
+      textboxTexts: [''],
+      colors: [{ textColor: '#111111', bgColor: '#ffffff' }],
+      savedTextStyles: {
+        fontFamily: 'fonts/GLOBAL.TTF',
+        fontSize: 99,
+        autoFontSize: true,
+        textDirection: 'vertical',
+        autoTextDirection: false,
+        layoutDirection: 'vertical',
+        fillColor: '#ffffff',
+        textColor: '#000000',
+        rotationAngle: 0,
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        useAutoTextColor: false,
+        inpaintMethod: 'litelama',
+        lineSpacing: 1,
+        textAlign: 'start'
+      },
+      currentMode: 'standard',
+      settingsSnapshot: settingsStoreMock.settings as any,
+    })
+
+    expect(result.finalImage).toBe('rendered-preserve')
+    expect(result.bubbleStates[0]?.fontSize).toBe(22)
+    expect(result.bubbleStates[0]?.fontFamily).toBe('fonts/CUSTOM.TTF')
+    expect(result.bubbleStates[0]?.textDirection).toBe('horizontal')
+    expect(result.bubbleStates[0]?.textColor).toBe('#123456')
+    expect(result.bubbleStates[0]?.strokeEnabled).toBe(true)
+    expect(result.bubbleStates[0]?.textAlign).toBe('center')
+  })
 })
