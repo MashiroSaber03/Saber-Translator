@@ -5,10 +5,10 @@
  * 注意：这是最复杂的步骤之一，需要处理文字方向、颜色、savedTextStyles等
  */
 import { parallelRender, type ParallelRenderResponse } from '@/api/parallelTranslate'
-import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleState, BubbleCoords, BubbleTextline } from '@/types/bubble'
 import type { SavedTextStyles } from '../types'
 import type { OcrResult } from '@/types/ocr'
+import type { TranslationSettings } from '@/types/settings'
 import { cloneBubbleStates } from '@/utils/bubbleFactory'
 
 export interface RenderInput {
@@ -31,6 +31,7 @@ export interface RenderInput {
     }>
     savedTextStyles?: SavedTextStyles | null
     currentMode: string
+    settingsSnapshot: TranslationSettings
 }
 
 export interface RenderOutput {
@@ -90,7 +91,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         textboxTexts,
         colors,
         savedTextStyles,
-        currentMode
+        currentMode,
+        settingsSnapshot,
     } = input
 
     if (!cleanImage) {
@@ -101,8 +103,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
         throw new Error('缺少干净背景图片')
     }
 
-    const settingsStore = useSettingsStore()
-    const { textStyle } = settingsStore.settings
+    const { textStyle } = settingsSnapshot
 
     // 【简化设计】计算 textDirection：
     // - 如果全局设置是 'auto'，使用检测结果

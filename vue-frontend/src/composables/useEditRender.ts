@@ -6,11 +6,11 @@
 
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { getEffectiveDirection } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { reRenderImage } from '@/api/translate'
-import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
+import { executeRender } from '@/composables/translation/core/steps'
 
 // ============================================================
 // 类型定义
@@ -34,6 +34,7 @@ export interface EditRenderCallbacks {
 export function useEditRender(callbacks?: EditRenderCallbacks) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
+  const settingsStore = useSettingsStore()
 
   const { bubbles } = storeToRefs(bubbleStore)
   const { currentImage } = storeToRefs(imageStore)
@@ -142,48 +143,35 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     try {
       console.log('reRenderFullImage: 开始重新渲染，气泡数量:', bubbles.value.length)
 
-      // 构建后端API需要的参数格式（参考原版edit_mode.js）
       const bubbleStates = bubbles.value
-      const bubbleTexts = bubbleStates.map(s => s.translatedText || '')
-      // 【复刻原版】确保坐标为整数（后端PIL的paste方法需要整数坐标）
-      const bubbleCoords = bubbleStates.map(s => s.coords.map(c => Math.round(c)) as [number, number, number, number])
-
-      // 构建每个气泡的样式状态（确保数值类型正确）
-      const bubbleStatesForApi = bubbleStates.map((s) => ({
-        translatedText: s.translatedText || '',
-        coords: s.coords,  // 后端会用 bubble_coords 覆盖，这里无需整数化
-        fontSize: Number(s.fontSize) || TEXT_STYLE_DEFAULTS.fontSize,
-        fontFamily: s.fontFamily || TEXT_STYLE_DEFAULTS.fontFamily,
-        textDirection: getEffectiveDirection(s),
-        textColor: s.textColor || TEXT_STYLE_DEFAULTS.textColor,
-        rotationAngle: Math.round(Number(s.rotationAngle) || 0),
-        position: s.position ? { x: Math.round(s.position.x || 0), y: Math.round(s.position.y || 0) } : { x: 0, y: 0 },
-        strokeEnabled: s.strokeEnabled !== undefined ? s.strokeEnabled : TEXT_STYLE_DEFAULTS.strokeEnabled,
-        strokeColor: s.strokeColor || TEXT_STYLE_DEFAULTS.strokeColor,
-        strokeWidth: Number(s.strokeWidth) || TEXT_STYLE_DEFAULTS.strokeWidth,
-        lineSpacing: typeof s.lineSpacing === 'number' ? s.lineSpacing : TEXT_STYLE_DEFAULTS.lineSpacing,
-        textAlign: s.textAlign || TEXT_STYLE_DEFAULTS.textAlign,
-      }))
-
-      // 调用后端API（使用正确的参数格式，确保数值类型）
-      const response = await reRenderImage({
-        clean_image: cleanBase64,
-        bubble_texts: bubbleTexts,
-        bubble_coords: bubbleCoords,
-        bubble_states: bubbleStatesForApi,
-        fontSize: Number(bubbleStates[0]?.fontSize) || TEXT_STYLE_DEFAULTS.fontSize,
-        fontFamily: bubbleStates[0]?.fontFamily || TEXT_STYLE_DEFAULTS.fontFamily,
-        textDirection: bubbleStates[0] ? getEffectiveDirection(bubbleStates[0]) : 'vertical',
-        textColor: bubbleStates[0]?.textColor || TEXT_STYLE_DEFAULTS.textColor,
-        strokeEnabled: bubbleStates[0]?.strokeEnabled !== undefined ? bubbleStates[0].strokeEnabled : TEXT_STYLE_DEFAULTS.strokeEnabled,
-        strokeColor: bubbleStates[0]?.strokeColor || TEXT_STYLE_DEFAULTS.strokeColor,
-        strokeWidth: Number(bubbleStates[0]?.strokeWidth) || TEXT_STYLE_DEFAULTS.strokeWidth,
-        lineSpacing: typeof bubbleStates[0]?.lineSpacing === 'number' ? bubbleStates[0].lineSpacing : TEXT_STYLE_DEFAULTS.lineSpacing,
-        textAlign: bubbleStates[0]?.textAlign || TEXT_STYLE_DEFAULTS.textAlign,
-        use_individual_styles: true,
-        use_inpainting: false,
-        use_lama: false,
-        is_font_style_change: true
+      const response = await executeRender({
+        imageIndex: imageStore.currentImageIndex,
+        cleanImage: cleanBase64,
+        bubbleCoords: bubbleStates.map((state) => state.coords.map((coord) => Math.round(coord)) as [number, number, number, number]),
+        bubbleAngles: bubbleStates.map((state) => state.rotationAngle || 0),
+        autoDirections: bubbleStates.map((state) => state.autoTextDirection || state.textDirection || 'vertical'),
+        textlinesPerBubble: bubbleStates.map((state) => state.textlines || []),
+        existingBubbleStates: bubbleStates,
+        originalTexts: bubbleStates.map((state) => state.originalText || ''),
+        ocrResults: bubbleStates.map((state) => state.ocrResult || {
+          text: state.originalText || '',
+          confidence: null,
+          confidenceSupported: false,
+          engine: '',
+          primaryEngine: '',
+          fallbackUsed: false,
+        }),
+        translatedTexts: bubbleStates.map((state) => state.translatedText || ''),
+        textboxTexts: bubbleStates.map((state) => state.textboxText || ''),
+        colors: bubbleStates.map((state) => ({
+          textColor: state.textColor || settingsStore.settings.textStyle.textColor,
+          bgColor: state.fillColor || settingsStore.settings.textStyle.fillColor,
+          autoFgColor: state.autoFgColor || null,
+          autoBgColor: state.autoBgColor || null,
+        })),
+        savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
+        currentMode: 'standard',
+        settingsSnapshot: settingsStore.settings,
       } as any)
 
       // 检查token是否过期（被新的渲染请求取代）
@@ -197,17 +185,19 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         return false
       }
 
-      // 后端返回的是 rendered_image 而不是 translated_image
-      if (response.rendered_image) {
-        // 更新翻译图
-        const translatedDataURL = `data:image/png;base64,${response.rendered_image}`
-        imageStore.updateCurrentImage({ translatedDataURL })
+      if (response.finalImage) {
+        const translatedDataURL = `data:image/png;base64,${response.finalImage}`
+        imageStore.updateCurrentImage({
+          translatedDataURL,
+          bubbleStates: response.bubbleStates,
+          hasUnsavedChanges: true,
+        })
 
         console.log('reRenderFullImage: 渲染成功')
         if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
         return true
       } else {
-        const errorMsg = response.error || '渲染失败'
+        const errorMsg = '渲染失败'
         console.error('reRenderFullImage: 渲染失败 -', errorMsg)
         renderError.value = errorMsg
         if (!silentMode) callbacks?.onRenderError?.(errorMsg)

@@ -4,27 +4,42 @@ const { parallelDetectMock } = vi.hoisted(() => ({
   parallelDetectMock: vi.fn()
 }))
 
+const detectionSettingsSnapshot = {
+  textDetector: 'ctd',
+  enableSaberYoloRefine: true,
+  saberYoloRefineOverlapThreshold: 35,
+  enableAuxYoloDetection: true,
+  auxYoloConfThreshold: 0.55,
+  auxYoloOverlapThreshold: 0.2,
+  boxExpand: {
+    ratio: 3,
+    top: 1,
+    bottom: 2,
+    left: 4,
+    right: 5
+  },
+  textStyle: {
+    fontSize: 16,
+    fontFamily: 'fonts/STSONG.TTF',
+    layoutDirection: 'auto',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    strokeEnabled: false,
+    strokeColor: '#000000',
+    strokeWidth: 1,
+    lineSpacing: 1,
+    textAlign: 'start',
+    inpaintMethod: 'solid',
+  }
+} as any
+
 vi.mock('@/api/parallelTranslate', () => ({
   parallelDetect: parallelDetectMock
 }))
 
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: () => ({
-    settings: {
-      textDetector: 'ctd',
-      enableSaberYoloRefine: true,
-      saberYoloRefineOverlapThreshold: 35,
-      enableAuxYoloDetection: true,
-      auxYoloConfThreshold: 0.55,
-      auxYoloOverlapThreshold: 0.2,
-      boxExpand: {
-        ratio: 3,
-        top: 1,
-        bottom: 2,
-        left: 4,
-        right: 5
-      }
-    }
+    settings: detectionSettingsSnapshot
   })
 }))
 
@@ -61,7 +76,8 @@ describe('executeDetection saber yolo refine flags', () => {
       image: {
         originalDataURL: 'data:image/png;base64,ZmFrZQ==',
         bubbleStates: undefined
-      } as any
+      } as any,
+      settingsSnapshot: detectionSettingsSnapshot,
     })
 
     expect(parallelDetectMock).toHaveBeenCalledTimes(2)

@@ -8,7 +8,7 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
-import { executeColor } from '@/composables/translation/core/steps'
+import { executeAtomicStep } from '@/composables/translation/core/atomicSteps'
 
 export class ColorPool extends TaskPool {
   constructor(
@@ -21,29 +21,19 @@ export class ColorPool extends TaskPool {
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {
-    const { imageData, detectionResult, ocrResult } = task
-
-    if (!detectionResult || detectionResult.bubbleCoords.length === 0) {
-      task.colorResult = { colors: [] }
-      task.status = 'processing'
-      return task
+    const runtime = task.runtime
+    if (!runtime) {
+      throw new Error('颜色步骤缺少运行时上下文')
     }
 
-    // 调用独立的颜色提取步骤模块
-    const result = await executeColor({
-      imageIndex: task.imageIndex,
-      image: imageData,
-      translationMode: task.translationMode,
-      bubbleCoords: detectionResult.bubbleCoords as any,
-      bubbleStates: imageData.bubbleStates,
-      textlinesPerBubble: ocrResult?.textlinesPerBubble || detectionResult.textlinesPerBubble || []
-    })
-
-    task.colorResult = {
-      colors: result.colors
+    if (task.bubbleCoords.length === 0) {
+      return {
+        ...task,
+        status: 'processing',
+        colors: [],
+      }
     }
 
-    task.status = 'processing'
-    return task
+    return await executeAtomicStep('color', task, runtime)
   }
 }

@@ -6,7 +6,7 @@
  */
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
-import { useSettingsStore } from '@/stores/settingsStore'
+import type { TranslationSettings } from '@/types/settings'
 import type { TranslationWarning } from '@/types/translationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
@@ -14,6 +14,7 @@ export interface TranslateInput {
     imageIndex: number
     translationMode?: string
     originalTexts: string[]
+    settingsSnapshot: TranslationSettings
 }
 
 export interface TranslateOutput {
@@ -23,7 +24,7 @@ export interface TranslateOutput {
 }
 
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
-    const { originalTexts, translationMode: pluginMode = 'standard' } = input
+    const { originalTexts, translationMode: pluginMode = 'standard', settingsSnapshot } = input
 
     if (originalTexts.length === 0) {
         return {
@@ -33,8 +34,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         }
     }
 
-    const settingsStore = useSettingsStore()
-    const settings = settingsStore.settings
+    const settings = settingsSnapshot
     const requestMode = settings.translation.translationMode || 'batch'
 
     if (requestMode === 'single') {

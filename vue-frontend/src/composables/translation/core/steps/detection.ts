@@ -3,10 +3,9 @@
  * 提取自 SequentialPipeline.ts Line 234-287
  */
 import { parallelDetect, type ParallelDetectResponse } from '@/api/parallelTranslate'
-import { useSettingsStore } from '@/stores/settingsStore'
-import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import type { TranslationSettings } from '@/types/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 export interface DetectionInput {
@@ -14,6 +13,7 @@ export interface DetectionInput {
     image: AppImageData
     translationMode?: string
     forceDetect?: boolean
+    settingsSnapshot: TranslationSettings
 }
 
 export interface DetectionOutput {
@@ -26,7 +26,6 @@ export interface DetectionOutput {
     originalTexts?: string[]
     bubbleStates: BubbleState[]
 }
-
 function createBubbleStatesFromDetection(
     image: AppImageData,
     result: {
@@ -34,10 +33,10 @@ function createBubbleStatesFromDetection(
         bubbleAngles: number[]
         autoDirections: string[]
         textlinesPerBubble: BubbleTextline[][]
-    }
+    },
+    settingsSnapshot: TranslationSettings
 ): BubbleState[] {
-    const settingsStore = useSettingsStore()
-    const { textStyle } = settingsStore.settings
+    const textStyle = settingsSnapshot.textStyle
 
     return result.bubbleCoords.map((coords, index) => {
         const autoDirection = result.autoDirections[index] === 'h'
@@ -77,8 +76,7 @@ function createBubbleStatesFromDetection(
 }
 
 export async function executeDetection(input: DetectionInput): Promise<DetectionOutput> {
-    const { imageIndex, image, translationMode = 'standard', forceDetect = false } = input
-    const settingsStore = useSettingsStore()
+    const { imageIndex, image, translationMode = 'standard', forceDetect = false, settingsSnapshot } = input
 
     // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
     // - bubbleStates === null/undefined: 从未处理过，需要自动检测
@@ -120,7 +118,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         }
     }
 
-    const settings = settingsStore.settings
+    const settings = settingsSnapshot
     const base64 = extractBase64(image.originalDataURL)
 
     // 步骤1: 使用用户选择的检测器进行检测（获取文本框）
@@ -187,7 +185,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     }
     return {
         ...detectionResult,
-        bubbleStates: createBubbleStatesFromDetection(image, detectionResult)
+        bubbleStates: createBubbleStatesFromDetection(image, detectionResult, settingsSnapshot)
     }
 }
 
@@ -196,42 +194,4 @@ function extractBase64(dataUrl: string): string {
         return dataUrl.split('base64,')[1] || ''
     }
     return dataUrl
-}
-
-/**
- * 统一保存检测结果到 ImageData
- * 确保所有检测结果字段都被正确保存，避免遗漏
- */
-export function saveDetectionResultToImage(
-    imageIndex: number,
-    result: DetectionOutput,
-    options?: {
-        /** 是否同时更新 bubbleStates（编辑模式需要） */
-        updateBubbleStates?: boolean
-        /** bubbleStates 数据（如果需要更新） */
-        bubbleStates?: any[]
-    }
-): void {
-    const imageStore = useImageStore()
-
-    const updateData: Record<string, any> = {
-        bubbleCoords: result.bubbleCoords,
-        bubbleAngles: result.bubbleAngles,
-        textMask: result.textMask || null,  // 精确文字掩膜
-        textlinesPerBubble: result.textlinesPerBubble || [],
-    }
-
-    // 如果提供了 bubbleStates，一起更新
-    if (options?.updateBubbleStates && options.bubbleStates) {
-        updateData.bubbleStates = options.bubbleStates.map((state, index) => ({
-            ...state,
-            textlines: state.textlines && state.textlines.length > 0
-                ? state.textlines
-                : (result.textlinesPerBubble[index] || [])
-        }))
-    } else if (result.bubbleStates.length > 0) {
-        updateData.bubbleStates = result.bubbleStates
-    }
-
-    imageStore.updateImageByIndex(imageIndex, updateData)
 }

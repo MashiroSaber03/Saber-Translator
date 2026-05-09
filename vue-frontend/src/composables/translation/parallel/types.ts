@@ -2,78 +2,14 @@
  * 并行翻译模块类型定义
  */
 
-import type { ImageData } from '@/types/image'
-import type { BubbleState, BubbleTextline } from '@/types/bubble'
-import type { OcrResult } from '@/types/ocr'
-import type { TranslationWarning } from '@/types/translationConstraints'
+import type { TaskContext } from '@/composables/translation/core/runtime'
 
 /**
  * 翻译模式
  */
 export type ParallelTranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
-/**
- * 任务状态
- */
-export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'buffered'
-
-/**
- * 流水线任务
- */
-export interface PipelineTask {
-  id: string
-  imageIndex: number
-  imageData: ImageData
-  translationMode: ParallelTranslationMode
-  status: TaskStatus
-  error?: string
-
-  // 检测结果
-  detectionResult?: {
-    bubbleCoords: number[][]  // [[x1, y1, x2, y2], ...]
-    bubbleAngles: number[]
-    bubblePolygons: number[][][]
-    autoDirections: string[]
-    textMask?: string
-    textlinesPerBubble?: BubbleTextline[][]
-    bubbleStates?: BubbleState[]
-  }
-
-  // OCR结果
-  ocrResult?: {
-    originalTexts: string[]
-    ocrResults?: OcrResult[]
-    textlinesPerBubble?: BubbleTextline[][]
-  }
-
-  // 颜色提取结果
-  colorResult?: {
-    colors: Array<{
-      textColor: string
-      bgColor: string
-      autoFgColor?: [number, number, number] | null
-      autoBgColor?: [number, number, number] | null
-    }>
-  }
-
-  // 翻译结果
-  translateResult?: {
-    translatedTexts: string[]
-    textboxTexts: string[]
-    warnings: TranslationWarning[]
-  }
-
-  // 修复结果
-  inpaintResult?: {
-    cleanImage: string
-  }
-
-  // 渲染结果
-  renderResult?: {
-    finalImage: string
-    bubbleStates: BubbleState[]
-  }
-}
+export type PipelineTask = TaskContext
 
 /**
  * 池子状态
@@ -111,13 +47,6 @@ export interface ParallelProgress {
 }
 
 /**
- * 池子链配置
- */
-export interface PoolChainConfig {
-  pools: string[]
-}
-
-/**
  * 并行配置
  */
 export interface ParallelConfig {
@@ -134,19 +63,6 @@ export interface PoolProgressUpdate {
   currentPage?: number
   completed?: number
   isWaitingLock?: boolean
-}
-
-/**
- * 翻译JSON数据（用于高质量翻译和AI校对）
- */
-export interface TranslationJsonData {
-  imageIndex: number
-  bubbles: Array<{
-    bubbleIndex: number
-    original: string
-    translated: string
-    textDirection: string
-  }>
 }
 
 /**

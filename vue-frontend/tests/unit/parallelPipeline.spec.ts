@@ -1,14 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  executeDetectionMock,
+  executeAtomicStepMock,
   settingsStoreMock,
   imageStoreMock,
 } = vi.hoisted(() => ({
-  executeDetectionMock: vi.fn(),
+  executeAtomicStepMock: vi.fn(),
   settingsStoreMock: {
     settings: {
       removeTextWithOcr: false,
+      autoSaveInBookshelfMode: false,
+      textStyle: {
+        fontSize: 16,
+        autoFontSize: false,
+        fontFamily: 'fonts/STSONG.TTF',
+        layoutDirection: 'auto',
+        textColor: '#000000',
+        fillColor: '#ffffff',
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        inpaintMethod: 'solid',
+        useAutoTextColor: false,
+        lineSpacing: 1,
+        textAlign: 'start',
+      },
+      hqTranslation: { batchSize: 1 },
+      proofreading: { rounds: [{ batchSize: 1 }] },
     },
   },
   imageStoreMock: {
@@ -19,14 +37,9 @@ const {
   },
 }))
 
-vi.mock('@/composables/translation/core/steps', () => ({
-  executeDetection: executeDetectionMock,
-  executeOcr: vi.fn(),
-  executeColor: vi.fn(),
-  executeTranslate: vi.fn(),
-  executeAiTranslate: vi.fn(),
-  executeInpaint: vi.fn(),
-  executeRender: vi.fn(),
+vi.mock('@/composables/translation/core/atomicSteps', () => ({
+  executeAtomicStep: executeAtomicStepMock,
+  executeBatchAtomicStep: vi.fn(),
 }))
 
 vi.mock('@/stores/settingsStore', () => ({
@@ -39,17 +52,16 @@ vi.mock('@/stores/imageStore', () => ({
 
 describe('ParallelPipeline failure handling', () => {
   beforeEach(() => {
-    executeDetectionMock.mockReset()
+    executeAtomicStepMock.mockReset()
     imageStoreMock.images = []
     imageStoreMock.setTranslationStatus.mockReset()
     imageStoreMock.updateImageByIndex.mockReset()
   })
 
   it('resolves with a failed result when an early pool throws instead of hanging forever', async () => {
-    executeDetectionMock.mockRejectedValueOnce(new Error('detect exploded'))
+    executeAtomicStepMock.mockRejectedValueOnce(new Error('detect exploded'))
 
     const { ParallelPipeline } = await import('@/composables/translation/parallel/ParallelPipeline')
-
     const pipeline = new ParallelPipeline({
       enabled: true,
       deepLearningLockSize: 1,
@@ -77,14 +89,12 @@ describe('ParallelPipeline failure handling', () => {
     })
     expect(imageStoreMock.setTranslationStatus).toHaveBeenNthCalledWith(1, 0, 'processing')
     expect(imageStoreMock.setTranslationStatus).toHaveBeenNthCalledWith(2, 0, 'failed', 'detect exploded')
-    expect(imageStoreMock.setTranslationStatus).toHaveBeenCalledWith(0, 'failed', 'detect exploded')
   })
 
   it('resolves promptly when the parallel pipeline is cancelled mid-flight', async () => {
-    executeDetectionMock.mockImplementationOnce(() => new Promise(() => {}))
+    executeAtomicStepMock.mockImplementationOnce(() => new Promise(() => {}))
 
     const { ParallelPipeline } = await import('@/composables/translation/parallel/ParallelPipeline')
-
     const pipeline = new ParallelPipeline({
       enabled: true,
       deepLearningLockSize: 1,

@@ -8,7 +8,7 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
-import { executeDetection } from '@/composables/translation/core/steps'
+import { executeAtomicStep } from '@/composables/translation/core/atomicSteps'
 
 export class DetectionPool extends TaskPool {
   constructor(
@@ -21,29 +21,11 @@ export class DetectionPool extends TaskPool {
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {
-    const { imageData } = task
-
-    // 调用独立的检测步骤模块
-    const result = await executeDetection({
-      imageIndex: task.imageIndex,
-      image: imageData,
-      translationMode: task.translationMode,
-      forceDetect: false
-    })
-
-    // 保存检测结果
-    task.detectionResult = {
-      bubbleCoords: result.bubbleCoords,
-      bubbleAngles: result.bubbleAngles,
-      bubblePolygons: result.bubblePolygons,
-      autoDirections: result.autoDirections,
-      textMask: result.textMask,
-      textlinesPerBubble: result.textlinesPerBubble,
-      bubbleStates: result.bubbleStates
+    const runtime = task.runtime
+    if (!runtime) {
+      throw new Error('检测步骤缺少运行时上下文')
     }
-    task.imageData.bubbleStates = result.bubbleStates
 
-    task.status = 'processing'
-    return task
+    return await executeAtomicStep('detection', task, runtime)
   }
 }

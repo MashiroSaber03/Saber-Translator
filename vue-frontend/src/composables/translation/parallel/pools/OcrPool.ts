@@ -8,7 +8,7 @@ import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
-import { executeOcr } from '@/composables/translation/core/steps'
+import { executeAtomicStep } from '@/composables/translation/core/atomicSteps'
 
 export class OcrPool extends TaskPool {
   constructor(
@@ -21,44 +21,20 @@ export class OcrPool extends TaskPool {
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {
-    const { imageData, detectionResult } = task
+    const runtime = task.runtime
+    if (!runtime) {
+      throw new Error('OCR 步骤缺少运行时上下文')
+    }
 
-    if (!detectionResult || detectionResult.bubbleCoords.length === 0) {
-      // 没有检测到气泡，直接跳过
-      task.ocrResult = {
+    if (task.bubbleCoords.length === 0) {
+      return {
+        ...task,
+        status: 'processing',
         originalTexts: [],
         ocrResults: [],
-        textlinesPerBubble: []
       }
-      task.status = 'processing'
-      return task
     }
 
-    // 调用独立的OCR步骤模块
-    const result = await executeOcr({
-      imageIndex: task.imageIndex,
-      image: imageData,
-      translationMode: task.translationMode,
-      bubbleCoords: detectionResult.bubbleCoords as any,
-      bubbleStates: imageData.bubbleStates,
-      textlinesPerBubble: detectionResult.textlinesPerBubble || []
-    })
-
-    if (imageData.bubbleStates) {
-      imageData.bubbleStates = imageData.bubbleStates.map((bubble, index) => ({
-        ...bubble,
-        originalText: result.originalTexts[index] || '',
-        ocrResult: result.ocrResults[index] || null
-      }))
-    }
-
-    task.ocrResult = {
-      originalTexts: result.originalTexts,
-      ocrResults: result.ocrResults,
-      textlinesPerBubble: imageData.bubbleStates?.map((bubble) => bubble.textlines || []) || detectionResult.textlinesPerBubble || []
-    }
-
-    task.status = 'processing'
-    return task
+    return await executeAtomicStep('ocr', task, runtime)
   }
 }

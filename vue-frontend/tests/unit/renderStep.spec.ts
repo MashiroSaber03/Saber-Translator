@@ -129,7 +129,8 @@ describe('executeRender', () => {
         bgColor: '#ffffff'
       }],
       savedTextStyles: null,
-      currentMode: 'standard'
+      currentMode: 'standard',
+      settingsSnapshot: settingsStoreMock.settings as any,
     })
 
     expect(result.finalImage).toBe('rendered')
@@ -207,7 +208,8 @@ describe('executeRender', () => {
         bgColor: '#ffffff'
       }],
       savedTextStyles: null,
-      currentMode: 'standard'
+      currentMode: 'standard',
+      settingsSnapshot: settingsStoreMock.settings as any,
     })
 
     expect(result.finalImage).toBe('rendered-complete')

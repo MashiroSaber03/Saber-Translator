@@ -463,7 +463,7 @@ export const useSessionStore = defineStore('session', () => {
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),
           hasUnsavedChanges: false,
-          ...normalizeImageTextStyleFields(img),
+          ...normalizeImageTextStyleFields(img as unknown as Partial<ImageData>),
           // 双掩膜系统字段
           textMask: (img.textMask as string) || null,
           userMask: (img.userMask as string) || null,
@@ -606,87 +606,37 @@ export const useSessionStore = defineStore('session', () => {
     loadingProgress.value = { current: 0, total: totalImages, message: `准备保存 ${totalImages} 张图片...` }
 
     try {
-      // 步骤0: 在保存前，将所有 /api/... URL 格式的图片转换为 Base64
-      const hasApiUrls = allImages.some(img =>
-        (img.originalDataURL && img.originalDataURL.startsWith('/api/')) ||
-        (img.translatedDataURL && img.translatedDataURL.startsWith('/api/')) ||
-        (img.cleanImageData && img.cleanImageData.startsWith('/api/'))
-      )
+      const { createPipelineRuntime, hydrateTaskContextFromImage } = await import('@/composables/translation/core/runtime')
+      const { persistAllPages } = await import('@/composables/translation/core/persistenceService')
 
-      if (hasApiUrls) {
-        console.log('[saveChapterSession] 检测到 /api/ URL 格式图片，开始转换为 Base64...')
-        loadingProgress.value = { current: 0, total: totalImages, message: '转换图片格式...' }
-
-        await convertImagesToBase64(allImages, (current, total) => {
-          loadingProgress.value = {
-            current: 0,
-            total: totalImages,
-            message: `转换图片 ${current}/${total}...`
-          }
-        })
-
-        console.log('[saveChapterSession] 图片格式转换完成')
-      }
-
-      // 收集 UI 设置（仅保存文本样式设置）
-      const { textStyle } = settingsStore.settings
-      const uiSettings: Record<string, unknown> = {
-        fontSize: textStyle.fontSize,
-        autoFontSize: textStyle.autoFontSize,
-        fontFamily: textStyle.fontFamily,
-        layoutDirection: textStyle.layoutDirection,
-        textColor: textStyle.textColor,
-        useInpaintingMethod: textStyle.inpaintMethod,
-        fillColor: textStyle.fillColor,
-        strokeEnabled: textStyle.strokeEnabled,
-        strokeColor: textStyle.strokeColor,
-        strokeWidth: textStyle.strokeWidth,
-        lineSpacing: textStyle.lineSpacing,
-        textAlign: textStyle.textAlign,
-        useAutoTextColor: textStyle.useAutoTextColor,
-      }
-
-      // 使用公共函数逐页保存
-      const { saveAllPagesSequentially, saveSessionMeta } = await import('@/api/pageStorage')
-
-      const savedCount = await saveAllPagesSequentially(
+      const runtime = createPipelineRuntime('standard', {
+        settingsSnapshot: settingsStore.settings,
+        autoSaveEnabled: true,
         sessionPath,
-        allImages as unknown as import('@/api/pageStorage').ImageDataForSave[],
-        {
-          onProgress: (current, total) => {
-            loadingProgress.value = {
-              current,
-              total,
-              message: `保存图片 ${current}/${total}...`
-            }
-          }
-        }
-      )
-
-      // 保存会话元数据
-      loadingProgress.value = {
-        current: totalImages,
-        total: totalImages,
-        message: '完成保存...'
-      }
-
-      await saveSessionMeta(sessionPath, {
-        ui_settings: uiSettings,
-        total_pages: totalImages,
-        currentImageIndex: imageStore.currentImageIndex
+        bookId,
+        chapterId,
       })
 
-      console.log(`章节保存完成: ${savedCount}/${totalImages} 张图片`)
+      const contexts = allImages.map((image, index) => hydrateTaskContextFromImage(index, image, 'standard', runtime))
 
-      // 更新书架章节图片数量
-      try {
-        const { apiClient } = await import('@/api/client')
-        await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
-          count: totalImages
-        })
-      } catch (e) {
-        console.warn('更新章节图片数量失败（非致命）:', e)
+      await persistAllPages(contexts, runtime, {
+        includeOriginal: true,
+        includeDerivedImagesFromSource: true,
+        currentImageIndex: imageStore.currentImageIndex,
+        onProgress: (current, total) => {
+          loadingProgress.value = {
+            current,
+            total,
+            message: `保存图片 ${current}/${total}...`
+          }
+        }
+      })
+
+      for (let index = 0; index < allImages.length; index++) {
+        imageStore.updateImageByIndex(index, { hasUnsavedChanges: false })
       }
+
+      console.log(`章节保存完成: ${totalImages}/${totalImages} 张图片`)
 
       loadingProgress.value = { current: totalImages, total: totalImages, message: '保存完成' }
 

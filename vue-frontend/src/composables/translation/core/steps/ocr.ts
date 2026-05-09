@@ -4,10 +4,10 @@
  */
 import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
 import { normalizeProviderId } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
+import type { TranslationSettings } from '@/types/settings'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
@@ -18,6 +18,7 @@ export interface OcrInput {
     bubbleCoords: BubbleCoords[]
     bubbleStates?: BubbleState[] | null
     textlinesPerBubble?: any[]
+    settingsSnapshot: TranslationSettings
 }
 
 export interface OcrOutput {
@@ -26,14 +27,13 @@ export interface OcrOutput {
 }
 
 export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
-    const { image, bubbleCoords, bubbleStates, textlinesPerBubble, translationMode = 'standard' } = input
+    const { image, bubbleCoords, bubbleStates, textlinesPerBubble, translationMode = 'standard', settingsSnapshot } = input
 
     if (bubbleCoords.length === 0) {
         return { originalTexts: [], ocrResults: [] }
     }
 
-    const settingsStore = useSettingsStore()
-    const settings = settingsStore.settings
+    const settings = settingsSnapshot
     const base64 = extractBase64(image.originalDataURL)
 
     // PaddleOCR-VL 使用独立的源语言设置

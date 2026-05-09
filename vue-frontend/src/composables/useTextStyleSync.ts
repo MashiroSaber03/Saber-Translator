@@ -16,6 +16,8 @@ import { showToast } from '@/utils/toast'
 import { getEffectiveDirection } from '@/types/bubble'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
+import { executeRender } from '@/composables/translation/core/steps'
 
 /**
  * 应用设置选项接口
@@ -101,6 +103,41 @@ export function useTextStyleSync() {
             textAlign: style.textAlign,
             inpaintMethod: style.inpaintMethod,
             useAutoTextColor: style.useAutoTextColor
+        })
+    }
+
+    async function renderWithCurrentBubbleStates(
+        bubbleStates: typeof bubbleStore.bubbles,
+        cleanImageBase64: string
+    ) {
+        return await executeRender({
+            imageIndex: imageStore.currentImageIndex,
+            cleanImage: cleanImageBase64,
+            bubbleCoords: bubbleStates.map(bs => bs.coords) as any,
+            bubbleAngles: bubbleStates.map(bs => bs.rotationAngle || 0),
+            autoDirections: bubbleStates.map(bs => bs.autoTextDirection || getEffectiveDirection(bs)),
+            textlinesPerBubble: bubbleStates.map(bs => bs.textlines || []),
+            existingBubbleStates: bubbleStates,
+            originalTexts: bubbleStates.map(bs => bs.originalText || ''),
+            ocrResults: bubbleStates.map(bs => bs.ocrResult || {
+                text: bs.originalText || '',
+                confidence: null,
+                confidenceSupported: false,
+                engine: '',
+                primaryEngine: '',
+                fallbackUsed: false
+            }),
+            translatedTexts: bubbleStates.map(bs => bs.translatedText || ''),
+            textboxTexts: bubbleStates.map(bs => bs.textboxText || ''),
+            colors: bubbleStates.map(bs => ({
+                textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
+                bgColor: bs.fillColor || settingsStore.settings.textStyle.fillColor,
+                autoFgColor: bs.autoFgColor || null,
+                autoBgColor: bs.autoBgColor || null
+            })),
+            savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
+            currentMode: 'standard',
+            settingsSnapshot: settingsStore.settings,
         })
     }
 
@@ -243,29 +280,6 @@ export function useTextStyleSync() {
                 return
             }
 
-            // 构建 API 参数（与原版 edit_mode.js reRenderFullImage 一致）
-            const layoutDir = settingsStore.settings.textStyle.layoutDirection
-
-            // 构建气泡状态数组（与原版 bubbleStatesForApi 格式一致）
-            const bubbleStatesForApi = bubbleStates.map((bs) => ({
-                translatedText: bs.translatedText || '',
-                coords: bs.coords,
-                fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,
-                fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
-                textDirection: getEffectiveDirection(bs),
-                textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
-                rotationAngle: bs.rotationAngle || 0,
-                position: bs.position || { x: 0, y: 0 },
-                strokeEnabled: bs.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
-                strokeColor: bs.strokeColor || settingsStore.settings.textStyle.strokeColor,
-                strokeWidth: bs.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
-                lineSpacing: bs.lineSpacing ?? settingsStore.settings.textStyle.lineSpacing,
-                textAlign: bs.textAlign ?? settingsStore.settings.textStyle.textAlign,
-            }))
-
-            const bubbleTexts = bubbleStatesForApi.map(s => s.translatedText)
-            const bubbleCoords = bubbleStatesForApi.map(s => s.coords)
-
             // 【修复P1】提取 clean_image 的 base64 部分，原版兜底策略：clean → original
             let cleanImageBase64 = ''
             if (image.cleanImageData) {
@@ -286,39 +300,15 @@ export function useTextStyleSync() {
                 return
             }
 
-            const { apiClient } = await import('@/api/client')
-            const response = await apiClient.post<{ rendered_image?: string; error?: string }>(
-                '/api/re_render_image',
-                {
-                    clean_image: cleanImageBase64,
-                    bubble_texts: bubbleTexts,
-                    bubble_coords: bubbleCoords,
-                    fontSize: settingsStore.settings.textStyle.fontSize,
-                    fontFamily: settingsStore.settings.textStyle.fontFamily,
-                    textDirection: layoutDir === 'auto' ? 'vertical' : layoutDir,
-                    textColor: settingsStore.settings.textStyle.textColor,
-                    bubble_states: bubbleStatesForApi,
-                    use_individual_styles: true,
-                    use_inpainting: false,
-                    use_lama: false,
-                    fillColor: null,
-                    is_font_style_change: true,
-                    strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
-                    strokeColor: settingsStore.settings.textStyle.strokeColor,
-                    strokeWidth: settingsStore.settings.textStyle.strokeWidth,
-                    lineSpacing: settingsStore.settings.textStyle.lineSpacing,
-                    textAlign: settingsStore.settings.textStyle.textAlign,
-                }
-            )
+            const result = await renderWithCurrentBubbleStates(bubbleStates as any, cleanImageBase64)
 
-            if (response.rendered_image) {
+            if (result.finalImage) {
                 imageStore.updateCurrentImage({
-                    translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+                    translatedDataURL: `data:image/png;base64,${result.finalImage}`,
+                    bubbleStates: result.bubbleStates,
                     hasUnsavedChanges: true
                 })
                 console.log('设置变更后重新渲染成功')
-            } else if (response.error) {
-                console.error('重新渲染失败:', response.error)
             }
         } catch (error) {
             console.error('设置变更后重新渲染失败:', error)
@@ -360,9 +350,6 @@ export function useTextStyleSync() {
             console.log('自动字号已开启，重新计算字号并渲染...')
 
             try {
-                const { apiClient } = await import('@/api/client')
-
-                // 提取 clean_image 的 base64 部分
                 let cleanImageBase64 = ''
                 if (image.cleanImageData) {
                     const cleanData = image.cleanImageData
@@ -380,73 +367,27 @@ export function useTextStyleSync() {
                     return
                 }
 
-                const bubbleStatesForApi = bubbleStates.map((bs) => ({
-                    translatedText: bs.translatedText || '',
-                    coords: bs.coords,
-                    fontSize: bs.fontSize || settingsStore.settings.textStyle.fontSize,  // 传递当前字号，后端会根据 autoFontSize=true 重新计算
-                    fontFamily: bs.fontFamily || settingsStore.settings.textStyle.fontFamily,
-                    textDirection: getEffectiveDirection(bs),
-                    textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
-                    rotationAngle: bs.rotationAngle || 0,
-                    position: bs.position || { x: 0, y: 0 },
-                    strokeEnabled: bs.strokeEnabled ?? settingsStore.settings.textStyle.strokeEnabled,
-                    strokeColor: bs.strokeColor || settingsStore.settings.textStyle.strokeColor,
-                    strokeWidth: bs.strokeWidth ?? settingsStore.settings.textStyle.strokeWidth,
-                    lineSpacing: bs.lineSpacing ?? settingsStore.settings.textStyle.lineSpacing,
-                    textAlign: bs.textAlign ?? settingsStore.settings.textStyle.textAlign,
-                }))
+                const result = await renderWithCurrentBubbleStates(bubbleStates as any, cleanImageBase64)
 
-                const bubbleTexts = bubbleStatesForApi.map(s => s.translatedText)
-                const bubbleCoords = bubbleStatesForApi.map(s => s.coords)
-
-                const response = await apiClient.post<{ rendered_image?: string; error?: string; bubble_states?: Array<{ fontSize?: number }> }>(
-                    '/api/re_render_image',
-                    {
-                        clean_image: cleanImageBase64,
-                        bubble_texts: bubbleTexts,
-                        bubble_coords: bubbleCoords,
-                        fontSize: settingsStore.settings.textStyle.fontSize,  // 后端需要数字类型
-                        fontFamily: settingsStore.settings.textStyle.fontFamily,
-                        textDirection: settingsStore.settings.textStyle.layoutDirection === 'auto' ? 'vertical' : settingsStore.settings.textStyle.layoutDirection,
-                        textColor: settingsStore.settings.textStyle.textColor,
-                        bubble_states: bubbleStatesForApi,
-                        use_individual_styles: true,
-                        use_inpainting: false,
-                        use_lama: false,
-                        fillColor: null,
-                        is_font_style_change: true,
-                        autoFontSize: true,  // 【修复】使用正确的参数名 autoFontSize（与原版 edit_mode.js 行 407 一致）
-                        strokeEnabled: settingsStore.settings.textStyle.strokeEnabled,
-                        strokeColor: settingsStore.settings.textStyle.strokeColor,
-                        strokeWidth: settingsStore.settings.textStyle.strokeWidth,
-                        lineSpacing: settingsStore.settings.textStyle.lineSpacing,
-                        textAlign: settingsStore.settings.textStyle.textAlign,
-                    }
-                )
-
-                if (response.rendered_image) {
-                    // 【复刻原版】如果后端返回了更新后的 bubble_states，需要回写字号
-                    if (response.bubble_states && Array.isArray(response.bubble_states)) {
+                if (result.finalImage) {
+                    if (result.bubbleStates && Array.isArray(result.bubbleStates)) {
                         const updatedBubbles = bubbleStates.map((bs, idx) => ({
                             ...bs,
-                            fontSize: response.bubble_states![idx]?.fontSize ?? bs.fontSize
+                            fontSize: result.bubbleStates[idx]?.fontSize ?? bs.fontSize
                         }))
                         imageStore.updateCurrentImage({
-                            translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+                            translatedDataURL: `data:image/png;base64,${result.finalImage}`,
                             bubbleStates: updatedBubbles,
                             hasUnsavedChanges: true
                         })
                         bubbleStore.setBubbles(updatedBubbles)
                     } else {
                         imageStore.updateCurrentImage({
-                            translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+                            translatedDataURL: `data:image/png;base64,${result.finalImage}`,
                             hasUnsavedChanges: true
                         })
                     }
                     console.log('自动字号渲染成功')
-                } else if (response.error) {
-                    console.error('自动字号渲染失败:', response.error)
-                    showToast('重新渲染失败: ' + response.error, 'error')
                 }
             } catch (error) {
                 console.error('自动字号渲染出错:', error)
@@ -759,7 +700,8 @@ export function useTextStyleSync() {
                             textboxTexts: textboxTexts,
                             colors: colors,
                             savedTextStyles: savedTextStyles as any,
-                            currentMode: 'standard'
+                            currentMode: 'standard',
+                            settingsSnapshot: settingsStore.settings,
                         })
 
                         if (result.finalImage) {

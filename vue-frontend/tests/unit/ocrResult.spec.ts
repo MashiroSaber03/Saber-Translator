@@ -4,6 +4,7 @@ import { createBubbleState, createBubbleStatesFromResponse } from '@/utils/bubbl
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { executeOcr } from '@/composables/translation/core/steps/ocr'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 const { parallelOcrMock } = vi.hoisted(() => ({
   parallelOcrMock: vi.fn(async () => ({
@@ -139,6 +140,7 @@ describe('OCR result integration', () => {
   })
 
   it('executeOcr should return both ocrResults and legacy originalTexts', async () => {
+    const settingsStore = useSettingsStore()
     const result = await executeOcr({
       imageIndex: 0,
       image: {
@@ -165,7 +167,8 @@ describe('OCR result integration', () => {
         hasUnsavedChanges: false
       } as any,
       bubbleCoords: [[0, 0, 10, 10]],
-      textlinesPerBubble: []
+      textlinesPerBubble: [],
+      settingsSnapshot: settingsStore.settings as any,
     })
 
     expect(result.originalTexts).toEqual(['こんにちは'])

@@ -3,9 +3,9 @@
  * 提取自 SequentialPipeline.ts Line 599-626
  */
 import { parallelInpaint, type ParallelInpaintResponse } from '@/api/parallelTranslate'
-import { useSettingsStore } from '@/stores/settingsStore'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
+import type { TranslationSettings } from '@/types/settings'
 
 export interface InpaintInput {
     imageIndex: number
@@ -15,6 +15,7 @@ export interface InpaintInput {
     bubblePolygons: number[][][]
     textMask?: string      // 文字检测掩膜
     userMask?: string      // 用户笔刷掩膜
+    settingsSnapshot: TranslationSettings
 }
 
 export interface InpaintOutput {
@@ -22,14 +23,13 @@ export interface InpaintOutput {
 }
 
 export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput> {
-    const { image, bubbleCoords, bubblePolygons, textMask, userMask, translationMode = 'standard' } = input
+    const { image, bubbleCoords, bubblePolygons, textMask, userMask, translationMode = 'standard', settingsSnapshot } = input
 
     if (bubbleCoords.length === 0) {
         return { cleanImage: extractBase64(image.originalDataURL) }
     }
 
-    const settingsStore = useSettingsStore()
-    const settings = settingsStore.settings
+    const settings = settingsSnapshot
     const { textStyle, preciseMask } = settings
     const base64 = extractBase64(image.originalDataURL)
 

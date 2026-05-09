@@ -4,26 +4,26 @@ import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
-const { reRenderImageMock } = vi.hoisted(() => ({
-  reRenderImageMock: vi.fn(),
+const { executeRenderMock } = vi.hoisted(() => ({
+  executeRenderMock: vi.fn(),
 }))
 
-vi.mock('@/api/translate', () => ({
-  reRenderImage: reRenderImageMock,
+vi.mock('@/composables/translation/core/steps', () => ({
+  executeRender: executeRenderMock,
 }))
 
 describe('useEditRender', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    reRenderImageMock.mockReset()
+    executeRenderMock.mockReset()
   })
 
   it('ignores render results when the user switches to another image before the request completes', async () => {
-    let resolveRender!: (value: { rendered_image: string }) => void
-    const pendingRender = new Promise<{ rendered_image: string }>((resolve) => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
       resolveRender = resolve
     })
-    reRenderImageMock.mockReturnValueOnce(pendingRender)
+    executeRenderMock.mockReturnValueOnce(pendingRender)
 
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
@@ -44,7 +44,7 @@ describe('useEditRender', () => {
     const renderPromise = reRenderFullImage()
 
     imageStore.setCurrentImageIndex(1)
-    resolveRender({ rendered_image: 'rendered-page-1' })
+    resolveRender({ finalImage: 'rendered-page-1', bubbleStates: bubbleStore.bubbles })
 
     await expect(renderPromise).resolves.toBe(false)
     expect(imageStore.images[0]?.translatedDataURL).toBeNull()

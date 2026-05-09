@@ -1,199 +1,141 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  hqTranslateBatchMock,
+  executeAtomicStepMock,
+  executeBatchAtomicStepMock,
   settingsStoreMock,
 } = vi.hoisted(() => ({
-  hqTranslateBatchMock: vi.fn(),
+  executeAtomicStepMock: vi.fn(),
+  executeBatchAtomicStepMock: vi.fn(),
   settingsStoreMock: {
     settings: {
-      enableVerboseLogs: false,
-      useTextboxPrompt: false,
       hqTranslation: {
-        provider: 'custom',
-        apiKey: 'hq-key',
-        modelName: 'hq-model',
-        customBaseUrl: 'https://hq.example.com/v1',
-        prompt: '高质量翻译提示词',
-        openaiOptions: {
-          request: {
-            forceJsonOutput: false,
-          },
-          execution: {
-            useStream: true,
-            rpmLimit: 0,
-            transportRetries: 1,
-            businessRetries: 0,
-          },
-        },
-        batchSize: 1,
+        batchSize: 2,
       },
       proofreading: {
-        maxRetries: 5,
-        rounds: [
-          {
-            name: '第1轮',
-            provider: 'custom',
-            apiKey: 'proof-key-1',
-            modelName: 'proof-model-1',
-            customBaseUrl: 'https://proof-1.example.com/v1',
-            batchSize: 1,
-            openaiOptions: {
-              request: {
-                forceJsonOutput: false,
-              },
-              execution: {
-                useStream: true,
-                rpmLimit: 0,
-                transportRetries: 1,
-                businessRetries: 0,
-              },
-            },
-            prompt: '请校对译文',
-          },
-          {
-            name: '第2轮',
-            provider: 'custom',
-            apiKey: 'proof-key-2',
-            modelName: 'proof-model-2',
-            customBaseUrl: 'https://proof-2.example.com/v1',
-            batchSize: 1,
-            openaiOptions: {
-              request: {
-                forceJsonOutput: false,
-              },
-              execution: {
-                useStream: true,
-                rpmLimit: 0,
-                transportRetries: 1,
-                businessRetries: 0,
-              },
-            },
-            prompt: '再次校对译文',
-          },
-        ],
+        rounds: [{ batchSize: 2 }],
+      },
+      textStyle: {
+        fontSize: 16,
+        autoFontSize: false,
+        fontFamily: 'fonts/STSONG.TTF',
+        layoutDirection: 'auto',
+        textColor: '#000000',
+        fillColor: '#ffffff',
+        strokeEnabled: false,
+        strokeColor: '#000000',
+        strokeWidth: 1,
+        lineSpacing: 1,
+        textAlign: 'start',
+        inpaintMethod: 'solid',
+        useAutoTextColor: false,
       },
     },
   },
 }))
 
-vi.mock('@/api/translate', () => ({
-  hqTranslateBatch: hqTranslateBatchMock,
-  translateSingleText: vi.fn(),
-}))
-
-vi.mock('@/api/parallelTranslate', () => ({
-  parallelTranslate: vi.fn(),
+vi.mock('@/composables/translation/core/atomicSteps', () => ({
+  executeAtomicStep: executeAtomicStepMock,
+  executeBatchAtomicStep: executeBatchAtomicStepMock,
 }))
 
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: () => settingsStoreMock,
 }))
 
-describe('TranslatePool retry mapping', () => {
+describe('TranslatePool', () => {
   beforeEach(() => {
-    hqTranslateBatchMock.mockReset()
-    hqTranslateBatchMock.mockResolvedValue({
-      success: true,
-      results: [
-        {
-          imageIndex: 0,
-          bubbles: [{ translated: '译文' }],
-        },
-      ],
-    })
+    executeAtomicStepMock.mockReset()
+    executeBatchAtomicStepMock.mockReset()
   })
 
-  it('preserves zero max retries for HQ batches', async () => {
-    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
+  it('routes standard mode through the shared translate atomic step', async () => {
+    executeAtomicStepMock.mockImplementation(async (_step: string, task: any) => ({
+      ...task,
+      translatedTexts: ['译文'],
+      warnings: [],
+    }))
 
-    const pool = new TranslatePool(
-      null,
-      { updatePool: vi.fn() } as any,
-    )
-    pool.setMode('hq', 1, null)
+    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
+    const pool = new TranslatePool(null, { updatePool: vi.fn() } as any)
+    pool.setMode('standard', 1, null)
 
     const task = {
       id: 'task-1',
       imageIndex: 0,
+      translationMode: 'standard',
+      runtime: { mode: 'standard', settingsSnapshot: settingsStoreMock.settings },
       status: 'pending',
-      imageData: {
-        originalDataURL: 'data:image/png;base64,abc',
-      },
-      ocrResult: {
-        originalTexts: ['原文'],
-      },
-      detectionResult: {
-        autoDirections: ['vertical'],
-      },
+      originalTexts: ['原文'],
+      sourceImage: { originalDataURL: 'data:image/png;base64,abc' },
+      bubbleCoords: [],
+      bubbleAngles: [],
+      bubblePolygons: [],
+      autoDirections: [],
+      textlinesPerBubble: [],
+      ocrResults: [],
+      colors: [],
+      translatedTexts: [],
+      textboxTexts: [],
+      warnings: [],
+      persisted: false,
     } as any
 
-    await (pool as any).process(task)
+    const result = await (pool as any).process(task)
 
-    expect(hqTranslateBatchMock).toHaveBeenCalledOnce()
-    expect(hqTranslateBatchMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: 'custom',
-        openai_options: expect.objectContaining({
-          execution: expect.objectContaining({
-            business_retries: 0,
-          }),
-        }),
-      }),
-    )
+    expect(executeAtomicStepMock).toHaveBeenCalledWith('translate', task, task.runtime)
+    expect(result.translatedTexts).toEqual(['译文'])
   })
 
-  it('preserves zero max retries for every proofreading round', async () => {
+  it('buffers HQ tasks and flushes them through the shared aiTranslate batch step', async () => {
+    executeBatchAtomicStepMock.mockImplementation(async (_step: string, tasks: any[]) =>
+      tasks.map((task) => ({
+        ...task,
+        translatedTexts: ['批量译文'],
+        warnings: [],
+      })),
+    )
+
+    const nextPool = { enqueue: vi.fn() }
     const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
+    const pool = new TranslatePool(nextPool as any, { updatePool: vi.fn() } as any)
+    pool.setMode('hq', 2, nextPool as any)
 
-    const pool = new TranslatePool(
-      null,
-      { updatePool: vi.fn() } as any,
-    )
-    pool.setMode('proofread', 1, null)
-
-    const task = {
-      id: 'task-2',
+    const runtime = { mode: 'hq', settingsSnapshot: settingsStoreMock.settings }
+    const firstTask = {
+      id: 'task-1',
       imageIndex: 0,
+      translationMode: 'hq',
+      runtime,
       status: 'pending',
-      imageData: {
-        originalDataURL: 'data:image/png;base64,abc',
-        translatedDataURL: null,
-        bubbleStates: [
-          {
-            originalText: '原文',
-            translatedText: '初始译文',
-            textDirection: 'vertical',
-            autoTextDirection: 'vertical',
-          },
-        ],
-      },
+      originalTexts: ['原文1'],
+      sourceImage: { originalDataURL: 'data:image/png;base64,abc1' },
+      bubbleCoords: [],
+      bubbleAngles: [],
+      bubblePolygons: [],
+      autoDirections: [],
+      textlinesPerBubble: [],
+      ocrResults: [],
+      colors: [],
+      translatedTexts: [],
+      textboxTexts: [],
+      warnings: [],
+      persisted: false,
     } as any
+    const secondTask = {
+      ...firstTask,
+      id: 'task-2',
+      imageIndex: 1,
+      originalTexts: ['原文2'],
+      sourceImage: { originalDataURL: 'data:image/png;base64,abc2' },
+    }
 
-    await (pool as any).process(task)
+    const buffered = await (pool as any).process(firstTask)
+    const flushed = await (pool as any).process(secondTask)
 
-    expect(hqTranslateBatchMock).toHaveBeenCalledTimes(2)
-    expect(hqTranslateBatchMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        provider: 'custom',
-        openai_options: expect.objectContaining({
-          execution: expect.objectContaining({
-            business_retries: 0,
-          }),
-        }),
-      }),
-    )
-    expect(hqTranslateBatchMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        provider: 'custom',
-        openai_options: expect.objectContaining({
-          execution: expect.objectContaining({
-            business_retries: 0,
-          }),
-        }),
-      }),
-    )
+    expect(buffered.status).toBe('buffered')
+    expect(executeBatchAtomicStepMock).toHaveBeenCalledWith('aiTranslate', [firstTask, secondTask], runtime)
+    expect(nextPool.enqueue).toHaveBeenCalledTimes(2)
+    expect(flushed.status).toBe('buffered')
   })
 })

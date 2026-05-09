@@ -15,9 +15,9 @@ import {
   getDownloadFileUrl,
   cleanTempFiles
 } from '@/api/system'
-import { reRenderImage } from '@/api/translate'
 import type { BubbleState } from '@/types/bubble'
-import { getEffectiveDirection } from '@/types/bubble'
+import { executeRender } from '@/composables/translation/core/steps'
+import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
 
 /**
  * 导出文本数据结构
@@ -365,8 +365,6 @@ export function useExportImport() {
         toast.info('正在渲染图片，请稍候...', 0)
 
         const textStyle = settingsStore.settings.textStyle
-        const layoutDir = textStyle.layoutDirection
-        const isAutoLayout = layoutDir === 'auto'
 
         for (let i = 0; i < imagesToReRender.length; i++) {
           const imageIndex = imagesToReRender[i]
@@ -398,46 +396,40 @@ export function useExportImport() {
               continue
             }
 
-            // 构建 API 参数
-            const bubbleStatesForApi = img.bubbleStates.map(bs => ({
-              translatedText: bs.translatedText || '',
-              coords: bs.coords,
-              fontSize: bs.fontSize || textStyle.fontSize,
-              fontFamily: bs.fontFamily || textStyle.fontFamily,
-              textDirection: getEffectiveDirection(bs),
-              textColor: bs.textColor || textStyle.textColor,
-              rotationAngle: bs.rotationAngle || 0,
-              position: bs.position || { x: 0, y: 0 },
-              strokeEnabled: bs.strokeEnabled ?? textStyle.strokeEnabled,
-              strokeColor: bs.strokeColor || textStyle.strokeColor,
-              strokeWidth: bs.strokeWidth ?? textStyle.strokeWidth,
-              lineSpacing: bs.lineSpacing ?? textStyle.lineSpacing,
-              textAlign: bs.textAlign ?? textStyle.textAlign,
-            }))
-
-            const response = await reRenderImage({
-              clean_image: cleanImageBase64,
-              bubble_texts: bubbleStatesForApi.map(s => s.translatedText),
-              bubble_coords: bubbleStatesForApi.map(s => s.coords),
-              fontSize: textStyle.fontSize,
-              fontFamily: textStyle.fontFamily,
-              textDirection: isAutoLayout ? 'vertical' : layoutDir,
-              textColor: textStyle.textColor,
-              bubble_states: bubbleStatesForApi,
-              use_individual_styles: true,
-              use_inpainting: false,
-              use_lama: false,
-              is_font_style_change: true,
-              strokeEnabled: textStyle.strokeEnabled,
-              strokeColor: textStyle.strokeColor,
-              strokeWidth: textStyle.strokeWidth,
-              lineSpacing: textStyle.lineSpacing,
-              textAlign: textStyle.textAlign,
+            const result = await executeRender({
+              imageIndex,
+              cleanImage: cleanImageBase64,
+              bubbleCoords: img.bubbleStates.map(bs => bs.coords) as any,
+              bubbleAngles: img.bubbleStates.map(bs => bs.rotationAngle || 0),
+              autoDirections: img.bubbleStates.map(bs => bs.autoTextDirection || bs.textDirection || 'vertical'),
+              textlinesPerBubble: img.bubbleStates.map(bs => bs.textlines || []),
+              existingBubbleStates: img.bubbleStates,
+              originalTexts: img.bubbleStates.map(bs => bs.originalText || ''),
+              ocrResults: img.bubbleStates.map(bs => bs.ocrResult || {
+                text: bs.originalText || '',
+                confidence: null,
+                confidenceSupported: false,
+                engine: '',
+                primaryEngine: '',
+                fallbackUsed: false
+              }),
+              translatedTexts: img.bubbleStates.map(bs => bs.translatedText || ''),
+              textboxTexts: img.bubbleStates.map(bs => bs.textboxText || ''),
+              colors: img.bubbleStates.map(bs => ({
+                textColor: bs.textColor || textStyle.textColor,
+                bgColor: bs.fillColor || textStyle.fillColor,
+                autoFgColor: bs.autoFgColor || null,
+                autoBgColor: bs.autoBgColor || null
+              })),
+              savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
+              currentMode: 'standard',
+              settingsSnapshot: settingsStore.settings,
             })
 
-            if (response.rendered_image) {
+            if (result.finalImage) {
               imageStore.updateImageByIndex(imageIndex, {
-                translatedDataURL: `data:image/png;base64,${response.rendered_image}`,
+                translatedDataURL: `data:image/png;base64,${result.finalImage}`,
+                bubbleStates: result.bubbleStates || img.bubbleStates,
                 hasUnsavedChanges: true
               })
               console.log(`importText: 图片 ${imageIndex} 渲染成功`)

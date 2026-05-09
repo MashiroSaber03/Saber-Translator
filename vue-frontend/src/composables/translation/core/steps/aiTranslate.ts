@@ -12,8 +12,8 @@
  */
 
 import { hqTranslateBatch } from '@/api/translate'
-import { useSettingsStore } from '@/stores/settingsStore'
 import type { ImageData } from '@/types/image'
+import type { TranslationSettings } from '@/types/settings'
 import type { TranslationWarning } from '@/types/translationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
@@ -34,6 +34,7 @@ export interface AiTranslateTask {
 export interface AiTranslateInput {
     mode: 'hq' | 'proofread'
     tasks: AiTranslateTask[]
+    settingsSnapshot: TranslationSettings
 }
 
 /** AI翻译输出 */
@@ -68,8 +69,7 @@ interface TranslationJsonData {
  * @returns AI翻译输出
  */
 export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTranslateOutput> {
-    const settingsStore = useSettingsStore()
-    const settings = settingsStore.settings
+    const settings = input.settingsSnapshot
     const isProofread = input.mode === 'proofread'
 
     // 1. 收集 JSON 数据

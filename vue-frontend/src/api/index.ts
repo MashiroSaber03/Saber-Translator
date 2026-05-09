@@ -23,19 +23,7 @@ export {
     saveSessionMeta,
     loadSessionMeta,
     savePageImage,
-    getPageImageUrl,
     savePageMeta,
-    loadPageMeta,
-    presaveAllPages,
-    saveTranslatedPage,
-    loadSession as loadSessionV2,  // 重命名避免与 session.ts 冲突
-    extractBase64,
-    saveAllPagesSequentially,
-    type PageData,
-    type PageInfo,
-    type SessionData as SessionDataV2,
-    type ImageDataForSave,
-    type SaveProgressCallback
 } from './pageStorage'
 
 // 漫画分析 API

@@ -1,421 +1,216 @@
 /**
- * 自动保存步骤实现 - 重构版
+ * 自动保存步骤实现
  *
- * 使用新的单页独立保存架构：
- * 1. 预保存阶段：保存所有页面的当前状态（原图 + 元数据）
- * 2. 单页保存阶段：每页翻译完成后只更新该页的译图和干净背景
- * 3. 完成阶段：更新会话元数据
- *
- * 优势：
- * - 每页独立保存，无竞态问题
- * - 增量更新，只保存变化的内容
- * - 简单统一的逻辑
+ * 统一使用 TaskContext + PersistenceService，
+ * 不再直接从 imageStore 回读旧状态拼保存 payload。
  */
 
 import { useSessionStore } from '@/stores/sessionStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import {
-    loadSessionMeta,
-    saveAllPagesSequentially,
-    saveTranslatedPage,
-    saveSessionMeta,
-    type ImageDataForSave
-} from '@/api/pageStorage'
-import { apiClient } from '@/api/client'
+  createPipelineRuntime,
+  getBookshelfSessionPath,
+  hydrateTaskContextFromImage,
+} from './runtime'
+import { executeAtomicStep } from './atomicSteps'
+import {
+  isSessionInitialized as checkSessionInitialized,
+  persistAllPages,
+  persistSessionMeta,
+} from './persistenceService'
 
-// ============================================================
-// 模块状态
-// ============================================================
-
-/** 当前会话路径缓存 */
 let sessionPathCache: string | null = null
-
-/** 是否已完成预保存 */
 let preSaveCompleted = false
 
-// ============================================================
-// 工具函数
-// ============================================================
-
-/**
- * 检查是否应该启用自动保存
- */
 export function shouldEnableAutoSave(): boolean {
-    const sessionStore = useSessionStore()
-    const settingsStore = useSettingsStore()
-
-    return settingsStore.settings.autoSaveInBookshelfMode && sessionStore.isBookshelfMode
+  const sessionStore = useSessionStore()
+  const settingsStore = useSettingsStore()
+  return settingsStore.settings.autoSaveInBookshelfMode && sessionStore.isBookshelfMode
 }
 
-/**
- * 获取会话路径
- */
 export function getSessionPath(): string | null {
-    const sessionStore = useSessionStore()
-    const bookId = sessionStore.currentBookId
-    const chapterId = sessionStore.currentChapterId
-
-    if (!bookId || !chapterId) {
-        return null
-    }
-
-    // 使用新格式路径: bookshelf/{book_id}/chapters/{chapter_id}/session
-    return `bookshelf/${bookId}/chapters/${chapterId}/session`
+  const sessionStore = useSessionStore()
+  return getBookshelfSessionPath(sessionStore.currentBookId, sessionStore.currentChapterId)
 }
 
 function getResolvedSessionPath(): string | null {
-    const currentSessionPath = getSessionPath()
-    if (currentSessionPath) {
-        if (sessionPathCache !== currentSessionPath) {
-            sessionPathCache = currentSessionPath
-        }
-        return currentSessionPath
-    }
-    return sessionPathCache
+  const currentSessionPath = getSessionPath()
+  if (currentSessionPath) {
+    sessionPathCache = currentSessionPath
+    return currentSessionPath
+  }
+  return sessionPathCache
 }
 
-function isNotFoundError(error: unknown): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'status' in error
-        && (error as { status?: unknown }).status === 404
+function createSaveRuntime(forceEnabled: boolean = false) {
+  const sessionStore = useSessionStore()
+  const settingsStore = useSettingsStore()
+  return createPipelineRuntime('standard', {
+    settingsSnapshot: settingsStore.settings,
+    autoSaveEnabled: forceEnabled || shouldEnableAutoSave(),
+    sessionPath: getResolvedSessionPath(),
+    bookId: sessionStore.currentBookId,
+    chapterId: sessionStore.currentChapterId,
+  })
 }
 
-/**
- * 构建 UI 设置对象（仅保存文本样式设置）
- */
-function buildUiSettings(): Record<string, unknown> {
-    const settingsStore = useSettingsStore()
-    const { textStyle } = settingsStore.settings
-
-    return {
-        fontSize: textStyle.fontSize,
-        autoFontSize: textStyle.autoFontSize,
-        fontFamily: textStyle.fontFamily,
-        layoutDirection: textStyle.layoutDirection,
-        textColor: textStyle.textColor,
-        useInpaintingMethod: textStyle.inpaintMethod,
-        fillColor: textStyle.fillColor,
-        strokeEnabled: textStyle.strokeEnabled,
-        strokeColor: textStyle.strokeColor,
-        strokeWidth: textStyle.strokeWidth,
-        lineSpacing: textStyle.lineSpacing,
-        textAlign: textStyle.textAlign,
-        useAutoTextColor: textStyle.useAutoTextColor,
-    }
+function getTaskContextForImage(pageIndex: number) {
+  const imageStore = useImageStore()
+  const image = imageStore.images[pageIndex]
+  if (!image) {
+    throw new Error(`页面 ${pageIndex + 1} 不存在`)
+  }
+  const runtime = createSaveRuntime(true)
+  return {
+    runtime,
+    context: hydrateTaskContextFromImage(pageIndex, image, 'standard', runtime),
+  }
 }
 
-async function updateChapterImageCount(totalImages: number): Promise<void> {
-    const sessionStore = useSessionStore()
-    const bookId = sessionStore.currentBookId
-    const chapterId = sessionStore.currentChapterId
-    if (bookId && chapterId) {
-        try {
-            await apiClient.put(`/api/bookshelf/books/${bookId}/chapters/${chapterId}/image-count`, {
-                count: totalImages
-            })
-            console.log(`[AutoSave] 已更新章节图片数量为 ${totalImages}`)
-        } catch (e) {
-            console.warn('[AutoSave] 更新章节图片数量失败（非致命）:', e)
-        }
-    }
-}
-
-function buildTranslatedPageSaveData(img: Record<string, unknown>): {
-    translated?: string
-    clean?: string
-    meta: Record<string, unknown>
-} {
-    const saveData: {
-        translated?: string
-        clean?: string
-        meta: Record<string, unknown>
-    } = {
-        meta: {}
-    }
-
-    if (typeof img.translatedDataURL === 'string' && img.translatedDataURL.startsWith('data:')) {
-        saveData.translated = img.translatedDataURL
-    }
-
-    if (typeof img.cleanImageData === 'string' && !img.cleanImageData.startsWith('/api/')) {
-        saveData.clean = img.cleanImageData.startsWith('data:')
-            ? img.cleanImageData
-            : `data:image/png;base64,${img.cleanImageData}`
-    }
-
-    for (const key of Object.keys(img)) {
-        if (!['originalDataURL', 'translatedDataURL', 'cleanImageData'].includes(key)) {
-            saveData.meta[key] = img[key]
-        }
-    }
-
-    return saveData
-}
-
-async function savePageToSession(sessionPath: string, pageIndex: number): Promise<void> {
-    const imageStore = useImageStore()
-    const img = imageStore.images[pageIndex]
-    if (!img) {
-        throw new Error(`页面 ${pageIndex + 1} 不存在`)
-    }
-
-    const saveData = buildTranslatedPageSaveData(img as Record<string, unknown>)
-    const result = await saveTranslatedPage(sessionPath, pageIndex, saveData)
-
-    if (!result.success) {
-        throw new Error(result.error || '保存失败')
-    }
-
-    imageStore.updateImageByIndex(pageIndex, { hasUnsavedChanges: false })
-    console.log(`[AutoSave] 页面 ${pageIndex + 1} 已保存`)
+async function clearUnsavedFlag(pageIndex: number): Promise<void> {
+  const imageStore = useImageStore()
+  imageStore.updateImageByIndex(pageIndex, { hasUnsavedChanges: false })
 }
 
 interface InitializeSessionOptions {
-    respectAutoSaveSetting: boolean
-    markPreSaveCompleted?: boolean
-    progressCallback?: PreSaveProgressCallback
+  respectAutoSaveSetting: boolean
+  markPreSaveCompleted?: boolean
+  progressCallback?: PreSaveProgressCallback
 }
 
 async function initializeBookshelfSession(options: InitializeSessionOptions): Promise<boolean> {
-    const imageStore = useImageStore()
-    const { progressCallback, respectAutoSaveSetting, markPreSaveCompleted = false } = options
+  const imageStore = useImageStore()
+  const { progressCallback, respectAutoSaveSetting, markPreSaveCompleted = false } = options
 
-    if (respectAutoSaveSetting && !shouldEnableAutoSave()) {
-        console.log('[AutoSave] 自动保存未启用或非书架模式，跳过预保存')
-        return true
-    }
+  if (respectAutoSaveSetting && !shouldEnableAutoSave()) {
+    console.log('[AutoSave] 自动保存未启用或非书架模式，跳过预保存')
+    return true
+  }
 
-    const sessionPath = getSessionPath()
-    if (!sessionPath) {
-        console.warn('[AutoSave] 缺少书籍/章节ID，跳过预保存')
-        progressCallback?.onError?.('缺少书籍/章节ID')
-        return false
-    }
+  const runtime = createSaveRuntime(true)
+  if (!runtime.sessionPath) {
+    console.warn('[AutoSave] 缺少书籍/章节ID，跳过预保存')
+    progressCallback?.onError?.('缺少书籍/章节ID')
+    return false
+  }
 
-    const allImages = imageStore.images
-    const totalImages = allImages.length
-    if (totalImages === 0) {
-        console.warn('[AutoSave] 没有图片，跳过预保存')
-        progressCallback?.onError?.('没有图片')
-        return false
-    }
+  const allImages = imageStore.images
+  const totalImages = allImages.length
+  if (totalImages === 0) {
+    console.warn('[AutoSave] 没有图片，跳过预保存')
+    progressCallback?.onError?.('没有图片')
+    return false
+  }
 
-    console.log(`[AutoSave] 预保存开始：${totalImages} 页（逐页保存）`)
-    progressCallback?.onStart?.(totalImages)
+  const contexts = allImages.map((image, index) => hydrateTaskContextFromImage(index, image, 'standard', runtime))
+  console.log(`[AutoSave] 预保存开始：${totalImages} 页（逐页保存）`)
+  progressCallback?.onStart?.(totalImages)
 
-    try {
-        const uiSettings = buildUiSettings()
-
-        const savedCount = await saveAllPagesSequentially(
-            sessionPath,
-            allImages as unknown as ImageDataForSave[],
-            {
-                onProgress: (current, total) => {
-                    progressCallback?.onProgress?.(current, total)
-                }
-            }
-        )
-
-        const sessionMetaResult = await saveSessionMeta(sessionPath, {
-            ui_settings: uiSettings,
-            total_pages: totalImages,
-            currentImageIndex: imageStore.currentImageIndex
-        })
-        if (!sessionMetaResult.success) {
-            throw new Error(sessionMetaResult.error || '保存会话元数据失败')
-        }
-
-        await updateChapterImageCount(totalImages)
-
-        sessionPathCache = sessionPath
-        if (markPreSaveCompleted) {
-            preSaveCompleted = true
-        }
-
-        console.log(`[AutoSave] 预保存完成，共保存 ${savedCount}/${totalImages} 页`)
-        progressCallback?.onComplete?.()
-
-        return true
-    } catch (error) {
-        console.error('[AutoSave] 预保存失败:', error)
-        const errorMsg = error instanceof Error ? error.message : '预保存失败'
-        progressCallback?.onError?.(errorMsg)
-        sessionPathCache = null
-        preSaveCompleted = false
-        return false
-    }
-}
-
-// ============================================================
-// 预保存阶段
-// ============================================================
-
-/** 预保存进度回调 */
-export interface PreSaveProgressCallback {
-    onStart?: (totalImages: number) => void
-    onProgress?: (current: number, total: number) => void
-    onComplete?: () => void
-    onError?: (error: string) => void
-}
-
-/**
- * 预保存所有页面（逐页保存，显示进度）
- *
- * 保存所有图片的当前状态（原图、已有的译图、元数据）
- *
- * @param progressCallback 进度回调
- * @returns 是否成功
- */
-export async function preSaveOriginalImages(
-    progressCallback?: PreSaveProgressCallback
-): Promise<boolean> {
-    return initializeBookshelfSession({
-        respectAutoSaveSetting: true,
-        markPreSaveCompleted: true,
-        progressCallback
+  try {
+    await persistAllPages(contexts, runtime, {
+      includeOriginal: true,
+      includeDerivedImagesFromSource: true,
+      currentImageIndex: imageStore.currentImageIndex,
+      onProgress: (current, total) => {
+        progressCallback?.onProgress?.(current, total)
+      },
     })
+
+    for (let index = 0; index < imageStore.images.length; index++) {
+      imageStore.updateImageByIndex(index, { hasUnsavedChanges: false })
+    }
+
+    sessionPathCache = runtime.sessionPath
+    if (markPreSaveCompleted) {
+      preSaveCompleted = true
+    }
+
+    console.log(`[AutoSave] 预保存完成，共保存 ${totalImages}/${totalImages} 页`)
+    progressCallback?.onComplete?.()
+    return true
+  } catch (error) {
+    console.error('[AutoSave] 预保存失败:', error)
+    progressCallback?.onError?.(error instanceof Error ? error.message : '预保存失败')
+    sessionPathCache = null
+    preSaveCompleted = false
+    return false
+  }
 }
 
-// ============================================================
-// 单页保存阶段
-// ============================================================
+export interface PreSaveProgressCallback {
+  onStart?: (totalImages: number) => void
+  onProgress?: (current: number, total: number) => void
+  onComplete?: () => void
+  onError?: (error: string) => void
+}
 
-/**
- * 保存翻译完成的页面
- *
- * 在每页翻译完成后调用，只保存该页的译图和干净背景
- *
- * @param pageIndex 页面索引（原始索引，0-based）
- */
-export async function saveTranslatedImage(pageIndex: number): Promise<void> {
-    // 检查是否应该启用
-    if (!shouldEnableAutoSave()) {
-        return
-    }
-
-    const sessionPath = getResolvedSessionPath()
-    if (!sessionPath) {
-        console.warn('[AutoSave] 会话路径不存在，跳过保存')
-        return
-    }
-
-    try {
-        await savePageToSession(sessionPath, pageIndex)
-    } catch (error) {
-        console.error(`[AutoSave] 保存页面 ${pageIndex + 1} 失败:`, error)
-        throw error
-    }
+export async function preSaveOriginalImages(
+  progressCallback?: PreSaveProgressCallback
+): Promise<boolean> {
+  return initializeBookshelfSession({
+    respectAutoSaveSetting: true,
+    markPreSaveCompleted: true,
+    progressCallback,
+  })
 }
 
 export async function isBookshelfSessionInitialized(): Promise<boolean> {
-    const sessionPath = getSessionPath()
-    if (!sessionPath) {
-        return false
-    }
-
-    try {
-        const result = await loadSessionMeta(sessionPath)
-        if (result.success && result.data) {
-            sessionPathCache = sessionPath
-            return true
-        }
-        return false
-    } catch (error) {
-        if (isNotFoundError(error)) {
-            return false
-        }
-        throw error
-    }
+  const runtime = createSaveRuntime(true)
+  const initialized = await checkSessionInitialized(runtime)
+  if (initialized && runtime.sessionPath) {
+    sessionPathCache = runtime.sessionPath
+  }
+  return initialized
 }
 
 export async function forceInitializeBookshelfSession(): Promise<boolean> {
-    return initializeBookshelfSession({
-        respectAutoSaveSetting: false,
-        markPreSaveCompleted: false
-    })
+  return initializeBookshelfSession({
+    respectAutoSaveSetting: false,
+    markPreSaveCompleted: false,
+  })
 }
 
 export async function saveBookshelfPageProgress(pageIndex: number, currentImageIndex: number): Promise<void> {
-    const sessionPath = getResolvedSessionPath()
-    if (!sessionPath) {
-        throw new Error('当前不在书架模式，无法保存到章节存档')
-    }
+  const imageStore = useImageStore()
+  const { runtime, context } = getTaskContextForImage(pageIndex)
 
-    await savePageToSession(sessionPath, pageIndex)
-
-    const imageStore = useImageStore()
-    const sessionMetaResult = await saveSessionMeta(sessionPath, {
-        ui_settings: buildUiSettings(),
-        total_pages: imageStore.images.length,
-        currentImageIndex
-    })
-
-    if (!sessionMetaResult.success) {
-        throw new Error(sessionMetaResult.error || '保存会话进度失败')
-    }
+  await executeAtomicStep('save', context, runtime)
+  await clearUnsavedFlag(pageIndex)
+  await persistSessionMeta(runtime, {
+    totalPages: imageStore.images.length,
+    currentImageIndex,
+  })
 }
 
-// ============================================================
-// 完成阶段
-// ============================================================
-
-/**
- * 完成保存
- *
- * 在所有翻译完成后调用，更新会话元数据
- */
 export async function finalizeSave(): Promise<void> {
-    // 检查是否应该启用
-    if (!shouldEnableAutoSave()) {
-        return
-    }
+  if (!shouldEnableAutoSave()) {
+    return
+  }
 
-    const sessionPath = getResolvedSessionPath()
-    if (!sessionPath || !preSaveCompleted) {
-        console.log('[AutoSave] 未执行预保存，跳过完成保存')
-        return
-    }
+  const runtime = createSaveRuntime(true)
+  if (!runtime.sessionPath || !preSaveCompleted) {
+    console.log('[AutoSave] 未执行预保存，跳过完成保存')
+    return
+  }
 
-    console.log('[AutoSave] 完成保存...')
-
-    const imageStore = useImageStore()
-    const totalImages = imageStore.images.length
-
-    try {
-        // 更新会话元数据
-        const sessionMetaResult = await saveSessionMeta(sessionPath, {
-            ui_settings: buildUiSettings(),
-            total_pages: totalImages,
-            currentImageIndex: imageStore.currentImageIndex
-        })
-        if (!sessionMetaResult.success) {
-            throw new Error(sessionMetaResult.error || '保存会话元数据失败')
-        }
-
-        await updateChapterImageCount(totalImages)
-
-        console.log('[AutoSave] 会话保存完成')
-
-    } catch (error) {
-        console.error('[AutoSave] 完成保存失败:', error)
-    } finally {
-        // 重置状态
-        sessionPathCache = null
-        preSaveCompleted = false
-    }
-}
-
-// ============================================================
-// 状态管理
-// ============================================================
-
-/**
- * 重置保存状态（取消翻译时调用）
- */
-export function resetSaveState(): void {
+  const imageStore = useImageStore()
+  try {
+    await persistSessionMeta(runtime, {
+      totalPages: imageStore.images.length,
+      currentImageIndex: imageStore.currentImageIndex,
+    })
+    console.log('[AutoSave] 会话保存完成')
+  } catch (error) {
+    console.error('[AutoSave] 完成保存失败:', error)
+  } finally {
     sessionPathCache = null
     preSaveCompleted = false
-    console.log('[AutoSave] 保存状态已重置')
+  }
+}
+
+export function resetSaveState(): void {
+  sessionPathCache = null
+  preSaveCompleted = false
+  console.log('[AutoSave] 保存状态已重置')
 }

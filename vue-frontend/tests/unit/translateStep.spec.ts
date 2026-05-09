@@ -46,6 +46,7 @@ describe('executeTranslate', () => {
     const result = await executeTranslate({
       imageIndex: 0,
       originalTexts: ['Alice <keep>'],
+      settingsSnapshot: settingsStore.settings,
     })
 
     expect(parallelTranslateMock).toHaveBeenCalledWith(
@@ -82,6 +83,7 @@ describe('executeTranslate', () => {
     await executeTranslate({
       imageIndex: 0,
       originalTexts: ['Alice <keep>'],
+      settingsSnapshot: settingsStore.settings,
     })
 
     expect(translateSingleTextMock).toHaveBeenCalledWith(

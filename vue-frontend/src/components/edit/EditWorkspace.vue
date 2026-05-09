@@ -249,7 +249,8 @@ import { useBrush } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useTranslation } from '@/composables/useTranslationPipeline'
-import { executeDetection, saveDetectionResultToImage } from '@/composables/translation/core/steps'
+import { executeDetection } from '@/composables/translation/core/steps'
+import { saveDetectionResultToImage } from '@/composables/translation/core/detectionResultWriter'
 import {
   forceInitializeBookshelfSession,
   isBookshelfSessionInitialized,
@@ -263,7 +264,6 @@ import BubbleEditor from './BubbleEditor.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
-import type { ImageData as AppImageData } from '@/types/image'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
 
 // ============================================================
@@ -1069,62 +1069,6 @@ async function handleReTranslateBubble(index: number): Promise<void> {
   }
 }
 
-/** 初始化图片的文本数组（复刻原版逻辑） */
-function initializeTextArrays(image: AppImageData, count: number): void {
-  if (!image.bubbleTexts) image.bubbleTexts = []
-  if (!image.originalTexts) image.originalTexts = []
-  while (image.bubbleTexts.length < count) {
-    image.bubbleTexts.push('')
-  }
-  while (image.originalTexts.length < count) {
-    image.originalTexts.push('')
-  }
-}
-
-/** 从检测响应创建气泡状态数组（复刻原版逻辑） */
-function createBubbleStatesFromDetection(
-  response: { bubble_coords: number[][]; bubble_angles?: number[]; auto_directions?: string[]; textlines_per_bubble?: any[] },
-  image: AppImageData,
-  textStyle: { fontSize: number; fontFamily: string; textColor: string; fillColor: string; strokeEnabled: boolean; strokeColor: string; strokeWidth: number; lineSpacing: number; textAlign: 'start' | 'center' | 'end'; inpaintMethod: string }
-): BubbleState[] {
-  const autoDirections = response.auto_directions || []
-  const textlinesPerBubble = response.textlines_per_bubble || []
-  return response.bubble_coords.map((coords, i) => {
-    const x1 = coords[0] ?? 0
-    const y1 = coords[1] ?? 0
-    const x2 = coords[2] ?? 0
-    const y2 = coords[3] ?? 0
-    let autoDir: 'vertical' | 'horizontal'
-    if (autoDirections[i]) {
-      autoDir = autoDirections[i] === 'v' ? 'vertical' : 'horizontal'
-    } else {
-      autoDir = (y2 - y1) > (x2 - x1) ? 'vertical' : 'horizontal'
-    }
-    return {
-      coords: coords as [number, number, number, number],
-      originalText: image.originalTexts?.[i] || '',
-      translatedText: image.bubbleTexts?.[i] || '',
-      textboxText: '',
-      fontSize: textStyle.fontSize,
-      fontFamily: textStyle.fontFamily,
-      textDirection: autoDir,
-      autoTextDirection: autoDir,
-      textColor: textStyle.textColor,
-      fillColor: textStyle.fillColor,
-      strokeEnabled: textStyle.strokeEnabled,
-      strokeColor: textStyle.strokeColor,
-      strokeWidth: textStyle.strokeWidth,
-      lineSpacing: textStyle.lineSpacing,
-      textAlign: textStyle.textAlign,
-      rotationAngle: response.bubble_angles?.[i] || 0,
-      inpaintMethod: textStyle.inpaintMethod as 'solid' | 'lama_mpe' | 'litelama',
-      position: { x: 0, y: 0 },
-      polygon: [],
-      textlines: textlinesPerBubble[i] || []
-    }
-  })
-}
-
 /** 自动检测气泡（复刻原版逻辑） */
 async function autoDetectBubbles(): Promise<void> {
   const image = currentImage.value
@@ -1139,13 +1083,12 @@ async function autoDetectBubbles(): Promise<void> {
     showToast('正在自动检测文本框...', 'info')
     
     const settingsStore = useSettingsStore()
-    const { textStyle } = settingsStore.settings
-    
     // 使用独立的检测步骤模块
     const result = await executeDetection({
       imageIndex: currentImageIndex.value,
       image: image,
-      forceDetect: true  // 编辑模式下总是强制重新检测
+      forceDetect: true,  // 编辑模式下总是强制重新检测
+      settingsSnapshot: settingsStore.settings,
     })
     
     if (currentImage.value?.id !== expectedImageId || currentImageIndex.value !== expectedImageIndex) {
@@ -1156,16 +1099,8 @@ async function autoDetectBubbles(): Promise<void> {
     if (result.bubbleCoords.length > 0) {
       // ✅ 使用统一保存函数，确保所有字段都被保存
       saveDetectionResultToImage(expectedImageIndex, result)
-      
-      initializeTextArrays(image, result.bubbleCoords.length)
-      const detectionData = {
-        bubble_coords: result.bubbleCoords,
-        bubble_angles: result.bubbleAngles,
-        auto_directions: result.autoDirections,
-        textlines_per_bubble: result.textlinesPerBubble
-      }
-      const newBubbles = createBubbleStatesFromDetection(detectionData, image, textStyle)
-      bubbleStore.setBubbles(newBubbles)
+
+      bubbleStore.setBubbles(result.bubbleStates)
       selectFirstBubbleIfExists()
       
       showToast(`自动检测到 ${result.bubbleCoords.length} 个文本框`, 'success')
@@ -1196,8 +1131,6 @@ async function detectAllImages(): Promise<void> {
 
   // 获取设置（在循环外获取，避免重复调用）
   const settingsStore = useSettingsStore()
-  const { textStyle } = settingsStore.settings
-
   // 【复刻原版】记录当前索引
   const originalIndex = currentImageIndex.value
   const totalImages = images.value.length
@@ -1223,34 +1156,19 @@ async function detectAllImages(): Promise<void> {
         const result = await executeDetection({
           imageIndex: i,
           image: image,
-          forceDetect: true  // 批量检测总是强制重新检测
+          forceDetect: true,  // 批量检测总是强制重新检测
+          settingsSnapshot: settingsStore.settings,
         })
 
         if (result.bubbleCoords.length > 0) {
-          const img = images.value[i]
-          if (img) {
-            // 准备 bubbleStates
-            initializeTextArrays(img, result.bubbleCoords.length)
-            const detectionData = {
-              bubble_coords: result.bubbleCoords,
-              bubble_angles: result.bubbleAngles,
-              auto_directions: result.autoDirections,
-              textlines_per_bubble: result.textlinesPerBubble
-            }
-            const newBubbleStates = createBubbleStatesFromDetection(detectionData, img, textStyle)
-            
-            // ✅ 使用统一保存函数，确保所有字段都被保存
-            saveDetectionResultToImage(i, result, {
-              updateBubbleStates: true,
-              bubbleStates: newBubbleStates
-            })
-            
-            totalDetected += result.bubbleCoords.length
-            
-            // 【复刻原版】如果是当前图片，同时更新显示
-            if (i === currentImageIndex.value) {
-              loadBubbleStatesFromImage()
-            }
+          // ✅ 使用统一保存函数，确保所有字段都被保存
+          saveDetectionResultToImage(i, result)
+
+          totalDetected += result.bubbleCoords.length
+
+          // 【复刻原版】如果是当前图片，同时更新显示
+          if (i === currentImageIndex.value) {
+            loadBubbleStatesFromImage()
           }
         }
       } catch (error) {

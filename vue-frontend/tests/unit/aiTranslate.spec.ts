@@ -73,6 +73,7 @@ describe('executeAiTranslate', () => {
           autoDirections: ['vertical'],
         },
       ],
+      settingsSnapshot: settingsStore.settings,
     })
 
     expect(hqTranslateBatchMock).toHaveBeenCalledTimes(1)
@@ -159,6 +160,7 @@ describe('executeAiTranslate', () => {
           } as any,
         },
       ],
+      settingsSnapshot: settingsStore.settings,
     })
 
     expect(hqTranslateBatchMock).toHaveBeenCalledTimes(2)
