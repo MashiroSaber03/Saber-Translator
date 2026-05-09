@@ -52,7 +52,7 @@
       @zoom-in="zoomIn"
       @zoom-out="zoomOut"
       @reset-zoom="resetZoom"
-      @exit-edit-mode="exitEditMode"
+      @exit-edit-mode="handleExitToolbarAction"
       @auto-detect-bubbles="autoDetectBubbles"
       @detect-all-images="detectAllImages"
       @translate-with-bubbles="translateWithCurrentBubbles"
@@ -63,6 +63,91 @@
       @activate-restore-brush="activateRestoreBrush"
       @apply-and-next="applyAndNext"
     />
+
+    <div
+      v-if="exitDialogState !== 'closed'"
+      class="exit-save-dialog-backdrop"
+    >
+      <div
+        class="exit-save-dialog"
+        :class="`state-${exitDialogState}`"
+        role="dialog"
+        aria-label="退出编辑"
+        @click.stop
+      >
+        <template v-if="exitDialogState === 'confirm'">
+          <div class="exit-save-dialog-title">退出编辑</div>
+          <p class="exit-save-dialog-text">
+            当前章节已开启自动保存。你可以直接退出，或先保存整章进度后再退出编辑模式。
+          </p>
+          <div class="exit-save-dialog-actions">
+            <button
+              type="button"
+              class="exit-save-dialog-btn secondary"
+              data-testid="exit-without-save-button"
+              @click="exitWithoutSaving"
+            >
+              直接退出
+            </button>
+            <button
+              type="button"
+              class="exit-save-dialog-btn primary"
+              data-testid="save-and-exit-button"
+              @click="saveAndExit"
+            >
+              保存后退出
+            </button>
+            <button
+              type="button"
+              class="exit-save-dialog-btn ghost"
+              data-testid="cancel-exit-save-button"
+              @click="closeExitDialog"
+            >
+              取消
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="exitDialogState === 'saving'">
+          <div class="exit-save-dialog-title">保存后退出</div>
+          <p class="exit-save-dialog-text">{{ exitSaveMessage }}</p>
+          <div class="exit-save-dialog-progress">
+            <div class="exit-save-dialog-progress-bar">
+              <div
+                class="exit-save-dialog-progress-fill"
+                :style="{ width: `${exitSaveProgressPercent}%` }"
+              ></div>
+            </div>
+            <div v-if="exitSaveHasProgress" class="exit-save-dialog-progress-meta">
+              {{ exitSaveCurrent }}/{{ exitSaveTotal }}
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="exitDialogState === 'error'">
+          <div class="exit-save-dialog-title">保存失败</div>
+          <p class="exit-save-dialog-text">{{ exitDialogError }}</p>
+          <div class="exit-save-dialog-actions">
+            <button
+              type="button"
+              class="exit-save-dialog-btn primary"
+              data-testid="retry-save-and-exit-button"
+              @click="saveAndExit"
+            >
+              重试保存
+            </button>
+            <button
+              type="button"
+              class="exit-save-dialog-btn ghost"
+              data-testid="return-to-editing-button"
+              @click="closeExitDialog"
+            >
+              返回编辑
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
 
     <!-- 缩略图面板 - 使用拆分的组件 -->
     <EditThumbnailPanel
@@ -287,6 +372,7 @@ const emit = defineEmits<{
 const imageStore = useImageStore()
 const bubbleStore = useBubbleStore()
 const sessionStore = useSessionStore()
+const settingsStore = useSettingsStore()
 
 // 使用翻译 composable（用于"使用当前气泡翻译"功能）
 const {
@@ -374,7 +460,16 @@ const {
   hasSelection
 } = storeToRefs(bubbleStore)
 
-const { isBookshelfMode } = storeToRefs(sessionStore)
+const {
+  isBookshelfMode,
+  currentBookId,
+  currentChapterId,
+  isSaving: isSessionSaving,
+  loadingProgress: sessionLoadingProgress,
+  error: sessionSaveError,
+} = storeToRefs(sessionStore)
+
+type ExitDialogState = 'closed' | 'confirm' | 'saving' | 'error'
 
 /** 当前图片宽度（从 Store 响应式获取） */
 const currentImageWidth = computed(() => currentImage.value?.width || 0)
@@ -456,6 +551,26 @@ const isTranslateLoading = ref(false)
 
 /** 修复气泡背景中 */
 const isRepairLoading = ref(false)
+
+const exitDialogState = ref<ExitDialogState>('closed')
+const exitDialogError = ref('')
+const shouldPromptSaveOnExit = computed(() =>
+  isBookshelfMode.value && settingsStore.settings.autoSaveInBookshelfMode
+)
+const exitSaveCurrent = computed(() => sessionLoadingProgress.value.current)
+const exitSaveTotal = computed(() => sessionLoadingProgress.value.total)
+const exitSaveHasProgress = computed(() => exitSaveTotal.value > 0)
+const exitSaveProgressPercent = computed(() => {
+  if (!exitSaveHasProgress.value) return 0
+  return Math.round((exitSaveCurrent.value / exitSaveTotal.value) * 100)
+})
+const exitSaveMessage = computed(() => {
+  const message = sessionLoadingProgress.value.message?.trim()
+  if (message) {
+    return message
+  }
+  return isSessionSaving.value ? '正在保存章节进度，完成后将自动退出编辑模式...' : '正在准备保存...'
+})
 
 // ============================================================
 // 图片查看器状态
@@ -540,6 +655,9 @@ function prepareForNavigation(): void {
   if (brushMode.value) {
     exitBrushMode()
   }
+  if (exitDialogState.value !== 'saving') {
+    closeExitDialog()
+  }
   saveBubbleStatesToImage()
 }
 
@@ -601,6 +719,16 @@ function saveBubbleStatesToImage(): void {
     console.log('已保存空气泡状态到当前图片（用户主动清空，标记为手动标注）')
   }
   // 如果 bubbleStates 从未是数组且当前也没有气泡，不做任何操作（保持 null 语义）
+}
+
+function closeExitDialog(): void {
+  exitDialogState.value = 'closed'
+  exitDialogError.value = ''
+}
+
+function openExitDialog(): void {
+  exitDialogState.value = 'confirm'
+  exitDialogError.value = ''
 }
 
 /** 从当前图片加载气泡状态 */
@@ -937,6 +1065,19 @@ function handleImageLoad(viewport: 'original' | 'translated'): void {
 /** 处理重新渲染 */
 function handleReRender(): void {
   reRenderFullImage()
+}
+
+function handleExitToolbarAction(): void {
+  if (exitDialogState.value === 'saving') {
+    return
+  }
+
+  if (shouldPromptSaveOnExit.value) {
+    openExitDialog()
+    return
+  }
+
+  exitEditMode()
 }
 
 /**
@@ -1371,6 +1512,14 @@ function stopPanelResize(): void {
 function handleKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement
   const key = event.key.toLowerCase()
+
+  if (exitDialogState.value !== 'closed') {
+    if (event.key === 'Escape' && exitDialogState.value !== 'saving') {
+      closeExitDialog()
+      event.preventDefault()
+    }
+    return
+  }
   
   // 【复刻原版 edit_mode.js handleEditModeKeydown】
   // 笔刷快捷键 R/U 和导航快捷键 A/D 只在 textarea 中禁用（用户可能想输入文字）
@@ -1470,6 +1619,9 @@ function handleKeyUp(event: KeyboardEvent): void {
 
 /** 【修复问题3】应用更改并跳转下一张（复刻原版逻辑） */
 async function applyAndNext(): Promise<void> {
+  if (exitDialogState.value !== 'saving') {
+    closeExitDialog()
+  }
   saveBubbleStatesToImage()
   
   // 【修复问题3】直接await reRenderFullImage，确保渲染完成后再切图
@@ -1522,8 +1674,53 @@ async function applyAndNext(): Promise<void> {
 
 /** 退出编辑模式 */
 function exitEditMode(): void {
+  if (exitDialogState.value === 'saving') {
+    return
+  }
+  closeExitDialog()
   saveBubbleStatesToImage()
   emit('exit')
+}
+
+function exitWithoutSaving(): void {
+  exitEditMode()
+}
+
+async function saveAndExit(): Promise<void> {
+  if (exitDialogState.value === 'saving') {
+    return
+  }
+
+  saveBubbleStatesToImage()
+
+  const bookId = currentBookId.value
+  const chapterId = currentChapterId.value
+  if (!bookId || !chapterId) {
+    exitDialogError.value = '当前不在章节上下文中，无法执行整章保存'
+    exitDialogState.value = 'error'
+    return
+  }
+
+  exitDialogError.value = ''
+  exitDialogState.value = 'saving'
+
+  try {
+    const success = await sessionStore.saveChapterSession(bookId, chapterId)
+    if (!success) {
+      exitDialogError.value = sessionSaveError.value || '保存失败，请重试'
+      exitDialogState.value = 'error'
+      return
+    }
+
+    closeExitDialog()
+    emit('exit')
+  } catch (error) {
+    console.error('[EditWorkspace] 保存后退出失败:', error)
+    exitDialogError.value = error instanceof Error
+      ? error.message
+      : (sessionSaveError.value || '保存失败，请重试')
+    exitDialogState.value = 'error'
+  }
 }
 
 
@@ -1606,12 +1803,17 @@ watch(() => props.isEditModeActive, (active) => {
         fitToScreen()
       }, 100)
     })
+  } else if (exitDialogState.value !== 'saving') {
+    closeExitDialog()
   }
 })
 
 // 监听当前图片变化（loadBubbleStatesFromImage 内部已调用 fitToScreen）
 watch(currentImageIndex, () => {
   if (props.isEditModeActive) {
+    if (exitDialogState.value !== 'saving') {
+      closeExitDialog()
+    }
     loadBubbleStatesFromImage()
   }
 })
@@ -1645,6 +1847,113 @@ watch(selectedBubble, (bubble) => {
   overflow: hidden;
   margin: 0;
   border-radius: 0;
+}
+
+.exit-save-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 64px 16px 16px;
+  background: rgba(4, 8, 18, 0.22);
+  z-index: calc(var(--z-overlay) + 1);
+}
+
+.exit-save-dialog {
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(12, 19, 37, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  backdrop-filter: blur(10px);
+}
+
+.exit-save-dialog.state-error {
+  border-color: rgba(255, 107, 107, 0.55);
+}
+
+.exit-save-dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.exit-save-dialog-text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.exit-save-dialog-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.exit-save-dialog-btn {
+  min-width: 88px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.exit-save-dialog-btn.primary {
+  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+  color: #11212f;
+  font-weight: 600;
+}
+
+.exit-save-dialog-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(0, 255, 136, 0.18);
+}
+
+.exit-save-dialog-btn.secondary,
+.exit-save-dialog-btn.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.exit-save-dialog-btn.secondary:hover,
+.exit-save-dialog-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.exit-save-dialog-progress {
+  margin-top: 14px;
+}
+
+.exit-save-dialog-progress-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.exit-save-dialog-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00ff88 0%, #00d4ff 100%);
+  transition: width 0.25s ease;
+}
+
+.exit-save-dialog-progress-meta {
+  margin-top: 8px;
+  color: #00ff88;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
 }
 
 /* ============ 顶部工具栏 - 双行布局 ============ */
