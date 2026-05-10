@@ -10,11 +10,10 @@ describe('insight provider manifest', () => {
   it('filters image generation providers by capability', () => {
     const providers = IMAGE_GEN_PROVIDER_OPTIONS.map(option => option.value)
 
-    expect(providers).toContain('openai')
-    expect(providers).toContain('qwen')
-    expect(providers).toContain('custom')
-    expect(providers).not.toContain('gemini')
-    expect(providers).not.toContain('deepseek')
+    expect(providers).toEqual(['gpt2api'])
+    expect(providers).not.toContain('openai')
+    expect(providers).not.toContain('qwen')
+    expect(providers).not.toContain('custom')
   })
 
   it('filters reranker providers by capability', () => {

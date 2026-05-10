@@ -7,7 +7,6 @@
 
 import {
   AI_PROVIDER_MANIFEST,
-  getProviderBaseUrl,
   getProviderDefaultModel,
   getProviderOptionsForCapability,
   providerSupportsCapability,
@@ -109,11 +108,6 @@ export const PROVIDER_DEFAULT_MODELS: Record<string, {
   ])
 )
 
-/** 获取默认模型 */
-export function getDefaultModel(provider: string, modelType: 'vlm' | 'chat' | 'embedding' | 'reranker' | 'imageGen'): string {
-  return PROVIDER_DEFAULT_MODELS[provider]?.[modelType] || ''
-}
-
 /** VLM 默认模型映射（向后兼容） */
 export const VLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
   Object.entries(PROVIDER_DEFAULT_MODELS)
@@ -140,13 +134,6 @@ export const RERANKER_DEFAULT_MODELS: Record<string, string> = Object.fromEntrie
   Object.entries(PROVIDER_DEFAULT_MODELS)
     .filter(([_, value]) => value.reranker)
     .map(([key, value]) => [key, value.reranker!])
-)
-
-/** 生图默认模型映射（向后兼容） */
-export const IMAGE_GEN_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_DEFAULT_MODELS)
-    .filter(([_, value]) => value.imageGen)
-    .map(([key, value]) => [key, value.imageGen!])
 )
 
 /** 架构预设数据 */
@@ -193,43 +180,3 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
 export const SUPPORTED_FETCH_PROVIDERS = AI_PROVIDER_MANIFEST
   .filter(entry => entry.capabilities.includes('modelFetch') && entry.kind !== 'adapter')
   .map(entry => entry.id)
-
-/**
- * 统一的服务商 Base URL 配置
- */
-export const PROVIDER_BASE_URLS: Record<string, {
-  base?: string
-  imageGen?: string
-}> = Object.fromEntries(
-  API_PROVIDER_OPTIONS.map(option => [
-    option.value,
-    {
-      base: getProviderBaseUrl(option.value) || undefined,
-      imageGen: getProviderBaseUrl(option.value, 'imageGen') || undefined,
-    },
-  ])
-)
-
-/** 获取 Base URL */
-export function getBaseUrl(provider: string, forImageGen = false): string {
-  const config = PROVIDER_BASE_URLS[provider]
-  if (!config) return ''
-  if (forImageGen && config.imageGen) return config.imageGen
-  return config.base || ''
-}
-
-/** 生图服务商默认 Base URL（向后兼容） */
-export const IMAGE_GEN_DEFAULT_BASE_URLS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_BASE_URLS)
-    .filter(([provider]) => PROVIDER_CAPABILITIES[provider]?.imageGen)
-    .map(([provider, value]) => [provider, value.imageGen || value.base || ''])
-)
-
-/** 生图尺寸选项 */
-export const IMAGE_SIZE_OPTIONS = [
-  { value: '1024x1024', label: '1024×1024（方形）' },
-  { value: '1024x1536', label: '1024×1536（竖版漫画推荐）' },
-  { value: '1536x1024', label: '1536×1024（横版）' },
-  { value: '768x1024', label: '768×1024（竖版）' },
-  { value: '1024x768', label: '1024×768（横版）' },
-]

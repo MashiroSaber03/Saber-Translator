@@ -35,6 +35,7 @@ class APIProvider(Enum):
     JINA = "jina"
     COHERE = "cohere"
     CUSTOM = "custom"
+    GPT2API = "gpt2api"
 
 
 # 向后兼容的别名（避免破坏现有代码）
@@ -115,9 +116,9 @@ class RerankerConfig(SerializableMixin):
 @dataclass
 class ImageGenConfig(SerializableMixin):
     """生图模型配置"""
-    provider: str = "siliconflow"
+    provider: str = "gpt2api"
     api_key: str = ""
-    model: str = "stabilityai/stable-diffusion-3-5-large"
+    model: str = "gpt-image-2"
     base_url: Optional[str] = None
     max_retries: int = 3             # 每张图重试次数
 

@@ -4,7 +4,7 @@
     "label": "SiliconFlow",
     "kind": "openai_compatible",
     "defaultBaseUrl": "https://api.siliconflow.cn/v1",
-    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "imageGen", "webImportAgent"],
+    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "webImportAgent"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": false,
@@ -13,11 +13,7 @@
     "supportsJsonResponse": true,
     "defaultModels": {
       "embedding": "BAAI/bge-m3",
-      "reranker": "BAAI/bge-reranker-v2-m3",
-      "imageGen": "stabilityai/stable-diffusion-3-5-large"
-    },
-    "modelCatalogs": {
-      "imageGen": ["stabilityai/stable-diffusion-3-5-large", "stabilityai/stable-diffusion-3-medium", "black-forest-labs/FLUX.1-schnell"]
+      "reranker": "BAAI/bge-reranker-v2-m3"
     }
   },
   {
@@ -45,13 +41,7 @@
     "label": "火山引擎",
     "kind": "openai_compatible",
     "defaultBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-    "capabilityBaseUrls": {
-      "imageGen": "https://visual.volcengineapi.com"
-    },
-    "capabilityEndpoints": {
-      "imageGen": "/v1/images/generations"
-    },
-    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "imageGen", "webImportAgent"],
+    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "webImportAgent"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": false,
@@ -60,8 +50,7 @@
     "supportsJsonResponse": true,
     "defaultModels": {
       "vlm": "doubao-1.5-vision-pro-32k",
-      "chat": "doubao-1.5-pro-32k",
-      "imageGen": "high_aes_general_v21"
+      "chat": "doubao-1.5-pro-32k"
     }
   },
   {
@@ -89,7 +78,7 @@
     "id": "custom",
     "label": "自定义 OpenAI 兼容服务",
     "kind": "openai_compatible",
-    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "imageGen", "webImportAgent"],
+    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "webImportAgent"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": true,
@@ -165,7 +154,7 @@
     "label": "OpenAI",
     "kind": "openai_compatible",
     "defaultBaseUrl": "https://api.openai.com/v1",
-    "capabilities": ["modelFetch", "connectionTest", "vlm", "chat", "embedding", "imageGen", "webImportAgent"],
+    "capabilities": ["modelFetch", "connectionTest", "vlm", "chat", "embedding", "webImportAgent"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": false,
@@ -175,12 +164,10 @@
     "defaultModels": {
       "vlm": "gpt-4o",
       "chat": "gpt-4o",
-      "embedding": "text-embedding-3-small",
-      "imageGen": "dall-e-3"
+      "embedding": "text-embedding-3-small"
     },
     "modelCatalogs": {
-      "vlm": ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"],
-      "imageGen": ["dall-e-3", "dall-e-2"]
+      "vlm": ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"]
     }
   },
   {
@@ -188,13 +175,7 @@
     "label": "通义千问",
     "kind": "openai_compatible",
     "defaultBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "capabilityBaseUrls": {
-      "imageGen": "https://dashscope.aliyuncs.com/api/v1"
-    },
-    "capabilityEndpoints": {
-      "imageGen": "/services/aigc/text2image/image-synthesis"
-    },
-    "capabilities": ["modelFetch", "connectionTest", "vlm", "chat", "embedding", "rerank", "imageGen"],
+    "capabilities": ["modelFetch", "connectionTest", "vlm", "chat", "embedding", "rerank"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": false,
@@ -204,12 +185,25 @@
     "defaultModels": {
       "vlm": "qwen-vl-max",
       "chat": "qwen-plus",
-      "embedding": "text-embedding-v3",
-      "imageGen": "wanx-v1"
+      "embedding": "text-embedding-v3"
     },
     "modelCatalogs": {
-      "vlm": ["qwen-vl-max", "qwen-vl-plus"],
-      "imageGen": ["wanx-v1", "wanx2.1-t2i-turbo", "wanx2.1-t2i-plus"]
+      "vlm": ["qwen-vl-max", "qwen-vl-plus"]
+    }
+  },
+  {
+    "id": "gpt2api",
+    "label": "gpt2api",
+    "kind": "adapter",
+    "capabilities": ["imageGen"],
+    "requiresApiKey": true,
+    "requiresModel": true,
+    "requiresBaseUrl": true,
+    "isLocal": false,
+    "supportsStream": false,
+    "supportsJsonResponse": true,
+    "defaultModels": {
+      "imageGen": "gpt-image-2"
     }
   },
   {

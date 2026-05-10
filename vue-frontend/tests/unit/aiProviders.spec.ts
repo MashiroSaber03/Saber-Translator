@@ -47,6 +47,12 @@ describe('translation page AI provider manifest', () => {
     expect(getProviderDefaultModel('qwen', 'chat')).toBe('qwen-plus')
   })
 
+  it('treats gpt2api as a base-url-driven image generation adapter', () => {
+    expect(providerSupportsCapability('gpt2api', 'imageGen')).toBe(true)
+    expect(providerSupportsCapability('gpt2api', 'modelFetch')).toBe(false)
+    expect(providerRequiresBaseUrl('gpt2api')).toBe(true)
+  })
+
   it('does not expose removed reasoning-control manifest fields', () => {
     for (const entry of AI_PROVIDER_MANIFEST) {
       expect(entry).not.toHaveProperty('supportsReasoningControl')

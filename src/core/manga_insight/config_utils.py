@@ -24,6 +24,8 @@ logger = logging.getLogger("MangaInsight.Config")
 # 配置文件名
 CONFIG_FILENAME = "manga_insight_settings.json"
 CURRENT_SCHEMA_VERSION = 2
+IMAGE_GEN_PROVIDER_ID = "gpt2api"
+IMAGE_GEN_DEFAULT_MODEL = "gpt-image-2"
 
 
 def has_provider_credentials(provider: str, api_key: str = "") -> bool:
@@ -261,6 +263,18 @@ def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any]
                 provider_group[provider_name] = migrated_payload
                 changed = changed or payload_changed
 
+    image_gen = migrated.get("image_gen")
+    if isinstance(image_gen, dict):
+        original_provider = str(image_gen.get("provider") or "").strip().lower()
+        if image_gen.get("provider") != IMAGE_GEN_PROVIDER_ID:
+            image_gen["provider"] = IMAGE_GEN_PROVIDER_ID
+            changed = True
+        # 生图链路已硬重置为 gpt2api-only。
+        # 旧 provider 对应的历史模型名不再可信，统一回退到网关默认模型。
+        if original_provider != IMAGE_GEN_PROVIDER_ID or not image_gen.get("model"):
+            image_gen["model"] = IMAGE_GEN_DEFAULT_MODEL
+            changed = True
+
     if migrated.get("schema_version") != CURRENT_SCHEMA_VERSION:
         migrated["schema_version"] = CURRENT_SCHEMA_VERSION
         changed = True
@@ -298,6 +312,17 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
     if config.embedding.base_url:
         if not config.embedding.base_url.startswith(("http://", "https://")):
             errors.append("Embedding base_url 格式无效，应以 http:// 或 https:// 开头")
+
+    # ImageGen 配置验证
+    if config.image_gen.provider != IMAGE_GEN_PROVIDER_ID:
+        errors.append(f"生图服务商当前仅支持 {IMAGE_GEN_PROVIDER_ID}")
+    if provider_requires_api_key(config.image_gen.provider) and not config.image_gen.api_key:
+        warnings.append("ImageGen 已选择服务商但未配置 API Key")
+    if config.image_gen.base_url:
+        if not config.image_gen.base_url.startswith(("http://", "https://")):
+            errors.append("ImageGen base_url 格式无效，应以 http:// 或 https:// 开头")
+    else:
+        warnings.append("ImageGen 已选择服务商但未配置 Base URL")
 
     # 批量分析参数验证（错误级别 - 无效参数会导致分析失败）
     if config.analysis.batch.pages_per_batch < 1:
@@ -385,6 +410,13 @@ def save_insight_config(config: MangaInsightConfig) -> bool:
         else:
             logger.error(f"无效的配置类型: {type(config)}")
             return False
+
+        image_gen = data.get("image_gen")
+        if isinstance(image_gen, dict):
+            original_provider = str(image_gen.get("provider") or "").strip().lower()
+            image_gen["provider"] = IMAGE_GEN_PROVIDER_ID
+            if original_provider != IMAGE_GEN_PROVIDER_ID or not image_gen.get("model"):
+                image_gen["model"] = IMAGE_GEN_DEFAULT_MODEL
         
         success = save_json_config(CONFIG_FILENAME, data)
         if success:

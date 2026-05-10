@@ -52,6 +52,29 @@ export const useInsightStore = defineStore('insight', () => {
     return target
   }
 
+  function normalizeImageGenConfig(
+    source?: Partial<StoreImageGenConfig> | null,
+    previous?: StoreImageGenConfig
+  ): StoreImageGenConfig {
+    const base = previous ?? {
+      provider: 'gpt2api',
+      apiKey: '',
+      model: 'gpt-image-2',
+      baseUrl: '',
+      maxRetries: 3
+    }
+    const originalProvider = String(source?.provider || '').trim().toLowerCase()
+    const model = originalProvider === 'gpt2api' && source?.model ? source.model : 'gpt-image-2'
+
+    return {
+      provider: 'gpt2api',
+      apiKey: source?.apiKey ?? base.apiKey,
+      model,
+      baseUrl: source?.baseUrl ?? base.baseUrl,
+      maxRetries: source?.maxRetries ?? base.maxRetries
+    }
+  }
+
   // ============================================================
   // 核心状态
   // ============================================================
@@ -110,7 +133,7 @@ export const useInsightStore = defineStore('insight', () => {
     },
     embedding: { provider: 'openai', apiKey: '', model: 'text-embedding-3-small', baseUrl: '', rpmLimit: 0 },
     reranker: { provider: 'jina', apiKey: '', model: 'jina-reranker-v2-base-multilingual', baseUrl: '', topK: 5 },
-    imageGen: { provider: 'siliconflow', apiKey: '', model: 'stabilityai/stable-diffusion-3-5-large', baseUrl: '', maxRetries: 3 },
+    imageGen: normalizeImageGenConfig(),
     batch: { pagesPerBatch: 5, contextBatchCount: 1, architecturePreset: 'standard', customLayers: [] },
     prompts: {}
   })
@@ -206,7 +229,7 @@ export const useInsightStore = defineStore('insight', () => {
   }
   function updateEmbeddingConfig(c: Partial<EmbeddingConfig>): void { config.value.embedding = { ...config.value.embedding, ...c }; configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding); saveConfigToStorage() }
   function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = { ...config.value.reranker, ...c }; configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
-  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = { ...config.value.imageGen, ...c }; saveConfigToStorage() }
+  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeImageGenConfig(c, config.value.imageGen); saveConfigToStorage() }
   function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c }; saveConfigToStorage() }
   function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts }; saveConfigToStorage() }
 
@@ -215,12 +238,12 @@ export const useInsightStore = defineStore('insight', () => {
   function setEmbeddingProvider(p: string): void { if (config.value.embedding.provider === p) return; configManager.embeddingManager.switch(config.value.embedding.provider, p, config.value.embedding); config.value.embedding.provider = p; saveConfigToStorage() }
   function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p; saveConfigToStorage() }
 
-  function setConfig(newConfig: InsightConfig): void { config.value = newConfig; saveConfigToStorage() }
+  function setConfig(newConfig: InsightConfig): void { config.value = { ...newConfig, imageGen: normalizeImageGenConfig(newConfig.imageGen, config.value.imageGen) }; saveConfigToStorage() }
   function saveConfigToStorage(): void { localStorage.setItem('manga_insight_config', JSON.stringify(config.value)) }
   function loadConfigFromStorage(): void {
     configManager.loadFromStorage()
     const stored = localStorage.getItem('manga_insight_config')
-      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, extraBody: p?.vlm?.extraBody, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, extraBody: p?.llm?.extraBody, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: { ...config.value.reranker, ...p.reranker }, imageGen: { ...config.value.imageGen, ...p.imageGen }, batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
+      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, extraBody: p?.vlm?.extraBody, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, extraBody: p?.llm?.extraBody, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: { ...config.value.reranker, ...p.reranker }, imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -255,7 +278,13 @@ export const useInsightStore = defineStore('insight', () => {
     if (embedding) config.value.embedding = { provider: (embedding.provider as string) || 'openai', apiKey: (embedding.api_key as string) || '', model: (embedding.model as string) || '', baseUrl: (embedding.base_url as string) || '', rpmLimit: (embedding.rpm_limit as number) ?? 0 }
     if (reranker) config.value.reranker = { provider: (reranker.provider as string) || 'jina', apiKey: (reranker.api_key as string) || '', model: (reranker.model as string) || '', baseUrl: (reranker.base_url as string) || '', topK: (reranker.top_k as number) || 5 }
     if (batch) { const cl = batch.custom_layers as Array<Record<string, unknown>> | undefined; config.value.batch = { pagesPerBatch: (batch.pages_per_batch as number) || 5, contextBatchCount: (batch.context_batch_count as number) ?? 1, architecturePreset: (batch.architecture_preset as string) || 'standard', customLayers: cl?.map(l => ({ name: (l.name as string) || '', units: (l.units_per_group as number) || 1, align: (l.align_to_chapter as boolean) || false })) || [] } }
-    if (imageGen) config.value.imageGen = { provider: (imageGen.provider as string) || 'siliconflow', apiKey: (imageGen.api_key as string) || '', model: (imageGen.model as string) || 'stabilityai/stable-diffusion-3-5-large', baseUrl: (imageGen.base_url as string) || '', maxRetries: (imageGen.max_retries as number) || 3 }
+    if (imageGen) config.value.imageGen = normalizeImageGenConfig({
+      provider: imageGen.provider as string | undefined,
+      apiKey: (imageGen.api_key as string) || '',
+      model: imageGen.model as string | undefined,
+      baseUrl: (imageGen.base_url as string) || '',
+      maxRetries: (imageGen.max_retries as number) || 3
+    }, config.value.imageGen)
 
     const ps = apiConfig.providerSettings as Record<string, Record<string, Record<string, unknown>>> | undefined
     if (ps) {
