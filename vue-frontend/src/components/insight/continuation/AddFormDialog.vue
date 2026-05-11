@@ -90,6 +90,17 @@ function add() {
   animation: fadeIn 0.2s;
 }
 
+.modal-dialog {
+  background: var(--bg-primary, #fff);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
+  animation: slideUp 0.3s;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
