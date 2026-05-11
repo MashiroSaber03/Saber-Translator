@@ -3,7 +3,7 @@
  * 使用 provide/inject 模式在组件树中共享状态
  */
 
-import { ref, readonly, type Ref, inject, provide, type InjectionKey } from 'vue'
+import { ref, readonly, type Ref, inject, type InjectionKey } from 'vue'
 import type { CharacterProfile, ChapterScript, PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 
@@ -12,6 +12,7 @@ export interface ContinuationState {
     isLoading: Readonly<Ref<boolean>>
     isDataReady: Readonly<Ref<boolean>>
     currentStep: Ref<number>
+    messageType: Ref<'success' | 'error' | 'info' | ''>
     errorMessage: Ref<string>
     successMessage: Ref<string>
 
@@ -50,8 +51,10 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const isLoading = ref(false)
     const isDataReady = ref(false)
     const currentStep = ref(0)
+    const messageType = ref<'success' | 'error' | 'info' | ''>('')
     const errorMessage = ref('')
     const successMessage = ref('')
+    let messageTimer: ReturnType<typeof setTimeout> | null = null
 
     // 配置数据
     const pageCount = ref(10)
@@ -73,7 +76,15 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     async function initializeData() {
         if (!bookId.value) return
 
+        if (messageTimer) {
+            clearTimeout(messageTimer)
+            messageTimer = null
+        }
+
         isLoading.value = true
+        messageType.value = ''
+        errorMessage.value = ''
+        successMessage.value = ''
 
         try {
             const result = await continuationApi.prepareContinuation(bookId.value)
@@ -99,14 +110,21 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 // 获取原作总页数
                 try {
                     const availableResult = await continuationApi.getAvailableImages(bookId.value, 'script')
-                    if (availableResult.success && availableResult.total_original_pages) {
+                    if (availableResult.success && typeof availableResult.total_original_pages === 'number') {
                         totalOriginalPages.value = availableResult.total_original_pages
                     }
                 } catch (e) {
                     console.warn('获取原作总页数失败:', e)
                 }
 
-                isDataReady.value = true
+                isDataReady.value = Boolean(result.ready)
+
+                if (!result.ready && result.message) {
+                    errorMessage.value = result.message
+                    messageType.value = 'error'
+                }
+            } else if (!result.success && result.error) {
+                showMessage(result.error, 'error')
             }
         } catch (error) {
             console.error('初始化数据失败:', error)
@@ -117,8 +135,15 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     async function resetState() {
+        if (messageTimer) {
+            clearTimeout(messageTimer)
+            messageTimer = null
+        }
         currentStep.value = 0
         isDataReady.value = false
+        messageType.value = ''
+        errorMessage.value = ''
+        successMessage.value = ''
         characters.value = []
         chapterScript.value = null
         pages.value = []
@@ -130,17 +155,25 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     function showMessage(message: string, type: 'success' | 'error' | 'info' = 'info') {
+        if (messageTimer) {
+            clearTimeout(messageTimer)
+            messageTimer = null
+        }
+
+        messageType.value = type
         if (type === 'error') {
             errorMessage.value = message
             successMessage.value = ''
-        } else if (type === 'success') {
+        } else {
             successMessage.value = message
             errorMessage.value = ''
         }
 
-        setTimeout(() => {
+        messageTimer = setTimeout(() => {
+            messageType.value = ''
             errorMessage.value = ''
             successMessage.value = ''
+            messageTimer = null
         }, 3000)
     }
 
@@ -165,6 +198,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         isLoading: readonly(isLoading),
         isDataReady: readonly(isDataReady),
         currentStep,
+        messageType,
         errorMessage,
         successMessage,
 
@@ -196,24 +230,11 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 }
 
-export function provideContinuationState() {
-    const bookId = inject<Ref<string>>('bookId')
-
-    if (!bookId) {
-        throw new Error('provideContinuationState must be used after bookId is provided')
-    }
-
-    const state = useContinuationState(bookId)
-    provide(ContinuationStateKey, state)
-
-    return state
-}
-
 export function useContinuationStateInject(): ContinuationState {
     const state = inject(ContinuationStateKey)
 
     if (!state) {
-        throw new Error('useContinuationStateInject must be used after provideContinuationState')
+        throw new Error('useContinuationStateInject must be used inside ContinuationPanel')
     }
 
     return state

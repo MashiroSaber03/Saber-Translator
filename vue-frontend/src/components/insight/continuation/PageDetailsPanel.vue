@@ -47,7 +47,6 @@
               v-model="page.description"
               rows="2"
               class="field-input"
-              @input="onDataChange"
             ></textarea>
           </div>
           
@@ -66,7 +65,6 @@
               v-model="page.image_prompt"
               rows="3"
               class="field-input"
-              @input="onDataChange"
             ></textarea>
             <button 
               class="btn secondary small"
@@ -89,7 +87,7 @@
 <script setup lang="ts">
 import type { PageContent } from '@/api/continuation'
 
-const props = defineProps<{
+defineProps<{
   pages: PageContent[]
   isGenerating: boolean
   regeneratingPage: number | null
@@ -100,18 +98,12 @@ const emit = defineEmits<{
   'regenerate-prompt': [pageNumber: number]
   'regenerate-all-prompts': []
   'save-changes': []
-  'data-change': []
 }>()
 
 function updateCharacters(page: PageContent, event: Event) {
   const input = event.target as HTMLInputElement
   const value = input.value
   page.characters = value.split(',').map(s => s.trim()).filter(s => s)
-  onDataChange()
-}
-
-function onDataChange() {
-  emit('data-change')
 }
 
 function getStatusText(status: string): string {

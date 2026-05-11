@@ -13,10 +13,14 @@
         class="script-textarea"
         rows="15"
         placeholder="脚本将在此显示..."
+        @input="handleScriptInput"
       ></textarea>
 
       <div class="script-actions">
-        <button class="btn secondary small" @click="scriptText = script!.script_text">↺ 重置</button>
+        <button class="btn secondary small" @click="$emit('reset-script')">↺ 重置</button>
+        <button class="btn secondary small" :disabled="!script || isSaving" @click="handleSave">
+          {{ isSaving ? '保存中...' : '💾 保存' }}
+        </button>
       </div>
     </div>
 
@@ -77,11 +81,15 @@ import ReferenceImageSelector from './ReferenceImageSelector.vue'
 const props = defineProps<{
   script: ChapterScript | null
   isGenerating: boolean
+  isSaving?: boolean
   bookId: string
 }>()
 
 const emit = defineEmits<{
-  'generate': [referenceImages: string[] | null]
+  'generate': [payload: { referenceImages: string[] | null; referenceImageCount: number }]
+  'update-script': [scriptText: string]
+  'save-script': []
+  'reset-script': []
 }>()
 
 const scriptText = ref('')
@@ -90,10 +98,8 @@ const selectorVisible = ref(false)
 const selectedRefImages = ref<string[]>([])
 const availableOriginalImages = ref<MangaImageInfo[]>([])
 
-watch(() => props.script, (newScript) => {
-  if (newScript) {
-    scriptText.value = newScript.script_text
-  }
+watch(() => props.script?.script_text, (newScriptText) => {
+  scriptText.value = newScriptText || ''
 }, { immediate: true })
 
 // 加载可用图片列表
@@ -143,7 +149,18 @@ function getDisplayRefCount(): number {
 function handleGenerate() {
   // 如果用户选择了参考图，传递选择的路径；否则传null使用自动逻辑
   const refs = selectedRefImages.value.length > 0 ? selectedRefImages.value : null
-  emit('generate', refs)
+  emit('generate', {
+    referenceImages: refs,
+    referenceImageCount: refCount.value,
+  })
+}
+
+function handleScriptInput() {
+  emit('update-script', scriptText.value)
+}
+
+function handleSave() {
+  emit('save-script')
 }
 
 // 组件挂载时加载可用图片

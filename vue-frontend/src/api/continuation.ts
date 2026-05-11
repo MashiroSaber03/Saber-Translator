@@ -307,18 +307,14 @@ export async function setFormReference(
 }
 
 /**
- * 生成脚本
+ * 保存编辑后的脚本
  */
-export async function generateScript(
+export async function saveScript(
     bookId: string,
-    direction: string,
-    pageCount: number
+    script: ChapterScript
 ): Promise<ScriptResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/script`, {
-        direction,
-        page_count: pageCount
-    }, {
-        timeout: 0  // 移除超时限制，LLM 生成可能很耗时
+    return apiClient.post(`/api/manga-insight/${bookId}/continuation/save-script`, {
+        script,
     })
 }
 
@@ -556,12 +552,14 @@ export async function generateScriptWithRefs(
     bookId: string,
     direction: string,
     pageCount: number,
-    referenceImages?: string[]
+    referenceImages?: string[],
+    referenceImageCount: number = 5
 ): Promise<ScriptResponse> {
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/script`, {
         direction,
         page_count: pageCount,
-        reference_images: referenceImages || null
+        reference_images: referenceImages || null,
+        reference_image_count: referenceImageCount,
     }, {
         timeout: 0  // 移除超时限制，LLM 生成可能很耗时
     })

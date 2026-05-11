@@ -29,7 +29,7 @@ def prepare_continuation(book_id: str):
     """
     准备续写所需的数据
 
-    检查故事概要和时间线是否存在，如果不存在则生成。
+    检查故事概要和时间线是否存在。
     同时返回已保存的续写数据（脚本、页面等）。
     """
     try:
@@ -50,13 +50,13 @@ def prepare_continuation(book_id: str):
 
 @manga_insight_bp.route('/<book_id>/continuation/save-pages', methods=['POST'])
 def save_continuation_pages(book_id: str):
-    """保存页面详情和提示词"""
+    """保存页面详情和提示词，允许传空数组以清空下游数据"""
     try:
         data = request.get_json() or {}
-        pages_data = data.get("pages", [])
+        pages_data = data.get("pages", None)
 
-        if not pages_data:
-            return error_response("缺少页面数据", 400)
+        if pages_data is None or not isinstance(pages_data, list):
+            return error_response("页面数据格式无效", 400)
 
         storage = AnalysisStorage(book_id)
         run_async(storage.save_continuation_pages(pages_data))

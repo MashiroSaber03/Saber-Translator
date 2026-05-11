@@ -3,9 +3,9 @@
  * 处理角色CRUD、形态管理、图片上传等
  */
 
-import { inject, provide, type Ref, type InjectionKey } from 'vue'
+import { inject, type Ref, type InjectionKey } from 'vue'
 import * as continuationApi from '@/api/continuation'
-import { useContinuationStateInject, type ContinuationState } from './useContinuationState'
+import type { ContinuationState } from './useContinuationState'
 
 interface CharacterManagementComposable {
     addCharacter: (name: string, aliases: string[], description: string) => Promise<void>
@@ -119,10 +119,13 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         if (!bookId.value) return
 
         try {
-            // 自动生成formId - 基于现有形态数量
             const char = state.characters.value.find(c => c.name === charName)
-            const existingFormsCount = char?.forms?.length || 0
-            const formId = `form_${existingFormsCount + 1}`
+            const existingForms = new Set((char?.forms || []).map(form => form.form_id))
+            let nextIndex = 1
+            while (existingForms.has(`form_${nextIndex}`)) {
+                nextIndex += 1
+            }
+            const formId = `form_${nextIndex}`
 
             const result = await continuationApi.addCharacterForm(bookId.value, charName, {
                 form_id: formId,
@@ -183,7 +186,7 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
         try {
             const formData = new FormData()
-            formData.append('file', file)
+            formData.append('image', file)
 
             const result = await continuationApi.uploadFormImage(bookId.value, charName, formId, formData)
 
@@ -293,24 +296,10 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
     }
 }
 
-export function provideCharacterManagement() {
-    const bookId = inject<Ref<string>>('bookId')
-    const state = useContinuationStateInject()
-
-    if (!bookId) {
-        throw new Error('provideCharacterManagement must be used after bookId is provided')
-    }
-
-    const composable = useCharacterManagement(bookId, state)
-    provide(CharacterManagementKey, composable)
-
-    return composable
-}
-
 export function useCharacterManagementInject(): CharacterManagementComposable {
     const composable = inject(CharacterManagementKey)
     if (!composable) {
-        throw new Error('useCharacterManagementInject must be used after provideCharacterManagement')
+        throw new Error('useCharacterManagementInject must be used inside ContinuationPanel')
     }
     return composable
 }

@@ -3,10 +3,10 @@
  * 处理页面图片生成、滑动窗口参考图、三视图生成等
  */
 
-import { ref, type Ref, inject, provide, type InjectionKey } from 'vue'
+import { ref, type Ref } from 'vue'
 import type { PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
-import { useContinuationStateInject, type ContinuationState } from './useContinuationState'
+import type { ContinuationState } from './useContinuationState'
 
 interface ImageGenerationComposable {
     isGenerating: Ref<boolean>
@@ -15,13 +15,41 @@ interface ImageGenerationComposable {
     regeneratePageImage: (pageNumber: number) => Promise<void>
 }
 
-const ImageGenerationKey: InjectionKey<ImageGenerationComposable> = Symbol('ImageGeneration')
-
-export { ImageGenerationKey }
-
 export function useImageGeneration(bookId: Ref<string | undefined>, state: ContinuationState): ImageGenerationComposable {
     const isGenerating = ref(false)
     const generationProgress = ref(0)
+
+    async function resolveStyleReferences(currentPageNumber: number): Promise<string[]> {
+        if (!bookId.value) return []
+
+        try {
+            const currentAbsolutePage = state.totalOriginalPages.value + currentPageNumber
+            const availableResult = await continuationApi.getAvailableImages(
+                bookId.value,
+                'image',
+                currentAbsolutePage
+            )
+
+            if (availableResult.success) {
+                const merged = [
+                    ...(availableResult.original_images || []),
+                    ...(availableResult.continuation_images || []),
+                ]
+                    .filter(image => image.has_image && image.path)
+                    .sort((left, right) => left.page_number - right.page_number)
+                    .map(image => image.path)
+
+                if (merged.length > 0) {
+                    return merged.slice(-state.styleRefPages.value)
+                }
+            }
+        } catch (error) {
+            console.warn('获取可用参考图失败，回退到默认逻辑:', error)
+        }
+
+        const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
+        return styleResult.success && styleResult.images ? styleResult.images : []
+    }
 
     async function batchGenerateImages(pages: PageContent[], initialStyleRefs?: string[]) {
         if (!bookId.value || pages.length === 0) return
@@ -39,9 +67,8 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                 // 使用用户选择的初始参考图
                 styleRefs = [...initialStyleRefs]
             } else {
-                // 使用自动逻辑：获取原作最后N张
-                const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
-                styleRefs = styleResult.success && styleResult.images ? styleResult.images : []
+                const firstPendingPage = pages.find(page => !page.image_url)?.page_number ?? 1
+                styleRefs = await resolveStyleReferences(firstPendingPage)
             }
 
             for (const page of pages) {
@@ -104,9 +131,7 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         try {
             page.status = 'generating'
 
-            // 使用自动逻辑获取画风参考图
-            const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
-            const styleRefs = styleResult.success && styleResult.images ? styleResult.images : []
+            const styleRefs = await resolveStyleReferences(pageNumber)
 
             const result = await continuationApi.regeneratePageImage(
                 bookId.value,
@@ -142,26 +167,4 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         batchGenerateImages,
         regeneratePageImage
     }
-}
-
-export function provideImageGeneration() {
-    const bookId = inject<Ref<string>>('bookId')
-    const state = useContinuationStateInject()
-
-    if (!bookId) {
-        throw new Error('provideImageGeneration must be used after bookId is provided')
-    }
-
-    const composable = useImageGeneration(bookId, state)
-    provide(ImageGenerationKey, composable)
-
-    return composable
-}
-
-export function useImageGenerationInject(): ImageGenerationComposable {
-    const composable = inject(ImageGenerationKey)
-    if (!composable) {
-        throw new Error('useImageGenerationInject must be used after provideImageGeneration')
-    }
-    return composable
 }

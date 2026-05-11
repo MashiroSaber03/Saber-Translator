@@ -29,6 +29,7 @@ def generate_script(book_id: str):
         {
             "direction": "用户指定的续写方向",
             "page_count": 15,
+            "reference_image_count": 5,
             "reference_images": ["路径1", "路径2", ...]  // 可选，自定义参考图路径列表
         }
 
@@ -46,14 +47,17 @@ def generate_script(book_id: str):
     try:
         data = request.get_json() or {}
         direction = data.get("direction", "")
-        page_count = data.get("page_count", 15)
-        reference_images = data.get("reference_images", None)
+        page_count = max(1, int(data.get("page_count", 15) or 15))
+        reference_image_count = max(1, int(data.get("reference_image_count", 5) or 5))
+        reference_images_raw = data.get("reference_images", None)
+        reference_images = reference_images_raw if isinstance(reference_images_raw, list) else None
 
         story_gen = StoryGenerator(book_id)
         script = run_async(story_gen.generate_chapter_script(
             user_direction=direction,
             page_count=page_count,
-            custom_reference_images=reference_images
+            custom_reference_images=reference_images,
+            reference_image_count=reference_image_count,
         ))
 
         # 自动保存脚本到持久化存储
@@ -65,6 +69,26 @@ def generate_script(book_id: str):
 
     except Exception as e:
         logger.error(f"生成脚本失败: {e}")
+        return error_response(str(e), 500)
+
+
+@manga_insight_bp.route('/<book_id>/continuation/save-script', methods=['POST'])
+def save_script(book_id: str):
+    """保存编辑后的续写脚本"""
+    try:
+        data = request.get_json() or {}
+        script_data = data.get("script", {})
+
+        if not script_data or not isinstance(script_data, dict):
+            return error_response("缺少脚本数据", 400)
+
+        script = ChapterScript.from_dict(script_data)
+        storage = AnalysisStorage(book_id)
+        run_async(storage.save_continuation_script(script.to_dict()))
+
+        return success_response(data={"script": script.to_dict()})
+    except Exception as e:
+        logger.error(f"保存脚本失败: {e}")
         return error_response(str(e), 500)
 
 

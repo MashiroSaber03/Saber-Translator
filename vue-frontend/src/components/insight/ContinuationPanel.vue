@@ -1,7 +1,7 @@
 <template>
   <div class="continuation-panel">
     <!-- 消息提示 -->
-    <div v-if="state.errorMessage.value || state.successMessage.value" class="message" :class="state.errorMessage.value ? 'error' : 'success'">
+    <div v-if="state.errorMessage.value || state.successMessage.value" class="message" :class="state.messageType.value || (state.errorMessage.value ? 'error' : 'success')">
       {{ state.errorMessage.value || state.successMessage.value }}
     </div>
     
@@ -69,9 +69,13 @@
       <div v-show="state.currentStep.value === 1" class="step-panel">
         <ScriptGenerationPanel
           :script="state.chapterScript.value"
-          :is-generating="scriptGen.isGenerating.value"
+          :is-generating="isGeneratingScript.value"
+          :is-saving="isSavingScript.value"
           :book-id="insightStore.currentBookId || ''"
           @generate="handleGenerateScript"
+          @update-script="handleScriptUpdate"
+          @save-script="handleSaveScript"
+          @reset-script="handleResetScript"
         />
         
         <div class="actions">
@@ -92,7 +96,6 @@
           @regenerate-prompt="handleRegeneratePrompt"
           @regenerate-all-prompts="handleRegenerateAllPrompts"
           @save-changes="handleSavePageChanges"
-          @data-change="onPageDataChange"
         />
         
         <div class="actions">
@@ -143,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, provide } from 'vue'
+import { ref, computed, onMounted, watch, provide, onBeforeUnmount } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { 
   useContinuationState,
@@ -153,14 +156,7 @@ import {
   useCharacterManagement,
   CharacterManagementKey
 } from '@/composables/continuation/useCharacterManagement'
-import { 
-  useScriptGeneration,
-  ScriptGenerationKey
-} from '@/composables/continuation/useScriptGeneration'
-import { 
-  useImageGeneration,
-  ImageGenerationKey
-} from '@/composables/continuation/useImageGeneration'
+import { useImageGeneration } from '@/composables/continuation/useImageGeneration'
 import CharacterManagementPanel from './continuation/CharacterManagementPanel.vue'
 import ScriptGenerationPanel from './continuation/ScriptGenerationPanel.vue'
 import PageDetailsPanel from './continuation/PageDetailsPanel.vue'
@@ -180,24 +176,24 @@ provide(ContinuationStateKey, stateComposable)
 const charMgmtComposable = useCharacterManagement(bookId, stateComposable)
 provide(CharacterManagementKey, charMgmtComposable)
 
-const scriptGenComposable = useScriptGeneration(bookId, stateComposable)
-provide(ScriptGenerationKey, scriptGenComposable)
-
 const imageGenComposable = useImageGeneration(bookId, stateComposable)
-provide(ImageGenerationKey, imageGenComposable)
 
 // 使用已创建的composables
 const state = stateComposable
-const scriptGen = scriptGenComposable
 const imageGen = imageGenComposable
 
 const stepNames = ['角色设置', '生成脚本', '页面详情', '图片生成', '导出']
 
 const regeneratingPromptPage = ref<number | null>(null)
+const isGeneratingScript = ref(false)
+const isSavingScript = ref(false)
+const scriptDirty = ref(false)
+const lastSavedScriptText = ref('')
+let promptSaveTimer: ReturnType<typeof setTimeout> | null = null
 
 // 计算属性
 const canProceedToScript = computed(() => {
-  return state.characters.value.length > 0
+  return state.isDataReady.value && state.characters.value.length > 0
 })
 
 const canProceedToPages = computed(() => {
@@ -233,19 +229,27 @@ function canNavigateToStep(step: number): boolean {
 
 function navigateToStep(step: number) {
   if (canNavigateToStep(step)) {
-    state.currentStep.value = step
+    void goToStep(step)
   }
 }
 
-function goToStep(step: number) {
-  state.currentStep.value = step
+function resolveReachableStep(requestedStep: number): number {
+  if (requestedStep <= 0) return 0
+  if (!canProceedToScript.value) return 0
+  if (requestedStep === 1) return 1
+  if (!canProceedToPages.value) return 1
+  if (requestedStep === 2) return 2
+  if (!canProceedToImages.value) return 2
+  if (requestedStep === 3) return 3
+  if (!canProceedToExport.value) return 3
+  return 4
 }
 
 // 脚本生成
-async function handleGenerateScript(referenceImages: string[] | null) {
+async function handleGenerateScript(payload: { referenceImages: string[] | null; referenceImageCount: number }) {
   if (!insightStore.currentBookId) return
 
-  scriptGen.isGenerating.value = true
+  isGeneratingScript.value = true
   state.errorMessage.value = ''
 
   try {
@@ -254,11 +258,19 @@ async function handleGenerateScript(referenceImages: string[] | null) {
       insightStore.currentBookId,
       state.continuationDirection.value,
       state.pageCount.value,
-      referenceImages || undefined
+      payload.referenceImages || undefined,
+      payload.referenceImageCount
     )
     
     if (result.success && result.script) {
+      const hadExistingPages = state.pages.value.length > 0
       state.chapterScript.value = result.script
+      lastSavedScriptText.value = result.script.script_text
+      scriptDirty.value = false
+      if (hadExistingPages) {
+        state.pages.value = []
+        await persistPages([])
+      }
       
       // 保存配置
       try {
@@ -271,20 +283,83 @@ async function handleGenerateScript(referenceImages: string[] | null) {
         console.error('保存配置失败:', error)
       }
       
-      state.showMessage('脚本生成成功', 'success')
+      state.showMessage(
+        hadExistingPages ? '脚本生成成功，旧的页面详情已清空' : '脚本生成成功',
+        'success'
+      )
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
     }
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {
-    scriptGen.isGenerating.value = false
+    isGeneratingScript.value = false
   }
+}
+
+async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
+  if (!insightStore.currentBookId || !state.chapterScript.value) return false
+
+  isSavingScript.value = true
+  const shouldInvalidatePages = scriptDirty.value && state.pages.value.length > 0
+  try {
+    const result = await continuationApi.saveScript(
+      insightStore.currentBookId,
+      state.chapterScript.value
+    )
+
+    if (result.success) {
+      lastSavedScriptText.value = state.chapterScript.value.script_text
+      scriptDirty.value = false
+      if (shouldInvalidatePages) {
+        state.pages.value = []
+        await persistPages([])
+        state.showMessage('脚本已更新，旧的页面详情已清空，请重新生成。', 'info')
+        return true
+      }
+      if (showSuccessMessage) {
+        state.showMessage('脚本已保存', 'success')
+      }
+      return true
+    }
+
+    state.showMessage('脚本保存失败: ' + result.error, 'error')
+    return false
+  } catch (error) {
+    state.showMessage('脚本保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    return false
+  } finally {
+    isSavingScript.value = false
+  }
+}
+
+async function persistPages(pages = state.pages.value): Promise<void> {
+  if (!insightStore.currentBookId) return
+  await continuationApi.savePages(insightStore.currentBookId, pages)
+}
+
+function handleScriptUpdate(scriptText: string) {
+  if (!state.chapterScript.value) return
+  state.chapterScript.value.script_text = scriptText
+  scriptDirty.value = scriptText !== lastSavedScriptText.value
+}
+
+function handleResetScript() {
+  if (!state.chapterScript.value) return
+  state.chapterScript.value.script_text = lastSavedScriptText.value
+  scriptDirty.value = false
 }
 
 // 页面详情生成
 async function handleGeneratePageDetails() {
   if (!insightStore.currentBookId || !state.chapterScript.value) return
+
+  if (scriptDirty.value) {
+    const saved = await handleSaveScript(false)
+    if (!saved) {
+      return
+    }
+  }
   
   state.isGeneratingPages.value = true
   state.isGeneratingPrompts.value = true
@@ -334,7 +409,7 @@ async function handleGeneratePageDetails() {
       }
     }
     
-    await continuationApi.savePages(insightStore.currentBookId, state.pages.value)
+    await persistPages()
     state.showMessage(`页面详情和提示词生成完成 (${state.pages.value.length} 页)`, 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
@@ -361,7 +436,7 @@ async function handleRegeneratePrompt(pageNumber: number) {
     
     if (result.success && result.page) {
       page.image_prompt = result.page.image_prompt
-      await continuationApi.savePages(insightStore.currentBookId, state.pages.value)
+      await persistPages()
       state.showMessage(`第 ${pageNumber} 页提示词已更新`, 'success')
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
@@ -394,7 +469,7 @@ async function handleRegenerateAllPrompts() {
     if (result.success && result.pages) {
       // 更新提示词
       state.pages.value = result.pages
-      await continuationApi.savePages(insightStore.currentBookId, state.pages.value)
+      await persistPages()
       state.showMessage('所有提示词已重新生成', 'success')
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
@@ -410,15 +485,11 @@ async function handleSavePageChanges() {
   if (!insightStore.currentBookId || state.pages.value.length === 0) return
   
   try {
-    await continuationApi.savePages(insightStore.currentBookId, state.pages.value)
+    await persistPages()
     state.showMessage('页面数据保存成功', 'success')
   } catch (error) {
     state.showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   }
-}
-
-function onPageDataChange() {
-  console.log('页面数据已修改')
 }
 
 // 图片生成
@@ -441,15 +512,25 @@ async function handleUsePrevious(pageNumber: number) {
   page.previous_url = temp
   
   if (insightStore.currentBookId) {
-    await continuationApi.savePages(insightStore.currentBookId, state.pages.value)
+    await persistPages()
   }
 }
 
 // 提示词变更处理
-async function handlePromptChange(pageNumber: number, prompt: string) {
-  // 直接更新state中的数据（v-model已经做了，这里只需要标记需要保存）
-  console.log(`页面 ${pageNumber} 提示词已修改`)
-  // 可以在这里添加防抖保存逻辑，或者让用户手动保存
+async function handlePromptChange(pageNumber: number) {
+  if (promptSaveTimer) {
+    clearTimeout(promptSaveTimer)
+  }
+
+  promptSaveTimer = setTimeout(async () => {
+    if (!insightStore.currentBookId || state.pages.value.length === 0) return
+
+    try {
+      await persistPages()
+    } catch (error) {
+      state.showMessage('提示词保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
+  }, 600)
 }
 
 // 清空并重新开始
@@ -457,13 +538,29 @@ async function handleClearAndRestart() {
   if (!insightStore.currentBookId) return
   
   try {
+    if (promptSaveTimer) {
+      clearTimeout(promptSaveTimer)
+      promptSaveTimer = null
+    }
     await continuationApi.clearContinuationData(insightStore.currentBookId)
     await state.resetState()
     state.currentStep.value = 0
+    scriptDirty.value = false
     state.showMessage('数据已清空', 'success')
   } catch (error) {
     state.showMessage('清空失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   }
+}
+
+async function goToStep(step: number) {
+  if (state.currentStep.value === 1 && step !== 1 && scriptDirty.value) {
+    const saved = await handleSaveScript(false)
+    if (!saved) {
+      return
+    }
+  }
+
+  state.currentStep.value = resolveReachableStep(step)
 }
 
 // 生命周期
@@ -476,6 +573,22 @@ onMounted(() => {
 watch(() => insightStore.currentBookId, (newBookId) => {
   if (newBookId) {
     state.initializeData()
+  }
+})
+
+watch(() => state.chapterScript.value, (script) => {
+  if (script) {
+    lastSavedScriptText.value = script.script_text
+    scriptDirty.value = false
+  } else {
+    lastSavedScriptText.value = ''
+  }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (promptSaveTimer) {
+    clearTimeout(promptSaveTimer)
+    promptSaveTimer = null
   }
 })
 </script>
@@ -505,6 +618,12 @@ watch(() => insightStore.currentBookId, (newBookId) => {
   background: #f0fdf4;
   color: #16a34a;
   border: 1px solid #bbf7d0;
+}
+
+.message.info {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
 }
 
 /* 步骤指示器 */

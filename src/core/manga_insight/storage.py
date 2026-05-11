@@ -787,8 +787,8 @@ class AnalysisStorage:
         script["saved_at"] = datetime.now().isoformat()
         return await self._save_json("continuation/script.json", script)
 
-    async def load_continuation_pages(self) -> Optional[List]:
-        """加载续写页面详情列表"""
+    async def load_continuation_pages(self) -> Optional[Dict[str, Any]]:
+        """加载续写页面详情列表及其元信息"""
         return await self._load_json("continuation/pages.json", None)
 
     async def save_continuation_pages(self, pages: List) -> bool:
@@ -827,11 +827,7 @@ class AnalysisStorage:
         continuation_path = os.path.join(self.base_path, "continuation")
         try:
             if os.path.exists(continuation_path):
-                # 只删除脚本和页面数据，保留生成的图片
-                for filename in ["script.json", "pages.json", "config.json"]:
-                    filepath = os.path.join(continuation_path, filename)
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
+                shutil.rmtree(continuation_path, onerror=_on_rmtree_error)
             return True
         except Exception as e:
             logger.error(f"清除续写数据失败: {e}")

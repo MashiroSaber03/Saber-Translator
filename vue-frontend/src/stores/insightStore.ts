@@ -26,6 +26,7 @@ import type {
 import {
   normalizeOpenAiOptions
 } from '@/utils/openaiOptions'
+import { getProviderBaseUrl, getProviderDefaultModel, normalizeProviderId } from '@/config/aiProviders'
 
 // 重新导出类型（保持向后兼容）
 export type {
@@ -56,21 +57,26 @@ export const useInsightStore = defineStore('insight', () => {
     source?: Partial<StoreImageGenConfig> | null,
     previous?: StoreImageGenConfig
   ): StoreImageGenConfig {
+    const normalizedProvider = normalizeProviderId(source?.provider || previous?.provider || 'gpt2api') || 'gpt2api'
+    const previousProvider = normalizeProviderId(previous?.provider || '') || 'gpt2api'
+    const providerChanged = normalizedProvider !== previousProvider
+    const defaultModel = getProviderDefaultModel(normalizedProvider, 'imageGen') || 'gpt-image-2'
+    const defaultBaseUrl = getProviderBaseUrl(normalizedProvider, 'imageGen')
     const base = previous ?? {
-      provider: 'gpt2api',
+      provider: normalizedProvider,
       apiKey: '',
-      model: 'gpt-image-2',
-      baseUrl: '',
+      model: defaultModel,
+      baseUrl: defaultBaseUrl,
       maxRetries: 3
     }
-    const originalProvider = String(source?.provider || '').trim().toLowerCase()
-    const model = originalProvider === 'gpt2api' && source?.model ? source.model : 'gpt-image-2'
+    const model = source?.model ?? (providerChanged ? defaultModel : base.model || defaultModel)
+    const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
 
     return {
-      provider: 'gpt2api',
+      provider: normalizedProvider,
       apiKey: source?.apiKey ?? base.apiKey,
       model,
-      baseUrl: source?.baseUrl ?? base.baseUrl,
+      baseUrl,
       maxRetries: source?.maxRetries ?? base.maxRetries
     }
   }

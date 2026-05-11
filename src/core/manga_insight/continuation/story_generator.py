@@ -41,11 +41,10 @@ class StoryGenerator:
         准备续写所需的数据，检查必要内容是否存在（不自动生成）
         
         Returns:
-            Dict: {"ready": bool, "generating": bool, "message": str}
+            Dict: {"ready": bool, "message": str}
         """
         result = {
             "ready": False,
-            "generating": False,
             "message": ""
         }
         
@@ -65,7 +64,6 @@ class StoryGenerator:
             return result
         
         result["ready"] = True
-        result["generating"] = False
         result["message"] = "数据准备完成"
         return result
     
@@ -73,7 +71,8 @@ class StoryGenerator:
         self,
         user_direction: str = "",
         page_count: int = 15,
-        custom_reference_images: List[str] = None
+        custom_reference_images: List[str] = None,
+        reference_image_count: int = 5,
     ) -> ChapterScript:
         """
         生成全话脚本（第一层）- 使用 VLM + 原作图片
@@ -84,10 +83,13 @@ class StoryGenerator:
             custom_reference_images: 自定义参考图路径列表（可选）
                 如果提供，使用这些图片替代自动选择的最后N张
                 如果为 None 或空列表，使用默认的自动选择逻辑
+            reference_image_count: 自动选择参考图时使用的原作图片数量
 
         Returns:
             ChapterScript: 生成的脚本
         """
+        reference_image_count = max(1, int(reference_image_count or 5))
+
         # 获取必要数据
         story_summary = await self.storage.load_template_overview("story_summary")
         timeline_data = await self.storage.load_timeline()
@@ -107,8 +109,8 @@ class StoryGenerator:
             original_images = await self._load_images_from_paths(custom_reference_images)
             logger.info(f"使用自定义参考图: {len(original_images)} 张")
         else:
-            # 使用默认的自动选择逻辑（最后5张）
-            original_images = await self._get_recent_manga_images(5)
+            # 使用默认的自动选择逻辑（最后 N 张）
+            original_images = await self._get_recent_manga_images(reference_image_count)
             logger.info(f"使用自动选择的参考图: {len(original_images)} 张")
 
         # 构建提示词（针对 VLM 优化）

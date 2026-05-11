@@ -73,7 +73,7 @@
               rows="4"
               class="prompt-input"
               placeholder="输入生图提示词..."
-              @input="$emit('prompt-change', page.page_number, page.image_prompt)"
+              @input="$emit('prompt-change', page.page_number)"
             ></textarea>
           </div>
           <div v-else class="prompt-preview">
@@ -107,7 +107,7 @@
       mode="image"
       :max-count="refCount"
       :original-images="availableOriginalImages"
-      :continuation-images="[]"
+      :continuation-images="availableContinuationImages"
       :character-forms="availableCharacterForms"
       :initial-selection="batchInitialRefs"
       :book-id="bookId"
@@ -136,7 +136,7 @@ const emit = defineEmits<{
   'batch-generate': [initialStyleRefs: string[] | null]
   'regenerate': [pageNumber: number]
   'use-previous': [pageNumber: number]
-  'prompt-change': [pageNumber: number, prompt: string]
+  'prompt-change': [pageNumber: number]
 }>()
 
 const state = useContinuationStateInject()
@@ -155,6 +155,7 @@ const selectorVisible = ref(false)
 
 // 可用图片数据
 const availableOriginalImages = ref<MangaImageInfo[]>([])
+const availableContinuationImages = ref<MangaImageInfo[]>([])
 const availableCharacterForms = ref<CharacterFormInfo[]>([])
 
 function togglePromptEdit(pageNumber: number) {
@@ -190,10 +191,15 @@ function getInitialRefCount(): number {
 // 打开批量生成参考图选择器
 async function openBatchReferenceSelector() {
   try {
-    // 批量生成从第1页开始，获取可用图片
-    const response = await getAvailableImages(props.bookId, 'image', props.totalOriginalPages + 1)
+    const firstPendingPage = props.pages.find(page => !page.image_url)?.page_number ?? 1
+    const response = await getAvailableImages(
+      props.bookId,
+      'image',
+      props.totalOriginalPages + firstPendingPage
+    )
     if (response.success) {
       availableOriginalImages.value = response.original_images || []
+      availableContinuationImages.value = response.continuation_images || []
       availableCharacterForms.value = response.character_forms || []
     }
   } catch (error) {
@@ -237,6 +243,19 @@ watch(refCount, (newValue) => {
 watch(() => state.styleRefPages?.value, (newValue) => {
   if (newValue && newValue !== refCount.value) {
     refCount.value = newValue
+  }
+})
+
+watch(() => props.bookId, () => {
+  batchInitialRefs.value = []
+  availableOriginalImages.value = []
+  availableContinuationImages.value = []
+  availableCharacterForms.value = []
+})
+
+watch(() => props.pages.length, (pageCount) => {
+  if (pageCount === 0) {
+    batchInitialRefs.value = []
   }
 })
 </script>

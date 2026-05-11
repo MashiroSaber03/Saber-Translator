@@ -53,7 +53,6 @@
           <span>漫画图片</span>
         </div>
         <div class="thumbnails-grid" ref="thumbnailsGrid">
-          <!-- 原作图片 -->
           <div
             v-for="img in originalImages"
             :key="`original-${img.page_number}`"
@@ -83,6 +82,34 @@
               title="已达到最大数量，请先取消其他选择"
             ></div>
           </div>
+
+          <div
+            v-for="img in continuationImages"
+            :key="`continuation-${img.page_number}`"
+            class="thumbnail continuation-thumbnail"
+            :class="{
+              selected: isSelected(img),
+              disabled: !isSelected(img) && selectedCount >= maxCount
+            }"
+            @click="toggleSelection(img)"
+          >
+            <img
+              :src="getImageUrl(img.path)"
+              :alt="`第${img.page_number}页续写图`"
+              loading="lazy"
+              @error="handleImageError"
+            />
+            <div v-if="isSelected(img)" class="selection-badge">
+              {{ getSelectionIndex(img) }}
+            </div>
+            <div class="page-badge">{{ img.page_number }}</div>
+            <div class="continuation-badge">续写</div>
+            <div
+              v-if="!isSelected(img) && selectedCount >= maxCount"
+              class="disabled-overlay"
+              title="已达到最大数量，请先取消其他选择"
+            ></div>
+          </div>
         </div>
       </div>
     </div>
@@ -100,7 +127,7 @@ const props = defineProps<{
   mode: 'script' | 'image'
   maxCount: number
   originalImages: MangaImageInfo[]
-  continuationImages: MangaImageInfo[]  // 保留prop以兼容，但不再使用
+  continuationImages: MangaImageInfo[]
   characterForms: CharacterFormInfo[]
   initialSelection: string[]
   bookId: string
@@ -127,9 +154,21 @@ const selectedCount = computed(() => selectedPaths.value.length)
 // 监听可见性变化，初始化选择状态
 watch(() => props.visible, (newVisible) => {
   if (newVisible) {
+    const availablePaths = new Set(
+      [
+        ...props.originalImages,
+        ...(props.mode === 'image' ? props.continuationImages : []),
+      ]
+        .map(img => img.path)
+        .filter(Boolean)
+    )
+
     // 恢复之前的选择状态，或自动预选最后N张
     if (props.initialSelection && props.initialSelection.length > 0) {
-      selectedPaths.value = [...props.initialSelection]
+      selectedPaths.value = props.initialSelection.filter(path => availablePaths.has(path))
+      if (selectedPaths.value.length === 0) {
+        autoSelectLast()
+      }
     } else {
       // 自动预选最后N张
       autoSelectLast()
@@ -180,8 +219,12 @@ function toggleSelection(img: MangaImageInfo): void {
 function autoSelectLast(): void {
   selectedPaths.value = []
 
-  // 只使用原作图片
-  const validImages = props.originalImages.filter(img => img.path)
+  const validImages = [
+    ...props.originalImages,
+    ...(props.mode === 'image' ? props.continuationImages : []),
+  ]
+    .filter(img => img.path)
+    .sort((left, right) => left.page_number - right.page_number)
 
   // 取最后N张
   const lastN = validImages.slice(-props.maxCount)
@@ -428,6 +471,18 @@ function handleCancel(): void {
   inset: 0;
   background: rgb(255, 255, 255, 0.6);
   cursor: not-allowed;
+}
+
+.continuation-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgb(59, 130, 246, 0.9);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .character-thumbnail {
