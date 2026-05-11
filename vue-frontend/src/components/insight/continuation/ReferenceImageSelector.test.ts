@@ -33,4 +33,51 @@ describe('ReferenceImageSelector', () => {
 
     expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:1']])
   })
+
+  it('prefers the latest real images instead of placeholder continuation pages', async () => {
+    const wrapper = mount(ReferenceImageSelector, {
+      props: {
+        visible: true,
+        mode: 'image',
+        maxCount: 2,
+        originalImages: [
+          {
+            page_number: 185,
+            path: '/tmp/page-185.png',
+            has_image: true,
+            token: 'original:185',
+          },
+          {
+            page_number: 186,
+            path: '/tmp/page-186.png',
+            has_image: true,
+            token: 'original:186',
+          },
+        ],
+        continuationImages: [
+          {
+            page_number: 187,
+            path: '',
+            has_image: false,
+            token: 'continuation:1',
+            is_placeholder: true,
+          },
+          {
+            page_number: 188,
+            path: '',
+            has_image: false,
+            token: 'continuation:2',
+            is_placeholder: true,
+          },
+        ],
+        characterForms: [],
+        initialSelection: [],
+        bookId: 'book-1',
+      },
+    })
+
+    await wrapper.find('button.btn.primary').trigger('click')
+
+    expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:185', 'original:186']])
+  })
 })

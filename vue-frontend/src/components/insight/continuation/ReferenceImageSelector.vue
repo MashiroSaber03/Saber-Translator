@@ -235,7 +235,7 @@ function autoSelectLast(): void {
     ...props.originalImages,
     ...(props.mode === 'image' ? props.continuationImages : []),
   ]
-    .filter(img => img.token)
+    .filter(img => img.token && img.has_image && img.path)
     .sort((left, right) => left.page_number - right.page_number)
 
   // 取最后N张
