@@ -115,6 +115,31 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
+    def test_build_full_prompt_places_style_rules_before_page_content(self) -> None:
+        from src.core.manga_insight.continuation.image_generator import ImageGenerator
+        from src.core.manga_insight.continuation.models import PageContent
+
+        generator = ImageGenerator.__new__(ImageGenerator)
+        prompt = generator._build_full_prompt(
+            PageContent(
+                page_number=1,
+                characters=["男主", "女主"],
+                description="夜晚的医院外台阶",
+                dialogues=[],
+                image_prompt="页面内容：医院外台阶夜晚，女主靠近男主并说出关键对白。",
+            )
+        )
+
+        self.assertIn("严格遵守以下风格要求", prompt)
+        self.assertIn("禁止写实插画、电影感光影、3D感、厚涂感", prompt)
+        self.assertIn("页面内容", prompt)
+        self.assertIn("如果页面内容与参考图风格冲突，优先服从参考图风格", prompt)
+        self.assertIn("不要为了强调夜景、城市灯光或镜头感而偏离原作画风", prompt)
+        self.assertLess(
+            prompt.index("严格遵守以下风格要求"),
+            prompt.index("页面内容"),
+        )
+
     async def test_image_generator_delegates_page_generation_to_image_gen_client(self) -> None:
         from src.core.manga_insight.continuation.image_generator import ImageGenerator
         from src.core.manga_insight.continuation.models import ContinuationCharacters, PageContent

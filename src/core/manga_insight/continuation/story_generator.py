@@ -554,7 +554,18 @@ class StoryGenerator:
     ) -> str:
         """生成生图提示词的LLM提示"""
         chars_list = ", ".join(page_content.characters) if page_content.characters else "无"
-        
+
+        forms_text = ""
+        if page_content.character_forms:
+            normalized_forms = []
+            for form in page_content.character_forms:
+                character_name = str(form.get("character") or "").strip()
+                form_name = str(form.get("form_name") or form.get("form_id") or "").strip()
+                if character_name and form_name:
+                    normalized_forms.append(f"- {character_name}：{form_name}")
+            if normalized_forms:
+                forms_text = "\n- 角色形态：\n" + "\n".join(normalized_forms)
+
         dialogues_text = ""
         if page_content.dialogues:
             dialogues_text = "\n".join([
@@ -562,40 +573,36 @@ class StoryGenerator:
                 for d in page_content.dialogues
             ])
 
-        return f"""请基于以下剧情信息，生成一个详细的漫画绘图提示词。
+        return f"""请基于以下剧情信息，生成一个“简洁优先”的漫画生图提示词。
+
+目标：告诉绘图模型“这一页必须发生什么”，不要把提示词写成详细分镜脚本。
 
 # 剧情信息
 
 - 出场角色：{chars_list}
-- 画面描述：{page_content.description}
-- 对话：
+{forms_text}
+- 核心画面：{page_content.description}
+- 必须保留对白：
 {dialogues_text if dialogues_text else "（无对话）"}
 
-# 输出格式
+# 输出要求
 
-一页漫画。
+请直接输出一个 5 行以内、以内容约束为主的简洁提示词，使用以下结构：
 
-**画面描述**：
-- **分格1**（[大小]，[镜头角度]）**：[具体画面内容，角色的动作、表情、位置关系]
-- **分格2**（[大小]，[镜头角度]）**：[具体画面内容]
-- **分格3**（[大小]，[镜头角度]）**：[具体画面内容]
-- [根据剧情需要继续添加分格]
-- **页面底部**：[如有旁白或特殊文字，在这里说明]
-
-**对话气泡**（简体中文）：
-- 分格X中，[位置描述]，内容：「对话内容」
-- 分格X中，[位置描述]，内容：「对话内容」
-
-# 分格描述规范
-
-**分格大小**：大格（占半页以上）、中格、小格、长条格、特写小图
-**镜头角度**：俯视角度、仰视角度、平视角度、斜角、远景、中景、特写
+出场角色：...
+核心动作/情绪：...
+场景：...
+关键对白：...
+风格约束：...
 
 # 重要规则
 
-1. **分格要详细**：每个分格都要说明大小、镜头角度、具体画面内容
-2. **动作要具体**：描述角色在做什么，表情如何，位置在哪
-3. **对话用简体中文**：所有气泡内容必须是简体中文
+1. **简洁优先**：只保留角色、核心动作/情绪、场景一句话、关键对白、风格约束
+2. **不要按“分格1/分格2”展开**，也不要写成详细分镜脚本；不要写镜头角度、景深、灯光、材质等过细视觉说明，除非剧情不可缺少
+3. **不要扩写新剧情**：只提炼这一页必须发生的内容，不要补充输入里没有的新事件
+4. **风格约束必须明确写出**：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。
+5. **负向约束必须写出**：禁止写实插画、电影感光影、3D感、厚涂感、霓虹夜景氛围、景深虚化、镜头语言、电影级光影、写实城市背景、概念插画风。
+6. **对话用简体中文**：所有对白与文字保持简体中文
 
 请直接输出提示词。
 """

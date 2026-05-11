@@ -262,6 +262,42 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertEqual(page.character_forms[0]["form_id"], "battle")
         self.assertEqual(page.character_forms[0]["form_name"], "Battle Form")
 
+    def test_build_image_prompt_prompt_defaults_to_concise_content_constraints(self) -> None:
+        from src.core.manga_insight.continuation.models import PageContent
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        prompt = generator._build_image_prompt_prompt(
+            PageContent(
+                page_number=2,
+                characters=["男主", "女主"],
+                description="医院外的夜晚台阶前，女主鼓起勇气靠近男主并说出关键对白",
+                dialogues=[
+                    {"character": "女主", "text": "我不后悔哦。"},
+                    {"character": "男主", "text": "啊？"},
+                ],
+            )
+        )
+
+        self.assertIn("简洁优先", prompt)
+        self.assertIn("核心动作/情绪", prompt)
+        self.assertIn("风格约束", prompt)
+        self.assertIn("不要按“分格1/分格2”", prompt)
+        self.assertIn("5 行以内", prompt)
+        self.assertIn("出场角色：...", prompt)
+        self.assertIn("核心动作/情绪：...", prompt)
+        self.assertIn("场景：...", prompt)
+        self.assertIn("关键对白：...", prompt)
+        self.assertIn("风格约束：...", prompt)
+        self.assertIn("霓虹夜景氛围", prompt)
+        self.assertIn("景深虚化", prompt)
+        self.assertIn("镜头语言", prompt)
+        self.assertIn("电影级光影", prompt)
+        self.assertIn("写实城市背景", prompt)
+        self.assertIn("概念插画风", prompt)
+        self.assertNotIn("**分格1**", prompt)
+        self.assertNotIn("# 分格描述规范", prompt)
+
 
 class ReferenceTokenResolverTests(unittest.TestCase):
     def test_build_continuation_candidates_include_placeholder_pages(self) -> None:
