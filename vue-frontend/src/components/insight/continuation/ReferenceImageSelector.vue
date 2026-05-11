@@ -292,6 +292,19 @@ function handleCancel(): void {
   animation: fadeIn 0.2s ease;
 }
 
+.reference-selector-modal {
+  width: min(1120px, calc(100vw - 48px));
+  max-height: min(88vh, 980px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
+  box-shadow: 0 24px 64px rgb(15, 23, 42, 0.28);
+  animation: scaleIn 0.2s ease;
+}
+
 @keyframes scaleIn {
   from { transform: scale(0.9); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
