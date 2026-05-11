@@ -7,7 +7,6 @@ Manga Insight 剧情生成器
 3. 生图提示词生成
 """
 
-import json
 import logging
 import os
 import re
@@ -16,10 +15,16 @@ from typing import Dict, List, Any
 from ..config_utils import load_insight_config, create_chat_client
 from ..storage import AnalysisStorage
 from ..utils.json_parser import parse_llm_json
-from .models import ChapterScript, PageContent
+from .models import ChapterScript, PageContent, ContinuationCharacters
 from .character_manager import CharacterManager
+from .reference_tokens import (
+    build_original_reference_candidates,
+    list_original_manga_page_paths,
+    resolve_reference_tokens,
+)
 
 logger = logging.getLogger("MangaInsight.Continuation.StoryGenerator")
+HierarchicalSummaryGenerator = None
 
 
 class StoryGenerator:
@@ -38,7 +43,7 @@ class StoryGenerator:
     
     async def prepare_continuation_data(self) -> Dict[str, Any]:
         """
-        准备续写所需的数据，检查必要内容是否存在（不自动生成）
+        准备续写所需的数据，必要时自动补齐故事概要。
         
         Returns:
             Dict: {"ready": bool, "message": str}
@@ -48,14 +53,17 @@ class StoryGenerator:
             "message": ""
         }
         
-        # 1. 检查故事概要是否存在（不自动生成，提示用户手动生成）
-        story_summary = await self.storage.load_template_overview("story_summary")
-        
-        if not story_summary or not story_summary.get("content"):
-            logger.info("故事概要不存在，提示用户手动生成")
-            result["message"] = "续写功能需要故事概要，请先在「概览」页面选择「故事概要」模板并点击生成"
+        try:
+            story_summary = await self._ensure_story_summary()
+        except Exception as exc:
+            logger.warning(f"自动生成故事概要失败: {exc}")
+            result["message"] = f"故事概要自动生成失败：{exc}"
             return result
-        
+
+        if not story_summary or not story_summary.get("content"):
+            result["message"] = "故事概要自动生成失败，请检查分析配置后重试"
+            return result
+
         # 2. 检查时间线是否存在
         timeline_data = await self.storage.load_timeline()
         
@@ -66,12 +74,41 @@ class StoryGenerator:
         result["ready"] = True
         result["message"] = "数据准备完成"
         return result
+
+    async def _ensure_story_summary(self) -> Dict[str, Any]:
+        """确保故事概要存在，缺失时自动生成。"""
+        story_summary = await self.storage.load_template_overview("story_summary")
+        if story_summary and story_summary.get("content"):
+            return story_summary
+
+        logger.info("故事概要缺失，开始自动生成")
+        llm_client = None
+        try:
+            summary_generator_cls = HierarchicalSummaryGenerator
+            if summary_generator_cls is None:
+                from ..features.hierarchical_summary import HierarchicalSummaryGenerator as summary_generator_cls
+
+            llm_client = create_chat_client(self.config)
+            generator = summary_generator_cls(
+                book_id=self.book_id,
+                storage=self.storage,
+                llm_client=llm_client,
+                prompts_config=self.config.prompts,
+            )
+            result = await generator.generate_with_template("story_summary", skip_cache=True)
+            if not result or not result.get("content"):
+                raise ValueError("未生成有效内容")
+            await self.storage.save_template_overview("story_summary", result)
+            return result
+        finally:
+            if llm_client:
+                await llm_client.close()
     
     async def generate_chapter_script(
         self,
         user_direction: str = "",
         page_count: int = 15,
-        custom_reference_images: List[str] = None,
+        custom_reference_tokens: List[str] = None,
         reference_image_count: int = 5,
     ) -> ChapterScript:
         """
@@ -80,8 +117,8 @@ class StoryGenerator:
         Args:
             user_direction: 用户指定的续写方向
             page_count: 续写页数
-            custom_reference_images: 自定义参考图路径列表（可选）
-                如果提供，使用这些图片替代自动选择的最后N张
+            custom_reference_tokens: 自定义参考图 token 列表（可选）
+                如果提供，使用这些引用替代自动选择的最后N张
                 如果为 None 或空列表，使用默认的自动选择逻辑
             reference_image_count: 自动选择参考图时使用的原作图片数量
 
@@ -91,7 +128,7 @@ class StoryGenerator:
         reference_image_count = max(1, int(reference_image_count or 5))
 
         # 获取必要数据
-        story_summary = await self.storage.load_template_overview("story_summary")
+        story_summary = await self._ensure_story_summary()
         timeline_data = await self.storage.load_timeline()
 
         if not story_summary or not story_summary.get("content"):
@@ -104,10 +141,17 @@ class StoryGenerator:
         reference_pages = await self._get_recent_page_analyses(5)
 
         # 获取原漫画图片作为视觉参考
-        if custom_reference_images and len(custom_reference_images) > 0:
-            # 使用用户自定义的参考图
-            original_images = await self._load_images_from_paths(custom_reference_images)
-            logger.info(f"使用自定义参考图: {len(original_images)} 张")
+        if custom_reference_tokens and len(custom_reference_tokens) > 0:
+            all_original_paths = await self._get_all_manga_image_paths()
+            original_candidates = build_original_reference_candidates(all_original_paths)
+            resolved_refs = resolve_reference_tokens(custom_reference_tokens, original_candidates)
+            resolved_paths = [ref["path"] for ref in resolved_refs if ref.get("path")]
+            original_images = await self._load_images_from_paths(resolved_paths)
+            if not original_images:
+                logger.warning("自定义参考图当前均不可用，回退到自动选择")
+                original_images = await self._get_recent_manga_images(reference_image_count)
+            else:
+                logger.info(f"使用自定义参考图: {len(original_images)} 张")
         else:
             # 使用默认的自动选择逻辑（最后 N 张）
             original_images = await self._get_recent_manga_images(reference_image_count)
@@ -172,11 +216,12 @@ class StoryGenerator:
         
         # 解析 JSON 响应
         page_data = self._parse_json_response(response)
+        character_forms = self._normalize_character_forms(page_data.get("character_forms", []))
         
         return PageContent(
             page_number=page_data.get("page_number", page_number),
             characters=page_data.get("characters", []),
-            character_forms=page_data.get("character_forms", []),
+            character_forms=character_forms,
             description=page_data.get("description", ""),
             dialogues=page_data.get("dialogues", [])
         )
@@ -256,53 +301,10 @@ class StoryGenerator:
         Returns:
             List[bytes]: 图片字节数据列表（最后几页）
         """
-        from src.shared.path_helpers import resource_path
-        from src.core import bookshelf_manager
-
         images = []
 
         try:
-            # 从书架系统获取书籍信息
-            book = bookshelf_manager.get_book(self.book_id)
-            if not book:
-                logger.warning(f"未找到书籍: {self.book_id}")
-                return images
-
-            # 获取所有章节的所有图片路径
-            chapters = book.get("chapters", [])
-            all_image_paths = []
-
-            for chapter in chapters:
-                chapter_id = chapter.get("id")
-                if not chapter_id:
-                    continue
-
-                # 从 session_meta.json 获取图片信息（使用新路径格式）
-                session_dir = resource_path(f"data/bookshelf/{self.book_id}/chapters/{chapter_id}/session")
-                session_meta_path = os.path.join(session_dir, "session_meta.json")
-
-                if os.path.exists(session_meta_path):
-                    try:
-                        with open(session_meta_path, "r", encoding="utf-8") as f:
-                            session_data = json.load(f)
-
-                        # 支持两种格式
-                        if "total_pages" in session_data:
-                            image_count = session_data.get("total_pages", 0)
-                        else:
-                            images_meta = session_data.get("images_meta", [])
-                            image_count = len(images_meta)
-
-                        for i in range(image_count):
-                            # 优先使用原图
-                            image_path = os.path.join(session_dir, "images", str(i), "original.png")
-                            if os.path.exists(image_path):
-                                all_image_paths.append(image_path)
-                    except Exception as e:
-                        logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
-                        continue
-
-            # 取最后 count 张图片
+            all_image_paths = await self._get_all_manga_image_paths()
             recent_paths = all_image_paths[-count:] if len(all_image_paths) > count else all_image_paths
 
             # 读取图片字节数据
@@ -319,6 +321,13 @@ class StoryGenerator:
         except Exception as e:
             logger.error(f"获取原漫画图片失败: {e}")
             return images
+
+    async def _get_all_manga_image_paths(self) -> List[str]:
+        """获取原漫画全部图片路径。"""
+        image_paths = list_original_manga_page_paths(self.book_id)
+        if not image_paths:
+            logger.warning(f"未找到可用原作图片: {self.book_id}")
+        return image_paths
 
     async def _load_images_from_paths(self, image_paths: List[str]) -> List[bytes]:
         """
@@ -499,10 +508,15 @@ class StoryGenerator:
                 characters_list.append(char_text)
             characters_info = "\n".join(characters_list)
         
+        form_registry = self._build_character_form_registry()
+
         return f"""请将以下剧本中的第{page_number}页内容，细化为结构化的剧情数据。
 
 # 角色列表
 {characters_info}
+
+# 角色形态映射
+{form_registry}
 
 # 全话脚本
 
@@ -516,8 +530,8 @@ class StoryGenerator:
   "page_number": {page_number},
   "characters": ["角色名1", "角色名2"],
   "character_forms": [
-    {{"character": "角色名1", "form_id": "形态ID"}},
-    {{"character": "角色名2", "form_id": "形态ID"}}
+    {{"character": "角色名1", "form_id": "稳定形态ID", "form_name": "形态显示名"}},
+    {{"character": "角色名2", "form_id": "稳定形态ID", "form_name": "形态显示名"}}
   ],
   "description": "详细的画面描述，包括：角色的动作、表情、姿势、位置关系，以及建议的镜头角度（俯视/仰视/平视/特写等）",
   "dialogues": [
@@ -528,7 +542,7 @@ class StoryGenerator:
 ## 要求
 
 1. **只提取剧本内容**：不要添加剧本中没有的信息
-2. **形态提取**：从剧本的「人物」行提取每个角色的形态，格式为 `角色名(形态名)`。将形态名作为 `form_id`。如果剧本中没有标注形态，则省略 `character_forms` 中该角色的条目，只需写出角色名，严禁编造形态名。
+2. **形态提取**：如果剧本的「人物」行中出现 `角色名(形态名)`，请根据上方的“角色形态映射”返回对应的稳定 `form_id`，并同时填写 `form_name`。如果剧本没有标注形态，则省略该角色的 `character_forms` 条目，严禁编造新形态。
 3. **对话原样保留**：保持剧本中的对话内容
 
 请直接输出JSON数据。
@@ -608,6 +622,72 @@ class StoryGenerator:
             logger.warning(f"无法解析 JSON 响应: {response[:200]}...")
             return {}
         return result
+
+    def _build_character_form_registry(self) -> str:
+        """为页面细化提示词构建角色形态 ID 映射。"""
+        characters = self._load_continuation_characters()
+        if not characters or not characters.characters:
+            return "（暂无角色形态信息）"
+
+        lines: List[str] = []
+        for character in characters.characters:
+            if character.enabled is False:
+                continue
+            if not character.forms:
+                lines.append(f"- {character.name}: （未配置形态）")
+                continue
+
+            for form in character.forms:
+                if form.enabled is False:
+                    continue
+                lines.append(
+                    f"- {character.name}: form_id={form.form_id}, form_name={form.form_name}"
+                )
+
+        return "\n".join(lines) if lines else "（暂无角色形态信息）"
+
+    def _load_continuation_characters(self) -> ContinuationCharacters | None:
+        try:
+            return self.char_manager.load_characters()
+        except Exception as exc:
+            logger.warning(f"加载续写角色失败: {exc}")
+            return None
+
+    def _normalize_character_forms(self, raw_forms: Any) -> List[Dict[str, str]]:
+        if not isinstance(raw_forms, list):
+            return []
+
+        characters = self._load_continuation_characters()
+        normalized: List[Dict[str, str]] = []
+        for item in raw_forms:
+            if not isinstance(item, dict):
+                continue
+
+            character_name = str(item.get("character") or "").strip()
+            raw_form_id = str(item.get("form_id") or "").strip()
+            raw_form_name = str(item.get("form_name") or "").strip()
+            if not character_name or not (raw_form_id or raw_form_name):
+                continue
+
+            resolved_form_id = raw_form_id
+            resolved_form_name = raw_form_name
+
+            if characters:
+                character = characters.get_character(character_name)
+                if character:
+                    form = character.resolve_form(raw_form_id, raw_form_name)
+                    if form:
+                        resolved_form_id = form.form_id
+                        resolved_form_name = form.form_name
+
+            entry = {"character": character_name}
+            if resolved_form_id:
+                entry["form_id"] = resolved_form_id
+            if resolved_form_name:
+                entry["form_name"] = resolved_form_name
+            normalized.append(entry)
+
+        return normalized
 
     async def _call_vlm_with_images(self, images: List[bytes], prompt: str) -> str:
         """

@@ -69,8 +69,8 @@
       <div v-show="state.currentStep.value === 1" class="step-panel">
         <ScriptGenerationPanel
           :script="state.chapterScript.value"
-          :is-generating="isGeneratingScript.value"
-          :is-saving="isSavingScript.value"
+          :is-generating="isGeneratingScript"
+          :is-saving="isSavingScript"
           :book-id="insightStore.currentBookId || ''"
           @generate="handleGenerateScript"
           @update-script="handleScriptUpdate"
@@ -113,7 +113,6 @@
           :is-generating="imageGen.isGenerating.value"
           :progress="imageGen.generationProgress.value"
           :book-id="insightStore.currentBookId || ''"
-          :total-original-pages="totalOriginalPages"
           @batch-generate="handleBatchGenerate"
           @regenerate="handleRegenerateImage"
           @use-previous="handleUsePrevious"
@@ -212,11 +211,6 @@ const generatedPagesCount = computed(() => {
   return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
 })
 
-// 原作总页数（用于参考图选择器）
-const totalOriginalPages = computed(() => {
-  return state.totalOriginalPages?.value || 0
-})
-
 // 步骤导航
 function canNavigateToStep(step: number): boolean {
   if (step === 0) return true
@@ -246,7 +240,7 @@ function resolveReachableStep(requestedStep: number): number {
 }
 
 // 脚本生成
-async function handleGenerateScript(payload: { referenceImages: string[] | null; referenceImageCount: number }) {
+async function handleGenerateScript(payload: { referenceTokens: string[] | null; referenceImageCount: number }) {
   if (!insightStore.currentBookId) return
 
   isGeneratingScript.value = true
@@ -258,7 +252,7 @@ async function handleGenerateScript(payload: { referenceImages: string[] | null;
       insightStore.currentBookId,
       state.continuationDirection.value,
       state.pageCount.value,
-      payload.referenceImages || undefined,
+      payload.referenceTokens || undefined,
       payload.referenceImageCount
     )
     
@@ -366,10 +360,36 @@ async function handleGeneratePageDetails() {
   state.errorMessage.value = ''
   
   const totalPages = state.chapterScript.value.page_count || state.pageCount.value
-  state.pages.value = []
+  const workingPages = Array.from({ length: totalPages }, (_, index) => {
+    const pageNumber = index + 1
+    const existing = state.pages.value.find(page => page.page_number === pageNumber)
+    return existing
+      ? { ...existing }
+      : {
+          page_number: pageNumber,
+          characters: [],
+          character_forms: [],
+          description: '',
+          dialogues: [],
+          image_prompt: '',
+          image_url: '',
+          previous_url: '',
+          status: 'pending' as const,
+        }
+  })
+  state.pages.value = [...workingPages]
   
   try {
     for (let i = 1; i <= totalPages; i++) {
+      const existingPage = workingPages[i - 1]!
+      const alreadyReady = existingPage.status !== 'failed'
+        && Boolean(existingPage.description)
+        && Boolean(existingPage.image_prompt)
+
+      if (alreadyReady) {
+        continue
+      }
+
       state.showMessage(`正在生成第 ${i}/${totalPages} 页详情...`, 'info')
       
       const detailResult = await continuationApi.generateSinglePageDetails(
@@ -379,16 +399,19 @@ async function handleGeneratePageDetails() {
       )
       
       if (!detailResult.success || !detailResult.page) {
-        state.pages.value.push({
+        workingPages[i - 1] = {
           page_number: i,
           characters: [],
+          character_forms: [],
           description: `生成失败: ${detailResult.error || '未知错误'}`,
           dialogues: [],
           image_prompt: '',
           image_url: '',
           previous_url: '',
           status: 'failed' as const
-        })
+        }
+        state.pages.value = [...workingPages]
+        await persistPages(workingPages)
         continue
       }
       
@@ -401,16 +424,22 @@ async function handleGeneratePageDetails() {
       )
       
       if (promptResult.success && promptResult.page) {
-        state.pages.value.push(promptResult.page)
+        workingPages[i - 1] = {
+          ...promptResult.page,
+          status: promptResult.page.status || 'pending',
+        }
       } else {
         const pageWithError = { ...detailResult.page }
         pageWithError.image_prompt = `提示词生成失败: ${promptResult.error || '未知错误'}`
-        state.pages.value.push(pageWithError)
+        pageWithError.status = 'failed'
+        workingPages[i - 1] = pageWithError
       }
+
+      state.pages.value = [...workingPages]
+      await persistPages(workingPages)
     }
     
-    await persistPages()
-    state.showMessage(`页面详情和提示词生成完成 (${state.pages.value.length} 页)`, 'success')
+    state.showMessage(`页面详情和提示词生成完成 (${workingPages.length} 页)`, 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {
@@ -493,9 +522,9 @@ async function handleSavePageChanges() {
 }
 
 // 图片生成
-async function handleBatchGenerate(initialStyleRefs: string[] | null) {
+async function handleBatchGenerate(initialStyleReferenceTokens: string[] | null) {
   if (!insightStore.currentBookId) return
-  await imageGen.batchGenerateImages(state.pages.value, initialStyleRefs || undefined)
+  await imageGen.batchGenerateImages(state.pages.value, initialStyleReferenceTokens || undefined)
 }
 
 async function handleRegenerateImage(pageNumber: number) {
@@ -517,7 +546,7 @@ async function handleUsePrevious(pageNumber: number) {
 }
 
 // 提示词变更处理
-async function handlePromptChange(pageNumber: number) {
+async function handlePromptChange(_pageNumber: number) {
   if (promptSaveTimer) {
     clearTimeout(promptSaveTimer)
   }

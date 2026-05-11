@@ -30,7 +30,7 @@ def generate_script(book_id: str):
             "direction": "用户指定的续写方向",
             "page_count": 15,
             "reference_image_count": 5,
-            "reference_images": ["路径1", "路径2", ...]  // 可选，自定义参考图路径列表
+            "reference_tokens": ["original:77", "original:78", ...]  // 可选，自定义参考图 token 列表
         }
 
     Returns:
@@ -49,14 +49,14 @@ def generate_script(book_id: str):
         direction = data.get("direction", "")
         page_count = max(1, int(data.get("page_count", 15) or 15))
         reference_image_count = max(1, int(data.get("reference_image_count", 5) or 5))
-        reference_images_raw = data.get("reference_images", None)
-        reference_images = reference_images_raw if isinstance(reference_images_raw, list) else None
+        reference_tokens_raw = data.get("reference_tokens", None)
+        reference_tokens = reference_tokens_raw if isinstance(reference_tokens_raw, list) else None
 
         story_gen = StoryGenerator(book_id)
         script = run_async(story_gen.generate_chapter_script(
             user_direction=direction,
             page_count=page_count,
-            custom_reference_images=reference_images,
+            custom_reference_tokens=reference_tokens,
             reference_image_count=reference_image_count,
         ))
 

@@ -122,6 +122,7 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
         generator = ImageGenerator("test-book")
         try:
             with mock.patch.object(generator, "_build_full_prompt", return_value="page prompt"), \
+                 mock.patch.object(generator, "_resolve_style_reference_images", return_value=[{"path": "ref.png", "type": "style"}]), \
                  mock.patch.object(generator._client, "generate", return_value=b"generated-image") as generate_mock, \
                  mock.patch.object(generator, "_save_image", return_value="saved-image.png"):
                 result = await generator.generate_page_image(
@@ -133,7 +134,7 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
                         image_prompt="prompt",
                     ),
                     characters=ContinuationCharacters(book_id="test-book", characters=[]),
-                    style_reference_images=["ref.png"],
+                    style_reference_tokens=["original:10"],
                     style_ref_count=1,
                 )
         finally:

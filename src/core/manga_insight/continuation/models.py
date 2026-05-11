@@ -124,6 +124,27 @@ class CharacterProfile:
             if form.form_id == form_id:
                 return form
         return None
+
+    def resolve_form(self, form_id: str = "", form_name: str = "") -> Optional[CharacterForm]:
+        """按稳定 ID 或显示名解析形态。"""
+        if form_id:
+            matched = self.get_form(form_id)
+            if matched:
+                return matched
+
+        if form_name:
+            for form in self.forms:
+                if form.form_name == form_name:
+                    return form
+                if form.form_id == form_name:
+                    return form
+
+        if form_id:
+            for form in self.forms:
+                if form.form_name == form_id:
+                    return form
+
+        return None
     
     def get_any_reference_image(self) -> str:
         """获取任意一张参考图（优先返回启用形态的参考图）"""

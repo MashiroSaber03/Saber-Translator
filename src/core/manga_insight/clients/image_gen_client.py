@@ -19,13 +19,14 @@ import base64
 import io
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Protocol
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from src.shared.http_config import build_httpx_kwargs
+from src.shared.ai_providers import IMAGE_GEN_CAPABILITY, normalize_provider_id, provider_supports_capability
 
 from ..config_models import ImageGenConfig
 from .base_client import BaseAPIClient
@@ -34,6 +35,65 @@ from .provider_registry import get_image_gen_base_url
 logger = logging.getLogger("MangaInsight.ImageGenClient")
 
 _DOWNLOAD_TIMEOUT_SECONDS = 60
+
+
+class ImageGenAdapter(Protocol):
+    async def generate(
+        self,
+        client: "ImageGenClient",
+        prompt: str,
+        prepared_refs: List[Dict[str, object]],
+    ) -> bytes:
+        ...
+
+
+class GPT2ApiImageGenAdapter:
+    async def generate(
+        self,
+        client: "ImageGenClient",
+        prompt: str,
+        prepared_refs: List[Dict[str, object]],
+    ) -> bytes:
+        request_url = client._build_api_url("images/edits" if prepared_refs else "images/generations")
+
+        for retry in range(client.config.max_retries):
+            try:
+                if prepared_refs:
+                    response = await client.client.post(
+                        request_url,
+                        headers=client._build_multipart_headers(),
+                        data=client._build_edit_form_data(prompt),
+                        files=client._build_edit_files(prepared_refs),
+                    )
+                else:
+                    response = await client.client.post(
+                        request_url,
+                        headers=client._get_headers(),
+                        json=client._build_generation_body(prompt),
+                    )
+                payload = client._decode_response_payload(response)
+                client._raise_api_error_if_needed(response, payload)
+
+                if client._payload_has_result(payload):
+                    return await client._extract_image_bytes_from_payload(payload)
+
+                raise ValueError("gpt2api 返回中没有图片结果")
+            except Exception as exc:
+                logger.warning(
+                    "gpt2api 生图调用失败 (尝试 %s/%s): %s",
+                    retry + 1,
+                    client.config.max_retries,
+                    exc,
+                )
+                if retry < client.config.max_retries - 1:
+                    await asyncio.sleep(2 ** retry)
+                else:
+                    raise
+
+
+IMAGE_GEN_ADAPTERS: Dict[str, ImageGenAdapter] = {
+    "gpt2api": GPT2ApiImageGenAdapter(),
+}
 
 
 class ImageGenClient(BaseAPIClient):
@@ -57,49 +117,17 @@ class ImageGenClient(BaseAPIClient):
         prompt: str,
         reference_images: Optional[List[Dict]] = None,
     ) -> bytes:
-        provider = (self.config.provider or "").strip().lower()
-        if provider != "gpt2api":
-            raise ValueError(f"当前版本仅支持 gpt2api 生图服务商，收到: {self.config.provider}")
+        provider = normalize_provider_id(self.config.provider)
+        if not provider_supports_capability(provider, IMAGE_GEN_CAPABILITY):
+            raise ValueError(f"服务商 '{self.config.provider}' 不支持 image_gen 能力")
+        adapter = IMAGE_GEN_ADAPTERS.get(provider)
+        if adapter is None:
+            raise ValueError(f"服务商 '{self.config.provider}' 尚未注册生图适配器")
         if not self.base_url:
-            raise ValueError("gpt2api 生图服务商需要设置 base_url")
+            raise ValueError(f"{self.config.provider} 生图服务商需要设置 base_url")
 
         prepared_refs = self._prepare_reference_images(reference_images)
-        route = "images/edits" if prepared_refs else "images/generations"
-        request_url = self._build_api_url(route)
-
-        for retry in range(self.config.max_retries):
-            try:
-                if prepared_refs:
-                    response = await self.client.post(
-                        request_url,
-                        headers=self._build_multipart_headers(),
-                        data=self._build_edit_form_data(prompt),
-                        files=self._build_edit_files(prepared_refs),
-                    )
-                else:
-                    response = await self.client.post(
-                        request_url,
-                        headers=self._get_headers(),
-                        json=self._build_generation_body(prompt),
-                    )
-                payload = self._decode_response_payload(response)
-                self._raise_api_error_if_needed(response, payload)
-
-                if self._payload_has_result(payload):
-                    return await self._extract_image_bytes_from_payload(payload)
-
-                raise ValueError("gpt2api 返回中没有图片结果")
-            except Exception as exc:
-                logger.warning(
-                    "gpt2api 生图调用失败 (尝试 %s/%s): %s",
-                    retry + 1,
-                    self.config.max_retries,
-                    exc,
-                )
-                if retry < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** retry)
-                else:
-                    raise
+        return await adapter.generate(self, prompt, prepared_refs)
 
     def _build_generation_body(self, prompt: str) -> Dict[str, object]:
         return {

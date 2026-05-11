@@ -1,3 +1,4 @@
+import json
 import asyncio
 import os
 import sys
@@ -125,3 +126,210 @@ class StoryGeneratorReferenceCountTests(unittest.TestCase):
         self.assertEqual(script.page_count, 8)
         self.assertEqual(script.chapter_title, "测试")
 
+
+class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
+    def test_prepare_continuation_data_auto_generates_story_summary_when_missing(self) -> None:
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            def __init__(self) -> None:
+                self.saved_summary = None
+
+            async def load_template_overview(self, template_key: str):
+                if template_key == "story_summary":
+                    return None
+                return None
+
+            async def load_timeline(self):
+                return {"events": [{"event": "开端"}]}
+
+            async def save_template_overview(self, template_key: str, data):
+                self.saved_summary = (template_key, data)
+                return True
+
+        class _SummaryGeneratorStub:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+            async def generate_with_template(self, template_key: str = "story_summary", skip_cache: bool = False):
+                return {
+                    "template_key": template_key,
+                    "template_name": "故事概要",
+                    "template_icon": "📖",
+                    "content": "自动补齐的故事概要",
+                    "source": "llm",
+                    "generated_at": "2026-05-11T00:00:00",
+                }
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.config = types.SimpleNamespace(prompts=types.SimpleNamespace())
+        generator.char_manager = types.SimpleNamespace(
+            format_characters_for_prompt=lambda: "（暂无角色信息）"
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.continuation.story_generator.HierarchicalSummaryGenerator",
+            _SummaryGeneratorStub,
+        ), mock.patch(
+            "src.core.manga_insight.continuation.story_generator.create_chat_client",
+            return_value=types.SimpleNamespace(close=mock.AsyncMock()),
+        ):
+            result = asyncio.run(generator.prepare_continuation_data())
+
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["message"], "数据准备完成")
+        self.assertIsNotNone(generator.storage.saved_summary)
+        self.assertEqual(generator.storage.saved_summary[0], "story_summary")
+        self.assertEqual(generator.storage.saved_summary[1]["content"], "自动补齐的故事概要")
+
+    def test_generate_page_details_normalizes_form_name_to_form_id(self) -> None:
+        from src.core.manga_insight.continuation.models import (
+            ChapterScript,
+            CharacterForm,
+            CharacterProfile,
+            ContinuationCharacters,
+        )
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {
+                    "characters": [
+                        {"name": "Hero"},
+                    ]
+                }
+
+        characters = ContinuationCharacters(
+            book_id="book-1",
+            characters=[
+                CharacterProfile(
+                    name="Hero",
+                    aliases=[],
+                    description="主角",
+                    forms=[
+                        CharacterForm(
+                            form_id="battle",
+                            form_name="Battle Form",
+                            description="战斗形态",
+                            reference_image="/tmp/hero-battle.png",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            load_characters=lambda: characters,
+            format_characters_for_prompt=lambda: "角色档案",
+        )
+        generator.chat_client = types.SimpleNamespace(
+            generate=mock.AsyncMock(
+                return_value=json.dumps(
+                    {
+                        "page_number": 1,
+                        "characters": ["Hero"],
+                        "character_forms": [
+                            {
+                                "character": "Hero",
+                                "form_id": "Battle Form",
+                            }
+                        ],
+                        "description": "主角出场",
+                        "dialogues": [{"character": "Hero", "text": "出发"}],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+
+        page = asyncio.run(
+            generator.generate_page_details(
+                ChapterScript(
+                    chapter_title="测试章节",
+                    page_count=1,
+                    script_text="第1页：主角出场",
+                ),
+                1,
+            )
+        )
+
+        self.assertEqual(page.character_forms[0]["form_id"], "battle")
+        self.assertEqual(page.character_forms[0]["form_name"], "Battle Form")
+
+
+class ReferenceTokenResolverTests(unittest.TestCase):
+    def test_build_continuation_candidates_include_placeholder_pages(self) -> None:
+        from src.core.manga_insight.continuation.reference_tokens import build_continuation_reference_candidates
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            generated_path = os.path.join(temp_dir, "cont-1.png")
+            with open(generated_path, "wb") as handle:
+                handle.write(b"png")
+
+            candidates = build_continuation_reference_candidates(
+                total_original_pages=78,
+                pages=[
+                    {"page_number": 1, "image_url": generated_path, "status": "generated"},
+                    {"page_number": 2, "image_url": "", "status": "pending"},
+                ],
+            )
+
+            self.assertEqual(candidates[0]["token"], "continuation:1")
+            self.assertEqual(candidates[0]["page_number"], 79)
+            self.assertTrue(candidates[0]["has_image"])
+            self.assertEqual(candidates[1]["token"], "continuation:2")
+            self.assertEqual(candidates[1]["page_number"], 80)
+            self.assertFalse(candidates[1]["has_image"])
+
+    def test_resolve_reference_tokens_skips_placeholder_until_image_exists(self) -> None:
+        from src.core.manga_insight.continuation.reference_tokens import resolve_reference_tokens
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_path = os.path.join(temp_dir, "original-1.png")
+            continuation_path = os.path.join(temp_dir, "continuation-1.png")
+            with open(original_path, "wb") as handle:
+                handle.write(b"png")
+
+            candidates = [
+                {
+                    "token": "original:1",
+                    "kind": "original",
+                    "page_number": 1,
+                    "path": original_path,
+                    "has_image": True,
+                },
+                {
+                    "token": "continuation:1",
+                    "kind": "continuation",
+                    "page_number": 79,
+                    "path": "",
+                    "has_image": False,
+                },
+            ]
+
+            resolved = resolve_reference_tokens(
+                ["original:1", "continuation:1"],
+                candidates,
+                current_page_number=80,
+            )
+            self.assertEqual([ref["path"] for ref in resolved], [original_path])
+
+            with open(continuation_path, "wb") as handle:
+                handle.write(b"png")
+            candidates[1]["path"] = continuation_path
+            candidates[1]["has_image"] = True
+            resolved = resolve_reference_tokens(
+                ["original:1", "continuation:1"],
+                candidates,
+                current_page_number=80,
+            )
+            self.assertEqual(
+                [ref["path"] for ref in resolved],
+                [original_path, continuation_path],
+            )

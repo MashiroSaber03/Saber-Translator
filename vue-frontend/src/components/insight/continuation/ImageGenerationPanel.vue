@@ -109,7 +109,7 @@
       :original-images="availableOriginalImages"
       :continuation-images="availableContinuationImages"
       :character-forms="availableCharacterForms"
-      :initial-selection="batchInitialRefs"
+      :initial-selection="batchInitialReferenceTokens"
       :book-id="bookId"
       @confirm="handleSelectorConfirm"
       @cancel="handleSelectorCancel"
@@ -129,11 +129,10 @@ const props = defineProps<{
   isGenerating: boolean
   progress: number
   bookId: string
-  totalOriginalPages: number
 }>()
 
 const emit = defineEmits<{
-  'batch-generate': [initialStyleRefs: string[] | null]
+  'batch-generate': [initialStyleReferenceTokens: string[] | null]
   'regenerate': [pageNumber: number]
   'use-previous': [pageNumber: number]
   'prompt-change': [pageNumber: number]
@@ -148,7 +147,7 @@ const editingPromptPage = ref<number | null>(null)
 const refCount = ref(state.styleRefPages?.value || 3)
 
 // 批量生成的初始参考图选择（全局）
-const batchInitialRefs = ref<string[]>([])
+const batchInitialReferenceTokens = ref<string[]>([])
 
 // 参考图选择器状态
 const selectorVisible = ref(false)
@@ -182,8 +181,8 @@ function getStatusText(status: string): string {
 
 // 获取显示的初始参考图数量
 function getInitialRefCount(): number {
-  if (batchInitialRefs.value.length > 0) {
-    return batchInitialRefs.value.length
+  if (batchInitialReferenceTokens.value.length > 0) {
+    return batchInitialReferenceTokens.value.length
   }
   return refCount.value
 }
@@ -191,11 +190,9 @@ function getInitialRefCount(): number {
 // 打开批量生成参考图选择器
 async function openBatchReferenceSelector() {
   try {
-    const firstPendingPage = props.pages.find(page => !page.image_url)?.page_number ?? 1
     const response = await getAvailableImages(
       props.bookId,
-      'image',
-      props.totalOriginalPages + firstPendingPage
+      'image'
     )
     if (response.success) {
       availableOriginalImages.value = response.original_images || []
@@ -210,8 +207,8 @@ async function openBatchReferenceSelector() {
 }
 
 // 选择器确认
-function handleSelectorConfirm(paths: string[]) {
-  batchInitialRefs.value = paths
+function handleSelectorConfirm(tokens: string[]) {
+  batchInitialReferenceTokens.value = tokens
 }
 
 // 选择器取消
@@ -221,8 +218,8 @@ function handleSelectorCancel() {
 
 // 批量生成
 function handleBatchGenerate() {
-  const refs = batchInitialRefs.value.length > 0 ? batchInitialRefs.value : null
-  emit('batch-generate', refs)
+  const tokens = batchInitialReferenceTokens.value.length > 0 ? batchInitialReferenceTokens.value : null
+  emit('batch-generate', tokens)
 }
 
 // 组件挂载时同步全局配置
@@ -247,7 +244,7 @@ watch(() => state.styleRefPages?.value, (newValue) => {
 })
 
 watch(() => props.bookId, () => {
-  batchInitialRefs.value = []
+  batchInitialReferenceTokens.value = []
   availableOriginalImages.value = []
   availableContinuationImages.value = []
   availableCharacterForms.value = []
@@ -255,7 +252,7 @@ watch(() => props.bookId, () => {
 
 watch(() => props.pages.length, (pageCount) => {
   if (pageCount === 0) {
-    batchInitialRefs.value = []
+    batchInitialReferenceTokens.value = []
   }
 })
 </script>

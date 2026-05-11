@@ -64,7 +64,7 @@
       :original-images="availableOriginalImages"
       :continuation-images="[]"
       :character-forms="[]"
-      :initial-selection="selectedRefImages"
+      :initial-selection="selectedReferenceTokens"
       :book-id="bookId"
       @confirm="handleSelectorConfirm"
       @cancel="handleSelectorCancel"
@@ -86,7 +86,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'generate': [payload: { referenceImages: string[] | null; referenceImageCount: number }]
+  'generate': [payload: { referenceTokens: string[] | null; referenceImageCount: number }]
   'update-script': [scriptText: string]
   'save-script': []
   'reset-script': []
@@ -95,7 +95,7 @@ const emit = defineEmits<{
 const scriptText = ref('')
 const refCount = ref(5)
 const selectorVisible = ref(false)
-const selectedRefImages = ref<string[]>([])
+const selectedReferenceTokens = ref<string[]>([])
 const availableOriginalImages = ref<MangaImageInfo[]>([])
 
 watch(() => props.script?.script_text, (newScriptText) => {
@@ -126,8 +126,8 @@ function openReferenceSelector() {
 }
 
 // 选择器确认
-function handleSelectorConfirm(paths: string[]) {
-  selectedRefImages.value = paths
+function handleSelectorConfirm(tokens: string[]) {
+  selectedReferenceTokens.value = tokens
 }
 
 // 选择器取消
@@ -138,8 +138,8 @@ function handleSelectorCancel() {
 // 获取显示的参考图数量
 function getDisplayRefCount(): number {
   // 如果用户已手动选择，显示选择的数量
-  if (selectedRefImages.value.length > 0) {
-    return selectedRefImages.value.length
+  if (selectedReferenceTokens.value.length > 0) {
+    return selectedReferenceTokens.value.length
   }
   // 否则显示配置的默认数量
   return refCount.value
@@ -148,9 +148,9 @@ function getDisplayRefCount(): number {
 // 生成脚本
 function handleGenerate() {
   // 如果用户选择了参考图，传递选择的路径；否则传null使用自动逻辑
-  const refs = selectedRefImages.value.length > 0 ? selectedRefImages.value : null
+  const refs = selectedReferenceTokens.value.length > 0 ? selectedReferenceTokens.value : null
   emit('generate', {
-    referenceImages: refs,
+    referenceTokens: refs,
     referenceImageCount: refCount.value,
   })
 }
@@ -174,7 +174,7 @@ onMounted(() => {
 watch(() => props.bookId, (newBookId) => {
   if (newBookId) {
     loadAvailableImages()
-    selectedRefImages.value = []
+    selectedReferenceTokens.value = []
   }
 })
 </script>

@@ -8,7 +8,7 @@ vi.mock('@/api/continuation', () => ({
   getAvailableImages: vi.fn().mockResolvedValue({
     success: true,
     original_images: [
-      { page_number: 1, path: '/tmp/page-1.png', has_image: true },
+      { page_number: 1, path: '/tmp/page-1.png', has_image: true, token: 'original:1' },
     ],
   }),
 }))
@@ -38,18 +38,19 @@ describe('ScriptGenerationPanel', () => {
     const textarea = wrapper.find('textarea.script-textarea')
     await textarea.setValue('新脚本内容')
 
-    expect(wrapper.emitted('update-script')?.at(-1)).toEqual(['新脚本内容'])
+    const updateEvents = wrapper.emitted('update-script') || []
+    expect(updateEvents[updateEvents.length - 1]).toEqual(['新脚本内容'])
 
     const generateButton = wrapper.find('button.btn.primary')
     await generateButton.trigger('click')
     await nextTick()
 
-    expect(wrapper.emitted('generate')?.at(-1)).toEqual([
+    const generateEvents = wrapper.emitted('generate') || []
+    expect(generateEvents[generateEvents.length - 1]).toEqual([
       {
-        referenceImages: null,
+        referenceTokens: null,
         referenceImageCount: 5,
       },
     ])
   })
 })
-

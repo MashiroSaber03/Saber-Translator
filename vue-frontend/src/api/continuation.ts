@@ -43,6 +43,7 @@ export interface ChapterScript {
 export interface CharacterFormSelection {
     character: string         // 角色名
     form_id: string           // 选择的形态ID
+    form_name?: string        // 形态显示名
 }
 
 export interface PageContent {
@@ -398,12 +399,12 @@ export async function generateSingleImagePrompt(
 }
 
 /**
- * 获取画风参考图路径
+ * 获取最近可用的画风参考图 token
  */
 export async function getStyleReferences(
     bookId: string,
     count: number = 3
-): Promise<{ success: boolean; images?: string[]; error?: string }> {
+): Promise<{ success: boolean; tokens?: string[]; error?: string }> {
     return apiClient.get(`/api/manga-insight/${bookId}/continuation/style-references?count=${count}`)
 }
 
@@ -414,13 +415,13 @@ export async function generatePageImage(
     bookId: string,
     pageNumber: number,
     page: PageContent,
-    styleRefs: string[],
+    styleReferenceTokens: string[],
     sessionId?: string,
     styleRefCount: number = 3  // 画风参考图数量
 ): Promise<ImageGenerateResponse> {
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/generate/${pageNumber}`, {
         page,
-        style_reference_images: styleRefs,
+        style_reference_tokens: styleReferenceTokens,
         session_id: sessionId,
         style_ref_count: styleRefCount
     }, {
@@ -435,13 +436,13 @@ export async function regeneratePageImage(
     bookId: string,
     pageNumber: number,
     page: PageContent,
-    styleRefs: string[],
+    styleReferenceTokens: string[],
     sessionId?: string,
     styleRefCount: number = 3  // 画风参考图数量（滑动窗口大小）
 ): Promise<ImageGenerateResponse> {
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/regenerate/${pageNumber}`, {
         page,
-        style_reference_images: styleRefs,
+        style_reference_tokens: styleReferenceTokens,
         session_id: sessionId,
         style_ref_count: styleRefCount
     }, {
@@ -497,19 +498,26 @@ export async function exportAsPdf(bookId: string): Promise<Blob> {
  * 原作/续写图片信息
  */
 export interface MangaImageInfo {
+    token: string
     page_number: number
     path: string
     has_image: boolean
+    is_placeholder?: boolean
+    label?: string
 }
 
 /**
  * 角色形态参考图信息
  */
 export interface CharacterFormInfo {
+    token: string
     character_name: string
     form_id: string
     form_name: string
-    reference_image: string
+    path: string
+    has_image: boolean
+    is_placeholder?: boolean
+    label?: string
 }
 
 /**
@@ -531,34 +539,31 @@ export interface AvailableImagesResponse {
  * @param mode "script" 或 "image"
  *   - script: 脚本生成场景，只返回原作图片
  *   - image: 生图场景，返回原作图片+续写图片+角色档案
- * @param currentPage 当前生成的页码（仅 mode=image 时有效）
  */
 export async function getAvailableImages(
     bookId: string,
-    mode: 'script' | 'image' = 'script',
-    currentPage: number = 0
+    mode: 'script' | 'image' = 'script'
 ): Promise<AvailableImagesResponse> {
     const params = new URLSearchParams({
-        mode,
-        current_page: currentPage.toString()
+        mode
     })
     return apiClient.get(`/api/manga-insight/${bookId}/continuation/available-images?${params}`)
 }
 
 /**
- * 生成脚本（支持自定义参考图）
+ * 生成脚本（支持自定义参考图 token）
  */
 export async function generateScriptWithRefs(
     bookId: string,
     direction: string,
     pageCount: number,
-    referenceImages?: string[],
+    referenceTokens?: string[],
     referenceImageCount: number = 5
 ): Promise<ScriptResponse> {
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/script`, {
         direction,
         page_count: pageCount,
-        reference_images: referenceImages || null,
+        reference_tokens: referenceTokens || null,
         reference_image_count: referenceImageCount,
     }, {
         timeout: 0  // 移除超时限制，LLM 生成可能很耗时

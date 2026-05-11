@@ -147,14 +147,14 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("temperature", saved_payload["vlm"])
         self.assertNotIn("use_stream", saved_payload["chat_llm"])
 
-    def test_load_insight_config_resets_legacy_image_gen_provider_to_gpt2api(self) -> None:
+    def test_load_insight_config_preserves_future_image_gen_provider_without_rewriting(self) -> None:
         from src.core.manga_insight.config_utils import load_insight_config
 
-        legacy_payload = {
+        payload = {
             "image_gen": {
-                "provider": "openai",
-                "api_key": "legacy-key",
-                "model": "dall-e-3",
+                "provider": "future-image-provider",
+                "api_key": "future-key",
+                "model": "future-image-model",
                 "base_url": "https://gateway.example.com/v1",
                 "max_retries": 5,
             }
@@ -162,31 +162,31 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
 
         with mock.patch(
             "src.core.manga_insight.config_utils.load_json_config",
-            return_value=legacy_payload,
+            return_value=payload,
         ), mock.patch(
             "src.core.manga_insight.config_utils.save_json_config",
             return_value=True,
         ) as save_mock:
             config = load_insight_config()
 
-        self.assertEqual(config.image_gen.provider, "gpt2api")
-        self.assertEqual(config.image_gen.model, "gpt-image-2")
-        self.assertEqual(config.image_gen.api_key, "legacy-key")
+        self.assertEqual(config.image_gen.provider, "future-image-provider")
+        self.assertEqual(config.image_gen.model, "future-image-model")
+        self.assertEqual(config.image_gen.api_key, "future-key")
         self.assertEqual(config.image_gen.base_url, "https://gateway.example.com/v1")
         self.assertEqual(config.image_gen.max_retries, 5)
-        save_mock.assert_called_once()
-        saved_payload = save_mock.call_args.args[1]
-        self.assertEqual(saved_payload["image_gen"]["provider"], "gpt2api")
-        self.assertEqual(saved_payload["image_gen"]["model"], "gpt-image-2")
+        if save_mock.called:
+            saved_payload = save_mock.call_args.args[1]
+            self.assertEqual(saved_payload["image_gen"]["provider"], "future-image-provider")
+            self.assertEqual(saved_payload["image_gen"]["model"], "future-image-model")
 
-    def test_save_insight_config_normalizes_image_gen_provider(self) -> None:
+    def test_save_insight_config_preserves_future_image_gen_provider(self) -> None:
         from src.core.manga_insight.config_utils import save_insight_config
 
         payload = {
             "image_gen": {
-                "provider": "openai",
-                "api_key": "legacy-key",
-                "model": "dall-e-3",
+                "provider": "future-image-provider",
+                "api_key": "future-key",
+                "model": "future-image-model",
                 "base_url": "https://gateway.example.com/v1",
                 "max_retries": 3,
             }
@@ -200,5 +200,5 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
 
         self.assertTrue(ok)
         saved_payload = save_mock.call_args.args[1]
-        self.assertEqual(saved_payload["image_gen"]["provider"], "gpt2api")
-        self.assertEqual(saved_payload["image_gen"]["model"], "gpt-image-2")
+        self.assertEqual(saved_payload["image_gen"]["provider"], "future-image-provider")
+        self.assertEqual(saved_payload["image_gen"]["model"], "future-image-model")

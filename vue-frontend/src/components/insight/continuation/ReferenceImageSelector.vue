@@ -33,15 +33,19 @@
         <div class="thumbnails-row">
           <div
             v-for="form in characterForms"
-            :key="`${form.character_name}-${form.form_id}`"
+            :key="form.token || `${form.character_name}-${form.form_id}`"
             class="thumbnail character-thumbnail"
           >
             <img
-              :src="getImageUrl(form.reference_image)"
+              v-if="form.has_image && form.path"
+              :src="getImageUrl(form.path)"
               :alt="`${form.character_name} - ${form.form_name}`"
               loading="lazy"
               @error="handleImageError"
             />
+            <div v-else class="placeholder-card">
+              <span>角色图缺失</span>
+            </div>
             <div class="character-label">{{ form.character_name }} - {{ form.form_name }}</div>
           </div>
         </div>
@@ -64,11 +68,15 @@
             @click="toggleSelection(img)"
           >
             <img
+              v-if="img.has_image"
               :src="getOriginalThumbnailUrl(img.page_number)"
               :alt="`第${img.page_number}页`"
               loading="lazy"
               @error="handleImageError"
             />
+            <div v-else class="placeholder-card">
+              <span>原作页缺失</span>
+            </div>
             <!-- 选中标记 -->
             <div v-if="isSelected(img)" class="selection-badge">
               {{ getSelectionIndex(img) }}
@@ -94,11 +102,15 @@
             @click="toggleSelection(img)"
           >
             <img
+              v-if="img.has_image && img.path"
               :src="getImageUrl(img.path)"
               :alt="`第${img.page_number}页续写图`"
               loading="lazy"
               @error="handleImageError"
             />
+            <div v-else class="placeholder-card">
+              <span>占位页</span>
+            </div>
             <div v-if="isSelected(img)" class="selection-badge">
               {{ getSelectionIndex(img) }}
             </div>
@@ -135,12 +147,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
-  'confirm': [selectedPaths: string[]]
+  'confirm': [selectedTokens: string[]]
   'cancel': []
 }>()
 
-// 选中的图片路径列表（按选择顺序）
-const selectedPaths = ref<string[]>([])
+// 选中的参考图 token 列表（按选择顺序）
+const selectedTokens = ref<string[]>([])
 const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(handleCancel, {
   enabled: () => props.visible,
 })
@@ -149,24 +161,24 @@ const { overlayRef, handleOverlayMouseDown } = useOverlayDismiss(handleCancel, {
 const thumbnailsGrid = ref<HTMLElement | null>(null)
 
 // 计算选中数量
-const selectedCount = computed(() => selectedPaths.value.length)
+const selectedCount = computed(() => selectedTokens.value.length)
 
 // 监听可见性变化，初始化选择状态
 watch(() => props.visible, (newVisible) => {
   if (newVisible) {
-    const availablePaths = new Set(
+    const availableTokens = new Set(
       [
         ...props.originalImages,
         ...(props.mode === 'image' ? props.continuationImages : []),
       ]
-        .map(img => img.path)
+        .map(img => img.token)
         .filter(Boolean)
     )
 
     // 恢复之前的选择状态，或自动预选最后N张
     if (props.initialSelection && props.initialSelection.length > 0) {
-      selectedPaths.value = props.initialSelection.filter(path => availablePaths.has(path))
-      if (selectedPaths.value.length === 0) {
+      selectedTokens.value = props.initialSelection.filter(token => availableTokens.has(token))
+      if (selectedTokens.value.length === 0) {
         autoSelectLast()
       }
     } else {
@@ -180,21 +192,21 @@ watch(() => props.visible, (newVisible) => {
   }
 }, { immediate: true })
 
-// 获取图片的唯一标识符（使用路径）
+// 获取图片的唯一标识符（使用 token）
 function getImageIdentifier(img: MangaImageInfo): string {
-  return img.path || ''
+  return img.token || ''
 }
 
 // 检查图片是否被选中
 function isSelected(img: MangaImageInfo): boolean {
   const identifier = getImageIdentifier(img)
-  return identifier ? selectedPaths.value.includes(identifier) : false
+  return identifier ? selectedTokens.value.includes(identifier) : false
 }
 
 // 获取选中序号
 function getSelectionIndex(img: MangaImageInfo): number {
   const identifier = getImageIdentifier(img)
-  const index = selectedPaths.value.indexOf(identifier)
+  const index = selectedTokens.value.indexOf(identifier)
   return index >= 0 ? index + 1 : 0
 }
 
@@ -203,32 +215,32 @@ function toggleSelection(img: MangaImageInfo): void {
   const identifier = getImageIdentifier(img)
   if (!identifier) return
 
-  const index = selectedPaths.value.indexOf(identifier)
+  const index = selectedTokens.value.indexOf(identifier)
   if (index >= 0) {
     // 取消选择
-    selectedPaths.value.splice(index, 1)
+    selectedTokens.value.splice(index, 1)
   } else {
     // 添加选择（检查是否达到上限）
-    if (selectedPaths.value.length < props.maxCount) {
-      selectedPaths.value.push(identifier)
+    if (selectedTokens.value.length < props.maxCount) {
+      selectedTokens.value.push(identifier)
     }
   }
 }
 
 // 自动选择最后N张
 function autoSelectLast(): void {
-  selectedPaths.value = []
+  selectedTokens.value = []
 
   const validImages = [
     ...props.originalImages,
     ...(props.mode === 'image' ? props.continuationImages : []),
   ]
-    .filter(img => img.path)
+    .filter(img => img.token)
     .sort((left, right) => left.page_number - right.page_number)
 
   // 取最后N张
   const lastN = validImages.slice(-props.maxCount)
-  selectedPaths.value = lastN.map(img => img.path)
+  selectedTokens.value = lastN.map(img => img.token)
 
   // 滚动到底部
   nextTick(() => {
@@ -238,7 +250,7 @@ function autoSelectLast(): void {
 
 // 清空选择
 function clearSelection(): void {
-  selectedPaths.value = []
+  selectedTokens.value = []
 }
 
 // 滚动到底部
@@ -269,7 +281,7 @@ function handleImageError(event: Event): void {
 
 // 确认选择
 function handleConfirm(): void {
-  emit('confirm', [...selectedPaths.value])
+  emit('confirm', [...selectedTokens.value])
   emit('update:visible', false)
 }
 
@@ -352,6 +364,20 @@ function handleCancel(): void {
 
 .close-btn:hover {
   color: #333;
+}
+
+.placeholder-card {
+  width: 100%;
+  height: 100%;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px dashed #cbd5e1;
 }
 
 /* 角色档案区域 */

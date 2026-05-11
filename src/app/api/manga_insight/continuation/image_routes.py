@@ -20,6 +20,12 @@ from src.core.manga_insight.continuation import (
     CharacterManager,
     PageContent,
 )
+from src.core.manga_insight.continuation.reference_tokens import (
+    build_character_reference_candidates,
+    build_continuation_reference_candidates,
+    build_original_reference_candidates,
+    list_original_manga_page_paths,
+)
 from src.core.manga_insight.storage import AnalysisStorage
 from src.shared.path_helpers import resource_path
 
@@ -82,7 +88,7 @@ def get_generated_image(book_id: str):
 @manga_insight_bp.route('/<book_id>/continuation/style-references', methods=['GET'])
 def get_style_references(book_id: str):
     """
-    获取画风参考图路径（原漫画最后N页）
+    获取最近可用的画风参考图 token
 
     Query:
         count: 需要的页数（默认3）
@@ -90,7 +96,7 @@ def get_style_references(book_id: str):
     Returns:
         {
             "success": true,
-            "images": ["路径1", "路径2", ...]
+            "tokens": ["original:77", "original:78", ...]
         }
     """
     try:
@@ -98,11 +104,11 @@ def get_style_references(book_id: str):
 
         image_gen = ImageGenerator(book_id)
         try:
-            style_refs = image_gen.get_style_reference_images(count)
+            style_tokens = run_async(image_gen.get_recent_style_reference_tokens(count))
         finally:
             run_async(image_gen.close())
 
-        return success_response(data={"images": style_refs})
+        return success_response(data={"tokens": style_tokens})
 
     except Exception as e:
         logger.error(f"获取画风参考图失败: {e}")
@@ -116,28 +122,16 @@ def get_available_images(book_id: str):
 
     Query:
         mode: "script" 或 "image"
-        current_page: 当前生成的页码（仅 mode=image 时有效）
 
     Returns:
         原作图片、续写图片、角色档案信息
     """
     try:
         mode = request.args.get('mode', 'script')
-        current_page = request.args.get('current_page', 0, type=int)
 
-        image_gen = ImageGenerator(book_id)
-        try:
-            # 获取原作图片列表
-            original_pages = image_gen._get_original_manga_pages()
-            original_images = []
-            for i, path in enumerate(original_pages):
-                original_images.append({
-                    "page_number": i + 1,
-                    "path": path,
-                    "has_image": os.path.exists(path) if path else False
-                })
-        finally:
-            run_async(image_gen.close())
+        # 获取原作图片列表
+        original_pages = list_original_manga_page_paths(book_id)
+        original_images = build_original_reference_candidates(original_pages)
 
         total_original_pages = len(original_images)
 
@@ -154,54 +148,20 @@ def get_available_images(book_id: str):
             pages_data = run_async(storage.load_continuation_pages())
 
             if pages_data and "pages" in pages_data:
-                continuation_images = []
-                for page in pages_data["pages"]:
-                    page_number = page.get("page_number", 0)
-                    actual_page_number = total_original_pages + page_number
-
-                    if current_page > 0 and actual_page_number >= current_page:
-                        continue
-
-                    image_url = page.get("image_url", "")
-                    has_image = bool(image_url) and os.path.exists(image_url)
-
-                    continuation_images.append({
-                        "page_number": actual_page_number,
-                        "path": image_url if has_image else "",
-                        "has_image": has_image
-                    })
-
-                result["continuation_images"] = continuation_images
+                result["continuation_images"] = build_continuation_reference_candidates(
+                    total_original_pages=total_original_pages,
+                    pages=pages_data["pages"],
+                )
 
             # 获取角色档案
             char_manager = CharacterManager(book_id)
             characters = char_manager.load_characters()
-
-            character_forms = []
-            for char in characters.characters:
-                if not char.enabled:
-                    continue
-
-                for form in char.forms:
-                    if not form.enabled or not form.reference_image:
-                        continue
-
-                    if os.path.exists(form.reference_image):
-                        character_forms.append({
-                            "character_name": char.name,
-                            "form_id": form.form_id,
-                            "form_name": form.form_name,
-                            "reference_image": form.reference_image
-                        })
-
-            result["character_forms"] = character_forms
+            result["character_forms"] = build_character_reference_candidates(characters)
 
         return success_response(data=result)
 
     except Exception as e:
-        logger.error(f"获取可用图片列表失败: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"获取可用图片列表失败: {e}", exc_info=True)
         return error_response(str(e), 500)
 
 
@@ -316,19 +276,19 @@ def generate_page_image(book_id: str, page_number: int):
     Request Body:
         {
             "page": {...页面数据...},
-            "style_reference_images": ["路径1", "路径2"],
+            "style_reference_tokens": ["original:78", "continuation:1"],
             "session_id": "会话ID",
             "style_ref_count": 3,
-            "custom_style_refs": ["路径1", "路径2"]
+            "custom_style_reference_tokens": ["original:78", "continuation:2"]
         }
     """
     try:
         data = request.get_json() or {}
         page_data = data.get("page", {})
-        style_refs = data.get("style_reference_images", [])
+        style_reference_tokens = data.get("style_reference_tokens", [])
         session_id = data.get("session_id", "")
         style_ref_count = data.get("style_ref_count", 3)
-        custom_style_refs = data.get("custom_style_refs", None)
+        custom_style_reference_tokens = data.get("custom_style_reference_tokens", None)
 
         if not page_data:
             return error_response("缺少页面数据", 400)
@@ -339,24 +299,18 @@ def generate_page_image(book_id: str, page_number: int):
         char_manager = CharacterManager(book_id)
         characters = char_manager.load_characters()
 
-        # 确定使用的画风参考图
-        if custom_style_refs is not None and len(custom_style_refs) > 0:
-            valid_refs = [p for p in custom_style_refs if p and os.path.exists(p)]
-            if len(valid_refs) == 0:
-                logger.warning("所有自定义参考图路径无效，回退到自动选择")
-                final_style_refs = style_refs
-            else:
-                final_style_refs = valid_refs
-                logger.info(f"使用用户自定义的 {len(valid_refs)} 张画风参考图")
-        else:
-            final_style_refs = style_refs
+        final_style_tokens = (
+            custom_style_reference_tokens
+            if isinstance(custom_style_reference_tokens, list) and custom_style_reference_tokens
+            else style_reference_tokens
+        )
 
         image_gen = ImageGenerator(book_id)
         try:
             image_path = run_async(image_gen.generate_page_image(
                 page_content=page,
                 characters=characters,
-                style_reference_images=final_style_refs,
+                style_reference_tokens=final_style_tokens,
                 session_id=session_id,
                 style_ref_count=style_ref_count
             ))
@@ -378,19 +332,19 @@ def regenerate_page_image(book_id: str, page_number: int):
     Request Body:
         {
             "page": {...页面数据...},
-            "style_reference_images": ["路径1", "路径2"],
+            "style_reference_tokens": ["original:78", "continuation:1"],
             "session_id": "会话ID",
             "style_ref_count": 3,
-            "custom_style_refs": ["路径1", "路径2"]
+            "custom_style_reference_tokens": ["original:78", "continuation:2"]
         }
     """
     try:
         data = request.get_json() or {}
         page_data = data.get("page", {})
-        style_refs = data.get("style_reference_images", [])
+        style_reference_tokens = data.get("style_reference_tokens", [])
         session_id = data.get("session_id", "")
         style_ref_count = data.get("style_ref_count", 3)
-        custom_style_refs = data.get("custom_style_refs", None)
+        custom_style_reference_tokens = data.get("custom_style_reference_tokens", None)
 
         if not page_data:
             return error_response("缺少页面数据", 400)
@@ -402,24 +356,18 @@ def regenerate_page_image(book_id: str, page_number: int):
         char_manager = CharacterManager(book_id)
         characters = char_manager.load_characters()
 
-        # 确定使用的画风参考图
-        if custom_style_refs is not None and len(custom_style_refs) > 0:
-            valid_refs = [p for p in custom_style_refs if p and os.path.exists(p)]
-            if len(valid_refs) == 0:
-                logger.warning("所有自定义参考图路径无效，回退到自动选择")
-                final_style_refs = style_refs
-            else:
-                final_style_refs = valid_refs
-                logger.info(f"使用用户自定义的 {len(valid_refs)} 张画风参考图")
-        else:
-            final_style_refs = style_refs
+        final_style_tokens = (
+            custom_style_reference_tokens
+            if isinstance(custom_style_reference_tokens, list) and custom_style_reference_tokens
+            else style_reference_tokens
+        )
 
         image_gen = ImageGenerator(book_id)
         try:
             image_path = run_async(image_gen.regenerate_page_image(
                 page_content=page,
                 characters=characters,
-                style_reference_images=final_style_refs,
+                style_reference_tokens=final_style_tokens,
                 session_id=session_id,
                 style_ref_count=style_ref_count
             ))

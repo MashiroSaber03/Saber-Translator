@@ -5,9 +5,8 @@ Manga Insight 图片生成器
 """
 
 import logging
-import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Any
 from datetime import datetime
 
 from ..config_models import ImageGenConfig
@@ -15,6 +14,13 @@ from ..config_utils import load_insight_config
 from ..storage import AnalysisStorage
 from ..clients import ImageGenClient
 from .models import PageContent, ContinuationCharacters
+from .reference_tokens import (
+    build_continuation_reference_candidates,
+    build_original_reference_candidates,
+    list_original_manga_page_paths,
+    resolve_reference_tokens,
+    select_recent_style_reference_tokens,
+)
 
 logger = logging.getLogger("MangaInsight.Continuation.ImageGenerator")
 
@@ -44,7 +50,7 @@ class ImageGenerator:
         self,
         page_content: PageContent,
         characters: ContinuationCharacters,
-        style_reference_images: List[str] = None,
+        style_reference_tokens: List[str] = None,
         session_id: str = "",
         style_ref_count: int = 3  # 用户设置的画风参考图数量
     ) -> str:
@@ -54,7 +60,7 @@ class ImageGenerator:
         Args:
             page_content: 页面内容（包含生图提示词）
             characters: 角色参考图配置
-            style_reference_images: 画风参考图片路径列表
+            style_reference_tokens: 画风参考 token 列表
             session_id: 续写会话ID
             style_ref_count: 画风参考图数量（从用户设置获取）
             
@@ -70,13 +76,16 @@ class ImageGenerator:
         )
         
         # 收集参考图片
-        reference_images = []
+        reference_images: List[Dict[str, Any]] = []
         
         # 构建形态映射 {角色名: form_id}
         form_map = {}
         if page_content.character_forms:
             for cf in page_content.character_forms:
-                form_map[cf.get("character", "")] = cf.get("form_id")  # 可能为 None
+                form_map[cf.get("character", "")] = {
+                    "form_id": cf.get("form_id"),
+                    "form_name": cf.get("form_name"),
+                }
         
         # 添加角色参考图
         for char_name in page_content.characters:
@@ -90,8 +99,11 @@ class ImageGenerator:
                 continue
             
             # 获取该角色在此页使用的形态
-            form_id = form_map.get(char_name)
-            form = char_ref.get_form(form_id) if form_id else None
+            form_info = form_map.get(char_name, {})
+            form = char_ref.resolve_form(
+                str(form_info.get("form_id") or ""),
+                str(form_info.get("form_name") or ""),
+            )
             
             # 获取形态的参考图路径
             ref_image = None
@@ -119,14 +131,13 @@ class ImageGenerator:
                     "name": label  # 这个名字会被用作图片标签
                 })
         
-        # 添加画风参考图（取最后N张，形成滑动窗口）
-        if style_reference_images:
-            # 使用用户设置的数量，确保取最后 style_ref_count 张
-            for img_path in style_reference_images[-style_ref_count:]:
-                reference_images.append({
-                    "path": img_path,
-                    "type": "style"
-                })
+        reference_images.extend(
+            await self._resolve_style_reference_images(
+                page_content=page_content,
+                style_reference_tokens=style_reference_tokens or [],
+                style_ref_count=style_ref_count,
+            )
+        )
         
         # 调用生图 API
         image_data = await self._client.generate(
@@ -198,7 +209,7 @@ class ImageGenerator:
         self,
         page_content: PageContent,
         characters: ContinuationCharacters,
-        style_reference_images: List[str] = None,
+        style_reference_tokens: List[str] = None,
         session_id: str = "",
         style_ref_count: int = 3  # 用户设置的画风参考图数量
     ) -> str:
@@ -208,7 +219,7 @@ class ImageGenerator:
         Args:
             page_content: 页面内容
             characters: 角色参考图配置
-            style_reference_images: 画风参考图片
+            style_reference_tokens: 画风参考 token
             session_id: 会话ID
             style_ref_count: 画风参考图数量（滑动窗口大小）
             
@@ -223,7 +234,7 @@ class ImageGenerator:
         new_image_path = await self.generate_page_image(
             page_content=page_content,
             characters=characters,
-            style_reference_images=style_reference_images,
+            style_reference_tokens=style_reference_tokens,
             session_id=session_id,
             style_ref_count=style_ref_count
         )
@@ -300,101 +311,83 @@ class ImageGenerator:
         # 保存图片
         with open(image_path, "wb") as f:
             f.write(image_data)
-        
+
         logger.info(f"图片已保存: {image_path}")
         return image_path
-    
-    def get_style_reference_images(
+
+    async def _resolve_style_reference_images(
         self,
-        count: int = 3
-    ) -> List[str]:
-        """
-        获取原漫画最后N页作为画风参考图
-        
-        返回的列表按时间从早到晚排序（最老的在前，最新的在后）
-        这样前端使用 slice(-N) 滑动窗口时，能正确删除最老的页面
-        
-        注意：已生成页面的滑动窗口由前端自己维护，这里只返回原漫画的参考图
-        
-        Args:
-            count: 需要的参考图数量
-            
-        Returns:
-            List[str]: 图片路径列表，按时间从早到晚排序
-        """
-        style_refs = []
-        
-        # 从原漫画最后几页获取（倒序遍历，收集最新的 count 张）
-        book_pages = self._get_original_manga_pages()
-        for page_path in reversed(book_pages):
-            if os.path.exists(page_path):
-                style_refs.append(page_path)
-                if len(style_refs) >= count:
-                    break
-        
-        # 反转，使列表按时间从早到晚排序
-        # 例如：[page100, page99, page98] -> [page98, page99, page100]
-        style_refs.reverse()
-        return style_refs
-    
-    def _get_original_manga_pages(self) -> List[str]:
-        """获取原漫画的页面路径"""
-        import json
-        from src.shared.path_helpers import resource_path
-        from src.core import bookshelf_manager
-        
-        pages = []
-        
-        try:
-            # 从书架系统获取书籍信息
-            book = bookshelf_manager.get_book(self.book_id)
-            if not book:
-                logger.warning(f"未找到书籍: {self.book_id}")
-                return pages
-            
-            # 获取章节信息
-            chapters = book.get("chapters", [])
+        page_content: PageContent,
+        style_reference_tokens: List[str],
+        style_ref_count: int,
+    ) -> List[Dict[str, Any]]:
+        """解析当前页可用的画风参考图。"""
+        style_ref_count = max(1, int(style_ref_count or 1))
+        total_original_pages, candidates = await self._load_style_reference_candidates()
+        current_absolute_page = total_original_pages + int(page_content.page_number or 0)
 
-            for chapter in chapters:
-                chapter_id = chapter.get("id")
-                if not chapter_id:
+        selected_tokens = [str(token).strip() for token in style_reference_tokens or [] if str(token).strip()]
+        if not selected_tokens:
+            selected_tokens = select_recent_style_reference_tokens(
+                candidates,
+                style_ref_count,
+                current_page_number=current_absolute_page,
+            )
+
+        resolved = resolve_reference_tokens(
+            selected_tokens,
+            candidates,
+            current_page_number=current_absolute_page,
+        )
+
+        if len(resolved) < style_ref_count:
+            fallback_tokens = select_recent_style_reference_tokens(
+                candidates,
+                style_ref_count,
+                current_page_number=current_absolute_page,
+            )
+            fallback_refs = resolve_reference_tokens(
+                fallback_tokens,
+                candidates,
+                current_page_number=current_absolute_page,
+            )
+            seen_paths = {ref["path"] for ref in resolved}
+            for ref in fallback_refs:
+                if ref["path"] in seen_paths:
                     continue
+                resolved.append(ref)
+                seen_paths.add(ref["path"])
+                if len(resolved) >= style_ref_count:
+                    break
 
-                # 从 session_meta.json 获取图片信息（使用新路径格式）
-                session_dir = resource_path(f"data/bookshelf/{self.book_id}/chapters/{chapter_id}/session")
-                session_meta_path = os.path.join(session_dir, "session_meta.json")
-                
-                if os.path.exists(session_meta_path):
-                    try:
-                        with open(session_meta_path, "r", encoding="utf-8") as f:
-                            session_data = json.load(f)
-                        
-                        # 支持两种格式
-                        if "total_pages" in session_data:
-                            image_count = session_data.get("total_pages", 0)
-                        else:
-                            images_meta = session_data.get("images_meta", [])
-                            image_count = len(images_meta)
-                        
-                        for i in range(image_count):
-                            image_path = self._find_image_path(session_dir, i)
-                            if image_path:
-                                pages.append(image_path)
-                    except Exception as e:
-                        logger.warning(f"读取 session_meta 失败: {session_meta_path}, {e}")
-                        continue
-        except Exception as e:
-            logger.error(f"获取原漫画页面失败: {e}")
-        
-        return pages
-    
-    def _find_image_path(self, session_dir: str, image_index: int, image_type: str = "original") -> str:
-        """查找图片文件路径"""
-        # 格式: images/{idx}/{type}.png
-        image_path = os.path.join(session_dir, "images", str(image_index), f"{image_type}.png")
-        if os.path.exists(image_path):
-            return image_path
-        
-        return ""
+        return resolved[:style_ref_count]
+
+    async def _load_style_reference_candidates(self) -> tuple[int, List[Dict[str, Any]]]:
+        original_pages = list_original_manga_page_paths(self.book_id)
+        if not original_pages:
+            logger.warning(f"未找到可用原作页面: {self.book_id}")
+        total_original_pages = len(original_pages)
+        original_candidates = build_original_reference_candidates(original_pages)
+
+        pages_data = await self.storage.load_continuation_pages()
+        continuation_candidates = build_continuation_reference_candidates(
+            total_original_pages=total_original_pages,
+            pages=(pages_data or {}).get("pages", []),
+        )
+
+        return total_original_pages, original_candidates + continuation_candidates
+
+    async def get_recent_style_reference_tokens(
+        self,
+        count: int = 3,
+        current_page_number: int | None = None,
+    ) -> List[str]:
+        """获取最近可用的画风参考图 token。"""
+        _, candidates = await self._load_style_reference_candidates()
+        return select_recent_style_reference_tokens(
+            candidates,
+            count,
+            current_page_number=current_page_number,
+        )
 
 
