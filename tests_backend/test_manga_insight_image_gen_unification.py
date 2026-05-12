@@ -131,10 +131,11 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("严格遵守以下风格要求", prompt)
-        self.assertIn("禁止写实插画、电影感光影、3D感、厚涂感", prompt)
+        self.assertIn("严格沿用原作漫画的线条、上色、角色五官比例、页面密度、分镜节奏", prompt)
         self.assertIn("页面内容", prompt)
         self.assertIn("如果页面内容与参考图风格冲突，优先服从参考图风格", prompt)
-        self.assertIn("不要为了强调夜景、城市灯光或镜头感而偏离原作画风", prompt)
+        self.assertNotIn("禁止写实插画", prompt)
+        self.assertNotIn("电影感光影", prompt)
         self.assertLess(
             prompt.index("严格遵守以下风格要求"),
             prompt.index("页面内容"),
