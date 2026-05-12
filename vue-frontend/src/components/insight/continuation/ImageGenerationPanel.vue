@@ -298,13 +298,14 @@ watch(() => props.pages.length, (pageCount) => {
 
 .generated-images {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
 .image-card {
-  padding: 16px;
   background: var(--bg-secondary, #f5f5f5);
   border-radius: 12px;
+  overflow: hidden;
   border: 1px solid var(--border-color, #e0e0e0);
 }
 
@@ -312,20 +313,62 @@ watch(() => props.pages.length, (pageCount) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.image-header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.image-preview {
+  min-height: 320px;
+  padding: 16px;
+  background: var(--bg-primary, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .image-preview img {
+  display: block;
   width: 100%;
-  max-width: 360px;
+  max-width: 100%;
+  max-height: 720px;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border-color, #ddd);
+}
+
+.no-image {
+  min-height: 280px;
+  width: 100%;
+  border: 1px dashed var(--border-color, #ddd);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f7f7f7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary, #666);
+}
+
+.no-image span {
+  font-size: 40px;
+  margin-bottom: 10px;
+}
+
+.no-image p {
+  margin: 0;
 }
 
 .story-context {
   display: grid;
   gap: 12px;
-  margin: 16px 0;
+  margin: 0;
+  padding: 16px;
 }
 
 .context-block {
@@ -349,7 +392,7 @@ watch(() => props.pages.length, (pageCount) => {
 }
 
 .prompt-section {
-  margin-top: 16px;
+  padding: 0 16px 16px;
 }
 
 .prompt-input,
@@ -381,7 +424,11 @@ watch(() => props.pages.length, (pageCount) => {
 .image-actions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  padding: 0 16px 16px;
+}
+
+.image-actions .btn {
+  flex: 1;
 }
 
 .btn {
@@ -443,5 +490,29 @@ watch(() => props.pages.length, (pageCount) => {
 
 .image-status.failed {
   color: #991b1b;
+}
+
+@media (max-width: 1024px) {
+  .generated-images {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .image-generation-panel {
+    padding: 16px;
+  }
+
+  .image-preview {
+    min-height: 240px;
+    padding: 12px;
+  }
+
+  .story-context,
+  .prompt-section,
+  .image-actions {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 }
 </style>
