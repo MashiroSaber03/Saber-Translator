@@ -77,3 +77,6 @@ docs/
 CLAUDE.md
 .windsurfchatopen/
 .windsurfrules
+
+# --- Git worktrees ---
+.worktrees/
