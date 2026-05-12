@@ -5,7 +5,9 @@ import sys
 import tempfile
 import types
 import unittest
+import importlib.util
 from unittest import mock
+from flask import Flask, Blueprint
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -262,6 +264,37 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertEqual(page.character_forms[0]["form_id"], "battle")
         self.assertEqual(page.character_forms[0]["form_name"], "Battle Form")
 
+    def test_generate_page_details_raises_on_invalid_json_response(self) -> None:
+        from src.core.manga_insight.continuation.models import ChapterScript
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {"characters": []}
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            load_characters=lambda: None,
+            format_characters_for_prompt=lambda: "（暂无角色信息）",
+        )
+        generator.chat_client = types.SimpleNamespace(
+            generate=mock.AsyncMock(return_value="这不是合法的 JSON")
+        )
+
+        with self.assertRaises(ValueError):
+            asyncio.run(
+                generator.generate_page_details(
+                    ChapterScript(
+                        chapter_title="测试章节",
+                        page_count=1,
+                        script_text="第1页：主角出场",
+                    ),
+                    1,
+                )
+            )
+
     def test_build_image_prompt_prompt_defaults_to_concise_content_constraints(self) -> None:
         from src.core.manga_insight.continuation.models import PageContent
         from src.core.manga_insight.continuation.story_generator import StoryGenerator
@@ -297,6 +330,88 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertIn("概念插画风", prompt)
         self.assertNotIn("**分格1**", prompt)
         self.assertNotIn("# 分格描述规范", prompt)
+
+
+class ContinuationStoryRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.app = Flask(__name__)
+        self._isolated_module_names = [
+            "isolated_manga_insight_pkg",
+            "isolated_manga_insight_pkg.async_helpers",
+            "isolated_manga_insight_pkg.response_builder",
+            "isolated_manga_insight_pkg.continuation",
+            "isolated_manga_insight_pkg.continuation.story_routes",
+        ]
+        self._original_modules = {
+            module_name: sys.modules.get(module_name)
+            for module_name in self._isolated_module_names
+        }
+
+        package_dir = os.path.join(PROJECT_ROOT, "src", "app", "api", "manga_insight")
+        continuation_dir = os.path.join(package_dir, "continuation")
+
+        package_module = types.ModuleType("isolated_manga_insight_pkg")
+        package_module.__path__ = [package_dir]
+        package_module.manga_insight_bp = Blueprint(
+            "isolated_manga_insight",
+            __name__,
+            url_prefix="/api/manga-insight",
+        )
+        sys.modules["isolated_manga_insight_pkg"] = package_module
+
+        continuation_package = types.ModuleType("isolated_manga_insight_pkg.continuation")
+        continuation_package.__path__ = [continuation_dir]
+        sys.modules["isolated_manga_insight_pkg.continuation"] = continuation_package
+
+        for module_name, file_path in (
+            ("isolated_manga_insight_pkg.async_helpers", os.path.join(package_dir, "async_helpers.py")),
+            ("isolated_manga_insight_pkg.response_builder", os.path.join(package_dir, "response_builder.py")),
+            (
+                "isolated_manga_insight_pkg.continuation.story_routes",
+                os.path.join(continuation_dir, "story_routes.py"),
+            ),
+        ):
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            module = importlib.util.module_from_spec(spec)
+            assert spec is not None and spec.loader is not None
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+        self.story_routes = sys.modules["isolated_manga_insight_pkg.continuation.story_routes"]
+
+    def tearDown(self) -> None:
+        for module_name, original in self._original_modules.items():
+            if original is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = original
+
+    def test_generate_single_page_details_returns_502_for_invalid_model_payload(self) -> None:
+        async def _raise_invalid_payload(*_args, **_kwargs):
+            raise ValueError("LLM 未返回有效的页面详情 JSON")
+
+        with mock.patch.object(self.story_routes, "StoryGenerator") as story_generator_cls:
+            story_generator_cls.return_value.generate_page_details = _raise_invalid_payload
+
+            with self.app.test_request_context(
+                "/api/manga-insight/book-1/continuation/pages/1",
+                method="POST",
+                json={
+                    "script": {
+                        "chapter_title": "测试章节",
+                        "page_count": 3,
+                        "script_text": "第1页：主角出场",
+                    }
+                },
+            ):
+                response = self.story_routes.generate_single_page_details("book-1", 1)
+
+        flask_response, status_code = response
+        self.assertEqual(status_code, 502)
+        payload = flask_response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], "LLM 未返回有效的页面详情 JSON")
+        self.assertEqual(payload["error_code"], "INVALID_PAGE_DETAILS_RESPONSE")
 
 
 class ReferenceTokenResolverTests(unittest.TestCase):

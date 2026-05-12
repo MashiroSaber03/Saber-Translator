@@ -67,13 +67,12 @@
       :initial-selection="selectedReferenceTokens"
       :book-id="bookId"
       @confirm="handleSelectorConfirm"
-      @cancel="handleSelectorCancel"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import type { ChapterScript, MangaImageInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
@@ -102,6 +101,13 @@ watch(() => props.script?.script_text, (newScriptText) => {
   scriptText.value = newScriptText || ''
 }, { immediate: true })
 
+watch(() => props.script, (newScript) => {
+  if (!newScript) {
+    selectedReferenceTokens.value = []
+    selectorVisible.value = false
+  }
+})
+
 // 加载可用图片列表
 async function loadAvailableImages() {
   if (!props.bookId) return
@@ -128,11 +134,6 @@ function openReferenceSelector() {
 // 选择器确认
 function handleSelectorConfirm(tokens: string[]) {
   selectedReferenceTokens.value = tokens
-}
-
-// 选择器取消
-function handleSelectorCancel() {
-  // 不做任何操作，保持之前的选择
 }
 
 // 获取显示的参考图数量
@@ -163,20 +164,19 @@ function handleSave() {
   emit('save-script')
 }
 
-// 组件挂载时加载可用图片
-onMounted(() => {
-  if (props.bookId) {
-    loadAvailableImages()
-  }
-})
-
 // 监听 bookId 变化
 watch(() => props.bookId, (newBookId) => {
   if (newBookId) {
     loadAvailableImages()
     selectedReferenceTokens.value = []
+    refCount.value = 5
+  } else {
+    refCount.value = 5
+    availableOriginalImages.value = []
+    selectedReferenceTokens.value = []
+    selectorVisible.value = false
   }
-})
+}, { immediate: true })
 </script>
 
 <style scoped>

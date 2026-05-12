@@ -53,4 +53,44 @@ describe('ScriptGenerationPanel', () => {
       },
     ])
   })
+
+  it('clears stale manual reference selections when the workflow is reset', async () => {
+    const selectorStub = {
+      template: '<div />',
+    }
+
+    const wrapper = mount(ScriptGenerationPanel, {
+      props: {
+        script: {
+          chapter_title: '测试章节',
+          page_count: 10,
+          script_text: '旧脚本',
+          generated_at: '2026-05-11T00:00:00',
+        },
+        isGenerating: false,
+        bookId: 'book-1',
+      },
+      global: {
+        stubs: {
+          ReferenceImageSelector: selectorStub,
+        },
+      },
+    })
+
+    ;(wrapper.vm as any).handleSelectorConfirm(['original:1'])
+    await nextTick()
+
+    await wrapper.setProps({ script: null })
+    await nextTick()
+
+    await wrapper.find('button.btn.primary').trigger('click')
+
+    const generateEvents = wrapper.emitted('generate') || []
+    expect(generateEvents[generateEvents.length - 1]).toEqual([
+      {
+        referenceTokens: null,
+        referenceImageCount: 5,
+      },
+    ])
+  })
 })

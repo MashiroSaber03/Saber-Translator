@@ -145,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, provide, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, provide, onBeforeUnmount } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { 
   useContinuationState,
@@ -190,6 +190,12 @@ const scriptDirty = ref(false)
 const lastSavedScriptText = ref('')
 let promptSaveTimer: ReturnType<typeof setTimeout> | null = null
 
+function resetLocalWorkflowState() {
+  isGeneratingScript.value = false
+  isSavingScript.value = false
+  regeneratingPromptPage.value = null
+}
+
 // 计算属性
 const canProceedToScript = computed(() => {
   return state.isDataReady.value && state.characters.value.length > 0
@@ -210,6 +216,31 @@ const canProceedToExport = computed(() => {
 const generatedPagesCount = computed(() => {
   return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
 })
+
+async function persistContinuationConfig(): Promise<{ success: boolean; error?: string }> {
+  if (!insightStore.currentBookId) {
+    return { success: false, error: '当前未选择漫画' }
+  }
+
+  try {
+    const result = await continuationApi.saveConfig(insightStore.currentBookId, {
+      page_count: state.pageCount.value,
+      style_reference_pages: state.styleRefPages.value,
+      continuation_direction: state.continuationDirection.value
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error || '未知错误' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '网络错误'
+    }
+  }
+}
 
 // 步骤导航
 function canNavigateToStep(step: number): boolean {
@@ -265,22 +296,15 @@ async function handleGenerateScript(payload: { referenceTokens: string[] | null;
         state.pages.value = []
         await persistPages([])
       }
-      
-      // 保存配置
-      try {
-        await continuationApi.saveConfig(insightStore.currentBookId, {
-          page_count: state.pageCount.value,
-          style_reference_pages: state.styleRefPages.value,
-          continuation_direction: state.continuationDirection.value
-        })
-      } catch (error) {
-        console.error('保存配置失败:', error)
+
+      const baseMessage = hadExistingPages ? '脚本生成成功，旧的页面详情已清空' : '脚本生成成功'
+      const configResult = await persistContinuationConfig()
+
+      if (configResult.success) {
+        state.showMessage(baseMessage, 'success')
+      } else {
+        state.showMessage(`${baseMessage}，但续写配置保存失败：${configResult.error}`, 'info')
       }
-      
-      state.showMessage(
-        hadExistingPages ? '脚本生成成功，旧的页面详情已清空' : '脚本生成成功',
-        'success'
-      )
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
     }
@@ -572,16 +596,25 @@ async function handleClearAndRestart() {
       promptSaveTimer = null
     }
     await continuationApi.clearContinuationData(insightStore.currentBookId)
-    await state.resetState()
-    state.currentStep.value = 0
-    scriptDirty.value = false
-    state.showMessage('数据已清空', 'success')
+    state.resetState()
+    resetLocalWorkflowState()
+    await state.initializeData()
+    if (state.isDataReady.value) {
+      state.showMessage('续写数据已清空，可重新开始。', 'success')
+    }
   } catch (error) {
     state.showMessage('清空失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   }
 }
 
 async function goToStep(step: number) {
+  if (state.currentStep.value === 0 && step !== 0) {
+    const configResult = await persistContinuationConfig()
+    if (!configResult.success) {
+      state.showMessage(`续写配置保存失败：${configResult.error}`, 'info')
+    }
+  }
+
   if (state.currentStep.value === 1 && step !== 1 && scriptDirty.value) {
     const saved = await handleSaveScript(false)
     if (!saved) {
@@ -593,17 +626,19 @@ async function goToStep(step: number) {
 }
 
 // 生命周期
-onMounted(() => {
-  if (insightStore.currentBookId) {
-    state.initializeData()
-  }
-})
-
 watch(() => insightStore.currentBookId, (newBookId) => {
+  if (promptSaveTimer) {
+    clearTimeout(promptSaveTimer)
+    promptSaveTimer = null
+  }
+  resetLocalWorkflowState()
+
   if (newBookId) {
     state.initializeData()
+  } else {
+    state.resetState()
   }
-})
+}, { immediate: true })
 
 watch(() => state.chapterScript.value, (script) => {
   if (script) {
@@ -611,6 +646,7 @@ watch(() => state.chapterScript.value, (script) => {
     scriptDirty.value = false
   } else {
     lastSavedScriptText.value = ''
+    scriptDirty.value = false
   }
 }, { immediate: true })
 

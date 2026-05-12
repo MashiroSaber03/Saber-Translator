@@ -33,7 +33,7 @@ export interface ContinuationState {
 
     // 方法
     initializeData: () => Promise<void>
-    resetState: () => Promise<void>
+    resetState: () => void
     showMessage: (message: string, type: 'success' | 'error' | 'info') => void
 
     // URL获取方法
@@ -71,6 +71,19 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     // 图片刷新key
     const imageRefreshKey = ref(Date.now())
 
+    function resetLoadedContinuationData(): void {
+        isDataReady.value = false
+        characters.value = []
+        chapterScript.value = null
+        pages.value = []
+        pageCount.value = 10
+        styleRefPages.value = 3
+        continuationDirection.value = ''
+        isGeneratingPages.value = false
+        isGeneratingPrompts.value = false
+        imageRefreshKey.value = Date.now()
+    }
+
     async function initializeData() {
         if (!bookId.value) return
 
@@ -83,6 +96,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         messageType.value = ''
         errorMessage.value = ''
         successMessage.value = ''
+        resetLoadedContinuationData()
 
         try {
             const result = await continuationApi.prepareContinuation(bookId.value)
@@ -94,6 +108,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 const charResult = await continuationApi.getCharacters(bookId.value)
                 if (charResult.success && charResult.characters) {
                     characters.value = charResult.characters
+                } else if (!charResult.success && charResult.error) {
+                    errorMessage.value = `加载角色失败：${charResult.error}`
+                    messageType.value = 'error'
                 }
 
                 chapterScript.value = data.script
@@ -122,23 +139,16 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         }
     }
 
-    async function resetState() {
+    function resetState() {
         if (messageTimer) {
             clearTimeout(messageTimer)
             messageTimer = null
         }
         currentStep.value = 0
-        isDataReady.value = false
         messageType.value = ''
         errorMessage.value = ''
         successMessage.value = ''
-        characters.value = []
-        chapterScript.value = null
-        pages.value = []
-        pageCount.value = 10
-        styleRefPages.value = 3
-        continuationDirection.value = ''
-        imageRefreshKey.value = Date.now()
+        resetLoadedContinuationData()
     }
 
     function showMessage(message: string, type: 'success' | 'error' | 'info' = 'info') {

@@ -625,9 +625,9 @@ class StoryGenerator:
     def _parse_json_response(self, response: str) -> Dict:
         """解析 JSON 响应"""
         result = parse_llm_json(response)
-        if not result:
+        if not isinstance(result, dict) or not result:
             logger.warning(f"无法解析 JSON 响应: {response[:200]}...")
-            return {}
+            raise ValueError("LLM 未返回有效的页面详情 JSON")
         return result
 
     def _build_character_form_registry(self) -> str:

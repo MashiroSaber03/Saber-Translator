@@ -134,6 +134,9 @@ def generate_single_page_details(book_id: str, page_number: int):
 
         return success_response(data={"page": page.to_dict()})
 
+    except ValueError as e:
+        logger.warning(f"生成第 {page_number} 页详情失败，模型返回无效结果: {e}")
+        return error_response(str(e), 502, error_code="INVALID_PAGE_DETAILS_RESPONSE")
     except Exception as e:
         logger.error(f"生成第 {page_number} 页详情失败: {e}")
         return error_response(str(e), 500)
