@@ -48,11 +48,12 @@ export interface CharacterFormSelection {
 
 export interface PageContent {
     page_number: number
+    continuity_text: string
+    story_text: string
+    dialogue_text: string
     characters: string[]
     character_forms?: CharacterFormSelection[]
-    description: string
-    dialogues: Array<{ character: string; text: string }>
-    image_prompt: string
+    final_prompt: string
     image_url: string
     previous_url: string
     status: 'pending' | 'generating' | 'generated' | 'failed'
@@ -320,7 +321,7 @@ export async function saveScript(
 }
 
 /**
- * 保存页面详情（持久化到服务器）
+ * 保存页面剧情与生成结果（持久化到服务器）
  */
 export async function savePages(
     bookId: string,
@@ -364,35 +365,6 @@ export async function generateSinglePageDetails(
 ): Promise<{ success: boolean; page?: PageContent; error?: string }> {
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/pages/${pageNumber}`, {
         script
-    }, {
-        timeout: 0  // 移除超时限制
-    })
-}
-
-/**
- * 生成图片提示词（批量）
- */
-export async function generateImagePrompts(
-    bookId: string,
-    pages: PageContent[]
-): Promise<PagesResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/prompts`, {
-        pages
-    }, {
-        timeout: 0  // 移除超时限制，需要为每页生成提示词
-    })
-}
-
-/**
- * 生成单页提示词（推荐使用，避免超时）
- */
-export async function generateSingleImagePrompt(
-    bookId: string,
-    page: PageContent,
-    pageNumber: number
-): Promise<{ success: boolean; page?: PageContent; error?: string }> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/prompts/${pageNumber}`, {
-        page
     }, {
         timeout: 0  // 移除超时限制
     })

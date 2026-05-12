@@ -29,7 +29,6 @@ export interface ContinuationState {
 
     // 生成状态
     isGeneratingPages: Ref<boolean>
-    isGeneratingPrompts: Ref<boolean>
 
     // 方法
     initializeData: () => Promise<void>
@@ -66,7 +65,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const pages = ref<PageContent[]>([])
     // 生成状态
     const isGeneratingPages = ref(false)
-    const isGeneratingPrompts = ref(false)
 
     // 图片刷新key
     const imageRefreshKey = ref(Date.now())
@@ -80,7 +78,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         styleRefPages.value = 3
         continuationDirection.value = ''
         isGeneratingPages.value = false
-        isGeneratingPrompts.value = false
         imageRefreshKey.value = Date.now()
     }
 
@@ -212,7 +209,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
         // 生成状态
         isGeneratingPages,
-        isGeneratingPrompts,
 
         // 方法
         initializeData,

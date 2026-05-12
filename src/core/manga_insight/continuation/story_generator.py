@@ -1,10 +1,9 @@
 """
 Manga Insight 剧情生成器
 
-负责三层递进的剧情生成：
+负责两层递进的续写内容生成：
 1. 全话脚本生成
-2. 每页剧情细化
-3. 生图提示词生成
+2. 每页剧情生成（用于剧情接续驱动生图）
 """
 
 import logging
@@ -22,11 +21,8 @@ from .reference_tokens import (
     list_original_manga_page_paths,
     resolve_reference_tokens,
 )
-from .prompt_validation import (
-    is_usable_image_prompt,
-    normalize_image_prompt_text,
-    normalize_page_description,
-)
+from .prompt_validation import normalize_page_description
+from .image_generator import ImageGenerator
 
 logger = logging.getLogger("MangaInsight.Continuation.StoryGenerator")
 HierarchicalSummaryGenerator = None
@@ -199,7 +195,7 @@ class StoryGenerator:
         page_number: int
     ) -> PageContent:
         """
-        生成单页剧情细化（第二层）
+        生成单页页面剧情数据
         
         Args:
             chapter_script: 全话脚本
@@ -222,63 +218,21 @@ class StoryGenerator:
         # 解析 JSON 响应
         page_data = self._parse_json_response(response)
         character_forms = self._normalize_character_forms(page_data.get("character_forms", []))
-        description = normalize_page_description(page_data.get("description", ""))
-        
-        return PageContent(
+        continuity_text = await self._get_previous_story_summary(page_number)
+        story_text = normalize_page_description(page_data.get("story_text", ""))
+        dialogue_text = str(page_data.get("dialogue_text", "") or "").strip()
+
+        page = PageContent(
             page_number=page_data.get("page_number", page_number),
+            continuity_text=continuity_text,
+            story_text=story_text,
+            dialogue_text=dialogue_text,
             characters=page_data.get("characters", []),
             character_forms=character_forms,
-            description=description,
-            dialogues=page_data.get("dialogues", [])
+            status=page_data.get("status", "pending")
         )
-    
-    async def generate_image_prompt(
-        self,
-        page_content: PageContent
-    ) -> str:
-        """
-        生成生图提示词（第三层）
-        
-        Args:
-            page_content: 页面内容
-            
-        Returns:
-            str: 生图提示词
-        """
-        prompt = self._build_image_prompt_prompt(page_content)
-        
-        logger.info(f"正在生成第 {page_content.page_number} 页的生图提示词")
-        response = await self.chat_client.generate(prompt)
-        image_prompt = normalize_image_prompt_text(response.strip())
-        if not is_usable_image_prompt(image_prompt):
-            raise ValueError("LLM 未返回有效的生图提示词")
-
-        return image_prompt
-    
-    async def generate_all_image_prompts(
-        self,
-        pages: List[PageContent]
-    ) -> List[PageContent]:
-        """
-        批量生成所有页面的生图提示词
-        
-        Args:
-            pages: 页面内容列表
-            
-        Returns:
-            List[PageContent]: 更新后的页面内容列表
-        """
-        for page in pages:
-            try:
-                image_prompt = await self.generate_image_prompt(page)
-                page.image_prompt = image_prompt
-                if page.status == "failed":
-                    page.status = "pending"
-            except Exception as e:
-                logger.error(f"生成第 {page.page_number} 页提示词失败: {e}")
-                page.image_prompt = ""
-                page.status = "failed"
-        return pages
+        page.final_prompt = ImageGenerator(self.book_id).compose_final_prompt(page)
+        return page
     
     async def _get_recent_page_analyses(self, count: int = 5) -> List[Dict]:
         """获取最近几页的分析结果"""
@@ -340,6 +294,35 @@ class StoryGenerator:
         if not image_paths:
             logger.warning(f"未找到可用原作图片: {self.book_id}")
         return image_paths
+
+    async def _get_previous_story_summary(self, page_number: int) -> str:
+        """
+        获取当前续写页的上一页剧情承接文本。
+
+        - 第1页：使用原作最后一页的分析摘要
+        - 第2页及以后：使用上一页续写页的 story_text
+        """
+        if page_number <= 1:
+            original_paths = await self._get_all_manga_image_paths()
+            if not original_paths:
+                return ""
+
+            last_original_page = len(original_paths)
+            last_page_analysis = await self.storage.load_page_analysis(last_original_page)
+            if not last_page_analysis:
+                return ""
+
+            summary = str(last_page_analysis.get("page_summary") or "").strip()
+            return summary
+
+        saved_pages = await self.storage.load_continuation_pages() or {}
+        pages = saved_pages.get("pages", []) if isinstance(saved_pages, dict) else []
+        previous_page_number = page_number - 1
+        for page in pages:
+            if int(page.get("page_number") or 0) == previous_page_number:
+                return str(page.get("story_text") or "").strip()
+
+        return ""
 
     async def _load_images_from_paths(self, image_paths: List[str]) -> List[bytes]:
         """
@@ -545,80 +528,19 @@ class StoryGenerator:
     {{"character": "角色名1", "form_id": "稳定形态ID", "form_name": "形态显示名"}},
     {{"character": "角色名2", "form_id": "稳定形态ID", "form_name": "形态显示名"}}
   ],
-  "description": "一到两句核心画面描述，只保留角色动作、情绪、相对位置和必须发生的视觉信息，不要写镜头角度、景深、分格、光影风格等导演语言",
-  "dialogues": [
-    {{"character": "角色名", "text": "对话内容"}}
-  ]
+  "story_text": "本页剧情文本，1-3段，描述这一页接续上一页发生了什么，重点写事件推进，不要写镜头角度、景深、分格、光影风格等导演语言",
+  "dialogue_text": "本页关键对白，按角色名：对白内容 的纯文本形式整理，保留简体中文对白"
 }}
 
 ## 要求
 
 1. **只提取剧本内容**：不要添加剧本中没有的信息
 2. **形态提取**：如果剧本的「人物」行中出现 `角色名(形态名)`，请根据上方的“角色形态映射”返回对应的稳定 `form_id`，并同时填写 `form_name`。如果剧本没有标注形态，则省略该角色的 `character_forms` 条目，严禁编造新形态。
-3. **描述要克制**：`description` 只写本页必须发生的核心画面，不要补充镜头语言、分格说明、光影氛围或额外视觉修辞
-4. **对话原样保留**：保持剧本中的对话内容
+3. **剧情文本优先**：`story_text` 只写这一页发生了什么、如何承接上一页，不要补充镜头语言、分格说明、光影氛围或额外视觉修辞
+4. **对白独立整理**：`dialogue_text` 中只保留本页关键对白，不要混入解释文字
+5. **对话原样保留**：保持剧本中的对话内容
 
 请直接输出JSON数据。
-"""
-    
-    def _build_image_prompt_prompt(
-        self,
-        page_content: PageContent
-    ) -> str:
-        """生成生图提示词的LLM提示"""
-        chars_list = ", ".join(page_content.characters) if page_content.characters else "无"
-
-        forms_text = ""
-        if page_content.character_forms:
-            normalized_forms = []
-            for form in page_content.character_forms:
-                character_name = str(form.get("character") or "").strip()
-                form_name = str(form.get("form_name") or form.get("form_id") or "").strip()
-                if character_name and form_name:
-                    normalized_forms.append(f"- {character_name}：{form_name}")
-            if normalized_forms:
-                forms_text = "\n- 角色形态：\n" + "\n".join(normalized_forms)
-
-        dialogues_text = ""
-        if page_content.dialogues:
-            dialogues_text = "\n".join([
-                f"- {d['character']}：「{d['text']}」"
-                for d in page_content.dialogues
-            ])
-
-        scene_description = normalize_page_description(page_content.description)
-
-        return f"""请基于以下剧情信息，生成一个“简洁优先”的漫画生图提示词。
-
-目标：告诉绘图模型“这一页必须发生什么”，不要把提示词写成详细分镜脚本。
-
-# 剧情信息
-
-- 出场角色：{chars_list}
-{forms_text}
-- 核心画面：{scene_description}
-- 必须保留对白：
-{dialogues_text if dialogues_text else "（无对话）"}
-
-# 输出要求
-
-请直接输出一个 5 行以内、以内容约束为主的简洁提示词，使用以下结构：
-
-出场角色：...
-核心动作/情绪：...
-场景：...
-关键对白：...
-风格约束：...
-
-# 重要规则
-
-1. **简洁优先**：只保留角色、核心动作/情绪、场景一句话、关键对白、风格约束
-2. **不要按“分格1/分格2”展开**，也不要写成详细分镜脚本；不要写镜头角度、景深、灯光、材质等过细视觉说明，除非剧情不可缺少
-3. **不要扩写新剧情**：只提炼这一页必须发生的内容，不要补充输入里没有的新事件
-4. **风格约束必须明确写出**：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。
-5. **对话用简体中文**：所有对白与文字保持简体中文
-
-请直接输出提示词。
 """
 
     

@@ -50,7 +50,7 @@ def prepare_continuation(book_id: str):
 
 @manga_insight_bp.route('/<book_id>/continuation/save-pages', methods=['POST'])
 def save_continuation_pages(book_id: str):
-    """保存页面详情和提示词，允许传空数组以清空下游数据"""
+    """保存页面剧情与生成结果，允许传空数组以清空下游数据"""
     try:
         data = request.get_json() or {}
         pages_data = data.get("pages", None)

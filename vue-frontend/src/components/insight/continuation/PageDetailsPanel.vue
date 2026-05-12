@@ -1,82 +1,70 @@
 <template>
   <div class="page-details-panel">
     <div class="panel-header">
-      <h3>📄 页面详情管理</h3>
-      <button 
-        v-if="pages.length > 0"
-        class="btn secondary small"
-        :disabled="isGenerating"
-        @click="$emit('regenerate-all-prompts')"
-      >
-        {{ isGenerating ? '生成中...' : '🎨 重新生成提示词' }}
-      </button>
+      <h3>📄 页面剧情管理</h3>
     </div>
-    
+
     <div v-if="pages.length === 0" class="empty-state">
-      <p>尚未生成页面详情</p>
-      <button 
+      <p>尚未生成页面剧情</p>
+      <button
         class="btn primary"
         :disabled="isGenerating"
         @click="$emit('generate-details')"
       >
-        {{ isGenerating ? '生成中...' : '🎯 生成页面详情' }}
+        {{ isGenerating ? '生成中...' : '🎯 生成页面剧情' }}
       </button>
     </div>
-    
+
     <div v-else class="pages-list">
       <div v-for="page in pages" :key="page.page_number" class="page-card">
         <div class="page-header">
           <h4>页面 {{ page.page_number }}</h4>
           <span class="page-status" :class="page.status">{{ getStatusText(page.status) }}</span>
         </div>
-        
+
         <div class="page-fields">
           <div class="page-field">
+            <label>上一页剧情承接：</label>
+            <textarea
+              v-model="page.continuity_text"
+              rows="3"
+              class="field-input"
+              @input="$emit('story-change', page.page_number)"
+            ></textarea>
+          </div>
+
+          <div class="page-field">
+            <label>本页剧情：</label>
+            <textarea
+              v-model="page.story_text"
+              rows="4"
+              class="field-input"
+              @input="$emit('story-change', page.page_number)"
+            ></textarea>
+          </div>
+
+          <div class="page-field">
+            <label>关键对白：</label>
+            <textarea
+              v-model="page.dialogue_text"
+              rows="3"
+              class="field-input"
+              @input="$emit('story-change', page.page_number)"
+            ></textarea>
+          </div>
+
+          <div class="page-field">
             <label>角色（逗号分隔）：</label>
-            <input 
+            <input
               :value="page.characters.join(', ')"
               @input="updateCharacters(page, $event)"
               type="text"
               class="field-input"
             >
           </div>
-          
-          <div class="page-field">
-            <label>场景描述：</label>
-            <textarea 
-              v-model="page.description"
-              rows="2"
-              class="field-input"
-            ></textarea>
-          </div>
-          
-          <div class="page-field">
-            <label>对话：</label>
-            <div class="dialogues">
-              <div v-for="(dialogue, idx) in page.dialogues" :key="idx" class="dialogue-item">
-                <strong>{{ dialogue.character }}:</strong> {{ dialogue.text }}
-              </div>
-            </div>
-          </div>
-          
-          <div class="page-field prompt-field">
-            <label>图片提示词：</label>
-            <textarea 
-              v-model="page.image_prompt"
-              rows="3"
-              class="field-input"
-            ></textarea>
-            <button 
-              class="btn secondary small"
-              :disabled="regeneratingPage === page.page_number"
-              @click="$emit('regenerate-prompt', page.page_number)"
-            >
-              {{ regeneratingPage === page.page_number ? '生成中...' : '🎨 重新生成提示词' }}
-            </button>
-          </div>
         </div>
       </div>
-      
+
       <div class="page-actions">
         <button class="btn secondary" @click="$emit('save-changes')">💾 保存修改</button>
       </div>
@@ -90,20 +78,19 @@ import type { PageContent } from '@/api/continuation'
 defineProps<{
   pages: PageContent[]
   isGenerating: boolean
-  regeneratingPage: number | null
 }>()
 
 const emit = defineEmits<{
   'generate-details': []
-  'regenerate-prompt': [pageNumber: number]
-  'regenerate-all-prompts': []
   'save-changes': []
+  'story-change': [pageNumber: number]
 }>()
 
 function updateCharacters(page: PageContent, event: Event) {
   const input = event.target as HTMLInputElement
   const value = input.value
   page.characters = value.split(',').map(s => s.trim()).filter(s => s)
+  emit('story-change', page.page_number)
 }
 
 function getStatusText(status: string): string {
@@ -134,7 +121,6 @@ function getStatusText(status: string): string {
   align-items: center;
   margin-bottom: 20px;
 }
-
 
 .empty-state {
   text-align: center;
@@ -224,34 +210,6 @@ function getStatusText(status: string): string {
   border-color: var(--primary, #6366f1);
 }
 
-.dialogues {
-  background: var(--bg-primary, #fff);
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-}
-
-.dialogue-item {
-  margin-bottom: 4px;
-}
-
-.dialogue-item:last-child {
-  margin-bottom: 0;
-}
-
-.dialogue-item strong {
-  color: var(--primary, #6366f1);
-}
-
-.prompt-field {
-  position: relative;
-}
-
-.prompt-field .btn {
-  margin-top: 8px;
-}
-
 .page-actions {
   margin-top: 16px;
   text-align: center;
@@ -276,28 +234,14 @@ function getStatusText(status: string): string {
   background: var(--primary-dark, #4f46e5);
 }
 
-.btn.primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .btn.secondary {
-  background: var(--bg-secondary, #f3f4f6);
+  background: var(--bg-primary, #fff);
   color: var(--text-primary, #333);
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--border-color, #ddd);
 }
 
 .btn.secondary:hover:not(:disabled) {
-  background: var(--bg-hover, #e5e7eb);
-}
-
-.btn.secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn.small {
-  padding: 6px 12px;
-  font-size: 13px;
+  border-color: var(--primary, #6366f1);
+  color: var(--primary, #6366f1);
 }
 </style>

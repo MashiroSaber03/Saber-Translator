@@ -69,7 +69,6 @@ function createStateStub(currentStep = 0) {
     pages: ref([]),
     imageRefreshKey: ref(Date.now()),
     isGeneratingPages: ref(false),
-    isGeneratingPrompts: ref(false),
     initializeData: vi.fn().mockResolvedValue(undefined),
     resetState: vi.fn().mockResolvedValue(undefined),
     showMessage: vi.fn(),
@@ -156,6 +155,24 @@ describe('ContinuationPanel', () => {
       continuation_direction: '',
     })
     expect(mocks.state.currentStep.value).toBe(1)
+  })
+
+  it('uses a four-step workflow without a standalone prompt step', async () => {
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    const stepNames = wrapper.findAll('.step-name').map(node => node.text())
+    expect(stepNames).toEqual(['角色设置', '生成脚本', '页面剧情', '图片生成/导出'])
+    expect(wrapper.text()).not.toContain('提示词生成')
   })
 
   it('surfaces config persistence failures after script generation', async () => {

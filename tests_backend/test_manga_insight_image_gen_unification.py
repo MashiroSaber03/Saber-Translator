@@ -115,7 +115,7 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
-    def test_build_full_prompt_places_style_rules_before_page_content(self) -> None:
+    def test_build_full_prompt_places_style_rules_before_plot_context(self) -> None:
         from src.core.manga_insight.continuation.image_generator import ImageGenerator
         from src.core.manga_insight.continuation.models import PageContent
 
@@ -123,25 +123,49 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
         prompt = generator._build_full_prompt(
             PageContent(
                 page_number=1,
+                continuity_text="上一页里女主终于主动接近男主。",
+                story_text="接着上一页，两人来到医院外台阶前继续对话，女主进一步表达心意。",
+                dialogue_text="女主：我不后悔哦。\n男主：啊？",
                 characters=["男主", "女主"],
-                description="夜晚的医院外台阶",
-                dialogues=[],
-                image_prompt="页面内容：医院外台阶夜晚，女主靠近男主并说出关键对白。",
+                final_prompt="",
             )
         )
 
         self.assertIn("严格遵守以下风格要求", prompt)
         self.assertIn("严格沿用原作漫画的线条、上色、角色五官比例、页面密度、分镜节奏", prompt)
-        self.assertIn("页面内容", prompt)
+        self.assertIn("上一页剧情", prompt)
+        self.assertIn("本页剧情", prompt)
+        self.assertIn("关键对白", prompt)
         self.assertIn("如果页面内容与参考图风格冲突，优先服从参考图风格", prompt)
-        self.assertNotIn("禁止写实插画", prompt)
-        self.assertNotIn("电影感光影", prompt)
         self.assertLess(
             prompt.index("严格遵守以下风格要求"),
-            prompt.index("页面内容"),
+            prompt.index("上一页剧情"),
         )
 
-    async def test_generate_page_image_rejects_failure_marker_prompt(self) -> None:
+    def test_compose_final_prompt_builds_plot_driven_prompt_text(self) -> None:
+        from src.core.manga_insight.continuation.image_generator import ImageGenerator
+        from src.core.manga_insight.continuation.models import PageContent
+
+        generator = ImageGenerator.__new__(ImageGenerator)
+        prompt = generator.compose_final_prompt(
+            PageContent(
+                page_number=2,
+                continuity_text="第一页里主角离开教室。",
+                story_text="第二页里主角走到走廊，遇到同学。",
+                dialogue_text="Hero：咦？",
+                characters=["Hero"],
+                character_forms=[{"character": "Hero", "form_id": "battle", "form_name": "Battle Form"}],
+            )
+        )
+
+        self.assertIn("上一页剧情：第一页里主角离开教室。", prompt)
+        self.assertIn("本页剧情：第二页里主角走到走廊，遇到同学。", prompt)
+        self.assertIn("关键对白：Hero：咦？", prompt)
+        self.assertIn("出场角色：Hero", prompt)
+        self.assertIn("角色形态：", prompt)
+        self.assertIn("保持原作漫画线条、脸型、上色、页面密度和分镜节奏。", prompt)
+
+    async def test_generate_page_image_rejects_empty_final_prompt(self) -> None:
         from src.core.manga_insight.continuation.image_generator import ImageGenerator
         from src.core.manga_insight.continuation.models import ContinuationCharacters, PageContent
 
@@ -151,15 +175,49 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
                 await generator.generate_page_image(
                     page_content=PageContent(
                         page_number=1,
+                        continuity_text="上一页剧情",
+                        story_text="本页剧情",
+                        dialogue_text="",
                         characters=[],
-                        description="scene",
-                        dialogues=[],
-                        image_prompt="生成失败: LLM 未返回有效提示词",
+                        final_prompt="",
                     ),
                     characters=ContinuationCharacters(book_id="test-book", characters=[]),
                 )
         finally:
             await generator.close()
+
+    async def test_generate_page_image_accepts_server_composed_final_prompt(self) -> None:
+        from src.core.manga_insight.continuation.image_generator import ImageGenerator
+        from src.core.manga_insight.continuation.models import ContinuationCharacters, PageContent
+
+        generator = ImageGenerator("test-book")
+        try:
+            prompt = generator.compose_final_prompt(
+                PageContent(
+                    page_number=1,
+                    continuity_text="原作末页摘要",
+                    story_text="主角来到走廊并遇到同学。",
+                    dialogue_text="Hero：咦？",
+                    characters=["Hero"],
+                )
+            )
+            with mock.patch.object(generator._client, "generate", return_value=b"generated-image"), \
+                 mock.patch.object(generator, "_save_image", return_value="saved-image.png"):
+                result = await generator.generate_page_image(
+                    page_content=PageContent(
+                        page_number=1,
+                        continuity_text="原作末页摘要",
+                        story_text="主角来到走廊并遇到同学。",
+                        dialogue_text="Hero：咦？",
+                        characters=["Hero"],
+                        final_prompt=prompt,
+                    ),
+                    characters=ContinuationCharacters(book_id="test-book", characters=[]),
+                )
+        finally:
+            await generator.close()
+
+        self.assertEqual(result, "saved-image.png")
 
     async def test_image_generator_delegates_page_generation_to_image_gen_client(self) -> None:
         from src.core.manga_insight.continuation.image_generator import ImageGenerator
@@ -174,10 +232,11 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
                 result = await generator.generate_page_image(
                     page_content=PageContent(
                         page_number=1,
+                        continuity_text="上一页剧情",
+                        story_text="本页剧情",
+                        dialogue_text="关键对白",
                         characters=[],
-                        description="scene",
-                        dialogues=[],
-                        image_prompt="prompt",
+                        final_prompt="最终提示词",
                     ),
                     characters=ContinuationCharacters(book_id="test-book", characters=[]),
                     style_reference_tokens=["original:10"],

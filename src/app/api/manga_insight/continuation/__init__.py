@@ -6,7 +6,7 @@ Manga Insight 续写功能 API 子模块
 模块结构:
 - file_routes.py: 通用文件服务
 - character_routes.py: 角色和形态管理
-- story_routes.py: 剧情生成（脚本、页面详情）
+- story_routes.py: 剧情生成（脚本、页面剧情）
 - image_routes.py: 图片生成和参考图管理
 - export_routes.py: 导出功能（图片、PDF）
 """

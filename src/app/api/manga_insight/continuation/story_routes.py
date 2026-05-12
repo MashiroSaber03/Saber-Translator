@@ -1,7 +1,7 @@
 """
 续写功能 - 剧情生成路由
 
-处理脚本生成、页面详情生成、提示词生成等请求。
+处理脚本生成与页面剧情生成请求。
 """
 
 import logging
@@ -95,7 +95,7 @@ def save_script(book_id: str):
 @manga_insight_bp.route('/<book_id>/continuation/pages/<int:page_number>', methods=['POST'])
 def generate_single_page_details(book_id: str, page_number: int):
     """
-    生成单页剧情细化（推荐使用，避免超时）
+    生成单页页面剧情（推荐使用，避免超时）
 
     Request Body:
         {
@@ -111,9 +111,11 @@ def generate_single_page_details(book_id: str, page_number: int):
             "success": true,
             "page": {
                 "page_number": 1,
+                "continuity_text": "...",
+                "story_text": "...",
+                "dialogue_text": "...",
                 "characters": ["角色1"],
-                "description": "描述",
-                "dialogues": []
+                "character_forms": []
             }
         }
     """
@@ -135,79 +137,8 @@ def generate_single_page_details(book_id: str, page_number: int):
         return success_response(data={"page": page.to_dict()})
 
     except ValueError as e:
-        logger.warning(f"生成第 {page_number} 页详情失败，模型返回无效结果: {e}")
+        logger.warning(f"生成第 {page_number} 页页面剧情失败，模型返回无效结果: {e}")
         return error_response(str(e), 502, error_code="INVALID_PAGE_DETAILS_RESPONSE")
     except Exception as e:
-        logger.error(f"生成第 {page_number} 页详情失败: {e}")
-        return error_response(str(e), 500)
-
-
-@manga_insight_bp.route('/<book_id>/continuation/prompts', methods=['POST'])
-def generate_image_prompts(book_id: str):
-    """
-    生成生图提示词（第三层）
-
-    Request Body:
-        {
-            "pages": [...页面数据...]
-        }
-
-    Returns:
-        {
-            "success": true,
-            "pages": [...带提示词的页面数据...]
-        }
-    """
-    try:
-        data = request.get_json() or {}
-        pages_data = data.get("pages", [])
-
-        if not pages_data:
-            return error_response("缺少页面数据", 400)
-
-        pages = [PageContent.from_dict(p) for p in pages_data]
-
-        story_gen = StoryGenerator(book_id)
-        updated_pages = run_async(story_gen.generate_all_image_prompts(pages))
-
-        return success_response(data={"pages": [p.to_dict() for p in updated_pages]})
-
-    except Exception as e:
-        logger.error(f"生成提示词失败: {e}")
-        return error_response(str(e), 500)
-
-
-@manga_insight_bp.route('/<book_id>/continuation/prompts/<int:page_number>', methods=['POST'])
-def generate_single_image_prompt(book_id: str, page_number: int):
-    """
-    生成单页生图提示词（推荐使用，避免超时）
-
-    Request Body:
-        {
-            "page": {...页面数据...}
-        }
-
-    Returns:
-        {
-            "success": true,
-            "page": {...带提示词的页面数据...}
-        }
-    """
-    try:
-        data = request.get_json() or {}
-        page_data = data.get("page", {})
-
-        if not page_data:
-            return error_response("缺少页面数据", 400)
-
-        page = PageContent.from_dict(page_data)
-
-        story_gen = StoryGenerator(book_id)
-        image_prompt = run_async(story_gen.generate_image_prompt(page))
-        page.image_prompt = image_prompt
-
-        return success_response(data={"page": page.to_dict()})
-
-    except Exception as e:
-        logger.error(f"生成第 {page_number} 页提示词失败: {e}")
+        logger.error(f"生成第 {page_number} 页页面剧情失败: {e}")
         return error_response(str(e), 500)

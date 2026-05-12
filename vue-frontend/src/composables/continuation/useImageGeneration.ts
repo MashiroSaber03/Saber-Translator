@@ -7,7 +7,7 @@ import { ref, type Ref } from 'vue'
 import type { PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
-import { isUsableImagePrompt, normalizeImagePrompt } from './promptValidation'
+import { hasUsableStoryContent, isUsableImagePrompt, normalizeImagePrompt } from './promptValidation'
 
 interface ImageGenerationComposable {
     isGenerating: Ref<boolean>
@@ -78,10 +78,10 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                     continue
                 }
 
-                page.image_prompt = normalizeImagePrompt(page.image_prompt)
-                if (!isUsableImagePrompt(page.image_prompt)) {
+                page.final_prompt = normalizeImagePrompt(page.final_prompt)
+                if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
                     page.status = 'failed'
-                    state.showMessage(`第 ${page.page_number} 页提示词无效，请先重新生成或手动修改`, 'error')
+                    state.showMessage(`第 ${page.page_number} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
                     await continuationApi.savePages(bookId.value, pages)
                     completedPages++
                     generationProgress.value = Math.round((completedPages / totalPages) * 100)
@@ -141,12 +141,12 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
 
         try {
             page.status = 'generating'
-            page.image_prompt = normalizeImagePrompt(page.image_prompt)
+            page.final_prompt = normalizeImagePrompt(page.final_prompt)
 
-            if (!isUsableImagePrompt(page.image_prompt)) {
+            if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
                 page.status = 'failed'
                 await continuationApi.savePages(bookId.value, state.pages.value)
-                state.showMessage(`第 ${pageNumber} 页提示词无效，请先重新生成或手动修改`, 'error')
+                state.showMessage(`第 ${pageNumber} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
                 return
             }
 

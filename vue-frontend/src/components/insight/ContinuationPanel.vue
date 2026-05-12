@@ -81,21 +81,19 @@
         <div class="actions">
           <button class="btn secondary" @click="goToStep(0)">← 上一步</button>
           <button class="btn primary" :disabled="!canProceedToPages" @click="goToStep(2)">
-            下一步：页面详情 →
+            下一步：页面剧情 →
           </button>
         </div>
       </div>
       
-      <!-- 步骤3: 页面详情 -->
+      <!-- 步骤3: 页面剧情 -->
       <div v-show="state.currentStep.value === 2" class="step-panel">
         <PageDetailsPanel
           :pages="state.pages.value"
           :is-generating="state.isGeneratingPages.value"
-          :regenerating-page="regeneratingPromptPage"
           @generate-details="handleGeneratePageDetails"
-          @regenerate-prompt="handleRegeneratePrompt"
-          @regenerate-all-prompts="handleRegenerateAllPrompts"
           @save-changes="handleSavePageChanges"
+          @story-change="handleStoryContentChange"
         />
         
         <div class="actions">
@@ -106,7 +104,7 @@
         </div>
       </div>
       
-      <!-- 步骤4: 图片生成 -->
+      <!-- 步骤4: 图片生成 / 导出 -->
       <div v-show="state.currentStep.value === 3" class="step-panel">
         <ImageGenerationPanel
           :pages="state.pages.value"
@@ -119,25 +117,15 @@
           @prompt-change="handlePromptChange"
         />
         
-        <div class="actions">
-          <button class="btn secondary" @click="goToStep(2)">← 上一步</button>
-          <button class="btn primary" :disabled="!canProceedToExport" @click="goToStep(4)">
-            下一步：导出 →
-          </button>
-        </div>
-      </div>
-      
-      <!-- 步骤5: 导出 -->
-      <div v-show="state.currentStep.value === 4" class="step-panel">
         <ExportPanel
           v-if="insightStore.currentBookId"
           :book-id="insightStore.currentBookId"
           :generated-count="generatedPagesCount"
           @clear-and-restart="handleClearAndRestart"
         />
-        
+
         <div class="actions">
-          <button class="btn secondary" @click="goToStep(3)">← 返回生成</button>
+          <button class="btn secondary" @click="goToStep(2)">← 上一步</button>
         </div>
       </div>
     </div>
@@ -162,7 +150,7 @@ import PageDetailsPanel from './continuation/PageDetailsPanel.vue'
 import ImageGenerationPanel from './continuation/ImageGenerationPanel.vue'
 import ExportPanel from './continuation/ExportPanel.vue'
 import * as continuationApi from '@/api/continuation'
-import { isUsableImagePrompt } from '@/composables/continuation/promptValidation'
+import { hasUsableStoryContent } from '@/composables/continuation/promptValidation'
 
 const insightStore = useInsightStore()
 
@@ -182,19 +170,22 @@ const imageGenComposable = useImageGeneration(bookId, stateComposable)
 const state = stateComposable
 const imageGen = imageGenComposable
 
-const stepNames = ['角色设置', '生成脚本', '页面详情', '图片生成', '导出']
+const stepNames = ['角色设置', '生成脚本', '页面剧情', '图片生成/导出']
 
-const regeneratingPromptPage = ref<number | null>(null)
 const isGeneratingScript = ref(false)
 const isSavingScript = ref(false)
 const scriptDirty = ref(false)
 const lastSavedScriptText = ref('')
 let promptSaveTimer: ReturnType<typeof setTimeout> | null = null
+let storySaveTimer: ReturnType<typeof setTimeout> | null = null
 
 function resetLocalWorkflowState() {
   isGeneratingScript.value = false
   isSavingScript.value = false
-  regeneratingPromptPage.value = null
+  if (storySaveTimer) {
+    clearTimeout(storySaveTimer)
+    storySaveTimer = null
+  }
 }
 
 // 计算属性
@@ -208,12 +199,8 @@ const canProceedToPages = computed(() => {
 
 const canProceedToImages = computed(() => {
   return state.pages.value.length > 0 && state.pages.value.every(
-    p => p.status !== 'failed' && isUsableImagePrompt(p.image_prompt)
+    p => p.status !== 'failed' && hasUsableStoryContent(p)
   )
-})
-
-const canProceedToExport = computed(() => {
-  return state.pages.value.some(p => p.image_url && p.status === 'generated')
 })
 
 const generatedPagesCount = computed(() => {
@@ -251,7 +238,6 @@ function canNavigateToStep(step: number): boolean {
   if (step === 1) return canProceedToScript.value
   if (step === 2) return canProceedToPages.value
   if (step === 3) return canProceedToImages.value
-  if (step === 4) return canProceedToExport.value
   return false
 }
 
@@ -267,10 +253,7 @@ function resolveReachableStep(requestedStep: number): number {
   if (requestedStep === 1) return 1
   if (!canProceedToPages.value) return 1
   if (requestedStep === 2) return 2
-  if (!canProceedToImages.value) return 2
-  if (requestedStep === 3) return 3
-  if (!canProceedToExport.value) return 3
-  return 4
+  return 3
 }
 
 // 脚本生成
@@ -300,7 +283,7 @@ async function handleGenerateScript(payload: { referenceTokens: string[] | null;
         await persistPages([])
       }
 
-      const baseMessage = hadExistingPages ? '脚本生成成功，旧的页面详情已清空' : '脚本生成成功'
+      const baseMessage = hadExistingPages ? '脚本生成成功，旧的页面剧情已清空' : '脚本生成成功'
       const configResult = await persistContinuationConfig()
 
       if (configResult.success) {
@@ -335,7 +318,7 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
       if (shouldInvalidatePages) {
         state.pages.value = []
         await persistPages([])
-        state.showMessage('脚本已更新，旧的页面详情已清空，请重新生成。', 'info')
+        state.showMessage('脚本已更新，旧的页面剧情已清空，请重新生成。', 'info')
         return true
       }
       if (showSuccessMessage) {
@@ -365,13 +348,29 @@ function handleScriptUpdate(scriptText: string) {
   scriptDirty.value = scriptText !== lastSavedScriptText.value
 }
 
+function handleStoryContentChange() {
+  if (storySaveTimer) {
+    clearTimeout(storySaveTimer)
+  }
+
+  storySaveTimer = setTimeout(async () => {
+    if (!insightStore.currentBookId || state.pages.value.length === 0) return
+
+    try {
+      await persistPages()
+    } catch (error) {
+      state.showMessage('页面剧情保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
+  }, 600)
+}
+
 function handleResetScript() {
   if (!state.chapterScript.value) return
   state.chapterScript.value.script_text = lastSavedScriptText.value
   scriptDirty.value = false
 }
 
-// 页面详情生成
+// 页面剧情生成
 async function handleGeneratePageDetails() {
   if (!insightStore.currentBookId || !state.chapterScript.value) return
 
@@ -383,7 +382,6 @@ async function handleGeneratePageDetails() {
   }
   
   state.isGeneratingPages.value = true
-  state.isGeneratingPrompts.value = true
   state.errorMessage.value = ''
   
   const totalPages = state.chapterScript.value.page_count || state.pageCount.value
@@ -394,11 +392,12 @@ async function handleGeneratePageDetails() {
       ? { ...existing }
       : {
           page_number: pageNumber,
+          continuity_text: '',
+          story_text: '',
+          dialogue_text: '',
           characters: [],
           character_forms: [],
-          description: '',
-          dialogues: [],
-          image_prompt: '',
+          final_prompt: '',
           image_url: '',
           previous_url: '',
           status: 'pending' as const,
@@ -410,14 +409,13 @@ async function handleGeneratePageDetails() {
     for (let i = 1; i <= totalPages; i++) {
       const existingPage = workingPages[i - 1]!
       const alreadyReady = existingPage.status !== 'failed'
-        && Boolean(existingPage.description)
-        && isUsableImagePrompt(existingPage.image_prompt)
+        && hasUsableStoryContent(existingPage)
 
       if (alreadyReady) {
         continue
       }
 
-      state.showMessage(`正在生成第 ${i}/${totalPages} 页详情...`, 'info')
+      state.showMessage(`正在生成第 ${i}/${totalPages} 页剧情...`, 'info')
       
       const detailResult = await continuationApi.generateSinglePageDetails(
         insightStore.currentBookId,
@@ -428,11 +426,12 @@ async function handleGeneratePageDetails() {
       if (!detailResult.success || !detailResult.page) {
         workingPages[i - 1] = {
           page_number: i,
+          continuity_text: '',
+          story_text: '',
+          dialogue_text: '',
           characters: [],
           character_forms: [],
-          description: `生成失败: ${detailResult.error || '未知错误'}`,
-          dialogues: [],
-          image_prompt: '',
+          final_prompt: '',
           image_url: '',
           previous_url: '',
           status: 'failed' as const
@@ -441,95 +440,17 @@ async function handleGeneratePageDetails() {
         await persistPages(workingPages)
         continue
       }
-      
-      state.showMessage(`正在生成第 ${i}/${totalPages} 页提示词...`, 'info')
-      
-      const promptResult = await continuationApi.generateSingleImagePrompt(
-        insightStore.currentBookId,
-        detailResult.page,
-        i
-      )
-      
-      if (promptResult.success && promptResult.page) {
-        workingPages[i - 1] = {
-          ...promptResult.page,
-          status: promptResult.page.status || 'pending',
-        }
-      } else {
-        const pageWithError = { ...detailResult.page }
-        pageWithError.image_prompt = ''
-        pageWithError.status = 'failed'
-        workingPages[i - 1] = pageWithError
+
+      workingPages[i - 1] = {
+        ...detailResult.page,
+        status: detailResult.page.status || 'pending',
       }
 
       state.pages.value = [...workingPages]
       await persistPages(workingPages)
     }
     
-    state.showMessage(`页面详情和提示词生成完成 (${workingPages.length} 页)`, 'success')
-  } catch (error) {
-    state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-  } finally {
-    state.isGeneratingPages.value = false
-    state.isGeneratingPrompts.value = false
-  }
-}
-
-async function handleRegeneratePrompt(pageNumber: number) {
-  if (!insightStore.currentBookId) return
-  
-  const page = state.pages.value.find(p => p.page_number === pageNumber)
-  if (!page) return
-  
-  regeneratingPromptPage.value = pageNumber
-  
-  try {
-    const result = await continuationApi.generateSingleImagePrompt(
-      insightStore.currentBookId,
-      page,
-      pageNumber
-    )
-    
-    if (result.success && result.page) {
-      page.image_prompt = result.page.image_prompt
-      await persistPages()
-      state.showMessage(`第 ${pageNumber} 页提示词已更新`, 'success')
-    } else {
-      state.showMessage('生成失败: ' + result.error, 'error')
-    }
-  } catch (error) {
-    state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-  } finally {
-    regeneratingPromptPage.value = null
-  }
-}
-
-// 批量重新生成所有提示词
-async function handleRegenerateAllPrompts() {
-  if (!insightStore.currentBookId || state.pages.value.length === 0) return
-  
-  if (!confirm('确定要重新生成所有页面的提示词吗？这将覆盖现有的提示词。')) {
-    return
-  }
-  
-  state.isGeneratingPages.value = true
-  state.errorMessage.value = ''
-  
-  try {
-    // 调用批量生成提示词API
-    const result = await continuationApi.generateImagePrompts(
-      insightStore.currentBookId,
-      state.pages.value
-    )
-    
-    if (result.success && result.pages) {
-      // 更新提示词
-      state.pages.value = result.pages
-      await persistPages()
-      state.showMessage('所有提示词已重新生成', 'success')
-    } else {
-      state.showMessage('生成失败: ' + result.error, 'error')
-    }
+    state.showMessage(`页面剧情生成完成 (${workingPages.length} 页)`, 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {

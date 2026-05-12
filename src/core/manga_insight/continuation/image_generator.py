@@ -49,6 +49,29 @@ class ImageGenerator:
     async def close(self) -> None:
         """关闭内部客户端。"""
         await self._client.close()
+
+    def compose_final_prompt(self, page_content: PageContent) -> str:
+        """根据剧情接续文本和角色信息拼装最终提示词。"""
+        chars_list = "、".join(page_content.characters) if page_content.characters else "无"
+        forms_text = ""
+        if page_content.character_forms:
+            form_lines = []
+            for form in page_content.character_forms:
+                character_name = str(form.get("character") or "").strip()
+                form_name = str(form.get("form_name") or form.get("form_id") or "").strip()
+                if character_name and form_name:
+                    form_lines.append(f"- {character_name}：{form_name}")
+            if form_lines:
+                forms_text = "\n角色形态：\n" + "\n".join(form_lines)
+
+        return normalize_image_prompt_text(
+            f"""上一页剧情：{page_content.continuity_text or "（无）"}
+本页承接：接续上一页剧情，本页发生以下内容。
+本页剧情：{page_content.story_text or "（无）"}
+关键对白：{page_content.dialogue_text or "（无）"}
+出场角色：{chars_list}{forms_text}
+风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。"""
+        , max_lines=12)
     
     async def generate_page_image(
         self,
@@ -62,7 +85,7 @@ class ImageGenerator:
         生成单页漫画图片
         
         Args:
-            page_content: 页面内容（包含生图提示词）
+            page_content: 页面内容（包含最终生图提示词）
             characters: 角色参考图配置
             style_reference_tokens: 画风参考 token 列表
             session_id: 续写会话ID
@@ -71,10 +94,10 @@ class ImageGenerator:
         Returns:
             str: 生成的图片路径
         """
-        normalized_prompt = normalize_image_prompt_text(page_content.image_prompt)
+        normalized_prompt = normalize_image_prompt_text(page_content.final_prompt, max_lines=12)
         if not is_usable_image_prompt(normalized_prompt):
-            raise ValueError(f"第 {page_content.page_number} 页没有有效的生图提示词")
-        page_content.image_prompt = normalized_prompt
+            raise ValueError(f"第 {page_content.page_number} 页没有有效的最终生图提示词")
+        page_content.final_prompt = normalized_prompt
         
         # 构建完整提示词
         full_prompt = self._build_full_prompt(
@@ -253,8 +276,8 @@ class ImageGenerator:
     ) -> str:
         """构建完整的生图提示词
 
-        先声明高优先级的风格规则，再给出本页内容，
-        避免详细内容描述反过来压过参考图风格。
+        先声明高优先级的风格规则，再给出剧情接续文本，
+        避免模型把剧情再改写成偏离参考图的视觉风格。
         """
         style_rules = """你是一位专业的漫画家。先严格遵守以下风格要求，再根据后面的页面内容作画。
 
@@ -263,11 +286,23 @@ class ImageGenerator:
 2. 如果提供了角色参考图，角色的外貌、服装、特征必须与参考图保持一致。
 3. 所有对话气泡、文字、音效词必须使用简体中文。
 4. 如果页面内容与参考图风格冲突，优先服从参考图风格，只保留这一页必须发生的事件。
+"""
+        auto_prompt = self.compose_final_prompt(page_content)
+
+        manual_override = normalize_image_prompt_text(page_content.final_prompt.strip(), max_lines=12)
+        if manual_override:
+            content = f"""
+
+# 用户修正后的最终提示词
+{manual_override}
+"""
+        else:
+            content = f"""
 
 # 页面内容
+{auto_prompt}
 """
 
-        content = normalize_image_prompt_text(page_content.image_prompt.strip())
         return style_rules + content
     
     def _build_orthographic_prompt(self) -> str:

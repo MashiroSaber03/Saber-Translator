@@ -53,20 +53,22 @@ describe('useImageGeneration', () => {
     const pages = ref([
       {
         page_number: 1,
+        continuity_text: '原作末页摘要',
+        story_text: '第1页剧情',
+        dialogue_text: '对白1',
         characters: [],
-        description: '第1页',
-        dialogues: [],
-        image_prompt: 'prompt-1',
+        final_prompt: 'prompt-1',
         image_url: '',
         previous_url: '',
         status: 'pending' as const,
       },
       {
         page_number: 2,
+        continuity_text: '第1页剧情',
+        story_text: '第2页剧情',
+        dialogue_text: '对白2',
         characters: [],
-        description: '第2页',
-        dialogues: [],
-        image_prompt: 'prompt-2',
+        final_prompt: 'prompt-2',
         image_url: '',
         previous_url: '',
         status: 'pending' as const,
@@ -89,7 +91,7 @@ describe('useImageGeneration', () => {
     expect(pages.value[1].image_url).toBe('/tmp/generated-page.png')
   })
 
-  it('skips pages whose prompts are invalid failure markers', async () => {
+  it('still generates pages when story content is complete even if final prompt is empty', async () => {
     getAvailableImagesMock.mockResolvedValue({
       success: true,
       original_images: [
@@ -108,20 +110,22 @@ describe('useImageGeneration', () => {
     const pages = ref([
       {
         page_number: 1,
+        continuity_text: '原作末页摘要',
+        story_text: '第1页剧情',
+        dialogue_text: '对白1',
         characters: [],
-        description: '第1页',
-        dialogues: [],
-        image_prompt: '生成失败: LLM 未返回有效提示词',
+        final_prompt: '',
         image_url: '',
         previous_url: '',
         status: 'pending' as const,
       },
       {
         page_number: 2,
+        continuity_text: '第1页剧情',
+        story_text: '第2页剧情',
+        dialogue_text: '对白2',
         characters: [],
-        description: '第2页',
-        dialogues: [],
-        image_prompt: '出场角色：男主\n核心动作/情绪：奔跑\n场景：走廊\n关键对白：等等我\n风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。',
+        final_prompt: '上一页剧情：第1页剧情\n本页剧情：第2页剧情\n关键对白：对白2\n出场角色：男主\n风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。',
         image_url: '',
         previous_url: '',
         status: 'pending' as const,
@@ -137,9 +141,8 @@ describe('useImageGeneration', () => {
     const composable = useImageGeneration(ref('book-1'), state)
     await composable.batchGenerateImages(pages.value)
 
-    expect(generatePageImageMock).toHaveBeenCalledTimes(1)
-    expect(generatePageImageMock.mock.calls[0]?.[1]).toBe(2)
-    expect(pages.value[0].status).toBe('failed')
+    expect(generatePageImageMock).toHaveBeenCalledTimes(2)
+    expect(generatePageImageMock.mock.calls[0]?.[1]).toBe(1)
     expect(pages.value[1].image_url).toBe('/tmp/generated-page.png')
   })
 })

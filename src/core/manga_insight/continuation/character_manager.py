@@ -424,7 +424,7 @@ class CharacterManager:
     
     def get_character_forms_tree(self, include_disabled: bool = False) -> Dict[str, Any]:
         """
-        获取角色形态树状结构（用于提示词生成）
+        获取角色形态树状结构（用于剧情页与生图上下文）
         
         Args:
             include_disabled: 是否包含禁用的角色和形态

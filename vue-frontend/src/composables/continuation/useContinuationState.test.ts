@@ -95,10 +95,11 @@ describe('useContinuationState', () => {
     state.pages.value = [
       {
         page_number: 1,
+        continuity_text: '旧承接',
+        story_text: '旧剧情',
+        dialogue_text: '旧对白',
         characters: ['旧角色'],
-        description: '旧描述',
-        dialogues: [],
-        image_prompt: '旧提示词',
+        final_prompt: '旧最终提示词',
         image_url: '/tmp/old.png',
         previous_url: '',
         status: 'generated',

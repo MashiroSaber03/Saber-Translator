@@ -43,23 +43,25 @@ class ChapterScript:
 class PageContent:
     """每页剧情"""
     page_number: int
-    characters: List[str]      # 出场人物
-    description: str           # 画面描述
-    dialogues: List[Dict]      # 对话列表 [{"character": "角色名", "text": "对话内容"}]
-    image_prompt: str = ""     # 生图提示词（可编辑）
-    image_url: str = ""        # 生成的图片URL
-    previous_url: str = ""     # 上一版本的图片URL（用于回退）
-    status: str = "pending"    # 状态: pending, generating, generated, failed
+    continuity_text: str = ""   # 上一页剧情承接文本
+    story_text: str = ""        # 本页剧情文本
+    dialogue_text: str = ""     # 关键对白文本
+    characters: List[str] = field(default_factory=list)      # 出场人物
     character_forms: List[Dict] = field(default_factory=list)  # 角色形态列表
+    final_prompt: str = ""      # 最终生图提示词（可编辑）
+    image_url: str = ""         # 生成的图片URL
+    previous_url: str = ""      # 上一版本的图片URL（用于回退）
+    status: str = "pending"     # 状态: pending, generating, generated, failed
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "page_number": self.page_number,
+            "continuity_text": self.continuity_text,
+            "story_text": self.story_text,
+            "dialogue_text": self.dialogue_text,
             "characters": self.characters,
             "character_forms": self.character_forms,
-            "description": self.description,
-            "dialogues": self.dialogues,
-            "image_prompt": self.image_prompt,
+            "final_prompt": self.final_prompt,
             "image_url": self.image_url,
             "previous_url": self.previous_url,
             "status": self.status
@@ -69,11 +71,12 @@ class PageContent:
     def from_dict(cls, data: Dict[str, Any]) -> "PageContent":
         return cls(
             page_number=data.get("page_number", 0),
+            continuity_text=data.get("continuity_text", ""),
+            story_text=data.get("story_text", ""),
+            dialogue_text=data.get("dialogue_text", ""),
             characters=data.get("characters", []),
             character_forms=data.get("character_forms", []),
-            description=data.get("description", ""),
-            dialogues=data.get("dialogues", []),
-            image_prompt=data.get("image_prompt", ""),
+            final_prompt=data.get("final_prompt", ""),
             image_url=data.get("image_url", ""),
             previous_url=data.get("previous_url", ""),
             status=data.get("status", "pending")

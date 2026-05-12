@@ -307,6 +307,8 @@ def generate_page_image(book_id: str, page_number: int):
 
         image_gen = ImageGenerator(book_id)
         try:
+            if not page.final_prompt:
+                page.final_prompt = image_gen.compose_final_prompt(page)
             image_path = run_async(image_gen.generate_page_image(
                 page_content=page,
                 characters=characters,
@@ -317,7 +319,10 @@ def generate_page_image(book_id: str, page_number: int):
         finally:
             run_async(image_gen.close())
 
-        return success_response(data={"image_path": image_path})
+        return success_response(data={
+            "image_path": image_path,
+            "page": page.to_dict()
+        })
 
     except Exception as e:
         logger.error(f"生成图片失败: {e}")
@@ -364,6 +369,8 @@ def regenerate_page_image(book_id: str, page_number: int):
 
         image_gen = ImageGenerator(book_id)
         try:
+            if not page.final_prompt:
+                page.final_prompt = image_gen.compose_final_prompt(page)
             image_path = run_async(image_gen.regenerate_page_image(
                 page_content=page,
                 characters=characters,
@@ -376,7 +383,8 @@ def regenerate_page_image(book_id: str, page_number: int):
 
         return success_response(data={
             "image_path": image_path,
-            "previous_path": previous_path
+            "previous_path": previous_path,
+            "page": page.to_dict()
         })
 
     except Exception as e:
