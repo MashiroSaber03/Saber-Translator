@@ -21,6 +21,10 @@ from .reference_tokens import (
     resolve_reference_tokens,
     select_recent_style_reference_tokens,
 )
+from .prompt_validation import (
+    is_usable_image_prompt,
+    normalize_image_prompt_text,
+)
 
 logger = logging.getLogger("MangaInsight.Continuation.ImageGenerator")
 
@@ -67,8 +71,10 @@ class ImageGenerator:
         Returns:
             str: 生成的图片路径
         """
-        if not page_content.image_prompt:
-            raise ValueError(f"第 {page_content.page_number} 页没有生图提示词")
+        normalized_prompt = normalize_image_prompt_text(page_content.image_prompt)
+        if not is_usable_image_prompt(normalized_prompt):
+            raise ValueError(f"第 {page_content.page_number} 页没有有效的生图提示词")
+        page_content.image_prompt = normalized_prompt
         
         # 构建完整提示词
         full_prompt = self._build_full_prompt(
@@ -261,10 +267,8 @@ class ImageGenerator:
 # 页面内容
 """
 
-        content = page_content.image_prompt.strip()
-        suffix = "\n\n请优先保证与参考图的画风一致性和角色稳定性，再表现这一页发生的事件。"
-
-        return style_rules + content + suffix
+        content = normalize_image_prompt_text(page_content.image_prompt.strip())
+        return style_rules + content
     
     def _build_orthographic_prompt(self) -> str:
         """构建三视图生成提示词"""

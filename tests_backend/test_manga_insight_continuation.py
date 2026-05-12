@@ -264,6 +264,95 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertEqual(page.character_forms[0]["form_id"], "battle")
         self.assertEqual(page.character_forms[0]["form_name"], "Battle Form")
 
+    def test_generate_page_details_sanitizes_camera_language_from_description(self) -> None:
+        from src.core.manga_insight.continuation.models import ChapterScript
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {"characters": [{"name": "Hero"}]}
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            load_characters=lambda: None,
+            format_characters_for_prompt=lambda: "（暂无角色信息）",
+        )
+        generator.chat_client = types.SimpleNamespace(
+            generate=mock.AsyncMock(
+                return_value=json.dumps(
+                    {
+                        "page_number": 1,
+                        "characters": ["Hero"],
+                        "description": "俯视角度，男主冲向门口，特写表情，夜色中的走廊",
+                        "dialogues": [{"character": "Hero", "text": "等等我"}],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+
+        page = asyncio.run(
+            generator.generate_page_details(
+                ChapterScript(
+                    chapter_title="测试章节",
+                    page_count=1,
+                    script_text="第1页：男主冲向门口",
+                ),
+                1,
+            )
+        )
+
+        self.assertNotIn("俯视", page.description)
+        self.assertNotIn("特写", page.description)
+        self.assertIn("男主冲向门口", page.description)
+        self.assertIn("夜色中的走廊", page.description)
+
+    def test_generate_page_details_keeps_core_action_when_camera_language_is_inline(self) -> None:
+        from src.core.manga_insight.continuation.models import ChapterScript
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {"characters": [{"name": "Hero"}]}
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            load_characters=lambda: None,
+            format_characters_for_prompt=lambda: "（暂无角色信息）",
+        )
+        generator.chat_client = types.SimpleNamespace(
+            generate=mock.AsyncMock(
+                return_value=json.dumps(
+                    {
+                        "page_number": 1,
+                        "characters": ["Hero"],
+                        "description": "俯视角度下男主冲向门口，女主在后方追上来",
+                        "dialogues": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+
+        page = asyncio.run(
+            generator.generate_page_details(
+                ChapterScript(
+                    chapter_title="测试章节",
+                    page_count=1,
+                    script_text="第1页：男主冲向门口，女主追上来",
+                ),
+                1,
+            )
+        )
+
+        self.assertNotIn("俯视", page.description)
+        self.assertIn("男主冲向门口", page.description)
+        self.assertIn("女主在后方追上来", page.description)
+
     def test_generate_page_details_raises_on_invalid_json_response(self) -> None:
         from src.core.manga_insight.continuation.models import ChapterScript
         from src.core.manga_insight.continuation.story_generator import StoryGenerator
@@ -331,6 +420,30 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertNotIn("概念插画风", prompt)
         self.assertNotIn("**分格1**", prompt)
         self.assertNotIn("# 分格描述规范", prompt)
+
+    def test_generate_all_image_prompts_keeps_failed_page_prompt_empty(self) -> None:
+        from src.core.manga_insight.continuation.models import PageContent
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+
+        async def _generate_image_prompt(page: PageContent) -> str:
+            if page.page_number == 1:
+                return "出场角色：男主\n核心动作/情绪：奔跑\n场景：走廊\n关键对白：等等我\n风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。"
+            raise ValueError("LLM 未返回有效的生图提示词")
+
+        generator.generate_image_prompt = _generate_image_prompt
+
+        pages = [
+            PageContent(page_number=1, characters=["男主"], description="奔跑", dialogues=[]),
+            PageContent(page_number=2, characters=["女主"], description="回头", dialogues=[]),
+        ]
+
+        updated = asyncio.run(generator.generate_all_image_prompts(pages))
+
+        self.assertTrue(updated[0].image_prompt)
+        self.assertEqual(updated[1].image_prompt, "")
+        self.assertEqual(updated[1].status, "failed")
 
 
 class ContinuationStoryRouteTests(unittest.TestCase):

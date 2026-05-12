@@ -141,6 +141,26 @@ class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):
             prompt.index("页面内容"),
         )
 
+    async def test_generate_page_image_rejects_failure_marker_prompt(self) -> None:
+        from src.core.manga_insight.continuation.image_generator import ImageGenerator
+        from src.core.manga_insight.continuation.models import ContinuationCharacters, PageContent
+
+        generator = ImageGenerator("test-book")
+        try:
+            with self.assertRaises(ValueError):
+                await generator.generate_page_image(
+                    page_content=PageContent(
+                        page_number=1,
+                        characters=[],
+                        description="scene",
+                        dialogues=[],
+                        image_prompt="生成失败: LLM 未返回有效提示词",
+                    ),
+                    characters=ContinuationCharacters(book_id="test-book", characters=[]),
+                )
+        finally:
+            await generator.close()
+
     async def test_image_generator_delegates_page_generation_to_image_gen_client(self) -> None:
         from src.core.manga_insight.continuation.image_generator import ImageGenerator
         from src.core.manga_insight.continuation.models import ContinuationCharacters, PageContent

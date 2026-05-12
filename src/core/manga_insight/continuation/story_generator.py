@@ -22,6 +22,11 @@ from .reference_tokens import (
     list_original_manga_page_paths,
     resolve_reference_tokens,
 )
+from .prompt_validation import (
+    is_usable_image_prompt,
+    normalize_image_prompt_text,
+    normalize_page_description,
+)
 
 logger = logging.getLogger("MangaInsight.Continuation.StoryGenerator")
 HierarchicalSummaryGenerator = None
@@ -217,12 +222,13 @@ class StoryGenerator:
         # 解析 JSON 响应
         page_data = self._parse_json_response(response)
         character_forms = self._normalize_character_forms(page_data.get("character_forms", []))
+        description = normalize_page_description(page_data.get("description", ""))
         
         return PageContent(
             page_number=page_data.get("page_number", page_number),
             characters=page_data.get("characters", []),
             character_forms=character_forms,
-            description=page_data.get("description", ""),
+            description=description,
             dialogues=page_data.get("dialogues", [])
         )
     
@@ -243,8 +249,11 @@ class StoryGenerator:
         
         logger.info(f"正在生成第 {page_content.page_number} 页的生图提示词")
         response = await self.chat_client.generate(prompt)
-        
-        return response.strip()
+        image_prompt = normalize_image_prompt_text(response.strip())
+        if not is_usable_image_prompt(image_prompt):
+            raise ValueError("LLM 未返回有效的生图提示词")
+
+        return image_prompt
     
     async def generate_all_image_prompts(
         self,
@@ -263,9 +272,12 @@ class StoryGenerator:
             try:
                 image_prompt = await self.generate_image_prompt(page)
                 page.image_prompt = image_prompt
+                if page.status == "failed":
+                    page.status = "pending"
             except Exception as e:
                 logger.error(f"生成第 {page.page_number} 页提示词失败: {e}")
-                page.image_prompt = f"生成失败: {str(e)}"
+                page.image_prompt = ""
+                page.status = "failed"
         return pages
     
     async def _get_recent_page_analyses(self, count: int = 5) -> List[Dict]:
@@ -533,7 +545,7 @@ class StoryGenerator:
     {{"character": "角色名1", "form_id": "稳定形态ID", "form_name": "形态显示名"}},
     {{"character": "角色名2", "form_id": "稳定形态ID", "form_name": "形态显示名"}}
   ],
-  "description": "详细的画面描述，包括：角色的动作、表情、姿势、位置关系，以及建议的镜头角度（俯视/仰视/平视/特写等）",
+  "description": "一到两句核心画面描述，只保留角色动作、情绪、相对位置和必须发生的视觉信息，不要写镜头角度、景深、分格、光影风格等导演语言",
   "dialogues": [
     {{"character": "角色名", "text": "对话内容"}}
   ]
@@ -543,7 +555,8 @@ class StoryGenerator:
 
 1. **只提取剧本内容**：不要添加剧本中没有的信息
 2. **形态提取**：如果剧本的「人物」行中出现 `角色名(形态名)`，请根据上方的“角色形态映射”返回对应的稳定 `form_id`，并同时填写 `form_name`。如果剧本没有标注形态，则省略该角色的 `character_forms` 条目，严禁编造新形态。
-3. **对话原样保留**：保持剧本中的对话内容
+3. **描述要克制**：`description` 只写本页必须发生的核心画面，不要补充镜头语言、分格说明、光影氛围或额外视觉修辞
+4. **对话原样保留**：保持剧本中的对话内容
 
 请直接输出JSON数据。
 """
@@ -573,6 +586,8 @@ class StoryGenerator:
                 for d in page_content.dialogues
             ])
 
+        scene_description = normalize_page_description(page_content.description)
+
         return f"""请基于以下剧情信息，生成一个“简洁优先”的漫画生图提示词。
 
 目标：告诉绘图模型“这一页必须发生什么”，不要把提示词写成详细分镜脚本。
@@ -581,7 +596,7 @@ class StoryGenerator:
 
 - 出场角色：{chars_list}
 {forms_text}
-- 核心画面：{page_content.description}
+- 核心画面：{scene_description}
 - 必须保留对白：
 {dialogues_text if dialogues_text else "（无对话）"}
 

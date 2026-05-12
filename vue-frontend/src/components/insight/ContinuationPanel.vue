@@ -162,6 +162,7 @@ import PageDetailsPanel from './continuation/PageDetailsPanel.vue'
 import ImageGenerationPanel from './continuation/ImageGenerationPanel.vue'
 import ExportPanel from './continuation/ExportPanel.vue'
 import * as continuationApi from '@/api/continuation'
+import { isUsableImagePrompt } from '@/composables/continuation/promptValidation'
 
 const insightStore = useInsightStore()
 
@@ -206,7 +207,9 @@ const canProceedToPages = computed(() => {
 })
 
 const canProceedToImages = computed(() => {
-  return state.pages.value.length > 0 && state.pages.value.every(p => p.image_prompt)
+  return state.pages.value.length > 0 && state.pages.value.every(
+    p => p.status !== 'failed' && isUsableImagePrompt(p.image_prompt)
+  )
 })
 
 const canProceedToExport = computed(() => {
@@ -408,7 +411,7 @@ async function handleGeneratePageDetails() {
       const existingPage = workingPages[i - 1]!
       const alreadyReady = existingPage.status !== 'failed'
         && Boolean(existingPage.description)
-        && Boolean(existingPage.image_prompt)
+        && isUsableImagePrompt(existingPage.image_prompt)
 
       if (alreadyReady) {
         continue
@@ -454,7 +457,7 @@ async function handleGeneratePageDetails() {
         }
       } else {
         const pageWithError = { ...detailResult.page }
-        pageWithError.image_prompt = `提示词生成失败: ${promptResult.error || '未知错误'}`
+        pageWithError.image_prompt = ''
         pageWithError.status = 'failed'
         workingPages[i - 1] = pageWithError
       }
