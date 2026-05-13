@@ -266,6 +266,21 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 .constraint-search {
   flex: 1 1 260px;
   min-width: 220px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #cfd6e4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2430;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.constraint-search:focus {
+  outline: none;
+  border-color: #5b73f2;
+  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
 }
 
 .constraint-actions {
