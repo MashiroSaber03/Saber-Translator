@@ -523,8 +523,7 @@ watch(() => props.pages.length, (pageCount) => {
   padding: 0 16px 16px;
 }
 
-.prompt-input,
-.prompt-text {
+.prompt-input {
   width: 100%;
   white-space: pre-wrap;
   line-height: 1.6;
