@@ -50,7 +50,7 @@ describe('bookTranslationConstraints helpers', () => {
 
   it('creates empty default constraints structure', () => {
     expect(createEmptyBookTranslationConstraints()).toEqual({
-      glossary: { enabled: false, entries: [] },
+      glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
       non_translate: { enabled: false, entries: [] },
     })
   })
@@ -60,6 +60,7 @@ describe('bookTranslationConstraints helpers', () => {
       normalizeBookTranslationConstraints({
         glossary: {
           enabled: true,
+          autoExtractEnabled: true,
           entries: [
             { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
             { source: '', target: '', note: '', matchMode: 'text' } as any,
@@ -76,6 +77,7 @@ describe('bookTranslationConstraints helpers', () => {
     ).toEqual({
       glossary: {
         enabled: true,
+        autoExtractEnabled: true,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: {

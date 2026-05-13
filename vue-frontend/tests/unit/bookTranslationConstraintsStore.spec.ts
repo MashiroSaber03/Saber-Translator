@@ -22,6 +22,7 @@ describe('bookTranslationConstraintsStore', () => {
         translation_constraints: {
           glossary: {
             enabled: true,
+            autoExtractEnabled: false,
             entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
           },
           non_translate: {
@@ -39,6 +40,7 @@ describe('bookTranslationConstraintsStore', () => {
     store.loadBookConstraints('book-1', {
       glossary: {
         enabled: true,
+        autoExtractEnabled: false,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: {
@@ -59,6 +61,7 @@ describe('bookTranslationConstraintsStore', () => {
     store.loadBookConstraints('book-1', {
       glossary: {
         enabled: true,
+        autoExtractEnabled: false,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: {
@@ -70,20 +73,21 @@ describe('bookTranslationConstraintsStore', () => {
 
     expect(store.bookId).toBeNull()
     expect(store.isAvailable).toBe(false)
-    expect(store.glossary).toEqual({ enabled: false, entries: [] })
+    expect(store.glossary).toEqual({ enabled: false, autoExtractEnabled: false, entries: [] })
     expect(store.nonTranslate).toEqual({ enabled: false, entries: [] })
   })
 
   it('saves updated constraints through book update api', async () => {
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {
-      glossary: { enabled: false, entries: [] },
+      glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
       non_translate: { enabled: false, entries: [] },
     })
 
     const ok = await store.saveBookConstraints({
       glossary: {
         enabled: true,
+        autoExtractEnabled: true,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: {
@@ -99,6 +103,7 @@ describe('bookTranslationConstraintsStore', () => {
         translation_constraints: {
           glossary: {
             enabled: true,
+            autoExtractEnabled: true,
             entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
           },
           non_translate: {
@@ -108,6 +113,7 @@ describe('bookTranslationConstraintsStore', () => {
         },
       }),
     )
+    expect(store.glossary.autoExtractEnabled).toBe(true)
   })
 
   it('does not mutate runtime constraints when save fails', async () => {
@@ -118,19 +124,57 @@ describe('bookTranslationConstraintsStore', () => {
 
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {
-      glossary: { enabled: false, entries: [] },
+      glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
       non_translate: { enabled: false, entries: [] },
     })
 
     const ok = await store.saveBookConstraints({
       glossary: {
         enabled: true,
+        autoExtractEnabled: false,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: { enabled: false, entries: [] },
     })
 
     expect(ok).toBe(false)
-    expect(store.glossary).toEqual({ enabled: false, entries: [] })
+    expect(store.glossary).toEqual({ enabled: false, autoExtractEnabled: false, entries: [] })
+  })
+
+  it('preserves autoExtractEnabled when backend response omits the new field', async () => {
+    updateBookMock.mockResolvedValueOnce({
+      success: true,
+      book: {
+        id: 'book-1',
+        translation_constraints: {
+          glossary: {
+            enabled: true,
+            entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
+          },
+          non_translate: {
+            enabled: false,
+            entries: [],
+          },
+        },
+      },
+    })
+
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
+      non_translate: { enabled: false, entries: [] },
+    })
+
+    const ok = await store.saveBookConstraints({
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
+      },
+      non_translate: { enabled: false, entries: [] },
+    })
+
+    expect(ok).toBe(true)
+    expect(store.glossary.autoExtractEnabled).toBe(true)
   })
 })

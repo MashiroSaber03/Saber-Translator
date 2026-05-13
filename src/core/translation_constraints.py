@@ -26,6 +26,7 @@ CHINESE_TARGET_CODES = {
 def normalize_glossary_settings(payload: Any) -> Dict[str, Any]:
     return {
         "enabled": bool(_value(payload, "enabled", default=False)),
+        "autoExtractEnabled": bool(_value(payload, "autoExtractEnabled", "auto_extract_enabled", default=False)),
         "entries": [
             {
                 "source": str(_value(entry, "source", "src", default="") or "").strip(),
@@ -263,6 +264,43 @@ def collect_glossary_warnings(
                 "actualTranslation": translated_text,
             })
     return warnings
+
+
+def extract_glossary_candidates_from_payload(
+    payload: Any,
+    *,
+    existing_entries: List[Dict[str, Any]] | None = None,
+) -> List[Dict[str, str]]:
+    existing_entries = existing_entries or []
+    existing_sources = {
+        str(entry.get("source", "") or "").strip().casefold()
+        for entry in existing_entries
+        if isinstance(entry, dict) and str(entry.get("source", "") or "").strip()
+    }
+    seen_sources: set[str] = set()
+    normalized: List[Dict[str, str]] = []
+
+    if not isinstance(payload, list):
+        return normalized
+
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        source = str(_value(item, "source", "term", "name", default="") or "").strip()
+        target = str(_value(item, "target", "translation", "translated", default="") or "").strip()
+        if not source or not target:
+            continue
+        source_key = source.casefold()
+        if source_key in seen_sources or source_key in existing_sources:
+            continue
+        seen_sources.add(source_key)
+        normalized.append({
+            "source": source,
+            "target": target,
+            "note": str(_value(item, "note", "remarks", default="") or "").strip(),
+            "matchMode": "text",
+        })
+    return normalized
 
 
 def validate_constraint_entries(entries: List[Dict[str, Any]], *, pattern_field: str) -> List[str]:

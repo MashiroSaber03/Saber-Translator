@@ -396,11 +396,27 @@ export function useSequentialPipeline() {
         console.warn('[TranslationWarnings]', tasks.flatMap((task) => task.warnings))
       }
 
+      const autoGlossaryStats = tasks.reduce((total, task) => ({
+        added: total.added + task.autoGlossaryStats.added,
+        duplicates: total.duplicates + task.autoGlossaryStats.duplicates,
+        failedPages: total.failedPages + task.autoGlossaryStats.failedPages,
+      }), {
+        added: 0,
+        duplicates: 0,
+        failedPages: 0,
+      })
+      if (autoGlossaryStats.added > 0 || autoGlossaryStats.duplicates > 0 || autoGlossaryStats.failedPages > 0) {
+        toast.info(
+          `自动添加术语：新增 ${autoGlossaryStats.added} 条，跳过重复 ${autoGlossaryStats.duplicates} 条，失败 ${autoGlossaryStats.failedPages} 页`
+        )
+      }
+
       return {
         success: result.failed === 0,
         completed: result.completed,
         failed: result.failed,
         errors: errors.length > 0 ? errors : undefined,
+        autoGlossaryStats,
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '执行失败'
@@ -411,6 +427,11 @@ export function useSequentialPipeline() {
         completed: 0,
         failed: imagesToProcess.length,
         errors,
+        autoGlossaryStats: {
+          added: 0,
+          duplicates: 0,
+          failedPages: 0,
+        },
       }
     } finally {
       isExecuting.value = false

@@ -14,6 +14,7 @@ import {
   DetectionPool,
   OcrPool,
   ColorPool,
+  AutoGlossaryPool,
   TranslatePool,
   InpaintPool,
   RenderPool,
@@ -32,6 +33,7 @@ export class ParallelPipeline {
   private detectionPool: DetectionPool
   private ocrPool: OcrPool
   private colorPool: ColorPool
+  private autoGlossaryPool: AutoGlossaryPool
   private translatePool: TranslatePool
   private inpaintPool: InpaintPool
   private renderPool: RenderPool
@@ -82,8 +84,14 @@ export class ParallelPipeline {
       handleTaskComplete,
     )
 
-    this.colorPool = new ColorPool(
+    this.autoGlossaryPool = new AutoGlossaryPool(
       this.translatePool,
+      this.progressTracker,
+      handleTaskComplete,
+    )
+
+    this.colorPool = new ColorPool(
+      this.autoGlossaryPool,
       this.lock,
       this.progressTracker,
       handleTaskComplete,
@@ -152,6 +160,15 @@ export class ParallelPipeline {
       success: result.success,
       failed: result.failed,
       errors: this.resultCollector.getFailed().map((task) => task.error || '未知错误'),
+      autoGlossaryStats: this.resultCollector.getAll().reduce((total, task) => ({
+        added: total.added + (task.autoGlossaryStats?.added || 0),
+        duplicates: total.duplicates + (task.autoGlossaryStats?.duplicates || 0),
+        failedPages: total.failedPages + (task.autoGlossaryStats?.failedPages || 0),
+      }), {
+        added: 0,
+        duplicates: 0,
+        failedPages: 0,
+      }),
     }
   }
 
@@ -192,6 +209,7 @@ export class ParallelPipeline {
       detection: this.detectionPool,
       ocr: this.ocrPool,
       color: this.colorPool,
+      autoGlossary: this.autoGlossaryPool,
       translate: this.translatePool,
       inpaint: this.inpaintPool,
       render: this.renderPool,
@@ -212,6 +230,7 @@ export class ParallelPipeline {
     this.ocrPool.cancel()
     this.colorPool.cancel()
     this.translatePool.cancel()
+    this.autoGlossaryPool.cancel()
     this.inpaintPool.cancel()
     this.renderPool.cancel()
     this.savePool.cancel()
@@ -235,6 +254,7 @@ export class ParallelPipeline {
     this.ocrPool.reset()
     this.colorPool.reset()
     this.translatePool.reset()
+    this.autoGlossaryPool.reset()
     this.inpaintPool.reset()
     this.renderPool.reset()
     this.savePool.reset()

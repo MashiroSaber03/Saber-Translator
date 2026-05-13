@@ -72,4 +72,9 @@ export interface ParallelExecutionResult {
   success: number
   failed: number
   errors?: string[]
+  autoGlossaryStats?: {
+    added: number
+    duplicates: number
+    failedPages: number
+  }
 }

@@ -1,7 +1,7 @@
 /**
  * 并行进度追踪器
  * 
- * 管理6个池子的进度状态，用于多进度条显示
+ * 管理并行流水线各个池子的进度状态，用于多进度条显示
  */
 
 import { reactive } from 'vue'
@@ -14,6 +14,7 @@ const DEFAULT_POOLS: Array<{ name: string; icon: string }> = [
   { name: '检测', icon: '📍' },
   { name: 'OCR', icon: '📖' },
   { name: '颜色', icon: '🎨' },
+  { name: '术语', icon: '📚' },
   { name: '翻译', icon: '🌐' },
   { name: '修复', icon: '🖌️' },
   { name: '渲染', icon: '✨' }

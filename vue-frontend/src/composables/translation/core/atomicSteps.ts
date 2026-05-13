@@ -5,6 +5,7 @@ import {
   executeInpaint,
   executeOcr,
   executeRender,
+  executeAutoGlossary,
   executeTranslate,
 } from './steps'
 import { persistPage } from './persistenceService'
@@ -14,6 +15,7 @@ export type AtomicStepName =
   | 'detection'
   | 'ocr'
   | 'color'
+  | 'autoGlossary'
   | 'translate'
   | 'inpaint'
   | 'render'
@@ -78,6 +80,24 @@ export async function executeAtomicStep(
         ...context,
         status: 'processing',
         colors: result.colors,
+      }
+    }
+    case 'autoGlossary': {
+      const result = await executeAutoGlossary({
+        originalTexts: context.originalTexts,
+        settingsSnapshot: runtime.settingsSnapshot,
+        bookTranslationConstraints: runtime.bookTranslationConstraints,
+        isBookshelfMode: runtime.isBookshelfMode,
+      })
+      runtime.bookTranslationConstraints = JSON.parse(JSON.stringify(result.bookTranslationConstraints))
+      return {
+        ...context,
+        status: 'processing',
+        autoGlossaryStats: {
+          added: context.autoGlossaryStats.added + result.autoGlossaryStats.added,
+          duplicates: context.autoGlossaryStats.duplicates + result.autoGlossaryStats.duplicates,
+          failedPages: context.autoGlossaryStats.failedPages + result.autoGlossaryStats.failedPages,
+        },
       }
     }
     case 'translate': {

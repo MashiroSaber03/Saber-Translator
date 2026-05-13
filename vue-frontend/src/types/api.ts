@@ -80,6 +80,19 @@ export interface HqTranslateResponse {
   error?: string
 }
 
+export interface GlossaryExtractionResponse {
+  success: boolean
+  new_entries?: Array<{
+    source: string
+    target: string
+    note: string
+    matchMode: 'text' | 'regex'
+  }>
+  candidate_count?: number
+  duplicate_count?: number
+  error?: string
+}
+
 /**
  * 会话数据
  */

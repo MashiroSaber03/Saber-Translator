@@ -260,6 +260,117 @@ class TranslationRouteConstraintTests(unittest.TestCase):
         self.assertIn("###占位符保护规则", joined_text)
         self.assertIn("__SABER_NTL_0001__", joined_text)
 
+    def test_glossary_extract_route_returns_new_entries_and_skips_duplicates(self) -> None:
+        with mock.patch.object(
+            self.translation_module,
+            "extract_glossary_entries_via_model",
+            return_value=(
+                [
+                    {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
+                ],
+                2,
+                1,
+            ),
+        ) as extract_mock:
+            response = self.client.post(
+                "/api/translation/glossary/extract",
+                json={
+                    "original_texts": ["Alice and Bob"],
+                    "source_language": "japanese",
+                    "target_language": "zh",
+                    "model_provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                    "existing_entries": [
+                        {"source": "Bob", "target": "鲍勃", "note": "", "matchMode": "text"}
+                    ],
+                    "openai_options": {
+                        "request": {"force_json_output": False},
+                        "execution": {
+                            "use_stream": True,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["new_entries"], [
+            {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
+        ])
+        self.assertEqual(payload["candidate_count"], 2)
+        self.assertEqual(payload["duplicate_count"], 1)
+        extract_kwargs = extract_mock.call_args.kwargs
+        self.assertEqual(extract_kwargs["provider"], "siliconflow")
+        self.assertTrue(extract_kwargs["openai_options"].execution.use_stream)
+        self.assertFalse(extract_kwargs["openai_options"].request.force_json_output)
+
+    def test_glossary_extract_route_rejects_non_array_model_payload(self) -> None:
+        with mock.patch.object(
+            self.translation_module._hq_executor,
+            "execute",
+            side_effect=RuntimeError("自动术语提取返回格式错误，期望 JSON 数组"),
+        ):
+            response = self.client.post(
+                "/api/translation/glossary/extract",
+                json={
+                    "original_texts": ["Alice"],
+                    "source_language": "japanese",
+                    "target_language": "zh",
+                    "model_provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+
+    def test_parse_glossary_extract_results_accepts_object_wrapped_entries(self) -> None:
+        parsed = self.translation_module._parse_glossary_extract_results(
+            '```json\n{"entries":[{"source":"Alice","target":"爱丽丝"}]}\n```',
+            force_json_output=False,
+        )
+        self.assertEqual(parsed, [{"source": "Alice", "target": "爱丽丝"}])
+
+    def test_glossary_extract_prompt_does_not_include_source_language_prefix(self) -> None:
+        captured = {}
+
+        def fake_execute(request, **kwargs):
+            captured["messages"] = request.messages
+            return types.SimpleNamespace(
+                raw_content='[]',
+                parsed=[],
+            )
+
+        with mock.patch.object(self.translation_module._hq_executor, "execute", side_effect=fake_execute):
+            self.translation_module.extract_glossary_entries_via_model(
+                texts=["Alice"],
+                source_language="japanese",
+                target_language="zh",
+                provider="siliconflow",
+                api_key="test-key",
+                model_name="test-model",
+                custom_base_url=None,
+                openai_options=self.translation_module.create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=0,
+                    transport_retries=1,
+                    business_retries=0,
+                ),
+                existing_entries=[],
+            )
+
+        user_prompt = captured["messages"][1]["content"]
+        self.assertNotIn("源语言:", user_prompt)
+        self.assertIn("目标语言: zh", user_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

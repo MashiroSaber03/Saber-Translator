@@ -122,7 +122,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             book["translation_constraints"],
             {
-                "glossary": {"enabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -131,7 +131,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             persisted["translation_constraints"],
             {
-                "glossary": {"enabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -160,7 +160,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             loaded["translation_constraints"],
             {
-                "glossary": {"enabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -174,6 +174,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         constraints = {
             "glossary": {
                 "enabled": True,
+                "autoExtractEnabled": True,
                 "entries": [
                     {
                         "source": "Alice",
@@ -218,6 +219,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
             translation_constraints={
                 "glossary": {
                     "enabled": True,
+                    "autoExtractEnabled": True,
                     "entries": [
                         {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
                         {"source": " ", "target": " ", "note": "", "matchMode": "regex"},
@@ -240,6 +242,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
             {
                 "glossary": {
                     "enabled": True,
+                    "autoExtractEnabled": True,
                     "entries": [
                         {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
                     ],

@@ -80,6 +80,11 @@ export interface PipelineResult {
     completed: number
     failed: number
     errors?: string[]
+    autoGlossaryStats?: {
+        added: number
+        duplicates: number
+        failedPages: number
+    }
 }
 
 // ============================================================

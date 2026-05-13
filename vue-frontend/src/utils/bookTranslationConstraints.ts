@@ -4,6 +4,7 @@ export function createEmptyBookTranslationConstraints(): BookTranslationConstrai
   return {
     glossary: {
       enabled: false,
+      autoExtractEnabled: false,
       entries: [],
     },
     non_translate: {
@@ -17,6 +18,7 @@ export function normalizeBookTranslationConstraints(
   payload?: Partial<BookTranslationConstraints> | null,
 ): BookTranslationConstraints {
   const defaults = createEmptyBookTranslationConstraints()
+  const glossaryPayload = payload?.glossary as (Partial<BookTranslationConstraints['glossary']> & { auto_extract_enabled?: boolean }) | undefined
   const glossaryEntries = Array.isArray(payload?.glossary?.entries)
     ? payload!.glossary!.entries.filter((entry) => String(entry?.source ?? '').trim() && String(entry?.target ?? '').trim())
     : defaults.glossary.entries
@@ -25,7 +27,8 @@ export function normalizeBookTranslationConstraints(
     : defaults.non_translate.entries
   return {
     glossary: {
-      enabled: Boolean(payload?.glossary?.enabled),
+      enabled: Boolean(glossaryPayload?.enabled),
+      autoExtractEnabled: Boolean(glossaryPayload?.autoExtractEnabled ?? glossaryPayload?.auto_extract_enabled),
       entries: glossaryEntries.map((entry) => ({ ...entry })),
     },
     non_translate: {

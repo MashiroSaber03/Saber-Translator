@@ -4,6 +4,7 @@ export type AtomicStepType =
   | 'detection'
   | 'ocr'
   | 'color'
+  | 'autoGlossary'
   | 'translate'
   | 'aiTranslate'
   | 'inpaint'
@@ -24,10 +25,10 @@ export interface PipelineResolutionFlags {
 
 const PIPELINE_MODE_DEFINITIONS: Record<TranslationMode, PipelineModeDefinition> = {
   standard: {
-    baseStepChain: ['detection', 'ocr', 'color', 'translate', 'inpaint', 'render'],
+    baseStepChain: ['detection', 'ocr', 'color', 'autoGlossary', 'translate', 'inpaint', 'render'],
   },
   hq: {
-    baseStepChain: ['detection', 'ocr', 'color', 'aiTranslate', 'inpaint', 'render'],
+    baseStepChain: ['detection', 'ocr', 'color', 'autoGlossary', 'aiTranslate', 'inpaint', 'render'],
   },
   proofread: {
     baseStepChain: ['aiTranslate', 'render'],
@@ -41,6 +42,7 @@ const STEP_LABELS: Record<AtomicStepType, string> = {
   detection: '气泡检测',
   ocr: '文字识别',
   color: '颜色提取',
+  autoGlossary: '自动术语提取',
   translate: '翻译',
   aiTranslate: 'AI翻译',
   inpaint: '背景修复',

@@ -1,6 +1,7 @@
 import unittest
 
 from src.core.translation_constraints import (
+    extract_glossary_candidates_from_payload,
     build_glossary_prompt,
     build_non_translate_guard_prompt,
     build_non_translate_prompt,
@@ -13,6 +14,28 @@ from src.core.translation_constraints import (
 
 
 class TranslationConstraintsTests(unittest.TestCase):
+    def test_extract_glossary_candidates_filters_invalid_and_duplicate_entries(self) -> None:
+        candidates = extract_glossary_candidates_from_payload(
+            [
+                {"source": "Alice", "target": "爱丽丝"},
+                {"source": "Alice", "target": "阿丽丝"},
+                {"source": "Bob", "target": "鲍勃", "note": "角色"},
+                {"source": "", "target": "空白"},
+                {"source": "NoTarget", "target": ""},
+                "invalid",
+            ],
+            existing_entries=[
+                {"source": "Bob", "target": "旧鲍勃", "note": "已存在", "matchMode": "text"},
+            ],
+        )
+
+        self.assertEqual(
+            candidates,
+            [
+                {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
+            ],
+        )
+
     def test_build_glossary_prompt_only_includes_matching_entries(self) -> None:
         settings = normalize_glossary_settings(
             {

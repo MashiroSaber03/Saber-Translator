@@ -13,6 +13,7 @@ export interface GlossaryEntry {
 
 export interface GlossarySettings {
   enabled: boolean
+  autoExtractEnabled: boolean
   entries: GlossaryEntry[]
 }
 
@@ -33,4 +34,10 @@ export interface TranslationWarning {
   source: string
   expectedTarget: string
   actualTranslation: string
+}
+
+export interface GlossaryExtractionStats {
+  added: number
+  duplicates: number
+  failedPages: number
 }

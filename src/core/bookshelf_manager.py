@@ -30,6 +30,7 @@ def _default_translation_constraints() -> Dict[str, Any]:
     return {
         "glossary": {
             "enabled": False,
+            "autoExtractEnabled": False,
             "entries": [],
         },
         "non_translate": {
@@ -80,6 +81,7 @@ def _normalize_translation_constraints(payload: Optional[Dict[str, Any]]) -> Dic
     return {
         "glossary": {
             "enabled": bool(glossary.get("enabled")) if isinstance(glossary, dict) else False,
+            "autoExtractEnabled": bool(glossary.get("autoExtractEnabled")) if isinstance(glossary, dict) else False,
             "entries": _normalize_entries(glossary.get("entries") if isinstance(glossary, dict) else [], kind="glossary"),
         },
         "non_translate": {

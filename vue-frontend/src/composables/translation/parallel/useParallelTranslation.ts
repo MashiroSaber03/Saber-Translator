@@ -21,6 +21,7 @@ const globalProgress = reactive<ParallelProgress>({
     { name: '检测', icon: '📍', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
     { name: 'OCR', icon: '📖', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
     { name: '颜色', icon: '🎨', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
+    { name: '术语', icon: '📚', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
     { name: '翻译', icon: '🌐', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
     { name: '修复', icon: '🖌️', waiting: 0, processing: false, completed: 0, isWaitingLock: false },
     { name: '渲染', icon: '✨', waiting: 0, processing: false, completed: 0, isWaitingLock: false }

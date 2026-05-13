@@ -6,7 +6,7 @@ import type { BookTranslationConstraints } from '@/types/bookTranslationConstrai
 import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
 import type { TranslationSettings } from '@/types/settings'
-import type { TranslationWarning } from '@/types/translationConstraints'
+import type { GlossaryExtractionStats, TranslationWarning } from '@/types/translationConstraints'
 import type { SavedTextStyles, TranslationMode } from './types'
 
 export type TaskExecutionStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'buffered'
@@ -52,6 +52,7 @@ export interface TaskContext {
   translatedTexts: string[]
   textboxTexts: string[]
   warnings: TranslationWarning[]
+  autoGlossaryStats: GlossaryExtractionStats
 
   cleanImage?: string
   finalImage?: string
@@ -141,7 +142,7 @@ export function createPipelineRuntime(
     settingsSnapshot.autoSaveInBookshelfMode && isBookshelfMode
   )
   const defaultConstraints: BookTranslationConstraints = {
-    glossary: { enabled: false, entries: [] },
+    glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
     non_translate: { enabled: false, entries: [] },
   }
 
@@ -188,6 +189,11 @@ export function createTaskContext(
     translatedTexts: [],
     textboxTexts: [],
     warnings: [],
+    autoGlossaryStats: {
+      added: 0,
+      duplicates: 0,
+      failedPages: 0,
+    },
     cleanImage: undefined,
     finalImage: undefined,
     bubbleStates: Array.isArray(sourceImage.bubbleStates) ? sourceImage.bubbleStates : sourceImage.bubbleStates ?? null,
@@ -241,5 +247,10 @@ export function hydrateTaskContextFromImage(
   context.cleanImage = typeof hydratedImage.cleanImageData === 'string' ? hydratedImage.cleanImageData : undefined
   context.finalImage = typeof hydratedImage.translatedDataURL === 'string' ? hydratedImage.translatedDataURL : undefined
   context.warnings = (hydratedImage.translationWarnings as TranslationWarning[] | undefined) || []
+  context.autoGlossaryStats = {
+    added: 0,
+    duplicates: 0,
+    failedPages: 0,
+  }
   return context
 }

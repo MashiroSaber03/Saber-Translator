@@ -41,7 +41,15 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
       if (!response.success || !response.book) {
         return false
       }
-      constraints.value = normalizeBookTranslationConstraints(response.book.translation_constraints)
+      const normalizedResponse = normalizeBookTranslationConstraints(response.book.translation_constraints)
+      const normalizedPayload = normalizeBookTranslationConstraints(payload)
+      constraints.value = {
+        ...normalizedResponse,
+        glossary: {
+          ...normalizedResponse.glossary,
+          autoExtractEnabled: normalizedResponse.glossary.autoExtractEnabled || normalizedPayload.glossary.autoExtractEnabled,
+        },
+      }
       return true
     } catch (error) {
       console.error('保存书籍级翻译约束失败:', error)

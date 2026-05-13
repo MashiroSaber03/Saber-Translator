@@ -13,6 +13,7 @@ describe('pipelineRegistry', () => {
       'detection',
       'ocr',
       'color',
+      'autoGlossary',
       'translate',
       'inpaint',
       'render',
@@ -22,6 +23,7 @@ describe('pipelineRegistry', () => {
       'detection',
       'ocr',
       'color',
+      'autoGlossary',
       'aiTranslate',
       'inpaint',
       'render',
@@ -63,6 +65,7 @@ describe('pipelineRegistry', () => {
       'detection',
       'ocr',
       'color',
+      'autoGlossary',
       'translate',
       'inpaint',
       'render',
@@ -80,6 +83,7 @@ describe('pipelineRegistry', () => {
       'detection',
       'ocr',
       'color',
+      'autoGlossary',
       'translate',
       'inpaint',
       'render',
@@ -113,6 +117,7 @@ describe('pipelineRegistry', () => {
 
   it('provides the unified step labels used by the pipelines', () => {
     expect(getStepLabel('detection')).toBe('气泡检测')
+    expect(getStepLabel('autoGlossary' as any)).toBe('自动术语提取')
     expect(getStepLabel('aiTranslate')).toBe('AI翻译')
     expect(getStepLabel('save')).toBe('保存')
   })

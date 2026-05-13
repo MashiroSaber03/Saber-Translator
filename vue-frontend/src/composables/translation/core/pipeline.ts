@@ -340,11 +340,21 @@ export function usePipeline() {
                 console.warn('[TranslationWarnings]', imagesToProcess.flatMap(image => image.translationWarnings || []))
             }
 
+            const autoGlossaryStats = result.autoGlossaryStats || {
+                added: 0,
+                duplicates: 0,
+                failedPages: 0,
+            }
+            if (autoGlossaryStats.added > 0 || autoGlossaryStats.duplicates > 0 || autoGlossaryStats.failedPages > 0) {
+                toast.info(`自动添加术语：新增 ${autoGlossaryStats.added} 条，跳过重复 ${autoGlossaryStats.duplicates} 条，失败 ${autoGlossaryStats.failedPages} 页`)
+            }
+
             return {
                 success: result.failed === 0,
                 completed: result.success,
                 failed: result.failed,
-                errors: result.errors
+                errors: result.errors,
+                autoGlossaryStats,
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : '并行翻译出错'
@@ -353,7 +363,12 @@ export function usePipeline() {
                 success: false,
                 completed: 0,
                 failed: imagesToProcess.length,
-                errors: [errorMessage]
+                errors: [errorMessage],
+                autoGlossaryStats: {
+                    added: 0,
+                    duplicates: 0,
+                    failedPages: 0,
+                },
             }
         } finally {
             // 清除预保存和保存进度状态

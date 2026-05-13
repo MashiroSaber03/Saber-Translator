@@ -6,6 +6,7 @@
 import { apiClient } from './client'
 import type {
   ApiResponse,
+  GlossaryExtractionResponse,
   ReRenderResponse,
   OcrSingleBubbleResponse,
   InpaintSingleBubbleResponse,
@@ -139,6 +140,30 @@ export interface TranslateSingleTextParams {
   }
 }
 
+export interface ExtractGlossaryEntriesParams {
+  original_texts: string[]
+  source_language: string
+  target_language: string
+  model_provider: string
+  api_key?: string
+  model_name?: string
+  custom_base_url?: string
+  existing_entries?: GlossarySettings['entries']
+  openai_options?: {
+    request: {
+      force_json_output: boolean
+      temperature?: number
+      extra_body?: Record<string, unknown>
+    }
+    execution: {
+      use_stream: boolean
+      rpm_limit: number
+      transport_retries: number
+      business_retries: number
+    }
+  }
+}
+
 // ==================== 渲染 API ====================
 
 /**
@@ -176,6 +201,12 @@ export async function translateSingleText(
  */
 export async function hqTranslateBatch(params: HqTranslateParams): Promise<HqTranslateResponse> {
   return apiClient.post<HqTranslateResponse>('/api/hq_translate_batch', params)
+}
+
+export async function extractGlossaryEntries(
+  params: ExtractGlossaryEntriesParams
+): Promise<GlossaryExtractionResponse> {
+  return apiClient.post<GlossaryExtractionResponse>('/api/translation/glossary/extract', params)
 }
 
 // ==================== OCR 和修复 API ====================

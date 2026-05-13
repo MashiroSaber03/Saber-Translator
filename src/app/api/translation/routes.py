@@ -34,6 +34,7 @@ from src.core.translation_constraints import (
     build_non_translate_guard_prompt,
     build_non_translate_prompt,
     collect_glossary_warnings,
+    extract_glossary_candidates_from_payload,
     normalize_glossary_settings,
     normalize_non_translate_settings,
     protect_hq_json_data,
@@ -67,6 +68,29 @@ from src.shared.openai_options import (
 
 _hq_chat_transport = OpenAICompatibleChatTransport()
 _hq_executor = OpenAICompatibleSyncExecutor(_hq_chat_transport)
+
+_AUTO_GLOSSARY_SYSTEM_PROMPT = (
+    "你是一个漫画翻译术语提取助手。"
+    "请从给定的 OCR 文本中提取适合加入漫画术语表的专有名词和人名，"
+    "并为每个词条给出稳定、简洁的目标语言建议译法。"
+)
+
+_AUTO_GLOSSARY_USER_PROMPT_TEMPLATE = """请从以下 OCR 文本中提取适合加入漫画术语表的实体。
+
+提取范围：
+1. 人名
+2. 专有名词
+
+输出要求：
+1. 只输出 JSON 数组
+2. 每项必须包含 source 和 target 字段
+3. 不要输出空字段
+4. 不要输出解释性文字
+5. 如果没有可提取内容，返回 []
+
+OCR 文本：
+{ocr_text}
+"""
 
 
 def _build_hq_translate_messages(json_data, image_base64_array, user_prompt, system_prompt):
@@ -217,6 +241,95 @@ def _default_single_translation_prompt(*, use_json_format: bool) -> str:
     return constants.DEFAULT_PROMPT
 
 
+def _parse_glossary_extract_results(content: str, *, force_json_output: bool):
+    if force_json_output:
+        try:
+            parsed_content = json.loads(content)
+        except json.JSONDecodeError:
+            parsed_content = parse_json_block_from_text(content)
+    else:
+        parsed_content = parse_json_block_from_text(content)
+
+    if isinstance(parsed_content, dict):
+        if isinstance(parsed_content.get('entries'), list):
+            results = parsed_content['entries']
+        elif isinstance(parsed_content.get('glossary'), list):
+            results = parsed_content['glossary']
+        elif isinstance(parsed_content.get('items'), list):
+            results = parsed_content['items']
+        else:
+            raise OpenAICompatibleBusinessRetryableError(
+                "自动术语提取返回格式错误，期望 JSON 数组或包含 entries/glossary/items 的对象"
+            )
+    elif isinstance(parsed_content, list):
+        results = parsed_content
+    else:
+        raise OpenAICompatibleBusinessRetryableError(
+            f"自动术语提取返回格式错误，实际收到: {type(parsed_content)}"
+        )
+
+    if not results:
+        return []
+    return results
+
+
+def extract_glossary_entries_via_model(
+    *,
+    texts,
+    source_language,
+    target_language,
+    provider,
+    api_key,
+    model_name,
+    custom_base_url,
+    openai_options,
+    existing_entries,
+):
+    joined_text = "\n".join(str(text or "").strip() for text in texts if str(text or "").strip())
+    if not joined_text:
+        return [], 0, 0
+
+    user_prompt = (
+        f"目标语言: {target_language}\n\n"
+        + _AUTO_GLOSSARY_USER_PROMPT_TEMPLATE.format(ocr_text=joined_text)
+    )
+    runtime_options = build_openai_compatible_runtime_options(
+        timeout=90.0,
+        print_stream_output=openai_options.execution.use_stream,
+        stream_output_label='自动术语提取' if openai_options.execution.use_stream else None,
+    )
+
+    result = _hq_executor.execute(
+        UnifiedChatRequest(
+            provider=provider,
+            api_key=api_key or "",
+            model=model_name or "",
+            base_url=resolve_provider_base_url(provider, custom_base_url),
+            capability=TRANSLATION_CAPABILITY,
+            openai_options=openai_options,
+            runtime_options=runtime_options,
+            messages=[
+                {"role": "system", "content": _AUTO_GLOSSARY_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        ),
+        capability=TRANSLATION_CAPABILITY,
+        parser=lambda content: _parse_glossary_extract_results(
+            content,
+            force_json_output=openai_options.request.force_json_output,
+        ),
+        logger_instance=logger,
+    )
+    raw_candidates = result.parsed
+    normalized = extract_glossary_candidates_from_payload(
+        raw_candidates,
+        existing_entries=existing_entries,
+    )
+    candidate_count = len([item for item in raw_candidates if isinstance(item, dict)])
+    duplicate_count = max(candidate_count - len(normalized), 0)
+    return normalized, candidate_count, duplicate_count
+
+
 def _normalize_single_bubble_textlines(
     raw_textlines,
     *,
@@ -286,6 +399,64 @@ def _normalize_single_bubble_textlines(
             'confidence': float(line_info.get('confidence', 0.0) or 0.0),
         })
     return normalized
+
+
+@translate_bp.route('/translation/glossary/extract', methods=['POST'])
+def route_extract_glossary_entries():
+    try:
+        data = request.get_json() or {}
+        original_texts = data.get('original_texts') or []
+        source_language = _request_value(data, 'source_language', 'sourceLanguage', default='japanese')
+        target_language = _request_value(data, 'target_language', 'targetLanguage', default='zh')
+        model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
+        api_key = _request_value(data, 'api_key', 'apiKey')
+        model_name = _request_value(data, 'model_name', 'model', 'modelName')
+        custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
+        existing_entries = data.get('existing_entries') or []
+
+        if not isinstance(original_texts, list) or not all(isinstance(item, str) for item in original_texts):
+            return jsonify({'success': False, 'error': 'original_texts 必须是字符串数组'}), 400
+
+        if not provider_supports_capability(model_provider, TRANSLATION_CAPABILITY):
+            return jsonify({'success': False, 'error': f'不支持的服务商: {model_provider}'}), 400
+
+        manifest = get_provider_manifest(model_provider)
+        if not manifest.supports_json_response:
+            return jsonify({'success': False, 'error': f'当前服务商不支持自动术语提取: {model_provider}'}), 400
+
+        openai_options = _route_openai_options(
+            data,
+            defaults=create_openai_compatible_options(
+                force_json_output=False,
+                use_stream=False,
+                rpm_limit=0,
+                transport_retries=1,
+                business_retries=0,
+            ),
+        )
+
+        new_entries, candidate_count, duplicate_count = extract_glossary_entries_via_model(
+            texts=original_texts,
+            source_language=source_language,
+            target_language=target_language,
+            provider=model_provider,
+            api_key=api_key,
+            model_name=model_name,
+            custom_base_url=custom_base_url,
+            openai_options=openai_options,
+            existing_entries=existing_entries,
+        )
+        return jsonify({
+            'success': True,
+            'new_entries': new_entries,
+            'candidate_count': candidate_count,
+            'duplicate_count': duplicate_count,
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error("自动术语提取失败: %s", exc, exc_info=True)
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 
 

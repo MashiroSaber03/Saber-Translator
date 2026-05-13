@@ -15,6 +15,13 @@
         <input :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
         启用术语表
       </label>
+      <label class="checkbox-label">
+        <input :checked="draft.autoExtractEnabled" type="checkbox" @change="toggleAutoExtractEnabled" />
+        自动添加术语
+      </label>
+      <div class="constraint-description">
+        仅书架模式生效。开启后会在当前页正式翻译前，自动从 OCR 结果中提取专有名词和人名并写入本书术语表。
+      </div>
       <TranslationConstraintTable
         :model-value="draft.entries as unknown as Record<string, string>[]"
         :columns="columns"
@@ -53,6 +60,7 @@ const isOpen = ref(props.modelValue)
 const isSaving = computed(() => constraintStore.isSaving)
 const draft = ref({
   enabled: false,
+  autoExtractEnabled: false,
   entries: [] as GlossaryEntry[],
 })
 
@@ -101,6 +109,10 @@ function syncDraft(): void {
 
 function toggleEnabled(event: Event): void {
   draft.value.enabled = (event.target as HTMLInputElement).checked
+}
+
+function toggleAutoExtractEnabled(event: Event): void {
+  draft.value.autoExtractEnabled = (event.target as HTMLInputElement).checked
 }
 
 function updateEntries(entries: Record<string, string>[]): void {

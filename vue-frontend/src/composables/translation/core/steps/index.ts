@@ -5,6 +5,7 @@
 export * from './detection'
 export * from './ocr'
 export * from './color'
+export * from './autoGlossary'
 export * from './translate'
 export * from './aiTranslate'
 export * from './inpaint'
