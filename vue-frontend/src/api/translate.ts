@@ -70,8 +70,7 @@ export interface ReRenderParams {
 
 /**
  * 高质量翻译请求参数
- * 与原版 high_quality_translation.js 的 hqTranslateBatchApi 参数格式保持一致
- * 后端期望接收 messages 而不是 images
+ * 使用结构化 jsonData + imageBase64Array，由后端构建多模态消息
  */
 export interface HqTranslateParams {
   // 服务设置
@@ -82,9 +81,9 @@ export interface HqTranslateParams {
   translation_mode?: string
   translation_scope?: string
 
-  // 新方式：传数据，后端构建消息
-  jsonData?: any[]
-  imageBase64Array?: string[]
+  // 结构化输入：传数据，后端构建消息
+  jsonData: any[]
+  imageBase64Array: string[]
   target_language?: string
   prompt?: string
   systemPrompt?: string
@@ -92,18 +91,6 @@ export interface HqTranslateParams {
   enableDebugLogs?: boolean  // 是否启用调试日志
   glossary_settings?: GlossarySettings
   non_translate_settings?: NonTranslateSettings
-
-  // 旧方式：直接传消息（向后兼容）
-  messages?: Array<{
-    role: 'system' | 'user' | 'assistant'
-    content: string | Array<{
-      type: 'text' | 'image_url'
-      text?: string
-      image_url?: {
-        url: string
-      }
-    }>
-  }>
 
   // 高级选项
   openai_options?: {

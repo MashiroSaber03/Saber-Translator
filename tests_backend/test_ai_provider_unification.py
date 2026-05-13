@@ -979,7 +979,22 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "provider": "siliconflow",
                     "api_key": "test-key",
                     "model_name": "test-model",
-                    "messages": [{"role": "user", "content": "hello"}],
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": ["ZmFrZQ=="],
+                    "prompt": "请翻译",
+                    "systemPrompt": "你是翻译助手",
                     "openai_options": {
                         "request": {"force_json_output": True},
                         "execution": {
@@ -1009,7 +1024,22 @@ class RouteCompatibilityTests(unittest.TestCase):
                 json={
                     "provider": "ollama",
                     "model_name": "llama3.2-vision",
-                    "messages": [{"role": "user", "content": "hello"}],
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": ["ZmFrZQ=="],
+                    "prompt": "请翻译",
+                    "systemPrompt": "你是翻译助手",
                     "openai_options": {
                         "request": {"force_json_output": True},
                         "execution": {
@@ -1057,7 +1087,20 @@ class RouteCompatibilityTests(unittest.TestCase):
                 "provider": "openai",
                 "api_key": "test-key",
                 "model_name": "gpt-4.1",
-                "messages": [{"role": "user", "content": "hello"}],
+                "jsonData": [
+                    {
+                        "imageIndex": 0,
+                        "bubbles": [
+                            {
+                                "bubbleIndex": 0,
+                                "original": "hello",
+                                "translated": "",
+                                "textDirection": "vertical",
+                            }
+                        ],
+                    }
+                ],
+                "imageBase64Array": ["ZmFrZQ=="],
             },
         )
 
@@ -1076,7 +1119,20 @@ class RouteCompatibilityTests(unittest.TestCase):
                     "provider": "siliconflow",
                     "api_key": "test-key",
                     "model_name": "test-model",
-                    "messages": [{"role": "user", "content": "hello"}],
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": ["ZmFrZQ=="],
                     "force_json_output": False,
                     "use_stream": False,
                     "rpm_limit": 1,
@@ -1088,6 +1144,129 @@ class RouteCompatibilityTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("openai_options", payload["error"])
         complete_mock.assert_not_called()
+
+    def test_hq_translate_batch_rejects_legacy_messages_payload(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.routes._hq_chat_transport.complete",
+        ) as complete_mock:
+            response = self.client.post(
+                "/api/hq_translate_batch",
+                json={
+                    "provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("jsonData", payload["error"])
+        complete_mock.assert_not_called()
+
+    def test_hq_translate_batch_rejects_mismatched_structured_payload_lengths(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.routes._hq_chat_transport.complete",
+        ) as complete_mock:
+            response = self.client.post(
+                "/api/hq_translate_batch",
+                json={
+                    "provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": [],
+                    "openai_options": {
+                        "request": {"force_json_output": True},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIn("不能为空", payload["error"])
+        complete_mock.assert_not_called()
+
+    def test_parallel_translate_applies_glossary_to_textbox_prompt_requests(self) -> None:
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.translate_text_list",
+            side_effect=[
+                ["错误译文 <keep>"],
+                ["textbox 爱丽丝 <keep>"],
+            ],
+        ) as translate_mock:
+            response = self.client.post(
+                "/api/parallel/translate",
+                json={
+                    "original_texts": ["Alice <keep>"],
+                    "target_language": "zh",
+                    "source_language": "japanese",
+                    "model_provider": "siliconflow",
+                    "api_key": "test-key",
+                    "model_name": "test-model",
+                    "prompt_content": "主提示词",
+                    "textbox_prompt_content": "textbox 提示词",
+                    "use_textbox_prompt": True,
+                    "glossary_settings": {
+                        "enabled": True,
+                        "entries": [
+                            {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"}
+                        ],
+                    },
+                    "non_translate_settings": {
+                        "enabled": True,
+                        "entries": [
+                            {"pattern": "<keep>", "note": "占位符", "matchMode": "text"}
+                        ],
+                    },
+                    "openai_options": {
+                        "request": {"force_json_output": False},
+                        "execution": {
+                            "use_stream": False,
+                            "rpm_limit": 0,
+                            "transport_retries": 1,
+                            "business_retries": 0,
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(translate_mock.call_count, 2)
+        first_prompt = translate_mock.call_args_list[0].kwargs["prompt_content"]
+        second_prompt = translate_mock.call_args_list[1].kwargs["prompt_content"]
+        self.assertIn("###术语表", first_prompt)
+        self.assertIn("###术语表", second_prompt)
+        self.assertIn("###禁翻表", second_prompt)
+        self.assertEqual(payload["warnings"], [])
 
     def test_ocr_single_bubble_accepts_new_openai_options_payload(self) -> None:
         with mock.patch(

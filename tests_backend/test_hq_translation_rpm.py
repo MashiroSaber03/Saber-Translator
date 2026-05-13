@@ -99,6 +99,8 @@ class HqTranslationRpmTests(unittest.TestCase):
         plugins_stub = types.ModuleType("src.plugins.manager")
         plugins_stub.apply_before_step_hooks = lambda _step, payload, **_kwargs: payload
         plugins_stub.apply_after_step_hooks = lambda _step, result, **_kwargs: result
+        plugins_stub.apply_before_pipeline_hooks = lambda payload, **_kwargs: payload
+        plugins_stub.apply_after_pipeline_hooks = lambda result, **_kwargs: result
         sys.modules["src.plugins.manager"] = plugins_stub
 
         package_dir = os.path.join(PROJECT_ROOT, "src", "app", "api", "translation")
@@ -145,7 +147,22 @@ class HqTranslationRpmTests(unittest.TestCase):
                     "provider": "siliconflow",
                     "api_key": "test-key",
                     "model_name": "test-model",
-                    "messages": [{"role": "user", "content": "hello"}],
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": ["ZmFrZQ=="],
+                    "prompt": "请翻译",
+                    "systemPrompt": "你是翻译助手",
                     "openai_options": {
                         "request": {"force_json_output": True},
                         "execution": {
@@ -174,7 +191,22 @@ class HqTranslationRpmTests(unittest.TestCase):
                     "provider": "volcano",
                     "api_key": "test-key",
                     "model_name": "test-model",
-                    "messages": [{"role": "user", "content": "hello"}],
+                    "jsonData": [
+                        {
+                            "imageIndex": 0,
+                            "bubbles": [
+                                {
+                                    "bubbleIndex": 0,
+                                    "original": "hello",
+                                    "translated": "",
+                                    "textDirection": "vertical",
+                                }
+                            ],
+                        }
+                    ],
+                    "imageBase64Array": ["ZmFrZQ=="],
+                    "prompt": "请翻译",
+                    "systemPrompt": "你是翻译助手",
                     "low_reasoning": True,
                     "no_thinking_method": "volcano",
                     "openai_options": {

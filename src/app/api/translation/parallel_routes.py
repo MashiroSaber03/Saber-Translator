@@ -39,6 +39,7 @@ from src.core.translation_constraints import (
 )
 from src.shared import constants
 from src.shared.openai_options import (
+    clone_openai_compatible_options,
     create_openai_compatible_options,
     merge_openai_compatible_options,
     validate_openai_options_payload,
@@ -542,6 +543,8 @@ def parallel_translate():
                 original_texts,
                 non_translate_settings,
             )
+            textbox_openai_options = clone_openai_compatible_options(openai_options)
+            textbox_openai_options.request.force_json_output = False
             textbox_texts = translate_text_list(
                 protected_textbox_originals,
                 target_language=target_language,
@@ -550,16 +553,24 @@ def parallel_translate():
                 model_name=model_name,
                 prompt_content=append_prompt_sections(
                     textbox_prompt_content,
+                    glossary_prompt,
                     non_translate_prompt,
                     build_non_translate_guard_prompt(protected_textbox_mappings, target_language=target_language),
                 ),
                 custom_base_url=custom_base_url,
-                openai_options=openai_options,
+                openai_options=textbox_openai_options,
             )
             textbox_texts = restore_texts_with_non_translate(textbox_texts, protected_textbox_mappings)
 
         warnings = []
-        for index, (source_text, translated_text) in enumerate(zip(original_texts, translated_texts)):
+        if use_textbox_prompt and len(textbox_texts) == len(original_texts):
+            effective_texts = [
+                textbox_text if textbox_text else translated_texts[index]
+                for index, textbox_text in enumerate(textbox_texts)
+            ]
+        else:
+            effective_texts = translated_texts
+        for index, (source_text, translated_text) in enumerate(zip(original_texts, effective_texts)):
             warnings.extend(
                 collect_glossary_warnings(
                     glossary_settings,

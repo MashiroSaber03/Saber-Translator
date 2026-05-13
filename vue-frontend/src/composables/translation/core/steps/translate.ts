@@ -27,6 +27,34 @@ export interface TranslateOutput {
     warnings: TranslationWarning[]
 }
 
+function mapWarnings(
+    warnings: TranslationWarning[] | undefined,
+    input: { imageIndex: number; bubbleIndex: number },
+): TranslationWarning[] {
+    return (warnings || []).map(warning => ({
+        imageIndex: warning.imageIndex ?? input.imageIndex,
+        bubbleIndex: warning.bubbleIndex ?? input.bubbleIndex,
+        source: warning.source,
+        expectedTarget: warning.expectedTarget,
+        actualTranslation: warning.actualTranslation,
+    }))
+}
+
+function resolveEffectiveTranslationWarnings(params: {
+    primaryResponseWarnings: TranslationWarning[] | undefined
+    textboxResponseWarnings: TranslationWarning[] | undefined
+    useTextboxPrompt: boolean
+    textboxText: string
+}): TranslationWarning[] {
+    if (!params.useTextboxPrompt) {
+        return params.primaryResponseWarnings || []
+    }
+    if (params.textboxText) {
+        return params.textboxResponseWarnings || []
+    }
+    return params.primaryResponseWarnings || []
+}
+
 export async function executeTranslate(input: TranslateInput): Promise<TranslateOutput> {
     const { originalTexts, translationMode: pluginMode = 'standard', settingsSnapshot } = input
 
@@ -87,13 +115,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
                 if (response.success && response.data) {
                     translatedTexts.push(response.data.translated_text || '')
-                    warnings.push(...(response.data.warnings || []).map(warning => ({
-                        imageIndex: warning.imageIndex ?? input.imageIndex,
-                        bubbleIndex: warning.bubbleIndex ?? i,
-                        source: warning.source,
-                        expectedTarget: warning.expectedTarget,
-                        actualTranslation: warning.actualTranslation,
-                    })))
                 } else {
                     console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
                     translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
@@ -111,9 +132,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                         custom_base_url: settings.translation.customBaseUrl,
                         target_language: settings.targetLanguage,
                         prompt_content: settings.textboxPrompt,
-                        ...(constraintPayload.non_translate_settings ? {
-                            non_translate_settings: constraintPayload.non_translate_settings,
-                        } : {}),
+                        ...constraintPayload,
                         openai_options: serializeOpenAICompatibleOptionsForApi({
                             ...settings.translation.openaiOptions,
                             request: {
@@ -124,10 +143,34 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     })
 
                     if (textboxResponse.success && textboxResponse.data) {
-                        textboxTexts.push(textboxResponse.data.translated_text || '')
+                        const textboxText = textboxResponse.data.translated_text || ''
+                        textboxTexts.push(textboxText)
+                        warnings.push(...mapWarnings(resolveEffectiveTranslationWarnings({
+                            primaryResponseWarnings: response.data?.warnings,
+                            textboxResponseWarnings: textboxResponse.data.warnings,
+                            useTextboxPrompt: settings.useTextboxPrompt,
+                            textboxText,
+                        }), {
+                            imageIndex: input.imageIndex,
+                            bubbleIndex: i,
+                        }))
                     } else {
                         textboxTexts.push('')
+                        warnings.push(...mapWarnings(resolveEffectiveTranslationWarnings({
+                            primaryResponseWarnings: response.data?.warnings,
+                            textboxResponseWarnings: undefined,
+                            useTextboxPrompt: settings.useTextboxPrompt,
+                            textboxText: '',
+                        }), {
+                            imageIndex: input.imageIndex,
+                            bubbleIndex: i,
+                        }))
                     }
+                } else if (response.success && response.data) {
+                    warnings.push(...mapWarnings(response.data.warnings, {
+                        imageIndex: input.imageIndex,
+                        bubbleIndex: i,
+                    }))
                 }
 
             } catch (error) {

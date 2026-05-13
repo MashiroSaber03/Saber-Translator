@@ -1206,9 +1206,6 @@ def hq_translate_batch():
     该接口作为后端代理，将请求转发到各 AI 服务商，避免前端直接调用时的 CORS 问题
     支持流式调用以避免长时间请求超时
     """
-    import json as json_module
-    import time  # 用于重试等待
-    
     try:
         data = request.get_json() or {}
         initial_mode = 'proofread' if data.get('isProofreading', False) else 'hq'
@@ -1226,9 +1223,7 @@ def hq_translate_batch():
         model_name = _request_value(data, 'model_name', 'model', 'modelName') or ''
         custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl') or ''
         
-        # 支持两种调用方式
-        messages = data.get('messages')  # 旧方式：直接传消息
-        json_data = data.get('jsonData')  # 新方式：传数据，后端构建消息
+        json_data = data.get('jsonData')  # 结构化输入：传数据，后端构建消息
         image_base64_array = data.get('imageBase64Array')
         target_language = _request_value(data, 'target_language', 'targetLanguage', default='zh')
         user_prompt = data.get('prompt', '')
@@ -1296,68 +1291,57 @@ def hq_translate_batch():
         if manifest.requires_model and not model_name:
             return jsonify({'error': f'缺少必要参数: {manifest.display_name} 需要模型名称'}), 400
 
-        # 检测使用哪种调用方式
-        if json_data is not None and image_base64_array is not None:
-            # 新方式：后端构建消息
-            if enable_debug_logs:
-                logger.info("[新接口] 检测到 jsonData + imageBase64Array，由后端构建消息")
-            original_json_data = copy.deepcopy(json_data)
-            glossary_source_texts = []
-            non_translate_source_texts = []
-            for image_idx, image_item in enumerate(original_json_data):
-                if not isinstance(image_item, dict):
-                    continue
-                actual_image_index = int(image_item.get('imageIndex', image_idx))
-                bubbles = image_item.get('bubbles', [])
-                if not isinstance(bubbles, list):
-                    continue
-                for bubble_idx, bubble in enumerate(bubbles):
-                    if not isinstance(bubble, dict):
-                        continue
-                    actual_bubble_index = int(bubble.get('bubbleIndex', bubble_idx))
-                    original_text = str(bubble.get('original', '') or '')
-                    translated_text = str(bubble.get('translated', '') or '')
-                    bubble_source_texts[(actual_image_index, actual_bubble_index)] = original_text
-                    if original_text:
-                        glossary_source_texts.append(original_text)
-                        non_translate_source_texts.append(original_text)
-                    if translated_text:
-                        non_translate_source_texts.append(translated_text)
+        if json_data is None or image_base64_array is None:
+            return jsonify({'error': '缺少必要参数: 需要 jsonData 和 imageBase64Array'}), 400
+        if not isinstance(json_data, list) or not isinstance(image_base64_array, list):
+            return jsonify({'error': 'jsonData 和 imageBase64Array 必须都是数组'}), 400
+        if len(json_data) == 0 or len(image_base64_array) == 0:
+            return jsonify({'error': 'jsonData 和 imageBase64Array 不能为空'}), 400
+        if len(json_data) != len(image_base64_array):
+            return jsonify({'error': 'jsonData 和 imageBase64Array 长度必须一致'}), 400
 
-            json_data, bubble_restore_mappings = protect_hq_json_data(
-                json_data,
-                non_translate_settings,
-                fields=('original', 'translated'),
-            )
-            user_prompt = append_prompt_sections(
-                user_prompt,
-                build_glossary_prompt(glossary_settings, glossary_source_texts, target_language=target_language),
-                build_non_translate_prompt(non_translate_settings, non_translate_source_texts, target_language=target_language),
-                build_non_translate_guard_prompt(bubble_restore_mappings.values(), target_language=target_language),
-            )
-            messages = _build_hq_translate_messages(
-                json_data, 
-                image_base64_array, 
-                user_prompt, 
-                system_prompt
-            )
-        elif messages:
-            # 旧方式：直接使用传入的消息
-            if enable_debug_logs:
-                logger.info("[旧接口] 使用前端传入的 messages")
-            constraint_prompt = append_prompt_sections(
-                '',
-                build_glossary_prompt(glossary_settings, [], target_language=target_language),
-                build_non_translate_prompt(non_translate_settings, [], target_language=target_language),
-            )
-            if constraint_prompt:
-                if messages and isinstance(messages[0], dict) and messages[0].get('role') == 'system' and isinstance(messages[0].get('content'), str):
-                    messages = copy.deepcopy(messages)
-                    messages[0]['content'] = append_prompt_sections(messages[0].get('content'), constraint_prompt)
-                else:
-                    messages = [{'role': 'system', 'content': constraint_prompt}, *messages]
-        else:
-            return jsonify({'error': '缺少必要参数: 需要 messages 或 (jsonData + imageBase64Array)'}), 400
+        if enable_debug_logs:
+            logger.info("[结构化接口] 检测到 jsonData + imageBase64Array，由后端构建消息")
+        original_json_data = copy.deepcopy(json_data)
+        glossary_source_texts = []
+        non_translate_source_texts = []
+        for image_idx, image_item in enumerate(original_json_data):
+            if not isinstance(image_item, dict):
+                continue
+            actual_image_index = int(image_item.get('imageIndex', image_idx))
+            bubbles = image_item.get('bubbles', [])
+            if not isinstance(bubbles, list):
+                continue
+            for bubble_idx, bubble in enumerate(bubbles):
+                if not isinstance(bubble, dict):
+                    continue
+                actual_bubble_index = int(bubble.get('bubbleIndex', bubble_idx))
+                original_text = str(bubble.get('original', '') or '')
+                translated_text = str(bubble.get('translated', '') or '')
+                bubble_source_texts[(actual_image_index, actual_bubble_index)] = original_text
+                if original_text:
+                    glossary_source_texts.append(original_text)
+                    non_translate_source_texts.append(original_text)
+                if translated_text:
+                    non_translate_source_texts.append(translated_text)
+
+        json_data, bubble_restore_mappings = protect_hq_json_data(
+            json_data,
+            non_translate_settings,
+            fields=('original', 'translated'),
+        )
+        user_prompt = append_prompt_sections(
+            user_prompt,
+            build_glossary_prompt(glossary_settings, glossary_source_texts, target_language=target_language),
+            build_non_translate_prompt(non_translate_settings, non_translate_source_texts, target_language=target_language),
+            build_non_translate_guard_prompt(bubble_restore_mappings.values(), target_language=target_language),
+        )
+        messages = _build_hq_translate_messages(
+            json_data,
+            image_base64_array,
+            user_prompt,
+            system_prompt
+        )
         
         try:
             base_url = resolve_provider_base_url(provider, custom_base_url)
