@@ -57,16 +57,58 @@
 
         <div class="story-context">
           <div class="context-block">
-            <label>上一页剧情</label>
-            <p>{{ page.continuity_text || '（无）' }}</p>
+            <div class="context-header">
+              <label>上一页剧情</label>
+              <button
+                v-if="shouldShowStoryToggle(page.page_number, 'continuity')"
+                class="context-toggle"
+                @click="toggleStorySection(page.page_number, 'continuity')"
+              >
+                {{ isStorySectionExpanded(page.page_number, 'continuity') ? '收起' : '展开' }}
+              </button>
+            </div>
+            <p
+              class="context-text"
+              :class="getStoryTextClass(page.page_number, 'continuity', 3)"
+            >
+              {{ page.continuity_text || '（无）' }}
+            </p>
           </div>
           <div class="context-block">
-            <label>本页剧情</label>
-            <p>{{ page.story_text || '（无）' }}</p>
+            <div class="context-header">
+              <label>本页剧情</label>
+              <button
+                v-if="shouldShowStoryToggle(page.page_number, 'story')"
+                class="context-toggle"
+                @click="toggleStorySection(page.page_number, 'story')"
+              >
+                {{ isStorySectionExpanded(page.page_number, 'story') ? '收起' : '展开' }}
+              </button>
+            </div>
+            <p
+              class="context-text"
+              :class="getStoryTextClass(page.page_number, 'story', 3)"
+            >
+              {{ page.story_text || '（无）' }}
+            </p>
           </div>
           <div class="context-block">
-            <label>关键对白</label>
-            <p>{{ page.dialogue_text || '（无）' }}</p>
+            <div class="context-header">
+              <label>关键对白</label>
+              <button
+                v-if="shouldShowStoryToggle(page.page_number, 'dialogue')"
+                class="context-toggle"
+                @click="toggleStorySection(page.page_number, 'dialogue')"
+              >
+                {{ isStorySectionExpanded(page.page_number, 'dialogue') ? '收起' : '展开' }}
+              </button>
+            </div>
+            <p
+              class="context-text"
+              :class="getStoryTextClass(page.page_number, 'dialogue', 2)"
+            >
+              {{ page.dialogue_text || '（无）' }}
+            </p>
           </div>
         </div>
 
@@ -89,8 +131,8 @@
               @input="$emit('prompt-change', page.page_number)"
             ></textarea>
           </div>
-          <div v-else class="prompt-preview">
-            <p v-if="page.final_prompt" class="prompt-text">{{ page.final_prompt }}</p>
+          <div v-else class="prompt-collapsed">
+            <p v-if="page.final_prompt" class="prompt-collapsed-hint">默认已折叠，点击“编辑”查看或修改</p>
             <p v-else class="prompt-empty">暂无最终提示词</p>
           </div>
         </div>
@@ -136,6 +178,8 @@ import { getAvailableImages } from '@/api/continuation'
 import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
+type StorySectionKey = 'continuity' | 'story' | 'dialogue'
+
 const props = defineProps<{
   pages: PageContent[]
   isGenerating: boolean
@@ -152,6 +196,7 @@ const emit = defineEmits<{
 
 const state = useContinuationStateInject()
 const editingPromptPage = ref<number | null>(null)
+const expandedStorySections = ref<Record<string, boolean>>({})
 const refCount = ref(state.styleRefPages?.value || 3)
 const batchInitialReferenceTokens = ref<string[]>([])
 const selectorVisible = ref(false)
@@ -179,6 +224,50 @@ function getStatusText(status: string): string {
     'failed': '失败'
   }
   return map[status] || status
+}
+
+function getStorySectionStateKey(pageNumber: number, section: StorySectionKey): string {
+  return `${pageNumber}:${section}`
+}
+
+function isStorySectionExpanded(pageNumber: number, section: StorySectionKey): boolean {
+  return Boolean(expandedStorySections.value[getStorySectionStateKey(pageNumber, section)])
+}
+
+function toggleStorySection(pageNumber: number, section: StorySectionKey): void {
+  const key = getStorySectionStateKey(pageNumber, section)
+  expandedStorySections.value = {
+    ...expandedStorySections.value,
+    [key]: !expandedStorySections.value[key],
+  }
+}
+
+function shouldShowStoryToggle(pageNumber: number, section: StorySectionKey): boolean {
+  const page = props.pages.find(item => item.page_number === pageNumber)
+  if (!page) return false
+
+  const contentMap: Record<StorySectionKey, string> = {
+    continuity: page.continuity_text || '',
+    story: page.story_text || '',
+    dialogue: page.dialogue_text || '',
+  }
+
+  const text = contentMap[section].trim()
+  const thresholdMap: Record<StorySectionKey, number> = {
+    continuity: 24,
+    story: 24,
+    dialogue: 18,
+  }
+
+  return text.length > thresholdMap[section]
+}
+
+function getStoryTextClass(pageNumber: number, section: StorySectionKey, maxLines: number): string[] {
+  if (isStorySectionExpanded(pageNumber, section)) {
+    return ['is-expanded']
+  }
+
+  return ['is-clamped', `lines-${maxLines}`]
 }
 
 function getInitialRefCount(): number {
@@ -247,6 +336,7 @@ watch(() => props.bookId, () => {
 watch(() => props.pages.length, (pageCount) => {
   if (pageCount === 0) {
     batchInitialReferenceTokens.value = []
+    expandedStorySections.value = {}
   }
 })
 </script>
@@ -375,20 +465,58 @@ watch(() => props.pages.length, (pageCount) => {
   background: var(--bg-primary, #fff);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
+}
+
+.context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .context-block label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
-.context-block p {
+.context-text {
   margin: 0;
   white-space: pre-wrap;
-  line-height: 1.6;
+  line-height: 1.55;
+  color: var(--text-primary, #333);
+  font-size: 13px;
+}
+
+.context-text.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.context-text.lines-2 {
+  -webkit-line-clamp: 2;
+}
+
+.context-text.lines-3 {
+  -webkit-line-clamp: 3;
+}
+
+.context-text.is-expanded {
+  display: block;
+}
+
+.context-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--primary, #6366f1);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .prompt-section {
@@ -409,16 +537,22 @@ watch(() => props.pages.length, (pageCount) => {
   font-family: inherit;
 }
 
-.prompt-preview {
+.prompt-collapsed {
   background: var(--bg-primary, #fff);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
 }
 
 .prompt-empty {
   margin: 0;
   color: var(--text-secondary, #666);
+}
+
+.prompt-collapsed-hint {
+  margin: 0;
+  color: var(--text-secondary, #666);
+  font-size: 12px;
 }
 
 .image-actions {
