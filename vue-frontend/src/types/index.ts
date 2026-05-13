@@ -30,5 +30,8 @@ export * from './workflow'
 // 角色卡工坊类型
 export * from './characterCard'
 
+// 书籍级翻译约束
+export * from './bookTranslationConstraints'
+
 // 术语表 / 禁翻表类型
 export * from './translationConstraints'

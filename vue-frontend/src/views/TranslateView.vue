@@ -30,6 +30,8 @@ import TranslationProgress from '@/components/translate/TranslationProgress.vue'
 import SponsorModal from '@/components/bookshelf/SponsorModal.vue'
 import ThumbnailSidebar from '@/components/translate/ThumbnailSidebar.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
+import BookGlossaryModal from '@/components/translate/BookGlossaryModal.vue'
+import BookNonTranslateModal from '@/components/translate/BookNonTranslateModal.vue'
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
@@ -76,6 +78,8 @@ const translateInit = useTranslateInit()
 
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
+const showBookGlossaryModal = ref(false)
+const showBookNonTranslateModal = ref(false)
 
 /** 是否显示赞助模态框 */
 const showSponsorModal = ref(false)
@@ -666,6 +670,8 @@ function selectImage(index: number) {
         @text-style-changed="handleTextStyleChanged"
         @auto-font-size-changed="handleAutoFontSizeChanged"
         @auto-text-color-changed="handleAutoTextColorChanged"
+        @open-glossary="showBookGlossaryModal = true"
+        @open-non-translate="showBookNonTranslateModal = true"
       />
 
       <!-- 主内容区 -->
@@ -737,6 +743,9 @@ function selectImage(index: number) {
       v-model="showSettingsModal"
       @save="handleSettingsSave"
     />
+
+    <BookGlossaryModal v-model="showBookGlossaryModal" />
+    <BookNonTranslateModal v-model="showBookNonTranslateModal" />
     
     <!-- 赞助模态框 -->
     <SponsorModal 

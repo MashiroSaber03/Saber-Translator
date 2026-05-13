@@ -9,10 +9,44 @@ import base64
 import re
 
 from src.core import bookshelf_manager
+from src.core.translation_constraints import validate_constraint_entries
 
 logger = logging.getLogger("BookshelfAPI")
 
 bookshelf_bp = Blueprint('bookshelf', __name__, url_prefix='/api/bookshelf')
+
+
+def _validate_translation_constraints_payload(payload):
+    if payload is None:
+        return []
+    if not isinstance(payload, dict):
+        return ["translation_constraints 必须是对象"]
+
+    errors = []
+    glossary = payload.get("glossary")
+    non_translate = payload.get("non_translate")
+
+    if glossary is not None:
+        if not isinstance(glossary, dict):
+            errors.append("glossary 必须是对象")
+        else:
+            entries = glossary.get("entries")
+            if entries is not None and not isinstance(entries, list):
+                errors.append("glossary.entries 必须是数组")
+            elif isinstance(entries, list):
+                errors.extend(validate_constraint_entries(entries, pattern_field="source"))
+
+    if non_translate is not None:
+        if not isinstance(non_translate, dict):
+            errors.append("non_translate 必须是对象")
+        else:
+            entries = non_translate.get("entries")
+            if entries is not None and not isinstance(entries, list):
+                errors.append("non_translate.entries 必须是数组")
+            elif isinstance(entries, list):
+                errors.extend(validate_constraint_entries(entries, pattern_field="pattern"))
+
+    return errors
 
 
 # ==================== 书籍 API ====================
@@ -50,8 +84,13 @@ def create_book():
         
         cover_data = data.get('cover')  # Base64封面数据（可选）
         tags = data.get('tags', [])  # 标签列表（可选）
+        translation_constraints = data.get('translation_constraints')
+
+        constraint_errors = _validate_translation_constraints_payload(translation_constraints)
+        if constraint_errors:
+            return jsonify({"success": False, "error": "；".join(constraint_errors)}), 400
         
-        book = bookshelf_manager.create_book(title, cover_data, tags)
+        book = bookshelf_manager.create_book(title, cover_data, tags, translation_constraints)
         if book:
             return jsonify({
                 "success": True,
@@ -92,8 +131,13 @@ def update_book(book_id):
         title = data.get('title')
         cover_data = data.get('cover')
         tags = data.get('tags')  # 可能是列表或None
+        translation_constraints = data.get('translation_constraints')
+
+        constraint_errors = _validate_translation_constraints_payload(translation_constraints)
+        if constraint_errors:
+            return jsonify({"success": False, "error": "；".join(constraint_errors)}), 400
         
-        book = bookshelf_manager.update_book(book_id, title, cover_data, tags)
+        book = bookshelf_manager.update_book(book_id, title, cover_data, tags, translation_constraints)
         if book:
             return jsonify({
                 "success": True,

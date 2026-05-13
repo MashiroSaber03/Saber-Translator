@@ -26,6 +26,69 @@ SESSIONS_DIR_NAME = "sessions"  # 会话数据目录
 TAGS_METADATA_FILE = "tags.json"  # 标签元数据文件
 
 
+def _default_translation_constraints() -> Dict[str, Any]:
+    return {
+        "glossary": {
+            "enabled": False,
+            "entries": [],
+        },
+        "non_translate": {
+            "enabled": False,
+            "entries": [],
+        },
+    }
+
+
+def _normalize_translation_constraints(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    source = payload if isinstance(payload, dict) else {}
+    glossary = source.get("glossary")
+    non_translate = source.get("non_translate")
+
+    def _normalize_entries(
+        value: Any,
+        *,
+        kind: str,
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        normalized: List[Dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            if kind == "glossary":
+                source_text = str(item.get("source", "") or "").strip()
+                target_text = str(item.get("target", "") or "").strip()
+                if not source_text or not target_text:
+                    continue
+                normalized.append({
+                    "source": source_text,
+                    "target": target_text,
+                    "note": str(item.get("note", "") or "").strip(),
+                    "matchMode": "regex" if str(item.get("matchMode", "text")).lower() == "regex" else "text",
+                })
+            else:
+                pattern_text = str(item.get("pattern", "") or "").strip()
+                if not pattern_text:
+                    continue
+                normalized.append({
+                    "pattern": pattern_text,
+                    "note": str(item.get("note", "") or "").strip(),
+                    "matchMode": "regex" if str(item.get("matchMode", "text")).lower() == "regex" else "text",
+                })
+        return normalized
+
+    return {
+        "glossary": {
+            "enabled": bool(glossary.get("enabled")) if isinstance(glossary, dict) else False,
+            "entries": _normalize_entries(glossary.get("entries") if isinstance(glossary, dict) else [], kind="glossary"),
+        },
+        "non_translate": {
+            "enabled": bool(non_translate.get("enabled")) if isinstance(non_translate, dict) else False,
+            "entries": _normalize_entries(non_translate.get("entries") if isinstance(non_translate, dict) else [], kind="non_translate"),
+        },
+    }
+
+
 def _get_bookshelf_dir() -> str:
     """获取书架数据目录的绝对路径"""
     base_path = resource_path(os.path.join("data", BOOKSHELF_DIR_NAME))
@@ -136,6 +199,12 @@ def _save_book_metadata(book_id: str, metadata: Dict[str, Any]) -> bool:
         book_dir = _get_book_dir(book_id)
         os.makedirs(book_dir, exist_ok=True)
         book_meta_path = os.path.join(book_dir, BOOK_METADATA_FILE)
+        metadata = {
+            **metadata,
+            "translation_constraints": _normalize_translation_constraints(
+                metadata.get("translation_constraints") if isinstance(metadata, dict) else None
+            ),
+        }
         with open(book_meta_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
         return True
@@ -239,7 +308,12 @@ def get_all_books(search: Optional[str] = None, tags: Optional[List[str]] = None
     return books
 
 
-def create_book(title: str, cover_data: Optional[str] = None, tags: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+def create_book(
+    title: str,
+    cover_data: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    translation_constraints: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """
     创建新书籍
     
@@ -260,6 +334,7 @@ def create_book(title: str, cover_data: Optional[str] = None, tags: Optional[Lis
         "cover": None,
         "tags": tags or [],
         "chapters": [],
+        "translation_constraints": _normalize_translation_constraints(translation_constraints) if translation_constraints is not None else _default_translation_constraints(),
         "created_at": current_time,
         "updated_at": current_time
     }
@@ -311,6 +386,11 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
         # 确保有tags字段（旧版数据兼容）
         if "tags" not in book_meta:
             book_meta["tags"] = []
+            meta_needs_save = True
+
+        normalized_constraints = _normalize_translation_constraints(book_meta.get("translation_constraints"))
+        if book_meta.get("translation_constraints") != normalized_constraints:
+            book_meta["translation_constraints"] = normalized_constraints
             meta_needs_save = True
         
         # 确保每个章节都有 session_path 和 page_count
@@ -380,7 +460,8 @@ def get_book(book_id: str) -> Optional[Dict[str, Any]]:
 
 def update_book(book_id: str, title: Optional[str] = None, 
                 cover_data: Optional[str] = None,
-                tags: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+                tags: Optional[List[str]] = None,
+                translation_constraints: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
     更新书籍信息
     
@@ -407,6 +488,9 @@ def update_book(book_id: str, title: Optional[str] = None,
     
     if tags is not None:
         book_meta["tags"] = tags
+
+    if translation_constraints is not None:
+        book_meta["translation_constraints"] = _normalize_translation_constraints(translation_constraints)
     
     book_meta["updated_at"] = int(time.time() * 1000)
     

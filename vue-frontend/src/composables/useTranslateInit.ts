@@ -15,6 +15,7 @@
 
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -68,6 +69,7 @@ export interface InitState {
 export function useTranslateInit() {
   const route = useRoute()
   const settingsStore = useSettingsStore()
+  const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
   const imageStore = useImageStore()
   const sessionStore = useSessionStore()
   const bubbleStore = useBubbleStore()
@@ -312,6 +314,7 @@ export function useTranslateInit() {
       currentBookTitle.value = null
       currentChapterTitle.value = null
       sessionStore.clearContext()
+      bookTranslationConstraintsStore.resetBookConstraints()
       return
     }
 
@@ -326,6 +329,7 @@ export function useTranslateInit() {
 
       if (!bookResponse.success || !bookResponse.book) {
         console.warn('[TranslateInit] 书籍不存在:', bookId)
+        bookTranslationConstraintsStore.resetBookConstraints()
         showToast('书籍不存在', 'warning')
         return
       }
@@ -335,6 +339,7 @@ export function useTranslateInit() {
 
       if (!chapter) {
         console.warn('[TranslateInit] 章节不存在:', chapterId)
+        bookTranslationConstraintsStore.resetBookConstraints()
         showToast('章节不存在', 'warning')
         return
       }
@@ -342,6 +347,7 @@ export function useTranslateInit() {
       // 设置书籍/章节上下文
       currentBookTitle.value = book.title
       currentChapterTitle.value = chapter.title
+      bookTranslationConstraintsStore.loadBookConstraints(bookId, book.translation_constraints)
 
       // 更新 sessionStore 的上下文
       sessionStore.setBookChapterContext(bookId, chapterId, book.title, chapter.title)
@@ -367,6 +373,7 @@ export function useTranslateInit() {
 
     } catch (error) {
       console.error('[TranslateInit] 加载书籍/章节信息失败:', error)
+      bookTranslationConstraintsStore.resetBookConstraints()
       showToast('加载书籍信息失败', 'error')
     }
   }

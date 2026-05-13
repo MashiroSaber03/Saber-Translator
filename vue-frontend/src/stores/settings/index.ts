@@ -46,7 +46,6 @@ import { createDefaultSettings } from './defaults'
 import {
   useOcrSettings,
   useTranslationSettings,
-  useTranslationConstraintsSettings,
   useDetectionSettings,
   useHqTranslationSettings,
   usePluginAgentSettings,
@@ -732,11 +731,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
-  const translationConstraintsModule = useTranslationConstraintsSettings(
-    settings,
-    saveToStorage
-  )
-
   // 检测设置模块
   const detectionModule = useDetectionSettings(settings, saveToStorage)
 
@@ -1403,16 +1397,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setTranslatePromptMode: translationModule.setTranslatePromptMode,
     saveTranslationProviderConfig: translationModule.saveTranslationProviderConfig,
     restoreTranslationProviderConfig: translationModule.restoreTranslationProviderConfig,
-
-    // 术语表 / 禁翻表模块
-    glossary: translationConstraintsModule.glossary,
-    nonTranslate: translationConstraintsModule.nonTranslate,
-    setGlossaryEnabled: translationConstraintsModule.setGlossaryEnabled,
-    setGlossaryEntries: translationConstraintsModule.setGlossaryEntries,
-    updateGlossary: translationConstraintsModule.updateGlossary,
-    setNonTranslateEnabled: translationConstraintsModule.setNonTranslateEnabled,
-    setNonTranslateEntries: translationConstraintsModule.setNonTranslateEntries,
-    updateNonTranslate: translationConstraintsModule.updateNonTranslate,
 
     // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,

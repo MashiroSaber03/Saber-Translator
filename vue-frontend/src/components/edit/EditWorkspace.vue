@@ -339,7 +339,9 @@ import {
   isBookshelfSessionInitialized,
   saveBookshelfPageProgress
 } from '@/composables/translation/core/saveStep'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { showToast } from '@/utils/toast'
 import BubbleOverlay from './BubbleOverlay.vue'
@@ -370,6 +372,7 @@ const emit = defineEmits<{
 const imageStore = useImageStore()
 const bubbleStore = useBubbleStore()
 const sessionStore = useSessionStore()
+const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
 const settingsStore = useSettingsStore()
 
 // 使用翻译 composable（用于"使用当前气泡翻译"功能）
@@ -1171,8 +1174,10 @@ async function handleReTranslateBubble(index: number): Promise<void> {
       target_language: settings.targetLanguage,
       // 使用逐气泡翻译的提示词（无论全局翻译模式设置为什么）
       prompt_content: promptContent,
-      glossary_settings: settings.glossary,
-      non_translate_settings: settings.nonTranslate,
+      ...resolveConstraintPayloadForTranslation({
+        isBookshelfMode: Boolean(sessionStore.currentBookId && sessionStore.currentChapterId),
+        constraints: bookTranslationConstraintsStore.constraints,
+      }),
       openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
     })
 

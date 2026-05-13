@@ -5,6 +5,7 @@
 
 import { apiClient } from './client'
 import type { ApiResponse, BookData, ChapterData, TagData } from '@/types'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 
 // ==================== 书籍 API ====================
 
@@ -76,13 +77,15 @@ export async function createBook(
   title: string,
   description?: string,
   cover?: string,
-  tags?: string[]
+  tags?: string[],
+  translation_constraints?: BookTranslationConstraints
 ): Promise<BookDetailResponse> {
   return apiClient.post<BookDetailResponse>('/api/bookshelf/books', {
     title,
     description,
     cover,
     tags,
+    translation_constraints,
   })
 }
 
@@ -99,6 +102,7 @@ export async function updateBook(
     description?: string
     cover?: string
     tags?: string[]  // 【复刻原版】支持更新 tags 数组
+    translation_constraints?: BookTranslationConstraints
   }
 ): Promise<BookDetailResponse> {
   return apiClient.put<BookDetailResponse>(`/api/bookshelf/books/${bookId}`, data)

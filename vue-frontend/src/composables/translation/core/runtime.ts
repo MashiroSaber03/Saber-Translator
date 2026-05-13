@@ -1,6 +1,8 @@
 import { useSessionStore } from '@/stores/sessionStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
 import type { TranslationSettings } from '@/types/settings'
@@ -12,6 +14,7 @@ export type TaskExecutionStatus = 'pending' | 'processing' | 'completed' | 'fail
 export interface PipelineRuntime {
   mode: TranslationMode
   settingsSnapshot: TranslationSettings
+  bookTranslationConstraints: BookTranslationConstraints
   savedTextStyles: SavedTextStyles | null
   autoSaveEnabled: boolean
   isBookshelfMode: boolean
@@ -94,6 +97,7 @@ export function createPipelineRuntime(
   mode: TranslationMode,
   options?: {
     settingsSnapshot?: TranslationSettings
+    bookTranslationConstraints?: BookTranslationConstraints
     savedTextStyles?: SavedTextStyles | null
     autoSaveEnabled?: boolean
     sessionPath?: string | null
@@ -103,6 +107,7 @@ export function createPipelineRuntime(
 ): PipelineRuntime {
   let sessionStore: ReturnType<typeof useSessionStore> | null = null
   let settingsStore: ReturnType<typeof useSettingsStore> | null = null
+  let bookTranslationConstraintsStore: ReturnType<typeof useBookTranslationConstraintsStore> | null = null
 
   try {
     sessionStore = useSessionStore()
@@ -114,6 +119,12 @@ export function createPipelineRuntime(
     settingsStore = useSettingsStore()
   } catch {
     settingsStore = null
+  }
+
+  try {
+    bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
+  } catch {
+    bookTranslationConstraintsStore = null
   }
 
   const sourceSettings = options?.settingsSnapshot ?? settingsStore?.settings
@@ -129,10 +140,19 @@ export function createPipelineRuntime(
   const autoSaveEnabled = options?.autoSaveEnabled ?? (
     settingsSnapshot.autoSaveInBookshelfMode && isBookshelfMode
   )
+  const defaultConstraints: BookTranslationConstraints = {
+    glossary: { enabled: false, entries: [] },
+    non_translate: { enabled: false, entries: [] },
+  }
 
   return {
     mode,
     settingsSnapshot,
+    bookTranslationConstraints: cloneDeep(
+      options?.bookTranslationConstraints
+        ?? bookTranslationConstraintsStore?.constraints
+        ?? defaultConstraints,
+    ),
     savedTextStyles: options?.savedTextStyles ?? buildSavedTextStylesFromSettings(settingsSnapshot),
     autoSaveEnabled,
     isBookshelfMode,

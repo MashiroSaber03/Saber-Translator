@@ -86,6 +86,8 @@ export async function executeAtomicStep(
         translationMode: runtime.mode,
         originalTexts: context.originalTexts,
         settingsSnapshot: runtime.settingsSnapshot,
+        bookTranslationConstraints: runtime.bookTranslationConstraints,
+        isBookshelfMode: runtime.isBookshelfMode,
       })
       return {
         ...context,
@@ -178,6 +180,8 @@ export async function executeBatchAtomicStep(
           autoDirections: context.autoDirections,
         })),
         settingsSnapshot: runtime.settingsSnapshot,
+        bookTranslationConstraints: runtime.bookTranslationConstraints,
+        isBookshelfMode: runtime.isBookshelfMode,
       })
 
       return contexts.map((context) => {

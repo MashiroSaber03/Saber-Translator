@@ -4,6 +4,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { projectTaskContext } from '@/composables/translation/core/taskProjector'
 import type { PipelineRuntime, TaskContext } from '@/composables/translation/core/runtime'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 describe('taskProjector', () => {
   beforeEach(() => {
@@ -30,6 +31,7 @@ describe('taskProjector', () => {
           textAlign: 'start',
         },
       } as any,
+      bookTranslationConstraints: createEmptyBookTranslationConstraints(),
       savedTextStyles: null,
       autoSaveEnabled: true,
       isBookshelfMode: true,

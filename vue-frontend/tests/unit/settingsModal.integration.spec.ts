@@ -33,24 +33,6 @@ vi.mock('@/components/settings/HqTranslationSettings.vue', () => ({
 vi.mock('@/components/settings/ProofreadingSettings.vue', () => ({
   default: { name: 'ProofreadingSettings', template: '<div>ProofreadingSettings stub</div>' },
 }))
-vi.mock('@/components/settings/GlossarySettings.vue', () => ({
-  default: {
-    name: 'GlossarySettings',
-    template: '<div>GlossarySettings stub</div>',
-    methods: {
-      validateSettings: () => ({ success: true }),
-    },
-  },
-}))
-vi.mock('@/components/settings/NonTranslateSettings.vue', () => ({
-  default: {
-    name: 'NonTranslateSettings',
-    template: '<div>NonTranslateSettings stub</div>',
-    methods: {
-      validateSettings: () => ({ success: true }),
-    },
-  },
-}))
 vi.mock('@/components/settings/PromptLibrary.vue', () => ({
   default: { name: 'PromptLibrary', template: '<div>PromptLibrary stub</div>' },
 }))

@@ -16,6 +16,7 @@ vi.mock('@/api/translate', () => ({
 
 import { executeTranslate } from '@/composables/translation/core/steps/translate'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 describe('executeTranslate', () => {
   beforeEach(() => {
@@ -27,12 +28,13 @@ describe('executeTranslate', () => {
   it('forwards glossary and non-translate settings in batch mode and returns warnings', async () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings.translation.translationMode = 'batch'
-    settingsStore.settings.glossary.enabled = true
-    settingsStore.settings.glossary.entries = [
+    const constraints = createEmptyBookTranslationConstraints()
+    constraints.glossary.enabled = true
+    constraints.glossary.entries = [
       { source: 'Alice', target: '爱丽丝', note: '主角', matchMode: 'text' } as any,
     ]
-    settingsStore.settings.nonTranslate.enabled = true
-    settingsStore.settings.nonTranslate.entries = [
+    constraints.non_translate.enabled = true
+    constraints.non_translate.entries = [
       { pattern: '<keep>', note: '占位符', matchMode: 'text' } as any,
     ]
 
@@ -47,12 +49,14 @@ describe('executeTranslate', () => {
       imageIndex: 0,
       originalTexts: ['Alice <keep>'],
       settingsSnapshot: settingsStore.settings,
+      bookTranslationConstraints: constraints,
+      isBookshelfMode: true,
     })
 
     expect(parallelTranslateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        glossary_settings: settingsStore.settings.glossary,
-        non_translate_settings: settingsStore.settings.nonTranslate,
+        glossary_settings: constraints.glossary,
+        non_translate_settings: constraints.non_translate,
       }),
     )
     expect(result.warnings).toEqual([
@@ -63,12 +67,13 @@ describe('executeTranslate', () => {
   it('forwards glossary and non-translate settings in single mode', async () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings.translation.translationMode = 'single'
-    settingsStore.settings.glossary.enabled = true
-    settingsStore.settings.glossary.entries = [
+    const constraints = createEmptyBookTranslationConstraints()
+    constraints.glossary.enabled = true
+    constraints.glossary.entries = [
       { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
     ]
-    settingsStore.settings.nonTranslate.enabled = true
-    settingsStore.settings.nonTranslate.entries = [
+    constraints.non_translate.enabled = true
+    constraints.non_translate.entries = [
       { pattern: '<keep>', note: '', matchMode: 'text' } as any,
     ]
 
@@ -84,12 +89,14 @@ describe('executeTranslate', () => {
       imageIndex: 0,
       originalTexts: ['Alice <keep>'],
       settingsSnapshot: settingsStore.settings,
+      bookTranslationConstraints: constraints,
+      isBookshelfMode: true,
     })
 
     expect(translateSingleTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        glossary_settings: settingsStore.settings.glossary,
-        non_translate_settings: settingsStore.settings.nonTranslate,
+        glossary_settings: constraints.glossary,
+        non_translate_settings: constraints.non_translate,
       }),
     )
   })

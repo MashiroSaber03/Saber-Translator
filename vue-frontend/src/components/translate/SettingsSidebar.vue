@@ -10,6 +10,7 @@
  */
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getFontList, uploadFont } from '@/api/config'
@@ -53,6 +54,10 @@ const emit = defineEmits<{
   (e: 'autoFontSizeChanged', isAutoFontSize: boolean): void
   /** 自动文字颜色开关变更（已翻译图片需要显式重新应用自动颜色） */
   (e: 'autoTextColorChanged', isAutoTextColor: boolean): void
+  /** 打开术语表弹窗 */
+  (e: 'openGlossary'): void
+  /** 打开禁翻表弹窗 */
+  (e: 'openNonTranslate'): void
 }>()
 
 // ============================================================
@@ -79,6 +84,7 @@ interface ApplySettingsOptions {
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
+const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
 
 // ============================================================
 // 状态定义
@@ -137,6 +143,7 @@ const isPageRangeValid = computed(() => {
 
 /** 是否可以翻译 */
 const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
+const canUseBookConstraints = computed(() => bookTranslationConstraintsStore.isAvailable)
 
 /** 是否可以切换上一张 */
 const canGoPrevious = computed(() => imageStore.canGoPrevious)
@@ -615,6 +622,14 @@ function handleRunWorkflow() {
 
   emit('runWorkflow', payload)
 }
+
+function handleOpenGlossary(): void {
+  emit('openGlossary')
+}
+
+function handleOpenNonTranslate(): void {
+  emit('openNonTranslate')
+}
 </script>
 
 <template>
@@ -946,6 +961,34 @@ function handleRunWorkflow() {
           </div>
         </div>
       </CollapsiblePanel>
+
+      <div class="book-constraints-panel">
+        <div class="book-constraints-title">书籍约束</div>
+        <div class="book-constraints-hint">
+          术语表和禁翻表按单本漫画保存，不与其他书共享。
+        </div>
+        <div class="book-constraints-actions">
+          <button
+            type="button"
+            class="settings-button secondary-button"
+            :disabled="!canUseBookConstraints"
+            @click="handleOpenGlossary"
+          >
+            术语表
+          </button>
+          <button
+            type="button"
+            class="settings-button secondary-button"
+            :disabled="!canUseBookConstraints"
+            @click="handleOpenNonTranslate"
+          >
+            禁翻表
+          </button>
+        </div>
+        <div v-if="!canUseBookConstraints" class="book-constraints-disabled-note">
+          仅书架模式可用
+        </div>
+      </div>
 
       <!-- 工作流启动区 -->
       <div class="action-buttons workflow-controls">
@@ -1603,6 +1646,63 @@ function handleRunWorkflow() {
   color: #5c6f8f;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.book-constraints-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #d8e3f1;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.book-constraints-title {
+  color: #273959;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.book-constraints-hint {
+  margin-top: 6px;
+  color: #62748f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.book-constraints-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.book-constraints-actions .settings-button {
+  flex: 1;
+}
+
+.secondary-button {
+  min-height: 38px;
+  border: 1px solid #bfd0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f4b71;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #eef4fb;
+}
+
+.secondary-button:disabled {
+  background: #eef2f6;
+  color: #8b97a7;
+  cursor: not-allowed;
+}
+
+.book-constraints-disabled-note {
+  margin-top: 8px;
+  color: #8b97a7;
+  font-size: 12px;
 }
 
 /* 翻页按钮 */

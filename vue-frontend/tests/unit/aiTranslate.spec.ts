@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { executeAiTranslate } from '@/composables/translation/core/steps/aiTranslate'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 const { hqTranslateBatchMock } = vi.hoisted(() => ({
   hqTranslateBatchMock: vi.fn(),
@@ -50,12 +51,13 @@ describe('executeAiTranslate', () => {
     settingsStore.settings.hqTranslation.provider = '' as any
     settingsStore.settings.hqTranslation.apiKey = 'hq-key'
     settingsStore.settings.hqTranslation.modelName = 'hq-model'
-    settingsStore.settings.glossary.enabled = true
-    settingsStore.settings.glossary.entries = [
+    const constraints = createEmptyBookTranslationConstraints()
+    constraints.glossary.enabled = true
+    constraints.glossary.entries = [
       { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
     ]
-    settingsStore.settings.nonTranslate.enabled = true
-    settingsStore.settings.nonTranslate.entries = [
+    constraints.non_translate.enabled = true
+    constraints.non_translate.entries = [
       { pattern: '<keep>', note: '', matchMode: 'text' } as any,
     ]
     settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit = 13
@@ -74,14 +76,16 @@ describe('executeAiTranslate', () => {
         },
       ],
       settingsSnapshot: settingsStore.settings,
+      bookTranslationConstraints: constraints,
+      isBookshelfMode: true,
     })
 
     expect(hqTranslateBatchMock).toHaveBeenCalledTimes(1)
     expect(hqTranslateBatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: '',
-        glossary_settings: settingsStore.settings.glossary,
-        non_translate_settings: settingsStore.settings.nonTranslate,
+        glossary_settings: constraints.glossary,
+        non_translate_settings: constraints.non_translate,
         openai_options: expect.objectContaining({
           execution: expect.objectContaining({
             rpm_limit: 13,
@@ -161,6 +165,8 @@ describe('executeAiTranslate', () => {
         },
       ],
       settingsSnapshot: settingsStore.settings,
+      bookTranslationConstraints: createEmptyBookTranslationConstraints(),
+      isBookshelfMode: false,
     })
 
     expect(hqTranslateBatchMock).toHaveBeenCalledTimes(2)

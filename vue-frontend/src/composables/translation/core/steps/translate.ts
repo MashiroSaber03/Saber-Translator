@@ -6,8 +6,10 @@
  */
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { TranslationSettings } from '@/types/settings'
 import type { TranslationWarning } from '@/types/translationConstraints'
+import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface TranslateInput {
@@ -15,6 +17,8 @@ export interface TranslateInput {
     translationMode?: string
     originalTexts: string[]
     settingsSnapshot: TranslationSettings
+    bookTranslationConstraints: BookTranslationConstraints
+    isBookshelfMode: boolean
 }
 
 export interface TranslateOutput {
@@ -36,6 +40,10 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
     const settings = settingsSnapshot
     const requestMode = settings.translation.translationMode || 'batch'
+    const constraintPayload = resolveConstraintPayloadForTranslation({
+        isBookshelfMode: input.isBookshelfMode,
+        constraints: input.bookTranslationConstraints,
+    })
 
     if (requestMode === 'single') {
         // ==================== 逐气泡翻译模式 ====================
@@ -73,8 +81,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     custom_base_url: settings.translation.customBaseUrl,
                     target_language: settings.targetLanguage,
                     prompt_content: promptContent,
-                    glossary_settings: settings.glossary,
-                    non_translate_settings: settings.nonTranslate,
+                    ...constraintPayload,
                     openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
                 })
 
@@ -104,7 +111,9 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                         custom_base_url: settings.translation.customBaseUrl,
                         target_language: settings.targetLanguage,
                         prompt_content: settings.textboxPrompt,
-                        non_translate_settings: settings.nonTranslate,
+                        ...(constraintPayload.non_translate_settings ? {
+                            non_translate_settings: constraintPayload.non_translate_settings,
+                        } : {}),
                         openai_options: serializeOpenAICompatibleOptionsForApi({
                             ...settings.translation.openaiOptions,
                             request: {
@@ -150,8 +159,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             prompt_content: settings.translatePrompt,
             textbox_prompt_content: settings.textboxPrompt,
             use_textbox_prompt: settings.useTextboxPrompt,
-            glossary_settings: settings.glossary,
-            non_translate_settings: settings.nonTranslate,
+            ...constraintPayload,
             openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions)
         })
 

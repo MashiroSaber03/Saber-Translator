@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 import type { TranslationSettings } from '@/types/settings'
 import type { SavedTextStyles } from '@/composables/translation/core/types'
 import type { TaskContext, PipelineRuntime } from '@/composables/translation/core/runtime'
@@ -111,8 +112,6 @@ describe('persistenceService', () => {
         singleNormalPrompt: '',
         singleJsonPrompt: '',
       },
-      glossary: { enabled: false, entries: [] },
-      nonTranslate: { enabled: false, entries: [] },
       targetLanguage: 'zh-CN',
       translatePrompt: '',
       useTextboxPrompt: false,
@@ -177,6 +176,7 @@ describe('persistenceService', () => {
     return {
       mode: 'standard',
       settingsSnapshot: createSettings(),
+      bookTranslationConstraints: createEmptyBookTranslationConstraints(),
       savedTextStyles: createSavedTextStyles(),
       autoSaveEnabled: true,
       isBookshelfMode: true,

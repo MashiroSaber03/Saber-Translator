@@ -18,10 +18,6 @@ import type {
   TranslationSettings,
   ParallelSettings
 } from '@/types/settings'
-import type {
-  GlossarySettings,
-  NonTranslateSettings,
-} from '@/types/translationConstraints'
 import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
 import {
   DEFAULT_AI_VISION_OCR_PROMPT,
@@ -130,18 +126,6 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
   singleJsonPrompt: DEFAULT_SINGLE_BUBBLE_JSON_PROMPT
 }
 
-/** 默认术语表设置 */
-export const DEFAULT_GLOSSARY: GlossarySettings = {
-  enabled: false,
-  entries: []
-}
-
-/** 默认禁翻表设置 */
-export const DEFAULT_NON_TRANSLATE: NonTranslateSettings = {
-  enabled: false,
-  entries: []
-}
-
 /** 默认高质量翻译设置 */
 export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   provider: 'siliconflow',
@@ -222,8 +206,6 @@ export function createDefaultSettings(): TranslationSettings {
     aiVisionOcr: cloneJson(DEFAULT_AI_VISION_OCR),
     hybridOcr: cloneJson(DEFAULT_HYBRID_OCR),
     translation: cloneJson(DEFAULT_TRANSLATION_SERVICE),
-    glossary: cloneJson(DEFAULT_GLOSSARY),
-    nonTranslate: cloneJson(DEFAULT_NON_TRANSLATE),
     targetLanguage: 'zh',
     translatePrompt: DEFAULT_TRANSLATE_PROMPT,
     useTextboxPrompt: false,

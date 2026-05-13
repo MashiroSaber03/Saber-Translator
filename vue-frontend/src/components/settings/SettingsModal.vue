@@ -42,16 +42,6 @@
         <TranslationSettings />
       </div>
 
-      <!-- 术语表 -->
-      <div v-show="activeTab === 'glossary'" class="settings-tab-pane">
-        <GlossarySettings ref="glossarySettingsRef" />
-      </div>
-
-      <!-- 禁翻表 -->
-      <div v-show="activeTab === 'non-translate'" class="settings-tab-pane">
-        <NonTranslateSettings ref="nonTranslateSettingsRef" />
-      </div>
-
       <!-- 检测设置 -->
       <div v-show="activeTab === 'detection'" class="settings-tab-pane">
         <DetectionSettings />
@@ -107,8 +97,6 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import BaseModal from '@/components/common/BaseModal.vue'
 import OcrSettings from './OcrSettings.vue'
 import TranslationSettings from './TranslationSettings.vue'
-import GlossarySettings from './GlossarySettings.vue'
-import NonTranslateSettings from './NonTranslateSettings.vue'
 import DetectionSettings from './DetectionSettings.vue'
 import HqTranslationSettings from './HqTranslationSettings.vue'
 import ProofreadingSettings from './ProofreadingSettings.vue'
@@ -124,10 +112,6 @@ interface SettingsModalSavePayload {
 
 interface TextStyleDefaultsSettingsExposed {
   saveDefaults: () => Promise<{ success: boolean; changed: boolean; error?: string }>
-}
-
-interface TranslationConstraintSettingsExposed {
-  validateSettings: () => { success: boolean; error?: string }
 }
 
 // Props
@@ -150,15 +134,11 @@ const settingsStore = useSettingsStore()
 const isOpen = ref(props.modelValue)
 const activeTab = ref('ocr')
 const textStyleDefaultsRef = ref<TextStyleDefaultsSettingsExposed | null>(null)
-const glossarySettingsRef = ref<TranslationConstraintSettingsExposed | null>(null)
-const nonTranslateSettingsRef = ref<TranslationConstraintSettingsExposed | null>(null)
 
 // Tab 配置
 const tabs = [
   { id: 'ocr', label: 'OCR识别' },
   { id: 'translate', label: '翻译服务' },
-  { id: 'glossary', label: '术语表' },
-  { id: 'non-translate', label: '禁翻表' },
   { id: 'detection', label: '检测设置' },
   { id: 'hq', label: '高质量翻译' },
   { id: 'proofreading', label: 'AI校对' },
@@ -207,18 +187,6 @@ function handleClose() {
 
 // 保存设置
 async function handleSave() {
-  const glossaryValidation = glossarySettingsRef.value?.validateSettings() ?? { success: true }
-  if (!glossaryValidation.success) {
-    showToast(glossaryValidation.error || '术语表校验失败', 'error')
-    return
-  }
-
-  const nonTranslateValidation = nonTranslateSettingsRef.value?.validateSettings() ?? { success: true }
-  if (!nonTranslateValidation.success) {
-    showToast(nonTranslateValidation.error || '禁翻表校验失败', 'error')
-    return
-  }
-
   const textDefaultsResult = await textStyleDefaultsRef.value?.saveDefaults() ?? {
     success: true,
     changed: false

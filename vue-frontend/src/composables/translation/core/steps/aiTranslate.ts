@@ -12,9 +12,11 @@
  */
 
 import { hqTranslateBatch } from '@/api/translate'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { ImageData } from '@/types/image'
 import type { TranslationSettings } from '@/types/settings'
 import type { TranslationWarning } from '@/types/translationConstraints'
+import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 // ============================================================
@@ -35,6 +37,8 @@ export interface AiTranslateInput {
     mode: 'hq' | 'proofread'
     tasks: AiTranslateTask[]
     settingsSnapshot: TranslationSettings
+    bookTranslationConstraints: BookTranslationConstraints
+    isBookshelfMode: boolean
 }
 
 /** AI翻译输出 */
@@ -71,6 +75,10 @@ interface TranslationJsonData {
 export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTranslateOutput> {
     const settings = input.settingsSnapshot
     const isProofread = input.mode === 'proofread'
+    const constraintPayload = resolveConstraintPayloadForTranslation({
+        isBookshelfMode: input.isBookshelfMode,
+        constraints: input.bookTranslationConstraints,
+    })
 
     // 1. 收集 JSON 数据
     const jsonData: TranslationJsonData[] = input.tasks.map(t => {
@@ -140,8 +148,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         systemPrompt,
         isProofreading: isProofread,
         enableDebugLogs: settings.enableVerboseLogs,
-        glossary_settings: settings.glossary,
-        non_translate_settings: settings.nonTranslate,
+        ...constraintPayload,
         openai_options: serializeOpenAICompatibleOptionsForApi((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
     })
 
@@ -171,8 +178,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 systemPrompt,
                 isProofreading: true,
                 enableDebugLogs: settings.enableVerboseLogs,
-                glossary_settings: settings.glossary,
-                non_translate_settings: settings.nonTranslate,
+                ...constraintPayload,
                 openai_options: serializeOpenAICompatibleOptionsForApi(round.openaiOptions)
             })
 

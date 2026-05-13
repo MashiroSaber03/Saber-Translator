@@ -6,6 +6,7 @@
 import type { BubbleState, BubbleTextline } from './bubble'
 
 import type { OcrResult } from './ocr'
+import type { BookTranslationConstraints } from './bookTranslationConstraints'
 import type { TranslationWarning } from './translationConstraints'
 
 /**
@@ -118,6 +119,7 @@ export interface BookData {
   cover?: string
   description?: string
   tags?: string[]
+  translation_constraints?: BookTranslationConstraints
   chapters?: ChapterData[]
   /** 章节数量（后端返回） */
   chapter_count?: number
