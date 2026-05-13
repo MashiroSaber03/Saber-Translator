@@ -54,6 +54,9 @@ describe('ImageGenerationPanel', () => {
     expect(source).toContain('@media (max-width: 1024px)')
     expect(source).toContain('grid-template-columns: 1fr;')
     expect(source).toContain('object-fit: contain;')
+    expect(source).toContain('.btn-mini {')
+    expect(source).toContain('border-radius: 6px;')
+    expect(source).toContain('background: var(--bg-primary, #fff);')
   })
 
   it('shows story sections as collapsed previews by default and expands them independently', async () => {

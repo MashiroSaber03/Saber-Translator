@@ -537,6 +537,29 @@ watch(() => props.pages.length, (pageCount) => {
   font-family: inherit;
 }
 
+.btn-mini {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  color: var(--primary, #6366f1);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-mini:hover {
+  background: var(--bg-secondary, #f5f5f5);
+  border-color: var(--primary, #6366f1);
+}
+
+.btn-mini:focus-visible {
+  outline: 2px solid rgb(99, 102, 241, 0.25);
+  outline-offset: 1px;
+}
+
 .prompt-collapsed {
   background: var(--bg-primary, #fff);
   border: 1px solid var(--border-color, #ddd);
