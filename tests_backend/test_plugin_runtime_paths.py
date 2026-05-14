@@ -29,6 +29,31 @@ class PathHelpersRuntimePathTests(unittest.TestCase):
                     with mock.patch.object(sys, "_MEIPASS", os.path.join(temp_dir, "_internal"), create=True):
                         self.assertEqual(path_helpers.get_app_root(), temp_dir)
 
+    def test_resource_path_uses_app_root_for_data_in_packaged_mode(self) -> None:
+        from src.shared import path_helpers
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_executable = os.path.join(temp_dir, "Saber-Translator.exe")
+            with mock.patch.object(sys, "frozen", True, create=True):
+                with mock.patch.object(sys, "executable", fake_executable):
+                    with mock.patch.object(sys, "_MEIPASS", os.path.join(temp_dir, "_internal"), create=True):
+                        self.assertEqual(
+                            path_helpers.resource_path(os.path.join("data", "sessions")),
+                            os.path.join(temp_dir, "data", "sessions"),
+                        )
+
+    def test_get_debug_dir_uses_app_root_data_directory(self) -> None:
+        from src.shared import path_helpers
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_executable = os.path.join(temp_dir, "Saber-Translator.exe")
+            with mock.patch.object(sys, "frozen", True, create=True):
+                with mock.patch.object(sys, "executable", fake_executable):
+                    with mock.patch.object(sys, "_MEIPASS", os.path.join(temp_dir, "_internal"), create=True):
+                        debug_dir = path_helpers.get_debug_dir("bubbles")
+
+        self.assertEqual(debug_dir, os.path.join(temp_dir, "data", "debug", "bubbles"))
+
 
 class ConfigLoaderRuntimePathTests(unittest.TestCase):
     def test_get_config_path_uses_app_root_config_in_packaged_mode(self) -> None:

@@ -12,7 +12,7 @@ import logging
 from flask import request, jsonify
 
 from . import system_bp
-from src.shared.path_helpers import get_debug_dir, resource_path
+from src.shared.path_helpers import get_data_root, get_debug_dir
 
 logger = logging.getLogger("SystemAPI.Files")
 
@@ -63,11 +63,7 @@ def clean_debug_files():
             logger.info(f"清理调试目录完成: {success_messages[-1]}")
         
         # 清理临时下载目录
-        temp_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 
-            '..', '..', '..', '..', 'data', 'temp'
-        )
-        temp_dir = os.path.normpath(temp_dir)
+        temp_dir = os.path.join(get_data_root(), 'temp')
         
         if os.path.exists(temp_dir):
             temp_files_count = 0

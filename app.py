@@ -4,7 +4,7 @@ import webbrowser
 import threading
 import secrets
 from flask_cors import CORS
-from src.shared.path_helpers import get_app_root, resource_path
+from src.shared.path_helpers import get_app_root, get_data_root, get_logs_root, resource_path
 from src.shared import constants
 import logging
 import logging.config
@@ -26,7 +26,7 @@ colorama.init()
 def setup_logging():
     """配置统一的日志系统"""
     # 创建日志目录
-    log_dir = os.path.join(basedir, 'logs')
+    log_dir = get_logs_root()
     os.makedirs(log_dir, exist_ok=True)
     
     # 生成日志文件名，包含日期
@@ -220,20 +220,20 @@ register_redirects(app)
 # 在应用启动时创建必要的文件夹
 def create_required_directories():
     # 获取项目根目录与应用根目录
-    base_path = basedir
     app_root = get_app_root()
+    data_root = get_data_root()
 
     # 确保插件与插件配置目录存在（统一使用应用根目录）
     os.makedirs(os.path.join(app_root, 'config'), exist_ok=True)
     os.makedirs(os.path.join(app_root, 'config', 'plugin_configs'), exist_ok=True)
     os.makedirs(os.path.join(app_root, 'plugins'), exist_ok=True)
     # 确保data目录及其子目录存在
-    os.makedirs(os.path.join(base_path, 'data', 'debug'), exist_ok=True)
-    os.makedirs(os.path.join(base_path, 'data', 'sessions'), exist_ok=True)
-    os.makedirs(os.path.join(base_path, 'data', 'temp'), exist_ok=True)  # 临时目录
-    
+    os.makedirs(os.path.join(data_root, 'debug'), exist_ok=True)
+    os.makedirs(os.path.join(data_root, 'sessions'), exist_ok=True)
+    os.makedirs(os.path.join(data_root, 'temp'), exist_ok=True)  # 临时目录
+
     # 确保logs目录存在
-    os.makedirs(os.path.join(base_path, 'logs'), exist_ok=True)
+    os.makedirs(get_logs_root(), exist_ok=True)
 
 # 在应用启动时调用
 create_required_directories()
@@ -297,7 +297,7 @@ if __name__ == '__main__':
         from loguru import logger as loguru_logger
         loguru_logger.remove()  # 移除所有处理器
         # 只添加文件处理器
-        loguru_logger.add(os.path.join(basedir, 'logs', f'loguru_{datetime.now().strftime("%Y-%m-%d")}.log'), 
+        loguru_logger.add(os.path.join(get_logs_root(), f'loguru_{datetime.now().strftime("%Y-%m-%d")}.log'),
                           level="INFO")
     except ImportError:
         pass  # loguru不是必需的库

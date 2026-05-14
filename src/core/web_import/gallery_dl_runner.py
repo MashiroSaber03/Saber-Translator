@@ -17,6 +17,7 @@ from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from .image_processor import ImageProcessor
+from src.shared.path_helpers import get_data_root
 
 logger = logging.getLogger("WebImport.GalleryDL")
 
@@ -176,8 +177,7 @@ class GalleryDLRunner:
         logger.info(f"执行 gallery-dl 分片提取: {url}")
         
         # 使用项目的临时目录
-        project_root = Path(__file__).parent.parent.parent.parent
-        project_temp_dir = project_root / "data" / "temp" / "gallery_dl"
+        project_temp_dir = Path(get_data_root()) / "temp" / "gallery_dl"
         project_temp_dir.mkdir(parents=True, exist_ok=True)
         
         # 清理旧的临时文件
@@ -365,8 +365,7 @@ class GalleryDLRunner:
             下载结果列表
         """
         # 使用项目的临时目录
-        project_root = Path(__file__).parent.parent.parent.parent
-        project_temp_dir = project_root / "data" / "temp" / "gallery_dl_download"
+        project_temp_dir = Path(get_data_root()) / "temp" / "gallery_dl_download"
         project_temp_dir.mkdir(parents=True, exist_ok=True)
         
         # 清理旧的临时文件

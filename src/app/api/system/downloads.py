@@ -21,7 +21,7 @@ from flask import request, jsonify, send_file
 from PIL import Image
 
 from . import system_bp
-from src.shared.path_helpers import resource_path
+from src.shared.path_helpers import get_app_root
 
 logger = logging.getLogger("SystemAPI.Downloads")
 
@@ -48,7 +48,7 @@ def download_start_session_api():
         
         # 创建唯一的会话ID和临时目录
         session_id = str(uuid.uuid4())
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_dir = os.path.join(base_path, 'data', 'temp', session_id)
         os.makedirs(temp_dir, exist_ok=True)
         
@@ -99,7 +99,7 @@ def download_upload_image_api():
         if '..' in session_id or '/' in session_id or '\\' in session_id:
             return jsonify({'error': '无效的会话ID'}), 400
             
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_dir = os.path.join(base_path, 'data', 'temp', session_id)
         
         if not os.path.exists(temp_dir):
@@ -195,7 +195,7 @@ def download_finalize_api():
         if '..' in session_id or '/' in session_id or '\\' in session_id:
             return jsonify({'error': '无效的会话ID'}), 400
             
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_dir = os.path.join(base_path, 'data', 'temp', session_id)
         
         if not os.path.exists(temp_dir):
@@ -298,7 +298,7 @@ def download_all_images_api():
             
         # 创建唯一的临时目录
         unique_id = str(uuid.uuid4())
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_dir = os.path.join(base_path, 'data', 'temp', unique_id)
         os.makedirs(temp_dir, exist_ok=True)
         logger.info(f"创建临时目录: {temp_dir}")
@@ -408,7 +408,7 @@ def download_processed_file_api(file_id: str):
             return jsonify({'error': '无效的文件ID'}), 400
             
         # 构建文件路径
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_dir = os.path.join(base_path, 'data', 'temp', file_id)
         
         if not os.path.exists(temp_dir):
@@ -465,7 +465,7 @@ def clean_temp_files_api():
         }
     """
     try:
-        base_path = resource_path('')
+        base_path = get_app_root()
         temp_base_dir = os.path.join(base_path, 'data', 'temp')
         
         if not os.path.exists(temp_base_dir):

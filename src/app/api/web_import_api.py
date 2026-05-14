@@ -24,13 +24,11 @@ from src.core.web_import import MangaScraperAgent, GalleryDLRunner, check_galler
 from src.shared import constants
 from src.shared.ai_providers import normalize_provider_id
 from src.shared.config_loader import get_config_path, load_json_config, save_json_config
+from src.shared.path_helpers import get_data_root
 
 logger = logging.getLogger("WebImportAPI")
 
 web_import_bp = Blueprint('web_import', __name__, url_prefix='/api/web-import')
-
-# 项目根目录
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _normalize_web_import_settings_payload(payload: dict | None) -> dict:
@@ -104,7 +102,7 @@ def serve_gallery_dl_temp(filename):
     """
     提供 gallery-dl 临时文件的静态访问
     """
-    temp_dir = PROJECT_ROOT / "data" / "temp" / "gallery_dl"
+    temp_dir = Path(get_data_root()) / "temp" / "gallery_dl"
     return send_from_directory(str(temp_dir), filename)
 
 
@@ -113,7 +111,7 @@ def serve_ai_agent_temp(filename):
     """
     提供 AI Agent 临时文件的静态访问
     """
-    temp_dir = PROJECT_ROOT / "data" / "temp" / "ai_agent"
+    temp_dir = Path(get_data_root()) / "temp" / "ai_agent"
     return send_from_directory(str(temp_dir), filename)
 
 
@@ -125,7 +123,7 @@ def get_gallery_dl_images():
     """
     import base64
     
-    temp_dir = PROJECT_ROOT / "data" / "temp" / "gallery_dl"
+    temp_dir = Path(get_data_root()) / "temp" / "gallery_dl"
     
     if not temp_dir.exists():
         return jsonify({'success': False, 'error': '临时目录不存在', 'images': []})

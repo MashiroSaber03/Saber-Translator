@@ -59,6 +59,16 @@ def get_app_root():
     return app_root
 
 
+def get_data_root():
+    """获取用户数据根目录。"""
+    return os.path.join(get_app_root(), 'data')
+
+
+def get_logs_root():
+    """获取日志根目录。"""
+    return os.path.join(get_app_root(), 'logs')
+
+
 def resource_path(relative_path):
     """
     获取资源的绝对路径，适用于开发环境和PyInstaller打包环境
@@ -69,7 +79,12 @@ def resource_path(relative_path):
     Returns:
         资源的绝对路径
     """
-    base_path = get_resource_root()
+    normalized_relative_path = str(relative_path or "").replace("\\", "/").lstrip("/")
+    if normalized_relative_path == "data" or normalized_relative_path.startswith("data/"):
+        base_path = get_app_root()
+    else:
+        base_path = get_resource_root()
+
     abs_path = os.path.join(base_path, relative_path)
     logger.debug(f"资源路径解析: '{relative_path}' -> '{abs_path}'")
     return abs_path
@@ -85,8 +100,7 @@ def get_debug_dir(subdirectory=None):
     Returns:
         debug目录的绝对路径
     """
-    project_root = resource_path('') # 获取项目根目录
-    debug_base = os.path.join(project_root, 'data', 'debug')
+    debug_base = os.path.join(get_data_root(), 'debug')
     
     try:
         os.makedirs(debug_base, exist_ok=True)
