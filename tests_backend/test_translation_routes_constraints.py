@@ -276,7 +276,6 @@ class TranslationRouteConstraintTests(unittest.TestCase):
                 "/api/translation/glossary/extract",
                 json={
                     "original_texts": ["Alice and Bob"],
-                    "source_language": "japanese",
                     "target_language": "zh",
                     "model_provider": "siliconflow",
                     "api_key": "test-key",
@@ -319,7 +318,6 @@ class TranslationRouteConstraintTests(unittest.TestCase):
                 "/api/translation/glossary/extract",
                 json={
                     "original_texts": ["Alice"],
-                    "source_language": "japanese",
                     "target_language": "zh",
                     "model_provider": "siliconflow",
                     "api_key": "test-key",
@@ -351,7 +349,6 @@ class TranslationRouteConstraintTests(unittest.TestCase):
         with mock.patch.object(self.translation_module._hq_executor, "execute", side_effect=fake_execute):
             self.translation_module.extract_glossary_entries_via_model(
                 texts=["Alice"],
-                source_language="japanese",
                 target_language="zh",
                 provider="siliconflow",
                 api_key="test-key",
@@ -370,6 +367,104 @@ class TranslationRouteConstraintTests(unittest.TestCase):
         user_prompt = captured["messages"][1]["content"]
         self.assertNotIn("源语言:", user_prompt)
         self.assertIn("目标语言: zh", user_prompt)
+
+    def test_glossary_extract_uses_custom_prompt_when_provided(self) -> None:
+        captured = {}
+
+        def fake_execute(request, **kwargs):
+            captured["messages"] = request.messages
+            return types.SimpleNamespace(
+                raw_content='[]',
+                parsed=[],
+            )
+
+        with mock.patch.object(self.translation_module._hq_executor, "execute", side_effect=fake_execute):
+            self.translation_module.extract_glossary_entries_via_model(
+                texts=["Alice"],
+                target_language="zh",
+                provider="siliconflow",
+                api_key="test-key",
+                model_name="test-model",
+                custom_base_url=None,
+                openai_options=self.translation_module.create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=0,
+                    transport_retries=1,
+                    business_retries=0,
+                ),
+                existing_entries=[],
+                prompt="自定义提示词\n\nOCR 文本：\n{ocr_text}",
+            )
+
+        user_prompt = captured["messages"][1]["content"]
+        self.assertIn("自定义提示词", user_prompt)
+        self.assertIn("Alice", user_prompt)
+
+    def test_glossary_extract_custom_prompt_allows_json_braces(self) -> None:
+        captured = {}
+
+        def fake_execute(request, **kwargs):
+            captured["messages"] = request.messages
+            return types.SimpleNamespace(
+                raw_content='[]',
+                parsed=[],
+            )
+
+        with mock.patch.object(self.translation_module._hq_executor, "execute", side_effect=fake_execute):
+            self.translation_module.extract_glossary_entries_via_model(
+                texts=["Alice"],
+                target_language="zh",
+                provider="siliconflow",
+                api_key="test-key",
+                model_name="test-model",
+                custom_base_url=None,
+                openai_options=self.translation_module.create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=0,
+                    transport_retries=1,
+                    business_retries=0,
+                ),
+                existing_entries=[],
+                prompt='请按 {"source":"原文","target":"译文"} 格式输出，并处理：{ocr_text}',
+            )
+
+        user_prompt = captured["messages"][1]["content"]
+        self.assertIn('{"source":"原文","target":"译文"}', user_prompt)
+        self.assertIn('Alice', user_prompt)
+
+    def test_glossary_extract_falls_back_to_default_prompt_when_custom_prompt_is_empty(self) -> None:
+        captured = {}
+
+        def fake_execute(request, **kwargs):
+            captured["messages"] = request.messages
+            return types.SimpleNamespace(
+                raw_content='[]',
+                parsed=[],
+            )
+
+        with mock.patch.object(self.translation_module._hq_executor, "execute", side_effect=fake_execute):
+            self.translation_module.extract_glossary_entries_via_model(
+                texts=["Alice"],
+                target_language="zh",
+                provider="siliconflow",
+                api_key="test-key",
+                model_name="test-model",
+                custom_base_url=None,
+                openai_options=self.translation_module.create_openai_compatible_options(
+                    force_json_output=False,
+                    use_stream=False,
+                    rpm_limit=0,
+                    transport_retries=1,
+                    business_retries=0,
+                ),
+                existing_entries=[],
+                prompt="",
+            )
+
+        user_prompt = captured["messages"][1]["content"]
+        self.assertIn("请从以下 OCR 文本中提取适合加入漫画术语表的实体", user_prompt)
 
 
 if __name__ == "__main__":

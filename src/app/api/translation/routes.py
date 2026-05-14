@@ -276,7 +276,6 @@ def _parse_glossary_extract_results(content: str, *, force_json_output: bool):
 def extract_glossary_entries_via_model(
     *,
     texts,
-    source_language,
     target_language,
     provider,
     api_key,
@@ -284,15 +283,18 @@ def extract_glossary_entries_via_model(
     custom_base_url,
     openai_options,
     existing_entries,
+    prompt=None,
 ):
     joined_text = "\n".join(str(text or "").strip() for text in texts if str(text or "").strip())
     if not joined_text:
         return [], 0, 0
 
-    user_prompt = (
-        f"目标语言: {target_language}\n\n"
-        + _AUTO_GLOSSARY_USER_PROMPT_TEMPLATE.format(ocr_text=joined_text)
-    )
+    prompt_template = str(prompt or "").strip() or _AUTO_GLOSSARY_USER_PROMPT_TEMPLATE
+    if "{ocr_text}" in prompt_template:
+        prompt_body = prompt_template.replace("{ocr_text}", joined_text)
+    else:
+        prompt_body = f"{prompt_template}\n\nOCR 文本：\n{joined_text}"
+    user_prompt = f"目标语言: {target_language}\n\n{prompt_body}"
     runtime_options = build_openai_compatible_runtime_options(
         timeout=90.0,
         print_stream_output=openai_options.execution.use_stream,
@@ -406,13 +408,13 @@ def route_extract_glossary_entries():
     try:
         data = request.get_json() or {}
         original_texts = data.get('original_texts') or []
-        source_language = _request_value(data, 'source_language', 'sourceLanguage', default='japanese')
         target_language = _request_value(data, 'target_language', 'targetLanguage', default='zh')
         model_provider = normalize_provider_id(_request_value(data, 'model_provider', 'provider'))
         api_key = _request_value(data, 'api_key', 'apiKey')
         model_name = _request_value(data, 'model_name', 'model', 'modelName')
         custom_base_url = _request_value(data, 'custom_base_url', 'base_url', 'baseUrl', 'customBaseUrl')
         existing_entries = data.get('existing_entries') or []
+        custom_prompt = _request_value(data, 'prompt', 'prompt_content', 'promptContent', default=None)
 
         if not isinstance(original_texts, list) or not all(isinstance(item, str) for item in original_texts):
             return jsonify({'success': False, 'error': 'original_texts 必须是字符串数组'}), 400
@@ -437,7 +439,6 @@ def route_extract_glossary_entries():
 
         new_entries, candidate_count, duplicate_count = extract_glossary_entries_via_model(
             texts=original_texts,
-            source_language=source_language,
             target_language=target_language,
             provider=model_provider,
             api_key=api_key,
@@ -445,6 +446,7 @@ def route_extract_glossary_entries():
             custom_base_url=custom_base_url,
             openai_options=openai_options,
             existing_entries=existing_entries,
+            prompt=custom_prompt,
         )
         return jsonify({
             'success': True,

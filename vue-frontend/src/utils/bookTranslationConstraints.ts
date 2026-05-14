@@ -1,10 +1,12 @@
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
+import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 
 export function createEmptyBookTranslationConstraints(): BookTranslationConstraints {
   return {
     glossary: {
       enabled: false,
       autoExtractEnabled: false,
+      autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
       entries: [],
     },
     non_translate: {
@@ -18,7 +20,12 @@ export function normalizeBookTranslationConstraints(
   payload?: Partial<BookTranslationConstraints> | null,
 ): BookTranslationConstraints {
   const defaults = createEmptyBookTranslationConstraints()
-  const glossaryPayload = payload?.glossary as (Partial<BookTranslationConstraints['glossary']> & { auto_extract_enabled?: boolean }) | undefined
+  const glossaryPayload = payload?.glossary as (
+    Partial<BookTranslationConstraints['glossary']> & {
+      auto_extract_enabled?: boolean
+      auto_extract_prompt?: string
+    }
+  ) | undefined
   const glossaryEntries = Array.isArray(payload?.glossary?.entries)
     ? payload!.glossary!.entries.filter((entry) => String(entry?.source ?? '').trim() && String(entry?.target ?? '').trim())
     : defaults.glossary.entries
@@ -29,6 +36,7 @@ export function normalizeBookTranslationConstraints(
     glossary: {
       enabled: Boolean(glossaryPayload?.enabled),
       autoExtractEnabled: Boolean(glossaryPayload?.autoExtractEnabled ?? glossaryPayload?.auto_extract_enabled),
+      autoExtractPrompt: String(glossaryPayload?.autoExtractPrompt ?? glossaryPayload?.auto_extract_prompt ?? '').trim() || DEFAULT_AUTO_GLOSSARY_PROMPT,
       entries: glossaryEntries.map((entry) => ({ ...entry })),
     },
     non_translate: {

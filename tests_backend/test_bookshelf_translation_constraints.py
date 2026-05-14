@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 from flask import Flask
+from src.core.bookshelf_manager import DEFAULT_AUTO_GLOSSARY_PROMPT
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -122,7 +123,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             book["translation_constraints"],
             {
-                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "autoExtractPrompt": DEFAULT_AUTO_GLOSSARY_PROMPT, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -131,7 +132,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             persisted["translation_constraints"],
             {
-                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "autoExtractPrompt": DEFAULT_AUTO_GLOSSARY_PROMPT, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -160,7 +161,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
         self.assertEqual(
             loaded["translation_constraints"],
             {
-                "glossary": {"enabled": False, "autoExtractEnabled": False, "entries": []},
+                "glossary": {"enabled": False, "autoExtractEnabled": False, "autoExtractPrompt": DEFAULT_AUTO_GLOSSARY_PROMPT, "entries": []},
                 "non_translate": {"enabled": False, "entries": []},
             },
         )
@@ -175,6 +176,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
             "glossary": {
                 "enabled": True,
                 "autoExtractEnabled": True,
+                "autoExtractPrompt": "提取这本漫画的人名和专有名词",
                 "entries": [
                     {
                         "source": "Alice",
@@ -220,6 +222,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
                 "glossary": {
                     "enabled": True,
                     "autoExtractEnabled": True,
+                    "autoExtractPrompt": "提取这本漫画的人名和专有名词",
                     "entries": [
                         {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
                         {"source": " ", "target": " ", "note": "", "matchMode": "regex"},
@@ -243,6 +246,7 @@ class BookshelfTranslationConstraintsTests(unittest.TestCase):
                 "glossary": {
                     "enabled": True,
                     "autoExtractEnabled": True,
+                    "autoExtractPrompt": "提取这本漫画的人名和专有名词",
                     "entries": [
                         {"source": "Alice", "target": "爱丽丝", "note": "", "matchMode": "text"},
                     ],

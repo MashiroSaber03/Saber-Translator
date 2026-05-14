@@ -15,6 +15,22 @@ from src.shared.path_helpers import resource_path
 
 logger = logging.getLogger("BookshelfManager")
 
+DEFAULT_AUTO_GLOSSARY_PROMPT = """请从以下 OCR 文本中提取适合加入漫画术语表的实体。
+
+提取范围：
+1. 人名
+2. 专有名词
+
+输出要求：
+1. 只输出 JSON 数组
+2. 每项必须包含 source 和 target 字段
+3. 不要输出空字段
+4. 不要输出解释性文字
+5. 如果没有可提取内容，返回 []
+
+OCR 文本：
+{ocr_text}"""
+
 # --- 基础配置 ---
 BOOKSHELF_DIR_NAME = "bookshelf"  # 书架数据目录
 BOOKS_METADATA_FILE = "books.json"  # 书籍列表元数据
@@ -31,6 +47,7 @@ def _default_translation_constraints() -> Dict[str, Any]:
         "glossary": {
             "enabled": False,
             "autoExtractEnabled": False,
+            "autoExtractPrompt": DEFAULT_AUTO_GLOSSARY_PROMPT,
             "entries": [],
         },
         "non_translate": {
@@ -82,6 +99,9 @@ def _normalize_translation_constraints(payload: Optional[Dict[str, Any]]) -> Dic
         "glossary": {
             "enabled": bool(glossary.get("enabled")) if isinstance(glossary, dict) else False,
             "autoExtractEnabled": bool(glossary.get("autoExtractEnabled")) if isinstance(glossary, dict) else False,
+            "autoExtractPrompt": (
+                str(glossary.get("autoExtractPrompt", "") or "").strip() or DEFAULT_AUTO_GLOSSARY_PROMPT
+            ) if isinstance(glossary, dict) else DEFAULT_AUTO_GLOSSARY_PROMPT,
             "entries": _normalize_entries(glossary.get("entries") if isinstance(glossary, dict) else [], kind="glossary"),
         },
         "non_translate": {

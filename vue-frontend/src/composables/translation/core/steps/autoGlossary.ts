@@ -72,12 +72,12 @@ export async function executeAutoGlossary(input: AutoGlossaryInput): Promise<Aut
   try {
     const response = await extractGlossaryEntries({
       original_texts: input.originalTexts,
-      source_language: settings.sourceLanguage,
       target_language: settings.targetLanguage,
       model_provider: settings.translation.provider,
       api_key: settings.translation.apiKey,
       model_name: settings.translation.modelName,
       custom_base_url: settings.translation.customBaseUrl,
+      prompt: input.bookTranslationConstraints.glossary.autoExtractPrompt,
       existing_entries: existingEntries,
       openai_options: serializeOpenAICompatibleOptionsForApi(settings.translation.openaiOptions),
     })

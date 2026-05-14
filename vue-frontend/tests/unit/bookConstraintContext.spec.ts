@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 
 import {
   createEmptyBookTranslationConstraints,
@@ -50,7 +51,7 @@ describe('bookTranslationConstraints helpers', () => {
 
   it('creates empty default constraints structure', () => {
     expect(createEmptyBookTranslationConstraints()).toEqual({
-      glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
+      glossary: { enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] },
       non_translate: { enabled: false, entries: [] },
     })
   })
@@ -61,6 +62,7 @@ describe('bookTranslationConstraints helpers', () => {
         glossary: {
           enabled: true,
           autoExtractEnabled: true,
+          autoExtractPrompt: '提取当前漫画中的人名',
           entries: [
             { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
             { source: '', target: '', note: '', matchMode: 'text' } as any,
@@ -78,11 +80,40 @@ describe('bookTranslationConstraints helpers', () => {
       glossary: {
         enabled: true,
         autoExtractEnabled: true,
+        autoExtractPrompt: '提取当前漫画中的人名',
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
       non_translate: {
         enabled: true,
         entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
+      },
+    })
+  })
+
+  it('falls back to the default auto glossary prompt when the saved prompt is blank', () => {
+    expect(
+      normalizeBookTranslationConstraints({
+        glossary: {
+          enabled: true,
+          autoExtractEnabled: true,
+          autoExtractPrompt: '   ',
+          entries: [],
+        },
+        non_translate: {
+          enabled: false,
+          entries: [],
+        },
+      }),
+    ).toEqual({
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      non_translate: {
+        enabled: false,
+        entries: [],
       },
     })
   })

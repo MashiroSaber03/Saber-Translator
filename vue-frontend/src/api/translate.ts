@@ -142,12 +142,12 @@ export interface TranslateSingleTextParams {
 
 export interface ExtractGlossaryEntriesParams {
   original_texts: string[]
-  source_language: string
   target_language: string
   model_provider: string
   api_key?: string
   model_name?: string
   custom_base_url?: string
+  prompt?: string
   existing_entries?: GlossarySettings['entries']
   openai_options?: {
     request: {

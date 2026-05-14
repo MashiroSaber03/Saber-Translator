@@ -56,6 +56,7 @@ describe('executeAutoGlossary', () => {
     store.loadBookConstraints('book-1', createEmptyBookTranslationConstraints())
     store.constraints.glossary.enabled = true
     store.constraints.glossary.autoExtractEnabled = true
+    store.constraints.glossary.autoExtractPrompt = '请提取实体\n\nOCR 文本：\n{ocr_text}'
     store.saveBookConstraints = saveBookConstraintsMock.mockImplementation(async (nextConstraints) => {
       store.constraints = JSON.parse(JSON.stringify(nextConstraints))
       return true
@@ -79,6 +80,7 @@ describe('executeAutoGlossary', () => {
 
     expect(extractGlossaryEntriesMock).toHaveBeenCalled()
     expect(extractGlossaryEntriesMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: '请提取实体\n\nOCR 文本：\n{ocr_text}',
       openai_options: {
         request: {
           force_json_output: false,

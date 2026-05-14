@@ -14,6 +14,7 @@ export interface GlossaryEntry {
 export interface GlossarySettings {
   enabled: boolean
   autoExtractEnabled: boolean
+  autoExtractPrompt: string
   entries: GlossaryEntry[]
 }
 

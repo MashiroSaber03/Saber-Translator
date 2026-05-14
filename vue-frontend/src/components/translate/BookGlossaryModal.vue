@@ -22,6 +22,23 @@
       <div class="constraint-description">
         仅书架模式生效。开启后会在当前页正式翻译前，自动从 OCR 结果中提取专有名词和人名并写入本书术语表。
       </div>
+      <div class="settings-item">
+        <label for="autoGlossaryPrompt">自动术语提取提示词</label>
+        <div class="constraint-description">
+          默认会显示内置提示词，你可以直接在此基础上修改；如果你把内容全部删空后保存，系统会自动恢复为默认提示词。
+        </div>
+        <textarea
+          id="autoGlossaryPrompt"
+          class="auto-glossary-prompt"
+          :value="draft.autoExtractPrompt"
+          rows="6"
+          placeholder="请输入自动术语提取提示词"
+          @input="updateAutoExtractPrompt"
+        />
+        <button type="button" class="btn btn-secondary btn-sm reset-auto-glossary-prompt-btn" @click="resetAutoExtractPrompt">
+          重置为默认提示词
+        </button>
+      </div>
       <TranslationConstraintTable
         :model-value="draft.entries as unknown as Record<string, string>[]"
         :columns="columns"
@@ -42,6 +59,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 import BaseModal from '@/components/common/BaseModal.vue'
 import TranslationConstraintTable from '@/components/settings/shared/TranslationConstraintTable.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
@@ -61,6 +79,7 @@ const isSaving = computed(() => constraintStore.isSaving)
 const draft = ref({
   enabled: false,
   autoExtractEnabled: false,
+  autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
   entries: [] as GlossaryEntry[],
 })
 
@@ -115,6 +134,14 @@ function toggleAutoExtractEnabled(event: Event): void {
   draft.value.autoExtractEnabled = (event.target as HTMLInputElement).checked
 }
 
+function updateAutoExtractPrompt(event: Event): void {
+  draft.value.autoExtractPrompt = (event.target as HTMLTextAreaElement).value
+}
+
+function resetAutoExtractPrompt(): void {
+  draft.value.autoExtractPrompt = DEFAULT_AUTO_GLOSSARY_PROMPT
+}
+
 function updateEntries(entries: Record<string, string>[]): void {
   draft.value.entries = entries as unknown as GlossaryEntry[]
 }
@@ -163,5 +190,21 @@ async function handleSave(): Promise<void> {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.settings-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auto-glossary-prompt {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  resize: vertical;
+  box-sizing: border-box;
 }
 </style>
