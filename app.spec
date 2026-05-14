@@ -24,6 +24,8 @@ datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'static'), os.path.join('
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
 
 # 2. 配置文件 - 不打包用户运行时配置
 # user_settings.json, prompts.json, model_history.json 等会在运行时自动生成

@@ -214,10 +214,10 @@ def test_reranker_connection():
 
 def get_prompts_library_path():
     """获取提示词库文件路径"""
-    from src.shared.path_helpers import resource_path
-    config_dir = resource_path("config")
-    os.makedirs(config_dir, exist_ok=True)
-    return os.path.join(config_dir, "manga_insight_prompts_library.json")
+    from src.shared.config_loader import get_config_path
+    library_path = get_config_path("manga_insight_prompts_library.json")
+    os.makedirs(os.path.dirname(library_path), exist_ok=True)
+    return library_path
 
 
 @manga_insight_bp.route('/prompts/library', methods=['GET'])

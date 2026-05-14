@@ -30,6 +30,22 @@ class PathHelpersRuntimePathTests(unittest.TestCase):
                         self.assertEqual(path_helpers.get_app_root(), temp_dir)
 
 
+class ConfigLoaderRuntimePathTests(unittest.TestCase):
+    def test_get_config_path_uses_app_root_config_in_packaged_mode(self) -> None:
+        from src.shared import config_loader
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_executable = os.path.join(temp_dir, "Saber-Translator.exe")
+            with mock.patch.object(sys, "frozen", True, create=True):
+                with mock.patch.object(sys, "executable", fake_executable):
+                    with mock.patch.object(sys, "_MEIPASS", os.path.join(temp_dir, "_internal"), create=True):
+                        with mock.patch.object(config_loader, "CONFIG_DIR", None):
+                            self.assertEqual(
+                                config_loader.get_config_path("user_settings.json"),
+                                os.path.join(temp_dir, "config", "user_settings.json"),
+                            )
+
+
 class PluginManagerRuntimePathTests(unittest.TestCase):
     def test_plugin_manager_defaults_to_single_app_root_plugins_directory(self) -> None:
         from src.plugins.manager import PluginManager

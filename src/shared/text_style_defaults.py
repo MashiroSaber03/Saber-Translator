@@ -13,9 +13,7 @@ import os
 from functools import lru_cache
 from typing import Any, Dict
 
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TEXT_STYLE_DEFAULTS_PATH = os.path.join(PROJECT_ROOT, "config", "text_style_defaults.json")
+TEXT_STYLE_DEFAULTS_PATH: str | None = None
 TEXT_STYLE_FACTORY_DEFAULTS_PATH = os.path.join(os.path.dirname(__file__), "text_style_defaults_factory.json")
 
 _REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
@@ -76,6 +74,14 @@ def _write_defaults_file(path: str, defaults: Dict[str, Any]) -> None:
         json.dump(defaults, file, indent=2, ensure_ascii=False)
 
 
+def _get_text_style_defaults_path() -> str:
+    if TEXT_STYLE_DEFAULTS_PATH:
+        return TEXT_STYLE_DEFAULTS_PATH
+
+    from src.shared.config_loader import get_config_path
+    return get_config_path("text_style_defaults.json")
+
+
 @lru_cache(maxsize=1)
 def load_text_style_factory_defaults() -> Dict[str, Any]:
     if not os.path.exists(TEXT_STYLE_FACTORY_DEFAULTS_PATH):
@@ -95,17 +101,18 @@ def get_text_style_factory_defaults() -> Dict[str, Any]:
 
 
 def ensure_text_style_defaults_file() -> None:
-    if os.path.exists(TEXT_STYLE_DEFAULTS_PATH):
+    text_style_defaults_path = _get_text_style_defaults_path()
+    if os.path.exists(text_style_defaults_path):
         return
 
-    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, get_text_style_factory_defaults())
+    _write_defaults_file(text_style_defaults_path, get_text_style_factory_defaults())
 
 
 @lru_cache(maxsize=1)
 def load_text_style_defaults() -> Dict[str, Any]:
     ensure_text_style_defaults_file()
 
-    with open(TEXT_STYLE_DEFAULTS_PATH, "r", encoding="utf-8") as file:
+    with open(_get_text_style_defaults_path(), "r", encoding="utf-8") as file:
         data = json.load(file)
 
     if not isinstance(data, dict):
@@ -128,13 +135,13 @@ def save_text_style_defaults(next_defaults: Dict[str, Any]) -> Dict[str, Any]:
         raise RuntimeError("text_style_defaults.json 必须是对象")
 
     normalized = _validate_text_style_defaults(next_defaults)
-    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, normalized)
+    _write_defaults_file(_get_text_style_defaults_path(), normalized)
     return reload_text_style_defaults()
 
 
 def reset_text_style_defaults() -> Dict[str, Any]:
     factory_defaults = get_text_style_factory_defaults()
-    _write_defaults_file(TEXT_STYLE_DEFAULTS_PATH, factory_defaults)
+    _write_defaults_file(_get_text_style_defaults_path(), factory_defaults)
     return reload_text_style_defaults()
 
 

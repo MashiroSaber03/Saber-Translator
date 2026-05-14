@@ -2,17 +2,30 @@ import json
 import yaml
 import os
 import logging
+import sys
 
-# 获取当前脚本所在的目录，然后向上两级找到项目根目录
-# 这假设 config_loader.py 在 src/shared/ 下
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-CONFIG_DIR = os.path.join(project_root, 'config')
+# 允许运行时或测试环境覆盖配置目录；默认回退到应用根目录下的 config/
+CONFIG_DIR = None
 
 logger = logging.getLogger("ConfigLoader")
 
+
+def get_config_dir():
+    """获取配置目录的绝对路径。"""
+    if CONFIG_DIR:
+        return os.path.abspath(CONFIG_DIR)
+
+    if getattr(sys, 'frozen', False):
+        executable_path = os.path.abspath(getattr(sys, 'executable', '') or '')
+        if executable_path:
+            return os.path.join(os.path.dirname(executable_path), 'config')
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    return os.path.join(project_root, 'config')
+
 def get_config_path(filename):
     """获取配置文件的绝对路径"""
-    return os.path.join(CONFIG_DIR, filename)
+    return os.path.join(get_config_dir(), filename)
 
 def load_json_config(filename, default_value={}):
     """
@@ -124,8 +137,12 @@ def save_yaml_config(filename, data):
 
 # --- 测试代码 ---
 if __name__ == '__main__':
-    print(f"项目根目录: {project_root}")
-    print(f"配置目录: {CONFIG_DIR}")
+    if getattr(sys, 'frozen', False):
+        app_root = os.path.dirname(os.path.abspath(getattr(sys, 'executable', '') or ''))
+    else:
+        app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    print(f"应用根目录: {app_root}")
+    print(f"配置目录: {get_config_dir()}")
 
     # 测试加载 JSON
     print("\n--- 测试加载 JSON ---")
