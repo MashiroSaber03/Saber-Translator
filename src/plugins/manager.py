@@ -12,9 +12,8 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.shared.config_loader import get_config_path, load_json_config, save_json_config
 from src.shared.exceptions import PluginException
-from src.shared.path_helpers import resource_path
+from src.shared.path_helpers import get_app_root
 
 from .base import PluginBase
 from .hooks import (
@@ -45,14 +44,20 @@ class PluginManager:
         self.plugin_metadata: Dict[str, Dict[str, Any]] = {}
         self.plugin_sources: Dict[str, str] = {}
         self.plugin_module_names: Dict[str, List[str]] = {}
+        self.app_root = get_app_root()
         raw_plugin_dirs = plugin_dirs or [
-            resource_path("src/plugins"),
-            resource_path("plugins"),
+            os.path.join(self.app_root, "plugins"),
         ]
         self.plugin_dirs = [self._normalize_source_path(path) for path in raw_plugin_dirs]
-        self.plugin_config_dir = get_config_path("plugin_configs")
+        self.plugin_config_dir = os.path.join(self.app_root, "config", "plugin_configs")
+        self.plugin_default_states_path = os.path.join(
+            self.app_root,
+            "config",
+            PLUGIN_DEFAULT_STATES_FILE,
+        )
         os.makedirs(self.plugin_config_dir, exist_ok=True)
-        os.makedirs(resource_path("plugins"), exist_ok=True)
+        os.makedirs(os.path.join(self.app_root, "plugins"), exist_ok=True)
+        os.makedirs(os.path.dirname(self.plugin_default_states_path), exist_ok=True)
         self.plugin_default_states = self._load_plugin_default_states()
         logger.debug("插件管理器初始化，扫描目录: %s", self.plugin_dirs)
 
@@ -78,9 +83,23 @@ class PluginManager:
                 self.plugin_default_states = {}
 
     def _load_plugin_default_states(self) -> Dict[str, bool]:
-        loaded_states = load_json_config(PLUGIN_DEFAULT_STATES_FILE, default_value={})
-        if not isinstance(loaded_states, dict):
-            return {}
+        loaded_states: Dict[str, Any] = {}
+        if os.path.exists(self.plugin_default_states_path):
+            try:
+                with open(self.plugin_default_states_path, "r", encoding="utf-8") as file:
+                    raw_text = file.read()
+                if not raw_text.strip():
+                    loaded = {}
+                else:
+                    loaded = json.loads(raw_text)
+                if isinstance(loaded, dict):
+                    loaded_states = loaded
+            except (json.JSONDecodeError, IOError) as exc:
+                logger.error(
+                    "加载插件默认启用状态文件 '%s' 失败: %s",
+                    self.plugin_default_states_path,
+                    exc,
+                )
         normalized_states: Dict[str, bool] = {}
         for plugin_id, enabled in loaded_states.items():
             if plugin_id:
@@ -91,12 +110,19 @@ class PluginManager:
     def save_plugin_default_states(self) -> bool:
         with self._lock:
             states_snapshot = dict(self.plugin_default_states)
-        success = save_json_config(PLUGIN_DEFAULT_STATES_FILE, states_snapshot)
-        if success:
+        try:
+            with open(self.plugin_default_states_path, "w", encoding="utf-8") as file:
+                json.dump(states_snapshot, file, indent=2, ensure_ascii=False)
             logger.info("插件默认启用状态已保存。")
-        else:
+            return True
+        except IOError as exc:
             logger.error("保存插件默认启用状态失败。")
-        return success
+            logger.error(
+                "写入插件默认启用状态文件 '%s' 失败: %s",
+                self.plugin_default_states_path,
+                exc,
+            )
+            return False
 
     def set_plugin_default_state(self, plugin_id: str, enabled: bool) -> bool:
         with self._lock:

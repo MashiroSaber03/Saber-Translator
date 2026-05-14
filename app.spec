@@ -5,6 +5,7 @@ Saber-Translator PyInstaller Spec 文件
 """
 
 import os
+import shutil
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
 block_cipher = None
@@ -21,6 +22,8 @@ hiddenimports = []
 # 1. 静态资源 (Vue SPA 构建产物、字体、图标)
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'static'), os.path.join('src', 'app', 'static')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
 
 # 2. 配置文件 - 不打包用户运行时配置
 # user_settings.json, prompts.json, model_history.json 等会在运行时自动生成
@@ -34,15 +37,8 @@ if os.path.exists(models_path):
 
 # 4. 插件目录
 plugins_path = os.path.join(PROJECT_ROOT, 'plugins')
-if os.path.exists(plugins_path):
-    datas.append((plugins_path, 'plugins'))
 
-# 5. src/plugins 目录 (内置插件)
-src_plugins_path = os.path.join(PROJECT_ROOT, 'src', 'plugins')
-if os.path.exists(src_plugins_path):
-    datas.append((src_plugins_path, os.path.join('src', 'plugins')))
-
-# 6. 图片资源
+# 5. 图片资源
 pic_path = os.path.join(PROJECT_ROOT, 'pic')
 if os.path.exists(pic_path):
     datas.append((pic_path, 'pic'))
@@ -294,3 +290,9 @@ coll = COLLECT(
     upx_exclude=[],
     name='Saber-Translator',
 )
+
+bundle_plugins_path = os.path.join(coll.name, 'plugins')
+if os.path.exists(bundle_plugins_path):
+    shutil.rmtree(bundle_plugins_path)
+if os.path.exists(plugins_path):
+    shutil.copytree(plugins_path, bundle_plugins_path)

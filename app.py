@@ -4,7 +4,7 @@ import webbrowser
 import threading
 import secrets
 from flask_cors import CORS
-from src.shared.path_helpers import resource_path
+from src.shared.path_helpers import get_app_root, resource_path
 from src.shared import constants
 import logging
 import logging.config
@@ -159,7 +159,7 @@ def setup_logging():
     
     return logger
 
-# 确定应用根目录 (app.py 所在的目录，即项目根目录)
+# 确定源码根目录 (app.py 所在的目录，即项目根目录)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 # 创建日志记录器
@@ -219,13 +219,14 @@ register_redirects(app)
 
 # 在应用启动时创建必要的文件夹
 def create_required_directories():
-    # 获取项目根目录
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    
-    # 确保config目录及其子目录存在
-    os.makedirs(os.path.join(base_path, 'config'), exist_ok=True)
-    os.makedirs(os.path.join(base_path, 'config', 'plugin_configs'), exist_ok=True)
-    
+    # 获取项目根目录与应用根目录
+    base_path = basedir
+    app_root = get_app_root()
+
+    # 确保插件与插件配置目录存在（统一使用应用根目录）
+    os.makedirs(os.path.join(app_root, 'config'), exist_ok=True)
+    os.makedirs(os.path.join(app_root, 'config', 'plugin_configs'), exist_ok=True)
+    os.makedirs(os.path.join(app_root, 'plugins'), exist_ok=True)
     # 确保data目录及其子目录存在
     os.makedirs(os.path.join(base_path, 'data', 'debug'), exist_ok=True)
     os.makedirs(os.path.join(base_path, 'data', 'sessions'), exist_ok=True)
@@ -362,5 +363,3 @@ if __name__ == '__main__':
     # host='0.0.0.0' 监听所有网络接口，允许局域网访问
     # threaded=True 启用多线程模式，支持长时间运行的请求
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
-
-    

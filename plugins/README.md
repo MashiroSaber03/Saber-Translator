@@ -122,9 +122,13 @@ supported_modes = ("standard", "hq", "proofread", "remove_text")
 
 ## 3. 插件放在哪里
 
-用户插件目录是项目根下的：
+插件目录是应用根目录下的：
 
 - [plugins](C:/Users/33252/Desktop/Saber-Translator/plugins)
+
+开发环境下，这通常就是项目根目录下的 `plugins/`。
+
+PyInstaller `onedir` 打包后，这通常就是 exe 同级的 `plugins/`。
 
 每个插件都是一个子目录。
 
@@ -1226,10 +1230,9 @@ from .helpers import build_prompt
 
 ## 18. 插件是怎么被发现和加载的
 
-启动后端时，插件管理器会扫描两个目录：
+启动后端时，插件管理器会扫描一个目录：
 
-- [src/plugins](C:/Users/33252/Desktop/Saber-Translator/src/plugins)（内置插件）
-- [plugins](C:/Users/33252/Desktop/Saber-Translator/plugins)（用户插件）
+- [plugins](C:/Users/33252/Desktop/Saber-Translator/plugins)
 
 扫描规则：
 

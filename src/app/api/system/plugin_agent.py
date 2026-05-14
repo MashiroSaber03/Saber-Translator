@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -30,7 +31,7 @@ from src.shared.openai_options import (
     merge_openai_compatible_options,
     validate_openai_options_payload,
 )
-from src.shared.path_helpers import resource_path
+from src.shared.path_helpers import get_app_root
 
 logger = logging.getLogger("SystemAPI.PluginAgent")
 
@@ -47,7 +48,7 @@ def _request_value(data: Dict[str, Any], *keys: str, default=None):
 def get_plugin_agent_runtime() -> PluginAgentRuntime:
     global _plugin_agent_runtime
     if _plugin_agent_runtime is None:
-        plugins_root = resource_path("plugins")
+        plugins_root = os.path.join(get_app_root(), "plugins")
         _plugin_agent_runtime = PluginAgentRuntime(
             plugins_root=plugins_root,
             finalize_refresh=lambda _target: get_plugin_manager().refresh_plugins(),

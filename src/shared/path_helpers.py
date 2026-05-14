@@ -14,6 +14,51 @@ logger = logging.getLogger("PathHelpers")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
+def get_project_root():
+    """
+    获取源码项目根目录。
+
+    Returns:
+        源码项目根目录绝对路径
+    """
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+
+def get_resource_root():
+    """
+    获取只读资源根目录。
+
+    开发环境下返回源码项目根目录；PyInstaller 打包环境下返回 bundle 内部资源目录。
+    """
+    try:
+        # PyInstaller创建的临时/内部资源目录
+        base_path = sys._MEIPASS
+        logger.debug(f"打包环境中，资源基础路径: {base_path}")
+        return base_path
+    except Exception:
+        base_path = get_project_root()
+        logger.debug(f"开发环境中，资源基础路径: {base_path}")
+        return base_path
+
+
+def get_app_root():
+    """
+    获取应用根目录（可写运行时目录）。
+
+    开发环境下返回源码项目根目录；PyInstaller onedir 下返回 exe 所在目录。
+    """
+    if is_packaged():
+        executable_path = os.path.abspath(getattr(sys, 'executable', '') or '')
+        if executable_path:
+            app_root = os.path.dirname(executable_path)
+            logger.debug(f"打包环境中，应用根目录: {app_root}")
+            return app_root
+
+    app_root = get_project_root()
+    logger.debug(f"开发环境中，应用根目录: {app_root}")
+    return app_root
+
+
 def resource_path(relative_path):
     """
     获取资源的绝对路径，适用于开发环境和PyInstaller打包环境
@@ -24,15 +69,7 @@ def resource_path(relative_path):
     Returns:
         资源的绝对路径
     """
-    try:
-        # PyInstaller创建的临时文件夹
-        base_path = sys._MEIPASS
-        logger.debug(f"打包环境中，基础路径: {base_path}")
-    except Exception:
-        # 开发环境中的路径 - 获取 path_helpers.py 所在的目录 (src/shared)，然后向上两级到项目根目录
-        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        logger.debug(f"开发环境中，项目根目录: {base_path}")
-    
+    base_path = get_resource_root()
     abs_path = os.path.join(base_path, relative_path)
     logger.debug(f"资源路径解析: '{relative_path}' -> '{abs_path}'")
     return abs_path

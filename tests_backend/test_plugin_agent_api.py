@@ -629,6 +629,14 @@ class PluginAgentApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["prompt_examples"]), 3)
         self.assertIsNone(payload["session"])
 
+    def test_get_plugin_agent_runtime_uses_app_root_plugins_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin_agent_module._plugin_agent_runtime = None
+            with mock.patch.object(self.plugin_agent_module, "get_app_root", return_value=temp_dir):
+                runtime = self.plugin_agent_module.get_plugin_agent_runtime()
+
+        self.assertEqual(runtime.plugins_root, os.path.join(temp_dir, "plugins"))
+
     def test_modify_session_requires_existing_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             plugins_root = os.path.join(temp_dir, "plugins")
