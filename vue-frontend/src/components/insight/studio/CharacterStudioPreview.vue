@@ -28,7 +28,9 @@
             <h4>聊天预览</h4>
             <p>直接在当前文档上试聊，观察问候语、世界书命中、正则日志和变量变化。</p>
           </div>
-          <button class="ghost-btn" :disabled="!document" @click="$emit('reset-preview')">重置会话</button>
+          <button class="ghost-btn" :disabled="!document || resettingPreview" @click="$emit('reset-preview')">
+            {{ resettingPreview ? '重置中...' : '重置会话' }}
+          </button>
         </div>
 
         <div v-if="!document" class="empty-copy">选择角色文档后可试聊。</div>
@@ -124,6 +126,7 @@ const props = defineProps<{
   session: PreviewSessionState | null
   previewing: boolean
   agentBusy: boolean
+  resettingPreview: boolean
   agentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   pendingPatch: Record<string, unknown> | null
   canUndoPatch: boolean
@@ -172,9 +175,14 @@ function summarizeLog(item: Record<string, unknown>) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100%;
   min-height: 0;
   width: 100%;
   align-self: stretch;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .runtime-shell.collapsed {
@@ -291,6 +299,14 @@ function summarizeLog(item: Record<string, unknown>) {
   background: linear-gradient(135deg, #2563c7, #4d86ee);
   color: #fff;
   box-shadow: 0 12px 24px rgba(37, 99, 199, 0.18);
+}
+
+.collapse-btn:disabled,
+.ghost-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .chat-shell,

@@ -155,6 +155,15 @@ export interface CharacterStudioReviewReport {
   generated_at?: string
 }
 
+export interface CharacterStudioEditorPendingState {
+  generatingSection: string | null
+  validating: boolean
+  importingWorldbook: boolean
+  deleting: boolean
+  saving: boolean
+  downloadingFormat: string | null
+}
+
 export interface CardAgentResponse {
   content: string
   context: string

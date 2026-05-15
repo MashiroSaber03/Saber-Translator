@@ -7,7 +7,9 @@
       </div>
       <div class="actions">
         <button class="secondary-btn" @click="addRootEntry">添加根条目</button>
-        <button class="ghost-btn" @click="pickWorldbook">导入世界书</button>
+        <button class="ghost-btn" :disabled="importing" @click="pickWorldbook">
+          {{ importing ? '导入中...' : '导入世界书' }}
+        </button>
       </div>
     </div>
 
@@ -41,6 +43,7 @@ import LorebookTreeBranch from './LorebookTreeBranch.vue'
 
 const props = defineProps<{
   entries: LorebookEntryNode[]
+  importing: boolean
 }>()
 
 const emit = defineEmits<{
@@ -164,6 +167,12 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 .ghost-btn {
   background: rgba(18, 47, 86, 0.08);
   color: #244979;
+}
+
+.secondary-btn:disabled,
+.ghost-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
 }
 
 .placeholder {

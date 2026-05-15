@@ -7,6 +7,10 @@
       :document-origin="currentDocumentOrigin"
       :has-document="!!store.currentDocument"
       :preview-collapsed="effectivePreviewCollapsed"
+      :busy="store.hasBusyAction"
+      :busy-label="store.activeActionLabel"
+      :save-pending="store.isSaving"
+      :validate-pending="store.isValidating"
       @back="goBack"
       @save="saveNow"
       @validate="validate"
@@ -27,58 +31,71 @@
       <div v-if="store.rightDrawerOpen && isCompactDesktop" class="drawer-mask right-mask" @click="store.rightDrawerOpen = false"></div>
 
       <aside class="left-column" :class="{ 'drawer-open': store.leftDrawerOpen }">
-        <CharacterStudioSidebar
-          :documents="store.filteredDocuments"
-          :candidates="store.filteredCandidates"
-          :search="store.selectedLibrarySearch"
-          :current-document-id="store.currentDocument?.id || ''"
-          :has-timeline="store.hasTimeline"
-          @update:search="store.selectedLibrarySearch = $event"
-          @open-document="openDocument"
-          @create-manual="createManual"
-          @create-from-candidate="createFromCandidate"
-          @import-file="importFile"
-        />
+        <div class="column-scroll" data-testid="left-scroll">
+          <CharacterStudioSidebar
+            :documents="store.filteredDocuments"
+            :candidates="store.filteredCandidates"
+            :search="store.selectedLibrarySearch"
+            :current-document-id="store.currentDocument?.id || ''"
+            :has-timeline="store.hasTimeline"
+            :workspace-loading="store.isWorkspaceLoading"
+            :creating-manual="store.isCreatingManual"
+            :importing-file="store.isImportingFile"
+            :opening-document-id="store.openingDocumentId"
+            :creating-candidate-name="store.creatingCandidateName"
+            @update:search="store.selectedLibrarySearch = $event"
+            @open-document="openDocument"
+            @create-manual="createManual"
+            @create-from-candidate="createFromCandidate"
+            @import-file="importFile"
+          />
+        </div>
       </aside>
 
       <section class="editor-column">
-        <CharacterStudioEditor
-          :document="store.currentDocument"
-          :avatar-url="avatarUrl"
-          :saving="store.isSaving"
-          :diagnostics="store.diagnostics"
-          :active-tab="store.activeEditorTab"
-          :active-script-tab="store.activeScriptTab"
-          @update:document="store.currentDocument = $event"
-          @update:active-tab="store.activeEditorTab = $event"
-          @update:active-script-tab="store.activeScriptTab = $event"
-          @save="saveNow"
-          @generate="generateSection"
-          @validate="validate"
-          @delete="deleteCurrent"
-          @import-worldbook="importWorldbook"
-          @download="download"
-        />
+        <div class="column-scroll" data-testid="editor-scroll">
+          <CharacterStudioEditor
+            :document="store.currentDocument"
+            :avatar-url="avatarUrl"
+            :saving="store.isSaving"
+            :diagnostics="store.diagnostics"
+            :pending-state="store.editorPendingState"
+            :active-tab="store.activeEditorTab"
+            :active-script-tab="store.activeScriptTab"
+            @update:document="store.currentDocument = $event"
+            @update:active-tab="store.activeEditorTab = $event"
+            @update:active-script-tab="store.activeScriptTab = $event"
+            @save="saveNow"
+            @generate="generateSection"
+            @validate="validate"
+            @delete="deleteCurrent"
+            @import-worldbook="importWorldbook"
+            @download="download"
+          />
+        </div>
       </section>
 
       <aside class="right-column" :class="{ collapsed: effectivePreviewCollapsed, 'drawer-open': store.rightDrawerOpen }">
-        <CharacterStudioPreview
-          :document="store.currentDocument"
-          :session="store.previewSession"
-          :previewing="store.isPreviewing"
-          :agent-busy="store.isAgentBusy"
-          :agent-messages="store.agentMessages"
-          :pending-patch="store.pendingAgentPatch"
-          :can-undo-patch="store.canUndoPatch"
-          :agent-html-preview="store.agentHtmlPreview"
-          :collapsed="effectivePreviewCollapsed"
-          @send-preview="sendPreview"
-          @reset-preview="resetPreview"
-          @send-agent="sendAgent"
-          @apply-patch="store.applyPendingPatch()"
-          @undo-patch="store.undoLastPatch()"
-          @toggle-collapsed="togglePreview"
-        />
+        <div class="column-scroll" data-testid="right-scroll">
+          <CharacterStudioPreview
+            :document="store.currentDocument"
+            :session="store.previewSession"
+            :previewing="store.isPreviewing"
+            :agent-busy="store.isAgentBusy"
+            :resetting-preview="store.isResettingPreview"
+            :agent-messages="store.agentMessages"
+            :pending-patch="store.pendingAgentPatch"
+            :can-undo-patch="store.canUndoPatch"
+            :agent-html-preview="store.agentHtmlPreview"
+            :collapsed="effectivePreviewCollapsed"
+            @send-preview="sendPreview"
+            @reset-preview="resetPreview"
+            @send-agent="sendAgent"
+            @apply-patch="store.applyPendingPatch()"
+            @undo-patch="store.undoLastPatch()"
+            @toggle-collapsed="togglePreview"
+          />
+        </div>
       </aside>
     </div>
   </div>
@@ -278,8 +295,11 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
-  min-height: 100vh;
+  height: 100vh;
   margin: 0 -20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background:
     radial-gradient(circle at top right, rgba(86, 138, 225, 0.08), transparent 24%),
     linear-gradient(180deg, #f4f7fb 0%, #eef3f9 48%, #f6f8fb 100%);
@@ -291,7 +311,9 @@ watch(() => props.docId, async nextDocId => {
   grid-template-columns: 304px minmax(0, 1fr) 392px;
   gap: 20px;
   padding: 20px 24px 28px;
-  min-height: calc(100vh - 112px);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .left-column,
@@ -299,15 +321,18 @@ watch(() => props.docId, async nextDocId => {
 .right-column {
   min-width: 0;
   width: 100%;
+  min-height: 0;
+  height: 100%;
   justify-self: stretch;
+  overflow: hidden;
 }
 
-.left-column,
-.right-column {
-  align-self: start;
-  position: sticky;
-  top: 108px;
-  max-height: calc(100vh - 132px);
+.column-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .right-column {
@@ -381,9 +406,6 @@ watch(() => props.docId, async nextDocId => {
 
   .workspace-shell.compact-desktop .right-column {
     grid-column: auto;
-    position: sticky;
-    top: 108px;
-    max-height: calc(100vh - 132px);
   }
 
   .workspace-shell.compact-desktop .right-column.collapsed {
@@ -396,7 +418,6 @@ watch(() => props.docId, async nextDocId => {
     top: 108px;
     bottom: 16px;
     width: min(440px, calc(100vw - 32px));
-    max-height: none;
     z-index: 30;
   }
 }

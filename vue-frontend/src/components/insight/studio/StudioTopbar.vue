@@ -13,6 +13,7 @@
             {{ documentTitle ? `当前角色：${documentTitle}` : '当前角色：未选择' }}
           </span>
           <span v-if="documentOrigin" class="status-pill">{{ documentOrigin }}</span>
+          <span v-if="busy && busyLabel" class="status-pill busy-pill">{{ busyLabel }}</span>
         </div>
       </div>
     </div>
@@ -23,8 +24,12 @@
       <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('toggle-preview')">
         {{ previewCollapsed ? '展开预览' : '收起预览' }}
       </button>
-      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('validate')">诊断</button>
-      <button class="primary-btn" :disabled="!hasDocument" @click="$emit('save')">保存</button>
+      <button class="ghost-btn" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
+        {{ validatePending ? '诊断中...' : '诊断' }}
+      </button>
+      <button class="primary-btn" :disabled="!hasDocument || savePending" @click="$emit('save')">
+        {{ savePending ? '保存中...' : '保存' }}
+      </button>
     </div>
   </header>
 </template>
@@ -37,6 +42,10 @@ defineProps<{
   documentOrigin: string
   hasDocument: boolean
   previewCollapsed: boolean
+  busy: boolean
+  busyLabel: string
+  savePending: boolean
+  validatePending: boolean
 }>()
 
 defineEmits<{
@@ -128,6 +137,11 @@ defineEmits<{
   color: #6d839f;
 }
 
+.busy-pill {
+  background: rgba(37, 99, 199, 0.12);
+  color: #1f5fc3;
+}
+
 .back-btn,
 .ghost-btn,
 .primary-btn,
@@ -157,6 +171,16 @@ defineEmits<{
   background: linear-gradient(135deg, #2563c7, #4d86ee);
   color: #fff;
   box-shadow: 0 12px 24px rgba(37, 99, 199, 0.22);
+}
+
+.back-btn:disabled,
+.ghost-btn:disabled,
+.primary-btn:disabled,
+.icon-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .icon-btn {

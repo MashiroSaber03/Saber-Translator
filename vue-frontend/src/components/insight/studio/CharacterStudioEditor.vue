@@ -36,9 +36,15 @@
           </div>
         </div>
         <div class="hero-actions">
-          <button class="ghost-btn" @click="$emit('generate', 'identity')">AI 补全角色设定</button>
-          <button class="ghost-btn" @click="$emit('generate', 'review')">AI 审查当前角色</button>
-          <button class="danger-btn" @click="$emit('delete')">删除文档</button>
+          <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')">
+            {{ isGenerating('identity') ? '补全中...' : 'AI 补全角色设定' }}
+          </button>
+          <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'review')">
+            {{ isGenerating('review') ? '审查中...' : 'AI 审查当前角色' }}
+          </button>
+          <button class="danger-btn" :disabled="pendingState.deleting" @click="$emit('delete')">
+            {{ pendingState.deleting ? '删除中...' : '删除文档' }}
+          </button>
         </div>
       </section>
 
@@ -129,7 +135,9 @@
                   <h3>最近诊断摘要</h3>
                   <p>导出前先看这里，能快速判断当前角色是否存在结构性问题。</p>
                 </div>
-                <button class="ghost-btn small" @click="$emit('validate')">重新诊断</button>
+                <button class="ghost-btn small" :disabled="pendingState.validating" @click="$emit('validate')">
+                  {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
+                </button>
               </div>
               <DiagnosticsPanel :diagnostics="diagnostics" />
             </section>
@@ -164,8 +172,12 @@
                 <p>聚合角色身份与世界观上下文，优先把角色基底写清楚，再去扩展运行时能力。</p>
               </div>
               <div class="head-actions">
-                <button class="ghost-btn small" @click="$emit('generate', 'identity')">AI 重写本区</button>
-                <button class="ghost-btn small" @click="$emit('generate', 'translate')">整卡翻译</button>
+                <button class="ghost-btn small" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')">
+                  {{ isGenerating('identity') ? '重写中...' : 'AI 重写本区' }}
+                </button>
+                <button class="ghost-btn small" :disabled="isGenerationLocked" @click="$emit('generate', 'translate')">
+                  {{ isGenerating('translate') ? '翻译中...' : '整卡翻译' }}
+                </button>
               </div>
             </div>
 
@@ -212,6 +224,7 @@
           <GreetingWorkbench
             :first-message="localDocument.coreMessages.first_message"
             :alternates="localDocument.coreMessages.alternate_greetings"
+            :generating="isGenerating('greetings')"
             @update:first-message="localDocument.coreMessages.first_message = $event"
             @update:item="updateGreeting"
             @add="addGreeting"
@@ -273,6 +286,7 @@
             </div>
             <LorebookTreeEditor
               :entries="localDocument.lorebook.entries"
+              :importing="pendingState.importingWorldbook"
               @update:entries="localDocument.lorebook.entries = $event"
               @import-worldbook="$emit('import-worldbook', $event)"
             />
@@ -302,6 +316,7 @@
               <RegexWorkbench
                 v-if="activeScriptTab === 'regex'"
                 :scripts="localDocument.regexScripts"
+                :generating="isGenerating('regex')"
                 @generate="$emit('generate', 'regex')"
                 @add="addRegexScript"
                 @remove="removeRegexScript"
@@ -313,6 +328,7 @@
               <TaskWorkbench
                 v-else
                 :tasks="localDocument.stateTasks"
+                :generating="isGenerating('state-tasks')"
                 @generate="$emit('generate', 'state-tasks')"
                 @add="addStateTask"
                 @remove="removeStateTask"
@@ -332,32 +348,36 @@
                 <p>在这里完成结构诊断、兼容裁剪确认和最终导出。导出前建议先跑一遍诊断。</p>
               </div>
               <div class="head-actions">
-                <button class="ghost-btn small" @click="$emit('validate')">重新诊断</button>
-                <button class="primary-btn small" @click="$emit('save')">{{ saving ? '保存中...' : '保存文档' }}</button>
+                <button class="ghost-btn small" :disabled="pendingState.validating" @click="$emit('validate')">
+                  {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
+                </button>
+                <button class="primary-btn small" :disabled="pendingState.saving" @click="$emit('save')">
+                  {{ pendingState.saving ? '保存中...' : '保存文档' }}
+                </button>
               </div>
             </div>
 
             <DiagnosticsPanel :diagnostics="diagnostics" />
 
             <div class="export-grid">
-              <button class="export-card" @click="$emit('download', 'v3')">
+              <button class="export-card" :disabled="isDownloading('v3')" @click="$emit('download', 'v3')">
                 <span class="export-icon">🧾</span>
-                <strong>导出 V3 JSON</strong>
+                <strong>{{ isDownloading('v3') ? '导出中...' : '导出 V3 JSON' }}</strong>
                 <p>当前工作台的主导出格式。</p>
               </button>
-              <button class="export-card" @click="$emit('download', 'v2')">
+              <button class="export-card" :disabled="isDownloading('v2')" @click="$emit('download', 'v2')">
                 <span class="export-icon">📦</span>
-                <strong>导出 V2 JSON</strong>
+                <strong>{{ isDownloading('v2') ? '导出中...' : '导出 V2 JSON' }}</strong>
                 <p>用于兼容旧生态，可能存在裁剪。</p>
               </button>
-              <button class="export-card" @click="$emit('download', 'png')">
+              <button class="export-card" :disabled="isDownloading('png')" @click="$emit('download', 'png')">
                 <span class="export-icon">🖼️</span>
-                <strong>导出 PNG</strong>
+                <strong>{{ isDownloading('png') ? '导出中...' : '导出 PNG' }}</strong>
                 <p>便于分享和回流导入。</p>
               </button>
-              <button class="export-card" @click="$emit('download', 'worldbook')">
+              <button class="export-card" :disabled="isDownloading('worldbook')" @click="$emit('download', 'worldbook')">
                 <span class="export-icon">📚</span>
-                <strong>导出世界书</strong>
+                <strong>{{ isDownloading('worldbook') ? '导出中...' : '导出世界书' }}</strong>
                 <p>单独导出当前角色知识树。</p>
               </button>
             </div>
@@ -370,7 +390,13 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { CharacterStudioDocument, ExportDiagnostic, RegexScript, StateTask } from '@/types/characterStudio'
+import type {
+  CharacterStudioDocument,
+  CharacterStudioEditorPendingState,
+  ExportDiagnostic,
+  RegexScript,
+  StateTask,
+} from '@/types/characterStudio'
 import LorebookTreeEditor from './LorebookTreeEditor.vue'
 import StudioSectionTabs from './StudioSectionTabs.vue'
 import GreetingWorkbench from './GreetingWorkbench.vue'
@@ -383,6 +409,7 @@ const props = defineProps<{
   avatarUrl: string
   saving: boolean
   diagnostics: ExportDiagnostic | null
+  pendingState: CharacterStudioEditorPendingState
   activeTab: 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'
   activeScriptTab: 'regex' | 'tasks'
 }>()
@@ -462,6 +489,16 @@ function normalizeTab(value: string): 'overview' | 'character' | 'greetings' | '
 
 function normalizeScriptTab(value: string): 'regex' | 'tasks' {
   return value === 'tasks' ? 'tasks' : 'regex'
+}
+
+function isGenerating(section: string) {
+  return props.pendingState.generatingSection === section
+}
+
+const isGenerationLocked = computed(() => props.pendingState.generatingSection !== null)
+
+function isDownloading(format: string) {
+  return props.pendingState.downloadingFormat === format
 }
 
 function formatOrigin(origin: CharacterStudioDocument['origin']['type']) {
@@ -602,7 +639,13 @@ function toggleScriptFreeze(event: Event) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .empty-card,
@@ -975,6 +1018,16 @@ textarea {
   padding: 11px 14px;
   background: rgba(217, 55, 55, 0.12);
   color: #b83535;
+}
+
+.ghost-btn:disabled,
+.primary-btn:disabled,
+.danger-btn:disabled,
+.export-card:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .small {

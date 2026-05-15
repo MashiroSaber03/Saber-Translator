@@ -10,7 +10,8 @@
         v-for="item in documents"
         :key="item.id"
         class="item"
-        :class="{ active: currentDocumentId === item.id }"
+        :class="{ active: currentDocumentId === item.id, opening: openingDocumentId === item.id }"
+        :disabled="!!openingDocumentId"
         @click="$emit('open', item.id)"
       >
         <div class="item-main">
@@ -21,6 +22,7 @@
           </div>
         </div>
         <div class="item-badges">
+          <span v-if="openingDocumentId === item.id" class="opening-pill">打开中...</span>
           <span v-if="item.is_favorite" class="favorite-pill">收藏</span>
           <span v-if="item.source_character" class="source-pill">{{ item.source_character }}</span>
         </div>
@@ -35,6 +37,7 @@ import type { CharacterStudioSummary } from '@/types/characterStudio'
 defineProps<{
   documents: CharacterStudioSummary[]
   currentDocumentId: string
+  openingDocumentId: string
 }>()
 
 defineEmits<{
@@ -103,10 +106,19 @@ function formatTime(value: string) {
   cursor: pointer;
 }
 
+.item:disabled {
+  opacity: 0.74;
+  cursor: wait;
+}
+
 .item.active {
   border-color: rgba(37, 99, 199, 0.24);
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 12px 24px rgba(31, 70, 120, 0.08);
+}
+
+.item.opening {
+  cursor: wait;
 }
 
 .item-main strong {
@@ -131,11 +143,17 @@ function formatTime(value: string) {
   align-items: flex-end;
 }
 
+.opening-pill,
 .favorite-pill,
 .source-pill {
   border-radius: 999px;
   padding: 3px 8px;
   font-size: 10px;
+}
+
+.opening-pill {
+  background: rgba(37, 99, 199, 0.14);
+  color: #1f5fc3;
 }
 
 .favorite-pill {

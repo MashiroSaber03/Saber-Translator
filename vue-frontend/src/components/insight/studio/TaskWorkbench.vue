@@ -6,7 +6,9 @@
         <p>用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
       </div>
       <div class="actions">
-        <button class="ghost-btn" @click="$emit('generate')">AI 生成任务</button>
+        <button class="ghost-btn" :disabled="generating" @click="$emit('generate')">
+          {{ generating ? '生成中...' : 'AI 生成任务' }}
+        </button>
         <button class="secondary-btn" @click="$emit('add')">添加任务</button>
       </div>
     </div>
@@ -49,6 +51,7 @@ import type { StateTask } from '@/types/characterStudio'
 
 defineProps<{
   tasks: StateTask[]
+  generating: boolean
 }>()
 
 defineEmits<{
@@ -166,6 +169,13 @@ label {
   padding: 10px 14px;
   background: rgba(217, 55, 55, 0.12);
   color: #b83535;
+}
+
+.secondary-btn:disabled,
+.ghost-btn:disabled,
+.danger-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
 }
 
 .small {

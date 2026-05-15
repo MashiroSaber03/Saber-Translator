@@ -89,6 +89,14 @@ describe('CharacterStudioEditor tabs', () => {
           diagnostics: null,
           activeTab: activeTab.value,
           activeScriptTab: activeScriptTab.value,
+          pendingState: {
+            generatingSection: null,
+            validating: false,
+            importingWorldbook: false,
+            deleting: false,
+            saving: false,
+            downloadingFormat: null,
+          },
           'onUpdate:document': (value: CharacterStudioDocument | null) => { currentDocument.value = value },
           'onUpdate:activeTab': (value: typeof activeTab.value) => { activeTab.value = value },
           'onUpdate:activeScriptTab': (value: typeof activeScriptTab.value) => { activeScriptTab.value = value },
@@ -142,5 +150,40 @@ describe('CharacterStudioEditor tabs', () => {
 
     expect(wrapper.text()).toContain('建议补强世界书和备用问候。')
     expect(wrapper.text()).toContain('世界书覆盖面不足')
+  })
+
+  it('shows loading copy for section generation and validation actions', async () => {
+    const wrapper = mount(defineComponent({
+      components: { CharacterStudioEditor },
+      setup() {
+        return () => h(CharacterStudioEditor, {
+          document,
+          avatarUrl: '',
+          saving: false,
+          diagnostics: null,
+          activeTab: 'overview',
+          activeScriptTab: 'regex',
+          pendingState: {
+            generatingSection: 'identity',
+            validating: true,
+            importingWorldbook: false,
+            deleting: false,
+            saving: false,
+            downloadingFormat: null,
+          },
+        })
+      },
+    }), {
+      global: {
+        stubs: {
+          LorebookTreeEditor: {
+            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('补全中...')
+    expect(wrapper.text()).toContain('诊断中...')
   })
 })

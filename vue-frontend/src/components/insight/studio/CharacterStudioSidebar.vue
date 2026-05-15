@@ -13,11 +13,16 @@
           class="search-input"
           placeholder="搜索角色 / 标签 / 来源"
           type="text"
+          :disabled="workspaceLoading"
           @input="$emit('update:search', ($event.target as HTMLInputElement).value)"
         >
         <div class="action-row">
-          <button class="primary-btn" @click="$emit('create-manual')">空白新建</button>
-          <button class="ghost-btn" @click="pickImport">导入</button>
+          <button class="primary-btn" :disabled="creatingManual || importingFile" @click="$emit('create-manual')">
+            {{ creatingManual ? '新建中...' : '空白新建' }}
+          </button>
+          <button class="ghost-btn" :disabled="creatingManual || importingFile" @click="pickImport">
+            {{ importingFile ? '导入中...' : '导入' }}
+          </button>
         </div>
       </div>
 
@@ -28,12 +33,14 @@
       <DocumentListPane
         :documents="documents"
         :current-document-id="currentDocumentId"
+        :opening-document-id="openingDocumentId"
         @open="$emit('open-document', $event)"
       />
 
       <CandidateListPane
         :candidates="candidates"
         :has-timeline="hasTimeline"
+        :creating-candidate-name="creatingCandidateName"
         @create="$emit('create-from-candidate', $event)"
       />
     </div>
@@ -52,6 +59,11 @@ defineProps<{
   search: string
   currentDocumentId: string
   hasTimeline: boolean
+  workspaceLoading: boolean
+  creatingManual: boolean
+  importingFile: boolean
+  openingDocumentId: string
+  creatingCandidateName: string
 }>()
 
 const emit = defineEmits<{
@@ -81,6 +93,7 @@ function handleFileSelect(event: Event) {
 .sidebar-shell {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   width: 100%;
   border-radius: 26px;
@@ -91,6 +104,7 @@ function handleFileSelect(event: Event) {
 }
 
 .sidebar-toolbar {
+  flex-shrink: 0;
   padding: 18px 18px 16px;
   border-bottom: 1px solid rgba(28, 55, 94, 0.08);
   background:
@@ -159,7 +173,16 @@ function handleFileSelect(event: Event) {
   color: #234977;
 }
 
+.primary-btn:disabled,
+.ghost-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .sidebar-content {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;

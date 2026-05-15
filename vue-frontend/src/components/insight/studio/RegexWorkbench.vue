@@ -6,7 +6,9 @@
         <p>统一维护提示替换、显示替换与运行位置，避免把运行时逻辑埋进大表单。</p>
       </div>
       <div class="actions">
-        <button class="ghost-btn" @click="$emit('generate')">AI 生成脚本</button>
+        <button class="ghost-btn" :disabled="generating" @click="$emit('generate')">
+          {{ generating ? '生成中...' : 'AI 生成脚本' }}
+        </button>
         <button class="secondary-btn" @click="$emit('add')">添加脚本</button>
       </div>
     </div>
@@ -48,6 +50,7 @@ import type { RegexScript } from '@/types/characterStudio'
 
 defineProps<{
   scripts: RegexScript[]
+  generating: boolean
 }>()
 
 defineEmits<{
@@ -164,6 +167,13 @@ label {
   padding: 10px 14px;
   background: rgba(217, 55, 55, 0.12);
   color: #b83535;
+}
+
+.secondary-btn:disabled,
+.ghost-btn:disabled,
+.danger-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
 }
 
 .small {

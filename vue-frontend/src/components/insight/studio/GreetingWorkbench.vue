@@ -6,7 +6,9 @@
           <h3>主问候</h3>
           <p>角色进入对话时最先展示的开场白。它决定了语气、场景和第一印象。</p>
         </div>
-        <button class="ghost-btn" @click="$emit('generate')">批量生成</button>
+        <button class="ghost-btn" :disabled="generating" @click="$emit('generate')">
+          {{ generating ? '生成中...' : '批量生成' }}
+        </button>
       </div>
       <textarea :value="firstMessage" rows="6" @input="$emit('update:firstMessage', ($event.target as HTMLTextAreaElement).value)"></textarea>
     </div>
@@ -47,6 +49,7 @@
 defineProps<{
   firstMessage: string
   alternates: string[]
+  generating: boolean
 }>()
 
 defineEmits<{
@@ -163,6 +166,13 @@ textarea {
   padding: 10px 14px;
   background: rgba(217, 55, 55, 0.12);
   color: #b83535;
+}
+
+.secondary-btn:disabled,
+.ghost-btn:disabled,
+.danger-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
 }
 
 .small {

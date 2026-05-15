@@ -14,7 +14,9 @@
             首登 {{ item.first_appearance || '-' }} 页 · 对话 {{ item.dialogue_count }} · 关键页 {{ item.sample_pages.slice(0, 3).join(' / ') || '-' }}
           </div>
         </div>
-        <button class="create-btn" @click="$emit('create', item.name)">创建</button>
+        <button class="create-btn" :disabled="!!creatingCandidateName" @click="$emit('create', item.name)">
+          {{ creatingCandidateName === item.name ? '创建中...' : '创建' }}
+        </button>
       </div>
     </div>
   </div>
@@ -26,6 +28,7 @@ import type { CharacterStudioCandidate } from '@/types/characterStudio'
 defineProps<{
   candidates: CharacterStudioCandidate[]
   hasTimeline: boolean
+  creatingCandidateName: string
 }>()
 
 defineEmits<{
@@ -99,5 +102,10 @@ defineEmits<{
   background: rgba(37, 99, 199, 0.1);
   color: #1f5fc3;
   cursor: pointer;
+}
+
+.create-btn:disabled {
+  opacity: 0.72;
+  cursor: wait;
 }
 </style>
