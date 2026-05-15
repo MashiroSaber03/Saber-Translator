@@ -49,7 +49,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const pendingAgentPatch = ref<Record<string, unknown> | null>(null)
   const activeEditorTab = ref<'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'>('overview')
   const activeScriptTab = ref<'regex' | 'tasks'>('regex')
-  const previewCollapsed = ref(false)
   const leftDrawerOpen = ref(false)
   const rightDrawerOpen = ref(false)
   const isWorkspaceLoading = ref(false)
@@ -649,7 +648,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     activeActionLabel,
     activeEditorTab,
     activeScriptTab,
-    previewCollapsed,
     leftDrawerOpen,
     rightDrawerOpen,
     isWorkspaceLoading,

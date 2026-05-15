@@ -6,7 +6,6 @@
       :document-title="store.currentDocument?.meta.title || ''"
       :document-origin="currentDocumentOrigin"
       :has-document="!!store.currentDocument"
-      :preview-collapsed="effectivePreviewCollapsed"
       :busy="store.hasBusyAction"
       :busy-label="store.activeActionLabel"
       :save-pending="store.isSaving"
@@ -15,7 +14,6 @@
       @save="saveNow"
       @validate="validate"
       @open-export="store.activeEditorTab = 'export'"
-      @toggle-preview="togglePreview"
       @toggle-left-drawer="store.leftDrawerOpen = !store.leftDrawerOpen"
       @toggle-right-drawer="store.rightDrawerOpen = !store.rightDrawerOpen"
     />
@@ -26,13 +24,13 @@
       <p>请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊仍然依赖当前书籍的分析上下文。</p>
     </div>
 
-    <div v-else class="workspace-shell" :class="{ 'preview-collapsed': effectivePreviewCollapsed, 'compact-desktop': isCompactDesktop }">
+    <div v-else class="workspace-shell">
       <div v-if="store.errorMessage" class="workspace-error">
         <span>⚠ {{ store.errorMessage }}</span>
         <button class="error-dismiss" @click="store.clearErrorMessage()">知道了</button>
       </div>
       <div v-if="store.leftDrawerOpen" class="drawer-mask left-mask" @click="store.leftDrawerOpen = false"></div>
-      <div v-if="store.rightDrawerOpen && isCompactDesktop" class="drawer-mask right-mask" @click="store.rightDrawerOpen = false"></div>
+      <div v-if="store.rightDrawerOpen" class="drawer-mask right-mask" @click="store.rightDrawerOpen = false"></div>
 
       <aside class="left-column" :class="{ 'drawer-open': store.leftDrawerOpen }">
         <div class="column-scroll" data-testid="left-scroll">
@@ -78,7 +76,7 @@
         </div>
       </section>
 
-      <aside class="right-column" :class="{ collapsed: effectivePreviewCollapsed, 'drawer-open': store.rightDrawerOpen }">
+      <aside class="right-column" :class="{ 'drawer-open': store.rightDrawerOpen }">
         <div class="column-scroll" data-testid="right-scroll">
           <CharacterStudioPreview
             :document="store.currentDocument"
@@ -90,13 +88,11 @@
             :pending-patch="store.pendingAgentPatch"
             :can-undo-patch="store.canUndoPatch"
             :agent-html-preview="store.agentHtmlPreview"
-            :collapsed="effectivePreviewCollapsed"
             @send-preview="sendPreview"
             @reset-preview="resetPreview"
             @send-agent="sendAgent"
             @apply-patch="store.applyPendingPatch()"
             @undo-patch="store.undoLastPatch()"
-            @toggle-collapsed="togglePreview"
           />
         </div>
       </aside>
@@ -105,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
@@ -123,13 +119,6 @@ const props = defineProps<{
 const router = useRouter()
 const store = useCharacterStudioStore()
 const bookshelfStore = useBookshelfStore()
-const viewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
-
-const isCompactDesktop = computed(() => viewportWidth.value <= 1280 && viewportWidth.value > 900)
-const effectivePreviewCollapsed = computed(() => (
-  isCompactDesktop.value ? !store.rightDrawerOpen : store.previewCollapsed
-))
-
 const currentBookTitle = computed(() => {
   if (!props.bookId) return ''
   const book = bookshelfStore.books.find(item => item.id === props.bookId)
@@ -194,17 +183,6 @@ function goBack() {
     return
   }
   void router.push({ name: 'insight', query: { book: props.bookId } })
-}
-
-function togglePreview() {
-  if (isCompactDesktop.value) {
-    store.rightDrawerOpen = !store.rightDrawerOpen
-    return
-  }
-  store.previewCollapsed = !store.previewCollapsed
-  if (store.previewCollapsed) {
-    store.rightDrawerOpen = false
-  }
 }
 
 async function openDocument(docId: string) {
@@ -280,11 +258,8 @@ async function download(format: string) {
 
 onMounted(async () => {
   const handleResize = () => {
-    viewportWidth.value = window.innerWidth
     if (window.innerWidth > 900) {
       store.leftDrawerOpen = false
-    }
-    if (window.innerWidth > 1280) {
       store.rightDrawerOpen = false
     }
   }
@@ -447,10 +422,6 @@ watch(() => props.docId, async nextDocId => {
   width: 88px;
 }
 
-.workspace-shell.preview-collapsed {
-  grid-template-columns: 304px minmax(0, 1fr) 88px;
-}
-
 .empty-state {
   max-width: 560px;
   margin: 80px auto;
@@ -494,35 +465,11 @@ watch(() => props.docId, async nextDocId => {
     grid-template-columns: 288px minmax(0, 1fr) 368px;
   }
 
-  .workspace-shell.preview-collapsed {
-    grid-template-columns: 288px minmax(0, 1fr) 88px;
-  }
 }
 
 @media (max-width: 1180px) {
-  .workspace-shell.compact-desktop {
-    grid-template-columns: 280px minmax(0, 1fr) 76px;
-  }
-
-  .workspace-shell.compact-desktop.preview-collapsed {
-    grid-template-columns: 280px minmax(0, 1fr) 76px;
-  }
-
-  .workspace-shell.compact-desktop .right-column {
-    grid-column: auto;
-  }
-
-  .workspace-shell.compact-desktop .right-column.collapsed {
-    width: 76px;
-  }
-
-  .workspace-shell.compact-desktop .right-column.drawer-open {
-    position: fixed;
-    right: 16px;
-    top: 108px;
-    bottom: 16px;
-    width: min(440px, calc(100vw - 32px));
-    z-index: 30;
+  .workspace-shell {
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
   }
 }
 

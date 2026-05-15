@@ -75,7 +75,7 @@ const sessionStub: PreviewSessionState = {
 }
 
 describe('CharacterStudioPreview layout state', () => {
-  it('emits toggle event for collapsible runtime sidebar', async () => {
+  it('does not render collapse controls anymore', () => {
     const wrapper = mount(CharacterStudioPreview, {
       props: {
         document: documentStub,
@@ -86,14 +86,12 @@ describe('CharacterStudioPreview layout state', () => {
         agentMessages: [],
         pendingPatch: null,
         agentHtmlPreview: '',
-        collapsed: false,
         canUndoPatch: false,
       },
     })
 
-    await wrapper.find('[data-testid="toggle-preview"]').trigger('click')
-
-    expect(wrapper.emitted('toggle-collapsed')).toBeTruthy()
+    expect(wrapper.text()).not.toContain('收起')
+    expect(wrapper.find('[data-testid="toggle-preview"]').exists()).toBe(false)
   })
 
   it('keeps undo patch available after patch is applied', () => {
@@ -107,7 +105,6 @@ describe('CharacterStudioPreview layout state', () => {
         agentMessages: [],
         pendingPatch: null,
         agentHtmlPreview: '',
-        collapsed: false,
         canUndoPatch: true,
       },
     })

@@ -21,9 +21,6 @@
     <div class="topbar-right">
       <button class="icon-btn drawer-btn" title="打开运行时侧栏" @click="$emit('toggle-right-drawer')">⌘</button>
       <button class="ghost-btn" @click="$emit('open-export')">导出区</button>
-      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('toggle-preview')">
-        {{ previewCollapsed ? '展开预览' : '收起预览' }}
-      </button>
       <button class="ghost-btn" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
         {{ validatePending ? '诊断中...' : '诊断' }}
       </button>
@@ -41,7 +38,6 @@ defineProps<{
   documentTitle: string
   documentOrigin: string
   hasDocument: boolean
-  previewCollapsed: boolean
   busy: boolean
   busyLabel: string
   savePending: boolean
@@ -53,7 +49,6 @@ defineEmits<{
   (e: 'save'): void
   (e: 'validate'): void
   (e: 'open-export'): void
-  (e: 'toggle-preview'): void
   (e: 'toggle-left-drawer'): void
   (e: 'toggle-right-drawer'): void
 }>()
