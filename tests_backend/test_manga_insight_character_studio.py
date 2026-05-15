@@ -249,6 +249,180 @@ class CharacterStudioPreviewTests(unittest.TestCase):
         self.assertIn("doc_id", session)
         self.assertEqual(session["doc_id"], "doc_alpha")
 
+    def test_generate_review_persists_last_review_payload(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                with mock.patch.object(service, "_create_chat_client", return_value=None):
+                    updated = asyncio.run(service.generate_section(document["id"], "review"))
+
+                self.assertIn("last_review", updated["exportArtifacts"])
+                self.assertIn("summary", updated["exportArtifacts"]["last_review"])
+                reloaded = asyncio.run(service.store.load_document(document["id"]))
+                self.assertIn("last_review", reloaded["exportArtifacts"])
+
+    def test_preview_chat_applies_runtime_rules_for_tasks_regex_and_lorebook(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                document["coreMessages"]["first_message"] = "开场白"
+                document["regexScripts"] = [
+                    {
+                        "id": "regex_apply",
+                        "scriptName": "问候替换",
+                        "findRegex": "hello",
+                        "replaceString": "hi",
+                        "placement": [1],
+                        "markdownOnly": False,
+                        "promptOnly": False,
+                        "runOnEdit": True,
+                        "disabled": False,
+                    },
+                    {
+                        "id": "regex_skip",
+                        "scriptName": "停用编辑时运行",
+                        "findRegex": "hero",
+                        "replaceString": "champion",
+                        "placement": [1],
+                        "markdownOnly": False,
+                        "promptOnly": False,
+                        "runOnEdit": False,
+                        "disabled": False,
+                    },
+                ]
+                document["lorebook"]["entries"] = [
+                    {
+                        "id": "entry_secondary",
+                        "comment": "次级关键词命中",
+                        "keys": ["primary"],
+                        "secondary_keys": ["ally"],
+                        "content": "secondary content",
+                        "enabled": True,
+                        "constant": False,
+                        "selective": False,
+                        "priority": 100,
+                        "position": "before_char",
+                        "depth": 4,
+                        "probability": 100,
+                        "prevent_recursion": False,
+                        "children": [],
+                    },
+                    {
+                        "id": "entry_regex",
+                        "comment": "正则关键词命中",
+                        "keys": ["fo+d"],
+                        "secondary_keys": [],
+                        "content": "regex content",
+                        "enabled": True,
+                        "constant": False,
+                        "selective": False,
+                        "priority": 100,
+                        "position": "before_char",
+                        "depth": 4,
+                        "probability": 100,
+                        "prevent_recursion": False,
+                        "use_regex": True,
+                        "children": [],
+                    },
+                    {
+                        "id": "entry_prob_zero",
+                        "comment": "不会命中",
+                        "keys": ["hero"],
+                        "secondary_keys": [],
+                        "content": "should not appear",
+                        "enabled": True,
+                        "constant": False,
+                        "selective": False,
+                        "priority": 100,
+                        "position": "before_char",
+                        "depth": 4,
+                        "probability": 0,
+                        "prevent_recursion": False,
+                        "children": [],
+                    },
+                    {
+                        "id": "entry_once",
+                        "comment": "仅首次注入",
+                        "keys": ["hero"],
+                        "secondary_keys": [],
+                        "content": "inject once",
+                        "enabled": True,
+                        "constant": False,
+                        "selective": False,
+                        "priority": 100,
+                        "position": "before_char",
+                        "depth": 4,
+                        "probability": 100,
+                        "prevent_recursion": True,
+                        "children": [],
+                    },
+                ]
+                document["stateTasks"] = [
+                    {
+                        "id": "task_init",
+                        "name": "初始化状态",
+                        "triggerTiming": "initialization",
+                        "interval": 0,
+                        "commands": "<<taskjs>>\nawait STscript('/setvar key=boot ready');\n<</taskjs>>",
+                        "disabled": False,
+                    },
+                    {
+                        "id": "task_receive_every_two",
+                        "name": "双轮接收",
+                        "triggerTiming": "message_received",
+                        "interval": 2,
+                        "commands": "<<taskjs>>\nawait STscript('/setvar key=received twice');\n<</taskjs>>",
+                        "disabled": False,
+                    },
+                    {
+                        "id": "task_after_reply",
+                        "name": "回复后任务",
+                        "triggerTiming": "message_sent",
+                        "interval": 1,
+                        "commands": "<<taskjs>>\nawait STscript('/setvar key=replied yes');\n<</taskjs>>",
+                        "disabled": False,
+                    },
+                ]
+                asyncio.run(service.store.save_document(document))
+
+                with mock.patch.object(service, "_create_chat_client", return_value=None):
+                    session1 = asyncio.run(service.preview_chat(document["id"], "hello ally hero food"))
+                    session2 = asyncio.run(service.preview_chat(document["id"], "hello hero"))
+
+                self.assertEqual(session1["messages"][1]["content"], "hi ally hero food")
+                self.assertEqual(session1["variables"]["boot"], "ready")
+                self.assertEqual(session1["variables"]["replied"], "yes")
+                self.assertNotIn("received", session1["variables"])
+                self.assertIn("received", session2["variables"])
+
+                lorebook_comments = [
+                    item.get("comment")
+                    for item in session2["log"]
+                    if item.get("type") == "lorebook"
+                ]
+                self.assertIn("次级关键词命中", lorebook_comments)
+                self.assertIn("正则关键词命中", lorebook_comments)
+                self.assertNotIn("不会命中", lorebook_comments)
+                self.assertEqual(lorebook_comments.count("仅首次注入"), 1)
+
 
 class CharacterStudioRouteTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -311,6 +485,23 @@ class CharacterStudioRouteTests(unittest.TestCase):
         payload = response.get_json()
         self.assertTrue(payload["success"])
         self.assertEqual(payload["book_id"], "book-demo")
+
+    def test_character_studio_document_route_includes_preview_session(self) -> None:
+        with mock.patch("isolated_character_studio_pkg.character_studio_routes.CharacterStudioService") as service_cls:
+            service = service_cls.return_value
+            service.store.load_document = mock.AsyncMock(return_value=_demo_document())
+            service.store.load_preview_session = mock.AsyncMock(return_value={
+                "doc_id": "doc_alpha",
+                "messages": [{"role": "assistant", "content": "已恢复预览"}],
+                "variables": {"trust_score": 20},
+                "log": [{"type": "task", "name": "初始化状态"}],
+            })
+            response = self.client.get("/api/manga-insight/book-demo/character-studio/documents/doc_alpha")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["preview_session"]["messages"][0]["content"], "已恢复预览")
 
 
 class CharacterStudioSpaRouteTests(unittest.TestCase):

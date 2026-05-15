@@ -7,9 +7,17 @@
       </div>
       <div class="actions">
         <button class="secondary-btn" @click="addRootEntry">添加根条目</button>
-        <button class="ghost-btn" @click="$emit('import-worldbook')">导入世界书</button>
+        <button class="ghost-btn" @click="pickWorldbook">导入世界书</button>
       </div>
     </div>
+
+    <input
+      ref="worldbookInput"
+      hidden
+      type="file"
+      accept=".json"
+      @change="handleWorldbookSelect"
+    >
 
     <div v-if="localEntries.length === 0" class="placeholder">暂无世界书条目。</div>
     <div v-else class="tree-list">
@@ -37,10 +45,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:entries', value: LorebookEntryNode[]): void
-  (e: 'import-worldbook'): void
+  (e: 'import-worldbook', file: File): void
 }>()
 
 const localEntries = ref<LorebookEntryNode[]>([])
+const worldbookInput = ref<HTMLInputElement | null>(null)
 let syncing = false
 
 function cloneEntries(entries: LorebookEntryNode[]) {
@@ -77,6 +86,18 @@ function addRootEntry() {
     prevent_recursion: true,
     children: [],
   })
+}
+
+function pickWorldbook() {
+  worldbookInput.value?.click()
+}
+
+function handleWorldbookSelect(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  emit('import-worldbook', file)
+  target.value = ''
 }
 
 function replaceRootEntry(index: number, value: LorebookEntryNode) {

@@ -60,7 +60,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const selectedLibrarySearch = ref('')
   const _suspendAutosave = ref(false)
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
-  let patchSnapshot: CharacterStudioDocument | null = null
+  const patchSnapshot = ref<CharacterStudioDocument | null>(null)
+
+  const canUndoPatch = computed(() => patchSnapshot.value !== null)
 
   const filteredDocuments = computed(() => {
     const keyword = selectedLibrarySearch.value.trim().toLowerCase()
@@ -118,13 +120,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       currentDocument.value = response.document
       previewSession.value = {
         doc_id: docId,
-        messages: response.document.previewState.messages || [],
-        variables: response.document.previewState.variables || {},
-        log: [],
+        messages: response.preview_session?.messages || response.document.previewState.messages || [],
+        variables: response.preview_session?.variables || response.document.previewState.variables || {},
+        log: response.preview_session?.log || [],
       }
       diagnostics.value = null
+      agentMessages.value = []
       pendingAgentPatch.value = null
       agentHtmlPreview.value = ''
+      patchSnapshot.value = null
       activeEditorTab.value = 'overview'
       activeScriptTab.value = 'regex'
       _suspendAutosave.value = false
@@ -192,6 +196,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     currentDocument.value = null
     previewSession.value = null
     diagnostics.value = null
+    agentMessages.value = []
+    pendingAgentPatch.value = null
+    agentHtmlPreview.value = ''
+    patchSnapshot.value = null
     await loadWorkspace(bookId.value)
   }
 
@@ -287,7 +295,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function applyPendingPatch() {
     if (!currentDocument.value || !pendingAgentPatch.value) return
-    patchSnapshot = cloneDocument(currentDocument.value)
+    patchSnapshot.value = cloneDocument(currentDocument.value)
     const nextDocument = cloneDocument(currentDocument.value)
     const patch = pendingAgentPatch.value
     const frozenSections = new Set(nextDocument.status.frozen_sections || [])
@@ -357,9 +365,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   function undoLastPatch() {
-    if (!patchSnapshot) return
-    currentDocument.value = patchSnapshot
-    patchSnapshot = null
+    if (!patchSnapshot.value) return
+    currentDocument.value = patchSnapshot.value
+    patchSnapshot.value = null
     pendingAgentPatch.value = null
     scheduleAutosave()
   }
@@ -425,6 +433,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     agentMessages,
     agentHtmlPreview,
     pendingAgentPatch,
+    canUndoPatch,
     activeEditorTab,
     activeScriptTab,
     previewCollapsed,

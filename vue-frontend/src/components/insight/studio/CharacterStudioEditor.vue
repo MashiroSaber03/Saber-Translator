@@ -134,6 +134,26 @@
               <DiagnosticsPanel :diagnostics="diagnostics" />
             </section>
           </div>
+
+          <div v-if="latestReview" class="workspace-row single">
+            <section class="workspace-card">
+              <div class="card-head">
+                <div>
+                  <h3>最近审查</h3>
+                  <p>这里展示最近一次“AI 审查当前角色”的结果，方便你直接据此继续补卡。</p>
+                </div>
+              </div>
+              <div class="review-summary">
+                <strong>{{ latestReview.summary }}</strong>
+                <ul v-if="latestReview.issues.length > 0" class="review-list">
+                  <li v-for="(item, index) in latestReview.issues" :key="`review-issue-${index}`">{{ item }}</li>
+                </ul>
+                <ul v-if="latestReview.suggestions.length > 0" class="review-list suggestions">
+                  <li v-for="(item, index) in latestReview.suggestions" :key="`review-suggestion-${index}`">{{ item }}</li>
+                </ul>
+              </div>
+            </section>
+          </div>
         </section>
 
         <section v-else-if="activeTab === 'character'" class="panel-stack">
@@ -254,7 +274,7 @@
             <LorebookTreeEditor
               :entries="localDocument.lorebook.entries"
               @update:entries="localDocument.lorebook.entries = $event"
-              @import-worldbook="$emit('import-worldbook')"
+              @import-worldbook="$emit('import-worldbook', $event)"
             />
           </section>
         </section>
@@ -375,7 +395,7 @@ const emit = defineEmits<{
   (e: 'generate', section: string): void
   (e: 'validate'): void
   (e: 'delete'): void
-  (e: 'import-worldbook'): void
+  (e: 'import-worldbook', file: File): void
   (e: 'download', format: string): void
 }>()
 
@@ -409,6 +429,18 @@ const flattenedLorebookCount = computed(() => {
   const walk = (entries: CharacterStudioDocument['lorebook']['entries']): number =>
     entries.reduce((total, entry) => total + 1 + walk(entry.children || []), 0)
   return walk(localDocument.value.lorebook.entries)
+})
+
+const latestReview = computed(() => {
+  const review = localDocument.value?.exportArtifacts?.last_review as
+    | { summary?: string; issues?: string[]; suggestions?: string[] }
+    | undefined
+  if (!review || !review.summary) return null
+  return {
+    summary: review.summary,
+    issues: Array.isArray(review.issues) ? review.issues : [],
+    suggestions: Array.isArray(review.suggestions) ? review.suggestions : [],
+  }
 })
 
 watch(() => props.document, value => {
@@ -952,6 +984,33 @@ textarea {
 
 .script-panel {
   margin-top: 16px;
+}
+
+.review-summary {
+  margin-top: 14px;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid rgba(28, 55, 94, 0.08);
+}
+
+.review-summary strong {
+  display: block;
+  color: #14304c;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.review-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #516882;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.review-list.suggestions {
+  color: #2b5f9f;
 }
 
 @media (max-width: 1180px) {

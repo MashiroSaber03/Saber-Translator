@@ -63,10 +63,12 @@ def create_character_studio_document(book_id: str):
 @manga_insight_bp.route("/<book_id>/character-studio/documents/<doc_id>", methods=["GET"])
 def get_character_studio_document(book_id: str, doc_id: str):
     try:
-        document = run_async(_service(book_id).store.load_document(doc_id))
+        service = _service(book_id)
+        document = run_async(service.store.load_document(doc_id))
         if not document:
             return error_response("文档不存在", 404)
-        return success_response(data={"document": document})
+        preview_session = run_async(service.store.load_preview_session(doc_id))
+        return success_response(data={"document": document, "preview_session": preview_session})
     except Exception as exc:
         logger.error("读取角色文档失败: %s", exc, exc_info=True)
         return error_response(str(exc), 500)

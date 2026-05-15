@@ -128,4 +128,19 @@ describe('CharacterStudioEditor tabs', () => {
     const currentValue = wrapper.find('textarea').element as HTMLTextAreaElement
     expect(currentValue.value).toBe('新的角色简介')
   })
+
+  it('shows persisted review summary when latest review exists', () => {
+    document.exportArtifacts = {
+      last_review: {
+        summary: '建议补强世界书和备用问候。',
+        issues: ['世界书覆盖面不足'],
+        suggestions: ['增加 2-3 条候选问候语'],
+      },
+    }
+
+    const wrapper = mountHarness()
+
+    expect(wrapper.text()).toContain('建议补强世界书和备用问候。')
+    expect(wrapper.text()).toContain('世界书覆盖面不足')
+  })
 })

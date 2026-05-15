@@ -148,6 +148,13 @@ export interface ExportDiagnostic {
   checks: Record<string, boolean>
 }
 
+export interface CharacterStudioReviewReport {
+  summary: string
+  issues: string[]
+  suggestions: string[]
+  generated_at?: string
+}
+
 export interface CardAgentResponse {
   content: string
   context: string
@@ -167,6 +174,7 @@ export interface CharacterStudioIndexResponse {
 export interface CharacterStudioDocumentResponse {
   success: boolean
   document?: CharacterStudioDocument
+  preview_session?: PreviewSessionState
   error?: string
   message?: string
 }

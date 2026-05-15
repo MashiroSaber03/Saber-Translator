@@ -3,7 +3,7 @@
     <div class="workbench-head">
       <div>
         <h3>状态任务</h3>
-        <p>用于初始化变量或挂载受控运行时逻辑，默认按初始化任务优先配置。</p>
+        <p>用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
       </div>
       <div class="actions">
         <button class="ghost-btn" @click="$emit('generate')">AI 生成任务</button>
@@ -28,7 +28,7 @@
             </select>
           </label>
           <label>
-            间隔（秒）
+            间隔（事件次数）
             <input :value="String(task.interval)" type="number" min="0" @input="$emit('update:number', index, 'interval', Number(($event.target as HTMLInputElement).value || 0))">
           </label>
           <label class="full">

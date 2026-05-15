@@ -63,6 +63,14 @@ vi.mock('@/api/characterStudio', () => ({
   getCharacterStudioDocument: vi.fn().mockResolvedValue({
     success: true,
     document: demoDocument,
+    preview_session: {
+      doc_id: 'doc_alpha',
+      messages: [
+        { role: 'assistant', content: '已恢复的预览消息' },
+      ],
+      variables: { trust_score: 88 },
+      log: [{ type: 'lorebook', comment: '恢复命中' }],
+    },
   }),
 }))
 
@@ -91,5 +99,16 @@ describe('characterStudioStore', () => {
 
     expect(store.currentDocument?.id).toBe('doc_alpha')
     expect(store.currentDocument?.identity.name).toBe('阿尔法')
+  })
+
+  it('restores persisted preview session when opening a document', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    expect(store.previewSession?.messages[0]?.content).toBe('已恢复的预览消息')
+    expect(store.previewSession?.variables.trust_score).toBe(88)
   })
 })

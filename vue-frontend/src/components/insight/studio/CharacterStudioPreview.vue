@@ -78,7 +78,7 @@
           </div>
           <div class="assistant-actions">
             <button class="ghost-btn" :disabled="!pendingPatch" @click="$emit('apply-patch')">应用 patch</button>
-            <button class="ghost-btn" :disabled="!pendingPatch" @click="$emit('undo-patch')">撤销 patch</button>
+            <button class="ghost-btn" :disabled="!canUndoPatch" @click="$emit('undo-patch')">撤销 patch</button>
           </div>
         </div>
 
@@ -126,6 +126,7 @@ const props = defineProps<{
   agentBusy: boolean
   agentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   pendingPatch: Record<string, unknown> | null
+  canUndoPatch: boolean
   agentHtmlPreview: string
   collapsed: boolean
 }>()

@@ -86,11 +86,33 @@ describe('CharacterStudioPreview layout state', () => {
         pendingPatch: null,
         agentHtmlPreview: '',
         collapsed: false,
+        canUndoPatch: false,
       },
     })
 
     await wrapper.find('[data-testid="toggle-preview"]').trigger('click')
 
     expect(wrapper.emitted('toggle-collapsed')).toBeTruthy()
+  })
+
+  it('keeps undo patch available after patch is applied', () => {
+    const wrapper = mount(CharacterStudioPreview, {
+      props: {
+        document: documentStub,
+        session: sessionStub,
+        previewing: false,
+        agentBusy: false,
+        agentMessages: [],
+        pendingPatch: null,
+        agentHtmlPreview: '',
+        collapsed: false,
+        canUndoPatch: true,
+      },
+    })
+
+    const buttons = wrapper.findAll('button')
+    const undoButton = buttons.find(button => button.text().includes('撤销 patch'))
+    expect(undoButton).toBeDefined()
+    expect((undoButton!.element as HTMLButtonElement).disabled).toBe(false)
   })
 })

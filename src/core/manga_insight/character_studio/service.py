@@ -12,7 +12,6 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.core.manga_insight.book_pages import build_book_pages_manifest
 from src.core.manga_insight.config_utils import create_chat_client, has_provider_model_config, load_insight_config
 from src.core.manga_insight.embedding_client import ChatClient
 from src.core.manga_insight.storage import AnalysisStorage
@@ -26,7 +25,13 @@ from .adapters import (
     import_document_payload,
 )
 from .agent import build_agent_context
-from .preview import apply_regex_scripts, initialize_preview_session, match_lorebook
+from .preview import (
+    apply_regex_scripts,
+    initialize_preview_session,
+    match_lorebook,
+    run_state_tasks,
+    sort_lorebook_hits,
+)
 from .store import CharacterStudioStore
 from .validators import build_diagnostics_report
 
@@ -386,6 +391,14 @@ class CharacterStudioService:
                 updated["identity"].update(identity)
             if isinstance(core_messages, dict):
                 updated["coreMessages"].update(core_messages)
+        elif section == "review":
+            updated.setdefault("exportArtifacts", {})
+            updated["exportArtifacts"]["last_review"] = {
+                "summary": str(payload.get("summary", "") or ""),
+                "issues": list(payload.get("issues", []) or []),
+                "suggestions": list(payload.get("suggestions", []) or []),
+                "generated_at": datetime.now().isoformat(),
+            }
         return ensure_document_shape(updated, book_id=self.book_id)
 
     async def validate_document(self, doc_id: str) -> Dict[str, Any]:
@@ -468,8 +481,19 @@ class CharacterStudioService:
             if opening:
                 session["messages"].append({"role": "assistant", "content": opening})
 
-        visible_user, prompt_user, user_hits = apply_regex_scripts(message, document.get("regexScripts", []), placement=1)
-        lorebook_hits = match_lorebook(document.get("lorebook", {}).get("entries", []), prompt_user)
+        visible_user, prompt_user, user_hits = apply_regex_scripts(
+            message,
+            document.get("regexScripts", []),
+            placement=1,
+            respect_run_on_edit=True,
+        )
+        lorebook_hits = sort_lorebook_hits(
+            match_lorebook(
+                document.get("lorebook", {}).get("entries", []),
+                prompt_user,
+                session=session,
+            )
+        )
         session["messages"].append({"role": "user", "content": visible_user})
         session["log"].extend(user_hits)
         for entry in lorebook_hits:
@@ -477,7 +501,10 @@ class CharacterStudioService:
                 "type": "lorebook",
                 "comment": entry.get("comment", ""),
                 "keys": entry.get("keys", []),
+                "position": entry.get("position", "before_char"),
+                "depth": entry.get("depth", 4),
             })
+        session["log"].extend(run_state_tasks(session, document.get("stateTasks", []), event="message_received"))
 
         prompt_lines = [
             document["coreMessages"].get("system_prompt", ""),
@@ -490,7 +517,9 @@ class CharacterStudioService:
         if lorebook_hits:
             prompt_lines.append("命中的世界书条目:")
             for entry in lorebook_hits:
-                prompt_lines.append(f"- {entry.get('comment', '')}: {entry.get('content', '')}")
+                content = str(entry.get("content", "") or "")
+                depth = max(int(entry.get("depth", 4) or 4), 1)
+                prompt_lines.append(f"- {entry.get('comment', '')}: {content[:depth * 160]}")
         history_text = "\n".join(
             f"{item.get('role')}: {item.get('content')}" for item in session["messages"][-8:]
         )
@@ -509,9 +538,15 @@ class CharacterStudioService:
                     await client.close()
                 except Exception:
                     pass
-        visible_assistant, _, assistant_hits = apply_regex_scripts(assistant_text, document.get("regexScripts", []), placement=2)
+        visible_assistant, _, assistant_hits = apply_regex_scripts(
+            assistant_text,
+            document.get("regexScripts", []),
+            placement=2,
+            respect_run_on_edit=True,
+        )
         session["messages"].append({"role": "assistant", "content": visible_assistant})
         session["log"].extend(assistant_hits)
+        session["log"].extend(run_state_tasks(session, document.get("stateTasks", []), event="message_sent"))
         await self.store.save_preview_session(doc_id, session)
         return session
 

@@ -30,7 +30,6 @@
         <CharacterStudioSidebar
           :documents="store.filteredDocuments"
           :candidates="store.filteredCandidates"
-          :loading="store.isWorkspaceLoading"
           :search="store.selectedLibrarySearch"
           :current-document-id="store.currentDocument?.id || ''"
           :has-timeline="store.hasTimeline"
@@ -70,6 +69,7 @@
           :agent-busy="store.isAgentBusy"
           :agent-messages="store.agentMessages"
           :pending-patch="store.pendingAgentPatch"
+          :can-undo-patch="store.canUndoPatch"
           :agent-html-preview="store.agentHtmlPreview"
           :collapsed="effectivePreviewCollapsed"
           @send-preview="sendPreview"
@@ -358,10 +358,6 @@ watch(() => props.docId, async nextDocId => {
   inset: 0;
   background: rgba(16, 34, 58, 0.34);
   z-index: 20;
-}
-
-.mobile-only {
-  display: none;
 }
 
 @media (max-width: 1440px) {

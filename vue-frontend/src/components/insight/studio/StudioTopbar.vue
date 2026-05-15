@@ -178,6 +178,10 @@ defineEmits<{
     justify-content: center;
   }
 
+  .inline-status {
+    display: none;
+  }
+
   .topbar-right {
     max-width: 100%;
   }
