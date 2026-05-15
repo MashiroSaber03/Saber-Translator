@@ -4,16 +4,16 @@
       <button class="icon-btn drawer-btn" title="打开导航" @click="$emit('toggle-left-drawer')">☰</button>
       <button class="back-btn" @click="$emit('back')">返回分析</button>
       <div class="title-block">
-        <div class="kicker">漫画分析 / 角色工坊</div>
-        <h1>角色工坊 2.0</h1>
-        <p>{{ subtitle }}</p>
-        <div class="inline-status">
+        <div class="title-row">
+          <h1>角色工坊 2.0</h1>
+          <span v-if="busy && busyLabel" class="status-pill busy-pill">{{ busyLabel }}</span>
+        </div>
+        <div class="meta-row">
           <span v-if="bookTitle" class="status-pill">当前书籍：{{ bookTitle }}</span>
           <span class="status-pill" :class="{ empty: !documentTitle }">
             {{ documentTitle ? `当前角色：${documentTitle}` : '当前角色：未选择' }}
           </span>
           <span v-if="documentOrigin" class="status-pill">{{ documentOrigin }}</span>
-          <span v-if="busy && busyLabel" class="status-pill busy-pill">{{ busyLabel }}</span>
         </div>
       </div>
     </div>
@@ -58,9 +58,9 @@ defineEmits<{
 .studio-topbar {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
   align-items: center;
-  padding: 16px 24px;
+  padding: 10px 20px;
   position: sticky;
   top: 0;
   z-index: 40;
@@ -73,7 +73,7 @@ defineEmits<{
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .topbar-left {
@@ -92,40 +92,43 @@ defineEmits<{
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  flex: 0 1 420px;
+  max-width: 420px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(28, 55, 94, 0.08);
 }
 
-.kicker {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: #6f84a2;
-  font-weight: 600;
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.title-block h1 {
+.title-row h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1.1;
   color: #102741;
+  white-space: nowrap;
 }
 
-.title-block p {
-  margin: 0;
-  color: #5f7591;
-  font-size: 13px;
-}
-
-.inline-status {
+.meta-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .status-pill {
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   background: rgba(20, 56, 106, 0.06);
   color: #234977;
   font-size: 11px;
+  line-height: 1.2;
 }
 
 .status-pill.empty {
@@ -135,6 +138,11 @@ defineEmits<{
 .busy-pill {
   background: rgba(37, 99, 199, 0.12);
   color: #1f5fc3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+  flex-shrink: 1;
 }
 
 .back-btn,
@@ -197,20 +205,38 @@ defineEmits<{
     justify-content: center;
   }
 
-  .inline-status {
-    display: none;
-  }
-
   .topbar-right {
     max-width: 100%;
+  }
+
+  .title-block {
+    flex-basis: 360px;
+    max-width: 360px;
   }
 }
 
 @media (max-width: 900px) {
+  .studio-topbar {
+    padding: 12px 16px;
+  }
+
   .topbar-left,
   .topbar-right {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .title-block {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .title-row {
+    flex-wrap: wrap;
+  }
+
+  .busy-pill {
+    max-width: none;
   }
 }
 </style>
