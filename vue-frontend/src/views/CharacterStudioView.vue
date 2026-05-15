@@ -316,6 +316,10 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
+  --studio-scrollbar-size: 10px;
+  --studio-scrollbar-thumb: rgba(122, 148, 186, 0.42);
+  --studio-scrollbar-thumb-hover: rgba(88, 118, 164, 0.72);
+  --studio-scrollbar-track: rgba(213, 223, 239, 0.32);
   height: 100vh;
   margin: 0 -20px;
   display: flex;
@@ -373,6 +377,66 @@ watch(() => props.docId, async nextDocId => {
 .column-scroll {
   height: 100%;
   min-height: 0;
+}
+
+.column-scroll,
+.studio-page :deep(.studio-editor),
+.studio-page :deep(.runtime-shell),
+.studio-page :deep(.sidebar-content),
+.studio-page :deep(.chat-shell),
+.studio-page :deep(.agent-shell) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--studio-scrollbar-thumb) transparent;
+}
+
+.column-scroll::-webkit-scrollbar,
+.studio-page :deep(.studio-editor::-webkit-scrollbar),
+.studio-page :deep(.runtime-shell::-webkit-scrollbar),
+.studio-page :deep(.sidebar-content::-webkit-scrollbar),
+.studio-page :deep(.chat-shell::-webkit-scrollbar),
+.studio-page :deep(.agent-shell::-webkit-scrollbar) {
+  width: var(--studio-scrollbar-size);
+  height: var(--studio-scrollbar-size);
+}
+
+.column-scroll::-webkit-scrollbar-track,
+.studio-page :deep(.studio-editor::-webkit-scrollbar-track),
+.studio-page :deep(.runtime-shell::-webkit-scrollbar-track),
+.studio-page :deep(.sidebar-content::-webkit-scrollbar-track),
+.studio-page :deep(.chat-shell::-webkit-scrollbar-track),
+.studio-page :deep(.agent-shell::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.column-scroll::-webkit-scrollbar-thumb,
+.studio-page :deep(.studio-editor::-webkit-scrollbar-thumb),
+.studio-page :deep(.runtime-shell::-webkit-scrollbar-thumb),
+.studio-page :deep(.sidebar-content::-webkit-scrollbar-thumb),
+.studio-page :deep(.chat-shell::-webkit-scrollbar-thumb),
+.studio-page :deep(.agent-shell::-webkit-scrollbar-thumb) {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(147, 170, 204, 0.5), rgba(112, 138, 180, 0.44));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.column-scroll:hover::-webkit-scrollbar-thumb,
+.studio-page :deep(.studio-editor:hover::-webkit-scrollbar-thumb),
+.studio-page :deep(.runtime-shell:hover::-webkit-scrollbar-thumb),
+.studio-page :deep(.sidebar-content:hover::-webkit-scrollbar-thumb),
+.studio-page :deep(.chat-shell:hover::-webkit-scrollbar-thumb),
+.studio-page :deep(.agent-shell:hover::-webkit-scrollbar-thumb) {
+  background: linear-gradient(180deg, rgba(118, 146, 188, 0.78), rgba(83, 112, 159, 0.74));
+  background-clip: padding-box;
+}
+
+.column-scroll::-webkit-scrollbar-corner,
+.studio-page :deep(.studio-editor::-webkit-scrollbar-corner),
+.studio-page :deep(.runtime-shell::-webkit-scrollbar-corner),
+.studio-page :deep(.sidebar-content::-webkit-scrollbar-corner),
+.studio-page :deep(.chat-shell::-webkit-scrollbar-corner),
+.studio-page :deep(.agent-shell::-webkit-scrollbar-corner) {
+  background: transparent;
 }
 
 .right-column {
