@@ -19,7 +19,7 @@ import PagesTree from '@/components/insight/PagesTree.vue'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
-import CharacterCardStudioPanel from '@/components/insight/CharacterCardStudioPanel.vue'
+import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntryPanel.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
@@ -39,7 +39,7 @@ const bookshelfStore = useBookshelfStore()
 // ============================================================
 
 /** 当前激活的选项卡 */
-const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation' | 'character_cards'>('overview')
+const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'>('overview')
 
 /** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
@@ -92,7 +92,7 @@ const bookCoverUrl = computed(() => {
  * 切换选项卡
  * @param tab - 选项卡名称
  */
-function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_cards'): void {
+function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'): void {
   activeTab.value = tab
 }
 
@@ -496,10 +496,10 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
             </button>
             <button
               class="tab-btn"
-              :class="{ active: activeTab === 'character_cards' }"
-              @click="switchTab('character_cards')"
+              :class="{ active: activeTab === 'character_studio' }"
+              @click="switchTab('character_studio')"
             >
-              <span class="tab-icon">🃏</span> 角色卡
+              <span class="tab-icon">🃏</span> 角色工坊
             </button>
           </div>
           <button 
@@ -531,9 +531,9 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           <ContinuationPanel />
         </div>
 
-        <!-- 角色卡工坊标签页 -->
-        <div v-show="activeTab === 'character_cards' && hasSelectedBook" class="tab-content">
-          <CharacterCardStudioPanel />
+        <!-- 角色工坊标签页 -->
+        <div v-show="activeTab === 'character_studio' && hasSelectedBook" class="tab-content">
+          <CharacterStudioEntryPanel />
         </div>
       </div>
 

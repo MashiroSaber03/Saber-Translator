@@ -29,4 +29,10 @@ describe('路由配置', () => {
     expect(route).toBeDefined()
     expect(route?.path).toBe('/insight')
   })
+
+  it('应该包含角色工作台路由', () => {
+    const route = router.getRoutes().find(r => r.name === 'character-studio')
+    expect(route).toBeDefined()
+    expect(route?.path).toBe('/insight/character-studio')
+  })
 })

@@ -38,5 +38,5 @@ export * from './pipeline'
 // 配置 API
 export * from './config'
 
-// 角色卡工坊 API
-export * from './characterCard'
+// Character Studio API
+export * from './characterStudio'

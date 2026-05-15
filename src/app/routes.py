@@ -45,6 +45,12 @@ def manga_insight():
     return serve_vue_app()
 
 
+@main_bp.route('/insight/character-studio')
+def character_studio():
+    """角色工坊页面"""
+    return serve_vue_app()
+
+
 @main_bp.route('/pic/<path:filename>')
 def serve_pic(filename):
     """服务 pic 目录下的图片资源"""

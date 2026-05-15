@@ -53,6 +53,16 @@ const routes: RouteRecordRaw[] = [
     })
   },
   {
+    path: '/insight/character-studio',
+    name: 'character-studio',
+    component: () => import('@/views/CharacterStudioView.vue'),
+    meta: { title: '角色工坊' },
+    props: (route) => ({
+      bookId: route.query.book as string | undefined,
+      docId: route.query.doc as string | undefined,
+    })
+  },
+  {
     // 未定义路由重定向到书架
     path: '/:pathMatch(.*)*',
     redirect: { name: 'bookshelf' }
