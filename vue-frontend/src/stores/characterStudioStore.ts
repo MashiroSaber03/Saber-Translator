@@ -185,7 +185,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!bookId.value || !docId) return
     isDocumentLoading.value = true
     openingDocumentId.value = docId
-    errorMessage.value = ''
+    clearErrorMessage()
     try {
       const response = await getCharacterStudioDocument(bookId.value, docId)
       if (!response.success || !response.document) {
@@ -209,7 +209,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         activeScriptTab.value = 'regex'
       })
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : '加载角色文档失败'
+      throw createActionError(error, '加载角色文档失败')
     } finally {
       isDocumentLoading.value = false
       openingDocumentId.value = ''
@@ -219,6 +219,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function createManualDocument(title: string = '新角色') {
     if (!bookId.value) return
     isCreatingManual.value = true
+    clearErrorMessage()
     try {
       const response = await createCharacterStudioDocument(bookId.value, { title })
       if (!response.success || !response.document) {
@@ -226,6 +227,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       }
       await loadWorkspace(bookId.value)
       await openDocument(response.document.id)
+    } catch (error) {
+      throw createActionError(error, '创建角色失败')
     } finally {
       isCreatingManual.value = false
     }
@@ -234,6 +237,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function createDocumentFromCandidate(candidateName: string) {
     if (!bookId.value) return
     creatingCandidateName.value = candidateName
+    clearErrorMessage()
     try {
       const response = await createCharacterStudioDocument(bookId.value, { candidate_name: candidateName })
       if (!response.success || !response.document) {
@@ -241,6 +245,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       }
       await loadWorkspace(bookId.value)
       await openDocument(response.document.id)
+    } catch (error) {
+      throw createActionError(error, '创建角色失败')
     } finally {
       creatingCandidateName.value = ''
     }
@@ -248,7 +254,13 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function persistCurrentDocument() {
     if (!bookId.value || !currentDocument.value) return
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+    }
+    if (isSaving.value) return
     isSaving.value = true
+    clearErrorMessage()
     try {
       const response = await saveCharacterStudioDocument(bookId.value, currentDocument.value.id, currentDocument.value as unknown as Record<string, unknown>)
       if (!response.success || !response.document) {
@@ -259,6 +271,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         markDocumentSynced(response.document)
       })
       await loadWorkspace(bookId.value)
+    } catch (error) {
+      throw createActionError(error, '保存失败')
     } finally {
       isSaving.value = false
     }
@@ -286,6 +300,16 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     lastSyncedFingerprint.value = buildAutosaveFingerprint(document)
   }
 
+  function clearErrorMessage() {
+    errorMessage.value = ''
+  }
+
+  function createActionError(error: unknown, fallback: string): Error {
+    const normalized = error instanceof Error ? error : new Error(fallback)
+    errorMessage.value = normalized.message || fallback
+    return normalized
+  }
+
   function updateCurrentDocument(nextDocument: CharacterStudioDocument | null) {
     currentDocument.value = nextDocument
     if (!nextDocument) return
@@ -311,6 +335,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!bookId.value || !currentDocument.value) return
     const docId = currentDocument.value.id
     isDeleting.value = true
+    clearErrorMessage()
     try {
       const response = await deleteCharacterStudioDocument(bookId.value, docId)
       if (!response.success) {
@@ -325,6 +350,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       agentHtmlPreview.value = ''
       patchSnapshot.value = null
       await loadWorkspace(bookId.value)
+    } catch (error) {
+      throw createActionError(error, '删除失败')
     } finally {
       isDeleting.value = false
     }
@@ -333,6 +360,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function generateSection(section: string) {
     if (!bookId.value || !currentDocument.value) return
     generatingSection.value = section
+    clearErrorMessage()
     try {
       const response = await generateCharacterStudioSection(bookId.value, currentDocument.value.id, section)
       if (!response.success || !response.document) {
@@ -343,6 +371,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         markDocumentSynced(response.document)
       })
       await loadWorkspace(bookId.value)
+    } catch (error) {
+      throw createActionError(error, '生成失败')
     } finally {
       generatingSection.value = null
     }
@@ -351,6 +381,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function validateCurrentDocument() {
     if (!bookId.value || !currentDocument.value) return
     isValidating.value = true
+    clearErrorMessage()
     try {
       const response = await validateCharacterStudioDocument(bookId.value, currentDocument.value.id)
       if (!response.success) {
@@ -362,6 +393,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         warnings: response.warnings || [],
         checks: response.checks || {},
       }
+    } catch (error) {
+      throw createActionError(error, '诊断失败')
     } finally {
       isValidating.value = false
     }
@@ -370,6 +403,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function resetPreview() {
     if (!bookId.value || !currentDocument.value) return
     isResettingPreview.value = true
+    clearErrorMessage()
     try {
       const response = await resetCharacterStudioPreview(bookId.value, currentDocument.value.id)
       if (!response.success) {
@@ -381,6 +415,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         variables: response.variables || {},
         log: response.log || [],
       }
+    } catch (error) {
+      throw createActionError(error, '重置预览失败')
     } finally {
       isResettingPreview.value = false
     }
@@ -389,6 +425,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function sendPreviewMessage(message: string) {
     if (!bookId.value || !currentDocument.value || !message.trim()) return
     isPreviewing.value = true
+    clearErrorMessage()
     try {
       const response = await previewCharacterStudioChat(bookId.value, currentDocument.value.id, message)
       if (!response.success) {
@@ -400,6 +437,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         variables: response.variables || {},
         log: response.log || [],
       }
+    } catch (error) {
+      throw createActionError(error, '预览聊天失败')
     } finally {
       isPreviewing.value = false
     }
@@ -520,6 +559,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function sendAgentMessage(message: string) {
     if (!bookId.value || !currentDocument.value || !message.trim()) return
     isAgentBusy.value = true
+    clearErrorMessage()
     agentMessages.value.push({ role: 'user', content: message })
     try {
       const response = await runCharacterStudioAgent(bookId.value, currentDocument.value.id, message)
@@ -530,6 +570,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       agentMessages.value.push({ role: 'assistant', content })
       pendingAgentPatch.value = extractPatch(content)
       agentHtmlPreview.value = extractHtmlPreview(content)
+    } catch (error) {
+      throw createActionError(error, 'Agent 调用失败')
     } finally {
       isAgentBusy.value = false
     }
@@ -538,6 +580,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function importFile(file: File) {
     if (!bookId.value) return
     isImportingFile.value = true
+    clearErrorMessage()
     try {
       const response = await importCharacterStudioFile(bookId.value, file)
       if (!response.success || !response.document) {
@@ -545,6 +588,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       }
       await loadWorkspace(bookId.value)
       await openDocument(response.document.id)
+    } catch (error) {
+      throw createActionError(error, '导入失败')
     } finally {
       isImportingFile.value = false
     }
@@ -553,6 +598,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function importWorldbook(file: File) {
     if (!bookId.value || !currentDocument.value) return
     isImportingWorldbook.value = true
+    clearErrorMessage()
     try {
       const response = await importWorldbookIntoCharacterStudioDocument(bookId.value, currentDocument.value.id, file)
       if (!response.success || !response.document) {
@@ -563,6 +609,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         markDocumentSynced(response.document)
       })
       await loadWorkspace(bookId.value)
+    } catch (error) {
+      throw createActionError(error, '世界书导入失败')
     } finally {
       isImportingWorldbook.value = false
     }
@@ -571,11 +619,14 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function downloadCurrent(format: string) {
     if (!bookId.value || !currentDocument.value) return
     downloadingFormat.value = format
+    clearErrorMessage()
     try {
       const { blob, filename } = format === 'worldbook'
         ? await downloadCharacterStudioWorldbook(bookId.value, currentDocument.value.id)
         : await downloadCharacterStudioExport(bookId.value, currentDocument.value.id, format)
       downloadBlob(blob, filename)
+    } catch (error) {
+      throw createActionError(error, '导出失败')
     } finally {
       downloadingFormat.value = null
     }
@@ -617,6 +668,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     generatingSection,
     downloadingFormat,
     errorMessage,
+    clearErrorMessage,
     selectedLibrarySearch,
     filteredDocuments,
     filteredCandidates,

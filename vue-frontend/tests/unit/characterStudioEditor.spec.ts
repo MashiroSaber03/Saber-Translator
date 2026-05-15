@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
@@ -85,7 +86,6 @@ describe('CharacterStudioEditor tabs', () => {
         return () => h(CharacterStudioEditor, {
           document: currentDocument.value,
           avatarUrl: '',
-          saving: false,
           diagnostics: null,
           activeTab: activeTab.value,
           activeScriptTab: activeScriptTab.value,
@@ -159,7 +159,6 @@ describe('CharacterStudioEditor tabs', () => {
         return () => h(CharacterStudioEditor, {
           document,
           avatarUrl: '',
-          saving: false,
           diagnostics: null,
           activeTab: 'overview',
           activeScriptTab: 'regex',

@@ -169,4 +169,30 @@ describe('characterStudioStore', () => {
 
     expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
   })
+
+  it('manual save cancels any queued autosave request', async () => {
+    vi.useFakeTimers()
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    if (!store.currentDocument) {
+      throw new Error('currentDocument missing in test setup')
+    }
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      identity: {
+        ...store.currentDocument.identity,
+        description: '准备手动保存',
+      },
+    })
+
+    await store.persistCurrentDocument()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+  })
 })

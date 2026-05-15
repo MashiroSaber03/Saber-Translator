@@ -409,7 +409,6 @@ import DiagnosticsPanel from './DiagnosticsPanel.vue'
 const props = defineProps<{
   document: CharacterStudioDocument | null
   avatarUrl: string
-  saving: boolean
   diagnostics: ExportDiagnostic | null
   pendingState: CharacterStudioEditorPendingState
   activeTab: 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'

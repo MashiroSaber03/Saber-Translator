@@ -27,6 +27,10 @@
     </div>
 
     <div v-else class="workspace-shell" :class="{ 'preview-collapsed': effectivePreviewCollapsed, 'compact-desktop': isCompactDesktop }">
+      <div v-if="store.errorMessage" class="workspace-error">
+        <span>⚠ {{ store.errorMessage }}</span>
+        <button class="error-dismiss" @click="store.clearErrorMessage()">知道了</button>
+      </div>
       <div v-if="store.leftDrawerOpen" class="drawer-mask left-mask" @click="store.leftDrawerOpen = false"></div>
       <div v-if="store.rightDrawerOpen && isCompactDesktop" class="drawer-mask right-mask" @click="store.rightDrawerOpen = false"></div>
 
@@ -57,7 +61,6 @@
           <CharacterStudioEditor
             :document="store.currentDocument"
             :avatar-url="avatarUrl"
-            :saving="store.isSaving"
             :diagnostics="store.diagnostics"
             :pending-state="store.editorPendingState"
             :active-tab="store.activeEditorTab"
@@ -160,15 +163,28 @@ function closeDrawers() {
   store.rightDrawerOpen = false
 }
 
-async function hydrateWorkspace(nextBookId: string) {
-  if (!bookshelfStore.books.length) {
-    await bookshelfStore.fetchBooks()
+async function runAction(action: () => Promise<void>) {
+  try {
+    await action()
+    return true
+  } catch {
+    return false
   }
-  await store.loadWorkspace(nextBookId)
-  if (props.docId) {
-    await store.openDocument(props.docId)
-  } else if (store.documents.length > 0) {
-    await store.openDocument(store.documents[0]!.id)
+}
+
+async function hydrateWorkspace(nextBookId: string) {
+  try {
+    if (!bookshelfStore.books.length) {
+      await bookshelfStore.fetchBooks()
+    }
+    await store.loadWorkspace(nextBookId)
+    if (props.docId) {
+      await store.openDocument(props.docId)
+    } else if (store.documents.length > 0) {
+      await store.openDocument(store.documents[0]!.id)
+    }
+  } catch {
+    // 错误已在 store 中记录并展示到页面
   }
 }
 
@@ -192,69 +208,74 @@ function togglePreview() {
 }
 
 async function openDocument(docId: string) {
-  await store.openDocument(docId)
+  const ok = await runAction(() => store.openDocument(docId))
+  if (!ok) return
   closeDrawers()
   if (!props.bookId) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: docId } })
 }
 
 async function createManual() {
-  await store.createManualDocument()
+  const ok = await runAction(() => store.createManualDocument())
+  if (!ok) return
   closeDrawers()
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
 
 async function createFromCandidate(candidateName: string) {
-  await store.createDocumentFromCandidate(candidateName)
+  const ok = await runAction(() => store.createDocumentFromCandidate(candidateName))
+  if (!ok) return
   closeDrawers()
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
 
 async function importFile(file: File) {
-  await store.importFile(file)
+  const ok = await runAction(() => store.importFile(file))
+  if (!ok) return
   closeDrawers()
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
 
 async function importWorldbook(file: File) {
-  await store.importWorldbook(file)
+  await runAction(() => store.importWorldbook(file))
 }
 
 async function saveNow() {
-  await store.persistCurrentDocument()
+  await runAction(() => store.persistCurrentDocument())
 }
 
 async function validate() {
-  await store.validateCurrentDocument()
+  await runAction(() => store.validateCurrentDocument())
 }
 
 async function generateSection(section: string) {
-  await store.generateSection(section)
+  await runAction(() => store.generateSection(section))
 }
 
 async function deleteCurrent() {
-  await store.deleteCurrentDocument()
+  const ok = await runAction(() => store.deleteCurrentDocument())
+  if (!ok) return
   if (!props.bookId) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId } })
 }
 
 async function sendPreview(message: string) {
-  await store.sendPreviewMessage(message)
+  await runAction(() => store.sendPreviewMessage(message))
 }
 
 async function resetPreview() {
-  await store.resetPreview()
+  await runAction(() => store.resetPreview())
 }
 
 async function sendAgent(message: string) {
-  await store.sendAgentMessage(message)
+  await runAction(() => store.sendAgentMessage(message))
 }
 
 async function download(format: string) {
-  await store.downloadCurrent(format)
+  await runAction(() => store.downloadCurrent(format))
 }
 
 onMounted(async () => {
@@ -289,7 +310,7 @@ watch(() => props.bookId, async nextBookId => {
 
 watch(() => props.docId, async nextDocId => {
   if (!nextDocId || nextDocId === store.currentDocument?.id) return
-  await store.openDocument(nextDocId)
+  await runAction(() => store.openDocument(nextDocId))
 })
 </script>
 
@@ -316,6 +337,28 @@ watch(() => props.docId, async nextDocId => {
   overflow: hidden;
 }
 
+.workspace-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 244, 244, 0.92);
+  border: 1px solid rgba(217, 55, 55, 0.18);
+  color: #9d2f2f;
+}
+
+.error-dismiss {
+  border: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: rgba(217, 55, 55, 0.12);
+  color: #9d2f2f;
+  cursor: pointer;
+}
+
 .left-column,
 .editor-column,
 .right-column {
@@ -330,9 +373,6 @@ watch(() => props.docId, async nextDocId => {
 .column-scroll {
   height: 100%;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
 }
 
 .right-column {
