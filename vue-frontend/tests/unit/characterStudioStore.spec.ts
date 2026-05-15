@@ -27,56 +27,78 @@ const demoDocument = {
   exportArtifacts: {},
 }
 
-vi.mock('@/api/characterStudio', () => ({
-  getCharacterStudioIndex: vi.fn().mockResolvedValue({
-    success: true,
-    book_id: 'book-demo',
-    documents: [
-      {
-        id: 'doc_alpha',
-        title: '阿尔法',
-        origin: 'manual',
-        source_character: null,
-        updated_at: '2026-05-15T00:00:00',
-        tags: ['主角'],
-        is_favorite: false,
-        has_avatar: false,
-        sample_pages: [1],
-      },
-    ],
-    candidates: [
-      {
-        name: '阿尔法',
-        aliases: [],
-        first_appearance: 1,
-        description: '测试角色',
-        arc: '成长',
-        dialogue_count: 2,
-        has_dialogues: true,
-        sample_pages: [1],
-        relationship_count: 0,
-        key_moment_count: 0,
-      },
-    ],
-    count: 1,
-  }),
-  getCharacterStudioDocument: vi.fn().mockResolvedValue({
-    success: true,
-    document: demoDocument,
-    preview_session: {
-      doc_id: 'doc_alpha',
-      messages: [
-        { role: 'assistant', content: '已恢复的预览消息' },
-      ],
-      variables: { trust_score: 88 },
-      log: [{ type: 'lorebook', comment: '恢复命中' }],
+const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
+  success: true,
+  book_id: 'book-demo',
+  documents: [
+    {
+      id: 'doc_alpha',
+      title: '阿尔法',
+      origin: 'manual',
+      source_character: null,
+      updated_at: '2026-05-15T00:00:00',
+      tags: ['主角'],
+      is_favorite: false,
+      has_avatar: false,
+      sample_pages: [1],
     },
-  }),
+  ],
+  candidates: [
+    {
+      name: '阿尔法',
+      aliases: [],
+      first_appearance: 1,
+      description: '测试角色',
+      arc: '成长',
+      dialogue_count: 2,
+      has_dialogues: true,
+      sample_pages: [1],
+      relationship_count: 0,
+      key_moment_count: 0,
+    },
+  ],
+  count: 1,
+})
+
+const getCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
+  success: true,
+  document: demoDocument,
+  preview_session: {
+    doc_id: 'doc_alpha',
+    messages: [
+      { role: 'assistant', content: '已恢复的预览消息' },
+    ],
+    variables: { trust_score: 88 },
+    log: [{ type: 'lorebook', comment: '恢复命中' }],
+  },
+})
+
+const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookId: string, _docId: string, payload: Record<string, unknown>) => ({
+  success: true,
+  document: {
+    ...demoDocument,
+    ...payload,
+    meta: {
+      ...demoDocument.meta,
+      ...((payload.meta as Record<string, unknown> | undefined) || {}),
+      updated_at: new Date().toISOString(),
+    },
+  },
+}))
+
+vi.mock('@/api/characterStudio', () => ({
+  getCharacterStudioIndex: getCharacterStudioIndexMock,
+  getCharacterStudioDocument: getCharacterStudioDocumentMock,
+  saveCharacterStudioDocument: saveCharacterStudioDocumentMock,
 }))
 
 describe('characterStudioStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.useRealTimers()
+    getCharacterStudioIndexMock.mockClear()
+    getCharacterStudioDocumentMock.mockClear()
+    saveCharacterStudioDocumentMock.mockClear()
   })
 
   it('loads index payload for a book', async () => {
@@ -110,5 +132,41 @@ describe('characterStudioStore', () => {
 
     expect(store.previewSession?.messages[0]?.content).toBe('已恢复的预览消息')
     expect(store.previewSession?.variables.trust_score).toBe(88)
+  })
+
+  it('does not start autosave loop immediately after opening a document', async () => {
+    vi.useFakeTimers()
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await vi.advanceTimersByTimeAsync(2500)
+
+    expect(saveCharacterStudioDocumentMock).not.toHaveBeenCalled()
+  })
+
+  it('autosaves user edits only once instead of re-saving server-updated document metadata', async () => {
+    vi.useFakeTimers()
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    if (!store.currentDocument) {
+      throw new Error('currentDocument missing in test setup')
+    }
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      identity: {
+        ...store.currentDocument.identity,
+        description: '新的角色描述',
+      },
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
   })
 })

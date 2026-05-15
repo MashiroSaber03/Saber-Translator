@@ -62,7 +62,7 @@
             :pending-state="store.editorPendingState"
             :active-tab="store.activeEditorTab"
             :active-script-tab="store.activeScriptTab"
-            @update:document="store.currentDocument = $event"
+            @update:document="store.updateCurrentDocument($event)"
             @update:active-tab="store.activeEditorTab = $event"
             @update:active-script-tab="store.activeScriptTab = $event"
             @save="saveNow"

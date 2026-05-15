@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   createCharacterStudioDocument,
   deleteCharacterStudioDocument,
@@ -70,6 +70,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const errorMessage = ref('')
   const selectedLibrarySearch = ref('')
   const _suspendAutosave = ref(false)
+  const lastSyncedFingerprint = ref('')
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
 
@@ -190,22 +191,23 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success || !response.document) {
         throw new Error(response.error || '加载角色文档失败')
       }
-      _suspendAutosave.value = true
-      currentDocument.value = response.document
-      previewSession.value = {
-        doc_id: docId,
-        messages: response.preview_session?.messages || response.document.previewState.messages || [],
-        variables: response.preview_session?.variables || response.document.previewState.variables || {},
-        log: response.preview_session?.log || [],
-      }
-      diagnostics.value = null
-      agentMessages.value = []
-      pendingAgentPatch.value = null
-      agentHtmlPreview.value = ''
-      patchSnapshot.value = null
-      activeEditorTab.value = 'overview'
-      activeScriptTab.value = 'regex'
-      _suspendAutosave.value = false
+      await runWithoutAutosave(async () => {
+        currentDocument.value = response.document
+        markDocumentSynced(response.document)
+        previewSession.value = {
+          doc_id: docId,
+          messages: response.preview_session?.messages || response.document.previewState.messages || [],
+          variables: response.preview_session?.variables || response.document.previewState.variables || {},
+          log: response.preview_session?.log || [],
+        }
+        diagnostics.value = null
+        agentMessages.value = []
+        pendingAgentPatch.value = null
+        agentHtmlPreview.value = ''
+        patchSnapshot.value = null
+        activeEditorTab.value = 'overview'
+        activeScriptTab.value = 'regex'
+      })
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '加载角色文档失败'
     } finally {
@@ -252,9 +254,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success || !response.document) {
         throw new Error(response.error || '保存失败')
       }
-      _suspendAutosave.value = true
-      currentDocument.value = response.document
-      _suspendAutosave.value = false
+      await runWithoutAutosave(async () => {
+        currentDocument.value = response.document
+        markDocumentSynced(response.document)
+      })
       await loadWorkspace(bookId.value)
     } finally {
       isSaving.value = false
@@ -271,6 +274,39 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }, 800)
   }
 
+  function buildAutosaveFingerprint(document: CharacterStudioDocument | null) {
+    if (!document) return ''
+    const snapshot = JSON.parse(JSON.stringify(document)) as CharacterStudioDocument
+    snapshot.meta.updated_at = ''
+    snapshot.status.last_validated_at = null
+    return JSON.stringify(snapshot)
+  }
+
+  function markDocumentSynced(document: CharacterStudioDocument | null) {
+    lastSyncedFingerprint.value = buildAutosaveFingerprint(document)
+  }
+
+  function updateCurrentDocument(nextDocument: CharacterStudioDocument | null) {
+    currentDocument.value = nextDocument
+    if (!nextDocument) return
+    if (buildAutosaveFingerprint(nextDocument) === lastSyncedFingerprint.value) return
+    scheduleAutosave()
+  }
+
+  async function runWithoutAutosave(callback: () => void | Promise<void>) {
+    _suspendAutosave.value = true
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+    }
+    try {
+      await callback()
+    } finally {
+      await nextTick()
+      _suspendAutosave.value = false
+    }
+  }
+
   async function deleteCurrentDocument() {
     if (!bookId.value || !currentDocument.value) return
     const docId = currentDocument.value.id
@@ -281,6 +317,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         throw new Error(response.error || '删除失败')
       }
       currentDocument.value = null
+      markDocumentSynced(null)
       previewSession.value = null
       diagnostics.value = null
       agentMessages.value = []
@@ -301,7 +338,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success || !response.document) {
         throw new Error(response.error || '生成失败')
       }
-      currentDocument.value = response.document
+      await runWithoutAutosave(async () => {
+        currentDocument.value = response.document
+        markDocumentSynced(response.document)
+      })
       await loadWorkspace(bookId.value)
     } finally {
       generatingSection.value = null
@@ -518,7 +558,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success || !response.document) {
         throw new Error(response.error || '世界书导入失败')
       }
-      currentDocument.value = response.document
+      await runWithoutAutosave(async () => {
+        currentDocument.value = response.document
+        markDocumentSynced(response.document)
+      })
       await loadWorkspace(bookId.value)
     } finally {
       isImportingWorldbook.value = false
@@ -537,10 +580,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       downloadingFormat.value = null
     }
   }
-
-  watch(currentDocument, () => {
-    scheduleAutosave()
-  }, { deep: true })
 
   return {
     bookId,
@@ -581,6 +620,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     selectedLibrarySearch,
     filteredDocuments,
     filteredCandidates,
+    updateCurrentDocument,
     loadWorkspace,
     openDocument,
     createManualDocument,

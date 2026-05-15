@@ -7,6 +7,7 @@ describe('LorebookTreeEditor import flow', () => {
     const wrapper = mount(LorebookTreeEditor, {
       props: {
         entries: [],
+        importing: false,
       },
     })
 
