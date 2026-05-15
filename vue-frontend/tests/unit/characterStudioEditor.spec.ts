@@ -186,4 +186,13 @@ describe('CharacterStudioEditor tabs', () => {
     expect(wrapper.text()).toContain('补全中...')
     expect(wrapper.text()).toContain('诊断中...')
   })
+
+  it('renders freeze settings as aligned rows with separate label and control cells', () => {
+    const wrapper = mountHarness()
+
+    const freezeItems = wrapper.findAll('.freeze-item')
+    expect(freezeItems.length).toBeGreaterThan(0)
+    expect(freezeItems[0]?.find('.freeze-item-label').exists()).toBe(true)
+    expect(freezeItems[0]?.find('.freeze-item-control').exists()).toBe(true)
+  })
 })

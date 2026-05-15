@@ -121,8 +121,10 @@
               </div>
               <div class="freeze-grid">
                 <label v-for="item in freezeItems" :key="item.key" class="freeze-item">
-                  <input :checked="isFrozen(item.key)" type="checkbox" @change="toggleFrozen(item.key, $event)">
-                  <span>{{ item.label }}</span>
+                  <span class="freeze-item-label">{{ item.label }}</span>
+                  <span class="freeze-item-control">
+                    <input :checked="isFrozen(item.key)" type="checkbox" @change="toggleFrozen(item.key, $event)">
+                  </span>
                 </label>
               </div>
             </section>
@@ -991,6 +993,42 @@ textarea {
   border-radius: 999px;
   background: rgba(20, 56, 106, 0.06);
   color: #234977;
+}
+
+.freeze-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.freeze-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid rgba(28, 55, 94, 0.08);
+}
+
+.freeze-item-label {
+  color: #183351;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.freeze-item-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.freeze-item-control input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
 }
 
 .ghost-btn,
