@@ -396,4 +396,42 @@ describe('characterStudioStore', () => {
 
     expect(store.activeActionLabel).toBe('正在补全整张角色卡')
   })
+
+  it('preserves backend validation messages when section generation fails', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const { ApiClientError } = await import('@/api/client')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    generateCharacterStudioSectionMock.mockRejectedValueOnce(new ApiClientError({
+      code: 'ERR_BAD_REQUEST',
+      message: 'AI 生成结果缺少 identity。',
+      status: 400,
+      details: { section: 'full' },
+    }))
+
+    await expect(store.generateSection('full')).rejects.toThrow('AI 生成结果缺少 identity。')
+    expect(store.errorMessage).toBe('AI 生成结果缺少 identity。')
+  })
+
+  it('keeps document title in sync when an agent patch changes identity.name', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    store.pendingAgentPatch = {
+      set: {
+        'identity.name': '新名字',
+      },
+    } as any
+
+    store.applyPendingPatch()
+
+    expect(store.currentDocument?.identity.name).toBe('新名字')
+    expect(store.currentDocument?.meta.title).toBe('新名字')
+  })
 })

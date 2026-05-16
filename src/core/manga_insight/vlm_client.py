@@ -6,7 +6,6 @@ import asyncio
 import base64
 import io
 import logging
-import re
 from typing import List, Dict, Optional
 
 from PIL import Image
@@ -16,6 +15,7 @@ from src.shared.openai_execution import (
     OpenAICompatibleAsyncExecutor,
     OpenAICompatibleBusinessRetryableError,
     build_openai_compatible_runtime_options,
+    extract_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
 from src.shared.ai_providers import provider_requires_api_key
@@ -182,89 +182,16 @@ class VLMClient:
         )
         return result.parsed
 
-    def _clean_thinking_tags(self, text: str) -> str:
-        patterns = [
-            r'<think>.*?</think>',
-            r'<thinking>.*?</thinking>',
-            r'<reasoning>.*?</reasoning>',
-            r'<thought>.*?</thought>',
-            r'<reflection>.*?</reflection>',
-            r'<内心独白>.*?</内心独白>',
-        ]
-        for pattern in patterns:
-            text = re.sub(pattern, '', text, flags=re.DOTALL | re.IGNORECASE)
-        return text.strip()
-
     def _extract_json_from_text(self, text: str) -> str:
-        text = self._clean_thinking_tags(text)
-        text = text.strip()
-
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-
-        text = text.strip()
-
-        if not text.startswith('{') and not text.startswith('['):
-            json_start = -1
-            for i, char in enumerate(text):
-                if char in '{[':
-                    json_start = i
-                    break
-            if json_start >= 0:
-                text = text[json_start:]
-
-        text = self._find_complete_json(text)
-        return text
-
-    def _find_complete_json(self, text: str) -> str:
-        if not text:
-            return text
-
-        open_char = text[0] if text else ''
-        if open_char == '{':
-            close_char = '}'
-        elif open_char == '[':
-            close_char = ']'
-        else:
-            return text
-
-        depth = 0
-        in_string = False
-        escape = False
-
-        for i, char in enumerate(text):
-            if escape:
-                escape = False
-                continue
-
-            if char == '\\':
-                escape = True
-                continue
-
-            if char == '"':
-                in_string = not in_string
-                continue
-
-            if in_string:
-                continue
-
-            if char == open_char:
-                depth += 1
-            elif char == close_char:
-                depth -= 1
-                if depth == 0:
-                    return text[:i + 1]
-
-        return text
+        return extract_json_block_from_text(text)
 
     def _parse_batch_analysis(self, response_text: str, start_page: int, end_page: int) -> Dict:
-        text = self._extract_json_from_text(response_text)
-
-        result = parse_llm_json(text)
+        try:
+            text = self._extract_json_from_text(response_text)
+            result = parse_llm_json(text)
+        except OpenAICompatibleBusinessRetryableError as exc:
+            logger.warning(f"批量 JSON 提取失败，第{start_page}-{end_page}页: {exc}")
+            result = {}
 
         if not result:
             logger.warning(f"批量 JSON 解析失败，第{start_page}-{end_page}页")

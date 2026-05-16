@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Optional, TypeVar
@@ -183,8 +184,23 @@ def strip_markdown_code_fences(text: str) -> str:
     return cleaned
 
 
+def strip_reasoning_tags(text: str) -> str:
+    cleaned = text or ""
+    patterns = [
+        r"<think>.*?</think>",
+        r"<thinking>.*?</thinking>",
+        r"<reasoning>.*?</reasoning>",
+        r"<thought>.*?</thought>",
+        r"<reflection>.*?</reflection>",
+        r"<内心独白>.*?</内心独白>",
+    ]
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned
+
+
 def extract_json_block_from_text(text: str) -> str:
-    cleaned = strip_markdown_code_fences(text)
+    cleaned = strip_markdown_code_fences(strip_reasoning_tags(text))
     if cleaned.startswith("{") or cleaned.startswith("["):
         candidate = cleaned
     else:

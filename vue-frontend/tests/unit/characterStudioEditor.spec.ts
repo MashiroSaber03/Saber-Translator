@@ -163,14 +163,14 @@ describe('CharacterStudioEditor tabs', () => {
   })
 
   it('shows loading copy for section generation and validation actions', async () => {
-    const wrapper = mount(defineComponent({
+    const generationWrapper = mount(defineComponent({
       components: { CharacterStudioEditor },
       setup() {
         return () => h(CharacterStudioEditor, {
           document,
           avatarUrl: '',
           diagnostics: null,
-          activeTab: 'overview',
+          activeTab: 'character',
           activeScriptTab: 'regex',
           pendingState: {
             generatingSection: 'identity',
@@ -192,8 +192,38 @@ describe('CharacterStudioEditor tabs', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('补全中...')
-    expect(wrapper.text()).toContain('诊断中...')
+    expect(generationWrapper.text()).toContain('重写中...')
+
+    const validationWrapper = mount(defineComponent({
+      components: { CharacterStudioEditor },
+      setup() {
+        return () => h(CharacterStudioEditor, {
+          document,
+          avatarUrl: '',
+          diagnostics: null,
+          activeTab: 'overview',
+          activeScriptTab: 'regex',
+          pendingState: {
+            generatingSection: null,
+            validating: true,
+            importingWorldbook: false,
+            deleting: false,
+            saving: false,
+            downloadingFormat: null,
+          },
+        })
+      },
+    }), {
+      global: {
+        stubs: {
+          LorebookTreeEditor: {
+            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+          },
+        },
+      },
+    })
+
+    expect(validationWrapper.text()).toContain('诊断中...')
   })
 
   it('shows full card generation entry and loading copy', () => {

@@ -22,7 +22,7 @@ export interface ApiResponse<T = unknown> {
 /**
  * API 错误
  */
-export interface ApiError {
+export interface ApiError extends Error {
   code: string
   message: string
   status: number

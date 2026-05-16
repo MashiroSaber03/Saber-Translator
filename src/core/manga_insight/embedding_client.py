@@ -3,7 +3,7 @@ Manga Insight Embedding / Chat clients backed by shared async transport.
 """
 
 import logging
-from typing import List, Optional
+from typing import Any, Callable, List, Optional, TypeVar
 
 from src.shared.ai_transport import (
     AsyncOpenAICompatibleTransport,
@@ -13,6 +13,7 @@ from src.shared.ai_transport import (
 from src.shared.openai_execution import (
     OpenAICompatibleAsyncExecutor,
     build_openai_compatible_runtime_options,
+    parse_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
 
@@ -22,6 +23,9 @@ from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
 DEFAULT_EMBEDDING_MAX_RETRIES = 3
+T = TypeVar("T")
+
+
 def _provider_id(value) -> str:
     if isinstance(value, str):
         return value.lower()
@@ -122,25 +126,33 @@ class ChatClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def generate(
+    def _build_messages(self, prompt: str, system: Optional[str] = None) -> List[dict[str, str]]:
+        messages: List[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
+    def _build_options(self, temperature: Optional[float] = None) -> OpenAICompatibleOptions:
+        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
+        if temperature is not None:
+            options.request.temperature = temperature
+        return options
+
+    async def _execute_request(
         self,
         prompt: str,
+        *,
         system: Optional[str] = None,
-        temperature: Optional[float] = None
-    ) -> str:
+        temperature: Optional[float] = None,
+        parser: Optional[Callable[[str], T]] = None,
+    ) -> T | str:
         logger.debug(f"[ChatClient] provider={self.config.provider}, base_url={self._base_url}, model={self.config.model}")
 
         if not self._base_url:
             raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
 
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        if temperature is not None:
-            options.request.temperature = temperature
+        options = self._build_options(temperature)
         use_stream = options.execution.use_stream
         logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
 
@@ -149,7 +161,7 @@ class ChatClient:
                 provider=self.provider,
                 api_key=self.config.api_key,
                 model=self.config.model,
-                messages=messages,
+                messages=self._build_messages(prompt, system),
                 base_url=getattr(self.config, "base_url", None) or None,
                 capability="chat",
                 openai_options=options,
@@ -160,9 +172,53 @@ class ChatClient:
                 ),
             ),
             capability="chat",
+            parser=parser,
             logger_instance=logger,
         )
-        return str(result.parsed)
+        return result.parsed
+
+    async def generate(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None
+    ) -> str:
+        result = await self._execute_request(
+            prompt,
+            system=system,
+            temperature=temperature,
+        )
+        return str(result)
+
+    async def generate_parsed(
+        self,
+        prompt: str,
+        *,
+        parser: Callable[[str], T],
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> T:
+        result = await self._execute_request(
+            prompt,
+            system=system,
+            temperature=temperature,
+            parser=parser,
+        )
+        return result  # type: ignore[return-value]
+
+    async def generate_json(
+        self,
+        prompt: str,
+        *,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> Any:
+        return await self.generate_parsed(
+            prompt,
+            parser=parse_json_block_from_text,
+            system=system,
+            temperature=temperature,
+        )
 
     async def test_connection(self) -> bool:
         try:

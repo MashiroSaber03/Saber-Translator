@@ -39,9 +39,6 @@
           <button class="primary-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'full')">
             {{ isGenerating('full') ? '整卡补全中...' : 'AI 一键补全整卡' }}
           </button>
-          <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')">
-            {{ isGenerating('identity') ? '补全中...' : 'AI 补全角色设定' }}
-          </button>
           <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'review')">
             {{ isGenerating('review') ? '审查中...' : 'AI 审查当前角色' }}
           </button>

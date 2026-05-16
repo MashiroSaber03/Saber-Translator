@@ -9,6 +9,15 @@ from src.shared.openai_options import (
 
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
+    def test_shared_json_parser_ignores_reasoning_tags_before_extracting_json(self) -> None:
+        from src.shared.openai_execution import parse_json_block_from_text
+
+        parsed = parse_json_block_from_text(
+            '<think>{"draft": 1}</think>\n```json\n{"answer": "ok"}\n```'
+        )
+
+        self.assertEqual(parsed, {"answer": "ok"})
+
     async def test_chat_client_reads_nested_openai_options_from_config(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
         from src.core.manga_insight.embedding_client import ChatClient
@@ -72,6 +81,39 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             request.openai_options.request.extra_body,
             {"thinking": {"type": "disabled"}},
         )
+
+    async def test_chat_client_generate_json_retries_until_markdown_json_parses(self) -> None:
+        from src.core.manga_insight.config_models import ChatLLMConfig
+        from src.core.manga_insight.embedding_client import ChatClient
+
+        config = ChatLLMConfig.from_dict(
+            {
+                "provider": "custom",
+                "api_key": "test-key",
+                "model": "chat-model",
+                "base_url": "https://example.com/v1",
+                "openai_options": {
+                    "request": {"temperature": 0.4},
+                    "execution": {"use_stream": False, "business_retries": 1},
+                },
+            }
+        )
+
+        complete_mock = mock.AsyncMock(
+            side_effect=[
+                "这不是 JSON",
+                '```json\n{"answer": "retry-ok"}\n```',
+            ]
+        )
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
+            new=complete_mock,
+        ):
+            client = ChatClient(config)
+            parsed = await client.generate_json("用户问题")
+
+        self.assertEqual(parsed, {"answer": "retry-ok"})
+        self.assertEqual(complete_mock.await_count, 2)
 
     async def test_chat_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig

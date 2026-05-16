@@ -9,6 +9,7 @@ import logging
 from typing import Dict, List
 from datetime import datetime
 
+from src.shared.openai_execution import OpenAICompatibleBusinessRetriesExhaustedError
 from .storage import AnalysisStorage
 from .config_models import (
     MangaInsightConfig,
@@ -16,7 +17,6 @@ from .config_models import (
     DEFAULT_CHAPTER_FROM_SEGMENTS_PROMPT,
     DEFAULT_ANALYSIS_SYSTEM_PROMPT
 )
-from .utils.json_parser import parse_llm_json
 from .config_utils import create_chat_client
 
 logger = logging.getLogger("MangaInsight.SummaryGenerator")
@@ -83,8 +83,6 @@ class SummaryGenerator:
             all_key_events.extend(events)
 
         # 使用 LLM 生成小总结
-        from .embedding_client import ChatClient
-
         segment_data = {
             "segment_id": segment_id,
             "page_range": {"start": int(start_page), "end": int(end_page)},
@@ -109,19 +107,23 @@ class SummaryGenerator:
             prompt = prompt.replace("{segment_id}", str(segment_id))
 
             system_prompt = self.config.prompts.analysis_system if self.config.prompts.analysis_system else DEFAULT_ANALYSIS_SYSTEM_PROMPT
-            response = await llm.generate(
+            parsed = await llm.generate_json(
                 prompt=prompt,
                 system=system_prompt,
                 temperature=0.3
             )
 
-            # 解析 JSON 响应
-            parsed = parse_llm_json(response)
             if parsed:
                 segment_data.update(parsed)
             else:
                 segment_data["summary"] = "\n".join(batch_summaries[:3])
 
+        except OpenAICompatibleBusinessRetriesExhaustedError as e:
+            logger.warning(f"小总结结构化生成重试耗尽: {e}")
+            if e.last_raw_content:
+                segment_data["summary"] = e.last_raw_content.strip()
+            else:
+                segment_data["summary"] = "\n".join(batch_summaries[:3])
         except Exception as e:
             logger.warning(f"小总结生成失败: {e}")
             segment_data["summary"] = "\n".join(batch_summaries[:3])
@@ -142,8 +144,6 @@ class SummaryGenerator:
         segment_results: List[Dict]
     ) -> Dict:
         """从小总结生成章节总结"""
-        from .embedding_client import ChatClient
-
         if not segment_results:
             return {
                 "chapter_id": chapter_id,
@@ -185,14 +185,12 @@ class SummaryGenerator:
             prompt = prompt.replace("{segment_summaries}", segment_summaries_text)
 
             system_prompt = self.config.prompts.analysis_system if self.config.prompts.analysis_system else DEFAULT_ANALYSIS_SYSTEM_PROMPT
-            response = await llm.generate(
+            parsed = await llm.generate_json(
                 prompt=prompt,
                 system=system_prompt,
                 temperature=0.3
             )
 
-            # 解析 JSON
-            parsed = parse_llm_json(response)
             if parsed:
                 chapter_summary = parsed.get("summary", "")
 
@@ -210,9 +208,14 @@ class SummaryGenerator:
                     "connections": parsed.get("connections", {}),
                     "segment_count": len(segment_results)
                 }
-            else:
-                chapter_summary = response.strip()
+            chapter_summary = ""
 
+        except OpenAICompatibleBusinessRetriesExhaustedError as e:
+            logger.warning(f"章节总结结构化生成重试耗尽: {e}")
+            if e.last_raw_content:
+                chapter_summary = e.last_raw_content.strip()
+            else:
+                chapter_summary = "\n".join(segment_summaries[:3])
         except Exception as e:
             logger.warning(f"章节总结生成失败: {e}")
             chapter_summary = "\n".join(segment_summaries[:3])

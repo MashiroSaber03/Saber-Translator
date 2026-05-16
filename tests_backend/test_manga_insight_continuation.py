@@ -453,6 +453,53 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
         self.assertEqual(page.continuity_text, "第一页里主角准备离开教室")
         self.assertEqual(page.story_text, "第二页里主角走到走廊，遇到同学")
 
+    def test_generate_page_details_accepts_markdown_json_via_structured_client(self) -> None:
+        from src.core.manga_insight.continuation.models import ChapterScript
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {"characters": [{"name": "Hero"}]}
+
+        async def _generate_parsed(_prompt, parser, **_kwargs):
+            return parser(
+                """```json
+{
+  "page_number": 1,
+  "characters": ["Hero"],
+  "story_text": "主角在雨夜走向路口",
+  "dialogue_text": "Hero：我到了"
+}
+```"""
+            )
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            load_characters=lambda: None,
+            format_characters_for_prompt=lambda: "（暂无角色信息）",
+        )
+        generator._get_previous_story_summary = mock.AsyncMock(return_value="上一页剧情")
+        generator.chat_client = types.SimpleNamespace(
+            generate_parsed=mock.AsyncMock(side_effect=_generate_parsed)
+        )
+
+        page = asyncio.run(
+            generator.generate_page_details(
+                ChapterScript(
+                    chapter_title="测试章节",
+                    page_count=1,
+                    script_text="第1页：主角在雨夜走向路口",
+                ),
+                1,
+            )
+        )
+
+        self.assertEqual(page.continuity_text, "上一页剧情")
+        self.assertEqual(page.story_text, "主角在雨夜走向路口")
+        self.assertEqual(page.dialogue_text, "Hero：我到了")
+
 
 class ContinuationStoryRouteTests(unittest.TestCase):
     def setUp(self) -> None:

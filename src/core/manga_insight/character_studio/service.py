@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.core.manga_insight.config_utils import create_chat_client, has_provider_model_config, load_insight_config
 from src.core.manga_insight.embedding_client import ChatClient
 from src.core.manga_insight.storage import AnalysisStorage
-from src.core.manga_insight.utils.json_parser import parse_llm_json
+from src.shared.openai_execution import (
+    OpenAICompatibleBusinessRetryableError,
+    parse_json_block_from_text,
+)
 
 from .adapters import (
     build_export_bundle,
@@ -40,18 +43,18 @@ logger = logging.getLogger("MangaInsight.CharacterStudio")
 SECTION_PROMPTS = {
     "identity": """你是角色卡编辑助手。请基于压缩摘要与目标角色名，为该角色补全角色设定。输出 JSON 对象，字段 only: name, description, personality, scenario。所有字段必须是字符串。""",
     "greetings": """你是角色卡问候语设计助手。请基于压缩摘要与目标角色名，为该角色补全问候语和对话元信息。输出 JSON 对象，字段 only: first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version。alternate_greetings 必须为字符串数组。""",
-    "lorebook": """你是角色世界书设计助手。请基于压缩摘要与目标角色名，为该角色构建世界书。输出 JSON 对象，字段 only: lorebook，其中 lorebook 必须包含 name, entries。entries 为数组，每项至少包含 comment, keys, secondary_keys, content, enabled, constant, selective, priority, position, depth, children。""",
-    "regex": """你是角色脚本助手。请基于压缩摘要与目标角色名，为该角色生成运行时正则脚本。输出 JSON 对象，字段 only: regexScripts。regexScripts 为数组，每项包含 scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled。""",
-    "state-tasks": """你是状态任务助手。请基于压缩摘要与目标角色名，为该角色生成状态任务。输出 JSON 对象，字段 only: stateTasks。stateTasks 为数组，每项包含 name, triggerTiming, interval, commands, disabled。""",
+    "lorebook": """你是角色世界书设计助手。请基于压缩摘要与目标角色名，为该角色构建世界书。输出 JSON 对象，字段 only: lorebook，其中 lorebook 必须包含 name, entries。entries 为数组，每项必须使用以下精确字段：comment, keys, secondary_keys, content, enabled, constant, selective, priority, position, depth, children。keys 必须是非空字符串数组。不要输出 name、title、key 这类替代字段；如果你拿不准，就返回空 entries 数组。""",
+    "regex": """你是角色脚本助手。请基于压缩摘要与目标角色名，为该角色生成运行时正则脚本。输出 JSON 对象，字段 only: regexScripts。regexScripts 为数组，每项必须使用以下精确字段：scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled。placement 只能是数字数组，推荐使用 [2]；1 表示用户输入/提示文本侧，2 表示角色回复/显示文本侧。不要输出 name、regex、replacement、condition 这类替代字段；当前不支持 condition 条件表达式。如果拿不准，就返回空数组。""",
+    "state-tasks": """你是状态任务助手。请基于压缩摘要与目标角色名，为该角色生成状态任务。输出 JSON 对象，字段 only: stateTasks。stateTasks 为数组，每项必须使用以下精确字段：name, triggerTiming, interval, commands, disabled。triggerTiming 只能使用 initialization、message_received、message_sent 三个值。commands 必须是非空字符串，格式推荐为 <<taskjs>> ... <</taskjs>>；如果拿不准如何写可执行 commands，就返回空数组。不要输出 description、trigger、action 这类替代字段。""",
     "review": """你是角色卡审查员。请基于压缩摘要与目标角色名，审查当前角色卡是否忠于原始剧情信息。输出 JSON 对象，字段 only: summary, issues, suggestions。summary 必须为字符串；issues 与 suggestions 必须为字符串数组。""",
-    "translate": """你是专业翻译与角色卡整理助手。请参考压缩摘要与当前角色卡草稿，将角色卡正文翻译或整理为更自然的中文。输出 JSON 对象，字段 only: identity, coreMessages。""",
+    "translate": """你是专业翻译与角色卡整理助手。请参考压缩摘要与当前角色卡草稿，将角色卡正文翻译或整理为更自然的中文。输出 JSON 对象，字段 only: identity, coreMessages。identity 必须包含完整字段：name, description, personality, scenario。coreMessages 必须包含完整字段：first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version。不要省略字段，不要返回 null。""",
     "full": """你是角色卡构建助手。请基于压缩摘要与目标角色名，一次性生成完整角色卡初稿。输出 JSON 对象，字段 only: identity, coreMessages, lorebook, regexScripts, stateTasks。
 
 identity 必须包含：name, description, personality, scenario。
 coreMessages 必须包含：first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version。
-lorebook 必须包含：name, entries。
-regexScripts 必须是数组。
-stateTasks 必须是数组。
+lorebook 必须包含：name, entries。entries 中每项必须使用精确字段：comment, keys, secondary_keys, content, enabled, constant, selective, priority, position, depth, children。keys 必须是非空字符串数组。不要用 name、title、key 代替。
+regexScripts 必须是数组。每项必须使用精确字段：scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled。placement 推荐使用 [2]；1 表示用户输入/提示文本侧，2 表示角色回复/显示文本侧。不要用 name、regex、replacement、condition 代替；当前不支持 condition。如果拿不准，就返回空数组。
+stateTasks 必须是数组。每项必须使用精确字段：name, triggerTiming, interval, commands, disabled。triggerTiming 只能使用 initialization、message_received、message_sent。commands 必须是非空字符串，推荐使用 <<taskjs>> ... <</taskjs>>。不要用 description、trigger、action 代替。如果拿不准，就返回空数组。
 
 请直接输出 JSON，不要输出解释、Markdown 或代码块外文字。""",
 }
@@ -253,8 +256,12 @@ class CharacterStudioService:
         if not client:
             raise ValueError("未配置可用的 AI 对话模型，无法审查角色卡。")
         try:
-            response = await client.generate(prompt=prompt, temperature=0.4)
-            generated = parse_llm_json(response, default={})
+            generated = await self._generate_structured_payload(
+                client=client,
+                prompt=prompt,
+                temperature=0.4,
+                parser=self._parse_review_payload,
+            )
         except Exception as exc:
             logger.error("生成审查报告失败: %s", exc, exc_info=True)
             raise ValueError(f"AI 审查失败：{exc}") from exc
@@ -264,7 +271,6 @@ class CharacterStudioService:
             except Exception:
                 pass
 
-        self._validate_generation_payload("review", generated)
         return generated
 
     async def _generate_fact_driven_section(
@@ -285,8 +291,17 @@ class CharacterStudioService:
             raise ValueError("未配置可用的 AI 对话模型，无法补全角色卡。")
 
         try:
-            response = await client.generate(prompt=prompt, temperature=0.45)
-            generated = parse_llm_json(response, default={})
+            generated = await self._generate_structured_payload(
+                client=client,
+                prompt=prompt,
+                temperature=0.45,
+                parser=lambda content: self._parse_fact_driven_payload(
+                    content,
+                    document=document,
+                    section=section,
+                    frozen_sections=frozen_sections,
+                ),
+            )
         except Exception as exc:
             logger.error("生成 section %s 失败: %s", section, exc, exc_info=True)
             raise ValueError(f"AI 生成失败：{exc}") from exc
@@ -296,11 +311,7 @@ class CharacterStudioService:
             except Exception:
                 pass
 
-        self._validate_generation_payload(section, generated)
         updated = self._apply_section_payload(document, section, generated, frozen_sections=frozen_sections)
-        diagnostics = build_diagnostics_report(updated)
-        if diagnostics.get("errors"):
-            raise ValueError(f"AI 生成结果校验失败：{'；'.join(diagnostics['errors'])}")
         return updated
 
     async def _ensure_compressed_context(self) -> str:
@@ -485,6 +496,278 @@ class CharacterStudioService:
             self._require_list(lorebook, "entries")
             return
 
+    def _parse_review_payload(self, content: str) -> Dict[str, Any]:
+        generated = parse_json_block_from_text(content)
+        if not isinstance(generated, dict):
+            raise OpenAICompatibleBusinessRetryableError("AI 审查结果不是 JSON 对象。")
+        try:
+            self._validate_generation_payload("review", generated)
+        except ValueError as exc:
+            raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+        return generated
+
+    def _parse_fact_driven_payload(
+        self,
+        content: str,
+        *,
+        document: Dict[str, Any],
+        section: str,
+        frozen_sections: set[str],
+    ) -> Dict[str, Any]:
+        generated = parse_json_block_from_text(content)
+        if not isinstance(generated, dict):
+            raise OpenAICompatibleBusinessRetryableError("AI 生成结果不是 JSON 对象。")
+        generated = self._normalize_generated_payload(section, generated)
+        try:
+            self._validate_generation_payload(section, generated)
+            updated = self._apply_section_payload(document, section, generated, frozen_sections=frozen_sections)
+            diagnostics = build_diagnostics_report(updated)
+            if diagnostics.get("errors"):
+                raise ValueError(f"AI 生成结果校验失败：{'；'.join(diagnostics['errors'])}")
+        except ValueError as exc:
+            raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+        return generated
+
+    async def _generate_structured_payload(
+        self,
+        *,
+        client: ChatClient,
+        prompt: str,
+        temperature: float,
+        parser,
+    ) -> Dict[str, Any]:
+        if hasattr(client, "generate_parsed"):
+            return await client.generate_parsed(
+                prompt,
+                parser=parser,
+                temperature=temperature,
+            )
+        return parser(await client.generate(prompt=prompt, temperature=temperature))
+
+    @staticmethod
+    def _coerce_string_list(value: Any) -> List[str]:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if not isinstance(value, list):
+            return []
+        results: List[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                results.append(text)
+        return results
+
+    @staticmethod
+    def _coerce_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "y", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "n", "off", ""}:
+                return False
+        return default
+
+    def _normalize_regex_placement(self, value: Any) -> List[int]:
+        raw_values = value if isinstance(value, list) else [value]
+        placements: List[int] = []
+        for item in raw_values:
+            placement = self._coerce_int(item, -1)
+            if placement in {1, 2}:
+                placements.append(placement)
+        return placements or [2]
+
+    def _normalize_trigger_timing(self, value: Any) -> tuple[str, bool]:
+        raw = str(value or "").strip().lower()
+        mapping = {
+            "initialization": "initialization",
+            "init": "initialization",
+            "startup": "initialization",
+            "message_received": "message_received",
+            "message_receive": "message_received",
+            "received": "message_received",
+            "user_message": "message_received",
+            "conversation_start": "message_received",
+            "message_sent": "message_sent",
+            "message_send": "message_sent",
+            "sent": "message_sent",
+            "assistant_message": "message_sent",
+            "conversation_end": "message_sent",
+        }
+        normalized = mapping.get(raw)
+        if normalized:
+            return normalized, False
+        return "message_sent", True
+
+    def _normalize_lorebook_entry(self, entry: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(entry, dict):
+            return None
+
+        comment = str(
+            entry.get("comment")
+            or entry.get("name")
+            or entry.get("title")
+            or ""
+        ).strip()
+        keys = self._coerce_string_list(entry.get("keys", entry.get("key", [])))
+        if not comment and keys:
+            comment = keys[0]
+        if not keys and comment:
+            keys = [comment]
+        secondary_keys = self._coerce_string_list(
+            entry.get("secondary_keys", entry.get("secondaryKeys", entry.get("keysecondary", [])))
+        )
+        children = [
+            normalized
+            for child in entry.get("children", []) or []
+            for normalized in [self._normalize_lorebook_entry(child)]
+            if normalized
+        ]
+
+        return {
+            "id": str(entry.get("id") or ""),
+            "comment": comment,
+            "keys": keys,
+            "secondary_keys": secondary_keys,
+            "content": str(entry.get("content", entry.get("description", "")) or "").strip(),
+            "enabled": self._coerce_bool(entry.get("enabled"), True),
+            "constant": self._coerce_bool(entry.get("constant"), False),
+            "selective": self._coerce_bool(entry.get("selective"), True),
+            "priority": self._coerce_int(entry.get("priority", entry.get("order", 100)), 100),
+            "position": str(entry.get("position", "before_char") or "before_char"),
+            "depth": self._coerce_int(entry.get("depth", 4), 4),
+            "probability": self._coerce_int(entry.get("probability", 100), 100),
+            "prevent_recursion": self._coerce_bool(entry.get("prevent_recursion", entry.get("preventRecursion")), True),
+            "use_regex": self._coerce_bool(entry.get("use_regex", entry.get("useRegex")), False),
+            "match_persona_description": self._coerce_bool(entry.get("match_persona_description"), True),
+            "match_character_description": self._coerce_bool(entry.get("match_character_description"), True),
+            "match_character_personality": self._coerce_bool(entry.get("match_character_personality"), True),
+            "match_character_depth_prompt": self._coerce_bool(entry.get("match_character_depth_prompt"), True),
+            "match_scenario": self._coerce_bool(entry.get("match_scenario"), True),
+            "children": children,
+        }
+
+    def _normalize_lorebook_payload(self, lorebook: Any) -> Dict[str, Any]:
+        if not isinstance(lorebook, dict):
+            return {"name": "", "entries": []}
+        raw_entries = lorebook.get("entries", [])
+        if isinstance(raw_entries, dict):
+            raw_entries = list(raw_entries.values())
+        normalized_entries = [
+            normalized
+            for entry in raw_entries or []
+            for normalized in [self._normalize_lorebook_entry(entry)]
+            if normalized
+        ]
+        return {
+            "name": str(lorebook.get("name", "") or "").strip(),
+            "entries": normalized_entries,
+        }
+
+    def _normalize_regex_scripts_payload(self, scripts: Any) -> List[Dict[str, Any]]:
+        if not isinstance(scripts, list):
+            return []
+        normalized_scripts: List[Dict[str, Any]] = []
+        for idx, item in enumerate(scripts):
+            if not isinstance(item, dict):
+                continue
+            placement = self._normalize_regex_placement(item.get("placement", [2]))
+            has_unsupported_condition = str(item.get("condition", "") or "").strip() != ""
+            normalized_scripts.append({
+                "id": str(item.get("id") or ""),
+                "scriptName": str(item.get("scriptName") or item.get("name") or f"脚本{idx + 1}").strip(),
+                "findRegex": str(item.get("findRegex") or item.get("regex") or item.get("pattern") or "").strip(),
+                "replaceString": str(item.get("replaceString") or item.get("replacement") or item.get("replace") or "").strip(),
+                "placement": placement,
+                "markdownOnly": self._coerce_bool(item.get("markdownOnly"), False),
+                "promptOnly": self._coerce_bool(item.get("promptOnly"), False),
+                "runOnEdit": self._coerce_bool(item.get("runOnEdit"), True),
+                "disabled": self._coerce_bool(item.get("disabled"), False) or has_unsupported_condition,
+            })
+        return normalized_scripts
+
+    def _build_placeholder_task_commands(self, task: Dict[str, Any]) -> str:
+        lines = [
+            "<<taskjs>>",
+            "// AI generated placeholder task metadata. Please replace with executable STscript logic if needed.",
+        ]
+        description = str(task.get("description", "") or "").strip()
+        trigger = str(task.get("trigger", "") or "").strip()
+        action = str(task.get("action", "") or "").strip()
+        if description:
+            lines.append(f"// description: {description}")
+        if trigger:
+            lines.append(f"// trigger: {trigger}")
+        if action:
+            lines.append(f"// action: {action}")
+        lines.append("<</taskjs>>")
+        return "\n".join(lines)
+
+    def _normalize_state_tasks_payload(self, tasks: Any) -> List[Dict[str, Any]]:
+        if not isinstance(tasks, list):
+            return []
+        normalized_tasks: List[Dict[str, Any]] = []
+        for idx, item in enumerate(tasks):
+            if not isinstance(item, dict):
+                continue
+            trigger_timing, unsupported_trigger = self._normalize_trigger_timing(
+                item.get("triggerTiming") or item.get("trigger")
+            )
+            commands = str(item.get("commands", "") or "").strip()
+            used_placeholder = not commands
+            if not commands:
+                commands = self._build_placeholder_task_commands(item)
+            normalized_tasks.append({
+                "id": str(item.get("id") or ""),
+                "name": str(item.get("name") or f"任务{idx + 1}").strip(),
+                "triggerTiming": trigger_timing,
+                "interval": self._coerce_int(item.get("interval", 0), 0),
+                "commands": commands,
+                "disabled": self._coerce_bool(item.get("disabled"), False) or used_placeholder or unsupported_trigger,
+            })
+        return normalized_tasks
+
+    def _normalize_generated_payload(self, section: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(payload)
+
+        if section == "lorebook":
+            lorebook = normalized.get("lorebook", normalized)
+            return {"lorebook": self._normalize_lorebook_payload(lorebook)}
+
+        if section == "regex":
+            scripts = normalized.get("regexScripts", normalized.get("regex_scripts", normalized))
+            return {"regexScripts": self._normalize_regex_scripts_payload(scripts)}
+
+        if section == "state-tasks":
+            tasks = normalized.get("stateTasks", normalized.get("state_tasks", normalized))
+            return {"stateTasks": self._normalize_state_tasks_payload(tasks)}
+
+        if section == "full":
+            lorebook = self._normalize_lorebook_payload(normalized.get("lorebook", {}))
+            normalized["lorebook"] = lorebook
+            normalized["regexScripts"] = self._normalize_regex_scripts_payload(
+                normalized.get("regexScripts", normalized.get("regex_scripts", []))
+            )
+            normalized["stateTasks"] = self._normalize_state_tasks_payload(
+                normalized.get("stateTasks", normalized.get("state_tasks", []))
+            )
+            return normalized
+
+        return normalized
+
     def _apply_section_payload(
         self,
         document: Dict[str, Any],
@@ -533,6 +816,7 @@ class CharacterStudioService:
             core_messages = payload.get("coreMessages")
             if isinstance(identity, dict):
                 updated["identity"].update(identity)
+                updated["meta"]["title"] = updated["identity"]["name"]
             if isinstance(core_messages, dict):
                 updated["coreMessages"].update(core_messages)
         elif section == "full":
@@ -723,7 +1007,7 @@ class CharacterStudioService:
         prompt = (
             "你是 Manga Insight Character Studio 的角色卡助手。"
             "你可以审查角色卡、建议世界书、建议问候语、建议正则脚本和状态任务。"
-            "如需修改，请输出 ```json:patch 代码块。"
+            "如需修改，请输出 ```json:patch 代码块，并严格遵循上下文里列出的 patch 契约与字段命名。"
             "\n\n上下文如下：\n"
             + context
             + "\n\n用户请求:\n"

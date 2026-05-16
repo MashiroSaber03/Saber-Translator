@@ -10,7 +10,6 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 from .config_utils import create_chat_client, has_provider_model_config, load_insight_config
-from .utils.json_parser import parse_llm_json
 from .config_models import DEFAULT_QA_SYSTEM_PROMPT, DEFAULT_QUESTION_DECOMPOSE_PROMPT
 from .storage import AnalysisStorage
 from .vector_store import MangaVectorStore
@@ -334,10 +333,7 @@ class MangaQA:
         prompt = base_prompt.format(question=question)
 
         try:
-            response = await self.chat_client.generate(prompt, temperature=0.3)
-
-            # 使用统一的 JSON 解析器
-            data = parse_llm_json(response)
+            data = await self.chat_client.generate_json(prompt, temperature=0.3)
             if data:
                 sub_questions = data.get("sub_questions", [])
                 # 过滤有效的子问题

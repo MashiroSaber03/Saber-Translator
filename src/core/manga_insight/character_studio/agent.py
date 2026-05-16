@@ -43,7 +43,13 @@ def build_agent_context(document: Dict[str, Any], preview_session: Dict[str, Any
         for item in runtime_log:
             parts.append(f"- {json.dumps(item, ensure_ascii=False)}")
     parts.append(
-        "请优先返回简洁建议；如需修改角色卡，请输出 ```json:patch 代码块，"
-        "格式形如 {\"set\": {\"identity.description\": \"...\"}, \"greeting_add\": \"...\"}。"
+        "请优先返回简洁建议；如需修改角色卡，请输出 ```json:patch 代码块。"
+        "支持的 patch 字段如下："
+        "1) set: 用于直接设置已有字段路径，例如 identity.description、identity.name、coreMessages.first_message、coreMessages.system_prompt、lorebook.name。"
+        "2) greeting_add: 追加一条 alternate_greetings 字符串。"
+        "3) worldbook_add: 追加世界书条目，对象字段建议为 comment、keys、content，可选 secondary_keys、position、priority、depth。keys 必须是字符串数组。"
+        "4) regex_add: 追加正则脚本，对象字段必须使用 scriptName、findRegex、replaceString，可选 placement、markdownOnly、promptOnly、runOnEdit、disabled。不要使用 name、regex、replacement、condition。"
+        "5) task_add: 追加状态任务，对象字段必须使用 name、triggerTiming、commands，可选 interval、disabled。triggerTiming 只能是 initialization、message_received、message_sent。commands 应为可执行字符串，推荐 <<taskjs>> ... <</taskjs>>。"
+        "不要输出其他 patch 顶层字段。"
     )
     return "\n".join(parts)

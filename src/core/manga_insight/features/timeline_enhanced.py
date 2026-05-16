@@ -17,7 +17,6 @@ from datetime import datetime
 from ..storage import AnalysisStorage
 from ..embedding_client import ChatClient
 from ..config_utils import has_provider_model_config
-from ..utils.json_parser import parse_llm_json
 from .timeline import TimelineBuilder
 # timeline_models 可用于类型提示，当前使用 Dict 返回
 
@@ -577,22 +576,15 @@ class EnhancedTimelineBuilder:
         
         try:
             # 调用 LLM
-            response = await self.llm.generate(
+            result = await self.llm.generate_json(
                 prompt=prompt,
                 temperature=0.3
             )
             
-            if not response:
-                logger.warning("LLM 返回空响应")
-                return None
-            
-            # 解析 JSON
-            result = self._parse_json_response(response)
-            
             if result:
                 logger.info(f"LLM 整合成功: {len(result.get('events', []))} 个事件")
             
-            return result
+            return result if isinstance(result, dict) else None
             
         except Exception as e:
             logger.error(f"LLM 调用失败: {e}")
@@ -605,21 +597,6 @@ class EnhancedTimelineBuilder:
                 except Exception:
                     pass
                 self.llm = None
-    
-    def _parse_json_response(self, response: str) -> Optional[Dict]:
-        """
-        解析 LLM 返回的 JSON
-
-        Args:
-            response: LLM 响应文本
-
-        Returns:
-            Dict: 解析后的数据，失败返回 None
-        """
-        result = parse_llm_json(response)
-        if not result:
-            logger.warning(f"无法解析 JSON 响应: {response[:500]}...")
-        return result
     
     def _post_process(self, data: Dict) -> Dict:
         """

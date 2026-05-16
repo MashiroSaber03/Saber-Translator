@@ -6,6 +6,28 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosError } from 'axios'
 import type { ApiError, ApiResponse } from '@/types'
 
+interface ApiClientErrorInit {
+  code: string
+  message: string
+  status: number
+  details?: Record<string, unknown>
+}
+
+export class ApiClientError extends Error implements ApiError {
+  readonly code: string
+  readonly status: number
+  readonly details?: Record<string, unknown>
+
+  constructor({ code, message, status, details }: ApiClientErrorInit) {
+    super(message)
+    this.name = 'ApiClientError'
+    Object.setPrototypeOf(this, new.target.prototype)
+    this.code = code
+    this.status = status
+    this.details = details
+  }
+}
+
 /**
  * 创建 API 错误对象
  */
@@ -13,12 +35,12 @@ function createApiError(error: AxiosError): ApiError {
   const response = error.response
   const data = response?.data as Record<string, unknown> | undefined
 
-  return {
-    code: (data?.code as string) || error.code || 'UNKNOWN_ERROR',
+  return new ApiClientError({
+    code: (data?.code as string) || (data?.error_code as string) || error.code || 'UNKNOWN_ERROR',
     message: (data?.error as string) || (data?.message as string) || error.message,
     status: response?.status || 500,
     details: data?.details as Record<string, unknown> | undefined,
-  }
+  })
 }
 
 /**

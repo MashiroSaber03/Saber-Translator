@@ -565,6 +565,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         }
         setByPath(nextDocument as unknown as Record<string, unknown>, path, value)
       })
+      const patchedName = String(nextDocument.identity?.name || '')
+      if (patchedName.trim()) {
+        nextDocument.meta.title = patchedName
+      }
     }
     if (typeof patch.greeting_add === 'string' && !frozenSections.has('greetings')) {
       nextDocument.coreMessages.alternate_greetings.push(patch.greeting_add)
