@@ -55,10 +55,6 @@ function buildDocument(): CharacterStudioDocument {
     chatPreset: {
       opening_mode: 'first_message',
     },
-    previewState: {
-      variables: {},
-      messages: [],
-    },
     grounding: {
       timeline_mode: 'enhanced',
       sample_pages: [1, 3],

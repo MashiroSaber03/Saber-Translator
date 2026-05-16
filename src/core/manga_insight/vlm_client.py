@@ -6,7 +6,7 @@ import asyncio
 import base64
 import io
 import logging
-from typing import List, Dict, Optional
+from typing import Callable, List, Dict, Optional
 
 from PIL import Image
 
@@ -110,6 +110,45 @@ class VLMClient:
             prompt=prompt,
             parser=self._build_batch_analysis_parser(start_page, end_page),
         )
+
+    async def generate_messages(
+        self,
+        messages: List[Dict[str, object]],
+        *,
+        temperature: Optional[float] = None,
+        on_stream_chunk: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        if not self._base_url:
+            raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
+
+        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
+        if temperature is not None:
+            options.request.temperature = temperature
+
+        def _handle_stream_chunk(delta: str, _full_text: str) -> None:
+            if on_stream_chunk and delta:
+                on_stream_chunk(delta)
+
+        result = await self._executor.execute(
+            UnifiedChatRequest(
+                provider=self.provider,
+                api_key=self.config.api_key,
+                model=self.config.model,
+                messages=messages,
+                base_url=self.config.base_url or None,
+                capability="vlm",
+                openai_options=options,
+                runtime_options=build_openai_compatible_runtime_options(
+                    timeout=self._timeout,
+                    print_stream_output=options.execution.use_stream,
+                    stream_output_label="角色工坊聊天",
+                    on_stream_chunk=_handle_stream_chunk,
+                ),
+            ),
+            capability="vlm",
+            logger_instance=logger,
+        )
+        return str(result.parsed)
 
     def _build_batch_analysis_prompt(self, start_page: int, end_page: int, page_count: int, context: Dict = None) -> str:
         base_prompt = self.prompts_config.batch_analysis if self.prompts_config.batch_analysis else DEFAULT_BATCH_ANALYSIS_PROMPT

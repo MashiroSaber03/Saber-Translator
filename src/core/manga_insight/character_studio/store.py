@@ -5,6 +5,8 @@ Character Studio storage helpers.
 from __future__ import annotations
 
 import os
+import shutil
+import uuid
 from typing import Any, Dict, List, Optional
 
 from src.core.manga_insight.storage import AnalysisStorage
@@ -25,7 +27,9 @@ class CharacterStudioStore:
             "character_studio/documents",
             "character_studio/assets",
             "character_studio/assets/avatars",
+            "character_studio/assets/chat",
             "character_studio/preview_chats",
+            "character_studio/chat_sessions",
             "character_studio/imports",
             "character_studio/exports",
         ):
@@ -78,9 +82,16 @@ class CharacterStudioStore:
         index_data = await self.load_index()
         index_data["documents"] = [item for item in index_data.get("documents", []) if item.get("id") != doc_id]
         await self.save_index(index_data)
-        return await self.storage._delete_file_if_exists(
+        deleted = await self.storage._delete_file_if_exists(
             os.path.join(self.base_path, "character_studio", "documents", f"{doc_id}.json")
         )
+        chat_dir = os.path.join(self.base_path, "character_studio", "chat_sessions", doc_id)
+        if os.path.isdir(chat_dir):
+            shutil.rmtree(chat_dir, ignore_errors=True)
+        chat_asset_dir = os.path.join(self.base_path, "character_studio", "assets", "chat", doc_id)
+        if os.path.isdir(chat_asset_dir):
+            shutil.rmtree(chat_asset_dir, ignore_errors=True)
+        return deleted
 
     async def load_preview_session(self, doc_id: str) -> Dict[str, Any]:
         data = await self.storage._load_json(f"character_studio/preview_chats/{doc_id}.json", None)
@@ -106,6 +117,70 @@ class CharacterStudioStore:
         ok = await self.storage._save_binary(path, data)
         if not ok:
             raise RuntimeError("保存导出文件失败")
+        return path
+
+    def _chat_doc_dir(self, doc_id: str) -> str:
+        return os.path.join(self.base_path, "character_studio", "chat_sessions", doc_id)
+
+    async def load_chat_index(self, doc_id: str) -> Dict[str, Any]:
+        data = await self.storage._load_json(
+            f"character_studio/chat_sessions/{doc_id}/index.json",
+            None,
+        )
+        return data or {
+            "doc_id": doc_id,
+            "active_session_id": None,
+            "archived_session_ids": [],
+        }
+
+    async def save_chat_index(self, doc_id: str, index_data: Dict[str, Any]) -> bool:
+        payload = dict(index_data or {})
+        payload["doc_id"] = doc_id
+        return await self.storage._save_json(
+            f"character_studio/chat_sessions/{doc_id}/index.json",
+            payload,
+        )
+
+    async def load_chat_session(self, doc_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+        payload = await self.storage._load_json(
+            f"character_studio/chat_sessions/{doc_id}/{session_id}.json",
+            None,
+        )
+        return payload or None
+
+    async def save_chat_session(self, doc_id: str, session_data: Dict[str, Any]) -> bool:
+        session_id = str(session_data.get("session_id") or "").strip()
+        if not session_id:
+            raise ValueError("chat session 缺少 session_id")
+        os.makedirs(self._chat_doc_dir(doc_id), exist_ok=True)
+        return await self.storage._save_json(
+            f"character_studio/chat_sessions/{doc_id}/{session_id}.json",
+            session_data,
+        )
+
+    async def save_chat_attachment(
+        self,
+        doc_id: str,
+        session_id: str,
+        *,
+        filename: str,
+        data: bytes,
+    ) -> str:
+        safe_name = os.path.basename(filename or "attachment.bin")
+        unique_name = f"{session_id}_{uuid.uuid4().hex[:10]}_{safe_name}"
+        session_asset_dir = os.path.join(
+            self.base_path,
+            "character_studio",
+            "assets",
+            "chat",
+            doc_id,
+            session_id,
+        )
+        os.makedirs(session_asset_dir, exist_ok=True)
+        path = os.path.join(session_asset_dir, unique_name)
+        ok = await self.storage._save_binary(path, data)
+        if not ok:
+            raise RuntimeError("保存聊天附件失败")
         return path
 
     @staticmethod

@@ -1,8 +1,8 @@
 <template>
   <header class="studio-topbar">
     <div class="topbar-left">
-      <button class="icon-btn drawer-btn" title="打开导航" @click="$emit('toggle-left-drawer')">☰</button>
       <button class="back-btn" @click="$emit('back')">返回分析</button>
+      <button class="ghost-btn" @click="$emit('open-resource')">角色资源</button>
       <div class="title-block">
         <div class="title-row">
           <h1>角色工坊 2.0</h1>
@@ -19,7 +19,9 @@
     </div>
 
     <div class="topbar-right">
-      <button class="icon-btn drawer-btn" title="打开运行时侧栏" @click="$emit('toggle-right-drawer')">⌘</button>
+      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('open-chat')">继续聊天</button>
+      <button class="ghost-btn" :disabled="!hasDocument || busy" @click="$emit('new-chat')">新对话</button>
+      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('open-prompt')">查看提示词</button>
       <button class="ghost-btn" @click="$emit('open-export')">导出区</button>
       <button class="ghost-btn" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
         {{ validatePending ? '诊断中...' : '诊断' }}
@@ -48,9 +50,11 @@ defineEmits<{
   (e: 'back'): void
   (e: 'save'): void
   (e: 'validate'): void
+  (e: 'open-resource'): void
+  (e: 'open-chat'): void
+  (e: 'new-chat'): void
+  (e: 'open-prompt'): void
   (e: 'open-export'): void
-  (e: 'toggle-left-drawer'): void
-  (e: 'toggle-right-drawer'): void
 }>()
 </script>
 
@@ -147,8 +151,7 @@ defineEmits<{
 
 .back-btn,
 .ghost-btn,
-.primary-btn,
-.icon-btn {
+.primary-btn {
   border: none;
   border-radius: 14px;
   cursor: pointer;
@@ -164,8 +167,7 @@ defineEmits<{
 }
 
 .back-btn:hover,
-.ghost-btn:hover,
-.icon-btn:hover {
+.ghost-btn:hover {
   transform: translateY(-1px);
 }
 
@@ -178,41 +180,11 @@ defineEmits<{
 
 .back-btn:disabled,
 .ghost-btn:disabled,
-.primary-btn:disabled,
-.icon-btn:disabled {
+.primary-btn:disabled {
   opacity: 0.68;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
-}
-
-.icon-btn {
-  width: 42px;
-  height: 42px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
-  font-size: 18px;
-}
-
-.drawer-btn {
-  display: none;
-}
-
-@media (max-width: 1280px) {
-  .drawer-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .topbar-right {
-    max-width: 100%;
-  }
-
-  .title-block {
-    flex-basis: 360px;
-    max-width: 360px;
-  }
 }
 
 @media (max-width: 900px) {

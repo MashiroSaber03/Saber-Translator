@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -135,6 +136,12 @@ def _demo_document(name: str = "测试角色") -> dict:
         },
         "exportArtifacts": {},
     }
+
+
+def _tiny_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0uoAAAAASUVORK5CYII="
+    )
 
 
 class CharacterStudioStorageTests(unittest.TestCase):
@@ -885,7 +892,8 @@ class CharacterStudioPreviewTests(unittest.TestCase):
                 self.assertIn("task_add", fake_client.prompts[0])
                 self.assertIn("不要使用 name、regex、replacement、condition", fake_client.prompts[0])
 
-    def test_preview_chat_applies_runtime_rules_for_tasks_regex_and_lorebook(self) -> None:
+class CharacterStudioChatServiceTests(unittest.TestCase):
+    def test_get_chat_state_bootstraps_active_session_with_opening_message(self) -> None:
         from src.core.manga_insight.character_studio.service import CharacterStudioService
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -897,11 +905,49 @@ class CharacterStudioPreviewTests(unittest.TestCase):
             ):
                 service = CharacterStudioService("book-demo")
                 document = _demo_document()
-                document["coreMessages"]["first_message"] = "开场白"
+                asyncio.run(service.store.save_document(document))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+
+                self.assertEqual(state["doc_id"], document["id"])
+                self.assertIsNotNone(state["active_session"])
+                self.assertEqual(state["archived_sessions"], [])
+                self.assertEqual(
+                    state["active_session"]["messages"][0]["content"],
+                    document["coreMessages"]["first_message"],
+                )
+
+    def test_send_chat_message_uses_vlm_and_records_runtime_state(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeVlmClient:
+            def __init__(self) -> None:
+                self.requests: list[list[dict]] = []
+
+            async def generate_messages(self, messages, *, on_stream_chunk=None):
+                self.requests.append(messages)
+                if on_stream_chunk:
+                    on_stream_chunk("先")
+                    on_stream_chunk("别急，")
+                    on_stream_chunk("按计划推进。")
+                return "先别急，按计划推进。"
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
                 document["regexScripts"] = [
                     {
-                        "id": "regex_apply",
-                        "scriptName": "问候替换",
+                        "id": "regex_1",
+                        "scriptName": "问候归一",
                         "findRegex": "hello",
                         "replaceString": "hi",
                         "placement": [1],
@@ -909,133 +955,208 @@ class CharacterStudioPreviewTests(unittest.TestCase):
                         "promptOnly": False,
                         "runOnEdit": True,
                         "disabled": False,
-                    },
-                    {
-                        "id": "regex_skip",
-                        "scriptName": "停用编辑时运行",
-                        "findRegex": "hero",
-                        "replaceString": "champion",
-                        "placement": [1],
-                        "markdownOnly": False,
-                        "promptOnly": False,
-                        "runOnEdit": False,
-                        "disabled": False,
-                    },
+                    }
                 ]
-                document["lorebook"]["entries"] = [
+                document["stateTasks"].append(
                     {
-                        "id": "entry_secondary",
-                        "comment": "次级关键词命中",
-                        "keys": ["primary"],
-                        "secondary_keys": ["ally"],
-                        "content": "secondary content",
-                        "enabled": True,
-                        "constant": False,
-                        "selective": False,
-                        "priority": 100,
-                        "position": "before_char",
-                        "depth": 4,
-                        "probability": 100,
-                        "prevent_recursion": False,
-                        "children": [],
-                    },
-                    {
-                        "id": "entry_regex",
-                        "comment": "正则关键词命中",
-                        "keys": ["fo+d"],
-                        "secondary_keys": [],
-                        "content": "regex content",
-                        "enabled": True,
-                        "constant": False,
-                        "selective": False,
-                        "priority": 100,
-                        "position": "before_char",
-                        "depth": 4,
-                        "probability": 100,
-                        "prevent_recursion": False,
-                        "use_regex": True,
-                        "children": [],
-                    },
-                    {
-                        "id": "entry_prob_zero",
-                        "comment": "不会命中",
-                        "keys": ["hero"],
-                        "secondary_keys": [],
-                        "content": "should not appear",
-                        "enabled": True,
-                        "constant": False,
-                        "selective": False,
-                        "priority": 100,
-                        "position": "before_char",
-                        "depth": 4,
-                        "probability": 0,
-                        "prevent_recursion": False,
-                        "children": [],
-                    },
-                    {
-                        "id": "entry_once",
-                        "comment": "仅首次注入",
-                        "keys": ["hero"],
-                        "secondary_keys": [],
-                        "content": "inject once",
-                        "enabled": True,
-                        "constant": False,
-                        "selective": False,
-                        "priority": 100,
-                        "position": "before_char",
-                        "depth": 4,
-                        "probability": 100,
-                        "prevent_recursion": True,
-                        "children": [],
-                    },
-                ]
-                document["stateTasks"] = [
-                    {
-                        "id": "task_init",
-                        "name": "初始化状态",
-                        "triggerTiming": "initialization",
-                        "interval": 0,
-                        "commands": "<<taskjs>>\nawait STscript('/setvar key=boot ready');\n<</taskjs>>",
-                        "disabled": False,
-                    },
-                    {
-                        "id": "task_receive_every_two",
-                        "name": "双轮接收",
+                        "id": "task_2",
+                        "name": "收到消息打标",
                         "triggerTiming": "message_received",
-                        "interval": 2,
-                        "commands": "<<taskjs>>\nawait STscript('/setvar key=received twice');\n<</taskjs>>",
-                        "disabled": False,
-                    },
-                    {
-                        "id": "task_after_reply",
-                        "name": "回复后任务",
-                        "triggerTiming": "message_sent",
                         "interval": 1,
-                        "commands": "<<taskjs>>\nawait STscript('/setvar key=replied yes');\n<</taskjs>>",
+                        "commands": "<<taskjs>>\nawait STscript('/setvar key=received yes');\n<</taskjs>>",
                         "disabled": False,
-                    },
-                ]
+                    }
+                )
                 asyncio.run(service.store.save_document(document))
 
-                with mock.patch.object(service, "_create_chat_client", return_value=None):
-                    session1 = asyncio.run(service.preview_chat(document["id"], "hello ally hero food"))
-                    session2 = asyncio.run(service.preview_chat(document["id"], "hello hero"))
+                state = asyncio.run(service.get_chat_state(document["id"]))
+                session_id = state["active_session"]["session_id"]
+                fake_client = FakeVlmClient()
+                events: list[dict] = []
 
-                self.assertEqual(session1["messages"][1]["content"], "hi ally hero food")
-                self.assertEqual(session1["variables"]["boot"], "ready")
-                self.assertEqual(session1["variables"]["replied"], "yes")
-                self.assertNotIn("received", session1["variables"])
-                self.assertIn("received", session2["variables"])
+                with mock.patch.object(service, "_create_vlm_client", return_value=fake_client):
+                    updated = asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="hello 测试角色",
+                            on_event=events.append,
+                        )
+                    )
 
-                lorebook_comments = [
-                    item.get("comment")
-                    for item in session2["log"]
-                    if item.get("type") == "lorebook"
+                assistant_message = updated["session"]["messages"][-1]
+                self.assertEqual(assistant_message["role"], "assistant")
+                self.assertEqual(assistant_message["content"], "先别急，按计划推进。")
+                self.assertEqual(assistant_message["variables_snapshot"]["trust_score"], "20")
+                self.assertEqual(assistant_message["variables_snapshot"]["received"], "yes")
+                runtime_types = {item["type"] for item in assistant_message["runtime_log"]}
+                self.assertIn("regex", runtime_types)
+                self.assertIn("lorebook", runtime_types)
+                self.assertIn("task", runtime_types)
+                event_types = {item["type"] for item in events}
+                self.assertIn("assistant_delta", event_types)
+                self.assertIn("assistant_done", event_types)
+                self.assertIsInstance(fake_client.requests[-1][-1]["content"], str)
+
+    def test_send_chat_message_with_image_builds_multimodal_user_payload(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeVlmClient:
+            def __init__(self) -> None:
+                self.requests: list[list[dict]] = []
+
+            async def generate_messages(self, messages, *, on_stream_chunk=None):
+                self.requests.append(messages)
+                return "我看到了这张图片。"
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+                session_id = state["active_session"]["session_id"]
+                fake_client = FakeVlmClient()
+
+                with mock.patch.object(service, "_create_vlm_client", return_value=fake_client):
+                    updated = asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="看看这张图里有什么",
+                            attachments=[
+                                {
+                                    "filename": "scene.png",
+                                    "mime_type": "image/png",
+                                    "bytes": _tiny_png_bytes(),
+                                }
+                            ],
+                        )
+                    )
+
+                user_message = updated["session"]["messages"][-2]
+                self.assertEqual(user_message["attachments"][0]["mime_type"], "image/png")
+                self.assertTrue(user_message["attachments"][0]["asset_path"].endswith(".png"))
+                last_user_payload = fake_client.requests[-1][-1]["content"]
+                self.assertIsInstance(last_user_payload, list)
+                self.assertEqual(last_user_payload[0]["type"], "image_url")
+                self.assertEqual(last_user_payload[-1]["type"], "text")
+
+    def test_edit_delete_and_regenerate_chat_messages_rewind_following_history(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeVlmClient:
+            def __init__(self) -> None:
+                self.responses = [
+                    "第一轮回复",
+                    "第二轮回复",
+                    "重生成后的第一轮回复",
+                    "第二轮重新开始后的回复",
                 ]
-                self.assertIn("次级关键词命中", lorebook_comments)
-                self.assertIn("正则关键词命中", lorebook_comments)
-                self.assertNotIn("不会命中", lorebook_comments)
-                self.assertEqual(lorebook_comments.count("仅首次注入"), 1)
+
+            async def generate_messages(self, messages, *, on_stream_chunk=None):
+                return self.responses.pop(0)
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+                session_id = state["active_session"]["session_id"]
+                fake_client = FakeVlmClient()
+
+                with mock.patch.object(service, "_create_vlm_client", return_value=fake_client):
+                    first_round = asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="第一轮用户消息",
+                        )
+                    )
+                    second_round = asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="第二轮用户消息",
+                        )
+                    )
+
+                    first_user_id = first_round["session"]["messages"][1]["message_id"]
+                    first_assistant_id = first_round["session"]["messages"][2]["message_id"]
+                    second_user_id = second_round["session"]["messages"][3]["message_id"]
+
+                    edited = asyncio.run(
+                        service.edit_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            message_id=first_user_id,
+                            new_content="已编辑的第一轮用户消息",
+                        )
+                    )
+                    self.assertEqual(
+                        [item["role"] for item in edited["session"]["messages"]],
+                        ["assistant", "user"],
+                    )
+
+                    regenerated = asyncio.run(
+                        service.regenerate_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            anchor_message_id=first_user_id,
+                        )
+                    )
+                    self.assertEqual(
+                        [item["content"] for item in regenerated["session"]["messages"]],
+                        [
+                            document["coreMessages"]["first_message"],
+                            "已编辑的第一轮用户消息",
+                            "重生成后的第一轮回复",
+                        ],
+                    )
+
+                    replayed = asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="第二轮重新开始",
+                        )
+                    )
+                    replayed_second_user_id = replayed["session"]["messages"][-2]["message_id"]
+                    deleted = asyncio.run(
+                        service.delete_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            message_id=replayed_second_user_id,
+                        )
+                    )
+
+                self.assertEqual(
+                    [item["content"] for item in replayed["session"]["messages"]][-2:],
+                    ["第二轮重新开始", "第二轮重新开始后的回复"],
+                )
+                self.assertEqual(
+                    [item["role"] for item in deleted["session"]["messages"]],
+                    ["assistant", "user", "assistant"],
+                )
 
 
 class CharacterStudioRouteTests(unittest.TestCase):
@@ -1100,22 +1221,56 @@ class CharacterStudioRouteTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["book_id"], "book-demo")
 
-    def test_character_studio_document_route_includes_preview_session(self) -> None:
+    def test_character_studio_document_route_returns_document_only(self) -> None:
         with mock.patch("isolated_character_studio_pkg.character_studio_routes.CharacterStudioService") as service_cls:
             service = service_cls.return_value
             service.store.load_document = mock.AsyncMock(return_value=_demo_document())
-            service.store.load_preview_session = mock.AsyncMock(return_value={
-                "doc_id": "doc_alpha",
-                "messages": [{"role": "assistant", "content": "已恢复预览"}],
-                "variables": {"trust_score": 20},
-                "log": [{"type": "task", "name": "初始化状态"}],
-            })
             response = self.client.get("/api/manga-insight/book-demo/character-studio/documents/doc_alpha")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["preview_session"]["messages"][0]["content"], "已恢复预览")
+        self.assertEqual(payload["document"]["id"], "doc_alpha")
+
+    def test_character_studio_chat_state_route_exists(self) -> None:
+        with mock.patch("isolated_character_studio_pkg.character_studio_routes.CharacterStudioService") as service_cls:
+            service_cls.return_value.get_chat_state = mock.AsyncMock(return_value={
+                "doc_id": "doc_alpha",
+                "active_session": {
+                    "session_id": "chat_alpha",
+                    "messages": [{"role": "assistant", "content": "我是测试角色，我们先谈正事。"}],
+                },
+                "archived_sessions": [],
+                "available_greetings": [],
+            })
+            response = self.client.get("/api/manga-insight/book-demo/character-studio/documents/doc_alpha/chat")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["doc_id"], "doc_alpha")
+        self.assertEqual(payload["active_session"]["session_id"], "chat_alpha")
+
+    def test_character_studio_create_chat_session_route_exists(self) -> None:
+        with mock.patch("isolated_character_studio_pkg.character_studio_routes.CharacterStudioService") as service_cls:
+            service_cls.return_value.create_new_chat_session = mock.AsyncMock(return_value={
+                "doc_id": "doc_alpha",
+                "active_session": {
+                    "session_id": "chat_beta",
+                    "messages": [{"role": "assistant", "content": "新的开场白"}],
+                },
+                "archived_sessions": [{"session_id": "chat_alpha"}],
+                "available_greetings": [],
+            })
+            response = self.client.post(
+                "/api/manga-insight/book-demo/character-studio/documents/doc_alpha/chat/sessions",
+                json={"greeting_id": "alternate_1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["active_session"]["session_id"], "chat_beta")
 
 
 class CharacterStudioSpaRouteTests(unittest.TestCase):

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
-import type { CharacterStudioDocument, PreviewSessionState } from '@/types/characterStudio'
+import type { CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 
 const documentStub: CharacterStudioDocument = {
   id: 'doc-alpha',
@@ -52,10 +52,6 @@ const documentStub: CharacterStudioDocument = {
   chatPreset: {
     opening_mode: 'first_message',
   },
-  previewState: {
-    variables: {},
-    messages: [],
-  },
   grounding: {
     timeline_mode: 'enhanced',
     sample_pages: [],
@@ -65,74 +61,88 @@ const documentStub: CharacterStudioDocument = {
   exportArtifacts: {},
 }
 
-const sessionStub: PreviewSessionState = {
+const sessionStub: CharacterStudioChatSession = {
+  session_id: 'chat-alpha',
   doc_id: 'doc-alpha',
+  title: '新对话',
+  created_at: '2026-05-15T00:00:00',
+  updated_at: '2026-05-15T00:00:00',
+  archived_at: null,
+  greeting_source: { type: 'first_message', index: 0 },
+  summary_blocks: [],
   messages: [
-    { role: 'assistant', content: '你好，我是阿尔法。' },
+    {
+      message_id: 'msg-open',
+      role: 'assistant',
+      content: '你好，我是阿尔法。',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: {},
+      created_at: '2026-05-15T00:00:00',
+      updated_at: '2026-05-15T00:00:00',
+    },
   ],
   variables: { trust_score: 20 },
-  log: [],
+  _runtime: {},
+  last_prompt_preview: '',
 }
 
-describe('CharacterStudioPreview layout state', () => {
-  it('does not render collapse controls anymore', () => {
-    const wrapper = mount(CharacterStudioPreview, {
-      props: {
-        document: documentStub,
-        session: sessionStub,
-        previewing: false,
-        agentBusy: false,
-        resettingPreview: false,
-        agentMessages: [],
-        pendingPatch: null,
-        agentHtmlPreview: '',
-        canUndoPatch: false,
-      },
-    })
+function mountPreview(overrides: Record<string, unknown> = {}) {
+  return mount(CharacterStudioPreview, {
+    props: {
+      bookId: 'book-demo',
+      document: documentStub,
+      session: sessionStub,
+      archivedSessions: [],
+      availableGreetings: [],
+      promptPreview: '',
+      activeTab: 'chat',
+      chatLoading: false,
+      chatStreaming: false,
+      chatMutating: false,
+      chatSummarizing: false,
+      chatExporting: false,
+      chatImporting: false,
+      chatPromptLoading: false,
+      agentBusy: false,
+      agentMessages: [],
+      pendingPatch: null,
+      canUndoPatch: false,
+      agentHtmlPreview: '',
+      ...overrides,
+    },
+  })
+}
 
+describe('CharacterStudioPreview workspace', () => {
+  it('renders chat / assistant / runtime tabs without old collapse controls', () => {
+    const wrapper = mountPreview()
+
+    expect(wrapper.text()).toContain('聊天')
+    expect(wrapper.text()).toContain('卡片助手')
+    expect(wrapper.text()).toContain('运行日志')
     expect(wrapper.text()).not.toContain('收起')
-    expect(wrapper.find('[data-testid="toggle-preview"]').exists()).toBe(false)
   })
 
   it('keeps undo patch available after patch is applied', () => {
-    const wrapper = mount(CharacterStudioPreview, {
-      props: {
-        document: documentStub,
-        session: sessionStub,
-        previewing: false,
-        agentBusy: false,
-        resettingPreview: false,
-        agentMessages: [],
-        pendingPatch: null,
-        agentHtmlPreview: '',
-        canUndoPatch: true,
-      },
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+      canUndoPatch: true,
     })
 
-    const buttons = wrapper.findAll('button')
-    const undoButton = buttons.find(button => button.text().includes('撤销 patch'))
+    const undoButton = wrapper.findAll('button').find(button => button.text().includes('撤销 patch'))
     expect(undoButton).toBeDefined()
     expect((undoButton!.element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('disables preview reset while a preview reply is still being generated', () => {
-    const wrapper = mount(CharacterStudioPreview, {
-      props: {
-        document: documentStub,
-        session: sessionStub,
-        previewing: true,
-        agentBusy: false,
-        resettingPreview: false,
-        agentMessages: [],
-        pendingPatch: null,
-        agentHtmlPreview: '',
-        canUndoPatch: false,
-      },
+  it('disables send button while a chat reply is still being generated', () => {
+    const wrapper = mountPreview({
+      chatStreaming: true,
     })
 
-    const buttons = wrapper.findAll('button')
-    const resetButton = buttons.find(button => button.text().includes('重置会话'))
-    expect(resetButton).toBeDefined()
-    expect((resetButton!.element as HTMLButtonElement).disabled).toBe(true)
+    const sendButton = wrapper.findAll('button').find(button => button.text().includes('回复生成中'))
+    expect(sendButton).toBeDefined()
+    expect((sendButton!.element as HTMLButtonElement).disabled).toBe(true)
   })
 })

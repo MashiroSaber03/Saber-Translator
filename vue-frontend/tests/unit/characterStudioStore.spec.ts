@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import type { CharacterStudioChatSession } from '@/types/characterStudio'
 
 const demoDocument = {
   id: 'doc_alpha',
@@ -22,7 +23,6 @@ const demoDocument = {
   regexScripts: [],
   stateTasks: [],
   chatPreset: { opening_mode: 'first_message' },
-  previewState: { variables: {}, messages: [] },
   grounding: { timeline_mode: 'enhanced', sample_pages: [1], relationships: [], key_moments: [] },
   exportArtifacts: {},
 }
@@ -95,33 +95,68 @@ const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookI
   },
 }))
 
-const previewCharacterStudioChatMock = vi.fn()
-const resetCharacterStudioPreviewMock = vi.fn()
 const createCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
   success: true,
   document: candidateDocument,
 })
 const generateCharacterStudioSectionMock = vi.fn()
+const getCharacterStudioChatStateMock = vi.fn()
+const createCharacterStudioChatSessionMock = vi.fn()
+const switchCharacterStudioChatSessionMock = vi.fn()
+const streamCharacterStudioChatMessageMock = vi.fn()
+const editCharacterStudioChatMessageMock = vi.fn()
+const deleteCharacterStudioChatMessageMock = vi.fn()
+const regenerateCharacterStudioChatMessageMock = vi.fn()
+const summarizeCharacterStudioChatSessionMock = vi.fn()
+const exportCharacterStudioChatSessionMock = vi.fn()
+const importCharacterStudioChatSessionMock = vi.fn()
+const getCharacterStudioChatPromptPreviewMock = vi.fn()
+
+const demoChatSession: CharacterStudioChatSession = {
+  session_id: 'chat_alpha',
+  doc_id: 'doc_alpha',
+  title: '新对话',
+  created_at: '2026-05-15T00:00:00',
+  updated_at: '2026-05-15T00:00:00',
+  archived_at: null,
+  greeting_source: { type: 'first_message', index: 0 },
+  summary_blocks: [],
+  messages: [
+    {
+      message_id: 'msg_opening',
+      role: 'assistant',
+      content: '我是阿尔法。',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: {},
+      created_at: '2026-05-15T00:00:00',
+      updated_at: '2026-05-15T00:00:00',
+    },
+  ],
+  variables: { trust_score: 20 },
+  _runtime: {},
+  last_prompt_preview: '',
+}
 
 vi.mock('@/api/characterStudio', () => ({
   createCharacterStudioDocument: createCharacterStudioDocumentMock,
+  createCharacterStudioChatSession: createCharacterStudioChatSessionMock,
+  switchCharacterStudioChatSession: switchCharacterStudioChatSessionMock,
+  getCharacterStudioChatState: getCharacterStudioChatStateMock,
+  streamCharacterStudioChatMessage: streamCharacterStudioChatMessageMock,
+  editCharacterStudioChatMessage: editCharacterStudioChatMessageMock,
+  deleteCharacterStudioChatMessage: deleteCharacterStudioChatMessageMock,
+  regenerateCharacterStudioChatMessage: regenerateCharacterStudioChatMessageMock,
+  summarizeCharacterStudioChatSession: summarizeCharacterStudioChatSessionMock,
+  exportCharacterStudioChatSession: exportCharacterStudioChatSessionMock,
+  importCharacterStudioChatSession: importCharacterStudioChatSessionMock,
+  getCharacterStudioChatPromptPreview: getCharacterStudioChatPromptPreviewMock,
   generateCharacterStudioSection: generateCharacterStudioSectionMock,
   getCharacterStudioIndex: getCharacterStudioIndexMock,
   getCharacterStudioDocument: getCharacterStudioDocumentMock,
   saveCharacterStudioDocument: saveCharacterStudioDocumentMock,
-  previewCharacterStudioChat: previewCharacterStudioChatMock,
-  resetCharacterStudioPreview: resetCharacterStudioPreviewMock,
 }))
-
-function createDeferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((innerResolve, innerReject) => {
-    resolve = innerResolve
-    reject = innerReject
-  })
-  return { promise, resolve, reject }
-}
 
 describe('characterStudioStore', () => {
   beforeEach(() => {
@@ -132,8 +167,17 @@ describe('characterStudioStore', () => {
     saveCharacterStudioDocumentMock.mockClear()
     createCharacterStudioDocumentMock.mockClear()
     generateCharacterStudioSectionMock.mockReset()
-    previewCharacterStudioChatMock.mockReset()
-    resetCharacterStudioPreviewMock.mockReset()
+    getCharacterStudioChatStateMock.mockReset()
+    createCharacterStudioChatSessionMock.mockReset()
+    switchCharacterStudioChatSessionMock.mockReset()
+    streamCharacterStudioChatMessageMock.mockReset()
+    editCharacterStudioChatMessageMock.mockReset()
+    deleteCharacterStudioChatMessageMock.mockReset()
+    regenerateCharacterStudioChatMessageMock.mockReset()
+    summarizeCharacterStudioChatSessionMock.mockReset()
+    exportCharacterStudioChatSessionMock.mockReset()
+    importCharacterStudioChatSessionMock.mockReset()
+    getCharacterStudioChatPromptPreviewMock.mockReset()
     getCharacterStudioIndexMock.mockResolvedValue({
       success: true,
       book_id: 'book-demo',
@@ -174,6 +218,13 @@ describe('characterStudioStore', () => {
         log: [{ type: 'lorebook', comment: '恢复命中' }],
       },
     })
+    getCharacterStudioChatStateMock.mockResolvedValue({
+      success: true,
+      doc_id: 'doc_alpha',
+      active_session: demoChatSession,
+      archived_sessions: [],
+      available_greetings: [],
+    })
   })
 
   it('loads index payload for a book', async () => {
@@ -198,15 +249,16 @@ describe('characterStudioStore', () => {
     expect(store.currentDocument?.identity.name).toBe('阿尔法')
   })
 
-  it('restores persisted preview session when opening a document', async () => {
+  it('loads active chat session when opening a document', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    expect(store.previewSession?.messages[0]?.content).toBe('已恢复的预览消息')
-    expect(store.previewSession?.variables.trust_score).toBe(88)
+    expect(store.activeChatSession?.session_id).toBe('chat_alpha')
+    expect(store.activeChatSession?.messages[0]?.content).toBe('我是阿尔法。')
+    expect(store.activeChatSession?.variables.trust_score).toBe(20)
   })
 
   it('does not start autosave loop immediately after opening a document', async () => {
@@ -291,53 +343,50 @@ describe('characterStudioStore', () => {
 
     expect(store.bookId).toBe('book-other')
     expect(store.currentDocument).toBeNull()
-    expect(store.previewSession).toBeNull()
+    expect(store.activeChatSession).toBeNull()
+    expect(store.archivedChatSessions).toEqual([])
     expect(store.diagnostics).toBeNull()
     expect(store.agentMessages).toEqual([])
     expect(store.pendingAgentPatch).toBeNull()
   })
 
-  it('ignores stale preview replies that resolve after a preview reset', async () => {
+  it('creates a fresh active session when starting a new conversation', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    const deferredPreview = createDeferred<{
-      success: boolean
-      doc_id: string
-      messages: Array<{ role: 'user' | 'assistant'; content: string }>
-      variables: Record<string, unknown>
-      log: Array<Record<string, unknown>>
-    }>()
-
-    previewCharacterStudioChatMock.mockReturnValueOnce(deferredPreview.promise)
-    resetCharacterStudioPreviewMock.mockResolvedValueOnce({
+    createCharacterStudioChatSessionMock.mockResolvedValueOnce({
       success: true,
       doc_id: 'doc_alpha',
-      messages: [],
-      variables: {},
-      log: [],
+      active_session: {
+        ...demoChatSession,
+        session_id: 'chat_beta',
+        messages: [
+          {
+            ...demoChatSession.messages[0],
+            message_id: 'msg_beta',
+            content: '新的开场白',
+          },
+        ],
+      },
+      archived_sessions: [
+        {
+          session_id: 'chat_alpha',
+          title: '新对话',
+          message_count: 1,
+          updated_at: '2026-05-15T00:00:00',
+        },
+      ],
+      available_greetings: [],
     })
 
-    const previewPromise = store.sendPreviewMessage('你好')
-    await Promise.resolve()
-    await store.resetPreview()
+    await store.createChatSession()
 
-    deferredPreview.resolve({
-      success: true,
-      doc_id: 'doc_alpha',
-      messages: [{ role: 'assistant', content: '这是一条过期回复' }],
-      variables: { trust_score: 42 },
-      log: [{ type: 'task', name: '过期任务' }],
-    })
-
-    await previewPromise
-
-    expect(store.previewSession?.messages).toEqual([])
-    expect(store.previewSession?.variables).toEqual({})
-    expect(store.previewSession?.log).toEqual([])
+    expect(store.activeChatSession?.session_id).toBe('chat_beta')
+    expect(store.activeChatSession?.messages[0]?.content).toBe('新的开场白')
+    expect(store.archivedChatSessions[0]?.session_id).toBe('chat_alpha')
   })
 
   it('creates a candidate document without prefilled card content', async () => {

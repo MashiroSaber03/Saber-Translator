@@ -13,9 +13,11 @@
       @back="goBack"
       @save="saveNow"
       @validate="validate"
+      @open-resource="store.resourcePanelOpen = true"
+      @open-chat="store.activeWorkspaceTab = 'chat'"
+      @new-chat="newChat"
+      @open-prompt="openPrompt"
       @open-export="store.activeEditorTab = 'export'"
-      @toggle-left-drawer="store.leftDrawerOpen = !store.leftDrawerOpen"
-      @toggle-right-drawer="store.rightDrawerOpen = !store.rightDrawerOpen"
     />
 
     <div v-if="!bookId" class="empty-state">
@@ -24,16 +26,14 @@
       <p>请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊仍然依赖当前书籍的分析上下文。</p>
     </div>
 
-    <div v-else class="workspace-shell">
+    <div v-else class="workspace-root">
       <div v-if="store.errorMessage" class="workspace-error">
         <span>⚠ {{ store.errorMessage }}</span>
         <button class="error-dismiss" @click="store.clearErrorMessage()">知道了</button>
       </div>
-      <div v-if="store.leftDrawerOpen" class="drawer-mask left-mask" @click="store.leftDrawerOpen = false"></div>
-      <div v-if="store.rightDrawerOpen" class="drawer-mask right-mask" @click="store.rightDrawerOpen = false"></div>
 
-      <aside class="left-column" :class="{ 'drawer-open': store.leftDrawerOpen }">
-        <div class="column-scroll" data-testid="left-scroll">
+      <div v-if="store.resourcePanelOpen" class="resource-overlay" @click.self="store.resourcePanelOpen = false">
+        <div class="resource-dialog">
           <CharacterStudioSidebar
             :documents="store.filteredDocuments"
             :candidates="store.filteredCandidates"
@@ -52,56 +52,79 @@
             @import-file="importFile"
           />
         </div>
-      </aside>
+      </div>
 
-      <section class="editor-column">
-        <div class="column-scroll" data-testid="editor-scroll">
-          <CharacterStudioEditor
-            :document="store.currentDocument"
-            :avatar-url="avatarUrl"
-            :diagnostics="store.diagnostics"
-            :pending-state="store.editorPendingState"
-            :active-tab="store.activeEditorTab"
-            :active-script-tab="store.activeScriptTab"
-            @update:document="store.updateCurrentDocument($event)"
-            @update:active-tab="store.activeEditorTab = $event"
-            @update:active-script-tab="store.activeScriptTab = $event"
-            @save="saveNow"
-            @generate="generateSection"
-            @validate="validate"
-            @delete="deleteCurrent"
-            @import-worldbook="importWorldbook"
-            @download="download"
-          />
-        </div>
-      </section>
+      <div class="workspace-shell" :style="workspaceStyle">
+        <section class="editor-pane">
+          <div class="column-scroll" data-testid="editor-scroll">
+            <CharacterStudioEditor
+              :document="store.currentDocument"
+              :avatar-url="avatarUrl"
+              :diagnostics="store.diagnostics"
+              :pending-state="store.editorPendingState"
+              :active-tab="store.activeEditorTab"
+              :active-script-tab="store.activeScriptTab"
+              @update:document="store.updateCurrentDocument($event)"
+              @update:active-tab="store.activeEditorTab = $event"
+              @update:active-script-tab="store.activeScriptTab = $event"
+              @save="saveNow"
+              @generate="generateSection"
+              @validate="validate"
+              @delete="deleteCurrent"
+              @import-worldbook="importWorldbook"
+              @download="download"
+            />
+          </div>
+        </section>
 
-      <aside class="right-column" :class="{ 'drawer-open': store.rightDrawerOpen }">
-        <div class="column-scroll" data-testid="right-scroll">
-          <CharacterStudioPreview
-            :document="store.currentDocument"
-            :session="store.previewSession"
-            :previewing="store.isPreviewing"
-            :agent-busy="store.isAgentBusy"
-            :resetting-preview="store.isResettingPreview"
-            :agent-messages="store.agentMessages"
-            :pending-patch="store.pendingAgentPatch"
-            :can-undo-patch="store.canUndoPatch"
-            :agent-html-preview="store.agentHtmlPreview"
-            @send-preview="sendPreview"
-            @reset-preview="resetPreview"
-            @send-agent="sendAgent"
-            @apply-patch="store.applyPendingPatch()"
-            @undo-patch="store.undoLastPatch()"
-          />
-        </div>
-      </aside>
+        <div class="pane-resizer" @mousedown="startResize"></div>
+
+        <aside class="chat-pane">
+          <div class="column-scroll" data-testid="chat-scroll">
+            <CharacterStudioPreview
+              :book-id="props.bookId || ''"
+              :document="store.currentDocument"
+              :session="store.activeChatSession"
+              :archived-sessions="store.archivedChatSessions"
+              :available-greetings="store.availableGreetings"
+              :prompt-preview="store.chatPromptPreview"
+              :active-tab="store.activeWorkspaceTab"
+              :chat-loading="store.isChatLoading"
+              :chat-streaming="store.isChatStreaming"
+              :chat-mutating="store.isChatMutating"
+              :chat-summarizing="store.isChatSummarizing"
+              :chat-exporting="store.isChatExporting"
+              :chat-importing="store.isChatImporting"
+              :chat-prompt-loading="store.isChatPromptLoading"
+              :agent-busy="store.isAgentBusy"
+              :agent-messages="store.agentMessages"
+              :pending-patch="store.pendingAgentPatch"
+              :can-undo-patch="store.canUndoPatch"
+              :agent-html-preview="store.agentHtmlPreview"
+              @update:active-tab="store.activeWorkspaceTab = $event"
+              @send-chat="sendChat"
+              @edit-message="editChatMessage"
+              @delete-message="deleteChatMessage"
+              @regenerate-message="regenerateChatMessage"
+              @new-session="createChatSession"
+              @switch-session="switchChatSession"
+              @summarize-session="summarizeChatSession"
+              @export-session="exportChatSession"
+              @import-session="importChatSession"
+              @load-prompt-preview="loadPromptPreviewFromChat"
+              @send-agent="sendAgent"
+              @apply-patch="store.applyPendingPatch()"
+              @undo-patch="store.undoLastPatch()"
+            />
+          </div>
+        </aside>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
@@ -119,6 +142,9 @@ const props = defineProps<{
 const router = useRouter()
 const store = useCharacterStudioStore()
 const bookshelfStore = useBookshelfStore()
+const leftPaneWidth = ref(52)
+const resizing = ref(false)
+
 const currentBookTitle = computed(() => {
   if (!props.bookId) return ''
   const book = bookshelfStore.books.find(item => item.id === props.bookId)
@@ -136,10 +162,10 @@ const currentDocumentOrigin = computed(() => {
 const topbarSubtitle = computed(() => {
   if (!store.currentDocument) {
     return store.hasTimeline
-      ? '选择一个角色文档，或先从分析候选锁定角色名，再补全整卡。'
+      ? '打开角色资源选择文档，或先从分析候选锁定角色名。'
       : '当前书还没有增强时间线，但仍可空白新建或导入角色卡。'
   }
-  return '编辑区优先，运行时预览收纳在右侧侧栏，适合长时间编卡。'
+  return '左侧专注编卡，右侧完成继续聊天、卡片助手和运行日志调试。'
 })
 
 const avatarUrl = computed(() => {
@@ -147,9 +173,25 @@ const avatarUrl = computed(() => {
   return getCharacterStudioAvatarUrl(props.bookId, store.currentDocument.id)
 })
 
-function closeDrawers() {
-  store.leftDrawerOpen = false
-  store.rightDrawerOpen = false
+const workspaceStyle = computed(() => ({
+  gridTemplateColumns: `${leftPaneWidth.value}fr 8px ${100 - leftPaneWidth.value}fr`,
+}))
+
+function handleMouseMove(event: MouseEvent) {
+  if (!resizing.value) return
+  const width = window.innerWidth || 1
+  const next = Math.min(70, Math.max(35, (event.clientX / width) * 100))
+  leftPaneWidth.value = next
+}
+
+function handleMouseUp() {
+  resizing.value = false
+  document.body.classList.remove('studio-resizing')
+}
+
+function startResize() {
+  resizing.value = true
+  document.body.classList.add('studio-resizing')
 }
 
 async function runAction(action: () => Promise<void>) {
@@ -168,7 +210,7 @@ async function hydrateWorkspace(nextBookId: string) {
     }
     await store.loadWorkspace(nextBookId)
     if (props.docId) {
-      const openedRequested = await runAction(() => store.openDocument(props.docId))
+      const openedRequested = await runAction(() => store.openDocument(props.docId!))
       if (openedRequested) return
       if (store.documents.length === 0) {
         void router.replace({ name: 'character-studio', query: { book: nextBookId } })
@@ -183,7 +225,7 @@ async function hydrateWorkspace(nextBookId: string) {
       }
     }
   } catch {
-    // 错误已在 store 中记录并展示到页面
+    // 错误由 store 统一承载
   }
 }
 
@@ -198,7 +240,7 @@ function goBack() {
 async function openDocument(docId: string) {
   const ok = await runAction(() => store.openDocument(docId))
   if (!ok) return
-  closeDrawers()
+  store.resourcePanelOpen = false
   if (!props.bookId) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: docId } })
 }
@@ -206,7 +248,7 @@ async function openDocument(docId: string) {
 async function createManual() {
   const ok = await runAction(() => store.createManualDocument())
   if (!ok) return
-  closeDrawers()
+  store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
@@ -214,7 +256,7 @@ async function createManual() {
 async function createFromCandidate(candidateName: string) {
   const ok = await runAction(() => store.createDocumentFromCandidate(candidateName))
   if (!ok) return
-  closeDrawers()
+  store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
@@ -222,7 +264,7 @@ async function createFromCandidate(candidateName: string) {
 async function importFile(file: File) {
   const ok = await runAction(() => store.importFile(file))
   if (!ok) return
-  closeDrawers()
+  store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
   void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
 }
@@ -250,42 +292,86 @@ async function deleteCurrent() {
   void router.replace({ name: 'character-studio', query: { book: props.bookId } })
 }
 
-async function sendPreview(message: string) {
-  await runAction(() => store.sendPreviewMessage(message))
-}
-
-async function resetPreview() {
-  await runAction(() => store.resetPreview())
-}
-
-async function sendAgent(message: string) {
-  await runAction(() => store.sendAgentMessage(message))
-}
-
 async function download(format: string) {
   await runAction(() => store.downloadCurrent(format))
 }
 
+async function sendAgent(message: string) {
+  store.activeWorkspaceTab = 'assistant'
+  await runAction(() => store.sendAgentMessage(message))
+}
+
+async function newChat() {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.createChatSession())
+}
+
+async function openPrompt() {
+  store.activeWorkspaceTab = 'chat'
+  store.chatPromptPreview = ''
+  await runAction(() => store.loadChatPromptPreview())
+}
+
+async function createChatSession(greetingId?: string) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.createChatSession(greetingId))
+}
+
+async function switchChatSession(sessionId: string) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.switchChatSession(sessionId))
+}
+
+async function sendChat(payload: { content: string; attachments: File[] }) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.sendChatMessage(payload.content, payload.attachments))
+}
+
+async function editChatMessage(payload: { messageId: string; content: string }) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.editChatMessage(payload.messageId, payload.content))
+}
+
+async function deleteChatMessage(messageId: string) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.deleteChatMessage(messageId))
+}
+
+async function regenerateChatMessage(messageId: string) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.regenerateChatMessage(messageId))
+}
+
+async function summarizeChatSession(cutoffMessageId?: string) {
+  store.activeWorkspaceTab = 'runtime'
+  await runAction(() => store.summarizeChatSession(cutoffMessageId))
+}
+
+async function exportChatSession() {
+  await runAction(() => store.exportChatSession())
+}
+
+async function importChatSession(file: File) {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.importChatSession(file))
+}
+
+async function loadPromptPreviewFromChat() {
+  await runAction(() => store.loadChatPromptPreview())
+}
+
 onMounted(async () => {
-  const handleResize = () => {
-    if (window.innerWidth > 900) {
-      store.leftDrawerOpen = false
-      store.rightDrawerOpen = false
-    }
-  }
-  window.addEventListener('resize', handleResize)
-  ;(window as Window & { __characterStudioResizeHandler__?: () => void }).__characterStudioResizeHandler__ = handleResize
+  window.addEventListener('mousemove', handleMouseMove)
+  window.addEventListener('mouseup', handleMouseUp)
   if (props.bookId) {
     await hydrateWorkspace(props.bookId)
   }
 })
 
 onUnmounted(() => {
-  const handler = (window as Window & { __characterStudioResizeHandler__?: () => void }).__characterStudioResizeHandler__
-  if (handler) {
-    window.removeEventListener('resize', handler)
-    delete (window as Window & { __characterStudioResizeHandler__?: () => void }).__characterStudioResizeHandler__
-  }
+  window.removeEventListener('mousemove', handleMouseMove)
+  window.removeEventListener('mouseup', handleMouseUp)
+  document.body.classList.remove('studio-resizing')
 })
 
 watch(() => props.bookId, async nextBookId => {
@@ -301,10 +387,6 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
-  --studio-scrollbar-size: 10px;
-  --studio-scrollbar-thumb: rgba(122, 148, 186, 0.42);
-  --studio-scrollbar-thumb-hover: rgba(88, 118, 164, 0.72);
-  --studio-scrollbar-track: rgba(213, 223, 239, 0.32);
   height: 100vh;
   margin: 0 -20px;
   display: flex;
@@ -316,47 +398,29 @@ watch(() => props.docId, async nextDocId => {
   color: #122b47;
 }
 
-.workspace-shell {
-  display: grid;
-  grid-template-columns: 304px minmax(0, 1fr) 392px;
-  gap: 20px;
-  padding: 20px 24px 28px;
+.workspace-root {
+  display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  flex-direction: column;
 }
 
-.workspace-error {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(255, 244, 244, 0.92);
-  border: 1px solid rgba(217, 55, 55, 0.18);
-  color: #9d2f2f;
-}
-
-.error-dismiss {
-  border: none;
-  border-radius: 12px;
-  padding: 8px 12px;
-  background: rgba(217, 55, 55, 0.12);
-  color: #9d2f2f;
-  cursor: pointer;
-}
-
-.left-column,
-.editor-column,
-.right-column {
-  min-width: 0;
-  width: 100%;
+.workspace-shell {
+  display: grid;
+  flex: 1;
   min-height: 0;
-  height: 100%;
-  justify-self: stretch;
-  overflow: hidden;
+  padding: 18px 20px 20px;
+}
+
+.editor-pane,
+.chat-pane {
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-pane {
+  width: auto !important;
+  padding: 0 !important;
 }
 
 .column-scroll {
@@ -364,154 +428,96 @@ watch(() => props.docId, async nextDocId => {
   min-height: 0;
 }
 
-.column-scroll,
-.studio-page :deep(.studio-editor),
-.studio-page :deep(.runtime-shell),
-.studio-page :deep(.sidebar-content),
-.studio-page :deep(.chat-shell),
-.studio-page :deep(.agent-shell) {
-  scrollbar-width: thin;
-  scrollbar-color: var(--studio-scrollbar-thumb) transparent;
-}
-
-.column-scroll::-webkit-scrollbar,
-.studio-page :deep(.studio-editor::-webkit-scrollbar),
-.studio-page :deep(.runtime-shell::-webkit-scrollbar),
-.studio-page :deep(.sidebar-content::-webkit-scrollbar),
-.studio-page :deep(.chat-shell::-webkit-scrollbar),
-.studio-page :deep(.agent-shell::-webkit-scrollbar) {
-  width: var(--studio-scrollbar-size);
-  height: var(--studio-scrollbar-size);
-}
-
-.column-scroll::-webkit-scrollbar-track,
-.studio-page :deep(.studio-editor::-webkit-scrollbar-track),
-.studio-page :deep(.runtime-shell::-webkit-scrollbar-track),
-.studio-page :deep(.sidebar-content::-webkit-scrollbar-track),
-.studio-page :deep(.chat-shell::-webkit-scrollbar-track),
-.studio-page :deep(.agent-shell::-webkit-scrollbar-track) {
-  background: transparent;
-}
-
-.column-scroll::-webkit-scrollbar-thumb,
-.studio-page :deep(.studio-editor::-webkit-scrollbar-thumb),
-.studio-page :deep(.runtime-shell::-webkit-scrollbar-thumb),
-.studio-page :deep(.sidebar-content::-webkit-scrollbar-thumb),
-.studio-page :deep(.chat-shell::-webkit-scrollbar-thumb),
-.studio-page :deep(.agent-shell::-webkit-scrollbar-thumb) {
+.pane-resizer {
+  width: 8px;
+  cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(147, 170, 204, 0.5), rgba(112, 138, 180, 0.44));
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: linear-gradient(180deg, rgba(37, 99, 199, 0.1), rgba(37, 99, 199, 0.22));
 }
 
-.column-scroll:hover::-webkit-scrollbar-thumb,
-.studio-page :deep(.studio-editor:hover::-webkit-scrollbar-thumb),
-.studio-page :deep(.runtime-shell:hover::-webkit-scrollbar-thumb),
-.studio-page :deep(.sidebar-content:hover::-webkit-scrollbar-thumb),
-.studio-page :deep(.chat-shell:hover::-webkit-scrollbar-thumb),
-.studio-page :deep(.agent-shell:hover::-webkit-scrollbar-thumb) {
-  background: linear-gradient(180deg, rgba(118, 146, 188, 0.78), rgba(83, 112, 159, 0.74));
-  background-clip: padding-box;
+.resource-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(9, 25, 49, 0.38);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 82px 20px 20px;
 }
 
-.column-scroll::-webkit-scrollbar-corner,
-.studio-page :deep(.studio-editor::-webkit-scrollbar-corner),
-.studio-page :deep(.runtime-shell::-webkit-scrollbar-corner),
-.studio-page :deep(.sidebar-content::-webkit-scrollbar-corner),
-.studio-page :deep(.chat-shell::-webkit-scrollbar-corner),
-.studio-page :deep(.agent-shell::-webkit-scrollbar-corner) {
-  background: transparent;
+.resource-dialog {
+  width: min(1180px, 100%);
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
 }
 
-.right-column {
-  transition: width 0.24s ease, transform 0.24s ease;
+.workspace-error {
+  margin: 14px 20px 0;
+  border-radius: 16px;
+  padding: 12px 16px;
+  background: rgba(255, 244, 244, 0.92);
+  border: 1px solid rgba(217, 55, 55, 0.12);
+  color: #b83535;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.right-column.collapsed {
-  width: 88px;
+.error-dismiss {
+  border: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: rgba(217, 55, 55, 0.12);
+  color: inherit;
 }
 
 .empty-state {
+  margin: auto;
   max-width: 560px;
-  margin: 80px auto;
-  padding: 36px;
+  text-align: center;
+  padding: 48px 32px;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(28, 55, 94, 0.08);
   box-shadow: 0 26px 42px rgba(20, 46, 82, 0.08);
 }
 
 .empty-badge {
   display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(37, 99, 199, 0.1);
+  background: rgba(37, 99, 199, 0.12);
   color: #1f5fc3;
   font-size: 12px;
-  font-weight: 600;
 }
 
 .empty-state h2 {
   margin: 16px 0 0;
-  font-size: 28px;
+  font-size: 30px;
 }
 
 .empty-state p {
   margin: 12px 0 0;
   color: #607794;
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
-.drawer-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(16, 34, 58, 0.34);
-  z-index: 20;
+:global(body.studio-resizing) {
+  cursor: col-resize;
+  user-select: none;
 }
 
-@media (max-width: 1440px) {
+@media (max-width: 1100px) {
   .workspace-shell {
-    grid-template-columns: 288px minmax(0, 1fr) 368px;
+    grid-template-columns: 1fr !important;
+    gap: 16px;
   }
 
-}
-
-@media (max-width: 1180px) {
-  .workspace-shell {
-    grid-template-columns: 280px minmax(0, 1fr) 360px;
-  }
-}
-
-@media (max-width: 900px) {
-  .workspace-shell {
-    grid-template-columns: 1fr;
-    padding: 16px;
-  }
-
-  .left-column,
-  .right-column {
-    position: fixed;
-    top: 88px;
-    bottom: 12px;
-    width: min(88vw, 360px);
-    z-index: 30;
-    transition: transform 0.26s ease;
-  }
-
-  .left-column {
-    left: 12px;
-    transform: translateX(calc(-100% - 18px));
-  }
-
-  .right-column {
-    right: 12px;
-    transform: translateX(calc(100% + 18px));
-  }
-
-  .left-column.drawer-open,
-  .right-column.drawer-open {
-    transform: translateX(0);
+  .pane-resizer {
+    display: none;
   }
 }
 </style>

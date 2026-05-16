@@ -22,7 +22,7 @@ describe('CharacterStudioView workspace shell', () => {
     replaceMock.mockReset()
   })
 
-  it('renders dedicated scroll containers for the three-column workspace', async () => {
+  it('renders dedicated scroll containers for the two-pane workspace', async () => {
     const studioStore = useCharacterStudioStore()
     const bookshelfStore = useBookshelfStore()
 
@@ -51,7 +51,6 @@ describe('CharacterStudioView workspace shell', () => {
       regexScripts: [],
       stateTasks: [],
       chatPreset: { opening_mode: 'first_message' },
-      previewState: { variables: {}, messages: [] },
       grounding: { timeline_mode: '', sample_pages: [], relationships: [], key_moments: [] },
       exportArtifacts: {},
     }
@@ -70,9 +69,8 @@ describe('CharacterStudioView workspace shell', () => {
       },
     })
 
-    expect(wrapper.find('[data-testid="left-scroll"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="editor-scroll"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="right-scroll"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="chat-scroll"]').exists()).toBe(true)
   })
 
   it('shows store error message in the workspace shell', async () => {

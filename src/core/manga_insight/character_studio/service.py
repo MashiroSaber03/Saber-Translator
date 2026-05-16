@@ -8,12 +8,15 @@ import copy
 import json
 import logging
 import os
+import base64
+import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.core.manga_insight.config_utils import create_chat_client, has_provider_model_config, load_insight_config
 from src.core.manga_insight.embedding_client import ChatClient
 from src.core.manga_insight.storage import AnalysisStorage
+from src.core.manga_insight.vlm_client import VLMClient
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
     parse_json_block_from_text,
@@ -77,6 +80,15 @@ class CharacterStudioService:
                 return llm
         except Exception as exc:
             logger.warning("初始化 Character Studio ChatClient 失败: %s", exc)
+        return None
+
+    def _create_vlm_client(self) -> Optional[VLMClient]:
+        try:
+            vlm = VLMClient(self.config.vlm, getattr(self.config, "prompts", None))
+            if has_provider_model_config(vlm.config.provider, vlm.config.model, vlm.config.api_key):
+                return vlm
+        except Exception as exc:
+            logger.warning("初始化 Character Studio VLMClient 失败: %s", exc)
         return None
 
     @staticmethod
@@ -909,99 +921,29 @@ class CharacterStudioService:
         await self.store.save_document(document)
         return document
 
-    async def preview_reset(self, doc_id: str) -> Dict[str, Any]:
-        document = await self.store.load_document(doc_id)
-        if not document:
-            raise ValueError("文档不存在")
-        session = initialize_preview_session(document)
-        await self.store.save_preview_session(doc_id, session)
-        return session
-
-    async def preview_chat(self, doc_id: str, message: str) -> Dict[str, Any]:
-        document = await self.store.load_document(doc_id)
-        if not document:
-            raise ValueError("文档不存在")
-        session = await self.store.load_preview_session(doc_id)
-        if not session.get("messages"):
-            session = initialize_preview_session(document)
-            opening = document["coreMessages"]["first_message"]
-            if opening:
-                session["messages"].append({"role": "assistant", "content": opening})
-
-        visible_user, prompt_user, user_hits = apply_regex_scripts(
-            message,
-            document.get("regexScripts", []),
-            placement=1,
-            respect_run_on_edit=True,
-        )
-        lorebook_hits = sort_lorebook_hits(
-            match_lorebook(
-                document.get("lorebook", {}).get("entries", []),
-                prompt_user,
-                session=session,
-            )
-        )
-        session["messages"].append({"role": "user", "content": visible_user})
-        session["log"].extend(user_hits)
-        for entry in lorebook_hits:
-            session["log"].append({
-                "type": "lorebook",
-                "comment": entry.get("comment", ""),
-                "keys": entry.get("keys", []),
-                "position": entry.get("position", "before_char"),
-                "depth": entry.get("depth", 4),
-            })
-        session["log"].extend(run_state_tasks(session, document.get("stateTasks", []), event="message_received"))
-
-        prompt_lines = [
-            document["coreMessages"].get("system_prompt", ""),
-            f"角色名: {document['identity']['name']}",
-            f"角色描述: {document['identity']['description']}",
-            f"角色人格: {document['identity']['personality']}",
-            f"当前场景: {document['identity']['scenario']}",
-            f"额外要求: {document['coreMessages']['post_history_instructions']}",
-        ]
-        if lorebook_hits:
-            prompt_lines.append("命中的世界书条目:")
-            for entry in lorebook_hits:
-                content = str(entry.get("content", "") or "")
-                depth = max(int(entry.get("depth", 4) or 4), 1)
-                prompt_lines.append(f"- {entry.get('comment', '')}: {content[:depth * 160]}")
-        history_text = "\n".join(
-            f"{item.get('role')}: {item.get('content')}" for item in session["messages"][-8:]
-        )
-        prompt_lines.append("最近对话:")
-        prompt_lines.append(history_text)
-        prompt_lines.append(f"用户输入: {prompt_user}")
-        assistant_text = "我收到你的信息了，我们继续推进。"
-        client = self._create_chat_client()
-        if client:
-            try:
-                assistant_text = await client.generate(prompt="\n".join(prompt_lines), temperature=0.7)
-            except Exception as exc:
-                logger.warning("预览聊天调用失败，回退默认回复: %s", exc)
-            finally:
-                try:
-                    await client.close()
-                except Exception:
-                    pass
-        visible_assistant, _, assistant_hits = apply_regex_scripts(
-            assistant_text,
-            document.get("regexScripts", []),
-            placement=2,
-            respect_run_on_edit=True,
-        )
-        session["messages"].append({"role": "assistant", "content": visible_assistant})
-        session["log"].extend(assistant_hits)
-        session["log"].extend(run_state_tasks(session, document.get("stateTasks", []), event="message_sent"))
-        await self.store.save_preview_session(doc_id, session)
-        return session
-
     async def run_agent(self, doc_id: str, message: str) -> Dict[str, Any]:
         document = await self.store.load_document(doc_id)
         if not document:
             raise ValueError("文档不存在")
-        session = await self.store.load_preview_session(doc_id)
+        chat_index = await self.store.load_chat_index(doc_id)
+        active_chat_id = str(chat_index.get("active_session_id") or "").strip()
+        if active_chat_id:
+            chat_session = await self.store.load_chat_session(doc_id, active_chat_id)
+            if chat_session:
+                last_message = (chat_session.get("messages", []) or [{}])[-1]
+                session = {
+                    "doc_id": doc_id,
+                    "messages": [
+                        {"role": item.get("role", "assistant"), "content": item.get("content", "")}
+                        for item in (chat_session.get("messages", []) or [])
+                    ],
+                    "variables": copy.deepcopy(chat_session.get("variables", {})),
+                    "log": copy.deepcopy(last_message.get("runtime_log", [])),
+                }
+            else:
+                session = await self.store.load_preview_session(doc_id)
+        else:
+            session = await self.store.load_preview_session(doc_id)
         compressed_context = await self._ensure_compressed_context()
         context = build_agent_context(document, session, compressed_context)
         prompt = (
@@ -1029,4 +971,679 @@ class CharacterStudioService:
         return {
             "content": response_text,
             "context": context,
+        }
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now().isoformat()
+
+    @staticmethod
+    def _new_session_id() -> str:
+        return f"chat_{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def _new_message_id() -> str:
+        return f"msg_{uuid.uuid4().hex[:12]}"
+
+    def _build_chat_greetings(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        greetings: List[Dict[str, Any]] = []
+        first_message = str(document.get("coreMessages", {}).get("first_message", "") or "").strip()
+        if first_message:
+            greetings.append({
+                "greeting_id": "first_message",
+                "label": "主问候",
+                "content": first_message,
+                "source": {"type": "first_message", "index": 0},
+            })
+        for index, item in enumerate(document.get("coreMessages", {}).get("alternate_greetings", []) or [], start=1):
+            content = str(item or "").strip()
+            if not content:
+                continue
+            greetings.append({
+                "greeting_id": f"alternate_{index}",
+                "label": f"备用问候 {index}",
+                "content": content,
+                "source": {"type": "alternate_greetings", "index": index - 1},
+            })
+        return greetings
+
+    def _create_chat_message(
+        self,
+        *,
+        role: str,
+        content: str,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        runtime_log: Optional[List[Dict[str, Any]]] = None,
+        variables_snapshot: Optional[Dict[str, Any]] = None,
+        generation_meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        now = self._now_iso()
+        return {
+            "message_id": self._new_message_id(),
+            "role": role,
+            "content": str(content or ""),
+            "attachments": copy.deepcopy(attachments or []),
+            "runtime_log": copy.deepcopy(runtime_log or []),
+            "variables_snapshot": copy.deepcopy(variables_snapshot or {}),
+            "generation_meta": copy.deepcopy(generation_meta or {}),
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def _build_session_summary(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        messages = session.get("messages", []) or []
+        last_message = messages[-1] if messages else {}
+        return {
+            "session_id": session.get("session_id"),
+            "title": session.get("title", "新对话"),
+            "message_count": len(messages),
+            "updated_at": session.get("updated_at"),
+            "archived_at": session.get("archived_at"),
+            "last_message_excerpt": str(last_message.get("content", "") or "")[:120],
+        }
+
+    def _create_empty_chat_session(
+        self,
+        doc_id: str,
+        *,
+        title: str = "新对话",
+        greeting_source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        now = self._now_iso()
+        return {
+            "session_id": self._new_session_id(),
+            "doc_id": doc_id,
+            "title": title,
+            "created_at": now,
+            "updated_at": now,
+            "archived_at": None,
+            "greeting_source": copy.deepcopy(greeting_source or {"type": "first_message", "index": 0}),
+            "summary_blocks": [],
+            "messages": [],
+            "variables": {},
+            "_runtime": {
+                "event_counts": {
+                    "message_received": 0,
+                    "message_sent": 0,
+                },
+                "matched_lorebook_ids": [],
+            },
+            "last_prompt_preview": "",
+        }
+
+    def _reset_chat_runtime(self, document: Dict[str, Any], session: Dict[str, Any]) -> None:
+        initialized = initialize_preview_session(document)
+        session["variables"] = copy.deepcopy(initialized.get("variables", {}))
+        session["_runtime"] = copy.deepcopy(initialized.get("_runtime", {
+            "event_counts": {"message_received": 0, "message_sent": 0},
+            "matched_lorebook_ids": [],
+        }))
+
+    def _create_opening_chat_session(
+        self,
+        document: Dict[str, Any],
+        *,
+        greeting_content: Optional[str] = None,
+        greeting_source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        session = self._create_empty_chat_session(
+            document["id"],
+            greeting_source=greeting_source,
+        )
+        self._reset_chat_runtime(document, session)
+        opening = str(
+            greeting_content
+            if greeting_content is not None
+            else document.get("coreMessages", {}).get("first_message", "")
+        ).strip()
+        if opening:
+            session["messages"].append(
+                self._create_chat_message(
+                    role="assistant",
+                    content=opening,
+                    variables_snapshot=session.get("variables", {}),
+                    generation_meta={"kind": "opening"},
+                )
+            )
+        return session
+
+    async def _bootstrap_chat_session(self, document: Dict[str, Any]) -> Dict[str, Any]:
+        doc_id = document["id"]
+        index = await self.store.load_chat_index(doc_id)
+        active_session_id = str(index.get("active_session_id") or "").strip()
+        if active_session_id:
+            session = await self.store.load_chat_session(doc_id, active_session_id)
+            if session:
+                return session
+
+        legacy = await self.store.load_preview_session(doc_id)
+        if legacy.get("messages"):
+            session = self._create_empty_chat_session(doc_id)
+            session["variables"] = copy.deepcopy(legacy.get("variables", {}))
+            session["_runtime"] = copy.deepcopy(legacy.get("_runtime", {
+                "event_counts": {"message_received": 0, "message_sent": 0},
+                "matched_lorebook_ids": [],
+            }))
+            legacy_messages = legacy.get("messages", []) or []
+            for idx, item in enumerate(legacy_messages):
+                runtime_log = legacy.get("log", []) if idx == len(legacy_messages) - 1 else []
+                session["messages"].append(
+                    self._create_chat_message(
+                        role=str(item.get("role", "assistant") or "assistant"),
+                        content=str(item.get("content", "") or ""),
+                        runtime_log=runtime_log,
+                        variables_snapshot=session.get("variables", {}),
+                        generation_meta={"kind": "legacy_preview"},
+                    )
+                )
+        else:
+            greetings = self._build_chat_greetings(document)
+            greeting = greetings[0] if greetings else None
+            session = self._create_opening_chat_session(
+                document,
+                greeting_content=greeting["content"] if greeting else "",
+                greeting_source=greeting["source"] if greeting else None,
+            )
+
+        index["active_session_id"] = session["session_id"]
+        index["archived_session_ids"] = list(index.get("archived_session_ids", []) or [])
+        await self.store.save_chat_session(doc_id, session)
+        await self.store.save_chat_index(doc_id, index)
+        return session
+
+    async def _load_chat_session_or_raise(self, doc_id: str, session_id: str) -> Dict[str, Any]:
+        session = await self.store.load_chat_session(doc_id, session_id)
+        if not session:
+            raise ValueError("聊天会话不存在")
+        return session
+
+    def _attachment_to_data_url(self, asset_path: str, mime_type: str) -> str:
+        with open(asset_path, "rb") as handle:
+            payload = base64.b64encode(handle.read()).decode("utf-8")
+        return f"data:{mime_type};base64,{payload}"
+
+    def _build_chat_system_prompt(
+        self,
+        document: Dict[str, Any],
+        session: Dict[str, Any],
+        lorebook_hits: List[Dict[str, Any]],
+    ) -> str:
+        parts = [
+            document.get("coreMessages", {}).get("system_prompt", "") or "你需要始终忠于当前角色设定。",
+            f"角色名: {document['identity'].get('name', '')}",
+            f"角色描述: {document['identity'].get('description', '')}",
+            f"角色人格: {document['identity'].get('personality', '')}",
+            f"当前场景: {document['identity'].get('scenario', '')}",
+            f"额外要求: {document['coreMessages'].get('post_history_instructions', '')}",
+            f"当前状态变量: {json.dumps(session.get('variables', {}), ensure_ascii=False)}",
+        ]
+        summary_blocks = session.get("summary_blocks", []) or []
+        if summary_blocks:
+            parts.append("会话摘要:")
+            for block in summary_blocks:
+                parts.append(f"- {block.get('content', '')}")
+        if lorebook_hits:
+            parts.append("命中的世界书条目:")
+            for entry in lorebook_hits:
+                content = str(entry.get("content", "") or "")
+                depth = max(int(entry.get("depth", 4) or 4), 1)
+                parts.append(f"- {entry.get('comment', '')}: {content[:depth * 160]}")
+        return "\n".join(part for part in parts if str(part).strip())
+
+    def _build_chat_request_messages(
+        self,
+        document: Dict[str, Any],
+        session: Dict[str, Any],
+        lorebook_hits: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        messages: List[Dict[str, Any]] = [{
+            "role": "system",
+            "content": self._build_chat_system_prompt(document, session, lorebook_hits),
+        }]
+        covered_message_ids = {
+            str(message_id)
+            for block in (session.get("summary_blocks", []) or [])
+            for message_id in (block.get("covered_message_ids", []) or [])
+        }
+        for item in session.get("messages", []) or []:
+            if str(item.get("message_id", "")) in covered_message_ids:
+                continue
+            role = str(item.get("role", "assistant") or "assistant")
+            attachments = item.get("attachments", []) or []
+            if role == "user" and attachments:
+                content_parts: List[Dict[str, Any]] = []
+                for attachment in attachments:
+                    asset_path = str(attachment.get("asset_path", "") or "")
+                    mime_type = str(attachment.get("mime_type", "image/png") or "image/png")
+                    if asset_path and os.path.exists(asset_path):
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": self._attachment_to_data_url(asset_path, mime_type)},
+                        })
+                content_parts.append({"type": "text", "text": str(item.get("content", "") or "")})
+                messages.append({"role": "user", "content": content_parts})
+            else:
+                messages.append({"role": role, "content": str(item.get("content", "") or "")})
+        session["last_prompt_preview"] = json.dumps(messages, ensure_ascii=False, indent=2)
+        return messages
+
+    @staticmethod
+    def _emit_chat_event(
+        on_event: Optional[Callable[[Dict[str, Any]], None]],
+        event_type: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        if on_event:
+            on_event({"type": event_type, **payload})
+
+    async def get_chat_state(self, doc_id: str) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        session = await self._bootstrap_chat_session(document)
+        index = await self.store.load_chat_index(doc_id)
+        archived_sessions: List[Dict[str, Any]] = []
+        for archived_id in index.get("archived_session_ids", []) or []:
+            archived = await self.store.load_chat_session(doc_id, str(archived_id))
+            if archived:
+                archived_sessions.append(self._build_session_summary(archived))
+        archived_sessions.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+        return {
+            "doc_id": doc_id,
+            "active_session": session,
+            "archived_sessions": archived_sessions,
+            "available_greetings": self._build_chat_greetings(document),
+        }
+
+    async def create_new_chat_session(
+        self,
+        doc_id: str,
+        *,
+        greeting_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        index = await self.store.load_chat_index(doc_id)
+        active_id = str(index.get("active_session_id") or "").strip()
+        if active_id:
+            active = await self.store.load_chat_session(doc_id, active_id)
+            if active:
+                active["archived_at"] = self._now_iso()
+                active["updated_at"] = active["archived_at"]
+                await self.store.save_chat_session(doc_id, active)
+                archived_ids = [str(item) for item in (index.get("archived_session_ids", []) or [])]
+                if active_id not in archived_ids:
+                    archived_ids.insert(0, active_id)
+                index["archived_session_ids"] = archived_ids
+        greetings = self._build_chat_greetings(document)
+        greeting = next((item for item in greetings if item["greeting_id"] == greeting_id), None)
+        if not greeting:
+            greeting = greetings[0] if greetings else None
+        session = self._create_opening_chat_session(
+            document,
+            greeting_content=greeting["content"] if greeting else "",
+            greeting_source=greeting["source"] if greeting else None,
+        )
+        index["active_session_id"] = session["session_id"]
+        await self.store.save_chat_session(doc_id, session)
+        await self.store.save_chat_index(doc_id, index)
+        return await self.get_chat_state(doc_id)
+
+    async def switch_chat_session(self, doc_id: str, session_id: str) -> Dict[str, Any]:
+        target_session = await self._load_chat_session_or_raise(doc_id, session_id)
+        index = await self.store.load_chat_index(doc_id)
+        active_id = str(index.get("active_session_id") or "").strip()
+        archived_ids = [str(item) for item in (index.get("archived_session_ids", []) or [])]
+        if active_id and active_id != session_id:
+            active_session = await self.store.load_chat_session(doc_id, active_id)
+            if active_session:
+                active_session["archived_at"] = self._now_iso()
+                active_session["updated_at"] = active_session["archived_at"]
+                await self.store.save_chat_session(doc_id, active_session)
+            if active_id not in archived_ids:
+                archived_ids.insert(0, active_id)
+        archived_ids = [item for item in archived_ids if item != session_id]
+        index["active_session_id"] = session_id
+        index["archived_session_ids"] = archived_ids
+        target_session["archived_at"] = None
+        target_session["updated_at"] = self._now_iso()
+        await self.store.save_chat_session(doc_id, target_session)
+        await self.store.save_chat_index(doc_id, index)
+        return await self.get_chat_state(doc_id)
+
+    async def _generate_assistant_message(
+        self,
+        document: Dict[str, Any],
+        session: Dict[str, Any],
+        *,
+        raw_user_content: str,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        visible_user, prompt_user, user_hits = apply_regex_scripts(
+            raw_user_content,
+            document.get("regexScripts", []),
+            placement=1,
+            respect_run_on_edit=True,
+        )
+        session["messages"][-1]["content"] = visible_user
+        session["messages"][-1]["generation_meta"]["original_content"] = raw_user_content
+        lorebook_hits = sort_lorebook_hits(
+            match_lorebook(
+                document.get("lorebook", {}).get("entries", []),
+                prompt_user,
+                session=session,
+            )
+        )
+        runtime_log: List[Dict[str, Any]] = list(user_hits)
+        for entry in lorebook_hits:
+            runtime_log.append({
+                "type": "lorebook",
+                "comment": entry.get("comment", ""),
+                "keys": entry.get("keys", []),
+                "position": entry.get("position", "before_char"),
+                "depth": entry.get("depth", 4),
+            })
+        runtime_log.extend(run_state_tasks(session, document.get("stateTasks", []), event="message_received"))
+        prompt_messages = self._build_chat_request_messages(document, session, lorebook_hits)
+        self._emit_chat_event(on_event, "runtime", {
+            "runtime_log": runtime_log,
+            "variables": copy.deepcopy(session.get("variables", {})),
+        })
+
+        client = self._create_vlm_client()
+        if not client:
+            raise ValueError("未配置可用的 VLM 模型，无法进行角色聊天。")
+
+        streamed_chunks: List[str] = []
+
+        def handle_chunk(delta: str) -> None:
+            streamed_chunks.append(delta)
+            self._emit_chat_event(on_event, "assistant_delta", {
+                "delta": delta,
+                "content": "".join(streamed_chunks),
+            })
+
+        try:
+            assistant_text = await client.generate_messages(
+                prompt_messages,
+                on_stream_chunk=handle_chunk,
+            )
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
+
+        visible_assistant, _, assistant_hits = apply_regex_scripts(
+            assistant_text,
+            document.get("regexScripts", []),
+            placement=2,
+            respect_run_on_edit=True,
+        )
+        runtime_log.extend(assistant_hits)
+        runtime_log.extend(run_state_tasks(session, document.get("stateTasks", []), event="message_sent"))
+        assistant_message = self._create_chat_message(
+            role="assistant",
+            content=visible_assistant,
+            runtime_log=runtime_log,
+            variables_snapshot=session.get("variables", {}),
+            generation_meta={"prompt_preview": session.get("last_prompt_preview", "")},
+        )
+        session["messages"].append(assistant_message)
+        session["updated_at"] = self._now_iso()
+        self._emit_chat_event(on_event, "assistant_done", {
+            "message_id": assistant_message["message_id"],
+            "content": assistant_message["content"],
+        })
+        return session
+
+    async def send_chat_message(
+        self,
+        doc_id: str,
+        *,
+        session_id: str,
+        content: str,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        if not str(content or "").strip() and not (attachments or []):
+            raise ValueError("消息内容不能为空")
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+
+        stored_attachments: List[Dict[str, Any]] = []
+        for index, attachment in enumerate(attachments or []):
+            raw_bytes = attachment.get("bytes")
+            if not isinstance(raw_bytes, (bytes, bytearray)):
+                continue
+            filename = str(attachment.get("filename") or f"attachment_{index}.bin")
+            mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+            asset_path = await self.store.save_chat_attachment(
+                doc_id,
+                session_id,
+                filename=filename,
+                data=bytes(raw_bytes),
+            )
+            stored_attachments.append({
+                "attachment_id": f"att_{uuid.uuid4().hex[:10]}",
+                "filename": filename,
+                "mime_type": mime_type,
+                "asset_path": asset_path,
+                "created_at": self._now_iso(),
+            })
+
+        user_message = self._create_chat_message(
+            role="user",
+            content=content,
+            attachments=stored_attachments,
+            variables_snapshot=session.get("variables", {}),
+            generation_meta={"original_content": content},
+        )
+        session["messages"].append(user_message)
+        await self._generate_assistant_message(
+            document,
+            session,
+            raw_user_content=content,
+            on_event=on_event,
+        )
+        await self.store.save_chat_session(doc_id, session)
+        return {
+            "session": session,
+            "available_greetings": self._build_chat_greetings(document),
+        }
+
+    async def edit_chat_message(
+        self,
+        doc_id: str,
+        *,
+        session_id: str,
+        message_id: str,
+        new_content: str,
+    ) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        messages = session.get("messages", []) or []
+        target_index = next((idx for idx, item in enumerate(messages) if item.get("message_id") == message_id), -1)
+        if target_index < 0:
+            raise ValueError("消息不存在")
+        target = messages[target_index]
+        target["content"] = new_content
+        target["updated_at"] = self._now_iso()
+        target.setdefault("generation_meta", {})["original_content"] = new_content
+        session["messages"] = messages[: target_index + 1]
+        self._reset_chat_runtime(document, session)
+        session["updated_at"] = self._now_iso()
+        await self.store.save_chat_session(doc_id, session)
+        return {"session": session}
+
+    async def delete_chat_message(
+        self,
+        doc_id: str,
+        *,
+        session_id: str,
+        message_id: str,
+    ) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        messages = session.get("messages", []) or []
+        target_index = next((idx for idx, item in enumerate(messages) if item.get("message_id") == message_id), -1)
+        if target_index < 0:
+            raise ValueError("消息不存在")
+        session["messages"] = messages[:target_index]
+        self._reset_chat_runtime(document, session)
+        session["updated_at"] = self._now_iso()
+        await self.store.save_chat_session(doc_id, session)
+        return {"session": session}
+
+    async def regenerate_chat_message(
+        self,
+        doc_id: str,
+        *,
+        session_id: str,
+        anchor_message_id: str,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        messages = session.get("messages", []) or []
+        anchor_index = next((idx for idx, item in enumerate(messages) if item.get("message_id") == anchor_message_id), -1)
+        if anchor_index < 0:
+            raise ValueError("消息不存在")
+        if messages[anchor_index].get("role") == "assistant":
+            user_index = next(
+                (idx for idx in range(anchor_index - 1, -1, -1) if messages[idx].get("role") == "user"),
+                -1,
+            )
+            if user_index < 0:
+                raise ValueError("未找到可重生的用户消息")
+        else:
+            user_index = anchor_index
+        session["messages"] = messages[: user_index + 1]
+        self._reset_chat_runtime(document, session)
+        raw_user_content = str(
+            session["messages"][-1].get("generation_meta", {}).get("original_content")
+            or session["messages"][-1].get("content", "")
+            or ""
+        )
+        await self._generate_assistant_message(
+            document,
+            session,
+            raw_user_content=raw_user_content,
+            on_event=on_event,
+        )
+        await self.store.save_chat_session(doc_id, session)
+        return {"session": session}
+
+    async def summarize_chat_session(
+        self,
+        doc_id: str,
+        *,
+        session_id: str,
+        cutoff_message_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        messages = session.get("messages", []) or []
+        if cutoff_message_id:
+            target_index = next((idx for idx, item in enumerate(messages) if item.get("message_id") == cutoff_message_id), -1)
+            if target_index < 0:
+                raise ValueError("消息不存在")
+            source_messages = messages[: target_index + 1]
+        else:
+            source_messages = messages
+        if not source_messages:
+            raise ValueError("当前会话没有可总结的消息")
+        prompt = (
+            f"请总结角色 {document['identity'].get('name', '')} 与用户的聊天进展。"
+            "用中文输出一段紧凑摘要，保留关键剧情、关系变化、状态变量和未完成事项。\n\n"
+            + "\n".join(f"{item.get('role')}: {item.get('content')}" for item in source_messages)
+        )
+        client = self._create_vlm_client()
+        if not client:
+            raise ValueError("未配置可用的 VLM 模型，无法总结聊天。")
+        try:
+            summary_text = await client.generate_messages([{"role": "user", "content": prompt}])
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
+        session.setdefault("summary_blocks", []).append({
+            "summary_id": f"sum_{uuid.uuid4().hex[:10]}",
+            "content": summary_text,
+            "created_at": self._now_iso(),
+            "covered_message_ids": [item.get("message_id") for item in source_messages],
+        })
+        session["updated_at"] = self._now_iso()
+        await self.store.save_chat_session(doc_id, session)
+        return {"session": session}
+
+    async def export_chat_session(self, doc_id: str, *, session_id: str) -> Dict[str, Any]:
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        payload = copy.deepcopy(session)
+        for message in payload.get("messages", []) or []:
+            for attachment in message.get("attachments", []) or []:
+                asset_path = str(attachment.get("asset_path", "") or "")
+                if asset_path and os.path.exists(asset_path):
+                    with open(asset_path, "rb") as handle:
+                        attachment["blob_base64"] = base64.b64encode(handle.read()).decode("utf-8")
+                attachment.pop("asset_path", None)
+        return payload
+
+    async def import_chat_session(self, doc_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        document = await self.store.load_document(doc_id)
+        if not document:
+            raise ValueError("文档不存在")
+        imported = copy.deepcopy(payload or {})
+        imported["doc_id"] = doc_id
+        imported["session_id"] = self._new_session_id()
+        imported["created_at"] = self._now_iso()
+        imported["updated_at"] = imported["created_at"]
+        imported["archived_at"] = None
+        for message in imported.get("messages", []) or []:
+            message["message_id"] = self._new_message_id()
+            for index, attachment in enumerate(message.get("attachments", []) or []):
+                blob_base64 = str(attachment.pop("blob_base64", "") or "")
+                if not blob_base64:
+                    continue
+                restored = await self.store.save_chat_attachment(
+                    doc_id,
+                    imported["session_id"],
+                    filename=str(attachment.get("filename") or f"attachment_{index}.bin"),
+                    data=base64.b64decode(blob_base64),
+                )
+                attachment["asset_path"] = restored
+        index = await self.store.load_chat_index(doc_id)
+        active_id = str(index.get("active_session_id") or "").strip()
+        if active_id:
+            current = await self.store.load_chat_session(doc_id, active_id)
+            if current:
+                current["archived_at"] = self._now_iso()
+                current["updated_at"] = current["archived_at"]
+                await self.store.save_chat_session(doc_id, current)
+                archived_ids = [str(item) for item in (index.get("archived_session_ids", []) or [])]
+                if active_id not in archived_ids:
+                    archived_ids.insert(0, active_id)
+                index["archived_session_ids"] = archived_ids
+        index["active_session_id"] = imported["session_id"]
+        await self.store.save_chat_session(doc_id, imported)
+        await self.store.save_chat_index(doc_id, index)
+        return await self.get_chat_state(doc_id)
+
+    async def get_chat_prompt_preview(self, doc_id: str, *, session_id: str) -> Dict[str, Any]:
+        session = await self._load_chat_session_or_raise(doc_id, session_id)
+        return {
+            "session_id": session_id,
+            "prompt_preview": session.get("last_prompt_preview", ""),
         }
