@@ -3,15 +3,15 @@
     <div v-if="!localDocument" class="empty-card">
       <div class="empty-mark">角色工坊</div>
       <h2>选择或创建角色文档</h2>
-      <p>先从左侧分析候选创建角色，或直接新建空白文档。选择角色后，这里会切换成完整的编辑工作区。</p>
+      <p>先从左侧候选锁定角色名，或直接新建空白文档。创建后建议先使用 AI 一键补全整卡，再进入各分区精修。</p>
       <div class="empty-grid">
         <article class="empty-tip">
           <strong>从候选开始</strong>
-          <p>如果当前书已有增强时间线，优先从分析候选创建角色，能自动带入来源证据和初始设定。</p>
+          <p>如果当前书已有增强时间线，可以先从分析候选创建角色。候选只会预填角色名，后续由压缩摘要驱动的 AI 负责补完整张卡。</p>
         </article>
         <article class="empty-tip">
           <strong>空白新建或导入</strong>
-          <p>如果你想手工构建角色，或者直接导入外部角色卡，也可以从左侧工具区快速开始。</p>
+          <p>如果你想手工构建角色，或者直接导入外部角色卡，也可以从左侧工具区快速开始；空白卡同样能用 AI 一键补全。</p>
         </article>
       </div>
     </div>
@@ -26,7 +26,7 @@
           <div class="hero-copy">
             <div class="hero-kicker">当前角色</div>
             <h2>{{ localDocument.meta.title || localDocument.identity.name }}</h2>
-            <p>{{ localDocument.identity.description || '当前角色还没有完善简介，可以先在“角色设定”里补充角色基底。' }}</p>
+            <p>{{ localDocument.identity.description || '当前角色还没有完善简介，建议先使用“AI 一键补全整卡”，再回到分区里精修。' }}</p>
             <div class="hero-meta">
               <span class="meta-pill">{{ formatOrigin(localDocument.origin.type) }}</span>
               <span class="meta-pill" v-if="localDocument.origin.source_character">来源: {{ localDocument.origin.source_character }}</span>
@@ -36,6 +36,9 @@
           </div>
         </div>
         <div class="hero-actions">
+          <button class="primary-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'full')">
+            {{ isGenerating('full') ? '整卡补全中...' : 'AI 一键补全整卡' }}
+          </button>
           <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')">
             {{ isGenerating('identity') ? '补全中...' : 'AI 补全角色设定' }}
           </button>
@@ -60,7 +63,7 @@
             <article class="summary-card">
               <span class="summary-label">来源摘要</span>
               <strong>{{ formatOrigin(localDocument.origin.type) }}</strong>
-              <p v-if="localDocument.origin.source_character">基于 {{ localDocument.origin.source_character }} 的分析结果创建</p>
+              <p v-if="localDocument.origin.source_character">通过分析候选「{{ localDocument.origin.source_character }}」锁定角色名创建</p>
               <p v-else>当前文档为手工或外部导入角色。</p>
             </article>
             <article class="summary-card">
@@ -481,8 +484,21 @@ watch(() => props.document, value => {
 
 watch(localDocument, value => {
   if (syncing) return
+  if (value) {
+    const normalizedName = String(value.identity.name || '').trim()
+    if (value.meta.title !== normalizedName) {
+      value.meta.title = normalizedName
+    }
+  }
   emit('update:document', value ? JSON.parse(JSON.stringify(value)) as CharacterStudioDocument : null)
 }, { deep: true })
+
+watch(() => localDocument.value?.identity.name, value => {
+  if (!localDocument.value) return
+  const normalizedName = String(value || '').trim()
+  if (localDocument.value.meta.title === normalizedName) return
+  localDocument.value.meta.title = normalizedName
+}, { flush: 'sync' })
 
 function normalizeTab(value: string): 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export' {
   return tabItems.some(item => item.value === value) ? value as typeof props.activeTab : 'overview'

@@ -14,7 +14,7 @@
           <h4>聊天预览</h4>
           <p>直接在当前文档上试聊，观察问候语、世界书命中、正则日志和变量变化。</p>
         </div>
-        <button class="ghost-btn" :disabled="!document || resettingPreview" @click="$emit('reset-preview')">
+        <button class="ghost-btn" :disabled="!document || resettingPreview || previewing" @click="$emit('reset-preview')">
           {{ resettingPreview ? '重置中...' : '重置会话' }}
         </button>
       </div>

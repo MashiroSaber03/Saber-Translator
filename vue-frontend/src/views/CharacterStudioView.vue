@@ -136,7 +136,7 @@ const currentDocumentOrigin = computed(() => {
 const topbarSubtitle = computed(() => {
   if (!store.currentDocument) {
     return store.hasTimeline
-      ? '选择一个角色文档，或从分析候选创建新角色。'
+      ? '选择一个角色文档，或先从分析候选锁定角色名，再补全整卡。'
       : '当前书还没有增强时间线，但仍可空白新建或导入角色卡。'
   }
   return '编辑区优先，运行时预览收纳在右侧侧栏，适合长时间编卡。'
@@ -168,9 +168,19 @@ async function hydrateWorkspace(nextBookId: string) {
     }
     await store.loadWorkspace(nextBookId)
     if (props.docId) {
-      await store.openDocument(props.docId)
-    } else if (store.documents.length > 0) {
-      await store.openDocument(store.documents[0]!.id)
+      const openedRequested = await runAction(() => store.openDocument(props.docId))
+      if (openedRequested) return
+      if (store.documents.length === 0) {
+        void router.replace({ name: 'character-studio', query: { book: nextBookId } })
+        return
+      }
+    }
+    if (store.documents.length > 0) {
+      const fallbackDocId = store.documents[0]!.id
+      const openedFallback = await runAction(() => store.openDocument(fallbackDocId))
+      if (openedFallback) {
+        void router.replace({ name: 'character-studio', query: { book: nextBookId, doc: fallbackDocId } })
+      }
     }
   } catch {
     // 错误已在 store 中记录并展示到页面

@@ -2,13 +2,9 @@ export interface CharacterStudioCandidate {
   name: string
   aliases: string[]
   first_appearance: number
-  description: string
-  arc: string
   dialogue_count: number
   has_dialogues: boolean
   sample_pages: number[]
-  relationship_count?: number
-  key_moment_count?: number
 }
 
 export interface CharacterStudioSummary {

@@ -5,7 +5,6 @@ Core Character Studio services.
 from __future__ import annotations
 
 import copy
-import io
 import json
 import logging
 import os
@@ -39,14 +38,25 @@ logger = logging.getLogger("MangaInsight.CharacterStudio")
 
 
 SECTION_PROMPTS = {
-    "identity": """你是角色卡编辑助手。根据以下角色 dossier，输出 JSON 对象，字段仅包含 name, description, personality, scenario。""",
-    "greetings": """你是角色卡问候语设计助手。根据以下角色 dossier，输出 JSON 对象，字段仅包含 first_message, alternate_greetings。alternate_greetings 为字符串数组。""",
-    "lorebook": """你是角色世界书设计助手。根据以下角色 dossier，输出 JSON 对象，字段仅包含 entries。entries 为世界书条目数组，每个条目包含 comment, keys, content。""",
-    "regex": """你是角色脚本助手。根据以下角色 dossier，输出 JSON 对象，字段仅包含 regex_scripts。每项包含 scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled。""",
-    "state-tasks": """你是状态任务助手。根据以下角色 dossier，输出 JSON 对象，字段仅包含 state_tasks。每项包含 name, triggerTiming, interval, commands, disabled。""",
-    "review": """你是角色卡审查员。请输出 JSON 对象，字段 only: summary, issues, suggestions。issues/suggestions 均为数组。""",
-    "translate": """你是专业翻译。把以下角色卡内容翻译成中文并保持 JSON 结构。""",
+    "identity": """你是角色卡编辑助手。请基于压缩摘要与目标角色名，为该角色补全角色设定。输出 JSON 对象，字段 only: name, description, personality, scenario。所有字段必须是字符串。""",
+    "greetings": """你是角色卡问候语设计助手。请基于压缩摘要与目标角色名，为该角色补全问候语和对话元信息。输出 JSON 对象，字段 only: first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version。alternate_greetings 必须为字符串数组。""",
+    "lorebook": """你是角色世界书设计助手。请基于压缩摘要与目标角色名，为该角色构建世界书。输出 JSON 对象，字段 only: lorebook，其中 lorebook 必须包含 name, entries。entries 为数组，每项至少包含 comment, keys, secondary_keys, content, enabled, constant, selective, priority, position, depth, children。""",
+    "regex": """你是角色脚本助手。请基于压缩摘要与目标角色名，为该角色生成运行时正则脚本。输出 JSON 对象，字段 only: regexScripts。regexScripts 为数组，每项包含 scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled。""",
+    "state-tasks": """你是状态任务助手。请基于压缩摘要与目标角色名，为该角色生成状态任务。输出 JSON 对象，字段 only: stateTasks。stateTasks 为数组，每项包含 name, triggerTiming, interval, commands, disabled。""",
+    "review": """你是角色卡审查员。请基于压缩摘要与目标角色名，审查当前角色卡是否忠于原始剧情信息。输出 JSON 对象，字段 only: summary, issues, suggestions。summary 必须为字符串；issues 与 suggestions 必须为字符串数组。""",
+    "translate": """你是专业翻译与角色卡整理助手。请参考压缩摘要与当前角色卡草稿，将角色卡正文翻译或整理为更自然的中文。输出 JSON 对象，字段 only: identity, coreMessages。""",
+    "full": """你是角色卡构建助手。请基于压缩摘要与目标角色名，一次性生成完整角色卡初稿。输出 JSON 对象，字段 only: identity, coreMessages, lorebook, regexScripts, stateTasks。
+
+identity 必须包含：name, description, personality, scenario。
+coreMessages 必须包含：first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version。
+lorebook 必须包含：name, entries。
+regexScripts 必须是数组。
+stateTasks 必须是数组。
+
+请直接输出 JSON，不要输出解释、Markdown 或代码块外文字。""",
 }
+
+FACT_DRIVEN_SECTIONS = {"identity", "greetings", "lorebook", "regex", "state-tasks", "translate", "full"}
 
 
 class CharacterStudioService:
@@ -147,13 +157,9 @@ class CharacterStudioService:
                 "name": name,
                 "aliases": aliases,
                 "first_appearance": int(character.get("first_appearance", 0) or 0),
-                "description": character.get("description", "") or "",
-                "arc": character.get("arc", "") or "",
                 "dialogue_count": len(dialogues),
                 "has_dialogues": len(dialogues) > 0,
                 "sample_pages": sample_pages,
-                "relationship_count": len(character.get("relationships", []) or []),
-                "key_moment_count": len(character.get("key_moments", []) or []),
             })
         return {
             "book_id": self.book_id,
@@ -189,74 +195,13 @@ class CharacterStudioService:
 
     async def _build_document_from_candidate(self, candidate_name: str) -> Dict[str, Any]:
         timeline = await self.storage.load_timeline() or {}
-        overview = await self.storage.load_overview() or {}
         characters = timeline.get("characters", []) or []
-        target = next((item for item in characters if item.get("name") == candidate_name), None)
-        if not target:
+        if not any(item.get("name") == candidate_name for item in characters):
             raise ValueError(f"未找到候选角色: {candidate_name}")
         document = create_empty_document(self.book_id, title=candidate_name, origin_type="analysis")
         document["origin"]["source_character"] = candidate_name
-        document["identity"].update({
-            "name": candidate_name,
-            "aliases": [a for a in target.get("aliases", []) if isinstance(a, str)],
-            "description": target.get("description", "") or "",
-            "personality": target.get("arc", "") or "",
-            "scenario": (overview.get("book_summary") or overview.get("summary") or "")[:600],
-        })
-        document["meta"]["tags"] = ["manga-insight", candidate_name]
-        document["grounding"].update({
-            "timeline_mode": timeline.get("mode", ""),
-            "relationships": target.get("relationships", []) or [],
-            "key_moments": target.get("key_moments", []) or [],
-        })
-        dialogues = await self._collect_dialogues_for_character([candidate_name] + document["identity"]["aliases"])
-        document["coreMessages"]["first_message"] = dialogues[0]["text"] if dialogues else f"我是{candidate_name}。我们开始吧。"
-        document["coreMessages"]["message_example"] = (
-            "<START>\n{{user}}: 我们接下来怎么办？\n{{char}}: 先稳住局势，再寻找关键线索。"
-        )
-        document["coreMessages"]["alternate_greetings"] = [
-            f"你来得正好，我是{candidate_name}，我们可以直接进入正题。",
-            f"别浪费时间了，我是{candidate_name}。你想先确认哪一部分？",
-        ]
-        document["grounding"]["sample_pages"] = sorted({int(item.get("page", 0)) for item in dialogues if int(item.get("page", 0)) > 0})[:8]
-        document["lorebook"]["entries"] = [
-            {
-                "id": "entry_origin",
-                "comment": "角色基底",
-                "keys": [candidate_name] + document["identity"]["aliases"][:3],
-                "secondary_keys": [],
-                "content": "\n".join(filter(None, [
-                    document["identity"]["description"],
-                    f"角色成长线：{target.get('arc', '')}" if target.get("arc") else "",
-                ])),
-                "enabled": True,
-                "constant": False,
-                "selective": True,
-                "priority": 100,
-                "position": "before_char",
-                "depth": 4,
-                "children": [],
-            }
-        ]
-        document["regexScripts"] = [{
-            "id": "regex_state_hide",
-            "scriptName": "隐藏状态块",
-            "findRegex": "<state>[\\s\\S]*?</state>",
-            "replaceString": "",
-            "placement": [2],
-            "markdownOnly": False,
-            "promptOnly": False,
-            "runOnEdit": True,
-            "disabled": False,
-        }]
-        document["stateTasks"] = [{
-            "id": "task_init",
-            "name": "初始化好感度",
-            "triggerTiming": "initialization",
-            "interval": 0,
-            "commands": "<<taskjs>>\nawait STscript('/setvar key=trust_score 20');\n<</taskjs>>",
-            "disabled": False,
-        }]
+        document["identity"]["name"] = candidate_name
+        document["meta"]["title"] = candidate_name
         return ensure_document_shape(document, book_id=self.book_id)
 
     async def save_document(self, doc_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -281,85 +226,275 @@ class CharacterStudioService:
             raise ValueError("文档不存在")
         if section not in SECTION_PROMPTS:
             raise ValueError(f"不支持的 section: {section}")
-        if section in set(document.get("status", {}).get("frozen_sections", []) or []):
+        frozen_sections = set(document.get("status", {}).get("frozen_sections", []) or [])
+        if section in frozen_sections:
             return document
-        dossier = self._build_dossier(document)
-        prompt = (
-            SECTION_PROMPTS[section]
-            + "\n\n角色 dossier:\n"
-            + json.dumps(dossier, ensure_ascii=False, indent=2)
-        )
+        if section == "review":
+            generated = await self._generate_review_payload(document)
+            updated = self._apply_section_payload(document, section, generated)
+            await self.store.save_document(updated)
+            return updated
+
+        if section in FACT_DRIVEN_SECTIONS:
+            updated = await self._generate_fact_driven_section(document, section, frozen_sections=frozen_sections)
+            await self.store.save_document(updated)
+            return updated
+
+        raise ValueError(f"不支持的 section: {section}")
+
+    async def _generate_review_payload(self, document: Dict[str, Any]) -> Dict[str, Any]:
+        role_name = str(document.get("identity", {}).get("name", "") or document.get("meta", {}).get("title", "")).strip()
+        if not role_name:
+            raise ValueError("请先填写角色名，再使用 AI 审查。")
+
+        compressed_context = await self._ensure_compressed_context()
+        prompt = self._build_review_prompt(document, compressed_context)
         client = self._create_chat_client()
-        generated: Dict[str, Any] = {}
-        if client:
+        if not client:
+            raise ValueError("未配置可用的 AI 对话模型，无法审查角色卡。")
+        try:
+            response = await client.generate(prompt=prompt, temperature=0.4)
+            generated = parse_llm_json(response, default={})
+        except Exception as exc:
+            logger.error("生成审查报告失败: %s", exc, exc_info=True)
+            raise ValueError(f"AI 审查失败：{exc}") from exc
+        finally:
             try:
-                response = await client.generate(prompt=prompt, temperature=0.5)
-                generated = parse_llm_json(response, default={})
-            except Exception as exc:
-                logger.warning("生成 section %s 失败，回退默认模板: %s", section, exc)
-            finally:
-                try:
-                    await client.close()
-                except Exception:
-                    pass
-        if not generated:
-            generated = self._fallback_generation(document, section)
-        updated = self._apply_section_payload(document, section, generated)
-        await self.store.save_document(updated)
+                await client.close()
+            except Exception:
+                pass
+
+        self._validate_generation_payload("review", generated)
+        return generated
+
+    async def _generate_fact_driven_section(
+        self,
+        document: Dict[str, Any],
+        section: str,
+        *,
+        frozen_sections: set[str],
+    ) -> Dict[str, Any]:
+        role_name = str(document.get("identity", {}).get("name", "") or document.get("meta", {}).get("title", "")).strip()
+        if not role_name:
+            raise ValueError("请先填写角色名，再使用 AI 补全。")
+
+        compressed_context = await self._ensure_compressed_context()
+        prompt = self._build_fact_generation_prompt(document, section, compressed_context)
+        client = self._create_chat_client()
+        if not client:
+            raise ValueError("未配置可用的 AI 对话模型，无法补全角色卡。")
+
+        try:
+            response = await client.generate(prompt=prompt, temperature=0.45)
+            generated = parse_llm_json(response, default={})
+        except Exception as exc:
+            logger.error("生成 section %s 失败: %s", section, exc, exc_info=True)
+            raise ValueError(f"AI 生成失败：{exc}") from exc
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
+
+        self._validate_generation_payload(section, generated)
+        updated = self._apply_section_payload(document, section, generated, frozen_sections=frozen_sections)
+        diagnostics = build_diagnostics_report(updated)
+        if diagnostics.get("errors"):
+            raise ValueError(f"AI 生成结果校验失败：{'；'.join(diagnostics['errors'])}")
         return updated
 
-    def _build_dossier(self, document: Dict[str, Any]) -> Dict[str, Any]:
-        return {
+    async def _ensure_compressed_context(self) -> str:
+        compressed = await self.storage.load_compressed_context()
+        context = str((compressed or {}).get("context", "") or "").strip()
+        if context:
+            return context
+
+        from src.core.manga_insight.features.hierarchical_summary import HierarchicalSummaryGenerator
+
+        summary_client = self._create_chat_client()
+        try:
+            generator = HierarchicalSummaryGenerator(
+                book_id=self.book_id,
+                storage=self.storage,
+                llm_client=summary_client,
+                prompts_config=getattr(self.config, "prompts", None),
+            )
+            await generator.generate_hierarchical_overview()
+        finally:
+            if summary_client:
+                try:
+                    await summary_client.close()
+                except Exception:
+                    pass
+
+        compressed = await self.storage.load_compressed_context()
+        context = str((compressed or {}).get("context", "") or "").strip()
+        if context:
+            return context
+        raise ValueError("未找到可用于角色工坊补全的压缩摘要，请先完成漫画分析或生成概览。")
+
+    def _build_fact_generation_prompt(self, document: Dict[str, Any], section: str, compressed_context: str) -> str:
+        snapshot = {
             "identity": document.get("identity", {}),
-            "grounding": document.get("grounding", {}),
-            "lorebook_count": len(document.get("lorebook", {}).get("entries", [])),
-            "regex_count": len(document.get("regexScripts", [])),
-            "task_count": len(document.get("stateTasks", [])),
             "coreMessages": document.get("coreMessages", {}),
+            "lorebook": document.get("lorebook", {}),
+            "regexScripts": document.get("regexScripts", []),
+            "stateTasks": document.get("stateTasks", []),
+            "frozen_sections": document.get("status", {}).get("frozen_sections", []),
         }
+        role_name = document.get("identity", {}).get("name", "") or document.get("meta", {}).get("title", "")
+        return (
+            SECTION_PROMPTS[section]
+            + "\n\n目标角色名:\n"
+            + str(role_name)
+            + "\n\n压缩摘要（唯一外部事实资料库）:\n"
+            + compressed_context
+            + "\n\n当前角色卡草稿（仅作风格、一致性与保留内容参考，不可当作新的事实来源）:\n"
+            + json.dumps(snapshot, ensure_ascii=False, indent=2)
+        )
 
-    def _fallback_generation(self, document: Dict[str, Any], section: str) -> Dict[str, Any]:
-        name = document["identity"]["name"] or "角色"
-        if section == "identity":
-            return {
-                "name": name,
-                "description": document["identity"]["description"] or f"{name} 是故事中的关键角色。",
-                "personality": document["identity"]["personality"] or "冷静、观察力强、会在关键时刻做出决断。",
-                "scenario": document["identity"]["scenario"] or "故事推进阶段，冲突尚未完全解决。",
-            }
-        if section == "greetings":
-            return {
-                "first_message": document["coreMessages"]["first_message"] or f"我是{name}。先告诉我，现在最紧急的事情是什么？",
-                "alternate_greetings": document["coreMessages"]["alternate_greetings"] or [f"你来了。我们可以继续推进下一步了。"],
-            }
-        if section == "lorebook":
-            return {
-                "entries": document["lorebook"]["entries"] or [],
-            }
-        if section == "regex":
-            return {
-                "regex_scripts": document["regexScripts"] or [],
-            }
-        if section == "state-tasks":
-            return {
-                "state_tasks": document["stateTasks"] or [],
-            }
+    def _build_review_prompt(self, document: Dict[str, Any], compressed_context: str) -> str:
+        role_name = document.get("identity", {}).get("name", "") or document.get("meta", {}).get("title", "")
+        review_target = {
+            "identity": document.get("identity", {}),
+            "coreMessages": document.get("coreMessages", {}),
+            "lorebook": document.get("lorebook", {}),
+            "regexScripts": document.get("regexScripts", []),
+            "stateTasks": document.get("stateTasks", []),
+        }
+        return (
+            SECTION_PROMPTS["review"]
+            + "\n\n目标角色名:\n"
+            + str(role_name)
+            + "\n\n压缩摘要（唯一外部事实资料库）:\n"
+            + compressed_context
+            + "\n\n当前角色卡内容（审查对象）:\n"
+            + json.dumps(review_target, ensure_ascii=False, indent=2)
+        )
+
+    @staticmethod
+    def _require_string(payload: Dict[str, Any], key: str, *, allow_empty: bool = False) -> None:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            raise ValueError(f"AI 生成结果缺少字符串字段: {key}")
+        if not allow_empty and not value.strip():
+            raise ValueError(f"AI 生成结果字段为空: {key}")
+
+    @staticmethod
+    def _require_list(payload: Dict[str, Any], key: str) -> List[Any]:
+        value = payload.get(key)
+        if not isinstance(value, list):
+            raise ValueError(f"AI 生成结果缺少数组字段: {key}")
+        return value
+
+    def _validate_identity_payload(self, payload: Dict[str, Any]) -> None:
+        self._require_string(payload, "name")
+        self._require_string(payload, "description")
+        self._require_string(payload, "personality")
+        self._require_string(payload, "scenario")
+
+    def _validate_core_messages_payload(self, payload: Dict[str, Any]) -> None:
+        self._require_string(payload, "first_message")
+        self._require_string(payload, "message_example")
+        alternates = self._require_list(payload, "alternate_greetings")
+        if not all(isinstance(item, str) for item in alternates):
+            raise ValueError("AI 生成结果字段类型错误: alternate_greetings")
+        self._require_string(payload, "system_prompt", allow_empty=True)
+        self._require_string(payload, "post_history_instructions", allow_empty=True)
+        self._require_string(payload, "creator_notes", allow_empty=True)
+        self._require_string(payload, "character_version", allow_empty=True)
+
+    def _validate_review_payload(self, payload: Dict[str, Any]) -> None:
+        self._require_string(payload, "summary", allow_empty=False)
+        issues = self._require_list(payload, "issues")
+        suggestions = self._require_list(payload, "suggestions")
+        if not all(isinstance(item, str) for item in issues):
+            raise ValueError("AI 审查结果字段类型错误: issues")
+        if not all(isinstance(item, str) for item in suggestions):
+            raise ValueError("AI 审查结果字段类型错误: suggestions")
+
+    def _validate_generation_payload(self, section: str, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("AI 生成结果不是有效 JSON 对象。")
+
         if section == "review":
-            report = build_diagnostics_report(document)
-            return {
-                "summary": "角色卡基础结构可用，请根据诊断结果继续完善。",
-                "issues": report.get("errors", []),
-                "suggestions": report.get("warnings", []),
-            }
-        if section == "translate":
-            return {
-                "identity": document["identity"],
-                "coreMessages": document["coreMessages"],
-            }
-        return {}
+            self._validate_review_payload(payload)
+            return
 
-    def _apply_section_payload(self, document: Dict[str, Any], section: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if section == "identity":
+            self._validate_identity_payload(payload)
+            return
+
+        if section == "greetings":
+            core_messages = payload.get("coreMessages", payload)
+            if not isinstance(core_messages, dict):
+                raise ValueError("AI 生成结果缺少 coreMessages。")
+            self._validate_core_messages_payload(core_messages)
+            return
+
+        if section == "lorebook":
+            lorebook = payload.get("lorebook", payload)
+            if not isinstance(lorebook, dict):
+                raise ValueError("AI 生成结果缺少 lorebook。")
+            if "name" in lorebook and not isinstance(lorebook.get("name"), str):
+                raise ValueError("AI 生成结果字段类型错误: lorebook.name")
+            self._require_list(lorebook, "entries")
+            return
+
+        if section == "regex":
+            scripts = payload.get("regexScripts", payload.get("regex_scripts"))
+            if not isinstance(scripts, list):
+                raise ValueError("AI 生成结果缺少 regexScripts。")
+            return
+
+        if section == "state-tasks":
+            tasks = payload.get("stateTasks", payload.get("state_tasks"))
+            if not isinstance(tasks, list):
+                raise ValueError("AI 生成结果缺少 stateTasks。")
+            return
+
+        if section == "translate":
+            identity = payload.get("identity")
+            core_messages = payload.get("coreMessages")
+            if not isinstance(identity, dict) or not isinstance(core_messages, dict):
+                raise ValueError("AI 生成结果缺少 identity 或 coreMessages。")
+            self._validate_identity_payload(identity)
+            self._validate_core_messages_payload(core_messages)
+            return
+
+        if section == "full":
+            identity = payload.get("identity")
+            core_messages = payload.get("coreMessages")
+            lorebook = payload.get("lorebook")
+            regex_scripts = payload.get("regexScripts")
+            state_tasks = payload.get("stateTasks")
+            if not isinstance(identity, dict):
+                raise ValueError("AI 生成结果缺少 identity。")
+            if not isinstance(core_messages, dict):
+                raise ValueError("AI 生成结果缺少 coreMessages。")
+            if not isinstance(lorebook, dict):
+                raise ValueError("AI 生成结果缺少 lorebook。")
+            if not isinstance(regex_scripts, list):
+                raise ValueError("AI 生成结果缺少 regexScripts。")
+            if not isinstance(state_tasks, list):
+                raise ValueError("AI 生成结果缺少 stateTasks。")
+            self._validate_identity_payload(identity)
+            self._validate_core_messages_payload(core_messages)
+            if "name" in lorebook and not isinstance(lorebook.get("name"), str):
+                raise ValueError("AI 生成结果字段类型错误: lorebook.name")
+            self._require_list(lorebook, "entries")
+            return
+
+    def _apply_section_payload(
+        self,
+        document: Dict[str, Any],
+        section: str,
+        payload: Dict[str, Any],
+        *,
+        frozen_sections: Optional[set[str]] = None,
+    ) -> Dict[str, Any]:
         updated = copy.deepcopy(document)
+        frozen = frozen_sections or set(updated.get("status", {}).get("frozen_sections", []) or [])
         if section == "identity":
             updated["identity"].update({
                 "name": payload.get("name", updated["identity"]["name"]),
@@ -369,10 +504,19 @@ class CharacterStudioService:
             })
             updated["meta"]["title"] = updated["identity"]["name"]
         elif section == "greetings":
-            updated["coreMessages"]["first_message"] = payload.get("first_message", updated["coreMessages"]["first_message"])
-            alternates = payload.get("alternate_greetings", updated["coreMessages"]["alternate_greetings"])
+            core_messages = payload.get("coreMessages", payload)
+            updated["coreMessages"]["first_message"] = core_messages.get("first_message", updated["coreMessages"]["first_message"])
+            updated["coreMessages"]["message_example"] = core_messages.get("message_example", updated["coreMessages"]["message_example"])
+            updated["coreMessages"]["system_prompt"] = core_messages.get("system_prompt", updated["coreMessages"]["system_prompt"])
+            updated["coreMessages"]["post_history_instructions"] = core_messages.get("post_history_instructions", updated["coreMessages"]["post_history_instructions"])
+            updated["coreMessages"]["creator_notes"] = core_messages.get("creator_notes", updated["coreMessages"]["creator_notes"])
+            updated["coreMessages"]["character_version"] = core_messages.get("character_version", updated["coreMessages"]["character_version"])
+            alternates = core_messages.get("alternate_greetings", updated["coreMessages"]["alternate_greetings"])
             updated["coreMessages"]["alternate_greetings"] = alternates if isinstance(alternates, list) else []
         elif section == "lorebook":
+            lorebook = payload.get("lorebook", payload)
+            if isinstance(lorebook, dict):
+                updated["lorebook"]["name"] = lorebook.get("name", updated["lorebook"]["name"])
             entries = payload.get("entries", payload.get("lorebook", {}).get("entries", []))
             if isinstance(entries, list):
                 updated["lorebook"]["entries"] = entries
@@ -391,6 +535,25 @@ class CharacterStudioService:
                 updated["identity"].update(identity)
             if isinstance(core_messages, dict):
                 updated["coreMessages"].update(core_messages)
+        elif section == "full":
+            identity = payload.get("identity")
+            core_messages = payload.get("coreMessages")
+            lorebook = payload.get("lorebook")
+            if isinstance(identity, dict) and "identity" not in frozen:
+                updated["identity"].update(identity)
+                updated["meta"]["title"] = updated["identity"]["name"]
+            if isinstance(core_messages, dict) and "greetings" not in frozen:
+                updated["coreMessages"].update(core_messages)
+            if isinstance(lorebook, dict) and "lorebook" not in frozen:
+                updated["lorebook"]["name"] = lorebook.get("name", updated["lorebook"]["name"])
+                if isinstance(lorebook.get("entries"), list):
+                    updated["lorebook"]["entries"] = lorebook["entries"]
+            regex_scripts = payload.get("regexScripts")
+            if isinstance(regex_scripts, list) and "regex" not in frozen:
+                updated["regexScripts"] = regex_scripts
+            state_tasks = payload.get("stateTasks")
+            if isinstance(state_tasks, list) and "state-tasks" not in frozen:
+                updated["stateTasks"] = state_tasks
         elif section == "review":
             updated.setdefault("exportArtifacts", {})
             updated["exportArtifacts"]["last_review"] = {
@@ -555,28 +718,30 @@ class CharacterStudioService:
         if not document:
             raise ValueError("文档不存在")
         session = await self.store.load_preview_session(doc_id)
-        context = build_agent_context(document, session)
+        compressed_context = await self._ensure_compressed_context()
+        context = build_agent_context(document, session, compressed_context)
         prompt = (
             "你是 Manga Insight Character Studio 的角色卡助手。"
             "你可以审查角色卡、建议世界书、建议问候语、建议正则脚本和状态任务。"
             "如需修改，请输出 ```json:patch 代码块。"
-            "\n\n当前文档摘要:\n"
+            "\n\n上下文如下：\n"
             + context
             + "\n\n用户请求:\n"
             + message
         )
-        response_text = "我建议先补充问候语和世界书条目。"
         client = self._create_chat_client()
-        if client:
+        if not client:
+            raise ValueError("未配置可用的 AI 对话模型，无法使用卡片助手。")
+        try:
+            response_text = await client.generate(prompt=prompt, temperature=0.6)
+        except Exception as exc:
+            logger.error("Agent 调用失败: %s", exc, exc_info=True)
+            raise ValueError(f"卡片助手调用失败：{exc}") from exc
+        finally:
             try:
-                response_text = await client.generate(prompt=prompt, temperature=0.6)
-            except Exception as exc:
-                logger.warning("Agent 调用失败，回退默认回复: %s", exc)
-            finally:
-                try:
-                    await client.close()
-                except Exception:
-                    pass
+                await client.close()
+            except Exception:
+                pass
         return {
             "content": response_text,
             "context": context,

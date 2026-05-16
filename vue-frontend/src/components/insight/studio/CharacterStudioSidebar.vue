@@ -4,7 +4,7 @@
       <div class="toolbar-copy">
         <div class="kicker">导航与资源</div>
         <h2>当前书籍角色工坊</h2>
-        <p>从分析候选创建角色，或直接空白新建、导入外部角色卡。</p>
+        <p>从分析候选锁定角色名，再用 AI 补全整卡；也可以直接空白新建或导入外部角色卡。候选仅预填角色名，不再直接抽离压缩后的分析字段。</p>
       </div>
 
       <div class="toolbar-actions">

@@ -72,6 +72,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const lastSyncedFingerprint = ref('')
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
+  let previewStateVersion = 0
+  let activePreviewRequestId = 0
+  let activeResetRequestId = 0
 
   const canUndoPatch = computed(() => patchSnapshot.value !== null)
   const editorPendingState = computed<CharacterStudioEditorPendingState>(() => ({
@@ -111,6 +114,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (isImportingWorldbook.value) return '正在导入世界书'
     if (generatingSection.value) {
       return {
+        full: '正在补全整张角色卡',
         identity: '正在补全角色设定',
         review: '正在审查当前角色',
         translate: '正在翻译整卡',
@@ -160,10 +164,37 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     })
   })
 
+  function invalidatePreviewState() {
+    previewStateVersion += 1
+    return previewStateVersion
+  }
+
+  function resetWorkspaceState() {
+    currentDocument.value = null
+    markDocumentSynced(null)
+    previewSession.value = null
+    diagnostics.value = null
+    agentMessages.value = []
+    agentHtmlPreview.value = ''
+    pendingAgentPatch.value = null
+    patchSnapshot.value = null
+    activeEditorTab.value = 'overview'
+    activeScriptTab.value = 'regex'
+    invalidatePreviewState()
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+    }
+  }
+
   async function loadWorkspace(nextBookId: string) {
     if (!nextBookId) return
+    const isBookChanged = !!bookId.value && bookId.value !== nextBookId
     isWorkspaceLoading.value = true
     errorMessage.value = ''
+    if (isBookChanged) {
+      resetWorkspaceState()
+    }
     bookId.value = nextBookId
     try {
       const response = await getCharacterStudioIndex(nextBookId)
@@ -173,6 +204,12 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       documents.value = response.documents || []
       candidates.value = response.candidates || []
       hasTimeline.value = response.has_timeline !== false
+      if (
+        currentDocument.value &&
+        !documents.value.some(item => item.id === currentDocument.value?.id)
+      ) {
+        resetWorkspaceState()
+      }
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '加载角色工坊失败'
     } finally {
@@ -182,14 +219,17 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function openDocument(docId: string) {
     if (!bookId.value || !docId) return
+    const requestedBookId = bookId.value
+    invalidatePreviewState()
     isDocumentLoading.value = true
     openingDocumentId.value = docId
     clearErrorMessage()
     try {
-      const response = await getCharacterStudioDocument(bookId.value, docId)
+      const response = await getCharacterStudioDocument(requestedBookId, docId)
       if (!response.success || !response.document) {
         throw new Error(response.error || '加载角色文档失败')
       }
+      if (bookId.value !== requestedBookId) return
       await runWithoutAutosave(async () => {
         currentDocument.value = response.document
         markDocumentSynced(response.document)
@@ -401,12 +441,24 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function resetPreview() {
     if (!bookId.value || !currentDocument.value) return
+    const requestedBookId = bookId.value
+    const requestedDocId = currentDocument.value.id
+    const requestVersion = invalidatePreviewState()
+    const requestId = activeResetRequestId + 1
+    activeResetRequestId = requestId
     isResettingPreview.value = true
     clearErrorMessage()
     try {
-      const response = await resetCharacterStudioPreview(bookId.value, currentDocument.value.id)
+      const response = await resetCharacterStudioPreview(requestedBookId, requestedDocId)
       if (!response.success) {
         throw new Error(response.error || '重置预览失败')
+      }
+      if (
+        requestVersion !== previewStateVersion ||
+        bookId.value !== requestedBookId ||
+        currentDocument.value?.id !== requestedDocId
+      ) {
+        return
       }
       previewSession.value = {
         doc_id: response.doc_id,
@@ -417,18 +469,32 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     } catch (error) {
       throw createActionError(error, '重置预览失败')
     } finally {
-      isResettingPreview.value = false
+      if (requestId === activeResetRequestId) {
+        isResettingPreview.value = false
+      }
     }
   }
 
   async function sendPreviewMessage(message: string) {
     if (!bookId.value || !currentDocument.value || !message.trim()) return
+    const requestedBookId = bookId.value
+    const requestedDocId = currentDocument.value.id
+    const requestVersion = invalidatePreviewState()
+    const requestId = activePreviewRequestId + 1
+    activePreviewRequestId = requestId
     isPreviewing.value = true
     clearErrorMessage()
     try {
-      const response = await previewCharacterStudioChat(bookId.value, currentDocument.value.id, message)
+      const response = await previewCharacterStudioChat(requestedBookId, requestedDocId, message)
       if (!response.success) {
         throw new Error(response.error || '预览聊天失败')
+      }
+      if (
+        requestVersion !== previewStateVersion ||
+        bookId.value !== requestedBookId ||
+        currentDocument.value?.id !== requestedDocId
+      ) {
+        return
       }
       previewSession.value = {
         doc_id: response.doc_id,
@@ -439,7 +505,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     } catch (error) {
       throw createActionError(error, '预览聊天失败')
     } finally {
-      isPreviewing.value = false
+      if (requestId === activePreviewRequestId) {
+        isPreviewing.value = false
+      }
     }
   }
 

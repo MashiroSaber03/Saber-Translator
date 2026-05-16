@@ -24,8 +24,6 @@ describe('CharacterStudioSidebar pending feedback', () => {
             name: '候选角色',
             aliases: [],
             first_appearance: 1,
-            description: '',
-            arc: '',
             dialogue_count: 2,
             has_dialogues: true,
             sample_pages: [1],
@@ -46,5 +44,6 @@ describe('CharacterStudioSidebar pending feedback', () => {
     expect(wrapper.text()).toContain('导入中...')
     expect(wrapper.text()).toContain('打开中...')
     expect(wrapper.text()).toContain('创建中...')
+    expect(wrapper.text()).toContain('候选仅预填角色名')
   })
 })

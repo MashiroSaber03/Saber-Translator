@@ -114,4 +114,25 @@ describe('CharacterStudioPreview layout state', () => {
     expect(undoButton).toBeDefined()
     expect((undoButton!.element as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('disables preview reset while a preview reply is still being generated', () => {
+    const wrapper = mount(CharacterStudioPreview, {
+      props: {
+        document: documentStub,
+        session: sessionStub,
+        previewing: true,
+        agentBusy: false,
+        resettingPreview: false,
+        agentMessages: [],
+        pendingPatch: null,
+        agentHtmlPreview: '',
+        canUndoPatch: false,
+      },
+    })
+
+    const buttons = wrapper.findAll('button')
+    const resetButton = buttons.find(button => button.text().includes('重置会话'))
+    expect(resetButton).toBeDefined()
+    expect((resetButton!.element as HTMLButtonElement).disabled).toBe(true)
+  })
 })

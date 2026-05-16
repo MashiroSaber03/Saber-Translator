@@ -1,12 +1,10 @@
 import asyncio
-import io
+import json
 import os
-import shutil
 import sys
 import tempfile
 import types
 import unittest
-import uuid
 import importlib.util
 from unittest import mock
 
@@ -249,8 +247,23 @@ class CharacterStudioPreviewTests(unittest.TestCase):
         self.assertIn("doc_id", session)
         self.assertEqual(session["doc_id"], "doc_alpha")
 
-    def test_generate_review_persists_last_review_payload(self) -> None:
+    def test_generate_review_persists_last_review_payload_using_compressed_context(self) -> None:
         from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def generate(self, prompt: str, temperature: float = 0.5):
+                self.prompts.append(prompt)
+                return json.dumps({
+                    "summary": "当前角色卡基本贴合剧情，但世界书覆盖还不够。",
+                    "issues": ["缺少对中盘冲突升级的明确刻画"],
+                    "suggestions": ["补一条与情报统筹职责相关的世界书条目"],
+                }, ensure_ascii=False)
+
+            async def close(self):
+                return None
 
         with tempfile.TemporaryDirectory() as temp_dir:
             insight_dir = os.path.join(temp_dir, "insight")
@@ -262,14 +275,273 @@ class CharacterStudioPreviewTests(unittest.TestCase):
                 service = CharacterStudioService("book-demo")
                 document = _demo_document()
                 asyncio.run(service.store.save_document(document))
+                asyncio.run(service.storage.save_compressed_context({
+                    "context": "压缩摘要强调测试角色在中盘承担统筹与风险评估职责，并多次主导关键抉择。",
+                    "source": "chapters",
+                    "group_count": 2,
+                    "char_count": 40,
+                }))
 
-                with mock.patch.object(service, "_create_chat_client", return_value=None):
+                fake_client = FakeClient()
+                with mock.patch.object(service, "_create_chat_client", return_value=fake_client):
                     updated = asyncio.run(service.generate_section(document["id"], "review"))
 
                 self.assertIn("last_review", updated["exportArtifacts"])
                 self.assertIn("summary", updated["exportArtifacts"]["last_review"])
+                self.assertEqual(updated["exportArtifacts"]["last_review"]["summary"], "当前角色卡基本贴合剧情，但世界书覆盖还不够。")
                 reloaded = asyncio.run(service.store.load_document(document["id"]))
                 self.assertIn("last_review", reloaded["exportArtifacts"])
+                self.assertTrue(any("压缩摘要强调测试角色在中盘承担统筹与风险评估职责" in prompt for prompt in fake_client.prompts))
+                self.assertTrue(any("目标角色名" in prompt for prompt in fake_client.prompts))
+                self.assertTrue(any("当前角色卡内容（审查对象）" in prompt for prompt in fake_client.prompts))
+
+    def test_create_document_from_candidate_only_prefills_name(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                asyncio.run(service.storage.save_timeline({
+                    "mode": "enhanced",
+                    "characters": [
+                        {
+                            "name": "候选角色",
+                            "aliases": ["别称"],
+                            "description": "旧简介",
+                            "arc": "旧成长线",
+                            "relationships": [{"character": "同伴", "relation": "队友"}],
+                            "key_moments": [{"page": 3, "event": "登场"}],
+                        }
+                    ],
+                }))
+                asyncio.run(service.storage.save_overview({
+                    "book_summary": "这是一本书的概要。",
+                }))
+
+                created = asyncio.run(service.create_document(candidate_name="候选角色"))
+
+                self.assertEqual(created["origin"]["type"], "analysis")
+                self.assertEqual(created["origin"]["source_character"], "候选角色")
+                self.assertEqual(created["identity"]["name"], "候选角色")
+                self.assertEqual(created["meta"]["title"], "候选角色")
+                self.assertEqual(created["identity"]["aliases"], [])
+                self.assertEqual(created["identity"]["description"], "")
+                self.assertEqual(created["identity"]["personality"], "")
+                self.assertEqual(created["identity"]["scenario"], "")
+                self.assertEqual(created["meta"]["tags"], [])
+                self.assertEqual(created["coreMessages"]["first_message"], "")
+                self.assertEqual(created["coreMessages"]["alternate_greetings"], [])
+                self.assertEqual(created["lorebook"]["entries"], [])
+                self.assertEqual(created["regexScripts"], [])
+                self.assertEqual(created["stateTasks"], [])
+                self.assertEqual(created["grounding"]["timeline_mode"], "")
+                self.assertEqual(created["grounding"]["sample_pages"], [])
+                self.assertEqual(created["grounding"]["relationships"], [])
+                self.assertEqual(created["grounding"]["key_moments"], [])
+
+    def test_generate_full_uses_compressed_context_and_updates_all_sections(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def generate(self, prompt: str, temperature: float = 0.5):
+                self.prompts.append(prompt)
+                return json.dumps({
+                    "identity": {
+                        "name": "候选角色",
+                        "description": "基于压缩摘要整理出的角色简介",
+                        "personality": "谨慎、聪明、带一点疏离感",
+                        "scenario": "故事进入中盘，冲突不断升级。",
+                    },
+                    "coreMessages": {
+                        "first_message": "我是候选角色。先同步一下局势。",
+                        "message_example": "<START>\n{{user}}: 现在情况如何？\n{{char}}: 先别慌，我们按计划来。",
+                        "alternate_greetings": [
+                            "你终于来了，我们直接进入正题。",
+                            "先确认情报，再决定下一步。"
+                        ],
+                        "system_prompt": "保持角色克制而清醒。",
+                        "post_history_instructions": "回应时维持剧情连续性。",
+                        "creator_notes": "来自压缩摘要的整卡补全。",
+                        "character_version": "2.1.0",
+                    },
+                    "lorebook": {
+                        "entries": [
+                            {
+                                "id": "entry_full",
+                                "comment": "角色基底",
+                                "keys": ["候选角色"],
+                                "secondary_keys": [],
+                                "content": "他总是先评估风险再行动。",
+                                "enabled": True,
+                                "constant": False,
+                                "selective": True,
+                                "priority": 120,
+                                "position": "before_char",
+                                "depth": 4,
+                                "children": [],
+                            }
+                        ]
+                    },
+                    "regexScripts": [
+                        {
+                            "id": "regex_full",
+                            "scriptName": "隐藏状态块",
+                            "findRegex": "<state>[\\s\\S]*?</state>",
+                            "replaceString": "",
+                            "placement": [2],
+                            "markdownOnly": False,
+                            "promptOnly": False,
+                            "runOnEdit": True,
+                            "disabled": False,
+                        }
+                    ],
+                    "stateTasks": [
+                        {
+                            "id": "task_full",
+                            "name": "初始化关系值",
+                            "triggerTiming": "initialization",
+                            "interval": 0,
+                            "commands": "<<taskjs>>\nawait STscript('/setvar key=trust_score 35');\n<</taskjs>>",
+                            "disabled": False,
+                        }
+                    ],
+                }, ensure_ascii=False)
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document("候选角色")
+                document["identity"]["description"] = ""
+                document["identity"]["personality"] = ""
+                document["identity"]["scenario"] = ""
+                document["coreMessages"]["first_message"] = ""
+                document["coreMessages"]["alternate_greetings"] = []
+                document["lorebook"]["entries"] = []
+                document["regexScripts"] = []
+                document["stateTasks"] = []
+                asyncio.run(service.store.save_document(document))
+                asyncio.run(service.storage.save_compressed_context({
+                    "context": "压缩摘要里明确提到候选角色在中盘承担情报统筹职责，并多次在危机中保持冷静。",
+                    "source": "chapters",
+                    "group_count": 3,
+                    "char_count": 42,
+                }))
+
+                fake_client = FakeClient()
+                with mock.patch.object(service, "_create_chat_client", return_value=fake_client):
+                    updated = asyncio.run(service.generate_section(document["id"], "full"))
+
+                self.assertEqual(updated["identity"]["description"], "基于压缩摘要整理出的角色简介")
+                self.assertEqual(updated["coreMessages"]["first_message"], "我是候选角色。先同步一下局势。")
+                self.assertEqual(updated["lorebook"]["entries"][0]["comment"], "角色基底")
+                self.assertEqual(updated["regexScripts"][0]["scriptName"], "隐藏状态块")
+                self.assertEqual(updated["stateTasks"][0]["name"], "初始化关系值")
+                self.assertTrue(any("压缩摘要里明确提到候选角色" in prompt for prompt in fake_client.prompts))
+
+    def test_generate_full_raises_when_llm_returns_invalid_json_and_document_stays_unchanged(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeClient:
+            async def generate(self, prompt: str, temperature: float = 0.5):
+                return "这不是 JSON"
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document("候选角色")
+                document["identity"]["description"] = ""
+                asyncio.run(service.store.save_document(document))
+                asyncio.run(service.storage.save_compressed_context({
+                    "context": "压缩摘要内容",
+                    "source": "chapters",
+                    "group_count": 1,
+                    "char_count": 6,
+                }))
+
+                with mock.patch.object(service, "_create_chat_client", return_value=FakeClient()):
+                    with self.assertRaises(ValueError):
+                        asyncio.run(service.generate_section(document["id"], "full"))
+
+                reloaded = asyncio.run(service.store.load_document(document["id"]))
+                self.assertEqual(reloaded["identity"]["description"], "")
+
+    def test_run_agent_uses_compressed_context_with_card_and_preview_runtime_context(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def generate(self, prompt: str, temperature: float = 0.6):
+                self.prompts.append(prompt)
+                return "建议补一条世界书，并输出一个 patch。\n```json:patch\n{\"set\":{\"identity.description\":\"补强后的简介\"}}\n```"
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+                asyncio.run(service.storage.save_compressed_context({
+                    "context": "压缩摘要指出测试角色在关键危机中总是先评估风险，再统一调度同伴行动。",
+                    "source": "chapters",
+                    "group_count": 2,
+                    "char_count": 39,
+                }))
+                asyncio.run(service.store.save_preview_session(document["id"], {
+                    "doc_id": document["id"],
+                    "messages": [
+                        {"role": "user", "content": "现在局势怎么样？"},
+                        {"role": "assistant", "content": "先别急，我正在梳理风险。"},
+                    ],
+                    "variables": {"trust_score": 44},
+                    "log": [{"type": "task", "name": "初始化状态"}],
+                }))
+
+                fake_client = FakeClient()
+                with mock.patch.object(service, "_create_chat_client", return_value=fake_client):
+                    result = asyncio.run(service.run_agent(document["id"], "请审查这张卡并给出 patch 建议"))
+
+                self.assertIn("压缩摘要指出测试角色在关键危机中总是先评估风险", result["context"])
+                self.assertIn("当前角色卡", result["context"])
+                self.assertIn("最近对话", result["context"])
+                self.assertIn("trust_score", result["context"])
+                self.assertIn("最近命中/执行日志", result["context"])
+                self.assertIn("初始化状态", result["context"])
+                self.assertIn("压缩摘要指出测试角色在关键危机中总是先评估风险", fake_client.prompts[0])
+                self.assertIn("唯一外部事实来源", fake_client.prompts[0])
+                self.assertIn("请审查这张卡并给出 patch 建议", fake_client.prompts[0])
 
     def test_preview_chat_applies_runtime_rules_for_tasks_regex_and_lorebook(self) -> None:
         from src.core.manga_insight.character_studio.service import CharacterStudioService

@@ -1,20 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioView from '@/views/CharacterStudioView.vue'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 
+const pushMock = vi.fn()
+const replaceMock = vi.fn()
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
+    push: pushMock,
+    replace: replaceMock,
   }),
 }))
 
 describe('CharacterStudioView workspace shell', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    pushMock.mockReset()
+    replaceMock.mockReset()
   })
 
   it('renders dedicated scroll containers for the three-column workspace', async () => {
@@ -95,5 +100,56 @@ describe('CharacterStudioView workspace shell', () => {
     })
 
     expect(wrapper.text()).toContain('导出失败：测试错误')
+  })
+
+  it('falls back to the first available document when requested docId cannot be opened', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+
+    bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
+    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockImplementation(async () => {
+      studioStore.documents = [
+        {
+          id: 'doc_alpha',
+          title: '阿尔法',
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-15T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+          sample_pages: [],
+        },
+      ]
+    })
+    studioStore.openDocument = vi.fn()
+      .mockRejectedValueOnce(new Error('文档不存在'))
+      .mockResolvedValueOnce(undefined)
+
+    mount(CharacterStudioView, {
+      props: {
+        bookId: 'book-demo',
+        docId: 'missing-doc',
+      },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(studioStore.openDocument).toHaveBeenCalledTimes(2)
+    expect(studioStore.openDocument).toHaveBeenNthCalledWith(1, 'missing-doc')
+    expect(studioStore.openDocument).toHaveBeenNthCalledWith(2, 'doc_alpha')
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'character-studio',
+      query: { book: 'book-demo', doc: 'doc_alpha' },
+    })
   })
 })

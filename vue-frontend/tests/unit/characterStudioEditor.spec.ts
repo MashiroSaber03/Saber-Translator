@@ -137,6 +137,16 @@ describe('CharacterStudioEditor tabs', () => {
     expect(currentValue.value).toBe('新的角色简介')
   })
 
+  it('keeps meta title in sync when identity name changes', async () => {
+    const wrapper = mountHarness()
+
+    await wrapper.find('[data-tab="character"]').trigger('click')
+    const nameInput = wrapper.find('input[type="text"]')
+    await nameInput.setValue('新角色名')
+
+    expect(wrapper.find('.hero-copy h2').text()).toBe('新角色名')
+  })
+
   it('shows persisted review summary when latest review exists', () => {
     document.exportArtifacts = {
       last_review: {
@@ -184,6 +194,42 @@ describe('CharacterStudioEditor tabs', () => {
 
     expect(wrapper.text()).toContain('补全中...')
     expect(wrapper.text()).toContain('诊断中...')
+  })
+
+  it('shows full card generation entry and loading copy', () => {
+    const idleWrapper = mountHarness()
+    expect(idleWrapper.text()).toContain('AI 一键补全整卡')
+
+    const wrapper = mount(defineComponent({
+      components: { CharacterStudioEditor },
+      setup() {
+        return () => h(CharacterStudioEditor, {
+          document,
+          avatarUrl: '',
+          diagnostics: null,
+          activeTab: 'overview',
+          activeScriptTab: 'regex',
+          pendingState: {
+            generatingSection: 'full',
+            validating: false,
+            importingWorldbook: false,
+            deleting: false,
+            saving: false,
+            downloadingFormat: null,
+          },
+        })
+      },
+    }), {
+      global: {
+        stubs: {
+          LorebookTreeEditor: {
+            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('整卡补全中...')
   })
 
   it('renders freeze settings as aligned rows with separate label and control cells', () => {

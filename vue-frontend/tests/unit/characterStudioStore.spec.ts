@@ -27,6 +27,19 @@ const demoDocument = {
   exportArtifacts: {},
 }
 
+const candidateDocument = {
+  ...demoDocument,
+  id: 'doc_candidate',
+  origin: { type: 'analysis', source_character: '候选角色', source_pages: [] },
+  meta: { ...demoDocument.meta, title: '候选角色', tags: [] },
+  identity: { ...demoDocument.identity, name: '候选角色', aliases: [], description: '', personality: '', scenario: '' },
+  coreMessages: { ...demoDocument.coreMessages, first_message: '', alternate_greetings: [] },
+  lorebook: { name: '候选角色世界书', entries: [] },
+  regexScripts: [],
+  stateTasks: [],
+  grounding: { timeline_mode: '', sample_pages: [], relationships: [], key_moments: [] },
+}
+
 const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
   success: true,
   book_id: 'book-demo',
@@ -48,13 +61,9 @@ const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
       name: '阿尔法',
       aliases: [],
       first_appearance: 1,
-      description: '测试角色',
-      arc: '成长',
       dialogue_count: 2,
       has_dialogues: true,
       sample_pages: [1],
-      relationship_count: 0,
-      key_moment_count: 0,
     },
   ],
   count: 1,
@@ -86,11 +95,33 @@ const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookI
   },
 }))
 
+const previewCharacterStudioChatMock = vi.fn()
+const resetCharacterStudioPreviewMock = vi.fn()
+const createCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
+  success: true,
+  document: candidateDocument,
+})
+const generateCharacterStudioSectionMock = vi.fn()
+
 vi.mock('@/api/characterStudio', () => ({
+  createCharacterStudioDocument: createCharacterStudioDocumentMock,
+  generateCharacterStudioSection: generateCharacterStudioSectionMock,
   getCharacterStudioIndex: getCharacterStudioIndexMock,
   getCharacterStudioDocument: getCharacterStudioDocumentMock,
   saveCharacterStudioDocument: saveCharacterStudioDocumentMock,
+  previewCharacterStudioChat: previewCharacterStudioChatMock,
+  resetCharacterStudioPreview: resetCharacterStudioPreviewMock,
 }))
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
 
 describe('characterStudioStore', () => {
   beforeEach(() => {
@@ -99,6 +130,50 @@ describe('characterStudioStore', () => {
     getCharacterStudioIndexMock.mockClear()
     getCharacterStudioDocumentMock.mockClear()
     saveCharacterStudioDocumentMock.mockClear()
+    createCharacterStudioDocumentMock.mockClear()
+    generateCharacterStudioSectionMock.mockReset()
+    previewCharacterStudioChatMock.mockReset()
+    resetCharacterStudioPreviewMock.mockReset()
+    getCharacterStudioIndexMock.mockResolvedValue({
+      success: true,
+      book_id: 'book-demo',
+      documents: [
+        {
+          id: 'doc_alpha',
+          title: '阿尔法',
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-15T00:00:00',
+          tags: ['主角'],
+          is_favorite: false,
+          has_avatar: false,
+          sample_pages: [1],
+        },
+      ],
+      candidates: [
+        {
+          name: '阿尔法',
+          aliases: [],
+          first_appearance: 1,
+          dialogue_count: 2,
+          has_dialogues: true,
+          sample_pages: [1],
+        },
+      ],
+      count: 1,
+    })
+    getCharacterStudioDocumentMock.mockResolvedValue({
+      success: true,
+      document: demoDocument,
+      preview_session: {
+        doc_id: 'doc_alpha',
+        messages: [
+          { role: 'assistant', content: '已恢复的预览消息' },
+        ],
+        variables: { trust_score: 88 },
+        log: [{ type: 'lorebook', comment: '恢复命中' }],
+      },
+    })
   })
 
   it('loads index payload for a book', async () => {
@@ -194,5 +269,131 @@ describe('characterStudioStore', () => {
     await vi.advanceTimersByTimeAsync(2000)
 
     expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears stale document state when loading a different book workspace', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    getCharacterStudioIndexMock.mockResolvedValueOnce({
+      success: true,
+      book_id: 'book-other',
+      documents: [],
+      candidates: [],
+      count: 0,
+      has_timeline: false,
+    })
+
+    await store.loadWorkspace('book-other')
+
+    expect(store.bookId).toBe('book-other')
+    expect(store.currentDocument).toBeNull()
+    expect(store.previewSession).toBeNull()
+    expect(store.diagnostics).toBeNull()
+    expect(store.agentMessages).toEqual([])
+    expect(store.pendingAgentPatch).toBeNull()
+  })
+
+  it('ignores stale preview replies that resolve after a preview reset', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const deferredPreview = createDeferred<{
+      success: boolean
+      doc_id: string
+      messages: Array<{ role: 'user' | 'assistant'; content: string }>
+      variables: Record<string, unknown>
+      log: Array<Record<string, unknown>>
+    }>()
+
+    previewCharacterStudioChatMock.mockReturnValueOnce(deferredPreview.promise)
+    resetCharacterStudioPreviewMock.mockResolvedValueOnce({
+      success: true,
+      doc_id: 'doc_alpha',
+      messages: [],
+      variables: {},
+      log: [],
+    })
+
+    const previewPromise = store.sendPreviewMessage('你好')
+    await Promise.resolve()
+    await store.resetPreview()
+
+    deferredPreview.resolve({
+      success: true,
+      doc_id: 'doc_alpha',
+      messages: [{ role: 'assistant', content: '这是一条过期回复' }],
+      variables: { trust_score: 42 },
+      log: [{ type: 'task', name: '过期任务' }],
+    })
+
+    await previewPromise
+
+    expect(store.previewSession?.messages).toEqual([])
+    expect(store.previewSession?.variables).toEqual({})
+    expect(store.previewSession?.log).toEqual([])
+  })
+
+  it('creates a candidate document without prefilled card content', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    getCharacterStudioIndexMock.mockResolvedValue({
+      success: true,
+      book_id: 'book-demo',
+      documents: [
+        {
+          id: 'doc_candidate',
+          title: '候选角色',
+          origin: 'analysis',
+          source_character: '候选角色',
+          updated_at: '2026-05-15T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+          sample_pages: [],
+        },
+      ],
+      candidates: [],
+      count: 1,
+    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce({
+      success: true,
+      document: candidateDocument,
+      preview_session: {
+        doc_id: 'doc_candidate',
+        messages: [],
+        variables: {},
+        log: [],
+      },
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.createDocumentFromCandidate('候选角色')
+
+    expect(store.currentDocument?.identity.name).toBe('候选角色')
+    expect(store.currentDocument?.identity.description).toBe('')
+    expect(store.currentDocument?.coreMessages.first_message).toBe('')
+    expect(store.currentDocument?.lorebook.entries).toEqual([])
+  })
+
+  it('shows dedicated progress copy for full card generation', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    generateCharacterStudioSectionMock.mockImplementationOnce(async () => new Promise(() => {}))
+    void store.generateSection('full')
+    await Promise.resolve()
+
+    expect(store.activeActionLabel).toBe('正在补全整张角色卡')
   })
 })
