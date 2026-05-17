@@ -140,7 +140,7 @@ export function buildCharacterStudioPatchSummary(
   const worldbookItems = [
     ...toArray(patch.worldbook_add).map(item => {
       const payload = isRecord(item) ? item : {}
-      const label = String(payload.comment || payload.name || '新世界书条目')
+      const label = String(payload.comment || '新世界书条目')
       return `新增「${label}」`
     }),
     ...toArray(patch.worldbook_update).filter((item): item is CharacterStudioPatchUpdateOp<CharacterStudioWorldbookChanges> => isRecord(item) && typeof item.id === 'string' && isRecord(item.changes)).map(item => summarizeWorldbookUpdate(item, document)),
