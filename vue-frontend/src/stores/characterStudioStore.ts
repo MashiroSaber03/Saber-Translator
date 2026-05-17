@@ -25,7 +25,9 @@ import {
   switchCharacterStudioChatSession,
   validateCharacterStudioDocument,
 } from '@/api/characterStudio'
+import { applyCharacterStudioAgentPatch } from '@/stores/characterStudioPatch'
 import type {
+  CharacterStudioAgentPatchV2,
   CharacterStudioChatAttachment,
   CharacterStudioChatMessage,
   CharacterStudioChatSession,
@@ -63,7 +65,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const diagnostics = ref<ExportDiagnostic | null>(null)
   const agentMessages = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const agentHtmlPreview = ref('')
-  const pendingAgentPatch = ref<Record<string, unknown> | null>(null)
+  const pendingAgentPatch = ref<CharacterStudioAgentPatchV2 | null>(null)
   const activeEditorTab = ref<'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'>('overview')
   const activeScriptTab = ref<'regex' | 'tasks'>('regex')
   const resourcePanelOpen = ref(false)
@@ -485,11 +487,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  function extractPatch(content: string): Record<string, unknown> | null {
+  function extractPatch(content: string): CharacterStudioAgentPatchV2 | null {
     const match = content.match(/```json:patch\s*([\s\S]*?)```/i)
     if (!match) return null
     try {
-      return JSON.parse(match[1]!.trim()) as Record<string, unknown>
+      return JSON.parse(match[1]!.trim()) as CharacterStudioAgentPatchV2
     } catch {
       return null
     }
@@ -500,97 +502,26 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     return match?.[1]?.trim() || ''
   }
 
-  function setByPath(target: Record<string, unknown>, path: string, value: unknown) {
-    const keys = path.split('.')
-    let current: Record<string, unknown> = target
-    for (let i = 0; i < keys.length - 1; i += 1) {
-      const key = keys[i]!
-      const next = current[key]
-      if (!next || typeof next !== 'object') {
-        current[key] = {}
-      }
-      current = current[key] as Record<string, unknown>
-    }
-    current[keys[keys.length - 1]!] = value
-  }
-
   function cloneDocument(document: CharacterStudioDocument): CharacterStudioDocument {
     return JSON.parse(JSON.stringify(document)) as CharacterStudioDocument
   }
 
   function applyPendingPatch() {
     if (!currentDocument.value || !pendingAgentPatch.value) return
-    patchSnapshot.value = cloneDocument(currentDocument.value)
-    const nextDocument = cloneDocument(currentDocument.value)
-    const patch = pendingAgentPatch.value
-    const frozenSections = new Set(nextDocument.status.frozen_sections || [])
-    const setPayload = patch.set
-    if (setPayload && typeof setPayload === 'object' && !Array.isArray(setPayload)) {
-      Object.entries(setPayload as Record<string, unknown>).forEach(([path, value]) => {
-        const section = path.split('.')[0]
-        if (
-          (section === 'identity' && frozenSections.has('identity')) ||
-          (section === 'coreMessages' && frozenSections.has('greetings')) ||
-          (section === 'lorebook' && frozenSections.has('lorebook')) ||
-          (section === 'regexScripts' && frozenSections.has('regex')) ||
-          (section === 'stateTasks' && frozenSections.has('state-tasks'))
-        ) {
-          return
-        }
-        setByPath(nextDocument as unknown as Record<string, unknown>, path, value)
-      })
-      const patchedName = String(nextDocument.identity?.name || '')
-      if (patchedName.trim()) {
-        nextDocument.meta.title = patchedName
+    clearErrorMessage()
+    try {
+      const nextDocument = applyCharacterStudioAgentPatch(currentDocument.value, pendingAgentPatch.value)
+      if (buildAutosaveFingerprint(nextDocument) === buildAutosaveFingerprint(currentDocument.value)) {
+        pendingAgentPatch.value = null
+        return
       }
+      patchSnapshot.value = cloneDocument(currentDocument.value)
+      currentDocument.value = nextDocument
+      pendingAgentPatch.value = null
+      scheduleAutosave()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '应用 patch 失败'
     }
-    if (typeof patch.greeting_add === 'string' && !frozenSections.has('greetings')) {
-      nextDocument.coreMessages.alternate_greetings.push(patch.greeting_add)
-    }
-    if (patch.worldbook_add && typeof patch.worldbook_add === 'object' && !Array.isArray(patch.worldbook_add) && !frozenSections.has('lorebook')) {
-      nextDocument.lorebook.entries.push({
-        id: `entry_${Date.now()}`,
-        comment: String((patch.worldbook_add as Record<string, unknown>).comment || '新条目'),
-        keys: Array.isArray((patch.worldbook_add as Record<string, unknown>).keys) ? ((patch.worldbook_add as Record<string, unknown>).keys as string[]) : [],
-        secondary_keys: [],
-        content: String((patch.worldbook_add as Record<string, unknown>).content || ''),
-        enabled: true,
-        constant: false,
-        selective: true,
-        priority: 100,
-        position: 'before_char',
-        depth: 4,
-        children: [],
-      })
-    }
-    if (patch.regex_add && typeof patch.regex_add === 'object' && !Array.isArray(patch.regex_add) && !frozenSections.has('regex')) {
-      nextDocument.regexScripts.push({
-        id: `regex_${Date.now()}`,
-        scriptName: String((patch.regex_add as Record<string, unknown>).scriptName || '新脚本'),
-        findRegex: String((patch.regex_add as Record<string, unknown>).findRegex || ''),
-        replaceString: String((patch.regex_add as Record<string, unknown>).replaceString || ''),
-        placement: Array.isArray((patch.regex_add as Record<string, unknown>).placement)
-          ? ((patch.regex_add as Record<string, unknown>).placement as number[])
-          : [2],
-        markdownOnly: Boolean((patch.regex_add as Record<string, unknown>).markdownOnly ?? false),
-        promptOnly: Boolean((patch.regex_add as Record<string, unknown>).promptOnly ?? false),
-        runOnEdit: Boolean((patch.regex_add as Record<string, unknown>).runOnEdit ?? true),
-        disabled: Boolean((patch.regex_add as Record<string, unknown>).disabled ?? false),
-      })
-    }
-    if (patch.task_add && typeof patch.task_add === 'object' && !Array.isArray(patch.task_add) && !frozenSections.has('state-tasks')) {
-      nextDocument.stateTasks.push({
-        id: `task_${Date.now()}`,
-        name: String((patch.task_add as Record<string, unknown>).name || '新任务'),
-        triggerTiming: String((patch.task_add as Record<string, unknown>).triggerTiming || 'initialization'),
-        interval: Number((patch.task_add as Record<string, unknown>).interval || 0),
-        commands: String((patch.task_add as Record<string, unknown>).commands || ''),
-        disabled: Boolean((patch.task_add as Record<string, unknown>).disabled ?? false),
-      })
-    }
-    currentDocument.value = nextDocument
-    pendingAgentPatch.value = null
-    scheduleAutosave()
   }
 
   function undoLastPatch() {

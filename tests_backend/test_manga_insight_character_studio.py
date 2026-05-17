@@ -238,6 +238,35 @@ class CharacterStudioExportAdapterTests(unittest.TestCase):
         self.assertEqual(entry["probability"], 88)
         self.assertFalse(entry["prevent_recursion"])
 
+    def test_ensure_document_shape_backfills_missing_ids_for_existing_collections(self) -> None:
+        from src.core.manga_insight.character_studio.adapters import ensure_document_shape
+
+        document = _demo_document()
+        document["lorebook"]["entries"][0]["id"] = ""
+        document["lorebook"]["entries"][0]["children"] = [{
+            "id": "",
+            "comment": "子条目",
+            "keys": ["子项"],
+            "secondary_keys": [],
+            "content": "子条目内容",
+            "enabled": True,
+            "constant": False,
+            "selective": True,
+            "priority": 80,
+            "position": "before_char",
+            "depth": 3,
+            "children": [],
+        }]
+        document["regexScripts"][0]["id"] = ""
+        document["stateTasks"][0]["id"] = ""
+
+        normalized = ensure_document_shape(document, book_id="book-demo")
+
+        self.assertTrue(normalized["lorebook"]["entries"][0]["id"].startswith("entry_"))
+        self.assertTrue(normalized["lorebook"]["entries"][0]["children"][0]["id"].startswith("entry_"))
+        self.assertTrue(normalized["regexScripts"][0]["id"].startswith("regex_"))
+        self.assertTrue(normalized["stateTasks"][0]["id"].startswith("task_"))
+
 
 class CharacterStudioRuntimeTests(unittest.TestCase):
     def test_initialize_runtime_session_includes_doc_id(self) -> None:
@@ -901,8 +930,18 @@ class CharacterStudioRuntimeTests(unittest.TestCase):
                 self.assertIn("唯一外部事实来源", fake_client.prompts[0])
                 self.assertIn("请审查这张卡并给出 patch 建议", fake_client.prompts[0])
                 self.assertIn("worldbook_add", fake_client.prompts[0])
+                self.assertIn("worldbook_update", fake_client.prompts[0])
+                self.assertIn("worldbook_delete", fake_client.prompts[0])
                 self.assertIn("regex_add", fake_client.prompts[0])
+                self.assertIn("regex_update", fake_client.prompts[0])
+                self.assertIn("regex_delete", fake_client.prompts[0])
                 self.assertIn("task_add", fake_client.prompts[0])
+                self.assertIn("task_update", fake_client.prompts[0])
+                self.assertIn("task_delete", fake_client.prompts[0])
+                self.assertIn("必须使用现有条目的稳定 id", fake_client.prompts[0])
+                self.assertIn("不要用 set 修改 lorebook.entries、regexScripts、stateTasks", fake_client.prompts[0])
+                self.assertIn("position 只能使用 before_char、at_depth、after_char", fake_client.prompts[0])
+                self.assertIn("placement 只能使用 1、2 或 [1,2]", fake_client.prompts[0])
                 self.assertIn("不要使用 name、regex、replacement、condition", fake_client.prompts[0])
 
 class CharacterStudioChatServiceTests(unittest.TestCase):

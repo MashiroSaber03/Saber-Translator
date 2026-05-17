@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
-import type { CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
+import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 
 const documentStub: CharacterStudioDocument = {
   id: 'doc-alpha',
@@ -59,6 +59,67 @@ const documentStub: CharacterStudioDocument = {
     key_moments: [],
   },
   exportArtifacts: {},
+}
+
+const documentWithPatchTargets: CharacterStudioDocument = {
+  ...documentStub,
+  lorebook: {
+    name: '阿尔法世界书',
+    entries: [
+      {
+        id: 'entry_root',
+        comment: '世界观设定',
+        keys: ['学院'],
+        secondary_keys: [],
+        content: '旧内容',
+        enabled: true,
+        constant: false,
+        selective: true,
+        priority: 100,
+        position: 'before_char',
+        depth: 4,
+        children: [
+          {
+            id: 'entry_child',
+            comment: '支线事件',
+            keys: ['祭典'],
+            secondary_keys: [],
+            content: '子条目',
+            enabled: true,
+            constant: false,
+            selective: true,
+            priority: 90,
+            position: 'before_char',
+            depth: 3,
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+  regexScripts: [
+    {
+      id: 'regex_alpha',
+      scriptName: '隐藏状态块',
+      findRegex: '<state>[\\s\\S]*?</state>',
+      replaceString: '',
+      placement: [2],
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: true,
+      disabled: false,
+    },
+  ],
+  stateTasks: [
+    {
+      id: 'task_alpha',
+      name: '初始化状态',
+      triggerTiming: 'initialization',
+      interval: 0,
+      commands: '<<taskjs>>\n<</taskjs>>',
+      disabled: false,
+    },
+  ],
 }
 
 const sessionStub: CharacterStudioChatSession = {
@@ -136,6 +197,38 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
       ...overrides,
     },
   })
+}
+
+const summaryPatch: CharacterStudioAgentPatchV2 = {
+  set: {
+    'identity.name': '新阿尔法',
+  },
+  greeting_add: '今晚继续推进计划。',
+  worldbook_update: {
+    id: 'entry_root',
+    changes: {
+      content: '新的世界观摘要',
+      priority: 250,
+    },
+  },
+  worldbook_delete: {
+    id: 'entry_child',
+  },
+  regex_add: {
+    scriptName: '战斗提示',
+    findRegex: '战斗开始',
+    replaceString: '<div>提示</div>',
+  },
+  regex_update: {
+    id: 'regex_alpha',
+    changes: {
+      disabled: true,
+      placement: [1, 2],
+    },
+  },
+  task_delete: {
+    id: 'task_alpha',
+  },
 }
 
 describe('CharacterStudioPreview workspace', () => {
@@ -256,5 +349,42 @@ describe('CharacterStudioPreview workspace', () => {
 
     expect(document.body.textContent).toContain('本轮提示词预览')
     expect(document.body.textContent).toContain('请先发送至少一条消息后再查看本轮提示词')
+  })
+
+  it('renders a grouped human-readable patch summary instead of only raw json', () => {
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+      document: documentWithPatchTargets,
+      pendingPatch: summaryPatch,
+    })
+
+    expect(wrapper.text()).toContain('待应用 Patch')
+    expect(wrapper.text()).toContain('字段更新')
+    expect(wrapper.text()).toContain('问候语')
+    expect(wrapper.text()).toContain('世界书')
+    expect(wrapper.text()).toContain('正则')
+    expect(wrapper.text()).toContain('状态任务')
+    expect(wrapper.text()).toContain('identity.name → 新阿尔法')
+    expect(wrapper.text()).toContain('追加备用问候语：今晚继续推进计划。')
+    expect(wrapper.text()).toContain('更新「世界观设定」')
+    expect(wrapper.text()).toContain('删除「支线事件」')
+    expect(wrapper.text()).toContain('新增「战斗提示」')
+    expect(wrapper.text()).toContain('更新「隐藏状态块」')
+    expect(wrapper.text()).toContain('删除「初始化状态」')
+    expect(wrapper.find('.patch-summary').text()).not.toContain('"worldbook_update"')
+  })
+
+  it('keeps raw patch json available in a collapsible details block', () => {
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+      document: documentWithPatchTargets,
+      pendingPatch: summaryPatch,
+    })
+
+    const details = wrapper.find('details.patch-raw-details')
+    expect(details.exists()).toBe(true)
+    expect(details.text()).toContain('查看原始 JSON')
+    expect(details.text()).toContain('"worldbook_update"')
+    expect(details.text()).toContain('"regex_update"')
   })
 })

@@ -20,6 +20,33 @@ def _normalize_name(value: str) -> str:
     return (value or "").strip()
 
 
+def _ensure_lorebook_entry_ids(entries: Any) -> List[Dict[str, Any]]:
+    if not isinstance(entries, list):
+        return []
+    normalized_entries: List[Dict[str, Any]] = []
+    for raw_entry in entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        entry = copy.deepcopy(raw_entry)
+        entry["id"] = str(entry.get("id") or f"entry_{uuid.uuid4().hex[:8]}")
+        entry["children"] = _ensure_lorebook_entry_ids(entry.get("children", []) or [])
+        normalized_entries.append(entry)
+    return normalized_entries
+
+
+def _ensure_array_item_ids(items: Any, *, prefix: str) -> List[Dict[str, Any]]:
+    if not isinstance(items, list):
+        return []
+    normalized_items: List[Dict[str, Any]] = []
+    for raw_item in items:
+        if not isinstance(raw_item, dict):
+            continue
+        item = copy.deepcopy(raw_item)
+        item["id"] = str(item.get("id") or f"{prefix}_{uuid.uuid4().hex[:8]}")
+        normalized_items.append(item)
+    return normalized_items
+
+
 def create_empty_document(book_id: str, *, title: str = "新角色", origin_type: str = "manual") -> Dict[str, Any]:
     now = _now_iso()
     return {
@@ -106,6 +133,9 @@ def ensure_document_shape(document: Dict[str, Any], *, book_id: Optional[str] = 
         normalized["stateTasks"] = []
     if not isinstance(normalized["meta"].get("tags"), list):
         normalized["meta"]["tags"] = []
+    normalized["lorebook"]["entries"] = _ensure_lorebook_entry_ids(normalized["lorebook"].get("entries", []))
+    normalized["regexScripts"] = _ensure_array_item_ids(normalized.get("regexScripts", []), prefix="regex")
+    normalized["stateTasks"] = _ensure_array_item_ids(normalized.get("stateTasks", []), prefix="task")
     return normalized
 
 

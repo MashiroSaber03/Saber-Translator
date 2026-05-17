@@ -262,7 +262,25 @@
 
       <div v-if="pendingPatch" class="prompt-preview-card">
         <h4>待应用 Patch</h4>
-        <pre>{{ JSON.stringify(pendingPatch, null, 2) }}</pre>
+        <div v-if="patchSummarySections.length > 0" class="patch-summary">
+          <section
+            v-for="section in patchSummarySections"
+            :key="section.key"
+            class="patch-summary-section"
+          >
+            <div class="patch-summary-head">
+              <strong>{{ section.title }}</strong>
+              <span>{{ section.items.length }} 项</span>
+            </div>
+            <ul class="patch-summary-list">
+              <li v-for="(item, index) in section.items" :key="`${section.key}-${index}`">{{ item }}</li>
+            </ul>
+          </section>
+        </div>
+        <details class="patch-raw-details">
+          <summary>查看原始 JSON</summary>
+          <pre>{{ JSON.stringify(pendingPatch, null, 2) }}</pre>
+        </details>
       </div>
 
       <div v-if="agentHtmlPreview" class="html-preview-card">
@@ -372,7 +390,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
 import BaseModal from '@/components/common/BaseModal.vue'
+import { buildCharacterStudioPatchSummary } from '@/stores/characterStudioPatchSummary'
 import type {
+  CharacterStudioAgentPatchV2,
   CharacterStudioChatAttachment,
   CharacterStudioChatSession,
   CharacterStudioChatSessionSummary,
@@ -398,7 +418,7 @@ const props = defineProps<{
   chatPromptLoading: boolean
   agentBusy: boolean
   agentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
-  pendingPatch: Record<string, unknown> | null
+  pendingPatch: CharacterStudioAgentPatchV2 | null
   canUndoPatch: boolean
   agentHtmlPreview: string
 }>()
@@ -474,6 +494,10 @@ const currentGreetingId = computed(() => {
 const currentGreetingLabel = computed(() => {
   const selected = props.availableGreetings.find(item => item.greeting_id === currentGreetingId.value)
   return selected?.label || '选择开场白'
+})
+
+const patchSummarySections = computed(() => {
+  return buildCharacterStudioPatchSummary(props.pendingPatch, props.document)
 })
 
 watch(() => props.session?.session_id, () => {
@@ -1218,6 +1242,54 @@ onUnmounted(() => {
   overflow: auto;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.patch-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.patch-summary-section {
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(244, 248, 255, 0.88);
+  border: 1px solid rgba(28, 55, 94, 0.08);
+}
+
+.patch-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.patch-summary-head strong {
+  color: #16365b;
+}
+
+.patch-summary-head span {
+  color: #607794;
+  font-size: 12px;
+}
+
+.patch-summary-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #234977;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.patch-raw-details {
+  margin-top: 12px;
+}
+
+.patch-raw-details summary {
+  cursor: pointer;
+  color: #607794;
+  font-size: 12px;
 }
 
 .log-list {
