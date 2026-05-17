@@ -224,22 +224,39 @@
         </div>
       </div>
 
-      <div class="messages-panel compact">
-        <div v-if="agentMessages.length === 0" class="empty-copy">还没有与卡片助手对话。</div>
-        <article v-for="(item, index) in agentMessages" :key="`agent-${index}`" class="message-card" :class="item.role">
-          <div class="message-head">
-            <span class="message-role">{{ item.role === 'assistant' ? '卡片助手' : '你' }}</span>
-          </div>
-          <pre class="agent-text">{{ item.content }}</pre>
-        </article>
-      </div>
+      <div class="assistant-main">
+        <div class="messages-panel assistant-messages">
+          <div v-if="agentMessages.length === 0" class="empty-copy">还没有与卡片助手对话。</div>
+          <article v-for="(item, index) in agentMessages" :key="`agent-${index}`" class="message-card" :class="item.role">
+            <div class="message-head">
+              <span class="message-role">{{ item.role === 'assistant' ? '卡片助手' : '你' }}</span>
+            </div>
+            <pre class="agent-text">{{ item.content }}</pre>
+          </article>
+        </div>
 
-      <div class="composer-card">
-        <textarea v-model="agentInput" rows="3" placeholder="例如：请审查当前角色卡，并建议补充世界书与状态任务。"></textarea>
-        <div class="composer-actions">
-          <button class="primary-btn" :disabled="agentBusy || !agentInput.trim() || !document" @click="sendAgent">
-            {{ agentBusy ? '助手处理中...' : '发送给助手' }}
-          </button>
+        <div class="composer-card assistant-composer">
+          <div class="composer-main">
+            <textarea
+              v-model="agentInput"
+              class="chat-composer-input"
+              rows="1"
+              placeholder="例如：请审查当前角色卡，并建议补充世界书与状态任务。"
+            ></textarea>
+            <div class="composer-actions compact-actions">
+              <button
+                data-testid="assistant-send-trigger"
+                class="primary-btn icon-btn"
+                type="button"
+                :title="agentBusy ? '助手处理中...' : '发送给助手'"
+                :aria-label="agentBusy ? '助手处理中...' : '发送给助手'"
+                :disabled="agentBusy || !agentInput.trim() || !document"
+                @click="sendAgent"
+              >
+                {{ agentBusy ? '…' : '↗' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -261,24 +278,28 @@
           <p>查看最新一轮的变量快照、世界书命中、正则命中与任务执行记录。</p>
         </div>
       </div>
-      <template v-if="latestRuntimeMessage">
-        <div class="runtime-grid">
-          <section class="runtime-card">
-            <h5>变量快照</h5>
-            <pre>{{ JSON.stringify(latestRuntimeMessage.variables_snapshot || {}, null, 2) }}</pre>
-          </section>
-          <section class="runtime-card">
-            <h5>运行日志</h5>
-            <div v-if="latestRuntimeMessage.runtime_log.length > 0" class="log-list">
-              <div v-for="(item, index) in latestRuntimeMessage.runtime_log" :key="`runtime-${index}`" class="log-item">
-                {{ summarizeLog(item) }}
+      <div class="runtime-main">
+        <template v-if="latestRuntimeMessage">
+          <div class="runtime-grid">
+            <section class="runtime-card">
+              <h5>变量快照</h5>
+              <pre>{{ JSON.stringify(latestRuntimeMessage.variables_snapshot || {}, null, 2) }}</pre>
+            </section>
+            <section class="runtime-card">
+              <h5>运行日志</h5>
+              <div v-if="latestRuntimeMessage.runtime_log.length > 0" class="log-list">
+                <div v-for="(item, index) in latestRuntimeMessage.runtime_log" :key="`runtime-${index}`" class="log-item">
+                  {{ summarizeLog(item) }}
+                </div>
               </div>
-            </div>
-            <div v-else class="empty-copy">当前还没有运行日志。</div>
-          </section>
+              <div v-else class="empty-copy">当前还没有运行日志。</div>
+            </section>
+          </div>
+        </template>
+        <div v-else class="messages-panel runtime-empty-panel">
+          <div class="empty-copy">发送消息后，这里会显示最新一轮的运行结果。</div>
         </div>
-      </template>
-      <div v-else class="empty-copy">发送消息后，这里会显示最新一轮的运行结果。</div>
+      </div>
     </section>
 
     <BaseModal
@@ -712,6 +733,14 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+.assistant-workspace {
+  gap: 12px;
+}
+
+.runtime-workspace {
+  gap: 12px;
+}
+
 .session-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -934,9 +963,29 @@ onUnmounted(() => {
   border: 1px solid rgba(28, 55, 94, 0.08);
 }
 
-.messages-panel.compact {
-  flex: 0 0 320px;
-  min-height: 320px;
+.assistant-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.assistant-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.assistant-composer {
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.runtime-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .message-card {
@@ -1138,6 +1187,8 @@ onUnmounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .runtime-card {
@@ -1145,6 +1196,15 @@ onUnmounted(() => {
   padding: 16px;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(25, 55, 94, 0.08);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.runtime-empty-panel {
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
 }
 
 .runtime-card pre,
@@ -1156,6 +1216,8 @@ onUnmounted(() => {
   color: #183351;
   max-height: 280px;
   overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .log-list {
@@ -1163,6 +1225,9 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 8px;
   margin-top: 10px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .log-item {

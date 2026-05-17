@@ -170,6 +170,38 @@ describe('CharacterStudioPreview workspace', () => {
     expect((undoButton!.element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('uses a full-height assistant workspace instead of the old fixed compact message panel', () => {
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+    })
+
+    expect(wrapper.find('.assistant-main').exists()).toBe(true)
+    expect(wrapper.find('.messages-panel.compact').exists()).toBe(false)
+  })
+
+  it('renders the assistant composer in the same compact style as the chat composer', () => {
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+    })
+
+    expect(wrapper.find('.assistant-composer .composer-main').exists()).toBe(true)
+    expect(wrapper.get('.assistant-composer textarea').attributes('rows')).toBe('1')
+
+    const sendButton = wrapper.get('[data-testid="assistant-send-trigger"]')
+    expect(sendButton.attributes('aria-label')).toBe('发送给助手')
+    expect(sendButton.text()).toBe('↗')
+    expect(wrapper.text()).not.toContain('发送给助手')
+  })
+
+  it('uses a full-height runtime workspace container instead of leaving a loose empty block', () => {
+    const wrapper = mountPreview({
+      activeTab: 'runtime',
+    })
+
+    expect(wrapper.find('.runtime-main').exists()).toBe(true)
+    expect(wrapper.find('.runtime-empty-panel').exists()).toBe(true)
+  })
+
   it('disables send button while a chat reply is still being generated', () => {
     const wrapper = mountPreview({
       chatStreaming: true,
