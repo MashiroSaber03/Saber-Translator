@@ -1,26 +1,5 @@
 <template>
   <div class="chat-shell">
-    <div class="workspace-head">
-      <div class="workspace-copy">
-        <div class="kicker">聊天工作区</div>
-        <h3>聊天 / 助手 / 运行日志</h3>
-        <p>在同一个区域里完成继续聊天、卡片助手修卡和命中调试。</p>
-      </div>
-      <div class="head-actions">
-        <button class="ghost-btn" :disabled="!document || chatMutating || chatStreaming" @click="$emit('new-session')">
-          新对话
-        </button>
-        <button
-          data-testid="prompt-preview-trigger"
-          class="ghost-btn"
-          :disabled="!document || chatPromptLoading || chatStreaming"
-          @click="openPromptPreviewModal"
-        >
-          {{ chatPromptLoading ? '加载中...' : '查看提示词' }}
-        </button>
-      </div>
-    </div>
-
     <div class="workspace-tabs" role="tablist">
       <button
         v-for="item in tabs"
@@ -37,17 +16,17 @@
     <section v-if="activeTab === 'chat'" class="workspace-card chat-workspace">
       <div class="session-toolbar">
         <div class="session-triggers">
-          <div class="trigger-stack">
-            <span class="trigger-label">会话</span>
+          <div class="trigger-stack trigger-stack-wide">
             <button
               data-testid="session-list-trigger"
-              class="session-trigger"
+              class="session-trigger session-trigger-inline"
               :disabled="chatMutating || chatStreaming"
               @click="toggleSessionList"
             >
-              <div class="trigger-copy">
+              <div class="trigger-copy trigger-copy-inline">
+                <span class="trigger-tag">会话</span>
                 <strong>{{ currentSessionLabel }}</strong>
-                <span>{{ currentSessionMeta }}</span>
+                <span class="trigger-meta">{{ currentSessionMeta }}</span>
               </div>
               <span class="trigger-arrow">▾</span>
             </button>
@@ -86,22 +65,32 @@
           </div>
 
           <div class="trigger-stack">
-            <span class="trigger-label">开场白</span>
             <button
               data-testid="greeting-picker-trigger"
-              class="session-trigger"
+              class="session-trigger session-trigger-inline"
               :disabled="availableGreetings.length === 0 || chatMutating || chatStreaming"
               @click="openGreetingPicker"
             >
-              <div class="trigger-copy">
-                <strong>{{ selectedGreetingLabel }}</strong>
-                <span>{{ selectedGreetingHint }}</span>
+              <div class="trigger-copy trigger-copy-inline">
+                <span class="trigger-tag">开场白</span>
+                <strong>{{ currentGreetingLabel }}</strong>
               </div>
               <span class="trigger-arrow">▾</span>
             </button>
           </div>
         </div>
         <div class="toolbar-buttons">
+          <button class="ghost-btn small" :disabled="!document || chatMutating || chatStreaming" @click="$emit('new-session')">
+            新对话
+          </button>
+          <button
+            data-testid="prompt-preview-trigger"
+            class="ghost-btn small"
+            :disabled="!document || chatPromptLoading || chatStreaming"
+            @click="openPromptPreviewModal"
+          >
+            {{ chatPromptLoading ? '加载中...' : '查看提示词' }}
+          </button>
           <button class="ghost-btn small" :disabled="!document || chatMutating || chatStreaming" @click="openGreetingPicker">
             重选开场白
           </button>
@@ -186,7 +175,7 @@
               <span class="pending-remove" @click.stop="removePendingFile(index)">×</span>
             </button>
           </div>
-          <textarea v-model="chatInput" rows="4" placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"></textarea>
+          <textarea v-model="chatInput" rows="3" placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"></textarea>
           <div class="composer-actions">
             <button class="ghost-btn" :disabled="chatStreaming" @click="pickAttachments">添加图片</button>
             <button class="primary-btn" :disabled="chatStreaming || (!chatInput.trim() && pendingFiles.length === 0)" @click="sendChat">
@@ -353,7 +342,6 @@ const props = defineProps<{
   availableGreetings: CharacterStudioGreetingOption[]
   promptPreview: string
   promptPreviewError: string
-  promptPreviewRequestKey: number
   activeTab: 'chat' | 'assistant' | 'runtime'
   chatLoading: boolean
   chatStreaming: boolean
@@ -429,24 +417,22 @@ const currentSessionMeta = computed(() => {
   const count = props.session?.messages.length || 0
   return `${count} 条消息`
 })
-const selectedGreetingLabel = computed(() => {
-  const selected = props.availableGreetings.find(item => item.greeting_id === selectedGreetingId.value)
-  return selected?.label || '选择开场白'
+const currentGreetingId = computed(() => {
+  const source = props.session?.greeting_source || {}
+  if (source.type === 'first_message') return 'first_message'
+  if (source.type === 'alternate_greetings' && typeof source.index === 'number') {
+    return `alternate_${source.index + 1}`
+  }
+  return props.availableGreetings[0]?.greeting_id || ''
 })
-const selectedGreetingHint = computed(() => {
-  const selected = props.availableGreetings.find(item => item.greeting_id === selectedGreetingId.value)
-  return selected?.content.slice(0, 26) || '切换开场白并新建会话'
+const currentGreetingLabel = computed(() => {
+  const selected = props.availableGreetings.find(item => item.greeting_id === currentGreetingId.value)
+  return selected?.label || '选择开场白'
 })
 
 watch(() => props.session?.session_id, () => {
   selectedGreetingId.value = ''
   sessionListOpen.value = false
-})
-
-watch(() => props.promptPreviewRequestKey, value => {
-  if (value > 0) {
-    promptPreviewModalOpen.value = true
-  }
 })
 
 function pickAttachments() {
@@ -531,7 +517,7 @@ function chooseSession(sessionId: string) {
 
 function openGreetingPicker() {
   if (!props.availableGreetings.length) return
-  selectedGreetingId.value = props.availableGreetings[0]?.greeting_id || ''
+  selectedGreetingId.value = currentGreetingId.value || props.availableGreetings[0]?.greeting_id || ''
   greetingPickerOpen.value = true
 }
 
@@ -607,7 +593,7 @@ onUnmounted(() => {
 .chat-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
   height: 100%;
   width: 100% !important;
@@ -618,7 +604,6 @@ onUnmounted(() => {
 .assistant-head,
 .message-head,
 .toolbar-buttons,
-.head-actions,
 .prompt-head,
 .composer-actions,
 .editor-actions {
@@ -628,25 +613,6 @@ onUnmounted(() => {
   justify-content: space-between;
 }
 
-.workspace-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: start;
-}
-
-.workspace-copy {
-  min-width: 0;
-}
-
-.kicker {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #6f84a2;
-}
-
-.workspace-head h3,
 .assistant-head h4,
 .prompt-preview-card h4,
 .html-preview-card h4,
@@ -655,7 +621,6 @@ onUnmounted(() => {
   color: #102741;
 }
 
-.workspace-head p,
 .assistant-head p {
   margin: 8px 0 0;
   color: #607794;
@@ -663,20 +628,15 @@ onUnmounted(() => {
   line-height: 1.7;
 }
 
-.head-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-self: start;
-}
-
 .workspace-tabs {
   display: flex;
   gap: 8px;
-  padding: 8px;
-  border-radius: 18px;
-  background: rgba(16, 39, 65, 0.05);
+  padding: 6px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(28, 55, 94, 0.08);
   width: 100%;
+  box-shadow: 0 18px 32px rgba(20, 46, 82, 0.06);
 }
 
 .tab-btn {
@@ -703,7 +663,7 @@ onUnmounted(() => {
 .prompt-preview-card,
 .html-preview-card {
   border-radius: 24px;
-  padding: 18px;
+  padding: 14px;
   background: rgba(252, 253, 255, 0.92);
   border: 1px solid rgba(28, 55, 94, 0.08);
   box-shadow: 0 24px 40px rgba(20, 46, 82, 0.08);
@@ -719,6 +679,7 @@ onUnmounted(() => {
 
 .chat-workspace {
   min-height: 0;
+  gap: 12px;
 }
 
 .assistant-workspace,
@@ -727,36 +688,31 @@ onUnmounted(() => {
 }
 
 .session-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  margin-bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  margin-bottom: 4px;
   width: 100%;
-  align-items: start;
 }
 
 .session-triggers {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1 1 440px;
   min-width: 0;
 }
 
 .trigger-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: #516882;
-  font-size: 12px;
-}
-
-.trigger-stack {
   position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
-.trigger-label {
-  color: #6f84a2;
-  font-size: 12px;
+.trigger-stack-wide {
+  flex: 1 1 260px;
 }
 
 .session-trigger {
@@ -773,6 +729,11 @@ onUnmounted(() => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
+.session-trigger-inline {
+  min-height: 46px;
+  padding: 10px 14px;
+}
+
 .session-trigger:disabled {
   opacity: 0.62;
   cursor: not-allowed;
@@ -786,6 +747,12 @@ onUnmounted(() => {
   text-align: left;
 }
 
+.trigger-copy-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 .trigger-copy strong {
   font-size: 14px;
   color: #14304c;
@@ -794,12 +761,25 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.trigger-copy span {
-  font-size: 12px;
-  color: #607794;
+.trigger-tag,
+.trigger-meta {
+  font-size: 11px;
+  color: #5f7591;
+  white-space: nowrap;
+}
+
+.trigger-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(20, 56, 106, 0.06);
+}
+
+.trigger-meta {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .trigger-arrow {
@@ -900,6 +880,8 @@ onUnmounted(() => {
 .toolbar-buttons {
   justify-content: flex-end;
   flex-wrap: wrap;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
 .messages-panel {
@@ -907,10 +889,9 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
   flex: 1 1 auto;
-  min-height: 260px;
+  min-height: 0;
   overflow: auto;
-  padding-right: 4px;
-  padding: 14px;
+  padding: 12px;
   border-radius: 20px;
   background: linear-gradient(180deg, rgba(244, 248, 255, 0.95), rgba(238, 244, 252, 0.9));
   border: 1px solid rgba(28, 55, 94, 0.08);
@@ -1016,11 +997,11 @@ onUnmounted(() => {
 }
 
 .composer-card {
-  margin-top: 14px;
+  margin-top: 2px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
+  gap: 8px;
+  padding: 14px;
   border-radius: 20px;
   background: rgba(244, 248, 255, 0.94);
   border: 1px solid rgba(28, 55, 94, 0.08);
@@ -1282,23 +1263,18 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1100px) {
-  .workspace-head {
-    grid-template-columns: 1fr;
-  }
-
-  .head-actions {
-    justify-content: flex-start;
-  }
-
   .runtime-grid {
     grid-template-columns: 1fr;
   }
 
   .session-toolbar {
-    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
-  .session-triggers,
+  .session-triggers {
+    flex-direction: column;
+  }
+
   .greeting-grid {
     grid-template-columns: 1fr;
   }

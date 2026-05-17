@@ -60,7 +60,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const availableGreetings = ref<CharacterStudioGreetingOption[]>([])
   const chatPromptPreview = ref('')
   const chatPromptPreviewError = ref('')
-  const promptPreviewRequestKey = ref(0)
   const diagnostics = ref<ExportDiagnostic | null>(null)
   const agentMessages = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const agentHtmlPreview = ref('')
@@ -202,7 +201,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     availableGreetings.value = []
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
-    promptPreviewRequestKey.value = 0
   }
 
   function abortActiveChatStream() {
@@ -1069,7 +1067,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     availableGreetings,
     chatPromptPreview,
     chatPromptPreviewError,
-    promptPreviewRequestKey,
     diagnostics,
     agentMessages,
     agentHtmlPreview,

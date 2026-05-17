@@ -6,7 +6,6 @@ describe('StudioTopbar compact layout', () => {
   it('renders a compact title block without the large subtitle banner copy', () => {
     const wrapper = mount(StudioTopbar, {
       props: {
-        subtitle: '编辑区优先，运行时预览收纳在右侧侧栏，适合长时间编卡。',
         bookTitle: '五等分',
         documentTitle: '上杉风太郎',
         documentOrigin: '分析生成',

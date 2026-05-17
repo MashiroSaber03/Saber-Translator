@@ -32,7 +32,6 @@
 
 <script setup lang="ts">
 defineProps<{
-  subtitle: string
   bookTitle: string
   documentTitle: string
   documentOrigin: string

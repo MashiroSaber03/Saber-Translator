@@ -1,7 +1,6 @@
 <template>
   <div class="studio-page">
     <StudioTopbar
-      :subtitle="topbarSubtitle"
       :book-title="currentBookTitle"
       :document-title="store.currentDocument?.meta.title || ''"
       :document-origin="currentDocumentOrigin"
@@ -86,7 +85,6 @@
               :available-greetings="store.availableGreetings"
               :prompt-preview="store.chatPromptPreview"
               :prompt-preview-error="store.chatPromptPreviewError"
-              :prompt-preview-request-key="store.promptPreviewRequestKey"
               :active-tab="store.activeWorkspaceTab"
               :chat-loading="store.isChatLoading"
               :chat-streaming="store.isChatStreaming"
@@ -156,15 +154,6 @@ const currentDocumentOrigin = computed(() => {
   if (origin === 'imported') return '外部导入'
   if (origin === 'manual') return '手工创建'
   return ''
-})
-
-const topbarSubtitle = computed(() => {
-  if (!store.currentDocument) {
-    return store.hasTimeline
-      ? '打开角色资源选择文档，或先从分析候选锁定角色名。'
-      : '当前书还没有增强时间线，但仍可空白新建或导入角色卡。'
-  }
-  return '左侧专注编卡，右侧完成继续聊天、卡片助手和运行日志调试。'
 })
 
 const avatarUrl = computed(() => {

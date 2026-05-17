@@ -120,7 +120,6 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
       ],
       promptPreview: '',
       promptPreviewError: '',
-      promptPreviewRequestKey: 0,
       activeTab: 'chat',
       chatLoading: false,
       chatStreaming: false,
@@ -140,6 +139,17 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CharacterStudioPreview workspace', () => {
+  it('renders the chat tab with a compact toolbar instead of the old workspace intro banner', () => {
+    const wrapper = mountPreview()
+
+    expect(wrapper.find('.workspace-head').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('聊天工作区')
+    expect(wrapper.text()).not.toContain('在同一个区域里完成继续聊天、卡片助手修卡和命中调试。')
+    expect(wrapper.text()).not.toContain('切换开场白并新建会话')
+    expect(wrapper.text()).toContain('新对话')
+    expect(wrapper.text()).toContain('查看提示词')
+  })
+
   it('renders chat / assistant / runtime tabs without old native selectors', () => {
     const wrapper = mountPreview()
 
