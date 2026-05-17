@@ -1,5 +1,5 @@
 """
-Lightweight preview runtime for Character Studio.
+Shared runtime helpers for Character Studio chat and card assistant flows.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 
-def initialize_preview_session(document: Dict[str, Any]) -> Dict[str, Any]:
+def initialize_runtime_session(document: Dict[str, Any]) -> Dict[str, Any]:
     session = {
         "doc_id": document.get("id", ""),
         "messages": [],

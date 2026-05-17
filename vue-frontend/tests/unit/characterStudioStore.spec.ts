@@ -72,14 +72,6 @@ const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
 const getCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
   success: true,
   document: demoDocument,
-  preview_session: {
-    doc_id: 'doc_alpha',
-    messages: [
-      { role: 'assistant', content: '已恢复的预览消息' },
-    ],
-    variables: { trust_score: 88 },
-    log: [{ type: 'lorebook', comment: '恢复命中' }],
-  },
 })
 
 const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookId: string, _docId: string, payload: Record<string, unknown>) => ({
@@ -209,14 +201,6 @@ describe('characterStudioStore', () => {
     getCharacterStudioDocumentMock.mockResolvedValue({
       success: true,
       document: demoDocument,
-      preview_session: {
-        doc_id: 'doc_alpha',
-        messages: [
-          { role: 'assistant', content: '已恢复的预览消息' },
-        ],
-        variables: { trust_score: 88 },
-        log: [{ type: 'lorebook', comment: '恢复命中' }],
-      },
     })
     getCharacterStudioChatStateMock.mockResolvedValue({
       success: true,
@@ -415,12 +399,6 @@ describe('characterStudioStore', () => {
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
       document: candidateDocument,
-      preview_session: {
-        doc_id: 'doc_candidate',
-        messages: [],
-        variables: {},
-        log: [],
-      },
     })
 
     await store.loadWorkspace('book-demo')

@@ -30,9 +30,9 @@ from .adapters import (
     import_document_payload,
 )
 from .agent import build_agent_context
-from .preview import (
+from .runtime import (
     apply_regex_scripts,
-    initialize_preview_session,
+    initialize_runtime_session,
     match_lorebook,
     run_state_tasks,
     sort_lorebook_hits,
@@ -1074,7 +1074,7 @@ class CharacterStudioService:
         }
 
     def _reset_chat_runtime(self, document: Dict[str, Any], session: Dict[str, Any]) -> None:
-        initialized = initialize_preview_session(document)
+        initialized = initialize_runtime_session(document)
         session["variables"] = copy.deepcopy(initialized.get("variables", {}))
         session["_runtime"] = copy.deepcopy(initialized.get("_runtime", {
             "event_counts": {"message_received": 0, "message_sent": 0},

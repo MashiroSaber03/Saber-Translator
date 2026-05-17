@@ -239,11 +239,11 @@ class CharacterStudioExportAdapterTests(unittest.TestCase):
         self.assertFalse(entry["prevent_recursion"])
 
 
-class CharacterStudioPreviewTests(unittest.TestCase):
-    def test_initialize_preview_session_includes_doc_id_for_frontend_contract(self) -> None:
-        from src.core.manga_insight.character_studio.preview import initialize_preview_session
+class CharacterStudioRuntimeTests(unittest.TestCase):
+    def test_initialize_runtime_session_includes_doc_id(self) -> None:
+        from src.core.manga_insight.character_studio.runtime import initialize_runtime_session
 
-        session = initialize_preview_session(_demo_document())
+        session = initialize_runtime_session(_demo_document())
 
         self.assertIn("doc_id", session)
         self.assertEqual(session["doc_id"], "doc_alpha")
@@ -828,7 +828,7 @@ class CharacterStudioPreviewTests(unittest.TestCase):
                 self.assertEqual(updated["identity"]["name"], "中野五月")
                 self.assertEqual(updated["meta"]["title"], "中野五月")
 
-    def test_run_agent_uses_compressed_context_with_card_and_preview_runtime_context(self) -> None:
+    def test_run_agent_uses_compressed_context_with_card_and_session_runtime_context(self) -> None:
         from src.core.manga_insight.character_studio.service import CharacterStudioService
 
         class FakeClient:

@@ -8,12 +8,12 @@ import json
 from typing import Any, Dict
 
 
-def build_agent_context(document: Dict[str, Any], preview_session: Dict[str, Any], compressed_context: str) -> str:
+def build_agent_context(document: Dict[str, Any], session_state: Dict[str, Any], compressed_context: str) -> str:
     identity = document.get("identity", {})
     core = document.get("coreMessages", {})
-    preview_messages = preview_session.get("messages", [])[-6:]
-    variables = preview_session.get("variables", {})
-    runtime_log = preview_session.get("log", [])[-8:]
+    recent_messages = session_state.get("messages", [])[-6:]
+    variables = session_state.get("variables", {})
+    runtime_log = session_state.get("log", [])[-8:]
 
     parts = [
         "【事实层】",
@@ -32,11 +32,11 @@ def build_agent_context(document: Dict[str, Any], preview_session: Dict[str, Any
         }, ensure_ascii=False, indent=2),
         "",
         "【运行时线索】",
-        f"当前预览变量: {variables}",
+        f"当前会话变量: {variables}",
     ]
-    if preview_messages:
+    if recent_messages:
         parts.append("最近对话:")
-        for msg in preview_messages:
+        for msg in recent_messages:
             parts.append(f"- {msg.get('role')}: {str(msg.get('content', ''))[:200]}")
     if runtime_log:
         parts.append("最近命中/执行日志:")
