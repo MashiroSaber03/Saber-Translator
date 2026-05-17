@@ -122,12 +122,6 @@ def _demo_document(name: str = "测试角色") -> dict:
         "chatPreset": {
             "opening_mode": "first_message",
         },
-        "previewState": {
-            "variables": {
-                "trust_score": 20,
-            },
-            "messages": [],
-        },
         "grounding": {
             "timeline_mode": "enhanced",
             "sample_pages": [1],
@@ -864,15 +858,34 @@ class CharacterStudioPreviewTests(unittest.TestCase):
                     "group_count": 2,
                     "char_count": 39,
                 }))
-                asyncio.run(service.store.save_preview_session(document["id"], {
-                    "doc_id": document["id"],
-                    "messages": [
-                        {"role": "user", "content": "现在局势怎么样？"},
-                        {"role": "assistant", "content": "先别急，我正在梳理风险。"},
-                    ],
-                    "variables": {"trust_score": 44},
-                    "log": [{"type": "task", "name": "初始化状态"}],
-                }))
+                state = asyncio.run(service.create_new_chat_session(document["id"]))
+                session = state["active_session"]
+                session["messages"] = [
+                    {
+                        "message_id": "msg_user",
+                        "role": "user",
+                        "content": "现在局势怎么样？",
+                        "attachments": [],
+                        "runtime_log": [],
+                        "variables_snapshot": {"trust_score": 44},
+                        "generation_meta": {},
+                        "created_at": "2026-05-15T00:00:00",
+                        "updated_at": "2026-05-15T00:00:00",
+                    },
+                    {
+                        "message_id": "msg_assistant",
+                        "role": "assistant",
+                        "content": "先别急，我正在梳理风险。",
+                        "attachments": [],
+                        "runtime_log": [{"type": "task", "name": "初始化状态"}],
+                        "variables_snapshot": {"trust_score": 44},
+                        "generation_meta": {},
+                        "created_at": "2026-05-15T00:00:01",
+                        "updated_at": "2026-05-15T00:00:01",
+                    },
+                ]
+                session["variables"] = {"trust_score": 44}
+                asyncio.run(service.store.save_chat_session(document["id"], session))
 
                 fake_client = FakeClient()
                 with mock.patch.object(service, "_create_chat_client", return_value=fake_client):

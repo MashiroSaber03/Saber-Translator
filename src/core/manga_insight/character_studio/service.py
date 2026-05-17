@@ -927,6 +927,12 @@ class CharacterStudioService:
             raise ValueError("文档不存在")
         chat_index = await self.store.load_chat_index(doc_id)
         active_chat_id = str(chat_index.get("active_session_id") or "").strip()
+        session = {
+            "doc_id": doc_id,
+            "messages": [],
+            "variables": {},
+            "log": [],
+        }
         if active_chat_id:
             chat_session = await self.store.load_chat_session(doc_id, active_chat_id)
             if chat_session:
@@ -940,10 +946,6 @@ class CharacterStudioService:
                     "variables": copy.deepcopy(chat_session.get("variables", {})),
                     "log": copy.deepcopy(last_message.get("runtime_log", [])),
                 }
-            else:
-                session = await self.store.load_preview_session(doc_id)
-        else:
-            session = await self.store.load_preview_session(doc_id)
         compressed_context = await self._ensure_compressed_context()
         context = build_agent_context(document, session, compressed_context)
         prompt = (
@@ -1116,34 +1118,13 @@ class CharacterStudioService:
             if session:
                 return session
 
-        legacy = await self.store.load_preview_session(doc_id)
-        if legacy.get("messages"):
-            session = self._create_empty_chat_session(doc_id)
-            session["variables"] = copy.deepcopy(legacy.get("variables", {}))
-            session["_runtime"] = copy.deepcopy(legacy.get("_runtime", {
-                "event_counts": {"message_received": 0, "message_sent": 0},
-                "matched_lorebook_ids": [],
-            }))
-            legacy_messages = legacy.get("messages", []) or []
-            for idx, item in enumerate(legacy_messages):
-                runtime_log = legacy.get("log", []) if idx == len(legacy_messages) - 1 else []
-                session["messages"].append(
-                    self._create_chat_message(
-                        role=str(item.get("role", "assistant") or "assistant"),
-                        content=str(item.get("content", "") or ""),
-                        runtime_log=runtime_log,
-                        variables_snapshot=session.get("variables", {}),
-                        generation_meta={"kind": "legacy_preview"},
-                    )
-                )
-        else:
-            greetings = self._build_chat_greetings(document)
-            greeting = greetings[0] if greetings else None
-            session = self._create_opening_chat_session(
-                document,
-                greeting_content=greeting["content"] if greeting else "",
-                greeting_source=greeting["source"] if greeting else None,
-            )
+        greetings = self._build_chat_greetings(document)
+        greeting = greetings[0] if greetings else None
+        session = self._create_opening_chat_session(
+            document,
+            greeting_content=greeting["content"] if greeting else "",
+            greeting_source=greeting["source"] if greeting else None,
+        )
 
         index["active_session_id"] = session["session_id"]
         index["archived_session_ids"] = list(index.get("archived_session_ids", []) or [])

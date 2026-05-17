@@ -28,7 +28,6 @@ class CharacterStudioStore:
             "character_studio/assets",
             "character_studio/assets/avatars",
             "character_studio/assets/chat",
-            "character_studio/preview_chats",
             "character_studio/chat_sessions",
             "character_studio/imports",
             "character_studio/exports",
@@ -92,15 +91,6 @@ class CharacterStudioStore:
         if os.path.isdir(chat_asset_dir):
             shutil.rmtree(chat_asset_dir, ignore_errors=True)
         return deleted
-
-    async def load_preview_session(self, doc_id: str) -> Dict[str, Any]:
-        data = await self.storage._load_json(f"character_studio/preview_chats/{doc_id}.json", None)
-        return data or {"doc_id": doc_id, "messages": [], "variables": {}, "log": []}
-
-    async def save_preview_session(self, doc_id: str, session_data: Dict[str, Any]) -> bool:
-        payload = dict(session_data or {})
-        payload["doc_id"] = doc_id
-        return await self.storage._save_json(f"character_studio/preview_chats/{doc_id}.json", payload)
 
     async def save_avatar_asset(self, doc_id: str, extension: str, image_bytes: bytes) -> str:
         ext = (extension or ".png").lower()

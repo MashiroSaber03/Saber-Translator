@@ -19,9 +19,6 @@
     </div>
 
     <div class="topbar-right">
-      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('open-chat')">继续聊天</button>
-      <button class="ghost-btn" :disabled="!hasDocument || busy" @click="$emit('new-chat')">新对话</button>
-      <button class="ghost-btn" :disabled="!hasDocument" @click="$emit('open-prompt')">查看提示词</button>
       <button class="ghost-btn" @click="$emit('open-export')">导出区</button>
       <button class="ghost-btn" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
         {{ validatePending ? '诊断中...' : '诊断' }}
@@ -51,9 +48,6 @@ defineEmits<{
   (e: 'save'): void
   (e: 'validate'): void
   (e: 'open-resource'): void
-  (e: 'open-chat'): void
-  (e: 'new-chat'): void
-  (e: 'open-prompt'): void
   (e: 'open-export'): void
 }>()
 </script>

@@ -59,6 +59,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const archivedChatSessions = ref<CharacterStudioChatSessionSummary[]>([])
   const availableGreetings = ref<CharacterStudioGreetingOption[]>([])
   const chatPromptPreview = ref('')
+  const chatPromptPreviewError = ref('')
+  const promptPreviewRequestKey = ref(0)
   const diagnostics = ref<ExportDiagnostic | null>(null)
   const agentMessages = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const agentHtmlPreview = ref('')
@@ -199,6 +201,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     archivedChatSessions.value = []
     availableGreetings.value = []
     chatPromptPreview.value = ''
+    chatPromptPreviewError.value = ''
+    promptPreviewRequestKey.value = 0
   }
 
   function abortActiveChatStream() {
@@ -977,6 +981,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     isChatPromptLoading.value = true
     clearErrorMessage()
+    chatPromptPreview.value = ''
+    chatPromptPreviewError.value = ''
     try {
       const response = await getCharacterStudioChatPromptPreview(
         bookId.value,
@@ -988,6 +994,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       }
       applyChatStatePayload(response)
     } catch (error) {
+      chatPromptPreviewError.value = error instanceof Error ? error.message : '加载提示词预览失败'
       throw createActionError(error, '加载提示词预览失败')
     } finally {
       isChatPromptLoading.value = false
@@ -1061,6 +1068,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     archivedChatSessions,
     availableGreetings,
     chatPromptPreview,
+    chatPromptPreviewError,
+    promptPreviewRequestKey,
     diagnostics,
     agentMessages,
     agentHtmlPreview,

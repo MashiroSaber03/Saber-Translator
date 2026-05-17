@@ -14,9 +14,6 @@
       @save="saveNow"
       @validate="validate"
       @open-resource="store.resourcePanelOpen = true"
-      @open-chat="store.activeWorkspaceTab = 'chat'"
-      @new-chat="newChat"
-      @open-prompt="openPrompt"
       @open-export="store.activeEditorTab = 'export'"
     />
 
@@ -79,7 +76,7 @@
 
         <div class="pane-resizer" @mousedown="startResize"></div>
 
-        <aside class="chat-pane">
+        <section class="chat-pane">
           <div class="column-scroll" data-testid="chat-scroll">
             <CharacterStudioPreview
               :book-id="props.bookId || ''"
@@ -88,6 +85,8 @@
               :archived-sessions="store.archivedChatSessions"
               :available-greetings="store.availableGreetings"
               :prompt-preview="store.chatPromptPreview"
+              :prompt-preview-error="store.chatPromptPreviewError"
+              :prompt-preview-request-key="store.promptPreviewRequestKey"
               :active-tab="store.activeWorkspaceTab"
               :chat-loading="store.isChatLoading"
               :chat-streaming="store.isChatStreaming"
@@ -117,7 +116,7 @@
               @undo-patch="store.undoLastPatch()"
             />
           </div>
-        </aside>
+        </section>
       </div>
     </div>
   </div>
@@ -299,17 +298,6 @@ async function download(format: string) {
 async function sendAgent(message: string) {
   store.activeWorkspaceTab = 'assistant'
   await runAction(() => store.sendAgentMessage(message))
-}
-
-async function newChat() {
-  store.activeWorkspaceTab = 'chat'
-  await runAction(() => store.createChatSession())
-}
-
-async function openPrompt() {
-  store.activeWorkspaceTab = 'chat'
-  store.chatPromptPreview = ''
-  await runAction(() => store.loadChatPromptPreview())
 }
 
 async function createChatSession(greetingId?: string) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
 import type { CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 
@@ -94,9 +94,33 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
       bookId: 'book-demo',
       document: documentStub,
       session: sessionStub,
-      archivedSessions: [],
-      availableGreetings: [],
+      archivedSessions: [
+        {
+          session_id: 'chat-archived',
+          title: '旧会话',
+          message_count: 5,
+          updated_at: '2026-05-15T01:00:00',
+          archived_at: '2026-05-15T01:00:00',
+          last_message_excerpt: '上一次聊到这里',
+        },
+      ],
+      availableGreetings: [
+        {
+          greeting_id: 'first_message',
+          label: '主问候',
+          content: '你好，我是阿尔法。',
+          source: { type: 'first_message', index: 0 },
+        },
+        {
+          greeting_id: 'alternate_1',
+          label: '备用问候 1',
+          content: '今天也一起推进计划吧。',
+          source: { type: 'alternate_greetings', index: 0 },
+        },
+      ],
       promptPreview: '',
+      promptPreviewError: '',
+      promptPreviewRequestKey: 0,
       activeTab: 'chat',
       chatLoading: false,
       chatStreaming: false,
@@ -116,13 +140,13 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CharacterStudioPreview workspace', () => {
-  it('renders chat / assistant / runtime tabs without old collapse controls', () => {
+  it('renders chat / assistant / runtime tabs without old native selectors', () => {
     const wrapper = mountPreview()
 
     expect(wrapper.text()).toContain('聊天')
     expect(wrapper.text()).toContain('卡片助手')
     expect(wrapper.text()).toContain('运行日志')
-    expect(wrapper.text()).not.toContain('收起')
+    expect(wrapper.find('select').exists()).toBe(false)
   })
 
   it('keeps undo patch available after patch is applied', () => {
@@ -144,5 +168,34 @@ describe('CharacterStudioPreview workspace', () => {
     const sendButton = wrapper.findAll('button').find(button => button.text().includes('回复生成中'))
     expect(sendButton).toBeDefined()
     expect((sendButton!.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('opens session list panel from the current session button', async () => {
+    const wrapper = mountPreview()
+
+    await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
+
+    expect(wrapper.text()).toContain('旧会话')
+    expect(wrapper.text()).toContain('上一次聊到这里')
+  })
+
+  it('opens greeting picker modal and shows greeting content cards', async () => {
+    const wrapper = mountPreview()
+
+    await wrapper.get('[data-testid="greeting-picker-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('重选开场白')
+    expect(document.body.textContent).toContain('今天也一起推进计划吧。')
+  })
+
+  it('opens prompt preview modal and shows empty state when no prompt is available', async () => {
+    const wrapper = mountPreview()
+
+    await wrapper.get('[data-testid="prompt-preview-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('本轮提示词预览')
+    expect(document.body.textContent).toContain('请先发送至少一条消息后再查看本轮提示词')
   })
 })

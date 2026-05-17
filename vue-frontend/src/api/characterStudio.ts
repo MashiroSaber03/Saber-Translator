@@ -203,7 +203,11 @@ async function readSseResponse(
           eventData = line.slice(5).trim()
         } else if (line === '' && eventType && eventData) {
           const parsed = JSON.parse(eventData) as Record<string, unknown>
-          onEvent({ type: eventType, ...parsed } as CharacterStudioChatStreamEvent)
+          const event = { type: eventType, ...parsed } as CharacterStudioChatStreamEvent
+          onEvent(event)
+          if (event.type === 'error') {
+            throw new Error(event.message || '聊天事件流返回错误')
+          }
           eventType = ''
           eventData = ''
         }

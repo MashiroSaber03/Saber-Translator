@@ -71,10 +71,6 @@ def create_empty_document(book_id: str, *, title: str = "新角色", origin_type
         "chatPreset": {
             "opening_mode": "first_message",
         },
-        "previewState": {
-            "variables": {},
-            "messages": [],
-        },
         "grounding": {
             "timeline_mode": "",
             "sample_pages": [],

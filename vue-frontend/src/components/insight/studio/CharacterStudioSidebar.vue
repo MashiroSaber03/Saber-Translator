@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar-shell">
+  <div class="sidebar-shell">
     <div class="sidebar-toolbar">
       <div class="toolbar-copy">
         <div class="kicker">导航与资源</div>
@@ -44,7 +44,7 @@
         @create="$emit('create-from-candidate', $event)"
       />
     </div>
-  </aside>
+  </div>
 </template>
 
 <script setup lang="ts">
