@@ -175,12 +175,37 @@
               <span class="pending-remove" @click.stop="removePendingFile(index)">×</span>
             </button>
           </div>
-          <textarea v-model="chatInput" rows="3" placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"></textarea>
-          <div class="composer-actions">
-            <button class="ghost-btn" :disabled="chatStreaming" @click="pickAttachments">添加图片</button>
-            <button class="primary-btn" :disabled="chatStreaming || (!chatInput.trim() && pendingFiles.length === 0)" @click="sendChat">
-              {{ chatStreaming ? '回复生成中...' : '发送消息' }}
-            </button>
+          <div class="composer-main">
+            <textarea
+              v-model="chatInput"
+              class="chat-composer-input"
+              rows="1"
+              placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"
+            ></textarea>
+            <div class="composer-actions compact-actions">
+              <button
+                data-testid="chat-upload-trigger"
+                class="ghost-btn icon-btn"
+                type="button"
+                title="添加图片"
+                aria-label="添加图片"
+                :disabled="chatStreaming"
+                @click="pickAttachments"
+              >
+                +
+              </button>
+              <button
+                data-testid="chat-send-trigger"
+                class="primary-btn icon-btn"
+                type="button"
+                :title="chatStreaming ? '回复生成中...' : '发送消息'"
+                :aria-label="chatStreaming ? '回复生成中...' : '发送消息'"
+                :disabled="chatStreaming || (!chatInput.trim() && pendingFiles.length === 0)"
+                @click="sendChat"
+              >
+                {{ chatStreaming ? '…' : '↗' }}
+              </button>
+            </div>
           </div>
           <input ref="attachmentInput" hidden type="file" accept="image/*" multiple @change="handleAttachmentChange">
         </div>
@@ -877,6 +902,18 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.composer-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.chat-composer-input {
+  min-height: 64px;
+  resize: vertical;
+}
+
 .toolbar-buttons {
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -1000,11 +1037,30 @@ onUnmounted(() => {
   margin-top: 2px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
+  gap: 6px;
+  padding: 10px 12px;
   border-radius: 20px;
   background: rgba(244, 248, 255, 0.94);
   border: 1px solid rgba(28, 55, 94, 0.08);
+}
+
+.compact-actions {
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.icon-btn {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
 }
 
 .pending-files {
@@ -1292,6 +1348,15 @@ onUnmounted(() => {
 
   .workspace-tabs {
     overflow-x: auto;
+  }
+
+  .composer-main {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-actions {
+    flex-direction: row;
+    justify-content: flex-end;
   }
 
   .message-card {

@@ -175,9 +175,9 @@ describe('CharacterStudioPreview workspace', () => {
       chatStreaming: true,
     })
 
-    const sendButton = wrapper.findAll('button').find(button => button.text().includes('回复生成中'))
-    expect(sendButton).toBeDefined()
-    expect((sendButton!.element as HTMLButtonElement).disabled).toBe(true)
+    const sendButton = wrapper.get('[data-testid="chat-send-trigger"]')
+    expect(sendButton.attributes('aria-label')).toBe('回复生成中...')
+    expect((sendButton.element as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('opens session list panel from the current session button', async () => {
@@ -187,6 +187,23 @@ describe('CharacterStudioPreview workspace', () => {
 
     expect(wrapper.text()).toContain('旧会话')
     expect(wrapper.text()).toContain('上一次聊到这里')
+  })
+
+  it('renders a compact chat composer with icon-only upload and send buttons', () => {
+    const wrapper = mountPreview()
+
+    expect(wrapper.find('.composer-main').exists()).toBe(true)
+    expect(wrapper.get('.chat-composer-input').attributes('rows')).toBe('1')
+
+    const uploadButton = wrapper.get('[data-testid="chat-upload-trigger"]')
+    const sendButton = wrapper.get('[data-testid="chat-send-trigger"]')
+
+    expect(uploadButton.attributes('aria-label')).toBe('添加图片')
+    expect(sendButton.attributes('aria-label')).toBe('发送消息')
+    expect(uploadButton.text()).toBe('+')
+    expect(sendButton.text()).toBe('↗')
+    expect(wrapper.text()).not.toContain('添加图片')
+    expect(wrapper.text()).not.toContain('发送消息')
   })
 
   it('opens greeting picker modal and shows greeting content cards', async () => {
