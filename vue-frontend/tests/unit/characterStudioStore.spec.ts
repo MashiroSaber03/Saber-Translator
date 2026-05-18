@@ -214,6 +214,40 @@ const demoChatSession: CharacterStudioChatSession = {
   last_prompt_preview: '',
 }
 
+const conversationChatSession: CharacterStudioChatSession = {
+  ...cloneDocument(demoChatSession),
+  messages: [
+    {
+      ...cloneDocument(demoChatSession.messages[0]!),
+      message_id: 'msg_opening',
+      content: '我是阿尔法。',
+      generation_meta: { kind: 'opening' },
+    },
+    {
+      message_id: 'msg_user_1',
+      role: 'user',
+      content: '今天情况怎么样？',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: { original_content: '今天情况怎么样？' },
+      created_at: '2026-05-15T00:01:00',
+      updated_at: '2026-05-15T00:01:00',
+    },
+    {
+      message_id: 'msg_assistant_1',
+      role: 'assistant',
+      content: '局势暂时稳定，但还需要继续观察。',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: {},
+      created_at: '2026-05-15T00:01:05',
+      updated_at: '2026-05-15T00:01:05',
+    },
+  ],
+}
+
 vi.mock('@/api/characterStudio', () => ({
   createCharacterStudioDocument: createCharacterStudioDocumentMock,
   createCharacterStudioChatSession: createCharacterStudioChatSessionMock,
@@ -526,6 +560,83 @@ describe('characterStudioStore', () => {
 
     await expect(store.generateSection('full')).rejects.toThrow('AI 生成结果缺少 identity。')
     expect(store.errorMessage).toBe('AI 生成结果缺少 identity。')
+  })
+
+  it('editing a user message automatically regenerates the assistant reply for that turn', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    getCharacterStudioChatStateMock.mockResolvedValueOnce({
+      success: true,
+      doc_id: 'doc_alpha',
+      active_session: cloneDocument(conversationChatSession),
+      archived_sessions: [],
+      available_greetings: [],
+    })
+
+    editCharacterStudioChatMessageMock.mockResolvedValueOnce({
+      success: true,
+      session: {
+        ...cloneDocument(conversationChatSession),
+        messages: cloneDocument(conversationChatSession.messages.slice(0, 2)).map((item, index) => {
+          if (index === 1) {
+            return {
+              ...item,
+              content: '编辑后的用户消息',
+              generation_meta: { original_content: '编辑后的用户消息' },
+            }
+          }
+          return item
+        }),
+      },
+    })
+
+    regenerateCharacterStudioChatMessageMock.mockImplementationOnce(async (
+      _bookId,
+      _docId,
+      _sessionId,
+      _messageId,
+      onEvent,
+    ) => {
+      onEvent({
+        type: 'assistant_delta',
+        delta: '新的',
+        content: '新的回答',
+      })
+      onEvent({
+        type: 'state',
+        session: {
+          ...cloneDocument(conversationChatSession),
+          messages: [
+            {
+              ...cloneDocument(conversationChatSession.messages[0]!),
+            },
+            {
+              ...cloneDocument(conversationChatSession.messages[1]!),
+              content: '编辑后的用户消息',
+              generation_meta: { original_content: '编辑后的用户消息' },
+            },
+            {
+              ...cloneDocument(conversationChatSession.messages[2]!),
+              message_id: 'msg_assistant_regenerated',
+              content: '新的回答',
+            },
+          ],
+        },
+      })
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await store.editChatMessage('msg_user_1', '编辑后的用户消息')
+
+    expect(editCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
+    expect(regenerateCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
+    expect(store.activeChatSession?.messages.map(item => item.content)).toEqual([
+      '我是阿尔法。',
+      '编辑后的用户消息',
+      '新的回答',
+    ])
   })
 
   it('rehydrates chat state after full generation so opening and greetings refresh immediately', async () => {

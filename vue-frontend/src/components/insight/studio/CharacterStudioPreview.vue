@@ -118,16 +118,36 @@
             <div class="message-head">
               <span class="message-role">{{ item.role === 'assistant' ? (document.identity.name || '角色') : '你' }}</span>
               <div class="message-actions">
-                <button class="ghost-btn tiny" :disabled="chatStreaming || chatMutating" @click="startEdit(item)">编辑</button>
-                <button class="ghost-btn tiny" :disabled="chatStreaming || chatMutating" @click="$emit('delete-message', item.message_id)">删除</button>
-                <button class="ghost-btn tiny" :disabled="chatStreaming" @click="$emit('regenerate-message', item.message_id)">重生</button>
+                <button
+                  v-if="canEditMessage(item)"
+                  class="ghost-btn tiny"
+                  :disabled="chatStreaming || chatMutating"
+                  @click="startEdit(item)"
+                >
+                  编辑
+                </button>
+                <button
+                  class="ghost-btn tiny"
+                  :disabled="chatStreaming || chatMutating"
+                  @click="$emit('delete-message', item.message_id)"
+                >
+                  从这里回退
+                </button>
+                <button
+                  v-if="canRegenerateMessage(item)"
+                  class="ghost-btn tiny"
+                  :disabled="chatStreaming"
+                  @click="$emit('regenerate-message', item.message_id)"
+                >
+                  重新生成
+                </button>
               </div>
             </div>
 
             <div v-if="editingMessageId === item.message_id" class="editor-row">
               <textarea v-model="editingContent" rows="4"></textarea>
               <div class="editor-actions">
-                <button class="primary-btn tiny" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item.message_id)">保存</button>
+                <button class="primary-btn tiny" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">保存并重新生成</button>
                 <button class="ghost-btn tiny" @click="cancelEdit">取消</button>
               </div>
             </div>
@@ -557,10 +577,18 @@ function cancelEdit() {
   editingContent.value = ''
 }
 
-function commitEdit(messageId: string) {
+function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   if (!editingContent.value.trim()) return
-  emit('edit-message', { messageId, content: editingContent.value.trim() })
+  emit('edit-message', { messageId: message.message_id, content: editingContent.value.trim() })
   cancelEdit()
+}
+
+function canEditMessage(message: CharacterStudioChatSession['messages'][number]) {
+  return message.role === 'user'
+}
+
+function canRegenerateMessage(message: CharacterStudioChatSession['messages'][number]) {
+  return message.role === 'assistant'
 }
 
 function pickImport() {

@@ -149,6 +149,45 @@ const sessionStub: CharacterStudioChatSession = {
   last_prompt_preview: '',
 }
 
+const conversationSessionStub: CharacterStudioChatSession = {
+  ...sessionStub,
+  messages: [
+    {
+      message_id: 'msg-open',
+      role: 'assistant',
+      content: '你好，我是阿尔法。',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: { kind: 'opening' },
+      created_at: '2026-05-15T00:00:00',
+      updated_at: '2026-05-15T00:00:00',
+    },
+    {
+      message_id: 'msg-user-1',
+      role: 'user',
+      content: '今天情况怎么样？',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: { original_content: '今天情况怎么样？' },
+      created_at: '2026-05-15T00:01:00',
+      updated_at: '2026-05-15T00:01:00',
+    },
+    {
+      message_id: 'msg-assistant-1',
+      role: 'assistant',
+      content: '局势暂时稳定，但还需要继续观察。',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: {},
+      created_at: '2026-05-15T00:01:05',
+      updated_at: '2026-05-15T00:01:05',
+    },
+  ],
+}
+
 function mountPreview(overrides: Record<string, unknown> = {}) {
   return mount(CharacterStudioPreview, {
     props: {
@@ -315,6 +354,36 @@ describe('CharacterStudioPreview workspace', () => {
     expect(sendButton.text()).toBe('↗')
     expect(wrapper.text()).not.toContain('添加图片')
     expect(wrapper.text()).not.toContain('发送消息')
+  })
+
+  it('shows user-message editing as an edit-and-regenerate action and uses clearer rollback labels', async () => {
+    const wrapper = mountPreview({
+      session: conversationSessionStub,
+    })
+
+    const userCard = wrapper.findAll('.message-card').find(card => card.text().includes('今天情况怎么样？'))
+    expect(userCard).toBeDefined()
+    expect(userCard!.text()).toContain('编辑')
+    expect(userCard!.text()).toContain('从这里回退')
+    expect(userCard!.text()).not.toContain('重新生成')
+
+    await userCard!.find('button').trigger('click')
+
+    expect(userCard!.text()).toContain('保存并重新生成')
+    expect(wrapper.text()).not.toContain('删除')
+    expect(wrapper.text()).not.toContain('重生')
+  })
+
+  it('shows regenerate on assistant replies instead of allowing direct editing', () => {
+    const wrapper = mountPreview({
+      session: conversationSessionStub,
+    })
+
+    const assistantCard = wrapper.findAll('.message-card').find(card => card.text().includes('局势暂时稳定'))
+    expect(assistantCard).toBeDefined()
+    expect(assistantCard!.text()).toContain('重新生成')
+    expect(assistantCard!.text()).toContain('从这里回退')
+    expect(assistantCard!.text()).not.toContain('编辑')
   })
 
   it('opens greeting picker modal and shows greeting content cards', async () => {

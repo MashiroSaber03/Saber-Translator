@@ -777,8 +777,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function editChatMessage(messageId: string, content: string) {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
+    const targetRole = activeChatSession.value.messages.find(item => item.message_id === messageId)?.role
     isChatMutating.value = true
     clearErrorMessage()
+    let handedOffToRegenerate = false
     try {
       const response = await editCharacterStudioChatMessage(
         bookId.value,
@@ -791,10 +793,21 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         throw new Error(response.error || '编辑消息失败')
       }
       applyChatStatePayload({ session: response.session as CharacterStudioChatSession })
+      if (targetRole === 'user') {
+        handedOffToRegenerate = true
+        isChatMutating.value = false
+        await regenerateChatMessage(messageId)
+        return
+      }
     } catch (error) {
+      if (handedOffToRegenerate) {
+        throw error
+      }
       throw createActionError(error, '编辑消息失败')
     } finally {
-      isChatMutating.value = false
+      if (isChatMutating.value) {
+        isChatMutating.value = false
+      }
       void flushPendingChatRehydrate()
     }
   }
