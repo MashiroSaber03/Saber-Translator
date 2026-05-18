@@ -28,8 +28,13 @@
         <button class="error-dismiss" @click="store.clearErrorMessage()">知道了</button>
       </div>
 
-      <div v-if="store.resourcePanelOpen" class="resource-overlay" @click.self="store.resourcePanelOpen = false">
-        <div class="resource-dialog">
+      <div
+        v-if="store.resourcePanelOpen"
+        class="resource-overlay"
+        data-testid="resource-overlay"
+        @click.self="store.resourcePanelOpen = false"
+      >
+        <div class="resource-dialog" data-testid="resource-dialog">
           <CharacterStudioSidebar
             :documents="store.filteredDocuments"
             :candidates="store.filteredCandidates"
@@ -420,12 +425,22 @@ watch(() => props.docId, async nextDocId => {
   align-items: flex-start;
   justify-content: center;
   padding: 82px 20px 20px;
+  overflow-y: auto;
 }
 
 .resource-dialog {
   width: min(1180px, 100%);
+  height: calc(100vh - 120px);
   max-height: calc(100vh - 120px);
+  min-height: 0;
+  display: flex;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+.resource-dialog > * {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .workspace-error {

@@ -100,6 +100,34 @@ describe('CharacterStudioView workspace shell', () => {
     expect(wrapper.text()).toContain('导出失败：测试错误')
   })
 
+  it('renders the resource dialog shell when the resource panel is open', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+
+    bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
+    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
+    studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
+    studioStore.resourcePanelOpen = true
+
+    const wrapper = mount(CharacterStudioView, {
+      props: {
+        bookId: 'book-demo',
+      },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="resource-overlay"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="resource-dialog"]').exists()).toBe(true)
+  })
+
   it('falls back to the first available document when requested docId cannot be opened', async () => {
     const studioStore = useCharacterStudioStore()
     const bookshelfStore = useBookshelfStore()
