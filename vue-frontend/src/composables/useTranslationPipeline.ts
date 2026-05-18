@@ -3,7 +3,7 @@
  * 
  * 使用统一的翻译入口，支持：
  * - 单页翻译
- * - 范围翻译
+ * - 指定页翻译
  * - 全部翻译
  * - 重试失败页面
  * 
@@ -24,7 +24,7 @@ import {
     getRemoveTextModeConfig
 } from './translation'
 import type { PageSelection } from './translation/core/types'
-import { normalizePageSelection, pageIndexesToSelection, pageSelectionToPageIndexes } from '@/utils/pageSelection'
+import { pageIndexesToSelection, pageSelectionToPageIndexes } from '@/utils/pageSelection'
 
 // 重新导出类型供外部使用
 export type { TranslationProgress, PageSelection } from './translation/core/types'
@@ -101,8 +101,8 @@ export function useTranslation() {
      * // 翻译全部
      * translatePages(range(0, totalImages), 'standard')
      * 
-     * // 翻译范围（第5-10页）
-     * translatePages(range(4, 10), 'standard')
+     * // 翻译指定页
+     * translatePages([0, 2, 7, 9], 'standard')
      * 
      * // 翻译单页
      * translatePages([7], 'standard')

@@ -84,7 +84,7 @@ describe('SettingsSidebar page selection workflow', () => {
     await workflowModeSelect!.setValue('translate-batch')
     await workflowModeSelect!.trigger('change')
 
-    const enableCheckbox = wrapper.find('.range-toggle-compact input[type="checkbox"]')
+    const enableCheckbox = wrapper.find('.page-selection-toggle-compact input[type="checkbox"]')
     await enableCheckbox.setValue(true)
 
     await wrapper.find('.page-selection-open-btn').trigger('click')
@@ -93,8 +93,6 @@ describe('SettingsSidebar page selection workflow', () => {
     await wrapper.find('.confirm-selection').trigger('click')
 
     const runButton = wrapper.find('#runWorkflowButton')
-    await runButton.trigger('click')
-
     await runButton.trigger('click')
 
     expect(wrapper.emitted('runWorkflow')?.[0]).toEqual([

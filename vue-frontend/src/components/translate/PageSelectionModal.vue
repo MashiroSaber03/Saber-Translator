@@ -66,7 +66,6 @@ watch(totalImages, (count) => {
 const normalizedDraftSelection = computed(() => normalizePageSelection(draftSelectedPages.value))
 const selectedCount = computed(() => normalizedDraftSelection.value.length)
 const draftSummary = computed(() => createPageSelectionSummary(normalizedDraftSelection.value))
-const isAllSelected = computed(() => totalImages.value > 0 && selectedCount.value === totalImages.value)
 
 function closeModal(): void {
   emit('update:modelValue', false)
@@ -528,7 +527,7 @@ function handleBreadcrumbClick(path: string): void {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-.thumbnail-processing-indicator {
+.page-selection-modal .thumbnail-processing-indicator {
   position: absolute;
   top: 5px;
   right: 5px;
@@ -545,10 +544,10 @@ function handleBreadcrumbClick(path: string): void {
   animation: pageSelectionPulse 1.5s infinite;
 }
 
-.translation-failed-indicator,
-.labeled-indicator,
-.page-number-indicator,
-.translated-indicator {
+.page-selection-modal .translation-failed-indicator,
+.page-selection-modal .labeled-indicator,
+.page-selection-modal .page-number-indicator,
+.page-selection-modal .translated-indicator {
   position: absolute;
   display: flex;
   align-items: center;
@@ -556,7 +555,7 @@ function handleBreadcrumbClick(path: string): void {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.translation-failed-indicator {
+.page-selection-modal .translation-failed-indicator {
   bottom: 3px;
   right: 3px;
   background-color: rgba(255, 0, 0, 0.8);
@@ -569,7 +568,7 @@ function handleBreadcrumbClick(path: string): void {
   z-index: 11;
 }
 
-.labeled-indicator {
+.page-selection-modal .labeled-indicator {
   bottom: 3px;
   right: 3px;
   background-color: rgba(0, 123, 255, 0.8);
@@ -581,7 +580,7 @@ function handleBreadcrumbClick(path: string): void {
   z-index: 10;
 }
 
-.page-number-indicator {
+.page-selection-modal .page-number-indicator {
   bottom: 3px;
   left: 3px;
   background-color: rgba(0, 0, 0, 0.6);
@@ -595,7 +594,7 @@ function handleBreadcrumbClick(path: string): void {
   z-index: 8;
 }
 
-.translated-indicator {
+.page-selection-modal .translated-indicator {
   top: 3px;
   left: 3px;
   background-color: rgba(34, 197, 94, 0.9);

@@ -892,7 +892,7 @@ function handleOpenNonTranslate(): void {
       >
         <div class="settings-form page-selection-form">
           <div class="range-header-row">
-            <label class="range-toggle-compact">
+            <label class="page-selection-toggle-compact">
               <input
                 type="checkbox"
                 v-model="isPageSelectionEnabled"
@@ -903,7 +903,7 @@ function handleOpenNonTranslate(): void {
             <span class="total-count">共 {{ totalImages }} 张</span>
           </div>
 
-          <div v-if="!supportsPageSelectionForCurrentMode" class="range-note">当前模式不支持指定翻译页码</div>
+          <div v-if="!supportsPageSelectionForCurrentMode" class="page-selection-note">当前模式不支持指定翻译页码</div>
 
           <div v-if="isPageSelectionActiveForCurrentMode" class="page-selection-summary-card">
             <div class="page-selection-summary-label">当前选择</div>
@@ -912,7 +912,7 @@ function handleOpenNonTranslate(): void {
             </div>
             <button
               type="button"
-              class="settings-button page-selection-open-btn"
+              class="settings-button secondary-button page-selection-open-btn"
               :disabled="totalImages === 0"
               @click="openPageSelectionModal"
             >
@@ -922,7 +922,7 @@ function handleOpenNonTranslate(): void {
 
           <div
             v-if="isPageSelectionActiveForCurrentMode && !hasValidPageSelection && totalImages > 0"
-            class="range-error-compact"
+            class="page-selection-error"
           >
             请至少选择一页
           </div>
@@ -1444,7 +1444,7 @@ function handleOpenNonTranslate(): void {
   gap: 8px;
 }
 
-.range-toggle-compact {
+.page-selection-toggle-compact {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1458,13 +1458,13 @@ function handleOpenNonTranslate(): void {
   cursor: pointer;
 }
 
-.range-toggle-compact:has(input:checked) {
+.page-selection-toggle-compact:has(input:checked) {
   border-color: #94b5e5;
   background: #e9f2ff;
   color: #21579c;
 }
 
-.range-toggle-compact input[type='checkbox'] {
+.page-selection-toggle-compact input[type='checkbox'] {
   width: 14px;
   height: 14px;
   margin: 0;
@@ -1477,7 +1477,7 @@ function handleOpenNonTranslate(): void {
   font-weight: 500;
 }
 
-.range-note {
+.page-selection-note {
   color: #6f8099;
   font-size: 12px;
 }
@@ -1507,9 +1507,13 @@ function handleOpenNonTranslate(): void {
 
 .page-selection-open-btn {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
 }
 
-.range-error-compact {
+.page-selection-error {
   color: #b73535;
   font-size: 12px;
   font-weight: 600;
@@ -1652,7 +1656,11 @@ function handleOpenNonTranslate(): void {
 }
 
 .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
+  padding: 0 14px;
   border: 1px solid #bfd0e5;
   border-radius: 8px;
   background: #ffffff;
