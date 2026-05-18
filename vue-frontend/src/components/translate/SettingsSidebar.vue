@@ -905,8 +905,7 @@ function handleOpenNonTranslate(): void {
 
           <div v-if="!supportsPageSelectionForCurrentMode" class="page-selection-note">当前模式不支持指定翻译页码</div>
 
-          <div v-if="isPageSelectionActiveForCurrentMode" class="page-selection-summary-card">
-            <div class="page-selection-summary-label">当前选择</div>
+          <div v-if="isPageSelectionActiveForCurrentMode" class="page-selection-summary-block">
             <div class="page-selection-summary-value">
               {{ createPageSelectionSummary(normalizedSelectedPages) }}
             </div>
@@ -1482,34 +1481,26 @@ function handleOpenNonTranslate(): void {
   font-size: 12px;
 }
 
-.page-selection-summary-card {
+.page-selection-summary-block {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  border: 1px solid #d8e3f1;
-  border-radius: 12px;
-  background: #f5f8fd;
-}
-
-.page-selection-summary-label {
-  color: #304464;
-  font-size: 13px;
-  font-weight: 700;
+  padding: 4px 0 0;
 }
 
 .page-selection-summary-value {
-  color: #4d5f7a;
+  color: #304464;
   font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
 }
 
 .page-selection-open-btn {
-  align-self: flex-start;
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   padding: 0 14px;
 }
 
@@ -1517,7 +1508,8 @@ function handleOpenNonTranslate(): void {
   color: #b73535;
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 8px;
+  margin-top: 2px;
+  padding: 6px 10px;
   border: 1px solid #f3cccc;
   border-radius: 8px;
   background: #fff1f1;
