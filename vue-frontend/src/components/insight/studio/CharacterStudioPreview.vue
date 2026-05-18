@@ -68,7 +68,7 @@
             <button
               data-testid="greeting-picker-trigger"
               class="session-trigger session-trigger-inline"
-              :disabled="availableGreetings.length === 0 || chatMutating || chatStreaming"
+              :disabled="displayGreetings.length === 0 || chatMutating || chatStreaming"
               @click="openGreetingPicker"
             >
               <div class="trigger-copy trigger-copy-inline">
@@ -329,10 +329,10 @@
       <div class="modal-copy">
         <p>选择一条开场白后，将归档当前会话，并以该开场白重新开启一轮新对话。</p>
       </div>
-      <div v-if="availableGreetings.length === 0" class="modal-empty">当前还没有可用开场白。</div>
+      <div v-if="displayGreetings.length === 0" class="modal-empty">当前还没有可用开场白。</div>
       <div v-else class="greeting-grid">
         <button
-          v-for="item in availableGreetings"
+          v-for="item in displayGreetings"
           :key="item.greeting_id"
           type="button"
           class="greeting-card"
@@ -391,13 +391,13 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
 import BaseModal from '@/components/common/BaseModal.vue'
 import { buildCharacterStudioPatchSummary } from '@/stores/characterStudioPatchSummary'
+import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import type {
   CharacterStudioAgentPatchV2,
   CharacterStudioChatAttachment,
   CharacterStudioChatSession,
   CharacterStudioChatSessionSummary,
   CharacterStudioDocument,
-  CharacterStudioGreetingOption,
 } from '@/types/characterStudio'
 
 const props = defineProps<{
@@ -405,7 +405,6 @@ const props = defineProps<{
   document: CharacterStudioDocument | null
   session: CharacterStudioChatSession | null
   archivedSessions: CharacterStudioChatSessionSummary[]
-  availableGreetings: CharacterStudioGreetingOption[]
   promptPreview: string
   promptPreviewError: string
   activeTab: 'chat' | 'assistant' | 'runtime'
@@ -483,16 +482,24 @@ const currentSessionMeta = computed(() => {
   const count = props.session?.messages.length || 0
   return `${count} 条消息`
 })
+const displayGreetings = computed(() => {
+  return buildCharacterStudioGreetingOptions(props.document)
+})
 const currentGreetingId = computed(() => {
   const source = props.session?.greeting_source || {}
-  if (source.type === 'first_message') return 'first_message'
-  if (source.type === 'alternate_greetings' && typeof source.index === 'number') {
-    return `alternate_${source.index + 1}`
+  if (source.type === 'first_message') {
+    const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first_message')
+    if (hasFirstMessage) return 'first_message'
   }
-  return props.availableGreetings[0]?.greeting_id || ''
+  if (source.type === 'alternate_greetings' && typeof source.index === 'number') {
+    const greetingId = `alternate_${source.index + 1}`
+    const hasAlternate = displayGreetings.value.some(item => item.greeting_id === greetingId)
+    if (hasAlternate) return greetingId
+  }
+  return displayGreetings.value[0]?.greeting_id || ''
 })
 const currentGreetingLabel = computed(() => {
-  const selected = props.availableGreetings.find(item => item.greeting_id === currentGreetingId.value)
+  const selected = displayGreetings.value.find(item => item.greeting_id === currentGreetingId.value)
   return selected?.label || '选择开场白'
 })
 
@@ -586,8 +593,8 @@ function chooseSession(sessionId: string) {
 }
 
 function openGreetingPicker() {
-  if (!props.availableGreetings.length) return
-  selectedGreetingId.value = currentGreetingId.value || props.availableGreetings[0]?.greeting_id || ''
+  if (!displayGreetings.value.length) return
+  selectedGreetingId.value = currentGreetingId.value || displayGreetings.value[0]?.greeting_id || ''
   greetingPickerOpen.value = true
 }
 

@@ -35,7 +35,6 @@ import type {
   CharacterStudioCandidate,
   CharacterStudioDocument,
   CharacterStudioEditorPendingState,
-  CharacterStudioGreetingOption,
   CharacterStudioSummary,
   ExportDiagnostic,
 } from '@/types/characterStudio'
@@ -59,7 +58,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const currentDocument = ref<CharacterStudioDocument | null>(null)
   const activeChatSession = ref<CharacterStudioChatSession | null>(null)
   const archivedChatSessions = ref<CharacterStudioChatSessionSummary[]>([])
-  const availableGreetings = ref<CharacterStudioGreetingOption[]>([])
   const chatPromptPreview = ref('')
   const chatPromptPreviewError = ref('')
   const diagnostics = ref<ExportDiagnostic | null>(null)
@@ -94,6 +92,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const selectedLibrarySearch = ref('')
   const _suspendAutosave = ref(false)
   const lastSyncedFingerprint = ref('')
+  const pendingChatRehydrate = ref(false)
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
   let chatAbortController: AbortController | null = null
@@ -200,9 +199,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   function resetChatState() {
     activeChatSession.value = null
     archivedChatSessions.value = []
-    availableGreetings.value = []
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
+    pendingChatRehydrate.value = false
   }
 
   function abortActiveChatStream() {
@@ -229,6 +228,43 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       clearTimeout(autosaveTimer)
       autosaveTimer = null
     }
+  }
+
+  function invalidateDocumentDerivedCaches() {
+    diagnostics.value = null
+    chatPromptPreview.value = ''
+    chatPromptPreviewError.value = ''
+  }
+
+  function shouldDelayChatRehydrate() {
+    return (
+      isChatStreaming.value ||
+      isChatMutating.value ||
+      isChatSummarizing.value ||
+      isChatImporting.value ||
+      isChatExporting.value
+    )
+  }
+
+  async function rehydrateChatAfterDocumentMutation(docId: string) {
+    if (!bookId.value || !docId) return
+    if (shouldDelayChatRehydrate()) {
+      pendingChatRehydrate.value = true
+      return
+    }
+    pendingChatRehydrate.value = false
+    try {
+      await loadChatState(docId)
+    } catch {
+      // 聊天态补刷失败不应回滚已成功的文档变更，错误由 store 状态承载。
+    }
+  }
+
+  async function flushPendingChatRehydrate() {
+    if (!pendingChatRehydrate.value) return
+    const docId = currentDocument.value?.id || ''
+    if (!docId || shouldDelayChatRehydrate()) return
+    await rehydrateChatAfterDocumentMutation(docId)
   }
 
   async function loadWorkspace(nextBookId: string) {
@@ -358,6 +394,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         markDocumentSynced(document)
       })
       await loadWorkspace(bookId.value)
+      await rehydrateChatAfterDocumentMutation(document.id)
     } catch (error) {
       throw createActionError(error, '保存失败')
     } finally {
@@ -401,6 +438,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     currentDocument.value = nextDocument
     if (!nextDocument) return
     if (buildAutosaveFingerprint(nextDocument) === lastSyncedFingerprint.value) return
+    invalidateDocumentDerivedCaches()
     scheduleAutosave()
   }
 
@@ -430,7 +468,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       }
       currentDocument.value = null
       markDocumentSynced(null)
-      diagnostics.value = null
+      invalidateDocumentDerivedCaches()
       agentMessages.value = []
       pendingAgentPatch.value = null
       agentHtmlPreview.value = ''
@@ -456,8 +494,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
+        invalidateDocumentDerivedCaches()
       })
       await loadWorkspace(bookId.value)
+      await rehydrateChatAfterDocumentMutation(document.id)
     } catch (error) {
       throw createActionError(error, '生成失败')
     } finally {
@@ -518,6 +558,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       patchSnapshot.value = cloneDocument(currentDocument.value)
       currentDocument.value = nextDocument
       pendingAgentPatch.value = null
+      invalidateDocumentDerivedCaches()
       scheduleAutosave()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '应用 patch 失败'
@@ -529,6 +570,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     currentDocument.value = patchSnapshot.value
     patchSnapshot.value = null
     pendingAgentPatch.value = null
+    invalidateDocumentDerivedCaches()
     scheduleAutosave()
   }
 
@@ -556,7 +598,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   function applyChatStatePayload(payload: {
     active_session?: CharacterStudioChatSession
     archived_sessions?: CharacterStudioChatSessionSummary[]
-    available_greetings?: CharacterStudioGreetingOption[]
     session?: CharacterStudioChatSession
     prompt_preview?: string
   }) {
@@ -569,9 +610,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
     if (payload.archived_sessions) {
       archivedChatSessions.value = payload.archived_sessions
-    }
-    if (payload.available_greetings) {
-      availableGreetings.value = payload.available_greetings
     }
     if (typeof payload.prompt_preview === 'string') {
       chatPromptPreview.value = payload.prompt_preview
@@ -610,6 +648,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '创建聊天会话失败')
     } finally {
       isChatMutating.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -628,6 +667,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '切换聊天会话失败')
     } finally {
       isChatMutating.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -731,6 +771,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (streamRunId === chatStreamRunId) {
         isChatStreaming.value = false
       }
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -754,6 +795,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '编辑消息失败')
     } finally {
       isChatMutating.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -776,6 +818,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '删除消息失败')
     } finally {
       isChatMutating.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -846,6 +889,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (streamRunId === chatStreamRunId) {
         isChatStreaming.value = false
       }
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -868,6 +912,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '总结聊天失败')
     } finally {
       isChatSummarizing.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -886,6 +931,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '导出聊天记录失败')
     } finally {
       isChatExporting.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -903,6 +949,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '导入聊天记录失败')
     } finally {
       isChatImporting.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -962,12 +1009,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
+        invalidateDocumentDerivedCaches()
       })
       await loadWorkspace(bookId.value)
+      await rehydrateChatAfterDocumentMutation(document.id)
     } catch (error) {
       throw createActionError(error, '世界书导入失败')
     } finally {
       isImportingWorldbook.value = false
+      void flushPendingChatRehydrate()
     }
   }
 
@@ -995,7 +1045,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     currentDocument,
     activeChatSession,
     archivedChatSessions,
-    availableGreetings,
     chatPromptPreview,
     chatPromptPreviewError,
     diagnostics,

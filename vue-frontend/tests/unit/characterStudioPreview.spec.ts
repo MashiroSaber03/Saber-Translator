@@ -165,20 +165,6 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
           last_message_excerpt: '上一次聊到这里',
         },
       ],
-      availableGreetings: [
-        {
-          greeting_id: 'first_message',
-          label: '主问候',
-          content: '你好，我是阿尔法。',
-          source: { type: 'first_message', index: 0 },
-        },
-        {
-          greeting_id: 'alternate_1',
-          label: '备用问候 1',
-          content: '今天也一起推进计划吧。',
-          source: { type: 'alternate_greetings', index: 0 },
-        },
-      ],
       promptPreview: '',
       promptPreviewError: '',
       activeTab: 'chat',
@@ -332,13 +318,43 @@ describe('CharacterStudioPreview workspace', () => {
   })
 
   it('opens greeting picker modal and shows greeting content cards', async () => {
-    const wrapper = mountPreview()
+    const wrapper = mountPreview({
+      document: {
+        ...documentStub,
+        coreMessages: {
+          ...documentStub.coreMessages,
+          alternate_greetings: ['今天也一起推进计划吧。'],
+        },
+      },
+    })
 
     await wrapper.get('[data-testid="greeting-picker-trigger"]').trigger('click')
     await flushPromises()
 
     expect(document.body.textContent).toContain('重选开场白')
     expect(document.body.textContent).toContain('今天也一起推进计划吧。')
+  })
+
+  it('falls back to document-derived greetings when chat-state greetings are still empty', () => {
+    const wrapper = mountPreview({
+      document: {
+        ...documentStub,
+        coreMessages: {
+          ...documentStub.coreMessages,
+          first_message: '新的主问候',
+          alternate_greetings: ['新的备用问候'],
+        },
+      },
+      session: {
+        ...sessionStub,
+        greeting_source: { type: 'first_message', index: 0 },
+        messages: [],
+      },
+    })
+
+    const trigger = wrapper.get('[data-testid="greeting-picker-trigger"]')
+    expect((trigger.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.text()).toContain('主问候')
   })
 
   it('opens prompt preview modal and shows empty state when no prompt is available', async () => {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { CharacterStudioChatSession } from '@/types/characterStudio'
+import type { CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
+import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 
 function cloneDocument<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -31,7 +32,7 @@ const demoDocument = {
   exportArtifacts: {},
 }
 
-const structuredDocument = {
+const structuredDocument: CharacterStudioDocument = {
   ...cloneDocument(demoDocument),
   lorebook: {
     name: '阿尔法世界书',
@@ -108,7 +109,7 @@ const structuredDocument = {
   ],
 }
 
-const candidateDocument = {
+const candidateDocument: CharacterStudioDocument = {
   ...demoDocument,
   id: 'doc_candidate',
   origin: { type: 'analysis', source_character: '候选角色', source_pages: [] },
@@ -184,6 +185,7 @@ const summarizeCharacterStudioChatSessionMock = vi.fn()
 const exportCharacterStudioChatSessionMock = vi.fn()
 const importCharacterStudioChatSessionMock = vi.fn()
 const getCharacterStudioChatPromptPreviewMock = vi.fn()
+const importWorldbookIntoCharacterStudioDocumentMock = vi.fn()
 
 const demoChatSession: CharacterStudioChatSession = {
   session_id: 'chat_alpha',
@@ -225,6 +227,7 @@ vi.mock('@/api/characterStudio', () => ({
   exportCharacterStudioChatSession: exportCharacterStudioChatSessionMock,
   importCharacterStudioChatSession: importCharacterStudioChatSessionMock,
   getCharacterStudioChatPromptPreview: getCharacterStudioChatPromptPreviewMock,
+  importWorldbookIntoCharacterStudioDocument: importWorldbookIntoCharacterStudioDocumentMock,
   generateCharacterStudioSection: generateCharacterStudioSectionMock,
   getCharacterStudioIndex: getCharacterStudioIndexMock,
   getCharacterStudioDocument: getCharacterStudioDocumentMock,
@@ -251,6 +254,7 @@ describe('characterStudioStore', () => {
     exportCharacterStudioChatSessionMock.mockReset()
     importCharacterStudioChatSessionMock.mockReset()
     getCharacterStudioChatPromptPreviewMock.mockReset()
+    importWorldbookIntoCharacterStudioDocumentMock.mockReset()
     getCharacterStudioIndexMock.mockResolvedValue({
       success: true,
       book_id: 'book-demo',
@@ -522,6 +526,188 @@ describe('characterStudioStore', () => {
 
     await expect(store.generateSection('full')).rejects.toThrow('AI 生成结果缺少 identity。')
     expect(store.errorMessage).toBe('AI 生成结果缺少 identity。')
+  })
+
+  it('rehydrates chat state after full generation so opening and greetings refresh immediately', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    getCharacterStudioChatStateMock
+      .mockResolvedValueOnce({
+        success: true,
+        doc_id: 'doc_alpha',
+        active_session: {
+          ...demoChatSession,
+          messages: [],
+        },
+        archived_sessions: [],
+        available_greetings: [],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        doc_id: 'doc_alpha',
+        active_session: {
+          ...demoChatSession,
+          messages: [
+            {
+              ...demoChatSession.messages[0],
+              content: '新的默认开场白',
+            },
+          ],
+        },
+        archived_sessions: [],
+        available_greetings: [
+          {
+            greeting_id: 'first_message',
+            label: '主问候',
+            content: '新的默认开场白',
+            source: { type: 'first_message', index: 0 },
+          },
+          {
+            greeting_id: 'alternate_1',
+            label: '备用问候 1',
+            content: '备用问候',
+            source: { type: 'alternate_greetings', index: 0 },
+          },
+        ],
+      })
+
+    generateCharacterStudioSectionMock.mockResolvedValueOnce({
+      success: true,
+      document: {
+        ...cloneDocument(demoDocument),
+        coreMessages: {
+          ...cloneDocument(demoDocument.coreMessages),
+          first_message: '新的默认开场白',
+          alternate_greetings: ['备用问候'],
+        },
+      },
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await store.generateSection('full')
+
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(2)
+    expect(store.activeChatSession?.messages[0]?.content).toBe('新的默认开场白')
+    expect(buildCharacterStudioGreetingOptions(store.currentDocument)).toHaveLength(2)
+  })
+
+  it('defers chat rehydrate until streaming finishes when document save happens mid-chat', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    let resolveStream: (() => void) | null = null
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(async () => new Promise<void>(resolve => {
+      resolveStream = resolve
+    }))
+
+    getCharacterStudioChatStateMock
+      .mockResolvedValueOnce({
+        success: true,
+        doc_id: 'doc_alpha',
+        active_session: cloneDocument(demoChatSession),
+        archived_sessions: [],
+        available_greetings: [
+          {
+            greeting_id: 'first_message',
+            label: '主问候',
+            content: '我是阿尔法。',
+            source: { type: 'first_message', index: 0 },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        doc_id: 'doc_alpha',
+        active_session: {
+          ...cloneDocument(demoChatSession),
+          messages: [
+            {
+              ...cloneDocument(demoChatSession.messages[0]!),
+              content: '保存后同步的新开场',
+            },
+          ],
+        },
+        archived_sessions: [],
+        available_greetings: [
+          {
+            greeting_id: 'first_message',
+            label: '主问候',
+            content: '保存后同步的新开场',
+            source: { type: 'first_message', index: 0 },
+          },
+        ],
+      })
+
+    saveCharacterStudioDocumentMock.mockResolvedValueOnce({
+      success: true,
+      document: {
+        ...cloneDocument(demoDocument),
+        coreMessages: {
+          ...cloneDocument(demoDocument.coreMessages),
+          first_message: '保存后同步的新开场',
+        },
+      },
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const sendPromise = store.sendChatMessage('先别刷新我')
+    await Promise.resolve()
+
+    expect(store.isChatStreaming).toBe(true)
+
+    await store.persistCurrentDocument()
+
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(1)
+
+    if (resolveStream) {
+      resolveStream()
+    }
+    await sendPromise
+
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(2)
+    expect(store.activeChatSession?.messages[0]?.content).toBe('保存后同步的新开场')
+  })
+
+  it('updates locally derived greeting options and clears stale diagnostics/prompt preview on document edits', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    store.diagnostics = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      checks: {},
+    }
+    store.chatPromptPreview = '旧提示词缓存'
+    store.chatPromptPreviewError = '旧错误'
+
+    if (!store.currentDocument) {
+      throw new Error('currentDocument missing in test setup')
+    }
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      coreMessages: {
+        ...store.currentDocument.coreMessages,
+        first_message: '本地立即可见的主问候',
+        alternate_greetings: ['备用问候 A'],
+      },
+    })
+
+    expect(buildCharacterStudioGreetingOptions(store.currentDocument).map(item => item.content)).toEqual([
+      '本地立即可见的主问候',
+      '备用问候 A',
+    ])
+    expect(store.diagnostics).toBeNull()
+    expect(store.chatPromptPreview).toBe('')
+    expect(store.chatPromptPreviewError).toBe('')
   })
 
   it('keeps document title in sync when an agent patch changes identity.name', async () => {
@@ -859,8 +1045,20 @@ describe('characterStudioStore', () => {
     store.applyPendingPatch()
     expect(store.currentDocument?.stateTasks).toEqual([])
 
+    store.diagnostics = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      checks: {},
+    }
+    store.chatPromptPreview = '旧提示词缓存'
+    store.chatPromptPreviewError = '旧错误'
+
     store.undoLastPatch()
     expect(store.currentDocument?.stateTasks[0]?.id).toBe('task_alpha')
+    expect(store.diagnostics).toBeNull()
+    expect(store.chatPromptPreview).toBe('')
+    expect(store.chatPromptPreviewError).toBe('')
   })
 
   it('clears a no-op frozen patch without creating undo state or autosaving', async () => {

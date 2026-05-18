@@ -969,6 +969,115 @@ class CharacterStudioChatServiceTests(unittest.TestCase):
                     document["coreMessages"]["first_message"],
                 )
 
+    def test_get_chat_state_backfills_opening_for_existing_empty_draft_session(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                session = service._create_empty_chat_session(document["id"])
+                chat_index = {
+                    "doc_id": document["id"],
+                    "active_session_id": session["session_id"],
+                    "archived_session_ids": [],
+                }
+                asyncio.run(service.store.save_chat_session(document["id"], session))
+                asyncio.run(service.store.save_chat_index(document["id"], chat_index))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+
+                self.assertEqual(
+                    state["active_session"]["messages"][0]["content"],
+                    document["coreMessages"]["first_message"],
+                )
+
+    def test_get_chat_state_refreshes_existing_draft_opening_after_greeting_changes(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+                session = state["active_session"]
+
+                updated_document = _demo_document()
+                updated_document["id"] = document["id"]
+                updated_document["coreMessages"]["first_message"] = "新的默认开场白。"
+                asyncio.run(service.store.save_document(updated_document))
+
+                refreshed = asyncio.run(service.get_chat_state(document["id"]))
+
+                self.assertEqual(session["session_id"], refreshed["active_session"]["session_id"])
+                self.assertEqual(
+                    refreshed["active_session"]["messages"][0]["content"],
+                    "新的默认开场白。",
+                )
+
+    def test_get_chat_state_does_not_rewrite_session_that_already_has_user_history(self) -> None:
+        from src.core.manga_insight.character_studio.service import CharacterStudioService
+
+        class FakeVlmClient:
+            async def generate_messages(self, messages, *, on_stream_chunk=None):
+                return "第一轮回复"
+
+            async def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            insight_dir = os.path.join(temp_dir, "insight")
+
+            with mock.patch(
+                "src.core.manga_insight.storage.get_insight_storage_path",
+                return_value=insight_dir,
+            ):
+                service = CharacterStudioService("book-demo")
+                document = _demo_document()
+                asyncio.run(service.store.save_document(document))
+
+                state = asyncio.run(service.get_chat_state(document["id"]))
+                session_id = state["active_session"]["session_id"]
+
+                with mock.patch.object(service, "_create_vlm_client", return_value=FakeVlmClient()):
+                    asyncio.run(
+                        service.send_chat_message(
+                            document["id"],
+                            session_id=session_id,
+                            content="第一轮用户消息",
+                        )
+                    )
+
+                updated_document = _demo_document()
+                updated_document["id"] = document["id"]
+                updated_document["coreMessages"]["first_message"] = "不应覆盖已有会话的新开场。"
+                asyncio.run(service.store.save_document(updated_document))
+
+                refreshed = asyncio.run(service.get_chat_state(document["id"]))
+
+                self.assertEqual(
+                    [item["content"] for item in refreshed["active_session"]["messages"][:3]],
+                    [
+                        document["coreMessages"]["first_message"],
+                        "第一轮用户消息",
+                        "第一轮回复",
+                    ],
+                )
+
     def test_send_chat_message_uses_vlm_and_records_runtime_state(self) -> None:
         from src.core.manga_insight.character_studio.service import CharacterStudioService
 

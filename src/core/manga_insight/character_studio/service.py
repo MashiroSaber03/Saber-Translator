@@ -1009,6 +1009,27 @@ class CharacterStudioService:
             })
         return greetings
 
+    def _resolve_chat_greeting(
+        self,
+        document: Dict[str, Any],
+        session: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        greetings = self._build_chat_greetings(document)
+        if not greetings:
+            return None
+
+        source = (session or {}).get("greeting_source", {}) or {}
+        if source.get("type") == "first_message":
+            greeting = next((item for item in greetings if item.get("greeting_id") == "first_message"), None)
+            if greeting:
+                return greeting
+        if source.get("type") == "alternate_greetings" and isinstance(source.get("index"), int):
+            greeting_id = f"alternate_{int(source['index']) + 1}"
+            greeting = next((item for item in greetings if item.get("greeting_id") == greeting_id), None)
+            if greeting:
+                return greeting
+        return greetings[0]
+
     def _create_chat_message(
         self,
         *,
@@ -1109,6 +1130,67 @@ class CharacterStudioService:
             )
         return session
 
+    def _is_draft_chat_session(self, session: Dict[str, Any]) -> bool:
+        messages = session.get("messages", []) or []
+        if session.get("summary_blocks"):
+            return False
+        if any(str(item.get("role", "")) == "user" for item in messages):
+            return False
+        if len(messages) == 0:
+            return True
+        return len(messages) == 1 and str(messages[0].get("role", "")) == "assistant"
+
+    def _align_draft_chat_session_with_document(
+        self,
+        document: Dict[str, Any],
+        session: Dict[str, Any],
+    ) -> bool:
+        if not self._is_draft_chat_session(session):
+            return False
+
+        greeting = self._resolve_chat_greeting(document, session=session)
+        if not greeting:
+            return False
+
+        desired_content = str(greeting.get("content", "") or "").strip()
+        if not desired_content:
+            return False
+
+        changed = False
+        desired_source = copy.deepcopy(greeting.get("source", {"type": "first_message", "index": 0}))
+        if session.get("greeting_source") != desired_source:
+            session["greeting_source"] = desired_source
+            changed = True
+
+        messages = session.setdefault("messages", [])
+        if not messages:
+            messages.append(
+                self._create_chat_message(
+                    role="assistant",
+                    content=desired_content,
+                    variables_snapshot=session.get("variables", {}),
+                    generation_meta={"kind": "opening"},
+                )
+            )
+            changed = True
+        else:
+            opening_message = messages[0]
+            if str(opening_message.get("content", "") or "") != desired_content:
+                opening_message["content"] = desired_content
+                opening_message["updated_at"] = self._now_iso()
+                changed = True
+            if opening_message.get("generation_meta", {}).get("kind") != "opening":
+                opening_message.setdefault("generation_meta", {})["kind"] = "opening"
+                changed = True
+            variables_snapshot = copy.deepcopy(session.get("variables", {}))
+            if opening_message.get("variables_snapshot") != variables_snapshot:
+                opening_message["variables_snapshot"] = variables_snapshot
+                changed = True
+
+        if changed:
+            session["updated_at"] = self._now_iso()
+        return changed
+
     async def _bootstrap_chat_session(self, document: Dict[str, Any]) -> Dict[str, Any]:
         doc_id = document["id"]
         index = await self.store.load_chat_index(doc_id)
@@ -1116,10 +1198,11 @@ class CharacterStudioService:
         if active_session_id:
             session = await self.store.load_chat_session(doc_id, active_session_id)
             if session:
+                if self._align_draft_chat_session_with_document(document, session):
+                    await self.store.save_chat_session(doc_id, session)
                 return session
 
-        greetings = self._build_chat_greetings(document)
-        greeting = greetings[0] if greetings else None
+        greeting = self._resolve_chat_greeting(document)
         session = self._create_opening_chat_session(
             document,
             greeting_content=greeting["content"] if greeting else "",
