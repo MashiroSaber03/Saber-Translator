@@ -102,13 +102,13 @@ export function useParallelTranslation() {
   /**
    * 执行并行翻译
    * @param mode 翻译模式
-   * @param imagesToProcess 可选的要处理的图片数组（用于范围翻译）
-   * @param startIndex 起始索引（用于范围翻译时保持原始索引）
+   * @param imagesToProcess 可选的要处理的图片数组（用于指定页翻译）
+   * @param imageIndexes 对应的原始图片索引
    */
   async function executeParallel(
     mode?: ParallelTranslationMode,
     imagesToProcess?: typeof imageStore.images,
-    startIndex: number = 0
+    imageIndexes: number[] = []
   ): Promise<ParallelExecutionResult> {
     if (isRunning.value) {
       return { success: 0, failed: 0, errors: ['翻译正在进行中'] }
@@ -140,10 +140,10 @@ export function useParallelTranslation() {
       // 确定模式
       const translationMode = mode ?? determineMode()
 
-      console.log(`🚀 开始并行翻译，模式: ${translationMode}，图片数: ${images.length}，起始索引: ${startIndex}`)
+      console.log(`🚀 开始并行翻译，模式: ${translationMode}，图片数: ${images.length}，页码索引: [${imageIndexes.join(', ')}]`)
 
-      // 执行 - 传入起始索引
-      const result = await pipeline.value.execute(images, translationMode, startIndex)
+      // 执行 - 传入原始图片索引
+      const result = await pipeline.value.execute(images, translationMode, imageIndexes)
 
       // 最后同步一次
       syncProgress()

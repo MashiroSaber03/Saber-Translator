@@ -58,17 +58,10 @@ function resolvePageIndexes(
     if (config.scope === 'failed') {
         return failedIndices.filter(idx => idx >= 0 && idx < totalImages)
     }
-    if (config.scope === 'range' && config.pageRange) {
-        const start = Math.max(0, config.pageRange.startPage - 1)
-        const end = Math.min(totalImages - 1, config.pageRange.endPage - 1)
-        if (start > end || start >= totalImages) {
-            return []
-        }
-        const result: number[] = []
-        for (let i = start; i <= end; i++) {
-            result.push(i)
-        }
-        return result
+    if (config.scope === 'selection' && config.pageSelection) {
+        return config.pageSelection.pages
+            .map(page => page - 1)
+            .filter(idx => idx >= 0 && idx < totalImages)
     }
     // 'all'
     return Array.from({ length: totalImages }, (_, i) => i)
@@ -179,7 +172,7 @@ export function usePipeline() {
 
         try {
             const parallelConfig = settingsStore.settings.parallel
-            const isBatchScope = config.scope === 'all' || config.scope === 'range'
+            const isBatchScope = config.scope === 'all' || config.scope === 'selection'
             const shouldUseParallel = parallelConfig?.enabled && isBatchScope
 
             const result = shouldUseParallel
@@ -205,22 +198,17 @@ export function usePipeline() {
      * 执行并行模式
      */
     async function executeParallelMode(config: PipelineConfig): Promise<PipelineResult> {
-        // 根据 scope 和 pageRange 获取要处理的图片
-        let imagesToProcess = imageStore.images
-        let startIndex = 0  // 起始索引，用于保持原始索引
+        const pageIndexes = resolvePageIndexes(
+            config,
+            imageStore.images.length,
+            imageStore.currentImageIndex,
+            imageStore.getFailedImageIndices()
+        )
+        const imagesToProcess = pageIndexes.map((index) => imageStore.images[index]).filter(Boolean)
 
-        if (config.scope === 'range' && config.pageRange) {
-            // 页码从1开始，转换为0索引
-            startIndex = Math.max(0, config.pageRange.startPage - 1)
-            const endIndex = Math.min(imageStore.images.length - 1, config.pageRange.endPage - 1)
-
-            if (startIndex <= endIndex && startIndex < imageStore.images.length) {
-                imagesToProcess = imageStore.images.slice(startIndex, endIndex + 1)
-                console.log(`🎯 并行翻译范围: 第 ${config.pageRange.startPage} 至 ${config.pageRange.endPage} 页，共 ${imagesToProcess.length} 张，起始索引 ${startIndex}`)
-            } else {
-                toast.error('无效的页面范围')
-                return { success: false, completed: 0, failed: 0, errors: ['无效的页面范围'] }
-            }
+        if (imagesToProcess.length === 0) {
+            toast.error('没有可处理的页码')
+            return { success: false, completed: 0, failed: 0, errors: ['没有可处理的页码'] }
         }
 
         // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
@@ -228,8 +216,7 @@ export function usePipeline() {
         if (imagesToProcess.length > 1) {
             const { textStyle } = settingsStore.settings
             console.log(`📝 [并行模式] 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
-            for (let i = 0; i < imagesToProcess.length; i++) {
-                const imageIndex = startIndex + i
+            for (const imageIndex of pageIndexes) {
                 imageStore.updateImageByIndex(imageIndex, {
                     fontSize: textStyle.fontSize,
                     autoFontSize: textStyle.autoFontSize,
@@ -307,7 +294,7 @@ export function usePipeline() {
 
             console.log(`🚀 启动并行翻译模式: ${parallelMode}`)
             console.log(`   图片数量: ${imagesToProcess.length}`)
-            console.log(`   起始索引: ${startIndex}`)
+            console.log(`   页码索引: [${pageIndexes.join(', ')}]`)
             console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
 
             // 初始化保存进度
@@ -319,8 +306,8 @@ export function usePipeline() {
                 }
             }
 
-            // 传入过滤后的图片数组和起始索引
-            const result = await parallelTranslation.executeParallel(parallelMode, imagesToProcess, startIndex)
+            // 传入过滤后的图片数组和原始索引数组
+            const result = await parallelTranslation.executeParallel(parallelMode, imagesToProcess, pageIndexes)
 
             // 显示结果
             if (result.success > 0 && result.failed === 0) {

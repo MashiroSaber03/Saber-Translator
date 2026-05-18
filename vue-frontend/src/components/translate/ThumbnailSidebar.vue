@@ -11,7 +11,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useFolderTree } from '@/composables/useFolderTree'
-import type { ImageData } from '@/types/image'
+import { useThumbnailSelection } from '@/composables/useThumbnailSelection'
 import type { FolderNode } from '@/types/folder'
 
 // ============================================================
@@ -78,6 +78,13 @@ const {
   resetToRoot
 } = useFolderTree(images)
 
+const {
+  getImageGlobalIndex,
+  getStatusType,
+  isTranslated,
+  getThumbnailTitle,
+} = useThumbnailSelection(images)
+
 // 当图片列表变化时，重置到根目录
 watch(() => images.value.length, (newLen, oldLen) => {
   if (newLen === 0 || (oldLen === 0 && newLen > 0)) {
@@ -88,30 +95,6 @@ watch(() => images.value.length, (newLen, oldLen) => {
 // ============================================================
 // 方法
 // ============================================================
-
-/**
- * 获取图片在全局列表中的索引
- */
-function getImageGlobalIndex(image: ImageData): number {
-  return images.value.findIndex(img => img.id === image.id)
-}
-
-/**
- * 获取状态指示器类型
- */
-function getStatusType(image: ImageData): 'failed' | 'labeled' | 'processing' | null {
-  if (image.translationFailed) return 'failed'
-  if (image.isManuallyAnnotated) return 'labeled'
-  if (image.translationStatus === 'processing') return 'processing'
-  return null
-}
-
-/**
- * 判断图片是否已翻译完成
- */
-function isTranslated(image: ImageData): boolean {
-  return image.translationStatus === 'completed'
-}
 
 /**
  * 点击缩略图
@@ -171,16 +154,6 @@ function scrollToActiveThumbnail() {
  */
 function setThumbnailRef(el: HTMLElement | null, index: number) {
   thumbnailRefs.value[index] = el
-}
-
-/**
- * 获取缩略图的 title 提示文本
- */
-function getThumbnailTitle(image: ImageData): string {
-  if (image.translationFailed) return '翻译失败，点击可重试'
-  if (image.isManuallyAnnotated) return '包含手动标注'
-  if (image.translationStatus === 'completed') return '已完成翻译'
-  return image.fileName || ''
 }
 
 // 监听当前索引变化

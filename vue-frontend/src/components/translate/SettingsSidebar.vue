@@ -34,6 +34,8 @@ import {
 } from '@/types/workflow'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import PageSelectionModal from '@/components/translate/PageSelectionModal.vue'
+import { clampPageSelection, createPageSelectionSummary } from '@/utils/pageSelection'
 
 // ============================================================
 // Props 和 Emits
@@ -107,14 +109,14 @@ const applyOptions = ref<ApplySettingsOptions>({
   textAlign: true,
 })
 
-/** 是否启用范围限制 */
-const isRangeEnabled = ref(false)
+/** 是否启用指定翻译页码 */
+const isPageSelectionEnabled = ref(false)
 
-/** 页面范围起始页 */
-const pageRangeStart = ref(1)
+/** 全局共享的已选页码（1-based） */
+const selectedPages = ref<number[]>([])
 
-/** 页面范围结束页 */
-const pageRangeEnd = ref(1)
+/** 页码选择弹窗显示状态 */
+const showPageSelectionModal = ref(false)
 
 /** 当前工作流模式 */
 const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
@@ -132,14 +134,8 @@ const hasImages = computed(() => imageStore.hasImages)
 /** 总图片数量 */
 const totalImages = computed(() => imageStore.images.length)
 
-/** 页面范围是否有效 */
-const isPageRangeValid = computed(() => {
-  return (
-    pageRangeStart.value >= 1 &&
-    pageRangeEnd.value <= totalImages.value &&
-    pageRangeStart.value <= pageRangeEnd.value
-  )
-})
+const normalizedSelectedPages = computed(() => clampPageSelection(selectedPages.value, totalImages.value))
+const hasValidPageSelection = computed(() => normalizedSelectedPages.value.length > 0)
 
 /** 是否可以翻译 */
 const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
@@ -154,7 +150,7 @@ const canGoNext = computed(() => imageStore.canGoNext)
 /** 当前工作流是否可执行 */
 const canRunWorkflow = computed(() => {
   const mode = selectedWorkflowMode.value
-  const rangeInvalid = isRangeActiveForCurrentMode.value && !isPageRangeValid.value
+  const selectionInvalid = isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value
 
   switch (mode) {
     case 'translate-current':
@@ -162,12 +158,12 @@ const canRunWorkflow = computed(() => {
     case 'translate-batch':
     case 'hq-batch':
     case 'proofread-batch':
-      return canTranslate.value && !rangeInvalid
+      return canTranslate.value && !selectionInvalid
     case 'remove-current':
     case 'delete-current':
       return !!currentImage.value
     case 'remove-batch':
-      return hasImages.value && !rangeInvalid
+      return hasImages.value && !selectionInvalid
     case 'clear-all':
       return hasImages.value
     case 'retry-failed':
@@ -194,12 +190,12 @@ const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
   )
 })
 
-/** 当前模式是否支持范围处理 */
-const supportsRangeForCurrentMode = computed(() => selectedWorkflowConfig.value.supportsRange)
+/** 当前模式是否支持指定页码 */
+const supportsPageSelectionForCurrentMode = computed(() => selectedWorkflowConfig.value.supportsPageSelection)
 
-/** 范围是否被激活且可用于当前模式 */
-const isRangeActiveForCurrentMode = computed(() => {
-  return supportsRangeForCurrentMode.value && isRangeEnabled.value
+/** 指定页码是否被激活且可用于当前模式 */
+const isPageSelectionActiveForCurrentMode = computed(() => {
+  return supportsPageSelectionForCurrentMode.value && isPageSelectionEnabled.value
 })
 
 /** 工作流选项（用于 CustomSelect） */
@@ -215,8 +211,8 @@ const workflowStartLabel = computed(() => selectedWorkflowConfig.value.startLabe
 
 /** 当前模式的范围/对象标签 */
 const workflowContextTag = computed(() => {
-  if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
-    return `范围 ${pageRangeStart.value}-${pageRangeEnd.value}`
+  if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
+    return `已选 ${normalizedSelectedPages.value.length} 页`
   }
 
   switch (selectedWorkflowMode.value) {
@@ -242,7 +238,7 @@ const workflowModeTag = computed(() => {
   if (isDangerousWorkflow.value) {
     return '高风险'
   }
-  return supportsRangeForCurrentMode.value ? '批量流程' : '单页流程'
+  return supportsPageSelectionForCurrentMode.value ? '批量流程' : '单页流程'
 })
 
 /** 当前模式说明文案 */
@@ -257,11 +253,14 @@ const workflowDescription = computed(() => {
         ? `将重试 ${failedImageCount.value} 张失败图片。`
         : '当前没有失败图片可重试。'
     default:
-      if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
-        return `当前范围：第 ${pageRangeStart.value}-${pageRangeEnd.value} 页。`
+      if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
+        return `当前页码：${createPageSelectionSummary(normalizedSelectedPages.value)}。`
       }
-      if (supportsRangeForCurrentMode.value) {
-        return '当前范围：全部图片（可启用指定范围）。'
+      if (isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value) {
+        return '请至少选择一页。'
+      }
+      if (supportsPageSelectionForCurrentMode.value) {
+        return '当前作用于全部图片（可启用指定翻译页码）。'
       }
       return '当前只作用于当前图片。'
   }
@@ -309,10 +308,14 @@ onUnmounted(() => {
   window.removeEventListener('click', handleClickOutside)
 })
 
-watch(supportsRangeForCurrentMode, supports => {
+watch(supportsPageSelectionForCurrentMode, supports => {
   if (!supports) {
-    isRangeEnabled.value = false
+    isPageSelectionEnabled.value = false
   }
+})
+
+watch(totalImages, (count) => {
+  selectedPages.value = clampPageSelection(selectedPages.value, count)
 })
 
 // ============================================================
@@ -559,41 +562,13 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
-/**
- * 页面范围面板展开时初始化范围值
- */
-function onPageRangeToggle(expanded: boolean) {
-  if (expanded && totalImages.value > 0) {
-    // 如果当前范围无效或未初始化（默认值1-1），重置为全范围
-    if (!isPageRangeValid.value || (pageRangeStart.value === 1 && pageRangeEnd.value === 1)) {
-      pageRangeStart.value = 1
-      pageRangeEnd.value = totalImages.value
-    }
-  }
+function openPageSelectionModal(): void {
+  if (totalImages.value === 0 || !supportsPageSelectionForCurrentMode.value) return
+  showPageSelectionModal.value = true
 }
 
-/**
- * 更新页面范围起始页
- * 【简化】只做边界限制，不自动修改结束页，避免用户输入时被干扰
- */
-function updatePageRangeStart(event: Event) {
-  const value = parseInt((event.target as HTMLInputElement).value)
-  if (!isNaN(value)) {
-    // 只限制在有效范围内，不联动修改结束页
-    pageRangeStart.value = Math.max(1, Math.min(value, totalImages.value))
-  }
-}
-
-/**
- * 更新页面范围结束页
- * 【简化】只做边界限制，不自动修改起始页，避免用户输入时被干扰
- */
-function updatePageRangeEnd(event: Event) {
-  const value = parseInt((event.target as HTMLInputElement).value)
-  if (!isNaN(value)) {
-    // 只限制在有效范围内，不联动修改起始页
-    pageRangeEnd.value = Math.max(1, Math.min(value, totalImages.value))
-  }
+function handlePageSelectionConfirm(pages: number[]): void {
+  selectedPages.value = clampPageSelection(pages, totalImages.value)
 }
 
 /**
@@ -613,10 +588,9 @@ function handleRunWorkflow() {
     mode: selectedWorkflowMode.value,
   }
 
-  if (isRangeActiveForCurrentMode.value && isPageRangeValid.value) {
-    payload.range = {
-      startPage: pageRangeStart.value,
-      endPage: pageRangeEnd.value,
+  if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
+    payload.pageSelection = {
+      pages: normalizedSelectedPages.value,
     }
   }
 
@@ -912,52 +886,45 @@ function handleOpenNonTranslate(): void {
       </CollapsiblePanel>
 
       <CollapsiblePanel
-        title="指定范围"
+        title="指定翻译页码"
         :default-expanded="false"
         class="settings-panel"
-        @toggle="onPageRangeToggle"
       >
-        <div class="settings-form page-range-form">
-          <!-- 启用开关 + 图片数 -->
+        <div class="settings-form page-selection-form">
           <div class="range-header-row">
             <label class="range-toggle-compact">
               <input
                 type="checkbox"
-                v-model="isRangeEnabled"
-                :disabled="totalImages === 0 || !supportsRangeForCurrentMode"
+                v-model="isPageSelectionEnabled"
+                :disabled="totalImages === 0 || !supportsPageSelectionForCurrentMode"
               />
               <span>启用</span>
             </label>
             <span class="total-count">共 {{ totalImages }} 张</span>
           </div>
 
-          <div v-if="!supportsRangeForCurrentMode" class="range-note">当前模式不支持指定范围</div>
+          <div v-if="!supportsPageSelectionForCurrentMode" class="range-note">当前模式不支持指定翻译页码</div>
 
-          <!-- 页面范围输入（启用时显示） -->
-          <div v-show="isRangeActiveForCurrentMode" class="page-range-inputs-compact">
-            <input
-              type="number"
-              id="pageRangeStart"
-              :value="pageRangeStart"
-              @input="updatePageRangeStart"
-              placeholder="起始"
-            />
-            <span class="range-sep">~</span>
-            <input
-              type="number"
-              id="pageRangeEnd"
-              :value="pageRangeEnd"
-              @input="updatePageRangeEnd"
-              placeholder="结束"
-            />
+          <div v-if="isPageSelectionActiveForCurrentMode" class="page-selection-summary-card">
+            <div class="page-selection-summary-label">当前选择</div>
+            <div class="page-selection-summary-value">
+              {{ createPageSelectionSummary(normalizedSelectedPages) }}
+            </div>
+            <button
+              type="button"
+              class="settings-button page-selection-open-btn"
+              :disabled="totalImages === 0"
+              @click="openPageSelectionModal"
+            >
+              选择页码
+            </button>
           </div>
 
-          <!-- 范围错误提示 -->
           <div
-            v-if="isRangeActiveForCurrentMode && !isPageRangeValid && totalImages > 0"
+            v-if="isPageSelectionActiveForCurrentMode && !hasValidPageSelection && totalImages > 0"
             class="range-error-compact"
           >
-            范围无效
+            请至少选择一页
           </div>
         </div>
       </CollapsiblePanel>
@@ -1029,6 +996,12 @@ function handleOpenNonTranslate(): void {
         <button id="nextImageButton" :disabled="!canGoNext" @click="emit('next')">下一张</button>
       </div>
     </div>
+    <PageSelectionModal
+      :model-value="showPageSelectionModal"
+      :selected-pages="normalizedSelectedPages"
+      @update:model-value="showPageSelectionModal = $event"
+      @confirm="handlePageSelectionConfirm"
+    />
   </aside>
 </template>
 
@@ -1459,8 +1432,8 @@ function handleOpenNonTranslate(): void {
   border-top: 1px solid #e3ebf6;
 }
 
-/* 页面范围面板 */
-.page-range-form {
+/* 指定翻译页码面板 */
+.page-selection-form {
   gap: 8px;
 }
 
@@ -1509,32 +1482,31 @@ function handleOpenNonTranslate(): void {
   font-size: 12px;
 }
 
-.page-range-inputs-compact {
+.page-selection-summary-card {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d8e3f1;
+  border-radius: 12px;
+  background: #f5f8fd;
 }
 
-.page-range-inputs-compact input {
-  width: 58px;
-  min-height: 34px;
-  padding: 6px 4px;
-  border: 1px solid #ccd9ea;
-  border-radius: 8px;
-  text-align: center;
+.page-selection-summary-label {
+  color: #304464;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-.page-range-inputs-compact input:focus {
-  border-color: #4a82ce;
-  outline: none;
+.page-selection-summary-value {
+  color: #4d5f7a;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
-.range-sep {
-  color: #7a8aa4;
-  font-size: 14px;
-  font-weight: 600;
+.page-selection-open-btn {
+  align-self: flex-start;
 }
 
 .range-error-compact {

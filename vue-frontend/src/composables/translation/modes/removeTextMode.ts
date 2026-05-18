@@ -4,17 +4,17 @@
  * 步骤链由 core/pipelineRegistry.ts 中的统一注册表定义
  */
 
-import type { PipelineConfig, ExecutionScope, PageRange } from '../core/types'
+import type { PipelineConfig, ExecutionScope, PageSelection } from '../core/types'
 
 /** 消除文字模式配置选项 */
 export interface RemoveTextModeOptions {
-    /** 页面范围（仅当 scope = 'range' 时使用） */
-    pageRange?: PageRange
+    /** 页面选择（仅当 scope = 'selection' 时使用） */
+    pageSelection?: PageSelection
 }
 
 /**
  * 获取仅消除文字模式配置
- * @param scope 执行范围：'current' | 'all' | 'range'
+ * @param scope 执行范围：'current' | 'all' | 'selection'
  * @param options 可选配置
  */
 export function getRemoveTextModeConfig(
@@ -24,6 +24,6 @@ export function getRemoveTextModeConfig(
     return {
         mode: 'removeText',
         scope,
-        pageRange: options?.pageRange
+        pageSelection: options?.pageSelection
     }
 }

@@ -10,14 +10,12 @@
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
 /** 执行范围 */
-export type ExecutionScope = 'current' | 'all' | 'failed' | 'range'
+export type ExecutionScope = 'current' | 'all' | 'failed' | 'selection'
 
-/** 页面范围配置（用于 scope = 'range' 时） */
-export interface PageRange {
-    /** 起始页码（从1开始） */
-    startPage: number
-    /** 结束页码（从1开始，包含） */
-    endPage: number
+/** 页面选择配置（用于 scope = 'selection' 时） */
+export interface PageSelection {
+    /** 用户选择的 1-based 页码列表 */
+    pages: number[]
 }
 
 // ============================================================
@@ -65,8 +63,8 @@ export interface BatchOptions {
 export interface PipelineConfig {
     mode: TranslationMode
     scope: ExecutionScope
-    /** 页面范围（仅当 scope = 'range' 时使用） */
-    pageRange?: PageRange
+    /** 页面选择（仅当 scope = 'selection' 时使用） */
+    pageSelection?: PageSelection
     batchOptions?: BatchOptions
 }
 

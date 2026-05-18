@@ -312,11 +312,10 @@ async function removeAllText() {
 }
 
 /**
- * 翻译指定范围的图片
- * @param startPage 起始页（1开始）
- * @param endPage 结束页（1开始）
+ * 翻译指定页码的图片
+ * @param pages 1-based 页码数组
  */
-async function translateImageRange(startPage: number, endPage: number) {
+async function translateSelectedImages(pages: number[]) {
   if (!hasImages.value) return
   
   // 验证翻译配置
@@ -324,15 +323,14 @@ async function translateImageRange(startPage: number, endPage: number) {
     return
   }
   
-  await translation.translateImageRange({ startPage, endPage })
+  await translation.translateSelectedImages({ pages })
 }
 
 /**
- * 高质量翻译指定范围
- * @param startPage 起始页（1开始）
- * @param endPage 结束页（1开始）
+ * 高质量翻译指定页码
+ * @param pages 1-based 页码数组
  */
-async function startHqTranslationRange(startPage: number, endPage: number) {
+async function startHqTranslationSelection(pages: number[]) {
   if (!hasImages.value) return
   
   // 验证高质量翻译配置
@@ -340,15 +338,14 @@ async function startHqTranslationRange(startPage: number, endPage: number) {
     return
   }
   
-  await translation.executeHqTranslation({ startPage, endPage })
+  await translation.executeHqTranslation({ pages })
 }
 
 /**
- * AI校对指定范围
- * @param startPage 起始页（1开始）
- * @param endPage 结束页（1开始）
+ * AI校对指定页码
+ * @param pages 1-based 页码数组
  */
-async function startProofreadingRange(startPage: number, endPage: number) {
+async function startProofreadingSelection(pages: number[]) {
   if (!hasImages.value) return
   
   // 验证 AI 校对配置
@@ -356,46 +353,45 @@ async function startProofreadingRange(startPage: number, endPage: number) {
     return
   }
   
-  await translation.executeProofreading({ startPage, endPage })
+  await translation.executeProofreading({ pages })
 }
 
 /**
- * 消除指定范围图片的文字
- * @param startPage 起始页（1开始）
- * @param endPage 结束页（1开始）
+ * 消除指定页码图片的文字
+ * @param pages 1-based 页码数组
  */
-async function removeTextRange(startPage: number, endPage: number) {
+async function removeTextSelection(pages: number[]) {
   if (!hasImages.value) return
-  await translation.removeTextRange({ startPage, endPage })
+  await translation.removeTextSelection({ pages })
 }
 
 /**
  * 统一处理侧边栏工作流启动
  */
 async function handleRunWorkflow(payload: WorkflowRunRequest) {
-  const range = payload.range
+  const selectedPages = payload.pageSelection?.pages
 
   switch (payload.mode) {
     case 'translate-current':
       await translateCurrentImage()
       return
     case 'translate-batch':
-      if (range) {
-        await translateImageRange(range.startPage, range.endPage)
+      if (selectedPages?.length) {
+        await translateSelectedImages(selectedPages)
       } else {
         await translateAllImages()
       }
       return
     case 'hq-batch':
-      if (range) {
-        await startHqTranslationRange(range.startPage, range.endPage)
+      if (selectedPages?.length) {
+        await startHqTranslationSelection(selectedPages)
       } else {
         await startHqTranslation()
       }
       return
     case 'proofread-batch':
-      if (range) {
-        await startProofreadingRange(range.startPage, range.endPage)
+      if (selectedPages?.length) {
+        await startProofreadingSelection(selectedPages)
       } else {
         await startProofreading()
       }
@@ -404,8 +400,8 @@ async function handleRunWorkflow(payload: WorkflowRunRequest) {
       await removeTextOnly()
       return
     case 'remove-batch':
-      if (range) {
-        await removeTextRange(range.startPage, range.endPage)
+      if (selectedPages?.length) {
+        await removeTextSelection(selectedPages)
       } else {
         await removeAllText()
       }

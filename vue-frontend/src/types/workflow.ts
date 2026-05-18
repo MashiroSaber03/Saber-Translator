@@ -17,12 +17,8 @@ export type WorkflowMode =
   | 'delete-current'
   | 'clear-all'
 
-/**
- * 页面范围
- */
-export interface WorkflowRange {
-  startPage: number
-  endPage: number
+export interface WorkflowPageSelection {
+  pages: number[]
 }
 
 /**
@@ -30,7 +26,7 @@ export interface WorkflowRange {
  */
 export interface WorkflowRunRequest {
   mode: WorkflowMode
-  range?: WorkflowRange
+  pageSelection?: WorkflowPageSelection
 }
 
 /**
@@ -40,7 +36,7 @@ export interface WorkflowModeConfig {
   mode: WorkflowMode
   label: string
   startLabel: string
-  supportsRange: boolean
+  supportsPageSelection: boolean
   isDangerous: boolean
 }
 
@@ -57,63 +53,63 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     mode: 'translate-current',
     label: '翻译当前图片',
     startLabel: '启动翻译当前图片',
-    supportsRange: false,
+    supportsPageSelection: false,
     isDangerous: false
   },
   {
     mode: 'translate-batch',
     label: '翻译所有图片',
     startLabel: '启动批量翻译',
-    supportsRange: true,
+    supportsPageSelection: true,
     isDangerous: false
   },
   {
     mode: 'hq-batch',
     label: '高质量翻译',
     startLabel: '启动高质量翻译',
-    supportsRange: true,
+    supportsPageSelection: true,
     isDangerous: false
   },
   {
     mode: 'proofread-batch',
     label: 'AI 校对',
     startLabel: '启动 AI 校对',
-    supportsRange: true,
+    supportsPageSelection: true,
     isDangerous: false
   },
   {
     mode: 'remove-current',
     label: '仅消除当前文字',
     startLabel: '启动当前图片消字',
-    supportsRange: false,
+    supportsPageSelection: false,
     isDangerous: false
   },
   {
     mode: 'remove-batch',
     label: '消除所有图片文字',
     startLabel: '启动批量消字',
-    supportsRange: true,
+    supportsPageSelection: true,
     isDangerous: false
   },
   {
     mode: 'retry-failed',
     label: '重新翻译失败图片',
     startLabel: '启动失败重试',
-    supportsRange: false,
+    supportsPageSelection: false,
     isDangerous: false
   },
   {
     mode: 'delete-current',
     label: '删除当前图片',
     startLabel: '删除当前图片',
-    supportsRange: false,
+    supportsPageSelection: false,
     isDangerous: true
   },
   {
     mode: 'clear-all',
     label: '清除所有图片',
     startLabel: '清除所有图片',
-    supportsRange: false,
+    supportsPageSelection: false,
     isDangerous: true
   }
 ]

@@ -125,7 +125,7 @@ export class ParallelPipeline {
   async execute(
     images: ImageData[],
     mode: ParallelTranslationMode,
-    startIndex: number = 0
+    imageIndexes: number[] = []
   ): Promise<ParallelExecutionResult> {
     const imageStore = useImageStore()
     this.reset()
@@ -140,7 +140,7 @@ export class ParallelPipeline {
     this.setupPoolChain(mode, images.length, chainConfig)
 
     const tasks: PipelineTask[] = images.map((imageData, localIndex) =>
-      hydrateTaskContextFromImage(startIndex + localIndex, imageData, mode, runtime),
+      hydrateTaskContextFromImage(imageIndexes[localIndex] ?? localIndex, imageData, mode, runtime),
     )
     this.activeTaskIndices = tasks.map((task) => task.imageIndex)
 
@@ -160,15 +160,6 @@ export class ParallelPipeline {
       success: result.success,
       failed: result.failed,
       errors: this.resultCollector.getFailed().map((task) => task.error || '未知错误'),
-      autoGlossaryStats: this.resultCollector.getAll().reduce((total, task) => ({
-        added: total.added + (task.autoGlossaryStats?.added || 0),
-        duplicates: total.duplicates + (task.autoGlossaryStats?.duplicates || 0),
-        failedPages: total.failedPages + (task.autoGlossaryStats?.failedPages || 0),
-      }), {
-        added: 0,
-        duplicates: 0,
-        failedPages: 0,
-      }),
     }
   }
 

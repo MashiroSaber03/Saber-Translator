@@ -23,10 +23,11 @@ import {
     getProofreadModeConfig,
     getRemoveTextModeConfig
 } from './translation'
-import type { PageRange } from './translation/core/types'
+import type { PageSelection } from './translation/core/types'
+import { normalizePageSelection, pageIndexesToSelection, pageSelectionToPageIndexes } from '@/utils/pageSelection'
 
 // 重新导出类型供外部使用
-export type { TranslationProgress, PageRange } from './translation/core/types'
+export type { TranslationProgress, PageSelection } from './translation/core/types'
 
 /** 翻译模式 */
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
@@ -42,23 +43,6 @@ export interface TranslateResult {
 // ============================================================
 // 辅助函数
 // ============================================================
-
-/**
- * 将页面索引数组转换为 PageRange
- * 假设索引数组是连续的
- */
-function indicesToPageRange(pageIndexes: number[]): PageRange {
-    if (pageIndexes.length === 0) {
-        return { startPage: 1, endPage: 0 }
-    }
-    const sorted = [...pageIndexes].sort((a, b) => a - b)
-    const first = sorted[0]
-    const last = sorted[sorted.length - 1]
-    return {
-        startPage: (first ?? 0) + 1,  // 转换为1-based
-        endPage: (last ?? 0) + 1
-    }
-}
 
 /**
  * 生成连续的页面索引数组
@@ -178,9 +162,9 @@ export function useTranslation() {
             // 全部翻译
             config = getModeConfig(mode, 'all')
         } else {
-            // 范围翻译
-            const pageRange = indicesToPageRange(pageIndexes)
-            config = getModeConfig(mode, 'range', pageRange)
+            // 指定页翻译
+            const pageSelection = { pages: pageIndexesToSelection(pageIndexes) }
+            config = getModeConfig(mode, 'selection', pageSelection)
         }
 
         const pipelineResult = await pipeline.execute(config)
@@ -197,20 +181,20 @@ export function useTranslation() {
      */
     function getModeConfig(
         mode: TranslationMode,
-        scope: 'current' | 'all' | 'range' | 'failed',
-        pageRange?: PageRange
+        scope: 'current' | 'all' | 'selection' | 'failed',
+        pageSelection?: PageSelection
     ) {
         switch (mode) {
             case 'standard':
-                return getStandardModeConfig(scope, pageRange ? { pageRange } : undefined)
+                return getStandardModeConfig(scope, pageSelection ? { pageSelection } : undefined)
             case 'hq':
-                return getHqModeConfig(scope, pageRange ? { pageRange } : undefined)
+                return getHqModeConfig(scope, pageSelection ? { pageSelection } : undefined)
             case 'proofread':
-                return getProofreadModeConfig(scope, pageRange ? { pageRange } : undefined)
+                return getProofreadModeConfig(scope, pageSelection ? { pageSelection } : undefined)
             case 'removeText':
-                return getRemoveTextModeConfig(scope, pageRange ? { pageRange } : undefined)
+                return getRemoveTextModeConfig(scope, pageSelection ? { pageSelection } : undefined)
             default:
-                return getStandardModeConfig(scope, pageRange ? { pageRange } : undefined)
+                return getStandardModeConfig(scope, pageSelection ? { pageSelection } : undefined)
         }
     }
 
@@ -243,12 +227,11 @@ export function useTranslation() {
     }
 
     /**
-     * 翻译指定范围的图片
-     * @param pageRange 页面范围（页码从1开始）
+     * 翻译指定页码的图片
+     * @param pageSelection 页面选择（页码从1开始）
      */
-    async function translateImageRange(pageRange: PageRange): Promise<boolean> {
-        // 转换为0-based索引
-        const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
+    async function translateSelectedImages(pageSelection: PageSelection): Promise<boolean> {
+        const pageIndexes = pageSelectionToPageIndexes(pageSelection.pages)
         const result = await translatePages(pageIndexes, 'standard')
         return result.success
     }
@@ -281,10 +264,10 @@ export function useTranslation() {
     }
 
     /**
-     * 消除指定范围图片的文字
+     * 消除指定页码图片的文字
      */
-    async function removeTextRange(pageRange: PageRange): Promise<boolean> {
-        const pageIndexes = range(pageRange.startPage - 1, pageRange.endPage)
+    async function removeTextSelection(pageSelection: PageSelection): Promise<boolean> {
+        const pageIndexes = pageSelectionToPageIndexes(pageSelection.pages)
         const result = await translatePages(pageIndexes, 'removeText')
         return result.success
     }
@@ -312,11 +295,11 @@ export function useTranslation() {
 
     /**
      * 执行高质量翻译
-     * @param pageRange 可选的页面范围
+     * @param pageSelection 可选的页面选择
      */
-    async function executeHqTranslation(pageRange?: PageRange): Promise<boolean> {
-        const pageIndexes = pageRange
-            ? range(pageRange.startPage - 1, pageRange.endPage)
+    async function executeHqTranslation(pageSelection?: PageSelection): Promise<boolean> {
+        const pageIndexes = pageSelection
+            ? pageSelectionToPageIndexes(pageSelection.pages)
             : range(0, imageStore.images.length)
         const result = await translatePages(pageIndexes, 'hq')
         return result.success
@@ -328,11 +311,11 @@ export function useTranslation() {
 
     /**
      * 执行 AI 校对
-     * @param pageRange 可选的页面范围
+     * @param pageSelection 可选的页面选择
      */
-    async function executeProofreading(pageRange?: PageRange): Promise<boolean> {
-        const pageIndexes = pageRange
-            ? range(pageRange.startPage - 1, pageRange.endPage)
+    async function executeProofreading(pageSelection?: PageSelection): Promise<boolean> {
+        const pageIndexes = pageSelection
+            ? pageSelectionToPageIndexes(pageSelection.pages)
             : range(0, imageStore.images.length)
         const result = await translatePages(pageIndexes, 'proofread')
         return result.success
@@ -388,13 +371,13 @@ export function useTranslation() {
 
         // 批量翻译
         translateAllImages,
-        translateImageRange,
+        translateSelectedImages,
         cancelBatchTranslation,
 
         // 仅消除文字
         removeTextOnly,
         removeAllTexts,
-        removeTextRange,
+        removeTextSelection,
 
         // 重新翻译失败图片
         retryFailedImages,

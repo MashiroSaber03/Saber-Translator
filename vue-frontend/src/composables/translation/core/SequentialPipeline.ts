@@ -79,15 +79,11 @@ export function useSequentialPipeline() {
         .map((index) => ({ image: images[index]!, index }))
         .filter((item) => item.image !== undefined)
     }
-    if (config.scope === 'range' && config.pageRange) {
-      const startIndex = Math.max(0, config.pageRange.startPage - 1)
-      const endIndex = Math.min(images.length - 1, config.pageRange.endPage - 1)
-      if (startIndex > endIndex || startIndex >= images.length) {
-        return []
-      }
-      return images
-        .slice(startIndex, endIndex + 1)
-        .map((image, idx) => ({ image, index: startIndex + idx }))
+    if (config.scope === 'selection' && config.pageSelection) {
+      return config.pageSelection.pages
+        .map((page) => page - 1)
+        .filter((index) => index >= 0 && index < images.length)
+        .map((index) => ({ image: images[index]!, index }))
     }
     return images.map((image, index) => ({ image, index }))
   }
@@ -137,7 +133,7 @@ export function useSequentialPipeline() {
     for (let imageIdx = 0; imageIdx < tasks.length; imageIdx++) {
       let task = tasks[imageIdx]!
 
-      if (config.scope === 'all' && !imageStore.isBatchTranslationInProgress) {
+      if ((config.scope === 'all' || config.scope === 'selection') && !imageStore.isBatchTranslationInProgress) {
         console.log('⏹️ 批量翻译已取消，停止处理')
         break
       }
@@ -196,7 +192,7 @@ export function useSequentialPipeline() {
     const stepsAfterAi = aiTranslateIdx >= 0 ? stepChain.slice(aiTranslateIdx + 1) : []
 
     for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-      if (config.scope === 'all' && !imageStore.isBatchTranslationInProgress) {
+      if ((config.scope === 'all' || config.scope === 'selection') && !imageStore.isBatchTranslationInProgress) {
         console.log('⏹️ 批量翻译已取消，停止处理')
         break
       }
@@ -307,7 +303,7 @@ export function useSequentialPipeline() {
 
     const usePerImageMode = shouldUsePerImageMode(config.mode)
     isExecuting.value = true
-    if (config.scope === 'all' || config.scope === 'failed') {
+    if (config.scope === 'all' || config.scope === 'failed' || config.scope === 'selection') {
       imageStore.setBatchTranslationInProgress(true)
     }
     saveCurrentStyles()

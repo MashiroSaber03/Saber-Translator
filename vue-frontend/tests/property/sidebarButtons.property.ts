@@ -60,7 +60,7 @@ function canTranslate(state: SidebarState): boolean {
   return hasImages(state) && !state.isBatchTranslationInProgress
 }
 
-function supportsRange(mode: WorkflowMode): boolean {
+function supportsPageSelection(mode: WorkflowMode): boolean {
   return mode === 'translate-batch'
     || mode === 'hq-batch'
     || mode === 'proofread-batch'
@@ -73,10 +73,10 @@ function supportsRange(mode: WorkflowMode): boolean {
 function isRunWorkflowDisabled(
   state: SidebarState,
   mode: WorkflowMode,
-  isRangeEnabled: boolean,
-  isRangeValid: boolean
+  isPageSelectionEnabled: boolean,
+  hasValidPageSelection: boolean
 ): boolean {
-  const rangeInvalid = supportsRange(mode) && isRangeEnabled && !isRangeValid
+  const pageSelectionInvalid = supportsPageSelection(mode) && isPageSelectionEnabled && !hasValidPageSelection
 
   switch (mode) {
     case 'translate-current':
@@ -84,12 +84,12 @@ function isRunWorkflowDisabled(
     case 'translate-batch':
     case 'hq-batch':
     case 'proofread-batch':
-      return !(canTranslate(state) && !rangeInvalid)
+      return !(canTranslate(state) && !pageSelectionInvalid)
     case 'remove-current':
     case 'delete-current':
       return !hasCurrentImage(state)
     case 'remove-batch':
-      return !(hasImages(state) && !rangeInvalid)
+      return !(hasImages(state) && !pageSelectionInvalid)
     case 'clear-all':
       return !hasImages(state)
     case 'retry-failed':
@@ -142,14 +142,14 @@ describe('侧边栏工作流按钮禁用状态属性测试', () => {
         workflowModeArb,
         fc.boolean(),
         fc.boolean(),
-        (mode, isBatchInProgress, isRangeEnabled) => {
+        (mode, isBatchInProgress, isPageSelectionEnabled) => {
           const state: SidebarState = {
             images: [],
             currentImageIndex: -1,
             isBatchTranslationInProgress: isBatchInProgress
           }
 
-          const disabled = isRunWorkflowDisabled(state, mode, isRangeEnabled, true)
+          const disabled = isRunWorkflowDisabled(state, mode, isPageSelectionEnabled, true)
           expect(disabled).toBe(true)
           return true
         }
@@ -163,21 +163,21 @@ describe('侧边栏工作流按钮禁用状态属性测试', () => {
       fc.property(
         fc.array(imageStateArb, { minLength: 1, maxLength: 10 }),
         fc.boolean(),
-        (images, isRangeEnabled) => {
+        (images, isPageSelectionEnabled) => {
           const state: SidebarState = {
             images,
             currentImageIndex: 0,
             isBatchTranslationInProgress: false
           }
 
-          expect(isRunWorkflowDisabled(state, 'translate-current', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'translate-batch', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'hq-batch', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'proofread-batch', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'remove-current', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'remove-batch', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'delete-current', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'clear-all', isRangeEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'translate-current', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'translate-batch', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'hq-batch', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'proofread-batch', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'remove-current', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'remove-batch', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'delete-current', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'clear-all', isPageSelectionEnabled, true)).toBe(false)
 
           return true
         }
@@ -191,23 +191,23 @@ describe('侧边栏工作流按钮禁用状态属性测试', () => {
       fc.property(
         fc.array(imageStateArb, { minLength: 1, maxLength: 10 }),
         fc.boolean(),
-        (images, isRangeEnabled) => {
+        (images, isPageSelectionEnabled) => {
           const state: SidebarState = {
             images,
             currentImageIndex: 0,
             isBatchTranslationInProgress: true
           }
 
-          expect(isRunWorkflowDisabled(state, 'translate-current', isRangeEnabled, true)).toBe(true)
-          expect(isRunWorkflowDisabled(state, 'translate-batch', isRangeEnabled, true)).toBe(true)
-          expect(isRunWorkflowDisabled(state, 'hq-batch', isRangeEnabled, true)).toBe(true)
-          expect(isRunWorkflowDisabled(state, 'proofread-batch', isRangeEnabled, true)).toBe(true)
-          expect(isRunWorkflowDisabled(state, 'retry-failed', isRangeEnabled, true)).toBe(true)
+          expect(isRunWorkflowDisabled(state, 'translate-current', isPageSelectionEnabled, true)).toBe(true)
+          expect(isRunWorkflowDisabled(state, 'translate-batch', isPageSelectionEnabled, true)).toBe(true)
+          expect(isRunWorkflowDisabled(state, 'hq-batch', isPageSelectionEnabled, true)).toBe(true)
+          expect(isRunWorkflowDisabled(state, 'proofread-batch', isPageSelectionEnabled, true)).toBe(true)
+          expect(isRunWorkflowDisabled(state, 'retry-failed', isPageSelectionEnabled, true)).toBe(true)
 
           // 危险操作和消字当前页不受批量锁影响（与组件逻辑一致）
-          expect(isRunWorkflowDisabled(state, 'remove-current', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'delete-current', isRangeEnabled, true)).toBe(false)
-          expect(isRunWorkflowDisabled(state, 'clear-all', isRangeEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'remove-current', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'delete-current', isPageSelectionEnabled, true)).toBe(false)
+          expect(isRunWorkflowDisabled(state, 'clear-all', isPageSelectionEnabled, true)).toBe(false)
 
           return true
         }
@@ -216,7 +216,7 @@ describe('侧边栏工作流按钮禁用状态属性测试', () => {
     )
   })
 
-  it('Property 48.4: 范围非法时仅影响支持范围的批量模式', () => {
+  it('Property 48.4: 页码选择为空时仅影响支持页码选择的批量模式', () => {
     fc.assert(
       fc.property(
         fc.array(imageStateArb, { minLength: 1, maxLength: 10 }),
@@ -228,14 +228,14 @@ describe('侧边栏工作流按钮禁用状态属性测试', () => {
             isBatchTranslationInProgress: false
           }
 
-          const disabledWithInvalidRange = isRunWorkflowDisabled(state, mode, true, false)
-          const disabledWithValidRange = isRunWorkflowDisabled(state, mode, true, true)
+          const disabledWithEmptySelection = isRunWorkflowDisabled(state, mode, true, false)
+          const disabledWithValidSelection = isRunWorkflowDisabled(state, mode, true, true)
 
-          if (supportsRange(mode)) {
-            expect(disabledWithInvalidRange).toBe(true)
-            expect(disabledWithValidRange).toBe(false)
+          if (supportsPageSelection(mode)) {
+            expect(disabledWithEmptySelection).toBe(true)
+            expect(disabledWithValidSelection).toBe(false)
           } else {
-            expect(disabledWithInvalidRange).toBe(disabledWithValidRange)
+            expect(disabledWithEmptySelection).toBe(disabledWithValidSelection)
           }
 
           return true
