@@ -5,6 +5,9 @@
       <div class="settings-group-header">
         <div class="settings-group-title">已安装插件</div>
         <div class="plugin-header-actions">
+          <button class="btn btn-sm" :disabled="isImporting" @click="triggerImport">
+            {{ isImporting ? '导入中...' : '导入插件' }}
+          </button>
           <button class="btn btn-sm" @click="showAgentModal = true">
             自动生成插件
           </button>
@@ -13,6 +16,13 @@
           </button>
         </div>
       </div>
+      <input
+        ref="pluginImportInputRef"
+        type="file"
+        accept=".zip,application/zip"
+        class="sr-only"
+        @change="handleImportFileChange"
+      />
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="plugins.length === 0" class="empty-hint">暂无已安装的插件</div>
       <div v-else class="plugin-list">
@@ -31,6 +41,7 @@
               <input type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
               <span class="slider"></span>
             </label>
+            <button class="btn btn-sm" @click="downloadPlugin(plugin)" title="导出">导出</button>
             <button class="btn btn-sm" @click="openPluginConfig(plugin)" v-if="plugin.has_config" title="配置">⚙️</button>
             <button class="btn btn-sm btn-danger" @click="deletePlugin(plugin)" title="删除">🗑️</button>
           </div>
@@ -157,6 +168,8 @@ const plugins = ref<Plugin[]>([])
 const defaultStates = ref<Record<string, boolean>>({})
 const isLoading = ref(false)
 const isRefreshing = ref(false)
+const isImporting = ref(false)
+const pluginImportInputRef = ref<HTMLInputElement | null>(null)
 
 // 配置模态框状态
 const showConfigModal = ref(false)
@@ -197,6 +210,10 @@ async function loadDefaultStates() {
 
 // 刷新插件列表并触发后端热重载
 async function refreshPluginList() {
+  await refreshPluginListCore({ showToast: true })
+}
+
+async function refreshPluginListCore(options: { showToast: boolean }) {
   isRefreshing.value = true
   closeConfigModal()
   try {
@@ -204,15 +221,17 @@ async function refreshPluginList() {
     plugins.value = result.plugins || []
     defaultStates.value = result.default_states || {}
 
-    if (result.partial_success) {
-      const failedCount = result.summary?.failed ?? result.failures?.length ?? 0
-      toast.warning(
-        failedCount > 0
-          ? `部分插件刷新失败（${failedCount} 个）`
-          : '部分插件刷新失败'
-      )
-    } else {
-      toast.success('插件列表已刷新')
+    if (options.showToast) {
+      if (result.partial_success) {
+        const failedCount = result.summary?.failed ?? result.failures?.length ?? 0
+        toast.warning(
+          failedCount > 0
+            ? `部分插件刷新失败（${failedCount} 个）`
+            : '部分插件刷新失败'
+        )
+      } else {
+        toast.success('插件列表已刷新')
+      }
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '刷新插件失败'
@@ -309,6 +328,66 @@ async function deletePlugin(plugin: Plugin) {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '删除插件失败'
     toast.error(errorMessage)
+  }
+}
+
+function triggerImport() {
+  pluginImportInputRef.value?.click()
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
+async function downloadPlugin(plugin: Plugin) {
+  try {
+    const result = await pluginApi.exportPlugin(plugin.id)
+    downloadBlob(result.blob, result.filename)
+    toast.success(`已导出 ${plugin.display_name}`)
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '导出插件失败'
+    toast.error(errorMessage)
+  }
+}
+
+async function importPluginFile(file: File, replace = false) {
+  return pluginApi.importPlugin(file, replace)
+}
+
+async function handleImportFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  isImporting.value = true
+  try {
+    await importPluginFile(file, false)
+    await refreshPluginListCore({ showToast: false })
+    toast.success('插件导入成功')
+  } catch (error: unknown) {
+    const conflictError = error as { status?: number; details?: Record<string, unknown>; message?: string }
+    if (conflictError?.status === 409) {
+      const pluginId = String(conflictError.details?.plugin_id || '')
+      const confirmed = confirm(`插件 "${pluginId || file.name}" 已存在，是否替换？`)
+      if (confirmed) {
+        await importPluginFile(file, true)
+        await refreshPluginListCore({ showToast: false })
+        toast.success('插件导入成功')
+      }
+    } else {
+      const errorMessage = error instanceof Error ? error.message : '导入插件失败'
+      toast.error(errorMessage)
+    }
+  } finally {
+    target.value = ''
+    isImporting.value = false
   }
 }
 
@@ -675,5 +754,17 @@ input:checked + .slider::before {
 .btn-danger {
   background: transparent;
   border: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>

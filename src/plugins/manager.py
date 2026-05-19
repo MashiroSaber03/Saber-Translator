@@ -9,6 +9,7 @@ import shutil
 import stat
 import sys
 import threading
+import tempfile
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,6 +23,12 @@ from .hooks import (
     PluginContext,
     normalize_plugin_mode,
     normalize_plugin_step,
+)
+from .package_io import (
+    build_plugin_package,
+    extract_plugin_package,
+    load_plugin_package_manifest,
+    validate_plugin_package_contents,
 )
 
 logger = logging.getLogger("PluginManager")
@@ -465,6 +472,27 @@ class PluginManager:
         with self._lock:
             return self.plugin_sources.get(plugin_id)
 
+    def export_plugin_bundle(self, plugin_id: str) -> Tuple[bytes, str]:
+        plugin = self.get_plugin(plugin_id)
+        if not plugin:
+            raise PluginException(f"插件 '{plugin_id}' 未找到", details={"plugin_id": plugin_id})
+
+        source_path = self.get_plugin_source_path(plugin_id)
+        if not source_path or not os.path.isdir(source_path):
+            raise PluginException(f"插件 '{plugin_id}' 的源码目录不存在", details={"plugin_id": plugin_id})
+
+        package_bytes, _manifest = build_plugin_package(
+            source_path,
+            manifest_fields={
+                "plugin_id": plugin.plugin_id,
+                "display_name": plugin.display_name,
+                "plugin_version": plugin.plugin_version,
+                "plugin_author": plugin.plugin_author,
+                "plugin_description": plugin.plugin_description,
+            },
+        )
+        return package_bytes, f"{plugin_id}.zip"
+
     def _collect_module_hierarchy(self, module_name: str) -> List[str]:
         module_names = {module_name}
         package_name = module_name.rpartition(".")[0]
@@ -511,6 +539,147 @@ class PluginManager:
     def remove_plugin(self, plugin_id: str) -> None:
         self._remove_plugin_runtime(plugin_id)
         self._clear_plugin_persistence(plugin_id)
+
+    def import_plugin_bundle(self, package_bytes: bytes, *, replace: bool = False) -> Dict[str, Any]:
+        try:
+            manifest = load_plugin_package_manifest(package_bytes)
+        except Exception as exc:
+            if isinstance(exc, PluginException):
+                raise
+            raise PluginException("插件包解析失败") from exc
+
+        manifest_plugin_id = str(manifest.get("plugin_id") or "").strip()
+        if not manifest_plugin_id:
+            raise PluginException("插件包 manifest 缺少 plugin_id")
+
+        source_directory = str(manifest.get("source_directory") or "").strip()
+        if not source_directory:
+            raise PluginException("插件包 manifest 缺少 source_directory")
+
+        with tempfile.TemporaryDirectory(prefix="plugin-import-", dir=self.app_root) as temp_dir:
+            staging_root = os.path.join(temp_dir, "staging")
+            extract_plugin_package(package_bytes, staging_root)
+            validate_plugin_package_contents(staging_root, manifest)
+
+            candidate_dir = os.path.join(staging_root, source_directory)
+            if not os.path.isdir(candidate_dir):
+                raise PluginException("插件包缺少插件源码目录", details={"plugin_id": manifest_plugin_id})
+
+            validation_result = self.validate_plugin_source_path(
+                candidate_dir,
+                plugin_name=source_directory,
+                force_reload=True,
+            )
+            validated_plugin = validation_result.get("plugin") or {}
+            validated_plugin_id = str(validated_plugin.get("id") or "").strip()
+            if not validated_plugin_id:
+                raise PluginException("导入插件校验失败：无法解析 plugin_id")
+            if validated_plugin_id != manifest_plugin_id:
+                raise PluginException(
+                    "插件包 manifest 与插件源码中的 plugin_id 不一致",
+                    details={
+                        "manifest_plugin_id": manifest_plugin_id,
+                        "validated_plugin_id": validated_plugin_id,
+                    },
+                )
+
+            destination_path = os.path.join(self.app_root, "plugins", source_directory)
+            existing_plugin = self.get_plugin(validated_plugin_id)
+            existing_source_path = self.get_plugin_source_path(validated_plugin_id)
+
+            if existing_plugin and not replace:
+                raise PluginException(
+                    f"插件 '{validated_plugin_id}' 已存在，请确认是否替换",
+                    details={
+                        "plugin_id": validated_plugin_id,
+                        "conflict": "existing_plugin",
+                    },
+                )
+
+            backup_dir = None
+            if existing_plugin and replace:
+                if existing_source_path and os.path.isdir(existing_source_path):
+                    backup_dir = os.path.join(temp_dir, "backup")
+                    shutil.copytree(existing_source_path, backup_dir)
+
+                runtime_enabled = bool(existing_plugin.is_enabled())
+                saved_default_state = self.plugin_default_states.get(validated_plugin_id)
+                old_source_path = existing_source_path if existing_source_path and os.path.isdir(existing_source_path) else None
+
+                try:
+                    self._remove_plugin_runtime(validated_plugin_id)
+                    if old_source_path and os.path.abspath(old_source_path) != os.path.abspath(destination_path):
+                        shutil.rmtree(old_source_path, onerror=self._handle_remove_readonly)
+                    if os.path.isdir(destination_path):
+                        shutil.rmtree(destination_path, onerror=self._handle_remove_readonly)
+                    shutil.copytree(candidate_dir, destination_path)
+
+                    prepared = self._prepare_plugin_from_source_path(
+                        destination_path,
+                        os.path.basename(destination_path),
+                        force_reload=True,
+                    )
+                    self._attach_prepared_plugin_instance(
+                        prepared,
+                        source_path=destination_path,
+                        enabled=runtime_enabled,
+                    )
+                    if saved_default_state is not None:
+                        self.plugin_default_states[validated_plugin_id] = saved_default_state
+                        self.save_plugin_default_states()
+                    return {
+                        "success": True,
+                        "plugin": self.get_plugin(validated_plugin_id).get_metadata() | {
+                            "enabled": self.get_plugin(validated_plugin_id).is_enabled(),
+                        },
+                    }
+                except Exception as exc:
+                    if os.path.isdir(destination_path):
+                        shutil.rmtree(destination_path, onerror=self._handle_remove_readonly)
+                    if backup_dir and os.path.isdir(backup_dir):
+                        restore_target = old_source_path or destination_path
+                        shutil.copytree(backup_dir, restore_target)
+                        restored = self._prepare_plugin_from_source_path(
+                            restore_target,
+                            os.path.basename(restore_target),
+                            force_reload=True,
+                        )
+                        self._attach_prepared_plugin_instance(
+                            restored,
+                            source_path=restore_target,
+                            enabled=runtime_enabled,
+                        )
+                        if saved_default_state is not None:
+                            self.plugin_default_states[validated_plugin_id] = saved_default_state
+                            self.save_plugin_default_states()
+                    if isinstance(exc, PluginException):
+                        raise
+                    raise PluginException("替换插件失败") from exc
+
+            if os.path.exists(destination_path):
+                raise PluginException(
+                    f"目标插件目录已存在: {destination_path}",
+                    details={"plugin_id": validated_plugin_id},
+                )
+
+            shutil.copytree(candidate_dir, destination_path)
+            prepared = self._prepare_plugin_from_source_path(
+                destination_path,
+                os.path.basename(destination_path),
+                force_reload=True,
+            )
+            self._attach_prepared_plugin_instance(
+                prepared,
+                source_path=destination_path,
+                enabled=False,
+            )
+            self.plugin_default_states[validated_plugin_id] = False
+            self.save_plugin_default_states()
+            plugin = self.get_plugin(validated_plugin_id)
+            return {
+                "success": True,
+                "plugin": plugin.get_metadata() | {"enabled": plugin.is_enabled()},
+            }
 
     def _handle_remove_readonly(self, func, path, exc_info) -> None:
         try:

@@ -12,11 +12,13 @@
 
 import os
 import logging
-from flask import request, jsonify
+import io
+from flask import request, jsonify, send_file
 
 from . import system_bp
 from src.plugins.manager import get_plugin_manager
 from src.plugins.base import PluginBase
+from src.shared.exceptions import PluginException
 
 logger = logging.getLogger("SystemAPI.Plugins")
 
@@ -121,6 +123,63 @@ def delete_plugin_api(plugin_id: str):
     except Exception as e:
         logger.error(f"删除插件 '{plugin_id}' 时发生未知错误: {e}", exc_info=True)
         return jsonify({'success': False, 'error': '删除插件时出错'}), 500
+
+
+@system_bp.route('/plugins/<plugin_id>/export', methods=['GET'])
+def export_plugin_api(plugin_id: str):
+    """导出指定插件为 zip 包。"""
+    try:
+        plugin_mgr = get_plugin_manager()
+        bundle_bytes, filename = plugin_mgr.export_plugin_bundle(plugin_id)
+        return send_file(
+            io.BytesIO(bundle_bytes),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename,
+        )
+    except PluginException as exc:
+        return jsonify({
+            'success': False,
+            'error': str(exc),
+            'details': exc.details,
+        }), 404
+    except Exception as e:
+        logger.error(f"导出插件 '{plugin_id}' 失败: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': '导出插件时出错'}), 500
+
+
+@system_bp.route('/plugins/import', methods=['POST'])
+def import_plugin_api():
+    """导入单个插件 zip 包。"""
+    uploaded_file = request.files.get('file')
+    if uploaded_file is None:
+        return jsonify({'success': False, 'error': '缺少插件压缩包'}), 400
+
+    replace_value = str(request.form.get('replace', 'false')).strip().lower()
+    replace = replace_value in {'1', 'true', 'yes', 'on'}
+
+    try:
+        bundle_bytes = uploaded_file.read()
+        if not bundle_bytes:
+            return jsonify({'success': False, 'error': '插件压缩包为空'}), 400
+
+        plugin_mgr = get_plugin_manager()
+        result = plugin_mgr.import_plugin_bundle(bundle_bytes, replace=replace)
+        return jsonify({
+            'success': True,
+            'plugin': result.get('plugin'),
+            'message': '插件导入成功',
+        })
+    except PluginException as exc:
+        status_code = 409 if exc.details.get('plugin_id') else 400
+        return jsonify({
+            'success': False,
+            'error': str(exc),
+            'details': exc.details,
+        }), status_code
+    except Exception as e:
+        logger.error("导入插件失败: %s", e, exc_info=True)
+        return jsonify({'success': False, 'error': '导入插件时出错'}), 500
 
 
 @system_bp.route('/plugins/<plugin_id>/config_schema', methods=['GET'])

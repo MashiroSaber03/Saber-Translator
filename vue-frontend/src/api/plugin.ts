@@ -71,6 +71,14 @@ export interface PluginRefreshResponse {
   error?: string
 }
 
+export interface PluginImportResponse {
+  success: boolean
+  plugin?: PluginData
+  message?: string
+  error?: string
+  details?: Record<string, unknown>
+}
+
 // ==================== 插件列表 API ====================
 
 /**
@@ -114,6 +122,37 @@ export async function disablePlugin(name: string): Promise<ApiResponse> {
 export async function deletePlugin(name: string): Promise<ApiResponse> {
   const safeName = encodeURIComponent(name)
   return apiClient.delete<ApiResponse>(`/api/plugins/${safeName}`)
+}
+
+/**
+ * 导出插件压缩包
+ * @param name 插件 ID
+ */
+export async function exportPlugin(name: string): Promise<{ blob: Blob; filename: string }> {
+  const safeName = encodeURIComponent(name)
+  const response = await fetch(`/api/plugins/${safeName}/export`)
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || '导出插件失败')
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const match = disposition.match(/filename="?([^";]+)"?/)
+  return {
+    blob: await response.blob(),
+    filename: match?.[1] || `${name}.zip`,
+  }
+}
+
+/**
+ * 导入插件压缩包
+ * @param file 插件 zip
+ * @param replace 是否替换同名插件
+ */
+export async function importPlugin(file: File, replace = false): Promise<PluginImportResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('replace', replace ? 'true' : 'false')
+  return apiClient.upload<PluginImportResponse>('/api/plugins/import', formData)
 }
 
 // ==================== 插件配置 API ====================

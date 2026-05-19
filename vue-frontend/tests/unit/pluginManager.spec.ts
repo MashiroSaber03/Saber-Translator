@@ -10,6 +10,8 @@ const {
   enablePluginMock,
   disablePluginMock,
   deletePluginMock,
+  exportPluginMock,
+  importPluginMock,
   getPluginConfigSchemaMock,
   getPluginConfigMock,
   savePluginConfigMock,
@@ -24,6 +26,8 @@ const {
   enablePluginMock: vi.fn(),
   disablePluginMock: vi.fn(),
   deletePluginMock: vi.fn(),
+  exportPluginMock: vi.fn(),
+  importPluginMock: vi.fn(),
   getPluginConfigSchemaMock: vi.fn(),
   getPluginConfigMock: vi.fn(),
   savePluginConfigMock: vi.fn(),
@@ -40,6 +44,8 @@ vi.mock('@/api/plugin', () => ({
   enablePlugin: enablePluginMock,
   disablePlugin: disablePluginMock,
   deletePlugin: deletePluginMock,
+  exportPlugin: exportPluginMock,
+  importPlugin: importPluginMock,
   getPluginConfigSchema: getPluginConfigSchemaMock,
   getPluginConfig: getPluginConfigMock,
   savePluginConfig: savePluginConfigMock,
@@ -93,6 +99,8 @@ describe('PluginManager', () => {
     enablePluginMock.mockReset()
     disablePluginMock.mockReset()
     deletePluginMock.mockReset()
+    exportPluginMock.mockReset()
+    importPluginMock.mockReset()
     getPluginConfigSchemaMock.mockReset()
     getPluginConfigMock.mockReset()
     savePluginConfigMock.mockReset()
@@ -119,6 +127,17 @@ describe('PluginManager', () => {
       success: true,
       default_states: {
         plugin_one: false,
+      },
+    })
+    exportPluginMock.mockResolvedValue({
+      blob: new Blob(['zip-bytes'], { type: 'application/zip' }),
+      filename: 'plugin_one.zip',
+    })
+    importPluginMock.mockResolvedValue({
+      success: true,
+      plugin: {
+        id: 'plugin_imported',
+        display_name: 'Imported Plugin',
       },
     })
   })
@@ -182,5 +201,71 @@ describe('PluginManager', () => {
     await flushPromises()
 
     expect(wrapper.find('.plugin-agent-modal-stub').attributes('data-open')).toBe('true')
+  })
+
+  it('exports a plugin package from the export button', async () => {
+    const objectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:plugin-one')
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const exportButton = wrapper.findAll('button').find(button => button.attributes('title') === '导出')
+    expect(exportButton).toBeTruthy()
+
+    await exportButton!.trigger('click')
+    await flushPromises()
+
+    expect(exportPluginMock).toHaveBeenCalledWith('plugin_one')
+    expect(objectUrlSpy).toHaveBeenCalledTimes(1)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(revokeSpy).toHaveBeenCalledWith('blob:plugin-one')
+    expect(toastSuccessMock).toHaveBeenCalledWith('已导出 Plugin One')
+
+    clickSpy.mockRestore()
+    revokeSpy.mockRestore()
+    objectUrlSpy.mockRestore()
+  })
+
+  it('retries import with replace after conflict confirmation', async () => {
+    importPluginMock
+      .mockRejectedValueOnce({
+        message: '插件已存在',
+        status: 409,
+        details: {
+          plugin_id: 'plugin_one',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        plugin: {
+          id: 'plugin_one',
+          display_name: 'Plugin One',
+        },
+      })
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const fileInput = wrapper.find('input[type="file"]')
+    expect(fileInput.exists()).toBe(true)
+
+    const file = new File(['zip-bytes'], 'plugin_one.zip', { type: 'application/zip' })
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [file],
+      configurable: true,
+    })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    expect(importPluginMock).toHaveBeenNthCalledWith(1, file, false)
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(importPluginMock).toHaveBeenNthCalledWith(2, file, true)
+    expect(refreshPluginsMock).toHaveBeenCalledTimes(1)
+    expect(toastSuccessMock).toHaveBeenCalledWith('插件导入成功')
+
+    confirmSpy.mockRestore()
   })
 })
