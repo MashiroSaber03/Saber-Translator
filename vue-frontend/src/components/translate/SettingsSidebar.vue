@@ -13,7 +13,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { getFontList, uploadFont } from '@/api/config'
+import {
+  getFontList,
+  type TranslateWorkflowPreferences,
+  getTranslateWorkflowPreferences,
+  saveTranslateWorkflowPreferences,
+  uploadFont,
+} from '@/api/config'
 import { showToast } from '@/utils/toast'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
@@ -28,6 +34,7 @@ import {
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
+  isWorkflowMode,
   type WorkflowMode,
   type WorkflowModeConfig,
   type WorkflowRunRequest,
@@ -120,6 +127,21 @@ const showPageSelectionModal = ref(false)
 
 /** 当前工作流模式 */
 const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
+
+/** 是否记住翻译页操作模式 */
+const rememberWorkflowModeEnabled = ref(false)
+
+/** 用户是否已经在本次挂载后手动切换过操作模式 */
+const hasUserChangedWorkflowMode = ref(false)
+
+/** 用户是否已经在本次挂载后手动切换过记忆开关 */
+const hasUserChangedRememberWorkflowMode = ref(false)
+
+/** 等待保存到后端的最新偏好快照 */
+let pendingWorkflowPreferences: TranslateWorkflowPreferences | null = null
+
+/** 是否正在写入翻译页操作模式偏好 */
+let isPersistingWorkflowPreferences = false
 
 // ============================================================
 // 计算属性
@@ -290,6 +312,8 @@ const fontSelectOptions = computed(() => {
 // ============================================================
 
 onMounted(async () => {
+  void loadWorkflowPreferences()
+
   // 加载字体列表
   await loadFontList()
 
@@ -349,6 +373,54 @@ async function loadFontList() {
     // 出错时也显示内置字体
     fontList.value = [...BUILTIN_FONTS]
   }
+}
+
+async function loadWorkflowPreferences() {
+  try {
+    const response = await getTranslateWorkflowPreferences()
+    const preferences = response.preferences
+    if (!response.success || !preferences) return
+
+    if (!hasUserChangedRememberWorkflowMode.value) {
+      rememberWorkflowModeEnabled.value = preferences.rememberWorkflowModeEnabled
+    }
+
+    if (
+      preferences.rememberWorkflowModeEnabled &&
+      isWorkflowMode(preferences.lastWorkflowMode) &&
+      !hasUserChangedWorkflowMode.value &&
+      !hasUserChangedRememberWorkflowMode.value
+    ) {
+      selectedWorkflowMode.value = preferences.lastWorkflowMode
+    }
+  } catch (error) {
+    console.warn('加载翻译页操作模式偏好失败:', error)
+  }
+}
+
+async function persistWorkflowPreferences(
+  rememberEnabled: boolean,
+  workflowMode: WorkflowMode
+): Promise<void> {
+  pendingWorkflowPreferences = {
+    rememberWorkflowModeEnabled: rememberEnabled,
+    lastWorkflowMode: workflowMode,
+  }
+
+  if (isPersistingWorkflowPreferences) return
+
+  isPersistingWorkflowPreferences = true
+  while (pendingWorkflowPreferences) {
+    const nextPreferences = pendingWorkflowPreferences
+    pendingWorkflowPreferences = null
+
+    try {
+      await saveTranslateWorkflowPreferences(nextPreferences)
+    } catch (error) {
+      console.warn('保存翻译页操作模式偏好失败:', error)
+    }
+  }
+  isPersistingWorkflowPreferences = false
 }
 
 /**
@@ -575,7 +647,19 @@ function handlePageSelectionConfirm(pages: number[]): void {
  * 处理工作流模式切换
  */
 function handleWorkflowModeChange(value: string | number) {
-  selectedWorkflowMode.value = String(value) as WorkflowMode
+  const workflowMode = String(value)
+  if (!isWorkflowMode(workflowMode)) return
+
+  hasUserChangedWorkflowMode.value = true
+  selectedWorkflowMode.value = workflowMode
+  void persistWorkflowPreferences(rememberWorkflowModeEnabled.value, workflowMode)
+}
+
+function handleRememberWorkflowModeChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  hasUserChangedRememberWorkflowMode.value = true
+  rememberWorkflowModeEnabled.value = checked
+  void persistWorkflowPreferences(checked, selectedWorkflowMode.value)
 }
 
 /**
@@ -966,6 +1050,15 @@ function handleOpenNonTranslate(): void {
             :options="workflowModeOptions"
             @change="handleWorkflowModeChange"
           />
+          <label class="remember-workflow-mode-toggle">
+            <input
+              id="rememberWorkflowModeCheckbox"
+              type="checkbox"
+              :checked="rememberWorkflowModeEnabled"
+              @change="handleRememberWorkflowModeChange"
+            />
+            <span>记住操作模式</span>
+          </label>
         </div>
         <div class="workflow-meta">
           <span class="workflow-chip">{{ workflowContextTag }}</span>
@@ -1548,6 +1641,24 @@ function handleOpenNonTranslate(): void {
   min-height: 42px;
   border-radius: 10px;
   border-color: #b8c6dd;
+}
+
+.remember-workflow-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 0;
+  color: #4b5f80;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.remember-workflow-mode-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #3ea94a;
 }
 
 .workflow-meta {

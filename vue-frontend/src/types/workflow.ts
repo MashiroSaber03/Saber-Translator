@@ -113,3 +113,11 @@ export const WORKFLOW_MODE_CONFIGS: WorkflowModeConfig[] = [
     isDangerous: true
   }
 ]
+
+const WORKFLOW_MODE_VALUES = new Set<WorkflowMode>(
+  WORKFLOW_MODE_CONFIGS.map(config => config.mode)
+)
+
+export function isWorkflowMode(value: unknown): value is WorkflowMode {
+  return typeof value === 'string' && WORKFLOW_MODE_VALUES.has(value as WorkflowMode)
+}

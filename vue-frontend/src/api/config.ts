@@ -13,6 +13,7 @@ import type {
   ConnectionTestResponse,
 } from '@/types'
 import type { TextStyleSettings } from '@/types/settings'
+import type { WorkflowMode } from '@/types/workflow'
 
 // ==================== 提示词内容响应 ====================
 
@@ -354,6 +355,17 @@ export interface SaveTextStyleDefaultsResponse {
   error?: string
 }
 
+export interface TranslateWorkflowPreferences {
+  rememberWorkflowModeEnabled: boolean
+  lastWorkflowMode: WorkflowMode
+}
+
+export interface TranslateWorkflowPreferencesResponse {
+  success: boolean
+  preferences?: TranslateWorkflowPreferences
+  error?: string
+}
+
 /**
  * 获取用户设置（从后端 config/user_settings.json 加载）
  */
@@ -383,6 +395,19 @@ export async function saveTextStyleDefaults(defaults: TextStyleSettings): Promis
  */
 export async function resetTextStyleDefaults(): Promise<SaveTextStyleDefaultsResponse> {
   return apiClient.post<SaveTextStyleDefaultsResponse>('/api/config/text-style-defaults/reset')
+}
+
+export async function getTranslateWorkflowPreferences(): Promise<TranslateWorkflowPreferencesResponse> {
+  return apiClient.get<TranslateWorkflowPreferencesResponse>('/api/config/translate-workflow-preferences')
+}
+
+export async function saveTranslateWorkflowPreferences(
+  preferences: TranslateWorkflowPreferences
+): Promise<TranslateWorkflowPreferencesResponse> {
+  return apiClient.post<TranslateWorkflowPreferencesResponse>(
+    '/api/config/translate-workflow-preferences',
+    preferences
+  )
 }
 
 /**
@@ -450,5 +475,7 @@ export const configApi = {
   getTextStyleDefaults,
   saveTextStyleDefaults,
   resetTextStyleDefaults,
+  getTranslateWorkflowPreferences,
+  saveTranslateWorkflowPreferences,
   saveUserSettings,
 }

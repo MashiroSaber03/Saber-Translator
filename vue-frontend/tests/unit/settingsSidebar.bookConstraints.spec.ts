@@ -1,16 +1,35 @@
+/* eslint-disable vue/one-component-per-file */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, type PropType } from 'vue'
 
 vi.mock('@/api/config', () => ({
   getFontList: async () => ({ fonts: [] }),
   uploadFont: async () => ({ success: true }),
+  getTranslateWorkflowPreferences: async () => ({
+    success: true,
+    preferences: {
+      rememberWorkflowModeEnabled: false,
+      lastWorkflowMode: 'translate-current',
+    },
+  }),
+  saveTranslateWorkflowPreferences: async () => ({ success: true }),
 }))
 
 vi.mock('@/components/common/CustomSelect.vue', () => ({
   default: defineComponent({
-    props: ['modelValue', 'options'],
+    props: {
+      modelValue: {
+        type: [String, Number] as PropType<string | number | undefined>,
+        default: undefined,
+      },
+      options: {
+        type: Array as PropType<Array<{ label: string; value: string | number }>>,
+        default: () => [],
+      },
+    },
     emits: ['change'],
     setup(props) {
       return () => h('select', { value: props.modelValue }, (props.options || []).map((option: any) => h('option', { value: option.value }, option.label)))
@@ -20,7 +39,12 @@ vi.mock('@/components/common/CustomSelect.vue', () => ({
 
 vi.mock('@/components/common/CollapsiblePanel.vue', () => ({
   default: defineComponent({
-    props: ['title'],
+    props: {
+      title: {
+        type: String,
+        default: '',
+      },
+    },
     setup(props, { slots }) {
       return () => h('section', [h('h3', props.title), slots.default?.()])
     },

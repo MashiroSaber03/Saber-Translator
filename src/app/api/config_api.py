@@ -21,6 +21,52 @@ logger = logging.getLogger("ConfigAPI")
 # 定义蓝图实例 (已在步骤 2 定义)
 config_bp = Blueprint('config_api', __name__, url_prefix='/api')
 
+DEFAULT_TRANSLATE_WORKFLOW_PREFERENCES = {
+    "rememberWorkflowModeEnabled": False,
+    "lastWorkflowMode": "translate-current",
+}
+
+VALID_TRANSLATE_WORKFLOW_MODES = {
+    "translate-current",
+    "translate-batch",
+    "hq-batch",
+    "proofread-batch",
+    "remove-current",
+    "remove-batch",
+    "retry-failed",
+    "delete-current",
+    "clear-all",
+}
+
+
+def _normalize_translate_workflow_preferences(raw_preferences):
+    """Return only the supported workflow preference fields with safe defaults."""
+    preferences = raw_preferences if isinstance(raw_preferences, dict) else {}
+    remember_enabled = preferences.get("rememberWorkflowModeEnabled")
+    last_mode = preferences.get("lastWorkflowMode")
+
+    return {
+        "rememberWorkflowModeEnabled": remember_enabled if isinstance(remember_enabled, bool) else False,
+        "lastWorkflowMode": last_mode if last_mode in VALID_TRANSLATE_WORKFLOW_MODES else "translate-current",
+    }
+
+
+def load_translate_workflow_preferences():
+    preferences = load_json_config(
+        constants.TRANSLATE_WORKFLOW_PREFERENCES_FILE,
+        default_value=DEFAULT_TRANSLATE_WORKFLOW_PREFERENCES.copy(),
+    )
+    return _normalize_translate_workflow_preferences(preferences)
+
+
+def save_translate_workflow_preferences(preferences):
+    normalized = _normalize_translate_workflow_preferences(preferences)
+    success = save_json_config(constants.TRANSLATE_WORKFLOW_PREFERENCES_FILE, normalized)
+    if not success:
+        logger.warning(f"保存翻译页操作模式偏好失败: {constants.TRANSLATE_WORKFLOW_PREFERENCES_FILE}")
+    return success, normalized
+
+
 # --- 需要加载/保存配置的辅助函数 ---
 # (这些函数原本在 app.py，现在移到这里)
 
@@ -260,6 +306,24 @@ def reset_text_style_defaults_api():
         return jsonify({'success': True, 'defaults': defaults})
     except RuntimeError as error:
         return jsonify({'success': False, 'error': str(error)}), 400
+
+
+@config_bp.route('/config/translate-workflow-preferences', methods=['GET'])
+def get_translate_workflow_preferences_api():
+    """获取翻译页操作模式偏好。"""
+    preferences = load_translate_workflow_preferences()
+    return jsonify({'success': True, 'preferences': preferences})
+
+
+@config_bp.route('/config/translate-workflow-preferences', methods=['POST'])
+def save_translate_workflow_preferences_api():
+    """保存翻译页操作模式偏好。"""
+    data = request.get_json() or {}
+    success, preferences = save_translate_workflow_preferences(data)
+    if success:
+        return jsonify({'success': True, 'preferences': preferences})
+    return jsonify({'success': False, 'error': '保存设置失败', 'preferences': preferences}), 500
+
 
 @config_bp.route('/save_settings', methods=['POST'])
 def save_settings_api():
