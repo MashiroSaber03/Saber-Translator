@@ -160,6 +160,9 @@ async function generateOverview(regenerate: boolean): Promise<void> {
         if (!generatedTemplates.value.includes(currentTemplate.value)) {
           generatedTemplates.value.push(currentTemplate.value)
         }
+        if (currentTemplate.value === 'story_summary' && response.cached !== true) {
+          insightStore.triggerDataRefresh()
+        }
       }
     } else {
       overviewContent.value = `生成失败: ${response.error || '未知错误'}`

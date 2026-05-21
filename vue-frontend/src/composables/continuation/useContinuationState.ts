@@ -11,10 +11,12 @@ export interface ContinuationState {
     // 状态
     isLoading: Readonly<Ref<boolean>>
     isDataReady: Readonly<Ref<boolean>>
+    isSyncingAnalysis: Readonly<Ref<boolean>>
     currentStep: Ref<number>
     messageType: Ref<'success' | 'error' | 'info' | ''>
     errorMessage: Ref<string>
     successMessage: Ref<string>
+    lastAnalysisSyncAt: Ref<string>
 
     // 配置
     pageCount: Ref<number>
@@ -32,6 +34,7 @@ export interface ContinuationState {
 
     // 方法
     initializeData: () => Promise<void>
+    syncAnalysisData: (source?: 'auto' | 'manual') => Promise<void>
     resetState: () => void
     showMessage: (message: string, type: 'success' | 'error' | 'info') => void
 
@@ -48,10 +51,12 @@ export { ContinuationStateKey }
 export function useContinuationState(bookId: Ref<string | undefined>): ContinuationState {
     const isLoading = ref(false)
     const isDataReady = ref(false)
+    const isSyncingAnalysis = ref(false)
     const currentStep = ref(0)
     const messageType = ref<'success' | 'error' | 'info' | ''>('')
     const errorMessage = ref('')
     const successMessage = ref('')
+    const lastAnalysisSyncAt = ref('')
     let messageTimer: ReturnType<typeof setTimeout> | null = null
 
     // 配置数据
@@ -71,23 +76,107 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
     function resetLoadedContinuationData(): void {
         isDataReady.value = false
+        isSyncingAnalysis.value = false
         characters.value = []
         chapterScript.value = null
         pages.value = []
         pageCount.value = 10
         styleRefPages.value = 3
         continuationDirection.value = ''
+        lastAnalysisSyncAt.value = ''
         isGeneratingPages.value = false
         imageRefreshKey.value = Date.now()
+    }
+
+    function clearMessageTimer(): void {
+        if (messageTimer) {
+            clearTimeout(messageTimer)
+            messageTimer = null
+        }
+    }
+
+    function setMessageState(message: string, type: 'success' | 'error' | 'info', persistent: boolean): void {
+        clearMessageTimer()
+
+        messageType.value = type
+        if (type === 'error') {
+            errorMessage.value = message
+            successMessage.value = ''
+        } else {
+            successMessage.value = message
+            errorMessage.value = ''
+        }
+
+        if (!persistent) {
+            messageTimer = setTimeout(() => {
+                messageType.value = ''
+                errorMessage.value = ''
+                successMessage.value = ''
+                messageTimer = null
+            }, 3000)
+        }
+    }
+
+    async function loadCharacters(persistentError: boolean = true): Promise<boolean> {
+        if (!bookId.value) return false
+
+        const charResult = await continuationApi.getCharacters(bookId.value)
+        if (charResult.success && charResult.characters) {
+            characters.value = charResult.characters
+            imageRefreshKey.value = Date.now()
+            return true
+        }
+
+        if (!charResult.success && charResult.error) {
+            setMessageState(`加载角色失败：${charResult.error}`, 'error', persistentError)
+        }
+        return false
+    }
+
+    function applySavedContinuationData(data: {
+        script: ChapterScript | null
+        pages: PageContent[]
+        config: {
+            page_count?: number
+            style_reference_pages?: number
+            continuation_direction?: string
+        } | null
+    }): void {
+        chapterScript.value = data.script
+        pages.value = data.pages || []
+
+        if (data.config) {
+            pageCount.value = data.config.page_count || 10
+            styleRefPages.value = data.config.style_reference_pages || 3
+            continuationDirection.value = data.config.continuation_direction || ''
+        }
+    }
+
+    function applyPreparationResult(result: {
+        ready?: boolean
+        message?: string
+        synced_at?: string
+    }, persistentMessage: boolean = true): void {
+        isDataReady.value = Boolean(result.ready)
+        if (result.synced_at) {
+            lastAnalysisSyncAt.value = result.synced_at
+        }
+
+        if (!result.ready && result.message) {
+            setMessageState(result.message, 'error', persistentMessage)
+            return
+        }
+
+        if (result.ready && messageType.value === 'error' && errorMessage.value && !errorMessage.value.startsWith('加载角色失败：')) {
+            messageType.value = ''
+            errorMessage.value = ''
+        }
     }
 
     async function initializeData() {
         if (!bookId.value) return
 
-        if (messageTimer) {
-            clearTimeout(messageTimer)
-            messageTimer = null
-        }
+        clearMessageTimer()
 
         isLoading.value = true
         messageType.value = ''
@@ -100,47 +189,55 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
             if (result.success && result.saved_data) {
                 const data = result.saved_data
-
-                // 加载角色数据
-                const charResult = await continuationApi.getCharacters(bookId.value)
-                if (charResult.success && charResult.characters) {
-                    characters.value = charResult.characters
-                } else if (!charResult.success && charResult.error) {
-                    errorMessage.value = `加载角色失败：${charResult.error}`
-                    messageType.value = 'error'
-                }
-
-                chapterScript.value = data.script
-                pages.value = data.pages || []
-
-                if (data.config) {
-                    pageCount.value = data.config.page_count || 10
-                    styleRefPages.value = data.config.style_reference_pages || 3
-                    continuationDirection.value = data.config.continuation_direction || ''
-                }
-
-                isDataReady.value = Boolean(result.ready)
-
-                if (!result.ready && result.message) {
-                    errorMessage.value = result.message
-                    messageType.value = 'error'
-                }
+                applySavedContinuationData(data)
+                applyPreparationResult(result)
+                await loadCharacters(true)
             } else if (!result.success && result.error) {
-                showMessage(result.error, 'error')
+                setMessageState(result.error, 'error', true)
             }
         } catch (error) {
             console.error('初始化数据失败:', error)
-            showMessage('初始化数据失败', 'error')
+            setMessageState('初始化数据失败', 'error', true)
         } finally {
             isLoading.value = false
         }
     }
 
-    function resetState() {
-        if (messageTimer) {
-            clearTimeout(messageTimer)
-            messageTimer = null
+    async function syncAnalysisData(source: 'auto' | 'manual' = 'manual') {
+        if (!bookId.value) return
+
+        const hasContinuationPayload = Boolean(chapterScript.value) || pages.value.length > 0
+        isSyncingAnalysis.value = true
+
+        try {
+            const result = await continuationApi.syncContinuationAnalysis(bookId.value)
+
+            if (!result.success) {
+                const message = result.error || '分析数据同步失败'
+                setMessageState(message, 'error', true)
+                return
+            }
+
+            applyPreparationResult(result)
+            const charactersLoaded = await loadCharacters(true)
+
+            if (!result.ready) {
+                return
+            }
+
+            if (source === 'manual' && charactersLoaded) {
+                const successText = hasContinuationPayload
+                    ? '已同步到最新分析数据，现有续写内容已保留'
+                    : (result.message || '分析数据同步完成')
+                showMessage(successText, 'success')
+            }
+        } finally {
+            isSyncingAnalysis.value = false
         }
+    }
+
+    function resetState() {
+        clearMessageTimer()
         currentStep.value = 0
         messageType.value = ''
         errorMessage.value = ''
@@ -149,26 +246,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     function showMessage(message: string, type: 'success' | 'error' | 'info' = 'info') {
-        if (messageTimer) {
-            clearTimeout(messageTimer)
-            messageTimer = null
-        }
-
-        messageType.value = type
-        if (type === 'error') {
-            errorMessage.value = message
-            successMessage.value = ''
-        } else {
-            successMessage.value = message
-            errorMessage.value = ''
-        }
-
-        messageTimer = setTimeout(() => {
-            messageType.value = ''
-            errorMessage.value = ''
-            successMessage.value = ''
-            messageTimer = null
-        }, 3000)
+        setMessageState(message, type, false)
     }
 
     // URL获取方法
@@ -191,10 +269,12 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         // 状态
         isLoading: readonly(isLoading),
         isDataReady: readonly(isDataReady),
+        isSyncingAnalysis: readonly(isSyncingAnalysis),
         currentStep,
         messageType,
         errorMessage,
         successMessage,
+        lastAnalysisSyncAt,
 
         // 配置
         pageCount,
@@ -212,6 +292,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
         // 方法
         initializeData,
+        syncAnalysisData,
         resetState,
         showMessage,
 

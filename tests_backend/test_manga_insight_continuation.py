@@ -182,10 +182,41 @@ class StoryGeneratorContinuationBehaviorTests(unittest.TestCase):
             result = asyncio.run(generator.prepare_continuation_data())
 
         self.assertTrue(result["ready"])
-        self.assertEqual(result["message"], "数据准备完成")
+        self.assertEqual(result["message"], "分析数据同步完成")
         self.assertIsNotNone(generator.storage.saved_summary)
         self.assertEqual(generator.storage.saved_summary[0], "story_summary")
         self.assertEqual(generator.storage.saved_summary[1]["content"], "自动补齐的故事概要")
+
+    def test_prepare_continuation_data_reports_sync_metadata_and_non_destructive_character_merge(self) -> None:
+        from src.core.manga_insight.continuation.story_generator import StoryGenerator
+
+        class _StorageStub:
+            async def load_timeline(self):
+                return {"events": [{"event": "开端"}]}
+
+        sync_result = {
+            "characters": object(),
+            "characters_added": 2,
+            "total_characters": 5,
+        }
+
+        generator = StoryGenerator.__new__(StoryGenerator)
+        generator.book_id = "book-1"
+        generator.storage = _StorageStub()
+        generator.char_manager = types.SimpleNamespace(
+            sync_characters_from_timeline=mock.AsyncMock(return_value=sync_result)
+        )
+        generator._ensure_story_summary = mock.AsyncMock(return_value={"content": "已有故事概要"})
+
+        result = asyncio.run(generator.prepare_continuation_data())
+
+        self.assertTrue(result["ready"])
+        self.assertTrue(result["story_summary_ready"])
+        self.assertTrue(result["timeline_ready"])
+        self.assertEqual(result["characters_added"], 2)
+        self.assertEqual(result["total_characters"], 5)
+        self.assertIn("synced_at", result)
+        generator.char_manager.sync_characters_from_timeline.assert_awaited_once()
 
     def test_generate_page_details_normalizes_form_name_to_form_id(self) -> None:
         from src.core.manga_insight.continuation.models import (
@@ -653,3 +684,151 @@ class ReferenceTokenResolverTests(unittest.TestCase):
                 [ref["path"] for ref in resolved],
                 [original_path, continuation_path],
             )
+
+
+class CharacterManagerSyncTests(unittest.TestCase):
+    def test_sync_characters_from_timeline_appends_only_missing_characters(self) -> None:
+        from src.core.manga_insight.continuation.character_manager import CharacterManager
+        from src.core.manga_insight.continuation.models import (
+            CharacterProfile,
+            CharacterForm,
+            ContinuationCharacters,
+        )
+
+        existing = ContinuationCharacters(
+            book_id="book-1",
+            characters=[
+                CharacterProfile(
+                    name="Hero",
+                    aliases=["勇者"],
+                    description="用户编辑后的描述",
+                    forms=[
+                        CharacterForm(
+                            form_id="battle",
+                            form_name="战斗形态",
+                            description="保留原形态",
+                            reference_image="/tmp/hero.png",
+                        )
+                    ],
+                    enabled=False,
+                )
+            ],
+        )
+        timeline_characters = [
+            CharacterProfile(
+                name="Hero",
+                aliases=["主角"],
+                description="时间线里的角色描述",
+                forms=[],
+            ),
+            CharacterProfile(
+                name="Partner",
+                aliases=["伙伴"],
+                description="新角色",
+                forms=[],
+            ),
+        ]
+
+        manager = CharacterManager.__new__(CharacterManager)
+        manager.book_id = "book-1"
+        manager.load_characters = mock.Mock(return_value=existing)
+        manager.load_characters_from_timeline = mock.AsyncMock(return_value=timeline_characters)
+        manager.save_characters = mock.Mock(return_value=True)
+
+        result = asyncio.run(manager.sync_characters_from_timeline())
+
+        self.assertEqual(result["characters_added"], 1)
+        self.assertEqual(result["total_characters"], 2)
+        merged = result["characters"]
+        self.assertEqual(len(merged.characters), 2)
+        hero = merged.get_character("Hero")
+        self.assertIsNotNone(hero)
+        self.assertEqual(hero.description, "用户编辑后的描述")
+        self.assertEqual(hero.enabled, False)
+        self.assertEqual(len(hero.forms), 1)
+        self.assertEqual(hero.forms[0].reference_image, "/tmp/hero.png")
+        self.assertIsNotNone(merged.get_character("Partner"))
+        manager.save_characters.assert_called_once()
+
+
+class ContinuationCharacterRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.app = Flask(__name__)
+        self._isolated_module_names = [
+            "isolated_manga_insight_character_pkg",
+            "isolated_manga_insight_character_pkg.async_helpers",
+            "isolated_manga_insight_character_pkg.response_builder",
+            "isolated_manga_insight_character_pkg.continuation",
+            "isolated_manga_insight_character_pkg.continuation.character_routes",
+        ]
+        self._original_modules = {
+            module_name: sys.modules.get(module_name)
+            for module_name in self._isolated_module_names
+        }
+
+        package_dir = os.path.join(PROJECT_ROOT, "src", "app", "api", "manga_insight")
+        continuation_dir = os.path.join(package_dir, "continuation")
+
+        package_module = types.ModuleType("isolated_manga_insight_character_pkg")
+        package_module.__path__ = [package_dir]
+        package_module.manga_insight_bp = Blueprint(
+            "isolated_manga_insight_character",
+            __name__,
+            url_prefix="/api/manga-insight",
+        )
+        sys.modules["isolated_manga_insight_character_pkg"] = package_module
+
+        continuation_package = types.ModuleType("isolated_manga_insight_character_pkg.continuation")
+        continuation_package.__path__ = [continuation_dir]
+        sys.modules["isolated_manga_insight_character_pkg.continuation"] = continuation_package
+
+        for module_name, file_path in (
+            ("isolated_manga_insight_character_pkg.async_helpers", os.path.join(package_dir, "async_helpers.py")),
+            ("isolated_manga_insight_character_pkg.response_builder", os.path.join(package_dir, "response_builder.py")),
+            (
+                "isolated_manga_insight_character_pkg.continuation.character_routes",
+                os.path.join(continuation_dir, "character_routes.py"),
+            ),
+        ):
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            module = importlib.util.module_from_spec(spec)
+            assert spec is not None and spec.loader is not None
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+        self.character_routes = sys.modules["isolated_manga_insight_character_pkg.continuation.character_routes"]
+
+    def tearDown(self) -> None:
+        for module_name, original in self._original_modules.items():
+            if original is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = original
+
+    def test_sync_continuation_analysis_returns_sync_payload(self) -> None:
+        with mock.patch("src.core.manga_insight.continuation.StoryGenerator") as story_generator_cls:
+            story_generator_cls.return_value.prepare_continuation_data = mock.AsyncMock(
+                return_value={
+                    "ready": True,
+                    "message": "分析数据同步完成",
+                    "story_summary_ready": True,
+                    "timeline_ready": True,
+                    "characters_added": 1,
+                    "total_characters": 3,
+                    "synced_at": "2026-05-21T20:00:00",
+                }
+            )
+
+            with self.app.test_request_context(
+                "/api/manga-insight/book-1/continuation/sync",
+                method="POST",
+            ):
+                response = self.character_routes.sync_continuation_analysis("book-1")
+
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["ready"])
+        self.assertTrue(payload["story_summary_ready"])
+        self.assertTrue(payload["timeline_ready"])
+        self.assertEqual(payload["characters_added"], 1)
+        self.assertEqual(payload["total_characters"], 3)

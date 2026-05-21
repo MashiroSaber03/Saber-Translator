@@ -10,6 +10,7 @@ import logging
 import os
 import re
 from typing import Dict, List, Any
+from datetime import datetime
 
 from src.shared.openai_execution import OpenAICompatibleBusinessRetryableError, parse_json_block_from_text
 from ..config_utils import load_insight_config, create_chat_client
@@ -49,9 +50,21 @@ class StoryGenerator:
         Returns:
             Dict: {"ready": bool, "message": str}
         """
+        existing_characters = None
+        if hasattr(self.char_manager, "load_characters"):
+            try:
+                existing_characters = self.char_manager.load_characters()
+            except Exception as exc:
+                logger.warning(f"加载续写角色配置失败: {exc}")
+
         result = {
             "ready": False,
-            "message": ""
+            "message": "",
+            "story_summary_ready": False,
+            "timeline_ready": False,
+            "characters_added": 0,
+            "total_characters": len(existing_characters.characters) if existing_characters and hasattr(existing_characters, "characters") else 0,
+            "synced_at": datetime.now().isoformat(),
         }
         
         try:
@@ -61,19 +74,25 @@ class StoryGenerator:
             result["message"] = f"故事概要自动生成失败：{exc}"
             return result
 
-        if not story_summary or not story_summary.get("content"):
+        result["story_summary_ready"] = bool(story_summary and story_summary.get("content"))
+        if not result["story_summary_ready"]:
             result["message"] = "故事概要自动生成失败，请检查分析配置后重试"
             return result
 
         # 2. 检查时间线是否存在
         timeline_data = await self.storage.load_timeline()
-        
-        if not timeline_data or not timeline_data.get("events"):
+
+        result["timeline_ready"] = bool(timeline_data and timeline_data.get("events"))
+        if not result["timeline_ready"]:
             result["message"] = "时间线数据不存在或为空，请先完成漫画分析"
             return result
-        
+
+        if hasattr(self.char_manager, "sync_characters_from_timeline"):
+            sync_result = await self.char_manager.sync_characters_from_timeline()
+            result["characters_added"] = int(sync_result.get("characters_added", 0) or 0)
+            result["total_characters"] = int(sync_result.get("total_characters", result["total_characters"]) or 0)
         result["ready"] = True
-        result["message"] = "数据准备完成"
+        result["message"] = "分析数据同步完成"
         return result
 
     async def _ensure_story_summary(self) -> Dict[str, Any]:

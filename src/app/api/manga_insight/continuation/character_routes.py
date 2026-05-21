@@ -22,6 +22,14 @@ from src.core.manga_insight.storage import AnalysisStorage
 logger = logging.getLogger("MangaInsight.API.Continuation.Character")
 
 
+def _run_continuation_sync(book_id: str):
+    """执行续写分析依赖同步。"""
+    from src.core.manga_insight.continuation import StoryGenerator
+
+    story_gen = StoryGenerator(book_id)
+    return run_async(story_gen.prepare_continuation_data())
+
+
 # ==================== 续写准备 ====================
 
 @manga_insight_bp.route('/<book_id>/continuation/prepare', methods=['GET'])
@@ -33,10 +41,7 @@ def prepare_continuation(book_id: str):
     同时返回已保存的续写数据（脚本、页面等）。
     """
     try:
-        from src.core.manga_insight.continuation import StoryGenerator
-
-        story_gen = StoryGenerator(book_id)
-        result = run_async(story_gen.prepare_continuation_data())
+        result = _run_continuation_sync(book_id)
 
         storage = AnalysisStorage(book_id)
         saved_data = run_async(storage.load_continuation_all())
@@ -45,6 +50,25 @@ def prepare_continuation(book_id: str):
 
     except Exception as e:
         logger.error(f"准备续写数据失败: {e}")
+        return error_response(str(e), 500)
+
+
+@manga_insight_bp.route('/<book_id>/continuation/sync', methods=['POST'])
+def sync_continuation_analysis(book_id: str):
+    """
+    同步续写所需的分析依赖数据。
+
+    - 自动补齐 story_summary
+    - 校验时间线是否可用
+    - 将时间线角色非破坏性同步到续写角色配置
+    """
+    try:
+        result = _run_continuation_sync(book_id)
+
+        return success_response(data=result)
+
+    except Exception as e:
+        logger.error(f"同步续写分析数据失败: {e}")
         return error_response(str(e), 500)
 
 

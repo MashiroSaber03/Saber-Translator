@@ -76,8 +76,25 @@ interface PrepareResponse {
     success: boolean
     ready?: boolean
     message?: string
+    story_summary_ready?: boolean
+    timeline_ready?: boolean
+    characters_added?: number
+    total_characters?: number
+    synced_at?: string
     error?: string
     saved_data?: SavedContinuationData
+}
+
+export interface SyncContinuationResponse {
+    success: boolean
+    ready?: boolean
+    message?: string
+    story_summary_ready?: boolean
+    timeline_ready?: boolean
+    characters_added?: number
+    total_characters?: number
+    synced_at?: string
+    error?: string
 }
 
 interface CharactersResponse {
@@ -119,6 +136,13 @@ interface ImageGenerateResponse {
  */
 export async function prepareContinuation(bookId: string): Promise<PrepareResponse> {
     return apiClient.get(`/api/manga-insight/${bookId}/continuation/prepare`)
+}
+
+/**
+ * 同步续写所需的分析依赖数据
+ */
+export async function syncContinuationAnalysis(bookId: string): Promise<SyncContinuationResponse> {
+    return apiClient.post(`/api/manga-insight/${bookId}/continuation/sync`, {})
 }
 
 /**

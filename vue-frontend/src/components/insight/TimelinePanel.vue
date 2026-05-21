@@ -195,6 +195,7 @@ async function regenerateTimeline(): Promise<void> {
     const response = await insightApi.regenerateTimeline(insightStore.currentBookId) as any
     if (response.success) {
       timelineData.value = normalizeTimelineResponse(response)
+      insightStore.triggerDataRefresh()
     } else {
       errorMessage.value = '重新生成失败'
     }

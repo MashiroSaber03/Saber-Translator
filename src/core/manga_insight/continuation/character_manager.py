@@ -117,24 +117,49 @@ class CharacterManager:
         Returns:
             ContinuationCharacters: 初始化后的角色配置
         """
-        # 先尝试加载已保存的配置
-        existing = self.load_characters()
-        if existing.characters:
-            logger.info("使用已保存的角色配置")
-            return existing
-        
-        # 从时间线加载
-        char_refs = await self.load_characters_from_timeline()
-        
-        characters = ContinuationCharacters(
-            book_id=self.book_id,
-            characters=char_refs
-        )
-        
-        # 保存配置
-        self.save_characters(characters)
-        
-        return characters
+        sync_result = await self.sync_characters_from_timeline()
+        return sync_result["characters"]
+
+    async def sync_characters_from_timeline(self) -> Dict[str, Any]:
+        """
+        将时间线中的角色非破坏性同步到续写角色配置。
+
+        规则：
+        - 已存在的角色不覆盖
+        - 仅追加续写配置中尚不存在的新角色
+        - 不修改用户已维护的形态、参考图、启用状态
+        """
+        characters = self.load_characters()
+        timeline_characters = await self.load_characters_from_timeline()
+
+        if not timeline_characters:
+            return {
+                "characters": characters,
+                "characters_added": 0,
+                "total_characters": len(characters.characters),
+            }
+
+        added_count = 0
+        for timeline_character in timeline_characters:
+            character_name = str(timeline_character.name or "").strip()
+            if not character_name:
+                continue
+
+            if characters.get_character(character_name):
+                continue
+
+            characters.characters.append(timeline_character)
+            added_count += 1
+
+        if added_count > 0:
+            self.save_characters(characters)
+            logger.info("已从时间线同步 %s 个新角色到续写配置", added_count)
+
+        return {
+            "characters": characters,
+            "characters_added": added_count,
+            "total_characters": len(characters.characters),
+        }
     
     
     # ===== 形态管理方法 =====

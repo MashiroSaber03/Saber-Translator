@@ -4,6 +4,20 @@
     <div v-if="state.errorMessage.value || state.successMessage.value" class="message" :class="state.messageType.value || (state.errorMessage.value ? 'error' : 'success')">
       {{ state.errorMessage.value || state.successMessage.value }}
     </div>
+
+    <div class="analysis-sync-bar">
+      <div class="analysis-sync-meta">
+        <span class="analysis-sync-title">分析数据同步</span>
+        <span class="analysis-sync-status">{{ analysisSyncStatus }}</span>
+      </div>
+      <button
+        class="btn secondary small analysis-sync-button"
+        :disabled="state.isSyncingAnalysis.value || !insightStore.currentBookId"
+        @click="handleManualSync"
+      >
+        {{ state.isSyncingAnalysis.value ? '同步中...' : '🔄 同步分析数据' }}
+      </button>
+    </div>
     
     <!-- 步骤指示器 -->
     <div class="step-indicator">
@@ -205,6 +219,25 @@ const canProceedToImages = computed(() => {
 
 const generatedPagesCount = computed(() => {
   return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
+})
+
+const analysisSyncStatus = computed(() => {
+  if (state.isSyncingAnalysis.value) {
+    return '正在同步最新分析数据...'
+  }
+
+  if (!state.isDataReady.value) {
+    return state.errorMessage.value || '缺少故事概要或时间线，暂不可续写'
+  }
+
+  if (state.lastAnalysisSyncAt.value) {
+    const syncDate = new Date(state.lastAnalysisSyncAt.value)
+    if (!Number.isNaN(syncDate.getTime())) {
+      return `已同步 ${syncDate.toLocaleString()}`
+    }
+  }
+
+  return '分析数据已就绪'
 })
 
 async function persistContinuationConfig(): Promise<{ success: boolean; error?: string }> {
@@ -510,6 +543,10 @@ async function handlePromptChange(_pageNumber: number) {
   }, 600)
 }
 
+async function handleManualSync() {
+  await state.syncAnalysisData('manual')
+}
+
 // 清空并重新开始
 async function handleClearAndRestart() {
   if (!insightStore.currentBookId) return
@@ -564,6 +601,11 @@ watch(() => insightStore.currentBookId, (newBookId) => {
   }
 }, { immediate: true })
 
+watch(() => insightStore.dataRefreshKey, async (newKey, oldKey) => {
+  if (!insightStore.currentBookId || newKey <= 0 || newKey === oldKey) return
+  await state.syncAnalysisData('auto')
+})
+
 watch(() => state.chapterScript.value, (script) => {
   if (script) {
     lastSavedScriptText.value = script.script_text
@@ -587,6 +629,35 @@ onBeforeUnmount(() => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.analysis-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 12px;
+  background: var(--bg-secondary, #f7f7f7);
+}
+
+.analysis-sync-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analysis-sync-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+.analysis-sync-status {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
 }
 
 /* 消息提示 */

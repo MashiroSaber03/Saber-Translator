@@ -31,7 +31,7 @@ describe('TimelinePanel', () => {
   })
 
   it('normalizes story_arcs in load and regenerate flows', async () => {
-    getTimelineMock.mockResolvedValue({
+    const initialTimeline = {
       success: true,
       mode: 'enhanced',
       story_arcs: [
@@ -46,8 +46,8 @@ describe('TimelinePanel', () => {
       plot_threads: [],
       summary: { one_sentence: '初始概要' },
       stats: { total_events: 1, total_pages: 3, total_arcs: 1, total_characters: 0, total_threads: 0 },
-    })
-    regenerateTimelineMock.mockResolvedValue({
+    }
+    const regeneratedTimeline = {
       success: true,
       mode: 'enhanced',
       story_arcs: [
@@ -62,12 +62,15 @@ describe('TimelinePanel', () => {
       plot_threads: [],
       summary: { one_sentence: '重生概要' },
       stats: { total_events: 2, total_pages: 6, total_arcs: 1, total_characters: 0, total_threads: 0 },
-    })
+    }
+    getTimelineMock.mockResolvedValueOnce(initialTimeline).mockResolvedValue(regeneratedTimeline)
+    regenerateTimelineMock.mockResolvedValue(regeneratedTimeline)
 
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
     store.currentBookId = 'book-1'
+    const refreshKeyBefore = store.dataRefreshKey
 
     const wrapper = mount(TimelinePanel, {
       global: {
@@ -84,5 +87,6 @@ describe('TimelinePanel', () => {
 
     expect(wrapper.text()).toContain('高潮')
     expect(wrapper.text()).toContain('重生概要')
+    expect(store.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 })

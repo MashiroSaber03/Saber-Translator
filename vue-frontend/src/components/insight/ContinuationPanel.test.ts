@@ -1,13 +1,11 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent, nextTick, ref } from 'vue'
+import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ContinuationPanel from './ContinuationPanel.vue'
 
 const mocks = vi.hoisted(() => ({
-  insightStore: {
-    currentBookId: 'book-1',
-  },
+  insightStore: null as any,
   state: null as any,
   characterManagement: null as any,
   imageGeneration: null as any,
@@ -69,7 +67,10 @@ function createStateStub(currentStep = 0) {
     pages: ref([]),
     imageRefreshKey: ref(Date.now()),
     isGeneratingPages: ref(false),
+    isSyncingAnalysis: ref(false),
+    lastAnalysisSyncAt: ref(''),
     initializeData: vi.fn().mockResolvedValue(undefined),
+    syncAnalysisData: vi.fn().mockResolvedValue(undefined),
     resetState: vi.fn().mockResolvedValue(undefined),
     showMessage: vi.fn(),
     getCharacterImageUrl: vi.fn().mockReturnValue(''),
@@ -85,7 +86,10 @@ const scriptPanelStub = defineComponent({
 
 describe('ContinuationPanel', () => {
   beforeEach(() => {
-    mocks.insightStore.currentBookId = 'book-1'
+    mocks.insightStore = reactive({
+      currentBookId: 'book-1',
+      dataRefreshKey: 0,
+    })
     mocks.state = createStateStub()
     mocks.characterManagement = {}
     mocks.imageGeneration = {
@@ -199,5 +203,49 @@ describe('ContinuationPanel', () => {
       expect.stringContaining('配置保存失败'),
       expect.any(String),
     )
+  })
+
+  it('provides a manual sync button and triggers manual sync without resetting continuation data', async () => {
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    const syncButton = wrapper.find('.analysis-sync-button')
+    expect(syncButton.exists()).toBe(true)
+
+    await syncButton.trigger('click')
+    await nextTick()
+
+    expect(mocks.state.syncAnalysisData).toHaveBeenCalledWith('manual')
+    expect(mocks.state.resetState).not.toHaveBeenCalled()
+  })
+
+  it('auto-syncs continuation analysis data when the global insight refresh key changes', async () => {
+    mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    expect(mocks.state.syncAnalysisData).not.toHaveBeenCalled()
+
+    mocks.insightStore.dataRefreshKey = Date.now()
+    await nextTick()
+
+    expect(mocks.state.syncAnalysisData).toHaveBeenCalledWith('auto')
   })
 })
