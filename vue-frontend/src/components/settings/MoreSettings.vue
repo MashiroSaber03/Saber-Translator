@@ -106,7 +106,27 @@
       </div>
       <div class="settings-item">
         <label>上传自定义字体:</label>
-        <input type="file" accept=".ttf,.ttc,.otf" @change="handleFontUpload" ref="fontInput" />
+        <div class="font-upload-row">
+          <input
+            ref="fontInput"
+            data-testid="font-upload-input"
+            class="visually-hidden-file-input"
+            type="file"
+            accept=".ttf,.ttc,.otf"
+            @change="handleFontUpload"
+          />
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-testid="font-upload-trigger"
+            @click="triggerFontUpload"
+          >
+            选择字体文件
+          </button>
+          <span class="font-upload-filename" data-testid="font-upload-filename">
+            {{ selectedFontFileName || '未选择文件' }}
+          </span>
+        </div>
         <div class="input-hint">支持 .ttf, .ttc, .otf 格式</div>
       </div>
     </div>
@@ -174,6 +194,7 @@ const isLoadingFonts = ref(false)
 const fontList = ref<(string | import('@/types').FontInfo)[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<HTMLInputElement | null>(null)
+const selectedFontFileName = ref('')
 
 // 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
@@ -222,11 +243,16 @@ async function refreshFontList() {
   }
 }
 
+function triggerFontUpload() {
+  fontInput.value?.click()
+}
+
 // 上传自定义字体
 async function handleFontUpload(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
+  selectedFontFileName.value = file.name
 
   // 验证文件类型
   const validExtensions = ['.ttf', '.ttc', '.otf']
@@ -294,6 +320,30 @@ async function cleanTempFiles() {
 </script>
 
 <style scoped>
+.font-upload-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.visually-hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.font-upload-filename {
+  color: var(--text-secondary);
+  font-size: 0.95em;
+}
+
 .font-count {
   margin-top: 8px;
   font-size: 13px;
