@@ -100,7 +100,7 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
 /** 默认混合OCR设置 */
 export const DEFAULT_HYBRID_OCR: HybridOcrSettings = {
   enabled: false,
-  secondaryEngine: 'manga_ocr',
+  secondaryEngine: '48px_ocr',
   confidenceThreshold: 0.2
 }
 
@@ -112,7 +112,7 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
   customBaseUrl: '',
   openaiOptions: createDefaultOpenAiOptions({
     execution: {
-      useStream: false,
+      useStream: true,
       rpmLimit: DEFAULT_RPM_TRANSLATION,
       transportRetries: 1,
       businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
@@ -136,7 +136,7 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
     execution: {
       useStream: true,
       rpmLimit: 7,
-      transportRetries: 1,
+      transportRetries: 3,
       businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
     }
   }),
@@ -153,7 +153,7 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
   openaiOptions: createDefaultOpenAiOptions({
     execution: {
       useStream: true,
-      rpmLimit: 7,
+      rpmLimit: 0,
       transportRetries: 10,
       businessRetries: 10
     }
@@ -218,7 +218,7 @@ export function createDefaultSettings(): TranslationSettings {
     pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
     parallel: cloneJson(DEFAULT_PARALLEL),
-    autoSaveInBookshelfMode: false,
+    autoSaveInBookshelfMode: true,
     removeTextWithOcr: false,
     enableVerboseLogs: false,  // 默认关闭详细日志
     lamaDisableResize: false  // 默认允许LAMA自动缩放（提高速度，减少显存占用）

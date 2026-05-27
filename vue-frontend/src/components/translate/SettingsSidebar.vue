@@ -129,7 +129,7 @@ const showPageSelectionModal = ref(false)
 const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
 
 /** 是否记住翻译页操作模式 */
-const rememberWorkflowModeEnabled = ref(false)
+const rememberWorkflowModeEnabled = ref(true)
 
 /** 用户是否已经在本次挂载后手动切换过操作模式 */
 const hasUserChangedWorkflowMode = ref(false)

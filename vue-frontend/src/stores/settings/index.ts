@@ -345,7 +345,7 @@ export const useSettingsStore = defineStore('settings', () => {
       },
       {
         execution: {
-          useStream: false,
+          useStream: true,
           rpmLimit: DEFAULT_RPM_TRANSLATION,
           transportRetries: 1,
           businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
@@ -368,7 +368,7 @@ export const useSettingsStore = defineStore('settings', () => {
         execution: {
           useStream: true,
           rpmLimit: 7,
-          transportRetries: 1,
+          transportRetries: 3,
           businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
         }
       }
@@ -387,7 +387,7 @@ export const useSettingsStore = defineStore('settings', () => {
       {
         execution: {
           useStream: true,
-          rpmLimit: 7,
+          rpmLimit: 0,
           transportRetries: 10,
           businessRetries: 10
         }
@@ -524,7 +524,7 @@ export const useSettingsStore = defineStore('settings', () => {
         },
         {
           execution: {
-            useStream: false,
+            useStream: true,
             rpmLimit: DEFAULT_RPM_TRANSLATION,
             transportRetries: 1,
             businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
@@ -547,7 +547,7 @@ export const useSettingsStore = defineStore('settings', () => {
           execution: {
             useStream: true,
             rpmLimit: 7,
-            transportRetries: 1,
+            transportRetries: 3,
             businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
           }
         }
@@ -567,7 +567,7 @@ export const useSettingsStore = defineStore('settings', () => {
         {
           execution: {
             useStream: true,
-            rpmLimit: 7,
+            rpmLimit: 0,
             transportRetries: 10,
             businessRetries: 10
           }
@@ -1209,7 +1209,7 @@ export const useSettingsStore = defineStore('settings', () => {
                 forceJsonOutput: config.translatePromptModeSelect === 'json'
               },
               execution: {
-                useStream: false,
+                useStream: true,
                 rpmLimit: parseNum(config.rpmTranslation, DEFAULT_RPM_TRANSLATION),
                 transportRetries: 1,
                 businessRetries: parseNum(config.translationMaxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
@@ -1233,7 +1233,7 @@ export const useSettingsStore = defineStore('settings', () => {
               execution: {
                 useStream: config.hqUseStream as boolean,
                 rpmLimit: parseNum(config.hqRpmLimit, 7),
-                transportRetries: 1,
+                transportRetries: 3,
                 businessRetries: parseNum(config.hqMaxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
               }
             },

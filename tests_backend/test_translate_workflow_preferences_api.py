@@ -42,7 +42,7 @@ class TranslateWorkflowPreferencesApiTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {
             "success": True,
             "preferences": {
-                "rememberWorkflowModeEnabled": False,
+                "rememberWorkflowModeEnabled": True,
                 "lastWorkflowMode": "translate-current",
             },
         })
@@ -92,7 +92,7 @@ class TranslateWorkflowPreferencesApiTests(unittest.TestCase):
                 saved_payload = json.load(file)
 
         self.assertEqual(saved_payload, {
-            "rememberWorkflowModeEnabled": False,
+            "rememberWorkflowModeEnabled": True,
             "lastWorkflowMode": "translate-current",
         })
 
@@ -112,7 +112,7 @@ class TranslateWorkflowPreferencesApiTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {
             "success": True,
             "preferences": {
-                "rememberWorkflowModeEnabled": False,
+                "rememberWorkflowModeEnabled": True,
                 "lastWorkflowMode": "translate-current",
             },
         })

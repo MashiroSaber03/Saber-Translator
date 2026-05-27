@@ -66,18 +66,18 @@ class VLMConfig(SerializableMixin):
         ),
         execution=OpenAICompatibleExecutionOptions(
             use_stream=True,
-            rpm_limit=10,
-            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            business_retries=3,
+            rpm_limit=0,
+            transport_retries=10,
+            business_retries=10,
         ),
     ))
-    image_max_size: int = 0  # 图片最大边长（像素），0 表示不压缩
+    image_max_size: int = 1280  # 图片最大边长（像素），0 表示不压缩
 
 
 @dataclass
 class ChatLLMConfig(SerializableMixin):
     """对话模型配置"""
-    use_same_as_vlm: bool = True
+    use_same_as_vlm: bool = False
     provider: str = "gemini"
     api_key: str = ""
     model: str = "gemini-2.0-flash"
@@ -86,9 +86,9 @@ class ChatLLMConfig(SerializableMixin):
         request=OpenAICompatibleRequestOptions(),
         execution=OpenAICompatibleExecutionOptions(
             use_stream=True,
-            rpm_limit=30,
-            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            business_retries=3,
+            rpm_limit=0,
+            transport_retries=10,
+            business_retries=10,
         ),
     ))
 
@@ -168,7 +168,7 @@ ARCHITECTURE_PRESETS = {
 class BatchAnalysisSettings(SerializableMixin):
     """批量分析设置"""
     pages_per_batch: int = 5                # 每批次分析的页数 (1-10)
-    context_batch_count: int = 1            # 作为上文参考的前置批次数量 (0-5)
+    context_batch_count: int = 3            # 作为上文参考的前置批次数量 (0-5)
 
     # 层级架构配置
     architecture_preset: str = "standard"   # 预设架构: simple/standard/chapter_based/full

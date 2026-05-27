@@ -157,7 +157,7 @@ class VLMClient:
         prompt = prompt.replace("{end_page}", str(end_page))
 
         if context and context.get("previous_summary"):
-            batch_count = context.get("context_batch_count", 1)
+            batch_count = context.get("context_batch_count", 3)
             if batch_count > 1:
                 prompt += f"\n\n【前文概要（前{batch_count}批内容）】\n请参考以下前文信息，确保剧情连贯：\n{context['previous_summary']}"
             else:

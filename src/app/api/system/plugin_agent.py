@@ -87,7 +87,7 @@ def _parse_agent_config(data: Dict[str, Any]) -> Dict[str, Any]:
         defaults=create_openai_compatible_options(
             force_json_output=False,
             use_stream=True,
-            rpm_limit=7,
+            rpm_limit=0,
             transport_retries=10,
             business_retries=10,
         ),

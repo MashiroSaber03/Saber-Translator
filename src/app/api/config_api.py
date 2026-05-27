@@ -22,7 +22,7 @@ logger = logging.getLogger("ConfigAPI")
 config_bp = Blueprint('config_api', __name__, url_prefix='/api')
 
 DEFAULT_TRANSLATE_WORKFLOW_PREFERENCES = {
-    "rememberWorkflowModeEnabled": False,
+    "rememberWorkflowModeEnabled": True,
     "lastWorkflowMode": "translate-current",
 }
 
@@ -46,7 +46,7 @@ def _normalize_translate_workflow_preferences(raw_preferences):
     last_mode = preferences.get("lastWorkflowMode")
 
     return {
-        "rememberWorkflowModeEnabled": remember_enabled if isinstance(remember_enabled, bool) else False,
+        "rememberWorkflowModeEnabled": remember_enabled if isinstance(remember_enabled, bool) else True,
         "lastWorkflowMode": last_mode if last_mode in VALID_TRANSLATE_WORKFLOW_MODES else "translate-current",
     }
 

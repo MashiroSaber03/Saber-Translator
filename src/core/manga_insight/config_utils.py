@@ -151,7 +151,7 @@ def _migrate_openai_compatible_entry(
         options.execution.transport_retries = max(0, int(transport_retries_value))
         changed = True
     else:
-        options.execution.transport_retries = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES
+        options.execution.transport_retries = default_options.execution.transport_retries
 
     has_business_retries, business_retries_value = _mapping_value(
         execution_payload,
@@ -214,9 +214,9 @@ def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any]
                 "request": {"force_json_output": False, "temperature": 0.3},
                 "execution": {
                     "use_stream": True,
-                    "rpm_limit": 10,
-                    "transport_retries": DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-                    "business_retries": 3,
+                    "rpm_limit": 0,
+                    "transport_retries": 10,
+                    "business_retries": 10,
                 },
             }
         ),
@@ -225,9 +225,9 @@ def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any]
                 "request": {"force_json_output": False},
                 "execution": {
                     "use_stream": True,
-                    "rpm_limit": 30,
-                    "transport_retries": DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-                    "business_retries": 3,
+                    "rpm_limit": 0,
+                    "transport_retries": 10,
+                    "business_retries": 10,
                 },
             }
         ),

@@ -629,6 +629,13 @@ class PluginAgentApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["prompt_examples"]), 3)
         self.assertIsNone(payload["session"])
 
+    def test_parse_agent_config_uses_updated_backend_defaults(self) -> None:
+        parsed = self.plugin_agent_module._parse_agent_config({})
+
+        self.assertEqual(parsed["openai_options"].execution.rpm_limit, 0)
+        self.assertEqual(parsed["openai_options"].execution.transport_retries, 10)
+        self.assertEqual(parsed["openai_options"].execution.business_retries, 10)
+
     def test_get_plugin_agent_runtime_uses_app_root_plugins_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             self.plugin_agent_module._plugin_agent_runtime = None

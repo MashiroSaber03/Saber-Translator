@@ -1,6 +1,6 @@
 {
   "fontSize": 26,
-  "autoFontSize": false,
+  "autoFontSize": true,
   "fontFamily": "fonts/思源黑体SourceHanSansK-Bold.TTF",
   "layoutDirection": "auto",
   "textColor": "#000000",

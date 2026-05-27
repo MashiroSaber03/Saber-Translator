@@ -15,8 +15,51 @@ if "yaml" not in sys.modules:
     yaml_stub.safe_dump = lambda *_args, **_kwargs: ""
     sys.modules["yaml"] = yaml_stub
 
+if "openai" not in sys.modules:
+    openai_stub = types.ModuleType("openai")
+
+    class _OpenAI:  # pragma: no cover - import stub only
+        def __init__(self, *args, **kwargs):
+            pass
+
+    openai_stub.OpenAI = _OpenAI
+    sys.modules["openai"] = openai_stub
+
 
 class MangaInsightConfigCleanupTests(unittest.TestCase):
+    def test_vlm_prompt_builder_uses_updated_context_batch_fallback(self) -> None:
+        from src.core.manga_insight.config_models import PromptsConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        client = VLMClient.__new__(VLMClient)
+        client.prompts_config = PromptsConfig()
+
+        prompt = client._build_batch_analysis_prompt(
+            start_page=1,
+            end_page=5,
+            page_count=5,
+            context={"previous_summary": "上一批剧情摘要"},
+        )
+
+        self.assertIn("前3批内容", prompt)
+
+    def test_default_config_uses_updated_factory_defaults(self) -> None:
+        from src.core.manga_insight.config_models import MangaInsightConfig
+
+        config = MangaInsightConfig()
+
+        self.assertEqual(config.vlm.openai_options.execution.rpm_limit, 0)
+        self.assertEqual(config.vlm.openai_options.execution.transport_retries, 10)
+        self.assertEqual(config.vlm.openai_options.execution.business_retries, 10)
+        self.assertEqual(config.vlm.image_max_size, 1280)
+
+        self.assertFalse(config.chat_llm.use_same_as_vlm)
+        self.assertEqual(config.chat_llm.openai_options.execution.rpm_limit, 0)
+        self.assertEqual(config.chat_llm.openai_options.execution.transport_retries, 10)
+        self.assertEqual(config.chat_llm.openai_options.execution.business_retries, 10)
+
+        self.assertEqual(config.analysis.batch.context_batch_count, 3)
+
     def test_to_dict_omits_removed_runtime_only_fields(self) -> None:
         from src.core.manga_insight.config_models import MangaInsightConfig
 
@@ -146,6 +189,38 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("rpm_limit", saved_payload["vlm"])
         self.assertNotIn("temperature", saved_payload["vlm"])
         self.assertNotIn("use_stream", saved_payload["chat_llm"])
+
+    def test_load_insight_config_uses_updated_defaults_when_openai_options_are_missing(self) -> None:
+        from src.core.manga_insight.config_utils import load_insight_config
+
+        payload = {
+            "vlm": {
+                "provider": "gemini",
+                "api_key": "key",
+                "model": "gemini-2.0-flash",
+            },
+            "chat_llm": {
+                "provider": "gemini",
+                "api_key": "key",
+                "model": "gemini-2.0-flash",
+            },
+        }
+
+        with mock.patch(
+            "src.core.manga_insight.config_utils.load_json_config",
+            return_value=payload,
+        ), mock.patch(
+            "src.core.manga_insight.config_utils.save_json_config",
+            return_value=True,
+        ):
+            config = load_insight_config()
+
+        self.assertEqual(config.vlm.openai_options.execution.rpm_limit, 0)
+        self.assertEqual(config.vlm.openai_options.execution.transport_retries, 10)
+        self.assertEqual(config.vlm.openai_options.execution.business_retries, 10)
+        self.assertEqual(config.chat_llm.openai_options.execution.rpm_limit, 0)
+        self.assertEqual(config.chat_llm.openai_options.execution.transport_retries, 10)
+        self.assertEqual(config.chat_llm.openai_options.execution.business_retries, 10)
 
     def test_load_insight_config_preserves_future_image_gen_provider_without_rewriting(self) -> None:
         from src.core.manga_insight.config_utils import load_insight_config

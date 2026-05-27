@@ -271,7 +271,7 @@ export type EditViewMode = (typeof EDIT_VIEW_MODE)[keyof typeof EDIT_VIEW_MODE]
 export const DEFAULT_TRANSLATION_MAX_RETRIES = 3
 
 /** 高质量翻译默认重试次数 */
-export const DEFAULT_HQ_TRANSLATION_MAX_RETRIES = 2
+export const DEFAULT_HQ_TRANSLATION_MAX_RETRIES = 3
 
 /** AI校对默认重试次数 */
 export const DEFAULT_PROOFREADING_MAX_RETRIES = 2

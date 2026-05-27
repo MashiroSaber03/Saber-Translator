@@ -109,7 +109,7 @@ export function useInsightConfigManager(
             businessRetries: (config as Record<string, unknown>).businessRetries
           }, {
             request: { forceJsonOutput: false, temperature: 0.3 },
-            execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 }
+            execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
           })
         }
         for (const config of Object.values(providerConfigs.value.llm)) {
@@ -122,7 +122,7 @@ export function useInsightConfigManager(
             businessRetries: (config as Record<string, unknown>).businessRetries
           }, {
             request: { forceJsonOutput: false },
-            execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 }
+            execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
           })
         }
       } catch (e) {
@@ -189,7 +189,7 @@ export function useInsightConfigManager(
       baseUrl: config.baseUrl as string,
       openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
         request: { forceJsonOutput: false, temperature: 0.3 },
-        execution: { useStream: true, rpmLimit: 10, transportRetries: 1, businessRetries: 3 }
+        execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
       })),
       imageMaxSize: config.imageMaxSize as number
     }),
@@ -212,7 +212,7 @@ export function useInsightConfigManager(
       baseUrl: config.baseUrl as string,
       openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
         request: { forceJsonOutput: false },
-        execution: { useStream: true, rpmLimit: 30, transportRetries: 1, businessRetries: 3 }
+        execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
       }))
     }),
     (config, cached) => {

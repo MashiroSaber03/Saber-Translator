@@ -40,6 +40,11 @@ class TextStyleDefaultsLoaderTests(unittest.TestCase):
 
         self.assertEqual(get_text_style_defaults(), expected_defaults)
 
+    def test_factory_defaults_enable_auto_font_size(self) -> None:
+        factory_defaults = text_style_defaults.get_text_style_factory_defaults()
+
+        self.assertTrue(factory_defaults["autoFontSize"])
+
     def test_loader_bootstraps_missing_defaults_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             missing_defaults_path = os.path.join(temp_dir, "config", "text_style_defaults.json")
