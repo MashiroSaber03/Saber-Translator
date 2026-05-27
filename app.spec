@@ -17,6 +17,11 @@ PROJECT_ROOT = os.path.abspath(os.path.dirname(SPEC))
 datas = []
 binaries = []
 hiddenimports = []
+module_collection_mode = {
+    # TorchScript/inspect 需要在运行时访问原始 .py 文件；仅有 PYZ 内字节码不够。
+    'litelama': 'pyz+py',
+    'kornia': 'pyz+py',
+}
 
 # ===================== 项目资源文件 =====================
 # 1. 静态资源 (Vue SPA 构建产物、字体、图标)
@@ -226,7 +231,7 @@ hiddenimports += [
 
 # Collect submodules
 print("[SPEC] Collecting submodules...")
-for mod in ['flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia']:
+for mod in ['flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia', 'litelama']:
     try:
         hiddenimports += collect_submodules(mod)
     except:
@@ -258,6 +263,7 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
+    module_collection_mode=module_collection_mode,
 )
 
 # ===================== 打包 =====================

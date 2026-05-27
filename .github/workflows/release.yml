@@ -41,7 +41,7 @@ on:
 
 env:
   MODELS_RELEASE_TAG: models-storage
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.12'
 
 jobs:
   # ============================================================================
@@ -193,7 +193,7 @@ jobs:
           pip uninstall torch torchvision torchaudio -y
           
           # Step 3: Install CUDA 13.0 PyTorch
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+          pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
 
       # --------------------------------------------------
       # 7. 使用 PyInstaller 打包
@@ -207,7 +207,25 @@ jobs:
           Get-ChildItem -Path dist/ | Select-Object Name
 
       # --------------------------------------------------
-      # 8. 7z 分卷压缩（最高压缩率）
+      # 8. 验证 TorchScript 所需源码文件已随包生成
+      # --------------------------------------------------
+      - name: Verify TorchScript source files
+        run: |
+          $requiredFiles = @(
+            "dist\Saber-Translator\_internal\litelama\litelama.py",
+            "dist\Saber-Translator\_internal\kornia\geometry\epipolar\_metrics.py"
+          )
+
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path $file)) {
+              Write-Host "Missing required TorchScript source file: $file"
+              exit 1
+            }
+            Write-Host "Verified source file: $file"
+          }
+
+      # --------------------------------------------------
+      # 9. 7z 分卷压缩（最高压缩率）
       # --------------------------------------------------
       - name: Package with 7z split (ultra compression)
         run: |
@@ -231,7 +249,7 @@ jobs:
           Get-ChildItem "$outputName.7z*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
 
       # --------------------------------------------------
-      # 9. 验证压缩文件
+      # 10. 验证压缩文件
       # --------------------------------------------------
       - name: Verify compressed archives
         run: |
@@ -260,7 +278,7 @@ jobs:
           }
 
       # --------------------------------------------------
-      # 10. 直接上传到 Release（不通过 artifacts）
+      # 11. 直接上传到 Release（不通过 artifacts）
       # --------------------------------------------------
       - name: Upload to Release
         env:
@@ -284,7 +302,7 @@ jobs:
           Write-Host "Upload completed for $variant version!"
 
       # --------------------------------------------------
-      # 11. 上传模型文件到 Release（仅 CPU 构建执行）
+      # 12. 上传模型文件到 Release（仅 CPU 构建执行）
       # --------------------------------------------------
       - name: Upload models to Release
         if: matrix.variant == 'cpu'

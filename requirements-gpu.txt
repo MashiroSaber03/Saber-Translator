@@ -42,7 +42,8 @@ accelerate  # required for GPU device_map in transformers
 einops
 ultralytics
 seaborn
-litelama
+litelama==0.1.7
+kornia==0.8.2
 
 # Other
 dill
@@ -58,4 +59,4 @@ httpx[http2]>=0.25.0
 gallery-dl>=1.26.0
 
 # Build
-pyinstaller
+pyinstaller==6.19.0
