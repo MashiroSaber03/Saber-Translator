@@ -630,10 +630,6 @@ defineExpose({
           <span class="select-link folder-link" @click="triggerFolderSelect">
             📁 选择文件夹
           </span>
-          <span class="separator"> | </span>
-          <span class="select-link web-import-link" @click="triggerWebImport">
-            🌐 从网页导入
-          </span>
         </p>
       </div>
       
