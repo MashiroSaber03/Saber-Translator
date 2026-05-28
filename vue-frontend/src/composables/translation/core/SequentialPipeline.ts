@@ -57,6 +57,10 @@ export function useSequentialPipeline() {
   const progressPercent = computed(() => progress.value.percentage || 0)
 
   function validateConfig(config: PipelineConfig): boolean {
+    if (config.mode === 'removeText' && !settingsStore.settings.removeTextWithOcr) {
+      return true
+    }
+
     const validationType = config.mode === 'hq' ? 'hq'
       : config.mode === 'proofread' ? 'proofread'
         : config.mode === 'removeText' ? 'ocr'

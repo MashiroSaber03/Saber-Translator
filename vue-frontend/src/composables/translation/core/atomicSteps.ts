@@ -10,6 +10,23 @@ import {
 } from './steps'
 import { persistPage } from './persistenceService'
 import type { PipelineRuntime, TaskContext } from './runtime'
+import type { BubbleState } from '@/types/bubble'
+
+function mergeOcrIntoBubbleStates(
+  bubbleStates: BubbleState[] | null | undefined,
+  originalTexts: string[],
+  ocrResults: TaskContext['ocrResults'],
+): BubbleState[] | null | undefined {
+  if (!Array.isArray(bubbleStates)) {
+    return bubbleStates
+  }
+
+  return bubbleStates.map((bubbleState, index) => ({
+    ...bubbleState,
+    originalText: originalTexts[index] ?? bubbleState.originalText,
+    ocrResult: ocrResults[index] ?? bubbleState.ocrResult ?? null,
+  }))
+}
 
 export type AtomicStepName =
   | 'detection'
@@ -65,6 +82,11 @@ export async function executeAtomicStep(
         status: 'processing',
         originalTexts: result.originalTexts,
         ocrResults: result.ocrResults,
+        bubbleStates: mergeOcrIntoBubbleStates(
+          context.bubbleStates,
+          result.originalTexts,
+          result.ocrResults,
+        ),
       }
     }
     case 'color': {

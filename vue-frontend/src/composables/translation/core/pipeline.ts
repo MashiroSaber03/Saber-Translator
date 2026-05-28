@@ -16,6 +16,7 @@ import { computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useToast } from '@/utils/toast'
+import { useValidation } from '@/composables/useValidation'
 import { useSequentialPipeline } from './SequentialPipeline'
 import { useParallelTranslation } from '../parallel'
 import {
@@ -88,6 +89,7 @@ export function usePipeline() {
     const imageStore = useImageStore()
     const settingsStore = useSettingsStore()
     const toast = useToast()
+    const validation = useValidation()
 
     // 获取两种管线实现
     const sequentialPipeline = useSequentialPipeline()
@@ -98,6 +100,22 @@ export function usePipeline() {
         sequentialPipeline.isTranslating.value || imageStore.isBatchTranslationInProgress
     )
     const progressPercent = computed(() => sequentialPipeline.progressPercent.value)
+
+    function validatePipelineConfig(config: PipelineConfig): boolean {
+        if (config.mode === 'removeText') {
+            if (!settingsStore.settings.removeTextWithOcr) {
+                return true
+            }
+            return validation.validateBeforeTranslation('ocr')
+        }
+
+        const validationType = config.mode === 'hq'
+            ? 'hq'
+            : config.mode === 'proofread'
+                ? 'proofread'
+                : 'normal'
+        return validation.validateBeforeTranslation(validationType)
+    }
 
     /**
      * 执行翻译管线
@@ -113,6 +131,10 @@ export function usePipeline() {
         if (imageStore.images.length === 0) {
             toast.error('请先上传图片')
             return { success: false, completed: 0, failed: 0, errors: ['没有图片'] }
+        }
+
+        if (!validatePipelineConfig(config)) {
+            return { success: false, completed: 0, failed: 0, errors: ['配置验证失败'] }
         }
 
         // 1. 生成 pipeline_id 并通知 before_pipeline
