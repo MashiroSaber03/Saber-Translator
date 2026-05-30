@@ -24,6 +24,42 @@ class DetectionException(Exception):
 
 # ========== 主要检测接口 ==========
 
+def _filter_small_text_blocks(
+    blocks,
+    image_width: int,
+    image_height: int,
+    min_text_block_area_percent: float = 0,
+):
+    """按最终文本框面积占原图面积的百分比过滤极小文本框。"""
+    try:
+        threshold = float(min_text_block_area_percent or 0)
+    except (TypeError, ValueError):
+        threshold = 0.0
+
+    if threshold <= 0 or image_width <= 0 or image_height <= 0:
+        return list(blocks)
+
+    image_area = float(image_width * image_height)
+    min_area = image_area * threshold / 100.0
+    filtered_blocks = []
+
+    for block in blocks:
+        x1, y1, x2, y2 = block.xyxy
+        area = max(0, x2 - x1) * max(0, y2 - y1)
+        if area >= min_area:
+            filtered_blocks.append(block)
+
+    removed_count = len(blocks) - len(filtered_blocks)
+    if removed_count > 0:
+        logger.info(
+            "已按面积阈值过滤 %s 个极小文本框 (阈值: %s%%, 保留: %s)",
+            removed_count,
+            threshold,
+            len(filtered_blocks),
+        )
+
+    return filtered_blocks
+
 def _detect_with_optional_saber_refinement(
     image_pil: Image.Image,
     detector_type: str,
@@ -72,6 +108,7 @@ def get_bubble_detection_result(
     aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
+    min_text_block_area_percent: float = 0,
 ) -> dict:
     """
     使用指定检测器检测图像中的文本区域，返回完整检测结果（含角度信息）
@@ -113,6 +150,12 @@ def get_bubble_detection_result(
             aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
+        )
+        result.blocks = _filter_small_text_blocks(
+            result.blocks,
+            image_pil.width,
+            image_pil.height,
+            min_text_block_area_percent=min_text_block_area_percent,
         )
         
         # 转换为旧格式
@@ -160,6 +203,7 @@ def get_bubble_coordinates(
     aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
+    min_text_block_area_percent: float = 0,
 ) -> List[Tuple[int, int, int, int]]:
     """
     使用指定检测器检测图像中的文本区域并返回排序后的坐标列表
@@ -170,7 +214,8 @@ def get_bubble_coordinates(
         expand_ratio, expand_top, expand_bottom, expand_left, expand_right,
         edge_ratio_threshold,
         enable_aux_yolo_detection, aux_yolo_conf_threshold, aux_yolo_overlap_threshold,
-        enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold
+        enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold,
+        min_text_block_area_percent,
     )
     return result.get('coords', [])
 
@@ -349,6 +394,7 @@ def get_bubble_detection_result_with_auto_directions(
     aux_yolo_overlap_threshold: float = None,
     enable_saber_yolo_refine: bool = None,
     saber_yolo_refine_overlap_threshold: float = None,
+    min_text_block_area_percent: float = 0,
 ) -> Dict[str, Any]:
     """
     获取气泡检测结果，并返回每个气泡的自动排版方向
@@ -382,6 +428,12 @@ def get_bubble_detection_result_with_auto_directions(
             aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
+        )
+        detection_result.blocks = _filter_small_text_blocks(
+            detection_result.blocks,
+            image_pil.width,
+            image_pil.height,
+            min_text_block_area_percent=min_text_block_area_percent,
         )
         
         # 保存模型生成的精确文字掩膜

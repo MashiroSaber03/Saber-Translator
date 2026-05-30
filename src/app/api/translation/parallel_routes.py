@@ -172,6 +172,7 @@ def parallel_detect():
         aux_yolo_overlap_threshold = data.get('aux_yolo_overlap_threshold')
         enable_saber_yolo_refine = data.get('enable_saber_yolo_refine')
         saber_yolo_refine_overlap_threshold = data.get('saber_yolo_refine_overlap_threshold')
+        min_text_block_area_percent = data.get('min_text_block_area_percent', 0)
         
         # 执行检测
         result = get_bubble_detection_result_with_auto_directions(
@@ -187,6 +188,7 @@ def parallel_detect():
             aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             enable_saber_yolo_refine=enable_saber_yolo_refine,
             saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
+            min_text_block_area_percent=min_text_block_area_percent,
         )
         
         # 提取结果

@@ -127,6 +127,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         translation_mode: translationMode,
         translation_scope: 'image',
         detector_type: settings.textDetector,
+        min_text_block_area_percent: settings.minTextBlockAreaPercent,
         enable_aux_yolo_detection: settings.enableAuxYoloDetection,
         aux_yolo_conf_threshold: settings.auxYoloConfThreshold,
         aux_yolo_overlap_threshold: settings.auxYoloOverlapThreshold,

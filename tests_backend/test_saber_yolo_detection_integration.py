@@ -90,6 +90,55 @@ class SaberYoloDetectionIntegrationTests(unittest.TestCase):
         self.assertEqual(refine_mock.call_count, 1)
         self.assertEqual(result["auto_directions"], ["h", "v"])
 
+    def test_auto_direction_detection_filters_small_blocks_by_area_percent(self) -> None:
+        exact_threshold_line = make_line(10, 10, 20, 20)
+        tiny_line = make_line(30, 10, 39, 20)
+        detection_result = DetectionResult(
+            blocks=[TextBlock(lines=[exact_threshold_line]), TextBlock(lines=[tiny_line])],
+            raw_lines=[exact_threshold_line, tiny_line],
+        )
+
+        with mock.patch.object(detection_module, "detect", return_value=detection_result), \
+             mock.patch.object(
+                 detection_module,
+                 "apply_saber_yolo_refinement",
+                 return_value=detection_result,
+                 create=True,
+             ):
+            result = detection_module.get_bubble_detection_result_with_auto_directions(
+                Image.new("RGB", (100, 100), "white"),
+                detector_type="default",
+                min_text_block_area_percent=1,
+            )
+
+        self.assertEqual(result["coords"], [(10, 10, 20, 20)])
+        self.assertEqual(len(result["auto_directions"]), 1)
+        self.assertEqual(len(result["textlines_per_bubble"]), 1)
+        self.assertEqual(result["textlines_per_bubble"][0][0]["polygon"], exact_threshold_line.pts.tolist())
+
+    def test_auto_direction_detection_keeps_all_blocks_when_area_percent_is_zero(self) -> None:
+        first_line = make_line(10, 10, 20, 20)
+        second_line = make_line(30, 10, 39, 20)
+        detection_result = DetectionResult(
+            blocks=[TextBlock(lines=[first_line]), TextBlock(lines=[second_line])],
+            raw_lines=[first_line, second_line],
+        )
+
+        with mock.patch.object(detection_module, "detect", return_value=detection_result), \
+             mock.patch.object(
+                 detection_module,
+                 "apply_saber_yolo_refinement",
+                 return_value=detection_result,
+                 create=True,
+             ):
+            result = detection_module.get_bubble_detection_result_with_auto_directions(
+                Image.new("RGB", (100, 100), "white"),
+                detector_type="default",
+                min_text_block_area_percent=0,
+            )
+
+        self.assertEqual(len(result["coords"]), 2)
+
     def test_parallel_detect_response_shape_is_unchanged(self) -> None:
         buffer = io.BytesIO()
         self.image.save(buffer, format="PNG")
@@ -202,6 +251,32 @@ class SaberYoloDetectionIntegrationTests(unittest.TestCase):
         self.assertEqual(detect_result_mock.call_args.kwargs["enable_aux_yolo_detection"], True)
         self.assertEqual(detect_result_mock.call_args.kwargs["aux_yolo_conf_threshold"], 0.55)
         self.assertEqual(detect_result_mock.call_args.kwargs["aux_yolo_overlap_threshold"], 0.2)
+
+    def test_parallel_detect_forwards_min_text_block_area_percent(self) -> None:
+        buffer = io.BytesIO()
+        self.image.save(buffer, format="PNG")
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        mocked_result = {
+            "coords": [],
+            "angles": [],
+            "polygons": [],
+            "auto_directions": [],
+            "raw_mask": None,
+            "textlines_per_bubble": [],
+        }
+
+        with mock.patch(
+            "src.app.api.translation.parallel_routes.get_bubble_detection_result_with_auto_directions",
+            return_value=mocked_result,
+        ) as detect_result_mock:
+            response = self.client.post(
+                "/api/parallel/detect",
+                json={"image": image_base64, "min_text_block_area_percent": 1},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(detect_result_mock.call_args.kwargs["min_text_block_area_percent"], 1)
 
     def test_get_bubble_detection_result_does_not_force_merge_lines(self) -> None:
         fake_result = DetectionResult(blocks=[], raw_lines=[])

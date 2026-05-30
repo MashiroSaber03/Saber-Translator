@@ -196,6 +196,7 @@ export function createDefaultSettings(): TranslationSettings {
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
     textDetector: 'default',
+    minTextBlockAreaPercent: 0.05,
     enableAuxYoloDetection: false,
     auxYoloConfThreshold: 0.4,
     auxYoloOverlapThreshold: 0.1,

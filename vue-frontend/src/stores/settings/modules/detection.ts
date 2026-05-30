@@ -33,6 +33,15 @@ export function useDetectionSettings(
   }
 
   /**
+   * 设置最小文本框面积占比（百分比）
+   */
+  function setMinTextBlockAreaPercent(percent: number): void {
+    settings.value.minTextBlockAreaPercent = percent
+    saveToStorage()
+    console.log(`最小文本框面积占比已设置为: ${percent}%`)
+  }
+
+  /**
    * 设置辅助 YSGYolo 检测开关
    */
   function setEnableAuxYoloDetection(enabled: boolean): void {
@@ -98,6 +107,7 @@ export function useDetectionSettings(
   return {
     // 方法
     setTextDetector,
+    setMinTextBlockAreaPercent,
     setEnableAuxYoloDetection,
     setAuxYoloConfThreshold,
     setAuxYoloOverlapThreshold,

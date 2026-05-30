@@ -6,6 +6,7 @@ const { parallelDetectMock } = vi.hoisted(() => ({
 
 const detectionSettingsSnapshot = {
   textDetector: 'ctd',
+  minTextBlockAreaPercent: 1,
   enableSaberYoloRefine: true,
   saberYoloRefineOverlapThreshold: 35,
   enableAuxYoloDetection: true,
@@ -83,6 +84,7 @@ describe('executeDetection saber yolo refine flags', () => {
     expect(parallelDetectMock).toHaveBeenCalledTimes(2)
     expect(parallelDetectMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
       detector_type: 'ctd',
+      min_text_block_area_percent: 1,
       enable_saber_yolo_refine: true,
       saber_yolo_refine_overlap_threshold: 35,
       enable_aux_yolo_detection: true,
@@ -94,5 +96,6 @@ describe('executeDetection saber yolo refine flags', () => {
       enable_saber_yolo_refine: false,
       enable_aux_yolo_detection: false
     }))
+    expect(parallelDetectMock.mock.calls[1]?.[0]).not.toHaveProperty('min_text_block_area_percent')
   })
 })

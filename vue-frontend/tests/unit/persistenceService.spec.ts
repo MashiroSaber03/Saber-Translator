@@ -76,6 +76,7 @@ describe('persistenceService', () => {
       ocrEngine: 'manga_ocr',
       sourceLanguage: 'japanese',
       textDetector: 'default',
+      minTextBlockAreaPercent: 1,
       enableAuxYoloDetection: false,
       auxYoloConfThreshold: 0.3,
       auxYoloOverlapThreshold: 0.3,

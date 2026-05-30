@@ -11,6 +11,18 @@
         />
       </div>
       <div class="settings-item">
+        <label for="settingsMinTextBlockAreaPercent">最小文本框面积占比 (%):</label>
+        <input
+          type="number"
+          id="settingsMinTextBlockAreaPercent"
+          v-model.number="settings.minTextBlockAreaPercent"
+          min="0"
+          max="100"
+          step="0.01"
+        />
+        <div class="input-hint">检测完成后自动删除面积低于原图该百分比的极小文本框，0 表示不过滤</div>
+      </div>
+      <div class="settings-item">
         <label class="checkbox-label">
           <input type="checkbox" v-model="settings.enableAuxYoloDetection" />
           启用辅助 YSGYolo 检测
@@ -153,6 +165,7 @@ const settingsStore = useSettingsStore()
 // 本地设置状态（用于双向绑定）
 const settings = reactive({
   textDetector: settingsStore.settings.textDetector,
+  minTextBlockAreaPercent: settingsStore.settings.minTextBlockAreaPercent,
   enableAuxYoloDetection: settingsStore.settings.enableAuxYoloDetection,
   auxYoloConfThreshold: settingsStore.settings.auxYoloConfThreshold,
   auxYoloOverlapThreshold: settingsStore.settings.auxYoloOverlapThreshold,
@@ -171,6 +184,10 @@ const settings = reactive({
 // 监听本地设置变化，同步到 store
 watch(() => settings.textDetector, (value) => {
   settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'default')
+})
+
+watch(() => settings.minTextBlockAreaPercent, (value) => {
+  settingsStore.setMinTextBlockAreaPercent(value)
 })
 
 watch(() => settings.enableAuxYoloDetection, (value) => {

@@ -20,6 +20,7 @@ export interface ParallelDetectParams {
   translation_mode?: string
   translation_scope?: string
   detector_type?: string
+  min_text_block_area_percent?: number
   enable_aux_yolo_detection?: boolean
   aux_yolo_conf_threshold?: number
   aux_yolo_overlap_threshold?: number

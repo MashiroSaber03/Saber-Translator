@@ -252,6 +252,7 @@ export interface TranslationSettings {
   ocrEngine: OcrEngine
   sourceLanguage: string
   textDetector: TextDetector
+  minTextBlockAreaPercent: number
   enableAuxYoloDetection: boolean
   auxYoloConfThreshold: number
   auxYoloOverlapThreshold: number

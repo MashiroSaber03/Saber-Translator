@@ -313,6 +313,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.saberYoloRefineOverlapThreshold = Number(settings.value.saberYoloRefineOverlapThreshold)
     }
 
+    settings.value.minTextBlockAreaPercent = Math.max(
+      0,
+      parseNumberOrFallback(settings.value.minTextBlockAreaPercent, 0.05)
+    )
+
     settings.value.enableAuxYoloDetection = Boolean(settings.value.enableAuxYoloDetection)
     if (
       settings.value.auxYoloConfThreshold === undefined ||
@@ -908,6 +913,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (backendSettings.textDetector) {
       settings.value.textDetector = normalizeTextDetector(backendSettings.textDetector)
     }
+    if (backendSettings.minTextBlockAreaPercent !== undefined) {
+      settings.value.minTextBlockAreaPercent = parseNum(backendSettings.minTextBlockAreaPercent, 0.05)
+    }
     if (backendSettings.enableAuxYoloDetection !== undefined) {
       settings.value.enableAuxYoloDetection = backendSettings.enableAuxYoloDetection as boolean
     }
@@ -1400,6 +1408,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,
+    setMinTextBlockAreaPercent: detectionModule.setMinTextBlockAreaPercent,
     setEnableAuxYoloDetection: detectionModule.setEnableAuxYoloDetection,
     setAuxYoloConfThreshold: detectionModule.setAuxYoloConfThreshold,
     setAuxYoloOverlapThreshold: detectionModule.setAuxYoloOverlapThreshold,
