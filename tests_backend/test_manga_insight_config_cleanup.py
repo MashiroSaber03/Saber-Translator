@@ -59,6 +59,9 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertEqual(config.chat_llm.openai_options.execution.business_retries, 10)
 
         self.assertEqual(config.analysis.batch.context_batch_count, 3)
+        self.assertEqual(config.embedding.transport_retries, 10)
+        self.assertEqual(config.embedding.business_retries, 10)
+        self.assertEqual(config.embedding.timeout_seconds, 0)
 
     def test_to_dict_omits_removed_runtime_only_fields(self) -> None:
         from src.core.manga_insight.config_models import MangaInsightConfig
@@ -71,6 +74,9 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("max_retries", payload["chat_llm"])
         self.assertNotIn("dimension", payload["embedding"])
         self.assertNotIn("max_retries", payload["embedding"])
+        self.assertEqual(payload["embedding"]["transport_retries"], 10)
+        self.assertEqual(payload["embedding"]["business_retries"], 10)
+        self.assertEqual(payload["embedding"]["timeout_seconds"], 0)
         self.assertNotIn("enabled", payload["reranker"])
         self.assertNotIn("rpm_limit", payload["reranker"])
         self.assertNotIn("max_retries", payload["reranker"])
@@ -110,6 +116,9 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
                     "model": "text-embedding-3-small",
                     "dimension": 3072,
                     "max_retries": 8,
+                    "transport_retries": 6,
+                    "business_retries": 7,
+                    "timeout_seconds": 0,
                 },
                 "reranker": {
                     "provider": "jina",
@@ -129,6 +138,9 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("max_retries", serialized["chat_llm"])
         self.assertNotIn("dimension", serialized["embedding"])
         self.assertNotIn("max_retries", serialized["embedding"])
+        self.assertEqual(serialized["embedding"]["transport_retries"], 6)
+        self.assertEqual(serialized["embedding"]["business_retries"], 7)
+        self.assertEqual(serialized["embedding"]["timeout_seconds"], 0)
         self.assertNotIn("enabled", serialized["reranker"])
         self.assertNotIn("rpm_limit", serialized["reranker"])
         self.assertNotIn("max_retries", serialized["reranker"])

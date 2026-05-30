@@ -303,6 +303,15 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
         if not config.embedding.base_url.startswith(("http://", "https://")):
             errors.append("Embedding base_url 格式无效，应以 http:// 或 https:// 开头")
 
+    if config.embedding.rpm_limit < 0:
+        errors.append("Embedding rpm_limit 不能为负数")
+    if config.embedding.transport_retries < 0:
+        errors.append("Embedding transport_retries 不能为负数")
+    if config.embedding.business_retries < 0:
+        errors.append("Embedding business_retries 不能为负数")
+    if config.embedding.timeout_seconds < 0:
+        errors.append("Embedding timeout_seconds 不能为负数")
+
     # ImageGen 配置验证
     if not provider_supports_capability(config.image_gen.provider, IMAGE_GEN_CAPABILITY):
         errors.append(f"生图服务商 '{config.image_gen.provider}' 不支持 image_gen")

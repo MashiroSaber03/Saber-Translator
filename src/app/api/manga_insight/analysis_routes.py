@@ -228,9 +228,15 @@ def get_analysis_status(book_id: str):
     try:
         task_manager = get_task_manager()
 
-        # 获取最新任务
-        latest_task = run_async(task_manager.get_latest_book_task(book_id))
-        current_task = latest_task if latest_task and latest_task.get("status") in {"running", "paused", "pending", "failed"} else None
+        # 获取最新的“分析类”任务，忽略纯向量重建任务，避免分析面板状态被误污染
+        tasks = run_async(task_manager.get_book_tasks(book_id))
+        current_task = None
+        for task in tasks:
+            if task.get("task_type") == TaskType.EMBEDDINGS_REBUILD.value:
+                continue
+            if task.get("status") in {"running", "paused", "pending", "failed"}:
+                current_task = task
+                break
 
         # 获取存储状态
         storage = AnalysisStorage(book_id)

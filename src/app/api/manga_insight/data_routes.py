@@ -9,7 +9,7 @@ from flask import request, Response
 
 from . import manga_insight_bp
 from .async_helpers import run_async
-from .response_builder import success_response, error_response
+from .response_builder import success_response, error_response, task_response
 from src.core.manga_insight.storage import AnalysisStorage
 from src.core.manga_insight.features.timeline import TimelineBuilder
 from src.core.manga_insight.book_pages import build_book_pages_manifest
@@ -517,12 +517,11 @@ def delete_template_overview(book_id: str, template_key: str):
 
 @manga_insight_bp.route('/<book_id>/rebuild-embeddings', methods=['POST'])
 def rebuild_embeddings(book_id: str):
-    """重新构建向量嵌入"""
-    analyzer = None
+    """启动后台向量重建任务。"""
     try:
-        from src.core.manga_insight.analyzer import MangaAnalyzer
         from src.core.manga_insight.config_utils import load_insight_config
-        from src.core.manga_insight.vector_store import MangaVectorStore
+        from src.core.manga_insight.task_manager import get_task_manager
+        from src.core.manga_insight.task_models import TaskType
         
         config = load_insight_config()
         
@@ -533,36 +532,63 @@ def rebuild_embeddings(book_id: str):
             config.embedding.api_key,
         ):
             return error_response("未配置 Embedding 模型，请先在设置中配置向量模型", 400)
-        
-        # 1. 重新构建向量（build_embeddings 内部会先清除现有向量）
-        analyzer = MangaAnalyzer(book_id, config)
-        result = run_async(analyzer.build_embeddings())
-        
-        # 2. 获取最新统计
-        vector_store = MangaVectorStore(book_id)
-        stats = vector_store.get_stats()
-        
-        if result.get("success"):
-            return success_response(
-                message=f"向量嵌入重建完成: {result.get('pages_count', 0)} 页面, {result.get('events_count', 0)} 事件",
-                stats=stats,
-                build_result=result
-            )
-        else:
+
+        task_manager = get_task_manager()
+        task = run_async(task_manager.create_task(
+            book_id=book_id,
+            task_type=TaskType.EMBEDDINGS_REBUILD,
+        ))
+        start_result = run_async(task_manager.start_task(task.task_id))
+        if not start_result.success:
             return error_response(
-                result.get("error", "向量嵌入构建失败，可能是向量存储不可用或没有分析数据"),
-                500
+                start_result.reason or "任务启动失败",
+                start_result.status_code or 409,
+                error_code=start_result.error_code or "TASK_START_REJECTED",
+                task_id=start_result.task_id,
+                running_task_id=start_result.running_task_id,
             )
+
+        return task_response(task.task_id, "started", message="向量重建任务已启动")
 
     except Exception as e:
         logger.error(f"重建向量嵌入失败: {e}", exc_info=True)
         return error_response(str(e), 500)
-    finally:
-        if analyzer:
-            try:
-                run_async(analyzer.close())
-            except Exception as close_error:
-                logger.warning(f"关闭向量重建分析器失败: {close_error}")
+
+
+@manga_insight_bp.route('/<book_id>/rebuild-embeddings/status', methods=['GET'])
+def rebuild_embeddings_status(book_id: str):
+    """查询向量重建任务状态。"""
+    try:
+        from src.core.manga_insight.task_manager import get_task_manager
+        from src.core.manga_insight.task_models import TaskType
+        from src.core.manga_insight.vector_store import MangaVectorStore
+
+        task_id = (request.args.get("task_id") or "").strip()
+        task_manager = get_task_manager()
+        task = None
+
+        if task_id:
+            task = run_async(task_manager.get_task_status(task_id))
+            if task and task.get("book_id") != book_id:
+                task = None
+        else:
+            tasks = run_async(task_manager.get_book_tasks(book_id))
+            for item in tasks:
+                if item.get("task_type") == TaskType.EMBEDDINGS_REBUILD.value:
+                    task = item
+                    break
+
+        stats = MangaVectorStore(book_id).get_stats()
+        result_data = task.get("result_data") if isinstance(task, dict) else None
+        build_result = result_data.get("build_result") if isinstance(result_data, dict) else None
+        return success_response(data={
+            "task": task,
+            "stats": stats,
+            "build_result": build_result,
+        })
+    except Exception as e:
+        logger.error(f"获取向量重建状态失败: {e}", exc_info=True)
+        return error_response(str(e), 500)
 
 
 @manga_insight_bp.route('/<book_id>/regenerate/timeline', methods=['POST'])

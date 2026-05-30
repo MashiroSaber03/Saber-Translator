@@ -55,6 +55,8 @@ class TaskExecutor:
             return await self.execute_incremental_analysis(task, analyzer)
         elif task.task_type == TaskType.REANALYZE:
             return await self.execute_reanalysis(task, analyzer)
+        elif task.task_type == TaskType.EMBEDDINGS_REBUILD:
+            return await self.execute_embeddings_rebuild(task, analyzer)
         return []
 
     async def execute_full_book_analysis(self, task: AnalysisTask, analyzer) -> List[str]:
@@ -440,6 +442,36 @@ class TaskExecutor:
         warnings.extend(await self._post_analysis_processing(task, analyzer))
         return warnings
 
+    async def execute_embeddings_rebuild(self, task: AnalysisTask, analyzer) -> List[str]:
+        """执行向量重建任务。"""
+        warnings: List[str] = []
+
+        task.progress.total_pages = 1
+        task.progress.analyzed_pages = 0
+        task.progress.current_phase = "embedding_rebuild"
+        task.progress.phase_progress = 0.0
+        self._notify_progress(task.task_id, task.progress.to_dict())
+
+        def progress_cb(current: int, total: int, _phase: str, message: str) -> None:
+            task.progress.total_pages = max(0, total)
+            task.progress.analyzed_pages = max(0, current)
+            task.progress.current_phase = message
+            task.progress.phase_progress = (current / total * 100.0) if total > 0 else 0.0
+            self._notify_progress(task.task_id, task.progress.to_dict())
+
+        result = await analyzer.build_embeddings(progress_callback=progress_cb)
+        task.result_data = {"build_result": result}
+
+        if not result.get("success"):
+            raise RuntimeError(result.get("error", "向量嵌入构建失败"))
+
+        task.progress.analyzed_pages = 1
+        task.progress.total_pages = 1
+        task.progress.current_phase = "embedding_rebuild_completed"
+        task.progress.phase_progress = 100.0
+        self._notify_progress(task.task_id, task.progress.to_dict())
+        return warnings
+
     @staticmethod
     def _split_contiguous_ranges(page_nums: List[int]) -> List[List[int]]:
         """将页码按连续段切分。"""
@@ -466,8 +498,13 @@ class TaskExecutor:
         logger.info("开始构建向量嵌入...")
         task.progress.current_phase = "embedding"
         try:
-            await analyzer.build_embeddings()
-            logger.info("向量嵌入完成")
+            result = await analyzer.build_embeddings()
+            if result.get("success"):
+                logger.info("向量嵌入完成")
+            else:
+                warning = result.get("error", "向量嵌入构建失败")
+                logger.warning("向量嵌入未完成: %s", warning)
+                warnings.append(warning)
         except Exception as e:
             logger.error(f"向量嵌入失败: {e}", exc_info=True)
             warnings.append(f"向量嵌入失败: {e}")

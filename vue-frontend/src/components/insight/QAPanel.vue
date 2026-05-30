@@ -4,7 +4,7 @@
  * 提供基于漫画内容的问答功能，支持流式响应
  */
 
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
@@ -28,6 +28,11 @@ const useReasoning = ref(true)
 const useReranker = ref(true)
 const topK = ref(5)
 const threshold = ref(0)
+const isRebuildingEmbeddings = ref(false)
+const rebuildTaskId = ref<string | null>(null)
+const rebuildProgressLabel = ref('')
+const rebuildPollingFailures = ref(0)
+let rebuildPollingTimer: ReturnType<typeof setInterval> | null = null
 
 /** 消息容器引用 */
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -172,31 +177,114 @@ function scrollToBottom(): void {
  */
 async function rebuildEmbeddings(): Promise<void> {
   if (!insightStore.currentBookId) return
+  if (isRebuildingEmbeddings.value) return
   if (!confirm('确定要重建向量索引吗？\n\n这将删除现有的向量数据并重新构建，可能需要一些时间。')) return
 
   insightStore.setLoading(true)
+  isRebuildingEmbeddings.value = true
+  rebuildProgressLabel.value = '准备启动...'
 
   try {
     const response = await insightApi.rebuildEmbeddings(insightStore.currentBookId)
-    
-    if (response.success) {
-      let message = '向量索引重建完成'
-      if (response.stats) {
-        message += `\n页面向量: ${response.stats.pages_count || 0} 条`
-        if (response.stats.dialogues_count) {
-          message += `\n对话向量: ${response.stats.dialogues_count} 条`
-        }
-      }
-      alert(message)
-    } else {
+
+    if (!response.success || !response.task_id) {
       alert('重建失败: ' + (response.error || '未知错误'))
+      isRebuildingEmbeddings.value = false
+      rebuildProgressLabel.value = ''
+      insightStore.setLoading(false)
+      return
     }
+
+    rebuildTaskId.value = response.task_id
+    rebuildProgressLabel.value = '任务已启动'
+    rebuildPollingFailures.value = 0
+    startRebuildStatusPolling(response.task_id)
   } catch (error) {
     console.error('重建向量索引失败:', error)
-    alert('重建向量索引失败')
-  } finally {
+    const message = error instanceof Error ? error.message : '重建向量索引失败'
+    alert(message)
+    isRebuildingEmbeddings.value = false
+    rebuildProgressLabel.value = ''
     insightStore.setLoading(false)
   }
+}
+
+function stopRebuildStatusPolling(): void {
+  if (rebuildPollingTimer) {
+    clearInterval(rebuildPollingTimer)
+    rebuildPollingTimer = null
+  }
+}
+
+async function pollRebuildStatus(taskId: string): Promise<void> {
+  if (!insightStore.currentBookId) return
+
+  const response = await insightApi.getRebuildEmbeddingsStatus(insightStore.currentBookId, taskId)
+  const task = response.task
+  if (!task) {
+    stopRebuildStatusPolling()
+    isRebuildingEmbeddings.value = false
+    insightStore.setLoading(false)
+    rebuildTaskId.value = null
+    rebuildProgressLabel.value = ''
+    alert('重建失败: 未找到向量重建任务状态')
+    return
+  }
+
+  rebuildPollingFailures.value = 0
+
+  const progress = task.progress
+  if (task.status === 'running' || task.status === 'pending') {
+    const phaseText = progress?.current_phase || '重建中'
+    const current = progress?.analyzed_pages ?? 0
+    const total = progress?.total_pages ?? 0
+    rebuildProgressLabel.value = total > 0 ? `${phaseText} (${current}/${total})` : phaseText
+  }
+
+  if (task.status === 'completed') {
+    stopRebuildStatusPolling()
+    isRebuildingEmbeddings.value = false
+    insightStore.setLoading(false)
+    rebuildTaskId.value = null
+    rebuildProgressLabel.value = ''
+
+    let message = '向量索引重建完成'
+    if (response.stats) {
+      message += `\n页面向量: ${response.stats.pages_count || 0} 条`
+      if (response.stats.events_count !== undefined) {
+        message += `\n事件向量: ${response.stats.events_count || 0} 条`
+      }
+    }
+    alert(message)
+    return
+  }
+
+  if (task.status === 'failed' || task.status === 'cancelled') {
+    stopRebuildStatusPolling()
+    isRebuildingEmbeddings.value = false
+    insightStore.setLoading(false)
+    rebuildTaskId.value = null
+    rebuildProgressLabel.value = ''
+    alert('重建失败: ' + (task.error_message || response.error || '未知错误'))
+  }
+}
+
+function startRebuildStatusPolling(taskId: string): void {
+  stopRebuildStatusPolling()
+  rebuildPollingTimer = setInterval(() => {
+    void pollRebuildStatus(taskId).catch((error) => {
+      console.error('轮询向量重建状态失败:', error)
+      rebuildPollingFailures.value += 1
+      if (rebuildPollingFailures.value >= 3) {
+        stopRebuildStatusPolling()
+        isRebuildingEmbeddings.value = false
+        insightStore.setLoading(false)
+        rebuildTaskId.value = null
+        rebuildProgressLabel.value = ''
+        alert('重建失败: 无法获取任务状态，请稍后查看结果')
+      }
+    })
+  }, 3000)
 }
 
 /**
@@ -334,6 +422,10 @@ onMounted(() => {
   // 初始化时滚动到底部
   scrollToBottom()
 })
+
+onUnmounted(() => {
+  stopRebuildStatusPolling()
+})
 </script>
 
 <template>
@@ -458,9 +550,10 @@ onMounted(() => {
             type="button" 
             class="btn btn-sm btn-secondary" 
             title="重建向量索引"
+            :disabled="isRebuildingEmbeddings"
             @click="rebuildEmbeddings"
           >
-            🔄 重建向量
+            {{ isRebuildingEmbeddings ? `⏳ ${rebuildProgressLabel || '重建中...'}` : '🔄 重建向量' }}
           </button>
         </div>
         

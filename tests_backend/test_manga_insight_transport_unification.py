@@ -1,11 +1,28 @@
 import unittest
 from unittest import mock
+import sys
+import types
 
 from src.shared.openai_options import (
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
+
+if "openai" not in sys.modules:
+    openai_stub = types.ModuleType("openai")
+
+    class _OpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _AsyncOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    openai_stub.OpenAI = _OpenAI
+    openai_stub.AsyncOpenAI = _AsyncOpenAI
+    sys.modules["openai"] = openai_stub
 
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -176,6 +193,82 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.model, "embedding-model")
         self.assertEqual(request.base_url, "https://example.com/v1")
         self.assertEqual(request.inputs, ["第一页", "第二页"])
+
+    async def test_embedding_client_uses_configured_transport_retries_and_unlimited_timeout(self) -> None:
+        from src.core.manga_insight.config_models import EmbeddingConfig
+        from src.core.manga_insight.embedding_client import EmbeddingClient
+
+        config = EmbeddingConfig(
+            provider="custom",
+            api_key="test-key",
+            model="embedding-model",
+            base_url="https://example.com/v1",
+            rpm_limit=0,
+            transport_retries=10,
+            business_retries=10,
+            timeout_seconds=0,
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.embed",
+            new=mock.AsyncMock(return_value=[[0.1, 0.2]]),
+        ) as embed_mock:
+            client = EmbeddingClient(config)
+            await client.embed_batch(["第一页"])
+
+        self.assertEqual(client._transport.max_retries, 10)
+        request = embed_mock.call_args.args[0]
+        self.assertIsNone(request.timeout)
+
+    async def test_embedding_client_retries_empty_business_result(self) -> None:
+        from src.core.manga_insight.config_models import EmbeddingConfig
+        from src.core.manga_insight.embedding_client import EmbeddingClient
+
+        config = EmbeddingConfig(
+            provider="custom",
+            api_key="test-key",
+            model="embedding-model",
+            base_url="https://example.com/v1",
+            rpm_limit=0,
+            transport_retries=0,
+            business_retries=1,
+            timeout_seconds=0,
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.embed",
+            new=mock.AsyncMock(side_effect=[[], [[0.1, 0.2]]]),
+        ) as embed_mock:
+            client = EmbeddingClient(config)
+            embeddings = await client.embed_batch(["第一页"])
+
+        self.assertEqual(embeddings, [[0.1, 0.2]])
+        self.assertEqual(embed_mock.await_count, 2)
+
+    async def test_embedding_client_does_not_business_retry_generic_value_error(self) -> None:
+        from src.core.manga_insight.config_models import EmbeddingConfig
+        from src.core.manga_insight.embedding_client import EmbeddingClient
+
+        config = EmbeddingConfig(
+            provider="custom",
+            api_key="test-key",
+            model="embedding-model",
+            base_url="https://example.com/v1",
+            rpm_limit=0,
+            transport_retries=0,
+            business_retries=10,
+            timeout_seconds=0,
+        )
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.embed",
+            new=mock.AsyncMock(side_effect=ValueError("API 错误 401: unauthorized")),
+        ) as embed_mock:
+            client = EmbeddingClient(config)
+            with self.assertRaisesRegex(ValueError, "401"):
+                await client.embed_batch(["第一页"])
+
+        self.assertEqual(embed_mock.await_count, 1)
 
     async def test_reranker_client_delegates_transport_and_preserves_result_mapping(self) -> None:
         from src.core.manga_insight.config_models import RerankerConfig

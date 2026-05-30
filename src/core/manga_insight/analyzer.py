@@ -399,9 +399,9 @@ class MangaAnalyzer:
     # 向量嵌入（委托给 EmbeddingBuilder）
     # ============================================================
 
-    async def build_embeddings(self) -> Dict:
+    async def build_embeddings(self, progress_callback=None) -> Dict:
         """构建向量嵌入（页面 + 事件）- 委托给 EmbeddingBuilder"""
-        return await self._embedding_builder.build_embeddings()
+        return await self._embedding_builder.build_embeddings(progress_callback=progress_callback)
 
     # ============================================================
     # 全书概览（委托给 OverviewGenerator）

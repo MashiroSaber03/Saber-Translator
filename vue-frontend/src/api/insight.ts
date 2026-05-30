@@ -161,6 +161,9 @@ export interface EmbeddingConfig {
   model: string
   base_url?: string
   rpm_limit?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }
 
 /**
@@ -491,10 +494,41 @@ export async function sendChat(
  */
 export interface RebuildEmbeddingsResponse {
   success: boolean
+  task_id?: string
+  status?: string
+  message?: string
   stats?: {
     pages_count?: number
     dialogues_count?: number
   }
+  error?: string
+}
+
+export interface RebuildEmbeddingsStatusResponse {
+  success: boolean
+  task?: {
+    task_id: string
+    task_type: string
+    status: string
+    progress?: {
+      current_phase?: string
+      analyzed_pages?: number
+      total_pages?: number
+      percentage?: number
+    }
+    error_message?: string
+    result_data?: {
+      build_result?: Record<string, any>
+    }
+  } | null
+  stats?: {
+    available?: boolean
+    pages_count?: number
+    dialogues_count?: number
+    scenes_count?: number
+    events_count?: number
+  }
+  build_result?: Record<string, any>
   error?: string
 }
 
@@ -509,6 +543,16 @@ export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddin
     {
       timeout: 0  // 移除超时限制，向量索引重建可能很耗时
     }
+  )
+}
+
+export async function getRebuildEmbeddingsStatus(
+  bookId: string,
+  taskId?: string
+): Promise<RebuildEmbeddingsStatusResponse> {
+  const suffix = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
+  return apiClient.get<RebuildEmbeddingsStatusResponse>(
+    `/api/manga-insight/${bookId}/rebuild-embeddings/status${suffix}`
   )
 }
 
@@ -638,6 +682,10 @@ export async function testEmbeddingConnection(config: {
   api_key: string
   model: string
   base_url?: string
+  rpm_limit?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }): Promise<ConnectionTestResponse> {
   return apiClient.post<ConnectionTestResponse>('/api/manga-insight/config/test/embedding', config)
 }

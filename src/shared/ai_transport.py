@@ -131,7 +131,7 @@ class UnifiedEmbeddingRequest:
     model: str
     inputs: List[str]
     base_url: Optional[str] = None
-    timeout: float = 60.0
+    timeout: Optional[float] = None
     request_overrides: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -711,7 +711,7 @@ class AsyncOpenAICompatibleTransport:
         self,
         *,
         base_url: str,
-        timeout: float,
+        timeout: Optional[float],
         method: str,
         url: str,
         api_key: str,

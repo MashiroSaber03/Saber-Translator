@@ -22,6 +22,10 @@ describe('useInsightStore factory defaults', () => {
     expect(store.config.llm.openaiOptions.execution.transportRetries).toBe(10)
     expect(store.config.llm.openaiOptions.execution.businessRetries).toBe(10)
 
+    expect(store.config.embedding.transportRetries).toBe(10)
+    expect(store.config.embedding.businessRetries).toBe(10)
+    expect(store.config.embedding.timeoutSeconds).toBe(0)
+
     expect(store.config.batch.contextBatchCount).toBe(3)
   })
 

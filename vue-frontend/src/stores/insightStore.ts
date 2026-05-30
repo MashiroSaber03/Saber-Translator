@@ -137,7 +137,16 @@ export const useInsightStore = defineStore('insight', () => {
         execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
       }
     },
-    embedding: { provider: 'openai', apiKey: '', model: 'text-embedding-3-small', baseUrl: '', rpmLimit: 0 },
+    embedding: {
+      provider: 'openai',
+      apiKey: '',
+      model: 'text-embedding-3-small',
+      baseUrl: '',
+      rpmLimit: 0,
+      transportRetries: 10,
+      businessRetries: 10,
+      timeoutSeconds: 0
+    },
     reranker: { provider: 'jina', apiKey: '', model: 'jina-reranker-v2-base-multilingual', baseUrl: '', topK: 5 },
     imageGen: normalizeImageGenConfig(),
     batch: { pagesPerBatch: 5, contextBatchCount: 3, architecturePreset: 'standard', customLayers: [] },
@@ -257,7 +266,16 @@ export const useInsightStore = defineStore('insight', () => {
     return {
       vlm: { provider: config.value.vlm.provider, api_key: config.value.vlm.apiKey, model: config.value.vlm.model, base_url: config.value.vlm.baseUrl || null, openai_options: { request: { force_json_output: config.value.vlm.openaiOptions.request.forceJsonOutput, temperature: config.value.vlm.openaiOptions.request.temperature, ...(config.value.vlm.openaiOptions.request.extraBody !== undefined ? { extra_body: config.value.vlm.openaiOptions.request.extraBody } : {}) }, execution: { use_stream: config.value.vlm.openaiOptions.execution.useStream, rpm_limit: config.value.vlm.openaiOptions.execution.rpmLimit, transport_retries: config.value.vlm.openaiOptions.execution.transportRetries, business_retries: config.value.vlm.openaiOptions.execution.businessRetries } }, image_max_size: config.value.vlm.imageMaxSize },
       chat_llm: { use_same_as_vlm: config.value.llm.useSameAsVlm, provider: config.value.llm.provider, api_key: config.value.llm.apiKey, model: config.value.llm.model, base_url: config.value.llm.baseUrl || null, openai_options: { request: { force_json_output: config.value.llm.openaiOptions.request.forceJsonOutput, temperature: config.value.llm.openaiOptions.request.temperature, ...(config.value.llm.openaiOptions.request.extraBody !== undefined ? { extra_body: config.value.llm.openaiOptions.request.extraBody } : {}) }, execution: { use_stream: config.value.llm.openaiOptions.execution.useStream, rpm_limit: config.value.llm.openaiOptions.execution.rpmLimit, transport_retries: config.value.llm.openaiOptions.execution.transportRetries, business_retries: config.value.llm.openaiOptions.execution.businessRetries } } },
-      embedding: { provider: config.value.embedding.provider, api_key: config.value.embedding.apiKey, model: config.value.embedding.model, base_url: config.value.embedding.baseUrl || null, rpm_limit: config.value.embedding.rpmLimit },
+      embedding: {
+        provider: config.value.embedding.provider,
+        api_key: config.value.embedding.apiKey,
+        model: config.value.embedding.model,
+        base_url: config.value.embedding.baseUrl || null,
+        rpm_limit: config.value.embedding.rpmLimit,
+        transport_retries: config.value.embedding.transportRetries ?? 10,
+        business_retries: config.value.embedding.businessRetries ?? 10,
+        timeout_seconds: config.value.embedding.timeoutSeconds ?? 0
+      },
       reranker: { provider: config.value.reranker.provider, api_key: config.value.reranker.apiKey, model: config.value.reranker.model, base_url: config.value.reranker.baseUrl || null, top_k: config.value.reranker.topK },
       image_gen: { provider: config.value.imageGen.provider, api_key: config.value.imageGen.apiKey, model: config.value.imageGen.model, base_url: config.value.imageGen.baseUrl || null, max_retries: config.value.imageGen.maxRetries },
       analysis: { batch: { pages_per_batch: config.value.batch.pagesPerBatch, context_batch_count: config.value.batch.contextBatchCount, architecture_preset: config.value.batch.architecturePreset, custom_layers: config.value.batch.customLayers.map(l => ({ name: l.name, units_per_group: l.units, align_to_chapter: l.align })) } },
@@ -265,7 +283,15 @@ export const useInsightStore = defineStore('insight', () => {
       providerSettings: {
         vlmProvider: mapProvider(providerConfigs.value.vlm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature ?? 0.3, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } }, image_max_size: c.imageMaxSize ?? 1280 })),
         llmProvider: mapProvider(providerConfigs.value.llm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } } })),
-        embeddingProvider: mapProvider(providerConfigs.value.embedding, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', rpm_limit: c.rpmLimit ?? 0 })),
+        embeddingProvider: mapProvider(providerConfigs.value.embedding, c => ({
+          api_key: c.apiKey || '',
+          model: c.model || '',
+          base_url: c.baseUrl || '',
+          rpm_limit: c.rpmLimit ?? 0,
+          transport_retries: c.transportRetries ?? 10,
+          business_retries: c.businessRetries ?? 10,
+          timeout_seconds: c.timeoutSeconds ?? 0
+        })),
         rerankerProvider: mapProvider(providerConfigs.value.reranker, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', top_k: c.topK ?? 5 }))
       }
     }
@@ -281,7 +307,16 @@ export const useInsightStore = defineStore('insight', () => {
 
     if (vlm) config.value.vlm = syncVlmAliases({ provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((vlm.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 })
     if (chatLlm) config.value.llm = syncLlmAliases({ useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: normalizeOpenAiOptions((chatLlm.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) })
-    if (embedding) config.value.embedding = { provider: (embedding.provider as string) || 'openai', apiKey: (embedding.api_key as string) || '', model: (embedding.model as string) || '', baseUrl: (embedding.base_url as string) || '', rpmLimit: (embedding.rpm_limit as number) ?? 0 }
+    if (embedding) config.value.embedding = {
+      provider: (embedding.provider as string) || 'openai',
+      apiKey: (embedding.api_key as string) || '',
+      model: (embedding.model as string) || '',
+      baseUrl: (embedding.base_url as string) || '',
+      rpmLimit: (embedding.rpm_limit as number) ?? 0,
+      transportRetries: (embedding.transport_retries as number) ?? 10,
+      businessRetries: (embedding.business_retries as number) ?? 10,
+      timeoutSeconds: (embedding.timeout_seconds as number) ?? 0
+    }
     if (reranker) config.value.reranker = { provider: (reranker.provider as string) || 'jina', apiKey: (reranker.api_key as string) || '', model: (reranker.model as string) || '', baseUrl: (reranker.base_url as string) || '', topK: (reranker.top_k as number) || 5 }
     if (batch) { const cl = batch.custom_layers as Array<Record<string, unknown>> | undefined; config.value.batch = { pagesPerBatch: (batch.pages_per_batch as number) || 5, contextBatchCount: (batch.context_batch_count as number) ?? 3, architecturePreset: (batch.architecture_preset as string) || 'standard', customLayers: cl?.map(l => ({ name: (l.name as string) || '', units: (l.units_per_group as number) || 1, align: (l.align_to_chapter as boolean) || false })) || [] } }
     if (imageGen) config.value.imageGen = normalizeImageGenConfig({
@@ -296,7 +331,15 @@ export const useInsightStore = defineStore('insight', () => {
     if (ps) {
       if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
       if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
-      if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', rpmLimit: (c.rpm_limit as number) ?? 0 }
+      if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = {
+        apiKey: (c.api_key as string) || '',
+        model: (c.model as string) || '',
+        baseUrl: (c.base_url as string) || '',
+        rpmLimit: (c.rpm_limit as number) ?? 0,
+        transportRetries: (c.transport_retries as number) ?? 10,
+        businessRetries: (c.business_retries as number) ?? 10,
+        timeoutSeconds: (c.timeout_seconds as number) ?? 0
+      }
       if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5 }
       configManager.saveToStorage()
     }

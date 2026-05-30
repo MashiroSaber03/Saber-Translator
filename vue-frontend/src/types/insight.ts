@@ -144,6 +144,9 @@ export interface StoreEmbeddingConfig {
   model: string
   baseUrl?: string
   rpmLimit?: number
+  transportRetries?: number
+  businessRetries?: number
+  timeoutSeconds?: number
 }
 
 /**
@@ -250,6 +253,9 @@ export interface EmbeddingConfig {
   model: string
   base_url?: string
   rpm_limit?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }
 
 /**
@@ -438,7 +444,7 @@ export type TaskStatus = 'pending' | 'running' | 'paused' | 'completed' | 'cance
 /**
  * 任务类型枚举
  */
-export type TaskType = 'full_book' | 'chapter' | 'incremental' | 'reanalyze'
+export type TaskType = 'full_book' | 'chapter' | 'incremental' | 'reanalyze' | 'embeddings_rebuild'
 
 /**
  * 分析进度

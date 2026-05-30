@@ -27,6 +27,7 @@ class TaskType(Enum):
     CHAPTER = "chapter"               # 章节分析
     INCREMENTAL = "incremental"       # 增量分析
     REANALYZE = "reanalyze"          # 重新分析（批量）
+    EMBEDDINGS_REBUILD = "embeddings_rebuild"  # 重建向量索引
 
 
 @dataclass
@@ -110,6 +111,7 @@ class AnalysisTask:
     base_analysis_version: Optional[str] = None
     force_reanalyze: bool = False
     warnings: List[str] = field(default_factory=list)
+    result_data: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         if not self.task_id:
@@ -134,7 +136,8 @@ class AnalysisTask:
             "is_incremental": self.is_incremental,
             "base_analysis_version": self.base_analysis_version,
             "force_reanalyze": self.force_reanalyze,
-            "warnings": self.warnings
+            "warnings": self.warnings,
+            "result_data": self.result_data,
         }
     
     @classmethod
@@ -187,7 +190,8 @@ class AnalysisTask:
             is_incremental=data.get("is_incremental", False),
             base_analysis_version=data.get("base_analysis_version"),
             force_reanalyze=data.get("force_reanalyze", False),
-            warnings=data.get("warnings", [])
+            warnings=data.get("warnings", []),
+            result_data=data.get("result_data"),
         )
 
 

@@ -101,6 +101,9 @@ class EmbeddingConfig(SerializableMixin):
     model: str = "text-embedding-3-small"
     base_url: Optional[str] = None
     rpm_limit: int = 0
+    transport_retries: int = 10
+    business_retries: int = 10
+    timeout_seconds: float = 0
 
 
 @dataclass

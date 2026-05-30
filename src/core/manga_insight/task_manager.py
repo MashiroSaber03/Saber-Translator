@@ -334,10 +334,11 @@ class AnalysisTaskManager:
             if self._cancel_flags.get(task.task_id):
                 task.status = TaskStatus.CANCELLED
             else:
-                # 构建时间线
-                timeline_warning = await executor.build_timeline_on_complete(task.book_id)
-                if timeline_warning:
-                    task_warnings.append(timeline_warning)
+                if task.task_type != TaskType.EMBEDDINGS_REBUILD:
+                    # 构建时间线
+                    timeline_warning = await executor.build_timeline_on_complete(task.book_id)
+                    if timeline_warning:
+                        task_warnings.append(timeline_warning)
 
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = datetime.now()

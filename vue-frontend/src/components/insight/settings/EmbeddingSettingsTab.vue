@@ -30,6 +30,9 @@ const apiKey = ref(insightStore.config.embedding.apiKey)
 const model = ref(insightStore.config.embedding.model)
 const baseUrl = ref(insightStore.config.embedding.baseUrl)
 const rpmLimit = ref(insightStore.config.embedding.rpmLimit)
+const transportRetries = ref(insightStore.config.embedding.transportRetries ?? 10)
+const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 10)
+const timeoutSeconds = ref(insightStore.config.embedding.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 
@@ -42,6 +45,9 @@ function onProviderChange(): void {
     insightStore.config.embedding.model = model.value
     insightStore.config.embedding.baseUrl = baseUrl.value
     insightStore.config.embedding.rpmLimit = rpmLimit.value
+    insightStore.config.embedding.transportRetries = transportRetries.value
+    insightStore.config.embedding.businessRetries = businessRetries.value
+    insightStore.config.embedding.timeoutSeconds = timeoutSeconds.value
   }
   
   insightStore.setEmbeddingProvider(newProvider)
@@ -50,6 +56,9 @@ function onProviderChange(): void {
   model.value = insightStore.config.embedding.model
   baseUrl.value = insightStore.config.embedding.baseUrl
   rpmLimit.value = insightStore.config.embedding.rpmLimit
+  transportRetries.value = insightStore.config.embedding.transportRetries ?? 10
+  businessRetries.value = insightStore.config.embedding.businessRetries ?? 10
+  timeoutSeconds.value = insightStore.config.embedding.timeoutSeconds ?? 0
   
   if (!model.value) {
     const defaultModel = EMBEDDING_DEFAULT_MODELS[newProvider]
@@ -107,7 +116,11 @@ async function testConnection(): Promise<void> {
       provider: provider.value,
       api_key: apiKey.value,
       model: model.value,
-      base_url: baseUrl.value || undefined
+      base_url: baseUrl.value || undefined,
+      rpm_limit: rpmLimit.value,
+      transport_retries: transportRetries.value,
+      business_retries: businessRetries.value,
+      timeout_seconds: timeoutSeconds.value,
     })
     emit('showMessage', response.success ? 'Embedding 连接成功' : '连接失败: ' + (response.error || '未知错误'), response.success ? 'success' : 'error')
   } catch {
@@ -123,7 +136,10 @@ function getConfig() {
     apiKey: apiKey.value,
     model: model.value,
     baseUrl: provider.value === 'custom' ? baseUrl.value : '',
-    rpmLimit: rpmLimit.value
+    rpmLimit: rpmLimit.value,
+    transportRetries: transportRetries.value,
+    businessRetries: businessRetries.value,
+    timeoutSeconds: timeoutSeconds.value
   }
 }
 
@@ -133,6 +149,9 @@ function syncFromStore(): void {
   model.value = insightStore.config.embedding.model
   baseUrl.value = insightStore.config.embedding.baseUrl
   rpmLimit.value = insightStore.config.embedding.rpmLimit
+  transportRetries.value = insightStore.config.embedding.transportRetries ?? 10
+  businessRetries.value = insightStore.config.embedding.businessRetries ?? 10
+  timeoutSeconds.value = insightStore.config.embedding.timeoutSeconds ?? 0
 }
 
 defineExpose({ getConfig, syncFromStore })
@@ -178,6 +197,24 @@ defineExpose({ getConfig, syncFromStore })
       <label>RPM 限制</label>
       <input v-model.number="rpmLimit" type="number" min="0" max="1000">
       <p class="form-hint">每分钟最大请求数，0 表示不限制</p>
+    </div>
+
+    <div class="form-group">
+      <label>传输重试次数</label>
+      <input v-model.number="transportRetries" type="number" min="0" max="100">
+      <p class="form-hint">网络超时、连接错误、429/5xx 的自动重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>业务重试次数</label>
+      <input v-model.number="businessRetries" type="number" min="0" max="100">
+      <p class="form-hint">当接口返回空向量或数量不匹配时的额外重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>单次请求超时（秒）</label>
+      <input v-model.number="timeoutSeconds" type="number" min="0" max="3600" step="1">
+      <p class="form-hint">0 表示不限制；大于 0 时作为单次 Embedding HTTP 请求超时</p>
     </div>
     
     <button class="btn btn-secondary" :disabled="isTesting" @click="testConnection">

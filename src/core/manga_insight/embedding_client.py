@@ -2,6 +2,7 @@
 Manga Insight Embedding / Chat clients backed by shared async transport.
 """
 
+import asyncio
 import logging
 from typing import Any, Callable, List, Optional, TypeVar
 
@@ -22,8 +23,13 @@ from .clients.provider_registry import get_base_url
 from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
-DEFAULT_EMBEDDING_MAX_RETRIES = 3
+DEFAULT_EMBEDDING_MAX_RETRIES = 10
+DEFAULT_EMBEDDING_BUSINESS_RETRIES = 10
 T = TypeVar("T")
+
+
+class EmbeddingBusinessRetryableError(ValueError):
+    """仅用于 Embedding 结果级别的可重试错误。"""
 
 
 def _provider_id(value) -> str:
@@ -42,8 +48,12 @@ class EmbeddingClient:
         self.provider = _provider_id(config.provider)
         self._base_url = get_base_url(self.provider, config.base_url)
         self._rpm_limiter = RPMLimiter(config.rpm_limit, bucket_id=f"embedding:{self.provider}")
-        self._timeout = 60.0
-        self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_EMBEDDING_MAX_RETRIES)
+        timeout_value = float(config.timeout_seconds or 0)
+        self._timeout = None if timeout_value <= 0 else timeout_value
+        self._transport = AsyncOpenAICompatibleTransport(
+            max_retries=max(0, int(config.transport_retries or DEFAULT_EMBEDDING_MAX_RETRIES))
+        )
+        self._business_retries = max(0, int(config.business_retries or DEFAULT_EMBEDDING_BUSINESS_RETRIES))
 
         logger.info(f"EmbeddingClient 初始化: provider={config.provider}, base_url={self._base_url}")
 
@@ -74,17 +84,48 @@ class EmbeddingClient:
         if not self._base_url:
             raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
 
-        await self._enforce_rpm_limit()
-        return await self._transport.embed(
-            UnifiedEmbeddingRequest(
-                provider=self.provider,
-                api_key=self.config.api_key,
-                model=self.config.model,
-                inputs=texts,
-                base_url=self.config.base_url or None,
-                timeout=self._timeout,
+        last_error: Optional[Exception] = None
+        total_attempts = self._business_retries + 1
+
+        for attempt in range(total_attempts):
+            await self._enforce_rpm_limit()
+            try:
+                embeddings = await self._transport.embed(
+                    UnifiedEmbeddingRequest(
+                        provider=self.provider,
+                        api_key=self.config.api_key,
+                        model=self.config.model,
+                        inputs=texts,
+                        base_url=self.config.base_url or None,
+                        timeout=self._timeout,
+                    )
+                )
+                self._validate_embeddings_result(texts, embeddings)
+                return embeddings
+            except EmbeddingBusinessRetryableError as exc:
+                last_error = exc
+                if attempt >= total_attempts - 1:
+                    break
+                logger.warning(
+                    "Embedding 业务重试 %s/%s: %s",
+                    attempt + 1,
+                    self._business_retries,
+                    exc,
+                )
+                await asyncio.sleep(1)
+
+        if last_error:
+            raise last_error
+        return []
+
+    @staticmethod
+    def _validate_embeddings_result(texts: List[str], embeddings: List[List[float]]) -> None:
+        if len(embeddings) != len(texts):
+            raise EmbeddingBusinessRetryableError(
+                f"Embedding 返回数量不匹配: 期望 {len(texts)}，实际 {len(embeddings)}"
             )
-        )
+        if any(not isinstance(item, list) or len(item) == 0 for item in embeddings):
+            raise EmbeddingBusinessRetryableError("Embedding 响应包含空向量")
 
     async def test_connection(self) -> bool:
         try:

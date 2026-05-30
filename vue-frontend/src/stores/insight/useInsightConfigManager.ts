@@ -56,6 +56,9 @@ interface LlmFields extends ProviderFieldMap {
 /** Embedding 配置字段 */
 interface EmbeddingFields extends ProviderFieldMap {
   rpmLimit: number
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
 }
 
 /** Reranker 配置字段 */
@@ -231,15 +234,21 @@ export function useInsightConfigManager(
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      rpmLimit: config.rpmLimit as number
+      rpmLimit: config.rpmLimit as number,
+      transportRetries: config.transportRetries as number,
+      businessRetries: config.businessRetries as number,
+      timeoutSeconds: config.timeoutSeconds as number
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
       if (cached.rpmLimit !== undefined) config.rpmLimit = cached.rpmLimit
+      if (cached.transportRetries !== undefined) config.transportRetries = cached.transportRetries
+      if (cached.businessRetries !== undefined) config.businessRetries = cached.businessRetries
+      if (cached.timeoutSeconds !== undefined) config.timeoutSeconds = cached.timeoutSeconds
     },
-    { apiKey: '', model: '', baseUrl: '' }
+    { apiKey: '', model: '', baseUrl: '', rpmLimit: 0, transportRetries: 10, businessRetries: 10, timeoutSeconds: 0 }
   )
 
   // Reranker 配置管理器
