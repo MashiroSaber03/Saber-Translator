@@ -40,7 +40,9 @@ describe('ImageGenSettingsTab', () => {
       apiKey: 'image-key',
       model: 'gpt-image-2',
       baseUrl: 'https://gateway.example.com/v1',
-      maxRetries: 5,
+      transportRetries: 5,
+      businessRetries: 6,
+      timeoutSeconds: 7,
     })
 
     const wrapper = mount(ImageGenSettingsTab, {
@@ -63,7 +65,9 @@ describe('ImageGenSettingsTab', () => {
       apiKey: 'image-key',
       model: 'gpt-image-2',
       baseUrl: 'https://gateway.example.com/v1',
-      maxRetries: 5,
+      transportRetries: 5,
+      businessRetries: 6,
+      timeoutSeconds: 7,
     })
   })
 })

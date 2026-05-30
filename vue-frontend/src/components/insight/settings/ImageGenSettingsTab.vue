@@ -26,8 +26,9 @@ const provider = ref(insightStore.config.imageGen?.provider || 'gpt2api')
 const apiKey = ref(insightStore.config.imageGen?.apiKey || '')
 const model = ref(insightStore.config.imageGen?.model || 'gpt-image-2')
 const baseUrl = ref(insightStore.config.imageGen?.baseUrl || '')
-const maxRetries = ref(insightStore.config.imageGen?.maxRetries || 3)
-const previousProvider = ref(provider.value)
+const transportRetries = ref(insightStore.config.imageGen?.transportRetries ?? 10)
+const businessRetries = ref(insightStore.config.imageGen?.businessRetries ?? 10)
+const timeoutSeconds = ref(insightStore.config.imageGen?.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
 
@@ -40,22 +41,30 @@ function getDefaultModel(providerId: string): string {
 }
 
 function onProviderChange(): void {
-  const currentProvider = provider.value
-  const previousProviderId = previousProvider.value
-  const defaultModel = getDefaultModel(currentProvider)
-  const previousDefaultModel = getDefaultModel(previousProviderId)
-  const defaultBaseUrl = getProviderBaseUrl(currentProvider, 'imageGen')
-  const previousDefaultBaseUrl = getProviderBaseUrl(previousProviderId, 'imageGen')
+  const newProvider = provider.value
+  const oldProvider = insightStore.config.imageGen.provider
 
-  if (!model.value || model.value === previousDefaultModel) {
-    model.value = defaultModel
+  if (oldProvider !== newProvider) {
+    insightStore.config.imageGen.apiKey = apiKey.value
+    insightStore.config.imageGen.model = model.value
+    insightStore.config.imageGen.baseUrl = baseUrl.value
+    insightStore.config.imageGen.transportRetries = transportRetries.value
+    insightStore.config.imageGen.businessRetries = businessRetries.value
+    insightStore.config.imageGen.timeoutSeconds = timeoutSeconds.value
   }
 
-  if (!baseUrl.value || baseUrl.value === previousDefaultBaseUrl) {
-    baseUrl.value = defaultBaseUrl
-  }
+  insightStore.setImageGenProvider(newProvider)
 
-  previousProvider.value = currentProvider
+  apiKey.value = insightStore.config.imageGen.apiKey
+  model.value = insightStore.config.imageGen.model
+  baseUrl.value = insightStore.config.imageGen.baseUrl || getProviderBaseUrl(newProvider, 'imageGen')
+  transportRetries.value = insightStore.config.imageGen.transportRetries ?? 10
+  businessRetries.value = insightStore.config.imageGen.businessRetries ?? 10
+  timeoutSeconds.value = insightStore.config.imageGen.timeoutSeconds ?? 0
+
+  if (!model.value) {
+    model.value = getDefaultModel(newProvider)
+  }
 }
 
 /** 获取当前配置 */
@@ -64,8 +73,10 @@ function getConfig() {
     provider: provider.value,
     apiKey: apiKey.value,
     model: model.value,
-    baseUrl: showBaseUrl.value ? baseUrl.value : '',
-    maxRetries: maxRetries.value
+    baseUrl: baseUrl.value,
+    transportRetries: transportRetries.value,
+    businessRetries: businessRetries.value,
+    timeoutSeconds: timeoutSeconds.value,
   }
 }
 
@@ -74,11 +85,12 @@ function syncFromStore(): void {
   const imageGen = insightStore.config.imageGen
   if (imageGen) {
     provider.value = imageGen.provider || 'gpt2api'
-    previousProvider.value = provider.value
     apiKey.value = imageGen.apiKey || ''
     model.value = imageGen.model || 'gpt-image-2'
-    baseUrl.value = imageGen.baseUrl || ''
-    maxRetries.value = imageGen.maxRetries || 3
+    baseUrl.value = imageGen.baseUrl || getProviderBaseUrl(provider.value, 'imageGen')
+    transportRetries.value = imageGen.transportRetries ?? 10
+    businessRetries.value = imageGen.businessRetries ?? 10
+    timeoutSeconds.value = imageGen.timeoutSeconds ?? 0
   }
 }
 
@@ -119,9 +131,21 @@ defineExpose({
     </div>
     
     <div class="form-group">
-      <label>失败重试次数</label>
-      <input v-model.number="maxRetries" type="number" min="1" max="10">
-      <p class="form-hint">每张图片生成失败后的重试次数</p>
+      <label>传输重试次数</label>
+      <input v-model.number="transportRetries" type="number" min="0" max="100">
+      <p class="form-hint">网络超时、连接错误、429/5xx 的自动重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>业务重试次数</label>
+      <input v-model.number="businessRetries" type="number" min="0" max="100">
+      <p class="form-hint">当接口返回空图片结果或结果不可解析时的额外重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>单次请求超时（秒）</label>
+      <input v-model.number="timeoutSeconds" type="number" min="0" max="3600" step="1">
+      <p class="form-hint">0 表示不限制；大于 0 时作为单次生图 HTTP 请求超时</p>
     </div>
   </div>
 </template>

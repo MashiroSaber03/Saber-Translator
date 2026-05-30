@@ -45,6 +45,10 @@ export type ImageGenConfig = StoreImageGenConfig
 export type InsightConfig = StoreInsightConfig
 
 export const useInsightStore = defineStore('insight', () => {
+  function coerceLegacyRetryValue(value: unknown, fallback: number): number {
+    return value === undefined || value === null ? fallback : Number(value)
+  }
+
   function syncVlmAliases(target: StoreVlmConfig): StoreVlmConfig {
     return target
   }
@@ -53,10 +57,28 @@ export const useInsightStore = defineStore('insight', () => {
     return target
   }
 
+  function normalizeRerankerConfig(
+    source?: Partial<StoreRerankerConfig> | null,
+    previous?: StoreRerankerConfig
+  ): StoreRerankerConfig {
+    const provider = normalizeProviderId(source?.provider || previous?.provider || 'jina') || 'jina'
+    return {
+      provider,
+      apiKey: source?.apiKey ?? previous?.apiKey ?? '',
+      model: source?.model ?? previous?.model ?? 'jina-reranker-v2-base-multilingual',
+      baseUrl: source?.baseUrl ?? previous?.baseUrl ?? '',
+      topK: source?.topK ?? previous?.topK ?? 5,
+      transportRetries: source?.transportRetries ?? previous?.transportRetries ?? 10,
+      businessRetries: source?.businessRetries ?? previous?.businessRetries ?? 10,
+      timeoutSeconds: source?.timeoutSeconds ?? previous?.timeoutSeconds ?? 0,
+    }
+  }
+
   function normalizeImageGenConfig(
     source?: Partial<StoreImageGenConfig> | null,
     previous?: StoreImageGenConfig
   ): StoreImageGenConfig {
+    const legacyMaxRetries = (source as Record<string, unknown> | null | undefined)?.maxRetries
     const normalizedProvider = normalizeProviderId(source?.provider || previous?.provider || 'gpt2api') || 'gpt2api'
     const previousProvider = normalizeProviderId(previous?.provider || '') || 'gpt2api'
     const providerChanged = normalizedProvider !== previousProvider
@@ -67,17 +89,22 @@ export const useInsightStore = defineStore('insight', () => {
       apiKey: '',
       model: defaultModel,
       baseUrl: defaultBaseUrl,
-      maxRetries: 3
+      transportRetries: 10,
+      businessRetries: 10,
+      timeoutSeconds: 0,
     }
     const model = source?.model ?? (providerChanged ? defaultModel : base.model || defaultModel)
     const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
+    const businessRetries = source?.businessRetries ?? (typeof legacyMaxRetries === 'number' ? legacyMaxRetries : base.businessRetries ?? 10)
 
     return {
       provider: normalizedProvider,
       apiKey: source?.apiKey ?? base.apiKey,
       model,
       baseUrl,
-      maxRetries: source?.maxRetries ?? base.maxRetries
+      transportRetries: source?.transportRetries ?? base.transportRetries ?? 10,
+      businessRetries,
+      timeoutSeconds: source?.timeoutSeconds ?? base.timeoutSeconds ?? 0
     }
   }
 
@@ -147,13 +174,13 @@ export const useInsightStore = defineStore('insight', () => {
       businessRetries: 10,
       timeoutSeconds: 0
     },
-    reranker: { provider: 'jina', apiKey: '', model: 'jina-reranker-v2-base-multilingual', baseUrl: '', topK: 5 },
+    reranker: normalizeRerankerConfig(),
     imageGen: normalizeImageGenConfig(),
     batch: { pagesPerBatch: 5, contextBatchCount: 3, architecturePreset: 'standard', customLayers: [] },
     prompts: {}
   })
 
-  const providerConfigs = ref<ProviderConfigsCache>({ vlm: {}, llm: {}, embedding: {}, reranker: {} })
+  const providerConfigs = ref<ProviderConfigsCache>({ vlm: {}, llm: {}, embedding: {}, reranker: {}, imageGen: {} })
   const configManager = useInsightConfigManager(providerConfigs)
 
   // ============================================================
@@ -243,8 +270,8 @@ export const useInsightStore = defineStore('insight', () => {
     saveConfigToStorage()
   }
   function updateEmbeddingConfig(c: Partial<EmbeddingConfig>): void { config.value.embedding = { ...config.value.embedding, ...c }; configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding); saveConfigToStorage() }
-  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = { ...config.value.reranker, ...c }; configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
-  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeImageGenConfig(c, config.value.imageGen); saveConfigToStorage() }
+  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = normalizeRerankerConfig(c, config.value.reranker); configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
+  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen); saveConfigToStorage() }
   function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c }; saveConfigToStorage() }
   function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts }; saveConfigToStorage() }
 
@@ -252,13 +279,21 @@ export const useInsightStore = defineStore('insight', () => {
   function setLlmProvider(p: string): void { if (config.value.llm.provider === p) return; configManager.llmManager.switch(config.value.llm.provider, p, config.value.llm); config.value.llm.provider = p; saveConfigToStorage() }
   function setEmbeddingProvider(p: string): void { if (config.value.embedding.provider === p) return; configManager.embeddingManager.switch(config.value.embedding.provider, p, config.value.embedding); config.value.embedding.provider = p; saveConfigToStorage() }
   function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p; saveConfigToStorage() }
+  function setImageGenProvider(p: string): void { if (config.value.imageGen.provider === p) return; configManager.imageGenManager.switch(config.value.imageGen.provider, p, config.value.imageGen); config.value.imageGen.provider = p; saveConfigToStorage() }
 
-  function setConfig(newConfig: InsightConfig): void { config.value = { ...newConfig, imageGen: normalizeImageGenConfig(newConfig.imageGen, config.value.imageGen) }; saveConfigToStorage() }
+  function setConfig(newConfig: InsightConfig): void {
+    config.value = {
+      ...newConfig,
+      reranker: normalizeRerankerConfig(newConfig.reranker, config.value.reranker),
+      imageGen: normalizeImageGenConfig(newConfig.imageGen, config.value.imageGen),
+    }
+    saveConfigToStorage()
+  }
   function saveConfigToStorage(): void { localStorage.setItem('manga_insight_config', JSON.stringify(config.value)) }
   function loadConfigFromStorage(): void {
     configManager.loadFromStorage()
     const stored = localStorage.getItem('manga_insight_config')
-      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, extraBody: p?.vlm?.extraBody, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, extraBody: p?.llm?.extraBody, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: { ...config.value.reranker, ...p.reranker }, imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
+      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, extraBody: p?.vlm?.extraBody, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, extraBody: p?.llm?.extraBody, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: normalizeRerankerConfig(p?.reranker, config.value.reranker), imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -276,8 +311,25 @@ export const useInsightStore = defineStore('insight', () => {
         business_retries: config.value.embedding.businessRetries ?? 10,
         timeout_seconds: config.value.embedding.timeoutSeconds ?? 0
       },
-      reranker: { provider: config.value.reranker.provider, api_key: config.value.reranker.apiKey, model: config.value.reranker.model, base_url: config.value.reranker.baseUrl || null, top_k: config.value.reranker.topK },
-      image_gen: { provider: config.value.imageGen.provider, api_key: config.value.imageGen.apiKey, model: config.value.imageGen.model, base_url: config.value.imageGen.baseUrl || null, max_retries: config.value.imageGen.maxRetries },
+      reranker: {
+        provider: config.value.reranker.provider,
+        api_key: config.value.reranker.apiKey,
+        model: config.value.reranker.model,
+        base_url: config.value.reranker.baseUrl || null,
+        top_k: config.value.reranker.topK,
+        transport_retries: config.value.reranker.transportRetries ?? 10,
+        business_retries: config.value.reranker.businessRetries ?? 10,
+        timeout_seconds: config.value.reranker.timeoutSeconds ?? 0,
+      },
+      image_gen: {
+        provider: config.value.imageGen.provider,
+        api_key: config.value.imageGen.apiKey,
+        model: config.value.imageGen.model,
+        base_url: config.value.imageGen.baseUrl || null,
+        transport_retries: config.value.imageGen.transportRetries ?? 10,
+        business_retries: config.value.imageGen.businessRetries ?? 10,
+        timeout_seconds: config.value.imageGen.timeoutSeconds ?? 0,
+      },
       analysis: { batch: { pages_per_batch: config.value.batch.pagesPerBatch, context_batch_count: config.value.batch.contextBatchCount, architecture_preset: config.value.batch.architecturePreset, custom_layers: config.value.batch.customLayers.map(l => ({ name: l.name, units_per_group: l.units, align_to_chapter: l.align })) } },
       prompts: config.value.prompts,
       providerSettings: {
@@ -292,7 +344,8 @@ export const useInsightStore = defineStore('insight', () => {
           business_retries: c.businessRetries ?? 10,
           timeout_seconds: c.timeoutSeconds ?? 0
         })),
-        rerankerProvider: mapProvider(providerConfigs.value.reranker, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', top_k: c.topK ?? 5 }))
+        rerankerProvider: mapProvider(providerConfigs.value.reranker, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', top_k: c.topK ?? 5, transport_retries: c.transportRetries ?? 10, business_retries: c.businessRetries ?? 10, timeout_seconds: c.timeoutSeconds ?? 0 })),
+        imageGenProvider: mapProvider(providerConfigs.value.imageGen, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', transport_retries: c.transportRetries ?? 10, business_retries: c.businessRetries ?? 10, timeout_seconds: c.timeoutSeconds ?? 0 }))
       }
     }
   }
@@ -317,14 +370,25 @@ export const useInsightStore = defineStore('insight', () => {
       businessRetries: (embedding.business_retries as number) ?? 10,
       timeoutSeconds: (embedding.timeout_seconds as number) ?? 0
     }
-    if (reranker) config.value.reranker = { provider: (reranker.provider as string) || 'jina', apiKey: (reranker.api_key as string) || '', model: (reranker.model as string) || '', baseUrl: (reranker.base_url as string) || '', topK: (reranker.top_k as number) || 5 }
+    if (reranker) config.value.reranker = normalizeRerankerConfig({
+      provider: (reranker.provider as string) || 'jina',
+      apiKey: (reranker.api_key as string) || '',
+      model: (reranker.model as string) || '',
+      baseUrl: (reranker.base_url as string) || '',
+      topK: (reranker.top_k as number) || 5,
+      transportRetries: (reranker.transport_retries as number) ?? 10,
+      businessRetries: (reranker.business_retries as number) ?? 10,
+      timeoutSeconds: (reranker.timeout_seconds as number) ?? 0,
+    }, config.value.reranker)
     if (batch) { const cl = batch.custom_layers as Array<Record<string, unknown>> | undefined; config.value.batch = { pagesPerBatch: (batch.pages_per_batch as number) || 5, contextBatchCount: (batch.context_batch_count as number) ?? 3, architecturePreset: (batch.architecture_preset as string) || 'standard', customLayers: cl?.map(l => ({ name: (l.name as string) || '', units: (l.units_per_group as number) || 1, align: (l.align_to_chapter as boolean) || false })) || [] } }
     if (imageGen) config.value.imageGen = normalizeImageGenConfig({
       provider: imageGen.provider as string | undefined,
       apiKey: (imageGen.api_key as string) || '',
       model: imageGen.model as string | undefined,
       baseUrl: (imageGen.base_url as string) || '',
-      maxRetries: (imageGen.max_retries as number) || 3
+      transportRetries: (imageGen.transport_retries as number) ?? 10,
+      businessRetries: (imageGen.business_retries as number) ?? coerceLegacyRetryValue(imageGen.max_retries, 10),
+      timeoutSeconds: (imageGen.timeout_seconds as number) ?? 0,
     }, config.value.imageGen)
 
     const ps = apiConfig.providerSettings as Record<string, Record<string, Record<string, unknown>>> | undefined
@@ -340,7 +404,8 @@ export const useInsightStore = defineStore('insight', () => {
         businessRetries: (c.business_retries as number) ?? 10,
         timeoutSeconds: (c.timeout_seconds as number) ?? 0
       }
-      if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5 }
+      if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5, transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? 10, timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
+      if (ps.imageGenProvider) for (const [p, c] of Object.entries(ps.imageGenProvider)) providerConfigs.value.imageGen[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? coerceLegacyRetryValue(c.max_retries, 10), timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
       configManager.saveToStorage()
     }
     if (apiConfig.prompts) config.value.prompts = apiConfig.prompts as Record<string, string>
@@ -349,6 +414,7 @@ export const useInsightStore = defineStore('insight', () => {
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
     configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding)
     configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker)
+    configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen)
   }
 
   function resetAnalysis(): void { analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; pages.value.clear(); overview.value = null; timeline.value = [] }
@@ -359,7 +425,7 @@ export const useInsightStore = defineStore('insight', () => {
     progressPercent, isAnalyzing, isAnalysisCompleted, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, selectedPage,
     setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
     addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
-    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, saveConfigToStorage, loadConfigFromStorage, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider,
+    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, saveConfigToStorage, loadConfigFromStorage, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
     resetAnalysis, reset
   }
 })

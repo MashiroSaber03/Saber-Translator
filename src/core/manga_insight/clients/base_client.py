@@ -36,7 +36,6 @@ class BaseAPIClient:
         resolved_base_url: Optional[str] = None,
         rpm_limit: int = 0,
         timeout: float = 120.0,
-        max_retries: int = 3
     ):
         """
         初始化基础客户端
@@ -48,14 +47,12 @@ class BaseAPIClient:
             resolved_base_url: 已解析的完整 base_url（优先级高于 base_url）
             rpm_limit: RPM 限制
             timeout: 请求超时时间（秒）
-            max_retries: 最大重试次数
         """
         self.provider = provider.lower()
         self.api_key = api_key
         self._base_url = resolved_base_url if resolved_base_url is not None else get_base_url(provider, base_url)
         self._rpm_limiter = RPMLimiter(rpm_limit)
         self._timeout = timeout
-        self._max_retries = max_retries
 
         # 创建 HTTP 客户端
         self.client = self._create_http_client()

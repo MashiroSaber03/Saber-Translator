@@ -29,6 +29,9 @@ const apiKey = ref(insightStore.config.reranker.apiKey)
 const model = ref(insightStore.config.reranker.model)
 const baseUrl = ref(insightStore.config.reranker.baseUrl)
 const topK = ref(insightStore.config.reranker.topK)
+const transportRetries = ref(insightStore.config.reranker.transportRetries ?? 10)
+const businessRetries = ref(insightStore.config.reranker.businessRetries ?? 10)
+const timeoutSeconds = ref(insightStore.config.reranker.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 
@@ -41,6 +44,9 @@ function onProviderChange(): void {
     insightStore.config.reranker.model = model.value
     insightStore.config.reranker.baseUrl = baseUrl.value
     insightStore.config.reranker.topK = topK.value
+    insightStore.config.reranker.transportRetries = transportRetries.value
+    insightStore.config.reranker.businessRetries = businessRetries.value
+    insightStore.config.reranker.timeoutSeconds = timeoutSeconds.value
   }
   
   insightStore.setRerankerProvider(newProvider)
@@ -49,6 +55,9 @@ function onProviderChange(): void {
   model.value = insightStore.config.reranker.model
   baseUrl.value = insightStore.config.reranker.baseUrl
   topK.value = insightStore.config.reranker.topK
+  transportRetries.value = insightStore.config.reranker.transportRetries ?? 10
+  businessRetries.value = insightStore.config.reranker.businessRetries ?? 10
+  timeoutSeconds.value = insightStore.config.reranker.timeoutSeconds ?? 0
   
   if (!model.value) {
     const defaultModel = RERANKER_DEFAULT_MODELS[newProvider]
@@ -106,7 +115,10 @@ async function testConnection(): Promise<void> {
       provider: provider.value,
       api_key: apiKey.value,
       model: model.value,
-      base_url: baseUrl.value || undefined
+      base_url: baseUrl.value || undefined,
+      transport_retries: transportRetries.value,
+      business_retries: businessRetries.value,
+      timeout_seconds: timeoutSeconds.value,
     })
     emit('showMessage', response.success ? 'Reranker 连接成功' : '连接失败: ' + (response.error || '未知错误'), response.success ? 'success' : 'error')
   } catch {
@@ -121,8 +133,11 @@ function getConfig() {
     provider: provider.value,
     apiKey: apiKey.value,
     model: model.value,
-    baseUrl: provider.value === 'custom' ? baseUrl.value : '',
-    topK: topK.value
+    baseUrl: baseUrl.value,
+    topK: topK.value,
+    transportRetries: transportRetries.value,
+    businessRetries: businessRetries.value,
+    timeoutSeconds: timeoutSeconds.value,
   }
 }
 
@@ -132,6 +147,9 @@ function syncFromStore(): void {
   model.value = insightStore.config.reranker.model
   baseUrl.value = insightStore.config.reranker.baseUrl
   topK.value = insightStore.config.reranker.topK
+  transportRetries.value = insightStore.config.reranker.transportRetries ?? 10
+  businessRetries.value = insightStore.config.reranker.businessRetries ?? 10
+  timeoutSeconds.value = insightStore.config.reranker.timeoutSeconds ?? 0
 }
 
 defineExpose({ getConfig, syncFromStore })
@@ -177,6 +195,24 @@ defineExpose({ getConfig, syncFromStore })
       <label>Top K</label>
       <input v-model.number="topK" type="number" min="1" max="20">
       <p class="form-hint">重排序后返回的结果数量</p>
+    </div>
+
+    <div class="form-group">
+      <label>传输重试次数</label>
+      <input v-model.number="transportRetries" type="number" min="0" max="100">
+      <p class="form-hint">网络超时、连接错误、429/5xx 的自动重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>业务重试次数</label>
+      <input v-model.number="businessRetries" type="number" min="0" max="100">
+      <p class="form-hint">当重排序结果为空或结构无效时的额外重试次数，默认 10</p>
+    </div>
+
+    <div class="form-group">
+      <label>单次请求超时（秒）</label>
+      <input v-model.number="timeoutSeconds" type="number" min="0" max="3600" step="1">
+      <p class="form-hint">0 表示不限制；大于 0 时作为单次重排序 HTTP 请求超时</p>
     </div>
     
     <button class="btn btn-secondary" :disabled="isTesting" @click="testConnection">

@@ -11,7 +11,6 @@ from enum import Enum
 
 from .config.serialization import SerializableMixin
 from src.shared.openai_options import (
-    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
@@ -114,6 +113,9 @@ class RerankerConfig(SerializableMixin):
     model: str = "jina-reranker-v2-base-multilingual"
     base_url: Optional[str] = None
     top_k: int = 5
+    transport_retries: int = 10
+    business_retries: int = 10
+    timeout_seconds: float = 0
 
 
 @dataclass
@@ -123,7 +125,9 @@ class ImageGenConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gpt-image-2"
     base_url: Optional[str] = None
-    max_retries: int = 3             # 每张图重试次数
+    transport_retries: int = 10
+    business_retries: int = 10
+    timeout_seconds: float = 0
 
 
 # 预设架构模板

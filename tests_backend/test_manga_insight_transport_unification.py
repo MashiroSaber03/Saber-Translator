@@ -269,6 +269,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 await client.embed_batch(["第一页"])
 
         self.assertEqual(embed_mock.await_count, 1)
+        self.assertEqual(client._transport.max_retries, 0)
 
     async def test_reranker_client_delegates_transport_and_preserves_result_mapping(self) -> None:
         from src.core.manga_insight.config_models import RerankerConfig
@@ -280,6 +281,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             model="rerank-model",
             base_url="https://example.com/v1",
             top_k=2,
+            transport_retries=6,
+            business_retries=1,
+            timeout_seconds=0,
         )
         documents = [
             {"document": "第一页摘要", "page_num": 1},
@@ -308,6 +312,72 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.query, "主角是谁")
         self.assertEqual(request.documents, ["第一页摘要", "第二页摘要"])
         self.assertEqual(request.top_n, 2)
+        self.assertIsNone(request.timeout)
+        self.assertEqual(client._transport.max_retries, 6)
+
+    async def test_reranker_client_retries_empty_business_result_only(self) -> None:
+        from src.core.manga_insight.config_models import RerankerConfig
+        from src.core.manga_insight.reranker_client import RerankerClient
+
+        config = RerankerConfig(
+            provider="custom",
+            api_key="test-key",
+            model="rerank-model",
+            base_url="https://example.com/v1",
+            top_k=2,
+            transport_retries=0,
+            business_retries=1,
+            timeout_seconds=0,
+        )
+        documents = [
+            {"document": "第一页摘要", "page_num": 1},
+            {"document": "第二页摘要", "page_num": 2},
+        ]
+
+        with mock.patch(
+            "src.core.manga_insight.reranker_client.AsyncOpenAICompatibleTransport.rerank",
+            new=mock.AsyncMock(
+                side_effect=[
+                    {"results": []},
+                    {"results": [{"index": 1, "relevance_score": 0.93}]},
+                ]
+            ),
+        ) as rerank_mock:
+            client = RerankerClient(config)
+            reranked = await client.rerank("主角是谁", documents, top_k=1)
+
+        self.assertEqual(rerank_mock.await_count, 2)
+        self.assertEqual([item["page_num"] for item in reranked], [2])
+
+    async def test_reranker_client_does_not_business_retry_non_retryable_value_error(self) -> None:
+        from src.core.manga_insight.config_models import RerankerConfig
+        from src.core.manga_insight.reranker_client import RerankerClient
+
+        config = RerankerConfig(
+            provider="custom",
+            api_key="test-key",
+            model="rerank-model",
+            base_url="https://example.com/v1",
+            top_k=2,
+            transport_retries=0,
+            business_retries=10,
+            timeout_seconds=0,
+        )
+        documents = [
+            {"document": "第一页摘要", "page_num": 1},
+            {"document": "第二页摘要", "page_num": 2},
+        ]
+
+        with mock.patch(
+            "src.core.manga_insight.reranker_client.AsyncOpenAICompatibleTransport.rerank",
+            new=mock.AsyncMock(side_effect=ValueError("API 错误 401: unauthorized")),
+        ) as rerank_mock:
+            client = RerankerClient(config)
+            reranked = await client.rerank("主角是谁", documents, top_k=2)
+
+        self.assertEqual(rerank_mock.await_count, 1)
+        self.assertEqual([item["page_num"] for item in reranked], [1, 2])
+        self.assertEqual(client._transport.max_retries, 0)
 
     async def test_vlm_client_uses_shared_async_transport_for_multimodal_chat(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig

@@ -158,6 +158,9 @@ export interface StoreRerankerConfig {
   model: string
   baseUrl?: string
   topK?: number
+  transportRetries?: number
+  businessRetries?: number
+  timeoutSeconds?: number
 }
 
 /**
@@ -168,7 +171,9 @@ export interface StoreImageGenConfig {
   apiKey: string
   model: string
   baseUrl?: string
-  maxRetries?: number
+  transportRetries?: number
+  businessRetries?: number
+  timeoutSeconds?: number
 }
 
 /**
@@ -267,6 +272,9 @@ export interface RerankerConfig {
   model: string
   base_url?: string
   top_k?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }
 
 /**
@@ -277,7 +285,9 @@ export interface ImageGenConfig {
   api_key: string
   model: string
   base_url?: string
-  max_retries?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }
 
 /**

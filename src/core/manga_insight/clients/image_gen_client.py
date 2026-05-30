@@ -25,6 +25,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
+from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
 from src.shared.http_config import build_httpx_kwargs
 from src.shared.ai_providers import IMAGE_GEN_CAPABILITY, normalize_provider_id, provider_supports_capability
 
@@ -35,6 +36,12 @@ from .provider_registry import get_image_gen_base_url
 logger = logging.getLogger("MangaInsight.ImageGenClient")
 
 _DOWNLOAD_TIMEOUT_SECONDS = 60
+DEFAULT_IMAGE_GEN_TRANSPORT_RETRIES = 10
+DEFAULT_IMAGE_GEN_BUSINESS_RETRIES = 10
+
+
+class ImageGenBusinessRetryableError(ValueError):
+    """仅用于生图结果级别的可重试错误。"""
 
 
 class ImageGenAdapter(Protocol):
@@ -55,40 +62,7 @@ class GPT2ApiImageGenAdapter:
         prepared_refs: List[Dict[str, object]],
     ) -> bytes:
         request_url = client._build_api_url("images/edits" if prepared_refs else "images/generations")
-
-        for retry in range(client.config.max_retries):
-            try:
-                if prepared_refs:
-                    response = await client.client.post(
-                        request_url,
-                        headers=client._build_multipart_headers(),
-                        data=client._build_edit_form_data(prompt),
-                        files=client._build_edit_files(prepared_refs),
-                    )
-                else:
-                    response = await client.client.post(
-                        request_url,
-                        headers=client._get_headers(),
-                        json=client._build_generation_body(prompt),
-                    )
-                payload = client._decode_response_payload(response)
-                client._raise_api_error_if_needed(response, payload)
-
-                if client._payload_has_result(payload):
-                    return await client._extract_image_bytes_from_payload(payload)
-
-                raise ValueError("gpt2api 返回中没有图片结果")
-            except Exception as exc:
-                logger.warning(
-                    "gpt2api 生图调用失败 (尝试 %s/%s): %s",
-                    retry + 1,
-                    client.config.max_retries,
-                    exc,
-                )
-                if retry < client.config.max_retries - 1:
-                    await asyncio.sleep(2 ** retry)
-                else:
-                    raise
+        return await client._request_image_bytes(request_url, prompt, prepared_refs)
 
 
 IMAGE_GEN_ADAPTERS: Dict[str, ImageGenAdapter] = {
@@ -102,13 +76,18 @@ class ImageGenClient(BaseAPIClient):
     def __init__(self, config: ImageGenConfig):
         self.config = config
         resolved_base_url = config.base_url or get_image_gen_base_url(config.provider)
+        timeout_value = float(config.timeout_seconds or 0)
+        self._timeout = None if timeout_value <= 0 else timeout_value
+        transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_IMAGE_GEN_TRANSPORT_RETRIES
+        business_retries = config.business_retries if config.business_retries is not None else DEFAULT_IMAGE_GEN_BUSINESS_RETRIES
+        self._transport_retries = max(0, int(transport_retries))
+        self._business_retries = max(0, int(business_retries))
         super().__init__(
             provider=config.provider,
             api_key=config.api_key,
             base_url=config.base_url,
             resolved_base_url=resolved_base_url,
-            timeout=300.0,
-            max_retries=config.max_retries,
+            timeout=self._timeout,
         )
         logger.info("ImageGenClient 初始化: provider=%s, base_url=%s", config.provider, self._base_url)
 
@@ -128,6 +107,94 @@ class ImageGenClient(BaseAPIClient):
 
         prepared_refs = self._prepare_reference_images(reference_images)
         return await adapter.generate(self, prompt, prepared_refs)
+
+    async def _request_image_bytes(
+        self,
+        request_url: str,
+        prompt: str,
+        prepared_refs: List[Dict[str, object]],
+    ) -> bytes:
+        last_error: Optional[Exception] = None
+        total_attempts = self._business_retries + 1
+
+        for attempt in range(total_attempts):
+            try:
+                payload = await self._request_generation_payload(request_url, prompt, prepared_refs)
+                if not self._payload_has_result(payload):
+                    raise ImageGenBusinessRetryableError("gpt2api 返回中没有图片结果")
+                try:
+                    return await self._extract_image_bytes_from_payload(payload)
+                except ValueError as exc:
+                    raise ImageGenBusinessRetryableError(str(exc)) from exc
+            except ImageGenBusinessRetryableError as exc:
+                last_error = exc
+                if attempt >= total_attempts - 1:
+                    break
+                logger.warning(
+                    "gpt2api 生图业务重试 %s/%s: %s",
+                    attempt + 1,
+                    self._business_retries,
+                    exc,
+                )
+                await asyncio.sleep(1)
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("生图响应为空")
+
+    async def _request_generation_payload(
+        self,
+        request_url: str,
+        prompt: str,
+        prepared_refs: List[Dict[str, object]],
+    ) -> Dict:
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(self._transport_retries + 1):
+            try:
+                if prepared_refs:
+                    response = await self.client.post(
+                        request_url,
+                        headers=self._build_multipart_headers(),
+                        data=self._build_edit_form_data(prompt),
+                        files=self._build_edit_files(prepared_refs),
+                    )
+                else:
+                    response = await self.client.post(
+                        request_url,
+                        headers=self._get_headers(),
+                        json=self._build_generation_body(prompt),
+                    )
+
+                if response.status_code in RETRYABLE_STATUS_CODES and attempt < self._transport_retries:
+                    logger.warning(
+                        "gpt2api 生图传输重试 %s/%s: HTTP %s",
+                        attempt + 1,
+                        self._transport_retries,
+                        response.status_code,
+                    )
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+
+                payload = self._decode_response_payload(response)
+                self._raise_api_error_if_needed(response, payload)
+                return payload
+            except RETRYABLE_EXCEPTIONS as exc:
+                last_exception = exc
+                if attempt < self._transport_retries:
+                    logger.warning(
+                        "gpt2api 生图传输重试 %s/%s: %s",
+                        attempt + 1,
+                        self._transport_retries,
+                        type(exc).__name__,
+                    )
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                raise
+
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("生图传输重试耗尽")
 
     def _build_generation_body(self, prompt: str) -> Dict[str, object]:
         return {

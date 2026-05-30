@@ -1,7 +1,7 @@
 /**
  * Insight 配置管理 Composable
  *
- * 统一管理 VLM/LLM/Embedding/Reranker 四种服务商配置的保存/恢复
+ * 统一管理 VLM/LLM/Embedding/Reranker/ImageGen 五种服务商配置的保存/恢复
  */
 
 import type { Ref } from 'vue'
@@ -64,6 +64,16 @@ interface EmbeddingFields extends ProviderFieldMap {
 /** Reranker 配置字段 */
 interface RerankerFields extends ProviderFieldMap {
   topK: number
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
+}
+
+/** ImageGen 配置字段 */
+interface ImageGenFields extends ProviderFieldMap {
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
 }
 
 /** 服务商配置缓存结构 */
@@ -72,6 +82,7 @@ export interface ProviderConfigsCache {
   llm: Record<string, Partial<LlmFields>>
   embedding: Record<string, Partial<EmbeddingFields>>
   reranker: Record<string, Partial<RerankerFields>>
+  imageGen: Record<string, Partial<ImageGenFields>>
 }
 
 /**
@@ -99,7 +110,8 @@ export function useInsightConfigManager(
           vlm: parsed.vlm || {},
           llm: parsed.llm || {},
           embedding: parsed.embedding || {},
-          reranker: parsed.reranker || {}
+          reranker: parsed.reranker || {},
+          imageGen: parsed.imageGen || {}
         }
         for (const config of Object.values(providerConfigs.value.vlm)) {
           config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
@@ -128,6 +140,18 @@ export function useInsightConfigManager(
             execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
           })
         }
+        for (const config of Object.values(providerConfigs.value.imageGen)) {
+          const legacyMaxRetries = (config as Record<string, unknown>).maxRetries
+          if (config.transportRetries === undefined) config.transportRetries = 10
+          if (config.businessRetries === undefined) config.businessRetries = typeof legacyMaxRetries === 'number' ? legacyMaxRetries : 10
+          if (config.timeoutSeconds === undefined) config.timeoutSeconds = 0
+          delete (config as Record<string, unknown>).maxRetries
+        }
+        for (const config of Object.values(providerConfigs.value.reranker)) {
+          if (config.transportRetries === undefined) config.transportRetries = 10
+          if (config.businessRetries === undefined) config.businessRetries = 10
+          if (config.timeoutSeconds === undefined) config.timeoutSeconds = 0
+        }
       } catch (e) {
         console.error('[Insight] 加载服务商配置缓存失败:', e)
       }
@@ -138,7 +162,7 @@ export function useInsightConfigManager(
    * 创建通用的服务商配置管理器
    */
   function createProviderManager<T extends ProviderFieldMap>(
-    configType: 'vlm' | 'llm' | 'embedding' | 'reranker',
+    configType: 'vlm' | 'llm' | 'embedding' | 'reranker' | 'imageGen',
     fieldExtractor: (config: Record<string, unknown>) => Partial<T>,
     fieldApplier: (config: Record<string, unknown>, cached: Partial<T>) => void,
     defaultFields: Partial<T>
@@ -258,15 +282,43 @@ export function useInsightConfigManager(
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      topK: config.topK as number
+      topK: config.topK as number,
+      transportRetries: config.transportRetries as number,
+      businessRetries: config.businessRetries as number,
+      timeoutSeconds: config.timeoutSeconds as number,
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
       if (cached.topK !== undefined) config.topK = cached.topK
+      if (cached.transportRetries !== undefined) config.transportRetries = cached.transportRetries
+      if (cached.businessRetries !== undefined) config.businessRetries = cached.businessRetries
+      if (cached.timeoutSeconds !== undefined) config.timeoutSeconds = cached.timeoutSeconds
     },
-    { apiKey: '', model: '', baseUrl: '' }
+    { apiKey: '', model: '', baseUrl: '', topK: 5, transportRetries: 10, businessRetries: 10, timeoutSeconds: 0 }
+  )
+
+  // ImageGen 配置管理器
+  const imageGenManager = createProviderManager<ImageGenFields>(
+    'imageGen',
+    (config) => ({
+      apiKey: config.apiKey as string,
+      model: config.model as string,
+      baseUrl: config.baseUrl as string,
+      transportRetries: config.transportRetries as number,
+      businessRetries: config.businessRetries as number,
+      timeoutSeconds: config.timeoutSeconds as number,
+    }),
+    (config, cached) => {
+      if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
+      if (cached.model !== undefined) config.model = cached.model
+      if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
+      if (cached.transportRetries !== undefined) config.transportRetries = cached.transportRetries
+      if (cached.businessRetries !== undefined) config.businessRetries = cached.businessRetries
+      if (cached.timeoutSeconds !== undefined) config.timeoutSeconds = cached.timeoutSeconds
+    },
+    { apiKey: '', model: '', baseUrl: '', transportRetries: 10, businessRetries: 10, timeoutSeconds: 0 }
   )
 
   return {
@@ -275,6 +327,7 @@ export function useInsightConfigManager(
     vlmManager,
     llmManager,
     embeddingManager,
-    rerankerManager
+    rerankerManager,
+    imageGenManager
   }
 }

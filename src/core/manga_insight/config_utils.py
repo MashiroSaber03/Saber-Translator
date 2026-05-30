@@ -16,7 +16,6 @@ from src.shared.ai_providers import (
 from src.shared.config_loader import load_json_config, save_json_config
 from .config_models import MangaInsightConfig
 from src.shared.openai_options import (
-    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     OpenAICompatibleOptions,
 )
 
@@ -201,6 +200,71 @@ def _migrate_openai_compatible_entry(
     return migrated, changed
 
 
+def _migrate_runtime_retry_entry(
+    payload: Dict[str, Any],
+    *,
+    default_transport_retries: int = 10,
+    default_business_retries: int = 10,
+    default_timeout_seconds: float = 0,
+) -> tuple[Dict[str, Any], bool]:
+    if not isinstance(payload, dict):
+        return payload, False
+
+    migrated = copy.deepcopy(payload)
+    changed = False
+
+    has_transport_retries, transport_retries_value = _mapping_value(
+        migrated,
+        "transport_retries",
+        "transportRetries",
+    )
+    if has_transport_retries:
+        migrated["transport_retries"] = max(0, int(transport_retries_value))
+        changed = changed or "transport_retries" not in migrated or migrated.get("transport_retries") != transport_retries_value
+    else:
+        migrated["transport_retries"] = default_transport_retries
+        changed = True
+
+    has_business_retries, business_retries_value = _mapping_value(
+        migrated,
+        "business_retries",
+        "businessRetries",
+        "max_retries",
+        "maxRetries",
+    )
+    if has_business_retries:
+        migrated["business_retries"] = max(0, int(business_retries_value))
+        changed = changed or "business_retries" not in migrated or migrated.get("business_retries") != business_retries_value
+    else:
+        migrated["business_retries"] = default_business_retries
+        changed = True
+
+    has_timeout_seconds, timeout_seconds_value = _mapping_value(
+        migrated,
+        "timeout_seconds",
+        "timeoutSeconds",
+    )
+    if has_timeout_seconds:
+        migrated["timeout_seconds"] = max(0.0, float(timeout_seconds_value))
+        changed = changed or "timeout_seconds" not in migrated or migrated.get("timeout_seconds") != timeout_seconds_value
+    else:
+        migrated["timeout_seconds"] = default_timeout_seconds
+        changed = True
+
+    for legacy_key in (
+        "transportRetries",
+        "businessRetries",
+        "timeoutSeconds",
+        "max_retries",
+        "maxRetries",
+    ):
+        if legacy_key in migrated:
+            migrated.pop(legacy_key, None)
+            changed = True
+
+    return migrated, changed
+
+
 def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     if not isinstance(data, dict):
         return {}, False
@@ -243,6 +307,13 @@ def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any]
             migrated[field_name] = migrated_section
             changed = changed or section_changed
 
+    for field_name in ("reranker", "image_gen"):
+        section = migrated.get(field_name)
+        if isinstance(section, dict):
+            migrated_section, section_changed = _migrate_runtime_retry_entry(section)
+            migrated[field_name] = migrated_section
+            changed = changed or section_changed
+
     provider_settings = migrated.get("provider_settings")
     if not isinstance(provider_settings, dict):
         provider_settings = migrated.get("providerSettings")
@@ -262,6 +333,17 @@ def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any]
                     provider_payload,
                     default_options=default_options,
                 )
+                provider_group[provider_name] = migrated_payload
+                changed = changed or payload_changed
+
+        for group_name in ("rerankerProvider", "imageGenProvider"):
+            provider_group = provider_settings.get(group_name)
+            if not isinstance(provider_group, dict):
+                continue
+            for provider_name, provider_payload in list(provider_group.items()):
+                if not isinstance(provider_payload, dict):
+                    continue
+                migrated_payload, payload_changed = _migrate_runtime_retry_entry(provider_payload)
                 provider_group[provider_name] = migrated_payload
                 changed = changed or payload_changed
 
@@ -322,6 +404,25 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
             errors.append("ImageGen base_url 格式无效，应以 http:// 或 https:// 开头")
     else:
         warnings.append("ImageGen 已选择服务商但未配置 Base URL")
+    if config.image_gen.transport_retries < 0:
+        errors.append("ImageGen transport_retries 不能为负数")
+    if config.image_gen.business_retries < 0:
+        errors.append("ImageGen business_retries 不能为负数")
+    if config.image_gen.timeout_seconds < 0:
+        errors.append("ImageGen timeout_seconds 不能为负数")
+
+    # Reranker 配置验证
+    if has_provider_credentials(config.reranker.provider, config.reranker.api_key) and not config.reranker.model:
+        warnings.append("Reranker 已选择服务商但未选择模型")
+    if config.reranker.base_url:
+        if not config.reranker.base_url.startswith(("http://", "https://")):
+            errors.append("Reranker base_url 格式无效，应以 http:// 或 https:// 开头")
+    if config.reranker.transport_retries < 0:
+        errors.append("Reranker transport_retries 不能为负数")
+    if config.reranker.business_retries < 0:
+        errors.append("Reranker business_retries 不能为负数")
+    if config.reranker.timeout_seconds < 0:
+        errors.append("Reranker timeout_seconds 不能为负数")
 
     # 批量分析参数验证（错误级别 - 无效参数会导致分析失败）
     if config.analysis.batch.pages_per_batch < 1:

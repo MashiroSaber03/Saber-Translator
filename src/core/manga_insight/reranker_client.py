@@ -2,6 +2,7 @@
 Manga Insight reranker client backed by shared async transport.
 """
 
+import asyncio
 import logging
 from typing import List, Dict, Optional
 
@@ -13,7 +14,12 @@ from .config_models import RerankerConfig
 
 logger = logging.getLogger("MangaInsight.Reranker")
 DEFAULT_RERANKER_RPM_LIMIT = 60
-DEFAULT_RERANKER_MAX_RETRIES = 2
+DEFAULT_RERANKER_TRANSPORT_RETRIES = 10
+DEFAULT_RERANKER_BUSINESS_RETRIES = 10
+
+
+class RerankerBusinessRetryableError(ValueError):
+    """仅用于重排序结果级别的可重试错误。"""
 
 
 class RerankerClient:
@@ -39,12 +45,18 @@ class RerankerClient:
         self._base_url = base_url
         self._rerank_url = rerank_url
         self._endpoint = endpoint or "/rerank"
-        self._timeout = 30.0
+        timeout_value = float(config.timeout_seconds or 0)
+        self._timeout = None if timeout_value <= 0 else timeout_value
+        transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_RERANKER_TRANSPORT_RETRIES
+        business_retries = config.business_retries if config.business_retries is not None else DEFAULT_RERANKER_BUSINESS_RETRIES
         self._rpm_limiter = RPMLimiter(
             DEFAULT_RERANKER_RPM_LIMIT,
             bucket_id=f"rerank:{provider}",
         )
-        self._transport = AsyncOpenAICompatibleTransport(max_retries=DEFAULT_RERANKER_MAX_RETRIES)
+        self._transport = AsyncOpenAICompatibleTransport(
+            max_retries=max(0, int(transport_retries))
+        )
+        self._business_retries = max(0, int(business_retries))
 
         logger.info(f"RerankerClient 初始化: provider={provider}, rerank_url={self._rerank_url}")
 
@@ -68,7 +80,33 @@ class RerankerClient:
 
         top_k = top_k or self.config.top_k
 
-        doc_texts = []
+        doc_texts = self._build_doc_texts(documents)
+
+        try:
+            result = await self._request_rerank_result(query, doc_texts, documents, top_k)
+            return self._map_reranked_documents(result, documents, top_k)
+
+        except Exception as e:
+            logger.error(f"重排序失败: {e}")
+            return documents[:top_k]
+
+    async def test_connection(self) -> bool:
+        try:
+            result = await self._request_rerank_result(
+                query="测试",
+                doc_texts=["文档1", "文档2"],
+                original_documents=["文档1", "文档2"],
+                top_k=2
+            )
+            mapped = self._map_reranked_documents(result, ["文档1", "文档2"], 2)
+            return len(mapped) > 0
+        except Exception as e:
+            logger.error(f"Reranker 连接测试失败: {e}")
+            return False
+
+    @staticmethod
+    def _build_doc_texts(documents: List[Dict]) -> List[str]:
+        doc_texts: List[str] = []
         for doc in documents:
             if isinstance(doc, dict):
                 text = (
@@ -82,45 +120,80 @@ class RerankerClient:
                 doc_texts.append(text)
             else:
                 doc_texts.append(str(doc))
+        return doc_texts
 
-        try:
+    async def _request_rerank_result(
+        self,
+        query: str,
+        doc_texts: List[str],
+        original_documents: List[Dict],
+        top_k: int,
+    ) -> Dict:
+        last_error: Optional[Exception] = None
+        total_attempts = self._business_retries + 1
+
+        for attempt in range(total_attempts):
             await self._enforce_rpm_limit()
-            result = await self._transport.rerank(
-                UnifiedRerankRequest(
-                    provider=self.provider,
-                    api_key=self.config.api_key,
-                    model=self.model,
-                    query=query,
-                    documents=doc_texts,
-                    top_n=min(top_k, len(documents)),
-                    base_url=self._base_url or None,
-                    timeout=self._timeout,
-                    endpoint=self._endpoint,
+            try:
+                result = await self._transport.rerank(
+                    UnifiedRerankRequest(
+                        provider=self.provider,
+                        api_key=self.config.api_key,
+                        model=self.model,
+                        query=query,
+                        documents=doc_texts,
+                        top_n=min(top_k, len(original_documents)),
+                        base_url=self._base_url or None,
+                        timeout=self._timeout,
+                        endpoint=self._endpoint,
+                    )
                 )
-            )
+                self._validate_rerank_result(result, original_documents)
+                return result
+            except RerankerBusinessRetryableError as exc:
+                last_error = exc
+                if attempt >= total_attempts - 1:
+                    break
+                logger.warning(
+                    "Reranker 业务重试 %s/%s: %s",
+                    attempt + 1,
+                    self._business_retries,
+                    exc,
+                )
+                await asyncio.sleep(1)
 
-            reranked = []
-            for item in result.get("results", []):
-                idx = item.get("index", 0)
-                if idx < len(documents):
-                    doc = documents[idx].copy() if isinstance(documents[idx], dict) else {"content": documents[idx]}
-                    doc["rerank_score"] = item.get("relevance_score", 0)
-                    reranked.append(doc)
+        if last_error:
+            raise last_error
+        raise RuntimeError("重排序结果为空")
 
-            return reranked[:top_k]
+    @staticmethod
+    def _validate_rerank_result(result: Dict, documents: List[Dict]) -> None:
+        results = result.get("results")
+        if not isinstance(results, list):
+            raise RerankerBusinessRetryableError("Reranker 响应缺少 results 列表")
+        if not results:
+            raise RerankerBusinessRetryableError("Reranker 响应为空结果")
 
-        except Exception as e:
-            logger.error(f"重排序失败: {e}")
-            return documents[:top_k]
+        valid_count = 0
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if isinstance(index, int) and 0 <= index < len(documents):
+                valid_count += 1
 
-    async def test_connection(self) -> bool:
-        try:
-            result = await self.rerank(
-                query="测试",
-                documents=["文档1", "文档2"],
-                top_k=2
-            )
-            return len(result) > 0
-        except Exception as e:
-            logger.error(f"Reranker 连接测试失败: {e}")
-            return False
+        if valid_count == 0:
+            raise RerankerBusinessRetryableError("Reranker 响应没有可映射的结果")
+
+    @staticmethod
+    def _map_reranked_documents(result: Dict, documents: List[Dict], top_k: int) -> List[Dict]:
+        reranked = []
+        for item in result.get("results", []):
+            if not isinstance(item, dict):
+                continue
+            idx = item.get("index", 0)
+            if isinstance(idx, int) and idx < len(documents):
+                doc = documents[idx].copy() if isinstance(documents[idx], dict) else {"content": documents[idx]}
+                doc["rerank_score"] = item.get("relevance_score", 0)
+                reranked.append(doc)
+        return reranked[:top_k]

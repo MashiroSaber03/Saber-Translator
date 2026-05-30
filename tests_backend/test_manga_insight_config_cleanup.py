@@ -62,6 +62,12 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertEqual(config.embedding.transport_retries, 10)
         self.assertEqual(config.embedding.business_retries, 10)
         self.assertEqual(config.embedding.timeout_seconds, 0)
+        self.assertEqual(config.reranker.transport_retries, 10)
+        self.assertEqual(config.reranker.business_retries, 10)
+        self.assertEqual(config.reranker.timeout_seconds, 0)
+        self.assertEqual(config.image_gen.transport_retries, 10)
+        self.assertEqual(config.image_gen.business_retries, 10)
+        self.assertEqual(config.image_gen.timeout_seconds, 0)
 
     def test_to_dict_omits_removed_runtime_only_fields(self) -> None:
         from src.core.manga_insight.config_models import MangaInsightConfig
@@ -80,6 +86,13 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("enabled", payload["reranker"])
         self.assertNotIn("rpm_limit", payload["reranker"])
         self.assertNotIn("max_retries", payload["reranker"])
+        self.assertEqual(payload["reranker"]["transport_retries"], 10)
+        self.assertEqual(payload["reranker"]["business_retries"], 10)
+        self.assertEqual(payload["reranker"]["timeout_seconds"], 0)
+        self.assertNotIn("max_retries", payload["image_gen"])
+        self.assertEqual(payload["image_gen"]["transport_retries"], 10)
+        self.assertEqual(payload["image_gen"]["business_retries"], 10)
+        self.assertEqual(payload["image_gen"]["timeout_seconds"], 0)
         self.assertNotIn("rpm_limit", payload["vlm"])
         self.assertNotIn("temperature", payload["vlm"])
         self.assertNotIn("force_json", payload["vlm"])
@@ -127,6 +140,19 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
                     "enabled": False,
                     "rpm_limit": 12,
                     "max_retries": 7,
+                    "transport_retries": 3,
+                    "business_retries": 4,
+                    "timeout_seconds": 0,
+                },
+                "image_gen": {
+                    "provider": "gpt2api",
+                    "api_key": "key",
+                    "model": "gpt-image-2",
+                    "base_url": "https://gateway.example.com/v1",
+                    "max_retries": 5,
+                    "transport_retries": 6,
+                    "business_retries": 7,
+                    "timeout_seconds": 0,
                 },
             }
         )
@@ -144,6 +170,13 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("enabled", serialized["reranker"])
         self.assertNotIn("rpm_limit", serialized["reranker"])
         self.assertNotIn("max_retries", serialized["reranker"])
+        self.assertEqual(serialized["reranker"]["transport_retries"], 3)
+        self.assertEqual(serialized["reranker"]["business_retries"], 4)
+        self.assertEqual(serialized["reranker"]["timeout_seconds"], 0)
+        self.assertNotIn("max_retries", serialized["image_gen"])
+        self.assertEqual(serialized["image_gen"]["transport_retries"], 6)
+        self.assertEqual(serialized["image_gen"]["business_retries"], 7)
+        self.assertEqual(serialized["image_gen"]["timeout_seconds"], 0)
         self.assertNotIn("rpm_limit", serialized["vlm"])
         self.assertNotIn("temperature", serialized["vlm"])
         self.assertNotIn("force_json", serialized["vlm"])
@@ -260,11 +293,17 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertEqual(config.image_gen.model, "future-image-model")
         self.assertEqual(config.image_gen.api_key, "future-key")
         self.assertEqual(config.image_gen.base_url, "https://gateway.example.com/v1")
-        self.assertEqual(config.image_gen.max_retries, 5)
+        self.assertEqual(config.image_gen.transport_retries, 10)
+        self.assertEqual(config.image_gen.business_retries, 5)
+        self.assertEqual(config.image_gen.timeout_seconds, 0)
         if save_mock.called:
             saved_payload = save_mock.call_args.args[1]
             self.assertEqual(saved_payload["image_gen"]["provider"], "future-image-provider")
             self.assertEqual(saved_payload["image_gen"]["model"], "future-image-model")
+            self.assertNotIn("max_retries", saved_payload["image_gen"])
+            self.assertEqual(saved_payload["image_gen"]["transport_retries"], 10)
+            self.assertEqual(saved_payload["image_gen"]["business_retries"], 5)
+            self.assertEqual(saved_payload["image_gen"]["timeout_seconds"], 0)
 
     def test_save_insight_config_preserves_future_image_gen_provider(self) -> None:
         from src.core.manga_insight.config_utils import save_insight_config
@@ -275,7 +314,9 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
                 "api_key": "future-key",
                 "model": "future-image-model",
                 "base_url": "https://gateway.example.com/v1",
-                "max_retries": 3,
+                "transport_retries": 10,
+                "business_retries": 3,
+                "timeout_seconds": 0,
             }
         }
 
@@ -289,3 +330,27 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         saved_payload = save_mock.call_args.args[1]
         self.assertEqual(saved_payload["image_gen"]["provider"], "future-image-provider")
         self.assertEqual(saved_payload["image_gen"]["model"], "future-image-model")
+        self.assertEqual(saved_payload["image_gen"]["transport_retries"], 10)
+        self.assertEqual(saved_payload["image_gen"]["business_retries"], 3)
+        self.assertEqual(saved_payload["image_gen"]["timeout_seconds"], 0)
+
+    def test_validate_config_rejects_negative_reranker_and_image_gen_runtime_values(self) -> None:
+        from src.core.manga_insight.config_models import MangaInsightConfig
+        from src.core.manga_insight.config_utils import validate_config
+
+        config = MangaInsightConfig()
+        config.reranker.transport_retries = -1
+        config.reranker.business_retries = -2
+        config.reranker.timeout_seconds = -3
+        config.image_gen.transport_retries = -4
+        config.image_gen.business_retries = -5
+        config.image_gen.timeout_seconds = -6
+
+        errors = validate_config(config)
+
+        self.assertIn("Reranker transport_retries 不能为负数", errors)
+        self.assertIn("Reranker business_retries 不能为负数", errors)
+        self.assertIn("Reranker timeout_seconds 不能为负数", errors)
+        self.assertIn("ImageGen transport_retries 不能为负数", errors)
+        self.assertIn("ImageGen business_retries 不能为负数", errors)
+        self.assertIn("ImageGen timeout_seconds 不能为负数", errors)

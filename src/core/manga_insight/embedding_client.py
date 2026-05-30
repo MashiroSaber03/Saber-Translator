@@ -50,10 +50,12 @@ class EmbeddingClient:
         self._rpm_limiter = RPMLimiter(config.rpm_limit, bucket_id=f"embedding:{self.provider}")
         timeout_value = float(config.timeout_seconds or 0)
         self._timeout = None if timeout_value <= 0 else timeout_value
+        transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_EMBEDDING_MAX_RETRIES
+        business_retries = config.business_retries if config.business_retries is not None else DEFAULT_EMBEDDING_BUSINESS_RETRIES
         self._transport = AsyncOpenAICompatibleTransport(
-            max_retries=max(0, int(config.transport_retries or DEFAULT_EMBEDDING_MAX_RETRIES))
+            max_retries=max(0, int(transport_retries))
         )
-        self._business_retries = max(0, int(config.business_retries or DEFAULT_EMBEDDING_BUSINESS_RETRIES))
+        self._business_retries = max(0, int(business_retries))
 
         logger.info(f"EmbeddingClient 初始化: provider={config.provider}, base_url={self._base_url}")
 

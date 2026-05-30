@@ -3,12 +3,29 @@ import types
 import unittest
 from unittest import mock
 
+import httpx
+
 
 if "yaml" not in sys.modules:
     yaml_stub = types.ModuleType("yaml")
     yaml_stub.safe_load = lambda *_args, **_kwargs: {}
     yaml_stub.safe_dump = lambda *_args, **_kwargs: ""
     sys.modules["yaml"] = yaml_stub
+
+if "openai" not in sys.modules:
+    openai_stub = types.ModuleType("openai")
+
+    class _OpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _AsyncOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    openai_stub.OpenAI = _OpenAI
+    openai_stub.AsyncOpenAI = _AsyncOpenAI
+    sys.modules["openai"] = openai_stub
 
 
 class FakeResponse:
@@ -37,6 +54,28 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
 
 
 class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_image_gen_client_uses_configured_unlimited_timeout(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+                transport_retries=10,
+                business_retries=10,
+                timeout_seconds=0,
+            )
+        )
+        try:
+            self.assertIsNone(client._timeout)
+            self.assertEqual(client._transport_retries, 10)
+            self.assertEqual(client._business_retries, 10)
+        finally:
+            await client.close()
+
     async def test_image_gen_client_uses_generations_route_without_references(self) -> None:
         from src.core.manga_insight.clients.image_gen_client import ImageGenClient
         from src.core.manga_insight.config_models import ImageGenConfig
@@ -112,6 +151,95 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
             post_mock.await_args.kwargs["files"],
             [("image", ("reference.png", b"reference", "image/png"))],
         )
+
+    async def test_image_gen_client_retries_empty_business_result_only(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+                transport_retries=0,
+                business_retries=1,
+                timeout_seconds=0,
+            )
+        )
+        try:
+            post_mock = mock.AsyncMock(
+                side_effect=[
+                    FakeResponse(200, {"data": []}),
+                    FakeResponse(200, {"data": [{"url": "data:image/png;base64,aGVsbG8="}]}),
+                ]
+            )
+            client.client.post = post_mock
+
+            result = await client.generate("draw something")
+        finally:
+            await client.close()
+
+        self.assertEqual(result, b"hello")
+        self.assertEqual(post_mock.await_count, 2)
+
+    async def test_image_gen_client_retries_transport_failures_without_spending_business_retry(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+                transport_retries=1,
+                business_retries=0,
+                timeout_seconds=0,
+            )
+        )
+        try:
+            post_mock = mock.AsyncMock(
+                side_effect=[
+                    httpx.ReadTimeout("timeout"),
+                    FakeResponse(200, {"data": [{"url": "data:image/png;base64,aGVsbG8="}]}),
+                ]
+            )
+            client.client.post = post_mock
+
+            result = await client.generate("draw something")
+        finally:
+            await client.close()
+
+        self.assertEqual(result, b"hello")
+        self.assertEqual(post_mock.await_count, 2)
+
+    async def test_image_gen_client_does_not_business_retry_non_retryable_api_errors(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+                transport_retries=0,
+                business_retries=10,
+                timeout_seconds=0,
+            )
+        )
+        try:
+            post_mock = mock.AsyncMock(return_value=FakeResponse(401, {"error": {"message": "unauthorized"}}))
+            client.client.post = post_mock
+
+            with self.assertRaisesRegex(ValueError, "unauthorized"):
+                await client.generate("draw something")
+        finally:
+            await client.close()
+
+        self.assertEqual(post_mock.await_count, 1)
+        self.assertEqual(client._transport_retries, 0)
 
 
 class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):

@@ -175,6 +175,22 @@ export interface RerankerConfig {
   model: string
   base_url?: string
   top_k?: number
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
+}
+
+/**
+ * 生图配置
+ */
+export interface ImageGenConfig {
+  provider: string
+  api_key: string
+  model: string
+  base_url?: string
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }
 
 /**
@@ -199,6 +215,7 @@ export interface AnalysisConfig {
   chat_llm?: LlmConfig
   embedding?: EmbeddingConfig
   reranker?: RerankerConfig
+  image_gen?: ImageGenConfig
   analysis?: {
     batch?: BatchAnalysisConfig
   }
@@ -699,6 +716,9 @@ export async function testRerankerConnection(config: {
   api_key: string
   model: string
   base_url?: string
+  transport_retries?: number
+  business_retries?: number
+  timeout_seconds?: number
 }): Promise<ConnectionTestResponse> {
   return apiClient.post<ConnectionTestResponse>('/api/manga-insight/config/test/reranker', config)
 }
