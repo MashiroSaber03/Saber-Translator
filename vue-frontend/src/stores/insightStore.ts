@@ -82,7 +82,8 @@ export const useInsightStore = defineStore('insight', () => {
     const normalizedProvider = normalizeProviderId(source?.provider || previous?.provider || 'gpt2api') || 'gpt2api'
     const previousProvider = normalizeProviderId(previous?.provider || '') || 'gpt2api'
     const providerChanged = normalizedProvider !== previousProvider
-    const defaultModel = getProviderDefaultModel(normalizedProvider, 'imageGen') || 'gpt-image-2'
+    const providerDefaultModel = getProviderDefaultModel(normalizedProvider, 'imageGen')
+    const defaultModel = providerDefaultModel || (normalizedProvider === 'gpt2api' ? 'gpt-image-2' : '')
     const defaultBaseUrl = getProviderBaseUrl(normalizedProvider, 'imageGen')
     const base = previous ?? {
       provider: normalizedProvider,
@@ -93,7 +94,7 @@ export const useInsightStore = defineStore('insight', () => {
       businessRetries: 10,
       timeoutSeconds: 0,
     }
-    const model = source?.model ?? (providerChanged ? defaultModel : base.model || defaultModel)
+    const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model || defaultModel)
     const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
     const businessRetries = source?.businessRetries ?? (typeof legacyMaxRetries === 'number' ? legacyMaxRetries : base.businessRetries ?? 10)
 

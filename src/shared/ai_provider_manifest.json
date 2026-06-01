@@ -207,6 +207,18 @@
     }
   },
   {
+    "id": "newapi",
+    "label": "New API",
+    "kind": "adapter",
+    "capabilities": ["imageGen"],
+    "requiresApiKey": true,
+    "requiresModel": true,
+    "requiresBaseUrl": true,
+    "isLocal": false,
+    "supportsStream": false,
+    "supportsJsonResponse": true
+  },
+  {
     "id": "jina",
     "label": "Jina AI",
     "kind": "adapter",

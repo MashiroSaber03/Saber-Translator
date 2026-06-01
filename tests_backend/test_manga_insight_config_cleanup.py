@@ -354,3 +354,17 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertIn("ImageGen transport_retries 不能为负数", errors)
         self.assertIn("ImageGen business_retries 不能为负数", errors)
         self.assertIn("ImageGen timeout_seconds 不能为负数", errors)
+
+    def test_validate_config_warns_when_image_gen_provider_requires_model_but_model_is_empty(self) -> None:
+        from src.core.manga_insight.config_models import MangaInsightConfig
+        from src.core.manga_insight.config_utils import validate_config
+
+        config = MangaInsightConfig()
+        config.image_gen.provider = "newapi"
+        config.image_gen.api_key = "image-key"
+        config.image_gen.base_url = "https://newapi.example.com/v1"
+        config.image_gen.model = ""
+
+        issues = validate_config(config)
+
+        self.assertIn("ImageGen 已选择服务商但未选择模型", issues)

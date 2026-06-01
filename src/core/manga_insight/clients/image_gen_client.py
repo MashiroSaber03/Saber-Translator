@@ -1,7 +1,7 @@
 """
 Manga Insight 生图客户端。
 
-当前版本仅保留一个明确支持的生图网关：gpt2api。
+当前版本支持 OpenAI 兼容图片接口网关。
 调用策略：
 - 无参考图：POST /v1/images/generations
 - 有任意参考图：POST /v1/images/edits
@@ -27,7 +27,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
 from src.shared.http_config import build_httpx_kwargs
-from src.shared.ai_providers import IMAGE_GEN_CAPABILITY, normalize_provider_id, provider_supports_capability
+from src.shared.ai_providers import (
+    IMAGE_GEN_CAPABILITY,
+    normalize_provider_id,
+    provider_requires_model,
+    provider_supports_capability,
+)
 
 from ..config_models import ImageGenConfig
 from .base_client import BaseAPIClient
@@ -54,7 +59,7 @@ class ImageGenAdapter(Protocol):
         ...
 
 
-class GPT2ApiImageGenAdapter:
+class OpenAICompatibleImageGenAdapter:
     async def generate(
         self,
         client: "ImageGenClient",
@@ -66,12 +71,13 @@ class GPT2ApiImageGenAdapter:
 
 
 IMAGE_GEN_ADAPTERS: Dict[str, ImageGenAdapter] = {
-    "gpt2api": GPT2ApiImageGenAdapter(),
+    "gpt2api": OpenAICompatibleImageGenAdapter(),
+    "newapi": OpenAICompatibleImageGenAdapter(),
 }
 
 
 class ImageGenClient(BaseAPIClient):
-    """专门适配 gpt2api 的生图客户端。"""
+    """OpenAI 兼容图片接口客户端。"""
 
     def __init__(self, config: ImageGenConfig):
         self.config = config
@@ -104,6 +110,8 @@ class ImageGenClient(BaseAPIClient):
             raise ValueError(f"服务商 '{self.config.provider}' 尚未注册生图适配器")
         if not self.base_url:
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 base_url")
+        if provider_requires_model(provider) and not str(self.config.model or "").strip():
+            raise ValueError(f"{self.config.provider} 生图服务商需要设置 model")
 
         prepared_refs = self._prepare_reference_images(reference_images)
         return await adapter.generate(self, prompt, prepared_refs)
@@ -121,7 +129,7 @@ class ImageGenClient(BaseAPIClient):
             try:
                 payload = await self._request_generation_payload(request_url, prompt, prepared_refs)
                 if not self._payload_has_result(payload):
-                    raise ImageGenBusinessRetryableError("gpt2api 返回中没有图片结果")
+                    raise ImageGenBusinessRetryableError(f"{self.config.provider} 返回中没有图片结果")
                 try:
                     return await self._extract_image_bytes_from_payload(payload)
                 except ValueError as exc:
@@ -131,7 +139,8 @@ class ImageGenClient(BaseAPIClient):
                 if attempt >= total_attempts - 1:
                     break
                 logger.warning(
-                    "gpt2api 生图业务重试 %s/%s: %s",
+                    "%s 生图业务重试 %s/%s: %s",
+                    self.config.provider,
                     attempt + 1,
                     self._business_retries,
                     exc,
@@ -168,7 +177,8 @@ class ImageGenClient(BaseAPIClient):
 
                 if response.status_code in RETRYABLE_STATUS_CODES and attempt < self._transport_retries:
                     logger.warning(
-                        "gpt2api 生图传输重试 %s/%s: HTTP %s",
+                        "%s 生图传输重试 %s/%s: HTTP %s",
+                        self.config.provider,
                         attempt + 1,
                         self._transport_retries,
                         response.status_code,
@@ -183,7 +193,8 @@ class ImageGenClient(BaseAPIClient):
                 last_exception = exc
                 if attempt < self._transport_retries:
                     logger.warning(
-                        "gpt2api 生图传输重试 %s/%s: %s",
+                        "%s 生图传输重试 %s/%s: %s",
+                        self.config.provider,
                         attempt + 1,
                         self._transport_retries,
                         type(exc).__name__,
@@ -368,7 +379,7 @@ class ImageGenClient(BaseAPIClient):
         if response.status_code >= 400:
             if error_message:
                 raise ValueError(error_message)
-            raise ValueError(f"gpt2api 请求失败: HTTP {response.status_code}")
+            raise ValueError(f"{self.config.provider} 请求失败: HTTP {response.status_code}")
         if error_message and not self._payload_has_result(payload):
             raise ValueError(error_message)
 
@@ -377,12 +388,12 @@ class ImageGenClient(BaseAPIClient):
             return response.json()
         except ValueError as exc:
             raw_excerpt = (response.text or "")[:300]
-            raise ValueError(f"gpt2api 返回了非 JSON 响应: {raw_excerpt}") from exc
+            raise ValueError(f"{self.config.provider} 返回了非 JSON 响应: {raw_excerpt}") from exc
 
     async def _extract_image_bytes_from_payload(self, payload: Dict) -> bytes:
         items = self._extract_result_items(payload)
         if not items:
-            raise ValueError("gpt2api 返回中没有图片数据")
+            raise ValueError(f"{self.config.provider} 返回中没有图片数据")
 
         image_item = items[0]
         if image_item.get("b64_json"):
@@ -390,7 +401,7 @@ class ImageGenClient(BaseAPIClient):
 
         image_url = str(image_item.get("url", "")).strip()
         if not image_url:
-            raise ValueError("gpt2api 返回的图片项缺少 url")
+            raise ValueError(f"{self.config.provider} 返回的图片项缺少 url")
         return await self._download_image_asset(image_url)
 
     async def _download_image_asset(self, asset_value: str) -> bytes:
@@ -410,4 +421,4 @@ class ImageGenClient(BaseAPIClient):
                 response.raise_for_status()
                 return response.content
 
-        raise ValueError(f"无法解析 gpt2api 图片资源: {asset_value[:120]}")
+        raise ValueError(f"无法解析 {self.config.provider} 图片资源: {asset_value[:120]}")

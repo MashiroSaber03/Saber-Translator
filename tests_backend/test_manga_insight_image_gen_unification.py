@@ -38,7 +38,13 @@ class FakeResponse:
 
 
 class SharedProviderRegistryImageGenTests(unittest.TestCase):
-    def test_shared_registry_exposes_gpt2api_as_only_image_gen_provider(self) -> None:
+    def test_image_gen_provider_enum_exposes_newapi(self) -> None:
+        from src.core.manga_insight.config_models import APIProvider
+
+        self.assertEqual(APIProvider.GPT2API.value, "gpt2api")
+        self.assertEqual(APIProvider.NEWAPI.value, "newapi")
+
+    def test_shared_registry_exposes_gpt2api_and_newapi_as_image_gen_providers(self) -> None:
         from src.shared.ai_providers import (
             IMAGE_GEN_CAPABILITY,
             get_provider_default_model,
@@ -47,10 +53,13 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
         )
 
         self.assertTrue(provider_supports_capability("gpt2api", IMAGE_GEN_CAPABILITY))
+        self.assertTrue(provider_supports_capability("newapi", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("openai", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("qwen", IMAGE_GEN_CAPABILITY))
         self.assertEqual(get_provider_default_model("gpt2api", "image_gen"), "gpt-image-2")
+        self.assertEqual(get_provider_default_model("newapi", "image_gen"), "")
         self.assertIsNone(resolve_provider_base_url_for_capability("gpt2api", IMAGE_GEN_CAPABILITY))
+        self.assertIsNone(resolve_provider_base_url_for_capability("newapi", IMAGE_GEN_CAPABILITY))
 
 
 class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
@@ -240,6 +249,55 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(post_mock.await_count, 1)
         self.assertEqual(client._transport_retries, 0)
+
+    async def test_image_gen_client_supports_newapi_with_same_openai_compatible_routes(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="newapi",
+                api_key="test-key",
+                model="flux-dev",
+                base_url="https://newapi.example.com",
+            )
+        )
+        try:
+            post_mock = mock.AsyncMock(
+                return_value=FakeResponse(
+                    200,
+                    {"data": [{"url": "data:image/png;base64,aGVsbG8="}]},
+                )
+            )
+            client.client.post = post_mock
+
+            result = await client.generate("draw something")
+        finally:
+            await client.close()
+
+        self.assertEqual(result, b"hello")
+        post_mock.assert_awaited_once()
+        self.assertEqual(post_mock.await_args.args[0], "https://newapi.example.com/v1/images/generations")
+        self.assertEqual(post_mock.await_args.kwargs["json"]["model"], "flux-dev")
+        self.assertEqual(post_mock.await_args.kwargs["json"]["prompt"], "draw something")
+
+    async def test_image_gen_client_requires_model_before_request(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="newapi",
+                api_key="test-key",
+                model="",
+                base_url="https://newapi.example.com",
+            )
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "需要设置 model"):
+                await client.generate("draw something")
+        finally:
+            await client.close()
 
 
 class ImageGeneratorDelegationTests(unittest.IsolatedAsyncioTestCase):

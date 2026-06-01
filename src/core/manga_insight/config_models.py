@@ -35,6 +35,7 @@ class APIProvider(Enum):
     COHERE = "cohere"
     CUSTOM = "custom"
     GPT2API = "gpt2api"
+    NEWAPI = "newapi"
 
 
 # 向后兼容的别名（避免破坏现有代码）

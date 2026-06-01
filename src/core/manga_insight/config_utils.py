@@ -11,6 +11,7 @@ from typing import Dict, Any, List, TYPE_CHECKING
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
     provider_requires_api_key,
+    provider_requires_model,
     provider_supports_capability,
 )
 from src.shared.config_loader import load_json_config, save_json_config
@@ -399,6 +400,8 @@ def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[st
         errors.append(f"生图服务商 '{config.image_gen.provider}' 不支持 image_gen")
     if provider_requires_api_key(config.image_gen.provider) and not config.image_gen.api_key:
         warnings.append("ImageGen 已选择服务商但未配置 API Key")
+    if provider_requires_model(config.image_gen.provider) and not config.image_gen.model:
+        warnings.append("ImageGen 已选择服务商但未选择模型")
     if config.image_gen.base_url:
         if not config.image_gen.base_url.startswith(("http://", "https://")):
             errors.append("ImageGen base_url 格式无效，应以 http:// 或 https:// 开头")

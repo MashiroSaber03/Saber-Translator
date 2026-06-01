@@ -90,6 +90,16 @@ describe('useInsightStore imageGen config', () => {
     })
   })
 
+  it('does not backfill gpt-image-2 when switching to newapi without a cached model', () => {
+    const store = useInsightStore()
+
+    store.setImageGenProvider('newapi')
+
+    expect(store.config.imageGen.provider).toBe('newapi')
+    expect(store.config.imageGen.model).toBe('')
+    expect(store.config.imageGen.baseUrl).toBe('')
+  })
+
   it('fills missing reranker runtime fields when loading legacy provider cache', () => {
     const providerConfigs = ref<ProviderConfigsCache>({
       vlm: {},

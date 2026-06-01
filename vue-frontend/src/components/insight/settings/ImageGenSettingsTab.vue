@@ -5,7 +5,7 @@
  */
 import { computed, ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
-import { providerRequiresApiKey, providerRequiresBaseUrl, getProviderBaseUrl } from '@/config/aiProviders'
+import { providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel, getProviderBaseUrl } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import {
   IMAGE_GEN_PROVIDER_OPTIONS,
@@ -17,27 +17,29 @@ import {
 // ============================================================
 
 const insightStore = useInsightStore()
+const initialProvider = insightStore.config.imageGen?.provider || 'gpt2api'
 
 // ============================================================
 // 状态
 // ============================================================
 
-const provider = ref(insightStore.config.imageGen?.provider || 'gpt2api')
+const provider = ref(initialProvider)
 const apiKey = ref(insightStore.config.imageGen?.apiKey || '')
-const model = ref(insightStore.config.imageGen?.model || 'gpt-image-2')
+const model = ref(insightStore.config.imageGen?.model ?? (PROVIDER_DEFAULT_MODELS[initialProvider]?.imageGen || 'gpt-image-2'))
 const baseUrl = ref(insightStore.config.imageGen?.baseUrl || '')
 const transportRetries = ref(insightStore.config.imageGen?.transportRetries ?? 10)
 const businessRetries = ref(insightStore.config.imageGen?.businessRetries ?? 10)
 const timeoutSeconds = ref(insightStore.config.imageGen?.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
+const showModelWarning = computed(() => providerRequiresModel(provider.value) && !model.value.trim())
 
 // ============================================================
 // 方法
 // ============================================================
 
 function getDefaultModel(providerId: string): string {
-  return PROVIDER_DEFAULT_MODELS[providerId]?.imageGen || 'gpt-image-2'
+  return PROVIDER_DEFAULT_MODELS[providerId]?.imageGen || ''
 }
 
 function onProviderChange(): void {
@@ -86,7 +88,7 @@ function syncFromStore(): void {
   if (imageGen) {
     provider.value = imageGen.provider || 'gpt2api'
     apiKey.value = imageGen.apiKey || ''
-    model.value = imageGen.model || 'gpt-image-2'
+    model.value = imageGen.model ?? getDefaultModel(provider.value)
     baseUrl.value = imageGen.baseUrl || getProviderBaseUrl(provider.value, 'imageGen')
     transportRetries.value = imageGen.transportRetries ?? 10
     businessRetries.value = imageGen.businessRetries ?? 10
@@ -103,7 +105,7 @@ defineExpose({
 
 <template>
   <div class="insight-settings-content">
-    <p class="settings-hint">生图模型服务商保留为可扩展选择器，当前可选项只有 gpt2api，带参考图时会自动适配到其图片编辑路由。</p>
+    <p class="settings-hint">生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。</p>
     
     <div class="form-group">
       <label>服务商</label>
@@ -123,6 +125,7 @@ defineExpose({
       <label>模型</label>
       <input v-model="model" type="text" placeholder="例如: gpt-image-2">
       <p class="form-hint">默认推荐使用当前服务商的默认生图模型。</p>
+      <p v-if="showModelWarning" class="form-hint warning-text">当前服务商需要手动填写模型名。</p>
     </div>
     
     <div v-if="showBaseUrl" class="form-group">

@@ -65,6 +65,10 @@ export function providerRequiresApiKey(provider: string): boolean {
   return Boolean(getProviderManifest(provider)?.requiresApiKey)
 }
 
+export function providerRequiresModel(provider: string): boolean {
+  return Boolean(getProviderManifest(provider)?.requiresModel)
+}
+
 export function isLocalProviderId(provider: string): boolean {
   return Boolean(getProviderManifest(provider)?.isLocal)
 }

@@ -7,6 +7,7 @@ import {
   providerSupportsRpmLimit,
   normalizeProviderId,
   providerRequiresBaseUrl,
+  providerRequiresModel,
   providerSupportsCapability
 } from '@/config/aiProviders'
 
@@ -51,6 +52,14 @@ describe('translation page AI provider manifest', () => {
     expect(providerSupportsCapability('gpt2api', 'imageGen')).toBe(true)
     expect(providerSupportsCapability('gpt2api', 'modelFetch')).toBe(false)
     expect(providerRequiresBaseUrl('gpt2api')).toBe(true)
+  })
+
+  it('treats newapi as a base-url-driven image generation adapter without a default model', () => {
+    expect(providerSupportsCapability('newapi', 'imageGen')).toBe(true)
+    expect(providerSupportsCapability('newapi', 'modelFetch')).toBe(false)
+    expect(providerRequiresBaseUrl('newapi')).toBe(true)
+    expect(providerRequiresModel('newapi')).toBe(true)
+    expect(getProviderDefaultModel('newapi', 'imageGen')).toBe('')
   })
 
   it('does not expose removed reasoning-control manifest fields', () => {

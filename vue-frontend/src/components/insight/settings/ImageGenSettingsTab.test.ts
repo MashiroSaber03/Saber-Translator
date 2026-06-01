@@ -70,5 +70,38 @@ describe('ImageGenSettingsTab', () => {
       timeoutSeconds: 7,
     })
   })
+
+  it('shows a non-blocking warning when newapi is selected without a model', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.updateImageGenConfig({
+      provider: 'newapi',
+      apiKey: 'image-key',
+      model: '',
+      baseUrl: 'https://newapi.example.com/v1',
+      transportRetries: 5,
+      businessRetries: 6,
+      timeoutSeconds: 7,
+    })
+
+    const wrapper = mount(ImageGenSettingsTab, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            name: 'CustomSelect',
+            props: ['modelValue', 'options'],
+            template: '<div class="custom-select-stub" />',
+          },
+        },
+      },
+    })
+
+    wrapper.vm.syncFromStore()
+
+    expect(wrapper.text()).toContain('当前服务商需要手动填写模型名')
+    expect(wrapper.vm.getConfig().model).toBe('')
+  })
 })
 
