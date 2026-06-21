@@ -114,7 +114,7 @@ describe('settings store saber yolo refine', () => {
       enableAuxYoloDetection: true,
       auxYoloConfThreshold: 0.55,
       auxYoloOverlapThreshold: 0.2,
-      settingsSchemaVersion: 2
+      settingsSchemaVersion: 3
     }))
   })
 })

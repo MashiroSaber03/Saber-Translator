@@ -1,4 +1,8 @@
 <script setup lang="ts">
+
+import UiButton from '@/components/ui/UiButton.vue'
+import AppShell from '@/components/ui/AppShell.vue'
+import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 /**
  * 漫画分析页面视图组件
  * 提供AI驱动的漫画内容分析，包括概览、时间线、问答和笔记功能
@@ -126,7 +130,7 @@ async function loadBook(bookId: string): Promise<void> {
       // 设置书籍总页数到store
       insightStore.setBookTotalPages(bookData.book.total_pages || 0)
       
-      // 从书籍信息中获取章节数据（与原版JS一致）
+      // 从书籍信息中获取章节数据（与当前页面行为一致）
       if (bookData.book.chapters && bookData.book.chapters.length > 0) {
         let pageOffset = 0
         const chaptersFromBook = bookData.book.chapters.map((ch: any, idx: number) => {
@@ -220,7 +224,7 @@ async function loadAnalysisStatus(): Promise<void> {
 
 /**
  * 启动状态轮询
- * 与原版 JS 的 startProgressPolling 保持一致：
+ * 与当前实现 JS 的 startProgressPolling 保持一致：
  * 分析完成后自动刷新概览数据和目录树
  */
 function startStatusPolling(): void {
@@ -308,7 +312,7 @@ function toggleMobileWorkspace(): void {
 
 /**
  * 跳转到翻译页面
- * 复刻原版逻辑：根据章节情况决定是否弹窗选择
+ * 当前行为逻辑：根据章节情况决定是否弹窗选择
  */
 function goToTranslate(): void {
   if (!insightStore.currentBookId) {
@@ -390,23 +394,23 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 </script>
 
 <template>
-  <div class="insight-page">
+  <AppShell class="insight-page">
     <!-- 页面头部 -->
     <AppHeader variant="insight" logo-title="书架首页">
       <template #header-links>
-        <router-link to="/" class="nav-link">📚 书架</router-link>
-        <a href="javascript:void(0)" class="nav-link" @click="goToTranslate">🌐 翻译</a>
-        <span class="nav-link active">🔍 分析</span>
-        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="nav-link" title="使用教程">📖 教程</a>
-        <button id="settingsBtn" class="btn btn-icon" title="设置" @click="openSettingsModal">⚙️</button>
-        <button id="themeToggle" class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
-          <span class="theme-icon">☀️</span>
-        </button>
+        <router-link to="/" class="insight-header__nav-link">📚 书架</router-link>
+        <a href="javascript:void(0)" class="insight-header__nav-link" @click="goToTranslate">🌐 翻译</a>
+        <span class="insight-header__nav-link insight-header__nav-link--active">🔍 分析</span>
+        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="insight-header__nav-link" title="使用教程">📖 教程</a>
+        <UiButton variant="toolbar" id="settingsBtn" class="insight-settings-action" title="设置" @click="openSettingsModal">⚙️</UiButton>
+        <UiButton variant="toolbar" id="themeToggle" class="insight-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <span class="insight-header__theme-icon">☀️</span>
+        </UiButton>
       </template>
     </AppHeader>
 
     <!-- 主内容区 -->
-    <main class="insight-main">
+    <SidebarLayout as="main" class="insight-main">
       <!-- 左侧边栏 -->
       <aside class="insight-sidebar" :class="{ 'mobile-visible': showMobileSidebar }">
         <!-- 书籍信息 -->
@@ -422,7 +426,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
               <span>📖</span>
             </div>
           </div>
-          <h2 class="book-title" :title="currentBook?.title">{{ currentBook?.title || '选择书籍' }}</h2>
+          <h2 class="insight-book-title" :title="currentBook?.title">{{ currentBook?.title || '选择书籍' }}</h2>
           <div class="book-meta">
             <span class="meta-item">
               <span class="meta-icon">📄</span> 
@@ -458,57 +462,64 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
         <!-- 标签页导航 -->
         <div v-else class="content-tabs">
-          <button 
+          <UiButton
+            variant="toolbar" 
             class="mobile-nav-btn" 
             @click="toggleMobileSidebar" 
             aria-label="打开导航"
           >
             📚
-          </button>
+          </UiButton>
           <div class="tabs-wrapper">
-            <button 
+            <UiButton
+              variant="toolbar" 
               class="tab-btn" 
               :class="{ active: activeTab === 'overview' }"
               @click="switchTab('overview')"
             >
               <span class="tab-icon">📊</span> 概览
-            </button>
-            <button 
+            </UiButton>
+            <UiButton
+              variant="toolbar" 
               class="tab-btn" 
               :class="{ active: activeTab === 'qa' }"
               @click="switchTab('qa')"
             >
               <span class="tab-icon">💬</span> 智能问答
-            </button>
-            <button 
+            </UiButton>
+            <UiButton
+              variant="toolbar" 
               class="tab-btn" 
               :class="{ active: activeTab === 'timeline' }"
               @click="switchTab('timeline')"
             >
               <span class="tab-icon">📈</span> 时间线
-            </button>
-            <button 
+            </UiButton>
+            <UiButton
+              variant="toolbar" 
               class="tab-btn" 
               :class="{ active: activeTab === 'continuation' }"
               @click="switchTab('continuation')"
             >
               <span class="tab-icon">🎨</span> 续写
-            </button>
-            <button
+            </UiButton>
+            <UiButton
+              variant="toolbar"
               class="tab-btn"
               :class="{ active: activeTab === 'character_studio' }"
               @click="switchTab('character_studio')"
             >
               <span class="tab-icon">🃏</span> 角色工坊
-            </button>
+            </UiButton>
           </div>
-          <button 
+          <UiButton
+            variant="toolbar" 
             class="mobile-nav-btn" 
             @click="toggleMobileWorkspace" 
             aria-label="打开笔记"
           >
             📝
-          </button>
+          </UiButton>
         </div>
 
         <!-- 概览标签页 -->
@@ -549,7 +560,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
         <!-- 笔记 -->
         <NotesPanel />
       </aside>
-    </main>
+    </SidebarLayout>
 
     <!-- 设置模态框 -->
     <InsightSettingsModal 
@@ -564,38 +575,57 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
       @select="handleChapterSelect"
       @close="closeChapterSelectModal"
     />
-  </div>
+  </AppShell>
 </template>
 
 <style scoped>
-/* ==================== 漫画分析页面完整样式 - 完整迁移自 manga-insight.css ==================== */
+/* ==================== 漫画分析页面样式 ==================== */
 
-/* ==================== 页面根容器固定布局 - 复刻原版 ==================== */
+/* ==================== 页面根容器固定布局 - 当前行为 ==================== */
 
 /* 
  * 【关键修复1】建立 BFC 防止外边距折叠，强制固定高度
- * 原版行为：整个页面框架固定在视口内，所有滚动发生在内部容器
+ * 当前行为：整个页面框架固定在视口内，所有滚动发生在内部容器
  * 
  * 【优化】使用 padding-top 而不是子元素的 margin-top，避免亚像素渲染问题
  */
 .insight-page {
+  --insight-bg-primary: var(--insight-view-accent-primary);
+  --insight-bg-secondary: var(--insight-view-accent-secondary);
+  --insight-bg-tertiary: var(--insight-view-accent-muted);
+  --insight-bg-hover: var(--insight-view-accent-strong);
+  --insight-text-primary: var(--color-text-default);
+  --insight-text-secondary: var(--color-text-secondary);
+  --insight-text-muted: var(--color-text-muted);
+  --insight-border-color: var(--color-border-muted);
+  --insight-color-primary: var(--color-text-brand);
+  --insight-primary: var(--insight-color-primary);
+  --insight-primary-light: var(--color-border-brand-gradient);
+  --insight-primary-dark: var(--color-surface-brand-strong);
+  --insight-success-color: var(--color-status-success);
+  --insight-success: var(--color-status-success);
+  --insight-warning-color: var(--insight-view-text-secondary);
+  --insight-warning: var(--insight-view-accent-variant-012);
+  --insight-error-color: var(--insight-view-text-muted);
+  --insight-danger: var(--insight-view-accent-variant-013);
+
   /* 固定高度为视口高度，防止内容撑开 */
   height: 100vh;
   /* 隐藏溢出，确保不出现整体滚动条 */
   overflow: hidden;
   /* 清除外边距，防止折叠到父元素 */
   margin: 0;
-  /* 【修复3 + 优化】覆盖 global.css，并为 fixed header 预留空间 */
-  /* 合并 padding 声明：top 56px（为 header 预留空间），left/right/bottom 0（覆盖 global.css） */
-  padding: 56px 0 0 0;
+  /* 为 fixed header 预留空间 */
+  /* 合并 padding 声明：top 56px（为 header 预留空间），left/right/bottom 0 */
+  padding: 56px 20px 0 20px;
   /* 使用 Flex 布局以支持子元素的高度计算 */
   display: flex;
   flex-direction: column;
 }
 
-/* Header 内 slot 元素样式（slot 内容保留父组件的 scoped 属性，无需 :deep()） */
-.nav-link {
-    color: var(--text-secondary);
+/* Header 内 slot 元素样式 */
+.insight-page .insight-header__nav-link {
+    color: var(--insight-text-secondary);
     text-decoration: none;
     font-size: 14px;
     padding: 6px 12px;
@@ -603,17 +633,17 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     transition: all 0.2s;
 }
 
-.nav-link:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+.insight-page .insight-header__nav-link:hover {
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-primary);
 }
 
-.nav-link.active {
-    background: var(--color-primary);
+.insight-page .insight-header__nav-link--active {
+    background: var(--insight-color-primary);
     color: white;
 }
 
-.theme-toggle {
+.insight-page .insight-header__theme-toggle {
     background: transparent;
     border: none;
     cursor: pointer;
@@ -623,23 +653,23 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 /* 布局 */
 /* 
  * 【关键修复2】主内容区使用固定高度，用 margin-top 为 fixed header 预留空间
- * 原版行为：主内容区严格占据 "100vh - header高度" 的空间，不会随内容撑开
+ * 当前行为：主内容区严格占据 "100vh - header高度" 的空间，不会随内容撑开
  * 高度计算：margin-top (56px) + height (calc(100vh - 56px)) = 100vh（正好填满）
  */
-.insight-main {
+.insight-page .insight-main {
     display: flex;
     /* 使用 flex: 1 自动填充父容器剩余空间（100vh - 56px padding-top） */
     flex: 1;
-    background: var(--bg-primary);
+    background: var(--insight-bg-primary);
     /* 确保内部溢出不影响外层 */
     overflow: hidden;
 }
 
-.insight-sidebar {
+.insight-page .insight-sidebar {
     width: 280px;
     min-width: 280px;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
+    background: var(--insight-bg-secondary);
+    border-right: 1px solid var(--insight-border-color);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -647,7 +677,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     max-height: 100%;
 }
 
-.insight-content {
+.insight-page .insight-content {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -655,11 +685,11 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     min-width: 0;
 }
 
-.insight-workspace {
+.insight-page .insight-workspace {
     width: 320px;
     min-width: 320px;
-    background: var(--bg-secondary);
-    border-left: 1px solid var(--border-color);
+    background: var(--insight-bg-secondary);
+    border-left: 1px solid var(--insight-border-color);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -668,29 +698,29 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 /* 标签页 */
-.content-tabs {
+.insight-page .content-tabs {
     display: flex;
     gap: 4px;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--insight-border-color);
+    background: var(--insight-bg-secondary);
     align-items: center;
 }
 
-.tabs-wrapper {
+.insight-page .tabs-wrapper {
     display: flex;
     gap: 4px;
     flex: 1;
 }
 
-.mobile-nav-btn {
+.insight-page .mobile-nav-btn {
     display: none;
     width: 36px;
     height: 36px;
     border-radius: 8px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-primary);
+    border: 1px solid var(--insight-border-color);
     cursor: pointer;
     align-items: center;
     justify-content: center;
@@ -699,23 +729,23 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     flex-shrink: 0;
 }
 
-.mobile-nav-btn:hover {
-    background: var(--color-primary);
+.insight-page .mobile-nav-btn:hover {
+    background: var(--insight-color-primary);
     color: white;
-    border-color: var(--color-primary);
+    border-color: var(--insight-color-primary);
 }
 
-.mobile-nav-btn.active {
-    background: var(--color-primary);
+.insight-page .mobile-nav-btn.active {
+    background: var(--insight-color-primary);
     color: white;
-    border-color: var(--color-primary);
+    border-color: var(--insight-color-primary);
 }
 
-.tab-btn {
+.insight-page .tab-btn {
     padding: 8px 16px;
     border: none;
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-size: 14px;
     cursor: pointer;
     border-radius: 6px;
@@ -725,17 +755,17 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     transition: all 0.2s;
 }
 
-.tab-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+.insight-page .tab-btn:hover {
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-primary);
 }
 
-.tab-btn.active {
-    background: var(--color-primary);
+.insight-page .tab-btn.active {
+    background: var(--insight-color-primary);
     color: white;
 }
 
-.tab-content {
+.insight-page .tab-content {
     /* 注意：display 由 v-show 控制，不在 CSS 中设置 */
     flex: 1;
     overflow-y: auto;
@@ -743,41 +773,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     padding: 0;
 }
 
-/* 原版兼容：如果不使用 v-show，可通过 active 类控制显示
+/* 当前实现兼容：如果不使用 v-show，可通过 active 类控制显示
 .tab-content.active {
     display: block;
 }
 */
 
-/* 表单元素 */
-.form-select,
-.form-input {
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    transition: border-color 0.2s;
-}
-
-.form-select:focus,
-.form-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-}
-
-.form-label {
-    display: block;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-bottom: 6px;
-}
-
 /* 选择书籍提示 */
-.select-book-prompt {
+.insight-page .select-book-prompt {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -787,27 +790,26 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     text-align: center;
 }
 
-.prompt-icon {
+.insight-page .prompt-icon {
     font-size: 64px;
     margin-bottom: 16px;
 }
 
-.select-book-prompt h2 {
+.insight-page .select-book-prompt h2 {
     margin-bottom: 8px;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
 }
 
-.select-book-prompt p {
-    color: var(--text-secondary);
+.insight-page .select-book-prompt p {
+    color: var(--insight-text-secondary);
     margin-bottom: 24px;
 }
 
-.book-selector {
+.insight-page .book-selector {
     width: 300px;
 }
 
-/* 按钮样式 */
-.btn {
+.insight-page .insight-settings-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -820,59 +822,33 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-primary);
 }
 
-.btn-primary {
-    background: var(--color-primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-dark);
-}
-
-.btn-secondary {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-    background: var(--border-color);
-}
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-}
-
-.btn-danger:hover {
-    opacity: 0.9;
-}
-
-.btn-block {
-    width: 100%;
+.insight-page .insight-settings-action:hover {
+    background: var(--insight-border-color);
 }
 
 /* 通用样式 */
-.placeholder-text {
-    color: var(--text-muted);
+.insight-page .placeholder-text {
+    color: var(--insight-text-muted);
     text-align: center;
     padding: 20px;
     font-size: 14px;
 }
 
-.empty-hint {
-    color: var(--text-muted);
+.insight-page .empty-hint {
+    color: var(--insight-text-muted);
     text-align: center;
     padding: 16px;
     font-size: 13px;
 }
 
-.loading-overlay {
+.insight-page .loading-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--insight-view-surface-base);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -883,8 +859,8 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 .loading-spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid var(--border-color);
-    border-top-color: var(--color-primary);
+    border: 4px solid var(--insight-border-color);
+    border-top-color: var(--insight-color-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -896,20 +872,20 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 /* 移动端导航按钮 */
-@media (width > 768px) {
+@media (--breakpoint-md-up) {
   .mobile-nav-btn {
     display: none;
   }
 }
 
-/* ==================== 书籍信息区域样式 - 与原版一致的垂直居中布局 ==================== */
+/* ==================== 书籍信息区域样式 - 与当前行为一致的垂直居中布局 ==================== */
 .book-info-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 20px 16px;
   text-align: center;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--insight-border-color);
 }
 
 .book-cover-wrapper {
@@ -918,7 +894,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   margin: 0 auto 12px;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-tertiary);
+  background: var(--insight-bg-tertiary);
   position: relative;
 }
 
@@ -938,13 +914,13 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   align-items: center;
   justify-content: center;
   font-size: 48px;
-  color: var(--text-muted);
+  color: var(--insight-text-muted);
 }
 
-.book-title {
+.insight-book-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
   margin: 0 0 10px 0;
   text-align: center;
   max-width: 100%;
@@ -957,7 +933,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   justify-content: center;
   gap: 16px;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   flex-wrap: wrap;
 }
 
@@ -974,7 +950,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 /* ==================== 侧边栏区域通用样式 ==================== */
 .sidebar-section {
   padding: 12px 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--insight-border-color);
 }
 
 .sidebar-section:last-child {

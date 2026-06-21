@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './ConfirmModal.global.styles.css'
 /**
  * 确认对话框组件
  * 用于需要用户确认的操作，如删除、批量操作等
@@ -6,6 +7,7 @@
  */
 
 import BaseModal from './BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 // ============================================================
 // Props 和 Emits 定义
@@ -24,7 +26,7 @@ interface Props {
   confirmType?: 'primary' | 'danger'
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   title: '确认操作',
   confirmText: '确定',
   cancelText: '取消',
@@ -73,45 +75,27 @@ function handleCancel(): void {
 
     <!-- 按钮区域 -->
     <template #footer>
-      <button 
-        class="btn btn-secondary" 
+      <UiButton
+        variant="secondary"
         @click="handleCancel"
       >
         {{ cancelText }}
-      </button>
-      <button 
-        :class="['btn', confirmType === 'danger' ? 'btn-danger' : 'btn-primary']"
+      </UiButton>
+      <UiButton
+        :variant="confirmType"
         @click="handleConfirm"
       >
         {{ confirmText }}
-      </button>
+      </UiButton>
     </template>
   </BaseModal>
 </template>
 
-<style>
-/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
-
-/* 确认模态框特定样式 */
-.confirm-modal .modal-body {
-  padding: 20px;
-  text-align: center;
-}
-
-.confirm-modal .confirm-message {
+<style scoped>
+.confirm-message {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-color);
-}
-
-.confirm-modal .modal-footer .btn-danger {
-  background-color: #dc3545;
-  color: white;
-  border: none;
-}
-
-.confirm-modal .modal-footer .btn-danger:hover {
-  background-color: #c82333;
+  color: var(--color-text-strong);
 }
 </style>

@@ -110,4 +110,45 @@ describe('BubbleEditor button labels', () => {
     expect(columnTitles).not.toContain('🇯🇵 日语原文')
     expect(columnTitles).not.toContain('🇨🇳 中文译文')
   })
+
+  it('defers translated text updates until IME composition commits', async () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+        isOcrLoading: false,
+        isTranslateLoading: false,
+      },
+      global: {
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            template: '<div class="jp-keyboard-stub"></div>',
+          },
+        },
+      },
+    })
+
+    const translatedTextarea = wrapper.findAll('textarea')[1]
+    expect(translatedTextarea).toBeDefined()
+
+    await translatedTextarea.trigger('compositionstart')
+    translatedTextarea.element.value = 'nihao'
+    await translatedTextarea.trigger('input')
+
+    expect(wrapper.emitted('update')).toBeUndefined()
+
+    translatedTextarea.element.value = '你好'
+    await translatedTextarea.trigger('compositionend')
+
+    expect(wrapper.emitted('update')).toEqual([[{ translatedText: '你好' }]])
+  })
 })

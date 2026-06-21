@@ -69,20 +69,20 @@ defineProps<{
 .checks-block {
   border-radius: 18px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(25, 55, 94, 0.08);
+  background: var(--diagnostics-panel-surface-base);
+  border: 1px solid var(--diagnostics-panel-border-default);
 }
 
 .summary-card .label {
   display: block;
   font-size: 12px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
 }
 
 .summary-card strong {
   display: block;
   margin-top: 8px;
-  color: #153250;
+  color: var(--diagnostics-panel-text-primary);
   font-size: 20px;
 }
 
@@ -94,17 +94,17 @@ defineProps<{
 .block ul {
   margin: 12px 0 0;
   padding-left: 18px;
-  color: #516882;
+  color: var(--diagnostics-panel-text-secondary);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .danger {
-  background: rgba(255, 244, 244, 0.86);
+  background: var(--diagnostics-panel-surface-raised);
 }
 
 .warning {
-  background: rgba(255, 249, 240, 0.86);
+  background: var(--diagnostics-panel-surface-muted);
 }
 
 .check-list {
@@ -121,22 +121,22 @@ defineProps<{
 }
 
 .check-pill.ok {
-  background: rgba(32, 170, 103, 0.14);
-  color: #17784b;
+  background: var(--diagnostics-panel-surface-subtle);
+  color: var(--diagnostics-panel-text-muted);
 }
 
 .check-pill.bad {
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
 }
 
 .empty-copy {
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
   line-height: 1.6;
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .summary-grid {
     grid-template-columns: 1fr;
   }

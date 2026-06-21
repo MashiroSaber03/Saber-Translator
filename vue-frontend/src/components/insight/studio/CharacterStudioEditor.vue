@@ -36,15 +36,15 @@
           </div>
         </div>
         <div class="hero-actions">
-          <button class="primary-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'full')">
+          <UiButton variant="toolbar" class="action-primary" :disabled="isGenerationLocked" @click="$emit('generate', 'full')">
             {{ isGenerating('full') ? '整卡补全中...' : 'AI 一键补全整卡' }}
-          </button>
-          <button class="ghost-btn" :disabled="isGenerationLocked" @click="$emit('generate', 'review')">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="isGenerationLocked" @click="$emit('generate', 'review')">
             {{ isGenerating('review') ? '审查中...' : 'AI 审查当前角色' }}
-          </button>
-          <button class="danger-btn" :disabled="pendingState.deleting" @click="$emit('delete')">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-danger" :disabled="pendingState.deleting" @click="$emit('delete')">
             {{ pendingState.deleting ? '删除中...' : '删除文档' }}
-          </button>
+          </UiButton>
         </div>
       </section>
 
@@ -89,26 +89,26 @@
                 </div>
               </div>
               <div class="quick-grid">
-                <button class="quick-card" @click="$emit('update:activeTab', 'character')">
+                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'character')">
                   <span class="quick-icon">🧬</span>
                   <strong>角色设定</strong>
                   <p>完善简介、性格、场景、标签。</p>
-                </button>
-                <button class="quick-card" @click="$emit('update:activeTab', 'greetings')">
+                </UiButton>
+                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'greetings')">
                   <span class="quick-icon">💬</span>
                   <strong>问候语</strong>
                   <p>打磨主问候和备用开场。</p>
-                </button>
-                <button class="quick-card" @click="$emit('update:activeTab', 'lorebook')">
+                </UiButton>
+                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'lorebook')">
                   <span class="quick-icon">📚</span>
                   <strong>世界书</strong>
                   <p>维护角色知识树和触发条目。</p>
-                </button>
-                <button class="quick-card" @click="$emit('update:activeTab', 'scripts')">
+                </UiButton>
+                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'scripts')">
                   <span class="quick-icon">⚙️</span>
                   <strong>脚本任务</strong>
                   <p>配置正则脚本和状态任务。</p>
-                </button>
+                </UiButton>
               </div>
             </section>
 
@@ -123,7 +123,7 @@
                 <label v-for="item in freezeItems" :key="item.key" class="freeze-item">
                   <span class="freeze-item-label">{{ item.label }}</span>
                   <span class="freeze-item-control">
-                    <input :checked="isFrozen(item.key)" type="checkbox" @change="toggleFrozen(item.key, $event)">
+                    <UiInput :checked="isFrozen(item.key)" type="checkbox" @change="toggleFrozen(item.key, $event)" />
                   </span>
                 </label>
               </div>
@@ -137,9 +137,9 @@
                   <h3>最近诊断摘要</h3>
                   <p>导出前先看这里，能快速判断当前角色是否存在结构性问题。</p>
                 </div>
-                <button class="ghost-btn small" :disabled="pendingState.validating" @click="$emit('validate')">
+                <UiButton variant="toolbar" class="action-ghost" :disabled="pendingState.validating" @click="$emit('validate')" size="sm">
                   {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
-                </button>
+                </UiButton>
               </div>
               <DiagnosticsPanel :diagnostics="diagnostics" />
             </section>
@@ -174,47 +174,47 @@
                 <p>聚合角色身份与世界观上下文，优先把角色基底写清楚，再去扩展运行时能力。</p>
               </div>
               <div class="head-actions">
-                <button class="ghost-btn small" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')">
+                <UiButton variant="toolbar" class="action-ghost" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')" size="sm">
                   {{ isGenerating('identity') ? '重写中...' : 'AI 重写本区' }}
-                </button>
-                <button class="ghost-btn small" :disabled="isGenerationLocked" @click="$emit('generate', 'translate')">
+                </UiButton>
+                <UiButton variant="toolbar" class="action-ghost" :disabled="isGenerationLocked" @click="$emit('generate', 'translate')" size="sm">
                   {{ isGenerating('translate') ? '翻译中...' : '整卡翻译' }}
-                </button>
+                </UiButton>
               </div>
             </div>
 
             <div class="form-grid">
               <label>
                 角色名称
-                <input v-model="localDocument.identity.name" type="text">
+                <UiInput v-model="localDocument.identity.name" type="text" />
               </label>
               <label>
                 别名（逗号分隔）
-                <input :value="localDocument.identity.aliases.join(', ')" type="text" @input="updateAliases($event)">
+                <UiInput :value="localDocument.identity.aliases.join(', ')" type="text" @input="updateAliases($event)" />
               </label>
               <label class="full">
                 角色简介
-                <textarea v-model="localDocument.identity.description" rows="6"></textarea>
+                <UiTextarea v-model="localDocument.identity.description" rows="6" />
               </label>
               <label class="full">
                 性格 / 人设
-                <textarea v-model="localDocument.identity.personality" rows="5"></textarea>
+                <UiTextarea v-model="localDocument.identity.personality" rows="5" />
               </label>
               <label class="full">
                 当前场景
-                <textarea v-model="localDocument.identity.scenario" rows="5"></textarea>
+                <UiTextarea v-model="localDocument.identity.scenario" rows="5" />
               </label>
               <label class="full">
                 标签（逗号分隔）
-                <input :value="localDocument.meta.tags.join(', ')" type="text" @input="updateTags($event)">
+                <UiInput :value="localDocument.meta.tags.join(', ')" type="text" @input="updateTags($event)" />
               </label>
               <div class="full option-row">
                 <label class="toggle-chip">
-                  <input v-model="localDocument.status.is_favorite" type="checkbox">
+                  <UiInput v-model="localDocument.status.is_favorite" type="checkbox" />
                   <span>收藏当前角色</span>
                 </label>
                 <label class="toggle-chip">
-                  <input :checked="isFrozen('identity')" type="checkbox" @change="toggleFrozen('identity', $event)">
+                  <UiInput :checked="isFrozen('identity')" type="checkbox" @change="toggleFrozen('identity', $event)" />
                   <span>钉住角色设定</span>
                 </label>
               </div>
@@ -246,27 +246,27 @@
             <div class="form-grid">
               <label class="full">
                 示例对话
-                <textarea v-model="localDocument.coreMessages.message_example" rows="5"></textarea>
+                <UiTextarea v-model="localDocument.coreMessages.message_example" rows="5" />
               </label>
               <label class="full">
                 系统提示词（System Prompt）
-                <textarea v-model="localDocument.coreMessages.system_prompt" rows="4"></textarea>
+                <UiTextarea v-model="localDocument.coreMessages.system_prompt" rows="4" />
               </label>
               <label class="full">
                 历史后置说明（Post History）
-                <textarea v-model="localDocument.coreMessages.post_history_instructions" rows="3"></textarea>
+                <UiTextarea v-model="localDocument.coreMessages.post_history_instructions" rows="3" />
               </label>
               <label class="full">
                 备注
-                <textarea v-model="localDocument.coreMessages.creator_notes" rows="3"></textarea>
+                <UiTextarea v-model="localDocument.coreMessages.creator_notes" rows="3" />
               </label>
               <label>
                 角色版本
-                <input v-model="localDocument.coreMessages.character_version" type="text">
+                <UiInput v-model="localDocument.coreMessages.character_version" type="text" />
               </label>
               <div class="option-row">
                 <label class="toggle-chip">
-                  <input :checked="isFrozen('greetings')" type="checkbox" @change="toggleFrozen('greetings', $event)">
+                  <UiInput :checked="isFrozen('greetings')" type="checkbox" @change="toggleFrozen('greetings', $event)" />
                   <span>钉住问候语区</span>
                 </label>
               </div>
@@ -282,7 +282,7 @@
                 <p>把角色设定、关系、场景、专有名词沉淀成可命中的知识树。条目设计越清晰，预览聊天越稳定。</p>
               </div>
               <label class="toggle-chip">
-                <input :checked="isFrozen('lorebook')" type="checkbox" @change="toggleFrozen('lorebook', $event)">
+                <UiInput :checked="isFrozen('lorebook')" type="checkbox" @change="toggleFrozen('lorebook', $event)" />
                 <span>钉住世界书区</span>
               </label>
             </div>
@@ -303,7 +303,7 @@
                 <p>把运行时逻辑拆成两个子区：正则脚本负责输入输出变换，状态任务负责变量初始化与节奏控制。</p>
               </div>
               <label class="toggle-chip">
-                <input :checked="isFrozen('regex') || isFrozen('state-tasks')" type="checkbox" @change="toggleScriptFreeze($event)">
+                <UiInput :checked="isFrozen('regex') || isFrozen('state-tasks')" type="checkbox" @change="toggleScriptFreeze($event)" />
                 <span>统一钉住脚本区</span>
               </label>
             </div>
@@ -350,38 +350,38 @@
                 <p>在这里完成结构诊断、兼容裁剪确认和最终导出。导出前建议先跑一遍诊断。</p>
               </div>
               <div class="head-actions">
-                <button class="ghost-btn small" :disabled="pendingState.validating" @click="$emit('validate')">
+                <UiButton variant="toolbar" class="action-ghost" :disabled="pendingState.validating" @click="$emit('validate')" size="sm">
                   {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
-                </button>
-                <button class="primary-btn small" :disabled="pendingState.saving" @click="$emit('save')">
+                </UiButton>
+                <UiButton variant="toolbar" class="action-primary" :disabled="pendingState.saving" @click="$emit('save')" size="sm">
                   {{ pendingState.saving ? '保存中...' : '保存文档' }}
-                </button>
+                </UiButton>
               </div>
             </div>
 
             <DiagnosticsPanel :diagnostics="diagnostics" />
 
             <div class="export-grid">
-              <button class="export-card" :disabled="isDownloading('v3')" @click="$emit('download', 'v3')">
+              <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('v3')" @click="$emit('download', 'v3')">
                 <span class="export-icon">🧾</span>
                 <strong>{{ isDownloading('v3') ? '导出中...' : '导出 V3 JSON' }}</strong>
                 <p>当前工作台的主导出格式。</p>
-              </button>
-              <button class="export-card" :disabled="isDownloading('v2')" @click="$emit('download', 'v2')">
+              </UiButton>
+              <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('v2')" @click="$emit('download', 'v2')">
                 <span class="export-icon">📦</span>
                 <strong>{{ isDownloading('v2') ? '导出中...' : '导出 V2 JSON' }}</strong>
                 <p>用于兼容旧生态，可能存在裁剪。</p>
-              </button>
-              <button class="export-card" :disabled="isDownloading('png')" @click="$emit('download', 'png')">
+              </UiButton>
+              <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('png')" @click="$emit('download', 'png')">
                 <span class="export-icon">🖼️</span>
                 <strong>{{ isDownloading('png') ? '导出中...' : '导出 PNG' }}</strong>
                 <p>便于分享和回流导入。</p>
-              </button>
-              <button class="export-card" :disabled="isDownloading('worldbook')" @click="$emit('download', 'worldbook')">
+              </UiButton>
+              <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('worldbook')" @click="$emit('download', 'worldbook')">
                 <span class="export-icon">📚</span>
                 <strong>{{ isDownloading('worldbook') ? '导出中...' : '导出世界书' }}</strong>
                 <p>单独导出当前角色知识树。</p>
-              </button>
+              </UiButton>
             </div>
           </section>
         </section>
@@ -391,6 +391,11 @@
 </template>
 
 <script setup lang="ts">
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import type {
   CharacterStudioDocument,
@@ -405,6 +410,7 @@ import GreetingWorkbench from './GreetingWorkbench.vue'
 import RegexWorkbench from './RegexWorkbench.vue'
 import TaskWorkbench from './TaskWorkbench.vue'
 import DiagnosticsPanel from './DiagnosticsPanel.vue'
+import { editorTabItems, freezeItems, scriptTabItems } from './characterStudioEditorConfig'
 
 const props = defineProps<{
   document: CharacterStudioDocument | null
@@ -430,27 +436,7 @@ const emit = defineEmits<{
 const localDocument = ref<CharacterStudioDocument | null>(null)
 let syncing = false
 
-const tabItems = [
-  { value: 'overview', label: '概览', icon: '◈' },
-  { value: 'character', label: '角色设定', icon: '🧬' },
-  { value: 'greetings', label: '问候语', icon: '💬' },
-  { value: 'lorebook', label: '世界书', icon: '📚' },
-  { value: 'scripts', label: '脚本任务', icon: '⚙️' },
-  { value: 'export', label: '导出诊断', icon: '⬇' },
-] as const
-
-const scriptTabItems = [
-  { value: 'regex', label: '正则脚本', icon: '∑' },
-  { value: 'tasks', label: '状态任务', icon: '∞' },
-] as const
-
-const freezeItems = [
-  { key: 'identity', label: '角色设定' },
-  { key: 'greetings', label: '问候语' },
-  { key: 'lorebook', label: '世界书' },
-  { key: 'regex', label: '正则脚本' },
-  { key: 'state-tasks', label: '状态任务' },
-] as const
+const tabItems = editorTabItems
 
 const flattenedLorebookCount = computed(() => {
   if (!localDocument.value) return 0
@@ -648,8 +634,7 @@ function toggleScriptFreeze(event: Event) {
 }
 </script>
 
-<style scoped>
-.studio-editor {
+<style scoped>.studio-editor {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -666,9 +651,9 @@ function toggleScriptFreeze(event: Event) {
 .overview-hero,
 .editor-shell {
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  box-shadow: 0 26px 42px rgba(20, 46, 82, 0.08);
+  background: var(--character-studio-editor-surface-base);
+  border: 1px solid var(--color-border-studio);
+  box-shadow: 0 26px 42px var(--shadow-studio-floating);
 }
 
 .empty-card {
@@ -681,22 +666,22 @@ function toggleScriptFreeze(event: Event) {
   align-items: center;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(37, 99, 199, 0.1);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint);
+  color: var(--color-text-primary-strong);
   font-size: 12px;
   font-weight: 600;
 }
 
 .empty-card h2 {
   margin: 18px 0 0;
-  color: #102741;
+  color: var(--character-studio-editor-text-primary);
   font-size: 30px;
 }
 
 .empty-card p {
   max-width: 560px;
   margin: 12px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   line-height: 1.8;
 }
 
@@ -710,13 +695,13 @@ function toggleScriptFreeze(event: Event) {
 .empty-tip {
   border-radius: 18px;
   padding: 16px;
-  background: rgba(245, 249, 254, 0.92);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--color-border-studio);
 }
 
 .empty-tip strong {
   display: block;
-  color: #14304c;
+  color: var(--character-studio-editor-text-secondary);
 }
 
 .empty-tip p {
@@ -743,7 +728,7 @@ function toggleScriptFreeze(event: Event) {
   height: 164px;
   border-radius: 24px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(37, 99, 199, 0.14), rgba(17, 39, 65, 0.04));
+  background: linear-gradient(180deg, var(--color-surface-studio-tint4), var(--character-studio-editor-surface-raised));
   flex-shrink: 0;
 }
 
@@ -759,7 +744,7 @@ function toggleScriptFreeze(event: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1f5fc3;
+  color: var(--color-text-primary-strong);
   font-size: 32px;
   font-weight: 700;
 }
@@ -772,18 +757,18 @@ function toggleScriptFreeze(event: Event) {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #6f84a2;
+  color: var(--character-studio-editor-text-muted);
 }
 
 .hero-copy h2 {
   margin: 10px 0 0;
-  color: #102741;
+  color: var(--character-studio-editor-text-primary);
   font-size: 30px;
 }
 
 .hero-copy p {
   margin: 12px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   line-height: 1.8;
 }
 
@@ -797,8 +782,8 @@ function toggleScriptFreeze(event: Event) {
 .meta-pill {
   border-radius: 999px;
   padding: 5px 10px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
   font-size: 11px;
 }
 
@@ -863,8 +848,8 @@ function toggleScriptFreeze(event: Event) {
 .quick-card,
 .export-card {
   border-radius: 22px;
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--color-border-studio);
+  background: var(--character-studio-editor-surface-muted);
 }
 
 .workspace-card,
@@ -874,7 +859,7 @@ function toggleScriptFreeze(event: Event) {
 
 .summary-card .summary-label {
   display: block;
-  color: #6f84a2;
+  color: var(--character-studio-editor-text-muted);
   font-size: 12px;
 }
 
@@ -882,12 +867,12 @@ function toggleScriptFreeze(event: Event) {
   display: block;
   margin-top: 8px;
   font-size: 24px;
-  color: #153250;
+  color: var(--character-studio-editor-text-subtle);
 }
 
 .summary-card p {
   margin: 8px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -902,12 +887,12 @@ function toggleScriptFreeze(event: Event) {
 .card-head h3 {
   margin: 0;
   font-size: 18px;
-  color: #112b47;
+  color: var(--character-studio-editor-text-supporting);
 }
 
 .card-head p {
   margin: 6px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -929,8 +914,8 @@ function toggleScriptFreeze(event: Event) {
 .quick-card:hover,
 .export-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 28px rgba(20, 46, 82, 0.08);
-  border-color: rgba(37, 99, 199, 0.16);
+  box-shadow: 0 18px 28px var(--shadow-studio-floating);
+  border-color: var(--character-studio-editor-border-default);
 }
 
 .quick-icon,
@@ -941,8 +926,8 @@ function toggleScriptFreeze(event: Event) {
   border-radius: 14px;
   align-items: center;
   justify-content: center;
-  background: rgba(37, 99, 199, 0.1);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint);
+  color: var(--color-text-primary-strong);
   font-size: 16px;
 }
 
@@ -950,14 +935,14 @@ function toggleScriptFreeze(event: Event) {
 .export-card strong {
   display: block;
   margin-top: 14px;
-  color: #14304c;
+  color: var(--character-studio-editor-text-secondary);
   font-size: 14px;
 }
 
 .quick-card p,
 .export-card p {
   margin: 8px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -966,7 +951,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #516882;
+  color: var(--character-studio-editor-text-disabled);
   font-size: 12px;
 }
 
@@ -977,11 +962,11 @@ label {
 input,
 textarea,
 select {
-  border: 1px solid rgba(28, 55, 94, 0.12);
-  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid var(--color-border-studio-strong);
+  background: var(--color-surface-studio-soft);
   border-radius: 16px;
   padding: 12px 14px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
 }
 
@@ -1003,8 +988,8 @@ textarea {
   gap: 8px;
   padding: 9px 12px;
   border-radius: 999px;
-  background: rgba(20, 56, 106, 0.06);
-  color: #234977;
+  background: var(--character-studio-editor-surface-subtle);
+  color: var(--color-text-studio);
 }
 
 .freeze-grid {
@@ -1021,12 +1006,12 @@ textarea {
   gap: 16px;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(245, 249, 254, 0.92);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--color-border-studio);
 }
 
 .freeze-item-label {
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -1043,36 +1028,36 @@ textarea {
   margin: 0;
 }
 
-.ghost-btn,
-.primary-btn,
-.danger-btn {
+.action-ghost,
+.action-primary,
+.action-danger {
   border: none;
   border-radius: 14px;
   cursor: pointer;
 }
 
-.ghost-btn {
+.action-ghost {
   padding: 11px 14px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
-.primary-btn {
+.action-primary {
   padding: 11px 16px;
-  background: linear-gradient(135deg, #2563c7, #4d86ee);
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(37, 99, 199, 0.18);
+  background: linear-gradient(135deg, var(--character-studio-editor-surface-hover), var(--character-studio-editor-surface-active));
+  color: var(--color-text-inverse);
+  box-shadow: 0 12px 24px var(--character-studio-editor-shadow-default);
 }
 
-.danger-btn {
+.action-danger {
   padding: 11px 14px;
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
 }
 
-.ghost-btn:disabled,
-.primary-btn:disabled,
-.danger-btn:disabled,
+.action-ghost:disabled,
+.action-primary:disabled,
+.action-danger:disabled,
 .export-card:disabled {
   opacity: 0.68;
   cursor: not-allowed;
@@ -1093,13 +1078,13 @@ textarea {
   margin-top: 14px;
   border-radius: 18px;
   padding: 16px;
-  background: rgba(245, 249, 254, 0.92);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--color-border-studio);
 }
 
 .review-summary strong {
   display: block;
-  color: #14304c;
+  color: var(--character-studio-editor-text-secondary);
   font-size: 15px;
   line-height: 1.7;
 }
@@ -1107,22 +1092,22 @@ textarea {
 .review-list {
   margin: 12px 0 0;
   padding-left: 18px;
-  color: #516882;
+  color: var(--character-studio-editor-text-disabled);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .review-list.suggestions {
-  color: #2b5f9f;
+  color: var(--character-studio-editor-text-inverse);
 }
 
-@media (max-width: 1180px) {
+@media (--breakpoint-modal-wide-down) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .overview-hero,
   .hero-main,
   .hero-actions,

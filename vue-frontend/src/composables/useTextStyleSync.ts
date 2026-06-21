@@ -216,7 +216,7 @@ export function useTextStyleSync() {
 
     /**
      * 处理文字样式设置变更
-     * 与原版 handleGlobalSettingChange 对应：更新所有气泡的对应参数，然后重新渲染
+     * 更新所有气泡的对应参数，然后重新渲染。
      * @param settingKey - 变更的设置项
      * @param newValue - 新值
      */
@@ -227,10 +227,9 @@ export function useTextStyleSync() {
             return
         }
 
-        // 注意：原版有 _isChangingFromSwitchImage 标记来避免切换图片时重渲染
-        // Vue 版暂时不实现此检查，因为切换图片时不会触发设置变更事件
+        // 切换图片时不会触发设置变更事件，因此这里不需要额外的切图锁。
 
-        // 需要重新渲染的设置项（与原版 renderSettings 一致）
+        // 需要重新渲染的文字样式设置项。
         const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
             'strokeEnabled', 'strokeColor', 'strokeWidth', 'fillColor',
             'lineSpacing', 'textAlign']
@@ -241,7 +240,7 @@ export function useTextStyleSync() {
 
         console.log(`全局设置变更 (${settingKey}=${newValue})，准备重渲染...`)
 
-        // 更新所有气泡的对应属性（与原版 propertyMap 一致）
+        // 将设置键映射到气泡状态字段。
         const propertyMap: Record<string, string> = {
             'fontSize': 'fontSize',
             'fontFamily': 'fontFamily',
@@ -308,7 +307,7 @@ export function useTextStyleSync() {
                 return
             }
 
-            // 【修复P1】提取 clean_image 的 base64 部分，原版兜底策略：clean → original
+            // 提取 clean_image 的 base64 部分，背景兜底策略：clean → original。
             const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
             if (!cleanImageBase64) {
@@ -337,7 +336,6 @@ export function useTextStyleSync() {
 
     /**
      * 处理自动字号开关变更
-     * 【复刻原版 events.js handleAutoFontSizeChange】
      * 核心逻辑：
      * - 开启自动字号：显式重新计算每个气泡的初始字号
      * - 关闭自动字号：将所有气泡设为输入框中的固定字号，然后渲染
@@ -346,7 +344,7 @@ export function useTextStyleSync() {
     async function handleAutoFontSizeChanged(isAutoFontSize: boolean) {
         const image = currentImage.value
         if (!image || !image.translatedDataURL) {
-            // 没有已翻译的图片，仅影响下次翻译（与原版一致）
+            // 没有已翻译的图片，仅影响下次翻译。
             console.log(`自动字号设置变更: ${isAutoFontSize} (仅影响下次翻译)`)
             return
         }
@@ -360,7 +358,7 @@ export function useTextStyleSync() {
         console.log(`自动字号设置变更: ${isAutoFontSize}，将重新渲染...`)
 
         if (isAutoFontSize) {
-            // 【复刻原版语义】开启自动字号时，显式触发一次字号初始化。
+            // 开启自动字号时显式触发一次字号初始化。
             console.log('自动字号已开启，重新计算字号并渲染...')
 
             try {
@@ -404,7 +402,7 @@ export function useTextStyleSync() {
                 console.error('自动字号渲染出错:', error)
             }
         } else {
-            // 【复刻原版】关闭自动字号：将所有气泡设为输入框中的固定字号
+            // 关闭自动字号时将所有气泡设为输入框中的固定字号。
             const fixedFontSize = settingsStore.settings.textStyle.fontSize
             console.log(`自动字号已关闭，使用固定字号 ${fixedFontSize} 渲染...`)
 

@@ -1,0 +1,471 @@
+.plugin-agent-modal.ui-modal__container {
+  width: 95vw;
+  height: 90vh;
+  max-height: 90vh;
+}
+
+.plugin-agent-modal .ui-modal__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plugin-agent-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plugin-agent-column {
+  min-width: 0;
+  min-height: 0;
+}
+
+.plugin-agent-scroll-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.plugin-agent-column-center {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.plugin-agent-block {
+  border: 1px solid var(--color-border-muted);
+  border-radius: 12px;
+  background: var(--color-surface-base);
+  padding: 16px;
+}
+
+.plugin-agent-history-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plugin-agent-chat-header,
+.plugin-agent-inline,
+.plugin-agent-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plugin-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.plugin-agent-mode-switch {
+  display: flex;
+  gap: 8px;
+}
+
+.plugin-agent-mode-btn {
+  flex: 1;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+  padding: 10px 12px;
+  line-height: 16px;
+}
+
+.plugin-agent-mode-btn.active {
+  background: var(--color-action-primary);
+  color: white;
+}
+
+.plugin-agent-modal .plugin-agent-start-btn.ui-button:disabled,
+.plugin-agent-modal .plugin-agent-begin-btn.ui-button:disabled {
+  border: 1px solid var(--plugin-agent-modal-border-default);
+  background: var(--plugin-agent-modal-surface-base);
+  color: var(--plugin-agent-modal-text-primary);
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+}
+
+.plugin-agent-modal .plugin-agent-start-btn.ui-button,
+.plugin-agent-modal .plugin-agent-begin-btn.ui-button {
+  width: 69px;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.plugin-agent-modal .plugin-agent-start-btn.ui-button {
+  height: 24px;
+  min-height: 0;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: 12px;
+}
+
+.plugin-agent-modal .plugin-agent-begin-btn.ui-button {
+  flex: 0 0 69px;
+  height: 80px;
+  min-height: 80px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.plugin-agent-input {
+  height: 80px;
+  min-height: 80px;
+  line-height: normal;
+}
+
+.plugin-agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.plugin-agent-grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.plugin-agent-checkboxes {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.plugin-agent-field input,
+.plugin-agent-input {
+  width: 100%;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-default);
+}
+
+.plugin-agent-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.plugin-agent-overview-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plugin-agent-overview-section {
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface-subtle);
+}
+
+.plugin-agent-overview-section h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.plugin-agent-overview-section .plugin-agent-list {
+  margin: 0;
+}
+
+.plugin-agent-overview-section .plugin-agent-list li + li {
+  margin-top: 8px;
+}
+
+.plugin-agent-overview-section .plugin-agent-list li {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.plugin-agent-modal .plugin-agent-overview-item p {
+  margin: 0;
+}
+
+.plugin-agent-modal .plugin-agent-overview-item strong {
+  font-weight: 700;
+}
+
+.plugin-agent-example {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  text-align: left;
+  border: 1px dashed var(--color-border-muted);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+}
+
+.plugin-agent-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plugin-agent-message,
+.plugin-agent-file-card {
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface-subtle);
+}
+
+.plugin-agent-message.role-user {
+  background: var(--plugin-agent-modal-surface-raised);
+}
+
+.plugin-agent-message.is-loading {
+  border-style: dashed;
+}
+
+.plugin-agent-message-role,
+.plugin-agent-file-name {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--color-text-supporting);
+}
+
+.plugin-agent-modal .plugin-agent-message-content p {
+  margin: 0 0 8px;
+}
+
+.plugin-agent-modal .plugin-agent-message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.plugin-agent-message-loading {
+  color: var(--color-text-supporting);
+}
+
+.plugin-agent-loading-dots::after {
+  content: '';
+  animation: plugin-agent-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes plugin-agent-dots {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
+}
+
+.plugin-agent-step-card {
+  position: relative;
+  border: 1px solid var(--plugin-agent-modal-border-strong);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, var(--plugin-agent-modal-accent-primary), var(--plugin-agent-modal-accent-secondary)),
+    var(--color-surface-subtle);
+  box-shadow: 0 10px 24px var(--plugin-agent-modal-shadow-default);
+}
+
+.plugin-agent-step-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--plugin-agent-modal-surface-muted);
+}
+
+.plugin-agent-step-card.status-streaming::before {
+  background: linear-gradient(180deg, var(--plugin-agent-modal-surface-subtle), var(--plugin-agent-modal-surface-hover));
+}
+
+.plugin-agent-step-card.status-success::before {
+  background: linear-gradient(180deg, var(--plugin-agent-modal-surface-active), var(--plugin-agent-modal-surface-selected));
+}
+
+.plugin-agent-step-card.status-error::before {
+  background: linear-gradient(180deg, var(--plugin-agent-modal-surface-overlay), var(--plugin-agent-modal-surface-inverse));
+}
+
+.plugin-agent-step-card.status-waiting::before {
+  background: linear-gradient(180deg, var(--plugin-agent-modal-surface-contrast), var(--plugin-agent-modal-surface-tint));
+}
+
+.plugin-agent-step-card-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.plugin-agent-step-badge {
+  flex-shrink: 0;
+  min-width: 46px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--plugin-agent-modal-surface-soft);
+  color: var(--plugin-agent-modal-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.plugin-agent-step-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-agent-step-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-default);
+}
+
+.plugin-agent-step-time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-supporting);
+}
+
+.plugin-agent-step-summary {
+  margin-top: 10px;
+  color: var(--color-text-default);
+  line-height: 1.6;
+}
+
+.plugin-agent-step-content {
+  margin-top: 10px;
+  color: var(--color-text-default);
+}
+
+.plugin-agent-modal .plugin-agent-step-content p {
+  margin: 0 0 8px;
+}
+
+.plugin-agent-modal .plugin-agent-step-content p:last-child {
+  margin-bottom: 0;
+}
+
+.plugin-agent-step-card-assistant.streaming .plugin-agent-step-title::after {
+  content: ' ...';
+  color: var(--plugin-agent-modal-text-secondary);
+}
+
+.plugin-agent-step-details {
+  margin-top: 12px;
+  border-top: 1px dashed var(--color-border-muted);
+  padding-top: 12px;
+}
+
+.plugin-agent-step-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-supporting);
+}
+
+.plugin-agent-step-detail {
+  margin-top: 10px;
+}
+
+.plugin-agent-step-detail-label,
+.plugin-agent-event-type {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--color-text-supporting);
+}
+
+.plugin-agent-step-detail-content,
+.plugin-agent-event-payload,
+.plugin-agent-file-preview,
+.plugin-agent-validation pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-size: 12px;
+}
+
+.plugin-agent-debug-shell {
+  margin-top: 4px;
+}
+
+.plugin-agent-debug-panel {
+  margin-top: 12px;
+  border: 1px dashed var(--color-border-muted);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--plugin-agent-modal-surface-strong);
+}
+
+.plugin-agent-event {
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface-subtle);
+}
+
+.plugin-agent-event + .plugin-agent-event {
+  margin-top: 10px;
+}
+
+.plugin-agent-composer {
+  display: flex;
+  gap: 12px;
+}
+
+.plugin-agent-composer textarea {
+  flex: 1;
+}
+
+.plugin-agent-composer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plugin-agent-empty {
+  color: var(--color-text-supporting);
+  font-size: 13px;
+}
+
+.plugin-agent-pending-target {
+  margin-top: 12px;
+}
+
+@media (--breakpoint-modal-wide-down) {
+  .plugin-agent-modal .ui-modal__body {
+    overflow-y: auto;
+  }
+
+  .plugin-agent-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  .plugin-agent-scroll-column,
+  .plugin-agent-column-center {
+    overflow: visible;
+    padding-right: 0;
+  }
+}

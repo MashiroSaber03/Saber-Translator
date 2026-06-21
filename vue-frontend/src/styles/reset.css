@@ -1,0 +1,31 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+input,
+textarea,
+select,
+button {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-surface-app);
+  color: var(--color-text-default);
+  line-height: 1.6;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+[id='app'] {
+  min-height: 100vh;
+}
+
+body.middle-button-drawing,
+body.middle-button-drawing * {
+  cursor: crosshair;
+}

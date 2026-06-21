@@ -5,7 +5,7 @@
  * **Validates: Requirements 24.4**
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useInsightStore, type NoteData, type NoteType } from '@/stores/insightStore'

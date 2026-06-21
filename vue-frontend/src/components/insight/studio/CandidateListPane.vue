@@ -14,15 +14,16 @@
             首登 {{ item.first_appearance || '-' }} 页 · 对话 {{ item.dialogue_count }} · 关键页 {{ item.sample_pages.slice(0, 3).join(' / ') || '-' }}
           </div>
         </div>
-        <button class="create-btn" :disabled="!!creatingCandidateName" @click="$emit('create', item.name)">
+        <UiButton variant="toolbar" class="create-btn" :disabled="!!creatingCandidateName" @click="$emit('create', item.name)">
           {{ creatingCandidateName === item.name ? '创建中...' : '创建' }}
-        </button>
+        </UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import type { CharacterStudioCandidate } from '@/types/characterStudio'
 
 defineProps<{
@@ -56,11 +57,11 @@ defineEmits<{
 
 .pane-head span {
   font-size: 12px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
 }
 
 .empty-copy {
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
   line-height: 1.6;
   padding: 8px 0;
@@ -79,18 +80,18 @@ defineEmits<{
   align-items: center;
   border-radius: 16px;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--color-surface-raised);
 }
 
 .candidate-main strong {
   display: block;
-  color: #122b47;
+  color: var(--candidate-list-pane-text-primary);
   font-size: 13px;
 }
 
 .candidate-meta {
   margin-top: 6px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -99,8 +100,8 @@ defineEmits<{
   border: none;
   border-radius: 12px;
   padding: 8px 12px;
-  background: rgba(37, 99, 199, 0.1);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint);
+  color: var(--color-text-primary-strong);
   cursor: pointer;
 }
 

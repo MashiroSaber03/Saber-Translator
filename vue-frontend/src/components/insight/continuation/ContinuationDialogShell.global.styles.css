@@ -1,0 +1,93 @@
+.continuation-dialog-modal.ui-modal__container {
+  width: 90%;
+  max-width: 520px;
+  max-height: 90vh;
+  border-radius: 12px;
+}
+
+.continuation-dialog-modal .ui-modal__body {
+  padding: 24px;
+}
+
+.continuation-dialog-modal .ui-modal__footer {
+  padding: 16px 24px;
+}
+
+.continuation-dialog-modal--wide.ui-modal__container {
+  max-width: 600px;
+}
+
+.continuation-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.continuation-dialog-form .continuation-dialog-form__field {
+  margin-bottom: 0;
+}
+
+.continuation-dialog-form .continuation-dialog-form__field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.continuation-dialog-form .continuation-dialog__form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  border-radius: 8px;
+  font: inherit;
+  transition: border-color 0.2s;
+}
+
+.continuation-dialog-form .continuation-dialog__form-input:focus {
+  outline: none;
+  border-color: var(--color-border-brand);
+}
+
+.continuation-dialog-form .form-hint {
+  margin: 6px 0 0;
+  color: var(--color-text-supporting, var(--color-text-subtle));
+  font-size: 12px;
+}
+
+.continuation-dialog-form .required {
+  color: var(--color-text-danger);
+}
+
+.continuation-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.continuation-dialog-actions .ui-button {
+  padding: 10px 20px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.continuation-dialog-actions .ui-button--primary {
+  background: var(--color-surface-brand);
+}
+
+.continuation-dialog-actions .ui-button--primary:hover:not(:disabled) {
+  background: var(--color-surface-brand-strong);
+  transform: none;
+  box-shadow: none;
+}
+
+.continuation-dialog-actions .ui-button--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+}
+
+.continuation-dialog-actions .ui-button--secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  transform: none;
+  box-shadow: none;
+}

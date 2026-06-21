@@ -6,29 +6,31 @@
       <div class="batch-config">
         <div class="config-row">
           <label>画风参考图数量:</label>
-          <input
+          <UiInput
             type="number"
             v-model.number="refCount"
             min="1"
             max="10"
             class="ref-count-input"
           />
-          <button
-            class="btn secondary"
+          <UiButton
+            variant="secondary"
+           
             @click="openBatchReferenceSelector"
           >
             📷 选择初始参考图 ({{ getInitialRefCount() }})
-          </button>
+          </UiButton>
         </div>
       </div>
 
-      <button
-        class="btn primary large"
+      <UiButton
+        variant="primary"
+       
         :disabled="isGenerating || pages.length === 0"
-        @click="handleBatchGenerate"
+        @click="handleBatchGenerate" size="lg"
       >
         {{ isGenerating ? '生成中...' : '🚀 批量生成图片' }}
-      </button>
+      </UiButton>
 
       <div v-if="isGenerating" class="progress-bar">
         <div class="progress-fill" :style="{ width: progress + '%' }"></div>
@@ -59,13 +61,14 @@
           <div class="context-block">
             <div class="context-header">
               <label>上一页剧情</label>
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="shouldShowStoryToggle(page.page_number, 'continuity')"
                 class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'continuity')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'continuity') ? '收起' : '展开' }}
-              </button>
+              </UiButton>
             </div>
             <p
               class="context-text"
@@ -77,13 +80,14 @@
           <div class="context-block">
             <div class="context-header">
               <label>本页剧情</label>
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="shouldShowStoryToggle(page.page_number, 'story')"
                 class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'story')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'story') ? '收起' : '展开' }}
-              </button>
+              </UiButton>
             </div>
             <p
               class="context-text"
@@ -95,13 +99,14 @@
           <div class="context-block">
             <div class="context-header">
               <label>关键对白</label>
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="shouldShowStoryToggle(page.page_number, 'dialogue')"
                 class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'dialogue')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'dialogue') ? '收起' : '展开' }}
-              </button>
+              </UiButton>
             </div>
             <p
               class="context-text"
@@ -115,21 +120,22 @@
         <div class="prompt-section">
           <div class="prompt-header">
             <label>📝 最终生图提示词</label>
-            <button
+            <UiButton
+              variant="toolbar"
               class="btn-mini"
               @click="togglePromptEdit(page.page_number)"
             >
               {{ editingPromptPage === page.page_number ? '收起' : '编辑' }}
-            </button>
+            </UiButton>
           </div>
           <div v-if="editingPromptPage === page.page_number" class="prompt-edit">
-            <textarea
+            <UiTextarea
               v-model="page.final_prompt"
               rows="8"
               class="prompt-input"
               placeholder="输入最终生图提示词..."
               @input="$emit('prompt-change', page.page_number)"
-            ></textarea>
+            />
           </div>
           <div v-else class="prompt-collapsed">
             <p v-if="page.final_prompt" class="prompt-collapsed-hint">默认已折叠，点击“编辑”查看或修改</p>
@@ -138,20 +144,22 @@
         </div>
 
         <div class="image-actions">
-          <button
-            class="btn secondary small"
+          <UiButton
+            variant="secondary"
+           
             :disabled="page.status === 'generating'"
-            @click="$emit('regenerate', page.page_number)"
+            @click="$emit('regenerate', page.page_number)" size="sm"
           >
             ↺ 重新生成
-          </button>
-          <button
+          </UiButton>
+          <UiButton
+            variant="secondary"
             v-if="page.previous_url"
-            class="btn secondary small"
-            @click="$emit('use-previous', page.page_number)"
+           
+            @click="$emit('use-previous', page.page_number)" size="sm"
           >
             ◀ 上一版本
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -172,6 +180,11 @@
 </template>
 
 <script setup lang="ts">
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, watch, onMounted } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
@@ -341,8 +354,7 @@ watch(() => props.pages.length, (pageCount) => {
 })
 </script>
 
-<style scoped>
-.image-generation-panel {
+<style scoped>.image-generation-panel {
   padding: 24px;
 }
 
@@ -352,196 +364,193 @@ watch(() => props.pages.length, (pageCount) => {
   font-weight: 600;
 }
 
-.generation-controls {
+.image-generation-panel .generation-controls {
   margin-bottom: 24px;
 }
 
-.batch-config {
+.image-generation-panel .batch-config {
   margin-bottom: 16px;
   padding: 16px;
-  background: var(--bg-secondary, #f5f5f5);
+  background: var(--color-surface-subtle);
   border-radius: 12px;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.config-row {
+.image-generation-panel .config-row {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.config-row label {
+.image-generation-panel .config-row label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
 }
 
-.ref-count-input {
+.image-generation-panel .ref-count-input {
   width: 60px;
   padding: 8px 10px;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 6px;
   font-size: 14px;
   text-align: center;
 }
 
-.generated-images {
+.image-generation-panel .generated-images {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
-.image-card {
-  background: var(--bg-secondary, #f5f5f5);
+.image-generation-panel .image-card {
+  background: var(--color-surface-subtle);
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.image-header {
+.image-generation-panel .image-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: var(--bg-primary, #fff);
-  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  background: var(--color-surface-base);
+  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.image-header h4 {
+.image-generation-panel .image-header h4 {
   margin: 0;
   font-size: 15px;
 }
 
-.image-preview {
+.image-generation-panel .image-preview {
   min-height: 320px;
   padding: 16px;
-  background: var(--bg-primary, #fff);
+  background: var(--color-surface-base);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.image-preview img {
+.image-generation-panel .image-preview img {
   display: block;
   width: 100%;
   max-width: 100%;
   max-height: 720px;
   object-fit: contain;
   border-radius: 8px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
 }
 
-.no-image {
+.image-generation-panel .no-image {
   min-height: 280px;
   width: 100%;
-  border: 1px dashed var(--border-color, #ddd);
+  border: 1px dashed var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
-  background: var(--bg-secondary, #f7f7f7);
+  background: var(--image-generation-panel-surface-base);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.no-image span {
+.image-generation-panel .no-image span {
   font-size: 40px;
   margin-bottom: 10px;
 }
 
-.no-image p {
+.image-generation-panel .no-image p {
   margin: 0;
 }
 
-.story-context {
+.image-generation-panel .story-context {
   display: grid;
   gap: 12px;
   margin: 0;
   padding: 16px;
 }
 
-.context-block {
-  background: var(--bg-primary, #fff);
-  border: 1px solid var(--border-color, #ddd);
+.image-generation-panel .context-block {
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
   padding: 10px 12px;
 }
 
-.context-header {
+.image-generation-panel .context-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.context-block label {
+.image-generation-panel .context-block label {
   display: block;
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 4px;
 }
 
-.context-text {
+.image-generation-panel .context-text {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.55;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
   font-size: 13px;
 }
 
-.context-text.is-clamped {
+.image-generation-panel .context-text.is-clamped {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
 }
 
-.context-text.lines-2 {
+.image-generation-panel .context-text.lines-2 {
   -webkit-line-clamp: 2;
 }
 
-.context-text.lines-3 {
+.image-generation-panel .context-text.lines-3 {
   -webkit-line-clamp: 3;
 }
 
-.context-text.is-expanded {
+.image-generation-panel .context-text.is-expanded {
   display: block;
 }
 
-.context-toggle {
+.image-generation-panel .context-toggle {
   border: none;
   background: none;
   padding: 0;
-  color: var(--primary, #6366f1);
+  color: var(--color-text-brand);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   flex-shrink: 0;
 }
 
-.prompt-section {
+.image-generation-panel .prompt-section {
   padding: 0 16px 16px;
 }
 
-.prompt-input {
+.image-generation-panel .prompt-input {
   width: 100%;
   white-space: pre-wrap;
   line-height: 1.6;
-}
-
-.prompt-input {
   padding: 12px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
   font-family: inherit;
 }
 
-.btn-mini {
+.image-generation-panel .btn-mini {
   padding: 4px 10px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 6px;
-  background: var(--bg-primary, #fff);
-  color: var(--primary, #6366f1);
+  background: var(--color-surface-base);
+  color: var(--color-text-brand);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
@@ -549,45 +558,35 @@ watch(() => props.pages.length, (pageCount) => {
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.btn-mini:hover {
-  background: var(--bg-secondary, #f5f5f5);
-  border-color: var(--primary, #6366f1);
+.image-generation-panel .btn-mini:hover {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-brand);
 }
 
-.btn-mini:focus-visible {
-  outline: 2px solid rgb(99, 102, 241, 0.25);
+.image-generation-panel .btn-mini:focus-visible {
+  outline: 2px solid var(--image-generation-panel-border-default);
   outline-offset: 1px;
 }
 
-.prompt-collapsed {
-  background: var(--bg-primary, #fff);
-  border: 1px solid var(--border-color, #ddd);
+.image-generation-panel .prompt-collapsed {
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
   padding: 10px 12px;
 }
 
-.prompt-empty {
+.image-generation-panel .prompt-empty {
   margin: 0;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.prompt-collapsed-hint {
+.image-generation-panel .prompt-collapsed-hint {
   margin: 0;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   font-size: 12px;
 }
 
-.image-actions {
-  display: flex;
-  gap: 8px;
-  padding: 0 16px 16px;
-}
-
-.image-actions .btn {
-  flex: 1;
-}
-
-.btn {
+.image-generation-panel .ui-button {
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
@@ -596,77 +595,87 @@ watch(() => props.pages.length, (pageCount) => {
   cursor: pointer;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.image-generation-panel .image-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.image-generation-panel .image-actions .ui-button {
+  flex: 1;
+}
+
+.image-generation-panel .ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
 }
 
-.btn.secondary {
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #333);
-  border: 1px solid var(--border-color, #ddd);
+.image-generation-panel .ui-button--secondary {
+  background: var(--color-surface-base);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
 }
 
-.btn.primary.large {
+.image-generation-panel .ui-button--primary.ui-button--lg {
   width: 100%;
 }
 
-.progress-bar {
+.image-generation-panel .progress-bar {
   height: 10px;
-  background: #e5e7eb;
+  background: var(--color-surface-hover);
   border-radius: 999px;
   overflow: hidden;
   margin-top: 16px;
   position: relative;
 }
 
-.progress-fill {
+.image-generation-panel .progress-fill {
   height: 100%;
-  background: var(--primary, #6366f1);
+  background: var(--color-surface-brand);
 }
 
-.progress-text {
+.image-generation-panel .progress-text {
   position: absolute;
   right: 10px;
   top: -24px;
   font-size: 12px;
 }
 
-.image-status.pending {
-  color: #92400e;
+.image-generation-panel .image-status.pending {
+  color: var(--image-generation-panel-text-primary);
 }
 
-.image-status.generating {
-  color: #1e40af;
+.image-generation-panel .image-status.generating {
+  color: var(--image-generation-panel-text-secondary);
 }
 
-.image-status.generated {
-  color: #065f46;
+.image-generation-panel .image-status.generated {
+  color: var(--image-generation-panel-text-muted);
 }
 
-.image-status.failed {
-  color: #991b1b;
+.image-generation-panel .image-status.failed {
+  color: var(--image-generation-panel-text-subtle);
 }
 
-@media (max-width: 1024px) {
-  .generated-images {
+@media (--breakpoint-xl-down) {
+  .image-generation-panel .generated-images {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 640px) {
+@media (--breakpoint-sm-down) {
   .image-generation-panel {
     padding: 16px;
   }
 
-  .image-preview {
+  .image-generation-panel .image-preview {
     min-height: 240px;
     padding: 12px;
   }
 
-  .story-context,
-  .prompt-section,
-  .image-actions {
+  .image-generation-panel .story-context,
+  .image-generation-panel .prompt-section,
+  .image-generation-panel .image-actions {
     padding-left: 12px;
     padding-right: 12px;
   }

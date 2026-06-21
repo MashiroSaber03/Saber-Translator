@@ -46,6 +46,11 @@ vi.mock('@/defaults/textStyleFactoryDefaults', () => ({
 
 import TextStyleDefaultsSettings from '@/components/settings/TextStyleDefaultsSettings.vue'
 
+const customSelectStub = {
+  props: ['modelValue', 'options'],
+  template: '<div class="custom-select-stub" :data-value="modelValue">{{ options?.length || 0 }}</div>',
+}
+
 describe('TextStyleDefaultsSettings', () => {
   beforeEach(() => {
     getDefaultsMock.mockReset()
@@ -64,10 +69,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })
@@ -83,10 +85,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })
@@ -103,10 +102,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })
@@ -128,10 +124,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })
@@ -159,10 +152,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })
@@ -188,10 +178,7 @@ describe('TextStyleDefaultsSettings', () => {
       props: { isOpen: true },
       global: {
         stubs: {
-          CustomSelect: {
-            props: ['modelValue', 'options'],
-            template: '<select :value="modelValue"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
-          },
+          CustomSelect: customSelectStub,
         },
       },
     })

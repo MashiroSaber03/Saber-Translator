@@ -6,11 +6,11 @@
           <h3>主问候</h3>
           <p>角色进入对话时最先展示的开场白。它决定了语气、场景和第一印象。</p>
         </div>
-        <button class="ghost-btn" :disabled="generating" @click="$emit('generate')">
+        <UiButton variant="toolbar" class="action-ghost" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : '批量生成' }}
-        </button>
+        </UiButton>
       </div>
-      <textarea :value="firstMessage" rows="6" @input="$emit('update:firstMessage', ($event.target as HTMLTextAreaElement).value)"></textarea>
+      <UiTextarea :value="firstMessage" rows="6" @input="$emit('update:firstMessage', ($event.target as HTMLTextAreaElement).value)" />
     </div>
 
     <div class="list-block">
@@ -19,7 +19,7 @@
           <h3>备用问候</h3>
           <p>维护多种开场方式，可随时采用为主问候或继续打磨。</p>
         </div>
-        <button class="secondary-btn" @click="$emit('add')">添加备用问候</button>
+        <UiButton variant="toolbar" class="action-secondary" @click="$emit('add')">添加备用问候</UiButton>
       </div>
 
       <div v-if="alternates.length === 0" class="empty-copy">还没有备用问候，建议生成 3-5 条不同场景的开场白。</div>
@@ -32,13 +32,13 @@
               <strong>备用问候</strong>
             </div>
             <div class="actions">
-              <button class="ghost-btn small" @click="$emit('promote', item)">设为主问候</button>
-              <button class="ghost-btn small" :disabled="index === 0" @click="$emit('move', index, -1)">上移</button>
-              <button class="ghost-btn small" :disabled="index === alternates.length - 1" @click="$emit('move', index, 1)">下移</button>
-              <button class="danger-btn small" @click="$emit('remove', index)">删除</button>
+              <UiButton variant="toolbar" class="action-ghost" @click="$emit('promote', item)" size="sm">设为主问候</UiButton>
+              <UiButton variant="toolbar" class="action-ghost" :disabled="index === 0" @click="$emit('move', index, -1)" size="sm">上移</UiButton>
+              <UiButton variant="toolbar" class="action-ghost" :disabled="index === alternates.length - 1" @click="$emit('move', index, 1)" size="sm">下移</UiButton>
+              <UiButton variant="toolbar" class="action-danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
             </div>
           </div>
-          <textarea :value="item" rows="4" @input="$emit('update:item', index, ($event.target as HTMLTextAreaElement).value)"></textarea>
+          <UiTextarea :value="item" rows="4" @input="$emit('update:item', index, ($event.target as HTMLTextAreaElement).value)" />
         </article>
       </div>
     </div>
@@ -46,6 +46,8 @@
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 defineProps<{
   firstMessage: string
   alternates: string[]
@@ -74,8 +76,8 @@ defineEmits<{
 .list-block {
   border-radius: 20px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(25, 55, 94, 0.08);
+  background: var(--greeting-workbench-surface-base);
+  border: 1px solid var(--greeting-workbench-border-default);
 }
 
 .hero-head,
@@ -95,7 +97,7 @@ defineEmits<{
 .hero-head p,
 .list-head p {
   margin: 6px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -103,11 +105,11 @@ defineEmits<{
 textarea {
   width: 100%;
   margin-top: 14px;
-  border: 1px solid rgba(28, 55, 94, 0.12);
-  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid var(--color-border-studio-strong);
+  background: var(--color-surface-studio-soft);
   border-radius: 16px;
   padding: 14px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   resize: vertical;
   font-size: 13px;
   line-height: 1.7;
@@ -121,10 +123,10 @@ textarea {
 }
 
 .alternate-card {
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  border: 1px solid var(--color-border-studio);
   border-radius: 18px;
   padding: 14px;
-  background: rgba(247, 250, 254, 0.96);
+  background: var(--greeting-workbench-surface-raised);
 }
 
 .title {
@@ -136,8 +138,8 @@ textarea {
 .index-chip {
   border-radius: 999px;
   padding: 3px 8px;
-  background: rgba(37, 99, 199, 0.1);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint);
+  color: var(--color-text-primary-strong);
   font-size: 11px;
 }
 
@@ -147,30 +149,30 @@ textarea {
   flex-wrap: wrap;
 }
 
-.secondary-btn,
-.ghost-btn,
-.danger-btn {
+.action-secondary,
+.action-ghost,
+.action-danger {
   border: none;
   border-radius: 12px;
   cursor: pointer;
 }
 
-.secondary-btn,
-.ghost-btn {
+.action-secondary,
+.action-ghost {
   padding: 10px 14px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
-.danger-btn {
+.action-danger {
   padding: 10px 14px;
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
 }
 
-.secondary-btn:disabled,
-.ghost-btn:disabled,
-.danger-btn:disabled {
+.action-secondary:disabled,
+.action-ghost:disabled,
+.action-danger:disabled {
   opacity: 0.68;
   cursor: not-allowed;
 }
@@ -182,11 +184,11 @@ textarea {
 
 .empty-copy {
   margin-top: 14px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .hero-head,
   .list-head,
   .alternate-head {

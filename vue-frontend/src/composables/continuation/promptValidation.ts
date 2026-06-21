@@ -9,7 +9,7 @@ export function isUsableImagePrompt(prompt: string | null | undefined): boolean 
   return !FAILURE_PREFIXES.some(prefix => text.startsWith(prefix))
 }
 
-export function normalizeImagePrompt(prompt: string | null | undefined, maxLines = 12): string {
+export function normalizeImagePrompt(prompt: string | null | undefined, maxLines?: number): string {
   const lines = (prompt || '')
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -19,7 +19,8 @@ export function normalizeImagePrompt(prompt: string | null | undefined, maxLines
     return ''
   }
 
-  return lines.slice(0, maxLines).join('\n')
+  const lineLimit = maxLines ?? (lines.some(line => line === '角色形态：') ? 12 : 5)
+  return lines.slice(0, lineLimit).join('\n')
 }
 
 export function hasUsableStoryContent(page: {

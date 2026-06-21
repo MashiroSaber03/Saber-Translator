@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
 /**
  * 书籍新建/编辑模态框组件
  */
@@ -7,6 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 interface Props {
   bookId?: string | null
@@ -37,7 +40,7 @@ const availableTags = computed(() => bookshelfStore.tags)
 const filteredTagSuggestions = computed(() => {
   if (!tagInput.value) return availableTags.value
   const query = tagInput.value.toLowerCase()
-  // 【复刻原版】使用 tag.name 作为唯一标识
+  // 【当前行为】使用 tag.name 作为唯一标识
   return availableTags.value.filter(tag => 
     tag.name.toLowerCase().includes(query) && !selectedTags.value.includes(tag.name)
   )
@@ -50,7 +53,7 @@ onMounted(() => {
     if (book) {
       title.value = book.title
       coverData.value = book.cover || null
-      // 【复刻原版】book.tags 存储的是标签名称,直接使用即可
+      // 【当前行为】book.tags 存储的是标签名称,直接使用即可
       if (book.tags && book.tags.length > 0) {
         selectedTags.value = [...book.tags]
       }
@@ -91,7 +94,7 @@ function handleCoverDrop(event: DragEvent) {
   reader.readAsDataURL(file)
 }
 
-// 添加标签 - 【复刻原版】使用 name 作为标识
+// 添加标签 - 【当前行为】使用 name 作为标识
 function addTag(tagName: string) {
   if (!selectedTags.value.includes(tagName)) {
     selectedTags.value.push(tagName)
@@ -108,7 +111,7 @@ async function createAndAddTag() {
   // 检查是否已存在
   const existing = availableTags.value.find(t => t.name === name)
   if (existing) {
-    addTag(existing.name)  // 【复刻原版】使用 name
+    addTag(existing.name)  // 【当前行为】使用 name
     return
   }
 
@@ -116,14 +119,14 @@ async function createAndAddTag() {
   try {
     const newTag = await bookshelfStore.createTag(name)
     if (newTag) {
-      addTag(newTag.name)  // 【复刻原版】使用 name
+      addTag(newTag.name)  // 【当前行为】使用 name
     }
   } catch (error) {
     showToast('创建标签失败', 'error')
   }
 }
 
-// 移除标签 - 【复刻原版】使用 name 作为标识
+// 移除标签 - 【当前行为】使用 name 作为标识
 function removeTag(tagName: string) {
   selectedTags.value = selectedTags.value.filter(name => name !== tagName)
 }
@@ -137,16 +140,16 @@ async function saveBook() {
     return
   }
 
-  // 【复刻原版】selectedTags 已经是标签名称数组,直接使用
+  // 【当前行为】selectedTags 已经是标签名称数组,直接使用
   const tagNames = selectedTags.value
 
   try {
     if (isEditing.value && props.bookId) {
-      // 【复刻原版 bookshelf.js saveBook】更新书籍时一次性传递所有数据包括 tags
+      // 更新书籍时一次性传递所有数据，包括 tags。
       const success = await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
         cover: coverData.value || undefined,
-        tags: tagNames  // 【复刻原版】一同传递 tags 数组
+        tags: tagNames  // 【当前行为】一同传递 tags 数组
       })
       if (success) {
         showToast('书籍更新成功', 'success')
@@ -179,19 +182,19 @@ async function saveBook() {
   <BaseModal :title="modalTitle" @close="emit('close')">
     <form @submit.prevent="saveBook">
       <!-- 书籍名称 -->
-      <div class="form-group">
+      <div class="book-modal__field">
         <label for="bookTitle">书籍名称 <span class="required">*</span></label>
-        <input
+        <UiInput
           id="bookTitle"
           v-model="title"
           type="text"
           placeholder="请输入书籍名称"
           required
-        >
+        />
       </div>
 
       <!-- 封面图片 -->
-      <div class="form-group">
+      <div class="book-modal__field">
         <label>封面图片</label>
         <div
           class="cover-upload-area"
@@ -199,13 +202,12 @@ async function saveBook() {
           @drop="handleCoverDrop"
           @click="($refs.coverInput as HTMLInputElement).click()"
         >
-          <input
+          <UiFileInput
             ref="coverInput"
-            type="file"
             accept="image/*"
             hidden
             @change="handleCoverUpload"
-          >
+          />
           <div class="cover-preview">
             <img
               v-if="coverData"
@@ -222,37 +224,38 @@ async function saveBook() {
       </div>
 
       <!-- 标签 -->
-      <div class="form-group">
+      <div class="book-modal__field">
         <label>标签</label>
         <div class="tag-input-container">
           <!-- 已选标签 -->
           <div class="selected-tags">
-            <!-- 【复刻原版】selectedTags 已经存储标签名称,直接使用 -->
+            <!-- 【当前行为】selectedTags 已经存储标签名称,直接使用 -->
             <span
               v-for="tagName in selectedTags"
               :key="tagName"
               class="selected-tag"
             >
               {{ tagName }}
-              <button type="button" class="remove-tag" @click="removeTag(tagName)">×</button>
+              <UiButton variant="toolbar" type="button" class="remove-tag" @click="removeTag(tagName)">×</UiButton>
             </span>
           </div>
           <!-- 标签输入 -->
           <div class="tag-dropdown">
-            <input
+            <UiInput
               v-model="tagInput"
               type="text"
               placeholder="输入标签名称..."
               autocomplete="off"
               @focus="showTagSuggestions = true"
               @keypress.enter.prevent="createAndAddTag"
-            >
+            />
             <div
               v-if="showTagSuggestions && filteredTagSuggestions.length > 0"
               class="tag-suggestions"
             >
-              <!-- 【复刻原版】使用 tag.name 作为 key 和参数 -->
-              <button
+              <!-- 【当前行为】使用 tag.name 作为 key 和参数 -->
+              <UiButton
+                variant="toolbar"
                 v-for="tag in filteredTagSuggestions"
                 :key="tag.name"
                 type="button"
@@ -260,7 +263,7 @@ async function saveBook() {
                 @click="addTag(tag.name)"
               >
                 {{ tag.name }}
-              </button>
+              </UiButton>
             </div>
           </div>
         </div>
@@ -269,45 +272,45 @@ async function saveBook() {
     </form>
 
     <template #footer>
-      <button type="button" class="btn btn-secondary" @click="emit('close')">取消</button>
-      <button type="button" class="btn btn-primary" @click="saveBook">保存</button>
+      <UiButton type="button" variant="secondary" @click="emit('close')">取消</UiButton>
+      <UiButton type="button" variant="primary" @click="saveBook">保存</UiButton>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
-.form-group {
+.book-modal__field {
   margin-bottom: 20px;
 }
 
-.form-group label {
+.book-modal__field label {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
 }
 
 .required {
-  color: #e74c3c;
+  color: var(--color-text-danger-strong);
 }
 
-.form-group input[type="text"] {
+.book-modal__field input[type="text"] {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 6px;
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
 }
 
-.form-group input[type="text"]:focus {
-  border-color: var(--color-primary, #667eea);
+.book-modal__field input[type="text"]:focus {
+  border-color: var(--color-action-primary, var(--color-border-brand-gradient));
 }
 
 .cover-upload-area {
   cursor: pointer;
-  border: 2px dashed var(--border-color, #ddd);
+  border: 2px dashed var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
   padding: 16px;
   text-align: center;
@@ -315,14 +318,14 @@ async function saveBook() {
 }
 
 .cover-upload-area:hover {
-  border-color: var(--color-primary, #667eea);
+  border-color: var(--color-action-primary, var(--color-border-brand-gradient));
 }
 
 .cover-preview {
   width: 150px;
   height: 200px;
   margin: 0 auto;
-  background: var(--bg-secondary, #f5f5f5);
+  background: var(--color-surface-subtle);
   border-radius: 4px;
   overflow: hidden;
   display: flex;
@@ -341,7 +344,7 @@ async function saveBook() {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: var(--text-secondary, #999);
+  color: var(--color-text-supporting, var(--color-text-muted));
 }
 
 .upload-icon {
@@ -351,11 +354,11 @@ async function saveBook() {
 .form-hint {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--color-text-supporting, var(--color-text-muted));
 }
 
 .tag-input-container {
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 6px;
   padding: 8px;
 }
@@ -372,8 +375,8 @@ async function saveBook() {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: var(--color-primary, #667eea);
-  color: #fff;
+  background: var(--color-action-primary, var(--color-surface-brand-gradient-start));
+  color: var(--color-text-inverse);
   font-size: 12px;
   border-radius: 4px;
 }
@@ -406,13 +409,13 @@ async function saveBook() {
   top: 100%;
   left: 0;
   right: 0;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #ddd);
+  background: var(--color-surface-card, var(--color-surface-base));
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px var(--book-modal-shadow-default);
   max-height: 200px;
   overflow-y: auto;
-  z-index: 10;
+  z-index: var(--z-local-toolbar);
 }
 
 .tag-suggestion {
@@ -424,10 +427,10 @@ async function saveBook() {
   border: none;
   cursor: pointer;
   font-size: 14px;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
 }
 
 .tag-suggestion:hover {
-  background: var(--bg-secondary, #f5f5f5);
+  background: var(--color-surface-subtle);
 }
 </style>

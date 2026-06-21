@@ -25,6 +25,7 @@ import type {
 } from '@/types/settings'
 import {
   STORAGE_KEY_TRANSLATION_SETTINGS,
+  STORAGE_KEY_THEME,
   STORAGE_KEY_PROVIDER_CONFIGS,
   DEFAULT_RPM_TRANSLATION,
   DEFAULT_RPM_AI_VISION_OCR,
@@ -77,6 +78,9 @@ export const useSettingsStore = defineStore('settings', () => {
   /** 翻译设置 */
   const settings = ref<TranslationSettings>(createDefaultSettings())
 
+  /** 主题状态（兼容旧设置 Store API，当前 UI 暂未启用主题切换） */
+  const theme = ref<'light' | 'dark'>('light')
+
   /** 服务商配置分组存储（用于切换服务商时保存/恢复配置） */
   const providerConfigs = ref<ProviderConfigsCache>({
     translation: {},
@@ -106,6 +110,8 @@ export const useSettingsStore = defineStore('settings', () => {
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, data)
     } catch (error) {
       console.error('保存设置到 localStorage 失败:', error)
+    } finally {
+      syncLegacyOpenAiMirrorFields()
     }
   }
 
@@ -119,6 +125,8 @@ export const useSettingsStore = defineStore('settings', () => {
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, data)
     } catch (error) {
       console.error('保存服务商配置缓存失败:', error)
+    } finally {
+      syncLegacyOpenAiMirrorFields()
     }
   }
 
@@ -135,6 +143,8 @@ export const useSettingsStore = defineStore('settings', () => {
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
     } catch (error) {
       console.error('保存插件 Agent 设置到 localStorage 失败:', error)
+    } finally {
+      syncLegacyOpenAiMirrorFields()
     }
   }
 
@@ -156,6 +166,8 @@ export const useSettingsStore = defineStore('settings', () => {
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, JSON.stringify(nextProviderConfigs))
     } catch (error) {
       console.error('保存插件 Agent 服务商配置缓存失败:', error)
+    } finally {
+      syncLegacyOpenAiMirrorFields()
     }
   }
 
@@ -239,9 +251,6 @@ export const useSettingsStore = defineStore('settings', () => {
         // 确保数值类型正确
         ensureNumericTypes()
 
-        // 【复刻原版】左侧边栏文字设置始终使用默认值，不从 localStorage 恢复
-        settings.value.textStyle = { ...defaults.textStyle }
-
         // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
         const t = settings.value.translation
         if (t.translationMode === 'single') {
@@ -249,8 +258,9 @@ export const useSettingsStore = defineStore('settings', () => {
         } else {
           settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
         }
+        syncLegacyOpenAiMirrorFields()
 
-        console.log('已从 localStorage 加载设置（textStyle 使用默认值）')
+        console.log('已从 localStorage 加载设置')
       }
     } catch (error) {
       console.error('从 localStorage 加载设置失败:', error)
@@ -357,6 +367,12 @@ export const useSettingsStore = defineStore('settings', () => {
         }
       }
     )
+    if (tr.rpmLimit !== undefined) {
+      tr.openaiOptions.execution.rpmLimit = parseNumberOrFallback(tr.rpmLimit, DEFAULT_RPM_TRANSLATION)
+    }
+    if (tr.maxRetries !== undefined) {
+      tr.openaiOptions.execution.businessRetries = parseNumberOrFallback(tr.maxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+    }
 
     const hq = settings.value.hqTranslation as typeof settings.value.hqTranslation & Record<string, unknown>
     hq.batchSize = Number(hq.batchSize) || 10
@@ -378,6 +394,12 @@ export const useSettingsStore = defineStore('settings', () => {
         }
       }
     )
+    if (hq.rpmLimit !== undefined) {
+      hq.openaiOptions.execution.rpmLimit = parseNumberOrFallback(hq.rpmLimit, 7)
+    }
+    if (hq.maxRetries !== undefined) {
+      hq.openaiOptions.execution.businessRetries = parseNumberOrFallback(hq.maxRetries, DEFAULT_HQ_TRANSLATION_MAX_RETRIES)
+    }
 
     const pluginAgent = settings.value.pluginAgent as typeof settings.value.pluginAgent & Record<string, unknown>
     pluginAgent.openaiOptions = normalizeOpenAiOptions(
@@ -418,6 +440,12 @@ export const useSettingsStore = defineStore('settings', () => {
         }
       }
     )
+    if (av.rpmLimit !== undefined) {
+      av.openaiOptions.execution.rpmLimit = parseNumberOrFallback(av.rpmLimit, DEFAULT_RPM_AI_VISION_OCR)
+    }
+    if (av.maxRetries !== undefined) {
+      av.openaiOptions.execution.businessRetries = parseNumberOrFallback(av.maxRetries, DEFAULT_TRANSLATION_MAX_RETRIES)
+    }
     av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt, av.openaiOptions.request.forceJsonOutput)
     av.openaiOptions.request.forceJsonOutput = av.promptMode === 'json'
     // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
@@ -681,6 +709,42 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function syncLegacyOpenAiMirrorFields(): void {
+    const translation = settings.value.translation as Record<string, unknown>
+    translation.rpmLimit = settings.value.translation.openaiOptions.execution.rpmLimit
+    translation.maxRetries = settings.value.translation.openaiOptions.execution.businessRetries
+    translation.isJsonMode = settings.value.translation.openaiOptions.request.forceJsonOutput
+    translation.useStream = settings.value.translation.openaiOptions.execution.useStream
+    if (settings.value.translation.openaiOptions.request.extraBody !== undefined) {
+      translation.extraBody = settings.value.translation.openaiOptions.request.extraBody
+    } else {
+      delete translation.extraBody
+    }
+
+    const hq = settings.value.hqTranslation as Record<string, unknown>
+    hq.rpmLimit = settings.value.hqTranslation.openaiOptions.execution.rpmLimit
+    hq.maxRetries = settings.value.hqTranslation.openaiOptions.execution.businessRetries
+    hq.forceJsonOutput = settings.value.hqTranslation.openaiOptions.request.forceJsonOutput
+    hq.useStream = settings.value.hqTranslation.openaiOptions.execution.useStream
+    if (settings.value.hqTranslation.openaiOptions.request.extraBody !== undefined) {
+      hq.extraBody = settings.value.hqTranslation.openaiOptions.request.extraBody
+    } else {
+      delete hq.extraBody
+    }
+
+    const aiVision = settings.value.aiVisionOcr as Record<string, unknown>
+    aiVision.rpmLimit = settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit
+    aiVision.maxRetries = settings.value.aiVisionOcr.openaiOptions.execution.businessRetries
+    aiVision.isJsonMode = settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput
+    aiVision.forceJsonOutput = settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput
+    aiVision.useStream = settings.value.aiVisionOcr.openaiOptions.execution.useStream
+    if (settings.value.aiVisionOcr.openaiOptions.request.extraBody !== undefined) {
+      aiVision.extraBody = settings.value.aiVisionOcr.openaiOptions.request.extraBody
+    } else {
+      delete aiVision.extraBody
+    }
+  }
+
   /**
    * 深度合并对象
    */
@@ -832,6 +896,34 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value = createDefaultSettings()
     saveToStorage()
     console.log('设置已重置为默认值')
+  }
+
+  function setTheme(nextTheme: 'light' | 'dark'): void {
+    theme.value = nextTheme
+    try {
+      localStorage.setItem(STORAGE_KEY_THEME, nextTheme)
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', nextTheme)
+        document.body.setAttribute('data-theme', nextTheme)
+      }
+    } catch (error) {
+      console.warn('保存主题设置失败:', error)
+    }
+  }
+
+  function toggleTheme(): void {
+    setTheme(theme.value === 'light' ? 'dark' : 'light')
+  }
+
+  function loadThemeFromStorage(): void {
+    try {
+      const storedTheme = localStorage.getItem(STORAGE_KEY_THEME)
+      if (storedTheme === 'light' || storedTheme === 'dark') {
+        setTheme(storedTheme)
+      }
+    } catch (error) {
+      console.warn('读取主题设置失败:', error)
+    }
   }
 
   // ============================================================
@@ -1281,6 +1373,7 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
 
+    syncLegacyOpenAiMirrorFields()
     console.log('[Settings] 后端设置映射完成')
   }
 
@@ -1306,6 +1399,7 @@ export const useSettingsStore = defineStore('settings', () => {
       stripLegacyOpenAiMirrorFields()
 
       const backendSettings: Record<string, unknown> = JSON.parse(JSON.stringify(settings.value))
+      syncLegacyOpenAiMirrorFields()
       backendSettings.settingsSchemaVersion = 3
       backendSettings.providerConfigs = buildProviderSettingsForBackend()
 
@@ -1320,6 +1414,7 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     } catch (error) {
       console.error('[Settings] 保存设置到后端出错:', error)
+      syncLegacyOpenAiMirrorFields()
       return false
     }
   }
@@ -1334,6 +1429,7 @@ export const useSettingsStore = defineStore('settings', () => {
         customBaseUrl: settings.value.pluginAgent.customBaseUrl,
         openaiOptions: JSON.parse(JSON.stringify(settings.value.pluginAgent.openaiOptions))
       }
+      syncLegacyOpenAiMirrorFields()
 
       savePluginAgentSettingsToStorage()
       savePluginAgentProviderConfigsToStorage()
@@ -1370,6 +1466,7 @@ export const useSettingsStore = defineStore('settings', () => {
       return false
     } catch (error) {
       console.error('[Settings] 保存插件 Agent 设置时出错:', error)
+      syncLegacyOpenAiMirrorFields()
       return false
     }
   }
@@ -1382,6 +1479,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // 核心状态
     settings,
     providerConfigs,
+    theme,
 
     // OCR 模块
     ocrEngine: ocrModule.ocrEngine,
@@ -1464,6 +1562,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // 持久化方法
     saveToStorage,
     loadFromStorage,
+    setTheme,
+    toggleTheme,
+    loadThemeFromStorage,
     initSettings,
     resetToDefaults,
 

@@ -158,7 +158,7 @@ describe('WebImportModal', () => {
     webImportStore.draftSettings.agent.provider = 'openai'
 
     const wrapper = mount(WebImportModal)
-    await wrapper.find('.settings-header').trigger('click')
+    await wrapper.find('.web-import-modal__settings-header').trigger('click')
 
     const fetchButton = wrapper.find('.fetch-models-btn')
     expect(fetchButton.exists()).toBe(true)

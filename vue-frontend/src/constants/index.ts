@@ -310,6 +310,9 @@ export const LAYOUT_MODE_KEY = 'edit_mode_layout'
 /** 翻译设置存储键 */
 export const STORAGE_KEY_TRANSLATION_SETTINGS = 'translationSettings'
 
+/** 主题设置存储键（兼容旧设置 Store API） */
+export const STORAGE_KEY_THEME = 'theme'
+
 /** 阅读器设置存储键 */
 export const STORAGE_KEY_READER_SETTINGS = 'readerSettings'
 

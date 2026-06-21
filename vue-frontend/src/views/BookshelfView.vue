@@ -16,6 +16,9 @@ import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
+import AppShell from '@/components/ui/AppShell.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiEmptyState from '@/components/ui/UiEmptyState.vue'
 import { showToast } from '@/utils/toast'
 
 const router = useRouter()
@@ -38,7 +41,7 @@ const filteredBooks = computed(() => bookshelfStore.filteredBooks)
 const allTags = computed(() => bookshelfStore.tags)
 const isEmpty = computed(() => filteredBooks.value.length === 0 && !bookshelfStore.searchQuery)
 
-// 【复刻原版 bookshelf.js】pageshow 事件处理函数
+// pageshow 事件处理函数
 // 当从翻译页面返回时（通过浏览器后退按钮），如果页面被 BFCache 缓存，自动刷新数据
 function handlePageShow(event: PageTransitionEvent) {
   if (event.persisted) {
@@ -71,7 +74,7 @@ onMounted(async () => {
     lanUrl.value = '获取失败'
   }
   
-  // 【复刻原版】添加 pageshow 事件监听，处理浏览器 BFCache
+  // 【当前行为】添加 pageshow 事件监听，处理浏览器 BFCache
   window.addEventListener('pageshow', handlePageShow)
 })
 
@@ -110,7 +113,7 @@ function openEditBookModal(bookId: string) {
 }
 
 // 打开书籍详情模态框 - 调用API获取完整数据（包括章节）
-// 【复刻原版 bookshelf.js openBookDetail】失败时显示 toast，不打开不完整的模态框
+// 失败时显示 toast，不打开不完整的书籍详情模态框
 async function openBookDetail(bookId: string) {
   try {
     // 【修复 P2】使用统一的 API 调用方式
@@ -130,7 +133,7 @@ async function openBookDetail(bookId: string) {
     showDetailModal.value = true
     
   } catch (error) {
-    // 【复刻原版】失败时显示 toast 提示
+    // 【当前行为】失败时显示 toast 提示
     const errorMsg = error instanceof Error ? error.message : '未知错误'
     console.error('加载书籍详情失败:', error)
     showToast(`加载书籍详情失败: ${errorMsg}`, 'error')
@@ -154,22 +157,22 @@ function showFeatureNotice() {
 </script>
 
 <template>
-  <div class="bookshelf-page">
+  <AppShell class="bookshelf-page">
     <!-- 页面头部 -->
     <AppHeader variant="bookshelf" logo-title="书架首页">
       <template #header-links>
-        <span class="lan-access-info" title="其他设备可通过此地址访问">
-          <span class="lan-icon">🌐局域网设备可通过该网址访问</span>
+        <span class="bookshelf-header__lan-access" title="其他设备可通过此地址访问">
+          <span class="bookshelf-header__lan-icon">🌐局域网设备可通过该网址访问</span>
           <span id="lanUrl">{{ lanUrl }}</span>
-          <button class="copy-btn" title="复制地址" @click="copyLanUrl">📋</button>
+          <UiButton variant="toolbar" class="bookshelf-header__copy-button" title="复制地址" @click="copyLanUrl">📋</UiButton>
         </span>
-        <a href="http://www.mashirosaber.top" target="_blank" class="tutorial-link">使用教程</a>
-        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="github-link">
-          <img src="/pic/github.jpg" alt="GitHub" class="github-icon">
+        <a href="http://www.mashirosaber.top" target="_blank" class="bookshelf-header__tutorial-link">使用教程</a>
+        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="bookshelf-header__github-link">
+          <img src="/pic/github.jpg" alt="GitHub" class="bookshelf-header__github-icon">
         </a>
-        <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
-          <span class="theme-icon">☀️</span>
-        </button>
+        <UiButton variant="toolbar" class="bookshelf-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <span class="bookshelf-header__theme-icon">☀️</span>
+        </UiButton>
       </template>
     </AppHeader>
 
@@ -179,16 +182,16 @@ function showFeatureNotice() {
       <div class="bookshelf-toolbar">
         <h1 class="page-title">我的书架</h1>
         <div class="toolbar-actions">
-          <button class="btn btn-primary" @click="openCreateBookModal">
-            <span class="btn-icon">+</span>
+          <UiButton variant="primary" @click="openCreateBookModal">
+            <span class="bookshelf-button-icon">+</span>
             <span>新建书籍</span>
-          </button>
-          <button class="btn btn-secondary" @click="openTagManageModal">
+          </UiButton>
+          <UiButton variant="secondary" @click="openTagManageModal">
             <span>🏷️ 管理标签</span>
-          </button>
-          <button class="btn btn-secondary" @click="goToTranslate">
+          </UiButton>
+          <UiButton variant="secondary" @click="goToTranslate">
             <span>快速翻译</span>
-          </button>
+          </UiButton>
         </div>
       </div>
 
@@ -211,22 +214,25 @@ function showFeatureNotice() {
         </div>
         
         <!-- 空状态提示 -->
-        <div v-else-if="isEmpty" class="empty-state">
-          <div class="empty-icon">📚</div>
-          <h2>书架空空如也</h2>
-          <p>点击"新建书籍"开始你的翻译之旅</p>
-          <button class="btn btn-primary" @click="openCreateBookModal">
-            <span class="btn-icon">+</span>
+        <UiEmptyState
+          v-else-if="isEmpty"
+          icon="📚"
+          title="书架空空如也"
+          description="点击&quot;新建书籍&quot;开始你的翻译之旅"
+        >
+          <UiButton variant="primary" @click="openCreateBookModal">
+            <span class="bookshelf-button-icon">+</span>
             <span>新建第一本书</span>
-          </button>
-        </div>
+          </UiButton>
+        </UiEmptyState>
         
         <!-- 搜索无结果 -->
-        <div v-else class="empty-state">
-          <div class="empty-icon">🔍</div>
-          <h2>未找到匹配的书籍</h2>
-          <p>尝试调整搜索条件或标签筛选</p>
-        </div>
+        <UiEmptyState
+          v-else
+          icon="🔍"
+          title="未找到匹配的书籍"
+          description="尝试调整搜索条件或标签筛选"
+        />
       </div>
     </main>
 
@@ -255,61 +261,60 @@ function showFeatureNotice() {
       @confirm="confirmCallback?.(); showConfirmModal = false"
       @cancel="showConfirmModal = false"
     />
-
-  </div>
+  </AppShell>
 </template>
 
 <style scoped>
-/* ==================== 书架页面完整样式 - 完整迁移自 bookshelf.css ==================== */
+/* ==================== 书架页面样式 ==================== */
 
 /* header 内 slot 元素样式（需要 :deep 因为元素在 AppHeader 子组件 slot 中渲染） */
-.lan-access-info {
+.bookshelf-header__lan-access {
     display: flex;
     align-items: center;
     gap: 6px;
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--bookshelf-view-text-primary);
     font-size: 0.85rem;
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--color-surface-overlay-light8);
     padding: 6px 12px;
     border-radius: 20px;
     backdrop-filter: blur(4px);
     font-family: var(--font-mono, 'Consolas', 'Monaco', monospace);
 }
 
-.tutorial-link {
-    color: rgba(255, 255, 255, 0.9);
+.bookshelf-header__tutorial-link {
+    color: var(--bookshelf-view-text-secondary);
     text-decoration: none;
     padding: 6px 12px;
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--color-surface-overlay-light5);
     transition: all 0.2s ease;
 }
 
-.tutorial-link:hover {
-    background: rgba(255, 255, 255, 0.25);
+.bookshelf-header__tutorial-link:hover {
+    background: var(--color-surface-overlay-medium5);
 }
 
-.github-link {
+.bookshelf-header__github-link {
     display: flex;
     align-items: center;
     padding: 6px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--color-surface-overlay-light5);
     transition: all 0.2s ease;
 }
 
-.github-link:hover {
-    background: rgba(255, 255, 255, 0.25);
+.bookshelf-header__github-link:hover {
+    background: var(--color-surface-overlay-medium5);
 }
 
-.github-icon {
+.bookshelf-header__github-icon {
     width: 24px;
     height: 24px;
     border-radius: 50%;
 }
 
-.theme-toggle {
-    background: rgba(255, 255, 255, 0.2);
+.bookshelf-header__theme-toggle {
+    background: var(--color-surface-overlay-medium);
     border: none;
     border-radius: 50%;
     width: 38px;
@@ -321,8 +326,8 @@ function showFeatureNotice() {
     transition: all 0.2s ease;
 }
 
-.theme-toggle:hover {
-    background: rgba(255, 255, 255, 0.3);
+.bookshelf-header__theme-toggle:hover {
+    background: var(--bookshelf-view-surface-base);
     transform: rotate(15deg);
 }
 
@@ -332,6 +337,10 @@ function showFeatureNotice() {
     margin: 0 auto;
     padding: 24px;
     min-height: calc(100vh - 64px);
+}
+
+.bookshelf-page {
+    padding-inline: 20px;
 }
 
 .bookshelf-toolbar {
@@ -346,7 +355,7 @@ function showFeatureNotice() {
 .page-title {
     font-size: 1.8rem;
     font-weight: 700;
-    color: var(--text-primary);
+    color: var(--color-text-default);
     margin: 0;
     display: flex;
     align-items: center;
@@ -364,67 +373,7 @@ function showFeatureNotice() {
     flex-wrap: wrap;
 }
 
-/* 按钮样式 */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-decoration: none;
-    white-space: nowrap;
-    user-select: none;
-}
-
-.btn:active {
-    transform: scale(0.97);
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-}
-
-.btn-secondary {
-    background: var(--card-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-    background: var(--hover-bg);
-    border-color: var(--text-secondary);
-}
-
-.btn-danger {
-    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-    color: white;
-    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
-}
-
-.btn-danger:hover {
-    background: linear-gradient(135deg, #e04555 0%, #d63343 100%);
-    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
-}
-
-.btn-sm {
-    padding: 6px 14px;
-    font-size: 0.85rem;
-}
-
-.btn-icon {
+.bookshelf-button-icon {
     font-size: 1.1rem;
     font-weight: 600;
 }
@@ -440,31 +389,5 @@ function showFeatureNotice() {
     gap: 24px;
 }
 
-/* 空状态 */
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 80px 20px;
-    text-align: center;
-}
-
-.empty-icon {
-    font-size: 4rem;
-    margin-bottom: 16px;
-}
-
-.empty-state h2 {
-    font-size: 1.5rem;
-    color: var(--text-primary);
-    margin: 0 0 8px 0;
-}
-
-.empty-state p {
-    color: var(--text-secondary);
-    margin: 0 0 24px 0;
-}
-
-/* 模态框/表单/Toast 样式已迁移到 BaseModal + global.css */
+/* 模态框、表单和 Toast 样式由对应组件 owner 管理 */
 </style>

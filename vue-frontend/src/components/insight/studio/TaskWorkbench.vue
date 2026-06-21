@@ -6,10 +6,10 @@
         <p>用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
       </div>
       <div class="actions">
-        <button class="ghost-btn" :disabled="generating" @click="$emit('generate')">
+        <UiButton variant="toolbar" class="action-ghost" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : 'AI 生成任务' }}
-        </button>
-        <button class="secondary-btn" @click="$emit('add')">添加任务</button>
+        </UiButton>
+        <UiButton variant="toolbar" class="action-secondary" @click="$emit('add')">添加任务</UiButton>
       </div>
     </div>
 
@@ -17,28 +17,28 @@
     <div v-else class="task-list">
       <article v-for="(task, index) in tasks" :key="task.id" class="task-card">
         <div class="card-head">
-          <input class="title-input" :value="task.name" type="text" @input="$emit('update:field', index, 'name', ($event.target as HTMLInputElement).value)">
-          <button class="danger-btn small" @click="$emit('remove', index)">删除</button>
+          <UiInput class="title-input" :value="task.name" type="text" @input="$emit('update:field', index, 'name', ($event.target as HTMLInputElement).value)" />
+          <UiButton variant="toolbar" class="action-danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
         </div>
         <div class="grid">
           <label>
             触发时机
-            <select :value="task.triggerTiming" @change="$emit('update:field', index, 'triggerTiming', ($event.target as HTMLSelectElement).value)">
+            <UiSelect :model-value="task.triggerTiming" @change="$emit('update:field', index, 'triggerTiming', $event)">
               <option value="initialization">初始化</option>
               <option value="message_received">收到消息</option>
               <option value="message_sent">发送消息</option>
-            </select>
+            </UiSelect>
           </label>
           <label>
             间隔（事件次数）
-            <input :value="String(task.interval)" type="number" min="0" @input="$emit('update:number', index, 'interval', Number(($event.target as HTMLInputElement).value || 0))">
+            <UiInput :value="String(task.interval)" type="number" min="0" @input="$emit('update:number', index, 'interval', Number(($event.target as HTMLInputElement).value || 0))" />
           </label>
           <label class="full">
             任务脚本
-            <textarea :value="task.commands" rows="6" @input="$emit('update:field', index, 'commands', ($event.target as HTMLTextAreaElement).value)"></textarea>
+            <UiTextarea :value="task.commands" rows="6" @input="$emit('update:field', index, 'commands', ($event.target as HTMLTextAreaElement).value)" />
           </label>
           <div class="toggles full">
-            <label><input :checked="task.disabled" type="checkbox" @change="$emit('toggle:field', index, 'disabled', ($event.target as HTMLInputElement).checked)"> 禁用任务</label>
+            <label><UiInput :checked="task.disabled" type="checkbox" @change="$emit('toggle:field', index, 'disabled', ($event.target as HTMLInputElement).checked)" /> 禁用任务</label>
           </div>
         </div>
       </article>
@@ -47,6 +47,10 @@
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { StateTask } from '@/types/characterStudio'
 
 defineProps<{
@@ -85,7 +89,7 @@ defineEmits<{
 
 .workbench-head p {
   margin: 6px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -106,8 +110,8 @@ defineEmits<{
 .task-card {
   border-radius: 18px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(25, 55, 94, 0.08);
+  background: var(--task-workbench-surface-base);
+  border: 1px solid var(--task-workbench-border-default);
 }
 
 .grid {
@@ -125,11 +129,11 @@ defineEmits<{
 input,
 textarea,
 select {
-  border: 1px solid rgba(28, 55, 94, 0.12);
-  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid var(--color-border-studio-strong);
+  background: var(--color-surface-studio-soft);
   border-radius: 14px;
   padding: 11px 12px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
 }
 
@@ -146,34 +150,34 @@ label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #516882;
+  color: var(--task-workbench-text-primary);
   font-size: 12px;
 }
 
-.secondary-btn,
-.ghost-btn,
-.danger-btn {
+.action-secondary,
+.action-ghost,
+.action-danger {
   border: none;
   border-radius: 12px;
   cursor: pointer;
 }
 
-.secondary-btn,
-.ghost-btn {
+.action-secondary,
+.action-ghost {
   padding: 10px 14px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
-.danger-btn {
+.action-danger {
   padding: 10px 14px;
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
 }
 
-.secondary-btn:disabled,
-.ghost-btn:disabled,
-.danger-btn:disabled {
+.action-secondary:disabled,
+.action-ghost:disabled,
+.action-danger:disabled {
   opacity: 0.68;
   cursor: not-allowed;
 }
@@ -184,11 +188,11 @@ label {
 }
 
 .empty-copy {
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .workbench-head,
   .card-head,
   .grid {

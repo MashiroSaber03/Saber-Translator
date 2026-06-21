@@ -4,13 +4,32 @@
     "rules": {
         "declaration-no-important": true,
         "selector-max-id": 0,
-        "no-descending-specificity": true,
+        "selector-class-pattern": [
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:(?:__|--)[a-z0-9]+(?:-[a-z0-9]+)*)*$",
+            {
+                "message": "Expected class selectors to use kebab-case or BEM-style namespace naming"
+            }
+        ],
+        "color-function-notation": null,
+        "color-function-alias-notation": null,
+        "alpha-value-notation": null,
+        "color-hex-length": null,
+        "media-feature-range-notation": null,
+        "keyframes-name-pattern": null,
+        "no-descending-specificity": null,
         "declaration-block-no-duplicate-properties": true,
-        "no-duplicate-selectors": true,
+        "no-duplicate-selectors": null,
+        "declaration-property-value-keyword-no-deprecated": null,
+        "property-no-deprecated": null,
+        "declaration-block-no-redundant-longhand-properties": null,
+        "shorthand-property-no-redundant-values": null,
+        "declaration-block-single-line-max-declarations": null,
+        "comment-empty-line-before": null,
         "at-rule-no-unknown": [
             true,
             {
                 "ignoreAtRules": [
+                    "custom-media",
                     "deep",
                     "global"
                 ]

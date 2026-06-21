@@ -1,18 +1,18 @@
 <template>
   <div class="proofreading-settings">
     <!-- AI校对启用开关 -->
-    <div class="settings-group">
-      <div class="settings-group-title">AI校对设置</div>
-      <div class="settings-item">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="isProofreadingEnabled" />
+    <UiPanel variant="settings">
+      <template #title>AI校对设置</template>
+      <UiField class="ui-settings-field">
+        <label class="ui-checkbox-label">
+          <UiInput type="checkbox" v-model="isProofreadingEnabled" />
           启用AI校对
         </label>
-        <div class="input-hint">翻译完成后自动进行AI校对</div>
-      </div>
-      <div class="settings-item">
+        <div class="ui-form-hint">翻译完成后自动进行AI校对</div>
+      </UiField>
+      <UiField class="ui-settings-field">
         <label for="settingsProofreadingMaxRetries">全局重试次数:</label>
-        <input
+        <UiInput
           type="number"
           id="settingsProofreadingMaxRetries"
           v-model.number="proofreadingMaxRetries"
@@ -20,71 +20,72 @@
           max="10"
           step="1"
         />
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- 校对轮次配置 -->
-    <div v-show="isProofreadingEnabled" class="settings-group">
-      <div class="settings-group-title">
+    <UiPanel variant="settings" v-show="isProofreadingEnabled">
+      <template #title>
         校对轮次配置
-        <button class="btn btn-secondary btn-sm" @click="addRound">+ 添加轮次</button>
-      </div>
+        <UiButton variant="secondary" @click="addRound" size="sm">+ 添加轮次</UiButton>
+      </template>
 
       <!-- 轮次列表 -->
       <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-round">
         <div class="round-header">
           <span class="round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
-          <button class="btn btn-danger btn-sm" @click="removeRound(index)" :disabled="proofreadingRounds.length <= 1">
+          <UiButton variant="danger" @click="removeRound(index)" :disabled="proofreadingRounds.length <= 1" size="sm">
             删除
-          </button>
+          </UiButton>
         </div>
 
         <div class="round-content">
           <!-- 轮次名称 -->
-          <div class="settings-item">
+          <UiField class="ui-settings-field">
             <label>轮次名称:</label>
-            <input type="text" v-model="round.name" placeholder="如: 第一轮校对" />
-          </div>
+            <UiInput type="text" v-model="round.name" placeholder="如: 第一轮校对" />
+          </UiField>
 
           <!-- 服务商选择 -->
-          <div class="settings-row">
-            <div class="settings-item">
+          <div class="ui-settings-row">
+            <UiField class="ui-settings-field">
               <label>服务商:</label>
               <CustomSelect
                 v-model="round.provider"
                 :options="providerOptions"
               />
-            </div>
-            <div v-show="providerRequiresApiKey(round.provider)" class="settings-item">
+            </UiField>
+            <UiField v-show="providerRequiresApiKey(round.provider)" class="ui-settings-field">
               <label>API Key:</label>
               <div class="password-input-wrapper">
-                <input
+                <UiInput
                   :type="round.showApiKey ? 'text' : 'password'"
                   v-model="round.apiKey"
                   class="secure-input"
                   placeholder="请输入API Key"
                   autocomplete="off"
                 />
-                <button type="button" class="password-toggle-btn" tabindex="-1" @click="round.showApiKey = !round.showApiKey">
+                <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="round.showApiKey = !round.showApiKey">
                   <span class="eye-icon" v-if="!round.showApiKey">👁</span>
                   <span class="eye-off-icon" v-else>👁‍🗨</span>
-                </button>
+                </UiButton>
               </div>
-            </div>
+            </UiField>
           </div>
 
           <!-- 自定义Base URL -->
-          <div v-show="providerRequiresBaseUrl(round.provider)" class="settings-item">
+          <UiField v-show="providerRequiresBaseUrl(round.provider)" class="ui-settings-field">
             <label>Base URL:</label>
-            <input type="text" v-model="round.customBaseUrl" placeholder="例如: https://api.example.com/v1" />
-          </div>
+            <UiInput type="text" v-model="round.customBaseUrl" placeholder="例如: https://api.example.com/v1" />
+          </UiField>
 
           <!-- 模型名称 -->
-          <div class="settings-item">
+          <UiField class="ui-settings-field">
             <label>模型名称:</label>
             <div class="model-input-with-fetch">
-              <input type="text" v-model="round.modelName" placeholder="请输入模型名称" />
-              <button
+              <UiInput type="text" v-model="round.modelName" placeholder="请输入模型名称" />
+              <UiButton
+                variant="toolbar"
                 type="button"
                 class="fetch-models-btn"
                 title="获取可用模型列表"
@@ -93,7 +94,7 @@
               >
                 <span class="fetch-icon">🔍</span>
                 <span class="fetch-text">{{ roundFetchingStates[index] ? '获取中...' : '获取模型' }}</span>
-              </button>
+              </UiButton>
             </div>
             <!-- 模型选择下拉框 -->
             <div v-if="roundModelLists[index] && roundModelLists[index].length > 0" class="model-select-container">
@@ -103,80 +104,87 @@
               />
               <span class="model-count">共 {{ roundModelLists[index].length }} 个模型</span>
             </div>
-          </div>
+          </UiField>
 
           <!-- 测试连接按钮 -->
-          <div class="settings-item">
-            <button 
+          <UiField class="ui-settings-field">
+            <UiButton
+              variant="toolbar" 
               class="settings-test-btn" 
               @click="testRoundConnection(index)" 
               :disabled="roundTestingStates[index]"
             >
               {{ roundTestingStates[index] ? '测试中...' : '🔗 测试连接' }}
-            </button>
-          </div>
+            </UiButton>
+          </UiField>
 
           <!-- 批处理设置 -->
-          <div class="settings-row">
-            <div class="settings-item">
+          <div class="ui-settings-row">
+            <UiField class="ui-settings-field">
               <label>批次大小:</label>
-              <input type="number" v-model.number="round.batchSize" min="1" max="10" step="1" />
-            </div>
-            <div class="settings-item">
+              <UiInput type="number" v-model.number="round.batchSize" min="1" max="10" step="1" />
+            </UiField>
+            <UiField class="ui-settings-field">
               <label>RPM限制:</label>
-              <input type="number" v-model.number="round.openaiOptions.execution.rpmLimit" min="0" step="1" />
-            </div>
+              <UiInput type="number" v-model.number="round.openaiOptions.execution.rpmLimit" min="0" step="1" />
+            </UiField>
           </div>
 
           <!-- 高级选项 -->
-          <div class="settings-row">
-            <div class="settings-item">
+          <div class="ui-settings-row">
+            <UiField class="ui-settings-field">
               <label>业务重试:</label>
-              <input type="number" v-model.number="round.openaiOptions.execution.businessRetries" min="0" max="10" step="1" />
-            </div>
-            <div class="settings-item">
+              <UiInput type="number" v-model.number="round.openaiOptions.execution.businessRetries" min="0" max="10" step="1" />
+            </UiField>
+            <UiField class="ui-settings-field">
               <label>传输重试:</label>
-              <input type="number" v-model.number="round.openaiOptions.execution.transportRetries" min="0" max="10" step="1" />
-            </div>
+              <UiInput type="number" v-model.number="round.openaiOptions.execution.transportRetries" min="0" max="10" step="1" />
+            </UiField>
           </div>
-          <div class="settings-row">
-            <div class="settings-item">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="round.openaiOptions.request.forceJsonOutput" />
+          <div class="ui-settings-row">
+            <UiField class="ui-settings-field">
+              <label class="ui-checkbox-label">
+                <UiInput type="checkbox" v-model="round.openaiOptions.request.forceJsonOutput" />
                 强制JSON输出
               </label>
-              <div class="input-hint">使用 response_format: json_object</div>
-            </div>
-            <div class="settings-item">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="round.openaiOptions.execution.useStream" />
+              <div class="ui-form-hint">使用 response_format: json_object</div>
+            </UiField>
+            <UiField class="ui-settings-field">
+              <label class="ui-checkbox-label">
+                <UiInput type="checkbox" v-model="round.openaiOptions.execution.useStream" />
                 流式调用
               </label>
-                <div class="input-hint">使用流式API调用，避免超时</div>
-              </div>
-            </div>
-          <div class="settings-item">
-            <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
+              <div class="ui-form-hint">使用流式API调用，避免超时</div>
+            </UiField>
           </div>
+          <UiField class="ui-settings-field">
+            <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
+          </UiField>
 
           <!-- 校对提示词 -->
-          <div class="settings-item">
+          <UiField class="ui-settings-field">
             <label>校对提示词:</label>
-            <textarea v-model="round.prompt" rows="4" placeholder="校对提示词"></textarea>
+            <UiTextarea v-model="round.prompt" rows="4" placeholder="校对提示词" />
             <!-- 快速选择提示词 -->
             <SavedPromptsPicker
               prompt-type="proofreading"
               @select="(content, name) => handleProofreadingPromptSelect(index, content, name)"
             />
-            <button class="btn btn-secondary btn-sm" @click="resetRoundPrompt(index)">重置为默认</button>
-          </div>
+            <UiButton variant="secondary" @click="resetRoundPrompt(index)" size="sm">重置为默认</UiButton>
+          </UiField>
         </div>
       </div>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * AI校对设置组件
  * 管理多轮AI校对配置
@@ -243,7 +251,7 @@ function getRoundModelOptions(index: number) {
   return options
 }
 
-/** 获取轮次模型列表（复刻原版逻辑） */
+/** 获取轮次模型列表（当前行为逻辑） */
 async function fetchRoundModels(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
@@ -280,7 +288,7 @@ async function fetchRoundModels(index: number) {
   }
 }
 
-/** 测试轮次连接（复刻原版逻辑） */
+/** 测试轮次连接（当前行为逻辑） */
 async function testRoundConnection(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
@@ -378,7 +386,7 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 <style scoped>
 .proofreading-round {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   margin-bottom: 15px;
   overflow: hidden;
@@ -389,8 +397,8 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   justify-content: space-between;
   align-items: center;
   padding: 10px 15px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
 .round-title {
@@ -401,44 +409,38 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   padding: 15px;
 }
 
-.checkbox-label {
+.ui-checkbox-label {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
 
-.checkbox-label input[type='checkbox'] {
+.ui-checkbox-label input[type='checkbox'] {
   width: auto;
 }
 
-.btn-sm {
+.ui-button--sm {
   padding: 4px 12px;
   font-size: 12px;
 }
 
-.btn-danger {
-  background: var(--danger-color, #dc3545);
+.ui-button--danger {
+  background: var(--proofreading-settings-surface-base);
   color: white;
   border: none;
 }
 
-.btn-danger:hover {
-  background: var(--danger-hover-color, #c82333);
+.ui-button--danger:hover {
+  background: var(--proofreading-settings-surface-raised);
 }
 
-.btn-danger:disabled {
+.ui-button--danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.settings-group-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-/* 复刻原版模型输入样式 */
+/* 当前行为模型输入样式 */
 .model-input-with-fetch {
   display: flex;
   gap: 10px;
@@ -454,10 +456,10 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-muted);
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--color-text-default);
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
@@ -465,22 +467,22 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   height: 38px;
 }
 
-.fetch-models-btn:hover:not(:disabled) {
-  background-color: var(--color-primary);
-  color: #fff;
-  border-color: var(--color-primary);
-}
-
 .fetch-models-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
+.fetch-models-btn:hover:not(:disabled) {
+  background-color: var(--color-action-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-action-primary);
+}
+
 .model-select-container {
   margin-top: 10px;
   padding: 12px;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -489,7 +491,7 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 .model-count {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   text-align: right;
   margin-top: 4px;
 }
@@ -515,7 +517,7 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   font-size: 16px;
   display: flex;
   align-items: center;
@@ -526,10 +528,10 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 .settings-test-btn {
   width: 100%;
   padding: 10px 16px;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-muted);
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--color-text-default);
   font-weight: 500;
   font-size: 14px;
   cursor: pointer;
@@ -540,18 +542,18 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   gap: 8px;
 }
 
-.settings-test-btn:hover:not(:disabled) {
-  background-color: var(--bg-hover);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.settings-test-btn:active:not(:disabled) {
-  background-color: var(--primary-light, #e7f3ff);
-}
-
 .settings-test-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.settings-test-btn:hover:not(:disabled) {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-action-primary);
+  color: var(--color-action-primary);
+}
+
+.settings-test-btn:active:not(:disabled) {
+  background-color: var(--proofreading-settings-surface-muted);
 }
 </style>

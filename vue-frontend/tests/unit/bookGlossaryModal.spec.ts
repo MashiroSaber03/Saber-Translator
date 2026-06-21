@@ -74,7 +74,7 @@ describe('BookGlossaryModal', () => {
 
     await checkboxes[1]!.setValue(false)
     await promptTextarea.setValue('自定义提词提示词')
-    await wrapper.find('.btn-primary').trigger('click')
+    await wrapper.find('[data-testid="save-book-glossary-button"]').trigger('click')
 
     expect(saveBookConstraintsMock).toHaveBeenCalledWith(expect.objectContaining({
       glossary: expect.objectContaining({

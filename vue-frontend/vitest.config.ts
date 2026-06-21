@@ -11,6 +11,7 @@ export default defineConfig({
     globals: true,
     // 测试文件匹配模式（包含属性测试）
     include: ['src/**/*.{test,spec}.{js,ts}', 'tests/**/*.{test,spec,property}.{js,ts}'],
+    exclude: ['node_modules', 'dist', 'tests/visual/**'],
     // 属性测试配置 - 每个属性测试运行100次迭代
     testTimeout: 30000,
     // 覆盖率配置

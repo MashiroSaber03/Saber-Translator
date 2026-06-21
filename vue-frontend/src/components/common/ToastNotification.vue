@@ -10,7 +10,7 @@
         >
           <span v-if="toast.isHTML" v-html="toast.message"></span>
           <span v-else>{{ toast.message }}</span>
-          <button class="vue-toast-close" @click.stop="removeToast(toast.id)">×</button>
+          <UiButton variant="toolbar" class="vue-toast-close" @click.stop="removeToast(toast.id)">×</UiButton>
         </div>
       </TransitionGroup>
     </div>
@@ -18,10 +18,11 @@
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * Toast 通知组件
  * 使用全局 toastService 显示消息提示
- * 样式与原版完全一致：底部居中、彩色背景、白色文字
+ * 样式与当前实现完全一致：底部居中、彩色背景、白色文字
  */
 import { onUnmounted } from 'vue'
 import { toastService } from '@/utils/toast'
@@ -42,7 +43,7 @@ onUnmounted(() => {
   toastService.clearAll()
 })
 
-// 暴露方法供外部使用（兼容旧版 API）
+// 暴露方法供外部使用（保留外部调用 API）
 defineExpose({
   toasts,
   addToast: toastService.addToast,
@@ -78,12 +79,12 @@ defineExpose({
 }
 
 .vue-toast-message {
-  background-color: rgb(0, 0, 0, 0.75);
+  background-color: var(--toast-notification-surface-base);
   border-radius: 8px;
   padding: 12px 24px;
   padding-right: 36px;
   margin-bottom: 0;
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px var(--toast-notification-shadow-default);
   position: relative;
   max-width: 100%;
   pointer-events: auto;
@@ -94,19 +95,19 @@ defineExpose({
 }
 
 .vue-toast-info {
-  background-color: rgb(24, 144, 255, 0.85);
+  background-color: var(--toast-notification-surface-raised);
 }
 
 .vue-toast-success {
-  background-color: rgb(82, 196, 26, 0.85);
+  background-color: var(--toast-notification-surface-muted);
 }
 
 .vue-toast-warning {
-  background-color: rgb(250, 173, 20, 0.85);
+  background-color: var(--toast-notification-surface-subtle);
 }
 
 .vue-toast-error {
-  background-color: rgb(255, 77, 79, 0.85);
+  background-color: var(--toast-notification-surface-hover);
 }
 
 .vue-toast-close {
@@ -118,7 +119,7 @@ defineExpose({
   border: none;
   font-size: 18px;
   cursor: pointer;
-  color: rgb(255, 255, 255, 0.7);
+  color: var(--toast-notification-text-primary);
   line-height: 1;
   padding: 0;
   width: 20px;
@@ -163,7 +164,7 @@ defineExpose({
 }
 
 /* 响应式适配 */
-@media (width <= 768px) {
+@media (--breakpoint-md-down) {
   .vue-toast-container {
     bottom: 60px;
     max-width: 90%;

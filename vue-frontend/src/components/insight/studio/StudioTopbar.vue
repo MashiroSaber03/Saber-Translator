@@ -1,8 +1,8 @@
 <template>
   <header class="studio-topbar">
     <div class="topbar-left">
-      <button class="back-btn" @click="$emit('back')">返回分析</button>
-      <button class="ghost-btn" @click="$emit('open-resource')">角色资源</button>
+      <UiButton variant="toolbar" class="back-btn" @click="$emit('back')">返回分析</UiButton>
+      <UiButton variant="toolbar" class="action-ghost" @click="$emit('open-resource')">角色资源</UiButton>
       <div class="title-block">
         <div class="title-row">
           <h1>角色工坊 2.0</h1>
@@ -19,18 +19,19 @@
     </div>
 
     <div class="topbar-right">
-      <button class="ghost-btn" @click="$emit('open-export')">导出区</button>
-      <button class="ghost-btn" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
+      <UiButton variant="toolbar" class="action-ghost" @click="$emit('open-export')">导出区</UiButton>
+      <UiButton variant="toolbar" class="action-ghost" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
         {{ validatePending ? '诊断中...' : '诊断' }}
-      </button>
-      <button class="primary-btn" :disabled="!hasDocument || savePending" @click="$emit('save')">
+      </UiButton>
+      <UiButton variant="toolbar" class="action-primary" :disabled="!hasDocument || savePending" @click="$emit('save')">
         {{ savePending ? '保存中...' : '保存' }}
-      </button>
+      </UiButton>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 defineProps<{
   bookTitle: string
   documentTitle: string
@@ -60,9 +61,9 @@ defineEmits<{
   padding: 10px 20px;
   position: sticky;
   top: 0;
-  z-index: 40;
-  border-bottom: 1px solid rgba(28, 55, 94, 0.08);
-  background: rgba(248, 251, 255, 0.9);
+  z-index: var(--z-app-header);
+  border-bottom: 1px solid var(--color-border-studio);
+  background: var(--studio-topbar-surface-base);
   backdrop-filter: blur(18px);
 }
 
@@ -93,8 +94,8 @@ defineEmits<{
   max-width: 420px;
   padding: 8px 12px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-studio);
 }
 
 .title-row {
@@ -108,7 +109,7 @@ defineEmits<{
   margin: 0;
   font-size: 20px;
   line-height: 1.1;
-  color: #102741;
+  color: var(--studio-topbar-text-primary);
   white-space: nowrap;
 }
 
@@ -122,19 +123,19 @@ defineEmits<{
 .status-pill {
   border-radius: 999px;
   padding: 4px 9px;
-  background: rgba(20, 56, 106, 0.06);
-  color: #234977;
+  background: var(--studio-topbar-surface-raised);
+  color: var(--color-text-studio);
   font-size: 11px;
   line-height: 1.2;
 }
 
 .status-pill.empty {
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
 }
 
 .busy-pill {
-  background: rgba(37, 99, 199, 0.12);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint2);
+  color: var(--color-text-primary-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -143,44 +144,46 @@ defineEmits<{
 }
 
 .back-btn,
-.ghost-btn,
-.primary-btn {
+.action-ghost,
+.action-primary {
   border: none;
   border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.2;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   white-space: nowrap;
 }
 
 .back-btn,
-.ghost-btn {
+.action-ghost {
   padding: 11px 15px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
 .back-btn:hover,
-.ghost-btn:hover {
+.action-ghost:hover {
   transform: translateY(-1px);
 }
 
-.primary-btn {
+.action-primary {
   padding: 11px 18px;
-  background: linear-gradient(135deg, #2563c7, #4d86ee);
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(37, 99, 199, 0.22);
+  background: linear-gradient(135deg, var(--studio-topbar-surface-muted), var(--studio-topbar-surface-subtle));
+  color: var(--color-text-inverse);
+  box-shadow: 0 12px 24px var(--studio-topbar-shadow-default);
 }
 
 .back-btn:disabled,
-.ghost-btn:disabled,
-.primary-btn:disabled {
+.action-ghost:disabled,
+.action-primary:disabled {
   opacity: 0.68;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .studio-topbar {
     padding: 12px 16px;
   }

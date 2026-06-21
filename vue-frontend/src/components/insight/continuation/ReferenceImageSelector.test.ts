@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
@@ -7,9 +8,24 @@ vi.mock('@/api/insight', () => ({
   getThumbnailUrl: vi.fn().mockReturnValue('/thumb/page-1.png'),
 }))
 
+afterEach(() => {
+  document.body.innerHTML = ''
+})
+
+async function clickConfirmButton(): Promise<void> {
+  await nextTick()
+  const confirmButton = document.body.querySelector<HTMLButtonElement>(
+    '.reference-selector-modal button.ui-button--primary'
+  )
+  expect(confirmButton).not.toBeNull()
+  confirmButton?.click()
+  await nextTick()
+}
+
 describe('ReferenceImageSelector', () => {
   it('auto-selects and emits reference tokens instead of raw paths', async () => {
     const wrapper = mount(ReferenceImageSelector, {
+      attachTo: document.body,
       props: {
         visible: true,
         mode: 'script',
@@ -29,13 +45,14 @@ describe('ReferenceImageSelector', () => {
       },
     })
 
-    await wrapper.find('button.btn.primary').trigger('click')
+    await clickConfirmButton()
 
     expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:1']])
   })
 
   it('prefers the latest real images instead of placeholder continuation pages', async () => {
     const wrapper = mount(ReferenceImageSelector, {
+      attachTo: document.body,
       props: {
         visible: true,
         mode: 'image',
@@ -76,7 +93,7 @@ describe('ReferenceImageSelector', () => {
       },
     })
 
-    await wrapper.find('button.btn.primary').trigger('click')
+    await clickConfirmButton()
 
     expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:185', 'original:186']])
   })

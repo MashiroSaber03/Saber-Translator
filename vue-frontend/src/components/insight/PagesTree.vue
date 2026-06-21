@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 页面导航树组件
  * 显示章节和页面的树状结构，支持展开/折叠和页面选择
@@ -199,7 +200,7 @@ onMounted(async () => {
 
 /**
  * 监听分析进度变化，自动刷新已分析页面标记
- * 【修复】原版在分析完成后会调用 renderPagesTree 重新渲染
+ * 【修复】当前实现在分析完成后会调用 renderPagesTree 重新渲染
  * Vue 版通过监听 analyzedPageCount 变化自动刷新
  */
 watch(
@@ -254,9 +255,9 @@ watch(
         </div>
         <!-- 加载更多按钮 -->
         <div v-if="totalPages > displayedPageCount" class="tree-load-more">
-          <button class="btn-load-more" @click="loadMorePages">
+          <UiButton variant="toolbar" class="btn-load-more" @click="loadMorePages">
             加载更多 (还有 {{ totalPages - displayedPageCount }} 页)
-          </button>
+          </UiButton>
         </div>
       </template>
       
@@ -274,7 +275,7 @@ watch(
             @click="toggleChapter(chapter.id)"
           >
             <span class="tree-expand-icon">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l8 7-8 7z"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l8 7-8 7z" /></svg>
             </span>
             <div class="tree-chapter-info">
               <span class="tree-chapter-title">{{ chapter.title }}</span>
@@ -284,13 +285,14 @@ watch(
               class="tree-chapter-status" 
               :class="{ analyzed: isChapterAnalyzed(chapter) }"
             ></span>
-            <button 
+            <UiButton
+              variant="toolbar" 
               class="btn-reanalyze-chapter" 
               title="重新分析此章节"
               @click.stop="reanalyzeChapter(chapter.id)"
             >
               🔄
-            </button>
+            </UiButton>
           </div>
           
           <!-- 章节页面网格（4列） -->
@@ -323,98 +325,9 @@ watch(
 </template>
 
 <style scoped>
-/* ==================== PagesTree 完整样式 ==================== */
+/* ==================== PagesTree样式 ==================== */
 
-/* ==================== CSS变量 ==================== */
-.pages-tree-section {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --bg-hover: rgb(99, 102, 241, 0.1);
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --success: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-}
-
-/* ==================== 组件特定样式 ==================== */
-
-.tree-chapter-header {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.tree-chapter-header:hover {
-  background-color: var(--bg-hover);
-}
-
-.tree-expand-icon {
-  width: 16px;
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-
-.tree-chapter-title {
-  flex: 1;
-  font-weight: 500;
-}
-
-.tree-chapter-pages {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.tree-pages-list {
-  padding-left: 16px;
-}
-
-.tree-page-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.tree-page-item:hover {
-  background-color: var(--bg-hover);
-}
-
-.tree-page-item.selected {
-  background-color: var(--primary-light);
-}
-
-.tree-page-thumbnail {
-  width: 32px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 2px;
-}
-
-.tree-page-num {
-  flex: 1;
-  font-size: 13px;
-}
-
-.tree-page-status {
-  color: var(--success);
-  font-size: 12px;
-}
-
-/* ==================== 页面树完整样式 - 从 manga-insight.css 迁移 ==================== */
+/* ==================== 页面树样式 ==================== */
 
 .pages-tree-section {
     flex: 1;
@@ -429,7 +342,7 @@ watch(
     align-items: center;
     justify-content: space-between;
     padding: 0 16px 12px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-muted);
 }
 
 .pages-tree-section .section-title {
@@ -440,8 +353,8 @@ watch(
 .page-count-badge {
     font-size: 11px;
     padding: 2px 8px;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-secondary);
     border-radius: 10px;
 }
 
@@ -466,11 +379,11 @@ watch(
 }
 
 .tree-chapter-header:hover {
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
 }
 
 .tree-chapter-header.active {
-    background: rgb(99, 102, 241, 0.1);
+    background: var(--color-focus-brand-soft);
 }
 
 .tree-expand-icon {
@@ -479,7 +392,7 @@ watch(
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-muted);
+    color: var(--insight-text-muted);
     transition: transform 0.2s;
 }
 
@@ -498,7 +411,7 @@ watch(
 .tree-chapter-title {
     font-size: 13px;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -506,7 +419,7 @@ watch(
 
 .tree-chapter-meta {
     font-size: 11px;
-    color: var(--text-muted);
+    color: var(--insight-text-muted);
     flex-shrink: 0;
 }
 
@@ -514,12 +427,12 @@ watch(
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--text-muted);
+    background: var(--insight-text-muted);
     flex-shrink: 0;
 }
 
 .tree-chapter-status.analyzed {
-    background: var(--success-color);
+    background: var(--insight-success-color);
 }
 
 .btn-reanalyze-chapter {
@@ -537,7 +450,7 @@ watch(
     opacity: 0.6;
 }
 
-.btn-reanalyze-chapter:hover {
+.tree-chapter-header:hover .btn-reanalyze-chapter:hover {
     opacity: 1;
 }
 
@@ -546,7 +459,7 @@ watch(
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
     padding: 8px 16px 8px 40px;
-    background: var(--bg-primary);
+    background: var(--insight-bg-primary);
 }
 
 .tree-chapter.expanded .tree-pages-grid {
@@ -555,7 +468,7 @@ watch(
 
 .tree-page-item {
     aspect-ratio: 3/4;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 4px;
     overflow: hidden;
     cursor: pointer;
@@ -565,13 +478,13 @@ watch(
 }
 
 .tree-page-item:hover {
-    border-color: var(--primary-light);
+    border-color: var(--insight-primary-light);
     transform: scale(1.02);
 }
 
 .tree-page-item.selected {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px rgb(99, 102, 241, 0.2);
+    border-color: var(--insight-color-primary);
+    box-shadow: 0 0 0 2px var(--pages-tree-shadow-default);
 }
 
 .tree-page-item.analyzed::after {
@@ -581,9 +494,9 @@ watch(
     right: 3px;
     width: 12px;
     height: 12px;
-    background: var(--success-color);
+    background: var(--insight-success-color);
     border-radius: 50%;
-    border: 1.5px solid var(--bg-primary);
+    border: 1.5px solid var(--insight-bg-primary);
 }
 
 .tree-page-thumb {
@@ -594,7 +507,7 @@ watch(
     height: 100%;
     object-fit: cover;
     object-position: center;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
 }
 
 .tree-page-num {
@@ -603,7 +516,7 @@ watch(
     left: 0;
     right: 0;
     padding: 2px 4px;
-    background: linear-gradient(transparent, rgb(0,0,0,0.7));
+    background: linear-gradient(transparent, var(--pages-tree-surface-base));
     color: white;
     font-size: 10px;
     text-align: center;
@@ -624,16 +537,16 @@ watch(
 .btn-load-more {
     padding: 6px 16px;
     font-size: 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
+    background: var(--insight-bg-tertiary);
+    border: 1px solid var(--color-border-muted);
     border-radius: 6px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .btn-load-more:hover {
-    background: var(--bg-secondary);
-    color: var(--text-primary);
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-primary);
 }
 </style>

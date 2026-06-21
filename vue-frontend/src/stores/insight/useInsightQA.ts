@@ -23,9 +23,7 @@ export interface UseInsightQAOptions {
   currentBookId: Ref<string | null>
 }
 
-export function useInsightQA(options: UseInsightQAOptions) {
-  const { currentBookId } = options
-
+export function useInsightQA(_options: UseInsightQAOptions) {
   /** 问答历史 */
   const qaHistory = ref<QAMessage[]>([])
 

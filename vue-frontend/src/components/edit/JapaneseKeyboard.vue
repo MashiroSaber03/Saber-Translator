@@ -4,7 +4,6 @@
   - 支持平假名和片假名切换
   - 支持基本、浊音、拗音、特殊字符标签页
   - 支持向指定文本框插入字符
-  对应原 edit_mode.js 中的 initKanaKeyboard 功能
 -->
 <template>
   <div v-if="visible" class="kana-keyboard">
@@ -12,7 +11,8 @@
     <div class="kana-keyboard-header">
       <span class="kana-keyboard-title">50音键盘</span>
       <div class="kana-keyboard-tabs">
-        <button
+        <UiButton
+          variant="toolbar"
           v-for="tab in tabs"
           :key="tab.id"
           class="kana-tab"
@@ -20,16 +20,16 @@
           @click="activeTab = tab.id"
         >
           {{ tab.label }}
-        </button>
+        </UiButton>
       </div>
-      <button class="kana-keyboard-close" @click="close">✕</button>
+      <UiButton variant="toolbar" class="kana-keyboard-close" @click="close">✕</UiButton>
     </div>
 
     <!-- 模式和目标选择 -->
     <div class="kana-keyboard-options">
       <div class="kana-mode-select">
         <label>
-          <input
+          <UiInput
             type="radio"
             name="kanaMode"
             value="hiragana"
@@ -38,7 +38,7 @@
           平假名
         </label>
         <label>
-          <input
+          <UiInput
             type="radio"
             name="kanaMode"
             value="katakana"
@@ -73,7 +73,8 @@
           <tr v-for="row in basicKana" :key="row.label">
             <td class="row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="kana"
                 class="kana-key"
                 :class="{ pressed: pressedKey === kana.h }"
@@ -81,7 +82,7 @@
               >
                 <span class="kana-hiragana">{{ kana.h }}</span>
                 <span class="kana-katakana">{{ kana.k }}</span>
-              </button>
+              </UiButton>
             </td>
           </tr>
         </tbody>
@@ -105,7 +106,8 @@
           <tr v-for="row in dakutenKana" :key="row.label">
             <td class="row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="kana"
                 class="kana-key"
                 :class="{ pressed: pressedKey === kana.h }"
@@ -113,7 +115,7 @@
               >
                 <span class="kana-hiragana">{{ kana.h }}</span>
                 <span class="kana-katakana">{{ kana.k }}</span>
-              </button>
+              </UiButton>
             </td>
           </tr>
         </tbody>
@@ -135,7 +137,8 @@
           <tr v-for="row in comboKana" :key="row.label">
             <td class="row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
-              <button
+              <UiButton
+                variant="toolbar"
                 v-if="kana"
                 class="kana-key"
                 :class="{ pressed: pressedKey === kana.h }"
@@ -143,7 +146,7 @@
               >
                 <span class="kana-hiragana">{{ kana.h }}</span>
                 <span class="kana-katakana">{{ kana.k }}</span>
-              </button>
+              </UiButton>
             </td>
           </tr>
         </tbody>
@@ -153,7 +156,8 @@
     <!-- 特殊字符 -->
     <div class="kana-tab-content" :class="{ active: activeTab === 'special' }">
       <div class="special-chars-grid">
-        <button
+        <UiButton
+          variant="toolbar"
           v-for="char in specialChars"
           :key="char.char"
           class="kana-key special-key"
@@ -162,18 +166,21 @@
         >
           {{ char.char }}
           <span v-if="char.label" class="char-label">{{ char.label }}</span>
-        </button>
+        </UiButton>
       </div>
     </div>
 
     <!-- 底部工具栏 -->
     <div class="kana-keyboard-footer">
-      <button class="kana-backspace" @click="deleteChar">⌫ 退格</button>
+      <UiButton variant="toolbar" class="kana-backspace" @click="deleteChar">⌫ 退格</UiButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 50音软键盘组件
  * 提供日语假名输入功能
@@ -387,13 +394,13 @@ function deleteChar(): void {
 <style scoped>
 /* 50音键盘容器 - 使用固定颜色值 */
 .kana-keyboard {
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--japanese-keyboard-shadow-default);
   margin-top: 10px;
   overflow: hidden;
-  color: #333;
+  color: var(--color-text-default);
 }
 
 /* 键盘头部 - 红色渐变背景 */
@@ -402,14 +409,14 @@ function deleteChar(): void {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--japanese-keyboard-surface-base) 0%, var(--japanese-keyboard-surface-raised) 100%);
+  color: var(--color-text-inverse);
 }
 
 .kana-keyboard-title {
   font-weight: 600;
   font-size: 13px;
-  color: #fff;
+  color: var(--color-text-inverse);
 }
 
 .kana-keyboard-tabs {
@@ -421,20 +428,20 @@ function deleteChar(): void {
   padding: 4px 10px;
   border: none;
   border-radius: 4px;
-  background: rgb(255, 255, 255, 0.2);
-  color: #fff;
+  background: var(--japanese-keyboard-surface-muted);
+  color: var(--color-text-inverse);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .kana-tab:hover {
-  background: rgb(255, 255, 255, 0.3);
+  background: var(--japanese-keyboard-surface-subtle);
 }
 
 .kana-tab.active {
-  background: #fff;
-  color: #e74c3c;
+  background: var(--color-surface-base);
+  color: var(--color-text-danger-strong);
   font-weight: 600;
 }
 
@@ -443,8 +450,8 @@ function deleteChar(): void {
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: rgb(255, 255, 255, 0.2);
-  color: #fff;
+  background: var(--japanese-keyboard-surface-muted);
+  color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
@@ -454,7 +461,7 @@ function deleteChar(): void {
 }
 
 .kana-keyboard-close:hover {
-  background: rgb(255, 255, 255, 0.4);
+  background: var(--japanese-keyboard-surface-hover);
 }
 
 /* 选项区域 */
@@ -463,8 +470,8 @@ function deleteChar(): void {
   align-items: center;
   gap: 20px;
   padding: 8px 12px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .kana-mode-select,
@@ -472,7 +479,7 @@ function deleteChar(): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #333;
+  color: var(--color-text-default);
   font-size: 12px;
 }
 
@@ -481,19 +488,19 @@ function deleteChar(): void {
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: #333;
+  color: var(--color-text-default);
 }
 
 .kana-mode-select input[type="radio"] {
-  accent-color: #e74c3c;
+  accent-color: var(--japanese-keyboard-surface-active);
 }
 
 .kana-target-select select {
   padding: 4px 8px;
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 4px;
-  color: #333;
+  color: var(--color-text-default);
   font-size: 12px;
 }
 
@@ -502,7 +509,7 @@ function deleteChar(): void {
   padding: 10px;
   max-height: 280px;
   overflow-y: auto;
-  background: #fff;
+  background: var(--color-surface-base);
 }
 
 /* 假名表格 */
@@ -510,7 +517,7 @@ function deleteChar(): void {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  background: #fff;
+  background: var(--color-surface-base);
 }
 
 .kana-table th,
@@ -518,18 +525,18 @@ function deleteChar(): void {
   padding: 2px;
   text-align: center;
   vertical-align: middle;
-  background: #fff;
+  background: var(--color-surface-base);
 }
 
 .kana-table th {
-  color: #666;
+  color: var(--color-text-secondary);
   font-weight: 500;
   font-size: 11px;
   padding-bottom: 6px;
 }
 
 .row-label {
-  color: #888;
+  color: var(--color-text-subtle);
   font-size: 11px;
   font-weight: 500;
   padding-right: 8px;
@@ -541,10 +548,10 @@ function deleteChar(): void {
 .kana-key {
   width: 42px;
   height: 42px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
-  background: #f8f9fa;
-  color: #333;
+  background: var(--japanese-keyboard-surface-selected);
+  color: var(--color-text-default);
   font-size: 13px;
   line-height: 1.2;
   cursor: pointer;
@@ -558,28 +565,28 @@ function deleteChar(): void {
 
 /* 假名文字样式 */
 .kana-hiragana {
-  color: #333;
+  color: var(--color-text-default);
   font-size: 13px;
   display: block;
 }
 
 .kana-katakana {
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 11px;
   display: block;
 }
 
 .kana-key:hover {
-  background: #e3f2fd;
-  border-color: #2196f3;
+  background: var(--japanese-keyboard-surface-overlay);
+  border-color: var(--japanese-keyboard-border-default);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgb(33, 150, 243, 0.3);
+  box-shadow: 0 2px 6px var(--japanese-keyboard-shadow-raised);
 }
 
 .kana-key:active,
 .kana-key.pressed {
   transform: translateY(0);
-  background: #bbdefb;
+  background: var(--japanese-keyboard-surface-inverse);
 }
 
 /* 特殊字符网格 */
@@ -587,7 +594,7 @@ function deleteChar(): void {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
   gap: 6px;
-  background: #fff;
+  background: var(--color-surface-base);
 }
 
 .special-key {
@@ -596,12 +603,12 @@ function deleteChar(): void {
   min-height: 32px;
   padding: 4px 8px;
   font-size: 14px;
-  color: #333;
+  color: var(--color-text-default);
 }
 
 .char-label {
   font-size: 9px;
-  color: #666;
+  color: var(--color-text-secondary);
   margin-top: 2px;
 }
 
@@ -616,23 +623,23 @@ function deleteChar(): void {
   align-items: center;
   justify-content: flex-end;
   padding: 8px 12px;
-  background: #f5f5f5;
-  border-top: 1px solid #e0e0e0;
+  background: var(--color-surface-subtle);
+  border-top: 1px solid var(--color-border-default);
 }
 
 .kana-backspace {
   padding: 6px 16px;
-  background: rgb(231, 76, 60, 0.1);
-  border: 1px solid rgb(231, 76, 60, 0.3);
+  background: var(--japanese-keyboard-surface-contrast);
+  border: 1px solid var(--japanese-keyboard-border-strong);
   border-radius: 4px;
-  color: #e74c3c;
+  color: var(--color-text-danger-strong);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
 }
 
 .kana-backspace:hover {
-  background: rgb(231, 76, 60, 0.2);
-  border-color: rgb(231, 76, 60, 0.5);
+  background: var(--japanese-keyboard-surface-tint);
+  border-color: var(--japanese-keyboard-border-muted);
 }
 </style>

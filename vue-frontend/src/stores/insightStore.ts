@@ -206,7 +206,11 @@ export const useInsightStore = defineStore('insight', () => {
 
   function setCurrentBook(bookId: string | null): void {
     currentBookId.value = bookId
-    bookId ? notesComposable.loadNotes() : notesComposable.clearNotes()
+    if (bookId) {
+      notesComposable.loadNotes()
+    } else {
+      notesComposable.clearNotes()
+    }
   }
   function setAnalysisStatus(status: AnalysisStatus): void { analysisStatus.value = status; progress.value.status = status }
   function setCurrentTaskId(taskId: string | null): void { currentTaskId.value = taskId }
@@ -233,11 +237,16 @@ export const useInsightStore = defineStore('insight', () => {
   function setCurrentPage(pageNum: number): void { selectedPageNum.value = pageNum }
 
   // 笔记管理
-  async function addNote(note: NoteData): Promise<void> { if (!await notesComposable.addNote({ type: note.type, content: note.content, pageNum: note.pageNum, title: note.title, tags: note.tags, question: note.question, answer: note.answer, citations: note.citations, comment: note.comment })) throw new Error('保存笔记失败') }
+  function addNote(note: NoteData): Promise<void> {
+    return notesComposable.addNote(note).then(result => {
+      if (!result) throw new Error('保存笔记失败')
+    })
+  }
   async function updateNote(noteId: string, updates: Partial<NoteData>): Promise<void> { await notesComposable.updateNote(noteId, updates) }
   async function deleteNote(noteId: string): Promise<void> { await notesComposable.deleteNote(noteId) }
   function setNoteTypeFilter(type: NoteType | 'all'): void { notesComposable.setNoteTypeFilter(type) }
   async function loadNotesFromAPI(): Promise<void> { await notesComposable.loadNotes() }
+  function loadNotesFromStorage(): void { notesComposable.loadNotesFromStorage() }
 
   function setLoading(loading: boolean): void { isLoading.value = loading }
   function setError(message: string | null): void { error.value = message }
@@ -425,7 +434,7 @@ export const useInsightStore = defineStore('insight', () => {
     currentBookId, currentTaskId, analysisStatus, progress, analysisMode, incrementalAnalysis, chapters, pages, overview, generatedTemplates, timeline, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
     progressPercent, isAnalyzing, isAnalysisCompleted, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, selectedPage,
     setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
-    addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
+    addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, loadNotesFromStorage, setLoading, setError,
     updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, saveConfigToStorage, loadConfigFromStorage, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
     resetAnalysis, reset
   }

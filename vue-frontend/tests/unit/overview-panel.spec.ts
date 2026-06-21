@@ -75,7 +75,7 @@ describe('OverviewPanel', () => {
     await wrapper.find('.custom-select-stub').trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('.btn-icon')[1]!.trigger('click')
+    await wrapper.findAll('.button-icon')[1]!.trigger('click')
     await flushPromises()
 
     expect(regenerateOverviewMock).toHaveBeenCalledWith('book-1', 'story_summary', true)

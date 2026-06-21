@@ -1,7 +1,6 @@
 /**
  * 笔刷工具组合式函数
  * 管理笔刷模式的状态和操作，包括修复笔刷和还原笔刷
- * 对应原 edit_mode.js 中的笔刷功能
  */
 
 import { ref, computed, onUnmounted } from 'vue'
@@ -53,7 +52,7 @@ export interface CurrentRepairSettings {
 export interface BrushCallbacks {
   /** 笔刷操作完成后触发重新渲染 */
   onBrushComplete?: () => void
-  /** 【复刻原版】获取当前编辑面板的修复设置，对应原版 $('#bubbleInpaintMethodNew').val() 等 */
+  /** 获取编辑面板当前修复方式、填充色等设置 */
   getCurrentRepairSettings?: () => CurrentRepairSettings
 }
 
@@ -389,7 +388,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     canvas.id = 'brushOverlayCanvas'
     canvas.width = img.naturalWidth
     canvas.height = img.naturalHeight
-    canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;'
+    canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: var(--z-canvas);'
 
     wrapper.appendChild(canvas)
     brushCanvas = canvas
@@ -517,11 +516,10 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
   /**
    * 修复笔刷区域（使用填充色或LAMA）
-   * 【复刻原版】从编辑面板下拉框读取修复方式，不依赖气泡选中状态
+   * 从编辑面板读取修复方式，不依赖气泡选中状态
    */
   async function repairBrushArea(currentImage: any, bounds: BrushBounds, expectedImageId: string): Promise<void> {
-    // 【复刻原版】从编辑面板获取修复方式，对应原版 $('#bubbleInpaintMethodNew').val()
-    // 通过回调获取，不依赖气泡选中状态
+    // 通过回调读取编辑面板当前修复方式，不依赖气泡选中状态。
     const settings = callbacks?.getCurrentRepairSettings?.() || {
       inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod as InpaintMethod,
       fillColor: TEXT_STYLE_DEFAULTS.fillColor
@@ -541,7 +539,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
   /**
    * 使用 LAMA 修复笔刷区域
-   * 【复刻原版】支持精确掩膜：根据用户的笔刷路径生成掩膜，而非使用外接矩形
+   * 支持精确掩膜：根据用户的笔刷路径生成掩膜，而非使用外接矩形
    */
   async function repairBrushAreaWithLama(
     currentImage: any,
@@ -563,7 +561,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       return
     }
 
-    // 【复刻原版】通过加载图像获取实际尺寸
+    // 通过加载图像获取实际尺寸。
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = async () => {
@@ -650,7 +648,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
           }
           console.error('LAMA 修复失败，回退到纯色填充:', error)
           showToast('LAMA 修复失败，使用纯色填充', 'warning')
-          // 【复刻原版】回退到纯色填充时，重新获取填充颜色
+          // 回退到纯色填充时重新读取当前填充颜色。
           const fallbackSettings = callbacks?.getCurrentRepairSettings?.()
           await repairBrushAreaWithColor(currentImage, bounds, expectedImageId, fallbackSettings?.fillColor)
         }
@@ -666,7 +664,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
   /**
    * 使用纯色填充修复笔刷区域
-   * 【复刻原版】从编辑面板读取填充颜色，不依赖气泡选中状态
+   * 从编辑面板读取填充颜色，不依赖气泡选中状态
    */
   async function repairBrushAreaWithColor(
     currentImage: any,
@@ -674,7 +672,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     expectedImageId: string,
     fillColor?: string
   ): Promise<void> {
-    // 【复刻原版】使用传入的填充色，对应原版 $('#fillColorNew').val()
+    // 优先使用编辑面板传入的当前填充色。
     const color = fillColor || settingsStore.settings.textStyle.fillColor || '#FFFFFF'
 
     // 获取当前干净背景

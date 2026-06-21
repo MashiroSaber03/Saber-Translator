@@ -41,7 +41,7 @@ describe('ScriptGenerationPanel', () => {
     const updateEvents = wrapper.emitted('update-script') || []
     expect(updateEvents[updateEvents.length - 1]).toEqual(['新脚本内容'])
 
-    const generateButton = wrapper.find('button.btn.primary')
+    const generateButton = wrapper.find('button.ui-button--primary')
     await generateButton.trigger('click')
     await nextTick()
 
@@ -83,7 +83,7 @@ describe('ScriptGenerationPanel', () => {
     await wrapper.setProps({ script: null })
     await nextTick()
 
-    await wrapper.find('button.btn.primary').trigger('click')
+    await wrapper.find('button.ui-button--primary').trigger('click')
 
     const generateEvents = wrapper.emitted('generate') || []
     expect(generateEvents[generateEvents.length - 1]).toEqual([

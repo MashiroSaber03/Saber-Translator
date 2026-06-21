@@ -55,9 +55,9 @@ defineEmits<{
 .edit-thumbnails-panel {
   position: relative;
   width: auto;
-  background: rgb(0,0,0,0.3);
+  background: var(--edit-thumbnail-panel-surface-base);
   padding: 10px 15px;
-  border-bottom: 1px solid rgb(255,255,255,0.1);
+  border-bottom: 1px solid var(--edit-thumbnail-panel-border-default);
   flex-shrink: 0;
 }
 
@@ -74,12 +74,12 @@ defineEmits<{
 }
 
 .thumbnails-scroll::-webkit-scrollbar-track {
-  background: rgb(255,255,255,0.1);
+  background: var(--edit-thumbnail-panel-surface-raised);
   border-radius: 3px;
 }
 
 .thumbnails-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255,255,255,0.3);
+  background: var(--edit-thumbnail-panel-surface-muted);
   border-radius: 3px;
 }
 
@@ -96,13 +96,13 @@ defineEmits<{
 }
 
 .edit-thumbnail-item:hover {
-  border-color: rgb(255,255,255,0.5);
+  border-color: var(--edit-thumbnail-panel-border-strong);
   transform: scale(1.05);
 }
 
 .edit-thumbnail-item.active {
-  border-color: #667eea;
-  box-shadow: 0 0 10px rgb(102, 126, 234, 0.5);
+  border-color: var(--color-border-brand-gradient);
+  box-shadow: 0 0 10px var(--edit-thumbnail-panel-shadow-default);
 }
 
 .edit-thumbnail-item img {
@@ -115,8 +115,8 @@ defineEmits<{
   position: absolute;
   bottom: 2px;
   right: 2px;
-  background: rgb(0,0,0,0.7);
-  color: #fff;
+  background: var(--edit-thumbnail-panel-surface-subtle);
+  color: var(--color-text-inverse);
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 3px;

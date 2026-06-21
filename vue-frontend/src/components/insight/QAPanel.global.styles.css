@@ -1,0 +1,124 @@
+.qa-note-modal.ui-modal__container {
+    width: 90%;
+    max-width: 560px;
+    border-radius: 16px;
+}
+
+.qa-note-modal.ui-modal__container .ui-modal__body {
+    padding: 24px;
+}
+
+.qa-note-modal.ui-modal__container .ui-modal__footer {
+    padding: 16px 24px;
+    background: var(--insight-bg-secondary);
+}
+
+/* 问答预览 */
+.qa-note-modal .qa-preview {
+    background: var(--insight-bg-tertiary);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.qa-note-modal .qa-preview-section {
+    margin-bottom: 16px;
+}
+
+.qa-note-modal .qa-preview-section:last-child {
+    margin-bottom: 0;
+}
+
+.qa-note-modal .qa-preview-section label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--insight-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.qa-note-modal .qa-preview-content {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--insight-text-primary);
+    background: var(--insight-bg-secondary);
+    padding: 12px;
+    border-radius: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.qa-note-modal .qa-preview-citations {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qa-note-modal .qa-citation-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: var(--insight-color-primary);
+    color: white;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* 笔记表单 */
+.qa-note-modal .note-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.qa-note-modal .note-form .qa-note-modal__field {
+    margin-bottom: 0;
+}
+
+.qa-note-modal .note-form label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--insight-text-primary);
+    margin-bottom: 6px;
+}
+
+.qa-note-modal .note-form .optional {
+    font-weight: 400;
+    color: var(--insight-text-secondary);
+    font-size: 12px;
+}
+
+.qa-note-modal .note-form .qa-note-modal__form-input,
+.qa-note-modal .note-form .qa-note-modal__form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid var(--color-border-muted);
+    border-radius: 8px;
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-primary);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.qa-note-modal .note-form .qa-note-modal__form-input,
+.qa-note-modal .note-form .qa-note-modal__form-textarea {
+    border-radius: 8px;
+}
+
+.qa-note-modal .note-form .qa-note-modal__form-input:focus,
+.qa-note-modal .note-form .qa-note-modal__form-textarea:focus {
+    outline: none;
+    border-color: var(--insight-color-primary);
+    box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+}
+
+.qa-note-modal .note-form .qa-note-modal__form-textarea {
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    line-height: 1.5;
+}

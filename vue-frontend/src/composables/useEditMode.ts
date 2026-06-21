@@ -43,7 +43,7 @@ export function useEditMode() {
 
     const currentImage = imageStore.currentImage
     
-    // 【修复】与原版一致：保存气泡状态，包括处理用户删除所有气泡的情况
+    // 退出编辑模式时同步气泡状态，包括用户删除所有气泡的情况。
     if (bubbleStore.bubbleCount > 0) {
       // 有气泡，保存当前状态
       imageStore.updateCurrentBubbleStates([...bubbleStore.bubbles])

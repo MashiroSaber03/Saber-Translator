@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 首次使用引导组件
  * 在用户首次使用时显示设置提醒弹窗
@@ -17,7 +19,7 @@ import BaseModal from './BaseModal.vue'
 // 常量定义
 // ============================================================
 
-/** localStorage 存储键（与原版 translation_validator.js 保持一致） */
+/** localStorage 存储键（与当前实现 translation_validator.js 保持一致） */
 const GUIDE_SHOWN_KEY = 'saber_translator_dismiss_setup_reminder'
 
 // ============================================================
@@ -44,7 +46,7 @@ const dontShowAgain = ref(false)
 // ============================================================
 
 onMounted(() => {
-  // 检查是否已经显示过引导（与原版 translation_validator.js 保持一致）
+  // 检查是否已经显示过引导（与当前实现 translation_validator.js 保持一致）
   const dismissed = localStorage.getItem(GUIDE_SHOWN_KEY)
   if (dismissed !== 'true') {
     // 首次使用或未勾选"不再显示"，显示引导弹窗
@@ -116,27 +118,29 @@ defineExpose({
       </div>
       
       <div class="guide-actions">
-        <button 
-          class="guide-btn primary"
+        <UiButton
+          variant="primary" 
+          class="guide-btn"
           @click="openSettingsAndClose"
         >
-          <span class="btn-icon">⚙️</span>
+          <span class="button-icon">⚙️</span>
           立即配置
-        </button>
-        <button 
-          class="guide-btn secondary"
+        </UiButton>
+        <UiButton
+          variant="secondary" 
+          class="guide-btn"
           @click="closeGuide"
         >
           稍后配置
-        </button>
+        </UiButton>
       </div>
       
       <div class="guide-footer">
         <label class="dont-show-option">
-          <input 
+          <UiInput 
             type="checkbox" 
             v-model="dontShowAgain"
-          >
+          />
           <span>不再显示此提醒</span>
         </label>
       </div>
@@ -165,19 +169,19 @@ defineExpose({
 .guide-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
   margin-bottom: 12px;
 }
 
 .guide-text {
   font-size: 14px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   margin-bottom: 8px;
   line-height: 1.6;
 }
 
 .highlight {
-  color: var(--color-primary, #4a90d9);
+  color: var(--color-action-primary, var(--first-time-guide-text-primary));
   font-weight: 500;
 }
 
@@ -191,7 +195,7 @@ defineExpose({
 
 .guide-list li {
   font-size: 14px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   margin-bottom: 8px;
   line-height: 1.5;
 }
@@ -217,33 +221,33 @@ defineExpose({
 }
 
 .guide-btn.primary {
-  background-color: var(--color-primary, #4a90d9);
+  background-color: var(--color-action-primary, var(--first-time-guide-surface-base));
   color: white;
   border: none;
 }
 
 .guide-btn.primary:hover {
-  background-color: var(--primary-hover, #3a7bc8);
+  background-color: var(--first-time-guide-surface-raised);
 }
 
 .guide-btn.secondary {
   background-color: transparent;
-  color: var(--text-secondary, #666);
-  border: 1px solid var(--border-color, #e0e0e0);
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
 .guide-btn.secondary:hover {
-  background-color: var(--hover-bg, #f5f5f5);
+  background-color: var(--color-surface-interactive-hover, var(--color-surface-subtle));
 }
 
-.btn-icon {
+.button-icon {
   font-size: 16px;
 }
 
 /* 引导底部 */
 .guide-footer {
   padding-top: 12px;
-  border-top: 1px solid var(--border-color, #e0e0e0);
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
 .dont-show-option {
@@ -251,7 +255,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   cursor: pointer;
 }
 
@@ -259,5 +263,5 @@ defineExpose({
   cursor: pointer;
 }
 
-/* .settings-highlight 及 @keyframes settingsHighlight 已迁移到 global.css */
+/* .settings-highlight 及 @keyframes settingsHighlight 由基础样式入口提供 */
 </style>

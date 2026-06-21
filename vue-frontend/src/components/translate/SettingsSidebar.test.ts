@@ -28,7 +28,7 @@ describe('SettingsSidebar defaults', () => {
     apiMocks.uploadFont.mockResolvedValue({ success: true, fontPath: 'fonts/custom.ttf' })
   })
 
-  it('defaults remember workflow mode to enabled before remote preferences load', async () => {
+  it('defaults remember workflow mode to disabled before remote preferences load', async () => {
     const wrapper = mount(SettingsSidebar, {
       global: {
         plugins: [createPinia()],
@@ -49,6 +49,6 @@ describe('SettingsSidebar defaults', () => {
     })
 
     const checkbox = wrapper.get('#rememberWorkflowModeCheckbox')
-    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
   })
 })

@@ -5,7 +5,7 @@
  * Feature: vue-frontend-migration, Property: 路由参数验证一致性
  * Validates: Requirements 2.2, 2.3
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it } from 'vitest'
 import * as fc from 'fast-check'
 import router from '@/router'
 

@@ -1,4 +1,3 @@
-/* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'

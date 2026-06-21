@@ -12,8 +12,7 @@ import * as fc from 'fast-check'
 import {
   createRateLimiter,
   createRateLimitedExecutor,
-  executeBatchWithRateLimit,
-  type RateLimiter
+  executeBatchWithRateLimit
 } from '@/utils/rateLimiter'
 
 // ============================================================

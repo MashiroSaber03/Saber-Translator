@@ -67,6 +67,7 @@ function handleSelect(value: string | number): void {
     <CustomSelect
       v-model="selectedBookId"
       :options="bookOptions"
+      fit
       @change="handleSelect"
     />
   </div>
@@ -79,7 +80,4 @@ function handleSelect(value: string | number): void {
     width: 300px;
 }
 
-.book-selector :deep(.custom-select) {
-    width: 100%;
-}
 </style>

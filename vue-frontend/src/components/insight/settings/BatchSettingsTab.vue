@@ -1,4 +1,8 @@
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 批量分析设置选项卡组件
  */
@@ -114,19 +118,19 @@ defineExpose({ getConfig, syncFromStore })
   <div class="insight-settings-content">
     <p class="settings-hint">配置批量分析的参数，影响分析速度和质量。</p>
     
-    <div class="form-group">
+    <div class="insight-settings-field">
       <label>每批次分析页数</label>
-      <input v-model.number="pagesPerBatch" type="number" min="1" max="10" @change="onPagesPerBatchChange">
+      <UiInput v-model.number="pagesPerBatch" type="number" min="1" max="10" @change="onPagesPerBatchChange" />
       <p class="form-hint">每次发送给 VLM 的图片数量，建议 3-5 张。{{ batchEstimate }}</p>
     </div>
     
-    <div class="form-group">
+    <div class="insight-settings-field">
       <label>上文参考批次数</label>
-      <input v-model.number="contextBatchCount" type="number" min="0" max="5">
+      <UiInput v-model.number="contextBatchCount" type="number" min="0" max="5" />
       <p class="form-hint">每批分析时参考前几批的结果作为上下文，0 表示不参考</p>
     </div>
     
-    <div class="form-group">
+    <div class="insight-settings-field">
       <label>分析架构</label>
       <CustomSelect v-model="architecturePreset" :options="ARCHITECTURE_OPTIONS" />
       <p class="form-hint">{{ architectureDescription }}</p>
@@ -142,15 +146,15 @@ defineExpose({ getConfig, syncFromStore })
           class="custom-layer-row"
         >
           <span class="layer-index">第{{ idx + 1 }}层</span>
-          <input 
+          <UiInput 
             type="text" 
             :value="layer.name"
             :disabled="!canEditLayerName(idx)"
             placeholder="层级名称"
             class="layer-name-input"
             @change="updateCustomLayer(idx, 'name', ($event.target as HTMLInputElement).value)"
-          >
-          <input 
+          />
+          <UiInput 
             type="number" 
             :value="layer.units"
             :disabled="!canEditLayerUnits(idx)"
@@ -158,15 +162,15 @@ defineExpose({ getConfig, syncFromStore })
             min="0" max="20"
             class="layer-units-input"
             @change="updateCustomLayer(idx, 'units', parseInt(($event.target as HTMLInputElement).value) || 0)"
-          >
+          />
           <label class="layer-align-label">
-            <input type="checkbox" :checked="layer.align" class="layer-align-checkbox" @change="updateCustomLayer(idx, 'align', ($event.target as HTMLInputElement).checked)">
+            <UiInput type="checkbox" :checked="layer.align" class="layer-align-checkbox" @change="updateCustomLayer(idx, 'align', ($event.target as HTMLInputElement).checked)" />
             <span class="layer-align-text">章节<br>对齐</span>
           </label>
-          <button v-if="canDeleteLayer(idx)" type="button" class="layer-delete-btn" @click="removeCustomLayer(idx)">删除</button>
+          <UiButton variant="toolbar" v-if="canDeleteLayer(idx)" type="button" class="layer-delete-btn" @click="removeCustomLayer(idx)">删除</UiButton>
         </div>
       </div>
-      <button type="button" class="btn btn-sm layer-add-btn" @click="addCustomLayer">+ 添加层级</button>
+      <UiButton variant="secondary" type="button" class="layer-add-btn" @click="addCustomLayer" size="sm">+ 添加层级</UiButton>
       <p class="form-hint">第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。</p>
     </div>
     
@@ -188,58 +192,397 @@ defineExpose({ getConfig, syncFromStore })
   </div>
 </template>
 
-<style scoped>
-/* 自定义层级编辑器 */
+<style scoped>.insight-settings-content {
+  padding: 16px 0;
+  min-height: 300px;
+}
+
+.insight-settings-content .settings-hint {
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  font-size: 13px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  border-radius: 4px;
+}
+
+.insight-settings-content .insight-settings-field {
+  margin-bottom: 16px;
+}
+
+.insight-settings-content .insight-settings-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-text-default, var(--color-text-default));
+}
+
+.insight-settings-content .insight-settings-field input[type="text"],
+.insight-settings-content .insight-settings-field input[type="password"],
+.insight-settings-content .insight-settings-field input[type="number"],
+.insight-settings-content .insight-settings-field select,
+.insight-settings-content .insight-settings-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--color-surface-input, var(--color-surface-base));
+  color: var(--color-text-default, var(--color-text-default));
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.insight-settings-content .insight-settings-field input:focus,
+.insight-settings-content .insight-settings-field select:focus,
+.insight-settings-content .insight-settings-field textarea:focus {
+  outline: none;
+  border-color: var(--color-border-brand);
+  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+}
+
+.insight-settings-content .form-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-supporting, var(--color-text-secondary));
+}
+
+.insight-settings-content .ui-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.insight-settings-content .ui-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.insight-settings-content .ui-button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.insight-settings-content .ui-button--primary {
+  background: var(--color-surface-brand);
+  color: white;
+}
+
+.insight-settings-content .ui-button--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.insight-settings-content .ui-button--primary:hover:not(:disabled) {
+  background: var(--color-surface-brand-strong);
+}
+
+.insight-settings-content .ui-button--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+}
+
+.insight-settings-content .ui-button--secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.insight-settings-content .form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.insight-settings-content .form-row .insight-settings-field {
+  flex: 1;
+}
+
+.insight-settings-content .placeholder-text {
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  text-align: center;
+  padding: 40px;
+}
+
+.insight-settings-content .prompts-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-settings-content .prompt-editor {
+  width: 100%;
+  min-height: 200px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-radius: 4px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-default, var(--color-text-default));
+  resize: vertical;
+}
+
+.insight-settings-content .prompt-editor:focus {
+  outline: none;
+  border-color: var(--color-border-brand);
+}
+
+.insight-settings-content .prompt-actions-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.insight-settings-content .ui-button--sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.insight-settings-content .section-divider {
+  border: none;
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  margin: 16px 0;
+}
+
+.insight-settings-content .prompts-library-section {
+  margin-top: 8px;
+}
+
+.insight-settings-content .library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.insight-settings-content .library-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.insight-settings-content .library-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.insight-settings-content .saved-prompts-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-radius: 4px;
+  background: var(--color-surface-muted);
+}
+
+.insight-settings-content .saved-prompt-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
+  transition: background 0.2s;
+}
+
+.insight-settings-content .saved-prompt-item:last-child {
+  border-bottom: none;
+}
+
+.insight-settings-content .saved-prompt-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.insight-settings-content .prompt-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insight-settings-content .prompt-type-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--color-focus-brand-soft);
+  color: var(--color-text-brand);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.insight-settings-content .button-icon-sm {
+  padding: 2px 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.insight-settings-content .button-icon-sm:hover {
+  opacity: 1;
+}
+
+.insight-settings-content .loading-text {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-supporting, var(--color-text-secondary));
+}
+
+.insight-settings-content .batch-info-box {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--color-surface-subtle);
+  border-radius: 8px;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+}
+
+.insight-settings-content .batch-info-box h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-default, var(--color-text-default));
+}
+
+.insight-settings-content .layers-preview-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.insight-settings-content .layers-preview-list li {
+  margin-bottom: 4px;
+}
+
+.insight-settings-content .align-badge {
+  color: var(--color-text-brand);
+  font-size: 12px;
+}
+
+.insight-settings-content .batch-estimate-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--batch-settings-tab-surface-base));
+  border-radius: 6px;
+  border: 1px solid var(--batch-settings-tab-border-default);
+}
+
+.insight-settings-content .batch-estimate-box p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-default, var(--color-text-default));
+}
+
+.insight-settings-content .batch-estimate-box strong {
+  color: var(--color-text-brand);
+}
+
+.insight-settings-content .model-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.insight-settings-content .model-input-row input {
+  flex: 1;
+}
+
+.insight-settings-content .fetch-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.insight-settings-content .model-select-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface-subtle);
+  border-radius: 6px;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+}
+
+.insight-settings-content .model-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--color-surface-input, var(--color-surface-base));
+  color: var(--color-text-default, var(--color-text-default));
+  cursor: pointer;
+}
+
+.insight-settings-content .model-select:focus {
+  outline: none;
+  border-color: var(--color-border-brand);
+}
+
+.insight-settings-content .model-count {
+  font-size: 12px;
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  white-space: nowrap;
+}
+
 .custom-layers-section {
   margin-top: 16px;
 }
 
-.custom-layers-label {
+.insight-settings-content .custom-layers-label {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
   font-size: 14px;
 }
 
-.custom-layers-list {
+.insight-settings-content .custom-layers-list {
   margin-bottom: 8px;
 }
 
-.custom-layer-row {
+.insight-settings-content .custom-layer-row {
   display: flex;
   flex-direction: row;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
   padding: 12px;
-  background: #f5f5f5;
+  background: var(--color-surface-subtle);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-default);
 }
 
-.layer-index {
+.insight-settings-content .layer-index {
   min-width: 50px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
-.layer-name-input {
+.insight-settings-content .layer-name-input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-default);
   border-radius: 6px;
   font-size: 14px;
 }
 
-.layer-units-input {
+.insight-settings-content .layer-units-input {
   width: 70px;
   padding: 8px 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-default);
   border-radius: 6px;
   font-size: 14px;
 }
 
-.layer-align-label {
+.insight-settings-content .layer-align-label {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -250,18 +593,18 @@ defineExpose({ getConfig, syncFromStore })
   text-align: center;
 }
 
-.layer-align-checkbox {
+.insight-settings-content .layer-align-checkbox {
   width: 16px;
   height: 16px;
 }
 
-.layer-align-text {
+.insight-settings-content .layer-align-text {
   line-height: 1.2;
 }
 
-.layer-delete-btn {
+.insight-settings-content .layer-delete-btn {
   padding: 6px 12px;
-  background: #ef4444;
+  background: var(--batch-settings-tab-surface-raised);
   color: white;
   border: none;
   border-radius: 6px;
@@ -270,12 +613,12 @@ defineExpose({ getConfig, syncFromStore })
   font-weight: 500;
 }
 
-.layer-delete-btn:hover {
-  background: #dc2626;
+.insight-settings-content .layer-delete-btn:hover {
+  background: var(--batch-settings-tab-surface-muted);
 }
 
-.layer-add-btn {
+.insight-settings-content .layer-add-btn {
   margin-top: 4px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-default);
 }
 </style>

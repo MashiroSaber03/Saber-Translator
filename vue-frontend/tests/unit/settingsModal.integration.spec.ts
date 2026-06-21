@@ -58,7 +58,7 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 const mountedWrappers: VueWrapper[] = []
 
 function getOverlay(): HTMLDivElement {
-  const overlay = document.body.querySelector('.modal-overlay')
+  const overlay = document.body.querySelector('.ui-modal__overlay')
   expect(overlay).toBeTruthy()
   return overlay as HTMLDivElement
 }
@@ -95,6 +95,6 @@ describe('SettingsModal integration', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeTruthy()
     expect(wrapper.emitted('update:modelValue')?.some(([value]) => value === false)).toBe(true)
-    expect(document.body.querySelector('.modal-overlay')).toBeNull()
+    expect(document.body.querySelector('.ui-modal__overlay')).toBeNull()
   })
 })

@@ -118,8 +118,8 @@
   </div>
 </template>
 
-
 <script setup lang="ts">
+
 /**
  * 翻译进度组件
  * 显示翻译进度条、当前处理图片序号
@@ -232,7 +232,7 @@ const progressPercent = computed(() => {
   return Math.round((currentIndex.value / totalCount.value) * 100)
 })
 
-/** 进度标签文本（优先使用自定义标签，复刻原版） */
+/** 进度标签文本（优先使用自定义标签，当前行为） */
 const progressLabel = computed(() => {
   // 优先使用自定义标签
   if (currentProgress.value.label) {
@@ -242,9 +242,7 @@ const progressLabel = computed(() => {
 })
 </script>
 
-
-<style scoped>
-/* ===================================
+<style scoped>/* ===================================
    进度条样式 - 新版并行进度条设计
    =================================== */
 
@@ -253,9 +251,9 @@ const progressLabel = computed(() => {
   padding: 20px 24px;
   border: none;
   border-radius: 12px;
-  background-color: #f8fafc;
+  background-color: var(--color-surface-quiet);
   width: 85%;
-  box-shadow: 0 2px 12px rgb(0,0,0,0.06);
+  box-shadow: 0 2px 12px var(--translation-progress-shadow-default);
 }
 
 /* ===================================
@@ -270,7 +268,7 @@ const progressLabel = computed(() => {
 .header-title {
   font-size: 1.2em;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text-heading);
 }
 
 /* 池子列表 */
@@ -302,14 +300,14 @@ const progressLabel = computed(() => {
 .pool-name {
   font-size: 14px;
   font-weight: 500;
-  color: #4a5568;
+  color: var(--translation-progress-text-primary);
 }
 
 /* 池子进度条 */
 .pool-progress-bar {
   position: relative;
   height: 12px;
-  background: #e2e8f0;
+  background: var(--translation-progress-surface-base);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -319,7 +317,7 @@ const progressLabel = computed(() => {
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(90deg, #48bb78, #38a169);
+  background: linear-gradient(90deg, var(--translation-progress-surface-raised), var(--translation-progress-surface-muted));
   border-radius: 6px;
   transition: width 0.3s ease;
 }
@@ -328,7 +326,7 @@ const progressLabel = computed(() => {
   position: absolute;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #4299e1, #3182ce);
+  background: linear-gradient(90deg, var(--translation-progress-surface-subtle), var(--translation-progress-surface-hover));
   border-radius: 6px;
   transition: left 0.3s ease, width 0.3s ease;
   animation: pulse 1.5s ease-in-out infinite;
@@ -348,21 +346,21 @@ const progressLabel = computed(() => {
 
 .completed-count {
   font-weight: 600;
-  color: #2d3748;
+  color: var(--translation-progress-text-secondary);
   text-align: right;
   min-width: 28px; /* 为最多两位数预留空间 */
 }
 
 .total-count {
-  color: #a0aec0;
+  color: var(--translation-progress-text-muted);
   min-width: 38px; /* 为"/ XX"格式预留空间 */
 }
 
 .waiting-badge {
   margin-left: 4px;
   padding: 1px 6px;
-  background: #ffc107;
-  color: #fff;
+  background: var(--translation-progress-surface-active);
+  color: var(--color-text-inverse);
   border-radius: 8px;
   font-size: 11px;
   font-weight: 600;
@@ -384,40 +382,40 @@ const progressLabel = computed(() => {
 
 /* 处理中状态 */
 .pool-processing .pool-name {
-  color: #3182ce;
+  color: var(--translation-progress-text-subtle);
 }
 
 /* 等待锁状态 */
 .pool-waiting-lock .pool-name {
-  color: #d69e2e;
+  color: var(--translation-progress-text-supporting);
 }
 
 /* 预保存进度 */
 .presave-section {
   margin-bottom: 16px;
   padding: 12px;
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  background: linear-gradient(135deg, var(--translation-progress-surface-selected) 0%, var(--translation-progress-surface-overlay) 100%);
   border-radius: 8px;
-  border: 1px solid #90caf9;
+  border: 1px solid var(--translation-progress-border-default);
 }
 
 .presave-label {
   font-size: 14px;
   font-weight: 500;
-  color: #1565c0;
+  color: var(--translation-progress-text-disabled);
   margin-bottom: 8px;
 }
 
 .presave-progress-bar {
   height: 10px;
-  background: #e3f2fd;
+  background: var(--translation-progress-surface-selected);
   border-radius: 5px;
   overflow: hidden;
 }
 
 .presave-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #42a5f5, #1976d2);
+  background: linear-gradient(90deg, var(--translation-progress-surface-inverse), var(--translation-progress-surface-contrast));
   border-radius: 5px;
   transition: width 0.3s ease;
   animation: presavePulse 1.5s ease-in-out infinite;
@@ -430,17 +428,17 @@ const progressLabel = computed(() => {
 
 /* 保存进度行 */
 .save-row .pool-name {
-  color: #7c3aed;
+  color: var(--translation-progress-text-inverse);
 }
 
 .save-progress {
-  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(90deg, var(--translation-progress-surface-tint), var(--translation-progress-surface-soft));
 }
 
 /* 分隔线 */
 .divider {
   height: 1px;
-  background: #e2e8f0;
+  background: var(--translation-progress-surface-base);
   margin: 20px 0;
 }
 
@@ -451,25 +449,25 @@ const progressLabel = computed(() => {
 
 .overall-label {
   font-size: 14px;
-  color: #4a5568;
+  color: var(--translation-progress-text-primary);
   margin-bottom: 8px;
 }
 
 .failed-text {
-  color: #e53e3e;
+  color: var(--translation-progress-text-brand);
   font-weight: 500;
 }
 
 .overall-progress-bar {
   height: 20px;
-  background: #e2e8f0;
+  background: var(--translation-progress-surface-base);
   border-radius: 10px;
   overflow: hidden;
 }
 
 .overall-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #48bb78 0%, #68d391 100%);
+  background: linear-gradient(90deg, var(--translation-progress-surface-raised) 0%, var(--translation-progress-surface-strong) 100%);
   border-radius: 10px;
   transition: width 0.3s ease;
   position: relative;
@@ -482,11 +480,11 @@ const progressLabel = computed(() => {
   inset: 0;
   background-image: linear-gradient(
     -45deg,
-    rgb(255, 255, 255, 0.2) 25%,
+    var(--translation-progress-accent-primary) 25%,
     transparent 25%,
     transparent 50%,
-    rgb(255, 255, 255, 0.2) 50%,
-    rgb(255, 255, 255, 0.2) 75%,
+    var(--translation-progress-accent-primary) 50%,
+    var(--translation-progress-accent-primary) 75%,
     transparent 75%,
     transparent
   );
@@ -509,23 +507,23 @@ const progressLabel = computed(() => {
   margin-bottom: 15px;
   font-weight: bold;
   font-size: 1.1em;
-  color: #2c3e50;
+  color: var(--color-text-heading);
   text-align: center;
 }
 
 .progress-bar {
   width: 100%;
   height: 25px;
-  background-color: #edf2f7;
+  background-color: var(--translation-progress-surface-stronger);
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgb(0,0,0,0.1);
+  box-shadow: inset 0 1px 3px var(--translation-progress-shadow-raised);
 }
 
 .progress-bar .progress {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #4cae4c 0%, #5cb85c 100%);
+  background: linear-gradient(90deg, var(--translation-progress-surface-highlight) 0%, var(--translation-progress-surface-highlight-strong) 100%);
   transition: width 0.3s ease;
   border-radius: 20px;
   position: relative;
@@ -533,7 +531,7 @@ const progressLabel = computed(() => {
 
 /* 失败数量 */
 .failed-count {
-  color: #e74c3c;
+  color: var(--color-text-danger-strong);
   font-weight: 500;
 }
 
@@ -542,7 +540,7 @@ const progressLabel = computed(() => {
    =================================== */
 
 /* 平板和小屏幕（宽度 < 768px） */
-@media (width <= 768px) {
+@media (--breakpoint-md-down) {
   .translation-progress-bar {
     width: 95%;
     padding: 16px 20px;
@@ -589,7 +587,7 @@ const progressLabel = computed(() => {
 }
 
 /* 手机屏幕（宽度 < 480px） */
-@media (width <= 480px) {
+@media (--breakpoint-xs-down) {
   .translation-progress-bar {
     width: 100%;
     padding: 12px 16px;
@@ -637,5 +635,4 @@ const progressLabel = computed(() => {
     margin-left: 1px;
   }
 }
-
 </style>

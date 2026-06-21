@@ -266,17 +266,13 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
     async function setFormReference(charName: string, formId: string, imagePath: string) {
         if (!bookId.value) return
 
-        try {
-            const result = await continuationApi.setFormReference(bookId.value, charName, formId, imagePath)
+        const result = await continuationApi.setFormReference(bookId.value, charName, formId, imagePath)
 
-            if (result.success) {
-                state.imageRefreshKey.value = Date.now()
-                await state.initializeData()
-            } else {
-                throw new Error(result.error)
-            }
-        } catch (error) {
-            throw error
+        if (result.success) {
+            state.imageRefreshKey.value = Date.now()
+            await state.initializeData()
+        } else {
+            throw new Error(result.error)
         }
     }
 

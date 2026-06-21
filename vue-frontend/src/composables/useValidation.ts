@@ -460,7 +460,7 @@ export function useValidation() {
 
     isSettingsButtonHighlighted.value = true
 
-    // 使用 CSS 类切换代替直接操作 style（样式定义在 global.css 或 AppHeader 中）
+    // 使用 CSS 类切换代替直接操作 style，样式由 AppHeader 和当前组件 owner 管理。
     settingsBtn.classList.add('settings-highlight')
 
     // 3秒后移除效果

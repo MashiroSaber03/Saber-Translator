@@ -1,5 +1,5 @@
 <template>
-  <div class="studio-page">
+  <AppShell class="studio-page">
     <StudioTopbar
       :book-title="currentBookTitle"
       :document-title="store.currentDocument?.meta.title || ''"
@@ -16,7 +16,7 @@
       @open-export="store.activeEditorTab = 'export'"
     />
 
-    <div v-if="!bookId" class="empty-state">
+    <div v-if="!bookId" class="studio-empty-state">
       <div class="empty-badge">缺少上下文</div>
       <h2>未检测到书籍参数</h2>
       <p>请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊仍然依赖当前书籍的分析上下文。</p>
@@ -25,7 +25,7 @@
     <div v-else class="workspace-root">
       <div v-if="store.errorMessage" class="workspace-error">
         <span>⚠ {{ store.errorMessage }}</span>
-        <button class="error-dismiss" @click="store.clearErrorMessage()">知道了</button>
+        <UiButton variant="toolbar" class="error-dismiss" @click="store.clearErrorMessage()">知道了</UiButton>
       </div>
 
       <div
@@ -121,10 +121,13 @@
         </section>
       </div>
     </div>
-  </div>
+  </AppShell>
 </template>
 
 <script setup lang="ts">
+import './CharacterStudioView.global.styles.css'
+import UiButton from '@/components/ui/UiButton.vue'
+import AppShell from '@/components/ui/AppShell.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
@@ -369,14 +372,14 @@ watch(() => props.docId, async nextDocId => {
 <style scoped>
 .studio-page {
   height: 100vh;
-  margin: 0 -20px;
+  margin: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background:
-    radial-gradient(circle at top right, rgba(86, 138, 225, 0.08), transparent 24%),
-    linear-gradient(180deg, #f4f7fb 0%, #eef3f9 48%, #f6f8fb 100%);
-  color: #122b47;
+    radial-gradient(circle at top right, var(--character-studio-view-accent-primary), transparent 24%),
+    linear-gradient(180deg, var(--character-studio-view-accent-secondary) 0%, var(--character-studio-view-accent-muted) 48%, var(--character-studio-view-accent-strong) 100%);
+  color: var(--character-studio-view-text-primary);
 }
 
 .workspace-root {
@@ -400,8 +403,8 @@ watch(() => props.docId, async nextDocId => {
 }
 
 .chat-pane {
-  width: auto !important;
-  padding: 0 !important;
+  width: auto;
+  padding: 0;
 }
 
 .column-scroll {
@@ -413,14 +416,14 @@ watch(() => props.docId, async nextDocId => {
   width: 8px;
   cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(37, 99, 199, 0.1), rgba(37, 99, 199, 0.22));
+  background: linear-gradient(180deg, var(--color-surface-studio-tint), var(--character-studio-view-surface-base));
 }
 
 .resource-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: rgba(9, 25, 49, 0.38);
+  z-index: var(--z-mobile-overlay);
+  background: var(--character-studio-view-surface-raised);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -447,9 +450,9 @@ watch(() => props.docId, async nextDocId => {
   margin: 14px 20px 0;
   border-radius: 16px;
   padding: 12px 16px;
-  background: rgba(255, 244, 244, 0.92);
-  border: 1px solid rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--character-studio-view-surface-muted);
+  border: 1px solid var(--character-studio-view-border-default);
+  color: var(--color-text-studio-danger);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -461,49 +464,44 @@ watch(() => props.docId, async nextDocId => {
   border-radius: 12px;
   padding: 8px 12px;
   cursor: pointer;
-  background: rgba(217, 55, 55, 0.12);
+  background: var(--color-surface-danger-soft);
   color: inherit;
 }
 
-.empty-state {
+.studio-empty-state {
   margin: auto;
   max-width: 560px;
   text-align: center;
   padding: 48px 32px;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  box-shadow: 0 26px 42px rgba(20, 46, 82, 0.08);
+  background: var(--character-studio-view-surface-subtle);
+  border: 1px solid var(--color-border-studio);
+  box-shadow: 0 26px 42px var(--shadow-studio-floating);
 }
 
 .empty-badge {
   display: inline-flex;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(37, 99, 199, 0.12);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint2);
+  color: var(--color-text-primary-strong);
   font-size: 12px;
 }
 
-.empty-state h2 {
+.studio-empty-state h2 {
   margin: 16px 0 0;
   font-size: 30px;
 }
 
-.empty-state p {
+.studio-empty-state p {
   margin: 12px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   line-height: 1.7;
 }
 
-:global(body.studio-resizing) {
-  cursor: col-resize;
-  user-select: none;
-}
-
-@media (max-width: 1100px) {
+@media (--breakpoint-studio-down) {
   .workspace-shell {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 1fr;
     gap: 16px;
   }
 

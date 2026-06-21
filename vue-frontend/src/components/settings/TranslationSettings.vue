@@ -1,23 +1,20 @@
 <template>
   <div class="translation-settings">
-    <!-- 翻译服务配置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">翻译服务配置</div>
-      <div class="settings-row">
-        <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>翻译服务配置</template>
+      <div class="ui-settings-row">
+        <UiField class="ui-settings-field">
           <label for="settingsModelProvider">翻译服务商:</label>
           <CustomSelect
             :model-value="localSettings.modelProvider"
             :options="providerOptions"
             @change="(v: any) => { localSettings.modelProvider = v; handleProviderChange() }"
           />
-        </div>
-
-        <!-- API Key (非本地服务显示) -->
-        <div v-show="!isLocalProvider" class="settings-item">
+        </UiField>
+        <UiField v-show="!isLocalProvider" class="ui-settings-field">
           <label for="settingsApiKey">{{ apiKeyLabel }}:</label>
           <div class="password-input-wrapper">
-            <input
+            <UiInput
               :type="showApiKey ? 'text' : 'password'"
               id="settingsApiKey"
               v-model="localSettings.apiKey"
@@ -25,36 +22,33 @@
               :placeholder="apiKeyPlaceholder"
               autocomplete="off"
             />
-            <button type="button" class="password-toggle-btn" tabindex="-1" @click="showApiKey = !showApiKey">
+            <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="showApiKey = !showApiKey">
               <span class="eye-icon" v-if="!showApiKey">👁</span>
               <span class="eye-off-icon" v-else>👁‍🗨</span>
-            </button>
+            </UiButton>
           </div>
-        </div>
+        </UiField>
       </div>
-
-      <!-- 自定义Base URL -->
-      <div v-show="providerRequiresBaseUrl(localSettings.modelProvider)" class="settings-item">
+      <UiField v-show="providerRequiresBaseUrl(localSettings.modelProvider)" class="ui-settings-field">
         <label for="settingsCustomBaseUrl">Base URL:</label>
-        <input
+        <UiInput
           type="text"
           id="settingsCustomBaseUrl"
           v-model="localSettings.customBaseUrl"
           placeholder="例如: https://api.example.com/v1"
         />
-      </div>
-
-      <!-- 模型名称 (非本地服务显示) -->
-      <div v-show="!isLocalProvider" class="settings-item">
+      </UiField>
+      <UiField v-show="!isLocalProvider" class="ui-settings-field">
         <label for="settingsModelName">{{ modelNameLabel }}:</label>
         <div class="model-input-with-fetch">
-          <input
+          <UiInput
             type="text"
             id="settingsModelName"
             v-model="localSettings.modelName"
             :placeholder="modelNamePlaceholder"
           />
-          <button
+          <UiButton
+            variant="toolbar"
             v-show="supportsFetchModels"
             type="button"
             class="fetch-models-btn"
@@ -64,9 +58,8 @@
           >
             <span class="fetch-icon">🔍</span>
             <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
-          </button>
+          </UiButton>
         </div>
-        <!-- 模型选择下拉框 -->
         <div v-if="modelList.length > 0" class="model-select-container">
           <CustomSelect
             :model-value="localSettings.modelName"
@@ -75,19 +68,18 @@
           />
           <span class="model-count">共 {{ modelList.length }} 个模型</span>
         </div>
-      </div>
-
-      <!-- 本地模型选择 (Ollama/Sakura) -->
-      <div v-show="isLocalProvider" class="settings-item">
+      </UiField>
+      <UiField v-show="isLocalProvider" class="ui-settings-field">
         <label for="settingsLocalModelName">模型名称:</label>
         <div class="model-input-with-fetch">
-          <input
+          <UiInput
             type="text"
             id="settingsLocalModelName"
             v-model="localSettings.modelName"
             :placeholder="localSettings.modelProvider === 'ollama' ? '例如: qwen2.5:7b' : '例如: sakura-14b-qwen2.5-v1.0'"
           />
-          <button
+          <UiButton
+            variant="toolbar"
             type="button"
             class="fetch-models-btn"
             title="获取本地可用模型列表"
@@ -96,9 +88,8 @@
           >
             <span class="fetch-icon">🔍</span>
             <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
-          </button>
+          </UiButton>
         </div>
-        <!-- 模型选择下拉框 -->
         <div v-if="localModelList.length > 0" class="model-select-container">
           <CustomSelect
             :model-value="localSettings.modelName"
@@ -107,18 +98,16 @@
           />
           <span class="model-count">共 {{ localModelList.length }} 个模型</span>
         </div>
-      </div>
-
-      <!-- RPM限制 (云服务显示) -->
-      <div class="settings-row">
-        <div v-show="showRpmLimit" class="settings-item">
+      </UiField>
+      <div class="ui-settings-row">
+        <UiField v-show="showRpmLimit" class="ui-settings-field">
           <label for="settingsRpmTranslation">RPM限制:</label>
-          <input type="number" id="settingsRpmTranslation" v-model.number="localSettings.rpmTranslation" min="0" step="1" />
-          <div class="input-hint">每分钟请求数，0表示无限制</div>
-        </div>
-        <div class="settings-item">
+          <UiInput type="number" id="settingsRpmTranslation" v-model.number="localSettings.rpmTranslation" min="0" step="1" />
+          <div class="ui-form-hint">每分钟请求数，0表示无限制</div>
+        </UiField>
+        <UiField class="ui-settings-field">
           <label for="settingsTranslationMaxRetries">重试次数:</label>
-          <input
+          <UiInput
             type="number"
             id="settingsTranslationMaxRetries"
             v-model.number="localSettings.translationBusinessRetries"
@@ -126,11 +115,11 @@
             max="10"
             step="1"
           />
-          <div class="input-hint">业务重试：空结果/结构解析失败</div>
-        </div>
-        <div class="settings-item">
+          <div class="ui-form-hint">业务重试：空结果/结构解析失败</div>
+        </UiField>
+        <UiField class="ui-settings-field">
           <label for="settingsTranslationTransportRetries">传输重试:</label>
-          <input
+          <UiInput
             type="number"
             id="settingsTranslationTransportRetries"
             v-model.number="localSettings.translationTransportRetries"
@@ -138,29 +127,27 @@
             max="10"
             step="1"
           />
-          <div class="input-hint">网络超时/429/5xx</div>
-        </div>
+          <div class="ui-form-hint">网络超时/429/5xx</div>
+        </UiField>
       </div>
-      <div v-show="showRpmLimit" class="settings-item">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="localSettings.useStream" />
+      <UiField v-show="showRpmLimit" class="ui-settings-field">
+        <label class="ui-checkbox-label">
+          <UiInput type="checkbox" v-model="localSettings.useStream" />
           流式调用
         </label>
-        <div class="input-hint">同时作用于整页批量和逐气泡翻译</div>
-      </div>
-      <div v-show="showRpmLimit" class="settings-item">
+        <div class="ui-form-hint">同时作用于整页批量和逐气泡翻译</div>
+      </UiField>
+      <UiField v-show="showRpmLimit" class="ui-settings-field">
         <OpenAIExtraBodyEditor v-model="localSettings.extraBody" />
-      </div>
-
-      <!-- 翻译模式选择 -->
-      <div class="settings-item">
+      </UiField>
+      <UiField class="ui-settings-field">
         <label for="settingsTranslationMode">翻译模式:</label>
         <CustomSelect
           :model-value="localSettings.translationMode"
           :options="translationModeOptions"
           @change="handleTranslationModeChange"
         />
-        <div class="input-hint translation-mode-hint">
+        <div class="ui-form-hint translation-mode-hint">
           <span v-if="localSettings.translationMode === 'batch'">
             💡 整页批量翻译：一次发送全部气泡，效率高，需要模型支持复杂指令
           </span>
@@ -168,87 +155,71 @@
             💡 逐气泡翻译：每个气泡单独翻译，更稳定，适合小模型或格式敏感场景
           </span>
         </div>
-        <!-- Sakura 服务商专属建议 -->
-        <div v-if="localSettings.modelProvider === 'sakura'" class="input-hint sakura-suggestion">
+        <div v-if="localSettings.modelProvider === 'sakura'" class="ui-form-hint sakura-suggestion">
           ⚠️ 建议 Sakura 服务使用"逐气泡翻译"模式，可获得更稳定的翻译效果
         </div>
-      </div>
-
-      <!-- 本地服务测试按钮 -->
-      <div v-show="isLocalProvider" class="settings-item">
-        <button class="settings-test-btn" @click="testLocalConnection" :disabled="isTesting">
+      </UiField>
+      <UiField v-show="isLocalProvider" class="ui-settings-field">
+        <UiButton variant="toolbar" class="settings-test-btn" @click="testLocalConnection" :disabled="isTesting">
           {{ isTesting ? '测试中...' : '🔗 测试连接' }}
-        </button>
-      </div>
-
-      <!-- 云服务商测试按钮（复刻原版） -->
-      <div v-show="!isLocalProvider" class="settings-item">
-        <button class="settings-test-btn" @click="testCloudConnection" :disabled="isTesting">
+        </UiButton>
+      </UiField>
+      <UiField v-show="!isLocalProvider" class="ui-settings-field">
+        <UiButton variant="toolbar" class="settings-test-btn" @click="testCloudConnection" :disabled="isTesting">
           {{ isTesting ? '测试中...' : '🔗 测试连接' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 提示词设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">提示词设置</div>
-      <div class="settings-item">
+        </UiButton>
+      </UiField>
+    </UiPanel>
+    <UiPanel variant="settings">
+      <template #title>提示词设置</template>
+      <UiField class="ui-settings-field">
         <label for="settingsPromptContent">翻译提示词:</label>
-        <textarea id="settingsPromptContent" v-model="localSettings.promptContent" rows="4" placeholder="翻译提示词"></textarea>
-        
-        <!-- 提示词格式选择（两种翻译模式都支持） -->
+        <UiTextarea id="settingsPromptContent" v-model="localSettings.promptContent" rows="4" placeholder="翻译提示词" />
         <div class="prompt-format-selector">
           <CustomSelect
             :model-value="localSettings.translatePromptMode"
             :options="promptModeOptions"
             @change="(v: any) => { localSettings.translatePromptMode = v; handlePromptModeChange() }"
           />
-          <span class="input-hint">JSON格式输出更结构化</span>
+          <span class="ui-form-hint">JSON格式输出更结构化</span>
         </div>
-        
-        <!-- 快速选择提示词 -->
         <SavedPromptsPicker
           prompt-type="translate"
           @select="handleTranslatePromptSelect"
         />
-        
-        <!-- 重置为默认按钮 -->
-        <button type="button" class="reset-btn" @click="resetTranslatePromptToDefault">
+        <UiButton variant="toolbar" type="button" class="reset-btn" @click="resetTranslatePromptToDefault">
           重置为默认
-        </button>
-      </div>
-
-      <!-- 文本框提示词 -->
-      <div class="settings-item">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="localSettings.enableTextboxPrompt" />
+        </UiButton>
+      </UiField>
+      <UiField class="ui-settings-field">
+        <label class="ui-checkbox-label">
+          <UiInput type="checkbox" v-model="localSettings.enableTextboxPrompt" />
           启用文本框提示词
         </label>
-      </div>
-      <div v-show="localSettings.enableTextboxPrompt" class="settings-item">
+      </UiField>
+      <UiField v-show="localSettings.enableTextboxPrompt" class="ui-settings-field">
         <label for="settingsTextboxPromptContent">文本框提示词:</label>
-        <textarea
+        <UiTextarea
           id="settingsTextboxPromptContent"
           v-model="localSettings.textboxPromptContent"
           rows="3"
           placeholder="文本框提示词"
-        ></textarea>
-        <!-- 快速选择提示词 -->
+        />
         <SavedPromptsPicker
           prompt-type="textbox"
           @select="handleTextboxPromptSelect"
         />
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
   </div>
 </template>
-
 <script setup lang="ts">
-/**
- * 翻译服务设置组件
- * 管理翻译服务商选择和配置
- * 支持服务商配置分组存储
- */
+
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -267,26 +238,23 @@ import type { TranslationProvider } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
-
-/** 翻译服务商选项 */
+import {
+  getTranslationApiKeyLabel,
+  getTranslationApiKeyPlaceholder,
+  getTranslationModelNameLabel,
+  getTranslationModelNamePlaceholder,
+} from './translationSettingsLabels'
 const providerOptions = getProviderOptionsForCapability('translation')
-
-/** 提示词模式选项 */
 const promptModeOptions = [
   { label: '普通提示词', value: 'normal' },
   { label: 'JSON提示词', value: 'json' }
 ]
-
-/** 翻译模式选项 */
 const translationModeOptions = [
   { label: '整页批量翻译 (推荐)', value: 'batch' },
   { label: '逐气泡翻译 (适合小模型)', value: 'single' }
 ]
-
-// Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
-
 // 本地状态（双向绑定用）
 // 根据翻译模式和JSON模式选择对应的提示词（4个独立存储字段之一）
 const currentTranslationMode = settingsStore.settings.translation.translationMode || 'batch'
@@ -299,7 +267,6 @@ const getCurrentPrompt = (): string => {
     return currentIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
   }
 }
-
 const localSettings = ref({
   modelProvider: normalizeProviderId(settingsStore.settings.translation.provider),
   apiKey: settingsStore.settings.translation.apiKey,
@@ -316,112 +283,42 @@ const localSettings = ref({
   enableTextboxPrompt: settingsStore.settings.useTextboxPrompt,
   textboxPromptContent: settingsStore.settings.textboxPrompt
 })
-
-// 密码显示状态
 const showApiKey = ref(false)
-
-// 测试状态
 const isTesting = ref(false)
-
-// 模型获取状态
 const isFetchingModels = ref(false)
 const modelList = ref<string[]>([])
 const localModelList = ref<string[]>([])
-
-/** 模型列表选项（用于CustomSelect） */
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   modelList.value.forEach(model => options.push({ label: model, value: model }))
   return options
 })
-
-/** 本地模型选项（用于CustomSelect） */
 const localModelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   localModelList.value.forEach(model => options.push({ label: model, value: model }))
   return options
 })
-
 // 计算属性：是否为本地服务商
 const isLocalProvider = computed(() => {
   return isLocalProviderId(localSettings.value.modelProvider)
 })
-
 // 计算属性：是否显示RPM限制
 const showRpmLimit = computed(() => {
   return providerSupportsRpmLimit(localSettings.value.modelProvider)
 })
-
 // 计算属性：是否支持获取模型列表
 const supportsFetchModels = computed(() => {
   return providerSupportsCapability(localSettings.value.modelProvider, 'modelFetch') && !isLocalProviderId(localSettings.value.modelProvider)
 })
-
-// 计算属性：API Key 标签
-const apiKeyLabel = computed(() => {
-  switch (localSettings.value.modelProvider) {
-    case 'baidu_translate':
-      return 'App ID'
-    case 'youdao_translate':
-      return 'App Key'
-    case 'caiyun':
-      return 'API Token'
-    default:
-      return 'API Key'
-  }
-})
-
-// 计算属性：API Key 占位符
-const apiKeyPlaceholder = computed(() => {
-  switch (localSettings.value.modelProvider) {
-    case 'baidu_translate':
-      return '请输入百度翻译App ID'
-    case 'youdao_translate':
-      return '请输入有道翻译应用ID'
-    case 'caiyun':
-      return '请输入彩云小译Token'
-    default:
-      return '请输入API Key'
-  }
-})
-
-// 计算属性：模型名称标签
-const modelNameLabel = computed(() => {
-  switch (localSettings.value.modelProvider) {
-    case 'baidu_translate':
-      return 'App Key'
-    case 'youdao_translate':
-      return 'App Secret'
-    case 'caiyun':
-      return '源语言 (可选)'
-    default:
-      return '模型名称'
-  }
-})
-
-// 计算属性：模型名称占位符
-const modelNamePlaceholder = computed(() => {
-  switch (localSettings.value.modelProvider) {
-    case 'baidu_translate':
-      return '请输入百度翻译App Key'
-    case 'youdao_translate':
-      return '请输入有道翻译应用密钥'
-    case 'caiyun':
-      return '可选: auto/日语/英语'
-    default:
-      return '请输入模型名称'
-  }
-})
-
-// 处理服务商切换
+const apiKeyLabel = computed(() => getTranslationApiKeyLabel(localSettings.value.modelProvider))
+const apiKeyPlaceholder = computed(() => getTranslationApiKeyPlaceholder(localSettings.value.modelProvider))
+const modelNameLabel = computed(() => getTranslationModelNameLabel(localSettings.value.modelProvider))
+const modelNamePlaceholder = computed(() => getTranslationModelNamePlaceholder(localSettings.value.modelProvider))
 function handleProviderChange() {
   const newProvider = localSettings.value.modelProvider as TranslationProvider
   localSettings.value.modelProvider = normalizeProviderId(newProvider)
-  
   // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
   settingsStore.setTranslationProvider(localSettings.value.modelProvider as TranslationProvider)
-  
-  // 从 store 同步恢复的配置到本地状态
   localSettings.value.apiKey = settingsStore.settings.translation.apiKey
   localSettings.value.modelName = settingsStore.settings.translation.modelName
   localSettings.value.customBaseUrl = settingsStore.settings.translation.customBaseUrl
@@ -431,18 +328,15 @@ function handleProviderChange() {
   localSettings.value.useStream = settingsStore.settings.translation.openaiOptions.execution.useStream
   localSettings.value.extraBody = settingsStore.settings.translation.openaiOptions.request.extraBody
   localSettings.value.translationMode = settingsStore.settings.translation.translationMode || 'batch'
-  
   // 清空所有模型列表（无论是云服务商还是本地服务商）
   modelList.value = []
   localModelList.value = []
 }
-
 // 处理提示词模式切换（普通 ↔ JSON）
 function handlePromptModeChange() {
   const newIsJsonMode = localSettings.value.translatePromptMode === 'json'
   const oldIsJsonMode = !newIsJsonMode  // 切换前的状态
   const isSingleMode = localSettings.value.translationMode === 'single'
-  
   // 先保存当前提示词到对应的字段（切换前的字段）
   if (isSingleMode) {
     if (oldIsJsonMode) {
@@ -457,8 +351,6 @@ function handlePromptModeChange() {
       settingsStore.updateTranslationService({ batchNormalPrompt: localSettings.value.promptContent })
     }
   }
-  
-  // 从新字段加载提示词
   const t = settingsStore.settings.translation
   let newPrompt: string
   if (isSingleMode) {
@@ -467,21 +359,15 @@ function handlePromptModeChange() {
     newPrompt = newIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
   }
   localSettings.value.promptContent = newPrompt
-  
-  // 同步到 store
   settingsStore.updateTranslationService({ isJsonMode: newIsJsonMode })
   settingsStore.setTranslatePrompt(newPrompt)
 }
-
-// 处理翻译模式切换
 function handleTranslationModeChange(value: any) {
   const newMode = String(value) as 'batch' | 'single'
   const oldMode = localSettings.value.translationMode
   const isJsonMode = localSettings.value.translatePromptMode === 'json'
-  
   // 如果模式没变，不做任何操作
   if (newMode === oldMode) return
-  
   // 先保存当前模式的提示词到对应字段（4个字段之一）
   if (oldMode === 'batch') {
     if (isJsonMode) {
@@ -496,11 +382,8 @@ function handleTranslationModeChange(value: any) {
       settingsStore.updateTranslationService({ singleNormalPrompt: localSettings.value.promptContent })
     }
   }
-  
-  // 更新模式
   localSettings.value.translationMode = newMode
   settingsStore.updateTranslationService({ translationMode: newMode })
-  
   // 加载新模式的已保存提示词（根据当前 JSON 模式选择对应字段）
   const t = settingsStore.settings.translation
   let savedPrompt: string
@@ -511,43 +394,33 @@ function handleTranslationModeChange(value: any) {
   }
   localSettings.value.promptContent = savedPrompt
   settingsStore.setTranslatePrompt(savedPrompt)
-  
   console.log(`翻译模式已切换为: ${newMode === 'batch' ? '整页批量翻译' : '逐气泡翻译'}`)
 }
-
 // 监听本地设置变化，同步到 store
 watch(() => localSettings.value.apiKey, (newVal) => {
   settingsStore.updateTranslationService({ apiKey: newVal })
 })
-
 watch(() => localSettings.value.modelName, (newVal) => {
   settingsStore.updateTranslationService({ modelName: newVal })
 })
-
 watch(() => localSettings.value.customBaseUrl, (newVal) => {
   settingsStore.updateTranslationService({ customBaseUrl: newVal })
 })
-
 watch(() => localSettings.value.rpmTranslation, (newVal) => {
   settingsStore.updateTranslationService({ rpmLimit: newVal })
 })
-
 watch(() => localSettings.value.translationTransportRetries, (newVal) => {
   settingsStore.updateTranslationService({ transportRetries: newVal })
 })
-
 watch(() => localSettings.value.translationBusinessRetries, (newVal) => {
   settingsStore.updateTranslationService({ businessRetries: newVal })
 })
-
 watch(() => localSettings.value.useStream, (newVal) => {
   settingsStore.updateTranslationService({ useStream: newVal })
 })
-
 watch(() => localSettings.value.extraBody, (newVal) => {
   settingsStore.updateTranslationService({ extraBody: newVal })
 })
-
 watch(() => localSettings.value.promptContent, (newVal) => {
   settingsStore.setTranslatePrompt(newVal)
   // 同时保存到当前模式和 JSON 模式对应的字段（4个字段之一）
@@ -567,41 +440,33 @@ watch(() => localSettings.value.promptContent, (newVal) => {
     }
   }
 })
-
 watch(() => localSettings.value.enableTextboxPrompt, (newVal) => {
   settingsStore.setUseTextboxPrompt(newVal)
 })
-
 watch(() => localSettings.value.textboxPromptContent, (newVal) => {
   settingsStore.setTextboxPrompt(newVal)
 })
-
 // 注意：translationMode 不需要 watch，因为 handleTranslationModeChange 已经处理了 store 同步
-
-// 获取模型列表（复刻原版 doFetchModels 逻辑）
+// 获取模型列表（当前行为 doFetchModels 逻辑）
 async function fetchModels() {
   const provider = localSettings.value.modelProvider
   const apiKey = localSettings.value.apiKey?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
-
-  // 验证（与原版一致）
+  // 验证（与当前行为一致）
   if (!apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
-
-  // 检查是否支持模型获取（与原版一致）
+  // 检查是否支持模型获取（与当前行为一致）
   if (!providerSupportsCapability(provider, 'modelFetch') || isLocalProviderId(provider)) {
     toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
     return
   }
-
-  // 自定义服务需要 base_url（与原版一致）
+  // 自定义服务需要 base_url（与当前行为一致）
   if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
   }
-
   isFetchingModels.value = true
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
@@ -619,17 +484,14 @@ async function fetchModels() {
     isFetchingModels.value = false
   }
 }
-
-// 获取服务商显示名称（与原版一致）
+// 获取服务商显示名称（与当前行为一致）
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
-
 // 获取本地模型列表（Ollama 或 Sakura）
 async function fetchLocalModels() {
   const provider = localSettings.value.modelProvider
   isFetchingModels.value = true
-  
   try {
     let result
     if (provider === 'sakura') {
@@ -640,7 +502,6 @@ async function fetchLocalModels() {
       toast.error('未选择本地服务商')
       return
     }
-    
     if (result.success && result.models) {
       localModelList.value = result.models.map((model: string | { id: string; name?: string }) =>
         typeof model === 'string' ? model : model.id
@@ -656,17 +517,13 @@ async function fetchLocalModels() {
     isFetchingModels.value = false
   }
 }
-
-// 测试本地服务连接
 async function testLocalConnection() {
   const provider = localSettings.value.modelProvider
   const modelName = localSettings.value.modelName?.trim()
-
   if (provider === 'ollama' && !modelName) {
     toast.warning('请填写模型名称')
     return
   }
-
   isTesting.value = true
   try {
     let result
@@ -695,39 +552,30 @@ async function testLocalConnection() {
     isTesting.value = false
   }
 }
-
-// 测试云服务商连接（复刻原版 testTranslationConnection 逻辑）
+// 测试云服务商连接（当前行为 testTranslationConnection 逻辑）
 async function testCloudConnection() {
   const provider = localSettings.value.modelProvider
   const apiKey = localSettings.value.apiKey?.trim()
   const modelName = localSettings.value.modelName?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
-
-  // 验证必填字段（与原版一致）
+  // 验证必填字段（与当前行为一致）
   if (!apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
-
-  // 非彩云小译需要模型名称
   if (provider !== 'caiyun' && !modelName) {
     toast.warning('请填写模型名称')
     return
   }
-
-  // 自定义服务需要 base_url
   if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要填写 Base URL')
     return
   }
-
   isTesting.value = true
   toast.info('正在测试连接...')
-
   try {
     let result
-
-    // 根据服务商类型分发到不同的测试函数（与原版一致）
+    // 根据服务商类型分发到不同的测试函数（与当前行为一致）
     switch (provider) {
       case 'baidu_translate':
         // 百度翻译使用 apiKey 作为 App ID，modelName 作为 App Key
@@ -738,7 +586,6 @@ async function testCloudConnection() {
         result = await configApi.testYoudaoTranslateConnection(apiKey, modelName)
         break
       default:
-        // 其他 AI 服务商使用通用接口
         result = await configApi.testAiTranslateConnection({
           provider,
           apiKey,
@@ -746,7 +593,6 @@ async function testCloudConnection() {
           baseUrl
         })
     }
-
     if (result.success) {
       toast.success(result.message || `${getProviderDisplayName(provider)} 连接成功!`)
     } else {
@@ -759,51 +605,103 @@ async function testCloudConnection() {
     isTesting.value = false
   }
 }
-
-// 处理翻译提示词选择
 function handleTranslatePromptSelect(content: string, name: string) {
   localSettings.value.promptContent = content
   toast.success(`已应用提示词: ${name}`)
 }
-
-// 处理文本框提示词选择
 function handleTextboxPromptSelect(content: string, name: string) {
   localSettings.value.textboxPromptContent = content
   toast.success(`已应用提示词: ${name}`)
 }
-
-// 重置翻译提示词为默认值
 function resetTranslatePromptToDefault() {
   const isJsonMode = localSettings.value.translatePromptMode === 'json'
-  
-  // 根据翻译模式和提示词模式选择对应的默认提示词
   if (localSettings.value.translationMode === 'single') {
-    // 逐气泡翻译模式
     localSettings.value.promptContent = isJsonMode ? DEFAULT_SINGLE_BUBBLE_JSON_PROMPT : DEFAULT_SINGLE_BUBBLE_PROMPT
   } else {
-    // 整页批量翻译模式
     localSettings.value.promptContent = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
   }
   toast.success('已重置为默认提示词')
 }
 </script>
 
-<style scoped>
-.model-hint {
-  color: var(--text-secondary);
+<style scoped>.model-hint {
+  color: var(--color-text-supporting);
   font-size: 12px;
   margin-top: 5px;
 }
 
-.checkbox-label {
+.ui-checkbox-label {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
 
-.checkbox-label input[type='checkbox'] {
+.ui-checkbox-label input[type='checkbox'] {
   width: auto;
+}
+
+.translation-settings .model-input-with-fetch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.translation-settings .model-input-with-fetch .translation-settings__model-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.translation-settings .fetch-models-btn.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 38px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-action-primary, var(--translation-settings-surface-base));
+  color: var(--color-text-inverse);
+  font-size: 0.9em;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.translation-settings .fetch-models-btn.ui-button:hover:not(:disabled) {
+  background: var(--translation-settings-surface-raised);
+}
+
+.translation-settings .fetch-models-btn.ui-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.translation-settings .settings-test-btn.ui-button {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 6px;
+  background-color: var(--color-surface-subtle);
+  color: var(--color-text-default);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.translation-settings .settings-test-btn.ui-button:hover:not(:disabled) {
+  border-color: var(--color-action-primary);
+  background-color: var(--color-surface-hover);
+  color: var(--color-action-primary);
+}
+
+.translation-settings .settings-test-btn.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 密码输入框包装器 */
@@ -817,7 +715,6 @@ function resetTranslatePromptToDefault() {
   flex: 1;
   padding-right: 36px;
 }
-
 /* 密码显示/隐藏切换按钮 */
 .password-toggle-btn {
   position: absolute;
@@ -842,47 +739,43 @@ function resetTranslatePromptToDefault() {
   display: inline-block;
   line-height: 1;
 }
-
 /* 重置为默认按钮 */
 .reset-btn {
   margin-top: 8px;
   padding: 6px 12px;
   font-size: 12px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   background: transparent;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .reset-btn:hover {
-  color: var(--color-primary, #4a90d9);
-  border-color: var(--color-primary, #4a90d9);
-  background: rgb(74, 144, 217, 0.05);
+  color: var(--color-action-primary, var(--translation-settings-text-primary));
+  border-color: var(--color-action-primary, var(--color-border-info));
+  background: var(--translation-settings-surface-muted);
 }
-
 /* 翻译模式提示样式 */
 .translation-mode-hint {
   margin-top: 6px;
   padding: 8px 12px;
-  background: var(--bg-secondary, #f8f9fa);
+  background: var(--translation-settings-surface-subtle);
   border-radius: 6px;
   font-size: 12px;
-  color: var(--text-secondary, #666);
-  border-left: 3px solid var(--color-primary, #4a90d9);
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  border-left: 3px solid var(--color-action-primary, var(--color-border-info));
 }
-
 /* Sakura 服务商专属建议样式 */
 .sakura-suggestion {
   margin-top: 6px;
   padding: 8px 12px;
-  background: #fff3cd;
+  background: var(--color-surface-base3cd);
   border-radius: 6px;
   font-size: 12px;
-  color: #856404;
-  border-left: 3px solid #ffc107;
+  color: var(--translation-settings-text-secondary);
+  border-left: 3px solid var(--translation-settings-border-default);
   font-weight: 500;
 }
-
 </style>

@@ -1,9 +1,13 @@
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 阅读器控制组件
  * 包含页码指示器、阅读设置面板、章节导航、回到顶部按钮、键盘快捷键
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 阅读设置接口
 export interface ReaderSettings {
@@ -62,18 +66,6 @@ const bgColorPresets = [
   { color: '#f5f5dc', name: '米色' },
   { color: '#2d2d2d', name: '深灰' }
 ]
-
-// ==================== 计算属性 ====================
-
-/**
- * 页码显示文本
- */
-const pageInfoText = computed(() => {
-  if (props.totalPages === 0) {
-    return '- / -'
-  }
-  return `${props.currentPage} / ${props.totalPages}`
-})
 
 // ==================== 方法 ====================
 
@@ -157,12 +149,10 @@ function saveSettings() {
 }
 
 /**
- * 应用设置到页面
- * 使用 CSS 变量而不是直接设置 body 样式，避免污染全局
+ * 应用阅读器设置到页面级 reader owner 变量
  */
 function applySettings() {
-  // 使用 CSS 变量，让 ReaderView 的容器来应用背景色
-  document.documentElement.style.setProperty('--reader-bg-color', settings.value.bgColor)
+  document.documentElement.style.setProperty('--reader-page-background', settings.value.bgColor)
   document.documentElement.style.setProperty('--reader-image-width', `${settings.value.imageWidth}%`)
   document.documentElement.style.setProperty('--reader-gap', `${settings.value.imageGap}px`)
   emit('settingsChange', settings.value)
@@ -218,8 +208,7 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   document.removeEventListener('keydown', handleKeydown)
   
-  // 清除阅读器的 CSS 变量
-  document.documentElement.style.removeProperty('--reader-bg-color')
+  document.documentElement.style.removeProperty('--reader-page-background')
   document.documentElement.style.removeProperty('--reader-image-width')
   document.documentElement.style.removeProperty('--reader-gap')
 })
@@ -235,7 +224,8 @@ defineExpose({
 <template>
   <!-- 章节导航 -->
   <nav v-if="showChapterNav" id="chapterNav" class="chapter-nav">
-    <button 
+    <UiButton
+      variant="toolbar" 
       id="prevChapterBtn" 
       class="nav-btn" 
       :disabled="!hasPrevChapter"
@@ -243,8 +233,9 @@ defineExpose({
     >
       <span class="nav-icon">◀</span>
       <span class="nav-text">上一章</span>
-    </button>
-    <button 
+    </UiButton>
+    <UiButton
+      variant="toolbar" 
       id="nextChapterBtn" 
       class="nav-btn" 
       :disabled="!hasNextChapter"
@@ -252,11 +243,12 @@ defineExpose({
     >
       <span class="nav-text">下一章</span>
       <span class="nav-icon">▶</span>
-    </button>
+    </UiButton>
   </nav>
 
   <!-- 回到顶部按钮 -->
-  <button 
+  <UiButton
+    variant="toolbar" 
     v-show="showScrollTopBtn"
     id="scrollTopBtn" 
     class="scroll-top-btn" 
@@ -264,7 +256,7 @@ defineExpose({
     @click="scrollToTop"
   >
     <span>↑</span>
-  </button>
+  </UiButton>
 
   <!-- 阅读设置面板 -->
   <div id="settingsPanel" class="settings-panel" :class="{ active: isSettingsPanelOpen }">
@@ -272,14 +264,14 @@ defineExpose({
     <div class="settings-content">
       <div class="settings-header">
         <h3>阅读设置</h3>
-        <button class="close-btn" @click="closeSettings">×</button>
+        <UiButton variant="toolbar" class="close-btn" @click="closeSettings">×</UiButton>
       </div>
       <div class="settings-body">
         <!-- 图片宽度设置 -->
         <div class="setting-item">
           <label>图片宽度</label>
           <div class="setting-control">
-            <input 
+            <UiInput 
               type="range" 
               id="imageWidthSlider" 
               min="50" 
@@ -295,7 +287,7 @@ defineExpose({
         <div class="setting-item">
           <label>图片间距</label>
           <div class="setting-control">
-            <input 
+            <UiInput 
               type="range" 
               id="imageGapSlider" 
               min="0" 
@@ -311,7 +303,8 @@ defineExpose({
         <div class="setting-item">
           <label>背景颜色</label>
           <div class="setting-control bg-options">
-            <button 
+            <UiButton
+              variant="toolbar" 
               v-for="preset in bgColorPresets"
               :key="preset.color"
               class="bg-option" 
@@ -320,7 +313,7 @@ defineExpose({
               :style="{ background: preset.color }"
               :title="preset.name"
               @click="updateBgColor(preset.color)"
-            ></button>
+            ></UiButton>
           </div>
         </div>
       </div>
@@ -328,130 +321,7 @@ defineExpose({
   </div>
 </template>
 
-<style scoped>
-/* ==================== ReaderControls 完整样式 - 从 reader.css 迁移 ==================== */
-
-/* 头部样式 */
-.reader-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
-  background: var(--header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  z-index: var(--z-overlay);
-  box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
-}
-
-.header-left,
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.header-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: rgb(255, 255, 255, 0.15);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.header-btn:hover {
-  background: rgb(255, 255, 255, 0.25);
-}
-
-.header-btn.primary {
-  background: rgb(255, 255, 255, 0.9);
-  color: #667eea;
-}
-
-.header-btn.primary:hover {
-  background: white;
-}
-
-.btn-icon {
-  font-size: 16px;
-}
-
-.book-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: white;
-  font-size: 14px;
-}
-
-.book-title {
-  font-weight: 600;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.separator {
-  opacity: 0.6;
-}
-
-.chapter-title {
-  opacity: 0.9;
-  max-width: 150px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.page-info {
-  color: white;
-  font-size: 14px;
-  opacity: 0.9;
-}
-
-/* 查看模式切换 */
-.view-mode-toggle {
-  display: flex;
-  background: rgb(255, 255, 255, 0.15);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.mode-btn {
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
-  color: rgb(255, 255, 255, 0.7);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-btn:hover {
-  color: white;
-}
-
-.mode-btn.active {
-  background: rgb(255, 255, 255, 0.9);
-  color: #667eea;
-  font-weight: 500;
-}
+<style scoped>/* ==================== ReaderControls样式 ==================== */
 
 /* 章节导航 */
 .chapter-nav {
@@ -460,7 +330,7 @@ defineExpose({
   left: 0;
   right: 0;
   height: 60px;
-  background: linear-gradient(to top, rgb(26, 26, 46, 0.95), rgb(26, 26, 46, 0.8));
+  background: linear-gradient(to top, var(--reader-controls-surface-base), var(--reader-controls-surface-raised));
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
@@ -474,8 +344,8 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 12px 24px;
-  background: rgb(255, 255, 255, 0.1);
-  border: 1px solid rgb(255, 255, 255, 0.2);
+  background: var(--reader-controls-surface-muted);
+  border: 1px solid var(--reader-controls-border-default);
   border-radius: 8px;
   color: white;
   font-size: 14px;
@@ -483,13 +353,13 @@ defineExpose({
   transition: all 0.2s;
 }
 
-.nav-btn:hover:not(:disabled) {
-  background: rgb(255, 255, 255, 0.2);
-}
-
 .nav-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: var(--reader-controls-surface-subtle);
 }
 
 .nav-icon {
@@ -503,20 +373,20 @@ defineExpose({
   bottom: 80px;
   width: 48px;
   height: 48px;
-  background: var(--color-primary, #667eea);
+  background: var(--color-action-primary, var(--color-surface-brand-gradient-start));
   border: none;
   border-radius: 50%;
   color: white;
   font-size: 20px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-brand-soft);
   transition: all 0.3s;
   z-index: var(--z-dropdown);
 }
 
 .scroll-top-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgb(102, 126, 234, 0.5);
+  box-shadow: 0 6px 16px var(--reader-controls-shadow-default);
 }
 
 /* 设置面板 */
@@ -534,7 +404,7 @@ defineExpose({
 .settings-overlay {
   position: absolute;
   inset: 0;
-  background: rgb(0, 0, 0, 0.5);
+  background: var(--reader-controls-surface-hover);
 }
 
 .settings-content {
@@ -544,9 +414,9 @@ defineExpose({
   width: 300px;
 
   /* 修复：使用固定的深色背景，不依赖可能未定义的CSS变量 */
-  background: #2d2d44;
+  background: var(--reader-controls-surface-active);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px var(--reader-controls-shadow-raised);
   overflow: hidden;
 }
 
@@ -555,10 +425,10 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  border-bottom: 1px solid rgb(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--reader-controls-border-strong);
 
   /* 修复：确保头部背景也是深色 */
-  background: #2d2d44;
+  background: var(--reader-controls-surface-active);
 }
 
 .settings-header h3 {
@@ -571,7 +441,7 @@ defineExpose({
 .close-btn {
   width: 28px;
   height: 28px;
-  background: rgb(255, 255, 255, 0.1);
+  background: var(--reader-controls-surface-muted);
   border: none;
   border-radius: 50%;
   color: white;
@@ -581,14 +451,14 @@ defineExpose({
 }
 
 .close-btn:hover {
-  background: rgb(255, 255, 255, 0.2);
+  background: var(--reader-controls-surface-subtle);
 }
 
 .settings-body {
   padding: 16px;
 
   /* 修复：确保主体背景也是深色 */
-  background: #2d2d44;
+  background: var(--reader-controls-surface-active);
 }
 
 .setting-item {
@@ -603,7 +473,7 @@ defineExpose({
   display: block;
 
   /* 修复：确保标签文字是淡白色，在深色背景上可见 */
-  color: rgb(255, 255, 255, 0.7);
+  color: var(--reader-controls-text-primary);
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -618,8 +488,7 @@ defineExpose({
   flex: 1;
   height: 4px;
   appearance: none;
-  appearance: none;
-  background: rgb(255, 255, 255, 0.2);
+  background: var(--reader-controls-surface-subtle);
   border-radius: 2px;
   outline: none;
 }
@@ -628,7 +497,7 @@ defineExpose({
   appearance: none;
   width: 16px;
   height: 16px;
-  background: #667eea;
+  background: var(--color-surface-brand-gradient-start);
   border-radius: 50%;
   cursor: pointer;
 }
@@ -659,33 +528,12 @@ defineExpose({
 }
 
 .bg-option.active {
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgb(102, 126, 234, 0.3);
+  border-color: var(--color-border-brand-gradient);
+  box-shadow: 0 0 0 2px var(--reader-controls-shadow-floating);
 }
 
 /* 响应式设计 */
-@media (width <= 768px) {
-  .header-btn .btn-text {
-    display: none;
-  }
-  
-  .book-title {
-    max-width: 120px;
-  }
-  
-  .chapter-title {
-    max-width: 80px;
-  }
-  
-  .header-center {
-    display: none;
-  }
-  
-  .mode-btn {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-  
+@media (--breakpoint-md-down) {
   .settings-content {
     right: 8px;
     left: 8px;
@@ -705,7 +553,7 @@ defineExpose({
   }
 }
 
-@media (width <= 480px) {
+@media (--breakpoint-xs-down) {
   .reader-header {
     padding: 0 8px;
   }

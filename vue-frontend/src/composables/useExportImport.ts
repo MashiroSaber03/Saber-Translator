@@ -214,7 +214,7 @@ export function useExportImport() {
 
   /**
    * 导入 JSON 文本文件并应用到当前图片集
-   * 【复刻原版】导入后自动重新渲染已翻译的图片
+   * 导入后自动重新渲染已翻译的图片
    * @param jsonFile - 用户选择的 JSON 文件
    */
   async function importText(jsonFile: File): Promise<void> {
@@ -283,7 +283,7 @@ export function useExportImport() {
 
         let imageUpdated = false
 
-        // 【复刻原版】确保必要的数组存在
+        // 确保导入目标所需数组存在。
         if (!image.bubbleStates) {
           image.bubbleStates = []
         }
@@ -299,12 +299,12 @@ export function useExportImport() {
           const bubbleIndex = bubbleData.bubbleIndex
           const original = bubbleData.original
           const translated = bubbleData.translated
-          // 获取排版方向，确保不是 'auto'（复刻原版）
+          // 获取排版方向，导入时落到可渲染方向。
           const rawDir = bubbleData.textDirection as string | undefined
           const textDirection: 'vertical' | 'horizontal' =
             (rawDir === 'vertical' || rawDir === 'horizontal') ? rawDir : 'vertical'
 
-          // 【复刻原版】确保数组索引存在
+          // 确保数组索引存在。
           while (image.bubbleTexts.length <= bubbleIndex) {
             image.bubbleTexts.push('')
           }
@@ -312,7 +312,7 @@ export function useExportImport() {
             image.originalTexts.push('')
           }
 
-          // 【复刻原版】更新文本数组
+          // 更新文本数组。
           if (original) image.originalTexts[bubbleIndex] = original
           if (translated) image.bubbleTexts[bubbleIndex] = translated
 
@@ -342,7 +342,7 @@ export function useExportImport() {
           }
         }
 
-        // 【复刻原版】确保 bubbleTexts 与 bubbleStates 同步
+        // 确保 bubbleTexts 与 bubbleStates 同步。
         if (imageUpdated && image.bubbleStates) {
           image.bubbleTexts = image.bubbleStates.map(bs => bs.translatedText || '')
         }
@@ -358,7 +358,7 @@ export function useExportImport() {
         }
       }
 
-      // 【复刻原版】重新渲染需要更新的图片
+      // 重新渲染需要更新的图片。
       if (imagesToReRender.length > 0) {
         importProgress.value = 80
         importProgressText.value = '开始渲染图片...'
@@ -377,7 +377,7 @@ export function useExportImport() {
           importProgressText.value = `渲染图片 ${i + 1}/${imagesToReRender.length}`
 
           try {
-            // 【复刻原版】背景兜底策略：clean → original
+            // 背景兜底策略：clean → original。
             let cleanImageBase64 = ''
             if (img.cleanImageData) {
               cleanImageBase64 = img.cleanImageData.includes('base64,')

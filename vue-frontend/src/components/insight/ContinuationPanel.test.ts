@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import UiButton from '@/components/ui/UiButton.vue'
 import ContinuationPanel from './ContinuationPanel.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -80,8 +81,9 @@ function createStateStub(currentStep = 0) {
 }
 
 const scriptPanelStub = defineComponent({
+  components: { UiButton },
   emits: ['generate', 'update-script', 'save-script', 'reset-script'],
-  template: '<button class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</button>',
+  template: '<UiButton class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</UiButton>',
 })
 
 describe('ContinuationPanel', () => {
@@ -128,7 +130,7 @@ describe('ContinuationPanel', () => {
 
     expect(mocks.state.initializeData).toHaveBeenCalledTimes(1)
 
-    await wrapper.find('button.btn.secondary.danger').trigger('click')
+    await wrapper.find('button.ui-button--danger').trigger('click')
     await nextTick()
 
     expect(mocks.clearContinuationData).toHaveBeenCalledWith('book-1')
@@ -150,7 +152,7 @@ describe('ContinuationPanel', () => {
       },
     })
 
-    await wrapper.find('button.btn.primary').trigger('click')
+    await wrapper.find('button.ui-button--primary').trigger('click')
     await nextTick()
 
     expect(mocks.saveConfig).toHaveBeenCalledWith('book-1', {

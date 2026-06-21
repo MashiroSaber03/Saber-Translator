@@ -1,5 +1,5 @@
 <template>
-  <!-- 通用进度条组件 - 完全复刻原版样式 -->
+  <!-- 通用进度条组件 - 当前视觉与行为样式 -->
   <div v-if="visible" class="translation-progress-bar">
     <div class="progress-bar-label">
       {{ label }}
@@ -16,7 +16,7 @@
 <script setup lang="ts">
 /**
  * 通用进度条组件
- * 完全复刻原版 #translationProgressBar 的样式和行为
+ * 当前视觉与行为 #translationProgressBar 的样式和行为
  */
 
 interface Props {
@@ -35,39 +35,39 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <style scoped>
-/* 完全复刻原版进度条样式 */
+/* 当前视觉与行为进度条样式 */
 
 .translation-progress-bar {
   margin: 20px auto;
   padding: 20px;
   border: none;
   border-radius: 8px;
-  background-color: #f8fafc;
+  background-color: var(--color-surface-quiet);
   text-align: center;
   width: 85%;
-  box-shadow: 0 2px 8px rgb(0,0,0,0.05);
+  box-shadow: 0 2px 8px var(--progress-bar-shadow-default);
 }
 
 .progress-bar-label {
   margin-bottom: 15px;
   font-weight: bold;
   font-size: 1.1em;
-  color: #2c3e50;
+  color: var(--color-text-heading);
 }
 
 .progress-bar {
   width: 100%;
   height: 25px;
-  background-color: #edf2f7;
+  background-color: var(--progress-bar-surface-base);
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgb(0,0,0,0.1);
+  box-shadow: inset 0 1px 3px var(--progress-bar-shadow-raised);
 }
 
 .progress-bar .progress {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #4cae4c 0%, #5cb85c 100%);
+  background: linear-gradient(90deg, var(--progress-bar-surface-raised) 0%, var(--progress-bar-surface-muted) 100%);
   transition: width 0.3s ease;
   border-radius: 20px;
   position: relative;
@@ -79,11 +79,11 @@ withDefaults(defineProps<Props>(), {
   inset: 0;
   background-image: linear-gradient(
       -45deg,
-      rgb(255, 255, 255, .2) 25%,
+      var(--progress-bar-accent-primary) 25%,
       transparent 25%,
       transparent 50%,
-      rgb(255, 255, 255, .2) 50%,
-      rgb(255, 255, 255, .2) 75%,
+      var(--progress-bar-accent-primary) 50%,
+      var(--progress-bar-accent-primary) 75%,
       transparent 75%,
       transparent
   );

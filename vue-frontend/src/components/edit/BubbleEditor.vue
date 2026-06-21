@@ -1,7 +1,7 @@
 <!--
   气泡编辑器组件
   编辑单个气泡的文本、字体、颜色等属性
-  使用原版Office风格浅色主题
+  使用当前实现Office风格浅色主题
   - 支持原文和译文编辑
   - 支持日语软键盘输入
   - 支持单气泡重新OCR识别和翻译
@@ -10,34 +10,35 @@
 -->
 <template>
   <div class="edit-panel-content">
-    <!-- 【复刻原版】始终显示编辑面板，不显示"请选择气泡"提示 -->
+    <!-- 【当前行为】始终显示编辑面板，不显示"请选择气泡"提示 -->
     <!-- 原文编辑区 -->
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">漫画原文</span>
-        <button 
+        <UiButton
+          variant="toolbar" 
           class="re-ocr-btn" 
           :class="{ 'is-loading': isOcrLoading }"
           :disabled="isOcrLoading"
           @click="handleOcrRecognize" 
           title="重新OCR此气泡"
         >
-          <span class="btn-icon">🔄</span>
-        </button>
+          <span class="button-icon">🔄</span>
+        </UiButton>
       </div>
-      <textarea
+      <UiTextarea
         ref="originalTextInput"
         v-model="localOriginalText"
         class="text-editor original-editor"
         placeholder="OCR识别的日语原文..."
         spellcheck="false"
         @input="handleOriginalTextChange"
-      ></textarea>
+      />
       <div class="text-actions">
-        <button class="copy-btn" @click="copyOriginalText">📋 复制</button>
-        <button class="keyboard-toggle-btn" @click="toggleJpKeyboard" title="显示/隐藏50音键盘">
+        <UiButton variant="toolbar" class="copy-btn" @click="copyOriginalText">📋 复制</UiButton>
+        <UiButton variant="toolbar" class="keyboard-toggle-btn" @click="toggleJpKeyboard" title="显示/隐藏50音键盘">
           ⌨️ 50音
-        </button>
+        </UiButton>
       </div>
 
       <!-- 50音软键盘 -->
@@ -54,26 +55,27 @@
     <div class="text-column translated-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">译文</span>
-        <button 
+        <UiButton
+          variant="toolbar" 
           class="re-translate-btn" 
           :class="{ 'is-loading': isTranslateLoading }"
           :disabled="isTranslateLoading"
           @click="handleReTranslate" 
           title="重新翻译此气泡"
         >
-          <span class="btn-icon">🔄</span>
-        </button>
+          <span class="button-icon">🔄</span>
+        </UiButton>
       </div>
-      <textarea
+      <UiTextarea
         ref="translatedTextInput"
         v-model="localTranslatedText"
         class="text-editor translated-editor"
         placeholder="翻译后的中文..."
         spellcheck="false"
         @input="handleTextChange"
-      ></textarea>
+      />
       <div class="text-actions">
-        <button class="copy-btn" @click="copyTranslatedText">📋 复制</button>
+        <UiButton variant="toolbar" class="copy-btn" @click="copyTranslatedText">📋 复制</UiButton>
       </div>
     </div>
 
@@ -95,7 +97,7 @@
           <div class="combo-control size-control">
             <label>字号</label>
             <div class="size-input-wrap">
-              <input
+              <UiInput
                 type="number"
                 v-model.number="localFontSize"
                 class="toolbar-fontsize-input"
@@ -106,12 +108,12 @@
                 @change="handleFontSizeChange"
               />
               <div class="toolbar-fontsize-btns">
-                <button class="toolbar-fontsize-btn" @click="increaseFontSize" title="增大字号">
+                <UiButton variant="toolbar" class="toolbar-fontsize-btn" @click="increaseFontSize" title="增大字号">
                   A+
-                </button>
-                <button class="toolbar-fontsize-btn" @click="decreaseFontSize" title="减小字号">
+                </UiButton>
+                <UiButton variant="toolbar" class="toolbar-fontsize-btn" @click="decreaseFontSize" title="减小字号">
                   A-
-                </button>
+                </UiButton>
               </div>
             </div>
           </div>
@@ -121,7 +123,8 @@
         <div class="toolbar-row toolbar-row-actions">
           <!-- 排版方向 -->
           <div class="toolbar-icon-group" aria-label="排版方向">
-            <button
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localTextDirection === 'vertical'"
               @click="setTextDirection('vertical')"
@@ -135,8 +138,9 @@
                   fill="none"
                 />
               </svg>
-            </button>
-            <button
+            </UiButton>
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localTextDirection === 'horizontal'"
               @click="setTextDirection('horizontal')"
@@ -150,7 +154,7 @@
                   fill="none"
                 />
               </svg>
-            </button>
+            </UiButton>
           </div>
 
           <div class="toolbar-divider vertical"></div>
@@ -158,13 +162,13 @@
           <!-- 文字颜色 -->
           <div class="toolbar-color-group">
             <div class="toolbar-color-picker" title="文字颜色">
-              <button class="toolbar-btn toolbar-color-btn" @click="triggerTextColorPicker">
+              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerTextColorPicker">
                 <svg viewBox="0 0 16 16" width="16" height="16">
                   <text x="3" y="11" font-size="10" font-weight="bold" fill="currentColor">A</text>
                 </svg>
                 <span class="color-indicator" :style="{ background: localTextColor }"></span>
-              </button>
-              <input
+              </UiButton>
+              <UiInput
                 ref="textColorInput"
                 type="color"
                 v-model="localTextColor"
@@ -190,7 +194,7 @@
               class="toolbar-color-picker toolbar-solid-color-options"
               :class="{ hidden: localInpaintMethod !== 'solid' }"
             >
-              <button class="toolbar-btn toolbar-color-btn" @click="triggerFillColorPicker">
+              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerFillColorPicker">
                 <svg viewBox="0 0 16 16" width="16" height="16">
                   <rect
                     x="2"
@@ -205,8 +209,8 @@
                   <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.3" />
                 </svg>
                 <span class="color-indicator" :style="{ background: localFillColor }"></span>
-              </button>
-              <input
+              </UiButton>
+              <UiInput
                 ref="fillColorInput"
                 type="color"
                 v-model="localFillColor"
@@ -220,7 +224,8 @@
 
           <!-- 描边设置 -->
           <div class="toolbar-stroke-cluster">
-            <button
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localStrokeEnabled"
               @click="toggleStroke"
@@ -240,20 +245,20 @@
                 </text>
                 <text x="3" y="12" font-size="11" font-weight="bold" fill="currentColor">A</text>
               </svg>
-            </button>
+            </UiButton>
 
             <div
               class="toolbar-color-picker toolbar-stroke-options"
               :class="{ hidden: !localStrokeEnabled }"
               title="描边颜色"
             >
-              <button class="toolbar-btn toolbar-color-btn" @click="triggerStrokeColorPicker">
+              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerStrokeColorPicker">
                 <svg viewBox="0 0 16 16" width="16" height="16">
                   <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2" />
                 </svg>
                 <span class="color-indicator" :style="{ background: localStrokeColor }"></span>
-              </button>
-              <input
+              </UiButton>
+              <UiInput
                 ref="strokeColorInput"
                 type="color"
                 v-model="localStrokeColor"
@@ -267,7 +272,7 @@
               :class="{ hidden: !localStrokeEnabled }"
               title="描边宽度"
             >
-              <input
+              <UiInput
                 type="number"
                 v-model.number="localStrokeWidth"
                 class="toolbar-mini-input"
@@ -284,7 +289,7 @@
         <div class="toolbar-row toolbar-row-typography">
           <div class="combo-control linespacing-control">
             <label>行间距</label>
-            <input
+            <UiInput
               type="number"
               v-model.number="localLineSpacing"
               class="toolbar-mini-input linespacing-input"
@@ -299,7 +304,8 @@
           <div class="toolbar-divider vertical"></div>
 
           <div class="toolbar-icon-group" aria-label="对齐方式" title="横排=水平对齐，竖排=列内字符对齐">
-            <button
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localTextAlign === 'start'"
               @click="setTextAlign('start')"
@@ -308,8 +314,9 @@
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
               </svg>
-            </button>
-            <button
+            </UiButton>
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localTextAlign === 'center'"
               @click="setTextAlign('center')"
@@ -318,8 +325,9 @@
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path d="M2 4h12M4 8h8M3 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
               </svg>
-            </button>
-            <button
+            </UiButton>
+            <UiButton
+              variant="toolbar"
               class="toolbar-btn"
               :data-active="localTextAlign === 'end'"
               @click="setTextAlign('end')"
@@ -328,14 +336,14 @@
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path d="M2 4h12M6 8h8M4 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
               </svg>
-            </button>
+            </UiButton>
           </div>
         </div>
 
         <!-- 第三行：旋转 + 位置 -->
         <div class="toolbar-row toolbar-row-bottom">
           <div class="toolbar-rotation-group" title="旋转角度">
-            <button class="toolbar-btn" @click="rotateLeft" title="逆时针旋转">
+            <UiButton variant="toolbar" class="toolbar-btn" @click="rotateLeft" title="逆时针旋转">
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path
                   d="M2 8a6 6 0 1 1 1.5 4"
@@ -345,8 +353,8 @@
                 />
                 <path d="M2 5v3.5h3.5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
-            <input
+            </UiButton>
+            <UiInput
               type="number"
               v-model.number="localRotationAngle"
               class="toolbar-mini-input toolbar-rotation-input"
@@ -356,7 +364,7 @@
               @change="handleRotationChange"
             />
             <span class="toolbar-unit">°</span>
-            <button class="toolbar-btn" @click="rotateRight" title="顺时针旋转">
+            <UiButton variant="toolbar" class="toolbar-btn" @click="rotateRight" title="顺时针旋转">
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path
                   d="M14 8a6 6 0 1 0-1.5 4"
@@ -366,41 +374,41 @@
                 />
                 <path d="M14 5v3.5h-3.5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
-            <button class="toolbar-btn toolbar-small-btn" @click="resetRotation" title="重置旋转">
+            </UiButton>
+            <UiButton variant="toolbar" class="toolbar-btn toolbar-small-btn" @click="resetRotation" title="重置旋转">
               0
-            </button>
+            </UiButton>
           </div>
 
           <div class="toolbar-divider vertical"></div>
 
           <div class="toolbar-position-group" title="位置调整">
-            <button class="toolbar-btn" @click="moveLeft" title="左移">
+            <UiButton variant="toolbar" class="toolbar-btn" @click="moveLeft" title="左移">
               <svg viewBox="0 0 16 16" width="14" height="14">
                 <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
-            <button class="toolbar-btn" @click="moveRight" title="右移">
+            </UiButton>
+            <UiButton variant="toolbar" class="toolbar-btn" @click="moveRight" title="右移">
               <svg viewBox="0 0 16 16" width="14" height="14">
                 <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
-            <button class="toolbar-btn" @click="moveUp" title="上移">
+            </UiButton>
+            <UiButton variant="toolbar" class="toolbar-btn" @click="moveUp" title="上移">
               <svg viewBox="0 0 16 16" width="14" height="14">
                 <path d="M3 10l5-5 5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
-            <button class="toolbar-btn" @click="moveDown" title="下移">
+            </UiButton>
+            <UiButton variant="toolbar" class="toolbar-btn" @click="moveDown" title="下移">
               <svg viewBox="0 0 16 16" width="14" height="14">
                 <path d="M3 6l5 5 5-5" stroke="currentColor" stroke-width="1.5" fill="none" />
               </svg>
-            </button>
+            </UiButton>
             <span class="toolbar-position-value">
               <span>{{ positionX }}</span>,<span>{{ positionY }}</span>
             </span>
-            <button class="toolbar-btn toolbar-small-btn" @click="resetPosition" title="重置位置">
+            <UiButton variant="toolbar" class="toolbar-btn toolbar-small-btn" @click="resetPosition" title="重置位置">
               ⌂
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
@@ -409,7 +417,8 @@
       <details class="fontsize-presets-panel">
         <summary>字号预设</summary>
         <div class="font-size-presets">
-          <button
+          <UiButton
+            variant="toolbar"
             v-for="preset in FONT_SIZE_PRESETS"
             :key="preset"
             class="preset-btn"
@@ -417,582 +426,103 @@
             @click="setFontSize(preset)"
           >
             {{ preset }}
-          </button>
+          </UiButton>
         </div>
       </details>
 
       <!-- 操作按钮 -->
       <div class="edit-action-buttons">
-        <button class="btn-apply-all" @click="applyToAll">样式同步到本页全部气泡</button>
-        <button class="btn-reset" @click="resetBubbleEdit">重置</button>
+        <UiButton variant="toolbar" class="btn-apply-all" @click="applyToAll">样式同步到本页全部气泡</UiButton>
+        <UiButton variant="toolbar" class="btn-reset" @click="resetBubbleEdit">重置</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-/**
- * 气泡编辑器组件
- * 编辑单个气泡的文本和样式属性
- * 使用原版Office风格浅色主题
- */
-import { ref, watch, computed, onMounted, nextTick } from 'vue'
-import { useBubbleStore } from '@/stores/bubbleStore'
-import {
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
+import JapaneseKeyboard from './JapaneseKeyboard.vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
+import { useBubbleEditor, type BubbleEditorEmit, type BubbleEditorProps } from './useBubbleEditor'
+
+const props = defineProps<BubbleEditorProps>()
+const emit = defineEmits<BubbleEditorEmit>()
+
+const {
   FONT_SIZE_PRESETS,
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
-  FONT_SIZE_STEP
-} from '@/constants'
-import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
-import { getFontListApi } from '@/api/config'
-import { createBubbleState } from '@/utils/bubbleFactory'
-import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import JapaneseKeyboard from './JapaneseKeyboard.vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
-
-// ============================================================
-// Props 和 Emits
-// ============================================================
-
-const props = defineProps<{
-  /** 气泡数据（可能为null） */
-  bubble: BubbleState | null
-  /** 气泡索引 */
-  bubbleIndex: number
-  /** OCR 识别中 */
-  isOcrLoading?: boolean
-  /** 翻译中 */
-  isTranslateLoading?: boolean
-}>()
-
-const emit = defineEmits<{
-  /** 更新气泡属性 */
-  (e: 'update', updates: Partial<BubbleState>): void
-  /** 重新渲染 */
-  (e: 'reRender'): void
-  /** 重新OCR识别 */
-  (e: 'ocrRecognize', index: number): void
-  /** 重新翻译单个气泡 */
-  (e: 'reTranslate', index: number): void
-  /** 【复刻原版 4.3】重置当前气泡到初始状态 */
-  (e: 'resetCurrent', index: number): void
-}>()
-
-// ============================================================
-// Store
-// ============================================================
-
-const bubbleStore = useBubbleStore()
-
-// ============================================================
-// 默认值
-// ============================================================
-
-const defaultBubble: BubbleState = createBubbleState({
-  coords: [0, 0, 0, 0],
-  polygon: [],
-})
-
-// ============================================================
-// 本地状态（用于双向绑定）
-// ============================================================
-
-const localOriginalText = ref('')
-const localTranslatedText = ref('')
-const localFontSize = ref(TEXT_STYLE_DEFAULTS.fontSize)
-const localFontFamily = ref(TEXT_STYLE_DEFAULTS.fontFamily)
-const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
-const localTextColor = ref(TEXT_STYLE_DEFAULTS.textColor)
-const localFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
-const localStrokeEnabled = ref(TEXT_STYLE_DEFAULTS.strokeEnabled)
-const localStrokeColor = ref(TEXT_STYLE_DEFAULTS.strokeColor)
-const localStrokeWidth = ref(TEXT_STYLE_DEFAULTS.strokeWidth)
-const localRotationAngle = ref(0)
-const localInpaintMethod = ref<InpaintMethod>(TEXT_STYLE_DEFAULTS.inpaintMethod)
-const localPositionX = ref(0)
-const localPositionY = ref(0)
-const localLineSpacing = ref(TEXT_STYLE_DEFAULTS.lineSpacing)
-const localTextAlign = ref<TextAlign>(TEXT_STYLE_DEFAULTS.textAlign)
-
-// 文本输入框引用
-const originalTextInput = ref<HTMLTextAreaElement | null>(null)
-const translatedTextInput = ref<HTMLTextAreaElement | null>(null)
-
-// 颜色选择器引用
-const textColorInput = ref<HTMLInputElement | null>(null)
-const fillColorInput = ref<HTMLInputElement | null>(null)
-const strokeColorInput = ref<HTMLInputElement | null>(null)
-
-// 日语软键盘状态
-const showJpKeyboard = ref(false)
-const jpKeyboardTarget = ref<'original' | 'translated'>('original')
-
-// 字体相关
-const systemFonts = ref<{ name: string; path: string }[]>([
-  { name: '思源黑体', path: TEXT_STYLE_DEFAULTS.fontFamily },
-  { name: '华文楷体', path: 'fonts/STKAITI.TTF' },
-  { name: '华文细黑', path: 'fonts/STXIHEI.TTF' },
-  { name: '黑体', path: 'fonts/SIMHEI.TTF' },
-  { name: '宋体', path: 'fonts/SIMSUN.TTC' },
-])
-const customFonts = ref<{ name: string; path: string }[]>([])
-
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 位置X */
-const positionX = computed(() => {
-  if (!props.bubble) return 0
-  return props.bubble.coords[0] + localPositionX.value
-})
-
-/** 位置Y */
-const positionY = computed(() => {
-  if (!props.bubble) return 0
-  return props.bubble.coords[1] + localPositionY.value
-})
-
-/** 字体选择器分组选项（用于CustomSelect） */
-const fontSelectGroups = computed(() => {
-  const groups = [
-    {
-      label: '系统字体',
-      options: systemFonts.value.map(f => ({ label: f.name, value: f.path })),
-    },
-  ]
-  if (customFonts.value.length > 0) {
-    groups.push({
-      label: '自定义字体',
-      options: customFonts.value.map(f => ({ label: f.name, value: f.path })),
-    })
-  }
-  return groups
-})
-
-/** 背景修复方式选项（用于CustomSelect） */
-const inpaintMethodOptions = [
-  { label: '纯色填充', value: 'solid' },
-  { label: 'LAMA修复(漫画)', value: 'lama_mpe' },
-  { label: 'LAMA修复(通用)', value: 'litelama' },
-]
-
-// ============================================================
-// 同步本地状态
-// ============================================================
-
-/** 从气泡数据同步到本地状态 */
-function syncFromBubble(bubble: BubbleState | null): void {
-  const b = bubble || defaultBubble
-  localOriginalText.value = b.originalText
-  localTranslatedText.value = b.translatedText
-  localFontSize.value = b.fontSize
-  localFontFamily.value = b.fontFamily
-  localTextDirection.value = b.textDirection
-  localTextColor.value = b.textColor
-  localFillColor.value = b.fillColor
-  localStrokeEnabled.value = b.strokeEnabled
-  localStrokeColor.value = b.strokeColor
-  localStrokeWidth.value = b.strokeWidth
-  localRotationAngle.value = b.rotationAngle
-  localInpaintMethod.value = b.inpaintMethod
-  localPositionX.value = b.position?.x || 0
-  localPositionY.value = b.position?.y || 0
-  localLineSpacing.value = b.lineSpacing ?? TEXT_STYLE_DEFAULTS.lineSpacing
-  localTextAlign.value = b.textAlign ?? TEXT_STYLE_DEFAULTS.textAlign
-}
-
-// 监听 props 变化，同步本地状态
-watch(
-  () => props.bubble,
-  newBubble => {
-    syncFromBubble(newBubble)
-  },
-  { deep: true, immediate: true }
-)
-
-// ============================================================
-// 事件处理 - 文本
-// ============================================================
-
-/** 处理原文变化 */
-function handleOriginalTextChange(): void {
-  emit('update', { originalText: localOriginalText.value })
-}
-
-/** 处理译文变化 */
-function handleTextChange(): void {
-  emit('update', { translatedText: localTranslatedText.value })
-}
-
-/** 复制原文 */
-function copyOriginalText(): void {
-  navigator.clipboard.writeText(localOriginalText.value)
-}
-
-/** 复制译文 */
-function copyTranslatedText(): void {
-  navigator.clipboard.writeText(localTranslatedText.value)
-}
-
-// ============================================================
-// 事件处理 - 字体和字号
-// ============================================================
-
-/** 处理字号变化 */
-function handleFontSizeChange(): void {
-  emit('update', { fontSize: localFontSize.value })
-}
-
-/** 设置字号 */
-function setFontSize(size: number): void {
-  localFontSize.value = size
-  emit('update', { fontSize: size })
-}
-
-/** 增大字号 */
-function increaseFontSize(): void {
-  localFontSize.value = Math.min(FONT_SIZE_MAX, localFontSize.value + FONT_SIZE_STEP)
-  emit('update', { fontSize: localFontSize.value })
-}
-
-/** 减小字号 */
-function decreaseFontSize(): void {
-  localFontSize.value = Math.max(FONT_SIZE_MIN, localFontSize.value - FONT_SIZE_STEP)
-  emit('update', { fontSize: localFontSize.value })
-}
-
-/** 处理字体变化 */
-function handleFontFamilyChange(): void {
-  emit('update', { fontFamily: localFontFamily.value })
-}
-
-// ============================================================
-// 事件处理 - 排版方向
-// ============================================================
-
-/** 设置排版方向 */
-function setTextDirection(direction: TextDirection): void {
-  localTextDirection.value = direction
-  emit('update', { textDirection: direction })
-}
-
-// ============================================================
-// 事件处理 - 颜色
-// ============================================================
-
-/** 触发文字颜色选择器 */
-function triggerTextColorPicker(): void {
-  textColorInput.value?.click()
-}
-
-/** 处理文字颜色变化 */
-function handleTextColorChange(): void {
-  emit('update', { textColor: localTextColor.value })
-}
-
-/** 触发填充颜色选择器 */
-function triggerFillColorPicker(): void {
-  fillColorInput.value?.click()
-}
-
-/** 处理填充颜色变化 */
-function handleFillColorChange(): void {
-  emit('update', { fillColor: localFillColor.value })
-}
-
-/** 触发描边颜色选择器 */
-function triggerStrokeColorPicker(): void {
-  strokeColorInput.value?.click()
-}
-
-/** 处理描边颜色变化 */
-function handleStrokeColorChange(): void {
-  emit('update', { strokeColor: localStrokeColor.value })
-}
-
-// ============================================================
-// 事件处理 - 描边
-// ============================================================
-
-/** 切换描边 */
-function toggleStroke(): void {
-  localStrokeEnabled.value = !localStrokeEnabled.value
-  emit('update', { strokeEnabled: localStrokeEnabled.value })
-}
-
-/** 处理描边宽度变化 */
-function handleStrokeWidthChange(): void {
-  emit('update', { strokeWidth: localStrokeWidth.value })
-}
-
-// ============================================================
-// 事件处理 - 修复方式
-// ============================================================
-
-/** 处理修复方式变化 */
-function handleInpaintMethodChange(): void {
-  emit('update', { inpaintMethod: localInpaintMethod.value })
-}
-
-// ============================================================
-// 事件处理 - 行间距与对齐
-// ============================================================
-
-/** 处理行间距变化（限制在 0.5-3.0） */
-function handleLineSpacingChange(): void {
-  let v = Number(localLineSpacing.value)
-  if (!Number.isFinite(v) || v <= 0) v = TEXT_STYLE_DEFAULTS.lineSpacing
-  v = Math.max(0.5, Math.min(3.0, v))
-  localLineSpacing.value = v
-  emit('update', { lineSpacing: v })
-}
-
-/** 设置对齐方式 */
-function setTextAlign(align: TextAlign): void {
-  localTextAlign.value = align
-  emit('update', { textAlign: align })
-}
-
-// ============================================================
-// 事件处理 - 旋转
-// ============================================================
-
-/** 处理旋转角度变化 */
-function handleRotationChange(): void {
-  emit('update', { rotationAngle: localRotationAngle.value })
-}
-
-/** 逆时针旋转 */
-function rotateLeft(): void {
-  localRotationAngle.value = Math.max(-180, localRotationAngle.value - 5)
-  emit('update', { rotationAngle: localRotationAngle.value })
-}
-
-/** 顺时针旋转 */
-function rotateRight(): void {
-  localRotationAngle.value = Math.min(180, localRotationAngle.value + 5)
-  emit('update', { rotationAngle: localRotationAngle.value })
-}
-
-/** 重置旋转 */
-function resetRotation(): void {
-  localRotationAngle.value = 0
-  emit('update', { rotationAngle: 0 })
-}
-
-// ============================================================
-// 事件处理 - 位置
-// ============================================================
-
-const MOVE_STEP = 2
-
-/** 左移 */
-function moveLeft(): void {
-  localPositionX.value -= MOVE_STEP
-  emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
-}
-
-/** 右移 */
-function moveRight(): void {
-  localPositionX.value += MOVE_STEP
-  emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
-}
-
-/** 上移 */
-function moveUp(): void {
-  localPositionY.value -= MOVE_STEP
-  emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
-}
-
-/** 下移 */
-function moveDown(): void {
-  localPositionY.value += MOVE_STEP
-  emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
-}
-
-/** 重置位置 */
-function resetPosition(): void {
-  localPositionX.value = 0
-  localPositionY.value = 0
-  emit('update', { position: { x: 0, y: 0 } })
-}
-
-// ============================================================
-// 事件处理 - 操作按钮
-// ============================================================
-
-/** 应用到全部气泡 */
-function applyToAll(): void {
-  bubbleStore.updateAllBubbles({
-    fontSize: localFontSize.value,
-    fontFamily: localFontFamily.value,
-    textDirection: localTextDirection.value,
-    textColor: localTextColor.value,
-    fillColor: localFillColor.value,
-    strokeEnabled: localStrokeEnabled.value,
-    strokeColor: localStrokeColor.value,
-    strokeWidth: localStrokeWidth.value,
-    inpaintMethod: localInpaintMethod.value,
-    lineSpacing: localLineSpacing.value,
-    textAlign: localTextAlign.value,
-  })
-  console.log('样式已应用到所有气泡')
-  // 触发重新渲染
-  emit('reRender')
-}
-
-/** 重置气泡编辑 */
-function resetBubbleEdit(): void {
-  // 【复刻原版 4.3】通知父组件重置当前气泡到初始状态
-  // 旧版使用 state.initialBubbleStates 保存进入编辑模式时的快照
-  emit('resetCurrent', props.bubbleIndex)
-}
-
-/** 重新OCR识别 */
-function handleOcrRecognize(): void {
-  emit('ocrRecognize', props.bubbleIndex)
-}
-
-/** 重新翻译单个气泡 */
-function handleReTranslate(): void {
-  emit('reTranslate', props.bubbleIndex)
-}
-
-// ============================================================
-// 日语软键盘相关
-// ============================================================
-
-/** 切换日语软键盘显示 */
-function toggleJpKeyboard(): void {
-  showJpKeyboard.value = !showJpKeyboard.value
-}
-
-/** 处理假名插入 */
-function handleKanaInsert(char: string, target: 'original' | 'translated'): void {
-  if (target === 'original') {
-    const input = originalTextInput.value
-    if (input) {
-      const start = input.selectionStart || localOriginalText.value.length
-      const end = input.selectionEnd || localOriginalText.value.length
-      const text = localOriginalText.value
-      localOriginalText.value = text.slice(0, start) + char + text.slice(end)
-      nextTick(() => {
-        input.selectionStart = input.selectionEnd = start + char.length
-        input.focus()
-      })
-      emit('update', { originalText: localOriginalText.value })
-    }
-  } else {
-    const input = translatedTextInput.value
-    if (input) {
-      const start = input.selectionStart || localTranslatedText.value.length
-      const end = input.selectionEnd || localTranslatedText.value.length
-      const text = localTranslatedText.value
-      localTranslatedText.value = text.slice(0, start) + char + text.slice(end)
-      nextTick(() => {
-        input.selectionStart = input.selectionEnd = start + char.length
-        input.focus()
-      })
-      emit('update', { translatedText: localTranslatedText.value })
-    }
-  }
-}
-
-/** 处理假名删除 */
-function handleKanaDelete(target: 'original' | 'translated'): void {
-  if (target === 'original') {
-    const input = originalTextInput.value
-    if (input && localOriginalText.value.length > 0) {
-      const start = input.selectionStart || localOriginalText.value.length
-      const end = input.selectionEnd || localOriginalText.value.length
-      const text = localOriginalText.value
-      if (start === end && start > 0) {
-        localOriginalText.value = text.slice(0, start - 1) + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start - 1
-          input.focus()
-        })
-      } else if (start !== end) {
-        localOriginalText.value = text.slice(0, start) + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start
-          input.focus()
-        })
-      }
-      emit('update', { originalText: localOriginalText.value })
-    }
-  } else {
-    const input = translatedTextInput.value
-    if (input && localTranslatedText.value.length > 0) {
-      const start = input.selectionStart || localTranslatedText.value.length
-      const end = input.selectionEnd || localTranslatedText.value.length
-      const text = localTranslatedText.value
-      if (start === end && start > 0) {
-        localTranslatedText.value = text.slice(0, start - 1) + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start - 1
-          input.focus()
-        })
-      } else if (start !== end) {
-        localTranslatedText.value = text.slice(0, start) + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start
-          input.focus()
-        })
-      }
-      emit('update', { translatedText: localTranslatedText.value })
-    }
-  }
-}
-
-// ============================================================
-// 字体管理
-// ============================================================
-
-/** 加载字体列表 */
-async function loadFontList(): Promise<void> {
-  try {
-    const response = await getFontListApi()
-    if (response.fonts) {
-      const system: { name: string; path: string }[] = []
-      const custom: { name: string; path: string }[] = []
-
-      for (const font of response.fonts) {
-        // API返回的字段是display_name，需要转换为name
-        const fontItem = {
-          name: typeof font === 'string' ? font : font.display_name || font.file_name || '',
-          path: typeof font === 'string' ? font : font.path,
-        }
-        if (fontItem.path.startsWith('fonts/')) {
-          system.push(fontItem)
-        } else {
-          custom.push(fontItem)
-        }
-      }
-
-      if (system.length > 0) {
-        systemFonts.value = system
-      }
-      customFonts.value = custom
-    }
-  } catch (error) {
-    console.error('加载字体列表失败:', error)
-  }
-}
-
-// ============================================================
-// 生命周期
-// ============================================================
-
-onMounted(() => {
-  loadFontList()
-})
+  FONT_SIZE_STEP,
+  localOriginalText,
+  localTranslatedText,
+  localFontSize,
+  localFontFamily,
+  localTextDirection,
+  localTextColor,
+  localFillColor,
+  localStrokeEnabled,
+  localStrokeColor,
+  localStrokeWidth,
+  localRotationAngle,
+  localInpaintMethod,
+  localLineSpacing,
+  localTextAlign,
+  originalTextInput,
+  translatedTextInput,
+  textColorInput,
+  fillColorInput,
+  strokeColorInput,
+  showJpKeyboard,
+  jpKeyboardTarget,
+  positionX,
+  positionY,
+  fontSelectGroups,
+  inpaintMethodOptions,
+  handleOriginalTextChange,
+  handleTextChange,
+  copyOriginalText,
+  copyTranslatedText,
+  handleFontSizeChange,
+  setFontSize,
+  increaseFontSize,
+  decreaseFontSize,
+  handleFontFamilyChange,
+  setTextDirection,
+  triggerTextColorPicker,
+  handleTextColorChange,
+  triggerFillColorPicker,
+  handleFillColorChange,
+  triggerStrokeColorPicker,
+  handleStrokeColorChange,
+  toggleStroke,
+  handleStrokeWidthChange,
+  handleInpaintMethodChange,
+  handleLineSpacingChange,
+  setTextAlign,
+  handleRotationChange,
+  rotateLeft,
+  rotateRight,
+  resetRotation,
+  moveLeft,
+  moveRight,
+  moveUp,
+  moveDown,
+  resetPosition,
+  applyToAll,
+  resetBubbleEdit,
+  handleOcrRecognize,
+  handleReTranslate,
+  toggleJpKeyboard,
+  handleKanaInsert,
+  handleKanaDelete,
+} = useBubbleEditor(props, emit)
 </script>
 
-<style scoped>
-/* ============ 编辑面板内容 - 使用原版浅色主题 ============ */
+<style scoped>/* ============ 编辑面板内容 - 使用当前实现浅色主题 ============ */
 
 .edit-panel-content {
   flex: 1;
@@ -1002,7 +532,7 @@ onMounted(() => {
   padding: 15px;
   overflow: auto;
   min-height: 0;
-  background: var(--card-bg-color, #fff);
+  background: var(--color-surface-card, var(--color-surface-base));
 }
 
 /* 文本块 */
@@ -1020,21 +550,21 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--border-color, #e9ecef);
+  border-bottom: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
 }
 
 .column-title {
   font-weight: 600;
   font-size: 14px;
-  color: var(--text-color, #495057);
+  color: var(--color-text-strong, var(--color-edit-panel-text));
 }
 
 .original-text-column .column-title {
-  color: #e74c3c;
+  color: var(--color-text-danger-strong);
 }
 
 .translated-text-column .column-title {
-  color: #27ae60;
+  color: var(--color-edit-panel-success);
 }
 
 /* 重新OCR/翻译按钮 */
@@ -1044,7 +574,7 @@ onMounted(() => {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--bg-color, #f8f9fa);
+  background: var(--color-surface-app, var(--color-edit-control-bg));
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
@@ -1052,8 +582,8 @@ onMounted(() => {
 
 .re-ocr-btn:hover,
 .re-translate-btn:hover {
-  background: #3498db;
-  color: #fff;
+  background: var(--color-surface-accent);
+  color: var(--color-text-inverse);
 }
 
 /* Loading 状态 */
@@ -1064,8 +594,8 @@ onMounted(() => {
   pointer-events: none;
 }
 
-.re-ocr-btn.is-loading .btn-icon,
-.re-translate-btn.is-loading .btn-icon {
+.re-ocr-btn.is-loading .button-icon,
+.re-translate-btn.is-loading .button-icon {
   display: inline-block;
   animation: spin-icon 1s linear infinite;
 }
@@ -1076,7 +606,7 @@ onMounted(() => {
   width: 100%;
   min-height: 60px;
   padding: 12px;
-  border: 2px solid var(--border-color, #e9ecef);
+  border: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
@@ -1089,17 +619,17 @@ onMounted(() => {
 
 .text-editor:focus {
   outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgb(52, 152, 219, 0.15);
+  border-color: var(--color-border-accent);
+  box-shadow: 0 0 0 3px var(--shadow-edit-focus-blue);
 }
 
 .original-editor {
-  background: #fff8f8;
+  background: var(--color-surface-editor-original);
   font-family: var(--font-jp);
 }
 
 .translated-editor {
-  background: #f8fff8;
+  background: var(--color-edit-translated-bg);
 }
 
 /* 文本操作按钮 */
@@ -1112,21 +642,21 @@ onMounted(() => {
 
 .text-actions button {
   padding: 6px 12px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 4px;
-  background: var(--card-bg-color, white);
+  background: var(--color-surface-card, white);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.15s;
 }
 
 .text-actions button:hover {
-  background: var(--bg-color, #f8f9fa);
-  border-color: #adb5bd;
+  background: var(--color-surface-app, var(--color-edit-control-bg));
+  border-color: var(--color-edit-muted-border-hover);
 }
 
 .keyboard-toggle-btn {
-  background: var(--bg-color, #f8f9fa);
+  background: var(--color-surface-app, var(--color-edit-control-bg));
 }
 
 /* ============ 样式设置区 ============ */
@@ -1134,9 +664,9 @@ onMounted(() => {
 .style-settings-section {
   width: 100%;
   padding: 16px;
-  background: #f5f6fb;
+  background: var(--color-edit-style-bg);
   border-radius: 10px;
-  border: 1px solid rgb(82, 92, 105, 0.12);
+  border: 1px solid var(--color-edit-style-border);
   overflow-y: auto;
 }
 
@@ -1147,10 +677,10 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
-  background: #fff;
-  border: 1px solid rgb(96, 110, 140, 0.22);
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-edit-toolbar-border);
   border-radius: 12px;
-  box-shadow: 0 10px 24px rgb(15, 23, 42, 0.12);
+  box-shadow: 0 10px 24px var(--shadow-edit-toolbar);
 }
 
 .toolbar-row {
@@ -1170,9 +700,9 @@ onMounted(() => {
 .toolbar-row-bottom {
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgb(226, 232, 240, 0.9);
+  border: 1px solid var(--color-edit-toolbar-row-border);
   border-radius: 10px;
-  background: linear-gradient(180deg, #fbfcff 0%, #f4f6ff 100%);
+  background: linear-gradient(180deg, var(--color-edit-toolbar-row-start) 0%, var(--color-edit-toolbar-row-end) 100%);
 }
 
 .linespacing-input {
@@ -1184,7 +714,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 4px;
   font-size: 11px;
-  color: #57607c;
+  color: var(--color-edit-toolbar-label);
 }
 
 .combo-control label {
@@ -1201,7 +731,7 @@ onMounted(() => {
 .toolbar-divider {
   width: 1px;
   height: 26px;
-  background: rgb(15, 23, 42, 0.08);
+  background: var(--color-edit-toolbar-divider);
 }
 
 .toolbar-divider.vertical {
@@ -1222,11 +752,11 @@ onMounted(() => {
   min-width: 160px;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--color-edit-input-border);
   border-radius: 8px;
   font-size: 13px;
-  background: #fff;
-  color: #1f2430;
+  background: var(--color-surface-base);
+  color: var(--color-edit-input-text);
   cursor: pointer;
   transition:
     border-color 0.15s,
@@ -1234,32 +764,32 @@ onMounted(() => {
 }
 
 .toolbar-font-select:hover {
-  border-color: #8aa0f6;
+  border-color: var(--color-edit-input-border-hover);
 }
 
 .toolbar-font-select:focus {
   outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.18);
+  border-color: var(--color-edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--shadow-edit-input-focus);
 }
 
 /* 字号输入 */
 .toolbar-fontsize-input {
   width: 60px;
   height: 36px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--color-edit-input-border);
   border-radius: 8px;
   padding: 0 8px;
   font-size: 14px;
   text-align: center;
-  background: #fff;
-  color: #1f2430;
+  background: var(--color-surface-base);
+  color: var(--color-edit-input-text);
 }
 
 .toolbar-fontsize-input:focus {
   outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.15);
+  border-color: var(--color-edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--bubble-editor-shadow-default);
 }
 
 .toolbar-fontsize-btns {
@@ -1270,10 +800,10 @@ onMounted(() => {
 .toolbar-fontsize-btn {
   min-width: 50px;
   height: 34px;
-  border: 1px solid #d0d7ea;
+  border: 1px solid var(--bubble-editor-border-default);
   border-radius: 8px;
-  background: #f2f4ff;
-  color: #2f46c8;
+  background: var(--bubble-editor-surface-base);
+  color: var(--bubble-editor-text-primary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -1281,40 +811,40 @@ onMounted(() => {
 }
 
 .toolbar-fontsize-btn:hover {
-  background: #dfe4ff;
-  border-color: #9aaefc;
-  color: #1d34a8;
+  background: var(--bubble-editor-surface-raised);
+  border-color: var(--bubble-editor-border-strong);
+  color: var(--bubble-editor-text-secondary);
 }
 
 /* 工具栏按钮 */
 .toolbar-btn {
   width: 34px;
   height: 34px;
-  border: 1px solid rgb(119, 130, 161, 0.35);
+  border: 1px solid var(--bubble-editor-border-muted);
   border-radius: 8px;
-  background: #fff;
-  color: #3b3f4f;
+  background: var(--color-surface-base);
+  color: var(--bubble-editor-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.12s;
   padding: 0;
-  box-shadow: inset 0 -1px 0 rgb(0, 0, 0, 0.03);
+  box-shadow: inset 0 -1px 0 var(--bubble-editor-shadow-raised);
 }
 
 .toolbar-btn:hover {
-  border-color: #7d96ff;
-  color: #2b4bff;
-  box-shadow: 0 2px 8px rgb(107, 125, 255, 0.25);
+  border-color: var(--bubble-editor-border-subtle);
+  color: var(--bubble-editor-text-subtle);
+  box-shadow: 0 2px 8px var(--bubble-editor-shadow-floating);
 }
 
 .toolbar-btn[data-active='true'],
 .toolbar-btn.active {
-  background: linear-gradient(135deg, #e8edff, #d9e2ff);
-  border-color: #5670ff;
-  color: #3040c2;
-  box-shadow: inset 0 1px 0 rgb(255, 255, 255, 0.7);
+  background: linear-gradient(135deg, var(--bubble-editor-surface-muted), var(--bubble-editor-surface-subtle));
+  border-color: var(--bubble-editor-border-hover);
+  color: var(--bubble-editor-text-supporting);
+  box-shadow: inset 0 1px 0 var(--bubble-editor-shadow-strong);
 }
 
 .toolbar-btn:active {
@@ -1349,7 +879,7 @@ onMounted(() => {
   width: 26px;
   height: 6px;
   border-radius: 999px;
-  border: 1px solid rgb(0, 0, 0, 0.2);
+  border: 1px solid var(--bubble-editor-border-active);
 }
 
 .hidden-color-input {
@@ -1383,11 +913,11 @@ onMounted(() => {
 .toolbar-inpaint-select {
   height: 34px;
   padding: 0 10px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--color-edit-input-border);
   border-radius: 8px;
   font-size: 12px;
-  background: #fff;
-  color: #1f2430;
+  background: var(--color-surface-base);
+  color: var(--color-edit-input-text);
   cursor: pointer;
   transition:
     border-color 0.15s,
@@ -1395,13 +925,13 @@ onMounted(() => {
 }
 
 .toolbar-inpaint-select:hover {
-  border-color: #8aa0f6;
+  border-color: var(--color-edit-input-border-hover);
 }
 
 .toolbar-inpaint-select:focus {
   outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.18);
+  border-color: var(--color-edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--shadow-edit-input-focus);
 }
 
 .toolbar-solid-color-options {
@@ -1425,24 +955,24 @@ onMounted(() => {
 .toolbar-mini-input {
   width: 46px;
   height: 32px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--color-edit-input-border);
   border-radius: 6px;
   padding: 0 6px;
   font-size: 12px;
   text-align: center;
-  background: #fff;
-  color: #1f2430;
+  background: var(--color-surface-base);
+  color: var(--color-edit-input-text);
 }
 
 .toolbar-mini-input:focus {
   outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgb(88, 125, 255, 0.2);
+  border-color: var(--color-edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--bubble-editor-shadow-soft);
 }
 
 .toolbar-unit {
   font-size: 11px;
-  color: #596071;
+  color: var(--bubble-editor-text-disabled);
 }
 
 /* 旋转控制组 */
@@ -1466,25 +996,25 @@ onMounted(() => {
 
 .toolbar-position-value {
   font-size: 12px;
-  color: #4a4f63;
+  color: var(--bubble-editor-text-inverse);
   min-width: 48px;
   text-align: center;
   padding: 0 6px;
   border-radius: 6px;
-  background: #eef1ff;
+  background: var(--bubble-editor-surface-hover);
 }
 
 /* 字号预设面板 */
 .fontsize-presets-panel {
   margin-top: 12px;
-  border-top: 1px solid var(--border-color, #e0e0e0);
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
   padding-top: 12px;
 }
 
 .fontsize-presets-panel summary {
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-color, #495057);
+  color: var(--color-text-strong, var(--color-edit-panel-text));
   font-weight: 500;
   padding: 4px 0;
 }
@@ -1498,24 +1028,24 @@ onMounted(() => {
 
 .preset-btn {
   padding: 6px 12px;
-  background: #f2f4ff;
-  border: 1px solid #d0d7ea;
+  background: var(--bubble-editor-surface-base);
+  border: 1px solid var(--bubble-editor-border-default);
   border-radius: 6px;
-  color: #2f46c8;
+  color: var(--bubble-editor-text-primary);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-btn:hover {
-  background: #dfe4ff;
-  border-color: #9aaefc;
+  background: var(--bubble-editor-surface-raised);
+  border-color: var(--bubble-editor-border-strong);
 }
 
 .preset-btn.active {
-  background: linear-gradient(135deg, #e8edff, #d9e2ff);
-  border-color: #5670ff;
-  color: #3040c2;
+  background: linear-gradient(135deg, var(--bubble-editor-surface-muted), var(--bubble-editor-surface-subtle));
+  border-color: var(--bubble-editor-border-hover);
+  color: var(--bubble-editor-text-supporting);
 }
 
 /* 操作按钮 */
@@ -1524,7 +1054,7 @@ onMounted(() => {
   gap: 10px;
   margin-top: 15px;
   padding-top: 15px;
-  border-top: 1px solid var(--border-color, #e0e0e0);
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
 .btn-apply-all,
@@ -1539,24 +1069,24 @@ onMounted(() => {
 }
 
 .btn-apply-all {
-  background: linear-gradient(135deg, #3498db 0%, #5dade2 100%);
+  background: linear-gradient(135deg, var(--color-surface-accent) 0%, var(--bubble-editor-surface-active) 100%);
   border: none;
   color: white;
 }
 
 .btn-apply-all:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(52, 152, 219, 0.3);
+  box-shadow: 0 4px 12px var(--bubble-editor-shadow-focus);
 }
 
 .btn-reset {
-  background: var(--card-bg-color, #fff);
-  border: 1px solid var(--border-color, #ddd);
-  color: var(--text-color, #495057);
+  background: var(--color-surface-card, var(--color-surface-base));
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  color: var(--color-text-strong, var(--color-edit-panel-text));
 }
 
 .btn-reset:hover {
-  background: var(--bg-color, #f8f9fa);
-  border-color: #adb5bd;
+  background: var(--color-surface-app, var(--color-edit-control-bg));
+  border-color: var(--color-edit-muted-border-hover);
 }
 </style>

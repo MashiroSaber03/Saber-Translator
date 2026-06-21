@@ -1,0 +1,4 @@
+body.studio-resizing {
+  cursor: col-resize;
+  user-select: none;
+}

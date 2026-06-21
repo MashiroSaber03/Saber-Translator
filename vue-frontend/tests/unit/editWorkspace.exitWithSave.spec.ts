@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -127,6 +127,7 @@ describe('EditWorkspace exit with save', () => {
 
   function mountWorkspace() {
     return mount(EditWorkspace, {
+      attachTo: document.body,
       props: {
         isEditModeActive: true,
       },
@@ -140,6 +141,29 @@ describe('EditWorkspace exit with save', () => {
         },
       },
     })
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    document.body.style.overflow = ''
+  })
+
+  function getTeleportedText(): string {
+    return document.body.textContent || ''
+  }
+
+  function getTeleportedButton(testId: string): HTMLButtonElement {
+    const button = document.body.querySelector(`[data-testid="${testId}"]`)
+    expect(button).toBeTruthy()
+    return button as HTMLButtonElement
+  }
+
+  async function clickTeleportedButton(testId: string): Promise<void> {
+    getTeleportedButton(testId).dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+    }))
+    await flushPromises()
   }
 
   it('exits immediately outside bookshelf mode when the toolbar exit button is clicked', async () => {
@@ -176,9 +200,9 @@ describe('EditWorkspace exit with save', () => {
     await wrapper.find('.exit-edit-mode-trigger').trigger('click')
 
     expect(wrapper.emitted('exit')).toBeUndefined()
-    expect(wrapper.text()).toContain('是否进行全量保存（避免丢失编辑数据）')
-    expect(wrapper.text()).toContain('直接退出')
-    expect(wrapper.text()).toContain('保存后退出')
+    expect(getTeleportedText()).toContain('是否进行全量保存（避免丢失编辑数据）')
+    expect(getTeleportedText()).toContain('直接退出')
+    expect(getTeleportedText()).toContain('保存后退出')
   })
 
   it('allows direct exit from the confirmation dialog without triggering a full chapter save', async () => {
@@ -191,7 +215,7 @@ describe('EditWorkspace exit with save', () => {
 
     const wrapper = mountWorkspace()
     await wrapper.find('.exit-edit-mode-trigger').trigger('click')
-    await wrapper.find('[data-testid="exit-without-save-button"]').trigger('click')
+    await clickTeleportedButton('exit-without-save-button')
 
     expect(saveChapterSessionSpy).not.toHaveBeenCalled()
     expect(wrapper.emitted('exit')).toHaveLength(1)
@@ -209,7 +233,7 @@ describe('EditWorkspace exit with save', () => {
 
     const wrapper = mountWorkspace()
     await wrapper.find('.exit-edit-mode-trigger').trigger('click')
-    await wrapper.find('[data-testid="save-and-exit-button"]').trigger('click')
+    await clickTeleportedButton('save-and-exit-button')
     await flushPromises()
 
     expect(saveChapterSessionSpy).toHaveBeenCalledWith('book-1', 'chapter-1')
@@ -226,12 +250,12 @@ describe('EditWorkspace exit with save', () => {
 
     const wrapper = mountWorkspace()
     await wrapper.find('.exit-edit-mode-trigger').trigger('click')
-    await wrapper.find('[data-testid="save-and-exit-button"]').trigger('click')
+    await clickTeleportedButton('save-and-exit-button')
     await flushPromises()
 
     expect(wrapper.emitted('exit')).toBeUndefined()
-    expect(wrapper.text()).toContain('保存失败')
-    expect(wrapper.find('[data-testid="retry-save-and-exit-button"]').exists()).toBe(true)
+    expect(getTeleportedText()).toContain('保存失败')
+    expect(getTeleportedButton('retry-save-and-exit-button')).toBeTruthy()
   })
 
   it('keeps the Escape key as a direct exit path even when auto save is enabled', async () => {

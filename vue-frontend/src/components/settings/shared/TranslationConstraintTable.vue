@@ -1,30 +1,28 @@
 <template>
   <div class="constraint-table">
     <div class="constraint-toolbar">
-      <input
+      <UiInput
         v-model="searchText"
         class="constraint-search"
         type="text"
         placeholder="搜索表格内容..."
       />
       <div class="constraint-actions">
-        <button type="button" class="btn btn-secondary btn-sm" @click="addRow">新增</button>
-        <button type="button" class="btn btn-secondary btn-sm" @click="triggerImport('json')">导入 JSON</button>
-        <button type="button" class="btn btn-secondary btn-sm" @click="triggerImport('xlsx')">导入 XLSX</button>
-        <button type="button" class="btn btn-secondary btn-sm" @click="exportJson">导出 JSON</button>
-        <button type="button" class="btn btn-secondary btn-sm" @click="exportXlsx">导出 XLSX</button>
+        <UiButton variant="secondary" type="button" @click="addRow" size="sm">新增</UiButton>
+        <UiButton variant="secondary" type="button" @click="triggerImport('json')" size="sm">导入 JSON</UiButton>
+        <UiButton variant="secondary" type="button" @click="triggerImport('xlsx')" size="sm">导入 XLSX</UiButton>
+        <UiButton variant="secondary" type="button" @click="exportJson" size="sm">导出 JSON</UiButton>
+        <UiButton variant="secondary" type="button" @click="exportXlsx" size="sm">导出 XLSX</UiButton>
       </div>
-      <input
+      <UiFileInput
         ref="jsonImportInput"
         class="hidden-input"
-        type="file"
         accept=".json,application/json"
         @change="handleImport($event, 'json')"
       />
-      <input
+      <UiFileInput
         ref="xlsxImportInput"
         class="hidden-input"
-        type="file"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         @change="handleImport($event, 'xlsx')"
       />
@@ -54,16 +52,17 @@
               <CustomSelect
                 :model-value="String(row[column.key] ?? '')"
                 :options="column.options || []"
+                fit
                 @change="updateCell(originalIndex, column.key, String($event))"
               />
             </div>
-            <textarea
+            <UiTextarea
               v-else-if="column.type === 'textarea'"
-              :value="String(row[column.key] ?? '')"
-              rows="2"
-              @input="updateCell(originalIndex, column.key, ($event.target as HTMLTextAreaElement).value)"
+              :model-value="String(row[column.key] ?? '')"
+              :rows="2"
+              @update:model-value="updateCell(originalIndex, column.key, $event)"
             />
-            <input
+            <UiInput
               v-else
               :value="String(row[column.key] ?? '')"
               type="text"
@@ -71,7 +70,7 @@
             />
           </td>
           <td class="action-cell">
-            <button type="button" class="btn btn-danger btn-sm" @click="removeRow(originalIndex)">删除</button>
+            <UiButton variant="danger" type="button" @click="removeRow(originalIndex)" size="sm">删除</UiButton>
           </td>
         </tr>
       </tbody>
@@ -80,6 +79,10 @@
 </template>
 
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { computed, ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useToast } from '@/utils/toast'
@@ -268,10 +271,10 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   min-width: 220px;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--translation-constraint-table-border-default);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2430;
+  background: var(--color-surface-basefff);
+  color: var(--translation-constraint-table-text-primary);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
@@ -279,8 +282,8 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
 .constraint-search:focus {
   outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
+  border-color: var(--translation-constraint-table-border-strong);
+  box-shadow: 0 0 0 2px var(--translation-constraint-table-shadow-default);
 }
 
 .constraint-actions {
@@ -300,7 +303,7 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
 .settings-table th,
 .settings-table td {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   padding: 8px;
   vertical-align: top;
 }
@@ -315,20 +318,13 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 .settings-table textarea {
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--translation-constraint-table-border-default);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2430;
+  background: var(--color-surface-basefff);
+  color: var(--translation-constraint-table-text-primary);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
-}
-
-.settings-table input:focus,
-.settings-table textarea:focus {
-  outline: none;
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
 }
 
 .settings-table textarea {
@@ -337,18 +333,15 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   resize: vertical;
 }
 
+.settings-table input:focus,
+.settings-table textarea:focus {
+  outline: none;
+  border-color: var(--translation-constraint-table-border-strong);
+  box-shadow: 0 0 0 2px var(--translation-constraint-table-shadow-default);
+}
+
 .select-cell {
   min-width: 0;
-}
-
-.select-cell :deep(.custom-select) {
-  width: 100%;
-  min-width: 0;
-}
-
-.select-cell :deep(.custom-select-trigger) {
-  height: 40px;
-  border-radius: 8px;
 }
 
 .sortable-header {

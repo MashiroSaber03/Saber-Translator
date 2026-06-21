@@ -7,8 +7,15 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 
-// 引入全局样式 - 仅CSS变量和基础reset
-import './styles/global.css'
+// 引入全局样式 - token 层按依赖顺序显式加载
+import './styles/tokens/palette.css'
+import './styles/tokens/semantic.css'
+import './styles/tokens/component.css'
+import './styles/tokens/domain.css'
+import './styles/reset.css'
+import './styles/animations.css'
+import './styles/base.css'
+import './components/ui/form-primitives.css'
 
 // 创建 Vue 应用实例
 const app = createApp(App)

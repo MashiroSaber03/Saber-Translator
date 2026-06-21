@@ -4,7 +4,8 @@
     <div class="prompts-chips-container">
       <span v-if="isLoading" class="empty-hint">加载中...</span>
       <span v-else-if="promptList.length === 0" class="empty-hint">暂无保存的提示词</span>
-      <button
+      <UiButton
+        variant="toolbar"
         v-else
         v-for="prompt in promptList"
         :key="prompt.name"
@@ -15,12 +16,13 @@
       >
         <span class="chip-icon">📝</span>
         {{ prompt.name }}
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 提示词快速选择器组件
  * 显示用户保存的提示词列表，点击可快速应用到对应的输入框
@@ -106,14 +108,14 @@ defineExpose({ refresh: loadPromptList })
 .saved-prompts-picker {
   margin-top: 10px;
   padding: 10px 12px;
-  background: var(--input-bg-color, #f5f5f5);
-  border: 1px solid var(--border-color, #e0e0e0);
+  background: var(--color-surface-input, var(--color-surface-subtle));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 6px;
 }
 
 .picker-label {
   font-size: 0.85em;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   margin-right: 10px;
   white-space: nowrap;
 }
@@ -129,12 +131,12 @@ defineExpose({ refresh: loadPromptList })
 
 .prompt-chip {
   padding: 5px 12px;
-  background: var(--card-bg-color, #fff);
-  border: 1px solid var(--border-color, #e0e0e0);
+  background: var(--color-surface-card, var(--color-surface-base));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 16px;
   cursor: pointer;
   font-size: 0.85em;
-  color: var(--text-color, #333);
+  color: var(--color-text-strong, var(--color-text-default));
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
@@ -142,9 +144,9 @@ defineExpose({ refresh: loadPromptList })
 }
 
 .prompt-chip:hover {
-  background: var(--color-primary, #4a90d9);
+  background: var(--color-action-primary, var(--saved-prompts-picker-surface-base));
   color: white;
-  border-color: var(--color-primary, #4a90d9);
+  border-color: var(--color-action-primary, var(--color-border-info));
 }
 
 .chip-icon {
@@ -153,7 +155,7 @@ defineExpose({ refresh: loadPromptList })
 
 .empty-hint {
   font-size: 0.85em;
-  color: var(--text-secondary, #999);
+  color: var(--color-text-supporting, var(--color-text-muted));
   font-style: italic;
 }
 </style>

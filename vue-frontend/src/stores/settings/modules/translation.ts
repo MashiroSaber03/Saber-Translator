@@ -70,6 +70,9 @@ export function useTranslationSettings(
     if (updates.rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = updates.rpmLimit
     if (updates.transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = updates.transportRetries
     if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
+    if ((updates as Record<string, unknown>).maxRetries !== undefined) {
+      settings.value.translation.openaiOptions.execution.businessRetries = Number((updates as Record<string, unknown>).maxRetries)
+    }
     if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
     if (updates.useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = updates.useStream
     if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
@@ -83,6 +86,19 @@ export function useTranslationSettings(
    * @param prompt - 提示词内容
    */
   function setTranslatePrompt(prompt: string): void {
+    const translation = settings.value.translation
+    const isJsonMode = translation.openaiOptions.request.forceJsonOutput
+    if (translation.translationMode === 'single') {
+      if (isJsonMode) {
+        translation.singleJsonPrompt = prompt
+      } else {
+        translation.singleNormalPrompt = prompt
+      }
+    } else if (isJsonMode) {
+      translation.batchJsonPrompt = prompt
+    } else {
+      translation.batchNormalPrompt = prompt
+    }
     settings.value.translatePrompt = prompt
     saveToStorage()
   }

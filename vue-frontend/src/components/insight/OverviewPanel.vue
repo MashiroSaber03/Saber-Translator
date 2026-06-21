@@ -1,4 +1,6 @@
 <script setup lang="ts">
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 概览面板组件
  * 显示漫画分析的概览统计、摘要和最近分析记录
@@ -92,7 +94,7 @@ const renderedContent = computed(() => {
 
 /**
  * 模板变更处理 - 只读取缓存，不触发生成
- * 与原版 JS 的 onOverviewTemplateChange 一致
+ * 与当前实现 JS 的 onOverviewTemplateChange 一致
  */
 async function onTemplateChange(): Promise<void> {
   await loadCachedOverview()
@@ -100,7 +102,7 @@ async function onTemplateChange(): Promise<void> {
 
 /**
  * 加载缓存的概览内容（不触发生成）
- * 与原版 JS 的 loadTemplateOverview 一致：GET /overview/{templateKey}
+ * 与当前实现 JS 的 loadTemplateOverview 一致：GET /overview/{templateKey}
  */
 async function loadCachedOverview(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -136,7 +138,7 @@ async function loadCachedOverview(): Promise<void> {
 
 /**
  * 生成概览（点击按钮时调用）
- * 与原版 JS 的 generateOverviewWithTemplate 一致：POST /overview/generate
+ * 与当前实现 JS 的 generateOverviewWithTemplate 一致：POST /overview/generate
  * @param regenerate - 是否强制重新生成（🔄按钮为true，📄按钮为false）
  */
 async function generateOverview(regenerate: boolean): Promise<void> {
@@ -177,8 +179,8 @@ async function generateOverview(regenerate: boolean): Promise<void> {
 
 /**
  * 加载已生成的模板列表
- * 【修复】与原版 HTML 一致：默认选中 no_spoiler，不自动切换到其他已生成模板
- * 原版 HTML 中 select 的第一个 option 是 no_spoiler，不会因为后端自动生成 story_summary 就切换
+ * 【修复】与当前实现 HTML 一致：默认选中 no_spoiler，不自动切换到其他已生成模板
+ * 当前实现 HTML 中 select 的第一个 option 是 no_spoiler，不会因为后端自动生成 story_summary 就切换
  */
 async function loadGeneratedTemplates(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -365,20 +367,22 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         </div>
         <div class="card-header-actions">
           <span class="template-status">{{ templateStatus }}</span>
-          <button 
-            class="btn-icon" 
+          <UiButton
+            variant="toolbar" 
+            class="button-icon" 
             title="生成/加载"
             @click="generateOverview(false)"
           >
             📄
-          </button>
-          <button 
-            class="btn-icon" 
+          </UiButton>
+          <UiButton
+            variant="toolbar" 
+            class="button-icon" 
             title="重新生成"
             @click="generateOverview(true)"
           >
             🔄
-          </button>
+          </UiButton>
         </div>
       </div>
       <p class="template-description">{{ currentTemplateDescription }}</p>
@@ -405,22 +409,24 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       
       <!-- 导出按钮 -->
       <div class="export-actions">
-        <button 
-          class="btn btn-secondary btn-sm" 
+        <UiButton
+          variant="secondary" 
+          class="overview-action-button overview-action-button--secondary"
           :disabled="isExporting || !overviewContent"
           title="导出当前概览"
-          @click="exportCurrentOverview"
+          @click="exportCurrentOverview" size="sm"
         >
           📄 导出当前
-        </button>
-        <button 
-          class="btn btn-primary btn-sm" 
+        </UiButton>
+        <UiButton
+          variant="primary" 
+          class="overview-action-button overview-action-button--primary"
           :disabled="isExporting"
           title="导出完整分析数据"
-          @click="exportAnalysisData"
+          @click="exportAnalysisData" size="sm"
         >
           {{ isExporting ? '导出中...' : '📤 导出全部' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -443,25 +449,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   </div>
 </template>
 
-<style scoped>
-/* ==================== 概览面板样式 - 完整迁移自 manga-insight.css ==================== */
-
-/* ==================== CSS变量 ==================== */
-.overview-tab {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-}
+<style scoped>/* ==================== 概览面板样式 - 当前样式 ==================== */
 
 /* ==================== 组件样式 ==================== */
 
@@ -472,126 +460,131 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     gap: 20px;
 }
 
-.overview-card {
-    background: var(--bg-secondary);
+.overview-grid .overview-card {
+    background: var(--insight-bg-secondary);
     border-radius: 12px;
     padding: 20px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
 }
 
-.overview-card.summary-card {
+.overview-grid .overview-card.summary-card {
     grid-column: span 2;
 }
 
-.card-header {
+.overview-grid .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
 }
 
-.card-header .card-title {
-    margin-bottom: 0;
-}
-
 /* 模板选择器样式 */
-.card-title-with-selector {
+.overview-grid .card-title-with-selector {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.card-title-icon {
+.overview-grid .card-title-icon {
     font-size: 20px;
     line-height: 1;
 }
 
-.template-select {
+.overview-grid .template-select {
     padding: 6px 12px;
     font-size: 14px;
     font-weight: 600;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 6px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-primary);
     cursor: pointer;
     min-width: 140px;
     transition: all 0.2s;
 }
 
-.template-select:hover {
-    border-color: var(--color-primary);
+.overview-grid .template-select:hover {
+    border-color: var(--insight-color-primary);
 }
 
-.template-select:focus {
+.overview-grid .template-select:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px rgb(99, 102, 241, 0.2);
+    border-color: var(--insight-color-primary);
+    box-shadow: 0 0 0 2px var(--overview-panel-shadow-default);
 }
 
-.card-header-actions {
+.overview-grid .card-header-actions {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.template-status {
+.overview-grid .template-status {
     font-size: 12px;
     padding: 2px 8px;
     border-radius: 4px;
     white-space: nowrap;
 }
 
-.template-status.status-cached {
-    background: rgb(34, 197, 94, 0.1);
-    color: #22c55e;
+.overview-grid .template-status.status-cached {
+    background: var(--overview-panel-surface-base);
+    color: var(--overview-panel-text-primary);
 }
 
-.template-status.status-empty {
-    background: rgb(156, 163, 175, 0.1);
+.overview-grid .template-status.status-empty {
+    background: var(--overview-panel-surface-raised);
     color: var(--text-tertiary);
 }
 
-.template-status.status-generating {
-    background: rgb(99, 102, 241, 0.1);
-    color: var(--color-primary);
+.overview-grid .template-status.status-generating {
+    background: var(--color-focus-brand-soft);
+    color: var(--insight-color-primary);
     animation: pulse 1.5s infinite;
 }
 
-.template-status.status-error {
-    background: rgb(239, 68, 68, 0.1);
-    color: #ef4444;
+.overview-grid .template-status.status-error {
+    background: var(--overview-panel-surface-muted);
+    color: var(--overview-panel-text-secondary);
 }
 
-.template-description {
+.overview-grid .template-description {
     font-size: 12px;
     color: var(--text-tertiary);
     margin: 0 0 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-muted);
 }
 
-.placeholder-text.generating {
-    color: var(--color-primary);
+.overview-grid .placeholder-text.generating {
+    color: var(--insight-color-primary);
     animation: pulse 1.5s infinite;
 }
 
-.placeholder-text.error {
-    color: #ef4444;
+.overview-grid .placeholder-text.error {
+    color: var(--overview-panel-text-secondary);
 }
 
-.card-title {
+.overview-grid .placeholder-text {
+    padding: 0;
+    text-align: left;
+}
+
+.overview-grid .card-title {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 16px;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
 }
 
-.btn-icon {
+.overview-grid .card-header .card-title {
+    margin-bottom: 0;
+}
+
+.overview-grid .button-icon {
     width: 32px;
     height: 32px;
     border: none;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 6px;
     cursor: pointer;
     font-size: 16px;
@@ -601,161 +594,195 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     transition: all 0.2s;
 }
 
-.btn-icon:hover {
-    background: var(--color-primary);
+.overview-grid .button-icon:hover {
+    background: var(--insight-color-primary);
     color: white;
 }
 
-.card-content {
-    color: var(--text-secondary);
+.overview-grid .card-content {
+    color: var(--insight-text-secondary);
     line-height: 1.6;
 }
 
 /* Markdown 渲染样式 */
-.markdown-content {
+.overview-grid .markdown-content {
     font-size: 14px;
     line-height: 1.8;
 }
 
-.markdown-content h2 {
+.overview-grid .markdown-content h2 {
     font-size: 16px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     margin: 16px 0 8px;
     padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-muted);
 }
 
-.markdown-content h2:first-child {
+.overview-grid .markdown-content h2:first-child {
     margin-top: 0;
 }
 
-.markdown-content h3 {
+.overview-grid .markdown-content h3 {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     margin: 12px 0 6px;
 }
 
-.markdown-content p {
+.overview-grid .markdown-content p {
     margin: 8px 0;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.markdown-content ul, .markdown-content ol {
+.overview-grid .markdown-content ul, .overview-grid .markdown-content ol {
     margin: 8px 0;
     padding-left: 20px;
 }
 
-.markdown-content li {
+.overview-grid .markdown-content li {
     margin: 4px 0;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.markdown-content strong {
-    color: var(--text-primary);
+.overview-grid .markdown-content strong {
+    color: var(--insight-text-primary);
     font-weight: 600;
 }
 
-.markdown-content em {
+.overview-grid .markdown-content em {
     font-style: italic;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.markdown-content blockquote {
+.overview-grid .markdown-content blockquote {
     margin: 12px 0;
     padding: 8px 12px;
-    border-left: 3px solid var(--color-primary);
-    background: var(--bg-tertiary);
+    border-left: 3px solid var(--insight-color-primary);
+    background: var(--insight-bg-tertiary);
     border-radius: 0 6px 6px 0;
 }
 
-.markdown-content blockquote p {
+.overview-grid .markdown-content blockquote p {
     margin: 0;
 }
 
-.markdown-content hr {
+.overview-grid .markdown-content hr {
     border: none;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-border-muted);
     margin: 16px 0;
 }
 
-.stats-grid {
+.overview-grid .stats-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 16px;
 }
 
-.stat-item {
+.overview-grid .stat-item {
     text-align: center;
     padding: 12px;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 8px;
 }
 
-.stat-value {
+.overview-grid .stat-value {
     display: block;
     font-size: 28px;
     font-weight: 700;
-    color: var(--color-primary);
+    color: var(--insight-color-primary);
 }
 
-.stat-label {
+.overview-grid .stat-label {
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.loading-text {
-  color: var(--text-secondary);
+.overview-grid .loading-text {
+  color: var(--insight-text-secondary);
   text-align: center;
   padding: 40px;
 }
 
-.export-actions {
+.overview-grid .export-actions {
   display: flex;
   gap: 8px;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--color-border-muted);
 }
 
-.btn-sm {
+.overview-grid .overview-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
   font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.overview-grid .overview-action-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.overview-grid .overview-card .overview-action-button--primary {
+  background: var(--insight-color-primary);
+  color: white;
+}
+
+.overview-grid .overview-card .overview-action-button--primary:hover:not(:disabled) {
+  background: var(--insight-primary-dark);
+}
+
+.overview-grid .overview-card .overview-action-button--secondary {
+  background: var(--insight-bg-tertiary);
+  color: var(--insight-text-primary);
+  border: 1px solid var(--color-border-muted);
+}
+
+.overview-grid .overview-card .overview-action-button--secondary:hover:not(:disabled) {
+  background: var(--color-border-muted);
 }
 
 /* 最近分析页面项 */
-.recent-pages {
+.overview-grid .recent-pages {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.recent-page-item {
+.overview-grid .recent-page-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background: var(--bg-tertiary);
+  background: var(--insight-bg-tertiary);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.recent-page-item:hover {
-  background: var(--bg-hover, rgb(99, 102, 241, 0.1));
+.overview-grid .recent-page-item:hover {
+  background: var(--color-focus-brand-soft);
   transform: translateX(4px);
 }
 
-.recent-page-item .page-number {
+.overview-grid .recent-page-item .page-number {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary);
+  color: var(--insight-color-primary);
 }
 
-.recent-page-item .page-summary {
+.overview-grid .recent-page-item .page-summary {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

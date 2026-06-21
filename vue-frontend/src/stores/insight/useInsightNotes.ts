@@ -37,6 +37,35 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return notes.value.filter(note => note.type === noteTypeFilter.value)
   })
 
+  function getStorageKey(): string | null {
+    return currentBookId.value ? `manga_notes_${currentBookId.value}` : null
+  }
+
+  function saveNotesToStorage(): void {
+    const storageKey = getStorageKey()
+    if (!storageKey) return
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(notes.value))
+    } catch (e) {
+      console.warn('保存本地笔记失败:', e)
+    }
+  }
+
+  function loadNotesFromStorage(): void {
+    const storageKey = getStorageKey()
+    if (!storageKey) {
+      notes.value = []
+      return
+    }
+    try {
+      const stored = localStorage.getItem(storageKey)
+      notes.value = stored ? JSON.parse(stored) as NoteData[] : []
+    } catch (e) {
+      console.warn('加载本地笔记失败:', e)
+      notes.value = []
+    }
+  }
+
   /**
    * 从 API 加载笔记
    */
@@ -56,10 +85,12 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         notes.value = response.notes.map(note =>
           toCamelCase(note as Record<string, unknown>) as unknown as NoteData
         )
+        saveNotesToStorage()
       }
     } catch (e) {
       console.error('加载笔记失败:', e)
       error.value = e instanceof Error ? e.message : '加载笔记失败'
+      loadNotesFromStorage()
     } finally {
       isLoading.value = false
     }
@@ -70,6 +101,28 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
    */
   async function addNote(note: Omit<NoteData, 'id' | 'createdAt' | 'updatedAt'>): Promise<NoteData | null> {
     if (!currentBookId.value) return null
+
+    const noteInput = note as Partial<NoteData>
+    const optimisticNote: NoteData = {
+      id: noteInput.id || `note_${Date.now()}`,
+      type: note.type,
+      content: note.content,
+      pageNum: note.pageNum,
+      title: note.title,
+      tags: note.tags,
+      question: note.question,
+      answer: note.answer,
+      citations: note.citations,
+      comment: note.comment,
+      createdAt: noteInput.createdAt || new Date().toISOString(),
+      updatedAt: noteInput.updatedAt || new Date().toISOString()
+    }
+    notes.value.unshift(optimisticNote)
+    saveNotesToStorage()
+
+    if (noteInput.id) {
+      return optimisticNote
+    }
 
     try {
       const response = await insightApi.createNote(currentBookId.value, {
@@ -87,14 +140,20 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       if (response.success && response.note) {
         // 使用转换器自动转换
         const newNote = toCamelCase(response.note as Record<string, unknown>) as unknown as NoteData
-        notes.value.unshift(newNote)
+        const index = notes.value.findIndex(existing => existing.id === optimisticNote.id)
+        if (index !== -1) {
+          notes.value[index] = newNote
+        } else {
+          notes.value.unshift(newNote)
+        }
+        saveNotesToStorage()
         return newNote
       }
     } catch (e) {
       console.error('添加笔记失败:', e)
       error.value = e instanceof Error ? e.message : '添加笔记失败'
     }
-    return null
+    return optimisticNote
   }
 
   /**
@@ -121,6 +180,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         const index = notes.value.findIndex(n => n.id === noteId)
         if (index !== -1) {
           notes.value[index] = { ...notes.value[index], ...updates, updatedAt: new Date().toISOString() }
+          saveNotesToStorage()
         }
         return true
       }
@@ -142,6 +202,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
       if (response.success) {
         notes.value = notes.value.filter(n => n.id !== noteId)
+        saveNotesToStorage()
         return true
       }
     } catch (e) {
@@ -172,6 +233,8 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     isLoading,
     error,
     loadNotes,
+    loadNotesFromStorage,
+    saveNotesToStorage,
     addNote,
     updateNote,
     deleteNote,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+
 /**
  * 右侧缩略图侧边栏组件
  * 显示图片概览列表，固定在页面右侧
@@ -178,7 +179,7 @@ onMounted(() => {
 
 <template>
   <aside ref="sidebarRef" id="thumbnail-sidebar" class="thumbnail-sidebar">
-    <div class="card thumbnail-card">
+    <div class="ui-panel-card thumbnail-card">
       <h2>图片概览</h2>
       
       <!-- 文件夹模式：面包屑导航 + 扁平列表 -->
@@ -228,7 +229,7 @@ onMounted(() => {
             v-for="image in currentImages"
             :key="image.id"
             :ref="(el) => setThumbnailRef(el as HTMLElement | null, getImageGlobalIndex(image))"
-            class="thumbnail-item"
+            class="thumbnail-sidebar__item"
             :class="{ active: getImageGlobalIndex(image) === currentIndex }"
             :title="getThumbnailTitle(image)"
             @click="handleClick(getImageGlobalIndex(image))"
@@ -270,7 +271,7 @@ onMounted(() => {
           v-for="(image, index) in images"
           :key="image.id"
           :ref="(el) => setThumbnailRef(el as HTMLElement | null, index)"
-          class="thumbnail-item"
+          class="thumbnail-sidebar__item"
           :class="{ active: index === currentIndex }"
           :title="getThumbnailTitle(image)"
           :data-index="index"
@@ -311,9 +312,8 @@ onMounted(() => {
   </aside>
 </template>
 
-<style scoped>
-/* ===================================
-   缩略图侧边栏样式 - 复刻自 thumbnail.css
+<style scoped>/* ===================================
+   缩略图侧边栏样式 - 缩略图列表
    =================================== */
 
 .thumbnail-sidebar {
@@ -323,45 +323,45 @@ onMounted(() => {
   width: 230px;
   height: calc(100vh - 40px);
   overflow-y: auto;
-  padding-top: 20px;
+  padding: 20px;
   margin-left: 0;
   order: 1;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 #f8fafc;
+  scrollbar-color: var(--thumbnail-sidebar-text-primary) var(--thumbnail-sidebar-text-secondary);
 }
 
-#thumbnail-sidebar::-webkit-scrollbar {
+.thumbnail-sidebar::-webkit-scrollbar {
   width: 8px;
 }
 
-#thumbnail-sidebar::-webkit-scrollbar-track {
-  background: #f8fafc;
+.thumbnail-sidebar::-webkit-scrollbar-track {
+  background: var(--color-surface-quiet);
   border-radius: 8px;
 }
 
-#thumbnail-sidebar::-webkit-scrollbar-thumb {
-  background-color: #cbd5e0;
+.thumbnail-sidebar::-webkit-scrollbar-thumb {
+  background-color: var(--thumbnail-sidebar-surface-base);
   border-radius: 8px;
-  border: 2px solid #f8fafc;
+  border: 2px solid var(--thumbnail-sidebar-border-default);
 }
 
-#thumbnail-sidebar .thumbnail-card {
+.thumbnail-sidebar .thumbnail-card {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgb(0,0,0,0.08);
+  box-shadow: 0 4px 12px var(--shadow-soft);
   padding: 25px;
   transition: box-shadow 0.2s;
 }
 
-#thumbnail-sidebar .thumbnail-card:hover {
-  box-shadow: 0 6px 16px rgb(0,0,0,0.12);
+.thumbnail-sidebar .thumbnail-card:hover {
+  box-shadow: 0 6px 16px var(--shadow-medium);
 }
 
-#thumbnail-sidebar .thumbnail-card h2 {
-  border-bottom: 2px solid #f0f0f0;
+.thumbnail-sidebar .thumbnail-card h2 {
+  border-bottom: 2px solid var(--thumbnail-sidebar-border-strong);
   padding-bottom: 12px;
   margin-bottom: 15px;
-  color: #2c3e50;
+  color: var(--color-text-heading);
   font-size: 1.4em;
   text-align: center;
 }
@@ -376,7 +376,7 @@ onMounted(() => {
   align-items: center;
   gap: 2px;
   padding: 8px 10px;
-  background: #f8fafc;
+  background: var(--color-surface-quiet);
   border-radius: 6px;
   margin-bottom: 10px;
   font-size: 12px;
@@ -384,7 +384,7 @@ onMounted(() => {
 }
 
 .breadcrumb-item {
-  color: #3498db;
+  color: var(--color-text-link);
   cursor: pointer;
   word-break: break-word;
 }
@@ -394,13 +394,13 @@ onMounted(() => {
 }
 
 .breadcrumb-item.active {
-  color: #2c3e50;
+  color: var(--color-text-heading);
   font-weight: 500;
   cursor: default;
 }
 
 .breadcrumb-sep {
-  color: #94a3b8;
+  color: var(--thumbnail-sidebar-text-muted);
   margin: 0 2px;
 }
 
@@ -413,17 +413,17 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #e8f4fd 0%, #d4e8f8 100%);
+  background: linear-gradient(135deg, var(--thumbnail-sidebar-surface-raised) 0%, var(--thumbnail-sidebar-surface-muted) 100%);
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 12px;
   font-size: 13px;
-  color: #3498db;
+  color: var(--color-text-link);
   transition: all 0.2s;
 }
 
 .folder-back-btn:hover {
-  background: linear-gradient(135deg, #d4e8f8 0%, #c0dcf0 100%);
+  background: linear-gradient(135deg, var(--thumbnail-sidebar-surface-muted) 0%, var(--thumbnail-sidebar-surface-subtle) 100%);
   transform: translateX(-2px);
 }
 
@@ -447,8 +447,8 @@ onMounted(() => {
 .folder-item {
   position: relative;
   padding: 10px 12px;
-  background: linear-gradient(135deg, #fff8e6 0%, #fff3d4 100%);
-  border: 1px solid #f0d78c;
+  background: linear-gradient(135deg, var(--color-surface-base8e6) 0%, var(--color-surface-base3d4) 100%);
+  border: 1px solid var(--thumbnail-sidebar-border-muted);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
@@ -456,9 +456,9 @@ onMounted(() => {
 }
 
 .folder-item:hover {
-  background: linear-gradient(135deg, #fff3d4 0%, #ffe8b8 100%);
+  background: linear-gradient(135deg, var(--color-surface-base3d4) 0%, var(--thumbnail-sidebar-surface-hover) 100%);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgb(240, 215, 140, 0.4);
+  box-shadow: 0 2px 8px var(--thumbnail-sidebar-shadow-default);
 }
 
 /* 文件夹图标作为右上角角标 */
@@ -467,11 +467,11 @@ onMounted(() => {
   top: -4px;
   right: -4px;
   font-size: 14px;
-  background: #fff;
+  background: var(--color-surface-base);
   border-radius: 4px;
   padding: 1px 2px;
-  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.1);
-  z-index: 1;
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-raised);
+  z-index: var(--z-local);
 }
 
 .folder-item .folder-info {
@@ -481,14 +481,14 @@ onMounted(() => {
 .folder-item .folder-name {
   font-size: 13px;
   font-weight: 500;
-  color: #5a4a00;
+  color: var(--thumbnail-sidebar-text-subtle);
   word-break: break-word;
   line-height: 1.4;
 }
 
 .folder-item .folder-count {
   font-size: 11px;
-  color: #8a7a30;
+  color: var(--thumbnail-sidebar-text-supporting);
   margin-left: 4px;
 }
 
@@ -496,7 +496,7 @@ onMounted(() => {
 .empty-folder {
   text-align: center;
   padding: 20px;
-  color: #94a3b8;
+  color: var(--thumbnail-sidebar-text-muted);
   font-size: 13px;
 }
 
@@ -517,11 +517,11 @@ onMounted(() => {
    缩略图项基础样式（两种模式通用）
    =================================== */
 
-#thumbnail-sidebar .thumbnail-item,
-.folder-content-list .thumbnail-item {
+.thumbnail-sidebar .thumbnail-sidebar__item,
+.folder-content-list .thumbnail-sidebar__item {
   margin-bottom: 0;
   cursor: pointer;
-  border: 2px solid #e2e8f0;
+  border: 2px solid var(--color-border-muted);
   border-radius: 8px;
   padding: 5px;
   transition: all 0.3s ease;
@@ -531,17 +531,17 @@ onMounted(() => {
 }
 
 /* 激活和悬停状态 */
-#thumbnail-sidebar .thumbnail-item.active,
-#thumbnail-sidebar .thumbnail-item:hover,
-.folder-content-list .thumbnail-item.active,
-.folder-content-list .thumbnail-item:hover {
-  border-color: #3498db;
-  box-shadow: 0 0 8px rgb(52, 152, 219, 0.5);
+.thumbnail-sidebar .thumbnail-sidebar__item.active,
+.thumbnail-sidebar .thumbnail-sidebar__item:hover,
+.folder-content-list .thumbnail-sidebar__item.active,
+.folder-content-list .thumbnail-sidebar__item:hover {
+  border-color: var(--color-border-accent);
+  box-shadow: 0 0 8px var(--thumbnail-sidebar-shadow-floating);
   transform: translateY(-2px);
 }
 
 /* 缩略图图片 */
-#thumbnail-sidebar .thumbnail-image,
+.thumbnail-sidebar .thumbnail-image,
 .folder-content-list .thumbnail-image {
   max-width: 100%;
   height: auto;
@@ -554,7 +554,7 @@ onMounted(() => {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: rgb(53, 152, 219, 0.8);
+  background-color: var(--thumbnail-sidebar-surface-active);
   color: white;
   width: 15px;
   height: 15px;
@@ -563,7 +563,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  z-index: 9;
+  z-index: var(--z-local-control);
   animation: pulse 1.5s infinite;
 }
 
@@ -572,7 +572,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: rgb(255, 0, 0, 0.8);
+  background-color: var(--thumbnail-sidebar-surface-selected);
   color: white;
   width: 18px;
   height: 18px;
@@ -582,7 +582,7 @@ onMounted(() => {
   justify-content: center;
   font-size: 12px;
   font-weight: bold;
-  z-index: 11;
+  z-index: var(--z-local-toolbar-raised);
   box-shadow: 0 0 3px black;
 }
 
@@ -591,7 +591,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: rgb(0, 123, 255, 0.8);
+  background-color: var(--thumbnail-sidebar-surface-overlay);
   color: white;
   width: 18px;
   height: 18px;
@@ -600,7 +600,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  z-index: 10;
+  z-index: var(--z-local-toolbar);
   box-shadow: 0 0 3px black;
 }
 
@@ -609,7 +609,7 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   left: 3px;
-  background-color: rgb(0, 0, 0, 0.6);
+  background-color: var(--thumbnail-sidebar-surface-inverse);
   color: white;
   min-width: 18px;
   height: 18px;
@@ -620,8 +620,8 @@ onMounted(() => {
   justify-content: center;
   font-size: 11px;
   font-weight: 500;
-  z-index: 8;
-  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.3);
+  z-index: var(--z-local-raised);
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-strong);
   font-family: var(--font-sans);
 }
 
@@ -630,7 +630,7 @@ onMounted(() => {
   position: absolute;
   top: 3px;
   left: 3px;
-  background-color: rgb(34, 197, 94, 0.9);  /* 绿色 */
+  background-color: var(--thumbnail-sidebar-surface-contrast);  /* 绿色 */
   color: white;
   width: 18px;
   height: 18px;
@@ -640,15 +640,41 @@ onMounted(() => {
   justify-content: center;
   font-size: 12px;
   font-weight: bold;
-  z-index: 9;
-  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.3);
+  z-index: var(--z-local-control);
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-strong);
 }
 
 /* 空状态 */
 .empty-state {
   text-align: center;
   padding: 20px;
-  color: #94a3b8;
+  color: var(--thumbnail-sidebar-text-muted);
 }
 
+@media (--breakpoint-md-down) {
+  .thumbnail-sidebar {
+    position: relative;
+    top: auto;
+    right: auto;
+    order: 3;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .thumbnail-sidebar .thumbnail-card {
+    padding: 16px;
+  }
+
+  .thumbnail-sidebar .thumbnail-card h2 {
+    font-size: 1.2em;
+  }
+
+  .thumbnail-sidebar .thumbnail-image {
+    width: min(100%, 290px);
+    margin: 0 auto;
+  }
+}
 </style>

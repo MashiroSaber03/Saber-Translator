@@ -2,29 +2,32 @@
   <div class="openai-extra-body-editor">
     <div class="editor-header">
       <label>{{ label }}</label>
-      <button
+      <UiButton
+        variant="secondary"
         type="button"
-        class="btn btn-secondary btn-sm"
+       
         :disabled="disabled || !localText.trim()"
-        @click="formatJson"
+        @click="formatJson" size="sm"
       >
         格式化
-      </button>
+      </UiButton>
     </div>
-    <textarea
+    <UiTextarea
       :value="localText"
       :rows="rows"
       :placeholder="placeholder"
       :disabled="disabled"
       class="extra-body-textarea"
       @input="handleInput"
-    ></textarea>
+    />
     <div v-if="errorMessage" class="input-error">{{ errorMessage }}</div>
-    <div v-else class="input-hint">{{ hint }}</div>
+    <div v-else class="ui-form-hint">{{ hint }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
@@ -146,7 +149,7 @@ function formatJson(): void {
 }
 
 .input-error {
-  color: #d14343;
+  color: var(--open-aiextra-body-editor-text-primary);
   font-size: 12px;
 }
 </style>

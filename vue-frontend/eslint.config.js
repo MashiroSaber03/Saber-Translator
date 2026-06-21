@@ -64,6 +64,22 @@ export default [
         ...globals.node,
       },
     },
+    rules: {
+      // Test files intentionally define small inline Vue stubs.
+      'vue/one-component-per-file': 'off',
+      'vue/require-prop-types': 'off',
+    },
+  },
+
+  // Node 脚本配置
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.es2021,
+      },
+    },
   },
   
   // 忽略文件

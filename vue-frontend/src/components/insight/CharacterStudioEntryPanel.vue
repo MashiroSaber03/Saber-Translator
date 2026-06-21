@@ -6,12 +6,13 @@
       <p>新的工作台会在独立页面中提供角色候选、世界书树、问候语、正则脚本、状态任务、聊天预览和卡片助手的完整闭环体验。</p>
     </div>
     <div class="actions">
-      <button class="primary-btn" @click="openStudio">打开角色工坊</button>
+      <UiButton variant="toolbar" class="action-primary" @click="openStudio">打开角色工坊</UiButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { useRouter } from 'vue-router'
 import { useInsightStore } from '@/stores/insightStore'
 
@@ -29,14 +30,15 @@ function openStudio() {
 
 <style scoped>
 .entry-card {
-  margin: 20px;
+  width: 100%;
+  min-height: 180px;
   padding: 28px 30px;
   border-radius: 28px;
   background:
-    radial-gradient(circle at top right, rgba(79, 136, 240, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 249, 254, 0.88));
-  border: 1px solid rgba(36, 76, 130, 0.14);
-  box-shadow: 0 24px 48px rgba(25, 49, 80, 0.1);
+    radial-gradient(circle at top right, var(--character-studio-entry-panel-accent-primary), transparent 24%),
+    linear-gradient(180deg, var(--character-studio-entry-panel-accent-secondary), var(--character-studio-entry-panel-accent-muted));
+  border: 1px solid var(--character-studio-entry-panel-border-default);
+  box-shadow: 0 24px 48px var(--character-studio-entry-panel-shadow-default);
   display: flex;
   justify-content: space-between;
   gap: 20px;
@@ -46,7 +48,7 @@ function openStudio() {
 .eyebrow {
   font-size: 11px;
   letter-spacing: 0.12em;
-  color: #5778a4;
+  color: var(--character-studio-entry-panel-text-primary);
   font-weight: 600;
 }
 
@@ -57,23 +59,23 @@ function openStudio() {
 
 .entry-card p {
   margin: 12px 0 0;
-  color: #566d86;
+  color: var(--character-studio-entry-panel-text-secondary);
   max-width: 760px;
   line-height: 1.7;
 }
 
-.primary-btn {
+.action-primary {
   border: none;
   border-radius: 14px;
   padding: 12px 20px;
   font-size: 14px;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(135deg, #2960c1, #447fe5);
-  box-shadow: 0 10px 22px rgba(38, 91, 184, 0.24);
+  color: var(--color-text-inverse);
+  background: linear-gradient(135deg, var(--character-studio-entry-panel-surface-base), var(--character-studio-entry-panel-surface-raised));
+  box-shadow: 0 10px 22px var(--character-studio-entry-panel-shadow-raised);
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .entry-card {
     flex-direction: column;
     align-items: flex-start;

@@ -5,6 +5,7 @@
  */
 
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const emit = defineEmits<{
   close: []
@@ -40,7 +41,7 @@ const emit = defineEmits<{
     </div>
 
     <template #footer>
-      <button type="button" class="btn btn-primary" @click="emit('close')">关闭</button>
+      <UiButton type="button" variant="primary" @click="emit('close')">关闭</UiButton>
     </template>
   </BaseModal>
 </template>
@@ -53,7 +54,7 @@ const emit = defineEmits<{
 
 .sponsor-message {
   font-size: 16px;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
   margin-bottom: 24px;
 }
 
@@ -75,8 +76,8 @@ const emit = defineEmits<{
   width: 180px;
   height: 180px;
   padding: 10px;
-  background: #fff;
-  border: 1px solid var(--border-color, #ddd);
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
 }
 
@@ -88,13 +89,13 @@ const emit = defineEmits<{
 
 .qr-label {
   font-size: 14px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   font-weight: 500;
 }
 
 .sponsor-thanks {
   font-size: 14px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 </style>

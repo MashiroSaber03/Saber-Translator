@@ -65,6 +65,13 @@ export interface SessionSaveOptions {
   isBookshelfMode?: boolean
 }
 
+interface BatchSaveState {
+  isInProgress: boolean
+  totalCount: number
+  currentIndex: number
+  sessionId: string | null
+}
+
 // ============================================================
 // Store 定义
 // ============================================================
@@ -104,6 +111,13 @@ export const useSessionStore = defineStore('session', () => {
   /** 是否正在保存 */
   const isSaving = ref(false)
 
+  const batchSaveState = ref<BatchSaveState>({
+    isInProgress: false,
+    totalCount: 0,
+    currentIndex: 0,
+    sessionId: null,
+  })
+
   // ============================================================
   // 计算属性
   // ============================================================
@@ -118,6 +132,14 @@ export const useSessionStore = defineStore('session', () => {
 
   /** 当前章节ID */
   const currentChapterId = computed(() => context.value.chapterId)
+
+  const batchSaveProgress = computed(() => {
+    if (!batchSaveState.value.isInProgress || batchSaveState.value.totalCount <= 0) {
+      return 0
+    }
+
+    return Math.round((batchSaveState.value.currentIndex / batchSaveState.value.totalCount) * 100)
+  })
 
   // ============================================================
   // 上下文管理方法
@@ -287,6 +309,52 @@ export const useSessionStore = defineStore('session', () => {
     error.value = message
   }
 
+  function startBatchSave(totalCount: number, sessionId: string): void {
+    batchSaveState.value = {
+      isInProgress: true,
+      totalCount,
+      currentIndex: 0,
+      sessionId,
+    }
+  }
+
+  function updateBatchSaveProgress(currentIndex: number): void {
+    batchSaveState.value.currentIndex = currentIndex
+  }
+
+  function completeBatchSave(): void {
+    batchSaveState.value = {
+      isInProgress: false,
+      totalCount: 0,
+      currentIndex: 0,
+      sessionId: null,
+    }
+  }
+
+  function createSessionData(
+    name: string,
+    images: ImageData[],
+    currentImageIndex: number,
+    uiSettings: Record<string, unknown>
+  ): SessionData {
+    return {
+      name,
+      version: '2.0',
+      savedAt: new Date().toISOString(),
+      imageCount: images.length,
+      currentImageIndex,
+      ui_settings: uiSettings,
+      images: images.map((image) => ({
+        ...image,
+        originalDataURL: image.originalDataURL,
+        translatedDataURL: image.translatedDataURL || undefined,
+        cleanImageData: image.cleanImageData || undefined,
+        bubbleStates: image.bubbleStates || undefined,
+        fileName: image.fileName,
+      })),
+    }
+  }
+
   // ============================================================
   // 重置方法
   // ============================================================
@@ -306,6 +374,7 @@ export const useSessionStore = defineStore('session', () => {
     isLoading.value = false
     isSaving.value = false
     error.value = null
+    completeBatchSave()
     console.log('会话状态已重置')
   }
 
@@ -670,11 +739,13 @@ export const useSessionStore = defineStore('session', () => {
     isSaving,
     error,
     loadingProgress,
+    batchSaveState,
 
     // 计算属性
     isBookshelfMode,
     currentBookId,
     currentChapterId,
+    batchSaveProgress,
 
     // 上下文管理
     setContext,
@@ -695,6 +766,10 @@ export const useSessionStore = defineStore('session', () => {
     setLoading,
     setSaving,
     setError,
+    startBatchSave,
+    updateBatchSaveProgress,
+    completeBatchSave,
+    createSessionData,
 
     // 图片转换工具
     imageUrlToBase64,

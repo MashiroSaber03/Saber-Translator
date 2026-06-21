@@ -1,4 +1,8 @@
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 图片结果显示组件
  * 显示翻译后的图片，支持原图/翻译图切换、图片大小调整
@@ -34,7 +38,7 @@ interface Props {
   isEditMode?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   isEditMode: false
 })
 
@@ -82,7 +86,7 @@ const isDownloading = computed(() => exportImport.isDownloading.value)
 /** 下载进度文本 */
 const downloadProgressText = computed(() => exportImport.downloadProgressText.value)
 
-/** 下载进度百分比 - 复刻原版 */
+/** 下载进度百分比 - 当前行为 */
 const downloadProgress = computed(() => exportImport.downloadProgress.value)
 
 /** 是否有图片 */
@@ -137,7 +141,7 @@ const detectedTexts = computed<Array<{ original: string; translated: string }>>(
     }))
   }
   
-  // 兼容旧数据格式
+  // 读取历史数据格式
   const originalTexts = currentImage.value.originalTexts || []
   const translatedTexts = useTextboxPrompt.value
     ? (currentImage.value.textboxTexts || currentImage.value.bubbleTexts || [])
@@ -308,33 +312,35 @@ async function handleImportFile(event: Event): Promise<void> {
 </script>
 
 <template>
-  <section v-if="currentImage" class="result-section card result-card">
+  <section v-if="currentImage" class="image-result-display result-section result-card">
     <!-- 控制栏 -->
     <div class="image-controls">
       <!-- 切换原图/翻译图按钮 -->
-      <button 
+      <UiButton
+        variant="toolbar" 
         v-if="hasTranslatedImage"
         id="toggleImageButton"
         class="control-btn"
         @click="toggleImageView"
       >
         {{ showOriginal ? '查看翻译图' : '查看原图' }}
-      </button>
+      </UiButton>
       
       <!-- 切换编辑模式按钮 -->
-      <button 
+      <UiButton
+        variant="toolbar" 
         id="toggleEditModeButton"
         class="control-btn"
         :class="{ active: isEditMode }"
         @click="toggleEditMode"
       >
         {{ isEditMode ? '退出编辑' : '切换编辑模式' }}
-      </button>
+      </UiButton>
       
       <!-- 图片大小控制 -->
       <div class="image-size-control">
         <label for="imageSize">图片大小:</label>
-        <input 
+        <UiInput 
           type="range" 
           id="imageSize" 
           min="50" 
@@ -342,12 +348,13 @@ async function handleImportFile(event: Event): Promise<void> {
           :value="imageSize"
           class="slider range-slider"
           @input="updateImageSize"
-        >
+        />
         <span class="image-size-value">{{ imageSize }}%</span>
       </div>
       
       <!-- 重新翻译失败按钮 -->
-      <button 
+      <UiButton
+        variant="toolbar" 
         v-if="hasFailedImages"
         id="retranslateFailedButton"
         class="retry-failed-btn"
@@ -355,15 +362,14 @@ async function handleImportFile(event: Event): Promise<void> {
         title="重新翻译所有失败的图片"
       >
         重新翻译失败图片 ({{ imageStore.failedImageCount }})
-      </button>
+      </UiButton>
     </div>
     
     <!-- 图片内容区域 -->
     <div class="content-container">
       <div class="image-container">
         <!-- 翻译后图片 -->
-        <img 
-          id="translatedImageDisplay"
+        <img
           class="translated-image"
           :src="displayImageUrl" 
           alt="翻译后图片"
@@ -387,7 +393,7 @@ async function handleImportFile(event: Event): Promise<void> {
     
     <!-- 下载和导出按钮区域 -->
     <div class="download-section">
-      <!-- 下载进度条 - 复刻原版 #translationProgressBar -->
+      <!-- 下载进度条 - 当前行为 #translationProgressBar -->
       <ProgressBar
         v-if="isDownloading"
         :visible="true"
@@ -395,23 +401,25 @@ async function handleImportFile(event: Event): Promise<void> {
         :label="downloadProgressText || '下载中，请稍候...'"
       />
       <div class="download-buttons">
-        <button 
+        <UiButton
+          variant="primary" 
           id="downloadButton" 
-          class="download-btn primary"
+          class="download-btn"
           :disabled="!hasDownloadableImage"
           @click="handleDownloadCurrent"
         >
           下载当前图片
-        </button>
+        </UiButton>
         <div class="download-all-container">
-          <button 
+          <UiButton
+            variant="primary" 
             id="downloadAllImagesButton" 
-            class="download-btn primary"
+            class="download-btn"
             :disabled="!hasImages"
             @click="handleDownloadAll"
           >
             下载所有图片
-          </button>
+          </UiButton>
           <div class="download-format-selector">
             <CustomSelect
               v-model="downloadFormat"
@@ -419,61 +427,61 @@ async function handleImportFile(event: Event): Promise<void> {
             />
           </div>
         </div>
-        <button 
+        <UiButton
+          variant="toolbar" 
           id="exportTextButton" 
           class="download-btn success"
           :disabled="!hasImages"
           @click="handleExportText"
         >
           导出文本
-        </button>
-        <button 
+        </UiButton>
+        <UiButton
+          variant="toolbar" 
           id="importTextButton" 
           class="download-btn success"
           :disabled="!hasImages"
           @click="triggerImportText"
         >
           导入文本
-        </button>
+        </UiButton>
         <!-- 隐藏的文件输入框，用于导入文本 -->
-        <input 
-          type="file" 
+        <UiFileInput 
           ref="importFileInput"
           id="importTextFileInput" 
           style="display: none;" 
           accept=".json"
           @change="handleImportFile"
-        >
+        />
       </div>
     </div>
   </section>
   
   <!-- 空状态提示 - 仅在没有图片时显示简洁提示 -->
   <section v-else class="empty-state-section">
-    <!-- 空状态不显示额外卡片，保持与原版一致 -->
+    <!-- 空状态不显示额外卡片，保持与当前行为一致 -->
   </section>
 </template>
 
-<style scoped>
-/* 结果区域卡片 - 匹配原版 #result-section 样式 */
-.result-section {
+<style scoped>/* 结果区域卡片 - 当前视觉 #result-section 样式 */
+.image-result-display.result-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px var(--image-result-display-shadow-default);
   padding: 25px;
   text-align: center;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.result-section:hover {
-  box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+.image-result-display.result-section:hover {
+  box-shadow: 0 8px 16px var(--image-result-display-shadow-raised);
 }
 
-/* 控制栏 - 匹配原版 .image-controls 样式 */
-.image-controls {
+/* 控制栏 - 当前视觉 .image-controls 样式 */
+.image-result-display .image-controls {
   margin-bottom: 15px;
   display: flex;
   align-items: center;
@@ -484,9 +492,9 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 /* 控制按钮 */
-.control-btn {
+.image-result-display .control-btn {
   padding: 10px 18px;
-  background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+  background: linear-gradient(135deg, var(--image-result-display-surface-base) 0%, var(--color-surface-accent) 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -494,47 +502,47 @@ async function handleImportFile(event: Event): Promise<void> {
   font-size: 0.95em;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+  box-shadow: 0 2px 6px var(--image-result-display-shadow-floating);
 }
 
-.control-btn:hover {
-  background: linear-gradient(135deg, #1f6aa6 0%, #3498db 100%);
-  box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+.image-result-display .control-btn:hover {
+  background: linear-gradient(135deg, var(--image-result-display-surface-raised) 0%, var(--color-surface-accent) 100%);
+  box-shadow: 0 4px 10px var(--image-result-display-shadow-strong);
   transform: translateY(-2px);
 }
 
-.control-btn.active {
-  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
-  box-shadow: 0 2px 6px rgba(39, 174, 96, 0.2);
+.image-result-display .control-btn.active {
+  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-surface-muted) 100%);
+  box-shadow: 0 2px 6px var(--image-result-display-shadow-soft);
 }
 
 /* 图片大小控制 */
-.image-size-control {
+.image-result-display .image-size-control {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.image-size-control label {
+.image-result-display .image-size-control label {
   font-size: 14px;
-  color: #555;
+  color: var(--image-result-display-text-primary);
 }
 
-.image-size-control .slider {
+.image-result-display .image-size-control .slider {
   width: 120px;
   cursor: pointer;
 }
 
-.image-size-value {
+.image-result-display .image-size-value {
   min-width: 45px;
   text-align: right;
   font-size: 14px;
-  color: #555;
+  color: var(--image-result-display-text-primary);
 }
 
 /* 重试按钮 */
-.retry-failed-btn {
-  background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%);
+.image-result-display .retry-failed-btn {
+  background: linear-gradient(135deg, var(--image-result-display-surface-subtle) 0%, var(--image-result-display-surface-hover) 100%);
   color: white;
   border: none;
   padding: 10px 18px;
@@ -543,40 +551,40 @@ async function handleImportFile(event: Event): Promise<void> {
   font-size: 0.95em;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px rgba(243, 156, 18, 0.2);
+  box-shadow: 0 2px 6px var(--image-result-display-shadow-focus);
 }
 
-.retry-failed-btn:hover {
-  background: linear-gradient(135deg, #d35400 0%, #f39c12 100%);
-  box-shadow: 0 4px 10px rgba(243, 156, 18, 0.3);
+.image-result-display .retry-failed-btn:hover {
+  background: linear-gradient(135deg, var(--image-result-display-surface-active) 0%, var(--image-result-display-surface-hover) 100%);
+  box-shadow: 0 4px 10px var(--image-result-display-shadow-glow);
   transform: translateY(-2px);
 }
 
 /* 内容容器 */
-.content-container {
+.image-result-display .content-container {
   width: 100%;
   position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
   margin-bottom: 20px;
-  background-color: var(--bg-color, #f8fafc);
-  border: 1px solid var(--border-color, #e2e8f0);
+  background-color: var(--color-surface-app, var(--color-surface-quiet));
+  border: 1px solid var(--color-border-muted, var(--color-border-muted));
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px var(--image-result-display-shadow-inset);
   text-align: center;
 }
 
 /* 图片容器 */
-.image-container {
+.image-result-display .image-container {
   position: relative;
   max-width: 100%;
   text-align: center;
 }
 
-/* 翻译后图片 - 匹配原版 #translatedImageDisplay 样式 */
-.translated-image {
+/* 翻译后图片 - 当前视觉 #translatedImageDisplay 样式 */
+.image-result-display .translated-image {
   position: relative;
   max-width: 100%;
   height: auto;
@@ -587,18 +595,18 @@ async function handleImportFile(event: Event): Promise<void> {
   margin: 0 auto;
 }
 
-/* 空状态区域 - 保持与原版一致，不显示额外卡片 */
-.empty-state-section {
+/* 空状态区域 - 保持与当前行为一致，不显示额外卡片 */
+.image-result-display .empty-state-section {
   display: none;
 }
 
 /* 检测文本信息区域 */
-.text-info {
+.image-result-display .text-info {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--secondary-bg, #f9f9f9);
-  border: 1px solid var(--border-color, #eee);
+  background-color: var(--secondary-bg, var(--image-result-display-surface-selected));
+  border: 1px solid var(--color-border-muted, var(--color-border-soft));
   border-radius: 4px;
   white-space: pre-wrap;
   font-family: var(--font-mono);
@@ -609,51 +617,51 @@ async function handleImportFile(event: Event): Promise<void> {
   overflow-y: auto;
 }
 
-.text-info h3 {
+.image-result-display .text-info h3 {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
   font-weight: 600;
 }
 
-.detected-text-list {
+.image-result-display .detected-text-list {
   margin: 0;
   padding: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
-.text-item {
+.image-result-display .text-item {
   display: block;
 }
 
-.original-text {
-  color: var(--text-primary, #333);
+.image-result-display .original-text {
+  color: var(--color-text-default, var(--color-text-default));
 }
 
-.translated-text {
-  color: var(--color-primary, #4a90d9);
+.image-result-display .translated-text {
+  color: var(--color-action-primary, var(--image-result-display-text-secondary));
 }
 
-.translated-text.translation-error {
-  color: var(--error-color, #e74c3c);
+.image-result-display .translated-text.translation-error {
+  color: var(--color-status-error, var(--color-text-danger-strong));
 }
 
-.separator {
-  color: var(--text-secondary, #999);
+.image-result-display .separator {
+  color: var(--color-text-supporting, var(--color-text-muted));
 }
 
-/* 下载区域样式 - 匹配原版 */
-.download-section {
+/* 下载区域样式 - 当前视觉 */
+.image-result-display .download-section {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--secondary-bg, #f9f9f9);
-  border: 1px solid var(--border-color, #eee);
+  background-color: var(--secondary-bg, var(--image-result-display-surface-selected));
+  border: 1px solid var(--color-border-muted, var(--color-border-soft));
   border-radius: 8px;
 }
 
-.download-buttons {
+.image-result-display .download-buttons {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -661,332 +669,82 @@ async function handleImportFile(event: Event): Promise<void> {
   align-items: center;
 }
 
-.download-btn {
+.image-result-display .download-btn {
   padding: 12px 24px;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.95em;
   font-weight: 500;
+  white-space: normal;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px var(--image-result-display-shadow-overlay);
 }
 
-.download-btn:disabled {
+.image-result-display .download-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.download-btn.primary {
-  background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+.image-result-display .download-btn.primary {
+  background: linear-gradient(135deg, var(--image-result-display-surface-base) 0%, var(--color-surface-accent) 100%);
   color: white;
 }
 
-.download-btn.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1f6aa6 0%, #3498db 100%);
+.image-result-display .download-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--image-result-display-surface-raised) 0%, var(--color-surface-accent) 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+  box-shadow: 0 4px 10px var(--image-result-display-shadow-strong);
 }
 
-.download-btn.success {
-  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+.image-result-display .download-btn.success {
+  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-surface-muted) 100%);
   color: white;
 }
 
-.download-btn.success:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1e8449 0%, #2ecc71 100%);
+.image-result-display .download-btn.success:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--image-result-display-surface-overlay) 0%, var(--image-result-display-surface-muted) 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 10px rgba(39, 174, 96, 0.3);
+  box-shadow: 0 4px 10px var(--image-result-display-shadow-brand);
 }
 
-.download-all-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.download-format-selector select {
-  padding: 10px 12px;
-  border: 1px solid var(--border-color, #ddd);
-  border-radius: 6px;
-  background-color: white;
-  font-size: 0.9em;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.download-format-selector select:hover {
-  border-color: var(--color-primary, #4a90d9);
-}
-
-.download-format-selector select:focus {
-  outline: none;
-  border-color: var(--color-primary, #4a90d9);
-  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
-}
-
-/* ===================================
-   图像展示区样式 - 完整迁移自 image-display.css
-   =================================== */
-
-#image-display-area {
-  flex-grow: 2.4;
-  padding: 20px;
-  margin-left: 340px;
-  margin-right: 240px;
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-#image-display-area .card {
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  padding: 25px;
-  text-align: center;
-  flex-grow: 0;
-  margin-bottom: 25px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-#image-display-area .card:hover {
-  box-shadow: 0 8px 16px rgba(0,0,0,0.12);
-}
-
-#image-display-area #upload-section {
-  flex: 0 0 auto;
-  min-height: 180px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 15px;
-}
-
-#image-display-area #upload-section #drop-area {
-  border: 2px dashed #b0bec5;
-  border-radius: 12px;
-  padding: 40px;
-  text-align: center;
-  cursor: pointer;
-  color: #546e7a;
-  margin-bottom: 15px;
-  width: 85%;
-  margin-left: auto;
-  margin-right: auto;
-  min-height: 100px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
-  background-color: #f7fafc;
-}
-
-#image-display-area #upload-section #drop-area:hover {
-  border-color: #3498db;
-  background-color: #ecf5fe;
-  transform: translateY(-3px);
-}
-
-#image-display-area #upload-section #drop-area.highlight {
-  border-color: #3498db;
-  background-color: #ecf5fe;
-  box-shadow: 0 0 15px rgba(52, 152, 219, 0.3);
-}
-
-#image-display-area #upload-section #drop-area p {
-  font-size: 1.1em;
-  margin: 10px 0;
-}
-
-#image-display-area #result-section {
-  flex: 1 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-#image-display-area #result-section .image-container {
-  width: 100%;
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 20px;
-  background-color: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  text-align: center;
-}
-
-#image-display-area #result-section #translatedImageDisplay {
-  position: relative;
-  max-width: 100%;
-  height: auto;
-  object-fit: contain;
-  border: none;
-  transition: width 0.3s ease;
-}
-
-#image-display-area #result-section .image-controls {
-  margin-bottom: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 20px;
-  width: 100%;
-}
-
-#image-display-area #result-section .text-info {
-  width: 100%;
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #f9f9f9;
-  border: 1px solid #eee;
-  border-radius: 4px;
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-  text-align: left;
-  overflow-x: auto;
-  height: 300px;
-  overflow-y: auto;
-}
-
-#image-display-area #result-section .download-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 15px;
-  margin-top: 25px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-.download-all-container {
+.image-result-display .download-all-container {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 10px;
 }
 
-.download-format-selector {
+.image-result-display .download-format-selector {
   width: auto;
   max-width: 150px;
 }
 
-.download-format-selector select {
+.image-result-display .download-format-selector select {
   width: 100%;
   padding: 10px;
-  border: 1px solid #e0e6ed;
+  border: 1px solid var(--image-result-display-border-default);
   border-radius: 8px;
   font-size: 0.9em;
-  background-color: #f8fafc;
+  background-color: var(--color-surface-quiet);
   margin-top: 5px;
   transition: border-color 0.3s, box-shadow 0.3s;
   cursor: pointer;
 }
 
-.download-format-selector select:focus {
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+.image-result-display .download-format-selector select:hover {
+  border-color: var(--color-action-primary, var(--color-border-info));
+}
+
+.image-result-display .download-format-selector select:focus {
+  border-color: var(--color-border-accent);
+  box-shadow: 0 0 0 3px var(--image-result-display-shadow-floating);
   outline: none;
 }
 
-#image-display-area #result-section .download-buttons button {
-  display: none;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1em;
-  margin-top: 0;
-  transition: all 0.3s ease;
-  min-width: 150px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
-  position: relative;
-  overflow: hidden;
-}
-
-#image-display-area #result-section .download-buttons button:hover {
-  background: linear-gradient(135deg, #1f6aa6 0%, #3498db 100%);
-  box-shadow: 0 6px 10px rgba(52, 152, 219, 0.3);
-  transform: translateY(-2px);
-}
-
-#image-display-area #result-section .download-buttons button:before {
-  content: '';
+.image-result-display .highlight-bubble {
   position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.7s;
-}
-
-#image-display-area #result-section .download-buttons button:hover:before {
-  left: 100%;
-}
-
-/* 导出/导入按钮样式已通过 .download-btn.success 类处理 */
-
-#image-display-area #upload-section #loadingMessage,
-#image-display-area #upload-section .error-message {
-  margin-top: 15px;
-  padding: 10px 15px;
-  border-radius: 8px;
-  text-align: center;
-  font-size: 1em;
-}
-
-#image-display-area #upload-section #loadingMessage:before {
-  content: '处理中...';
-}
-
-#image-display-area #upload-section .error-message {
-  color: #c53030;
-  background-color: #fff5f5;
-  border-left: 4px solid #fc8181;
-  font-weight: bold;
-}
-
-#image-display-area #upload-section .loader {
-  display: none;
-}
-
-#translatingMessage, #downloadingMessage {
-  display: none;
-}
-
-#result-section p#translatingMessage {
-  margin-top: 10px;
-  font-style: italic;
-  color: #777;
-  text-align: center;
-  display: none;
-}
-
-#result-section p#downloadingMessage {
-  margin-top: 10px;
-  font-style: italic;
-  color: #777;
-  text-align: center;
-  display: none;
-}
-
-.highlight-bubble {
-  position: absolute;
-  border: 1px solid #2980b9;
+  border: 1px solid var(--image-result-display-border-strong);
   pointer-events: auto;
   z-index: var(--z-overlay);
   border-radius: 5px;
@@ -994,8 +752,14 @@ async function handleImportFile(event: Event): Promise<void> {
   cursor: pointer;
 }
 
-.highlight-bubble.selected {
-  border: 1px solid #e74c3c;
+.image-result-display .highlight-bubble.selected {
+  border: 1px solid var(--image-result-display-border-muted);
 }
 
+@media (--breakpoint-md-down) {
+  .image-result-display .image-container {
+    max-width: 280px;
+    margin-top: 25px;
+  }
+}
 </style>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 书籍搜索和标签筛选组件
  */
@@ -11,7 +13,7 @@ interface Props {
   tags: TagData[]
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   search: [query: string]
@@ -57,29 +59,30 @@ function isTagSelected(tagName: string): boolean {
   <div class="filter-bar">
     <!-- 搜索框 -->
     <div class="search-box">
-      <input
+      <UiInput
         v-model="searchQuery"
         type="text"
         placeholder="搜索书籍名称或标签..."
         autocomplete="off"
         @input="handleInput"
         @keypress.enter="handleSearch"
-      >
-      <button class="search-btn" @click="handleSearch">🔍</button>
-      <button
+      />
+      <UiButton variant="toolbar" class="search-btn" @click="handleSearch">🔍</UiButton>
+      <UiButton
+        variant="toolbar"
         v-if="showClearBtn"
         class="clear-search-btn"
         @click="clearSearch"
       >
         ✕
-      </button>
+      </UiButton>
     </div>
 
     <!-- 标签筛选 -->
     <div v-if="tags.length > 0" class="tag-filter">
       <span class="filter-label">标签筛选:</span>
       <div class="tag-chips">
-        <!-- 【复刻原版】使用 tag.name 作为唯一标识 -->
+        <!-- 【当前行为】使用 tag.name 作为唯一标识 -->
         <span
           v-for="tag in tags"
           :key="tag.name"
@@ -96,7 +99,7 @@ function isTagSelected(tagName: string): boolean {
 </template>
 
 <style scoped>
-/* ==================== 搜索和筛选栏样式 - 完整迁移自 bookshelf.css ==================== */
+/* ==================== 搜索和筛选栏样式 - 当前样式 ==================== */
 
 .filter-bar {
     display: flex;
@@ -104,9 +107,9 @@ function isTagSelected(tagName: string): boolean {
     gap: 16px;
     margin-bottom: 24px;
     padding: 16px;
-    background: var(--card-bg);
+    background: var(--color-surface-card);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px var(--book-search-shadow-default);
 }
 
 /* 搜索框 */
@@ -120,18 +123,18 @@ function isTagSelected(tagName: string): boolean {
 .search-box input {
     flex: 1;
     padding: 10px 16px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 8px;
     font-size: 0.95rem;
-    background: var(--input-bg);
-    color: var(--text-primary);
+    background: var(--color-surface-input);
+    color: var(--color-text-default);
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .search-box input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgb(102, 126, 234, 0.1);
+    border-color: var(--color-border-brand-gradient);
+    box-shadow: 0 0 0 3px var(--book-search-shadow-raised);
 }
 
 .search-btn, .clear-search-btn {
@@ -144,7 +147,7 @@ function isTagSelected(tagName: string): boolean {
 }
 
 .search-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
     color: white;
 }
 
@@ -153,16 +156,16 @@ function isTagSelected(tagName: string): boolean {
 }
 
 .clear-search-btn {
-    background: var(--hover-bg);
-    color: var(--text-secondary);
+    background: var(--color-surface-interactive-hover);
+    color: var(--color-text-supporting);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .clear-search-btn:hover {
-    background: var(--border-color);
-    color: var(--text-primary);
+    background: var(--color-border-muted);
+    color: var(--color-text-default);
 }
 
 /* 标签筛选 */
@@ -175,7 +178,7 @@ function isTagSelected(tagName: string): boolean {
 
 .filter-label {
     font-size: 0.85rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     white-space: nowrap;
 }
 
@@ -195,32 +198,32 @@ function isTagSelected(tagName: string): boolean {
     font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.2s;
-    background: var(--hover-bg);
-    color: var(--text-primary);
+    background: var(--color-surface-interactive-hover);
+    color: var(--color-text-default);
     border: 2px solid transparent;
 }
 
 .tag-chip:hover {
-    background: var(--tag-color, #667eea);
+    background: var(--tag-color, var(--color-surface-brand-gradient-start));
     color: white;
 }
 
 .tag-chip.active {
-    background: var(--tag-color, #667eea);
+    background: var(--tag-color, var(--color-surface-brand-gradient-start));
     color: white;
-    border-color: var(--tag-color, #667eea);
-    box-shadow: 0 2px 8px rgb(102, 126, 234, 0.3);
+    border-color: var(--tag-color, var(--color-border-brand-gradient));
+    box-shadow: 0 2px 8px var(--book-search-shadow-floating);
 }
 
 .tag-count {
-    background: rgb(255, 255, 255, 0.3);
+    background: var(--book-search-surface-base);
     padding: 1px 6px;
     border-radius: 10px;
     font-size: 0.7rem;
 }
 
 .no-tags {
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     font-size: 0.85rem;
     font-style: italic;
 }

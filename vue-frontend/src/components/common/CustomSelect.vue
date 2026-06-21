@@ -5,7 +5,10 @@
 <template>
   <div 
     class="custom-select" 
-    :class="{ open: isOpen, disabled: disabled }"
+    :class="[
+      `custom-select--${variant}`,
+      { open: isOpen, disabled: disabled, 'custom-select--fit': fit }
+    ]"
     ref="selectRef"
   >
     <!-- 选择框显示区域 -->
@@ -97,12 +100,18 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** 标题提示 */
   title?: string
+  /** 视觉尺寸/场景变体 */
+  variant?: 'default' | 'compact' | 'workflow'
+  /** 是否跟随父容器宽度 */
+  fit?: boolean
 }>(), {
   options: () => [],
   groups: () => [],
   placeholder: '请选择',
   disabled: false,
-  title: ''
+  title: '',
+  variant: 'default',
+  fit: false
 })
 
 // Emits
@@ -251,13 +260,17 @@ onUnmounted(() => {
 })
 </script>
 
-<style>
-/* 不使用scoped，直接使用全局样式确保不被覆盖 */
+<style scoped>
 .custom-select {
   position: relative;
   min-width: 160px;
   font-size: 14px;
-  color: #1f2430;
+  color: var(--custom-select-text-primary);
+}
+
+.custom-select--fit {
+  width: 100%;
+  min-width: 0;
 }
 
 .custom-select-trigger {
@@ -266,21 +279,37 @@ onUnmounted(() => {
   justify-content: space-between;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--custom-select-border-default);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2430;
+  background: var(--color-surface-basefff);
+  color: var(--custom-select-text-primary);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.custom-select--compact {
+  min-width: 70px;
+  flex: 0 0 auto;
+}
+
+.custom-select--compact .custom-select-trigger {
+  height: 38px;
+  padding: 0 10px;
+}
+
+.custom-select--workflow .custom-select-trigger {
+  min-height: 42px;
+  border-color: var(--custom-select-border-strong);
+  border-radius: 10px;
+}
+
 .custom-select-trigger:hover {
-  border-color: #8aa0f6;
+  border-color: var(--custom-select-border-muted);
 }
 
 .custom-select.open .custom-select-trigger {
-  border-color: #5b73f2;
-  box-shadow: 0 0 0 2px rgba(88, 125, 255, 0.18);
+  border-color: var(--custom-select-border-subtle);
+  box-shadow: 0 0 0 2px var(--custom-select-shadow-default);
 }
 
 .custom-select.disabled .custom-select-trigger {
@@ -293,12 +322,12 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1f2430;
+  color: var(--custom-select-text-primary);
 }
 
 .custom-select-arrow {
   margin-left: 8px;
-  color: #666666;
+  color: var(--color-text-secondary666);
   transition: transform 0.2s;
 }
 
@@ -310,26 +339,26 @@ onUnmounted(() => {
   position: fixed; /* 改为 fixed 以配合 Teleport */
   /* top, left, width 由 JS 动态计算 */
   margin-top: 0; /* JS计算位置时已包含偏移 */
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
+  background: var(--color-surface-basefff);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  box-shadow: 0 12px 26px rgba(19, 36, 70, 0.18);
-  z-index: 2000;
+  box-shadow: 0 12px 26px var(--custom-select-shadow-raised);
+  z-index: var(--z-popover);
   max-height: 360px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: #1f2430;
+  color: var(--custom-select-text-primary);
 }
 
 .custom-select-options {
   padding: 6px 0;
-  background: #ffffff;
-  color: #1f2430;
+  background: var(--color-surface-basefff);
+  color: var(--custom-select-text-primary);
 }
 
 .custom-select-group {
   margin-bottom: 4px;
-  background: #ffffff;
+  background: var(--color-surface-basefff);
 }
 
 .custom-select-group:last-child {
@@ -340,8 +369,8 @@ onUnmounted(() => {
   padding: 8px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #666666;
-  background: #f5f5f5;
+  color: var(--color-text-secondary666);
+  background: var(--color-surface-subtle);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -349,21 +378,21 @@ onUnmounted(() => {
 .custom-select-option {
   padding: 9px 12px;
   cursor: pointer;
-  color: #1f2430;
-  background: #ffffff;
+  color: var(--custom-select-text-primary);
+  background: var(--color-surface-basefff);
   font-size: 14px;
   line-height: 1.4;
   transition: background 0.15s;
 }
 
 .custom-select-option:hover {
-  background: #e3f2fd;
-  color: #1f2430;
+  background: var(--custom-select-surface-base);
+  color: var(--custom-select-text-primary);
 }
 
 .custom-select-option.selected {
-  background: #e8edff;
-  color: #3040c2;
+  background: var(--custom-select-surface-raised);
+  color: var(--custom-select-text-secondary);
   font-weight: 500;
 }
 

@@ -22,19 +22,19 @@ function mountModal(props: Record<string, unknown> = {}): VueWrapper {
 }
 
 function getOverlay(): HTMLDivElement {
-  const overlay = document.body.querySelector('.modal-overlay')
+  const overlay = document.body.querySelector('.ui-modal__overlay')
   expect(overlay).toBeTruthy()
   return overlay as HTMLDivElement
 }
 
 function getContainer(): HTMLDivElement {
-  const container = document.body.querySelector('.modal-container')
+  const container = document.body.querySelector('.ui-modal__container')
   expect(container).toBeTruthy()
   return container as HTMLDivElement
 }
 
 function getCloseButton(): HTMLButtonElement {
-  const closeButton = document.body.querySelector('.modal-close-btn')
+  const closeButton = document.body.querySelector('.ui-modal__close')
   expect(closeButton).toBeTruthy()
   return closeButton as HTMLButtonElement
 }
@@ -131,5 +131,32 @@ describe('BaseModal', () => {
 
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+  })
+
+  it('exposes explicit chrome body footer and scroll classes for Teleport customization', () => {
+    mount(BaseModal, {
+      attachTo: document.body,
+      props: {
+        modelValue: true,
+        title: 'Custom Modal',
+        chromeVariant: 'compact',
+        bodyClass: 'custom-body',
+        footerClass: 'custom-footer',
+        bodyPadding: 'none',
+        scrollMode: 'contained',
+      },
+      slots: {
+        default: '<div>Body</div>',
+        footer: '<div>Footer</div>',
+      },
+    })
+
+    expect(getContainer().classList.contains('ui-modal__container--chrome-compact')).toBe(true)
+    const body = document.body.querySelector('.ui-modal__body')
+    expect(body?.classList.contains('custom-body')).toBe(true)
+    expect(body?.classList.contains('ui-modal__body--padding-none')).toBe(true)
+    expect(body?.classList.contains('ui-modal__body--scroll-contained')).toBe(true)
+    const footer = document.body.querySelector('.ui-modal__footer')
+    expect(footer?.classList.contains('custom-footer')).toBe(true)
   })
 })

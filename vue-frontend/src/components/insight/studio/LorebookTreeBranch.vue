@@ -3,7 +3,7 @@
     <details class="node-details" open>
       <summary class="node-summary">
         <div class="summary-main">
-          <input v-model="localEntry.comment" class="title-input" type="text">
+          <UiInput v-model="localEntry.comment" class="title-input" type="text" />
           <div class="meta-line">
             <span>{{ localEntry.keys.length }} 个关键词</span>
             <span>优先级 {{ localEntry.priority }}</span>
@@ -11,10 +11,10 @@
           </div>
         </div>
         <div class="summary-actions" @click.prevent>
-          <button class="mini-btn" @click="move(-1)" :disabled="index === 0">上移</button>
-          <button class="mini-btn" @click="move(1)">下移</button>
-          <button class="mini-btn" @click="addChild">子项</button>
-          <button class="danger-btn" @click="$emit('remove')">删除</button>
+          <UiButton variant="toolbar" class="mini-btn" @click="move(-1)" :disabled="index === 0">上移</UiButton>
+          <UiButton variant="toolbar" class="mini-btn" @click="move(1)">下移</UiButton>
+          <UiButton variant="toolbar" class="mini-btn" @click="addChild">子项</UiButton>
+          <UiButton variant="toolbar" class="action-danger" @click="$emit('remove')">删除</UiButton>
         </div>
       </summary>
 
@@ -22,44 +22,44 @@
         <div class="grid">
           <label>
             关键词（逗号分隔）
-            <input :value="localEntry.keys.join(', ')" type="text" @input="updateKeys($event)">
+            <UiInput :value="localEntry.keys.join(', ')" type="text" @input="updateKeys($event)" />
           </label>
           <label>
             次级关键词（逗号分隔）
-            <input :value="(localEntry.secondary_keys || []).join(', ')" type="text" @input="updateSecondaryKeys($event)">
+            <UiInput :value="(localEntry.secondary_keys || []).join(', ')" type="text" @input="updateSecondaryKeys($event)" />
           </label>
           <label class="full">
             内容
-            <textarea v-model="localEntry.content" rows="4"></textarea>
+            <UiTextarea v-model="localEntry.content" rows="4" />
           </label>
           <label>
             优先级
-            <input v-model.number="localEntry.priority" type="number" min="0" step="10">
+            <UiInput v-model.number="localEntry.priority" type="number" min="0" step="10" />
           </label>
           <label>
             注入位置
-            <select v-model="localEntry.position">
+            <UiSelect v-model="localEntry.position">
               <option value="before_char">before_char</option>
               <option value="after_char">after_char</option>
               <option value="at_depth">at_depth</option>
-            </select>
+            </UiSelect>
           </label>
           <label>
             深度
-            <input v-model.number="localEntry.depth" type="number" min="0">
+            <UiInput v-model.number="localEntry.depth" type="number" min="0" />
           </label>
           <label>
             概率
-            <input v-model.number="localEntry.probability" type="number" min="0" max="100">
+            <UiInput v-model.number="localEntry.probability" type="number" min="0" max="100" />
           </label>
         </div>
 
         <div class="toggles">
-          <label><input v-model="localEntry.enabled" type="checkbox"> 启用</label>
-          <label><input v-model="localEntry.constant" type="checkbox"> 常驻</label>
-          <label><input v-model="localEntry.selective" type="checkbox"> 选择触发</label>
-          <label><input v-model="localEntry.prevent_recursion" type="checkbox"> 防递归</label>
-          <label><input v-model="localEntry.use_regex" type="checkbox"> 用正则匹配</label>
+          <label><UiInput v-model="localEntry.enabled" type="checkbox" /> 启用</label>
+          <label><UiInput v-model="localEntry.constant" type="checkbox" /> 常驻</label>
+          <label><UiInput v-model="localEntry.selective" type="checkbox" /> 选择触发</label>
+          <label><UiInput v-model="localEntry.prevent_recursion" type="checkbox" /> 防递归</label>
+          <label><UiInput v-model="localEntry.use_regex" type="checkbox" /> 用正则匹配</label>
         </div>
 
         <div v-if="localEntry.children.length > 0" class="children">
@@ -79,6 +79,10 @@
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
 
@@ -165,8 +169,8 @@ function move(offset: -1 | 1) {
 <style scoped>
 .branch-node {
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--lorebook-tree-branch-surface-base);
+  border: 1px solid var(--color-border-studio);
 }
 
 .node-details {
@@ -195,7 +199,7 @@ function move(offset: -1 | 1) {
   width: 100%;
   border: none;
   background: transparent;
-  color: #14304c;
+  color: var(--lorebook-tree-branch-text-primary);
   font-size: 14px;
   font-weight: 600;
   padding: 0;
@@ -206,7 +210,7 @@ function move(offset: -1 | 1) {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 8px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 11px;
 }
 
@@ -235,18 +239,18 @@ label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #516882;
+  color: var(--lorebook-tree-branch-text-secondary);
   font-size: 12px;
 }
 
 input,
 textarea,
 select {
-  border: 1px solid rgba(28, 55, 94, 0.12);
-  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid var(--color-border-studio-strong);
+  background: var(--color-surface-studio-soft);
   border-radius: 14px;
   padding: 10px 12px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
 }
 
@@ -262,7 +266,7 @@ textarea {
 }
 
 .mini-btn,
-.danger-btn {
+.action-danger {
   border: none;
   border-radius: 12px;
   padding: 7px 10px;
@@ -271,13 +275,13 @@ textarea {
 }
 
 .mini-btn {
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
-.danger-btn {
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+.action-danger {
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
 }
 
 .children {
@@ -286,10 +290,10 @@ textarea {
   gap: 10px;
   margin-top: 14px;
   padding-left: 16px;
-  border-left: 2px solid rgba(37, 99, 199, 0.12);
+  border-left: 2px solid var(--lorebook-tree-branch-border-default);
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .node-summary,
   .summary-actions,
   .grid {

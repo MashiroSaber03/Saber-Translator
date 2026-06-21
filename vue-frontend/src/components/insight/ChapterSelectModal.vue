@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './ChapterSelectModal.global.styles.css'
 /**
  * 章节选择弹窗组件
  * 用于在有多个章节时让用户选择要翻译的章节
@@ -7,6 +8,7 @@
 
 import { ref } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 // ============================================================
 // 类型定义
@@ -27,7 +29,7 @@ interface Props {
 // Props 和 Emits
 // ============================================================
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   close: []
@@ -101,29 +103,24 @@ function close(): void {
     </div>
 
     <template #footer>
-      <button class="btn btn-secondary" @click="close">取消</button>
-      <button 
-        class="btn btn-primary" 
+      <UiButton variant="secondary" @click="close">取消</UiButton>
+      <UiButton
+        variant="primary"
         :disabled="!selectedChapterId"
         @click="confirmSelection"
       >
         确定
-      </button>
+      </UiButton>
     </template>
   </BaseModal>
 </template>
 
-<style>
-/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
-
+<style scoped>
 /* 章节选择弹窗特定样式 */
-.chapter-select-modal .modal-body {
-  padding: 24px;
-}
 
 .chapter-select-body .hint-text {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin: 0 0 16px;
 }
 
@@ -139,7 +136,7 @@ function close(): void {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--bg-tertiary, #f1f5f9);
+  background: var(--chapter-select-modal-surface-base);
   border: 2px solid transparent;
   border-radius: 8px;
   cursor: pointer;
@@ -147,13 +144,13 @@ function close(): void {
 }
 
 .chapter-select-body .chapter-item:hover {
-  background: var(--bg-primary, #f8fafc);
-  border-color: var(--primary-light, #818cf8);
+  background: var(--color-surface-quiet);
+  border-color: var(--chapter-select-modal-border-default);
 }
 
 .chapter-select-body .chapter-item.selected {
-  background: rgb(99, 102, 241, 0.1);
-  border-color: var(--color-primary);
+  background: var(--color-focus-brand-soft);
+  border-color: var(--insight-color-primary);
 }
 
 .chapter-select-body .chapter-info {
@@ -166,21 +163,17 @@ function close(): void {
 .chapter-select-body .chapter-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary, #1a202c);
+  color: var(--color-text-default, var(--chapter-select-modal-text-primary));
 }
 
 .chapter-select-body .chapter-pages {
   font-size: 12px;
-  color: var(--text-secondary, #64748b);
+  color: var(--color-text-supporting, var(--chapter-select-modal-text-secondary));
 }
 
 .chapter-select-body .check-icon {
   font-size: 18px;
-  color: var(--color-primary);
+  color: var(--insight-color-primary);
   font-weight: bold;
-}
-
-.chapter-select-modal .modal-footer {
-  gap: 12px;
 }
 </style>

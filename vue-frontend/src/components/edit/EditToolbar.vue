@@ -9,14 +9,15 @@
     <div class="edit-toolbar toolbar-row-1">
       <!-- 图片导航 -->
       <div class="image-navigator">
-        <button
+        <UiButton
+          variant="toolbar"
           class="nav-btn"
           :disabled="!canGoPrevious"
           @click="$emit('go-previous-image')"
           title="上一张图片 (A)"
         >
           ◀◀
-        </button>
+        </UiButton>
         <span
           class="image-indicator"
           @click="$emit('toggle-thumbnails')"
@@ -24,29 +25,32 @@
         >
           图 <span>{{ currentImageIndex + 1 }}</span> / <span>{{ imageCount }}</span>
         </span>
-        <button
+        <UiButton
+          variant="toolbar"
           class="nav-btn"
           :disabled="!canGoNext"
           @click="$emit('go-next-image')"
           title="下一张图片 (D)"
         >
           ▶▶
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="thumb-toggle-btn"
           :class="{ active: showThumbnails }"
           @click="$emit('toggle-thumbnails')"
           title="显示/隐藏缩略图"
         >
           ☷
-        </button>
+        </UiButton>
       </div>
 
       <div class="toolbar-divider"></div>
 
       <!-- 气泡导航 -->
       <div class="bubble-navigator">
-        <button
+        <UiButton
+          variant="toolbar"
           id="prevBubbleBtn"
           class="nav-btn"
           :disabled="!hasBubbles || selectedBubbleIndex <= 0"
@@ -54,11 +58,12 @@
           title="上一个气泡"
         >
           ◀
-        </button>
+        </UiButton>
         <span class="bubble-indicator">
           气泡 <span id="currentBubbleNum">{{ selectedBubbleIndex >= 0 ? selectedBubbleIndex + 1 : 0 }}</span> / <span id="totalBubbleNum">{{ bubbleCount }}</span>
         </span>
-        <button
+        <UiButton
+          variant="toolbar"
           id="nextBubbleBtn"
           class="nav-btn"
           :disabled="!hasBubbles || selectedBubbleIndex >= bubbleCount - 1"
@@ -66,14 +71,15 @@
           title="下一个气泡"
         >
           ▶
-        </button>
+        </UiButton>
       </div>
 
       <div class="toolbar-divider"></div>
 
       <!-- 视图控制 -->
       <div class="view-controls">
-        <button
+        <UiButton
+          variant="toolbar"
           class="layout-toggle-btn"
           @click="$emit('toggle-layout')"
           title="切换布局：左右/上下"
@@ -86,39 +92,42 @@
             <rect x="2" y="1" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
             <rect x="2" y="11" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
           </svg>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="view-mode-btn"
           @click="$emit('toggle-view-mode')"
           title="切换视图模式"
         >
           <span class="dual-icon">⧉</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           :class="{ active: syncEnabled }"
           @click="$emit('toggle-sync')"
           title="同步缩放/拖动"
           style="font-size: 12px;"
         >
           🔗
-        </button>
-        <button @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</button>
-        <button @click="$emit('zoom-in')" title="放大 (+)">+</button>
+        </UiButton>
+        <UiButton variant="toolbar" @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</UiButton>
+        <UiButton variant="toolbar" @click="$emit('zoom-in')" title="放大 (+)">+</UiButton>
         <span id="zoomLevel" class="zoom-level">{{ Math.round(scale * 100) }}%</span>
-        <button @click="$emit('zoom-out')" title="缩小 (-)">−</button>
-        <button @click="$emit('reset-zoom')" title="原始大小">1:1</button>
+        <UiButton variant="toolbar" @click="$emit('zoom-out')" title="缩小 (-)">−</UiButton>
+        <UiButton variant="toolbar" @click="$emit('reset-zoom')" title="原始大小">1:1</UiButton>
       </div>
 
       <div class="toolbar-spacer"></div>
 
-      <button class="secondary-btn" @click="$emit('exit-edit-mode')">退出编辑</button>
+      <UiButton variant="toolbar" class="action-secondary" @click="$emit('exit-edit-mode')">退出编辑</UiButton>
     </div>
 
     <!-- 第二行：操作工具 -->
     <div class="edit-toolbar toolbar-row-2">
       <!-- 气泡操作工具组 -->
       <div class="annotation-tools">
-        <button
+        <UiButton
+          variant="toolbar"
           class="annotation-btn detect-btn"
           @click="$emit('auto-detect-bubbles')"
           title="自动检测当前图片的文本框"
@@ -128,8 +137,9 @@
             <path d="M9 9l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
           </svg>
           <span>检测</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="annotation-btn detect-btn"
           @click="$emit('detect-all-images')"
           title="批量检测所有图片"
@@ -141,8 +151,9 @@
             <path d="M12 12l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
           <span>批量检测</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="annotation-btn primary-action-btn"
           @click="$emit('translate-with-bubbles')"
           title="使用当前文本框翻译此图片"
@@ -152,11 +163,12 @@
             <path d="M9 13l2-7 2 7M9.5 11h3" stroke="currentColor" stroke-width="1.2" fill="none" />
           </svg>
           <span>翻译</span>
-        </button>
+        </UiButton>
 
         <div class="toolbar-divider"></div>
 
-        <button
+        <UiButton
+          variant="toolbar"
           class="annotation-btn"
           :class="{ active: isDrawingMode }"
           @click="$emit('toggle-drawing-mode')"
@@ -167,8 +179,9 @@
             <path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.5" />
           </svg>
           <span>添加</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="annotation-btn"
           :disabled="!hasSelection"
           @click="$emit('delete-selected-bubbles')"
@@ -179,8 +192,9 @@
             <path d="M5 8h6" stroke="currentColor" stroke-width="1.5" />
           </svg>
           <span>删除</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="annotation-btn"
           :class="{ 'is-loading': isRepairLoading }"
           :disabled="!hasSelection || isRepairLoading"
@@ -192,12 +206,13 @@
             <path d="M11 5l-1-1 2-2 2 2-2 2-1-1z" fill="currentColor" />
           </svg>
           <span>修复</span>
-        </button>
+        </UiButton>
 
         <div class="toolbar-divider"></div>
 
         <!-- 笔刷工具 -->
-        <button
+        <UiButton
+          variant="toolbar"
           class="annotation-btn brush-btn"
           :class="{ active: brushMode === 'repair' }"
           @click="$emit('activate-repair-brush')"
@@ -208,8 +223,9 @@
             <circle cx="8" cy="8" r="2" fill="currentColor" />
           </svg>
           <span>修复笔刷</span>
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="toolbar"
           class="annotation-btn brush-btn"
           :class="{ active: brushMode === 'restore' }"
           @click="$emit('activate-restore-brush')"
@@ -220,20 +236,20 @@
             <path d="M5 8h6M8 5v6" stroke="currentColor" stroke-width="1" transform="rotate(45 8 8)" />
           </svg>
           <span>还原笔刷</span>
-        </button>
+        </UiButton>
         <span v-if="brushMode" class="brush-size-indicator">
           笔刷: {{ brushSize }}px
         </span>
 
         <!-- 快捷键帮助 -->
         <div class="help-tooltip-container">
-          <button class="help-tooltip-btn" title="快捷键操作帮助">
+          <UiButton variant="toolbar" class="help-tooltip-btn" title="快捷键操作帮助">
             <svg viewBox="0 0 16 16" width="14" height="14">
               <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2" />
               <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor">?</text>
             </svg>
             <span class="help-btn-text">快捷键</span>
-          </button>
+          </UiButton>
           <div class="help-tooltip-popup">
             <div class="help-section">
               <div class="help-title">🖱️ 鼠标操作</div>
@@ -268,7 +284,7 @@
         {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
       </div>
 
-      <!-- 进度条显示（紧跟快捷键图标右侧，复刻原版位置） -->
+      <!-- 进度条显示（紧跟快捷键图标右侧，当前行为位置） -->
       <div 
         v-if="isProcessing" 
         class="edit-progress-container"
@@ -291,15 +307,17 @@
 
       <!-- 快捷操作 -->
       <div class="quick-actions">
-        <button class="primary-btn" @click="$emit('apply-and-next')" title="应用更改并跳转下一张 (Ctrl+Enter)">
+        <UiButton variant="toolbar" class="action-primary" @click="$emit('apply-and-next')" title="应用更改并跳转下一张 (Ctrl+Enter)">
           应用并下一张
-        </button>
+        </UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 编辑模式工具栏组件
  * 包含双行布局：第一行导航和视图控制，第二行操作工具
@@ -418,7 +436,7 @@ const progressPercent = computed(() => {
   return Math.round((props.progressCurrent / props.progressTotal) * 100)
 })
 
-/** 进度是否完成（复刻原版状态控制） */
+/** 进度是否完成（当前行为状态控制） */
 const isProgressCompleted = computed(() => {
   return props.progressTotal > 0 && props.progressCurrent >= props.progressTotal
 })
@@ -446,12 +464,11 @@ const brushCursorStyle = computed(() => {
 })
 </script>
 
-<style scoped>
-/* 顶部工具栏 */
+<style scoped>/* 顶部工具栏 */
 .edit-toolbar-wrapper {
   flex-shrink: 0;
-  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(135deg, var(--color-edit-shell-start) 0%, var(--color-edit-shell-end) 100%);
+  border-bottom: 1px solid var(--color-edit-shell-divider);
 }
 
 .edit-toolbar {
@@ -462,11 +479,11 @@ const brushCursorStyle = computed(() => {
 }
 
 .toolbar-row-1 {
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--color-edit-shell-divider-soft);
 }
 
 .toolbar-row-2 {
-  background: rgba(0,0,0,0.15);
+  background: var(--color-edit-shell-overlay);
 }
 
 .toolbar-spacer {
@@ -476,7 +493,7 @@ const brushCursorStyle = computed(() => {
 .toolbar-divider {
   width: 1px;
   height: 24px;
-  background: rgba(255,255,255,0.2);
+  background: var(--color-surface-overlay-medium-2);
   margin: 0 5px;
 }
 
@@ -487,44 +504,23 @@ const brushCursorStyle = computed(() => {
   gap: 8px;
 }
 
-.image-navigator .nav-btn {
-  width: 36px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(102, 126, 234, 0.3);
-  color: #fff;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-
-.image-navigator .nav-btn:hover {
-  background: rgba(102, 126, 234, 0.5);
-}
-
-.image-navigator .nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
 .image-indicator {
-  color: #fff;
+  color: var(--color-text-inverse);
   font-size: 14px;
   padding: 6px 12px;
-  background: rgba(102, 126, 234, 0.2);
+  background: var(--color-edit-shell-chip);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .image-indicator:hover {
-  background: rgba(102, 126, 234, 0.4);
+  background: var(--color-edit-shell-chip-hover);
 }
 
 .image-indicator span {
   font-weight: bold;
-  color: #667eea;
+  color: var(--edit-toolbar-text-primary);
 }
 
 .thumb-toggle-btn {
@@ -532,19 +528,19 @@ const brushCursorStyle = computed(() => {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  background: var(--color-surface-overlay-light-2);
+  color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
   transition: all 0.2s;
 }
 
 .thumb-toggle-btn:hover {
-  background: rgba(255,255,255,0.2);
+  background: var(--color-surface-overlay-medium-2);
 }
 
 .thumb-toggle-btn.active {
-  background: rgba(102, 126, 234, 0.5);
+  background: var(--color-edit-shell-chip-active);
 }
 
 /* 气泡导航 */
@@ -554,38 +550,17 @@ const brushCursorStyle = computed(() => {
   gap: 8px;
 }
 
-.bubble-navigator .nav-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: rgba(102, 126, 234, 0.3);
-  color: #fff;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s;
-}
-
-.bubble-navigator .nav-btn:hover {
-  background: rgba(102, 126, 234, 0.5);
-}
-
-.bubble-navigator .nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
 .bubble-indicator {
-  color: #fff;
+  color: var(--color-text-inverse);
   font-size: 13px;
   padding: 4px 10px;
-  background: rgba(0,0,0,0.3);
+  background: var(--color-edit-shell-progress-2);
   border-radius: 6px;
 }
 
 .bubble-indicator span {
   font-weight: bold;
-  color: #00ff88;
+  color: var(--color-edit-accent);
 }
 
 /* 视图控制按钮组 */
@@ -600,21 +575,21 @@ const brushCursorStyle = computed(() => {
   height: 36px;
   border: none;
   border-radius: 6px;
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  background: var(--color-surface-overlay-light-2);
+  color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
   transition: all 0.2s;
 }
 
 .view-controls button:hover {
-  background: rgba(255,255,255,0.2);
+  background: var(--color-surface-overlay-medium-2);
 }
 
 .view-controls .zoom-level {
   min-width: 50px;
   text-align: center;
-  color: #fff;
+  color: var(--color-text-inverse);
   font-size: 13px;
   padding: 0 8px;
 }
@@ -629,48 +604,48 @@ const brushCursorStyle = computed(() => {
   gap: 10px;
 }
 
-.primary-btn {
+.action-primary {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
-  color: #1a1a2e;
+  background: linear-gradient(135deg, var(--color-edit-action-start) 0%, var(--color-edit-action-end) 100%);
+  color: var(--color-edit-action-text);
   font-weight: 600;
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
 }
 
-.primary-btn:hover {
+.action-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+  box-shadow: 0 4px 12px var(--shadow-edit-action);
 }
 
-.secondary-btn {
+.action-secondary {
   padding: 8px 16px;
-  border: 1px solid rgba(255,255,255,0.3);
+  border: 1px solid var(--color-edit-action-border);
   border-radius: 6px;
   background: transparent;
-  color: #fff;
+  color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
 }
 
-.secondary-btn:hover {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(255,255,255,0.5);
+.action-secondary:hover {
+  background: var(--color-surface-overlay-light-2);
+  border-color: var(--color-edit-action-border-hover);
 }
 
-/* 导航按钮样式 - 与原版一致 */
+/* 导航按钮样式 - 与当前行为一致 */
 .image-navigator .nav-btn,
 .bubble-navigator .nav-btn {
   width: 28px;
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: rgba(102, 126, 234, 0.3);
-  color: #fff;
+  background: var(--color-edit-shell-control);
+  color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 10px;
   transition: all 0.2s;
@@ -681,19 +656,25 @@ const brushCursorStyle = computed(() => {
   line-height: 1;
 }
 
-.image-navigator .nav-btn:hover,
-.bubble-navigator .nav-btn:hover {
-  background: rgba(102, 126, 234, 0.5);
+.image-navigator .nav-btn:disabled,
+.bubble-navigator .nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
-/* 进度条样式（完整复刻原版） */
+.image-navigator .nav-btn:not(:disabled):hover,
+.bubble-navigator .nav-btn:not(:disabled):hover {
+  background: var(--color-edit-shell-chip-active);
+}
+
+/* 进度条样式（当前视觉与行为） */
 .edit-progress-container {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 6px 16px;
   margin-left: 12px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--color-edit-shell-progress);
   border-radius: 20px;
   min-width: 200px;
   max-width: 350px;
@@ -705,6 +686,7 @@ const brushCursorStyle = computed(() => {
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -720,13 +702,13 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--edit-toolbar-text-secondary);
   font-weight: 500;
 }
 
 .edit-progress-count {
   font-size: 12px;
-  color: #00ff88;
+  color: var(--color-edit-accent);
   font-weight: 600;
   font-family: var(--font-mono);
 }
@@ -734,7 +716,7 @@ const brushCursorStyle = computed(() => {
 .edit-progress-bar {
   flex: 1;
   height: 6px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-overlay-light5);
   border-radius: 3px;
   overflow: hidden;
   min-width: 80px;
@@ -742,15 +724,15 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00ff88, #00d4ff);
+  background: linear-gradient(90deg, var(--color-edit-action-start), var(--edit-toolbar-surface-base));
   border-radius: 3px;
   transition: width 0.3s ease;
-  box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
+  box-shadow: 0 0 8px var(--edit-toolbar-shadow-default);
 }
 
 /* 进度条动画效果（仅在进行中时播放） */
 .edit-progress-fill.animating {
-  background: linear-gradient(90deg, #00ff88, #00d4ff, #00ff88);
+  background: linear-gradient(90deg, var(--color-edit-action-start), var(--edit-toolbar-surface-base), var(--color-edit-action-start));
   background-size: 200% 100%;
   animation: progressShine 1.5s ease-in-out infinite;
 }
@@ -762,12 +744,12 @@ const brushCursorStyle = computed(() => {
 
 /* 完成状态 */
 .edit-progress-container.completed .edit-progress-fill {
-  background: #00ff88;
+  background: var(--color-edit-action-start);
   animation: none;
 }
 
 .edit-progress-container.completed .edit-progress-text {
-  color: #00ff88;
+  color: var(--color-edit-accent);
 }
 
 /* 修复按钮 Loading 状态 */
@@ -782,11 +764,12 @@ const brushCursorStyle = computed(() => {
 }
 
 /* 笔刷大小指示器 */
+
 .brush-size-indicator {
-  color: #fff;
+  color: var(--color-text-inverse);
   font-size: 12px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-surface-overlay-light);
   border-radius: 4px;
   margin-left: 8px;
 }
@@ -794,8 +777,8 @@ const brushCursorStyle = computed(() => {
 /* 激活状态按钮 */
 .annotation-btn.active,
 .brush-btn.active {
-  background: rgba(102, 126, 234, 0.5);
-  border-color: #667eea;
+  background: var(--color-edit-shell-chip-active);
+  border-color: var(--color-border-brand-gradient);
 }
 
 /* 笔刷光标 */
@@ -811,8 +794,8 @@ const brushCursorStyle = computed(() => {
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
+  background: var(--edit-toolbar-surface-raised);
+  color: var(--color-text-inverse);
   border-radius: 6px;
   font-size: 13px;
   z-index: var(--z-modal);
@@ -833,10 +816,10 @@ const brushCursorStyle = computed(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #cfd6e4;
+  border: 1px solid var(--color-edit-input-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #666;
+  background: var(--edit-toolbar-surface-muted);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -848,9 +831,9 @@ const brushCursorStyle = computed(() => {
 }
 
 .help-tooltip-btn:hover {
-  background: #fff;
-  border-color: #5b73f2;
-  color: #5b73f2;
+  background: var(--color-surface-base);
+  border-color: var(--color-edit-input-border-focus);
+  color: var(--edit-toolbar-text-muted);
 }
 
 .help-tooltip-popup {
@@ -860,10 +843,10 @@ const brushCursorStyle = computed(() => {
   margin-top: 8px;
   min-width: 260px;
   padding: 12px 14px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-muted);
   border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px var(--edit-toolbar-shadow-raised);
   z-index: var(--z-overlay);
   opacity: 0;
   visibility: hidden;
@@ -871,8 +854,7 @@ const brushCursorStyle = computed(() => {
   transition: all 0.2s ease;
 }
 
-.help-tooltip-container:hover .help-tooltip-popup,
-.help-tooltip-popup:hover {
+.help-tooltip-container:hover .help-tooltip-popup {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -889,10 +871,10 @@ const brushCursorStyle = computed(() => {
 .help-title {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--edit-toolbar-text-subtle);
   margin-bottom: 6px;
   padding-bottom: 4px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--edit-toolbar-border-default);
 }
 
 .help-item {
@@ -904,16 +886,16 @@ const brushCursorStyle = computed(() => {
 }
 
 .help-key {
-  color: #6b7280;
+  color: var(--edit-toolbar-text-supporting);
   font-family: var(--font-mono);
-  background: #f3f4f6;
+  background: var(--color-surface-muted);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 10px;
 }
 
 .help-desc {
-  color: #374151;
+  color: var(--edit-toolbar-text-subtle);
 }
 
 /* annotation-tools 样式 */
@@ -928,18 +910,18 @@ const brushCursorStyle = computed(() => {
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--edit-toolbar-border-strong);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--color-surface-overlay-light);
+  color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
 }
 
 .annotation-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--color-surface-overlay-medium);
+  border-color: var(--edit-toolbar-border-muted);
 }
 
 .annotation-btn:disabled {
@@ -956,41 +938,35 @@ const brushCursorStyle = computed(() => {
 }
 
 .detect-btn {
-  background: rgba(102, 126, 234, 0.3);
-  border-color: rgba(102, 126, 234, 0.5);
+  background: var(--color-edit-shell-control);
+  border-color: var(--edit-toolbar-border-subtle);
 }
 
 .detect-btn:hover {
-  background: rgba(102, 126, 234, 0.5);
+  background: var(--color-edit-shell-chip-active);
 }
 
 .primary-action-btn {
-  background: rgba(0, 255, 136, 0.2);
-  border-color: rgba(0, 255, 136, 0.4);
-  color: #00ff88;
+  background: var(--edit-toolbar-surface-subtle);
+  border-color: var(--edit-toolbar-border-hover);
+  color: var(--color-edit-accent);
 }
 
 .primary-action-btn:hover {
-  background: rgba(0, 255, 136, 0.3);
+  background: var(--edit-toolbar-surface-hover);
 }
 
 .brush-btn {
-  background: rgba(255, 193, 7, 0.2);
-  border-color: rgba(255, 193, 7, 0.4);
+  background: var(--edit-toolbar-surface-active);
+  border-color: var(--edit-toolbar-border-active);
 }
 
 .brush-btn:hover {
-  background: rgba(255, 193, 7, 0.3);
-}
-
-.image-navigator .nav-btn:disabled,
-.bubble-navigator .nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+  background: var(--edit-toolbar-surface-selected);
 }
 
 /* sync按钮激活状态 */
 .view-controls button.active {
-  background: rgba(102, 126, 234, 0.5);
+  background: var(--color-edit-shell-chip-active);
 }
 </style>

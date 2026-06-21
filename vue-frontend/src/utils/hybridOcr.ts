@@ -62,7 +62,7 @@ export function normalizeHybridOcrConfig(
     }
   }
 
-  if (options?.preferRecommendedOrder && !isSupportedHybridOcrCombo(primaryEngine, hybrid.secondaryEngine)) {
+  if (options?.preferRecommendedOrder) {
     return {
       primaryEngine: RECOMMENDED_HYBRID_PRIMARY_ENGINE,
       hybrid: {

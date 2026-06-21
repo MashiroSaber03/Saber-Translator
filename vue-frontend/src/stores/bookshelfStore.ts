@@ -56,6 +56,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /** 当前选中的书籍ID（用于详情显示） */
   const currentBookId = ref<string | null>(null)
 
+  /** 批量选择模式（兼容旧的本地批量操作 API） */
+  const batchMode = ref(false)
+
+  /** 批量模式下选中的书籍 ID */
+  const selectedBookIds = ref<Set<string>>(new Set())
+
   /** 是否正在加载 */
   const isLoading = ref(false)
 
@@ -70,7 +76,21 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    * 过滤后的书籍列表
    * 【复刻原版】搜索和标签筛选完全交给后端处理，前端直接返回后端结果
    */
-  const filteredBooks = computed(() => books.value)
+  const filteredBooks = computed(() => {
+    const keyword = searchKeyword.value.trim().toLowerCase()
+    const tagFilters = selectedTagIds.value
+
+    return books.value.filter((book) => {
+      const matchesKeyword = !keyword
+        || book.title.toLowerCase().includes(keyword)
+        || Boolean(book.description?.toLowerCase().includes(keyword))
+
+      const matchesTags = tagFilters.length === 0
+        || tagFilters.every(tagId => book.tags?.includes(tagId))
+
+      return matchesKeyword && matchesTags
+    })
+  })
 
   /** 书籍总数 */
   const bookCount = computed(() => books.value.length)
@@ -92,6 +112,11 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 搜索查询（兼容旧API） */
   const searchQuery = computed(() => searchKeyword.value)
+
+  /** 是否已选中当前书籍列表中的所有书籍 */
+  const isAllSelected = computed(() =>
+    books.value.length > 0 && books.value.every(book => selectedBookIds.value.has(book.id))
+  )
 
   // ============================================================
   // 书籍管理方法
@@ -142,7 +167,29 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (expandedBookId.value === bookId) {
         expandedBookId.value = null
       }
+      if (currentBookId.value === bookId) {
+        currentBookId.value = null
+      }
+      if (selectedBookIds.value.delete(bookId)) {
+        selectedBookIds.value = new Set(selectedBookIds.value)
+      }
       console.log(`已删除书籍: ${bookId}`)
+    }
+  }
+
+  /**
+   * 批量删除书籍（本地兼容 API）
+   * @param bookIds - 要删除的书籍 ID 列表
+   */
+  function deleteBooks(bookIds: string[]): void {
+    const ids = new Set(bookIds)
+    books.value = books.value.filter(book => !ids.has(book.id))
+    selectedBookIds.value = new Set([...selectedBookIds.value].filter(bookId => !ids.has(bookId)))
+    if (expandedBookId.value && ids.has(expandedBookId.value)) {
+      expandedBookId.value = null
+    }
+    if (currentBookId.value && ids.has(currentBookId.value)) {
+      currentBookId.value = null
     }
   }
 
@@ -269,8 +316,51 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  // 【已删除冗余函数】addTagToBook 和 removeTagFromBook
-  // 原因: 现在所有标签操作都通过 updateBookApi 传递完整 tags 数组完成
+  /**
+   * 为书籍添加标签（本地兼容 API）
+   * 业务保存仍通过 updateBookApi 提交完整 tags 数组。
+   */
+  function addTagToBook(bookId: string, tagId: string): void {
+    const book = books.value.find(item => item.id === bookId)
+    if (!book) return
+
+    const currentTags = book.tags ?? []
+    if (!currentTags.includes(tagId)) {
+      book.tags = [...currentTags, tagId]
+    }
+  }
+
+  /**
+   * 从书籍移除标签（本地兼容 API）
+   */
+  function removeTagFromBook(bookId: string, tagId: string): void {
+    const book = books.value.find(item => item.id === bookId)
+    if (!book?.tags) return
+
+    book.tags = book.tags.filter(item => item !== tagId)
+  }
+
+  /**
+   * 批量添加标签（本地兼容 API）
+   */
+  function batchAddTags(bookIds: string[], tagIds: string[]): void {
+    for (const bookId of bookIds) {
+      for (const tagId of tagIds) {
+        addTagToBook(bookId, tagId)
+      }
+    }
+  }
+
+  /**
+   * 批量移除标签（本地兼容 API）
+   */
+  function batchRemoveTags(bookIds: string[], tagIds: string[]): void {
+    for (const bookId of bookIds) {
+      for (const tagId of tagIds) {
+        removeTagFromBook(bookId, tagId)
+      }
+    }
+  }
 
   // ============================================================
   // 搜索和筛选方法
@@ -330,6 +420,38 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   function setSort(by: BookSortBy, order: SortOrder = 'desc'): void {
     sortBy.value = by
     sortOrder.value = order
+  }
+
+  // ============================================================
+  // 批量选择方法（本地兼容 API）
+  // ============================================================
+
+  function enterBatchMode(): void {
+    batchMode.value = true
+  }
+
+  function exitBatchMode(): void {
+    batchMode.value = false
+    selectedBookIds.value = new Set()
+  }
+
+  function toggleBookSelection(bookId: string): void {
+    const next = new Set(selectedBookIds.value)
+    if (next.has(bookId)) {
+      next.delete(bookId)
+    } else {
+      next.add(bookId)
+    }
+    selectedBookIds.value = next
+  }
+
+  function toggleSelectAll(): void {
+    if (isAllSelected.value) {
+      selectedBookIds.value = new Set()
+      return
+    }
+
+    selectedBookIds.value = new Set(books.value.map(book => book.id))
   }
 
   // ============================================================
@@ -673,6 +795,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     tags.value = []
     searchKeyword.value = ''
     selectedTagIds.value = []
+    batchMode.value = false
+    selectedBookIds.value = new Set()
     sortBy.value = 'updatedAt'
     sortOrder.value = 'desc'
     expandedBookId.value = null
@@ -695,6 +819,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     sortOrder,
     expandedBookId,
     currentBookId,
+    batchMode,
+    selectedBookIds,
     isLoading,
     error,
 
@@ -705,12 +831,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     expandedBook,
     currentBook,
     searchQuery,
+    isAllSelected,
 
     // 书籍管理（本地）
     setBooks,
     addBook,
     updateBook,
     deleteBook,
+    deleteBooks,
     getBookById,
 
     // 章节管理（本地）
@@ -723,7 +851,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     setTags,
     addTag,
     deleteTag,
-    // 【已删除冗余】addTagToBook 和 removeTagFromBook - 现用 updateBookApi
+    addTagToBook,
+    removeTagFromBook,
+    batchAddTags,
+    batchRemoveTags,
 
     // 搜索和筛选
     setSearchKeyword,
@@ -733,6 +864,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     setTagFilter,
     clearTagFilter,
     setSort,
+    enterBatchMode,
+    exitBatchMode,
+    toggleBookSelection,
+    toggleSelectAll,
 
     // 展开/折叠
     expandBook,

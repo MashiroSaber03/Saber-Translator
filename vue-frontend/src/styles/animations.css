@@ -1,0 +1,85 @@
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 var(--animations-shadow-default);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 5px var(--animations-shadow-raised);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 var(--animations-shadow-raised);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes move {
+  0% {
+    background-position: 0 0;
+  }
+
+  100% {
+    background-position: 30px 30px;
+  }
+}
+
+@keyframes settingsHighlight {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--animations-shadow-floating);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px var(--animations-shadow-strong);
+  }
+}
+
+.settings-highlight {
+  animation: settingsHighlight 1.5s ease-in-out infinite;
+}

@@ -6,20 +6,19 @@
         <p>支持根条目与子条目，适合逐步积累设定与触发知识。</p>
       </div>
       <div class="actions">
-        <button class="secondary-btn" @click="addRootEntry">添加根条目</button>
-        <button class="ghost-btn" :disabled="importing" @click="pickWorldbook">
+        <UiButton variant="toolbar" class="action-secondary" @click="addRootEntry">添加根条目</UiButton>
+        <UiButton variant="toolbar" class="action-ghost" :disabled="importing" @click="pickWorldbook">
           {{ importing ? '导入中...' : '导入世界书' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
-    <input
+    <UiFileInput
       ref="worldbookInput"
       hidden
-      type="file"
       accept=".json"
       @change="handleWorldbookSelect"
-    >
+    />
 
     <div v-if="localEntries.length === 0" class="placeholder">暂无世界书条目。</div>
     <div v-else class="tree-list">
@@ -37,6 +36,8 @@
 </template>
 
 <script setup lang="ts">
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
 import LorebookTreeBranch from './LorebookTreeBranch.vue'
@@ -123,9 +124,9 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 .workshop-card {
   border-radius: 22px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(34, 72, 125, 0.12);
-  box-shadow: 0 18px 38px rgba(21, 44, 77, 0.08);
+  background: var(--lorebook-tree-editor-surface-base);
+  border: 1px solid var(--lorebook-tree-editor-border-default);
+  box-shadow: 0 18px 38px var(--lorebook-tree-editor-shadow-default);
 }
 
 .section-head {
@@ -141,7 +142,7 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 
 .section-head p {
   margin: 6px 0 0;
-  color: #5d738c;
+  color: var(--lorebook-tree-editor-text-primary);
   font-size: 13px;
 }
 
@@ -151,32 +152,32 @@ function moveRootEntry(index: number, offset: -1 | 1) {
   align-items: flex-start;
 }
 
-.secondary-btn,
-.ghost-btn {
+.action-secondary,
+.action-ghost {
   border: none;
   border-radius: 12px;
   padding: 10px 14px;
   cursor: pointer;
 }
 
-.secondary-btn {
-  background: rgba(41, 96, 193, 0.1);
-  color: #275ebe;
+.action-secondary {
+  background: var(--lorebook-tree-editor-surface-raised);
+  color: var(--lorebook-tree-editor-text-secondary);
 }
 
-.ghost-btn {
-  background: rgba(18, 47, 86, 0.08);
-  color: #244979;
+.action-ghost {
+  background: var(--lorebook-tree-editor-surface-muted);
+  color: var(--lorebook-tree-editor-text-muted);
 }
 
-.secondary-btn:disabled,
-.ghost-btn:disabled {
+.action-secondary:disabled,
+.action-ghost:disabled {
   opacity: 0.68;
   cursor: not-allowed;
 }
 
 .placeholder {
-  color: #72869c;
+  color: var(--lorebook-tree-editor-text-subtle);
   font-size: 13px;
 }
 
@@ -186,7 +187,7 @@ function moveRootEntry(index: number, offset: -1 | 1) {
   gap: 10px;
 }
 
-@media (max-width: 900px) {
+@media (--breakpoint-lg-down) {
   .section-head {
     flex-direction: column;
   }

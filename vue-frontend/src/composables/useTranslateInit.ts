@@ -1,6 +1,6 @@
 /**
  * 翻译页面初始化组合式函数
- * 迁移自 main.js 的 initializeApp 函数
+ * 负责翻译页面启动初始化
  * 
  * 功能：
  * - 页面加载时初始化所有设置（从 localStorage 恢复）
@@ -118,7 +118,7 @@ export function useTranslateInit() {
 
   /**
    * 初始化应用
-   * 迁移自 main.js 的 initializeApp 函数
+   * 负责翻译页面启动初始化
    * 
    * @param force - 是否强制重新初始化（用于 SPA 场景下重新进入页面）
    */
@@ -384,7 +384,7 @@ export function useTranslateInit() {
 
   /**
    * 切换显示的图片
-   * 迁移自 main.js 的 switchImage 函数
+   * 切换当前显示图片并同步页面状态
    * @param index - 要显示的图片索引
    */
   function switchImage(index: number): void {

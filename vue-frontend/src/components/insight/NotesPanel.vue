@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import './NotesPanel.global.styles.css'
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 /**
  * 笔记面板组件
  * 管理漫画分析过程中的笔记
@@ -6,8 +13,8 @@
 
 import { ref, computed } from 'vue'
 import { useInsightStore, type NoteType, type NoteData } from '@/stores/insightStore'
+import BaseModal from '@/components/common/BaseModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
-import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 /** 笔记筛选类型选项 */
 const noteFilterOptions = [
@@ -48,12 +55,6 @@ const newNotePageNum = ref<number | null>(null)
 
 /** 新笔记标签 */
 const newNoteTags = ref('')
-const {
-  overlayRef: noteModalOverlayRef,
-  handleOverlayMouseDown: handleNoteModalOverlayMouseDown,
-} = useOverlayDismiss(closeNoteModal, {
-  enabled: showNoteModal,
-})
 
 // ============================================================
 // 计算属性
@@ -222,20 +223,21 @@ function getNoteTypeIcon(type: NoteType): string {
           <span class="note-type-icon">{{ getNoteTypeIcon(note.type) }}</span>
           <span class="note-date">{{ formatDate(note.createdAt) }}</span>
           <div class="note-actions">
-            <button 
-              class="btn-icon-sm" 
-              title="编辑"
+            <UiIconButton
+              label="编辑"
+              size="sm"
               @click.stop="openEditModal(note)"
             >
               ✏️
-            </button>
-            <button 
-              class="btn-icon-sm" 
-              title="删除"
+            </UiIconButton>
+            <UiIconButton
+              label="删除"
+              variant="danger"
+              size="sm"
               @click.stop="deleteNote(note.id)"
             >
               🗑️
-            </button>
+            </UiIconButton>
           </div>
         </div>
         <div v-if="note.title" class="note-title">{{ note.title }}</div>
@@ -261,261 +263,164 @@ function getNoteTypeIcon(type: NoteType): string {
           <span v-if="note.citations.length > 3" class="citation-badge">+{{ note.citations.length - 3 }}</span>
         </div>
         <div v-if="note.pageNum" class="note-page-link">
-          <button 
+          <UiButton
+            variant="toolbar" 
             class="btn-link" 
             @click.stop="goToPage(note.pageNum)"
           >
             📄 第 {{ note.pageNum }} 页
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
     
     <!-- 添加笔记按钮 -->
-    <button 
-      class="btn btn-secondary btn-block btn-sm" 
-      @click="openNoteModal"
+    <UiButton
+      variant="secondary" 
+      class="btn-block" 
+      @click="openNoteModal" size="sm"
     >
       + 添加笔记
-    </button>
+    </UiButton>
     
-    <!-- 笔记模态框 -->
-    <div
-      v-if="showNoteModal"
-      ref="noteModalOverlayRef"
-      class="modal show"
-      @mousedown.self="handleNoteModalOverlayMouseDown"
+    <BaseModal
+      v-model="showNoteModal"
+      :title="editingNote ? '编辑笔记' : '添加笔记'"
+      size="small"
+      custom-class="notes-panel-modal"
+      @close="closeNoteModal"
     >
-      <div class="modal-content modal-sm">
-        <div class="modal-header">
-          <h3>{{ editingNote ? '编辑笔记' : '添加笔记' }}</h3>
-          <button class="modal-close" @click="closeNoteModal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <!-- 问答笔记查看模式 -->
-          <template v-if="editingNote && editingNote.type === 'qa'">
-            <div class="qa-note-view">
-              <div class="qa-section">
-                <label class="qa-label">问题</label>
-                <div class="qa-content">{{ editingNote.question }}</div>
-              </div>
-              <div class="qa-section">
-                <label class="qa-label">回答</label>
-                <div class="qa-content qa-answer">{{ editingNote.answer }}</div>
-              </div>
-              <div v-if="editingNote.citations && editingNote.citations.length > 0" class="qa-section">
-                <label class="qa-label">引用页码</label>
-                <div class="qa-citations">
-                  <span 
-                    v-for="citation in editingNote.citations" 
-                    :key="citation.page"
-                    class="qa-citation-badge"
-                    @click="goToPage(citation.page)"
-                  >
-                    第{{ citation.page }}页
-                  </span>
-                </div>
-              </div>
-              <div v-if="editingNote.comment" class="qa-section">
-                <label class="qa-label">补充说明</label>
-                <div class="qa-content">{{ editingNote.comment }}</div>
+      <template #title>
+        <span>{{ editingNote ? '编辑笔记' : '添加笔记' }}</span>
+      </template>
+
+      <div class="notes-modal-body">
+        <!-- 问答笔记查看模式 -->
+        <template v-if="editingNote && editingNote.type === 'qa'">
+          <div class="qa-note-view">
+            <div class="qa-section">
+              <label class="qa-label">问题</label>
+              <div class="qa-content">{{ editingNote.question }}</div>
+            </div>
+            <div class="qa-section">
+              <label class="qa-label">回答</label>
+              <div class="qa-content qa-answer">{{ editingNote.answer }}</div>
+            </div>
+            <div v-if="editingNote.citations && editingNote.citations.length > 0" class="qa-section">
+              <label class="qa-label">引用页码</label>
+              <div class="qa-citations">
+                <span 
+                  v-for="citation in editingNote.citations" 
+                  :key="citation.page"
+                  class="qa-citation-badge"
+                  @click="goToPage(citation.page)"
+                >
+                  第{{ citation.page }}页
+                </span>
               </div>
             </div>
-            <div class="form-group">
-              <label>笔记标题 <span class="label-optional">(可选)</span></label>
-              <input 
-                v-model="newNoteTitle" 
-                type="text" 
-                class="form-input"
-                placeholder="修改标题..."
-              >
+            <div v-if="editingNote.comment" class="qa-section">
+              <label class="qa-label">补充说明</label>
+              <div class="qa-content">{{ editingNote.comment }}</div>
             </div>
-          </template>
-          <!-- 文本笔记编辑模式 -->
-          <template v-else>
-            <div class="form-group">
-              <label>笔记类型</label>
-              <CustomSelect
-                v-model="newNoteType"
-                :options="noteTypeOptions"
-              />
-            </div>
-            <div class="form-group">
-              <label>标题 <span class="label-optional">(可选)</span></label>
-              <input 
-                v-model="newNoteTitle" 
-                type="text" 
-                class="form-input"
-                placeholder="给笔记起个标题..."
-              >
-            </div>
-            <div class="form-group">
-              <label>内容 <span class="label-required">*</span></label>
-              <textarea 
-                v-model="newNoteContent"
-                class="form-textarea"
-                rows="5"
-                placeholder="写下你的想法..."
-              ></textarea>
-            </div>
-            <div class="form-group">
-              <label>关联页码 <span class="label-optional">(可选)</span></label>
-              <input 
-                v-model.number="newNotePageNum" 
-                type="number" 
-                class="form-input"
-                placeholder="输入页码"
-                min="1"
-              >
-            </div>
-            <div class="form-group">
-              <label>标签 <span class="label-optional">(可选)</span></label>
-              <input 
-                v-model="newNoteTags" 
-                type="text" 
-                class="form-input"
-                placeholder="多个标签用逗号分隔，如: 角色,剧情"
-              >
-            </div>
-          </template>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeNoteModal">取消</button>
-          <button 
-            class="btn btn-primary" 
-            :disabled="editingNote?.type !== 'qa' && !newNoteContent.trim()"
-            @click="saveNote"
-          >
-            保存
-          </button>
-        </div>
+          </div>
+          <div class="notes-panel__field">
+            <label>笔记标题 <span class="label-optional">(可选)</span></label>
+            <UiInput 
+              v-model="newNoteTitle" 
+              type="text" 
+              class="notes-panel__form-input"
+              placeholder="修改标题..."
+            />
+          </div>
+        </template>
+        <!-- 文本笔记编辑模式 -->
+        <template v-else>
+          <div class="notes-panel__field">
+            <label>笔记类型</label>
+            <CustomSelect
+              v-model="newNoteType"
+              :options="noteTypeOptions"
+            />
+          </div>
+          <div class="notes-panel__field">
+            <label>标题 <span class="label-optional">(可选)</span></label>
+            <UiInput 
+              v-model="newNoteTitle" 
+              type="text" 
+              class="notes-panel__form-input"
+              placeholder="给笔记起个标题..."
+            />
+          </div>
+          <div class="notes-panel__field">
+            <label>内容 <span class="label-required">*</span></label>
+            <UiTextarea 
+              v-model="newNoteContent"
+              class="notes-panel__form-textarea"
+              rows="5"
+              placeholder="写下你的想法..."
+            />
+          </div>
+          <div class="notes-panel__field">
+            <label>关联页码 <span class="label-optional">(可选)</span></label>
+            <UiInput 
+              v-model.number="newNotePageNum" 
+              type="number" 
+              class="notes-panel__form-input"
+              placeholder="输入页码"
+              min="1"
+            />
+          </div>
+          <div class="notes-panel__field">
+            <label>标签 <span class="label-optional">(可选)</span></label>
+            <UiInput 
+              v-model="newNoteTags" 
+              type="text" 
+              class="notes-panel__form-input"
+              placeholder="多个标签用逗号分隔，如: 角色,剧情"
+            />
+          </div>
+        </template>
       </div>
-    </div>
+
+      <template #footer>
+        <UiButton variant="secondary" @click="closeNoteModal">取消</UiButton>
+        <UiButton
+          variant="primary" 
+          :disabled="editingNote?.type !== 'qa' && !newNoteContent.trim()"
+          @click="saveNote"
+        >
+          保存
+        </UiButton>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
-<style scoped>
-/* ==================== NotesPanel 完整样式 ==================== */
-
-/* ==================== CSS变量 ==================== */
-.workspace-section {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-}
+<style scoped>/* ==================== NotesPanel样式 ==================== */
 
 /* ==================== 工作区通用样式 ==================== */
-.workspace-section {
+.notes-section .workspace-section {
   padding: 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
-.section-title {
+.workspace-section.notes-section {
+  padding: 20px 18px;
+}
+
+.notes-section .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin-bottom: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* ==================== 模态框样式 ==================== */
-.modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  align-items: center;
-  justify-content: center;
-}
-
-.modal.show {
-  display: flex;
-}
-
-.modal-content {
-  position: relative;
-  background: var(--bg-primary);
-  border-radius: 16px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 50px rgb(0, 0, 0, 0.3);
-}
-
-.modal-content.modal-sm {
-  max-width: 450px;
-}
-
-.modal-content.modal-lg {
-  max-width: 700px;
-}
-
-.modal-header {
-  padding: 20px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.modal-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.modal-close {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.modal-body {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-footer {
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
 /* ==================== 按钮样式 ==================== */
-.btn {
+.notes-section .ui-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -530,248 +435,234 @@ function getNoteTypeIcon(type: NoteType): string {
   text-decoration: none;
 }
 
-.btn-primary {
-  background: var(--color-primary);
+.notes-section .ui-button--primary {
+  background: var(--insight-color-primary);
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-dark);
-}
-
-.btn-primary:disabled {
+.notes-section .ui-button--primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
+.notes-section .ui-button--primary:hover:not(:disabled) {
+  background: var(--insight-primary-dark);
 }
 
-.btn-secondary:hover {
-  background: var(--border-color);
+.notes-section .ui-button--secondary {
+  background: var(--insight-bg-tertiary);
+  color: var(--insight-text-primary);
+  border: 1px solid var(--color-border-muted);
 }
 
-.btn-block {
+.notes-section .ui-button--secondary:hover {
+  background: var(--color-border-muted);
+}
+
+.notes-section .btn-block {
   width: 100%;
 }
 
-.btn-sm {
+.notes-section .ui-button--sm {
   padding: 8px 14px;
   font-size: 13px;
 }
 
 /* ==================== 表单样式 ==================== */
-.form-group {
+.notes-section .notes-panel__field {
   margin-bottom: 16px;
 }
 
-.form-group label {
+.notes-section .notes-panel__field label {
   display: block;
   margin-bottom: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea,
-.form-input,
-.form-textarea {
+.notes-section .notes-panel__field input,
+.notes-section .notes-panel__field select,
+.notes-section .notes-panel__field textarea,
+.notes-section .notes-panel__form-input,
+.notes-section .notes-panel__form-textarea {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--insight-bg-primary);
+  color: var(--insight-text-primary);
   transition: border-color 0.2s;
 }
 
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus,
-.form-input:focus,
-.form-textarea:focus {
+.notes-section .notes-panel__form-input,
+.notes-section .notes-panel__form-textarea {
+  line-height: normal;
+}
+
+.notes-section .notes-panel__field input:focus,
+.notes-section .notes-panel__field select:focus,
+.notes-section .notes-panel__field textarea:focus,
+.notes-section .notes-panel__form-input:focus,
+.notes-section .notes-panel__form-textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--insight-color-primary);
 }
 
 /* ==================== 通用组件 ==================== */
-.placeholder-text {
-  color: var(--text-muted);
+.notes-section .placeholder-text {
+  color: var(--insight-text-muted);
   text-align: center;
   padding: 20px;
   font-size: 14px;
 }
 
 /* ==================== 组件特定样式 ==================== */
-.label-optional {
+.notes-section .label-optional {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   font-weight: normal;
 }
 
-.label-required {
-  color: var(--error-color, #ef4444);
+.notes-section .label-required {
+  color: var(--color-status-error, var(--notes-panel-text-primary));
   font-weight: normal;
 }
 
-.note-item {
+.notes-section .note-item {
   padding: 12px;
   border-radius: 8px;
-  background-color: var(--bg-secondary);
+  background-color: var(--insight-bg-secondary);
   margin-bottom: 8px;
 }
 
-.note-header {
+.notes-section .note-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
 
-.note-type-icon {
+.notes-section .note-type-icon {
   font-size: 14px;
 }
 
-.note-date {
+.notes-section .note-date {
   flex: 1;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
 }
 
-.note-actions {
+.notes-section .note-actions {
   display: flex;
   gap: 4px;
   margin-left: auto;
 }
 
-.note-actions .btn-icon-sm {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.note-actions .btn-icon-sm:hover {
-  background: var(--bg-tertiary);
-  border-color: var(--color-primary);
-}
-
-.note-title {
+.notes-section .note-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
   margin-bottom: 6px;
 }
 
-.note-content {
+.notes-section .note-content {
   font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
 }
 
-.note-tags {
+.notes-section .note-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
 }
 
-.note-tag {
+.notes-section .note-tag {
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
-  background: var(--primary-light, rgb(99, 102, 241, 0.1));
-  color: var(--color-primary, #6366f1);
+  background: var(--color-focus-brand-soft);
+  color: var(--color-action-primary, var(--color-text-brand));
   border-radius: 12px;
 }
 
-.note-page-link {
+.notes-section .note-page-link {
   margin-top: 8px;
 }
 
-.btn-link {
+.notes-section .btn-link {
   background: none;
   border: none;
-  color: var(--primary);
+  color: var(--insight-primary);
   cursor: pointer;
   font-size: 12px;
   padding: 0;
 }
 
-.btn-link:hover {
+.notes-section .btn-link:hover {
   text-decoration: underline;
 }
 
-/* ==================== 笔记面板完整样式 - 从 manga-insight.css 迁移 ==================== */
+/* ==================== 笔记面板样式 ==================== */
 
-.notes-list {
+.notes-section .notes-list {
     max-height: 300px;
     overflow-y: auto;
     margin-bottom: 12px;
 }
 
-.note-item {
+.notes-section .note-item {
     padding: 12px;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 8px;
     margin-bottom: 10px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
-.note-item:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 2px 8px rgb(99, 102, 241, 0.1);
+.notes-section .note-item:hover {
+    border-color: var(--insight-color-primary);
+    box-shadow: 0 2px 8px var(--color-focus-brand-soft);
 }
 
-.note-item.qa-note {
-    border-left: 3px solid var(--color-primary);
+.notes-section .note-item.qa-note {
+    border-left: 3px solid var(--insight-color-primary);
 }
 
-.note-item.text-note {
-    border-left: 3px solid var(--success-color);
+.notes-section .note-item.text-note {
+    border-left: 3px solid var(--insight-success-color);
 }
 
-.note-header {
+.notes-section .note-header {
     display: flex;
     align-items: flex-start;
     gap: 8px;
     margin-bottom: 8px;
 }
 
-.note-type-badge {
+.notes-section .note-type-badge {
     font-size: 16px;
     flex-shrink: 0;
 }
 
-.note-title {
+.notes-section .note-title {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.note-preview {
+.notes-section .note-preview {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     line-height: 1.5;
     margin-bottom: 8px;
     display: -webkit-box;
@@ -781,209 +672,209 @@ function getNoteTypeIcon(type: NoteType): string {
     overflow: hidden;
 }
 
-.note-tags {
+.notes-section .note-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     margin-bottom: 8px;
 }
 
-.note-tag {
+.notes-section .note-tag {
     font-size: 11px;
     padding: 2px 6px;
-    background: var(--color-primary);
+    background: var(--insight-color-primary);
     color: white;
     border-radius: 10px;
     opacity: 0.8;
 }
 
-.note-meta {
+.notes-section .note-meta {
     font-size: 11px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
-.note-meta-left {
+.notes-section .note-meta-left {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.note-page-ref {
-    color: var(--color-primary);
+.notes-section .note-page-ref {
+    color: var(--insight-color-primary);
     cursor: pointer;
 }
 
-.note-page-ref:hover {
+.notes-section .note-page-ref:hover {
     text-decoration: underline;
 }
 
-.btn-delete-note {
+.notes-section .btn-delete-note {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-size: 14px;
     padding: 2px 6px;
     border-radius: 4px;
     transition: all 0.2s;
 }
 
-.btn-delete-note:hover {
-    color: var(--error-color);
-    background: rgb(239, 68, 68, 0.1);
+.notes-section .btn-delete-note:hover {
+    color: var(--insight-error-color);
+    background: var(--notes-panel-surface-base);
 }
 
-.section-header-with-actions {
+.notes-section .section-header-with-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
 }
 
-.section-header-with-actions .section-title {
+.notes-section .section-header-with-actions .section-title {
     margin: 0;
 }
 
-.notes-filter-select {
+.notes-section .notes-filter-select {
     padding: 4px 8px;
     font-size: 12px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 4px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-primary);
     cursor: pointer;
 }
 
-.note-detail-content {
+.notes-section .note-detail-content {
     padding: 0;
 }
 
-.note-detail-header {
+.notes-section .note-detail-header {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 16px;
     padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-muted);
 }
 
-.note-detail-type-icon {
+.notes-section .note-detail-type-icon {
     font-size: 32px;
 }
 
-.note-detail-info {
+.notes-section .note-detail-info {
     flex: 1;
 }
 
-.note-detail-title {
+.notes-section .note-detail-title {
     font-size: 18px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     margin-bottom: 4px;
 }
 
-.note-detail-meta {
+.notes-section .note-detail-meta {
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.note-detail-body {
+.notes-section .note-detail-body {
     margin-bottom: 16px;
 }
 
-.note-detail-section {
+.notes-section .note-detail-section {
     margin-bottom: 20px;
 }
 
-.note-detail-section-title {
+.notes-section .note-detail-section-title {
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 8px;
 }
 
-.note-detail-text {
+.notes-section .note-detail-text {
     font-size: 14px;
     line-height: 1.7;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
     white-space: pre-wrap;
 }
 
-.note-detail-qa-section {
-    background: var(--bg-tertiary);
+.notes-section .note-detail-qa-section {
+    background: var(--insight-bg-tertiary);
     border-radius: 8px;
     padding: 12px;
     margin-bottom: 12px;
 }
 
-.note-detail-qa-label {
+.notes-section .note-detail-qa-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-primary);
+    color: var(--insight-color-primary);
     margin-bottom: 6px;
 }
 
-.note-detail-qa-content {
+.notes-section .note-detail-qa-content {
     font-size: 14px;
     line-height: 1.6;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
 }
 
-.note-detail-tags {
+.notes-section .note-detail-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
 
-.note-detail-tag {
+.notes-section .note-detail-tag {
     padding: 4px 10px;
-    background: var(--color-primary);
+    background: var(--insight-color-primary);
     color: white;
     border-radius: 12px;
     font-size: 12px;
 }
 
-.note-detail-page-link {
+.notes-section .note-detail-page-link {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 6px 12px;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 8px;
-    color: var(--color-primary);
+    color: var(--insight-color-primary);
     font-size: 13px;
     cursor: pointer;
     transition: background 0.2s;
 }
 
-.note-detail-page-link:hover {
-    background: var(--bg-secondary);
+.notes-section .note-detail-page-link:hover {
+    background: var(--insight-bg-secondary);
 }
 
 /* 问答笔记预览样式 */
-.qa-preview-text {
+.notes-section .qa-preview-text {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-style: italic;
 }
 
 /* 引用页码标签 */
-.note-citations {
+.notes-section .note-citations {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 8px;
 }
 
-.citation-badge {
+.notes-section .citation-badge {
     display: inline-block;
     padding: 2px 8px;
-    background: var(--color-primary);
+    background: var(--insight-color-primary);
     color: white;
     border-radius: 10px;
     font-size: 11px;
@@ -991,61 +882,61 @@ function getNoteTypeIcon(type: NoteType): string {
     transition: opacity 0.2s;
 }
 
-.citation-badge:hover {
+.notes-section .citation-badge:hover {
     opacity: 0.8;
 }
 
 /* 问答笔记查看模式 */
-.qa-note-view {
-    background: var(--bg-tertiary);
+.notes-section .qa-note-view {
+    background: var(--insight-bg-tertiary);
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 16px;
 }
 
-.qa-section {
+.notes-section .qa-section {
     margin-bottom: 16px;
 }
 
-.qa-section:last-child {
+.notes-section .qa-section:last-child {
     margin-bottom: 0;
 }
 
-.qa-label {
+.notes-section .qa-label {
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 8px;
 }
 
-.qa-content {
+.notes-section .qa-content {
     font-size: 14px;
     line-height: 1.6;
-    color: var(--text-primary);
-    background: var(--bg-secondary);
+    color: var(--insight-text-primary);
+    background: var(--insight-bg-secondary);
     padding: 12px;
     border-radius: 8px;
 }
 
-.qa-answer {
+.notes-section .qa-answer {
     max-height: 200px;
     overflow-y: auto;
 }
 
-.qa-citations {
+.notes-section .qa-citations {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.qa-citation-badge {
+.notes-section .qa-citation-badge {
     display: inline-flex;
     align-items: center;
     padding: 4px 10px;
-    background: var(--color-primary);
+    background: var(--insight-color-primary);
     color: white;
     border-radius: 12px;
     font-size: 12px;
@@ -1054,7 +945,7 @@ function getNoteTypeIcon(type: NoteType): string {
     transition: opacity 0.2s;
 }
 
-.qa-citation-badge:hover {
+.notes-section .qa-citation-badge:hover {
     opacity: 0.8;
 }
 </style>

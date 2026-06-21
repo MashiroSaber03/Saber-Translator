@@ -8,19 +8,19 @@
         <span class="script-meta">共 {{ script.page_count }} 页 · {{ script.generated_at }}</span>
       </div>
 
-      <textarea
+      <UiTextarea
         v-model="scriptText"
         class="script-textarea"
         rows="15"
         placeholder="脚本将在此显示..."
-        @input="handleScriptInput"
-      ></textarea>
+        @update:model-value="handleScriptInput"
+      />
 
       <div class="script-actions">
-        <button class="btn secondary small" @click="$emit('reset-script')">↺ 重置</button>
-        <button class="btn secondary small" :disabled="!script || isSaving" @click="handleSave">
+        <UiButton variant="secondary" @click="$emit('reset-script')" size="sm">↺ 重置</UiButton>
+        <UiButton variant="secondary" :disabled="!script || isSaving" @click="handleSave" size="sm">
           {{ isSaving ? '保存中...' : '💾 保存' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -32,29 +32,31 @@
     <div class="reference-config">
       <div class="config-row">
         <label>VLM参考图数:</label>
-        <input
+        <UiInput
           type="number"
           v-model.number="refCount"
           min="1"
           max="10"
           class="ref-count-input"
         />
-        <button
-          class="btn secondary small ref-btn"
-          @click="openReferenceSelector"
+        <UiButton
+          variant="secondary"
+          class="ref-btn"
+          @click="openReferenceSelector" size="sm"
         >
           📷 参考图 ({{ getDisplayRefCount() }})
-        </button>
+        </UiButton>
       </div>
     </div>
 
-    <button
-      class="btn primary"
+    <UiButton
+      variant="primary"
+     
       :disabled="isGenerating"
       @click="handleGenerate"
     >
       {{ isGenerating ? '生成中...' : '🎯 生成脚本' }}
-    </button>
+    </UiButton>
 
     <!-- 参考图选择器 -->
     <ReferenceImageSelector
@@ -72,6 +74,9 @@
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, watch } from 'vue'
 import type { ChapterScript, MangaImageInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
@@ -156,8 +161,8 @@ function handleGenerate() {
   })
 }
 
-function handleScriptInput() {
-  emit('update-script', scriptText.value)
+function handleScriptInput(value: string) {
+  emit('update-script', value)
 }
 
 function handleSave() {
@@ -208,13 +213,13 @@ watch(() => props.bookId, (newBookId) => {
 
 .script-meta {
   font-size: 13px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .script-textarea {
   width: 100%;
   padding: 16px;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 8px;
   font-family: inherit;
   font-size: 14px;
@@ -224,7 +229,7 @@ watch(() => props.bookId, (newBookId) => {
 
 .script-textarea:focus {
   outline: none;
-  border-color: var(--primary, #6366f1);
+  border-color: var(--color-border-brand);
 }
 
 .script-actions {
@@ -234,7 +239,7 @@ watch(() => props.bookId, (newBookId) => {
 .no-script {
   text-align: center;
   padding: 40px 20px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .no-script p {
@@ -245,7 +250,7 @@ watch(() => props.bookId, (newBookId) => {
 .reference-config {
   margin-bottom: 16px;
   padding: 12px 16px;
-  background: var(--bg-secondary, #f5f5f5);
+  background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
@@ -257,14 +262,14 @@ watch(() => props.bookId, (newBookId) => {
 
 .config-row label {
   font-size: 14px;
-  color: var(--text-primary, #333);
+  color: var(--color-text-default, var(--color-text-default));
   white-space: nowrap;
 }
 
 .ref-count-input {
   width: 60px;
   padding: 6px 10px;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 6px;
   font-size: 14px;
   text-align: center;
@@ -272,14 +277,14 @@ watch(() => props.bookId, (newBookId) => {
 
 .ref-count-input:focus {
   outline: none;
-  border-color: var(--primary, #6366f1);
+  border-color: var(--color-border-brand);
 }
 
 .ref-btn {
   margin-left: auto;
 }
 
-.btn {
+.ui-button {
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
@@ -290,31 +295,31 @@ watch(() => props.bookId, (newBookId) => {
   width: 100%;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
 }
 
-.btn.primary:hover:not(:disabled) {
-  background: var(--primary-dark, #4f46e5);
-}
-
-.btn.primary:disabled {
+.ui-button--primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn.secondary {
-  background: var(--bg-secondary, #f3f4f6);
-  color: var(--text-primary, #333);
-  border: 1px solid var(--border-color, #e0e0e0);
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--color-surface-brand-strong);
 }
 
-.btn.secondary:hover {
-  background: var(--bg-hover, #e5e7eb);
+.ui-button--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.btn.small {
+.ui-button--secondary:hover {
+  background: var(--color-surface-hover);
+}
+
+.ui-button--sm {
   padding: 6px 12px;
   font-size: 13px;
   width: auto;

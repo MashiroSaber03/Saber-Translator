@@ -32,7 +32,7 @@ export interface BubbleActionCallbacks {
 
 /**
  * 确保坐标为整数格式（后端 OpenCV 需要整数坐标）
- * 【复刻原版】原版坐标始终是整数，这里作为防御性转换
+ * 后端渲染接口要求整数坐标，这里作为防御性转换
  */
 function normalizeCoords(coords: BubbleCoords): BubbleCoords {
   return [
@@ -188,7 +188,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   }
 
   // ============================================================
-  // 延迟渲染机制（类似原版的triggerDelayedPreview）
+  // 延迟渲染机制
   // ============================================================
 
   /** 延迟渲染计时器 */
@@ -275,7 +275,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   /** 处理气泡更新（带延迟渲染） */
   function handleBubbleUpdate(updates: Partial<BubbleState>): void {
     bubbleStore.updateSelectedBubble(updates)
-    // 触发延迟渲染预览（类似原版的triggerDelayedPreview）
+    // 触发延迟渲染预览。
     triggerDelayedPreview()
   }
 
@@ -284,7 +284,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     if (hasSelection.value) {
       bubbleStore.deleteSelected()
       console.log('已删除选中的气泡')
-      // 删除后触发重新渲染（原版逻辑）
+      // 删除后触发重新渲染。
       callbacks?.onReRender?.()
     }
   }
@@ -329,7 +329,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       const isLamaMethod = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
 
       if (isLamaMethod) {
-        // 确定 LAMA 模型类型（与原版逻辑一致）
+        // 根据当前修复方式确定 LAMA 模型类型。
         const lamaModel = inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe'
 
         // 确保坐标为整数（后端 OpenCV 需要）
@@ -510,12 +510,12 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         settings.ocrEngine || 'manga_ocr',
         {
           source_language: ocrSourceLanguage,
-          // 百度 OCR 参数（复刻原版 edit_mode.js）
+          // 百度 OCR 请求参数
           baidu_ocr_api_key: settings.baiduOcr.apiKey,
           baidu_ocr_secret_key: settings.baiduOcr.secretKey,
           baidu_version: settings.baiduOcr.version,
           baidu_source_language: settings.baiduOcr.sourceLanguage,
-          // AI 视觉 OCR 参数（复刻原版 edit_mode.js）
+          // AI 视觉 OCR 请求参数
           ai_vision_provider: normalizeProviderId(settings.aiVisionOcr.provider),
           ai_vision_api_key: settings.aiVisionOcr.apiKey,
           ai_vision_model_name: settings.aiVisionOcr.modelName,

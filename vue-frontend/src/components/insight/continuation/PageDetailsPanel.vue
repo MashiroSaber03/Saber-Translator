@@ -6,13 +6,14 @@
 
     <div v-if="pages.length === 0" class="empty-state">
       <p>尚未生成页面剧情</p>
-      <button
-        class="btn primary"
+      <UiButton
+        variant="primary"
+       
         :disabled="isGenerating"
         @click="$emit('generate-details')"
       >
         {{ isGenerating ? '生成中...' : '🎯 生成页面剧情' }}
-      </button>
+      </UiButton>
     </div>
 
     <div v-else class="pages-list">
@@ -25,54 +26,57 @@
         <div class="page-fields">
           <div class="page-field">
             <label>上一页剧情承接：</label>
-            <textarea
+            <UiTextarea
               v-model="page.continuity_text"
               rows="3"
               class="field-input"
               @input="$emit('story-change', page.page_number)"
-            ></textarea>
+            />
           </div>
 
           <div class="page-field">
             <label>本页剧情：</label>
-            <textarea
+            <UiTextarea
               v-model="page.story_text"
               rows="4"
               class="field-input"
               @input="$emit('story-change', page.page_number)"
-            ></textarea>
+            />
           </div>
 
           <div class="page-field">
             <label>关键对白：</label>
-            <textarea
+            <UiTextarea
               v-model="page.dialogue_text"
               rows="3"
               class="field-input"
               @input="$emit('story-change', page.page_number)"
-            ></textarea>
+            />
           </div>
 
           <div class="page-field">
             <label>角色（逗号分隔）：</label>
-            <input
+            <UiInput
               :value="page.characters.join(', ')"
               @input="updateCharacters(page, $event)"
               type="text"
               class="field-input"
-            >
+            />
           </div>
         </div>
       </div>
 
       <div class="page-actions">
-        <button class="btn secondary" @click="$emit('save-changes')">💾 保存修改</button>
+        <UiButton variant="secondary" @click="$emit('save-changes')">💾 保存修改</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { PageContent } from '@/api/continuation'
 
 defineProps<{
@@ -125,7 +129,7 @@ function getStatusText(status: string): string {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .empty-state p {
@@ -140,9 +144,9 @@ function getStatusText(status: string): string {
 
 .page-card {
   padding: 16px;
-  background: var(--bg-secondary, #f5f5f5);
+  background: var(--color-surface-subtle);
   border-radius: 12px;
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
 .page-header {
@@ -165,23 +169,23 @@ function getStatusText(status: string): string {
 }
 
 .page-status.pending {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--page-details-panel-surface-base);
+  color: var(--page-details-panel-text-primary);
 }
 
 .page-status.generating {
-  background: #dbeafe;
-  color: #1e40af;
+  background: var(--page-details-panel-surface-raised);
+  color: var(--page-details-panel-text-secondary);
 }
 
 .page-status.generated {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--page-details-panel-surface-muted);
+  color: var(--page-details-panel-text-muted);
 }
 
 .page-status.failed {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--page-details-panel-surface-subtle);
+  color: var(--page-details-panel-text-subtle);
 }
 
 .page-fields {
@@ -199,7 +203,7 @@ function getStatusText(status: string): string {
 .field-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
@@ -207,7 +211,7 @@ function getStatusText(status: string): string {
 
 .field-input:focus {
   outline: none;
-  border-color: var(--primary, #6366f1);
+  border-color: var(--color-border-brand);
 }
 
 .page-actions {
@@ -215,7 +219,7 @@ function getStatusText(status: string): string {
   text-align: center;
 }
 
-.btn {
+.ui-button {
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
@@ -225,23 +229,23 @@ function getStatusText(status: string): string {
   transition: all 0.2s;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
 }
 
-.btn.primary:hover:not(:disabled) {
-  background: var(--primary-dark, #4f46e5);
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--color-surface-brand-strong);
 }
 
-.btn.secondary {
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #333);
-  border: 1px solid var(--border-color, #ddd);
+.ui-button--secondary {
+  background: var(--color-surface-base);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
 }
 
-.btn.secondary:hover:not(:disabled) {
-  border-color: var(--primary, #6366f1);
-  color: var(--primary, #6366f1);
+.ui-button--secondary:hover:not(:disabled) {
+  border-color: var(--color-border-brand);
+  color: var(--color-text-brand);
 }
 </style>

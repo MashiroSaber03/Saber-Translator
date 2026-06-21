@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+import AppShell from '@/components/ui/AppShell.vue'
 /**
  * 阅读器页面视图组件
  * 提供翻译后漫画的阅读体验，支持原图/翻译图切换和阅读设置
@@ -190,53 +192,55 @@ watch(
 </script>
 
 <template>
-  <div class="reader-page">
+  <AppShell class="reader-page">
     <!-- 阅读器头部 -->
     <header class="reader-header">
-      <div class="header-left">
-        <button id="backBtn" class="header-btn" title="返回书架" @click="goBack">
-          <span class="btn-icon">←</span>
-          <span class="btn-text">返回</span>
-        </button>
+      <div class="reader-header__left">
+        <UiButton variant="toolbar" id="backBtn" class="reader-header__button" title="返回书架" @click="goBack">
+          <span class="reader-header__button-icon">←</span>
+          <span class="reader-header__button-text">返回</span>
+        </UiButton>
         <div class="book-info">
-          <span id="bookTitle" class="book-title">{{ bookInfo?.title || '加载中...' }}</span>
+          <span id="bookTitle" class="reader-header__book-title">{{ bookInfo?.title || '加载中...' }}</span>
           <span class="separator">·</span>
           <span id="chapterTitle" class="chapter-title">{{ currentChapterInfo?.title || '-' }}</span>
         </div>
       </div>
-      <div class="header-center">
+      <div class="reader-header__center">
         <span id="pageInfo" class="page-info">{{ currentPage }} / {{ imagesData.length || '-' }}</span>
       </div>
-      <div class="header-right">
+      <div class="reader-header__right">
         <div class="view-mode-toggle">
-          <button 
+          <UiButton
+            variant="toolbar" 
             id="viewOriginalBtn" 
-            class="mode-btn" 
+            class="reader-header__mode-button" 
             :class="{ active: currentViewMode === 'original' }"
             data-mode="original" 
             title="查看原图"
             @click="setViewMode('original')"
           >
             原图
-          </button>
-          <button 
+          </UiButton>
+          <UiButton
+            variant="toolbar" 
             id="viewTranslatedBtn" 
-            class="mode-btn" 
+            class="reader-header__mode-button" 
             :class="{ active: currentViewMode === 'translated' }"
             data-mode="translated" 
             title="查看翻译"
             @click="setViewMode('translated')"
           >
             翻译
-          </button>
+          </UiButton>
         </div>
-        <button id="settingsBtn" class="header-btn" title="阅读设置" @click="openSettings">
-          <span class="btn-icon">⚙️</span>
-        </button>
-        <button id="translateBtn" class="header-btn primary" title="进入翻译页面" @click="goToTranslate">
-          <span class="btn-icon">✏️</span>
-          <span class="btn-text">翻译</span>
-        </button>
+        <UiButton variant="toolbar" id="settingsBtn" class="reader-header__button" title="阅读设置" @click="openSettings">
+          <span class="reader-header__button-icon">⚙️</span>
+        </UiButton>
+        <UiButton variant="primary" id="translateBtn" class="reader-header__button reader-header__button--primary" title="进入翻译页面" @click="goToTranslate">
+          <span class="reader-header__button-icon">✏️</span>
+          <span class="reader-header__button-text">翻译</span>
+        </UiButton>
       </div>
     </header>
 
@@ -260,19 +264,18 @@ watch(
       @navigate-chapter="navigateChapter"
       @settings-change="handleSettingsChange"
     />
-  </div>
+  </AppShell>
 </template>
 
 <style scoped>
-/* 阅读页面样式 - 完整迁移自 reader.css */
+/* 阅读页面样式 - 当前样式 */
 
 /* ==================== 页面容器样式 ==================== */
 .reader-page {
-    margin: 0;
+    width: calc(100% - 40px);
+    margin: 0 20px;
     padding: 0;
-
-    /* 优先使用阅读器设置的背景色 */
-    background: var(--reader-bg-color, #1a1a2e);
+    background: var(--reader-page-background, var(--reader-view-surface-base));
     min-height: 100vh;
     overflow-x: hidden;
 }
@@ -284,34 +287,34 @@ watch(
     left: 0;
     right: 0;
     height: 56px;
-    background: var(--header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+    background: var(--header-bg, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
     z-index: var(--z-overlay);
-    box-shadow: 0 2px 10px rgb(0, 0, 0, 0.2);
+    box-shadow: 0 2px 10px var(--reader-view-shadow-default);
 }
 
-.header-left,
-.header-right {
+.reader-header__left,
+.reader-header__right {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.header-center {
+.reader-header__center {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
 }
 
-.header-btn {
+.reader-header__button {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: rgb(255, 255, 255, 0.15);
+    background: var(--reader-view-surface-raised);
     border: none;
     border-radius: 8px;
     color: white;
@@ -320,20 +323,20 @@ watch(
     transition: all 0.2s;
 }
 
-.header-btn:hover {
-    background: rgb(255, 255, 255, 0.25);
+.reader-header__button:hover {
+    background: var(--reader-view-surface-muted);
 }
 
-.header-btn.primary {
-    background: rgb(255, 255, 255, 0.9);
-    color: #667eea;
+.reader-header__button--primary {
+    background: var(--reader-view-surface-subtle);
+    color: var(--reader-view-text-primary);
 }
 
-.header-btn.primary:hover {
+.reader-header__button--primary:hover {
     background: white;
 }
 
-.btn-icon {
+.reader-header__button-icon {
     font-size: 16px;
 }
 
@@ -345,7 +348,7 @@ watch(
     font-size: 14px;
 }
 
-.book-title {
+.reader-header__book-title {
     font-weight: 600;
     max-width: 200px;
     white-space: nowrap;
@@ -374,38 +377,38 @@ watch(
 /* 查看模式切换 */
 .view-mode-toggle {
     display: flex;
-    background: rgb(255, 255, 255, 0.15);
+    background: var(--reader-view-surface-raised);
     border-radius: 8px;
     overflow: hidden;
 }
 
-.mode-btn {
+.reader-header__mode-button {
     padding: 8px 16px;
     background: transparent;
     border: none;
-    color: rgb(255, 255, 255, 0.7);
+    color: var(--reader-view-text-secondary);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.mode-btn:hover {
+.reader-header__mode-button:hover {
     color: white;
 }
 
-.mode-btn.active {
-    background: rgb(255, 255, 255, 0.9);
-    color: #667eea;
+.reader-header__mode-button.active {
+    background: var(--reader-view-surface-subtle);
+    color: var(--reader-view-text-primary);
     font-weight: 500;
 }
 
 /* ==================== 响应式设计 ==================== */
-@media (width <= 768px) {
-    .header-btn .btn-text {
+@media (--breakpoint-md-down) {
+    .reader-header__button .reader-header__button-text {
         display: none;
     }
     
-    .book-title {
+    .reader-header__book-title {
         max-width: 120px;
     }
     
@@ -413,17 +416,17 @@ watch(
         max-width: 80px;
     }
     
-    .header-center {
+    .reader-header__center {
         display: none;
     }
     
-    .mode-btn {
+    .reader-header__mode-button {
         padding: 8px 12px;
         font-size: 12px;
     }
 }
 
-@media (width <= 480px) {
+@media (--breakpoint-xs-down) {
     .reader-header {
         padding: 0 8px;
     }

@@ -19,7 +19,8 @@
     <!-- Tab 导航 + 内容区域（都放在 body slot 中） -->
     <!-- Tab 导航 -->
     <div class="settings-tabs">
-      <button
+      <UiButton
+        variant="toolbar"
         v-for="tab in tabs"
         :key="tab.id"
         class="settings-tab"
@@ -27,7 +28,7 @@
         @click="activeTab = tab.id"
       >
         {{ tab.label }}
-      </button>
+      </UiButton>
     </div>
 
     <!-- Tab 内容 -->
@@ -80,13 +81,14 @@
 
     <!-- 底部按钮 -->
     <template #footer>
-      <button class="btn btn-secondary" @click="handleClose">取消</button>
-      <button class="btn btn-primary" @click="handleSave">保存设置</button>
+      <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+      <UiButton variant="primary" @click="handleSave">保存设置</UiButton>
     </template>
   </BaseModal>
 </template>
 
 <script setup lang="ts">
+import './SettingsModal.global.styles.css'
 /**
  * 设置模态框组件
  * 管理所有一次性配置的集中设置界面
@@ -95,6 +97,7 @@
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import OcrSettings from './OcrSettings.vue'
 import TranslationSettings from './TranslationSettings.vue'
 import DetectionSettings from './DetectionSettings.vue'
@@ -213,65 +216,35 @@ async function handleSave() {
 }
 </script>
 
-<style>
-/* 不使用 scoped，因为 BaseModal 使用 Teleport 将内容传送到 body */
+<style scoped>
 /* ===================================
    设置模态框样式 - 基于 BaseModal 定制
    =================================== */
 
 /* 覆盖 BaseModal overlay 的 z-index 提升到最高 */
-.settings-modal-wrapper .modal-container {
-  max-width: 900px;
-  width: 90%;
-  max-height: 90vh;
-}
 
-/* 自定义头部样式 — 保留原版的渐变背景 */
-.settings-modal-wrapper .modal-header {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  padding: 20px 25px;
-}
-
-.settings-modal-wrapper .modal-title {
-  color: white;
-  font-size: 1.4em;
-}
-
-.settings-modal-wrapper .modal-close-btn {
-  color: rgb(255, 255, 255, 0.8);
-  font-size: 20px;
-}
-
-.settings-modal-wrapper .modal-close-btn:hover {
-  color: white;
-  background-color: rgb(255, 255, 255, 0.15);
-}
+/* 自定义头部样式 — 保留当前实现的渐变背景 */
 
 /* BaseModal body 内的 tab + content 布局 */
-.settings-modal-wrapper .modal-body {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
-.settings-modal-wrapper .settings-tabs {
+.settings-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border-color);
-  background-color: var(--input-bg-color);
+  border-bottom: 1px solid var(--color-border-muted);
+  background-color: var(--color-surface-input);
   padding: 0 15px;
   overflow: auto hidden;
   flex-shrink: 0;
   min-height: 48px;
 }
 
-.settings-modal-wrapper .settings-tab {
+.settings-tabs > .settings-tab {
+  flex: 0 1 auto;
+  min-width: fit-content;
   padding: 14px 20px;
   cursor: pointer;
   border: none;
   background: none;
-  color: var(--text-color);
+  color: var(--color-text-strong);
   font-size: 0.95em;
   font-weight: 500;
   position: relative;
@@ -280,73 +253,61 @@ async function handleSave() {
   opacity: 0.7;
 }
 
-.settings-modal-wrapper .settings-tab:hover {
+.settings-tabs > .settings-tab:hover {
   opacity: 1;
-  background-color: rgb(0, 0, 0, 0.03);
+  background-color: var(--settings-modal-surface-raised);
 }
 
-.settings-modal-wrapper .settings-tab.active {
+.settings-tabs > .settings-tab.active {
   opacity: 1;
-  color: var(--color-primary);
+  color: var(--color-action-primary);
 }
 
-.settings-modal-wrapper .settings-tab.active::after {
+.settings-tabs > .settings-tab.active::after {
   content: '';
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--color-primary);
+  background: var(--color-action-primary);
   border-radius: 3px 3px 0 0;
 }
 
-.settings-modal-wrapper .settings-tab-content {
+.settings-tab-content {
   flex: 1;
   overflow-y: auto;
   padding: 25px;
 }
 
-.settings-modal-wrapper .settings-tab-pane {
+.settings-tab-pane {
   display: block;
 }
 
-.settings-modal-wrapper .settings-tab-pane.active {
+.settings-tab-pane.active {
   display: block;
   animation: settingsModalFadeIn 0.3s;
 }
 
-/* Note: .settings-group, .settings-group-title, .settings-item, .settings-row, .settings-test-btn
-   are now defined in global.css and inherited */
 
 @keyframes settingsModalFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@media (width <= 768px) {
-  .settings-modal-wrapper .modal-container {
-    margin: 0;
-    max-height: 100vh;
-    border-radius: 0;
-    width: 100%;
-  }
-  
-  .settings-modal-wrapper .settings-tabs {
+@media (--breakpoint-md-down) {
+  .settings-tabs {
     padding: 0 10px;
   }
   
-  .settings-modal-wrapper .settings-tab {
+  .settings-tabs > .settings-tab {
+    flex: 0 0 auto;
     padding: 12px 14px;
     font-size: 0.9em;
   }
   
-  .settings-modal-wrapper .settings-tab-content {
+  .settings-tab-content {
     padding: 15px;
-  }
-  
-  .settings-modal-wrapper .settings-row {
-    grid-template-columns: 1fr;
   }
 }
 </style>

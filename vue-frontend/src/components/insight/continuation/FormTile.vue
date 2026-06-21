@@ -9,7 +9,7 @@
       </div>
       <label class="upload-overlay">
         <span class="upload-text">{{ form.reference_image ? '更换图片' : '上传图片' }}</span>
-        <input type="file" accept="image/*" hidden @change="handleUpload">
+        <UiFileInput accept="image/*" hidden @change="handleUpload" />
       </label>
     </div>
     
@@ -26,32 +26,35 @@
     <div class="form-actions">
       <div class="action-row">
         <label class="toggle-control" :title="form.enabled !== false ? '点击禁用' : '点击启用'">
-          <input 
+          <UiInput 
             type="checkbox" 
             :checked="form.enabled !== false"
             @change="$emit('toggle-enabled', ($event.target as HTMLInputElement).checked)"
-          >
+          />
           <span class="toggle-track"></span>
         </label>
-        <button class="action-btn generate-btn" @click="$emit('generate-orthographic')" title="生成三视图">
+        <UiButton variant="toolbar" class="action-btn generate-btn" @click="$emit('generate-orthographic')" title="生成三视图">
           <span>🎨</span>
-        </button>
-        <button v-if="form.reference_image" class="action-btn delete-btn" @click="$emit('delete-image')" title="删除图片">
+        </UiButton>
+        <UiButton variant="toolbar" v-if="form.reference_image" class="action-btn delete-btn" @click="$emit('delete-image')" title="删除图片">
           <span>🗑️</span>
-        </button>
+        </UiButton>
       </div>
       <div class="action-row secondary">
-        <button class="icon-btn edit-btn" @click="$emit('edit')" title="编辑形态">✏️</button>
-        <button class="icon-btn delete-btn" @click="$emit('delete')" title="删除形态">🗑️</button>
+        <UiButton variant="toolbar" class="icon-btn edit-btn" @click="$emit('edit')" title="编辑形态">✏️</UiButton>
+        <UiButton variant="toolbar" class="icon-btn delete-btn" @click="$emit('delete')" title="删除形态">🗑️</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { CharacterForm } from '@/api/continuation'
 
-const props = defineProps<{
+defineProps<{
   form: CharacterForm
   characterName: string
   formImageUrl: string
@@ -81,19 +84,19 @@ function handleUpload(event: Event) {
 <style scoped>
 /* 卡片容器 */
 .form-tile {
-  background: linear-gradient(135deg, #fff 0%, #f8f9ff 100%);
+  background: linear-gradient(135deg, var(--color-surface-base) 0%, var(--form-tile-surface-base) 100%);
   border-radius: 16px;
   overflow: hidden;
-  border: 1.5px solid #e8eaf6;
-  box-shadow: 0 2px 8px rgb(99, 102, 241, 0.08);
+  border: 1.5px solid var(--form-tile-border-default);
+  box-shadow: 0 2px 8px var(--form-tile-shadow-default);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
 }
 
 .form-tile:hover {
-  border-color: #c7d2fe;
-  box-shadow: 0 8px 24px rgb(99, 102, 241, 0.16);
+  border-color: var(--form-tile-border-strong);
+  box-shadow: 0 8px 24px var(--color-focus-brand-soft6);
   transform: translateY(-2px);
 }
 
@@ -110,7 +113,7 @@ function handleUpload(event: Event) {
 .form-image-section {
   aspect-ratio: 1;
   position: relative;
-  background: linear-gradient(135deg, #f5f7ff 0%, #eef2ff 100%);
+  background: linear-gradient(135deg, var(--form-tile-surface-raised) 0%, var(--form-tile-surface-muted) 100%);
   overflow: hidden;
 }
 
@@ -127,7 +130,7 @@ function handleUpload(event: Event) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--form-tile-text-primary);
 }
 
 .placeholder-icon {
@@ -140,14 +143,14 @@ function handleUpload(event: Event) {
   margin: 0;
   font-size: 12px;
   font-weight: 500;
-  color: #9ca3af;
+  color: var(--form-tile-text-primary);
 }
 
 /* 上传遮罩 */
 .upload-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgb(99, 102, 241, 0.92), rgb(124, 58, 237, 0.92));
+  background: linear-gradient(135deg, var(--form-tile-surface-subtle), var(--form-tile-surface-hover));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -161,7 +164,7 @@ function handleUpload(event: Event) {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgb(0, 0, 0, 0.1);
+  text-shadow: 0 1px 2px var(--form-tile-shadow-raised);
 }
 
 .form-image-section:hover .upload-overlay {
@@ -188,7 +191,7 @@ function handleUpload(event: Event) {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--form-tile-text-secondary);
   flex: 1;
   line-height: 1.3;
 }
@@ -204,14 +207,14 @@ function handleUpload(event: Event) {
 }
 
 .status-badge.disabled {
-  background: linear-gradient(135deg, #fee2e2, #fecaca);
-  color: #dc2626;
+  background: linear-gradient(135deg, var(--form-tile-surface-active), var(--form-tile-surface-selected));
+  color: var(--form-tile-text-muted);
 }
 
 .form-description {
   margin: 0;
   font-size: 11px;
-  color: #64748b;
+  color: var(--form-tile-text-subtle);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -223,8 +226,8 @@ function handleUpload(event: Event) {
 /* 操作区域 */
 .form-actions {
   padding: 10px 12px;
-  background: linear-gradient(to bottom, #fafbff, #f8f9ff);
-  border-top: 1px solid #e8eaf6;
+  background: linear-gradient(to bottom, var(--form-tile-surface-overlay), var(--form-tile-surface-base));
+  border-top: 1px solid var(--form-tile-border-default);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -260,7 +263,7 @@ function handleUpload(event: Event) {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+  background: linear-gradient(135deg, var(--form-tile-surface-inverse), var(--form-tile-surface-contrast));
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 18px;
 }
@@ -275,11 +278,11 @@ function handleUpload(event: Event) {
   background: white;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
-  box-shadow: 0 2px 4px rgb(0, 0, 0, 0.2);
+  box-shadow: 0 2px 4px var(--form-tile-shadow-floating);
 }
 
 .toggle-control input:checked + .toggle-track {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, var(--form-tile-surface-tint), var(--form-tile-surface-soft));
 }
 
 .toggle-control input:checked + .toggle-track::before {
@@ -291,7 +294,7 @@ function handleUpload(event: Event) {
   flex: 1;
   height: 32px;
   padding: 0 10px;
-  border: 1.5px solid #e2e8f0;
+  border: 1.5px solid var(--color-border-muted);
   background: white;
   border-radius: 8px;
   cursor: pointer;
@@ -303,23 +306,23 @@ function handleUpload(event: Event) {
 }
 
 .action-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--color-surface-quiet);
+  border-color: var(--form-tile-border-muted);
 }
 
 .action-btn.generate-btn {
-  border-color: #a5b4fc;
-  color: #6366f1;
+  border-color: var(--form-tile-border-subtle);
+  color: var(--color-text-brand);
 }
 
 .action-btn.generate-btn:hover {
-  background: #eef2ff;
-  border-color: #818cf8;
+  background: var(--form-tile-surface-muted);
+  border-color: var(--form-tile-border-hover);
 }
 
 .action-btn.delete-btn:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
+  background: var(--form-tile-surface-strong);
+  border-color: var(--form-tile-border-active);
 }
 
 /* 图标按钮（次要行） */
@@ -327,7 +330,7 @@ function handleUpload(event: Event) {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1.5px solid #e2e8f0;
+  border: 1.5px solid var(--color-border-muted);
   background: white;
   border-radius: 8px;
   cursor: pointer;
@@ -339,17 +342,17 @@ function handleUpload(event: Event) {
 }
 
 .icon-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--color-surface-quiet);
+  border-color: var(--form-tile-border-muted);
 }
 
 .icon-btn.edit-btn:hover {
-  background: #eef2ff;
-  border-color: #a5b4fc;
+  background: var(--form-tile-surface-muted);
+  border-color: var(--form-tile-border-subtle);
 }
 
 .icon-btn.delete-btn:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
+  background: var(--form-tile-surface-strong);
+  border-color: var(--form-tile-border-active);
 }
 </style>

@@ -1,6 +1,7 @@
 <template>
   <div class="studio-tabs" role="tablist">
-    <button
+    <UiButton
+      variant="toolbar"
       v-for="item in items"
       :key="item.value"
       class="tab-btn"
@@ -10,11 +11,12 @@
     >
       <span class="tab-icon">{{ item.icon }}</span>
       <span class="tab-label">{{ item.label }}</span>
-    </button>
+    </UiButton>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 defineProps<{
   modelValue: string
   items: Array<{ value: string; label: string; icon: string }>
@@ -31,8 +33,8 @@ defineEmits<{
   gap: 8px;
   padding: 8px;
   border-radius: 18px;
-  background: rgba(16, 39, 65, 0.04);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--studio-section-tabs-surface-base);
+  border: 1px solid var(--color-border-studio);
   overflow-x: auto;
 }
 
@@ -44,7 +46,7 @@ defineEmits<{
   border-radius: 14px;
   padding: 10px 14px;
   background: transparent;
-  color: #55708f;
+  color: var(--studio-section-tabs-text-primary);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
@@ -52,14 +54,14 @@ defineEmits<{
 
 .tab-btn:hover {
   transform: translateY(-1px);
-  background: rgba(37, 99, 199, 0.08);
-  color: #234977;
+  background: var(--studio-section-tabs-surface-raised);
+  color: var(--color-text-studio);
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, rgba(37, 99, 199, 0.14), rgba(77, 134, 238, 0.1));
-  color: #16365b;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 199, 0.16);
+  background: linear-gradient(135deg, var(--color-surface-studio-tint4), var(--studio-section-tabs-surface-muted));
+  color: var(--studio-section-tabs-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--studio-section-tabs-shadow-default);
 }
 
 .tab-icon {

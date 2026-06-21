@@ -87,7 +87,7 @@ describe('RerankerSettingsTab', () => {
     await inputs[3].setValue('7')
     await inputs[4].setValue('8')
     await inputs[5].setValue('9')
-    const buttons = wrapper.findAll('button.btn-secondary')
+    const buttons = wrapper.findAll('button.ui-button--secondary')
     await buttons[buttons.length - 1].trigger('click')
 
     expect(testRerankerConnection).toHaveBeenCalledWith({

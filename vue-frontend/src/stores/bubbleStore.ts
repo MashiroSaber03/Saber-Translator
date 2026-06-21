@@ -8,6 +8,7 @@ import { ref, computed } from 'vue'
 import type {
   BubbleState,
   BubbleCoords,
+  BubbleStateOverrides,
   BubbleStateUpdates
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
@@ -15,12 +16,21 @@ import { useSettingsStore } from '@/stores/settingsStore'
 
 // 从 bubbleFactory 统一导入 store 内部使用的工厂函数
 import {
-  createBubbleState,
+  createBubbleState as createBubbleStateFromFactory,
   cloneBubbleStates,
   getTextlinesPerBubbleFromStates,
   isValidBubbleState,
   detectTextDirection
 } from '@/utils/bubbleFactory'
+
+export { cloneBubbleStates, isValidBubbleState }
+
+export function createBubbleState(overrides?: BubbleStateOverrides | BubbleCoords): BubbleState {
+  if (Array.isArray(overrides)) {
+    return createBubbleStateFromFactory({ coords: overrides })
+  }
+  return createBubbleStateFromFactory(overrides)
+}
 
 // ============================================================
 // Store 定义

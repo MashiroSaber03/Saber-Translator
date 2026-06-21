@@ -1,24 +1,23 @@
 <template>
   <div class="plugin-manager">
     <!-- 插件列表 -->
-    <div class="settings-group">
-      <div class="settings-group-header">
-        <div class="settings-group-title">已安装插件</div>
+    <UiPanel variant="settings">
+      <template #title>
+        <span>已安装插件</span>
         <div class="plugin-header-actions">
-          <button class="btn btn-sm" :disabled="isImporting" @click="triggerImport">
+          <UiButton variant="secondary" :disabled="isImporting" @click="triggerImport" size="sm">
             {{ isImporting ? '导入中...' : '导入插件' }}
-          </button>
-          <button class="btn btn-sm" @click="showAgentModal = true">
+          </UiButton>
+          <UiButton variant="secondary" @click="showAgentModal = true" size="sm">
             自动生成插件
-          </button>
-          <button class="btn btn-sm" :disabled="isRefreshing" @click="refreshPluginList">
+          </UiButton>
+          <UiButton variant="secondary" :disabled="isRefreshing" @click="refreshPluginList" size="sm">
             {{ isRefreshing ? '刷新中...' : '刷新插件' }}
-          </button>
+          </UiButton>
         </div>
-      </div>
-      <input
+      </template>
+      <UiFileInput
         ref="pluginImportInputRef"
-        type="file"
         accept=".zip,application/zip"
         class="sr-only"
         @change="handleImportFileChange"
@@ -38,29 +37,29 @@
           </div>
           <div class="plugin-controls">
             <label class="switch">
-              <input type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
+              <UiInput type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
               <span class="slider"></span>
             </label>
-            <button class="btn btn-sm" @click="downloadPlugin(plugin)" title="导出">导出</button>
-            <button class="btn btn-sm" @click="openPluginConfig(plugin)" v-if="plugin.has_config" title="配置">⚙️</button>
-            <button class="btn btn-sm btn-danger" @click="deletePlugin(plugin)" title="删除">🗑️</button>
+            <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
+            <UiButton variant="secondary" @click="openPluginConfig(plugin)" v-if="plugin.has_config" title="配置" size="sm">⚙️</UiButton>
+            <UiButton variant="danger" @click="deletePlugin(plugin)" title="删除" size="sm">🗑️</UiButton>
           </div>
         </div>
       </div>
-    </div>
+    </UiPanel>
 
     <!-- 默认启用状态设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">默认启用状态</div>
+    <UiPanel variant="settings">
+      <template #title>默认启用状态</template>
       <p class="settings-hint">设置插件在新会话中的默认启用状态</p>
       <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="default-state-item">
         <span class="plugin-name">{{ plugin.display_name }}</span>
         <label class="switch">
-          <input type="checkbox" :checked="defaultStates[plugin.id]" @change="updateDefaultState(plugin.id, $event)" />
+          <UiInput type="checkbox" :checked="defaultStates[plugin.id]" @change="updateDefaultState(plugin.id, $event)" />
           <span class="slider"></span>
         </label>
       </div>
-    </div>
+    </UiPanel>
 
     <!-- 插件配置模态框 -->
     <div
@@ -83,7 +82,7 @@
             <div class="config-field-control">
               <template v-if="field.type === 'boolean'">
                 <label class="config-switch">
-                  <input type="checkbox" :id="'config-' + key" v-model="configValues[key]" />
+                  <UiInput type="checkbox" :id="'config-' + key" v-model="configValues[key]" />
                   <span class="config-switch-track"></span>
                   <span class="config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
                 </label>
@@ -98,7 +97,7 @@
                 </div>
               </template>
               <template v-else-if="field.type === 'number'">
-                <input
+                <UiInput
                   type="number"
                   class="config-input"
                   :id="'config-' + key"
@@ -108,7 +107,7 @@
                 />
               </template>
               <template v-else>
-                <input
+                <UiInput
                   type="text"
                   class="config-input"
                   :id="'config-' + key"
@@ -121,8 +120,8 @@
           </div>
         </div>
         <div class="plugin-config-footer">
-          <button class="btn btn-secondary" @click="closeConfigModal">取消</button>
-          <button class="btn btn-primary" @click="savePluginConfig">保存</button>
+          <UiButton variant="secondary" @click="closeConfigModal">取消</UiButton>
+          <UiButton variant="primary" @click="savePluginConfig">保存</UiButton>
         </div>
       </div>
     </div>
@@ -135,6 +134,12 @@
 </template>
 
 <script setup lang="ts">
+import UiPanel from '@/components/ui/UiPanel.vue'
+
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 插件管理组件
  * 管理插件的刷新、启用/禁用、配置和删除
@@ -403,100 +408,91 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.settings-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.plugin-header-actions {
+<style scoped>.plugin-manager .plugin-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.plugin-list {
-  border: 1px solid var(--border-color);
+.plugin-manager .plugin-list {
+  border: 1px solid var(--color-border-muted);
   border-radius: 4px;
 }
 
-.plugin-item {
+.plugin-manager .plugin-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 15px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
-.plugin-item:last-child {
+.plugin-manager .plugin-item:last-child {
   border-bottom: none;
 }
 
-.plugin-info {
+.plugin-manager .plugin-info {
   flex: 1;
 }
 
-.plugin-header {
+.plugin-manager .plugin-header {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 4px;
 }
 
-.plugin-name {
+.plugin-manager .plugin-name {
   font-weight: 500;
 }
 
-.plugin-version {
+.plugin-manager .plugin-version {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
-.plugin-description {
+.plugin-manager .plugin-description {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   margin: 0;
 }
 
-.plugin-meta {
+.plugin-manager .plugin-meta {
   margin: 4px 0 0;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
-.plugin-controls {
+.plugin-manager .plugin-controls {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 /* 开关样式 */
-.switch {
+.plugin-manager .switch {
   position: relative;
   display: inline-block;
   width: 40px;
   height: 22px;
 }
 
-.switch input {
+.plugin-manager .switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.slider {
+.plugin-manager .slider {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background-color: var(--bg-tertiary);
+  background-color: var(--color-surface-muted);
   transition: 0.3s;
   border-radius: 22px;
 }
 
-.slider::before {
+.plugin-manager .slider::before {
   position: absolute;
   content: '';
   height: 16px;
@@ -508,32 +504,32 @@ onMounted(() => {
   border-radius: 50%;
 }
 
-input:checked + .slider {
-  background-color: var(--color-primary);
+.plugin-manager input:checked + .slider {
+  background-color: var(--color-action-primary);
 }
 
-input:checked + .slider::before {
+.plugin-manager input:checked + .slider::before {
   transform: translateX(18px);
 }
 
 /* 默认状态设置 */
-.default-state-item {
+.plugin-manager .default-state-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
-.default-state-item:last-child {
+.plugin-manager .default-state-item:last-child {
   border-bottom: none;
 }
 
 /* 配置模态框 */
-.plugin-config-modal {
+.plugin-manager .plugin-config-modal {
   position: fixed;
   inset: 0;
-  background: rgb(0, 0, 0, 0.5);
+  background: var(--plugin-manager-surface-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -541,11 +537,11 @@ input:checked + .slider::before {
   padding: 20px;
 }
 
-.plugin-config-content {
-  background: var(--card-bg-color, #fff);
-  border: 1px solid var(--border-color, #e2e8f0);
+.plugin-manager .plugin-config-content {
+  background: var(--color-surface-card, var(--color-surface-base));
+  border: 1px solid var(--color-border-muted, var(--color-border-muted));
   border-radius: 16px;
-  box-shadow: 0 24px 60px rgb(15, 23, 42, 0.26);
+  box-shadow: 0 24px 60px var(--plugin-manager-shadow-default);
   width: 90%;
   max-width: 620px;
   max-height: 80vh;
@@ -554,23 +550,23 @@ input:checked + .slider::before {
   flex-direction: column;
 }
 
-.plugin-config-header {
+.plugin-manager .plugin-config-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  background: linear-gradient(180deg, rgb(248, 250, 252, 0.96) 0%, rgb(255, 255, 255, 0.98) 100%);
-  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, var(--plugin-manager-surface-raised) 0%, var(--plugin-manager-surface-muted) 100%);
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
-.plugin-config-header h4 {
+.plugin-manager .plugin-config-header h4 {
   margin: 0;
   font-size: 1.18rem;
   font-weight: 700;
-  color: var(--text-color, #1a202c);
+  color: var(--color-text-strong, var(--plugin-manager-text-primary));
 }
 
-.close-btn {
+.plugin-manager .close-btn {
   width: 36px;
   height: 36px;
   display: inline-flex;
@@ -579,19 +575,19 @@ input:checked + .slider::before {
   border-radius: 10px;
   font-size: 24px;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
-.close-btn:hover {
-  background: rgb(15, 23, 42, 0.06);
-  color: var(--text-color, #1a202c);
+.plugin-manager .close-btn:hover {
+  background: var(--plugin-manager-surface-subtle);
+  color: var(--color-text-strong, var(--plugin-manager-text-primary));
 }
 
-.plugin-config-body {
+.plugin-manager .plugin-config-body {
   background:
-    linear-gradient(180deg, rgb(248, 250, 252, 0.52) 0%, rgb(255, 255, 255, 0.92) 100%),
-    var(--card-bg-color, #fff);
+    linear-gradient(180deg, var(--plugin-manager-accent-primary) 0%, var(--plugin-manager-accent-secondary) 100%),
+    var(--color-surface-card, var(--plugin-manager-accent-muted));
   padding: 20px 24px 24px;
   overflow-y: auto;
   flex: 1;
@@ -600,15 +596,15 @@ input:checked + .slider::before {
   gap: 14px;
 }
 
-.config-field {
+.plugin-manager .config-field {
   padding: 16px 18px;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--color-border-muted, var(--color-border-muted));
   border-radius: 14px;
-  background: var(--input-bg-color, #f9fafc);
-  box-shadow: 0 8px 24px rgb(15, 23, 42, 0.04);
+  background: var(--color-surface-input, var(--plugin-manager-surface-hover));
+  box-shadow: 0 8px 24px var(--plugin-manager-shadow-raised);
 }
 
-.config-field-head {
+.plugin-manager .config-field-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -616,58 +612,58 @@ input:checked + .slider::before {
   margin-bottom: 12px;
 }
 
-.config-field-label {
+.plugin-manager .config-field-label {
   display: block;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--text-color, #1a202c);
+  color: var(--color-text-strong, var(--plugin-manager-text-primary));
 }
 
-.config-field-key {
+.plugin-manager .config-field-key {
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgb(37, 99, 235, 0.08);
-  color: rgb(37, 99, 235);
+  background: var(--plugin-manager-surface-active);
+  color: var(--plugin-manager-text-secondary);
   font-size: 12px;
   font-family: var(--font-mono, 'Consolas', monospace);
 }
 
-.config-field-control {
+.plugin-manager .config-field-control {
   display: flex;
   align-items: center;
   min-height: 44px;
 }
 
-.config-input {
+.plugin-manager .config-input {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid var(--input-border-color, #d5deea);
+  border: 1px solid var(--color-border-input, var(--plugin-manager-border-default));
   border-radius: 10px;
-  background: var(--card-bg-color, #fff);
-  color: var(--text-color, #1a202c);
+  background: var(--color-surface-card, var(--color-surface-base));
+  color: var(--color-text-strong, var(--plugin-manager-text-primary));
   font-size: 14px;
   line-height: 1.4;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
 
-.config-input:hover {
-  border-color: rgb(140, 158, 255);
+.plugin-manager .config-input:hover {
+  border-color: var(--plugin-manager-border-strong);
 }
 
-.config-input:focus {
+.plugin-manager .config-input:focus {
   outline: none;
-  border-color: rgb(91, 115, 242);
-  box-shadow: 0 0 0 3px rgb(91, 115, 242, 0.14);
-  background: #fff;
+  border-color: var(--plugin-manager-border-muted);
+  box-shadow: 0 0 0 3px var(--plugin-manager-shadow-floating);
+  background: var(--color-surface-base);
 }
 
-.config-select-wrap {
+.plugin-manager .config-select-wrap {
   width: 100%;
 }
 
-.config-switch {
+.plugin-manager .config-switch {
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -675,22 +671,22 @@ input:checked + .slider::before {
   user-select: none;
 }
 
-.config-switch input {
+.plugin-manager .config-switch input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
 
-.config-switch-track {
+.plugin-manager .config-switch-track {
   position: relative;
   width: 46px;
   height: 26px;
   border-radius: 999px;
-  background: #cbd5e1;
+  background: var(--plugin-manager-surface-selected);
   transition: background-color var(--transition-fast);
 }
 
-.config-switch-track::after {
+.plugin-manager .config-switch-track::after {
   content: '';
   position: absolute;
   top: 3px;
@@ -698,65 +694,65 @@ input:checked + .slider::before {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 2px 6px rgb(15, 23, 42, 0.18);
+  background: var(--color-surface-base);
+  box-shadow: 0 2px 6px var(--plugin-manager-shadow-strong);
   transition: transform var(--transition-fast);
 }
 
-.config-switch input:checked + .config-switch-track {
-  background: linear-gradient(135deg, rgb(37, 99, 235) 0%, rgb(99, 102, 241) 100%);
+.plugin-manager .config-switch input:checked + .config-switch-track {
+  background: linear-gradient(135deg, var(--plugin-manager-surface-overlay) 0%, var(--plugin-manager-surface-inverse) 100%);
 }
 
-.config-switch input:checked + .config-switch-track::after {
+.plugin-manager .config-switch input:checked + .config-switch-track::after {
   transform: translateX(20px);
 }
 
-.config-switch-text {
+.plugin-manager .config-switch-text {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-color, #1a202c);
+  color: var(--color-text-strong, var(--plugin-manager-text-primary));
 }
 
-.field-description {
+.plugin-manager .field-description {
   margin: 12px 0 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
-.plugin-config-footer {
+.plugin-manager .plugin-config-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 18px 24px 22px;
-  background: linear-gradient(0deg, rgb(248, 250, 252, 0.9) 0%, rgb(255, 255, 255, 0.98) 100%);
-  border-top: 1px solid var(--border-color);
+  background: linear-gradient(0deg, var(--plugin-manager-surface-contrast) 0%, var(--plugin-manager-surface-muted) 100%);
+  border-top: 1px solid var(--color-border-muted);
 }
 
-.loading-hint,
-.empty-hint {
+.plugin-manager .loading-hint,
+.plugin-manager .empty-hint {
   padding: 20px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
-.settings-hint {
+.plugin-manager .settings-hint {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   margin-bottom: 10px;
 }
 
-.btn-sm {
+.plugin-manager .ui-button--sm {
   padding: 4px 8px;
   font-size: 12px;
 }
 
-.btn-danger {
+.plugin-manager .ui-button--danger {
   background: transparent;
   border: none;
 }
 
-.sr-only {
+.plugin-manager .sr-only {
   position: absolute;
   width: 1px;
   height: 1px;

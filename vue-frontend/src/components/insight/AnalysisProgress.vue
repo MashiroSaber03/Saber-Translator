@@ -1,4 +1,8 @@
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 分析进度组件
  * 显示分析进度、状态指示和控制按钮
@@ -257,7 +261,7 @@ async function startAnalysis(): Promise<void> {
 
 /**
  * 暂停分析
- * 与原版 JS 一致：传递 task_id 参数
+ * 与当前实现 JS 一致：传递 task_id 参数
  */
 async function pauseAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -277,7 +281,7 @@ async function pauseAnalysis(): Promise<void> {
 
 /**
  * 继续分析
- * 与原版 JS 一致：传递 task_id 参数
+ * 与当前实现 JS 一致：传递 task_id 参数
  */
 async function resumeAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -298,7 +302,7 @@ async function resumeAnalysis(): Promise<void> {
 
 /**
  * 取消分析
- * 与原版 JS 一致：传递 task_id 参数
+ * 与当前实现 JS 一致：传递 task_id 参数
  */
 async function cancelAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -411,9 +415,11 @@ watch(analysisMode, () => {
         <CustomSelect
           v-model="analysisMode"
           :options="analysisModeOptions"
+          variant="compact"
           @change="onAnalysisModeChange"
         />
-        <button 
+        <UiButton
+          variant="toolbar" 
           class="btn-analysis-start" 
           :disabled="!canStartAnalysis"
           :class="{ loading: isStarting }"
@@ -424,12 +430,13 @@ watch(analysisMode, () => {
           </svg>
           <span v-if="isStarting" class="loading-spinner"></span>
           <span>{{ isStarting ? '启动中...' : startButtonText }}</span>
-        </button>
+        </UiButton>
       </div>
       
       <!-- 运行中状态 -->
       <div v-if="showRunningButtons" class="btn-group-running">
-        <button 
+        <UiButton
+          variant="toolbar" 
           class="btn-control btn-pause" 
           title="暂停分析"
           @click="pauseAnalysis"
@@ -438,8 +445,9 @@ watch(analysisMode, () => {
             <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
           </svg>
           <span class="btn-label">暂停</span>
-        </button>
-        <button 
+        </UiButton>
+        <UiButton
+          variant="toolbar" 
           class="btn-control btn-cancel" 
           title="取消分析"
           @click="cancelAnalysis"
@@ -448,12 +456,13 @@ watch(analysisMode, () => {
             <path d="M6 6h12v12H6z" />
           </svg>
           <span class="btn-label">取消</span>
-        </button>
+        </UiButton>
       </div>
       
       <!-- 暂停状态 -->
       <div v-if="showPausedButtons" class="btn-group-paused">
-        <button 
+        <UiButton
+          variant="toolbar" 
           class="btn-control btn-resume" 
           title="继续分析"
           @click="resumeAnalysis"
@@ -462,8 +471,9 @@ watch(analysisMode, () => {
             <path d="M8 5v14l11-7z" />
           </svg>
           <span class="btn-label">继续</span>
-        </button>
-        <button 
+        </UiButton>
+        <UiButton
+          variant="toolbar" 
           class="btn-control btn-cancel" 
           title="取消分析"
           @click="cancelAnalysis"
@@ -472,7 +482,7 @@ watch(analysisMode, () => {
             <path d="M6 6h12v12H6z" />
           </svg>
           <span class="btn-label">取消</span>
-        </button>
+        </UiButton>
       </div>
     </div>
     
@@ -485,14 +495,14 @@ watch(analysisMode, () => {
     
     <!-- 页码输入（单页模式时显示） -->
     <div v-if="showPageInput" class="page-input-wrapper">
-      <input 
+      <UiInput 
         v-model.number="inputPageNum"
         type="number" 
         class="form-input-compact" 
         placeholder="输入页码" 
         min="1"
         :max="insightStore.totalPageCount || undefined"
-      >
+      />
       <span class="page-hint">/ {{ insightStore.totalPageCount || '?' }}</span>
     </div>
     
@@ -509,15 +519,16 @@ watch(analysisMode, () => {
     <!-- 选项行 -->
     <div class="analysis-options-row">
       <label class="checkbox-compact" title="仅分析未分析的页面，跳过已分析的页面">
-        <input 
+        <UiInput 
           type="checkbox" 
           :checked="insightStore.incrementalAnalysis"
           @change="insightStore.setIncrementalAnalysis(($event.target as HTMLInputElement).checked)"
-        >
+        />
         <span>增量模式</span>
       </label>
-      <button 
-        class="btn-icon-sm" 
+      <UiButton
+        variant="toolbar" 
+        class="button-icon-sm" 
         title="导出分析报告"
         :disabled="insightStore.analyzedPageCount === 0"
         @click="exportAnalysis"
@@ -527,55 +538,28 @@ watch(analysisMode, () => {
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>
 
-<style scoped>
-/* ==================== AnalysisProgress 完整样式 ==================== */
-
-/* ==================== CSS变量 ==================== */
-.analysis-control-compact {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --bg-hover: rgb(99, 102, 241, 0.1);
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --warning: #f59e0b;
-  --error-color: #ef4444;
-  --danger: #ef4444;
-}
+<style scoped>/* ==================== AnalysisProgress样式 ==================== */
 
 /* ==================== 组件特定样式 ==================== */
 
-/* 进度条暂停状态 */
-.progress-bar-slim.paused .progress-fill-slim {
-  background: var(--warning, #f59e0b);
-  animation: none;
-}
-
 /* 进度消息 */
-.progress-message {
+.analysis-control-compact .progress-message {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin-top: 4px;
   text-align: center;
 }
 
 /* 错误消息 */
-.error-message {
+.analysis-control-compact .error-message {
   font-size: 12px;
-  color: var(--danger, #ef4444);
-  background: rgb(239, 68, 68, 0.1);
+  color: var(--analysis-progress-text-primary);
+  background: var(--analysis-progress-surface-base);
   padding: 6px 10px;
   border-radius: 4px;
   margin-top: 8px;
@@ -583,47 +567,47 @@ watch(analysisMode, () => {
 }
 
 /* 按钮标签 */
-.btn-label {
+.analysis-control-compact .btn-label {
   font-size: 12px;
   margin-left: 4px;
 }
 
 /* 页码输入包装器 */
-.page-input-wrapper {
+.analysis-control-compact .page-input-wrapper {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
 }
 
-.page-hint {
+.analysis-control-compact .page-hint {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
 }
 
 /* 模式描述 */
-.mode-description {
+.analysis-control-compact .mode-description {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin-top: 6px;
   font-style: italic;
 }
 
 /* 预估时间 */
-.estimated-time {
+.analysis-control-compact .estimated-time {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin-top: 4px;
 }
 
 /* 加载中按钮 */
-.btn-analysis-start.loading {
+.analysis-control-compact .btn-analysis-start.loading {
   opacity: 0.7;
   cursor: wait;
 }
 
 /* 加载动画 */
-.loading-spinner {
+.analysis-control-compact .loading-spinner {
   display: inline-block;
   width: 14px;
   height: 14px;
@@ -633,122 +617,111 @@ watch(analysisMode, () => {
   animation: spin 0.8s linear infinite;
 }
 
-.btn-icon-sm:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* ==================== 分析控制样式 ==================== */
 
-/* ==================== 分析控制完整样式 - 从 manga-insight.css 迁移 ==================== */
-
-.analysis-control-compact {
+.sidebar-section.analysis-control-compact {
     padding: 12px 16px;
 }
 
-.analysis-status-bar {
+.analysis-control-compact .analysis-status-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
 }
 
-.status-left {
+.analysis-control-compact .status-left {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.status-dot {
+.analysis-control-compact .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--text-muted);
+    background: var(--insight-text-muted);
     transition: all 0.3s;
 }
 
-.status-dot.running {
-    background: var(--color-primary);
-    box-shadow: 0 0 8px var(--color-primary);
+.analysis-control-compact .status-dot.running {
+    background: var(--insight-color-primary);
+    box-shadow: 0 0 8px var(--insight-color-primary);
     animation: pulse-glow 1.5s infinite;
 }
 
-.status-dot.paused {
-    background: var(--warning-color);
+.analysis-control-compact .status-dot.paused {
+    background: var(--insight-warning-color);
 }
 
-.status-dot.completed {
-    background: var(--success-color);
+.analysis-control-compact .status-dot.completed {
+    background: var(--insight-success-color);
 }
 
-.status-dot.failed {
-    background: var(--error-color);
+.analysis-control-compact .status-dot.failed {
+    background: var(--insight-error-color);
 }
 
-.status-label {
+.analysis-control-compact .status-label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--insight-text-primary);
 }
 
-.status-progress {
+.analysis-control-compact .status-progress {
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-variant-numeric: tabular-nums;
 }
 
-.progress-bar-slim {
+.analysis-control-compact .progress-bar-slim {
     height: 3px;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 2px;
     overflow: hidden;
     margin-bottom: 10px;
 }
 
-.progress-fill-slim {
+.analysis-control-compact .progress-fill-slim {
     height: 100%;
-    background: linear-gradient(90deg, var(--color-primary), var(--primary-light));
+    background: linear-gradient(90deg, var(--insight-color-primary), var(--insight-primary-light));
     transition: width 0.3s ease;
     width: 0%;
 }
 
-.analysis-btn-group {
+.analysis-control-compact .progress-bar-slim.paused .progress-fill-slim {
+    background: var(--analysis-progress-surface-raised);
+    animation: none;
+}
+
+.analysis-control-compact .analysis-btn-group {
     margin-bottom: 10px;
 }
 
-.btn-group-idle {
+.analysis-control-compact .btn-group-idle {
     display: flex;
     gap: 8px;
     flex-wrap: nowrap;
 }
 
-/* 覆盖CustomSelect在按钮组中的宽度 */
-.btn-group-idle :deep(.custom-select) {
-    min-width: 70px;
-    flex: 0 0 auto;
-}
-
-.btn-group-idle :deep(.custom-select-trigger) {
-    height: 38px;
-    padding: 0 10px;
-}
-
-.analysis-mode-select {
+.analysis-control-compact .analysis-mode-select {
     flex: 0 0 auto;
     padding: 8px 12px;
     font-size: 13px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 8px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--insight-bg-primary);
+    color: var(--insight-text-primary);
     cursor: pointer;
     min-width: 70px;
 }
 
-.analysis-mode-select:focus {
+.analysis-control-compact .analysis-mode-select:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--insight-color-primary);
 }
 
-.btn-analysis-start {
+.analysis-control-compact .btn-analysis-start {
     flex: 1;
     display: flex;
     align-items: center;
@@ -757,7 +730,7 @@ watch(analysisMode, () => {
     padding: 8px 16px;
     font-size: 13px;
     font-weight: 500;
-    background: linear-gradient(135deg, var(--color-primary), var(--primary-dark));
+    background: linear-gradient(135deg, var(--insight-color-primary), var(--insight-primary-dark));
     color: white;
     border: none;
     border-radius: 8px;
@@ -765,26 +738,26 @@ watch(analysisMode, () => {
     transition: all 0.2s;
 }
 
-.btn-analysis-start:hover {
+.analysis-control-compact .btn-analysis-start:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgb(99, 102, 241, 0.3);
+    box-shadow: 0 4px 12px var(--analysis-progress-shadow-default);
 }
 
-.btn-analysis-start:active {
+.analysis-control-compact .btn-analysis-start:active {
     transform: translateY(0);
 }
 
-.btn-analysis-start svg {
+.analysis-control-compact .btn-analysis-start svg {
     flex-shrink: 0;
 }
 
-.btn-group-running,
-.btn-group-paused {
+.analysis-control-compact .btn-group-running,
+.analysis-control-compact .btn-group-paused {
     display: flex;
     gap: 8px;
 }
 
-.btn-control {
+.analysis-control-compact .btn-control {
     flex: 1;
     display: flex;
     align-items: center;
@@ -796,94 +769,99 @@ watch(analysisMode, () => {
     transition: all 0.2s;
 }
 
-.btn-pause {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+.analysis-control-compact .btn-pause {
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-primary);
 }
 
-.btn-pause:hover {
-    background: var(--warning-color);
+.analysis-control-compact .btn-pause:hover {
+    background: var(--insight-warning-color);
     color: white;
 }
 
-.btn-resume {
-    background: var(--success-color);
+.analysis-control-compact .btn-resume {
+    background: var(--insight-success-color);
     color: white;
 }
 
-.btn-resume:hover {
-    background: #16a34a;
+.analysis-control-compact .btn-resume:hover {
+    background: var(--analysis-progress-surface-muted);
 }
 
-.btn-cancel {
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
+.analysis-control-compact .btn-cancel {
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-text-secondary);
 }
 
-.btn-cancel:hover {
-    background: var(--error-color);
+.analysis-control-compact .btn-cancel:hover {
+    background: var(--insight-error-color);
     color: white;
 }
 
-.form-select-compact,
-.form-input-compact {
+.analysis-control-compact .form-select-compact,
+.analysis-control-compact .form-input-compact {
     width: 100%;
     padding: 8px 12px;
     font-size: 13px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 8px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--insight-bg-primary);
+    color: var(--insight-text-primary);
     margin-top: 8px;
 }
 
-.form-select-compact:focus,
-.form-input-compact:focus {
+.analysis-control-compact .form-select-compact:focus,
+.analysis-control-compact .form-input-compact:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--insight-color-primary);
 }
 
-.analysis-options-row {
+.analysis-control-compact .analysis-options-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding-top: 8px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-border-muted);
 }
 
-.checkbox-compact {
+.analysis-control-compact .checkbox-compact {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     cursor: pointer;
 }
 
-.checkbox-compact input[type="checkbox"] {
+.analysis-control-compact .checkbox-compact input[type="checkbox"] {
     width: 14px;
     height: 14px;
     cursor: pointer;
-    accent-color: var(--color-primary);
+    accent-color: var(--insight-color-primary);
 }
 
-.btn-icon-sm {
+.analysis-control-compact .button-icon-sm {
     width: 28px;
     height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 6px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.btn-icon-sm:hover {
-    background: var(--bg-tertiary);
-    color: var(--color-primary);
-    border-color: var(--color-primary);
+.button-icon-sm:hover {
+    background: var(--insight-bg-tertiary);
+    color: var(--insight-color-primary);
+    border-color: var(--insight-color-primary);
+}
+
+.button-icon-sm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>

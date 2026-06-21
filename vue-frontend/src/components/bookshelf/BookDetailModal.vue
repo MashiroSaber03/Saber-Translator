@@ -1,7 +1,10 @@
 <script setup lang="ts">
+
+import UiInput from '@/components/ui/UiInput.vue'
+
 /**
  * 书籍详情模态框组件
- * 使用与原版bookshelf.html完全相同的HTML结构和CSS类名
+ * 使用与当前实现bookshelf.html完全相同的HTML结构和CSS类名
  */
 
 import { ref, computed, nextTick } from 'vue'
@@ -10,6 +13,7 @@ import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const emit = defineEmits<{
   close: []
@@ -190,7 +194,6 @@ function goToInsight() {
 }
 
 // 处理章节排序
-// 【复刻原版 bookshelf.js handleChapterDrop】
 async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
   if (!currentBook.value) return false
   try {
@@ -200,19 +203,19 @@ async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
       return true
     } else {
       showToast('排序保存失败', 'error')
-      // 【复刻原版】刷新以恢复原始顺序
+      // 【当前行为】刷新以恢复原始顺序
       await refreshBookDetail()
       return false
     }
   } catch (error) {
     showToast('排序保存失败', 'error')
-    // 【复刻原版】刷新以恢复原始顺序
+    // 【当前行为】刷新以恢复原始顺序
     await refreshBookDetail()
     return false
   }
 }
 
-// 【复刻原版】刷新当前书籍详情（用于排序失败后恢复原顺序）
+// 【当前行为】刷新当前书籍详情（用于排序失败后恢复原顺序）
 async function refreshBookDetail() {
   if (!currentBook.value) return
   try {
@@ -287,7 +290,7 @@ const showAddTagModal = ref(false)
 const quickTagFilter = ref('')
 const quickTagInputRef = ref<HTMLInputElement | null>(null)
 
-// 【复刻原版】过滤后的可用标签列表（排除已添加的标签）
+// 【当前行为】过滤后的可用标签列表（排除已添加的标签）
 const filteredAvailableTags = computed(() => {
   const currentTags = currentBook.value?.tags || []
   const filter = quickTagFilter.value.trim().toLowerCase()
@@ -298,7 +301,7 @@ const filteredAvailableTags = computed(() => {
   )
 })
 
-// 【复刻原版】是否显示创建新标签选项
+// 【当前行为】是否显示创建新标签选项
 const showCreateNewTagOption = computed(() => {
   const filter = quickTagFilter.value.trim()
   if (!filter) return false
@@ -307,7 +310,7 @@ const showCreateNewTagOption = computed(() => {
   return !allTags.value.some(t => t.name.toLowerCase() === filter.toLowerCase())
 })
 
-// 【复刻原版】打开添加标签弹窗
+// 【当前行为】打开添加标签弹窗
 function openAddTagModal() {
   quickTagFilter.value = ''
   showAddTagModal.value = true
@@ -318,13 +321,13 @@ function openAddTagModal() {
   })
 }
 
-// 【复刻原版】关闭添加标签弹窗
+// 【当前行为】关闭添加标签弹窗
 function closeAddTagModal() {
   showAddTagModal.value = false
   quickTagFilter.value = ''
 }
 
-// 【复刻原版】处理输入框回车事件
+// 【当前行为】处理输入框回车事件
 async function handleQuickTagInputEnter() {
   const tagName = quickTagFilter.value.trim()
   if (tagName) {
@@ -337,7 +340,6 @@ async function handleQuickTagInputEnter() {
 const isTagLoading = ref(false)
 
 // 从书籍移除标签（用于详情页面的标签删除按钮）
-// 【复刻原版 bookshelf.js removeTagFromCurrentBook】
 // 步骤: 1. 获取当前书籍 tags  2. 过滤掉要删除的标签  3. PUT 更新整个 tags 数组
 async function removeTag(tagName: string) {
   if (!currentBook.value || isTagLoading.value) return
@@ -345,11 +347,11 @@ async function removeTag(tagName: string) {
   isTagLoading.value = true
   
   try {
-    // 【复刻原版】获取当前的 tags 数组并过滤
+    // 【当前行为】获取当前的 tags 数组并过滤
     const currentTags = currentBook.value.tags || []
     const newTags = currentTags.filter(t => t !== tagName)
     
-    // 【复刻原版】通过 updateBookApi 更新整个 tags 数组
+    // 【当前行为】通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
@@ -357,7 +359,7 @@ async function removeTag(tagName: string) {
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已移除', 'success')
-      // 【复刻原版】刷新书籍列表和标签列表
+      // 【当前行为】刷新书籍列表和标签列表
       await bookshelfStore.loadBooks()
       await bookshelfStore.loadTags()
     } else {
@@ -371,7 +373,7 @@ async function removeTag(tagName: string) {
   }
 }
 
-// 【复刻原版】快速添加标签到书籍（支持创建新标签）
+// 【当前行为】快速添加标签到书籍（支持创建新标签）
 // 步骤: 1. 如需创建新标签则创建  2. 获取当前 tags  3. 追加新标签  4. PUT 更新整个 tags 数组
 async function quickAddTagToBook(tagName: string) {
   if (!currentBook.value || !tagName || isTagLoading.value) return
@@ -399,11 +401,11 @@ async function quickAddTagToBook(tagName: string) {
       }
     }
     
-    // 【复刻原版】获取当前 tags 并追加新标签
+    // 【当前行为】获取当前 tags 并追加新标签
     const currentTags = currentBook.value.tags || []
     const newTags = [...currentTags, tagName]
     
-    // 【复刻原版】通过 updateBookApi 更新整个 tags 数组
+    // 【当前行为】通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
@@ -411,7 +413,7 @@ async function quickAddTagToBook(tagName: string) {
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已添加', 'success')
-      // 【复刻原版】刷新书籍列表和标签列表
+      // 【当前行为】刷新书籍列表和标签列表
       await bookshelfStore.loadBooks()
       await bookshelfStore.loadTags()
     } else {
@@ -436,101 +438,102 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-esc="true"
     @close="emit('close')"
   >
-        <div v-if="currentBook" class="book-detail-container">
-          <!-- 书籍信息 - 与原版相同的垂直布局 -->
-          <div class="book-info-section">
-            <div class="book-cover-large">
-              <img
-                v-if="currentBook.cover"
-                :src="currentBook.cover"
-                alt="封面"
+    <div v-if="currentBook" class="book-detail-container">
+      <!-- 书籍信息 - 与当前实现相同的垂直布局 -->
+      <div class="book-info-section">
+        <div class="book-cover-large">
+          <img
+            v-if="currentBook.cover"
+            :src="currentBook.cover"
+            alt="封面"
+          >
+          <div v-else class="book-cover-placeholder">📖</div>
+        </div>
+        <div class="book-meta">
+          <h3>{{ currentBook.title }}</h3>
+          <p class="meta-item">
+            <span>标签：</span>
+            <span v-if="currentBook.tags && currentBook.tags.length > 0" class="detail-tags">
+              <span
+                v-for="tag in currentBook.tags"
+                :key="tag"
+                class="detail-tag"
+                :style="{ background: getTagColor(tag) }"
               >
-              <div v-else class="book-cover-placeholder">📖</div>
-            </div>
-            <div class="book-meta">
-              <h3>{{ currentBook.title }}</h3>
-              <p class="meta-item">
-                <span>标签：</span>
-                <span v-if="currentBook.tags && currentBook.tags.length > 0" class="detail-tags">
-                  <span
-                    v-for="tag in currentBook.tags"
-                    :key="tag"
-                    class="detail-tag"
-                    :style="{ background: getTagColor(tag) }"
-                  >
-                    {{ tag }}
-                    <span class="remove-detail-tag" @click.stop="removeTag(tag)">×</span>
-                  </span>
-                </span>
-                <span v-else class="no-tags-hint">暂无标签</span>
-                <button class="btn-add-tag" title="添加标签" @click="openAddTagModal">+</button>
-              </p>
-              <p class="meta-item"><span>章节数：</span><span>{{ chapters.length }}</span></p>
-              <p class="meta-item"><span>创建时间：</span><span>{{ formatDate(currentBook.created_at || currentBook.createdAt) }}</span></p>
-              <p class="meta-item"><span>最后更新：</span><span>{{ formatDate(currentBook.updated_at || currentBook.updatedAt) }}</span></p>
-              <div class="book-actions">
-                <button class="btn btn-sm btn-primary" @click="goToInsight">● 漫画分析</button>
-                <button class="btn btn-sm btn-secondary" @click="editCurrentBook">编辑书籍</button>
-                <button class="btn btn-sm btn-danger" @click="deleteCurrentBook">删除书籍</button>
-              </div>
-            </div>
+                {{ tag }}
+                <span class="remove-detail-tag" @click.stop="removeTag(tag)">×</span>
+              </span>
+            </span>
+            <span v-else class="no-tags-hint">暂无标签</span>
+            <UiButton variant="toolbar" class="btn-add-tag" title="添加标签" @click="openAddTagModal">+</UiButton>
+          </p>
+          <p class="meta-item"><span>章节数：</span><span>{{ chapters.length }}</span></p>
+          <p class="meta-item"><span>创建时间：</span><span>{{ formatDate(currentBook.created_at || currentBook.createdAt) }}</span></p>
+          <p class="meta-item"><span>最后更新：</span><span>{{ formatDate(currentBook.updated_at || currentBook.updatedAt) }}</span></p>
+          <div class="book-actions">
+            <UiButton size="sm" variant="primary" @click="goToInsight">● 漫画分析</UiButton>
+            <UiButton size="sm" variant="secondary" @click="editCurrentBook">编辑书籍</UiButton>
+            <UiButton size="sm" variant="danger" @click="deleteCurrentBook">删除书籍</UiButton>
           </div>
+        </div>
+      </div>
 
-          <!-- 章节列表 -->
-          <div class="chapters-section">
-            <div class="section-header">
-              <h3>章节列表</h3>
-              <button class="btn btn-sm btn-primary" @click="openCreateChapterModal">
-                <span class="btn-icon">+</span> 新建章节
-              </button>
+      <!-- 章节列表 -->
+      <div class="chapters-section">
+        <div class="section-header">
+          <h3>章节列表</h3>
+          <UiButton size="sm" variant="primary" @click="openCreateChapterModal">
+            <span class="button-icon">+</span> 新建章节
+          </UiButton>
+        </div>
+        <div v-if="chapters.length > 0" class="chapters-list">
+          <div
+            v-for="(chapter, index) in chapters"
+            :key="chapter.id"
+            class="chapter-item"
+            :class="{
+              dragging: draggedChapterIndex === index,
+              'drag-over': dragOverChapterIndex === index && draggedChapterIndex !== index
+            }"
+            draggable="true"
+            @dragstart="handleChapterDragStart($event, index)"
+            @dragover="handleChapterDragOver($event, index)"
+            @dragleave="handleChapterDragLeave"
+            @drop="handleChapterDrop($event, index)"
+            @dragend="handleChapterDragEnd"
+          >
+            <div class="chapter-drag-handle" title="拖拽排序">⋮⋮</div>
+            <div class="chapter-info">
+              <span class="chapter-order">#{{ index + 1 }}</span>
+              <span class="chapter-title">{{ chapter.title }}</span>
+              <span class="chapter-meta">{{ chapter.image_count || chapter.imageCount || 0 }} 张图片</span>
             </div>
-            <div v-if="chapters.length > 0" class="chapters-list">
-              <div
-                v-for="(chapter, index) in chapters"
-                :key="chapter.id"
-                class="chapter-item"
-                :class="{
-                  dragging: draggedChapterIndex === index,
-                  'drag-over': dragOverChapterIndex === index && draggedChapterIndex !== index
-                }"
-                draggable="true"
-                @dragstart="handleChapterDragStart($event, index)"
-                @dragover="handleChapterDragOver($event, index)"
-                @dragleave="handleChapterDragLeave"
-                @drop="handleChapterDrop($event, index)"
-                @dragend="handleChapterDragEnd"
+            <div class="chapter-actions">
+              <UiButton variant="toolbar" class="chapter-action-btn chapter-enter-btn" @click="goToTranslate(chapter.id)">
+                进入翻译
+              </UiButton>
+              <UiButton
+                variant="toolbar"
+                class="chapter-action-btn chapter-read-btn"
+                :disabled="(chapter.image_count || chapter.imageCount || 0) === 0"
+                @click="goToReader(chapter.id)"
               >
-                <div class="chapter-drag-handle" title="拖拽排序">⋮⋮</div>
-                <div class="chapter-info">
-                  <span class="chapter-order">#{{ index + 1 }}</span>
-                  <span class="chapter-title">{{ chapter.title }}</span>
-                  <span class="chapter-meta">{{ chapter.image_count || chapter.imageCount || 0 }} 张图片</span>
-                </div>
-                <div class="chapter-actions">
-                  <button class="chapter-action-btn chapter-enter-btn" @click="goToTranslate(chapter.id)">
-                    进入翻译
-                  </button>
-                  <button
-                    class="chapter-action-btn chapter-read-btn"
-                    :disabled="(chapter.image_count || chapter.imageCount || 0) === 0"
-                    @click="goToReader(chapter.id)"
-                  >
-                    进入阅读
-                  </button>
-                  <button class="chapter-action-btn" @click="openEditChapterModal(chapter.id)">
-                    编辑
-                  </button>
-                  <button class="chapter-action-btn danger" @click="deleteChapter(chapter.id)">
-                    删除
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty-state-small">
-              <p>暂无章节，点击上方按钮创建</p>
+                进入阅读
+              </UiButton>
+              <UiButton variant="toolbar" class="chapter-action-btn" @click="openEditChapterModal(chapter.id)">
+                编辑
+              </UiButton>
+              <UiButton variant="danger" class="chapter-action-btn" @click="deleteChapter(chapter.id)">
+                删除
+              </UiButton>
             </div>
           </div>
         </div>
+        <div v-else class="empty-state-small">
+          <p>暂无章节，点击上方按钮创建</p>
+        </div>
+      </div>
+    </div>
   </BaseModal>
 
   <!-- 章节编辑模态框 -->
@@ -541,20 +544,21 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-overlay="true"
     :close-on-esc="true"
   >
-        <div class="form-group">
-          <label for="chapterTitleInput">章节名称 <span class="required">*</span></label>
-          <input
-            id="chapterTitleInput"
-            v-model="chapterTitle"
-            type="text"
-            placeholder="例如：第1话、序章"
-            @keypress.enter="saveChapter"
-          >
-        </div>
-        <template #footer>
-          <button type="button" class="btn btn-secondary" @click="showChapterModal = false">取消</button>
-          <button type="button" class="btn btn-primary" @click="saveChapter">保存</button>
-        </template>
+    <div class="chapter-form-field">
+      <label for="chapterTitleInput">章节名称 <span class="required">*</span></label>
+      <UiInput
+        id="chapterTitleInput"
+        v-model="chapterTitle"
+        type="text"
+        autocomplete="off"
+        placeholder="例如：第1话、序章"
+        @keypress.enter="saveChapter"
+      />
+    </div>
+    <template #footer>
+      <UiButton type="button" variant="secondary" @click="showChapterModal = false">取消</UiButton>
+      <UiButton type="button" variant="primary" @click="saveChapter">保存</UiButton>
+    </template>
   </BaseModal>
 
   <BaseModal
@@ -565,53 +569,53 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-esc="true"
     @close="closeAddTagModal"
   >
-          <!-- 【复刻原版】搜索/创建输入框 -->
-          <div class="quick-tag-input-wrapper">
-            <input
-              ref="quickTagInputRef"
-              v-model="quickTagFilter"
-              type="text"
-              class="quick-tag-input"
-              placeholder="输入标签名称进行搜索或创建..."
-              @keypress.enter="handleQuickTagInputEnter"
-            >
-          </div>
+    <!-- 【当前行为】搜索/创建输入框 -->
+    <div class="quick-tag-input-wrapper">
+      <UiInput
+        ref="quickTagInputRef"
+        v-model="quickTagFilter"
+        type="text"
+        class="quick-tag-input"
+        placeholder="输入标签名称进行搜索或创建..."
+        @keypress.enter="handleQuickTagInputEnter"
+      />
+    </div>
           
-          <!-- 【复刻原版】过滤后的可用标签列表 -->
-          <div class="quick-tag-list">
-            <!-- 可用标签 -->
-            <div
-              v-for="tag in filteredAvailableTags"
-              :key="tag.name"
-              class="quick-tag-item"
-              @click="quickAddTagToBook(tag.name)"
-            >
-              <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
-              <span class="quick-tag-name">{{ tag.name }}</span>
-              <span class="tag-add-icon">+</span>
-            </div>
+    <!-- 【当前行为】过滤后的可用标签列表 -->
+    <div class="quick-tag-list">
+      <!-- 可用标签 -->
+      <div
+        v-for="tag in filteredAvailableTags"
+        :key="tag.name"
+        class="quick-tag-item"
+        @click="quickAddTagToBook(tag.name)"
+      >
+        <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
+        <span class="quick-tag-name">{{ tag.name }}</span>
+        <span class="tag-add-icon">+</span>
+      </div>
             
-            <!-- 创建新标签选项 -->
-            <div
-              v-if="showCreateNewTagOption"
-              class="quick-tag-item new-tag"
-              @click="quickAddTagToBook(quickTagFilter.trim())"
-            >
-              <span class="tag-icon">+</span>
-              <span>创建并添加 "{{ quickTagFilter.trim() }}"</span>
-            </div>
+      <!-- 创建新标签选项 -->
+      <div
+        v-if="showCreateNewTagOption"
+        class="quick-tag-item new-tag"
+        @click="quickAddTagToBook(quickTagFilter.trim())"
+      >
+        <span class="tag-icon">+</span>
+        <span>创建并添加 "{{ quickTagFilter.trim() }}"</span>
+      </div>
             
-            <!-- 无可用标签提示 -->
-            <p 
-              v-if="filteredAvailableTags.length === 0 && !showCreateNewTagOption" 
-              class="no-tags-hint"
-            >
-              {{ quickTagFilter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
-            </p>
-          </div>
-        <template #footer>
-          <button type="button" class="btn btn-secondary" @click="closeAddTagModal">关闭</button>
-        </template>
+      <!-- 无可用标签提示 -->
+      <p 
+        v-if="filteredAvailableTags.length === 0 && !showCreateNewTagOption" 
+        class="quick-tags-empty"
+      >
+        {{ quickTagFilter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
+      </p>
+    </div>
+    <template #footer>
+      <UiButton type="button" variant="secondary" @click="closeAddTagModal">关闭</UiButton>
+    </template>
   </BaseModal>
 
   <!-- 删除确认模态框 -->
@@ -619,24 +623,24 @@ async function quickAddTagToBook(tagName: string) {
     v-model="showDeleteConfirm"
     title="确认删除"
     size="small"
+    custom-class="confirm-modal"
     :close-on-overlay="true"
     :close-on-esc="true"
   >
-          <p>
-            {{ deleteTarget === 'book' 
-              ? '确定要删除这本书籍吗？所有章节数据将一并删除，此操作不可恢复。' 
-              : '确定要删除这个章节吗？此操作不可恢复。' 
-            }}
-          </p>
-        <template #footer>
-          <button type="button" class="btn btn-secondary" @click="showDeleteConfirm = false">取消</button>
-          <button type="button" class="btn btn-danger" @click="confirmDelete">删除</button>
-        </template>
+    <p>
+      {{ deleteTarget === 'book' 
+        ? '确定要删除这本书籍吗？所有章节数据将一并删除，此操作不可恢复。' 
+        : '确定要删除这个章节吗？此操作不可恢复。' 
+      }}
+    </p>
+    <template #footer>
+      <UiButton type="button" variant="secondary" @click="showDeleteConfirm = false">取消</UiButton>
+      <UiButton type="button" variant="danger" @click="confirmDelete">删除</UiButton>
+    </template>
   </BaseModal>
 </template>
 
-<style scoped>
-/* ==================== 书籍详情模态框样式 - 完整迁移自 bookshelf.css ==================== */
+<style scoped>/* ==================== 书籍详情模态框样式 - 当前样式 ==================== */
 
 /* 书籍详情容器 */
 .book-detail-container {
@@ -658,8 +662,8 @@ async function quickAddTagToBook(tagName: string) {
     aspect-ratio: 3 / 4;
     border-radius: 12px;
     overflow: hidden;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+    box-shadow: 0 8px 24px var(--book-detail-modal-shadow-default);
 }
 
 .book-cover-large img {
@@ -679,7 +683,7 @@ async function quickAddTagToBook(tagName: string) {
 .book-meta h3 {
     font-size: 1.3rem;
     margin: 0 0 16px 0;
-    color: var(--text-primary);
+    color: var(--color-text-default);
     font-weight: 600;
     line-height: 1.3;
     word-break: break-word;
@@ -688,7 +692,7 @@ async function quickAddTagToBook(tagName: string) {
 /* 书籍详情元信息项 - 垂直排列 */
 .book-meta .meta-item {
     font-size: 0.9rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     margin: 6px 0;
     display: flex;
     align-items: center;
@@ -696,7 +700,7 @@ async function quickAddTagToBook(tagName: string) {
 }
 
 .book-meta .meta-item span:first-child {
-    color: var(--text-primary);
+    color: var(--color-text-default);
     font-weight: 500;
     flex-shrink: 0;
     min-width: 70px;
@@ -717,7 +721,7 @@ async function quickAddTagToBook(tagName: string) {
 }
 
 .book-meta .no-tags-hint {
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     font-style: italic;
 }
 
@@ -725,9 +729,9 @@ async function quickAddTagToBook(tagName: string) {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    border: 1px dashed var(--border-color);
+    border: 1px dashed var(--color-border-muted);
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     font-size: 0.9rem;
     cursor: pointer;
     display: inline-flex;
@@ -737,8 +741,8 @@ async function quickAddTagToBook(tagName: string) {
 }
 
 .book-meta .btn-add-tag:hover {
-    border-color: #667eea;
-    color: #667eea;
+    border-color: var(--color-border-brand-gradient);
+    color: var(--book-detail-modal-text-primary);
 }
 
 /* 操作按钮组 */
@@ -751,7 +755,7 @@ async function quickAddTagToBook(tagName: string) {
 
 /* 章节区域 */
 .chapters-section {
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-border-muted);
     padding-top: 16px;
 }
 
@@ -767,7 +771,7 @@ async function quickAddTagToBook(tagName: string) {
 .section-header h3 {
     font-size: 1.05rem;
     margin: 0;
-    color: var(--text-primary);
+    color: var(--color-text-default);
     font-weight: 600;
 }
 
@@ -787,17 +791,17 @@ async function quickAddTagToBook(tagName: string) {
 }
 
 .chapters-list::-webkit-scrollbar-track {
-    background: var(--hover-bg);
+    background: var(--color-surface-interactive-hover);
     border-radius: 3px;
 }
 
 .chapters-list::-webkit-scrollbar-thumb {
-    background: var(--border-color);
+    background: var(--color-border-muted);
     border-radius: 3px;
 }
 
 .chapters-list::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
+    background: var(--color-text-supporting);
 }
 
 .chapter-item {
@@ -805,14 +809,14 @@ async function quickAddTagToBook(tagName: string) {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: var(--hover-bg);
+    background: var(--color-surface-interactive-hover);
     border-radius: 8px;
     transition: all 0.2s ease;
     gap: 12px;
 }
 
 .chapter-item:hover {
-    background: var(--border-color);
+    background: var(--color-border-muted);
 }
 
 .chapter-info {
@@ -825,7 +829,7 @@ async function quickAddTagToBook(tagName: string) {
 
 .chapter-order {
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     min-width: 32px;
     flex-shrink: 0;
 }
@@ -833,7 +837,7 @@ async function quickAddTagToBook(tagName: string) {
 .chapter-title {
     font-weight: 500;
     font-size: 0.9rem;
-    color: var(--text-primary);
+    color: var(--color-text-default);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -841,7 +845,7 @@ async function quickAddTagToBook(tagName: string) {
 
 .chapter-meta {
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
 }
 
 .chapter-actions {
@@ -856,62 +860,103 @@ async function quickAddTagToBook(tagName: string) {
     border: none;
     padding: 6px 10px;
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     cursor: pointer;
     border-radius: 4px;
     transition: all 0.2s;
 }
 
 .chapter-action-btn:hover {
-    background: var(--card-bg);
-    color: var(--text-primary);
+    background: var(--color-surface-card);
+    color: var(--color-text-default);
 }
 
 .chapter-action-btn.danger:hover {
-    color: #dc3545;
+    color: var(--color-text-danger);
 }
 
 .chapter-enter-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
     color: white;
     font-weight: 500;
 }
 
 .chapter-enter-btn:hover {
-    background: linear-gradient(135deg, #7b8eef 0%, #8a5cb5 100%);
+    background: linear-gradient(135deg, var(--book-detail-modal-surface-base) 0%, var(--book-detail-modal-surface-raised) 100%);
     color: white;
     transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 12px var(--book-detail-modal-shadow-raised);
 }
 
 .chapter-read-btn {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
     color: white;
     font-weight: 500;
 }
 
-.chapter-read-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #34ce57 0%, #38d9a9 100%);
-    color: white;
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
-}
-
 .chapter-read-btn:disabled {
-    background: var(--border-color);
-    color: var(--text-secondary);
+    background: var(--color-border-muted);
+    color: var(--color-text-supporting);
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.chapter-read-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--book-detail-modal-surface-muted) 0%, var(--book-detail-modal-surface-subtle) 100%);
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px var(--book-detail-modal-shadow-floating);
 }
 
 /* 空状态 */
 .empty-state-small {
     padding: 40px 20px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
 }
 
-/* ==================== 【复刻原版】快速添加标签样式 ==================== */
+/* 章节编辑弹窗表单 */
+.chapter-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chapter-form-field label {
+    display: block;
+    color: var(--color-text-default);
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.required {
+    color: var(--color-text-danger-strong);
+}
+
+.chapter-form-field input[type='text'] {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border-muted);
+    border-radius: 8px;
+    outline: none;
+    background: var(--color-surface-card);
+    color: var(--color-text-default);
+    font-size: 0.95rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.chapter-form-field input[type='text']:focus {
+    border-color: var(--color-border-brand-gradient);
+    box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-strong);
+}
+
+.chapter-form-field input[type='text']::placeholder {
+    color: var(--color-text-supporting);
+}
+
+/* ==================== 【当前行为】快速添加标签样式 ==================== */
 
 /* 快速标签输入框包装 */
 .quick-tag-input-wrapper {
@@ -921,22 +966,22 @@ async function quickAddTagToBook(tagName: string) {
 .quick-tag-input {
     width: 100%;
     padding: 12px 16px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 8px;
     font-size: 0.95rem;
-    background: var(--card-bg);
-    color: var(--text-primary);
+    background: var(--color-surface-card);
+    color: var(--color-text-default);
     transition: all 0.2s;
 }
 
 .quick-tag-input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    border-color: var(--color-border-brand-gradient);
+    box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-soft);
 }
 
 .quick-tag-input::placeholder {
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
 }
 
 /* 快速标签列表 */
@@ -954,14 +999,14 @@ async function quickAddTagToBook(tagName: string) {
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    background: var(--hover-bg);
+    background: var(--color-surface-interactive-hover);
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .quick-tag-item:hover {
-    background: var(--border-color);
+    background: var(--color-border-muted);
     transform: translateX(4px);
 }
 
@@ -975,13 +1020,13 @@ async function quickAddTagToBook(tagName: string) {
 .quick-tag-item .quick-tag-name {
     flex: 1;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--color-text-default);
 }
 
 .quick-tag-item .tag-add-icon {
     font-size: 1.2rem;
     font-weight: 600;
-    color: #667eea;
+    color: var(--book-detail-modal-text-primary);
     opacity: 0;
     transition: opacity 0.2s;
 }
@@ -992,13 +1037,13 @@ async function quickAddTagToBook(tagName: string) {
 
 /* 创建新标签选项 */
 .quick-tag-item.new-tag {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-    border: 1px dashed rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, var(--book-detail-modal-surface-hover) 0%, var(--book-detail-modal-surface-active) 100%);
+    border: 1px dashed var(--book-detail-modal-border-default);
 }
 
 .quick-tag-item.new-tag:hover {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
-    border-color: rgba(102, 126, 234, 0.6);
+    background: linear-gradient(135deg, var(--book-detail-modal-surface-selected) 0%, var(--book-detail-modal-surface-overlay) 100%);
+    border-color: var(--book-detail-modal-border-strong);
 }
 
 .quick-tag-item .tag-icon {
@@ -1009,13 +1054,13 @@ async function quickAddTagToBook(tagName: string) {
     justify-content: center;
     font-size: 1.1rem;
     font-weight: 600;
-    color: #667eea;
+    color: var(--book-detail-modal-text-primary);
 }
 
 /* 无标签提示 */
-.no-tags-hint {
+.quick-tags-empty {
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     font-style: italic;
     padding: 24px 16px;
     margin: 0;

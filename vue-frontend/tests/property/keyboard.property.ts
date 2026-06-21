@@ -7,7 +7,7 @@
  * Validates: Requirements 19.1-19.7
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import * as fc from 'fast-check'
 
 // ============================================================
@@ -143,31 +143,6 @@ const modifiersArb = fc.record({
   shift: fc.boolean(),
   alt: fc.boolean()
 })
-
-/**
- * 生成目标元素类型
- */
-const targetElementArb = fc.constantFrom(
-  { tagName: 'DIV', isContentEditable: false },
-  { tagName: 'BUTTON', isContentEditable: false },
-  { tagName: 'INPUT', isContentEditable: false },
-  { tagName: 'TEXTAREA', isContentEditable: false },
-  { tagName: 'DIV', isContentEditable: true }
-)
-
-/**
- * 生成模拟键盘事件
- */
-const mockKeyboardEventArb = fc.record({
-  key: keyNameArb,
-  ctrlKey: fc.boolean(),
-  shiftKey: fc.boolean(),
-  altKey: fc.boolean(),
-  target: targetElementArb
-}).map(data => ({
-  ...data,
-  preventDefault: vi.fn()
-}))
 
 /**
  * 生成快捷键处理器

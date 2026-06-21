@@ -1,7 +1,8 @@
-<template>
+﻿<template>
   <div class="chat-shell">
     <div class="workspace-tabs" role="tablist">
-      <button
+      <UiButton
+        variant="toolbar"
         v-for="item in tabs"
         :key="item.value"
         class="tab-btn"
@@ -10,14 +11,15 @@
       >
         <span>{{ item.icon }}</span>
         <strong>{{ item.label }}</strong>
-      </button>
+      </UiButton>
     </div>
 
     <section v-if="activeTab === 'chat'" class="workspace-card chat-workspace">
       <div class="session-toolbar">
         <div class="session-triggers">
           <div class="trigger-stack trigger-stack-wide">
-            <button
+            <UiButton
+              variant="toolbar"
               data-testid="session-list-trigger"
               class="session-trigger session-trigger-inline"
               :disabled="chatMutating || chatStreaming"
@@ -29,9 +31,10 @@
                 <span class="trigger-meta">{{ currentSessionMeta }}</span>
               </div>
               <span class="trigger-arrow">▾</span>
-            </button>
+            </UiButton>
             <div v-if="sessionListOpen" ref="sessionListRef" class="session-list-panel">
-              <button
+              <UiButton
+                variant="toolbar"
                 class="session-list-item current"
                 :class="{ active: session?.session_id === currentSessionId }"
                 @click="closeSessionList"
@@ -44,9 +47,10 @@
                   <span>{{ currentSessionMeta }}</span>
                   <span class="item-badge">当前</span>
                 </div>
-              </button>
+              </UiButton>
               <div v-if="archivedSessions.length === 0" class="session-list-empty">还没有归档会话。</div>
-              <button
+              <UiButton
+                variant="toolbar"
                 v-for="item in archivedSessions"
                 :key="item.session_id"
                 class="session-list-item"
@@ -60,12 +64,13 @@
                   <span>{{ item.message_count }} 条</span>
                   <span>{{ formatSessionTime(item.updated_at) }}</span>
                 </div>
-              </button>
+              </UiButton>
             </div>
           </div>
 
           <div class="trigger-stack">
-            <button
+            <UiButton
+              variant="toolbar"
               data-testid="greeting-picker-trigger"
               class="session-trigger session-trigger-inline"
               :disabled="displayGreetings.length === 0 || chatMutating || chatStreaming"
@@ -76,35 +81,36 @@
                 <strong>{{ currentGreetingLabel }}</strong>
               </div>
               <span class="trigger-arrow">▾</span>
-            </button>
+            </UiButton>
           </div>
         </div>
         <div class="toolbar-buttons">
-          <button class="ghost-btn small" :disabled="!document || chatMutating || chatStreaming" @click="$emit('new-session')">
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!document || chatMutating || chatStreaming" @click="$emit('new-session')" size="sm">
             新对话
-          </button>
-          <button
+          </UiButton>
+          <UiButton
+            variant="toolbar"
             data-testid="prompt-preview-trigger"
-            class="ghost-btn small"
+            class="action-ghost"
             :disabled="!document || chatPromptLoading || chatStreaming"
-            @click="openPromptPreviewModal"
+            @click="openPromptPreviewModal" size="sm"
           >
             {{ chatPromptLoading ? '加载中...' : '查看提示词' }}
-          </button>
-          <button class="ghost-btn small" :disabled="!document || chatMutating || chatStreaming" @click="openGreetingPicker">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!document || chatMutating || chatStreaming" @click="openGreetingPicker" size="sm">
             重选开场白
-          </button>
-          <button class="ghost-btn small" :disabled="!session || chatSummarizing || chatStreaming" @click="$emit('summarize-session')">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!session || chatSummarizing || chatStreaming" @click="$emit('summarize-session')" size="sm">
             {{ chatSummarizing ? '总结中...' : '手动总结' }}
-          </button>
-          <button class="ghost-btn small" :disabled="!session || chatExporting || chatStreaming" @click="$emit('export-session')">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!session || chatExporting || chatStreaming" @click="$emit('export-session')" size="sm">
             {{ chatExporting ? '导出中...' : '导出聊天' }}
-          </button>
-          <button class="ghost-btn small" :disabled="chatImporting || chatStreaming" @click="pickImport">
+          </UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="chatImporting || chatStreaming" @click="pickImport" size="sm">
             {{ chatImporting ? '导入中...' : '导入聊天' }}
-          </button>
+          </UiButton>
         </div>
-        <input ref="importInput" hidden type="file" accept=".json" @change="handleImportChange">
+        <UiFileInput ref="importInput" hidden accept=".json" @change="handleImportChange" />
       </div>
 
       <div v-if="!document" class="empty-copy">选择角色文档后可开始聊天。</div>
@@ -118,43 +124,47 @@
             <div class="message-head">
               <span class="message-role">{{ item.role === 'assistant' ? (document.identity.name || '角色') : '你' }}</span>
               <div class="message-actions">
-                <button
+                <UiButton
+                  variant="toolbar"
                   v-if="canEditMessage(item)"
-                  class="ghost-btn tiny"
+                  class="action-ghost tiny"
                   :disabled="chatStreaming || chatMutating"
                   @click="startEdit(item)"
                 >
                   编辑
-                </button>
-                <button
-                  class="ghost-btn tiny"
+                </UiButton>
+                <UiButton
+                  variant="toolbar"
+                  class="action-ghost tiny"
                   :disabled="chatStreaming || chatMutating"
                   @click="$emit('delete-message', item.message_id)"
                 >
                   从这里回退
-                </button>
-                <button
+                </UiButton>
+                <UiButton
+                  variant="toolbar"
                   v-if="canRegenerateMessage(item)"
-                  class="ghost-btn tiny"
+                  class="action-ghost tiny"
                   :disabled="chatStreaming"
                   @click="$emit('regenerate-message', item.message_id)"
                 >
                   重新生成
-                </button>
+                </UiButton>
               </div>
             </div>
 
             <div v-if="editingMessageId === item.message_id" class="editor-row">
-              <textarea v-model="editingContent" rows="4"></textarea>
+              <UiTextarea v-model="editingContent" rows="4" />
               <div class="editor-actions">
-                <button class="primary-btn tiny" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">保存并重新生成</button>
-                <button class="ghost-btn tiny" @click="cancelEdit">取消</button>
+                <UiButton variant="toolbar" class="action-primary tiny" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">保存并重新生成</UiButton>
+                <UiButton variant="toolbar" class="action-ghost tiny" @click="cancelEdit">取消</UiButton>
               </div>
             </div>
             <div v-else class="message-body">{{ item.content }}</div>
 
             <div v-if="item.attachments.length > 0" class="attachment-grid">
-              <button
+              <UiButton
+                variant="toolbar"
                 v-for="attachment in item.attachments"
                 :key="attachment.attachment_id"
                 type="button"
@@ -172,14 +182,15 @@
                   <strong>{{ attachment.filename }}</strong>
                   <span>{{ attachmentTypeLabel(attachment.mime_type) }}</span>
                 </div>
-              </button>
+              </UiButton>
             </div>
           </article>
         </div>
 
         <div class="composer-card">
           <div v-if="pendingFiles.length > 0" class="pending-files">
-            <button
+            <UiButton
+              variant="toolbar"
               v-for="(file, index) in pendingFiles"
               :key="file.id"
               type="button"
@@ -193,19 +204,20 @@
                 <span>{{ attachmentTypeLabel(file.file.type || 'application/octet-stream') }}</span>
               </div>
               <span class="pending-remove" @click.stop="removePendingFile(index)">×</span>
-            </button>
+            </UiButton>
           </div>
           <div class="composer-main">
-            <textarea
+            <UiTextarea
               v-model="chatInput"
               class="chat-composer-input"
               rows="1"
               placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"
-            ></textarea>
+            />
             <div class="composer-actions compact-actions">
-              <button
+              <UiButton
+                variant="toolbar"
                 data-testid="chat-upload-trigger"
-                class="ghost-btn icon-btn"
+                class="action-ghost icon-btn"
                 type="button"
                 title="添加图片"
                 aria-label="添加图片"
@@ -213,10 +225,11 @@
                 @click="pickAttachments"
               >
                 +
-              </button>
-              <button
+              </UiButton>
+              <UiButton
+                variant="toolbar"
                 data-testid="chat-send-trigger"
-                class="primary-btn icon-btn"
+                class="action-primary icon-btn"
                 type="button"
                 :title="chatStreaming ? '回复生成中...' : '发送消息'"
                 :aria-label="chatStreaming ? '回复生成中...' : '发送消息'"
@@ -224,10 +237,10 @@
                 @click="sendChat"
               >
                 {{ chatStreaming ? '…' : '↗' }}
-              </button>
+              </UiButton>
             </div>
           </div>
-          <input ref="attachmentInput" hidden type="file" accept="image/*" multiple @change="handleAttachmentChange">
+          <UiFileInput ref="attachmentInput" hidden accept="image/*" multiple @change="handleAttachmentChange" />
         </div>
       </template>
     </section>
@@ -239,8 +252,8 @@
           <p>围绕角色卡本体给出结构化建议，可应用 patch 或撤销。</p>
         </div>
         <div class="assistant-actions">
-          <button class="ghost-btn small" :disabled="!pendingPatch" @click="$emit('apply-patch')">应用 patch</button>
-          <button class="ghost-btn small" :disabled="!canUndoPatch" @click="$emit('undo-patch')">撤销 patch</button>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!pendingPatch" @click="$emit('apply-patch')" size="sm">应用 patch</UiButton>
+          <UiButton variant="toolbar" class="action-ghost" :disabled="!canUndoPatch" @click="$emit('undo-patch')" size="sm">撤销 patch</UiButton>
         </div>
       </div>
 
@@ -257,16 +270,17 @@
 
         <div class="composer-card assistant-composer">
           <div class="composer-main">
-            <textarea
+            <UiTextarea
               v-model="agentInput"
               class="chat-composer-input"
               rows="1"
               placeholder="例如：请审查当前角色卡，并建议补充世界书与状态任务。"
-            ></textarea>
+            />
             <div class="composer-actions compact-actions">
-              <button
+              <UiButton
+                variant="toolbar"
                 data-testid="assistant-send-trigger"
-                class="primary-btn icon-btn"
+                class="action-primary icon-btn"
                 type="button"
                 :title="agentBusy ? '助手处理中...' : '发送给助手'"
                 :aria-label="agentBusy ? '助手处理中...' : '发送给助手'"
@@ -274,7 +288,7 @@
                 @click="sendAgent"
               >
                 {{ agentBusy ? '…' : '↗' }}
-              </button>
+              </UiButton>
             </div>
           </div>
         </div>
@@ -340,78 +354,45 @@
       </div>
     </section>
 
-    <BaseModal
-      v-model="greetingPickerOpen"
-      title="重选开场白"
-      size="large"
-      custom-class="studio-chat-modal"
-    >
-      <div class="modal-copy">
-        <p>选择一条开场白后，将归档当前会话，并以该开场白重新开启一轮新对话。</p>
-      </div>
-      <div v-if="displayGreetings.length === 0" class="modal-empty">当前还没有可用开场白。</div>
-      <div v-else class="greeting-grid">
-        <button
-          v-for="item in displayGreetings"
-          :key="item.greeting_id"
-          type="button"
-          class="greeting-card"
-          :class="{ active: selectedGreetingId === item.greeting_id }"
-          @click="selectedGreetingId = item.greeting_id"
-        >
-          <div class="greeting-card-head">
-            <span class="greeting-badge">{{ item.label }}</span>
-            <span v-if="selectedGreetingId === item.greeting_id" class="greeting-check">✓</span>
-          </div>
-          <p>{{ item.content }}</p>
-        </button>
-      </div>
-      <template #footer>
-        <button class="ghost-btn" @click="greetingPickerOpen = false">取消</button>
-        <button class="primary-btn" :disabled="!selectedGreetingId || chatMutating || chatStreaming" @click="confirmGreetingSelection">
-          确认并重新开场
-        </button>
-      </template>
-    </BaseModal>
-
-    <BaseModal
-      v-model="promptPreviewModalOpen"
-      title="本轮提示词预览"
-      size="large"
-      custom-class="studio-chat-modal"
-    >
-      <div v-if="chatPromptLoading" class="modal-loading">提示词加载中...</div>
-      <div v-else-if="promptPreviewError" class="modal-empty">{{ promptPreviewError }}</div>
-      <div v-else-if="promptPreview.trim()" class="prompt-preview-body">
-        <div class="prompt-tools">
-          <button class="ghost-btn small" @click="copyPromptPreview">复制内容</button>
-        </div>
-        <pre>{{ promptPreview }}</pre>
-      </div>
-      <div v-else class="modal-empty" data-testid="prompt-preview-empty">
-        请先发送至少一条消息后再查看本轮提示词。
-      </div>
-    </BaseModal>
-
-    <BaseModal
-      v-model="imagePreviewOpen"
-      :title="imagePreviewAttachment?.filename || '图片预览'"
-      size="large"
-      custom-class="studio-chat-modal studio-image-modal"
-    >
-      <div v-if="imagePreviewAttachment" class="image-preview-body">
-        <img :src="attachmentUrl(imagePreviewAttachment)" :alt="imagePreviewAttachment.filename">
-      </div>
-    </BaseModal>
+    <CharacterStudioPreviewModals
+      v-model:greeting-open="greetingPickerOpen"
+      v-model:prompt-open="promptPreviewModalOpen"
+      v-model:image-open="imagePreviewOpen"
+      v-model:selected-greeting-id="selectedGreetingId"
+      :display-greetings="displayGreetings"
+      :chat-mutating="chatMutating"
+      :chat-streaming="chatStreaming"
+      :chat-prompt-loading="chatPromptLoading"
+      :prompt-preview="promptPreview"
+      :prompt-preview-error="promptPreviewError"
+      :image-title="imagePreviewTitle"
+      :image-src="imagePreviewSrc"
+      @confirm-greeting-selection="confirmGreetingSelection"
+      @copy-prompt-preview="copyPromptPreview"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
-import BaseModal from '@/components/common/BaseModal.vue'
 import { buildCharacterStudioPatchSummary } from '@/stores/characterStudioPatchSummary'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
+import CharacterStudioPreviewModals from './CharacterStudioPreviewModals.vue'
+import { studioPreviewTabs } from './characterStudioEditorConfig'
+import {
+  attachmentTypeLabel,
+  canEditStudioChatMessage as canEditMessage,
+  canRegenerateStudioChatMessage as canRegenerateMessage,
+  formatSessionTime,
+  type PendingAttachmentCard,
+  summarizeStudioRuntimeLog as summarizeLog,
+} from './characterStudioPreviewHelpers'
 import type {
   CharacterStudioAgentPatchV2,
   CharacterStudioChatAttachment,
@@ -459,18 +440,7 @@ const emit = defineEmits<{
   (e: 'undo-patch'): void
 }>()
 
-const tabs = [
-  { value: 'chat', label: '聊天', icon: '💬' },
-  { value: 'assistant', label: '卡片助手', icon: '🧠' },
-  { value: 'runtime', label: '运行日志', icon: '📟' },
-] as const
-
-interface PendingAttachmentCard {
-  id: string
-  file: File
-  previewUrl: string
-}
-
+const tabs = studioPreviewTabs
 const chatInput = ref('')
 const agentInput = ref('')
 const pendingFiles = ref<PendingAttachmentCard[]>([])
@@ -527,6 +497,11 @@ const patchSummarySections = computed(() => {
   return buildCharacterStudioPatchSummary(props.pendingPatch, props.document)
 })
 
+const imagePreviewTitle = computed(() => imagePreviewAttachment.value?.filename || '图片预览')
+const imagePreviewSrc = computed(() => (
+  imagePreviewAttachment.value ? attachmentUrl(imagePreviewAttachment.value) : ''
+))
+
 watch(() => props.session?.session_id, () => {
   selectedGreetingId.value = ''
   sessionListOpen.value = false
@@ -581,14 +556,6 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   if (!editingContent.value.trim()) return
   emit('edit-message', { messageId: message.message_id, content: editingContent.value.trim() })
   cancelEdit()
-}
-
-function canEditMessage(message: CharacterStudioChatSession['messages'][number]) {
-  return message.role === 'user'
-}
-
-function canRegenerateMessage(message: CharacterStudioChatSession['messages'][number]) {
-  return message.role === 'assistant'
 }
 
 function pickImport() {
@@ -659,23 +626,6 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
   imagePreviewOpen.value = true
 }
 
-function attachmentTypeLabel(mimeType: string) {
-  if (mimeType.startsWith('image/')) return '图片'
-  return mimeType.split('/').pop() || '附件'
-}
-
-function formatSessionTime(value: string) {
-  if (!value) return '未知时间'
-  return value.slice(5, 16).replace('T', ' ')
-}
-
-function summarizeLog(item: Record<string, unknown>) {
-  if (item.type === 'regex') return `命中正则: ${String(item.scriptName || item.pattern || '未知脚本')}`
-  if (item.type === 'lorebook') return `命中世界书: ${String(item.comment || '未命名条目')}`
-  if (item.type === 'task') return `执行任务: ${String(item.name || '未命名任务')}`
-  return JSON.stringify(item)
-}
-
 function handleDocumentClick(event: MouseEvent) {
   if (!sessionListOpen.value) return
   if (sessionListRef.value?.contains(event.target as Node)) return
@@ -701,9 +651,9 @@ onUnmounted(() => {
   gap: 12px;
   min-height: 0;
   height: 100%;
-  width: 100% !important;
-  max-width: none !important;
-  padding: 0 !important;
+  width: 100%;
+  max-width: none;
+  padding: 0;
 }
 
 .assistant-head,
@@ -723,12 +673,12 @@ onUnmounted(() => {
 .html-preview-card h4,
 .runtime-card h5 {
   margin: 8px 0 0;
-  color: #102741;
+  color: var(--character-studio-preview-shell-text-primary);
 }
 
 .assistant-head p {
   margin: 8px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -738,10 +688,10 @@ onUnmounted(() => {
   gap: 8px;
   padding: 6px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-studio);
   width: 100%;
-  box-shadow: 0 18px 32px rgba(20, 46, 82, 0.06);
+  box-shadow: 0 18px 32px var(--character-studio-preview-shell-shadow-default);
 }
 
 .tab-btn {
@@ -754,14 +704,14 @@ onUnmounted(() => {
   border-radius: 14px;
   padding: 10px 14px;
   background: transparent;
-  color: #55708f;
+  color: var(--character-studio-preview-shell-text-secondary);
   cursor: pointer;
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, rgba(37, 99, 199, 0.14), rgba(77, 134, 238, 0.1));
-  color: #16365b;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 199, 0.16);
+  background: linear-gradient(135deg, var(--color-surface-studio-tint4), var(--character-studio-preview-shell-surface-base));
+  color: var(--character-studio-preview-shell-text-muted);
+  box-shadow: inset 0 0 0 1px var(--character-studio-preview-shell-shadow-raised);
 }
 
 .workspace-card,
@@ -769,9 +719,9 @@ onUnmounted(() => {
 .html-preview-card {
   border-radius: 24px;
   padding: 14px;
-  background: rgba(252, 253, 255, 0.92);
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  box-shadow: 0 24px 40px rgba(20, 46, 82, 0.08);
+  background: var(--character-studio-preview-shell-surface-raised);
+  border: 1px solid var(--color-border-studio);
+  box-shadow: 0 24px 40px var(--shadow-studio-floating);
   width: 100%;
 }
 
@@ -833,13 +783,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  border: 1px solid rgba(28, 55, 94, 0.1);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 249, 254, 0.92));
+  border: 1px solid var(--character-studio-preview-shell-border-default);
+  background: linear-gradient(180deg, var(--character-studio-preview-shell-surface-muted), var(--color-surface-studio-soft));
   border-radius: 16px;
   padding: 12px 14px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 1px 0 var(--character-studio-preview-shell-shadow-floating);
 }
 
 .session-trigger-inline {
@@ -868,7 +818,7 @@ onUnmounted(() => {
 
 .trigger-copy strong {
   font-size: 14px;
-  color: #14304c;
+  color: var(--character-studio-preview-shell-text-subtle);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -877,7 +827,7 @@ onUnmounted(() => {
 .trigger-tag,
 .trigger-meta {
   font-size: 11px;
-  color: #5f7591;
+  color: var(--character-studio-preview-shell-text-supporting);
   white-space: nowrap;
 }
 
@@ -887,7 +837,7 @@ onUnmounted(() => {
   justify-content: center;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(20, 56, 106, 0.06);
+  background: var(--character-studio-preview-shell-surface-subtle);
 }
 
 .trigger-meta {
@@ -896,13 +846,13 @@ onUnmounted(() => {
 }
 
 .trigger-arrow {
-  color: #5f7591;
+  color: var(--character-studio-preview-shell-text-supporting);
   flex-shrink: 0;
 }
 
 .session-list-panel {
   position: absolute;
-  z-index: 15;
+  z-index: var(--z-local-overlay);
   top: calc(100% + 6px);
   left: 0;
   width: min(460px, calc(100vw - 80px));
@@ -910,9 +860,9 @@ onUnmounted(() => {
   overflow: auto;
   border-radius: 20px;
   padding: 10px;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  box-shadow: 0 18px 38px rgba(20, 46, 82, 0.18);
+  background: var(--character-studio-preview-shell-surface-hover);
+  border: 1px solid var(--color-border-studio);
+  box-shadow: 0 18px 38px var(--character-studio-preview-shell-shadow-strong);
 }
 
 .session-list-item {
@@ -930,18 +880,18 @@ onUnmounted(() => {
 
 .session-list-item:hover,
 .session-list-item.active {
-  background: rgba(37, 99, 199, 0.08);
+  background: var(--character-studio-preview-shell-surface-active);
 }
 
 .session-list-item.current {
-  border-bottom: 1px solid rgba(28, 55, 94, 0.08);
+  border-bottom: 1px solid var(--color-border-studio);
   margin-bottom: 6px;
   padding-bottom: 14px;
 }
 
 .session-list-empty {
   padding: 12px 14px;
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
 }
 
@@ -951,13 +901,13 @@ onUnmounted(() => {
 
 .item-main strong {
   display: block;
-  color: #14304c;
+  color: var(--character-studio-preview-shell-text-subtle);
   font-size: 14px;
 }
 
 .item-main p {
   margin: 6px 0 0;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -967,7 +917,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 6px;
   align-items: flex-end;
-  color: #6f84a2;
+  color: var(--character-studio-preview-shell-text-disabled);
   font-size: 11px;
 }
 
@@ -975,18 +925,18 @@ onUnmounted(() => {
   display: inline-flex;
   border-radius: 999px;
   padding: 4px 8px;
-  background: rgba(37, 99, 199, 0.12);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint2);
+  color: var(--color-text-primary-strong);
 }
 
 .composer-card textarea,
 .editor-row textarea {
   width: 100%;
-  border: 1px solid rgba(28, 55, 94, 0.12);
-  background: rgba(245, 249, 254, 0.92);
+  border: 1px solid var(--color-border-studio-strong);
+  background: var(--color-surface-studio-soft);
   border-radius: 14px;
   padding: 10px 12px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
 }
 
@@ -1018,8 +968,8 @@ onUnmounted(() => {
   overflow: auto;
   padding: 12px;
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(244, 248, 255, 0.95), rgba(238, 244, 252, 0.9));
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: linear-gradient(180deg, var(--character-studio-preview-workspace-surface-base), var(--character-studio-preview-workspace-surface-raised));
+  border: 1px solid var(--color-border-studio);
 }
 
 .assistant-main {
@@ -1050,24 +1000,24 @@ onUnmounted(() => {
 .message-card {
   border-radius: 18px;
   padding: 14px;
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  background: rgba(247, 250, 254, 0.96);
+  border: 1px solid var(--color-border-studio);
+  background: var(--character-studio-preview-workspace-surface-muted);
   width: min(100%, 88%);
 }
 
 .message-card.user {
   margin-left: auto;
-  background: rgba(20, 56, 106, 0.08);
+  background: var(--character-studio-preview-workspace-surface-subtle);
 }
 
 .message-card.assistant {
   margin-right: auto;
-  background: rgba(37, 99, 199, 0.1);
+  background: var(--color-surface-studio-tint);
 }
 
 .message-role {
   font-size: 11px;
-  color: #5f7591;
+  color: var(--character-studio-preview-workspace-text-primary);
 }
 
 .message-actions {
@@ -1079,7 +1029,7 @@ onUnmounted(() => {
 .message-body,
 .agent-text {
   margin-top: 8px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -1099,19 +1049,18 @@ onUnmounted(() => {
 .attachment-card {
   margin: 0;
   padding: 0;
-  border: none;
   text-align: left;
   cursor: pointer;
   border-radius: 14px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--character-studio-preview-workspace-surface-hover);
+  border: 1px solid var(--color-border-studio);
 }
 
 .attachment-frame {
   aspect-ratio: 1 / 1;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(225, 235, 250, 0.72), rgba(241, 246, 255, 0.96));
+  background: linear-gradient(180deg, var(--character-studio-preview-workspace-surface-active), var(--character-studio-preview-workspace-surface-selected));
 }
 
 .attachment-card img {
@@ -1129,7 +1078,7 @@ onUnmounted(() => {
 }
 
 .attachment-info strong {
-  color: #14304c;
+  color: var(--character-studio-preview-workspace-text-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1138,7 +1087,7 @@ onUnmounted(() => {
 
 .attachment-info span {
   font-size: 11px;
-  color: #607794;
+  color: var(--color-text-studio-muted);
 }
 
 .composer-card {
@@ -1148,8 +1097,8 @@ onUnmounted(() => {
   gap: 6px;
   padding: 10px 12px;
   border-radius: 20px;
-  background: rgba(244, 248, 255, 0.94);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--character-studio-preview-workspace-surface-overlay);
+  border: 1px solid var(--color-border-studio);
 }
 
 .compact-actions {
@@ -1184,8 +1133,8 @@ onUnmounted(() => {
   grid-template-columns: 56px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  border: 1px solid rgba(28, 55, 94, 0.08);
-  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--color-border-studio);
+  background: var(--character-studio-preview-workspace-surface-inverse);
   border-radius: 16px;
   padding: 10px 12px;
   text-align: left;
@@ -1197,7 +1146,7 @@ onUnmounted(() => {
   height: 56px;
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(37, 99, 199, 0.08);
+  background: var(--character-studio-preview-workspace-surface-contrast);
 }
 
 .pending-image-thumb img {
@@ -1215,7 +1164,7 @@ onUnmounted(() => {
 
 .pending-image-copy strong {
   font-size: 12px;
-  color: #14304c;
+  color: var(--character-studio-preview-workspace-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1223,7 +1172,7 @@ onUnmounted(() => {
 
 .pending-image-copy span {
   font-size: 11px;
-  color: #607794;
+  color: var(--color-text-studio-muted);
 }
 
 .pending-remove {
@@ -1236,8 +1185,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(217, 55, 55, 0.12);
-  color: #b83535;
+  background: var(--color-surface-danger-soft);
+  color: var(--color-text-studio-danger);
   cursor: pointer;
 }
 
@@ -1253,8 +1202,8 @@ onUnmounted(() => {
 .runtime-card {
   border-radius: 18px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(25, 55, 94, 0.08);
+  background: var(--character-studio-preview-workspace-surface-tint);
+  border: 1px solid var(--character-studio-preview-workspace-border-default);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1272,7 +1221,7 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 12px;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   max-height: 280px;
   overflow: auto;
   flex: 1 1 auto;
@@ -1289,8 +1238,8 @@ onUnmounted(() => {
 .patch-summary-section {
   border-radius: 16px;
   padding: 14px;
-  background: rgba(244, 248, 255, 0.88);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--character-studio-preview-workspace-surface-soft);
+  border: 1px solid var(--color-border-studio);
 }
 
 .patch-summary-head {
@@ -1301,18 +1250,18 @@ onUnmounted(() => {
 }
 
 .patch-summary-head strong {
-  color: #16365b;
+  color: var(--character-studio-preview-details-text-primary);
 }
 
 .patch-summary-head span {
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 12px;
 }
 
 .patch-summary-list {
   margin: 10px 0 0;
   padding-left: 18px;
-  color: #234977;
+  color: var(--color-text-studio);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -1323,7 +1272,7 @@ onUnmounted(() => {
 
 .patch-raw-details summary {
   cursor: pointer;
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 12px;
 }
 
@@ -1340,8 +1289,8 @@ onUnmounted(() => {
 .log-item {
   border-radius: 12px;
   padding: 10px 12px;
-  background: rgba(20, 56, 106, 0.06);
-  color: #234977;
+  background: var(--character-studio-preview-details-surface-base);
+  color: var(--color-text-studio);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -1349,14 +1298,14 @@ onUnmounted(() => {
 .preview-frame {
   width: 100%;
   height: 260px;
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  border: 1px solid var(--color-border-studio);
   border-radius: 16px;
   margin-top: 12px;
-  background: #fff;
+  background: var(--color-surface-base);
 }
 
 .empty-copy {
-  color: #6d839f;
+  color: var(--color-text-studio-subtle);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -1364,7 +1313,7 @@ onUnmounted(() => {
 .modal-copy p,
 .modal-empty,
 .modal-loading {
-  color: #607794;
+  color: var(--color-text-studio-muted);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -1377,18 +1326,18 @@ onUnmounted(() => {
 }
 
 .greeting-card {
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  border: 1px solid var(--color-border-studio);
   border-radius: 18px;
   padding: 16px;
-  background: rgba(244, 248, 255, 0.84);
+  background: var(--character-studio-preview-details-surface-raised);
   text-align: left;
   cursor: pointer;
 }
 
 .greeting-card.active {
-  border-color: rgba(37, 99, 199, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 199, 0.16);
-  background: rgba(237, 244, 255, 0.96);
+  border-color: var(--character-studio-preview-details-border-default);
+  box-shadow: inset 0 0 0 1px var(--character-studio-preview-details-shadow-default);
+  background: var(--character-studio-preview-details-surface-muted);
 }
 
 .greeting-card-head {
@@ -1402,19 +1351,19 @@ onUnmounted(() => {
   display: inline-flex;
   border-radius: 999px;
   padding: 4px 9px;
-  background: rgba(37, 99, 199, 0.1);
-  color: #1f5fc3;
+  background: var(--color-surface-studio-tint);
+  color: var(--color-text-primary-strong);
   font-size: 11px;
 }
 
 .greeting-check {
-  color: #1f5fc3;
+  color: var(--color-text-primary-strong);
   font-weight: 700;
 }
 
 .greeting-card p {
   margin: 12px 0 0;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -1424,13 +1373,13 @@ onUnmounted(() => {
   margin: 0;
   padding: 16px;
   border-radius: 16px;
-  background: rgba(244, 248, 255, 0.92);
-  border: 1px solid rgba(28, 55, 94, 0.08);
+  background: var(--character-studio-preview-details-surface-subtle);
+  border: 1px solid var(--color-border-studio);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 60vh;
   overflow: auto;
-  color: #183351;
+  color: var(--color-text-studio-strong);
   font-size: 12px;
 }
 
@@ -1450,31 +1399,31 @@ onUnmounted(() => {
   max-height: 72vh;
   border-radius: 18px;
   object-fit: contain;
-  background: rgba(244, 248, 255, 0.9);
+  background: var(--character-studio-preview-details-surface-hover);
 }
 
-.ghost-btn,
-.primary-btn {
+.action-ghost,
+.action-primary {
   border: none;
   border-radius: 14px;
   cursor: pointer;
 }
 
-.ghost-btn {
+.action-ghost {
   padding: 10px 14px;
-  background: rgba(20, 56, 106, 0.07);
-  color: #234977;
+  background: var(--color-surface-studio-muted);
+  color: var(--color-text-studio);
 }
 
-.primary-btn {
+.action-primary {
   padding: 11px 16px;
-  background: linear-gradient(135deg, #2563c7, #4d86ee);
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(37, 99, 199, 0.18);
+  background: linear-gradient(135deg, var(--character-studio-preview-details-surface-active), var(--character-studio-preview-details-surface-selected));
+  color: var(--color-text-inverse);
+  box-shadow: 0 12px 24px var(--character-studio-preview-details-shadow-raised);
 }
 
-.ghost-btn:disabled,
-.primary-btn:disabled {
+.action-ghost:disabled,
+.action-primary:disabled {
   opacity: 0.68;
   cursor: not-allowed;
   box-shadow: none;
@@ -1490,7 +1439,7 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-@media (max-width: 1100px) {
+@media (--breakpoint-studio-down) {
   .runtime-grid {
     grid-template-columns: 1fr;
   }
@@ -1512,7 +1461,7 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 760px) {
+@media (--breakpoint-preview-down) {
   .tab-btn {
     flex: initial;
     justify-content: flex-start;

@@ -11,33 +11,33 @@
       <div class="constraint-description">
         命中当前文本的术语会追加到翻译提示词中，并在翻译完成后做术语检查。
       </div>
-      <label class="checkbox-label">
-        <input :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
+      <label class="ui-checkbox-label">
+        <UiInput :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
         启用术语表
       </label>
-      <label class="checkbox-label">
-        <input :checked="draft.autoExtractEnabled" type="checkbox" @change="toggleAutoExtractEnabled" />
+      <label class="ui-checkbox-label">
+        <UiInput :checked="draft.autoExtractEnabled" type="checkbox" @change="toggleAutoExtractEnabled" />
         自动添加术语
       </label>
       <div class="constraint-description">
         仅书架模式生效。开启后会在当前页正式翻译前，自动从 OCR 结果中提取专有名词和人名并写入本书术语表。
       </div>
-      <div class="settings-item">
+      <div class="book-glossary-modal__prompt-field">
         <label for="autoGlossaryPrompt">自动术语提取提示词</label>
         <div class="constraint-description">
           默认会显示内置提示词，你可以直接在此基础上修改；如果你把内容全部删空后保存，系统会自动恢复为默认提示词。
         </div>
-        <textarea
+        <UiTextarea
           id="autoGlossaryPrompt"
           class="auto-glossary-prompt"
-          :value="draft.autoExtractPrompt"
-          rows="6"
+          :model-value="draft.autoExtractPrompt"
+          :rows="6"
           placeholder="请输入自动术语提取提示词"
-          @input="updateAutoExtractPrompt"
+          @update:model-value="updateAutoExtractPrompt"
         />
-        <button type="button" class="btn btn-secondary btn-sm reset-auto-glossary-prompt-btn" @click="resetAutoExtractPrompt">
+        <UiButton type="button" variant="secondary" size="sm" class="reset-auto-glossary-prompt-btn" @click="resetAutoExtractPrompt">
           重置为默认提示词
-        </button>
+        </UiButton>
       </div>
       <TranslationConstraintTable
         :model-value="draft.entries as unknown as Record<string, string>[]"
@@ -50,17 +50,20 @@
       />
     </div>
     <template #footer>
-      <button class="btn btn-secondary" @click="handleClose">取消</button>
-      <button class="btn btn-primary" :disabled="isSaving" @click="handleSave">保存</button>
+      <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+      <UiButton variant="primary" :disabled="isSaving" data-testid="save-book-glossary-button" @click="handleSave">保存</UiButton>
     </template>
   </BaseModal>
 </template>
 
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { computed, ref, watch } from 'vue'
 
 import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import TranslationConstraintTable from '@/components/settings/shared/TranslationConstraintTable.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import type { GlossaryEntry } from '@/types/translationConstraints'
@@ -134,8 +137,8 @@ function toggleAutoExtractEnabled(event: Event): void {
   draft.value.autoExtractEnabled = (event.target as HTMLInputElement).checked
 }
 
-function updateAutoExtractPrompt(event: Event): void {
-  draft.value.autoExtractPrompt = (event.target as HTMLTextAreaElement).value
+function updateAutoExtractPrompt(value: string): void {
+  draft.value.autoExtractPrompt = value
 }
 
 function resetAutoExtractPrompt(): void {
@@ -181,18 +184,18 @@ async function handleSave(): Promise<void> {
 }
 
 .constraint-description {
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.checkbox-label {
+.ui-checkbox-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.settings-item {
+.book-glossary-modal__prompt-field {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -202,7 +205,7 @@ async function handleSave(): Promise<void> {
   width: 100%;
   min-height: 120px;
   padding: 10px 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   resize: vertical;
   box-sizing: border-box;

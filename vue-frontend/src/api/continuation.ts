@@ -115,12 +115,6 @@ interface ScriptResponse {
     error?: string
 }
 
-interface PagesResponse {
-    success: boolean
-    pages?: PageContent[]
-    error?: string
-}
-
 interface ImageGenerateResponse {
     success: boolean
     image_path?: string

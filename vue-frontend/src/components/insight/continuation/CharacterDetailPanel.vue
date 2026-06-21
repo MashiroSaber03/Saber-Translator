@@ -21,24 +21,24 @@
         </div>
         <div class="detail-actions">
           <label class="toggle-switch" title="启用/禁用角色">
-            <input 
+            <UiInput 
               type="checkbox" 
               :checked="character.enabled !== false"
               @change="$emit('toggle-character', ($event.target as HTMLInputElement).checked)"
-            >
+            />
             <span class="toggle-slider"></span>
           </label>
-          <button class="icon-btn-lg" @click="$emit('edit-character')" title="编辑角色">✏️</button>
-          <button class="icon-btn-lg danger" @click="$emit('delete-character')" title="删除角色">🗑️</button>
+          <UiButton variant="toolbar" class="icon-btn-lg" @click="$emit('edit-character')" title="编辑角色">✏️</UiButton>
+          <UiButton variant="danger" class="icon-btn-lg" @click="$emit('delete-character')" title="删除角色">🗑️</UiButton>
         </div>
       </div>
       
       <div class="forms-section">
         <div class="section-header">
           <h4>形态列表</h4>
-          <button class="btn small primary" @click="$emit('add-form')">
+          <UiButton variant="primary" @click="$emit('add-form')" size="sm">
             ➕ 新增形态
-          </button>
+          </UiButton>
         </div>
         
         <div v-if="!character.forms || character.forms.length === 0" class="empty-forms">
@@ -66,10 +66,12 @@
 </template>
 
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
 import FormTile from './FormTile.vue'
 
-const props = defineProps<{
+defineProps<{
   character: CharacterProfile | null
   avatarUrl: string
   getFormImageUrl: (formId: string) => string
@@ -91,9 +93,9 @@ defineEmits<{
 
 <style scoped>
 .character-detail-panel {
-  background: linear-gradient(135deg, #fafbff 0%, #f5f7ff 100%);
+  background: linear-gradient(135deg, var(--character-detail-panel-surface-base) 0%, var(--character-detail-panel-surface-raised) 100%);
   border-radius: 16px;
-  border: 1px solid #e0e4ff;
+  border: 1px solid var(--character-detail-panel-border-default);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -106,7 +108,7 @@ defineEmits<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--character-detail-panel-text-primary);
 }
 
 .empty-detail span {
@@ -125,7 +127,7 @@ defineEmits<{
   justify-content: space-between;
   align-items: flex-start;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--character-detail-panel-border-strong);
   margin-bottom: 16px;
 }
 
@@ -140,7 +142,7 @@ defineEmits<{
   height: 64px;
   border-radius: 12px;
   overflow: hidden;
-  background: #f0f0f0;
+  background: var(--character-detail-panel-surface-muted);
   flex-shrink: 0;
 }
 
@@ -156,7 +158,7 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   color: white;
   font-size: 24px;
   font-weight: 600;
@@ -166,13 +168,13 @@ defineEmits<{
   margin: 0 0 4px;
   font-size: 18px;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--character-detail-panel-text-secondary);
 }
 
 .detail-aliases {
   margin: 0;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--character-detail-panel-text-muted);
 }
 
 .detail-actions {
@@ -199,7 +201,7 @@ defineEmits<{
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background-color: #cbd5e1;
+  background-color: var(--character-detail-panel-surface-subtle);
   transition: 0.3s;
   border-radius: 22px;
 }
@@ -214,11 +216,11 @@ defineEmits<{
   background-color: white;
   transition: 0.3s;
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgb(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px var(--character-detail-panel-shadow-default);
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, var(--character-detail-panel-surface-hover), var(--character-detail-panel-surface-active));
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
@@ -229,7 +231,7 @@ defineEmits<{
   width: 40px;
   height: 40px;
   border: none;
-  background: #fff;
+  background: var(--color-surface-base);
   border-radius: 10px;
   cursor: pointer;
   font-size: 18px;
@@ -237,17 +239,17 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 2px 6px rgb(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px var(--character-detail-panel-shadow-raised);
 }
 
 .icon-btn-lg:hover {
-  background: #f0f2ff;
+  background: var(--character-detail-panel-surface-selected);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.12);
+  box-shadow: 0 4px 12px var(--character-detail-panel-shadow-floating);
 }
 
 .icon-btn-lg.danger:hover {
-  background: #fef2f2;
+  background: var(--character-detail-panel-surface-overlay);
 }
 
 .forms-section {
@@ -258,7 +260,7 @@ defineEmits<{
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--character-detail-panel-text-subtle);
 }
 
 .section-header {
@@ -268,7 +270,7 @@ defineEmits<{
   margin-bottom: 12px;
 }
 
-.btn {
+.ui-button {
   padding: 6px 12px;
   border: none;
   border-radius: 6px;
@@ -278,16 +280,16 @@ defineEmits<{
   transition: all 0.2s;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
 }
 
-.btn.primary:hover {
-  background: var(--primary-dark, #4f46e5);
+.ui-button--primary:hover {
+  background: var(--color-surface-brand-strong);
 }
 
-.btn.small {
+.ui-button--sm {
   padding: 6px 12px;
   font-size: 13px;
 }
@@ -295,7 +297,7 @@ defineEmits<{
 .empty-forms {
   text-align: center;
   padding: 40px 20px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .empty-forms p {

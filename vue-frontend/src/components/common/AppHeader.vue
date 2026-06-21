@@ -1,57 +1,59 @@
 <template>
   <header class="app-header" :class="[`app-header--${variant}`]">
-    <div class="header-content">
+    <div class="app-header__content">
       <!-- 左侧：Logo 和应用名称 -->
-      <div class="logo-container">
-        <router-link to="/" :title="logoTitle">
-          <img :src="'/pic/logo.png'" alt="Saber-Translator Logo" class="app-logo" />
-          <span class="app-name">Saber-Translator</span>
+      <div class="app-header__logo-container">
+        <router-link to="/" :title="logoTitle" class="app-header__logo-link">
+          <img :src="'/pic/logo.png'" alt="Saber-Translator Logo" class="app-header__logo" />
+          <span class="app-header__name">Saber-Translator</span>
         </router-link>
       </div>
 
       <!-- 右侧：导航链接（使用 slot 允许各 View 自定义内容） -->
-      <div class="header-links">
+      <div class="app-header__links">
         <slot name="header-links">
           <!-- 默认内容：通用导航链接 -->
 
           <!-- 返回书架按钮（仅在非书架页面显示） -->
-          <router-link v-if="showBackToShelf" to="/" class="back-to-shelf">
+          <router-link v-if="showBackToShelf" to="/" class="app-header__back-link">
             📚 返回书架
           </router-link>
 
           <!-- 保存按钮（仅在书架模式下显示） -->
-          <button
+          <UiButton
+            variant="toolbar"
             v-if="showSaveButton"
-            class="save-header-btn"
+            class="app-header__save-button"
             title="保存当前进度"
             @click="$emit('save')"
           >
             💾 保存
-          </button>
+          </UiButton>
 
           <!-- 设置按钮 -->
-          <button
+          <UiButton
+            variant="toolbar"
             v-if="showSettingsButton"
-            class="header-btn settings-btn"
-            :class="{ 'highlight-animation': highlightSettings }"
+            class="app-header__settings-button"
+            :class="{ 'app-header__settings-button--highlight': highlightSettings }"
             title="设置"
             @click="$emit('openSettings')"
           >
             ⚙️
-          </button>
+          </UiButton>
 
           <!-- 使用教程链接 -->
           <a
             href="http://www.mashirosaber.top"
             target="_blank"
-            class="tutorial-link"
+            class="app-header__link app-header__link--tutorial"
             title="使用教程"
           >
             📖 使用教程
           </a>
 
           <!-- 赞助按钮 -->
-          <a href="#" class="donate-link" title="请作者喝奶茶" @click.prevent="$emit('donate')">
+          <a href="#" class="app-header__link app-header__link--donate" title="请作者喝奶茶" @click.prevent="$emit('donate')">
             🍵 赞助
           </a>
 
@@ -59,16 +61,16 @@
           <a
             href="https://github.com/MashiroSaber03/saber-translator"
             target="_blank"
-            class="github-link"
+            class="app-header__link app-header__link--github"
             title="GitHub 仓库"
           >
-            <img :src="'/pic/github.jpg'" alt="GitHub" class="github-icon" />
+            <img :src="'/pic/github.jpg'" alt="GitHub" class="app-header__github-icon" />
             GitHub
           </a>
 
-          <button class="theme-toggle" title="功能开发中" @click="showFeatureNotice">
-            <span class="theme-icon">☀️</span>
-          </button>
+          <UiButton variant="toolbar" class="app-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
+            <span class="app-header__theme-icon">☀️</span>
+          </UiButton>
         </slot>
       </div>
     </div>
@@ -76,6 +78,8 @@
 </template>
 
 <script setup lang="ts">
+
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast } from '@/utils/toast'
@@ -127,12 +131,11 @@ function showFeatureNotice(): void {
 
 </script>
 
-<style scoped>
-/* ============ 头部样式（默认变体） ============ */
+<style scoped>/* ============ 头部样式（默认变体） ============ */
 
 .app-header {
   background: transparent;
-  color: #2c3e50;
+  color: var(--color-text-heading);
   padding: 10px 20px;
   display: flex;
   justify-content: center;
@@ -140,100 +143,100 @@ function showFeatureNotice(): void {
   position: relative;
   width: auto;
   margin: 0 auto;
-  max-width: calc(100% - 700px);
+  max-width: calc(100% - 740px);
   z-index: var(--z-dropdown);
 }
 
-.header-content {
+.app-header__content {
   width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 6px 10px;
-  background: rgb(255, 255, 255, 0.9);
+  background: var(--app-header-surface-base);
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgb(0,0,0,0.1);
+  box-shadow: 0 2px 10px var(--app-header-shadow-default);
 }
 
-.logo-container {
+.app-header__logo-container {
   display: flex;
   align-items: center;
 }
 
-.logo-container a {
+.app-header__logo-link {
   display: flex;
   align-items: center;
   text-decoration: none;
-  color: #2c3e50;
+  color: var(--color-text-heading);
 }
 
-.app-logo {
+.app-header__logo {
   height: 40px;
   width: auto;
   margin-right: 15px;
   border-radius: 8px;
 }
 
-.app-name {
+.app-header__name {
   font-size: 1.5em;
   font-weight: bold;
   letter-spacing: 0.5px;
 }
 
-.header-links {
+.app-header__links {
   display: flex;
   align-items: center;
   gap: 15px;
 }
 
-.tutorial-link, .github-link {
+.app-header__link {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: rgb(0,0,0,0.05);
+  background-color: var(--app-header-surface-raised);
   border-radius: 20px;
-  color: #2c3e50;
+  color: var(--color-text-heading);
   text-decoration: none;
   transition: all 0.3s ease;
 }
 
-.tutorial-link:hover, .github-link:hover {
-  background-color: rgb(0,0,0,0.1);
+.app-header__link:hover {
+  background-color: var(--app-header-surface-muted);
   transform: translateY(-2px);
 }
 
-.github-icon {
+.app-header__github-icon {
   width: 20px;
   height: 20px;
   border-radius: 50%;
 }
 
 /* 赞助按钮样式 */
-.donate-link {
+.app-header__link--donate {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: rgb(255, 105, 180, 0.15);
+  background-color: var(--app-header-surface-subtle);
   border-radius: 20px;
-  color: #e91e63;
+  color: var(--app-header-text-primary);
   text-decoration: none;
   transition: all 0.3s ease;
 }
 
-.donate-link:hover {
-  background-color: rgb(255, 105, 180, 0.25);
+.app-header__link--donate:hover {
+  background-color: var(--app-header-surface-hover);
   transform: translateY(-2px);
 }
 
 /* 返回书架按钮样式 */
-.back-to-shelf {
+.app-header__back-link {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 8px 14px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   border-radius: 20px;
   color: white;
   text-decoration: none;
@@ -242,18 +245,18 @@ function showFeatureNotice(): void {
   transition: all 0.3s ease;
 }
 
-.back-to-shelf:hover {
+.app-header__back-link:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-brand-soft);
 }
 
 /* 保存按钮样式（顶部） */
-.save-header-btn {
+.app-header__save-button {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
   border: none;
   border-radius: 20px;
   color: white;
@@ -263,22 +266,22 @@ function showFeatureNotice(): void {
   transition: all 0.3s ease;
 }
 
-.save-header-btn:hover {
+.app-header__save-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(40, 167, 69, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-success-soft);
 }
 
-.save-header-btn:active {
+.app-header__save-button:active {
   transform: translateY(0);
 }
 
 /* 设置按钮基础样式 */
-.header-btn {
+.app-header__settings-button {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 8px 12px;
-  background-color: rgb(0, 0, 0, 0.05);
+  background-color: var(--app-header-surface-active);
   border: none;
   border-radius: 20px;
   cursor: pointer;
@@ -286,19 +289,19 @@ function showFeatureNotice(): void {
   transition: all 0.3s ease;
 }
 
-.header-btn:hover {
-  background-color: rgb(0, 0, 0, 0.1);
+.app-header__settings-button:hover {
+  background-color: var(--app-header-surface-selected);
   transform: translateY(-2px);
 }
 
 /* 设置按钮高亮引导动画 */
-.highlight-animation {
+.app-header__settings-button--highlight {
   animation: pulse-highlight 1.5s ease-in-out infinite;
 }
 
-.theme-toggle {
-  background-color: #f0f2f5;
-  border: 1px solid #dcdfe6;
+.app-header__theme-toggle {
+  background-color: var(--app-header-surface-overlay);
+  border: 1px solid var(--app-header-border-default);
   border-radius: 20px;
   cursor: pointer;
   padding: 6px 12px;
@@ -309,11 +312,11 @@ function showFeatureNotice(): void {
   transition: background-color 0.3s;
 }
 
-.theme-toggle:hover {
-  background-color: #e6e8eb;
+.app-header__theme-toggle:hover {
+  background-color: var(--app-header-surface-inverse);
 }
 
-.theme-icon {
+.app-header__theme-icon {
   font-size: 16px;
 }
 
@@ -325,8 +328,8 @@ function showFeatureNotice(): void {
   left: 0;
   right: 0;
   height: 56px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
   z-index: var(--z-dropdown);
   display: flex;
   align-items: center;
@@ -336,7 +339,7 @@ function showFeatureNotice(): void {
   margin: 0;
 }
 
-.app-header--insight .header-content {
+.app-header--insight .app-header__content {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -348,27 +351,27 @@ function showFeatureNotice(): void {
   box-shadow: none;
 }
 
-.app-header--insight .logo-container a {
+.app-header--insight .app-header__logo-link {
   display: flex;
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  color: var(--text-primary);
+  color: var(--color-text-default);
 }
 
-.app-header--insight .app-logo {
+.app-header--insight .app-header__logo {
   height: 32px;
   width: auto;
   max-height: 32px;
   margin-right: 0;
 }
 
-.app-header--insight .app-name {
+.app-header--insight .app-header__name {
   font-weight: 600;
   font-size: 18px;
 }
 
-.app-header--insight .header-links {
+.app-header--insight .app-header__links {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -377,13 +380,13 @@ function showFeatureNotice(): void {
 /* ============ Bookshelf 变体样式 ============ */
 
 .app-header--bookshelf {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   padding: 0 24px;
   height: 64px;
-  box-shadow: 0 2px 20px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 20px var(--app-header-shadow-raised);
   position: sticky;
   top: 0;
-  z-index: var(--z-sticky, 200);
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   max-width: none;
@@ -391,7 +394,7 @@ function showFeatureNotice(): void {
   margin: 0;
 }
 
-.app-header--bookshelf .header-content {
+.app-header--bookshelf .app-header__content {
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
@@ -404,7 +407,7 @@ function showFeatureNotice(): void {
   border-radius: 0;
 }
 
-.app-header--bookshelf .logo-container a {
+.app-header--bookshelf .app-header__logo-link {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -412,25 +415,72 @@ function showFeatureNotice(): void {
   color: white;
 }
 
-.app-header--bookshelf .app-logo {
+.app-header--bookshelf .app-header__logo {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px var(--app-header-shadow-floating);
   margin-right: 0;
 }
 
-.app-header--bookshelf .app-name {
+.app-header--bookshelf .app-header__name {
   font-size: 1.3rem;
   font-weight: 700;
   color: white;
   letter-spacing: -0.5px;
 }
 
-.app-header--bookshelf .header-links {
+.app-header--bookshelf .app-header__links {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-</style>
 
+@media (--breakpoint-md-down) {
+  .app-header--default {
+    width: 100%;
+    max-width: none;
+    padding: 8px 10px;
+  }
+
+  .app-header--default .app-header__content {
+    flex-direction: column;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    width: auto;
+    background: transparent;
+    box-shadow: none;
+    padding: 9px 0 1px;
+  }
+
+  .app-header--default .app-header__logo-container {
+    display: flex;
+    flex: 1 1 100%;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .app-header--default .app-header__logo-link {
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .app-header--default .app-header__logo {
+    height: 30px;
+    margin-right: 0;
+  }
+
+  .app-header--default .app-header__name {
+    display: none;
+  }
+
+  .app-header--default .app-header__links {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 160px;
+    gap: 10px 8px;
+  }
+}
+</style>

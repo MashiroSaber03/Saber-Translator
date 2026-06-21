@@ -1,0 +1,307 @@
+.reference-selector-modal.ui-modal__container {
+  width: min(1120px, calc(100vw - 48px));
+  max-height: min(88vh, 980px);
+  background: var(--color-surface-base);
+  border: 1px solid var(--reference-image-selector-border-default);
+  border-radius: 18px;
+  box-shadow: 0 24px 64px var(--reference-image-selector-shadow-default);
+  animation: scaleIn 0.2s ease;
+}
+
+.reference-selector-modal .ui-modal__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.reference-selector-modal .modal-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--reference-image-selector-surface-base);
+  border-bottom: 1px solid var(--color-border-default);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.reference-selector-modal .modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reference-selector-modal .header-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.reference-selector-modal .header-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.reference-selector-modal .close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  line-height: 1;
+  margin-left: 8px;
+}
+
+.reference-selector-modal .close-btn:hover {
+  color: var(--color-text-default);
+}
+
+.reference-selector-modal .placeholder-card {
+  width: 100%;
+  height: 100%;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-surface-muted), var(--color-surface-hover));
+  color: var(--reference-image-selector-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px dashed var(--reference-image-selector-border-strong);
+}
+
+/* 角色档案区域 */
+.reference-selector-modal .character-section {
+  padding: 12px 20px;
+  background: var(--reference-image-selector-surface-raised);
+  border-bottom: 1px solid var(--reference-image-selector-border-muted);
+  flex-shrink: 0;
+}
+
+.reference-selector-modal .section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--reference-image-selector-text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reference-selector-modal .section-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--reference-image-selector-text-muted);
+}
+
+.reference-selector-modal .thumbnails-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 漫画图片区域 */
+.reference-selector-modal .manga-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 20px;
+}
+
+.reference-selector-modal .manga-section .section-label {
+  color: var(--reference-image-selector-text-subtle);
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.reference-selector-modal .thumbnails-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 110px);
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+  justify-content: start;
+}
+
+.reference-selector-modal .thumbnail {
+  position: relative;
+  width: 110px;
+  height: 154px;
+  border: 2px solid var(--reference-image-selector-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: white;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.reference-selector-modal .thumbnail:hover {
+  border-color: var(--reference-image-selector-border-hover);
+  box-shadow: 0 2px 12px var(--reference-image-selector-shadow-raised);
+  transform: translateY(-2px);
+}
+
+.reference-selector-modal .thumbnail.selected {
+  border-color: var(--reference-image-selector-border-hover);
+  box-shadow: 0 0 0 3px var(--reference-image-selector-shadow-floating);
+}
+
+.reference-selector-modal .thumbnail.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.reference-selector-modal .thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reference-selector-modal .selection-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 26px;
+  height: 26px;
+  background: var(--reference-image-selector-surface-muted);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: bold;
+  box-shadow: 0 2px 6px var(--reference-image-selector-shadow-strong);
+  animation: badgePop 0.15s ease;
+}
+
+@keyframes badgePop {
+  from { transform: scale(0.8); }
+  to { transform: scale(1); }
+}
+
+.reference-selector-modal .page-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: var(--reference-image-selector-surface-subtle);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reference-selector-modal .disabled-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--reference-image-selector-surface-hover);
+  cursor: not-allowed;
+}
+
+.reference-selector-modal .continuation-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--reference-image-selector-surface-active);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.reference-selector-modal .character-thumbnail {
+  width: 90px;
+  height: 126px;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.reference-selector-modal .character-thumbnail:hover {
+  border-color: var(--reference-image-selector-border-muted);
+  box-shadow: none;
+  transform: none;
+}
+
+.reference-selector-modal .character-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--reference-image-selector-surface-subtle);
+  color: white;
+  padding: 4px 6px;
+  font-size: 10px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reference-selector-modal .ui-button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.reference-selector-modal .ui-button--primary {
+  background: var(--reference-image-selector-surface-muted);
+  color: white;
+}
+
+.reference-selector-modal .ui-button--primary:hover {
+  background: var(--reference-image-selector-surface-selected);
+}
+
+.reference-selector-modal .ui-button--secondary {
+  background: white;
+  color: var(--reference-image-selector-text-supporting);
+  border: 1px solid var(--reference-image-selector-border-active);
+}
+
+.reference-selector-modal .ui-button--secondary:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--reference-image-selector-border-focus);
+}
+
+/* 响应式适配 */
+@media (--breakpoint-lg-down) {
+  .reference-selector-modal.ui-modal__container {
+    width: 95vw;
+    max-height: 90vh;
+  }
+
+  .reference-selector-modal .modal-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .reference-selector-modal .header-actions {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+  }
+
+  .reference-selector-modal .thumbnails-grid {
+    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  }
+}

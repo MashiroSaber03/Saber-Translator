@@ -11,8 +11,8 @@
       <div class="constraint-description">
         命中当前文本的禁翻内容会被保护为占位符，翻译完成后再还原。
       </div>
-      <label class="checkbox-label">
-        <input :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
+      <label class="ui-checkbox-label">
+        <UiInput :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
         启用禁翻表
       </label>
       <TranslationConstraintTable
@@ -26,16 +26,18 @@
       />
     </div>
     <template #footer>
-      <button class="btn btn-secondary" @click="handleClose">取消</button>
-      <button class="btn btn-primary" :disabled="isSaving" @click="handleSave">保存</button>
+      <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+      <UiButton variant="primary" :disabled="isSaving" @click="handleSave">保存</UiButton>
     </template>
   </BaseModal>
 </template>
 
 <script setup lang="ts">
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
 
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import TranslationConstraintTable from '@/components/settings/shared/TranslationConstraintTable.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import type { NonTranslateEntry } from '@/types/translationConstraints'
@@ -140,12 +142,12 @@ async function handleSave(): Promise<void> {
 }
 
 .constraint-description {
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.checkbox-label {
+.ui-checkbox-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;

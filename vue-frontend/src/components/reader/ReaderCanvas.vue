@@ -5,6 +5,7 @@
  */
 import { computed, watch, onMounted, onUnmounted } from 'vue'
 import type { ChapterImageData } from '@/api/bookshelf'
+import UiButton from '@/components/ui/UiButton.vue'
 
 // 组件属性
 const props = defineProps<{
@@ -112,13 +113,13 @@ watch(
     </div>
 
     <!-- 空状态 -->
-    <div v-else-if="showEmptyState" id="emptyState" class="empty-state">
+    <div v-else-if="showEmptyState" id="emptyState" class="reader-empty-state">
       <div class="empty-icon">📖</div>
       <h2>暂无图片</h2>
       <p>该章节还没有图片，点击下方按钮开始翻译</p>
-      <button id="goTranslateBtn" class="btn btn-primary" @click="goToTranslate">
+      <UiButton id="goTranslateBtn" class="reader-empty-action" variant="primary" @click="goToTranslate">
         进入翻译
-      </button>
+      </UiButton>
     </div>
 
     <!-- 图片容器 -->
@@ -141,7 +142,7 @@ watch(
 </template>
 
 <style scoped>
-/* ==================== ReaderCanvas 完整样式 - 从 reader.css 迁移 ==================== */
+/* ==================== ReaderCanvas样式 ==================== */
 
 /* 主内容区 */
 .reader-main {
@@ -159,26 +160,26 @@ watch(
   align-items: center;
   justify-content: center;
   height: calc(100vh - 56px);
-  color: rgb(255, 255, 255, 0.7);
+  color: var(--reader-canvas-text-primary);
 }
 
 .loading-spinner {
   width: 48px;
   height: 48px;
-  border: 3px solid rgb(255, 255, 255, 0.1);
-  border-top-color: #667eea;
+  border: 3px solid var(--reader-canvas-border-default);
+  border-top-color: var(--color-border-brand-gradient);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 /* 空状态 */
-.empty-state {
+.reader-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: calc(100vh - 56px);
-  color: rgb(255, 255, 255, 0.7);
+  color: var(--reader-canvas-text-primary);
   text-align: center;
   padding: 20px;
 }
@@ -188,13 +189,13 @@ watch(
   margin-bottom: 16px;
 }
 
-.empty-state h2 {
+.reader-empty-state h2 {
   margin: 0 0 8px;
   color: white;
   font-weight: 500;
 }
 
-.empty-state p {
+.reader-empty-state p {
   margin: 0 0 24px;
   font-size: 14px;
 }
@@ -226,7 +227,7 @@ watch(
 
 .reader-image.loading {
   min-height: 300px;
-  background: rgb(255, 255, 255, 0.05);
+  background: var(--reader-canvas-surface-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,7 +237,7 @@ watch(
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgb(0, 0, 0, 0.6);
+  background: var(--reader-canvas-surface-raised);
   color: white;
   padding: 4px 8px;
   border-radius: 4px;
@@ -249,28 +250,12 @@ watch(
   opacity: 1;
 }
 
-/* 按钮样式 */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+.reader-empty-action {
   padding: 12px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.btn-primary:hover {
+.reader-empty-action:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-brand-soft);
 }
 </style>

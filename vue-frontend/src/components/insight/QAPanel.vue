@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import './QAPanel.global.styles.css'
+
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 智能问答面板组件
  * 提供基于漫画内容的问答功能，支持流式响应
@@ -8,7 +14,8 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
-import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
+import BaseModal from '@/components/common/BaseModal.vue'
+import { useQANoteModal } from './useQANoteModal'
 
 // ============================================================
 // 状态
@@ -50,6 +57,16 @@ const isStreaming = computed(() => insightStore.isStreaming)
 /** 是否显示精确模式选项 */
 const showPreciseModeOptions = computed(() => qaMode.value === 'precise')
 
+const {
+  closeNoteModal,
+  noteComment,
+  noteTitle,
+  openNoteModal,
+  pendingQAData,
+  saveNote,
+  showNoteModal,
+} = useQANoteModal(insightStore)
+
 // ============================================================
 // 方法
 // ============================================================
@@ -73,7 +90,7 @@ async function sendQuestion(): Promise<void> {
   // 清空输入
   questionInput.value = ''
 
-  // 清空之前的问答内容（单轮对话模式，与原版一致）
+  // 清空之前的问答内容（单轮对话模式，与当前行为一致）
   insightStore.clearQAHistory()
 
   // 添加用户消息
@@ -323,98 +340,6 @@ function askExampleQuestion(question: string): void {
 }
 
 // ============================================================
-// 笔记弹窗相关
-// ============================================================
-
-/** 笔记弹窗状态 */
-const showNoteModal = ref(false)
-/** 当前待保存的问答数据 */
-const pendingQAData = ref<{
-  messageId: string
-  question: string
-  answer: string
-  citations: Array<{ page: number }>
-} | null>(null)
-/** 笔记标题 */
-const noteTitle = ref('')
-/** 笔记补充说明 */
-const noteComment = ref('')
-const {
-  overlayRef: noteModalOverlayRef,
-  handleOverlayMouseDown: handleNoteModalOverlayMouseDown,
-} = useOverlayDismiss(closeNoteModal, {
-  enabled: showNoteModal,
-})
-
-/**
- * 打开笔记弹窗
- * @param message - 助手消息
- */
-function openNoteModal(message: { id: string; content: string; citations?: Array<{ page: number }> }): void {
-  if (!insightStore.currentBookId) return
-  
-  // 获取最后一个用户问题
-  const userMessage = insightStore.qaHistory.find(m => m.role === 'user')
-  const question = userMessage?.content || ''
-  
-  pendingQAData.value = {
-    messageId: message.id,
-    question,
-    answer: message.content,
-    citations: message.citations || []
-  }
-  
-  noteTitle.value = ''
-  noteComment.value = ''
-  showNoteModal.value = true
-}
-
-/**
- * 关闭笔记弹窗
- */
-function closeNoteModal(): void {
-  showNoteModal.value = false
-  pendingQAData.value = null
-}
-
-/**
- * 保存笔记
- */
-async function saveNote(): Promise<void> {
-  if (!insightStore.currentBookId || !pendingQAData.value) return
-  
-  const now = new Date().toISOString()
-  const noteData = {
-    id: Date.now().toString(),
-    type: 'qa' as const,
-    title: noteTitle.value || pendingQAData.value.question.substring(0, 30),
-    content: pendingQAData.value.answer,
-    question: pendingQAData.value.question,
-    answer: pendingQAData.value.answer,
-    citations: pendingQAData.value.citations,
-    comment: noteComment.value || undefined,
-    createdAt: now,
-    updatedAt: now
-  }
-  
-  try {
-    // 添加到本地store
-    await insightStore.addNote(noteData)
-    
-    // 更新消息的保存状态
-    const message = insightStore.qaHistory.find(m => m.id === pendingQAData.value?.messageId)
-    if (message) {
-      message.saved = true
-    }
-    
-    closeNoteModal()
-  } catch (error) {
-    console.error('保存笔记失败:', error)
-    alert('保存笔记失败')
-  }
-}
-
-// ============================================================
 // 生命周期
 // ============================================================
 
@@ -482,7 +407,8 @@ onUnmounted(() => {
               </span>
             </div>
             <!-- 保存为笔记按钮 -->
-            <button 
+            <UiButton
+              variant="toolbar" 
               v-if="message.content && !message.isLoading"
               class="message-save-btn"
               :class="{ saved: message.saved }"
@@ -490,7 +416,7 @@ onUnmounted(() => {
               @click="openNoteModal(message)"
             >
               {{ message.saved ? '✅ 已保存' : '📝 保存为笔记' }}
-            </button>
+            </UiButton>
           </template>
         </div>
       </div>
@@ -502,59 +428,62 @@ onUnmounted(() => {
       <div class="chat-options">
         <!-- 问答模式切换 -->
         <div class="qa-mode-toggle" title="精确模式：使用RAG检索相关片段；全局模式：使用全文摘要">
-          <button 
+          <UiButton
+            variant="toolbar" 
             type="button" 
             class="qa-mode-btn"
             :class="{ active: qaMode === 'precise' }"
             @click="setQAMode('precise')"
           >
             🎯 精确模式
-          </button>
-          <button 
+          </UiButton>
+          <UiButton
+            variant="toolbar" 
             type="button" 
             class="qa-mode-btn"
             :class="{ active: qaMode === 'global' }"
             @click="setQAMode('global')"
           >
             🌐 全局模式
-          </button>
+          </UiButton>
         </div>
         
         <span class="chat-option-divider">|</span>
         
         <!-- 精确模式选项 -->
         <div v-if="showPreciseModeOptions" class="precise-mode-options">
-          <label class="checkbox-label compact" title="启用父子块模式">
-            <input v-model="useParentChild" type="checkbox">
+          <label class="ui-checkbox-label compact" title="启用父子块模式">
+            <UiInput v-model="useParentChild" type="checkbox" />
             <span>父子块模式</span>
           </label>
-          <label class="checkbox-label compact" title="启用推理检索">
-            <input v-model="useReasoning" type="checkbox">
+          <label class="ui-checkbox-label compact" title="启用推理检索">
+            <UiInput v-model="useReasoning" type="checkbox" />
             <span>推理检索</span>
           </label>
-          <label class="checkbox-label compact" title="启用重排序">
-            <input v-model="useReranker" type="checkbox">
+          <label class="ui-checkbox-label compact" title="启用重排序">
+            <UiInput v-model="useReranker" type="checkbox" />
             <span>重排序</span>
           </label>
           <span class="chat-option-divider">|</span>
           <label class="input-label compact" title="返回的最大结果数">
             <span>Top K:</span>
-            <input v-model.number="topK" type="number" min="1" max="20" class="input-small">
+            <UiInput v-model.number="topK" type="number" min="1" max="20" class="input-small" />
           </label>
           <label class="input-label compact" title="相关性阈值">
             <span>阈值:</span>
-            <input v-model.number="threshold" type="number" min="0" max="1" step="0.1" class="input-small">
+            <UiInput v-model.number="threshold" type="number" min="0" max="1" step="0.1" class="input-small" />
           </label>
           <span class="chat-option-divider">|</span>
-          <button 
+          <UiButton
+            variant="secondary" 
             type="button" 
-            class="btn btn-sm btn-secondary" 
+            
             title="重建向量索引"
             :disabled="isRebuildingEmbeddings"
-            @click="rebuildEmbeddings"
+            @click="rebuildEmbeddings" size="sm"
           >
             {{ isRebuildingEmbeddings ? `⏳ ${rebuildProgressLabel || '重建中...'}` : '🔄 重建向量' }}
-          </button>
+          </UiButton>
         </div>
         
         <!-- 全局模式提示 -->
@@ -575,111 +504,90 @@ onUnmounted(() => {
       
       <!-- 输入框 -->
       <div class="chat-input-wrapper">
-        <textarea 
+        <UiTextarea 
           v-model="questionInput"
           placeholder="输入你的问题..." 
           rows="1"
           :disabled="isStreaming"
           @keydown="handleKeydown"
-        ></textarea>
-        <button 
+        />
+        <UiButton
+          variant="toolbar" 
           class="send-btn" 
           :disabled="isStreaming || !questionInput.trim()"
           @click="sendQuestion"
         >
           <span>发送</span>
-        </button>
+        </UiButton>
       </div>
     </div>
     
-    <!-- 笔记弹窗 -->
-    <div v-if="showNoteModal" class="modal note-modal show">
-      <div
-        ref="noteModalOverlayRef"
-        class="modal-overlay"
-        @mousedown.self="handleNoteModalOverlayMouseDown"
-      ></div>
-      <div class="modal-content note-modal-content">
-        <div class="modal-header">
-          <h2>📝 添加笔记</h2>
-          <button class="modal-close" @click="closeNoteModal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <!-- 问答预览 -->
-          <div v-if="pendingQAData" class="qa-preview">
-            <div class="qa-preview-section">
-              <label>问题</label>
-              <div class="qa-preview-content">{{ pendingQAData.question }}</div>
-            </div>
-            <div class="qa-preview-section">
-              <label>回答</label>
-              <div class="qa-preview-content" v-html="renderMarkdown(pendingQAData.answer)"></div>
-            </div>
-            <div v-if="pendingQAData.citations.length > 0" class="qa-preview-section">
-              <label>引用页码</label>
-              <div class="qa-preview-citations">
-                <span 
-                  v-for="citation in pendingQAData.citations" 
-                  :key="citation.page"
-                  class="qa-citation-badge"
-                >
-                  第{{ citation.page }}页
-                </span>
-              </div>
-            </div>
+    <BaseModal
+      v-model="showNoteModal"
+      title="📝 添加笔记"
+      size="medium"
+      custom-class="qa-note-modal"
+      :custom-style="{ width: '90%', maxWidth: '560px' }"
+      @close="closeNoteModal"
+    >
+      <div class="qa-note-modal-body">
+        <!-- 问答预览 -->
+        <div v-if="pendingQAData" class="qa-preview">
+          <div class="qa-preview-section">
+            <label>问题</label>
+            <div class="qa-preview-content">{{ pendingQAData.question }}</div>
           </div>
-          <!-- 笔记表单 -->
-          <div class="note-form">
-            <div class="form-group">
-              <label for="qaNoteTitle">笔记标题 <span class="optional">(可选)</span></label>
-              <input 
-                v-model="noteTitle"
-                type="text" 
-                id="qaNoteTitle" 
-                class="form-input" 
-                placeholder="默认使用问题作为标题..."
+          <div class="qa-preview-section">
+            <label>回答</label>
+            <div class="qa-preview-content" v-html="renderMarkdown(pendingQAData.answer)"></div>
+          </div>
+          <div v-if="pendingQAData.citations.length > 0" class="qa-preview-section">
+            <label>引用页码</label>
+            <div class="qa-preview-citations">
+              <span 
+                v-for="citation in pendingQAData.citations" 
+                :key="citation.page"
+                class="qa-citation-badge"
               >
-            </div>
-            <div class="form-group">
-              <label for="qaNoteComment">补充说明 <span class="optional">(可选)</span></label>
-              <textarea 
-                v-model="noteComment"
-                id="qaNoteComment" 
-                class="form-textarea" 
-                rows="3" 
-                placeholder="添加你的评论或补充..."
-              ></textarea>
+                第{{ citation.page }}页
+              </span>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeNoteModal">取消</button>
-          <button class="btn btn-primary" @click="saveNote">保存笔记</button>
+        <!-- 笔记表单 -->
+        <div class="note-form">
+          <div class="qa-note-modal__field">
+            <label for="qaNoteTitle">笔记标题 <span class="optional">(可选)</span></label>
+            <UiInput 
+              id="qaNoteTitle"
+              v-model="noteTitle"
+              type="text" 
+              class="qa-note-modal__form-input" 
+              placeholder="默认使用问题作为标题..."
+            />
+          </div>
+          <div class="qa-note-modal__field">
+            <label for="qaNoteComment">补充说明 <span class="optional">(可选)</span></label>
+            <UiTextarea 
+              id="qaNoteComment"
+              v-model="noteComment"
+              class="qa-note-modal__form-textarea" 
+              rows="3" 
+              placeholder="添加你的评论或补充..."
+            />
+          </div>
         </div>
       </div>
-    </div>
+
+      <template #footer>
+        <UiButton variant="secondary" @click="closeNoteModal">取消</UiButton>
+        <UiButton variant="primary" @click="saveNote">保存笔记</UiButton>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
-<style scoped>
-/* ==================== 问答面板完整样式 ==================== */
-
-/* ==================== CSS变量 ==================== */
-.qa-container {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-}
+<style scoped>/* ==================== 问答面板样式 ==================== */
 
 /* ==================== 组件样式 ==================== */
 .qa-container {
@@ -688,65 +596,65 @@ onUnmounted(() => {
     height: 100%;
 }
 
-.chat-messages {
+.qa-container .chat-messages {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
 }
 
-.welcome-message {
+.qa-container .welcome-message {
     text-align: center;
     padding: 40px 20px;
 }
 
-.welcome-icon {
+.qa-container .welcome-icon {
     font-size: 48px;
     margin-bottom: 16px;
 }
 
-.welcome-message h3 {
+.qa-container .welcome-message h3 {
     margin-bottom: 8px;
 }
 
-.welcome-message p {
-    color: var(--text-secondary);
+.qa-container .welcome-message p {
+    color: var(--insight-text-secondary);
     margin-bottom: 20px;
 }
 
-.suggested-questions {
+.qa-container .suggested-questions {
     display: flex;
     flex-direction: column;
     gap: 8px;
     align-items: center;
 }
 
-.suggestion-btn {
+.qa-container .suggestion-btn {
     padding: 10px 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    background: var(--insight-bg-secondary);
+    border: 1px solid var(--color-border-muted);
     border-radius: 20px;
     cursor: pointer;
     transition: all 0.2s;
     font-size: 13px;
 }
 
-.suggestion-btn:hover {
-    background: var(--bg-tertiary);
-    border-color: var(--color-primary);
+.qa-container .suggestion-btn:hover {
+    background: var(--insight-bg-tertiary);
+    border-color: var(--insight-color-primary);
 }
 
-.chat-message {
+.qa-container .chat-message {
     display: flex;
     gap: 12px;
     margin-bottom: 20px;
     animation: slideIn 0.3s ease;
 }
 
-.chat-message.user {
+.qa-container .chat-message.user {
     flex-direction: row-reverse;
 }
 
-.message-avatar {
+.qa-container .message-avatar {
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -757,12 +665,12 @@ onUnmounted(() => {
     flex-shrink: 0;
 }
 
-.chat-message.user .message-avatar {
+.qa-container .chat-message.user .message-avatar {
     background: transparent;
     overflow: hidden;
 }
 
-.message-avatar .avatar-img {
+.qa-container .message-avatar .avatar-img {
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -770,125 +678,125 @@ onUnmounted(() => {
     display: block;
 }
 
-.chat-message.assistant .message-avatar {
-    background: var(--bg-tertiary);
+.qa-container .chat-message.assistant .message-avatar {
+    background: var(--insight-bg-tertiary);
 }
 
-.message-content {
+.qa-container .message-content {
     max-width: 70%;
     padding: 12px 16px;
     border-radius: 12px;
     line-height: 1.6;
 }
 
-.chat-message.user .message-content {
-    background: var(--color-primary);
+.qa-container .chat-message.user .message-content {
+    background: var(--insight-color-primary);
     color: white;
     border-bottom-right-radius: 4px;
 }
 
-.chat-message.assistant .message-content {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+.qa-container .chat-message.assistant .message-content {
+    background: var(--insight-bg-secondary);
+    border: 1px solid var(--color-border-muted);
     border-bottom-left-radius: 4px;
 }
 
-.chat-message.assistant .message-content.markdown-content {
+.qa-container .chat-message.assistant .message-content.markdown-content {
     max-width: 70%;
 }
 
-.chat-message.assistant .answer-text {
+.qa-container .chat-message.assistant .answer-text {
     line-height: 1.7;
 }
 
-.chat-message.assistant .answer-text p {
+.qa-container .chat-message.assistant .answer-text p {
     margin: 0 0 8px;
 }
 
-.chat-message.assistant .answer-text p:last-child {
+.qa-container .chat-message.assistant .answer-text p:last-child {
     margin-bottom: 0;
 }
 
-.chat-message.assistant .answer-text ul,
-.chat-message.assistant .answer-text ol {
+.qa-container .chat-message.assistant .answer-text ul,
+.qa-container .chat-message.assistant .answer-text ol {
     margin: 8px 0;
     padding-left: 20px;
 }
 
-.chat-message.assistant .answer-text li {
+.qa-container .chat-message.assistant .answer-text li {
     margin: 4px 0;
 }
 
-.chat-message.assistant .answer-text strong {
-    color: var(--color-primary);
+.qa-container .chat-message.assistant .answer-text strong {
+    color: var(--insight-color-primary);
     font-weight: 600;
 }
 
-.chat-message.assistant .answer-text blockquote {
+.qa-container .chat-message.assistant .answer-text blockquote {
     margin: 8px 0;
     padding: 6px 12px;
-    border-left: 3px solid var(--color-primary);
-    background: var(--bg-tertiary);
+    border-left: 3px solid var(--insight-color-primary);
+    background: var(--insight-bg-tertiary);
     border-radius: 0 6px 6px 0;
     font-style: italic;
 }
 
-.chat-message.assistant .answer-text blockquote p {
+.qa-container .chat-message.assistant .answer-text blockquote p {
     margin: 0;
 }
 
-.chat-input-container {
+.qa-container .chat-input-container {
     padding: 16px;
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-secondary);
+    border-top: 1px solid var(--color-border-muted);
+    background: var(--insight-bg-secondary);
 }
 
-.chat-options {
+.qa-container .chat-options {
     display: flex;
     align-items: center;
     gap: 16px;
     margin-bottom: 10px;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-muted);
 }
 
-.chat-options .checkbox-label.compact {
+.qa-container .chat-options .ui-checkbox-label.compact {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.chat-options .checkbox-label.compact:hover {
-    color: var(--text-primary);
+.qa-container .chat-options .ui-checkbox-label.compact:hover {
+    color: var(--insight-text-primary);
 }
 
-.chat-options .checkbox-label.compact input[type="checkbox"] {
+.qa-container .chat-options .ui-checkbox-label.compact input[type="checkbox"] {
     width: 16px;
     height: 16px;
     cursor: pointer;
 }
 
-.chat-option-divider {
-    color: var(--border-color);
+.qa-container .chat-option-divider {
+    color: var(--color-border-muted);
     margin: 0 4px;
 }
 
-.qa-mode-toggle {
+.qa-container .qa-mode-toggle {
     display: flex;
-    background: var(--bg-secondary);
+    background: var(--insight-bg-secondary);
     border-radius: 8px;
     padding: 2px;
     gap: 2px;
 }
 
-.qa-mode-btn {
+.qa-container .qa-mode-btn {
     padding: 6px 12px;
     border: none;
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-size: 13px;
     cursor: pointer;
     border-radius: 6px;
@@ -896,47 +804,47 @@ onUnmounted(() => {
     white-space: nowrap;
 }
 
-.qa-mode-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-tertiary);
+.qa-container .qa-mode-btn:hover {
+    color: var(--insight-text-primary);
+    background: var(--insight-bg-tertiary);
 }
 
-.qa-mode-btn.active {
-    background: var(--color-primary);
+.qa-container .qa-mode-btn.active {
+    background: var(--insight-color-primary);
     color: white;
     font-weight: 500;
 }
 
-.precise-mode-options {
+.qa-container .precise-mode-options {
     display: flex;
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
 }
 
-.global-mode-hint {
+.qa-container .global-mode-hint {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
-.global-mode-hint .hint-text {
+.qa-container .global-mode-hint .hint-text {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-style: italic;
 }
 
-.answer-mode-badge {
+.qa-container .answer-mode-badge {
     display: inline-block;
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 4px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-secondary);
     margin-bottom: 8px;
 }
 
-.welcome-examples {
+.qa-container .welcome-examples {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -944,60 +852,60 @@ onUnmounted(() => {
     justify-content: center;
 }
 
-.example-tag {
+.qa-container .example-tag {
     padding: 6px 12px;
-    background: var(--bg-secondary);
+    background: var(--insight-bg-secondary);
     border-radius: 16px;
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.example-tag:hover {
-    background: var(--color-primary);
+.qa-container .example-tag:hover {
+    background: var(--insight-color-primary);
     color: white;
 }
 
-.chat-options .input-label.compact {
+.qa-container .chat-options .input-label.compact {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     display: flex;
     align-items: center;
     gap: 4px;
 }
 
-.chat-options .input-small {
+.qa-container .chat-options .input-small {
     width: 50px;
     padding: 2px 6px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 4px;
     font-size: 12px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--insight-bg-primary);
+    color: var(--insight-text-primary);
 }
 
-.chat-input-wrapper {
+.qa-container .chat-input-wrapper {
     display: flex;
     gap: 12px;
     align-items: flex-end;
 }
 
-.chat-input-wrapper textarea {
+.qa-container .chat-input-wrapper textarea {
     flex: 1;
     padding: 12px 16px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-muted);
     border-radius: 12px;
     resize: none;
     font-size: 14px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--insight-bg-primary);
+    color: var(--insight-text-primary);
     max-height: 120px;
 }
 
-.send-btn {
+.qa-container .send-btn {
     padding: 12px 24px;
-    background: var(--color-primary);
+    background: var(--insight-color-primary);
     color: white;
     border: none;
     border-radius: 12px;
@@ -1006,72 +914,72 @@ onUnmounted(() => {
     transition: background 0.2s;
 }
 
-.send-btn:hover {
-    background: var(--primary-dark);
+.qa-container .send-btn:hover {
+    background: var(--insight-primary-dark);
 }
 
-.send-btn:disabled {
-    background: var(--text-muted);
+.qa-container .send-btn:disabled {
+    background: var(--insight-text-muted);
     cursor: not-allowed;
 }
 
-.message-citations {
+.qa-container .message-citations {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-border-muted);
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
 }
 
-.citation-item {
+.qa-container .citation-item {
     display: inline-block;
     padding: 2px 8px;
-    background: var(--bg-tertiary);
+    background: var(--insight-bg-tertiary);
     border-radius: 4px;
     margin: 2px 4px;
     cursor: pointer;
 }
 
-.citation-item:hover {
-    background: var(--color-primary);
+.qa-container .citation-item:hover {
+    background: var(--insight-color-primary);
     color: white;
 }
 
-.message-save-btn {
+.qa-container .message-save-btn {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 6px 12px;
     margin-top: 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
+    background: var(--insight-bg-tertiary);
+    border: 1px solid var(--color-border-muted);
     border-radius: 6px;
-    color: var(--text-secondary);
+    color: var(--insight-text-secondary);
     font-size: 12px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.message-save-btn:hover {
-    background: var(--color-primary);
+.qa-container .message-save-btn:hover {
+    background: var(--insight-color-primary);
     color: white;
-    border-color: var(--color-primary);
+    border-color: var(--insight-color-primary);
 }
 
-.message-save-btn.saved {
-    background: var(--success-color);
+.qa-container .message-save-btn.saved {
+    background: var(--insight-success-color);
     color: white;
-    border-color: var(--success-color);
+    border-color: var(--insight-success-color);
     cursor: default;
 }
 
 /* 加载动画 */
-.loading-dots {
+.qa-container .loading-dots {
   display: inline-block;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
 }
 
-.loading-dots::after {
+.qa-container .loading-dots::after {
   content: '';
   animation: dots 1.5s steps(4, end) infinite;
 }
@@ -1083,229 +991,4 @@ onUnmounted(() => {
   80%, 100% { content: '...'; }
 }
 
-/* ==================== 笔记弹窗样式 ==================== */
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: var(--z-overlay);
-    display: none;
-}
-
-.modal.show {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgb(0, 0, 0, 0.5);
-}
-
-.note-modal .modal-content {
-    max-width: 560px;
-}
-
-.note-modal-content {
-    position: relative;
-    width: 90%;
-    max-width: 560px;
-    max-height: 90vh;
-    background: var(--bg-primary);
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgb(0, 0, 0, 0.3);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.modal-header h2 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.modal-close {
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: var(--bg-tertiary);
-    border-radius: 8px;
-    font-size: 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-}
-
-.modal-close:hover {
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-}
-
-.modal-body {
-    padding: 24px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 16px 24px;
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-secondary);
-}
-
-/* 问答预览 */
-.qa-preview {
-    background: var(--bg-tertiary);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 16px;
-}
-
-.qa-preview-section {
-    margin-bottom: 16px;
-}
-
-.qa-preview-section:last-child {
-    margin-bottom: 0;
-}
-
-.qa-preview-section label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-    display: block;
-}
-
-.qa-preview-content {
-    font-size: 14px;
-    line-height: 1.6;
-    color: var(--text-primary);
-    background: var(--bg-secondary);
-    padding: 12px;
-    border-radius: 8px;
-    max-height: 150px;
-    overflow-y: auto;
-}
-
-.qa-preview-citations {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.qa-citation-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    background: var(--color-primary);
-    color: white;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-/* 笔记表单 */
-.note-form {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.note-form .form-group {
-    margin-bottom: 0;
-}
-
-.note-form label {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 6px;
-}
-
-.note-form .optional {
-    font-weight: 400;
-    color: var(--text-secondary);
-    font-size: 12px;
-}
-
-.note-form .form-input,
-.note-form .form-textarea {
-    width: 100%;
-    padding: 10px 12px;
-    font-size: 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.note-form .form-input:focus,
-.note-form .form-textarea:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(99, 102, 241, 0.1);
-}
-
-.note-form .form-textarea {
-    resize: vertical;
-    min-height: 80px;
-    font-family: inherit;
-    line-height: 1.5;
-}
-
-/* 按钮样式 */
-.btn {
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-}
-
-.btn-primary {
-    background: var(--color-primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-dark);
-}
-
-.btn-secondary {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-    background: var(--bg-secondary);
-}
 </style>

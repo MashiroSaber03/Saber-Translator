@@ -1,704 +1,84 @@
-<script setup lang="ts">
-/**
- * 设置侧边栏组件
- * 翻译页面左侧的设置面板，包含文字设置、操作按钮等
- *
- * 功能：
- * - 文字设置折叠面板（字号、字体、排版、颜色、描边、填充方式）
- * - 翻译操作按钮组
- * - 导航按钮
- */
+﻿<script setup lang="ts">
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
-import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
-import {
-  getFontList,
-  type TranslateWorkflowPreferences,
-  getTranslateWorkflowPreferences,
-  saveTranslateWorkflowPreferences,
-  uploadFont,
-} from '@/api/config'
-import { showToast } from '@/utils/toast'
-import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
-import {
-  BUILTIN_FONTS,
-  clampLineSpacing,
-  getFontDisplayName,
-  inpaintMethodOptions,
-  layoutDirectionOptions,
-  textAlignOptions,
-} from '@/utils/textStyleForm'
-import {
-  DEFAULT_WORKFLOW_MODE,
-  WORKFLOW_MODE_CONFIGS,
-  isWorkflowMode,
-  type WorkflowMode,
-  type WorkflowModeConfig,
-  type WorkflowRunRequest,
-} from '@/types/workflow'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+
+import UiButton from '@/components/ui/UiButton.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 import PageSelectionModal from '@/components/translate/PageSelectionModal.vue'
-import { clampPageSelection, createPageSelectionSummary } from '@/utils/pageSelection'
-
-// ============================================================
-// Props 和 Emits
-// ============================================================
-
-const emit = defineEmits<{
-  /** 启动工作流 */
-  (e: 'runWorkflow', payload: WorkflowRunRequest): void
-  /** 上一张图片 */
-  (e: 'previous'): void
-  /** 下一张图片 */
-  (e: 'next'): void
-  /** 应用设置到全部 */
-  (e: 'applyToAll', options: ApplySettingsOptions): void
-  /** 文字样式设置变更（需要重新渲染） */
-  (e: 'textStyleChanged', settingKey: string, newValue: unknown): void
-  /** 【复刻原版修复A】自动字号开关变更（需要特殊处理：重新计算字号或应用固定字号） */
-  (e: 'autoFontSizeChanged', isAutoFontSize: boolean): void
-  /** 自动文字颜色开关变更（已翻译图片需要显式重新应用自动颜色） */
-  (e: 'autoTextColorChanged', isAutoTextColor: boolean): void
-  /** 打开术语表弹窗 */
-  (e: 'openGlossary'): void
-  /** 打开禁翻表弹窗 */
-  (e: 'openNonTranslate'): void
-}>()
-
-// ============================================================
-// 类型定义
-// ============================================================
-
-/** 应用设置选项 */
-interface ApplySettingsOptions {
-  fontSize: boolean
-  fontFamily: boolean
-  layoutDirection: boolean
-  textColor: boolean
-  fillColor: boolean
-  strokeEnabled: boolean
-  strokeColor: boolean
-  strokeWidth: boolean
-  lineSpacing: boolean
-  textAlign: boolean
-}
-
-// ============================================================
-// Stores
-// ============================================================
-
-const imageStore = useImageStore()
-const settingsStore = useSettingsStore()
-const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
-
-// ============================================================
-// 状态定义
-// ============================================================
-
-/** 应用设置下拉菜单是否显示 */
-const showApplyOptions = ref(false)
-
-/** 应用设置选项 */
-const applyOptions = ref<ApplySettingsOptions>({
-  fontSize: true,
-  fontFamily: true,
-  layoutDirection: true,
-  textColor: true,
-  fillColor: true,
-  strokeEnabled: true,
-  strokeColor: true,
-  strokeWidth: true,
-  lineSpacing: true,
-  textAlign: true,
-})
-
-/** 是否启用指定翻译页码 */
-const isPageSelectionEnabled = ref(false)
-
-/** 全局共享的已选页码（1-based） */
-const selectedPages = ref<number[]>([])
-
-/** 页码选择弹窗显示状态 */
-const showPageSelectionModal = ref(false)
-
-/** 当前工作流模式 */
-const selectedWorkflowMode = ref<WorkflowMode>(DEFAULT_WORKFLOW_MODE)
-
-/** 是否记住翻译页操作模式 */
-const rememberWorkflowModeEnabled = ref(true)
-
-/** 用户是否已经在本次挂载后手动切换过操作模式 */
-const hasUserChangedWorkflowMode = ref(false)
-
-/** 用户是否已经在本次挂载后手动切换过记忆开关 */
-const hasUserChangedRememberWorkflowMode = ref(false)
-
-/** 等待保存到后端的最新偏好快照 */
-let pendingWorkflowPreferences: TranslateWorkflowPreferences | null = null
-
-/** 是否正在写入翻译页操作模式偏好 */
-let isPersistingWorkflowPreferences = false
-
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 当前图片 */
-const currentImage = computed(() => imageStore.currentImage)
-
-/** 是否有图片 */
-const hasImages = computed(() => imageStore.hasImages)
-
-/** 总图片数量 */
-const totalImages = computed(() => imageStore.images.length)
-
-const normalizedSelectedPages = computed(() => clampPageSelection(selectedPages.value, totalImages.value))
-const hasValidPageSelection = computed(() => normalizedSelectedPages.value.length > 0)
-
-/** 是否可以翻译 */
-const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
-const canUseBookConstraints = computed(() => bookTranslationConstraintsStore.isAvailable)
-
-/** 是否可以切换上一张 */
-const canGoPrevious = computed(() => imageStore.canGoPrevious)
-
-/** 是否可以切换下一张 */
-const canGoNext = computed(() => imageStore.canGoNext)
-
-/** 当前工作流是否可执行 */
-const canRunWorkflow = computed(() => {
-  const mode = selectedWorkflowMode.value
-  const selectionInvalid = isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value
-
-  switch (mode) {
-    case 'translate-current':
-      return !!currentImage.value && canTranslate.value
-    case 'translate-batch':
-    case 'hq-batch':
-    case 'proofread-batch':
-      return canTranslate.value && !selectionInvalid
-    case 'remove-current':
-    case 'delete-current':
-      return !!currentImage.value
-    case 'remove-batch':
-      return hasImages.value && !selectionInvalid
-    case 'clear-all':
-      return hasImages.value
-    case 'retry-failed':
-      return hasFailedImages.value && !imageStore.isBatchTranslationInProgress
-    default:
-      return false
-  }
-})
-
-/** 文字样式设置 */
-const textStyle = computed(() => settingsStore.textStyle)
-
-/** 失败图片数量 */
-const failedImageCount = computed(() => imageStore.failedImageCount)
-
-/** 是否有失败图片 */
-const hasFailedImages = computed(() => failedImageCount.value > 0)
-
-/** 当前工作流配置 */
-const selectedWorkflowConfig = computed<WorkflowModeConfig>(() => {
-  return (
-    WORKFLOW_MODE_CONFIGS.find(cfg => cfg.mode === selectedWorkflowMode.value) ??
-    WORKFLOW_MODE_CONFIGS[0]!
-  )
-})
-
-/** 当前模式是否支持指定页码 */
-const supportsPageSelectionForCurrentMode = computed(() => selectedWorkflowConfig.value.supportsPageSelection)
-
-/** 指定页码是否被激活且可用于当前模式 */
-const isPageSelectionActiveForCurrentMode = computed(() => {
-  return supportsPageSelectionForCurrentMode.value && isPageSelectionEnabled.value
-})
-
-/** 工作流选项（用于 CustomSelect） */
-const workflowModeOptions = computed(() => {
-  return WORKFLOW_MODE_CONFIGS.map(cfg => ({
-    label: cfg.label,
-    value: cfg.mode,
-  }))
-})
-
-/** 启动按钮文案 */
-const workflowStartLabel = computed(() => selectedWorkflowConfig.value.startLabel)
-
-/** 当前模式的范围/对象标签 */
-const workflowContextTag = computed(() => {
-  if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
-    return `已选 ${normalizedSelectedPages.value.length} 页`
-  }
-
-  switch (selectedWorkflowMode.value) {
-    case 'translate-current':
-    case 'remove-current':
-    case 'delete-current':
-      return '当前页'
-    case 'translate-batch':
-    case 'hq-batch':
-    case 'proofread-batch':
-    case 'remove-batch':
-    case 'clear-all':
-      return '全量'
-    case 'retry-failed':
-      return hasFailedImages.value ? `失败 ${failedImageCount.value} 张` : '失败重试'
-    default:
-      return '流程'
-  }
-})
-
-/** 当前模式类型标签 */
-const workflowModeTag = computed(() => {
-  if (isDangerousWorkflow.value) {
-    return '高风险'
-  }
-  return supportsPageSelectionForCurrentMode.value ? '批量流程' : '单页流程'
-})
-
-/** 当前模式说明文案 */
-const workflowDescription = computed(() => {
-  switch (selectedWorkflowMode.value) {
-    case 'delete-current':
-      return '删除前会弹出确认，建议先检查当前页是否已保存。'
-    case 'clear-all':
-      return '清除前会弹出确认，此操作会移除所有已加载图片。'
-    case 'retry-failed':
-      return hasFailedImages.value
-        ? `将重试 ${failedImageCount.value} 张失败图片。`
-        : '当前没有失败图片可重试。'
-    default:
-      if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
-        return `当前页码：${createPageSelectionSummary(normalizedSelectedPages.value)}。`
-      }
-      if (isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value) {
-        return '请至少选择一页。'
-      }
-      if (supportsPageSelectionForCurrentMode.value) {
-        return '当前作用于全部图片（可启用指定翻译页码）。'
-      }
-      return '当前只作用于当前图片。'
-  }
-})
-
-/** 当前工作流是否危险操作 */
-const isDangerousWorkflow = computed(() => selectedWorkflowConfig.value.isDangerous)
-
-/** 字体列表（包含内置字体） */
-const fontList = ref<string[]>([])
-
-/** 字体上传输入框引用 */
-const fontUploadInput = ref<HTMLInputElement | null>(null)
-
-/** 字体选择选项（用于CustomSelect） */
-const fontSelectOptions = computed(() => {
-  const options = fontList.value.map(font => ({
-    label: getFontDisplayName(font),
-    value: font,
-  }))
-  options.push({ label: '自定义字体...', value: 'custom-font' })
-  return options
-})
-
-// ============================================================
-// 生命周期
-// ============================================================
-
-onMounted(async () => {
-  void loadWorkflowPreferences()
-
-  // 加载字体列表
-  await loadFontList()
-
-  // 确保当前选中的字体在列表中
-  const currentFont = textStyle.value.fontFamily
-  if (currentFont && !fontList.value.includes(currentFont)) {
-    // 如果当前字体不在列表中，添加到列表
-    fontList.value = [currentFont, ...fontList.value]
-  }
-
-  // 监听点击外部关闭应用选项菜单
-  window.addEventListener('click', handleClickOutside)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('click', handleClickOutside)
-})
-
-watch(supportsPageSelectionForCurrentMode, supports => {
-  if (!supports) {
-    isPageSelectionEnabled.value = false
-  }
-})
-
-watch(totalImages, (count) => {
-  selectedPages.value = clampPageSelection(selectedPages.value, count)
-})
-
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 加载字体列表
- */
-async function loadFontList() {
-  try {
-    const response = await getFontList()
-    // 后端返回的是 { fonts: [{file_name, display_name, path, is_default}, ...] }
-    if (response.fonts && Array.isArray(response.fonts) && response.fonts.length > 0) {
-      // 检查是新格式（对象数组）还是旧格式（字符串数组）
-      const firstItem = response.fonts[0]
-      if (typeof firstItem === 'object' && 'path' in firstItem) {
-        // 新格式：提取字体路径
-        const serverFonts = response.fonts.map(f => (typeof f === 'object' ? f.path : f))
-        fontList.value = serverFonts
-      } else {
-        // 旧格式：直接使用
-        fontList.value = response.fonts as string[]
-      }
-    } else {
-      // 如果API失败，至少显示内置字体
-      fontList.value = [...BUILTIN_FONTS]
-    }
-  } catch (error) {
-    console.error('加载字体列表失败:', error)
-    // 出错时也显示内置字体
-    fontList.value = [...BUILTIN_FONTS]
-  }
-}
-
-async function loadWorkflowPreferences() {
-  try {
-    const response = await getTranslateWorkflowPreferences()
-    const preferences = response.preferences
-    if (!response.success || !preferences) return
-
-    if (!hasUserChangedRememberWorkflowMode.value) {
-      rememberWorkflowModeEnabled.value = preferences.rememberWorkflowModeEnabled
-    }
-
-    if (
-      preferences.rememberWorkflowModeEnabled &&
-      isWorkflowMode(preferences.lastWorkflowMode) &&
-      !hasUserChangedWorkflowMode.value &&
-      !hasUserChangedRememberWorkflowMode.value
-    ) {
-      selectedWorkflowMode.value = preferences.lastWorkflowMode
-    }
-  } catch (error) {
-    console.warn('加载翻译页操作模式偏好失败:', error)
-  }
-}
-
-async function persistWorkflowPreferences(
-  rememberEnabled: boolean,
-  workflowMode: WorkflowMode
-): Promise<void> {
-  pendingWorkflowPreferences = {
-    rememberWorkflowModeEnabled: rememberEnabled,
-    lastWorkflowMode: workflowMode,
-  }
-
-  if (isPersistingWorkflowPreferences) return
-
-  isPersistingWorkflowPreferences = true
-  while (pendingWorkflowPreferences) {
-    const nextPreferences = pendingWorkflowPreferences
-    pendingWorkflowPreferences = null
-
-    try {
-      await saveTranslateWorkflowPreferences(nextPreferences)
-    } catch (error) {
-      console.warn('保存翻译页操作模式偏好失败:', error)
-    }
-  }
-  isPersistingWorkflowPreferences = false
-}
-
-/**
- * 更新字号
- */
-function updateFontSize(event: Event) {
-  const value = parseInt((event.target as HTMLInputElement).value)
-  if (!isNaN(value)) {
-    settingsStore.updateTextStyle({ fontSize: value })
-    emit('textStyleChanged', 'fontSize', value)
-  }
-}
-
-/**
- * 更新自动字号
- * 【复刻原版修复A】切换后触发 autoFontSizeChanged 事件
- */
-function updateAutoFontSize(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  settingsStore.updateTextStyle({ autoFontSize: checked })
-  console.log(`自动字号设置变更: ${checked}`)
-  // 【复刻原版】触发事件，由父组件处理重新渲染逻辑
-  emit('autoFontSizeChanged', checked)
-}
-
-/**
- * 处理字体文件上传
- */
-async function handleFontUpload(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  // 验证文件类型
-  const validExtensions = ['.ttf', '.ttc', '.otf']
-  const fileName = file.name.toLowerCase()
-  const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
-
-  if (!isValidType) {
-    showToast('请选择 .ttf、.ttc 或 .otf 格式的字体文件', 'error')
-    input.value = ''
-    return
-  }
-
-  try {
-    const response = await uploadFont(file)
-    if (response.success && response.fontPath) {
-      // 更新字体列表
-      await loadFontList()
-      // 设置新上传的字体为当前字体
-      settingsStore.updateTextStyle({ fontFamily: response.fontPath })
-      showToast('字体上传成功', 'success')
-    } else {
-      showToast(response.error || '字体上传失败', 'error')
-    }
-  } catch (error) {
-    console.error('字体上传失败:', error)
-    showToast('字体上传失败', 'error')
-  } finally {
-    // 清空文件输入
-    input.value = ''
-  }
-}
-
-/**
- * 处理字体选择变化（CustomSelect）
- */
-function handleFontSelectChange(value: string | number) {
-  const strValue = String(value)
-  if (strValue === 'custom-font') {
-    fontUploadInput.value?.click()
-    return
-  }
-  settingsStore.updateTextStyle({ fontFamily: strValue })
-  emit('textStyleChanged', 'fontFamily', strValue)
-}
-
-/**
- * 处理排版方向变化（CustomSelect）
- */
-function handleLayoutDirectionChange(value: string | number) {
-  const strValue = String(value)
-  settingsStore.updateTextStyle({ layoutDirection: strValue as TextDirection })
-  emit('textStyleChanged', 'layoutDirection', strValue)
-}
-
-/**
- * 处理填充方式变化（CustomSelect）
- */
-function handleInpaintMethodChange(value: string | number) {
-  const strValue = String(value)
-  settingsStore.updateTextStyle({ inpaintMethod: strValue as InpaintMethod })
-}
-
-/**
- * 更新文字颜色
- */
-function updateTextColor(event: Event) {
-  const value = (event.target as HTMLInputElement).value
-  settingsStore.updateTextStyle({ textColor: value })
-  emit('textStyleChanged', 'textColor', value)
-}
-
-/**
- * 更新行间距倍数（0.5 - 3.0）
- */
-function updateLineSpacing(event: Event) {
-  const value = clampLineSpacing(Number((event.target as HTMLInputElement).value), TEXT_STYLE_DEFAULTS.lineSpacing)
-  settingsStore.updateTextStyle({ lineSpacing: value })
-  emit('textStyleChanged', 'lineSpacing', value)
-}
-
-/**
- * 更新对齐方式
- */
-function updateTextAlign(value: string | number) {
-  const strValue = String(value) as TextAlign
-  settingsStore.updateTextStyle({ textAlign: strValue })
-  emit('textStyleChanged', 'textAlign', strValue)
-}
-
-/**
- * 更新是否使用自动文字颜色
- */
-function updateUseAutoTextColor(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  settingsStore.updateTextStyle({ useAutoTextColor: checked })
-  emit('autoTextColorChanged', checked)
-}
-
-/**
- * 更新描边启用状态
- */
-function updateStrokeEnabled(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  settingsStore.updateTextStyle({ strokeEnabled: checked })
-  emit('textStyleChanged', 'strokeEnabled', checked)
-}
-
-/**
- * 更新描边颜色
- */
-function updateStrokeColor(event: Event) {
-  const value = (event.target as HTMLInputElement).value
-  settingsStore.updateTextStyle({ strokeColor: value })
-  emit('textStyleChanged', 'strokeColor', value)
-}
-
-/**
- * 更新描边宽度
- */
-function updateStrokeWidth(event: Event) {
-  const value = parseInt((event.target as HTMLInputElement).value)
-  if (!isNaN(value)) {
-    settingsStore.updateTextStyle({ strokeWidth: value })
-    emit('textStyleChanged', 'strokeWidth', value)
-  }
-}
-
-/**
- * 更新填充颜色
- */
-function updateFillColor(event: Event) {
-  const value = (event.target as HTMLInputElement).value
-  settingsStore.updateTextStyle({ fillColor: value })
-  emit('textStyleChanged', 'fillColor', value)
-}
-
-/**
- * 切换应用设置下拉菜单
- */
-function toggleApplyOptions() {
-  showApplyOptions.value = !showApplyOptions.value
-}
-
-/**
- * 全选/取消全选应用选项
- */
-function toggleSelectAll() {
-  const allSelected = Object.values(applyOptions.value).every(v => v)
-  const newValue = !allSelected
-  applyOptions.value = {
-    fontSize: newValue,
-    fontFamily: newValue,
-    layoutDirection: newValue,
-    textColor: newValue,
-    fillColor: newValue,
-    strokeEnabled: newValue,
-    strokeColor: newValue,
-    strokeWidth: newValue,
-    lineSpacing: newValue,
-    textAlign: newValue,
-  }
-}
-
-/**
- * 应用设置到全部
- */
-function handleApplyToAll() {
-  emit('applyToAll', { ...applyOptions.value })
-  showApplyOptions.value = false
-}
-
-/**
- * 点击外部关闭下拉菜单
- */
-function handleClickOutside(event: MouseEvent) {
-  const target = event.target as HTMLElement
-  if (!target.closest('.apply-settings-group')) {
-    showApplyOptions.value = false
-  }
-}
-
-function openPageSelectionModal(): void {
-  if (totalImages.value === 0 || !supportsPageSelectionForCurrentMode.value) return
-  showPageSelectionModal.value = true
-}
-
-function handlePageSelectionConfirm(pages: number[]): void {
-  selectedPages.value = clampPageSelection(pages, totalImages.value)
-}
-
-/**
- * 处理工作流模式切换
- */
-function handleWorkflowModeChange(value: string | number) {
-  const workflowMode = String(value)
-  if (!isWorkflowMode(workflowMode)) return
-
-  hasUserChangedWorkflowMode.value = true
-  selectedWorkflowMode.value = workflowMode
-  void persistWorkflowPreferences(rememberWorkflowModeEnabled.value, workflowMode)
-}
-
-function handleRememberWorkflowModeChange(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  hasUserChangedRememberWorkflowMode.value = true
-  rememberWorkflowModeEnabled.value = checked
-  void persistWorkflowPreferences(checked, selectedWorkflowMode.value)
-}
-
-/**
- * 启动当前工作流
- */
-function handleRunWorkflow() {
-  if (!canRunWorkflow.value) return
-
-  const payload: WorkflowRunRequest = {
-    mode: selectedWorkflowMode.value,
-  }
-
-  if (isPageSelectionActiveForCurrentMode.value && hasValidPageSelection.value) {
-    payload.pageSelection = {
-      pages: normalizedSelectedPages.value,
-    }
-  }
-
-  emit('runWorkflow', payload)
-}
-
-function handleOpenGlossary(): void {
-  emit('openGlossary')
-}
-
-function handleOpenNonTranslate(): void {
-  emit('openNonTranslate')
-}
+import { unref } from 'vue'
+import { useSettingsSidebar, type SettingsSidebarEmit } from './useSettingsSidebar'
+
+const emit = defineEmits<SettingsSidebarEmit>()
+
+const {
+  showApplyOptions,
+  applyOptions,
+  isPageSelectionEnabled,
+  showPageSelectionModal,
+  selectedWorkflowMode,
+  rememberWorkflowModeEnabled,
+  hasImages,
+  totalImages,
+  normalizedSelectedPages,
+  hasValidPageSelection,
+  canUseBookConstraints,
+  canGoPrevious,
+  canGoNext,
+  canRunWorkflow,
+  textStyle,
+  supportsPageSelectionForCurrentMode,
+  isPageSelectionActiveForCurrentMode,
+  workflowModeOptions,
+  workflowStartLabel,
+  workflowContextTag,
+  workflowModeTag,
+  workflowDescription,
+  isDangerousWorkflow,
+  fontUploadInput,
+  fontSelectOptions,
+  layoutDirectionOptions,
+  inpaintMethodOptions,
+  textAlignOptions,
+  createPageSelectionSummary,
+  updateFontSize,
+  updateAutoFontSize,
+  handleFontUpload,
+  handleFontSelectChange,
+  handleLayoutDirectionChange,
+  handleInpaintMethodChange,
+  updateTextColor,
+  updateLineSpacing,
+  updateTextAlign,
+  updateUseAutoTextColor,
+  updateStrokeEnabled,
+  updateStrokeColor,
+  updateStrokeWidth,
+  updateFillColor,
+  toggleApplyOptions,
+  toggleSelectAll,
+  handleApplyToAll,
+  openPageSelectionModal,
+  handlePageSelectionConfirm,
+  handleWorkflowModeChange,
+  handleRememberWorkflowModeChange,
+  handleRunWorkflow,
+  handleOpenGlossary,
+  handleOpenNonTranslate,
+} = useSettingsSidebar(emit)
 </script>
 
 <template>
-  <aside id="settings-sidebar" class="settings-sidebar">
-    <div class="card settings-card">
+  <aside class="settings-sidebar">
+    <div class="settings-card">
       <h2 class="sidebar-title">翻译设置</h2>
 
       <!-- 文字设置折叠面板 -->
       <CollapsiblePanel
         title="文字设置"
         :default-expanded="true"
+        variant="settings"
         class="settings-panel text-settings-panel"
       >
         <div class="settings-form text-settings-form">
@@ -707,9 +87,9 @@ function handleOpenNonTranslate(): void {
               <h3 class="group-title">字体排版</h3>
               <span class="group-note">影响新翻译文本</span>
             </div>
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="fontSize">字号</label>
-              <input
+              <UiInput
                 type="number"
                 id="fontSize"
                 :value="textStyle.fontSize"
@@ -724,7 +104,7 @@ function handleOpenNonTranslate(): void {
                 for="autoFontSize"
                 title="勾选后，首次翻译时自动为每个气泡计算合适的字号"
               >
-                <input
+                <UiInput
                   type="checkbox"
                   id="autoFontSize"
                   :checked="textStyle.autoFontSize"
@@ -734,16 +114,15 @@ function handleOpenNonTranslate(): void {
               </label>
             </div>
 
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="fontFamily">文本字体</label>
               <CustomSelect
                 :model-value="textStyle.fontFamily"
                 :options="fontSelectOptions"
                 @change="handleFontSelectChange"
               />
-              <input
+              <UiFileInput
                 ref="fontUploadInput"
-                type="file"
                 id="fontUpload"
                 accept=".ttf,.ttc,.otf"
                 style="display: none"
@@ -751,7 +130,7 @@ function handleOpenNonTranslate(): void {
               />
             </div>
 
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="layoutDirection">排版方向</label>
               <CustomSelect
                 :model-value="textStyle.layoutDirection"
@@ -760,9 +139,9 @@ function handleOpenNonTranslate(): void {
               />
             </div>
 
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="lineSpacing">行间距</label>
-              <input
+              <UiInput
                 type="number"
                 id="lineSpacing"
                 :value="textStyle.lineSpacing"
@@ -774,7 +153,7 @@ function handleOpenNonTranslate(): void {
               />
             </div>
 
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="textAlign">对齐方式</label>
               <CustomSelect
                 :model-value="textStyle.textAlign"
@@ -788,11 +167,11 @@ function handleOpenNonTranslate(): void {
             <div class="group-title-row">
               <h3 class="group-title">颜色与填充</h3>
             </div>
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <div class="label-row">
                 <label for="textColor">文字颜色</label>
                 <label class="toggle-pill auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
-                  <input
+                  <UiInput
                     type="checkbox"
                     :checked="textStyle.useAutoTextColor"
                     @change="updateUseAutoTextColor"
@@ -800,7 +179,7 @@ function handleOpenNonTranslate(): void {
                   <span>自动</span>
                 </label>
               </div>
-              <input
+              <UiInput
                 type="color"
                 id="textColor"
                 class="color-input"
@@ -813,7 +192,7 @@ function handleOpenNonTranslate(): void {
               </div>
             </div>
 
-            <div class="form-group">
+            <div class="settings-sidebar__field">
               <label for="useInpainting">气泡填充方式</label>
               <CustomSelect
                 :model-value="textStyle.inpaintMethod"
@@ -826,10 +205,10 @@ function handleOpenNonTranslate(): void {
               <div
                 v-if="textStyle.inpaintMethod === 'solid'"
                 id="solidColorOptions"
-                class="form-group inline-color-group"
+                class="settings-sidebar__field inline-color-group"
               >
                 <label for="fillColor">填充颜色</label>
-                <input
+                <UiInput
                   type="color"
                   id="fillColor"
                   class="color-input compact"
@@ -844,7 +223,7 @@ function handleOpenNonTranslate(): void {
             <div class="group-title-row">
               <h3 class="group-title">描边</h3>
               <label class="toggle-pill stroke-toggle" for="strokeEnabled">
-                <input
+                <UiInput
                   type="checkbox"
                   id="strokeEnabled"
                   :checked="textStyle.strokeEnabled"
@@ -857,9 +236,9 @@ function handleOpenNonTranslate(): void {
             <Transition name="stroke-slide">
               <div v-if="textStyle.strokeEnabled" id="strokeOptions" class="stroke-options">
                 <div class="stroke-grid">
-                  <div class="form-group">
+                  <div class="settings-sidebar__field">
                     <label for="strokeColor">描边颜色</label>
-                    <input
+                    <UiInput
                       type="color"
                       id="strokeColor"
                       class="color-input compact"
@@ -867,9 +246,9 @@ function handleOpenNonTranslate(): void {
                       @input="updateStrokeColor"
                     />
                   </div>
-                  <div class="form-group">
+                  <div class="settings-sidebar__field">
                     <label for="strokeWidth">描边宽度 (px)</label>
-                    <input
+                    <UiInput
                       type="number"
                       id="strokeWidth"
                       class="compact-number-input"
@@ -878,7 +257,7 @@ function handleOpenNonTranslate(): void {
                       max="10"
                       @input="updateStrokeWidth"
                     />
-                    <div class="input-hint">0 表示无描边。</div>
+                    <div class="ui-form-hint">0 表示无描边。</div>
                   </div>
                 </div>
               </div>
@@ -887,28 +266,30 @@ function handleOpenNonTranslate(): void {
         </div>
 
         <!-- 应用到全部按钮 -->
-        <div class="apply-settings-group">
-          <button
+        <div class="settings-sidebar__apply-group">
+          <UiButton
+            variant="toolbar"
             type="button"
-            class="settings-button"
-            :disabled="!hasImages"
+            class="settings-sidebar__apply-button"
+            :disabled="!unref(hasImages)"
             @click="handleApplyToAll"
           >
             应用到全部
-          </button>
-          <button
+          </UiButton>
+          <UiButton
+            variant="toolbar"
             type="button"
-            class="settings-gear-btn"
+            class="settings-sidebar__apply-options-button"
             title="选择要应用的参数"
             @click="toggleApplyOptions"
           >
             ⚙️
-          </button>
+          </UiButton>
 
           <!-- 应用选项下拉菜单 -->
           <div v-if="showApplyOptions" class="apply-options-dropdown">
             <div class="apply-option">
-              <input
+              <UiInput
                 type="checkbox"
                 id="apply_selectAll"
                 :checked="Object.values(applyOptions).every(v => v)"
@@ -918,15 +299,15 @@ function handleOpenNonTranslate(): void {
             </div>
             <hr />
             <div class="apply-option">
-              <input type="checkbox" id="apply_fontSize" v-model="applyOptions.fontSize" />
+              <UiInput type="checkbox" id="apply_fontSize" v-model="applyOptions.fontSize" />
               <label for="apply_fontSize">字号</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_fontFamily" v-model="applyOptions.fontFamily" />
+              <UiInput type="checkbox" id="apply_fontFamily" v-model="applyOptions.fontFamily" />
               <label for="apply_fontFamily">字体</label>
             </div>
             <div class="apply-option">
-              <input
+              <UiInput
                 type="checkbox"
                 id="apply_layoutDirection"
                 v-model="applyOptions.layoutDirection"
@@ -934,23 +315,23 @@ function handleOpenNonTranslate(): void {
               <label for="apply_layoutDirection">排版方向</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_lineSpacing" v-model="applyOptions.lineSpacing" />
+              <UiInput type="checkbox" id="apply_lineSpacing" v-model="applyOptions.lineSpacing" />
               <label for="apply_lineSpacing">行间距</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_textAlign" v-model="applyOptions.textAlign" />
+              <UiInput type="checkbox" id="apply_textAlign" v-model="applyOptions.textAlign" />
               <label for="apply_textAlign">对齐方式</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />
+              <UiInput type="checkbox" id="apply_textColor" v-model="applyOptions.textColor" />
               <label for="apply_textColor">文字颜色</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_fillColor" v-model="applyOptions.fillColor" />
+              <UiInput type="checkbox" id="apply_fillColor" v-model="applyOptions.fillColor" />
               <label for="apply_fillColor">填充颜色</label>
             </div>
             <div class="apply-option">
-              <input
+              <UiInput
                 type="checkbox"
                 id="apply_strokeEnabled"
                 v-model="applyOptions.strokeEnabled"
@@ -958,11 +339,11 @@ function handleOpenNonTranslate(): void {
               <label for="apply_strokeEnabled">描边开关</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_strokeColor" v-model="applyOptions.strokeColor" />
+              <UiInput type="checkbox" id="apply_strokeColor" v-model="applyOptions.strokeColor" />
               <label for="apply_strokeColor">描边颜色</label>
             </div>
             <div class="apply-option">
-              <input type="checkbox" id="apply_strokeWidth" v-model="applyOptions.strokeWidth" />
+              <UiInput type="checkbox" id="apply_strokeWidth" v-model="applyOptions.strokeWidth" />
               <label for="apply_strokeWidth">描边宽度</label>
             </div>
           </div>
@@ -972,15 +353,16 @@ function handleOpenNonTranslate(): void {
       <CollapsiblePanel
         title="指定翻译页码"
         :default-expanded="false"
+        variant="settings"
         class="settings-panel"
       >
         <div class="settings-form page-selection-form">
           <div class="range-header-row">
             <label class="page-selection-toggle-compact">
-              <input
+              <UiInput
                 type="checkbox"
                 v-model="isPageSelectionEnabled"
-                :disabled="totalImages === 0 || !supportsPageSelectionForCurrentMode"
+                :disabled="unref(totalImages) === 0 || !unref(supportsPageSelectionForCurrentMode)"
               />
               <span>启用</span>
             </label>
@@ -993,14 +375,15 @@ function handleOpenNonTranslate(): void {
             <div class="page-selection-summary-value">
               {{ createPageSelectionSummary(normalizedSelectedPages) }}
             </div>
-            <button
+            <UiButton
+              variant="toolbar"
               type="button"
               class="settings-button secondary-button page-selection-open-btn"
-              :disabled="totalImages === 0"
+              :disabled="unref(totalImages) === 0"
               @click="openPageSelectionModal"
             >
               选择页码
-            </button>
+            </UiButton>
           </div>
 
           <div
@@ -1018,22 +401,24 @@ function handleOpenNonTranslate(): void {
           术语表和禁翻表按单本漫画保存，不与其他书共享。
         </div>
         <div class="book-constraints-actions">
-          <button
+          <UiButton
+            variant="toolbar"
             type="button"
             class="settings-button secondary-button"
-            :disabled="!canUseBookConstraints"
+            :disabled="!unref(canUseBookConstraints)"
             @click="handleOpenGlossary"
           >
             术语表
-          </button>
-          <button
+          </UiButton>
+          <UiButton
+            variant="toolbar"
             type="button"
             class="settings-button secondary-button"
-            :disabled="!canUseBookConstraints"
+            :disabled="!unref(canUseBookConstraints)"
             @click="handleOpenNonTranslate"
           >
             禁翻表
-          </button>
+          </UiButton>
         </div>
         <div v-if="!canUseBookConstraints" class="book-constraints-disabled-note">
           仅书架模式可用
@@ -1042,19 +427,21 @@ function handleOpenNonTranslate(): void {
 
       <!-- 工作流启动区 -->
       <div class="action-buttons workflow-controls">
-        <div class="form-group">
+        <div class="settings-sidebar__field">
           <label for="workflowModeSelect">操作模式:</label>
           <CustomSelect
             id="workflowModeSelect"
             :model-value="selectedWorkflowMode"
             :options="workflowModeOptions"
+            fit
+            variant="workflow"
             @change="handleWorkflowModeChange"
           />
           <label class="remember-workflow-mode-toggle">
-            <input
+            <UiInput
               id="rememberWorkflowModeCheckbox"
               type="checkbox"
-              :checked="rememberWorkflowModeEnabled"
+              :checked="unref(rememberWorkflowModeEnabled)"
               @change="handleRememberWorkflowModeChange"
             />
             <span>记住操作模式</span>
@@ -1066,15 +453,16 @@ function handleOpenNonTranslate(): void {
             {{ workflowModeTag }}
           </span>
         </div>
-        <button
+        <UiButton
+          variant="toolbar"
           id="runWorkflowButton"
           class="settings-button workflow-run-button"
           :class="{ 'danger-button': isDangerousWorkflow }"
-          :disabled="!canRunWorkflow"
+          :disabled="!unref(canRunWorkflow)"
           @click="handleRunWorkflow"
         >
           {{ workflowStartLabel }}
-        </button>
+        </UiButton>
         <div class="workflow-description">
           {{ workflowDescription }}
         </div>
@@ -1082,10 +470,10 @@ function handleOpenNonTranslate(): void {
 
       <!-- 导航按钮 -->
       <div class="navigation-buttons">
-        <button id="prevImageButton" :disabled="!canGoPrevious" @click="emit('previous')">
+        <UiButton variant="toolbar" id="prevImageButton" :disabled="!unref(canGoPrevious)" @click="emit('previous')">
           上一张
-        </button>
-        <button id="nextImageButton" :disabled="!canGoNext" @click="emit('next')">下一张</button>
+        </UiButton>
+        <UiButton variant="toolbar" id="nextImageButton" :disabled="!unref(canGoNext)" @click="emit('next')">下一张</UiButton>
       </div>
     </div>
     <PageSelectionModal
@@ -1098,7 +486,7 @@ function handleOpenNonTranslate(): void {
 </template>
 
 <style scoped>
-/* 侧边栏容器 */
+/* Sidebar shell */
 .settings-sidebar {
   position: fixed;
   top: 70px;
@@ -1106,13 +494,13 @@ function handleOpenNonTranslate(): void {
   width: 300px;
   height: calc(100vh - 90px);
   overflow-y: auto;
-  padding-top: 10px;
+  padding: 10px 20px 20px;
   display: flex;
   flex-direction: column;
   direction: rtl;
-  z-index: 50;
+  z-index: var(--z-fixed-sidebar);
   scrollbar-width: thin;
-  scrollbar-color: #c7d5e7 #eef3f9;
+  scrollbar-color: var(--settings-sidebar-shell-text-primary) var(--settings-sidebar-shell-text-secondary);
 }
 
 .settings-sidebar > * {
@@ -1124,21 +512,20 @@ function handleOpenNonTranslate(): void {
 }
 
 .settings-sidebar::-webkit-scrollbar-track {
-  background: #eef3f9;
+  background: var(--settings-sidebar-shell-surface-base);
   border-radius: 999px;
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb {
-  background: #c7d5e7;
+  background: var(--settings-sidebar-shell-surface-raised);
   border-radius: 999px;
 }
 
-/* 顶层卡片 */
 .settings-card {
-  background: #fff;
-  border: 1px solid #dbe4ef;
+  background: var(--color-surface-base);
+  border: 1px solid var(--settings-sidebar-shell-border-default);
   border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(28, 45, 72, 0.07);
+  box-shadow: 0 8px 20px var(--settings-sidebar-shell-shadow-default);
   padding: 18px;
   margin-bottom: 14px;
 }
@@ -1146,42 +533,56 @@ function handleOpenNonTranslate(): void {
 .sidebar-title {
   margin: 0 0 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #e2e9f2;
-  color: #20314f;
+  border-bottom: 1px solid var(--settings-sidebar-shell-border-strong);
+  color: var(--settings-sidebar-shell-text-muted);
   font-size: 24px;
   font-weight: 700;
   text-align: center;
 }
 
-/* 面板层：恢复轻量容器，形成“2层结构” */
 .settings-panel {
   margin: 0 0 12px;
   padding: 12px;
-  border: 1px solid #d8e3f1;
+  border: 1px solid var(--settings-sidebar-shell-border-muted);
   border-radius: 12px;
-  background: #f5f8fd;
+  background: var(--settings-sidebar-shell-surface-muted);
 }
 
-.settings-panel :deep(.collapsible-header) {
-  margin: 0 0 10px;
-  padding: 0;
-  color: #304464;
-  border-bottom: 1px solid #dde7f4;
-  padding-bottom: 8px;
+@media (--breakpoint-sidebar-height-compact) {
+  .settings-sidebar {
+    top: 66px;
+    height: calc(100vh - 80px);
+  }
+
+  .sidebar-title {
+    font-size: 22px;
+  }
 }
 
-.settings-panel :deep(.collapsible-title) {
-  font-size: 17px;
-  font-weight: 700;
-}
+@media (--breakpoint-md-down) {
+  .settings-sidebar {
+    position: relative;
+    top: auto;
+    left: auto;
+    order: 2;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    margin-top: 0;
+    overflow: visible;
+    padding: 0;
+    direction: ltr;
+    z-index: auto;
+  }
 
-.settings-panel :deep(.toggle-icon) {
-  color: #6e81a2;
-  font-size: 12px;
-}
+  .settings-card {
+    padding: 14px 16px 32px;
+    margin-bottom: 0;
+  }
 
-.settings-panel :deep(.collapsible-content) {
-  padding-top: 2px;
+  .sidebar-title {
+    font-size: 20px;
+  }
 }
 
 .settings-form {
@@ -1190,7 +591,8 @@ function handleOpenNonTranslate(): void {
 }
 
 .setting-group {
-  --group-divider-color: #d4deeb;
+  --settings-sidebar-group-divider-color: var(--settings-sidebar-shell-text-subtle);
+
   margin: 0;
   padding: 10px 0;
   border-radius: 0;
@@ -1205,7 +607,7 @@ function handleOpenNonTranslate(): void {
 .setting-group + .setting-group {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 3px solid var(--group-divider-color);
+  border-top: 3px solid var(--settings-sidebar-group-divider-color);
 }
 
 .group-title-row {
@@ -1215,49 +617,53 @@ function handleOpenNonTranslate(): void {
   gap: 10px;
   margin-bottom: 12px;
   padding: 0 0 10px;
-  border-bottom: 1px solid #dfe8f4;
+  border-bottom: 1px solid var(--settings-sidebar-shell-border-subtle);
 }
 
 .setting-group-typography {
-  --group-divider-color: #d4deeb;
+  --settings-sidebar-group-divider-color: var(--settings-sidebar-shell-text-subtle);
 }
 
 .setting-group-color {
-  --group-divider-color: #24a87a;
+  --settings-sidebar-group-divider-color: var(--settings-sidebar-shell-text-supporting);
 }
 
 .setting-group-stroke {
-  --group-divider-color: #dc9a2f;
+  --settings-sidebar-group-divider-color: var(--settings-sidebar-shell-text-disabled);
+}
+
+.setting-group-color + .setting-group-stroke {
+  margin-top: 8px;
 }
 
 .group-title {
   margin: 0;
-  color: #273959;
+  color: var(--settings-sidebar-shell-text-inverse);
   font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
 }
 
 .group-note {
-  color: #7d8ba4;
+  color: var(--settings-sidebar-shell-text-brand);
   font-size: 11px;
   line-height: 1.2;
 }
 
-.form-group {
+.settings-sidebar__field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-bottom: 11px;
 }
 
-.form-group:last-child {
+.settings-sidebar__field:last-child {
   margin-bottom: 0;
 }
 
-.form-group label {
+.settings-sidebar__field > label {
   margin: 0;
-  color: #2f3d56;
+  color: var(--settings-sidebar-shell-text-danger);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1267,30 +673,6 @@ function handleOpenNonTranslate(): void {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.settings-sidebar input[type='number'],
-.settings-sidebar input[type='text'],
-.settings-sidebar select {
-  width: 100%;
-  min-height: 40px;
-  padding: 9px 10px;
-  border: 1px solid #cfdcec;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #1f2f47;
-  background: #fbfdff;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.settings-sidebar input[type='number']:focus,
-.settings-sidebar input[type='text']:focus,
-.settings-sidebar select:focus {
-  border-color: #4a82ce;
-  box-shadow: 0 0 0 3px rgba(74, 130, 206, 0.18);
-  outline: none;
 }
 
 .disabled-input {
@@ -1304,10 +686,10 @@ function handleOpenNonTranslate(): void {
   gap: 6px;
   width: fit-content;
   padding: 5px 10px;
-  border: 1px solid #d3deed;
+  border: 1px solid var(--settings-sidebar-shell-border-hover);
   border-radius: 999px;
-  background: #f4f8fd;
-  color: #5b6f8e;
+  background: var(--settings-sidebar-shell-surface-subtle);
+  color: var(--settings-sidebar-shell-text-warning);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1318,14 +700,14 @@ function handleOpenNonTranslate(): void {
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: #4a82ce;
+  accent-color: var(--settings-sidebar-shell-surface-hover);
   cursor: pointer;
 }
 
 .toggle-pill:has(input:checked) {
-  border-color: #94b5e5;
-  background: #e9f2ff;
-  color: #21579c;
+  border-color: var(--settings-sidebar-shell-border-active);
+  background: var(--settings-sidebar-shell-surface-active);
+  color: var(--settings-sidebar-shell-text-success);
 }
 
 .auto-fontsize-toggle {
@@ -1336,9 +718,9 @@ function handleOpenNonTranslate(): void {
   width: 58px;
   height: 34px;
   padding: 2px;
-  border: 1px solid #cfdcec;
+  border: 1px solid var(--settings-sidebar-shell-border-focus);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface-base);
   cursor: pointer;
 }
 
@@ -1358,19 +740,19 @@ function handleOpenNonTranslate(): void {
 }
 
 .inline-hint {
-  color: #3a6ea7;
+  color: var(--settings-sidebar-shell-text-info);
   font-size: 12px;
   line-height: 1.35;
   padding: 6px 8px;
-  border: 1px solid #d2e2fa;
+  border: 1px solid var(--settings-sidebar-shell-border-selected);
   border-radius: 8px;
-  background: #edf4ff;
+  background: var(--settings-sidebar-shell-surface-selected);
 }
 
 .stroke-options {
   margin-top: 8px;
   padding: 8px 0 0;
-  border-top: 1px dashed #d7e2ef;
+  border-top: 1px dashed var(--settings-sidebar-shell-border-danger);
   border-radius: 0;
   background: transparent;
 }
@@ -1386,13 +768,12 @@ function handleOpenNonTranslate(): void {
   min-height: 36px;
 }
 
-.input-hint {
-  color: #6f8099;
+.ui-form-hint {
+  color: var(--settings-sidebar-apply-actions-text-primary);
   font-size: 11px;
   line-height: 1.3;
 }
 
-/* 展开/收起动画 */
 .slide-fade-enter-active {
   transition: all 0.28s ease-out;
 }
@@ -1435,63 +816,62 @@ function handleOpenNonTranslate(): void {
   max-height: 220px;
 }
 
-/* 应用到全部 */
-.apply-settings-group {
+.settings-sidebar__apply-group {
   display: flex;
   align-items: stretch;
   position: relative;
-  margin-top: 14px;
+  margin-top: 8px;
   width: 100%;
   height: 38px;
 }
 
-.apply-settings-group .settings-button {
+.settings-sidebar__apply-group .settings-sidebar__apply-button {
   flex: 1;
   min-width: 0;
   margin: 0;
   border: none;
   border-radius: 8px 0 0 8px;
-  background: linear-gradient(135deg, #4b89d0 0%, #316fb6 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-base) 0%, var(--settings-sidebar-apply-actions-surface-raised) 100%);
+  color: var(--color-text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.apply-settings-group .settings-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #3f7bc4 0%, #2b64a9 100%);
-}
-
-.apply-settings-group .settings-button:disabled {
-  background: #c2c9d4;
+.settings-sidebar__apply-group .settings-sidebar__apply-button:disabled {
+  background: var(--settings-sidebar-apply-actions-surface-muted);
   cursor: not-allowed;
 }
 
-.settings-gear-btn {
+.settings-sidebar__apply-group .settings-sidebar__apply-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-subtle) 0%, var(--settings-sidebar-apply-actions-surface-hover) 100%);
+}
+
+.settings-sidebar__apply-options-button {
   width: 38px;
   border: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.24);
+  border-left: 1px solid var(--settings-sidebar-apply-actions-border-default);
   border-radius: 0 8px 8px 0;
-  background: linear-gradient(135deg, #316fb6 0%, #285d99 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-raised) 0%, var(--settings-sidebar-apply-actions-surface-active) 100%);
+  color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .settings-gear-btn:hover {
-  background: linear-gradient(135deg, #2a64a5 0%, #224f82 100%);
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-selected) 0%, var(--settings-sidebar-apply-actions-surface-overlay) 100%);
 }
 
 .apply-options-dropdown {
   position: absolute;
   inset: auto 0 calc(100% + 6px) 0;
   padding: 10px;
-  border: 1px solid #d7e2f2;
+  border: 1px solid var(--settings-sidebar-apply-actions-border-strong);
   border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 24px rgba(22, 37, 58, 0.16);
+  background: var(--color-surface-base);
+  box-shadow: 0 12px 24px var(--settings-sidebar-apply-actions-shadow-default);
   max-height: 260px;
   overflow-y: auto;
   z-index: var(--z-overlay);
@@ -1502,7 +882,7 @@ function handleOpenNonTranslate(): void {
   align-items: center;
   gap: 8px;
   min-height: 26px;
-  color: #405473;
+  color: var(--settings-sidebar-apply-actions-text-secondary);
   font-size: 13px;
   cursor: pointer;
 }
@@ -1511,20 +891,19 @@ function handleOpenNonTranslate(): void {
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: #4b89d0;
+  accent-color: var(--settings-sidebar-apply-actions-surface-base);
 }
 
 .apply-option:hover {
-  color: #2b5f9d;
+  color: var(--settings-sidebar-apply-actions-text-muted);
 }
 
 .apply-options-dropdown hr {
   margin: 6px 0;
   border: none;
-  border-top: 1px solid #e3ebf6;
+  border-top: 1px solid var(--settings-sidebar-apply-actions-border-muted);
 }
 
-/* 指定翻译页码面板 */
 .page-selection-form {
   gap: 8px;
 }
@@ -1541,36 +920,36 @@ function handleOpenNonTranslate(): void {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid #d4deed;
+  border: 1px solid var(--settings-sidebar-apply-actions-border-subtle);
   border-radius: 999px;
-  background: #f4f8fd;
-  color: #5d7090;
+  background: var(--settings-sidebar-apply-actions-surface-inverse);
+  color: var(--settings-sidebar-apply-actions-text-subtle);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .page-selection-toggle-compact:has(input:checked) {
-  border-color: #94b5e5;
-  background: #e9f2ff;
-  color: #21579c;
+  border-color: var(--settings-sidebar-apply-actions-border-hover);
+  background: var(--settings-sidebar-apply-actions-surface-contrast);
+  color: var(--settings-sidebar-apply-actions-text-supporting);
 }
 
 .page-selection-toggle-compact input[type='checkbox'] {
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: #4a82ce;
+  accent-color: var(--settings-sidebar-apply-actions-surface-tint);
 }
 
 .total-count {
-  color: #6f809a;
+  color: var(--settings-sidebar-apply-actions-text-disabled);
   font-size: 12px;
   font-weight: 500;
 }
 
 .page-selection-note {
-  color: #6f8099;
+  color: var(--settings-sidebar-apply-actions-text-primary);
   font-size: 12px;
 }
 
@@ -1582,7 +961,7 @@ function handleOpenNonTranslate(): void {
 }
 
 .page-selection-summary-value {
-  color: #304464;
+  color: var(--settings-sidebar-apply-actions-text-inverse);
   font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
@@ -1598,18 +977,17 @@ function handleOpenNonTranslate(): void {
 }
 
 .page-selection-error {
-  color: #b73535;
+  color: var(--settings-sidebar-apply-actions-text-brand);
   font-size: 12px;
   font-weight: 600;
   margin-top: 2px;
   padding: 6px 10px;
-  border: 1px solid #f3cccc;
+  border: 1px solid var(--settings-sidebar-apply-actions-border-active);
   border-radius: 8px;
-  background: #fff1f1;
+  background: var(--color-surface-base1f1);
   text-align: center;
 }
 
-/* 工作流区 */
 .action-buttons {
   display: flex;
   flex-direction: column;
@@ -1619,28 +997,17 @@ function handleOpenNonTranslate(): void {
 
 .workflow-controls {
   padding: 12px;
-  border: 1px solid #d8e3f1;
+  border: 1px solid var(--settings-sidebar-apply-actions-border-focus);
   border-radius: 12px;
-  background: #f8fbff;
+  background: var(--settings-sidebar-apply-actions-surface-soft);
 }
 
-.workflow-controls .form-group {
+.workflow-controls .settings-sidebar__field {
   margin-bottom: 0;
 }
 
-.workflow-controls .form-group label {
+.workflow-controls .settings-sidebar__field label {
   margin-bottom: 6px;
-}
-
-.workflow-controls :deep(.custom-select) {
-  width: 100%;
-  min-width: 0;
-}
-
-.workflow-controls :deep(.custom-select-trigger) {
-  min-height: 42px;
-  border-radius: 10px;
-  border-color: #b8c6dd;
 }
 
 .remember-workflow-mode-toggle {
@@ -1649,7 +1016,7 @@ function handleOpenNonTranslate(): void {
   gap: 8px;
   margin-top: 10px;
   margin-bottom: 0;
-  color: #4b5f80;
+  color: var(--settings-sidebar-apply-actions-text-danger);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1658,7 +1025,7 @@ function handleOpenNonTranslate(): void {
 .remember-workflow-mode-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: #3ea94a;
+  accent-color: var(--settings-sidebar-apply-actions-surface-strong);
 }
 
 .workflow-meta {
@@ -1672,27 +1039,27 @@ function handleOpenNonTranslate(): void {
   align-items: center;
   height: 24px;
   padding: 0 9px;
-  border: 1px solid #d3e1f6;
+  border: 1px solid var(--settings-sidebar-apply-actions-border-selected);
   border-radius: 999px;
-  background: #e8f0fd;
-  color: #2d4568;
+  background: var(--settings-sidebar-apply-actions-surface-stronger);
+  color: var(--settings-sidebar-apply-actions-text-warning);
   font-size: 12px;
   font-weight: 600;
 }
 
 .workflow-chip.danger-chip {
-  border-color: #ffcaca;
-  background: #ffe7e7;
-  color: #9f2b2b;
+  border-color: var(--settings-sidebar-apply-actions-border-danger);
+  background: var(--settings-sidebar-apply-actions-surface-highlight);
+  color: var(--settings-sidebar-apply-actions-text-success);
 }
 
 .workflow-run-button {
   min-height: 54px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #3ea94a 0%, #58ba54 100%);
-  box-shadow: 0 8px 16px rgba(62, 169, 74, 0.24);
-  color: #fff;
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-strong) 0%, var(--settings-sidebar-apply-actions-surface-highlight-strong) 100%);
+  box-shadow: 0 8px 16px var(--settings-sidebar-apply-actions-shadow-raised);
+  color: var(--color-text-inverse);
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
@@ -1701,28 +1068,34 @@ function handleOpenNonTranslate(): void {
     box-shadow 0.2s ease;
 }
 
+@media (--breakpoint-md-down) {
+  .workflow-controls {
+    margin-top: 8px;
+  }
+}
+
 .workflow-run-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 18px rgba(54, 151, 64, 0.28);
+  box-shadow: 0 10px 18px var(--settings-sidebar-workflow-shadow-default);
 }
 
 .workflow-run-button.danger-button {
-  background: linear-gradient(135deg, #d64242 0%, #bf3434 100%);
-  box-shadow: 0 8px 16px rgba(214, 66, 66, 0.24);
+  background: linear-gradient(135deg, var(--settings-sidebar-workflow-surface-base) 0%, var(--settings-sidebar-workflow-surface-raised) 100%);
+  box-shadow: 0 8px 16px var(--settings-sidebar-workflow-shadow-raised);
 }
 
 .workflow-run-button.danger-button:hover:not(:disabled) {
-  box-shadow: 0 10px 18px rgba(191, 52, 52, 0.28);
+  box-shadow: 0 10px 18px var(--settings-sidebar-workflow-shadow-floating);
 }
 
 .workflow-run-button:disabled {
-  background: #c1c8d1;
+  background: var(--settings-sidebar-workflow-surface-muted);
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .workflow-description {
-  color: #5c6f8f;
+  color: var(--settings-sidebar-workflow-text-primary);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -1730,20 +1103,20 @@ function handleOpenNonTranslate(): void {
 .book-constraints-panel {
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid #d8e3f1;
+  border: 1px solid var(--settings-sidebar-workflow-border-default);
   border-radius: 12px;
-  background: #f8fbff;
+  background: var(--settings-sidebar-workflow-surface-subtle);
 }
 
 .book-constraints-title {
-  color: #273959;
+  color: var(--settings-sidebar-workflow-text-secondary);
   font-size: 15px;
   font-weight: 700;
 }
 
 .book-constraints-hint {
   margin-top: 6px;
-  color: #62748f;
+  color: var(--settings-sidebar-workflow-text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1764,31 +1137,30 @@ function handleOpenNonTranslate(): void {
   justify-content: center;
   min-height: 38px;
   padding: 0 14px;
-  border: 1px solid #bfd0e5;
+  border: 1px solid var(--settings-sidebar-workflow-border-strong);
   border-radius: 8px;
-  background: #ffffff;
-  color: #2f4b71;
+  background: var(--color-surface-basefff);
+  color: var(--settings-sidebar-workflow-text-subtle);
   font-size: 13px;
   font-weight: 600;
 }
 
-.secondary-button:hover:not(:disabled) {
-  background: #eef4fb;
+.secondary-button:disabled {
+  background: var(--settings-sidebar-workflow-surface-hover);
+  color: var(--settings-sidebar-workflow-text-supporting);
+  cursor: not-allowed;
 }
 
-.secondary-button:disabled {
-  background: #eef2f6;
-  color: #8b97a7;
-  cursor: not-allowed;
+.secondary-button:hover:not(:disabled) {
+  background: var(--settings-sidebar-workflow-surface-active);
 }
 
 .book-constraints-disabled-note {
   margin-top: 8px;
-  color: #8b97a7;
+  color: var(--settings-sidebar-workflow-text-supporting);
   font-size: 12px;
 }
 
-/* 翻页按钮 */
 .navigation-buttons {
   display: flex;
   gap: 10px;
@@ -1800,31 +1172,20 @@ function handleOpenNonTranslate(): void {
   min-height: 38px;
   border: none;
   border-radius: 8px;
-  background: #6c7784;
-  color: #fff;
+  background: var(--settings-sidebar-workflow-surface-selected);
+  color: var(--color-text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
-.navigation-buttons button:hover:not(:disabled) {
-  background: #5a6572;
-}
-
 .navigation-buttons button:disabled {
-  background: #c2c9d4;
+  background: var(--settings-sidebar-workflow-surface-overlay);
   cursor: not-allowed;
 }
 
-@media (max-height: 860px) {
-  .settings-sidebar {
-    top: 66px;
-    height: calc(100vh - 80px);
-  }
-
-  .sidebar-title {
-    font-size: 22px;
-  }
+.navigation-buttons button:hover:not(:disabled) {
+  background: var(--settings-sidebar-workflow-surface-inverse);
 }
 </style>

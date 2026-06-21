@@ -4,27 +4,38 @@
       <div
         v-if="modelValue"
         ref="overlayRef"
-        class="modal-overlay"
+        class="ui-modal__overlay"
+        :class="overlayClass"
         @mousedown.self="handleOverlayMouseDown"
       >
-        <div class="modal-container" :class="[sizeClass, customClass]" :style="customStyle">
+        <div
+          class="ui-modal__container"
+          :class="[uiSizeClass, uiChromeClass, customClass]"
+          :style="customStyle"
+        >
           <!-- 模态框头部 -->
-          <div v-if="showHeader" class="modal-header">
-            <h3 class="modal-title">
+          <div v-if="showHeader" class="ui-modal__header">
+            <h3 class="ui-modal__title">
               <slot name="title">{{ title }}</slot>
             </h3>
-            <button v-if="showCloseButton" class="modal-close-btn" title="关闭" @click="close">
+            <UiButton
+              variant="toolbar"
+              v-if="showCloseButton"
+              class="ui-modal__close"
+              title="关闭"
+              @click="close"
+            >
               ✕
-            </button>
+            </UiButton>
           </div>
 
           <!-- 模态框内容 -->
-          <div class="modal-body">
+          <div class="ui-modal__body" :class="[uiBodyPaddingClass, uiBodyScrollClass, bodyClass]">
             <slot></slot>
           </div>
 
           <!-- 模态框底部 -->
-          <div v-if="$slots.footer" class="modal-footer">
+          <div v-if="$slots.footer" class="ui-modal__footer" :class="footerClass">
             <slot name="footer"></slot>
           </div>
         </div>
@@ -34,6 +45,7 @@
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, watch, onMounted, onUnmounted } from 'vue'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
@@ -55,6 +67,18 @@ interface Props {
   size?: 'small' | 'medium' | 'large' | 'full'
   /** 自定义类名 */
   customClass?: string
+  /** 遮罩层自定义类名，仅用于明确的 Teleport 布局定制 */
+  overlayClass?: string
+  /** 内容区自定义类名 */
+  bodyClass?: string
+  /** 底部自定义类名 */
+  footerClass?: string
+  /** 内容区 padding 策略 */
+  bodyPadding?: 'default' | 'none' | 'compact'
+  /** 内容区滚动策略 */
+  scrollMode?: 'auto' | 'contained' | 'none'
+  /** 弹窗 chrome 视觉变体 */
+  chromeVariant?: 'default' | 'compact' | 'plain'
   /** 自定义样式 */
   customStyle?: Record<string, string>
 }
@@ -68,6 +92,12 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEsc: true,
   size: 'medium',
   customClass: '',
+  overlayClass: '',
+  bodyClass: '',
+  footerClass: '',
+  bodyPadding: 'default',
+  scrollMode: 'auto',
+  chromeVariant: 'default',
   customStyle: () => ({})
 })
 
@@ -81,9 +111,20 @@ const emit = defineEmits<{
   open: []
 }>()
 
-// 计算尺寸类名
-const sizeClass = computed(() => {
-  return `modal-${props.size}`
+const uiSizeClass = computed(() => {
+  return `ui-modal__container--${props.size}`
+})
+
+const uiChromeClass = computed(() => {
+  return `ui-modal__container--chrome-${props.chromeVariant}`
+})
+
+const uiBodyPaddingClass = computed(() => {
+  return `ui-modal__body--padding-${props.bodyPadding}`
+})
+
+const uiBodyScrollClass = computed(() => {
+  return `ui-modal__body--scroll-${props.scrollMode}`
 })
 
 // 关闭模态框
@@ -133,13 +174,13 @@ onUnmounted(() => {
 
 <style scoped>
 /* 遮罩层 */
-.modal-overlay {
+.ui-modal__overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgb(0, 0, 0, 0.5);
+  background-color: var(--base-modal-surface-base);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -147,10 +188,10 @@ onUnmounted(() => {
 }
 
 /* 模态框容器 */
-.modal-container {
-  background: var(--modal-bg, #fff);
+.ui-modal__container {
+  background: var(--modal-bg, var(--color-surface-base));
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgb(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px var(--base-modal-shadow-default);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -158,72 +199,100 @@ onUnmounted(() => {
 }
 
 /* 尺寸变体 */
-.modal-small {
+.ui-modal__container--small {
   width: 400px;
   max-width: 90vw;
 }
 
-.modal-medium {
+.ui-modal__container--medium {
   width: 600px;
   max-width: 90vw;
 }
 
-.modal-large {
+.ui-modal__container--large {
   width: 900px;
   max-width: 95vw;
 }
 
-.modal-full {
+.ui-modal__container--full {
   width: 95vw;
   height: 90vh;
 }
 
 /* 模态框头部 */
-.modal-header {
+.ui-modal__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.modal-title {
+.ui-modal__title {
   margin: 0;
   font-size: 1.2em;
   font-weight: 600;
-  color: var(--text-color, #2c3e50);
+  color: var(--color-text-strong, var(--color-text-heading));
 }
 
-.modal-close-btn {
+.ui-modal__close {
   background: none;
   border: none;
   font-size: 1.2em;
   cursor: pointer;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   padding: 4px 8px;
   border-radius: 4px;
   transition: all 0.2s ease;
 }
 
-.modal-close-btn:hover {
-  background-color: rgb(0, 0, 0, 0.1);
-  color: var(--text-color, #2c3e50);
+.ui-modal__close:hover {
+  background-color: var(--base-modal-surface-raised);
+  color: var(--color-text-strong, var(--color-text-heading));
 }
 
 /* 模态框内容 */
-.modal-body {
+.ui-modal__body {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
 }
 
+.ui-modal__body--padding-none {
+  padding: 0;
+}
+
+.ui-modal__body--padding-compact {
+  padding: 12px;
+}
+
+.ui-modal__body--scroll-contained {
+  overflow: hidden;
+}
+
+.ui-modal__body--scroll-none {
+  overflow: visible;
+}
+
 /* 模态框底部 */
-.modal-footer {
+.ui-modal__footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 16px 20px;
-  border-top: 1px solid var(--border-color, #e0e0e0);
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+}
+
+.ui-modal__container--chrome-compact .ui-modal__header {
+  padding: 12px 16px;
+}
+
+.ui-modal__container--chrome-compact .ui-modal__footer {
+  padding: 12px 16px;
+}
+
+.ui-modal__container--chrome-plain {
+  box-shadow: none;
 }
 
 /* 过渡动画 */
@@ -232,8 +301,8 @@ onUnmounted(() => {
   transition: opacity 0.2s ease;
 }
 
-.modal-fade-enter-active .modal-container,
-.modal-fade-leave-active .modal-container {
+.modal-fade-enter-active .ui-modal__container,
+.modal-fade-leave-active .ui-modal__container {
   transition: transform 0.2s ease;
 }
 
@@ -242,8 +311,8 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.modal-fade-enter-from .modal-container,
-.modal-fade-leave-to .modal-container {
+.modal-fade-enter-from .ui-modal__container,
+.modal-fade-leave-to .ui-modal__container {
   transform: scale(0.95);
 }
 </style>

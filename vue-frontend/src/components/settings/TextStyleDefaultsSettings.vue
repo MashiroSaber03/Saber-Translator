@@ -1,36 +1,37 @@
 <template>
   <div class="text-style-defaults-settings">
-    <div class="settings-group">
-      <div class="settings-group-title">文本默认值</div>
-      <div class="settings-item">
-        <div class="input-hint">
+    <UiPanel variant="settings">
+      <template #title>文本默认值</template>
+      <UiField class="ui-settings-field">
+        <div class="ui-form-hint">
           这里修改的是全局默认文字设置，会写入 <code>config/text_style_defaults.json</code>。
           <br />
           保存成功后会在下次启动时作为新的初始默认值使用。
         </div>
-      </div>
-      <div class="settings-item action-row">
-        <button
+      </UiField>
+      <UiField class="ui-settings-field action-row">
+        <UiButton
+          variant="secondary"
           type="button"
-          class="btn btn-secondary"
+         
           data-testid="reset-text-style-defaults"
           :disabled="isLoading"
           @click="resetDraftToFactory"
         >
           恢复出厂默认
-        </button>
-      </div>
-      <div v-if="errorMessage" class="settings-item">
-        <div class="input-hint error-hint">{{ errorMessage }}</div>
-      </div>
-    </div>
+        </UiButton>
+      </UiField>
+      <UiField v-if="errorMessage" class="ui-settings-field">
+        <div class="ui-form-hint ui-form-hint--error">{{ errorMessage }}</div>
+      </UiField>
+    </UiPanel>
 
-    <div class="settings-group">
-      <div class="settings-group-title">字体排版</div>
-      <div class="settings-row">
-        <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>字体排版</template>
+      <div class="ui-settings-row">
+        <UiField class="ui-settings-field">
           <label for="textDefaultsFontSize">字号</label>
-          <input
+          <UiInput
             id="textDefaultsFontSize"
             type="number"
             :value="draftDefaults.fontSize"
@@ -38,57 +39,56 @@
             :disabled="draftDefaults.autoFontSize"
             @input="updateFontSize"
           />
-        </div>
-        <div class="settings-item checkbox-item">
-          <label class="checkbox-label">
-            <input
+        </UiField>
+        <UiField class="ui-settings-field ui-settings-field--checkbox">
+          <label class="ui-checkbox-label">
+            <UiInput
               type="checkbox"
               :checked="draftDefaults.autoFontSize"
               @change="updateAutoFontSize"
             />
             <span class="checkbox-text">自动计算初始字号</span>
           </label>
-        </div>
+        </UiField>
       </div>
 
-      <div class="settings-item">
+      <UiField class="ui-settings-field">
         <label for="textDefaultsFontFamily">文本字体</label>
         <CustomSelect
           :model-value="draftDefaults.fontFamily"
           :options="fontSelectOptions"
           @change="handleFontSelectChange"
         />
-        <input
+        <UiFileInput
           ref="fontUploadInput"
-          type="file"
           accept=".ttf,.ttc,.otf"
           style="display: none"
           @change="handleFontUpload"
         />
-      </div>
+      </UiField>
 
-      <div class="settings-row">
-        <div class="settings-item">
+      <div class="ui-settings-row">
+        <UiField class="ui-settings-field">
           <label for="textDefaultsLayoutDirection">排版方向</label>
           <CustomSelect
             :model-value="draftDefaults.layoutDirection"
             :options="layoutDirectionOptions"
             @change="handleLayoutDirectionChange"
           />
-        </div>
-        <div class="settings-item">
+        </UiField>
+        <UiField class="ui-settings-field">
           <label for="textDefaultsTextAlign">对齐方式</label>
           <CustomSelect
             :model-value="draftDefaults.textAlign"
             :options="textAlignOptions"
             @change="handleTextAlignChange"
           />
-        </div>
+        </UiField>
       </div>
 
-      <div class="settings-item">
+      <UiField class="ui-settings-field">
         <label for="textDefaultsLineSpacing">行间距</label>
-        <input
+        <UiInput
           id="textDefaultsLineSpacing"
           type="number"
           :value="draftDefaults.lineSpacing"
@@ -97,78 +97,78 @@
           step="0.1"
           @change="updateLineSpacing"
         />
-        <div class="input-hint">行间距倍数（0.5 - 3.0）</div>
-      </div>
-    </div>
+        <div class="ui-form-hint">行间距倍数（0.5 - 3.0）</div>
+      </UiField>
+    </UiPanel>
 
-    <div class="settings-group">
-      <div class="settings-group-title">颜色与填充</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input
+    <UiPanel variant="settings">
+      <template #title>颜色与填充</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput
             type="checkbox"
             :checked="draftDefaults.useAutoTextColor"
             @change="updateUseAutoTextColor"
           />
           <span class="checkbox-text">自动识别文字颜色</span>
         </label>
-      </div>
-      <div class="settings-row">
-        <div class="settings-item">
+      </UiField>
+      <div class="ui-settings-row">
+        <UiField class="ui-settings-field">
           <label for="textDefaultsTextColor">文字颜色</label>
-          <input
+          <UiInput
             id="textDefaultsTextColor"
             type="color"
             :value="draftDefaults.textColor"
             :disabled="draftDefaults.useAutoTextColor"
             @input="updateTextColor"
           />
-        </div>
-        <div class="settings-item">
+        </UiField>
+        <UiField class="ui-settings-field">
           <label for="textDefaultsInpaintMethod">气泡填充方式</label>
           <CustomSelect
             :model-value="draftDefaults.inpaintMethod"
             :options="inpaintMethodOptions"
             @change="handleInpaintMethodChange"
           />
-        </div>
+        </UiField>
       </div>
-      <div v-if="draftDefaults.inpaintMethod === 'solid'" class="settings-item">
+      <UiField v-if="draftDefaults.inpaintMethod === 'solid'" class="ui-settings-field">
         <label for="textDefaultsFillColor">填充颜色</label>
-        <input
+        <UiInput
           id="textDefaultsFillColor"
           type="color"
           :value="draftDefaults.fillColor"
           @input="updateFillColor"
         />
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
-    <div class="settings-group">
-      <div class="settings-group-title">描边</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input
+    <UiPanel variant="settings">
+      <template #title>描边</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput
             type="checkbox"
             :checked="draftDefaults.strokeEnabled"
             @change="updateStrokeEnabled"
           />
           <span class="checkbox-text">启用描边</span>
         </label>
-      </div>
-      <div v-if="draftDefaults.strokeEnabled" class="settings-row">
-        <div class="settings-item">
+      </UiField>
+      <div v-if="draftDefaults.strokeEnabled" class="ui-settings-row">
+        <UiField class="ui-settings-field">
           <label for="textDefaultsStrokeColor">描边颜色</label>
-          <input
+          <UiInput
             id="textDefaultsStrokeColor"
             type="color"
             :value="draftDefaults.strokeColor"
             @input="updateStrokeColor"
           />
-        </div>
-        <div class="settings-item">
+        </UiField>
+        <UiField class="ui-settings-field">
           <label for="textDefaultsStrokeWidth">描边宽度 (px)</label>
-          <input
+          <UiInput
             id="textDefaultsStrokeWidth"
             type="number"
             :value="draftDefaults.strokeWidth"
@@ -176,14 +176,19 @@
             max="10"
             @input="updateStrokeWidth"
           />
-          <div class="input-hint">0 表示无描边。</div>
-        </div>
+          <div class="ui-form-hint">0 表示无描边。</div>
+        </UiField>
       </div>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
 import type { TextStyleSettings } from '@/types/settings'
@@ -462,7 +467,7 @@ defineExpose({
 }
 
 .error-hint {
-  color: var(--color-danger, #d14343);
+  color: var(--color-status-error, var(--text-style-defaults-settings-text-primary));
 }
 
 .text-style-defaults-settings code {

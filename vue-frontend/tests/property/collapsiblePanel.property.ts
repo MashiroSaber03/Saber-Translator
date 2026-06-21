@@ -130,7 +130,7 @@ function collapseAllPanels(manager: PanelManagerState): void {
  * @returns JSON 字符串
  */
 function serializePanelState(manager: PanelManagerState): string {
-  const obj: Record<string, boolean> = {}
+  const obj = Object.create(null) as Record<string, boolean>
   for (const [key, value] of manager.panels.entries()) {
     obj[key] = value
   }

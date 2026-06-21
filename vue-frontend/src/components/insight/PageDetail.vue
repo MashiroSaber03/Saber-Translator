@@ -1,4 +1,6 @@
 <script setup lang="ts">
+
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 页面详情组件
  * 显示选中页面的详细信息，包括图片、摘要和对话
@@ -249,16 +251,6 @@ function handlePreviewKeydown(event: KeyboardEvent): void {
   }
 }
 
-/**
- * 跳转到指定页面
- * @param pageNum - 页码
- */
-function goToPage(pageNum: number): void {
-  if (pageNum >= 1 && pageNum <= totalPages.value) {
-    insightStore.selectPage(pageNum)
-  }
-}
-
 /** 是否正在导出 */
 const isExporting = ref(false)
 
@@ -360,7 +352,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         <div class="page-detail-header">
           <h4>📄 第 {{ selectedPageNum }} 页</h4>
           <div class="page-nav-buttons">
-            <button 
+            <UiButton
+              variant="toolbar" 
               class="btn-page-nav"
               :class="{ disabled: !hasPrevPage }"
               :disabled="!hasPrevPage"
@@ -368,9 +361,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
               @click="navigatePrev"
             >
               ◀ 上一张
-            </button>
+            </UiButton>
             <span class="page-indicator">{{ selectedPageNum }} / {{ totalPages }}</span>
-            <button 
+            <UiButton
+              variant="toolbar" 
               class="btn-page-nav"
               :class="{ disabled: !hasNextPage }"
               :disabled="!hasNextPage"
@@ -378,7 +372,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
               @click="navigateNext"
             >
               下一张 ▶
-            </button>
+            </UiButton>
           </div>
         </div>
         
@@ -449,23 +443,25 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         
         <!-- 操作按钮 -->
         <div class="page-detail-actions">
-          <button 
-            class="btn btn-secondary btn-sm" 
+          <UiButton
+            variant="secondary" 
+            
             :disabled="isReanalyzing || isReanalyzeTaskRunning"
             :class="{ loading: isReanalyzing || isReanalyzeTaskRunning }"
-            @click="reanalyzePage"
+            @click="reanalyzePage" size="sm"
           >
             <span v-if="isReanalyzing || isReanalyzeTaskRunning" class="btn-spinner"></span>
             {{ isReanalyzing ? '启动中...' : (isReanalyzeTaskRunning ? '分析中...' : '🔄 重新分析') }}
-          </button>
-          <button 
+          </UiButton>
+          <UiButton
+            variant="secondary" 
             v-if="isPageAnalyzed"
-            class="btn btn-secondary btn-sm" 
+            
             :disabled="isExporting"
-            @click="exportPageData"
+            @click="exportPageData" size="sm"
           >
             {{ isExporting ? '导出中...' : '📄 导出此页' }}
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -479,59 +475,39 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       @keydown="handlePreviewKeydown"
     >
       <div class="image-preview-content" @click.stop>
-        <button class="preview-close" title="关闭 (Esc)" @click="closeImagePreview">&times;</button>
+        <UiButton variant="toolbar" class="preview-close" title="关闭 (Esc)" @click="closeImagePreview">&times;</UiButton>
         <img :src="pageImageUrl" :alt="`第${selectedPageNum}页`">
         <!-- 预览模式导航 -->
         <div class="preview-nav">
-          <button 
+          <UiButton
+            variant="toolbar" 
             class="preview-nav-btn prev"
             :disabled="!hasPrevPage"
             title="上一页 (←)"
             @click.stop="navigatePrev"
           >
             ◀
-          </button>
+          </UiButton>
           <span class="preview-page-info">{{ selectedPageNum }} / {{ totalPages }}</span>
-          <button 
+          <UiButton
+            variant="toolbar" 
             class="preview-nav-btn next"
             :disabled="!hasNextPage"
             title="下一页 (→)"
             @click.stop="navigateNext"
           >
             ▶
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-/* ==================== PageDetail 完整样式 ==================== */
-
-/* ==================== CSS变量 ==================== */
-.page-detail-container {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #fff;
-  --bg-tertiary: #f1f5f9;
-  --bg-hover: rgb(99, 102, 241, 0.1);
-  --text-primary: #1a202c;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --color-primary: #6366f1;
-  --primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --success-color: #22c55e;
-  --success: #22c55e;
-  --warning-color: #f59e0b;
-  --error-color: #ef4444;
-  --danger: #ef4444;
-}
+<style scoped>/* ==================== PageDetail样式 ==================== */
 
 /* ==================== 按钮样式 ==================== */
-.btn {
+.page-detail-section .ui-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -546,121 +522,130 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   text-decoration: none;
 }
 
-.btn-primary {
-  background: var(--color-primary);
+.page-detail-section .ui-button--primary {
+  background: var(--insight-color-primary);
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-dark);
-}
-
-.btn-primary:disabled {
+.page-detail-section .ui-button--primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
+.page-detail-section .ui-button--primary:hover:not(:disabled) {
+  background: var(--insight-primary-dark);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--border-color);
+.page-detail-section .ui-button--secondary {
+  background: var(--insight-bg-tertiary);
+  color: var(--insight-text-primary);
+  border: 1px solid var(--color-border-muted);
 }
 
-.btn-secondary:disabled {
+.page-detail-section .ui-button--secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.btn-sm {
+.page-detail-section .ui-button--secondary:hover:not(:disabled) {
+  background: var(--color-border-muted);
+}
+
+.page-detail-section .ui-button--sm {
   padding: 8px 14px;
   font-size: 13px;
 }
 
 /* ==================== 组件特定样式 ==================== */
 
-/* 空状态 */
-.placeholder-text {
-  text-align: center;
-  padding: 24px;
-  color: var(--text-secondary);
+.workspace-section.page-detail-section {
+  padding: 20px 18px;
 }
 
-.empty-icon {
+/* 空状态 */
+.page-detail-section .placeholder-text {
+  text-align: center;
+  padding: 24px;
+  color: var(--insight-text-secondary);
+}
+
+.page-detail-section .placeholder-text p {
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.page-detail-section .empty-icon {
   font-size: 48px;
   margin-bottom: 12px;
 }
 
 /* 加载状态 */
-.loading-state {
+.page-detail-section .loading-state {
   text-align: center;
   padding: 24px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
 }
 
-.loading-spinner {
+.page-detail-section .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid var(--border-color);
-  border-top-color: var(--primary);
+  border: 3px solid var(--color-border-muted);
+  border-top-color: var(--insight-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin: 0 auto 12px;
 }
 
-.page-detail-header h4 {
+.page-detail-section .page-detail-header h4 {
   margin: 0;
   font-size: 16px;
 }
 
-.page-nav-buttons {
+.page-detail-section .page-nav-buttons {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.btn-page-nav {
+.page-detail-section .btn-page-nav {
   padding: 4px 12px;
   font-size: 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   border-radius: 4px;
-  background: var(--bg-secondary);
+  background: var(--insight-bg-secondary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.btn-page-nav:hover:not(.disabled) {
-  background: var(--bg-hover);
-  border-color: var(--primary);
+.page-detail-section .btn-page-nav:hover:not(.disabled) {
+  background: var(--insight-bg-hover);
+  border-color: var(--insight-primary);
 }
 
-.btn-page-nav.disabled {
+.page-detail-section .btn-page-nav.disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.page-indicator {
+.page-detail-section .page-indicator {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   min-width: 60px;
   text-align: center;
 }
 
 /* 错误消息 */
-.error-message {
+.page-detail-section .error-message {
   font-size: 12px;
-  color: var(--danger, #ef4444);
-  background: rgb(239, 68, 68, 0.1);
+  color: var(--page-detail-text-primary);
+  background: var(--page-detail-surface-base);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
 }
 
 /* 页面图片 */
-.page-detail-image {
+.page-detail-section .page-detail-image {
   position: relative;
   margin-bottom: 12px;
   cursor: pointer;
@@ -668,168 +653,168 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   overflow: hidden;
 }
 
-.page-detail-image img {
+.page-detail-section .page-detail-image img {
   max-width: 100%;
   display: block;
   border-radius: 4px;
 }
 
-.image-overlay {
+.page-detail-section .image-overlay {
   position: absolute;
   inset: 0;
-  background: rgb(0, 0, 0, 0);
+  background: var(--page-detail-surface-raised);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
 }
 
-.page-detail-image:hover .image-overlay {
-  background: rgb(0, 0, 0, 0.3);
+.page-detail-section .page-detail-image:hover .image-overlay {
+  background: var(--page-detail-surface-muted);
 }
 
-.zoom-hint {
+.page-detail-section .zoom-hint {
   color: white;
   font-size: 14px;
   opacity: 0;
   transition: opacity 0.2s;
 }
 
-.page-detail-image:hover .zoom-hint {
+.page-detail-section .page-detail-image:hover .zoom-hint {
   opacity: 1;
 }
 
 /* 分析状态标签 */
-.analysis-status-tag {
+.page-detail-section .analysis-status-tag {
   display: inline-block;
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  background: var(--insight-bg-secondary);
+  color: var(--insight-text-secondary);
   margin-bottom: 12px;
 }
 
-.analysis-status-tag.analyzed {
-  background: rgb(34, 197, 94, 0.1);
-  color: var(--success, #22c55e);
+.page-detail-section .analysis-status-tag.analyzed {
+  background: var(--page-detail-surface-subtle);
+  color: var(--page-detail-text-secondary);
 }
 
 /* 页面摘要 */
-.page-summary {
+.page-detail-section .page-summary {
   margin-bottom: 16px;
 }
 
-.page-summary h5 {
+.page-detail-section .page-summary h5 {
   font-size: 14px;
   margin: 0 0 8px;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
 }
 
-.page-summary p {
+.page-detail-section .page-summary p {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin: 0;
 }
 
-.page-summary.empty p {
+.page-detail-section .page-summary.empty p {
   font-style: italic;
 }
 
 /* 场景和氛围信息 */
-.scene-mood-info {
+.page-detail-section .scene-mood-info {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
   padding: 10px;
-  background: var(--bg-secondary);
+  background: var(--insight-bg-secondary);
   border-radius: 6px;
 }
 
-.info-item {
+.page-detail-section .info-item {
   font-size: 13px;
 }
 
-.info-label {
-  color: var(--text-secondary);
+.page-detail-section .info-label {
+  color: var(--insight-text-secondary);
 }
 
-.info-value {
-  color: var(--text-primary);
+.page-detail-section .info-value {
+  color: var(--insight-text-primary);
 }
 
 /* 对话部分 */
-.dialogues-section {
+.page-detail-section .dialogues-section {
   margin-bottom: 16px;
 }
 
-.dialogues-section h5 {
+.page-detail-section .dialogues-section h5 {
   font-size: 14px;
   margin: 0 0 12px;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
 }
 
-.dialogues-section.empty p {
+.page-detail-section .dialogues-section.empty p {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   font-style: italic;
 }
 
-.dialogue-item {
+.page-detail-section .dialogue-item {
   padding: 10px 12px;
   margin: 8px 0;
-  background: var(--bg-secondary);
+  background: var(--insight-bg-secondary);
   border-radius: 8px;
-  border-left: 3px solid var(--primary);
+  border-left: 3px solid var(--insight-primary);
 }
 
-.dialogue-speaker {
+.page-detail-section .dialogue-speaker {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 500;
   font-size: 12px;
-  color: var(--primary);
+  color: var(--insight-primary);
   margin-bottom: 6px;
 }
 
-.speaker-icon {
+.page-detail-section .speaker-icon {
   font-size: 14px;
 }
 
-.dialogue-text {
+.page-detail-section .dialogue-text {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text-primary);
+  color: var(--insight-text-primary);
 }
 
-.dialogue-original {
+.page-detail-section .dialogue-original {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--insight-text-secondary);
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px dashed var(--border-color);
+  border-top: 1px dashed var(--color-border-muted);
 }
 
-.original-label {
+.page-detail-section .original-label {
   font-weight: 500;
 }
 
 /* 操作按钮 */
-.page-detail-actions {
+.page-detail-section .page-detail-actions {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--color-border-muted);
 }
 
-.btn.loading {
+.page-detail-section .ui-button.loading {
   opacity: 0.7;
   cursor: wait;
 }
 
-.btn-spinner {
+.page-detail-section .btn-spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
@@ -841,10 +826,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 /* 图片预览模态框 */
-.image-preview-modal {
+.page-detail-section .image-preview-modal {
   position: fixed;
   inset: 0;
-  background: rgb(0, 0, 0, 0.95);
+  background: var(--page-detail-surface-hover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -852,7 +837,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   outline: none;
 }
 
-.image-preview-content {
+.page-detail-section .image-preview-content {
   position: relative;
   max-width: 90vw;
   max-height: 90vh;
@@ -861,13 +846,13 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   align-items: center;
 }
 
-.image-preview-content img {
+.page-detail-section .image-preview-content img {
   max-width: 100%;
   max-height: calc(90vh - 60px);
   object-fit: contain;
 }
 
-.preview-close {
+.page-detail-section .preview-close {
   position: absolute;
   top: -45px;
   right: 0;
@@ -880,40 +865,40 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   transition: transform 0.2s;
 }
 
-.preview-close:hover {
+.page-detail-section .preview-close:hover {
   transform: scale(1.1);
 }
 
 /* 预览导航 */
-.preview-nav {
+.page-detail-section .preview-nav {
   display: flex;
   align-items: center;
   gap: 16px;
   margin-top: 16px;
 }
 
-.preview-nav-btn {
+.page-detail-section .preview-nav-btn {
   width: 40px;
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: rgb(255, 255, 255, 0.2);
+  background: var(--page-detail-surface-active);
   color: white;
   font-size: 18px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.preview-nav-btn:hover:not(:disabled) {
-  background: rgb(255, 255, 255, 0.3);
-}
-
-.preview-nav-btn:disabled {
+.page-detail-section .preview-nav-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-.preview-page-info {
+.page-detail-section .preview-nav-btn:hover:not(:disabled) {
+  background: var(--page-detail-surface-selected);
+}
+
+.page-detail-section .preview-page-info {
   color: white;
   font-size: 14px;
   min-width: 80px;

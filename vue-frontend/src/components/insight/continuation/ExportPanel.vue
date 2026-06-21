@@ -28,22 +28,24 @@
         </div>
       </div>
       
-      <button 
-        class="btn primary large" 
+      <UiButton
+        variant="primary" 
+        
         :disabled="isExporting"
-        @click="handleExport"
+        @click="handleExport" size="lg"
       >
         {{ isExporting ? '导出中...' : '📥 下载' }}
-      </button>
+      </UiButton>
       
       <div class="export-actions">
-        <button class="btn secondary" @click="clearAndRestart">🗑️ 清空并重新开始</button>
+        <UiButton variant="secondary" @click="clearAndRestart">🗑️ 清空并重新开始</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref } from 'vue'
 import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
 import * as continuationApi from '@/api/continuation'
@@ -132,11 +134,11 @@ async function clearAndRestart() {
 .export-summary p {
   margin: 0;
   font-size: 16px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .export-summary strong {
-  color: var(--primary, #6366f1);
+  color: var(--color-text-brand);
   font-size: 20px;
 }
 
@@ -149,7 +151,7 @@ async function clearAndRestart() {
 
 .format-card {
   padding: 24px;
-  border: 2px solid var(--border-color, #e0e0e0);
+  border: 2px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
@@ -157,14 +159,14 @@ async function clearAndRestart() {
 }
 
 .format-card:hover {
-  border-color: var(--primary, #6366f1);
+  border-color: var(--color-border-brand);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(99, 102, 241, 0.1);
+  box-shadow: 0 4px 12px var(--color-focus-brand-soft);
 }
 
 .format-card.selected {
-  border-color: var(--primary, #6366f1);
-  background: rgb(99, 102, 241, 0.05);
+  border-color: var(--color-border-brand);
+  background: var(--export-panel-surface-base);
 }
 
 .format-icon {
@@ -183,10 +185,10 @@ async function clearAndRestart() {
 .format-desc {
   display: block;
   font-size: 14px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.btn {
+.ui-button {
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
@@ -196,35 +198,35 @@ async function clearAndRestart() {
   transition: all 0.2s;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
   width: 100%;
   margin-bottom: 16px;
 }
 
-.btn.primary:hover:not(:disabled) {
-  background: var(--primary-dark, #4f46e5);
-}
-
-.btn.primary:disabled {
+.ui-button--primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn.primary.large {
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--color-surface-brand-strong);
+}
+
+.ui-button--primary.ui-button--lg {
   padding: 14px 28px;
   font-size: 16px;
 }
 
-.btn.secondary {
-  background: var(--bg-secondary, #f3f4f6);
-  color: var(--text-primary, #333);
-  border: 1px solid var(--border-color, #e0e0e0);
+.ui-button--secondary {
+  background: var(--color-surface-muted);
+  color: var(--color-text-default, var(--color-text-default));
+  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.btn.secondary:hover {
-  background: var(--bg-hover, #e5e7eb);
+.ui-button--secondary:hover {
+  background: var(--color-surface-hover);
 }
 
 .export-actions {

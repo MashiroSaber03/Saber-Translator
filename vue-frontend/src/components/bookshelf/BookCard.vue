@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 书籍卡片组件
- * 使用与原版bookshelf.js完全相同的HTML结构和CSS类名
+ * 展示书籍封面、标题、标签和基础统计信息。
  */
 
 import type { BookData } from '@/types'
@@ -52,7 +52,7 @@ function handleImageError(event: Event) {
 </script>
 
 <template>
-  <!-- 书籍卡片 - 使用与原版相同的HTML结构 -->
+  <!-- 书籍卡片 - 使用与当前实现相同的HTML结构 -->
   <div class="book-card" @click="handleClick">
     <!-- 封面图片 -->
     <div class="book-cover">
@@ -84,14 +84,14 @@ function handleImageError(event: Event) {
 </template>
 
 <style scoped>
-/* ==================== 书籍卡片样式 - 完整迁移自 bookshelf.css ==================== */
+/* ==================== 书籍卡片样式 - 当前样式 ==================== */
 
 /* 书籍卡片 */
 .book-card {
-    background: var(--card-bg);
-    border-radius: var(--border-radius-md, 12px);
+    background: var(--color-surface-card);
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px var(--book-card-shadow-default);
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
@@ -101,7 +101,7 @@ function handleImageError(event: Event) {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: var(--border-radius-md, 12px);
+    border-radius: var(--radius-lg);
     border: 2px solid transparent;
     transition: border-color 0.2s ease;
     pointer-events: none;
@@ -109,11 +109,11 @@ function handleImageError(event: Event) {
 
 .book-card:hover {
     transform: translateY(-6px) scale(1.02);
-    box-shadow: 0 12px 32px rgb(0, 0, 0, 0.15);
+    box-shadow: 0 12px 32px var(--book-card-shadow-raised);
 }
 
 .book-card:hover::after {
-    border-color: rgb(102, 126, 234, 0.5);
+    border-color: var(--book-card-border-default);
 }
 
 .book-card:active {
@@ -123,11 +123,11 @@ function handleImageError(event: Event) {
 /* 书籍封面 */
 .book-cover {
     aspect-ratio: 3 / 4;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
     display: block;
     overflow: hidden;
     position: relative;
-    border-radius: var(--border-radius-md, 12px) var(--border-radius-md, 12px) 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .book-cover img {
@@ -148,7 +148,7 @@ function handleImageError(event: Event) {
     content: '查看详情';
     position: absolute;
     inset: 0;
-    background: rgb(0, 0, 0, 0.6);
+    background: var(--book-card-surface-base);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -157,7 +157,7 @@ function handleImageError(event: Event) {
     font-weight: 500;
     opacity: 0;
     transition: opacity 0.2s ease;
-    z-index: 1;
+    z-index: var(--z-local);
 }
 
 .book-card:hover .book-cover::before {
@@ -170,7 +170,7 @@ function handleImageError(event: Event) {
     left: 50%;
     transform: translate(-50%, -50%);
     font-size: 3rem;
-    color: rgb(255, 255, 255, 0.8);
+    color: var(--book-card-text-primary);
 }
 
 /* 书籍信息 */
@@ -184,7 +184,7 @@ function handleImageError(event: Event) {
 .book-title {
     font-size: 0.95rem;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--color-text-default);
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -194,7 +194,7 @@ function handleImageError(event: Event) {
 
 .book-chapter-count {
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--color-text-supporting);
     margin: 4px 0;
 }
 
@@ -212,6 +212,6 @@ function handleImageError(event: Event) {
     border-radius: 10px;
     font-size: 0.7rem;
     color: white;
-    background: #667eea;
+    background: var(--color-surface-brand-gradient-start);
 }
 </style>

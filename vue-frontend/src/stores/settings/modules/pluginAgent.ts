@@ -29,6 +29,11 @@ export function usePluginAgentSettings(
 
   const pluginAgentProvider = computed(() => settings.value.pluginAgent.provider)
   const getDefaultOpenAiOptions = () => JSON.parse(JSON.stringify(createDefaultSettings().pluginAgent.openaiOptions))
+  const getUncachedProviderOpenAiOptions = () => {
+    const options = getDefaultOpenAiOptions()
+    options.execution.rpmLimit = 7
+    return options
+  }
 
   function setPluginAgentProvider(provider: PluginAgentProvider): void {
     provider = normalizeProviderId(provider) as PluginAgentProvider
@@ -91,7 +96,7 @@ export function usePluginAgentSettings(
       settings.value.pluginAgent.apiKey = ''
       settings.value.pluginAgent.modelName = ''
       settings.value.pluginAgent.customBaseUrl = ''
-      settings.value.pluginAgent.openaiOptions = getDefaultOpenAiOptions()
+      settings.value.pluginAgent.openaiOptions = getUncachedProviderOpenAiOptions()
     }
   }
 

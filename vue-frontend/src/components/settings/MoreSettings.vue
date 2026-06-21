@@ -4,155 +4,155 @@
     <ParallelSettings />
 
     <!-- 书架模式自动保存 -->
-    <div class="settings-group">
-      <div class="settings-group-title">自动保存设置</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input 
+    <UiPanel variant="settings">
+      <template #title>自动保存设置</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput 
             type="checkbox" 
             v-model="localSettings.autoSaveInBookshelfMode"
           />
           <span class="checkbox-text">书架模式自动保存</span>
         </label>
-        <div class="input-hint">
+        <div class="ui-form-hint">
           开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。
           <br />
           <span class="hint-note">注意：此功能仅在书架模式下生效，快速翻译模式不支持。</span>
         </div>
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- 消除文字模式设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">消除文字模式</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input 
+    <UiPanel variant="settings">
+      <template #title>消除文字模式</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput 
             type="checkbox" 
             v-model="localSettings.removeTextWithOcr"
           />
           <span class="checkbox-text">同时执行OCR识别</span>
         </label>
-        <div class="input-hint">
+        <div class="ui-form-hint">
           开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。
           <br />
           <span class="hint-note">适用于需要保留原文信息以便后续翻译或参考的场景。</span>
         </div>
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- LAMA 修复设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">LAMA 修复设置</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input 
+    <UiPanel variant="settings">
+      <template #title>LAMA 修复设置</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput 
             type="checkbox" 
             v-model="localSettings.lamaDisableResize"
           />
           <span class="checkbox-text">禁用自动缩放</span>
         </label>
-        <div class="input-hint">
+        <div class="ui-form-hint">
           开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。
           <br />
           <span class="hint-note">⚠️ 需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。</span>
           <br />
           <span class="hint-note">适用于两种LAMA修复方法（速度优化和通用）。</span>
         </div>
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- 详细日志设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">调试选项</div>
-      <div class="settings-item checkbox-item">
-        <label class="checkbox-label">
-          <input 
+    <UiPanel variant="settings">
+      <template #title>调试选项</template>
+      <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <label class="ui-checkbox-label">
+          <UiInput 
             type="checkbox" 
             v-model="localSettings.enableVerboseLogs"
           />
           <span class="checkbox-text">详细日志</span>
         </label>
-        <div class="input-hint">
+        <div class="ui-form-hint">
           开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。
           <br />
           <span class="hint-note">影响所有翻译模式，默认关闭以保持日志简洁。</span>
         </div>
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- PDF处理方式 -->
-    <div class="settings-group">
-      <div class="settings-group-title">PDF处理设置</div>
-      <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>PDF处理设置</template>
+      <UiField class="ui-settings-field">
         <label for="settingsPdfProcessingMethod">PDF处理方式:</label>
         <CustomSelect
           v-model="localSettings.pdfProcessingMethod"
           :options="pdfMethodOptions"
         />
-        <div class="input-hint">前端处理速度更快，后端处理兼容性更好</div>
-      </div>
-    </div>
+        <div class="ui-form-hint">前端处理速度更快，后端处理兼容性更好</div>
+      </UiField>
+    </UiPanel>
 
     <!-- 字体设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">字体设置</div>
-      <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>字体设置</template>
+      <UiField class="ui-settings-field">
         <label>系统字体列表:</label>
-        <button class="btn btn-secondary" @click="refreshFontList" :disabled="isLoadingFonts">
+        <UiButton variant="secondary" @click="refreshFontList" :disabled="isLoadingFonts">
           {{ isLoadingFonts ? '加载中...' : '🔄 刷新字体列表' }}
-        </button>
+        </UiButton>
         <div v-if="fontList.length > 0" class="font-count">共 {{ fontList.length }} 个字体</div>
-      </div>
-      <div class="settings-item">
+      </UiField>
+      <UiField class="ui-settings-field">
         <label>上传自定义字体:</label>
         <div class="font-upload-row">
-          <input
+          <UiFileInput
             ref="fontInput"
             data-testid="font-upload-input"
             class="visually-hidden-file-input"
-            type="file"
             accept=".ttf,.ttc,.otf"
             @change="handleFontUpload"
           />
-          <button
+          <UiButton
+            variant="secondary"
             type="button"
-            class="btn btn-secondary"
+           
             data-testid="font-upload-trigger"
             @click="triggerFontUpload"
           >
             选择字体文件
-          </button>
+          </UiButton>
           <span class="font-upload-filename" data-testid="font-upload-filename">
             {{ selectedFontFileName || '未选择文件' }}
           </span>
         </div>
-        <div class="input-hint">支持 .ttf, .ttc, .otf 格式</div>
-      </div>
-    </div>
+        <div class="ui-form-hint">支持 .ttf, .ttc, .otf 格式</div>
+      </UiField>
+    </UiPanel>
 
     <!-- 缓存清理 -->
-    <div class="settings-group">
-      <div class="settings-group-title">缓存清理</div>
-      <div class="settings-row">
-        <div class="settings-item">
-          <button class="btn btn-secondary" @click="cleanDebugFiles" :disabled="isCleaning">
+    <UiPanel variant="settings">
+      <template #title>缓存清理</template>
+      <div class="ui-settings-row">
+        <UiField class="ui-settings-field">
+          <UiButton variant="secondary" @click="cleanDebugFiles" :disabled="isCleaning">
             {{ isCleaning ? '清理中...' : '🗑️ 清理调试文件' }}
-          </button>
-          <div class="input-hint">清理调试过程中生成的临时文件</div>
-        </div>
-        <div class="settings-item">
-          <button class="btn btn-secondary" @click="cleanTempFiles" :disabled="isCleaning">
+          </UiButton>
+          <div class="ui-form-hint">清理调试过程中生成的临时文件</div>
+        </UiField>
+        <UiField class="ui-settings-field">
+          <UiButton variant="secondary" @click="cleanTempFiles" :disabled="isCleaning">
             {{ isCleaning ? '清理中...' : '🗑️ 清理临时文件' }}
-          </button>
-          <div class="input-hint">清理下载和处理过程中的临时文件</div>
-        </div>
+          </UiButton>
+          <div class="ui-form-hint">清理下载和处理过程中的临时文件</div>
+        </UiField>
       </div>
-    </div>
+    </UiPanel>
 
     <!-- 关于 -->
-    <div class="settings-group">
-      <div class="settings-group-title">关于</div>
+    <UiPanel variant="settings">
+      <template #title>关于</template>
       <div class="about-info">
         <p><strong>Saber-Translator</strong></p>
         <p>AI驱动的漫画翻译工具</p>
@@ -162,11 +162,16 @@
         </p>
         <p class="disclaimer">本项目完全开源免费，请勿上当受骗</p>
       </div>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 更多设置组件
  * 管理PDF处理、字体、缓存清理等杂项设置
@@ -340,19 +345,19 @@ async function cleanTempFiles() {
 }
 
 .font-upload-filename {
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   font-size: 0.95em;
 }
 
 .font-count {
   margin-top: 8px;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
 .about-info {
   padding: 15px;
-  background: var(--bg-secondary);
+  background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
@@ -366,7 +371,7 @@ async function cleanTempFiles() {
 }
 
 .about-info .links a {
-  color: var(--color-primary);
+  color: var(--color-action-primary);
   text-decoration: none;
 }
 
@@ -375,7 +380,7 @@ async function cleanTempFiles() {
 }
 
 .about-info .disclaimer {
-  color: var(--warning-color, #f0ad4e);
+  color: var(--color-status-warning, var(--more-settings-text-primary));
   font-weight: 500;
 }
 
@@ -386,7 +391,7 @@ async function cleanTempFiles() {
   gap: 8px;
 }
 
-.checkbox-label {
+.ui-checkbox-label {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -394,19 +399,19 @@ async function cleanTempFiles() {
   font-weight: 500;
 }
 
-.checkbox-label input[type="checkbox"] {
+.ui-checkbox-label input[type="checkbox"] {
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: var(--color-primary);
+  accent-color: var(--color-action-primary);
 }
 
 .checkbox-text {
-  color: var(--text-primary);
+  color: var(--color-text-default);
 }
 
 .hint-note {
-  color: var(--warning-color, #f0ad4e);
+  color: var(--color-status-warning, var(--more-settings-text-primary));
   font-size: 12px;
 }
 </style>

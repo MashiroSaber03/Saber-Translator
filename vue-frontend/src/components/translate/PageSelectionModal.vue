@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import './PageSelectionModal.global.styles.css'
+
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -121,7 +124,7 @@ function handleBreadcrumbClick(path: string): void {
     title="指定翻译页码"
     size="full"
     custom-class="page-selection-modal"
-    @update:modelValue="emit('update:modelValue', $event)"
+    @update:model-value="emit('update:modelValue', $event)"
     @close="closeModal"
   >
     <div class="page-selection-shell">
@@ -138,12 +141,12 @@ function handleBreadcrumbClick(path: string): void {
 
       <section class="page-selection-toolbar-card">
         <div class="page-selection-toolbar-row">
-          <button type="button" class="page-selection-toolbar-btn" @click="selectAllPages">全选</button>
-          <button type="button" class="page-selection-toolbar-btn" @click="clearSelection">清空</button>
-          <button type="button" class="page-selection-toolbar-btn page-selection-filter-failed" @click="replaceSelection(failedPages)">失败页</button>
-          <button type="button" class="page-selection-toolbar-btn" @click="replaceSelection(pendingPages)">未翻译页</button>
-          <button type="button" class="page-selection-toolbar-btn" @click="replaceSelection(completedPages)">已翻译页</button>
-          <button type="button" class="page-selection-toolbar-btn" @click="replaceSelection(labeledPages)">手动标注页</button>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn" @click="selectAllPages">全选</UiButton>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn" @click="clearSelection">清空</UiButton>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn page-selection-filter-failed" @click="replaceSelection(failedPages)">失败页</UiButton>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn" @click="replaceSelection(pendingPages)">未翻译页</UiButton>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn" @click="replaceSelection(completedPages)">已翻译页</UiButton>
+          <UiButton variant="toolbar" type="button" class="page-selection-toolbar-btn" @click="replaceSelection(labeledPages)">手动标注页</UiButton>
         </div>
       </section>
 
@@ -185,7 +188,8 @@ function handleBreadcrumbClick(path: string): void {
               </div>
             </div>
 
-            <button
+            <UiButton
+              variant="toolbar"
               v-for="image in currentImages"
               :key="image.id"
               type="button"
@@ -206,13 +210,14 @@ function handleBreadcrumbClick(path: string): void {
               <span v-else-if="getStatusType(image) === 'labeled'" class="labeled-indicator">✏️</span>
               <div v-if="getStatusType(image) === 'processing'" class="thumbnail-processing-indicator">⟳</div>
               <div v-if="isSelected(getImageGlobalIndex(image) + 1)" class="page-selection-selected-badge">已选</div>
-            </button>
+            </UiButton>
           </div>
         </template>
 
         <template v-else>
           <div class="page-selection-grid">
-            <button
+            <UiButton
+              variant="toolbar"
               v-for="(image, index) in images"
               :key="image.id"
               type="button"
@@ -233,55 +238,24 @@ function handleBreadcrumbClick(path: string): void {
               <span v-else-if="getStatusType(image) === 'labeled'" class="labeled-indicator">✏️</span>
               <div v-if="getStatusType(image) === 'processing'" class="thumbnail-processing-indicator">⟳</div>
               <div v-if="isSelected(index + 1)" class="page-selection-selected-badge">已选</div>
-            </button>
+            </UiButton>
           </div>
         </template>
       </section>
     </div>
 
     <template #footer>
-      <button type="button" class="page-selection-footer-btn secondary" @click="closeModal">
+      <UiButton variant="secondary" type="button" class="page-selection-footer-btn" @click="closeModal">
         取消
-      </button>
-      <button type="button" class="page-selection-footer-btn primary page-selection-confirm-btn" @click="confirmSelection">
+      </UiButton>
+      <UiButton variant="primary" type="button" class="page-selection-footer-btn page-selection-confirm-btn" @click="confirmSelection">
         确定
-      </button>
+      </UiButton>
     </template>
   </BaseModal>
 </template>
 
-<style>
-.page-selection-modal .modal-container {
-  width: min(1180px, 95vw);
-  height: min(88vh, 920px);
-  background: #fff;
-  border: 1px solid #dbe4ef;
-  border-radius: 14px;
-  box-shadow: 0 20px 50px rgba(28, 45, 72, 0.18);
-}
-
-.page-selection-modal .modal-header {
-  padding: 18px 22px;
-  border-bottom: 1px solid #e2e9f2;
-}
-
-.page-selection-modal .modal-title {
-  color: #20314f;
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.page-selection-modal .modal-body {
-  padding: 18px 20px;
-  background: #f4f7f9;
-}
-
-.page-selection-modal .modal-footer {
-  padding: 16px 20px;
-  border-top: 1px solid #e2e9f2;
-  background: #fff;
-}
-
+<style scoped>
 .page-selection-shell {
   display: flex;
   flex-direction: column;
@@ -292,10 +266,10 @@ function handleBreadcrumbClick(path: string): void {
 .page-selection-summary-card,
 .page-selection-toolbar-card,
 .page-selection-browser-card {
-  background: #fff;
-  border: 1px solid #dbe4ef;
+  background: var(--color-surface-base);
+  border: 1px solid var(--page-selection-modal-border-default);
   border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(28, 45, 72, 0.07);
+  box-shadow: 0 8px 20px var(--page-selection-modal-shadow-raised);
 }
 
 .page-selection-summary-card {
@@ -307,14 +281,14 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-summary-title {
-  color: #273959;
+  color: var(--page-selection-modal-text-secondary);
   font-size: 16px;
   font-weight: 700;
 }
 
 .page-selection-summary-text {
   margin-top: 4px;
-  color: #51637f;
+  color: var(--page-selection-modal-text-muted);
   font-size: 14px;
 }
 
@@ -328,18 +302,18 @@ function handleBreadcrumbClick(path: string): void {
   display: inline-flex;
   align-items: center;
   padding: 5px 10px;
-  border: 1px solid #d3deed;
+  border: 1px solid var(--page-selection-modal-border-muted);
   border-radius: 999px;
-  background: #f4f8fd;
-  color: #5b6f8e;
+  background: var(--page-selection-modal-surface-raised);
+  color: var(--page-selection-modal-text-subtle);
   font-size: 12px;
   font-weight: 600;
 }
 
 .page-selection-toolbar-card {
   padding: 12px;
-  background: #f5f8fd;
-  border-color: #d8e3f1;
+  background: var(--page-selection-modal-surface-muted);
+  border-color: var(--page-selection-modal-border-subtle);
 }
 
 .page-selection-toolbar-row {
@@ -353,9 +327,9 @@ function handleBreadcrumbClick(path: string): void {
   min-height: 38px;
   padding: 9px 14px;
   border-radius: 10px;
-  border: 1px solid #cfdcec;
-  background: #fbfdff;
-  color: #243552;
+  border: 1px solid var(--page-selection-modal-border-hover);
+  background: var(--page-selection-modal-surface-subtle);
+  color: var(--page-selection-modal-text-supporting);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -364,18 +338,18 @@ function handleBreadcrumbClick(path: string): void {
 
 .page-selection-toolbar-btn:hover,
 .page-selection-footer-btn.secondary:hover {
-  border-color: #4a82ce;
-  box-shadow: 0 0 0 3px rgba(74, 130, 206, 0.12);
+  border-color: var(--page-selection-modal-border-active);
+  box-shadow: 0 0 0 3px var(--page-selection-modal-shadow-floating);
 }
 
 .page-selection-footer-btn.primary {
-  border-color: #4a82ce;
-  background: #4a82ce;
-  color: #fff;
+  border-color: var(--page-selection-modal-border-active);
+  background: var(--page-selection-modal-surface-hover);
+  color: var(--color-text-inverse);
 }
 
 .page-selection-footer-btn.primary:hover {
-  background: #3f74bc;
+  background: var(--page-selection-modal-surface-active);
 }
 
 .page-selection-browser-card {
@@ -393,7 +367,7 @@ function handleBreadcrumbClick(path: string): void {
   align-items: center;
   gap: 2px;
   padding: 8px 10px;
-  background: #f8fafc;
+  background: var(--color-surface-quiet);
   border-radius: 6px;
   margin-bottom: 10px;
   font-size: 12px;
@@ -401,19 +375,19 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-breadcrumb-item {
-  color: #3498db;
+  color: var(--color-text-link);
   cursor: pointer;
   word-break: break-word;
 }
 
 .page-selection-breadcrumb-item.active {
-  color: #2c3e50;
+  color: var(--color-text-heading);
   font-weight: 600;
   cursor: default;
 }
 
 .page-selection-breadcrumb-sep {
-  color: #94a3b8;
+  color: var(--page-selection-modal-text-disabled);
   margin: 0 2px;
 }
 
@@ -422,12 +396,12 @@ function handleBreadcrumbClick(path: string): void {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #e8f4fd 0%, #d4e8f8 100%);
+  background: linear-gradient(135deg, var(--page-selection-modal-surface-selected) 0%, var(--page-selection-modal-surface-overlay) 100%);
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 12px;
   font-size: 13px;
-  color: #3498db;
+  color: var(--color-text-link);
   transition: all 0.2s;
 }
 
@@ -445,17 +419,17 @@ function handleBreadcrumbClick(path: string): void {
   position: relative;
   min-height: 88px;
   padding: 12px;
-  background: linear-gradient(135deg, #fff8e6 0%, #fff3d4 100%);
-  border: 1px solid #f0d78c;
+  background: linear-gradient(135deg, var(--color-surface-base8e6) 0%, var(--color-surface-base3d4) 100%);
+  border: 1px solid var(--page-selection-modal-border-focus);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .page-selection-folder-item:hover {
-  background: linear-gradient(135deg, #fff3d4 0%, #ffe8b8 100%);
+  background: linear-gradient(135deg, var(--color-surface-base3d4) 0%, var(--page-selection-modal-surface-inverse) 100%);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(240, 215, 140, 0.4);
+  box-shadow: 0 2px 8px var(--page-selection-modal-shadow-strong);
 }
 
 .page-selection-folder-item .folder-icon {
@@ -463,23 +437,23 @@ function handleBreadcrumbClick(path: string): void {
   top: -4px;
   right: -4px;
   font-size: 14px;
-  background: #fff;
+  background: var(--color-surface-base);
   border-radius: 4px;
   padding: 1px 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px var(--page-selection-modal-shadow-soft);
 }
 
 .page-selection-folder-item .folder-name {
   font-size: 13px;
   font-weight: 500;
-  color: #5a4a00;
+  color: var(--page-selection-modal-text-inverse);
   word-break: break-word;
   line-height: 1.4;
 }
 
 .page-selection-folder-item .folder-count {
   font-size: 11px;
-  color: #8a7a30;
+  color: var(--page-selection-modal-text-brand);
   margin-left: 4px;
 }
 
@@ -487,9 +461,9 @@ function handleBreadcrumbClick(path: string): void {
   position: relative;
   width: 100%;
   padding: 5px;
-  border: 2px solid #e2e8f0;
+  border: 2px solid var(--color-border-muted);
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface-base);
   cursor: pointer;
   overflow: hidden;
   transition: all 0.3s ease;
@@ -497,13 +471,13 @@ function handleBreadcrumbClick(path: string): void {
 
 .page-selection-thumbnail:hover,
 .page-selection-thumbnail.active {
-  border-color: #3498db;
-  box-shadow: 0 0 8px rgba(52, 152, 219, 0.45);
+  border-color: var(--color-border-accent);
+  box-shadow: 0 0 8px var(--page-selection-modal-shadow-focus);
   transform: translateY(-2px);
 }
 
 .page-selection-thumbnail.active {
-  background: linear-gradient(180deg, #ffffff 0%, #f2f8ff 100%);
+  background: linear-gradient(180deg, var(--color-surface-basefff) 0%, var(--page-selection-modal-surface-contrast) 100%);
 }
 
 .page-selection-thumbnail .thumbnail-image {
@@ -519,19 +493,19 @@ function handleBreadcrumbClick(path: string): void {
   left: 3px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(74, 130, 206, 0.92);
-  color: #fff;
+  background: var(--page-selection-modal-surface-tint);
+  color: var(--color-text-inverse);
   font-size: 11px;
   font-weight: 700;
-  z-index: 9;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  z-index: var(--z-local-control);
+  box-shadow: 0 1px 3px var(--page-selection-modal-shadow-glow);
 }
 
-.page-selection-modal .thumbnail-processing-indicator {
+.thumbnail-processing-indicator {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: rgba(53, 152, 219, 0.8);
+  background-color: var(--page-selection-modal-surface-soft);
   color: white;
   width: 15px;
   height: 15px;
@@ -540,50 +514,50 @@ function handleBreadcrumbClick(path: string): void {
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  z-index: 9;
+  z-index: var(--z-local-control);
   animation: pageSelectionPulse 1.5s infinite;
 }
 
-.page-selection-modal .translation-failed-indicator,
-.page-selection-modal .labeled-indicator,
-.page-selection-modal .page-number-indicator,
-.page-selection-modal .translated-indicator {
+.translation-failed-indicator,
+.labeled-indicator,
+.page-number-indicator,
+.translated-indicator {
   position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px var(--page-selection-modal-shadow-inset);
 }
 
-.page-selection-modal .translation-failed-indicator {
+.translation-failed-indicator {
   bottom: 3px;
   right: 3px;
-  background-color: rgba(255, 0, 0, 0.8);
+  background-color: var(--page-selection-modal-surface-strong);
   color: white;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   font-size: 12px;
   font-weight: bold;
-  z-index: 11;
+  z-index: var(--z-local-toolbar-raised);
 }
 
-.page-selection-modal .labeled-indicator {
+.labeled-indicator {
   bottom: 3px;
   right: 3px;
-  background-color: rgba(0, 123, 255, 0.8);
+  background-color: var(--page-selection-modal-surface-stronger);
   color: white;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   font-size: 12px;
-  z-index: 10;
+  z-index: var(--z-local-toolbar);
 }
 
-.page-selection-modal .page-number-indicator {
+.page-number-indicator {
   bottom: 3px;
   left: 3px;
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: var(--page-selection-modal-surface-highlight);
   color: white;
   min-width: 18px;
   height: 18px;
@@ -591,20 +565,20 @@ function handleBreadcrumbClick(path: string): void {
   border-radius: 3px;
   font-size: 11px;
   font-weight: 500;
-  z-index: 8;
+  z-index: var(--z-local-raised);
 }
 
-.page-selection-modal .translated-indicator {
+.translated-indicator {
   top: 3px;
   left: 3px;
-  background-color: rgba(34, 197, 94, 0.9);
+  background-color: var(--page-selection-modal-surface-highlight-strong);
   color: white;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   font-size: 12px;
   font-weight: bold;
-  z-index: 9;
+  z-index: var(--z-local-control);
 }
 
 @keyframes pageSelectionPulse {
@@ -618,7 +592,7 @@ function handleBreadcrumbClick(path: string): void {
   }
 }
 
-@media (width <= 900px) {
+@media (--breakpoint-lg-down) {
   .page-selection-summary-card {
     flex-direction: column;
     align-items: flex-start;

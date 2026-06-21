@@ -5,9 +5,9 @@
         <h4>🎭 角色档案</h4>
         <p class="hint">点击角色查看和管理形态</p>
       </div>
-      <button class="btn small primary" @click="openAddCharacterDialog">
+      <UiButton variant="primary" @click="openAddCharacterDialog" size="sm">
         ➕ 新增角色
-      </button>
+      </UiButton>
     </div>
     
     <div v-if="characters.length === 0" class="empty-state">
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, computed } from 'vue'
 import { useCharacterManagementInject } from '@/composables/continuation/useCharacterManagement'
 import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
@@ -110,7 +111,7 @@ import EditFormDialog from './EditFormDialog.vue'
 import OrthographicDialog from './OrthographicDialog.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
 
-const props = defineProps<{
+defineProps<{
   bookId: string
   isLoading?: boolean
 }>()
@@ -312,10 +313,10 @@ function closeOrthoDialog() {
 .section-title .hint {
   margin: 0;
   font-size: 12px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.btn {
+.ui-button {
   padding: 10px 20px;
   border: none;
   border-radius: 8px;
@@ -325,16 +326,16 @@ function closeOrthoDialog() {
   transition: all 0.2s;
 }
 
-.btn.primary {
-  background: var(--primary, #6366f1);
+.ui-button--primary {
+  background: var(--color-surface-brand);
   color: white;
 }
 
-.btn.primary:hover {
-  background: var(--primary-dark, #4f46e5);
+.ui-button--primary:hover {
+  background: var(--color-surface-brand-strong);
 }
 
-.btn.small {
+.ui-button--sm {
   padding: 6px 12px;
   font-size: 13px;
 }
@@ -342,7 +343,7 @@ function closeOrthoDialog() {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: var(--text-secondary, #666);
+  color: var(--color-text-supporting, var(--color-text-secondary));
   font-size: 14px;
 }
 
@@ -369,21 +370,21 @@ function closeOrthoDialog() {
   align-items: center;
   padding: 10px 6px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--color-surface-base);
   border: 2px solid transparent;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .character-tile:hover {
-  background: #f5f7ff;
-  border-color: #c7d2fe;
+  background: var(--character-management-panel-surface-base);
+  border-color: var(--character-management-panel-border-default);
 }
 
 .character-tile.selected {
-  background: linear-gradient(135deg, #eef2ff 0%, #e8e8ff 100%);
-  border-color: #6366f1;
-  box-shadow: 0 4px 12px rgb(99, 102, 241, 0.2);
+  background: linear-gradient(135deg, var(--character-management-panel-surface-raised) 0%, var(--character-management-panel-surface-muted) 100%);
+  border-color: var(--color-border-brand);
+  box-shadow: 0 4px 12px var(--character-management-panel-shadow-default);
 }
 
 .character-tile.disabled {
@@ -397,7 +398,7 @@ function closeOrthoDialog() {
   border-radius: 10px;
   overflow: hidden;
   position: relative;
-  background: #f0f0f0;
+  background: var(--character-management-panel-surface-subtle);
   margin-bottom: 6px;
 }
 
@@ -413,7 +414,7 @@ function closeOrthoDialog() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   color: white;
   font-size: 20px;
   font-weight: 600;
@@ -423,7 +424,7 @@ function closeOrthoDialog() {
   position: absolute;
   bottom: -4px;
   right: -4px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, var(--color-surface-brand) 0%, var(--character-management-panel-surface-hover) 100%);
   color: white;
   font-size: 10px;
   font-weight: 600;
@@ -440,7 +441,7 @@ function closeOrthoDialog() {
   position: absolute;
   top: 2px;
   left: 2px;
-  background: rgb(239, 68, 68, 0.9);
+  background: var(--character-management-panel-surface-active);
   color: white;
   font-size: 9px;
   font-weight: 500;
@@ -451,7 +452,7 @@ function closeOrthoDialog() {
 .tile-name {
   font-size: 12px;
   font-weight: 500;
-  color: #374151;
+  color: var(--character-management-panel-text-primary);
   text-align: center;
   max-width: 100%;
   overflow: hidden;

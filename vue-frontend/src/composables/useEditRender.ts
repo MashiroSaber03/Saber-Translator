@@ -1,7 +1,6 @@
 /**
  * 编辑模式渲染组合式函数
  * 处理编辑模式下的图像重新渲染逻辑
- * 对应原版 edit_mode.js 中的 reRenderFullImage 函数
  */
 
 import { ref } from 'vue'
@@ -102,7 +101,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     const expectedImageId = image.id
 
     // 检查是否有气泡
-    // 【复刻原版逻辑】没有气泡坐标时跳过后端渲染
+    // 没有气泡坐标时跳过后端渲染。
     // 【Vue适配】将cleanImageData作为translatedDataURL显示，确保修复笔刷效果可见
     if (bubbles.value.length === 0) {
       console.log('reRenderFullImage: 没有气泡，跳过后端渲染')

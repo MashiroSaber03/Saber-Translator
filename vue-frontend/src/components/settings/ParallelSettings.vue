@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 并行翻译设置组件
  * 
@@ -38,36 +42,36 @@ const lockSize = computed({
 <template>
   <div class="parallel-settings">
     <!-- 并行翻译设置 -->
-    <div class="settings-group">
-      <div class="settings-group-title">🚀 并行翻译</div>
+    <UiPanel variant="settings">
+      <template #title>🚀 并行翻译</template>
       
       <!-- 启用开关 -->
-      <div class="settings-item">
+      <UiField class="ui-settings-field">
         <label>启用并行模式:</label>
         <label class="toggle-switch">
-          <input type="checkbox" v-model="parallelEnabled">
+          <UiInput type="checkbox" v-model="parallelEnabled" />
           <span class="toggle-slider"></span>
         </label>
-        <div class="input-hint">使用流水线并行处理，可能提升批量翻译速度</div>
-      </div>
+        <div class="ui-form-hint">使用流水线并行处理，可能提升批量翻译速度</div>
+      </UiField>
 
       <!-- 深度学习锁大小 -->
-      <div class="settings-item" :class="{ 'item-disabled': !parallelEnabled }">
+      <UiField class="ui-settings-field" :class="{ 'item-disabled': !parallelEnabled }">
         <label>深度学习并发数:</label>
         <div class="number-control">
-          <button class="btn btn-sm" @click="lockSize = Math.max(1, lockSize - 1)" :disabled="!parallelEnabled">-</button>
-          <input 
+          <UiButton variant="secondary" @click="lockSize = Math.max(1, lockSize - 1)" :disabled="!parallelEnabled" size="sm">-</UiButton>
+          <UiInput 
             type="number" 
             v-model.number="lockSize" 
             min="1" 
             max="4"
             :disabled="!parallelEnabled"
             class="number-input"
-          >
-          <button class="btn btn-sm" @click="lockSize = Math.min(4, lockSize + 1)" :disabled="!parallelEnabled">+</button>
+          />
+          <UiButton variant="secondary" @click="lockSize = Math.min(4, lockSize + 1)" :disabled="!parallelEnabled" size="sm">+</UiButton>
         </div>
-        <div class="input-hint">控制检测/OCR/颜色/修复的最大并发数（建议1-2）</div>
-      </div>
+        <div class="ui-form-hint">控制检测/OCR/颜色/修复的最大并发数（建议1-2）</div>
+      </UiField>
 
       <!-- 说明 -->
       <div class="settings-note" v-if="parallelEnabled">
@@ -78,7 +82,7 @@ const lockSize = computed({
           <li>如果遇到显存不足，请将并发数设为1</li>
         </ul>
       </div>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
@@ -102,7 +106,7 @@ const lockSize = computed({
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background-color: var(--border-color);
+  background-color: var(--color-border-muted);
   transition: 0.3s;
   border-radius: 24px;
 }
@@ -120,7 +124,7 @@ const lockSize = computed({
 }
 
 input:checked + .toggle-slider {
-  background-color: var(--color-primary);
+  background-color: var(--color-action-primary);
 }
 
 input:checked + .toggle-slider::before {
@@ -134,7 +138,7 @@ input:checked + .toggle-slider::before {
   gap: 4px;
 }
 
-.number-control .btn-sm {
+.number-control .ui-button--sm {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -145,9 +149,9 @@ input:checked + .toggle-slider::before {
   width: 50px;
   height: 28px;
   text-align: center;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-color);
+  border: 1px solid var(--color-border-muted);
+  background: var(--color-surface-input);
+  color: var(--color-text-strong);
   border-radius: 4px;
   font-size: 14px;
 }
@@ -168,14 +172,14 @@ input:checked + .toggle-slider::before {
 .settings-note {
   margin-top: 12px;
   padding: 10px 12px;
-  background: rgb(255, 193, 7, 0.1);
-  border: 1px solid rgb(255, 193, 7, 0.3);
+  background: var(--parallel-settings-surface-base);
+  border: 1px solid var(--parallel-settings-border-default);
   border-radius: 6px;
   font-size: 12px;
 }
 
 .note-title {
-  color: #ffc107;
+  color: var(--parallel-settings-text-primary);
   font-weight: 500;
   margin-bottom: 6px;
 }
@@ -183,7 +187,7 @@ input:checked + .toggle-slider::before {
 .settings-note ul {
   margin: 0;
   padding-left: 18px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
 .settings-note li {

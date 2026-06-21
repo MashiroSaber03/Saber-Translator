@@ -1,0 +1,70 @@
+.ui-settings-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.ui-settings-field,
+.ui-settings-field.ui-field.ui-field {
+  display: block;
+  gap: 0;
+  margin-bottom: 15px;
+}
+
+.ui-settings-row > .ui-settings-field,
+.ui-settings-row > .ui-settings-field.ui-field.ui-field {
+  margin-bottom: 0;
+}
+
+.ui-settings-field:last-child,
+.ui-settings-field.ui-field.ui-field:last-child {
+  margin-bottom: 0;
+}
+
+.ui-settings-field > label:not(.ui-checkbox-label) {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.95em;
+  font-weight: 500;
+}
+
+.ui-settings-field .ui-input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.ui-settings-field .ui-select,
+.ui-settings-field .ui-textarea {
+  padding: 10px 12px;
+  background-color: var(--color-surface-card, var(--color-surface-basefff));
+  color: var(--color-text-strong, var(--form-primitives-text-primary));
+  font-size: 0.95em;
+}
+
+.ui-settings-field--checkbox {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.ui-checkbox-label input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+
+.ui-form-hint {
+  margin-top: 6px;
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  font-size: 0.85em;
+  line-height: 1.45;
+}
+
+.ui-form-hint--error,
+.error-hint {
+  color: var(--color-status-error, var(--color-text-danger));
+}

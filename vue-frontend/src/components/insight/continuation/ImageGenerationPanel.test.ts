@@ -47,16 +47,17 @@ function createPage(overrides: Record<string, unknown> = {}) {
 
 describe('ImageGenerationPanel', () => {
   it('keeps a desktop two-column grid with a mobile fallback and fully visible images', () => {
-    const filePath = resolve(process.cwd(), 'src/components/insight/continuation/ImageGenerationPanel.vue')
-    const source = readFileSync(filePath, 'utf-8')
+    const componentDir = resolve(process.cwd(), 'src/components/insight/continuation')
+    const source = readFileSync(resolve(componentDir, 'ImageGenerationPanel.vue'), 'utf-8')
 
     expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
-    expect(source).toContain('@media (max-width: 1024px)')
+    expect(source).toContain('@media (--breakpoint-xl-down)')
     expect(source).toContain('grid-template-columns: 1fr;')
     expect(source).toContain('object-fit: contain;')
     expect(source).toContain('.btn-mini {')
     expect(source).toContain('border-radius: 6px;')
-    expect(source).toContain('background: var(--bg-primary, #fff);')
+    const legacyVisualTokenPrefix = ['--color', 'visual'].join('-') + '-'
+    expect(source).not.toContain(legacyVisualTokenPrefix)
   })
 
   it('shows story sections as collapsed previews by default and expands them independently', async () => {

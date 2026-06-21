@@ -1,19 +1,19 @@
 <template>
   <div class="prompt-library">
     <!-- 提示词类型选择 -->
-    <div class="settings-group">
-      <div class="settings-group-title">提示词管理</div>
-      <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>提示词管理</template>
+      <UiField class="ui-settings-field">
         <label for="promptType">提示词类型:</label>
         <CustomSelect
           v-model="selectedType"
           :options="promptTypeOptions"
           @change="handleTypeChange"
         />
-      </div>
+      </UiField>
 
       <!-- 提示词模式切换（仅翻译和AI视觉OCR支持） -->
-      <div v-if="supportsModeSwitch" class="settings-item">
+      <UiField v-if="supportsModeSwitch" class="ui-settings-field">
         <label for="promptMode">提示词模式:</label>
         <CustomSelect
           :model-value="selectedMode"
@@ -21,46 +21,51 @@
           @change="(v: string | number) => { selectedMode = String(v); handleModeChange() }"
         />
         <span class="mode-hint">{{ modeHint }}</span>
-      </div>
-    </div>
+      </UiField>
+    </UiPanel>
 
     <!-- 已保存的提示词列表 -->
-    <div class="settings-group">
-      <div class="settings-group-title">已保存的提示词</div>
+    <UiPanel variant="settings">
+      <template #title>已保存的提示词</template>
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="promptList.length === 0" class="empty-hint">暂无保存的提示词</div>
       <div v-else class="prompt-list">
         <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }" @click="selectPrompt(prompt.name)">
           <span class="prompt-name">{{ prompt.name }}</span>
           <div class="prompt-actions">
-            <button class="btn btn-sm" @click.stop="loadPrompt(prompt.name)" title="加载到编辑器">📥</button>
-            <button class="btn btn-sm btn-danger" @click.stop="deletePrompt(prompt.name)" title="删除" :disabled="prompt.name === 'default'">
+            <UiButton variant="secondary" @click.stop="loadPrompt(prompt.name)" title="加载到编辑器" size="sm">📥</UiButton>
+            <UiButton variant="danger" @click.stop="deletePrompt(prompt.name)" title="删除" :disabled="prompt.name === 'default'" size="sm">
               🗑️
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
-    </div>
+    </UiPanel>
 
     <!-- 提示词编辑器 -->
-    <div class="settings-group">
-      <div class="settings-group-title">提示词编辑</div>
-      <div class="settings-item">
+    <UiPanel variant="settings">
+      <template #title>提示词编辑</template>
+      <UiField class="ui-settings-field">
         <label for="promptName">提示词名称:</label>
-        <input type="text" id="promptName" v-model="editingName" placeholder="请输入提示词名称" />
-      </div>
-      <div class="settings-item">
+        <UiInput type="text" id="promptName" v-model="editingName" placeholder="请输入提示词名称" />
+      </UiField>
+      <UiField class="ui-settings-field">
         <label for="promptContent">提示词内容:</label>
-        <textarea id="promptContent" v-model="editingContent" rows="8" placeholder="请输入提示词内容"></textarea>
-      </div>
+        <UiTextarea id="promptContent" v-model="editingContent" rows="8" placeholder="请输入提示词内容" />
+      </UiField>
       <div class="prompt-editor-actions">
-        <button class="btn btn-primary" @click="savePrompt" :disabled="!editingName || !editingContent">保存提示词</button>
+        <UiButton variant="primary" @click="savePrompt" :disabled="!editingName || !editingContent">保存提示词</UiButton>
       </div>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 提示词管理组件
  * 管理各类提示词的保存、加载和删除
@@ -135,6 +140,14 @@ const modeHint = computed(() => {
 // ============================================================
 // 提示词列表操作
 // ============================================================
+
+function getTranslationPromptMode(): 'normal' | 'json' {
+  const translationSettings = settingsStore.settings.translation
+  const forceJsonOutput =
+    translationSettings.openaiOptions?.request?.forceJsonOutput ?? translationSettings.isJsonMode
+
+  return forceJsonOutput ? 'json' : 'normal'
+}
 
 /** 加载提示词列表 */
 async function loadPromptList() {
@@ -243,7 +256,7 @@ function handleTypeChange() {
   
   // 同步模式状态
   if (selectedType.value === 'translate') {
-    selectedMode.value = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal'
+    selectedMode.value = getTranslationPromptMode()
   } else if (selectedType.value === 'ai_vision_ocr') {
     selectedMode.value = settingsStore.settings.aiVisionOcr.promptMode || 'normal'
   } else {
@@ -280,7 +293,7 @@ function handleModeChange() {
 // 初始化
 onMounted(() => {
   // 同步初始模式状态
-  selectedMode.value = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput ? 'json' : 'normal'
+  selectedMode.value = getTranslationPromptMode()
   loadPromptList()
 })
 </script>
@@ -289,7 +302,7 @@ onMounted(() => {
 .prompt-list {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-muted);
   border-radius: 4px;
 }
 
@@ -298,7 +311,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--color-border-muted);
   cursor: pointer;
 }
 
@@ -307,11 +320,11 @@ onMounted(() => {
 }
 
 .prompt-item:hover {
-  background: var(--bg-hover);
+  background: var(--color-surface-hover);
 }
 
 .prompt-item.active {
-  background: var(--bg-active);
+  background: var(--color-surface-subtle);
 }
 
 .prompt-name {
@@ -333,27 +346,27 @@ onMounted(() => {
 .empty-hint {
   padding: 20px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
 }
 
-.btn-sm {
+.ui-button--sm {
   padding: 4px 8px;
   font-size: 12px;
 }
 
-.btn-danger {
+.ui-button--danger {
   background: transparent;
   border: none;
 }
 
-.btn-danger:disabled {
+.ui-button--danger:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
 .mode-hint {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-supporting);
   margin-left: 10px;
 }
 </style>

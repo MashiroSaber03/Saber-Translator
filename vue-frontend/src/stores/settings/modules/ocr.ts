@@ -100,7 +100,10 @@ export function useOcrSettings(
     if (updates.rpmLimit !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = updates.rpmLimit
     if (updates.transportRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.transportRetries = updates.transportRetries
     if (updates.businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = updates.businessRetries
-    if (updates.isJsonMode !== undefined) settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+    if (updates.isJsonMode !== undefined) {
+      settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
+      settings.value.aiVisionOcr.promptMode = updates.isJsonMode ? 'json' : 'normal'
+    }
     if (updates.useStream !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.useStream = updates.useStream
     if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
       settings.value.aiVisionOcr.openaiOptions.request.extraBody = updates.extraBody
@@ -155,18 +158,20 @@ export function useOcrSettings(
    * 切换时自动更新当前提示词内容为对应模式的默认提示词
    * @param isJsonMode - 是否为JSON格式模式
    */
-  function setAiVisionOcrPromptMode(mode: 'normal' | 'json' | 'paddleocr_vl'): void {
-    settings.value.aiVisionOcr.promptMode = mode
-    settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = mode === 'json'
+  function setAiVisionOcrPromptMode(mode: boolean | 'normal' | 'json' | 'paddleocr_vl'): void {
+    const normalizedMode = typeof mode === 'boolean' ? (mode ? 'json' : 'normal') : mode
 
-    if (mode === 'json') {
+    settings.value.aiVisionOcr.promptMode = normalizedMode
+    settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = normalizedMode === 'json'
+
+    if (normalizedMode === 'json') {
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
-    } else if (mode === 'normal') {
+    } else if (normalizedMode === 'normal') {
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_PROMPT
     }
 
     saveToStorage()
-    console.log(`AI视觉OCR提示词模式已切换为: ${mode}`)
+    console.log(`AI视觉OCR提示词模式已切换为: ${normalizedMode}`)
   }
 
   // ============================================================
