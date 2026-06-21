@@ -25,6 +25,7 @@
 
       <UiButton
         variant="primary"
+        block
        
         :disabled="isGenerating || pages.length === 0"
         @click="handleBatchGenerate" size="lg"
@@ -586,14 +587,6 @@ watch(() => props.pages.length, (pageCount) => {
   font-size: 12px;
 }
 
-.image-generation-panel .ui-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
 
 .image-generation-panel .image-actions {
   display: flex;
@@ -601,24 +594,10 @@ watch(() => props.pages.length, (pageCount) => {
   padding: 0 16px 16px;
 }
 
-.image-generation-panel .image-actions .ui-button {
+.image-generation-panel .image-actions > * {
   flex: 1;
 }
 
-.image-generation-panel .ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.image-generation-panel .ui-button--secondary {
-  background: var(--color-surface-base);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-}
-
-.image-generation-panel .ui-button--primary.ui-button--lg {
-  width: 100%;
-}
 
 .image-generation-panel .progress-bar {
   height: 10px;

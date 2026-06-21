@@ -33,7 +33,7 @@ export function useOcrSettings(
     rpmLimit?: number
     transportRetries?: number
     businessRetries?: number
-    isJsonMode?: boolean
+    forceJsonOutput?: boolean
     useStream?: boolean
     extraBody?: Record<string, unknown>
   }
@@ -96,17 +96,27 @@ export function useOcrSettings(
    * @param updates - 要更新的设置
    */
   function updateAiVisionOcr(updates: AiVisionOcrUiUpdates): void {
-    Object.assign(settings.value.aiVisionOcr, updates)
-    if (updates.rpmLimit !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = updates.rpmLimit
-    if (updates.transportRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.transportRetries = updates.transportRetries
-    if (updates.businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = updates.businessRetries
-    if (updates.isJsonMode !== undefined) {
-      settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = updates.isJsonMode
-      settings.value.aiVisionOcr.promptMode = updates.isJsonMode ? 'json' : 'normal'
+    const {
+      rpmLimit,
+      transportRetries,
+      businessRetries,
+      forceJsonOutput,
+      useStream,
+      extraBody,
+      ...ocrUpdates
+    } = updates
+
+    Object.assign(settings.value.aiVisionOcr, ocrUpdates)
+    if (rpmLimit !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.rpmLimit = rpmLimit
+    if (transportRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.transportRetries = transportRetries
+    if (businessRetries !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.businessRetries = businessRetries
+    if (forceJsonOutput !== undefined) {
+      settings.value.aiVisionOcr.openaiOptions.request.forceJsonOutput = forceJsonOutput
+      settings.value.aiVisionOcr.promptMode = forceJsonOutput ? 'json' : 'normal'
     }
-    if (updates.useStream !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.useStream = updates.useStream
+    if (useStream !== undefined) settings.value.aiVisionOcr.openaiOptions.execution.useStream = useStream
     if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-      settings.value.aiVisionOcr.openaiOptions.request.extraBody = updates.extraBody
+      settings.value.aiVisionOcr.openaiOptions.request.extraBody = extraBody
     }
     saveToStorage()
   }
@@ -156,7 +166,7 @@ export function useOcrSettings(
   /**
    * 设置AI视觉OCR提示词模式
    * 切换时自动更新当前提示词内容为对应模式的默认提示词
-   * @param isJsonMode - 是否为JSON格式模式
+   * @param mode - 提示词模式
    */
   function setAiVisionOcrPromptMode(mode: boolean | 'normal' | 'json' | 'paddleocr_vl'): void {
     const normalizedMode = typeof mode === 'boolean' ? (mode ? 'json' : 'normal') : mode

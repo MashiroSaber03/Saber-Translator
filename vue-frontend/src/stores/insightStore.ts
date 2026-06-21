@@ -2,7 +2,7 @@
  * 漫画分析状态管理 Store
  * 管理漫画分析状态、进度跟踪、问答和笔记
  *
- * 重构后使用拆分的 composables:
+ * 使用拆分的 composables:
  * - useInsightNotes: 笔记管理
  * - useInsightQA: 问答管理
  * - useInsightConfigManager: 服务商配置管理
@@ -24,18 +24,19 @@ import type {
   StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
 } from '@/types/insight'
 import {
+  deserializeOpenAICompatibleOptionsFromApi,
   normalizeOpenAiOptions
 } from '@/utils/openaiOptions'
 import { getProviderBaseUrl, getProviderDefaultModel, normalizeProviderId } from '@/config/aiProviders'
 
-// 重新导出类型（保持向后兼容）
+// 公开 Store 相关类型
 export type {
   AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
   PageData, ChapterInfo, OverviewData, TimelineEvent,
   QAMessage, NoteData, BatchConfig
 }
 
-// 为了兼容性，导出 Store 类型的别名
+// Store 内部使用的类型别名
 export type AnalysisProgress = StoreAnalysisProgress
 export type VlmConfig = StoreVlmConfig
 export type LlmConfig = StoreLlmConfig
@@ -45,18 +46,6 @@ export type ImageGenConfig = StoreImageGenConfig
 export type InsightConfig = StoreInsightConfig
 
 export const useInsightStore = defineStore('insight', () => {
-  function coerceLegacyRetryValue(value: unknown, fallback: number): number {
-    return value === undefined || value === null ? fallback : Number(value)
-  }
-
-  function syncVlmAliases(target: StoreVlmConfig): StoreVlmConfig {
-    return target
-  }
-
-  function syncLlmAliases(target: StoreLlmConfig): StoreLlmConfig {
-    return target
-  }
-
   function normalizeRerankerConfig(
     source?: Partial<StoreRerankerConfig> | null,
     previous?: StoreRerankerConfig
@@ -78,7 +67,6 @@ export const useInsightStore = defineStore('insight', () => {
     source?: Partial<StoreImageGenConfig> | null,
     previous?: StoreImageGenConfig
   ): StoreImageGenConfig {
-    const legacyMaxRetries = (source as Record<string, unknown> | null | undefined)?.maxRetries
     const normalizedProvider = normalizeProviderId(source?.provider || previous?.provider || 'gpt2api') || 'gpt2api'
     const previousProvider = normalizeProviderId(previous?.provider || '') || 'gpt2api'
     const providerChanged = normalizedProvider !== previousProvider
@@ -96,7 +84,7 @@ export const useInsightStore = defineStore('insight', () => {
     }
     const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model || defaultModel)
     const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
-    const businessRetries = source?.businessRetries ?? (typeof legacyMaxRetries === 'number' ? legacyMaxRetries : base.businessRetries ?? 10)
+    const businessRetries = source?.businessRetries ?? base.businessRetries ?? 10
 
     return {
       provider: normalizedProvider,
@@ -256,26 +244,22 @@ export const useInsightStore = defineStore('insight', () => {
   // ============================================================
 
   function updateVlmConfig(c: Partial<VlmConfig>): void {
-    config.value.vlm = syncVlmAliases({ ...config.value.vlm, ...c })
+    config.value.vlm = { ...config.value.vlm, ...c }
     if ((c as Record<string, unknown>).rpmLimit !== undefined) config.value.vlm.openaiOptions.execution.rpmLimit = (c as Record<string, any>).rpmLimit
     if ((c as Record<string, unknown>).temperature !== undefined) config.value.vlm.openaiOptions.request.temperature = (c as Record<string, any>).temperature
-    if ((c as Record<string, unknown>).forceJson !== undefined) config.value.vlm.openaiOptions.request.forceJsonOutput = Boolean((c as Record<string, any>).forceJson)
     if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
       config.value.vlm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
     }
     if ((c as Record<string, unknown>).useStream !== undefined) config.value.vlm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
-    config.value.vlm = syncVlmAliases(config.value.vlm)
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)
     saveConfigToStorage()
   }
   function updateLlmConfig(c: Partial<LlmConfig>): void {
-    config.value.llm = syncLlmAliases({ ...config.value.llm, ...c })
-    if ((c as Record<string, unknown>).forceJson !== undefined) config.value.llm.openaiOptions.request.forceJsonOutput = Boolean((c as Record<string, any>).forceJson)
+    config.value.llm = { ...config.value.llm, ...c }
     if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
       config.value.llm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
     }
     if ((c as Record<string, unknown>).useStream !== undefined) config.value.llm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
-    config.value.llm = syncLlmAliases(config.value.llm)
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
     saveConfigToStorage()
   }
@@ -303,7 +287,7 @@ export const useInsightStore = defineStore('insight', () => {
   function loadConfigFromStorage(): void {
     configManager.loadFromStorage()
     const stored = localStorage.getItem('manga_insight_config')
-      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: syncVlmAliases({ ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, { rpmLimit: p?.vlm?.rpmLimit, temperature: p?.vlm?.temperature, forceJsonOutput: p?.vlm?.forceJson, extraBody: p?.vlm?.extraBody, useStream: p?.vlm?.useStream }, config.value.vlm.openaiOptions) }), llm: syncLlmAliases({ ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, { forceJsonOutput: p?.llm?.forceJson, extraBody: p?.llm?.extraBody, useStream: p?.llm?.useStream }, config.value.llm.openaiOptions) }), embedding: { ...config.value.embedding, ...p.embedding }, reranker: normalizeRerankerConfig(p?.reranker, config.value.reranker), imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
+      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: { ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, config.value.vlm.openaiOptions) }, llm: { ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, config.value.llm.openaiOptions) }, embedding: { ...config.value.embedding, ...p.embedding }, reranker: normalizeRerankerConfig(p?.reranker, config.value.reranker), imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -342,7 +326,7 @@ export const useInsightStore = defineStore('insight', () => {
       },
       analysis: { batch: { pages_per_batch: config.value.batch.pagesPerBatch, context_batch_count: config.value.batch.contextBatchCount, architecture_preset: config.value.batch.architecturePreset, custom_layers: config.value.batch.customLayers.map(l => ({ name: l.name, units_per_group: l.units, align_to_chapter: l.align })) } },
       prompts: config.value.prompts,
-      providerSettings: {
+      provider_settings: {
         vlmProvider: mapProvider(providerConfigs.value.vlm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature ?? 0.3, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } }, image_max_size: c.imageMaxSize ?? 1280 })),
         llmProvider: mapProvider(providerConfigs.value.llm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } } })),
         embeddingProvider: mapProvider(providerConfigs.value.embedding, c => ({
@@ -368,8 +352,8 @@ export const useInsightStore = defineStore('insight', () => {
     const batch = (apiConfig.analysis as Record<string, unknown> | undefined)?.batch as Record<string, unknown> | undefined
     const imageGen = apiConfig.image_gen as Record<string, unknown> | undefined
 
-    if (vlm) config.value.vlm = syncVlmAliases({ provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((vlm.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 })
-    if (chatLlm) config.value.llm = syncLlmAliases({ useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: normalizeOpenAiOptions((chatLlm.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) })
+    if (vlm) config.value.vlm = { provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((vlm.openai_options as any), { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 }
+    if (chatLlm) config.value.llm = { useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((chatLlm.openai_options as any), { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
     if (embedding) config.value.embedding = {
       provider: (embedding.provider as string) || 'openai',
       apiKey: (embedding.api_key as string) || '',
@@ -397,14 +381,14 @@ export const useInsightStore = defineStore('insight', () => {
       model: imageGen.model as string | undefined,
       baseUrl: (imageGen.base_url as string) || '',
       transportRetries: (imageGen.transport_retries as number) ?? 10,
-      businessRetries: (imageGen.business_retries as number) ?? coerceLegacyRetryValue(imageGen.max_retries, 10),
+      businessRetries: (imageGen.business_retries as number) ?? 10,
       timeoutSeconds: (imageGen.timeout_seconds as number) ?? 0,
     }, config.value.imageGen)
 
-    const ps = apiConfig.providerSettings as Record<string, Record<string, Record<string, unknown>>> | undefined
+    const ps = apiConfig.provider_settings as Record<string, Record<string, Record<string, unknown>>> | undefined
     if (ps) {
-      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
-      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: normalizeOpenAiOptions((c.openai_options as any), undefined, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
+      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((c.openai_options as any), { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
+      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((c.openai_options as any), { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
       if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = {
         apiKey: (c.api_key as string) || '',
         model: (c.model as string) || '',
@@ -415,7 +399,7 @@ export const useInsightStore = defineStore('insight', () => {
         timeoutSeconds: (c.timeout_seconds as number) ?? 0
       }
       if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5, transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? 10, timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
-      if (ps.imageGenProvider) for (const [p, c] of Object.entries(ps.imageGenProvider)) providerConfigs.value.imageGen[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? coerceLegacyRetryValue(c.max_retries, 10), timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
+      if (ps.imageGenProvider) for (const [p, c] of Object.entries(ps.imageGenProvider)) providerConfigs.value.imageGen[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? 10, timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
       configManager.saveToStorage()
     }
     if (apiConfig.prompts) config.value.prompts = apiConfig.prompts as Record<string, string>

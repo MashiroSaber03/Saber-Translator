@@ -17,7 +17,7 @@ import {
   providerRequiresApiKey,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import type { TranslationProvider, HqTranslationProvider, ProofreadingRound } from '@/types/settings'
 import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'

@@ -11,7 +11,7 @@ vi.mock('@/api/config', () => ({
   saveUserSettings: saveUserSettingsMock,
 }))
 
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 describe('settings store plugin agent configuration', () => {
   beforeEach(() => {

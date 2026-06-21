@@ -147,7 +147,7 @@ export async function resetTextboxPromptToDefault(name: string): Promise<PromptC
 
 
 /**
- * 从云服务商获取可用模型列表（复刻原版 doFetchModels 逻辑）
+ * 从云服务商获取可用模型列表。
  * @param provider 服务商 (siliconflow, deepseek, volcano, gemini, custom 等)
  * @param apiKey API Key
  * @param baseUrl 自定义服务的 Base URL（仅 custom 需要）
@@ -250,7 +250,6 @@ export interface AiTranslateTestParams {
 /**
  * 测试 AI 翻译服务连接（通用接口）
  * 支持: SiliconFlow, DeepSeek, 火山引擎, Gemini, 彩云小译, 自定义OpenAI兼容服务
- * 复刻原版 testTranslationConnection 逻辑
  * @param params 测试参数
  */
 export async function testAiTranslateConnection(
@@ -419,14 +418,6 @@ export async function saveUserSettings(settings: Record<string, unknown>): Promi
 }
 
 
-// ==================== 别名导出（兼容旧调用方式） ====================
-
-/** 获取字体列表（别名） */
-export const getFontListApi = getFontList
-
-/** 上传字体（别名） */
-export const uploadFontApi = uploadFont
-
 // ==================== 导出 API 对象 ====================
 
 /**
@@ -449,7 +440,7 @@ export const configApi = {
   resetTextboxPromptToDefault,
 
   // 模型信息
-  fetchModels,  // 新增：获取云服务商模型列表
+  fetchModels,
 
   // 服务连接测试
   testOllamaConnection,
@@ -457,15 +448,13 @@ export const configApi = {
   testBaiduOcrConnection,
   testLamaRepair,
   testAiVisionOcrConnection,
-  testAiTranslateConnection,        // 新增：测试AI翻译服务连接
-  testBaiduTranslateConnection,     // 新增：测试百度翻译连接
-  testYoudaoTranslateConnection,    // 新增：测试有道翻译连接
+  testAiTranslateConnection,
+  testBaiduTranslateConnection,
+  testYoudaoTranslateConnection,
 
   // 字体管理
   getFontList,
   uploadFont,
-  getFontListApi,
-  uploadFontApi,
 
   // 参数测试
   testParams,

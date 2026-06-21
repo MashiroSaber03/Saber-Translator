@@ -75,7 +75,7 @@ export async function extractImages(
   onResult: (result: ExtractResult) => void,
   onError: (error: string) => void,
   engine: WebImportEngine = 'auto',
-  onPage?: (page: ComicPage) => void  // 新增：每下载一张图片就回调
+  onPage?: (page: ComicPage) => void
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/extract`, {
     method: 'POST',

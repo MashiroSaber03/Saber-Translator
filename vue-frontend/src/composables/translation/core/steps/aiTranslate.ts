@@ -153,8 +153,8 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     })
 
     // 5. 解析结果
-    const forceJson = isProofread ? (roundConfig?.openaiOptions.request.forceJsonOutput || false) : hqConfig.openaiOptions.request.forceJsonOutput
-    const translatedData = parseHqResponse(response, forceJson)
+    const forceJsonOutput = isProofread ? (roundConfig?.openaiOptions.request.forceJsonOutput || false) : hqConfig.openaiOptions.request.forceJsonOutput
+    const translatedData = parseHqResponse(response, forceJsonOutput)
     let latestWarnings = response.warnings || []
 
     // 6. 校对模式可能有多轮

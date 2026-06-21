@@ -154,7 +154,7 @@ function formatTime(value: string) {
 }
 
 .opening-pill {
-  background: var(--color-surface-studio-tint4);
+  background: var(--color-surface-studio-tint-strong);
   color: var(--color-text-primary-strong);
 }
 

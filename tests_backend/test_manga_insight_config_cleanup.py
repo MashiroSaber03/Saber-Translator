@@ -99,7 +99,7 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertNotIn("use_stream", payload["vlm"])
         self.assertNotIn("use_stream", payload["chat_llm"])
 
-    def test_from_dict_ignores_removed_legacy_fields(self) -> None:
+    def test_from_dict_ignores_removed_runtime_fields(self) -> None:
         from src.core.manga_insight.config_models import MangaInsightConfig
 
         config = MangaInsightConfig.from_dict(
@@ -186,10 +186,10 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         self.assertFalse(hasattr(config.vlm, "use_stream"))
         self.assertFalse(hasattr(config.chat_llm, "use_stream"))
 
-    def test_load_insight_config_migrates_legacy_openai_fields_and_rewrites_file(self) -> None:
+    def test_load_insight_config_ignores_settings_without_current_schema(self) -> None:
         from src.core.manga_insight.config_utils import load_insight_config
 
-        legacy_payload = {
+        old_payload = {
             "vlm": {
                 "provider": "custom",
                 "api_key": "key",
@@ -212,33 +212,24 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
 
         with mock.patch(
             "src.core.manga_insight.config_utils.load_json_config",
-            return_value=legacy_payload,
+            return_value=old_payload,
         ), mock.patch(
             "src.core.manga_insight.config_utils.save_json_config",
             return_value=True,
         ) as save_mock:
             config = load_insight_config()
 
-        self.assertEqual(config.vlm.openai_options.execution.rpm_limit, 12)
-        self.assertEqual(config.vlm.openai_options.request.temperature, 0.6)
-        self.assertTrue(config.vlm.openai_options.request.force_json_output)
-        self.assertFalse(config.vlm.openai_options.execution.use_stream)
-        self.assertEqual(config.vlm.openai_options.execution.business_retries, 4)
-        self.assertFalse(config.chat_llm.openai_options.execution.use_stream)
-        save_mock.assert_called_once()
-        saved_payload = save_mock.call_args.args[1]
-        self.assertEqual(saved_payload["schema_version"], 2)
-        self.assertEqual(saved_payload["vlm"]["openai_options"]["execution"]["rpm_limit"], 12)
-        self.assertNotIn("force_json", saved_payload["vlm"])
-        self.assertNotIn("use_stream", saved_payload["vlm"])
-        self.assertNotIn("rpm_limit", saved_payload["vlm"])
-        self.assertNotIn("temperature", saved_payload["vlm"])
-        self.assertNotIn("use_stream", saved_payload["chat_llm"])
+        self.assertEqual(config.schema_version, 2)
+        self.assertEqual(config.vlm.provider, "gemini")
+        self.assertEqual(config.vlm.openai_options.execution.rpm_limit, 0)
+        self.assertEqual(config.vlm.openai_options.execution.business_retries, 10)
+        save_mock.assert_not_called()
 
     def test_load_insight_config_uses_updated_defaults_when_openai_options_are_missing(self) -> None:
         from src.core.manga_insight.config_utils import load_insight_config
 
         payload = {
+            "schema_version": 2,
             "vlm": {
                 "provider": "gemini",
                 "api_key": "key",
@@ -271,12 +262,13 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
         from src.core.manga_insight.config_utils import load_insight_config
 
         payload = {
+            "schema_version": 2,
             "image_gen": {
                 "provider": "future-image-provider",
                 "api_key": "future-key",
                 "model": "future-image-model",
                 "base_url": "https://gateway.example.com/v1",
-                "max_retries": 5,
+                "business_retries": 5,
             }
         }
 
@@ -300,7 +292,6 @@ class MangaInsightConfigCleanupTests(unittest.TestCase):
             saved_payload = save_mock.call_args.args[1]
             self.assertEqual(saved_payload["image_gen"]["provider"], "future-image-provider")
             self.assertEqual(saved_payload["image_gen"]["model"], "future-image-model")
-            self.assertNotIn("max_retries", saved_payload["image_gen"])
             self.assertEqual(saved_payload["image_gen"]["transport_retries"], 10)
             self.assertEqual(saved_payload["image_gen"]["business_retries"], 5)
             self.assertEqual(saved_payload["image_gen"]["timeout_seconds"], 0)

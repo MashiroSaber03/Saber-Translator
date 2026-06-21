@@ -152,7 +152,7 @@ import UiInput from '@/components/ui/UiInput.vue'
  * 管理文字检测器和相关参数配置
  */
 import { reactive, watch } from 'vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
 /** 检测器类型选项 */

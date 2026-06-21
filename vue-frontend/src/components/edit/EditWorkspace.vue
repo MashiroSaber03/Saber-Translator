@@ -1017,7 +1017,7 @@ const {
 .edit-progress-bar {
   flex: 1;
   height: 6px;
-  background: var(--color-surface-overlay-light5);
+  background: var(--color-surface-overlay-light-soft);
   border-radius: 3px;
   overflow: hidden;
   min-width: 80px;

@@ -108,28 +108,28 @@ export const PROVIDER_DEFAULT_MODELS: Record<string, {
   ])
 )
 
-/** VLM 默认模型映射（向后兼容） */
+/** VLM 默认模型映射 */
 export const VLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
   Object.entries(PROVIDER_DEFAULT_MODELS)
     .filter(([_, value]) => value.vlm)
     .map(([key, value]) => [key, value.vlm!])
 )
 
-/** LLM 默认模型映射（向后兼容） */
+/** LLM 默认模型映射 */
 export const LLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
   Object.entries(PROVIDER_DEFAULT_MODELS)
     .filter(([_, value]) => value.chat)
     .map(([key, value]) => [key, value.chat!])
 )
 
-/** Embedding 默认模型映射（向后兼容） */
+/** Embedding 默认模型映射 */
 export const EMBEDDING_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
   Object.entries(PROVIDER_DEFAULT_MODELS)
     .filter(([_, value]) => value.embedding)
     .map(([key, value]) => [key, value.embedding!])
 )
 
-/** Reranker 默认模型映射（向后兼容） */
+/** Reranker 默认模型映射 */
 export const RERANKER_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
   Object.entries(PROVIDER_DEFAULT_MODELS)
     .filter(([_, value]) => value.reranker)

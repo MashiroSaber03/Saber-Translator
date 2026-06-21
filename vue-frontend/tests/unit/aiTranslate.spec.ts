@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { executeAiTranslate } from '@/composables/translation/core/steps/aiTranslate'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 const { hqTranslateBatchMock } = vi.hoisted(() => ({

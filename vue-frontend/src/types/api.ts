@@ -166,7 +166,7 @@ export interface ChapterData {
 
 /**
  * 标签数据
- * 【复刻原版】后端使用 name 作为唯一标识符,不返回独立的 id 字段
+ * 后端使用 name 作为唯一标识符，不返回独立的 id 字段。
  */
 export interface TagData {
   /** 标签ID(可选,后端不返回,应使用 name 作为唯一标识) */
@@ -309,7 +309,7 @@ export interface PdfParseStartResponse {
 
 /**
  * PDF 解析批次响应
- * 注意：images 是对象数组，每个对象包含 page_index 和 data_url（复刻原版）
+ * images 是对象数组，每个对象包含 page_index 和 data_url。
  */
 export interface PdfParseBatchResponse {
   success: boolean

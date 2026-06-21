@@ -285,7 +285,7 @@
           </div>
         </div>
 
-        <!-- 新增：行间距 + 对齐 -->
+        <!-- 行间距 + 对齐 -->
         <div class="toolbar-row toolbar-row-typography">
           <div class="combo-control linespacing-control">
             <label>行间距</label>

@@ -524,6 +524,21 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .continuation-panel {
+  --ui-button-padding: 10px 20px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-danger-background: var(--continuation-panel-surface-selected);
+  --ui-button-danger-color: var(--continuation-panel-text-primary);
+  --ui-button-danger-border: 1px solid var(--continuation-panel-border-default);
+  --ui-button-danger-hover-background: var(--continuation-panel-surface-overlay);
+  --ui-button-danger-hover-border-color: var(--continuation-panel-border-hover);
+  --ui-button-disabled-opacity: 0.5;
+
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
@@ -692,51 +707,6 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-secondary));
-}
-/* 按钮 */
-.ui-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-}
-
-.ui-button--secondary {
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-}
-
-.ui-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ui-button--danger {
-  background: var(--continuation-panel-surface-selected);
-  color: var(--continuation-panel-text-primary);
-  border: 1px solid var(--continuation-panel-border-default);
-}
-
-.ui-button--danger:hover:not(:disabled) {
-  background: var(--continuation-panel-surface-overlay);
-  border-color: var(--continuation-panel-border-hover);
 }
 
 .actions {

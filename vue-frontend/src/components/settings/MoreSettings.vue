@@ -177,7 +177,7 @@ import UiButton from '@/components/ui/UiButton.vue'
  * 管理PDF处理、字体、缓存清理等杂项设置
  */
 import { ref, watch } from 'vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
 import { useToast } from '@/utils/toast'

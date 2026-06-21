@@ -52,7 +52,7 @@ const rpmLimit = ref(insightStore.config.vlm.openaiOptions.execution.rpmLimit)
 const transportRetries = ref(insightStore.config.vlm.openaiOptions.execution.transportRetries)
 const businessRetries = ref(insightStore.config.vlm.openaiOptions.execution.businessRetries)
 const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature)
-const forceJson = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
+const forceJsonOutput = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
 const extraBody = ref(insightStore.config.vlm.openaiOptions.request.extraBody)
 const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
 const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize)
@@ -79,7 +79,7 @@ function onProviderChange(): void {
     insightStore.config.vlm.openaiOptions.execution.transportRetries = transportRetries.value
     insightStore.config.vlm.openaiOptions.execution.businessRetries = businessRetries.value
     insightStore.config.vlm.openaiOptions.request.temperature = temperature.value
-    insightStore.config.vlm.openaiOptions.request.forceJsonOutput = forceJson.value
+    insightStore.config.vlm.openaiOptions.request.forceJsonOutput = forceJsonOutput.value
     insightStore.config.vlm.openaiOptions.request.extraBody = extraBody.value
     insightStore.config.vlm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.vlm.imageMaxSize = imageMaxSize.value
@@ -94,7 +94,7 @@ function onProviderChange(): void {
   transportRetries.value = insightStore.config.vlm.openaiOptions.execution.transportRetries
   businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
-  forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  forceJsonOutput.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
   extraBody.value = insightStore.config.vlm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
@@ -123,11 +123,10 @@ async function fetchModels(): Promise<void> {
     return
   }
   
-  const apiProvider = provider.value === 'custom' ? 'custom_openai' : provider.value
   isFetchingModels.value = true
   
   try {
-    const response = await insightApi.fetchModels(apiProvider, apiKey.value, baseUrl.value || undefined)
+    const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
     
     if (response.success && response.models && response.models.length > 0) {
       models.value = response.models
@@ -185,7 +184,7 @@ function getConfig() {
     baseUrl: provider.value === 'custom' ? baseUrl.value : '',
     openaiOptions: {
       request: {
-        forceJsonOutput: forceJson.value,
+        forceJsonOutput: forceJsonOutput.value,
         temperature: temperature.value,
         extraBody: extraBody.value
       },
@@ -210,7 +209,7 @@ function syncFromStore(): void {
   transportRetries.value = insightStore.config.vlm.openaiOptions.execution.transportRetries
   businessRetries.value = insightStore.config.vlm.openaiOptions.execution.businessRetries
   temperature.value = insightStore.config.vlm.openaiOptions.request.temperature
-  forceJson.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
+  forceJsonOutput.value = insightStore.config.vlm.openaiOptions.request.forceJsonOutput
   extraBody.value = insightStore.config.vlm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
@@ -299,7 +298,7 @@ defineExpose({
     
     <div class="insight-settings-field">
       <label class="ui-checkbox-label">
-        <UiInput v-model="forceJson" type="checkbox" />
+        <UiInput v-model="forceJsonOutput" type="checkbox" />
         <span>强制 JSON 输出</span>
       </label>
       <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
@@ -398,38 +397,19 @@ defineExpose({
   cursor: pointer;
 }
 
-.insight-settings-content .ui-button {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.insight-settings-content .ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.insight-settings-content .ui-button--primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.insight-settings-content .ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-}
-
-.insight-settings-content .ui-button--secondary {
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-surface-hover);
+.insight-settings-content {
+  --ui-button-padding: 10px 16px;
+  --ui-button-radius: 6px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
 }
 
 .insight-settings-content .form-row {
@@ -478,10 +458,6 @@ defineExpose({
   justify-content: flex-end;
 }
 
-.insight-settings-content .ui-button--sm {
-  padding: 6px 12px;
-  font-size: 13px;
-}
 
 .insight-settings-content .section-divider {
   border: none;

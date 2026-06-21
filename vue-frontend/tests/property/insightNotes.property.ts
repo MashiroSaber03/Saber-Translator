@@ -1,7 +1,7 @@
 /**
  * 漫画分析笔记属性测试
  * 
- * **Feature: vue-frontend-migration, Property 16: 笔记持久化往返一致性**
+ * **Feature: frontend-behavior, Property 16: 笔记持久化往返一致性**
  * **Validates: Requirements 24.4**
  */
 

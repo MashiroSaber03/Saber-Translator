@@ -59,7 +59,7 @@ defineEmits<{
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--color-surface-studio-tint4), var(--studio-section-tabs-surface-muted));
+  background: linear-gradient(135deg, var(--color-surface-studio-tint-strong), var(--studio-section-tabs-surface-muted));
   color: var(--studio-section-tabs-text-secondary);
   box-shadow: inset 0 0 0 1px var(--studio-section-tabs-shadow-default);
 }

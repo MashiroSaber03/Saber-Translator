@@ -1,7 +1,7 @@
 /**
  * ToastNotification 消息队列属性测试
  *
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 18: 消息队列管理一致性
  *
  * Validates: Requirements 8.2
@@ -151,7 +151,7 @@ describe('ToastNotification 属性测试', () => {
     /**
      * 测试消息添加后队列长度正确
      *
-     * Feature: vue-frontend-migration, Property 18: 消息队列管理一致性
+     * Feature: frontend-behavior, Property 18: 消息队列管理一致性
      * Validates: Requirements 8.2
      */
     it('添加消息后队列长度应正确增加', () => {
@@ -625,7 +625,7 @@ describe('Property 39: 消息提示系统一致性', () => {
   /**
    * 测试 showGeneralMessage 队列模式（只保留最新消息）
    *
-   * Feature: vue-frontend-migration, Property 39: 消息提示系统一致性
+   * Feature: frontend-behavior, Property 39: 消息提示系统一致性
    * Validates: Requirements 8.2
    */
   it('showGeneralMessage 应只保留最新的一条消息', () => {

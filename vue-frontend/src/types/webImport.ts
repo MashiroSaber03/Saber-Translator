@@ -10,7 +10,6 @@ export type WebImportAgentProvider =
     | 'gemini'
     | 'ollama'
     | 'custom'
-    | 'custom_openai'
 
 /** 导入引擎类型 */
 export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'

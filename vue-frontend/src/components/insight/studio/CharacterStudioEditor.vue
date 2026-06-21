@@ -370,7 +370,7 @@
               <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('v2')" @click="$emit('download', 'v2')">
                 <span class="export-icon">📦</span>
                 <strong>{{ isDownloading('v2') ? '导出中...' : '导出 V2 JSON' }}</strong>
-                <p>用于兼容旧生态，可能存在裁剪。</p>
+                <p>部分平台可能存在裁剪。</p>
               </UiButton>
               <UiButton variant="toolbar" class="export-card" :disabled="isDownloading('png')" @click="$emit('download', 'png')">
                 <span class="export-icon">🖼️</span>
@@ -728,7 +728,7 @@ function toggleScriptFreeze(event: Event) {
   height: 164px;
   border-radius: 24px;
   overflow: hidden;
-  background: linear-gradient(180deg, var(--color-surface-studio-tint4), var(--character-studio-editor-surface-raised));
+  background: linear-gradient(180deg, var(--color-surface-studio-tint-strong), var(--character-studio-editor-surface-raised));
   flex-shrink: 0;
 }
 

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { useSettingsStore } from '@/stores/settingsStore'
+import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
+import { useSettingsStore } from '@/stores/settings'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -13,7 +14,7 @@ vi.mock('@/api/config', () => ({
   saveUserSettings: saveUserSettingsMock,
 }))
 
-describe('settings store deprecated HQ/proofreading fields', () => {
+describe('settings store current schema boundaries', () => {
   let localStorageMock: Record<string, string> = {}
 
   beforeEach(() => {
@@ -41,7 +42,7 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not send deprecated session reset fields when saving backend settings', async () => {
+  it('does not send removed session reset fields when saving backend settings', async () => {
     const store = useSettingsStore()
     store.settings.hqTranslation.openaiOptions.execution.rpmLimit = 9
     store.settings.proofreading.rounds = [
@@ -78,7 +79,7 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     expect(payload.proofreading.rounds[0].openaiOptions.execution.rpmLimit).toBe(7)
   })
 
-  it('ignores deprecated session reset fields when loading backend settings', async () => {
+  it('ignores backend settings without the current schema version', async () => {
     getUserSettingsMock.mockResolvedValue({
       success: true,
       settings: {
@@ -103,15 +104,13 @@ describe('settings store deprecated HQ/proofreading fields', () => {
     const store = useSettingsStore()
     const loaded = await store.loadFromBackend()
 
-    expect(loaded).toBe(true)
-    expect(store.settings.hqTranslation.openaiOptions.execution.rpmLimit).toBe(12)
+    expect(loaded).toBe(false)
+    expect(store.settings.hqTranslation.openaiOptions.execution.rpmLimit).not.toBe(12)
     expect('sessionReset' in (store.settings.hqTranslation as any)).toBe(false)
-    expect('sessionReset' in (store.settings.proofreading.rounds[0] as any)).toBe(false)
-    expect(store.settings.proofreading.rounds[0]?.openaiOptions.execution.rpmLimit).toBe(4)
   })
 
-  it('strips removed low reasoning fields from persisted settings payloads', () => {
-    localStorageMock['saber_translator_settings_v2'] = JSON.stringify({
+  it('ignores local settings without the current schema version', () => {
+    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
       hqTranslation: {
         lowReasoning: true,
         noThinkingMethod: 'volcano',
@@ -145,10 +144,6 @@ describe('settings store deprecated HQ/proofreading fields', () => {
 
     expect('lowReasoning' in (store.settings.hqTranslation as any)).toBe(false)
     expect('noThinkingMethod' in (store.settings.hqTranslation as any)).toBe(false)
-    const firstRound = store.settings.proofreading.rounds[0] as Record<string, unknown> | undefined
-    if (firstRound) {
-      expect('lowReasoning' in firstRound).toBe(false)
-      expect('noThinkingMethod' in firstRound).toBe(false)
-    }
+    expect(store.settings.hqTranslation.openaiOptions.request.forceJsonOutput).toBe(false)
   })
 })

@@ -25,7 +25,7 @@ export function useTranslationSettings(
     rpmLimit?: number
     transportRetries?: number
     businessRetries?: number
-    isJsonMode?: boolean
+    forceJsonOutput?: boolean
     useStream?: boolean
     extraBody?: Record<string, unknown>
   }
@@ -66,17 +66,24 @@ export function useTranslationSettings(
    * @param updates - 要更新的设置
    */
   function updateTranslationService(updates: TranslationServiceUiUpdates): void {
-    Object.assign(settings.value.translation, updates)
-    if (updates.rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = updates.rpmLimit
-    if (updates.transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = updates.transportRetries
-    if (updates.businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = updates.businessRetries
-    if ((updates as Record<string, unknown>).maxRetries !== undefined) {
-      settings.value.translation.openaiOptions.execution.businessRetries = Number((updates as Record<string, unknown>).maxRetries)
-    }
-    if (updates.isJsonMode !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = updates.isJsonMode
-    if (updates.useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = updates.useStream
+    const {
+      rpmLimit,
+      transportRetries,
+      businessRetries,
+      forceJsonOutput,
+      useStream,
+      extraBody,
+      ...serviceUpdates
+    } = updates
+
+    Object.assign(settings.value.translation, serviceUpdates)
+    if (rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = rpmLimit
+    if (transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = transportRetries
+    if (businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = businessRetries
+    if (forceJsonOutput !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = forceJsonOutput
+    if (useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = useStream
     if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-      settings.value.translation.openaiOptions.request.extraBody = updates.extraBody
+      settings.value.translation.openaiOptions.request.extraBody = extraBody
     }
     saveToStorage()
   }
@@ -87,14 +94,14 @@ export function useTranslationSettings(
    */
   function setTranslatePrompt(prompt: string): void {
     const translation = settings.value.translation
-    const isJsonMode = translation.openaiOptions.request.forceJsonOutput
+    const forceJsonOutput = translation.openaiOptions.request.forceJsonOutput
     if (translation.translationMode === 'single') {
-      if (isJsonMode) {
+      if (forceJsonOutput) {
         translation.singleJsonPrompt = prompt
       } else {
         translation.singleNormalPrompt = prompt
       }
-    } else if (isJsonMode) {
+    } else if (forceJsonOutput) {
       translation.batchJsonPrompt = prompt
     } else {
       translation.batchNormalPrompt = prompt
@@ -106,28 +113,28 @@ export function useTranslationSettings(
   /**
    * 设置翻译提示词模式
    * 切换时从对应的存储字段加载提示词（不会丢失用户修改）
-   * @param isJsonMode - 是否为JSON格式模式
+   * @param forceJsonOutput - 是否为 JSON 格式模式
    */
-  function setTranslatePromptMode(isJsonMode: boolean): void {
+  function setTranslatePromptMode(forceJsonOutput: boolean): void {
     // 更新模式状态
-    settings.value.translation.openaiOptions.request.forceJsonOutput = isJsonMode
+    settings.value.translation.openaiOptions.request.forceJsonOutput = forceJsonOutput
 
     // 根据翻译模式和提示词模式，从对应的存储字段加载提示词
     const isSingleMode = settings.value.translation.translationMode === 'single'
     let prompt: string
     if (isSingleMode) {
-      prompt = isJsonMode
+      prompt = forceJsonOutput
         ? settings.value.translation.singleJsonPrompt
         : settings.value.translation.singleNormalPrompt
     } else {
-      prompt = isJsonMode
+      prompt = forceJsonOutput
         ? settings.value.translation.batchJsonPrompt
         : settings.value.translation.batchNormalPrompt
     }
     settings.value.translatePrompt = prompt
 
     saveToStorage()
-    console.log(`翻译提示词模式已切换为: ${isJsonMode ? 'JSON格式' : '普通模式'}`)
+    console.log(`翻译提示词模式已切换为: ${forceJsonOutput ? 'JSON格式' : '普通模式'}`)
   }
 
   // ============================================================

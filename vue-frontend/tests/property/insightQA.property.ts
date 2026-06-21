@@ -1,7 +1,7 @@
 /**
  * 漫画分析问答流式响应属性测试
  * 
- * **Feature: vue-frontend-migration, Property 32: 问答流式响应一致性**
+ * **Feature: frontend-behavior, Property 32: 问答流式响应一致性**
  * **Validates: Requirements 6.3**
  */
 

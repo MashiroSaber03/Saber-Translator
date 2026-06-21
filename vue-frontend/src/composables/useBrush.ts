@@ -5,7 +5,7 @@
 
 import { ref, computed, onUnmounted } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { BRUSH_MIN_SIZE, BRUSH_MAX_SIZE, BRUSH_DEFAULT_SIZE } from '@/constants'
 import { inpaintSingleBubble } from '@/api/translate'
 import { showToast } from '@/utils/toast'

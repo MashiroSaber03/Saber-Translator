@@ -1,7 +1,7 @@
 /**
  * 触摸手势处理属性测试
  * 
- * **Feature: vue-frontend-migration, Property 44: 触摸手势处理一致性**
+ * **Feature: frontend-behavior, Property 44: 触摸手势处理一致性**
  * **Validates: Requirements 25.3**
  * 
  * 测试内容：

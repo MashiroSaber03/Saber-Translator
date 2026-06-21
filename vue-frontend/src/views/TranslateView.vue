@@ -19,7 +19,7 @@ import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/sessionStore'
 import { showToast } from '@/utils/toast'
 import ImageUpload from '@/components/translate/ImageUpload.vue'
@@ -140,10 +140,7 @@ const pageTitle = computed(() => {
 // ============================================================
 
 onMounted(async () => {
-  // 【关键修复】当前行为多页应用的行为：每次进入翻译页面都是全新的空白状态
-  // 当前行为：每次访问 /translate 都是一个全新的 HTTP 请求，JS 状态从零开始
-  // Vue SPA 行为：Pinia store 状态在整个应用生命周期内持久存在
-  // 修复：无论是书架模式还是快速翻译模式，都清空旧数据
+  // 进入翻译路由时重置工作区状态，保证书架模式和快速翻译模式互不串会话。
   imageStore.clearImages()
   bubbleStore.clearBubbles()
   
@@ -167,18 +164,14 @@ onUnmounted(() => {
 watch(
   () => [route.query.book, route.query.chapter],
   async ([newBook, newChapter], [oldBook, oldChapter]) => {
-    // 【修复】处理所有路由参数变化场景，当前行为多页应用的行为
-    
     if (newBook && newChapter) {
-      // 场景1：进入书架模式（加载新章节）
-      // 关键修复：在任何异步操作之前，立即同步清空旧数据
+      // 进入书架章节前先同步清空当前图片和气泡状态。
       imageStore.clearImages()
       bubbleStore.clearBubbles()
       
       await loadChapterSession()
     } else if (oldBook && oldChapter && !newBook && !newChapter) {
-      // 场景2：从书架模式切换到快速翻译模式（参数消失）
-      // 同样需要清空数据，确保每次进入都是全新的翻译会话。
+      // 从书架模式切回快速翻译时重置工作区。
       imageStore.clearImages()
       bubbleStore.clearBubbles()
       // 清空书籍/章节上下文
@@ -401,15 +394,18 @@ function showFeatureNotice() {
   </AppShell>
 </template>
 
-<style scoped>/* 翻译页面样式 - 当前视觉样式 */
+<style scoped>/* 翻译页面布局 */
 
 /* 页面容器 */
 .translate-page {
+  --translate-sidebar-left-gutter: 340px;
+  --translate-sidebar-right-gutter: 240px;
+
   min-height: 100vh;
   background-color: var(--translate-view-surface-base);
 }
 
-/* 主容器 - 当前视觉 .container 样式 */
+/* 页面主容器 */
 .translate-shell {
   display: flex;
   width: calc(100% - 40px);
@@ -420,19 +416,19 @@ function showFeatureNotice() {
   margin-top: 10px;
 }
 
-/* 主内容区 - 当前视觉 #image-display-area 样式 */
+/* 主内容区 */
 .translate-workspace {
   flex-grow: 2.4;
   padding: 20px;
-  margin-left: 340px;
-  margin-right: 240px;
+  margin-left: var(--translate-sidebar-left-gutter);
+  margin-right: var(--translate-sidebar-right-gutter);
   max-width: none;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* 上传区域卡片 - 当前视觉 #upload-section 样式 */
+/* 上传区域卡片 */
 .translate-upload-card {
   background-color: white;
   border-radius: 12px;
@@ -519,7 +515,7 @@ function showFeatureNotice() {
   }
 }
 
-/* 开源声明样式 - 当前视觉 .open-source-notice 样式 */
+/* 开源声明 */
 .translate-open-source-notice {
   font-weight: bold;
   color: var(--translate-view-text-secondary);

@@ -51,7 +51,7 @@
 
     <UiButton
       variant="primary"
-     
+      block
       :disabled="isGenerating"
       @click="handleGenerate"
     >
@@ -187,6 +187,24 @@ watch(() => props.bookId, (newBookId) => {
 <style scoped>
 .script-panel {
   padding: 24px;
+
+  --ui-button-padding: 10px 20px;
+  --ui-button-radius: 8px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-color: white;
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-primary-hover-transform: none;
+  --ui-button-primary-hover-shadow: none;
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-secondary-hover-border-color: var(--color-border-muted, var(--color-border-default));
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.5;
 }
 
 .script-panel h3 {
@@ -282,46 +300,5 @@ watch(() => props.bookId, (newBookId) => {
 
 .ref-btn {
   margin-left: auto;
-}
-
-.ui-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
-}
-
-.ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.ui-button--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-}
-
-.ui-button--secondary {
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.ui-button--secondary:hover {
-  background: var(--color-surface-hover);
-}
-
-.ui-button--sm {
-  padding: 6px 12px;
-  font-size: 13px;
-  width: auto;
 }
 </style>

@@ -41,7 +41,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /** 搜索关键词 */
   const searchKeyword = ref('')
 
-  /** 【复刻原版】选中的标签名称列表(用于筛选) - 实际存储 name 而非 id */
+  /** 选中的标签名称列表，用于后端筛选。 */
   const selectedTagIds = ref<string[]>([])
 
   /** 排序方式 */
@@ -56,7 +56,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /** 当前选中的书籍ID（用于详情显示） */
   const currentBookId = ref<string | null>(null)
 
-  /** 批量选择模式（兼容旧的本地批量操作 API） */
+  /** 批量选择模式 */
   const batchMode = ref(false)
 
   /** 批量模式下选中的书籍 ID */
@@ -74,7 +74,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 
    * 过滤后的书籍列表
-   * 【复刻原版】搜索和标签筛选完全交给后端处理，前端直接返回后端结果
+   * 搜索和标签筛选由后端处理，前端直接展示当前返回结果。
    */
   const filteredBooks = computed(() => {
     const keyword = searchKeyword.value.trim().toLowerCase()
@@ -110,7 +110,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     return books.value.find(book => book.id === currentBookId.value) || null
   })
 
-  /** 搜索查询（兼容旧API） */
+  /** 当前搜索查询 */
   const searchQuery = computed(() => searchKeyword.value)
 
   /** 是否已选中当前书籍列表中的所有书籍 */
@@ -178,7 +178,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 批量删除书籍（本地兼容 API）
+   * 批量删除书籍
    * @param bookIds - 要删除的书籍 ID 列表
    */
   function deleteBooks(bookIds: string[]): void {
@@ -300,7 +300,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 删除标签
-   * 【复刻原版】使用 name 作为唯一标识
+   * 使用标签名称作为唯一标识
    * @param tagName - 标签名称(作为ID)
    */
   function deleteTag(tagName: string): void {
@@ -317,7 +317,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 为书籍添加标签（本地兼容 API）
+   * 为书籍添加标签
    * 业务保存仍通过 updateBookApi 提交完整 tags 数组。
    */
   function addTagToBook(bookId: string, tagId: string): void {
@@ -331,7 +331,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 从书籍移除标签（本地兼容 API）
+   * 从书籍移除标签
    */
   function removeTagFromBook(bookId: string, tagId: string): void {
     const book = books.value.find(item => item.id === bookId)
@@ -341,7 +341,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 批量添加标签（本地兼容 API）
+   * 批量添加标签
    */
   function batchAddTags(bookIds: string[], tagIds: string[]): void {
     for (const bookId of bookIds) {
@@ -352,7 +352,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   /**
-   * 批量移除标签（本地兼容 API）
+   * 批量移除标签
    */
   function batchRemoveTags(bookIds: string[], tagIds: string[]): void {
     for (const bookId of bookIds) {
@@ -383,7 +383,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 切换标签筛选并重新加载书籍
-   * 与原版 bookshelf.js 的 toggleTagFilter 逻辑保持一致
    * @param tagId - 标签ID
    */
   function toggleTagFilter(tagId: string): void {
@@ -393,7 +392,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     } else {
       selectedTagIds.value.push(tagId)
     }
-    // 与原版保持一致：每次标签变化都从后端重新加载数据
+    // 每次标签变化都从后端重新加载数据。
     loadBooks()
   }
 
@@ -423,7 +422,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   // ============================================================
-  // 批量选择方法（本地兼容 API）
+  // 批量选择方法
   // ============================================================
 
   function enterBatchMode(): void {
@@ -519,12 +518,11 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 设置搜索查询并重新加载书籍
-   * 与原版 bookshelf.js 的 handleSearch 逻辑保持一致
    * @param query - 搜索查询
    */
   function setSearchQuery(query: string): void {
     searchKeyword.value = query
-    // 与原版保持一致：每次搜索变化都从后端重新加载数据
+    // 每次搜索变化都从后端重新加载数据。
     loadBooks()
   }
 
@@ -534,13 +532,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 从服务器加载书籍列表
-   * 与原版 bookshelf.js 保持一致，将搜索和标签筛选参数传递给后端
+   * 将搜索和标签筛选参数传递给后端。
    */
   async function loadBooks(): Promise<void> {
     setLoading(true)
     setError(null)
     try {
-      // 构建请求参数，与原版逻辑保持一致
+      // 构建当前书架筛选请求参数。
       const params: { search?: string; tags?: string[] } = {}
 
       if (searchKeyword.value.trim()) {
@@ -602,7 +600,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 更新书籍(调用API)
-   * 【复刻原版 bookshelf.js saveBook】支持更新 title, cover, tags
+   * 支持更新 title、cover、tags。
    * @param bookId - 书籍ID
    * @param data - 更新数据
    */
@@ -610,7 +608,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     title?: string;
     description?: string;
     cover?: string;
-    tags?: string[]  // 【复刻原版】支持更新 tags 数组
+    tags?: string[]
   }): Promise<boolean> {
     try {
       const response = await bookshelfApi.updateBook(bookId, data)
@@ -682,7 +680,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 更新标签（调用API）
-   * 【复刻原版 bookshelf.js editTag】
    * 更新成功后刷新标签列表和书籍列表
    * @param tagId - 标签ID（原标签名称）
    * @param name - 新标签名称
@@ -692,7 +689,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     try {
       const response = await bookshelfApi.updateTag(tagId, name, color)
       if (response.success) {
-        // 【复刻原版】更新成功后重新加载标签和书籍列表
+        // 更新成功后重新加载标签和书籍列表。
         await loadTags()
         await loadBooks()
         return true
@@ -781,7 +778,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  // 【复刻原版】标签的增删改为通过 updateBookApi 完成,传递完整 tags 数组
+  // 标签的增删改通过 updateBookApi 完成，传递完整 tags 数组。
 
   // ============================================================
   // 重置方法

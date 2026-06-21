@@ -261,8 +261,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // 绘制和操作状态已迁移到 useBubbleActions composable
-  // 笔刷状态和方法已迁移到 useBrush composable
+  // 绘制、气泡操作和笔刷状态由专用 composable 管理。
 
 
   // ============================================================
@@ -734,8 +733,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // 气泡操作方法已迁移到 useBubbleActions composable
-
   /** 处理重新渲染 */
   function handleReRender(): void {
     reRenderFullImage()
@@ -843,14 +840,14 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   // 其他方法
   // ============================================================
 
-  /** 【修复问题3】应用更改并跳转下一张（当前行为逻辑） */
+  /** 保存当前编辑结果并跳转到下一张。 */
   async function applyAndNext(): Promise<void> {
     if (exitDialogState.value !== 'saving') {
       closeExitDialog()
     }
     saveBubbleStatesToImage()
     
-    // 【修复问题3】直接await reRenderFullImage，确保渲染完成后再切图
+    // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
     const renderSucceeded = await reRenderFullImage()
     if (!renderSucceeded) {
       showToast('应用失败，已停留在当前图片，请重试', 'warning')
@@ -933,7 +930,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       console.warn('加载布局模式失败:', e)
     }
 
-    // 【修复问题1】添加全局键盘事件监听（document级别，当前行为）
+    // 键盘快捷键需要在编辑工作区获得焦点之外仍然可用。
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
     // 添加全局鼠标移动监听（用于笔刷光标跟踪和涂抹）

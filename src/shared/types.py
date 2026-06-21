@@ -18,7 +18,7 @@ TranslationResult: TypeAlias = Tuple[TextList, TextList]  # (bubble_texts, textb
 
 # 状态相关类型
 Position: TypeAlias = Dict[str, int]  # {'x': int, 'y': int}
-# 旧版字典形态的气泡数据兼容别名。新代码应优先使用 src.core.config_models.BubbleState。
+# 字典形态的气泡数据别名。
 BubbleStateDict: TypeAlias = Dict[str, Any]
 BubbleState: TypeAlias = BubbleStateDict
 BubbleStatesList: TypeAlias = List[BubbleStateDict]

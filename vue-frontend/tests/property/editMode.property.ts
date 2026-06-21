@@ -1,7 +1,7 @@
 /**
  * 编辑模式属性测试
  * 
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 9: 图片切换状态保存一致性
  * Property 28: 气泡拖拽移动一致性
  * Property 29: 气泡大小调整一致性
@@ -124,7 +124,7 @@ describe('编辑模式属性测试', () => {
    * 
    * 对于任意气泡状态，切换图片前保存的状态应当在切换回来后能够正确恢复。
    * 
-   * Feature: vue-frontend-migration, Property 9: 图片切换状态保存一致性
+   * Feature: frontend-behavior, Property 9: 图片切换状态保存一致性
    * Validates: Requirements 30.3
    */
   it('图片切换时气泡状态应当正确保存和恢复', () => {
@@ -228,7 +228,7 @@ describe('编辑模式属性测试', () => {
    * 2. 在图片边界内
    * 3. 正确反映偏移量（在边界允许范围内）
    * 
-   * Feature: vue-frontend-migration, Property 28: 气泡拖拽移动一致性
+   * Feature: frontend-behavior, Property 28: 气泡拖拽移动一致性
    * Validates: Requirements 17.5
    */
   it('气泡拖拽后坐标应当正确更新且在边界内', () => {
@@ -299,7 +299,7 @@ describe('编辑模式属性测试', () => {
    * 2. 在图片边界内
    * 3. 8个调整手柄方向正确
    * 
-   * Feature: vue-frontend-migration, Property 29: 气泡大小调整一致性
+   * Feature: frontend-behavior, Property 29: 气泡大小调整一致性
    * Validates: Requirements 17.5
    */
   it('气泡大小调整后坐标应当正确更新且满足约束', () => {

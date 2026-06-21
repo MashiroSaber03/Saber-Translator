@@ -180,7 +180,7 @@ export function getEffectiveDirection(
   if (bubble.textDirection === 'vertical' || bubble.textDirection === 'horizontal') {
     return bubble.textDirection
   }
-  // 兼容旧数据：如果 textDirection 是 'auto' 或无效，使用 autoTextDirection
+  // textDirection 异常时回退到检测方向。
   if (bubble.autoTextDirection === 'vertical' || bubble.autoTextDirection === 'horizontal') {
     return bubble.autoTextDirection
   }

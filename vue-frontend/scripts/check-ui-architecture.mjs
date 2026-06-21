@@ -1,7 +1,19 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-const ROOTS = ['src/components', 'src/views', 'src/styles', 'src/composables', 'tests']
+const ROOTS = [
+  'src/api',
+  'src/components',
+  'src/config',
+  'src/composables',
+  'src/stores',
+  'src/styles',
+  'src/types',
+  'src/utils',
+  'src/views',
+  'tests',
+  '../src/shared',
+]
 const IS_AUDIT = process.argv.includes('--audit')
 const SKIP_SOURCE_SCAN = process.argv.includes('--skip-source-scan')
 const TOKENS_FIXTURE_INDEX = process.argv.indexOf('--tokens-fixture')
@@ -19,10 +31,9 @@ const TOKEN_FILES = TOKENS_FIXTURE_INDEX >= 0
   ? [resolve(process.cwd(), process.argv[TOKENS_FIXTURE_INDEX + 1] || '')]
   : TOKEN_FILE_ORDER.map(file => join(process.cwd(), file))
 const SFC_MAX_LINES = 1800
-const SFC_REVIEW_LINES = 1400
+const SFC_REVIEW_LINES = 1500
 const SFC_MAX_STYLE_LINES = 1200
 const CSS_MAX_LINES = 1200
-const CSS_REVIEW_LINES = 900
 const CSS_OWNER_REVIEW_LINES = 800
 const VUE_STYLE_RE = /<style(?![^>]*\bscoped\b)[^>]*>/g
 const CSS_ID_SELECTOR_RE = /^\s*#[A-Za-z0-9_-]+/m
@@ -72,7 +83,7 @@ const CSS_LEGACY_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(btn|card|form-group|modal)(
 const CSS_LEGACY_BUTTON_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-action-btn|btn-primary|btn-secondary|btn-danger|btn-sm|btn-icon|primary-btn|secondary-btn|ghost-btn|danger-btn)(?![A-Za-z0-9_-])/g
 const CSS_GENERIC_FORM_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(form-input|form-textarea)(?![A-Za-z0-9_-])/g
 const CSS_UNOWNED_GLOBAL_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(header-content|logo-container|app-logo|app-name|header-links|tutorial-link|github-link|donate-link|header-btn|mode-btn|upload-card|thumbnail-item|status-icon|ui-form-field)(?![A-Za-z0-9_-])/g
-const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-form-field|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
+const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
 const CSS_BARE_UI_MODAL_SELECTOR_RE = /^\s*\.ui-modal__/m
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
@@ -104,8 +115,14 @@ const VALUE_NAMED_TOKEN_RE = new RegExp(
   `--${'semantic'}-[a-z-]+-(?:hex|rgb|rgba)-[a-z0-9-]+|--${'color'}-${'token'}-[a-z0-9-]+`,
   'g',
 )
+const GENERATED_PALETTE_TOKEN_NAME_RE = /^--palette-(?:(?:border|color|shadow|surface|text)-\d{3}|[a-z]+-\d{2,3}-(?:[a-z]|bright|calm|clear|cool|dark|deep|dusty|fresh|light|muted|pale|quiet|rich|soft|solid|subtle|vivid|warm)(?:-[a-z]+)?)$/
 const GENERATED_OWNER_TOKEN_RE = /--color-[a-z0-9-]+-(?:surface|text|border|shadow|accent)-\d{3}/g
-const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|旧版[^*\n\r]*|原版[^*\n\r]*|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
+const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
+const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
+const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
+const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
+const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
+const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|旧版[^*\n\r]*|原版[^*\n\r]*|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
 const CSS_BLOCK_RE = /([^{}]+)\{([^{}]*)\}/g
 const CUSTOM_PROPERTY_RE = /(--[A-Za-z0-9_-]+)\s*:\s*([^;]+);/g
 const VAR_REFERENCE_RE = /var\(\s*(--[A-Za-z0-9_-]+)/g
@@ -194,10 +211,16 @@ const RESERVED_GLOBAL_CUSTOM_PROPERTIES = new Set([
   ...LEGACY_SHORT_ALIAS_VARIABLES,
 ])
 const UI_MINDSET_SCAN_ROOTS = [
+  'src/api/',
+  'src/config/',
   'src/components/',
-  'src/views/',
   'src/composables/',
+  'src/stores/',
   'src/styles/',
+  'src/types/',
+  'src/utils/',
+  'src/views/',
+  'tests/',
 ]
 const PAGE_CUSTOM_PROPERTY_PREFIXES = new Map([
   ['src/views/BookshelfView.vue', '--bookshelf-'],
@@ -242,73 +265,28 @@ const ARCHITECTURE_DEBT_BUDGETS = {
   valueNamedTokenReferences: 0,
 }
 
-const LARGE_SFC_DECISIONS = new Map([
-  ['src/components/insight/studio/CharacterStudioPreview.vue', 'split by workspace areas: chat/session/agent/prompt preview/modal concerns are independent UI owners'],
-  ['src/components/bookshelf/BookDetailModal.vue', 'split by modal sections when editing this flow: summary/chapters/tags/danger actions are separate UI regions'],
-  ['src/components/insight/studio/CharacterStudioEditor.vue', 'split by editor panels when the next studio UI change lands: identity/tabs/lorebook/diagnostics/footer are separate'],
-  ['src/components/settings/TranslationSettings.vue', 'extract sections/composables only; provider state is cohesive and should remain centralized'],
-  ['src/components/settings/OcrSettings.vue', 'extract sections/composables only; OCR provider switching and model fetching share state'],
-  ['src/components/translate/WebImportModal.vue', 'split by modal workflow: extract bar/settings/results/logs/footer can stand alone'],
-  ['src/components/insight/QAPanel.vue', 'keep chat flow cohesive; extract note modal/rebuild controls when touched'],
-  ['src/views/InsightView.vue', 'split shell regions after layout migration; page still owns analysis orchestration'],
-  ['src/components/insight/PagesTree.vue', 'keep cohesive: recursion and selection state are tightly coupled'],
-  ['src/components/insight/AnalysisProgress.vue', 'extract API state composable only; UI is one workflow'],
-  ['src/components/edit/BubbleEditor.vue', 'keep cohesive: selected bubble state and editing controls must be read together'],
-  ['src/components/insight/ContinuationPanel.vue', 'keep cohesive tab orchestrator; sub-flows already live in dialogs'],
-  ['src/components/insight/TimelinePanel.vue', 'keep cohesive timeline surface after style ownership merge; filters, summaries, entities, and event list share one timeline state'],
-  ['src/views/CharacterStudioView.vue', 'keep until layout shell migration leaves clear subcomponents'],
-  ['src/components/insight/PageDetail.vue', 'keep cohesive read/edit panel'],
-  ['src/components/edit/BubbleOverlay.vue', 'keep cohesive: pointer geometry and overlay rendering are regression-prone'],
-])
-
-const LARGE_CSS_OWNER_DECISIONS = new Map([
-  ['src/components/insight/NotesPanel.styles.css', 'split only with Notes modal extraction; list/toolbar/editor modal/empty state can become real owners'],
-  ['src/components/edit/BubbleEditor.styles.css', 'keep while BubbleEditor remains one cohesive editor form'],
-  ['src/components/insight/QAPanel.styles.css', 'split only with note modal/rebuild extraction; chat surface remains cohesive'],
-  ['src/components/edit/EditToolbar.styles.css', 'keep for now: toolbar controls are visually cohesive and tiny style files would reduce clarity'],
-  ['src/components/insight/studio/CharacterStudioEditor.styles.css', 'accepted studio editor owner; split leaf panels only with a concrete ownership gain'],
-  ['src/components/settings/PluginAgentModal.styles.css', 'keep for now: three-column modal styling is one cohesive owner'],
-])
-
-const LAYOUT_BYPASS_DECISIONS = new Map([
-  ['src/views/BookshelfView.vue', 'page content still owns historical header-height offset; migrate to AppShell content sizing when bookshelf layout is next touched'],
-  ['src/views/InsightView.vue', 'Insight page owns the analysis viewport until the multi-pane shell fully absorbs mobile drawers'],
-  ['src/views/InsightView.styles.css', 'mobile sidebar overlay remains page-owned until SidebarLayout overlay mode owns analysis mobile panes'],
-  ['src/views/ReaderView.vue', 'reader header is a distinct immersive mode; keep until AppShell reader variant owns fixed chrome'],
-  ['src/views/CharacterStudioView.vue', 'studio page keeps viewport editor shell until SidebarLayout studio mode owns pane heights'],
-  ['src/views/TranslateView.vue', 'Translate page owns workspace side gutters until SidebarLayout fixed-sidebar mode covers every edit-state constraint'],
-  ['src/views/TranslateView.styles.css', 'translate workspace still has legacy sidebar margin offsets; migrate after SidebarLayout fixed-sidebar mode is fully verified'],
-  ['src/components/common/AppHeader.vue', 'AppHeader owns its mobile fixed navigation menu'],
-  ['src/components/common/AppHeader.styles.css', 'AppHeader owns its mobile fixed navigation menu'],
-  ['src/components/common/BaseModal.vue', 'BaseModal owns Teleport overlay positioning'],
-  ['src/components/common/CustomSelect.vue', 'CustomSelect owns Teleport dropdown positioning'],
-  ['src/components/common/ToastNotification.vue', 'Toast owns fixed notification positioning'],
-  ['src/components/reader/ReaderCanvas.vue', 'reader canvas owns viewport fit for immersive reading mode'],
-  ['src/components/reader/ReaderControls.vue', 'ReaderControls owns immersive fixed controls'],
-  ['src/components/reader/ReaderControls.styles.css', 'reader controls own fixed immersive controls until reader shell is thickened'],
-  ['src/components/translate/SettingsSidebar.vue', 'SettingsSidebar owns the fixed translated-page pane while SidebarLayout hosts the page shell'],
-  ['src/components/translate/SettingsSidebar.shell.styles.css', 'settings sidebar owns its fixed translated-page pane until SidebarLayout can express the exact chrome contract'],
-  ['src/components/translate/ThumbnailSidebar.vue', 'ThumbnailSidebar owns the fixed translated-page pane while SidebarLayout hosts the page shell'],
-  ['src/components/translate/ThumbnailSidebar.styles.css', 'thumbnail sidebar owns its fixed translated-page pane until SidebarLayout can express the exact chrome contract'],
-  ['src/components/ui/AppShell.vue', 'AppShell owns page viewport, chrome, and header-offset algorithms'],
-  ['src/components/ui/SidebarLayout.vue', 'SidebarLayout owns fixed/sticky/overlay sidebar algorithms for page migration'],
-  ['src/components/edit/EditToolbar.vue', 'EditToolbar owns fixed mobile toolbar behavior'],
-  ['src/components/edit/EditToolbar.styles.css', 'edit toolbar owns fixed mobile toolbar behavior'],
-  ['src/components/edit/EditWorkspace.vue', 'EditWorkspace is a full-screen editor shell by design'],
-  ['src/components/edit/EditWorkspace.canvas.styles.css', 'edit canvas owns floating mini-map/compare controls'],
-  ['src/components/edit/EditWorkspace.shell.styles.css', 'edit workspace is a full-screen editor shell by design'],
-  ['src/components/settings/PluginManager.vue', 'PluginManager owns scoped loading overlay positioning'],
-  ['src/components/settings/PluginManager.styles.css', 'plugin manager owns scoped loading overlay positioning'],
-  ['src/components/insight/PageDetail.vue', 'PageDetail owns its scoped image preview overlay'],
-  ['src/components/insight/PageDetail.styles.css', 'page detail image preview overlay is scoped to the panel'],
-  ['src/components/insight/TimelinePanel.vue', 'TimelinePanel owns internal event-list scrolling'],
-  ['src/components/insight/TimelinePanel.timeline.styles.css', 'timeline panel owns internal list max-height; page shell should not manage event list scrolling'],
+const LAYOUT_OWNER_ALLOWED_FILES = new Set([
+  'src/views/InsightView.vue',
+  'src/views/ReaderView.vue',
+  'src/views/CharacterStudioView.vue',
+  'src/components/common/AppHeader.vue',
+  'src/components/common/BaseModal.vue',
+  'src/components/common/CustomSelect.vue',
+  'src/components/common/ToastNotification.vue',
+  'src/components/reader/ReaderCanvas.vue',
+  'src/components/reader/ReaderControls.vue',
+  'src/components/translate/SettingsSidebar.vue',
+  'src/components/translate/ThumbnailSidebar.vue',
+  'src/components/ui/AppShell.vue',
+  'src/components/ui/SidebarLayout.vue',
+  'src/components/edit/EditToolbar.vue',
+  'src/components/edit/EditWorkspace.vue',
+  'src/components/settings/PluginManager.vue',
+  'src/components/insight/PageDetail.vue',
+  'src/components/insight/TimelinePanel.vue',
 ])
 
 const failures = []
-const cssReviewCandidates = []
-const sfcReviewCandidates = []
-const layoutBypassCandidates = []
 const valueNamedTokenCandidates = new Map()
 const tokenArchitectureStats = {
   rootTokens: 0,
@@ -332,7 +310,7 @@ function walk(dir) {
       checkFile(path)
       continue
     }
-    if (/\.(?:js|jsx|ts|tsx)$/.test(path)) {
+    if (/\.(?:js|jsx|ts|tsx|json)$/.test(path)) {
       checkScriptFile(path)
     }
   }
@@ -492,6 +470,24 @@ function checkOldImplementationMindset(path, normalizedPath, content) {
   )
 }
 
+function checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments) {
+  const compatMatches = new Set([...contentWithoutComments.matchAll(FRONTEND_SCHEMA_COMPAT_RE)].map(match => match[0]))
+  if (SOURCE_FIXTURE || OPENAI_MIRROR_FIELD_PATH_RE.test(normalizedPath)) {
+    for (const match of contentWithoutComments.matchAll(FRONTEND_SCHEMA_MAX_RETRIES_RE)) {
+      compatMatches.add(match[0])
+    }
+  }
+
+  if (compatMatches.size === 0) {
+    return
+  }
+
+  addFailure(
+    path,
+    `legacy frontend schema/provider reference(s) ${[...compatMatches].join(', ')} are not allowed; use the current provider ids and current nested settings schema`
+  )
+}
+
 function checkCustomPropertyOwnership(path, normalizedPath, content) {
   if (isTokenFile(normalizedPath)) {
     return
@@ -590,6 +586,22 @@ function checkTokenDependencyArchitecture(paths) {
     addFailure(reportPath, `body defines ${token}; body compatibility aliases are no longer allowed`)
   }
 
+  const generatedPaletteDefinitions = [...rootTokenNames].filter(token => GENERATED_PALETTE_TOKEN_NAME_RE.test(token))
+  if (generatedPaletteDefinitions.length > 0) {
+    addFailure(
+      reportPath,
+      `generated palette token definition(s) ${generatedPaletteDefinitions.join(', ')} are not allowed; define the final semantic token value directly in src/styles/tokens/*`
+    )
+  }
+
+  const valueNamedDefinitions = [...rootTokenNames].filter(token => VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE.test(token))
+  if (valueNamedDefinitions.length > 0) {
+    addFailure(
+      reportPath,
+      `value-named token definition(s) ${valueNamedDefinitions.join(', ')} are not allowed; name tokens by role, not raw value fragments`
+    )
+  }
+
   for (const [token, values] of rootTokens) {
     for (const referencedToken of referencedTokens(values)) {
       tokenArchitectureStats.rootDependencies += 1
@@ -650,12 +662,31 @@ function checkHardcodedColors(path, normalizedPath, content) {
   }
 }
 
+function checkUiPrimitiveSelectors(path, normalizedPath, content) {
+  if (normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
+    return
+  }
+
+  const styleContents = extractStyleContents(content, path)
+  const primitiveSelectors = new Set()
+  for (const styleContent of styleContents) {
+    for (const match of stripCssComments(styleContent).matchAll(CSS_UI_PRIMITIVE_SELECTOR_RE)) {
+      primitiveSelectors.add(match[2])
+    }
+  }
+
+  if (primitiveSelectors.size > 0) {
+    addFailure(path, `UI primitive selector(s) ${[...primitiveSelectors].map(token => `.${token}`).join(', ')} are not allowed in business CSS; use primitive props/classes or a business-owned class`)
+  }
+}
+
 function checkFile(path) {
   const content = readFileSync(path, 'utf8')
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
   checkOldImplementationMindset(path, normalizedPath, content)
+  checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
@@ -667,11 +698,8 @@ function checkFile(path) {
   }
 
   if (LAYOUT_BYPASS_RE.test(contentWithoutComments) && !isTokenFile(normalizedPath)) {
-    const decision = LAYOUT_BYPASS_DECISIONS.get(normalizedPath)
-    if (!decision) {
-      addFailure(path, 'layout bypass detected (fixed viewport, 100vh calc, or legacy sidebar margin) without a maintenance decision; move the layout algorithm to AppShell/SidebarLayout or register why this owner must keep it')
-    } else {
-      layoutBypassCandidates.push(`${normalizedPath} (${decision})`)
+    if (!LAYOUT_OWNER_ALLOWED_FILES.has(normalizedPath)) {
+      addFailure(path, 'layout bypass detected (fixed viewport, 100vh calc, or sidebar margin); move the layout algorithm to AppShell/SidebarLayout or a permanent shell/overlay owner')
     }
   }
 
@@ -688,12 +716,7 @@ function checkFile(path) {
     if (lineCount > SFC_MAX_LINES) {
       addFailure(path, `SFC has ${lineCount} lines; split UI sections or move isolated UI behavior into composables`)
     } else if (lineCount >= SFC_REVIEW_LINES) {
-      const decision = LARGE_SFC_DECISIONS.get(normalizedPath)
-      if (!decision) {
-        addFailure(path, `SFC has ${lineCount} lines and no maintenance decision; add a real owner-boundary decision before keeping or splitting it`)
-      } else {
-        sfcReviewCandidates.push(`${normalizedPath}: ${lineCount} lines (${decision})`)
-      }
+      addFailure(path, `SFC has ${lineCount} lines; split UI sections or move isolated UI behavior into composables`)
     }
     if (styleLineCount > SFC_MAX_STYLE_LINES) {
       addFailure(path, `SFC has ${styleLineCount} style lines; move repeated UI styling into primitives or split the component`)
@@ -744,12 +767,7 @@ function checkFile(path) {
     if (lineCount > CSS_MAX_LINES) {
       addFailure(path, `CSS file has ${lineCount} lines; split by component boundary or move repeated rules into primitives`)
     } else if (lineCount >= CSS_OWNER_REVIEW_LINES) {
-      const decision = LARGE_CSS_OWNER_DECISIONS.get(normalizedPath)
-      if (!decision) {
-        addFailure(path, `CSS owner has ${lineCount} lines and no maintenance decision; do not split by line count, register the owner decision or extract a real subcomponent`)
-      } else if (lineCount >= CSS_REVIEW_LINES) {
-        cssReviewCandidates.push(`${normalizedPath}: ${lineCount} lines (${decision})`)
-      }
+      addFailure(path, `CSS owner has ${lineCount} lines; split by component boundary or move repeated rules into primitives`)
     }
   }
 
@@ -796,17 +814,12 @@ function checkFile(path) {
         addFailure(path, `unowned global selector(s) ${[...unownedSelectors].map(token => `.${token}`).join(', ')} are not allowed in imported CSS; use the owning component/page namespace`)
       }
 
-      if (!normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
-        const primitiveSelectors = new Set([...content.matchAll(CSS_UI_PRIMITIVE_SELECTOR_RE)].map(match => match[2]))
-        if (primitiveSelectors.size > 0) {
-          addFailure(path, `UI primitive selector(s) ${[...primitiveSelectors].map(token => `.${token}`).join(', ')} are not allowed in business CSS; use primitive props/classes or a business-owned class`)
-        }
-      }
-
       if (!TELEPORT_STYLE_OWNER_ALLOWED_FILES.has(normalizedPath) && CSS_BARE_UI_MODAL_SELECTOR_RE.test(content)) {
         addFailure(path, 'bare .ui-modal__* selectors are not allowed outside BaseModal; scope modal customization behind a business modal class')
       }
     }
+
+    checkUiPrimitiveSelectors(path, normalizedPath, content)
   }
 
   if (CSS_ID_SELECTOR_RE.test(content)) {
@@ -827,6 +840,22 @@ function checkFile(path) {
 
   if (isTokenFile(normalizedPath)) {
     const definitions = customPropertyDefinitions(content, path)
+    const generatedPaletteDefinitions = definitions.filter(token => GENERATED_PALETTE_TOKEN_NAME_RE.test(token))
+    if (generatedPaletteDefinitions.length > 0) {
+      addFailure(
+        path,
+        `generated palette token definition(s) ${[...new Set(generatedPaletteDefinitions)].join(', ')} are not allowed; define the final semantic token value directly in src/styles/tokens/*`
+      )
+    }
+
+    const valueNamedDefinitions = definitions.filter(token => VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE.test(token))
+    if (valueNamedDefinitions.length > 0) {
+      addFailure(
+        path,
+        `value-named token definition(s) ${[...new Set(valueNamedDefinitions)].join(', ')} are not allowed; name tokens by role, not raw value fragments`
+      )
+    }
+
     const legacyDefinitions = definitions.filter(token => (
       LEGACY_COMPATIBILITY_VARIABLES.has(token) || LEGACY_GLOBAL_VARIABLES.has(token) || LEGACY_SHORT_ALIAS_VARIABLES.has(token)
     ))
@@ -879,6 +908,13 @@ function checkFile(path) {
   if (!isTokenFile(normalizedPath)) {
     architectureDebtUsage.businessVisualColorTokenReferences += countRegexMatches(contentWithoutComments, VISUAL_COMPAT_COLOR_TOKEN_RE)
     architectureDebtUsage.colorTokenReferencesOutsideTokens += countRegexMatches(contentWithoutComments, COMPAT_COLOR_TOKEN_RE)
+    const paletteRefs = matchedTokens(contentWithoutComments, PALETTE_TOKEN_REFERENCE_RE)
+    if (paletteRefs.size > 0) {
+      addFailure(
+        path,
+        `private palette token reference(s) ${[...paletteRefs].join(', ')} are not allowed outside src/styles/tokens/*; use semantic or owner tokens`
+      )
+    }
   }
 
   if (LEGACY_RADIUS_TOKEN_RE.test(contentWithoutComments)) {
@@ -941,6 +977,7 @@ function checkScriptFile(path) {
   const contentWithoutComments = stripCssComments(content)
 
   checkOldImplementationMindset(path, normalizedPath, content)
+  checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
 
   architectureDebtUsage.generatedCssReferences += countRegexMatches(contentWithoutComments, GENERATED_CSS_RE)
   architectureDebtUsage.settingsSharedReferences += countRegexMatches(contentWithoutComments, SETTINGS_SHARED_STYLE_RE)
@@ -953,6 +990,13 @@ function checkScriptFile(path) {
 
   if (!isTokenFile(normalizedPath)) {
     architectureDebtUsage.colorTokenReferencesOutsideTokens += countRegexMatches(contentWithoutComments, COMPAT_COLOR_TOKEN_RE)
+    const paletteRefs = matchedTokens(contentWithoutComments, PALETTE_TOKEN_REFERENCE_RE)
+    if (paletteRefs.size > 0) {
+      addFailure(
+        path,
+        `private palette token reference(s) ${[...paletteRefs].join(', ')} are not allowed outside src/styles/tokens/*; use semantic or owner tokens`
+      )
+    }
   }
 
   const legacyCompatibilityRefs = referencedOrMutatedCustomProperties(contentWithoutComments, LEGACY_COMPATIBILITY_VARIABLES)
@@ -1011,7 +1055,11 @@ checkTokenDependencyArchitecture(TOKEN_FILES)
 checkCriticalVisualCoverage()
 
 if (SOURCE_FIXTURE) {
-  checkFile(SOURCE_FIXTURE)
+  if (SOURCE_FIXTURE.endsWith('.vue') || SOURCE_FIXTURE.endsWith('.css')) {
+    checkFile(SOURCE_FIXTURE)
+  } else {
+    checkScriptFile(SOURCE_FIXTURE)
+  }
 } else if (!SKIP_SOURCE_SCAN) {
   for (const root of ROOTS) {
     walk(root)

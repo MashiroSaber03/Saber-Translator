@@ -95,13 +95,3 @@ export async function renameSession(oldName: string, newName: string): Promise<A
   })
 }
 
-// 注意：旧的分批保存 API (batchSaveStartApi, batchSaveImageApi, batchSaveCompleteApi) 已移除
-// 新的单页保存 API 请使用 pageStorage.ts
-
-// ==================== 导出别名（兼容旧接口） ====================
-
-/**
- * 按路径加载会话 API（别名）
- * 用于 sessionStore 中的动态导入
- */
-export const loadSessionByPathApi = loadSessionByPath

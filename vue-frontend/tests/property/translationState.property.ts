@@ -2,7 +2,7 @@
  * 翻译状态管理属性测试
  * 使用 fast-check 进行属性基测试，验证翻译状态流转的一致性
  *
- * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+ * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
  * Validates: Requirements 4.4, 4.5
  */
 import { describe, it, beforeEach, afterEach, vi } from 'vitest'
@@ -59,7 +59,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 对于任意图片，状态从 pending → processing → completed/failed 流转应正确
@@ -90,7 +90,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 对于任意图片，状态从 processing → completed 流转应正确
@@ -119,7 +119,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 对于任意图片，状态从 processing → failed 流转应正确，并记录错误信息
@@ -156,7 +156,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 获取失败图片索引应正确返回所有失败的图片
@@ -201,7 +201,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 标记当前图片为失败应正确更新状态
@@ -244,7 +244,7 @@ describe('翻译状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 20: 翻译状态流转一致性
+   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
    * Validates: Requirements 4.4, 4.5
    *
    * 翻译状态更新应保持其他图片数据不变

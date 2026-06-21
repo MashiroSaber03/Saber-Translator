@@ -1,7 +1,7 @@
 /**
  * 图片上传处理属性测试
  * 
- * **Feature: vue-frontend-migration, Property 26: 图片上传处理一致性**
+ * **Feature: frontend-behavior, Property 26: 图片上传处理一致性**
  * **Validates: Requirements 4.1**
  * 
  * 测试内容：

@@ -30,7 +30,6 @@ export type TranslationProvider =
   | 'ollama'
   | 'sakura'
   | 'custom'
-  | 'custom_openai'
 
 /**
  * 高质量翻译服务商类型
@@ -42,7 +41,6 @@ export type HqTranslationProvider =
   | 'gemini'
   | 'ollama'
   | 'custom'
-  | 'custom_openai'
 
 /**
  * 插件 Agent 服务商类型

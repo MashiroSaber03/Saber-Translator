@@ -16,16 +16,35 @@ const legacyShortBgActive = '--bg' + '-active'
 const legacyShortPrimary = '--primary'
 const legacyReaderBgColor = '--reader' + '-bg-color'
 const generatedOwnerToken = '--color-' + 'book-card-surface-001'
+const generatedPaletteToken = '--palette-' + 'surface-001'
+const generatedPaletteVariantToken = '--palette-' + 'blue-400-clear'
+const privatePaletteToken = '--palette-' + 'blue-500'
+const paletteSurfaceEditorToken = '--palette-' + 'surface-editor'
+const valueNamedSemanticToken = '--color-surface-' + 'basefff'
 const migrationMindsetKeepExisting = '保持' + '既有'
-const migrationMindsetReplica = '复刻' + '原版'
-const migrationMindsetStyleSource = 'Source: Panel' + '.styles.css'
-const migrationMindsetCompleteStyles = '完整样式 - 从 reader' + '.css 迁移'
-const migrationMindsetOldVersion = '旧版 handleBubbleMouseDown'
-const migrationMindsetMigratedFrom = '迁移自 main' + '.js'
-const migrationMindsetOriginalReference = '对应' + '原版 edit_mode.js'
-const migrationMindsetOriginalCore = '原版 edit_mode.js'
+const migrationMindsetReplica = '复刻' + '原' + '版'
+const migrationMindsetStyleSource = 'Source' + ': Panel' + '.styles.css'
+const migrationMindsetCompleteStyles = '完整' + '样式 - ' + '从 reader' + '.css 迁' + '移'
+const migrationMindsetOldVersion = '旧' + '版 handleBubbleMouseDown'
+const migrationMindsetMigratedFrom = '迁移' + '自 main' + '.js'
+const migrationMindsetOriginalReference = '对应' + '原' + '版 edit_mode' + '.js'
+const migrationMindsetOriginalCore = '原' + '版 edit_mode' + '.js'
 const migrationMindsetOldFileName = '当前行为 bookshelf' + '.js'
 const migrationMindsetOldFileNameCore = 'bookshelf' + '.js'
+const legacyProviderCustomOpenAi = 'custom' + '_openai'
+const legacyProviderCustomOpenAiVision = 'custom' + '_openai_vision'
+const legacyIdsField = 'legacy' + 'Ids'
+const legacyStorageKey = 'LEGACY' + '_STORAGE_KEY'
+const oldProviderSettingsField = 'provider' + 'Settings'
+const oldStripMirrorHelper = 'strip' + 'LegacyOpenAiMirrorFields'
+const oldSyncMirrorHelper = 'sync' + 'LegacyOpenAiMirrorFields'
+const oldCoerceRetryHelper = 'coerce' + 'LegacyRetryValue'
+const threshold48pxField = 'threshold' + '48px'
+const thresholdMangaOcrField = 'threshold' + 'MangaOcr'
+const thresholdPaddleOcrField = 'threshold' + 'PaddleOcr'
+const oldIsJsonModeField = 'is' + 'JsonMode'
+const oldForceJsonField = 'force' + 'Json'
+const oldMaxRetriesField = 'max' + 'Retries'
 
 function runUiArchitectureTokenFixture(tokensCss: string) {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
@@ -81,6 +100,45 @@ function runUiArchitectureAudit() {
 }
 
 describe('UI architecture token dependency lint', () => {
+  it('rejects generated palette token names in token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${generatedPaletteToken}: #fff;
+        --color-surface-page: var(${generatedPaletteToken});
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('generated palette token definition(s)')
+    expect(result.stderr).toContain(generatedPaletteToken)
+  })
+
+  it('rejects generated palette variant names in token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${generatedPaletteVariantToken}: #818cf8;
+        --color-action-primary: var(${generatedPaletteVariantToken});
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('generated palette token definition(s)')
+    expect(result.stderr).toContain(generatedPaletteVariantToken)
+  })
+
+  it('rejects value-named semantic token names in token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${valueNamedSemanticToken}: #fff;
+        --color-surface-page: var(${valueNamedSemanticToken});
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('value-named token definition(s)')
+    expect(result.stderr).toContain(valueNamedSemanticToken)
+  })
+
   it('rejects root tokens that depend on body-only compatibility tokens', () => {
     const result = runUiArchitectureTokenFixture(`
       :root {
@@ -110,8 +168,8 @@ describe('UI architecture token dependency lint', () => {
   it('rejects body compatibility aliases in token files', () => {
     const result = runUiArchitectureTokenFixture(`
       :root {
-        --palette-surface-editor: #1a1a2e;
-        --color-edit-shell-end: var(--palette-surface-editor);
+        ${paletteSurfaceEditorToken}: #1a1a2e;
+        --color-edit-shell-end: var(${paletteSurfaceEditorToken});
       }
 
       body {
@@ -236,6 +294,21 @@ describe('UI architecture CSS variable ownership lint', () => {
     expect(result.stderr).toContain('generated owner token reference(s)')
     expect(result.stderr).toContain(generatedOwnerToken)
   })
+
+  it('rejects business CSS that reads private palette tokens', () => {
+    const result = runUiArchitectureSourceFixture('BookCard.vue', `
+      <template><div class="book-card"></div></template>
+      <style scoped>
+      .book-card {
+        background: var(${privatePaletteToken});
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('private palette token reference(s)')
+    expect(result.stderr).toContain(privatePaletteToken)
+  })
 })
 
 describe('UI architecture style ownership lint', () => {
@@ -251,6 +324,48 @@ describe('UI architecture style ownership lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('ordinary script CSS imports are not allowed')
     expect(result.stderr).toContain('Panel.styles.css')
+  })
+
+  it('rejects business CSS that overrides UI primitive internals', () => {
+    const result = runUiArchitectureSourceFixture('InsightPanel.css', `
+      .insight-panel .ui-button--primary {
+        min-width: 120px;
+      }
+
+      .insight-panel .ui-button--danger {
+        color: var(--color-status-danger-text);
+      }
+
+      .insight-panel .ui-input {
+        width: 100%;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive selector(s)')
+    expect(result.stderr).toContain('.ui-button--primary')
+    expect(result.stderr).toContain('.ui-button--danger')
+    expect(result.stderr).toContain('.ui-input')
+  })
+
+  it('rejects scoped Vue styles that override UI primitive internals', () => {
+    const result = runUiArchitectureSourceFixture('InsightPanel.vue', `
+      <template><section class="insight-panel"></section></template>
+      <style scoped>
+      .insight-panel .ui-button--primary {
+        min-width: 120px;
+      }
+
+      .insight-panel .ui-input {
+        width: 100%;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive selector(s)')
+    expect(result.stderr).toContain('.ui-button--primary')
+    expect(result.stderr).toContain('.ui-input')
   })
 
   it('allows explicit global style imports for Teleport or slot reach-through owners', () => {
@@ -336,5 +451,61 @@ describe('UI architecture old implementation mindset lint', () => {
     expect(result.stderr).not.toContain('accepted large CSS owners')
     expect(result.stderr).not.toContain('permanent shell/layout owners')
     expect(result.stderr).not.toContain('pending layout')
+  })
+})
+
+describe('UI architecture frontend schema compatibility lint', () => {
+  it('rejects legacy provider ids and manifest alias fields in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('aiProviders.ts', `
+      export const customProvider = '${legacyProviderCustomOpenAi}'
+      export const customVisionProvider = '${legacyProviderCustomOpenAiVision}'
+      export const manifest = { ${legacyIdsField}: ['${legacyProviderCustomOpenAi}'] }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
+    expect(result.stderr).toContain(legacyProviderCustomOpenAi)
+    expect(result.stderr).toContain(legacyProviderCustomOpenAiVision)
+    expect(result.stderr).toContain(legacyIdsField)
+  })
+
+  it('rejects old settings migration and mirror helpers in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('settings.ts', `
+      const ${legacyStorageKey} = 'saber-translator-settings'
+      const payload = { ${oldProviderSettingsField}: {} }
+      function ${oldStripMirrorHelper}() {}
+      function ${oldSyncMirrorHelper}() {}
+      function ${oldCoerceRetryHelper}() {}
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
+    expect(result.stderr).toContain(legacyStorageKey)
+    expect(result.stderr).toContain(oldProviderSettingsField)
+    expect(result.stderr).toContain(oldStripMirrorHelper)
+    expect(result.stderr).toContain(oldSyncMirrorHelper)
+    expect(result.stderr).toContain(oldCoerceRetryHelper)
+  })
+
+  it('rejects old OpenAI mirror fields and OCR threshold fields in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('openaiOptions.ts', `
+      export const options = {
+        ${oldIsJsonModeField}: true,
+        ${oldForceJsonField}: true,
+        ${oldMaxRetriesField}: 3,
+        ${threshold48pxField}: 0.7,
+        ${thresholdMangaOcrField}: 0.8,
+        ${thresholdPaddleOcrField}: 0.9,
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
+    expect(result.stderr).toContain(oldIsJsonModeField)
+    expect(result.stderr).toContain(oldForceJsonField)
+    expect(result.stderr).toContain(oldMaxRetriesField)
+    expect(result.stderr).toContain(threshold48pxField)
+    expect(result.stderr).toContain(thresholdMangaOcrField)
+    expect(result.stderr).toContain(thresholdPaddleOcrField)
   })
 })

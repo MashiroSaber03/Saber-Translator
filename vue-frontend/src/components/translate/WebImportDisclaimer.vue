@@ -161,7 +161,7 @@ function handleCancel() {
   align-items: center;
   gap: 12px;
   padding: 20px 24px;
-  background: linear-gradient(135deg, var(--color-surface-base3cd), var(--web-import-disclaimer-surface-muted));
+  background: linear-gradient(135deg, var(--color-surface-warning-tint), var(--web-import-disclaimer-surface-muted));
   border-bottom: 2px solid var(--web-import-disclaimer-border-default);
   border-radius: 14px 14px 0 0;
 }

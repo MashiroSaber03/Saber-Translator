@@ -419,7 +419,7 @@ function handleBreadcrumbClick(path: string): void {
   position: relative;
   min-height: 88px;
   padding: 12px;
-  background: linear-gradient(135deg, var(--color-surface-base8e6) 0%, var(--color-surface-base3d4) 100%);
+  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
   border: 1px solid var(--page-selection-modal-border-focus);
   border-radius: 10px;
   cursor: pointer;
@@ -427,7 +427,7 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-folder-item:hover {
-  background: linear-gradient(135deg, var(--color-surface-base3d4) 0%, var(--page-selection-modal-surface-inverse) 100%);
+  background: linear-gradient(135deg, var(--color-surface-warning-warm) 0%, var(--page-selection-modal-surface-inverse) 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px var(--page-selection-modal-shadow-strong);
 }
@@ -477,7 +477,7 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-thumbnail.active {
-  background: linear-gradient(180deg, var(--color-surface-basefff) 0%, var(--page-selection-modal-surface-contrast) 100%);
+  background: linear-gradient(180deg, var(--color-surface-plain) 0%, var(--page-selection-modal-surface-contrast) 100%);
 }
 
 .page-selection-thumbnail .thumbnail-image {

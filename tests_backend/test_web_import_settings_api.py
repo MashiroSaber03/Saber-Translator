@@ -54,11 +54,11 @@ class WebImportSettingsApiTests(unittest.TestCase):
             {"success": True, "hasStoredSettings": False, "settings": {}, "providerConfigs": {"agent": {}}},
         )
 
-    def test_save_settings_round_trips_and_normalizes_provider_ids(self) -> None:
+    def test_save_settings_round_trips_current_provider_ids(self) -> None:
         payload = {
             "settings": {
                 "agent": {
-                    "provider": "custom_openai",
+                    "provider": "custom",
                     "apiKey": "custom-key",
                     "modelName": "custom-model",
                     "customBaseUrl": "https://custom.example/v1",
@@ -69,7 +69,7 @@ class WebImportSettingsApiTests(unittest.TestCase):
             },
             "providerConfigs": {
                 "agent": {
-                    "custom_openai": {
+                    "custom": {
                         "apiKey": "custom-key",
                         "modelName": "custom-model",
                         "customBaseUrl": "https://custom.example/v1",
@@ -97,7 +97,6 @@ class WebImportSettingsApiTests(unittest.TestCase):
 
             self.assertEqual(saved_payload["settings"]["agent"]["provider"], "custom")
             self.assertIn("custom", saved_payload["providerConfigs"]["agent"])
-            self.assertNotIn("custom_openai", saved_payload["providerConfigs"]["agent"])
 
             get_response = self.client.get("/api/web-import/settings")
             self.assertEqual(get_response.status_code, 200)

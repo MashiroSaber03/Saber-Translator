@@ -61,7 +61,6 @@ class ProviderManifest:
     is_local: bool = False
     supports_stream: bool = False
     supports_json_response: bool = False
-    legacy_ids: FrozenSet[str] = field(default_factory=frozenset)
     capability_base_urls: Mapping[str, str] = field(default_factory=dict)
     capability_endpoints: Mapping[str, str] = field(default_factory=dict)
     default_models: Mapping[str, str] = field(default_factory=dict)
@@ -116,7 +115,6 @@ def _build_provider_manifest(entry: dict) -> ProviderManifest:
         is_local=entry.get("isLocal", False),
         supports_stream=entry.get("supportsStream", False),
         supports_json_response=entry.get("supportsJsonResponse", False),
-        legacy_ids=frozenset(entry.get("legacyIds", [])),
         capability_base_urls={
             _normalize_capability_name(capability): base_url
             for capability, base_url in entry.get("capabilityBaseUrls", {}).items()
@@ -135,18 +133,10 @@ _PROVIDERS: Dict[str, ProviderManifest] = {
     for entry in _load_provider_manifest_data()
 }
 
-_LEGACY_ID_MAP = {
-    legacy_id: manifest.id
-    for manifest in _PROVIDERS.values()
-    for legacy_id in manifest.legacy_ids
-}
-
-
 def normalize_provider_id(provider: Optional[str]) -> str:
     if not provider:
         return ""
-    lowered = str(provider).strip().lower()
-    return _LEGACY_ID_MAP.get(lowered, lowered)
+    return str(provider).strip().lower()
 
 
 def get_provider_manifest(provider: Optional[str]) -> ProviderManifest:

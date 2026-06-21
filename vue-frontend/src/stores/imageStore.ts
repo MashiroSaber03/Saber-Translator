@@ -7,7 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ImageData, TranslationStatus, ImageDataUpdates } from '@/types/image'
 import type { BubbleState } from '@/types/bubble'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import {
   getImageTextStyleDefaults,
   normalizeImageTextStyleFields,
@@ -330,7 +330,7 @@ export const useImageStore = defineStore('image', () => {
       return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' })
     })
 
-    // 【关键修复】如果有当前图片，找到它在排序后的新位置
+    // 排序后保持当前图片选中状态。
     if (currentImageId) {
       const newIndex = images.value.findIndex(img => img.id === currentImageId)
       if (newIndex >= 0 && newIndex !== currentImageIndex.value) {
@@ -449,7 +449,6 @@ export const useImageStore = defineStore('image', () => {
 
   /**
    * 更新当前图片的单个属性
-   * 迁移自 main.js 的 state.updateCurrentImageProperty
    * @param key - 属性名
    * @param value - 属性值
    */

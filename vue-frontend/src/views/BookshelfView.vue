@@ -8,7 +8,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getServerInfo } from '@/api'
-import { getBookDetail } from '@/api/bookshelf'  // 【修复 P2】导入 bookshelf API
+import { getBookDetail } from '@/api/bookshelf'
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
@@ -116,7 +116,6 @@ function openEditBookModal(bookId: string) {
 // 失败时显示 toast，不打开不完整的书籍详情模态框
 async function openBookDetail(bookId: string) {
   try {
-    // 【修复 P2】使用统一的 API 调用方式
     const response = await getBookDetail(bookId)
     
     if (!response.success) {
@@ -274,7 +273,7 @@ function showFeatureNotice() {
     gap: 6px;
     color: var(--bookshelf-view-text-primary);
     font-size: 0.85rem;
-    background: var(--color-surface-overlay-light8);
+    background: var(--color-surface-overlay-light-raised);
     padding: 6px 12px;
     border-radius: 20px;
     backdrop-filter: blur(4px);
@@ -286,12 +285,12 @@ function showFeatureNotice() {
     text-decoration: none;
     padding: 6px 12px;
     border-radius: 20px;
-    background: var(--color-surface-overlay-light5);
+    background: var(--color-surface-overlay-light-soft);
     transition: all 0.2s ease;
 }
 
 .bookshelf-header__tutorial-link:hover {
-    background: var(--color-surface-overlay-medium5);
+    background: var(--color-surface-overlay-medium-strong);
 }
 
 .bookshelf-header__github-link {
@@ -299,12 +298,12 @@ function showFeatureNotice() {
     align-items: center;
     padding: 6px;
     border-radius: 50%;
-    background: var(--color-surface-overlay-light5);
+    background: var(--color-surface-overlay-light-soft);
     transition: all 0.2s ease;
 }
 
 .bookshelf-header__github-link:hover {
-    background: var(--color-surface-overlay-medium5);
+    background: var(--color-surface-overlay-medium-strong);
 }
 
 .bookshelf-header__github-icon {
@@ -336,7 +335,7 @@ function showFeatureNotice() {
     max-width: 1400px;
     margin: 0 auto;
     padding: 24px;
-    min-height: calc(100vh - 64px);
+    min-height: 0;
 }
 
 .bookshelf-page {

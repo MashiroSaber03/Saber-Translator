@@ -126,12 +126,12 @@ describe('webImportStore settings workflow', () => {
     expect(stored.providerConfigs.agent.deepseek.modelName).toBe('deepseek-chat')
   })
 
-  it('merges backend data with defaults and normalizes legacy provider ids', async () => {
+  it('merges current backend data with defaults', async () => {
     getWebImportSettingsMock.mockResolvedValue({
       success: true,
       settings: {
         agent: {
-          provider: 'custom_openai',
+          provider: 'custom',
           apiKey: 'custom-key',
           modelName: 'custom-model',
           customBaseUrl: 'https://custom.example/v1',
@@ -139,7 +139,7 @@ describe('webImportStore settings workflow', () => {
       },
       providerConfigs: {
         agent: {
-          custom_openai: {
+          custom: {
             apiKey: 'custom-key',
             modelName: 'custom-model',
             customBaseUrl: 'https://custom.example/v1',
@@ -157,7 +157,6 @@ describe('webImportStore settings workflow', () => {
     expect(store.settings.download.timeout).toBe(30)
     expect(store.providerConfigs.agent.custom).toBeDefined()
     expect(store.providerConfigs.agent.custom?.modelName).toBe('custom-model')
-    expect(store.providerConfigs.agent.custom_openai).toBeUndefined()
   })
 
   it('preserves localStorage settings when backend has no stored payload yet', async () => {

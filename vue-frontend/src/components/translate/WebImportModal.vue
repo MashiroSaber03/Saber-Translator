@@ -288,7 +288,7 @@ const {
                 <UiInput
                   type="checkbox"
                   :checked="draftSettings.agent.forceJsonOutput"
-                  @change="webImportStore.setAgentForceJson(($event.target as HTMLInputElement).checked)"
+                  @change="webImportStore.setAgentForceJsonOutput(($event.target as HTMLInputElement).checked)"
                 />
                 强制 JSON 格式
               </label>
@@ -587,4 +587,3 @@ const {
     </template>
   </BaseModal>
 </template>
-

@@ -37,17 +37,6 @@ export function cloneOpenAiOptions(options: OpenAICompatibleOptions): OpenAIComp
 
 export function normalizeOpenAiOptions(
   raw: unknown,
-  legacy?: {
-    forceJsonOutput?: unknown
-    isJsonMode?: unknown
-    temperature?: unknown
-    extraBody?: unknown
-    useStream?: unknown
-    rpmLimit?: unknown
-    maxRetries?: unknown
-    transportRetries?: unknown
-    businessRetries?: unknown
-  },
   defaults?: Partial<OpenAICompatibleOptions>
 ): OpenAICompatibleOptions {
   const normalized = createDefaultOpenAiOptions(defaults)
@@ -56,52 +45,68 @@ export function normalizeOpenAiOptions(
   const execution = (candidate.execution && typeof candidate.execution === 'object') ? candidate.execution as Record<string, any> : {}
 
   normalized.request.forceJsonOutput = Boolean(
-    request.forceJsonOutput
-    ?? request.force_json_output
-    ?? legacy?.forceJsonOutput
-    ?? legacy?.isJsonMode
-    ?? normalized.request.forceJsonOutput
+    request.forceJsonOutput ?? normalized.request.forceJsonOutput
   )
 
-  const temperature = request.temperature ?? legacy?.temperature
+  const temperature = request.temperature
   if (temperature !== undefined && temperature !== null && temperature !== '') {
     normalized.request.temperature = Number(temperature)
   }
 
-  normalized.request.extraBody = cloneRecordOrUndefined(
-    request.extraBody
-    ?? request.extra_body
-    ?? legacy?.extraBody
-  )
+  normalized.request.extraBody = cloneRecordOrUndefined(request.extraBody)
 
   normalized.execution.useStream = Boolean(
-    execution.useStream
-    ?? execution.use_stream
-    ?? legacy?.useStream
-    ?? normalized.execution.useStream
+    execution.useStream ?? normalized.execution.useStream
   )
 
   normalized.execution.rpmLimit = parseNumberOrFallback(
-    execution.rpmLimit
-    ?? execution.rpm_limit
-    ?? legacy?.rpmLimit,
-    normalized.execution.rpmLimit
+    execution.rpmLimit ?? normalized.execution.rpmLimit
   )
 
   normalized.execution.transportRetries = parseNumberOrFallback(
-    execution.transportRetries
-    ?? execution.transport_retries
-    ?? legacy?.transportRetries,
-    normalized.execution.transportRetries
+    execution.transportRetries ?? normalized.execution.transportRetries
   )
 
   normalized.execution.businessRetries = parseNumberOrFallback(
-    execution.businessRetries
-    ?? execution.business_retries
-    ?? execution.maxRetries
-    ?? execution.max_retries
-    ?? legacy?.businessRetries
-    ?? legacy?.maxRetries,
+    execution.businessRetries ?? normalized.execution.businessRetries
+  )
+
+  return normalized
+}
+
+export function deserializeOpenAICompatibleOptionsFromApi(
+  raw: unknown,
+  defaults?: Partial<OpenAICompatibleOptions>
+): OpenAICompatibleOptions {
+  const normalized = createDefaultOpenAiOptions(defaults)
+  const candidate = (raw && typeof raw === 'object') ? raw as Record<string, any> : {}
+  const request = (candidate.request && typeof candidate.request === 'object') ? candidate.request as Record<string, any> : {}
+  const execution = (candidate.execution && typeof candidate.execution === 'object') ? candidate.execution as Record<string, any> : {}
+
+  normalized.request.forceJsonOutput = Boolean(
+    request.force_json_output ?? normalized.request.forceJsonOutput
+  )
+
+  const temperature = request.temperature
+  if (temperature !== undefined && temperature !== null && temperature !== '') {
+    normalized.request.temperature = Number(temperature)
+  }
+
+  normalized.request.extraBody = cloneRecordOrUndefined(request.extra_body)
+
+  normalized.execution.useStream = Boolean(
+    execution.use_stream ?? normalized.execution.useStream
+  )
+  normalized.execution.rpmLimit = parseNumberOrFallback(
+    execution.rpm_limit ?? normalized.execution.rpmLimit,
+    normalized.execution.rpmLimit
+  )
+  normalized.execution.transportRetries = parseNumberOrFallback(
+    execution.transport_retries ?? normalized.execution.transportRetries,
+    normalized.execution.transportRetries
+  )
+  normalized.execution.businessRetries = parseNumberOrFallback(
+    execution.business_retries ?? normalized.execution.businessRetries,
     normalized.execution.businessRetries
   )
 

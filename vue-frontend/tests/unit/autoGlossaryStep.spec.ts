@@ -12,7 +12,7 @@ vi.mock('@/api/translate', () => ({
 
 import { executeAutoGlossary } from '@/composables/translation/core/steps/autoGlossary'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 describe('executeAutoGlossary', () => {

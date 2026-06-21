@@ -168,7 +168,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
-   * 设置书籍/章节上下文（别名，兼容 main.js 迁移）
+   * 设置书籍/章节上下文
    * @param bookId - 书籍ID
    * @param chapterId - 章节ID
    * @param bookTitle - 书籍标题
@@ -384,7 +384,6 @@ export const useSessionStore = defineStore('session', () => {
 
   /**
    * 将图片 URL 转换为 Base64
-   * 复刻原版 imageUrlToBase64 逻辑
    */
   async function imageUrlToBase64(url: string | null): Promise<string | null> {
     if (!url || typeof url !== 'string') return null
@@ -412,7 +411,6 @@ export const useSessionStore = defineStore('session', () => {
 
   /**
    * 将会话中的所有图片 URL 转换为 Base64
-   * 复刻原版 convertImagesToBase64 逻辑
    */
   async function convertImagesToBase64(
     images: ImageData[],
@@ -456,15 +454,14 @@ export const useSessionStore = defineStore('session', () => {
     try {
       // 获取 store 实例
       const { useImageStore } = await import('@/stores/imageStore')
-      const { useSettingsStore } = await import('@/stores/settingsStore')
+      const { useSettingsStore } = await import('@/stores/settings')
       const { useBubbleStore } = await import('@/stores/bubbleStore')
       const imageStore = useImageStore()
       const settingsStore = useSettingsStore()
       const bubbleStore = useBubbleStore()
 
-      // 调用 API 按路径加载会话
-      const { loadSessionByPathApi } = await import('@/api/session')
-      const response = await loadSessionByPathApi(sessionPath)
+      const { loadSessionByPath } = await import('@/api/session')
+      const response = await loadSessionByPath(sessionPath)
 
       if (!response.success || !response.session) {
         throw new Error(response.error || '加载会话失败')
@@ -492,8 +489,7 @@ export const useSessionStore = defineStore('session', () => {
           // 图片尺寸（可选）
           width: (img.width as number) || undefined,
           height: (img.height as number) || undefined,
-          // 【修复C】保留 bubbleStates 的 null 语义：null=从未处理，[]=用户清空
-          // 原版语义：null/undefined 表示需要自动检测，[] 表示用户主动清空了文本框
+          // 保留 bubbleStates 的 null 语义：null/undefined 表示需要自动检测，[] 表示用户主动清空了文本框。
           bubbleStates: bubbleStates,
           bubbleCoords: bubbleStates
             ? bubbleStates.map((state) => state.coords)
@@ -538,8 +534,7 @@ export const useSessionStore = defineStore('session', () => {
           userMask: (img.userMask as string) || null,
         })})
 
-        // 将图片 URL 转换为 Base64（用于 Canvas 操作和翻译功能）
-        // 复刻原版逻辑：显示进度并逐张转换
+        // 将图片 URL 转换为 Base64，用于 Canvas 操作和翻译功能。
         if (images.length > 0) {
           console.log('正在加载图片...')
           loadingProgress.value = { current: 0, total: images.length, message: '正在加载图片...' }
@@ -653,7 +648,7 @@ export const useSessionStore = defineStore('session', () => {
 
     // 获取 imageStore 和 settingsStore
     const { useImageStore } = await import('@/stores/imageStore')
-    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const { useSettingsStore } = await import('@/stores/settings')
     const imageStore = useImageStore()
     const settingsStore = useSettingsStore()
 

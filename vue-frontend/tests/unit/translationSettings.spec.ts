@@ -67,7 +67,7 @@ vi.mock('@/components/settings/SavedPromptsPicker.vue', () => ({
 }))
 
 import TranslationSettings from '@/components/settings/TranslationSettings.vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 describe('TranslationSettings', () => {
   beforeEach(() => {

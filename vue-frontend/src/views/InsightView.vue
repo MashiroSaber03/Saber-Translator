@@ -581,14 +581,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 <style scoped>
 /* ==================== 漫画分析页面样式 ==================== */
 
-/* ==================== 页面根容器固定布局 - 当前行为 ==================== */
-
-/* 
- * 【关键修复1】建立 BFC 防止外边距折叠，强制固定高度
- * 当前行为：整个页面框架固定在视口内，所有滚动发生在内部容器
- * 
- * 【优化】使用 padding-top 而不是子元素的 margin-top，避免亚像素渲染问题
- */
+/* ==================== 页面根容器固定布局 ==================== */
 .insight-page {
   --insight-bg-primary: var(--insight-view-accent-primary);
   --insight-bg-secondary: var(--insight-view-accent-secondary);
@@ -609,16 +602,10 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   --insight-error-color: var(--insight-view-text-muted);
   --insight-danger: var(--insight-view-accent-variant-013);
 
-  /* 固定高度为视口高度，防止内容撑开 */
   height: 100vh;
-  /* 隐藏溢出，确保不出现整体滚动条 */
   overflow: hidden;
-  /* 清除外边距，防止折叠到父元素 */
   margin: 0;
-  /* 为 fixed header 预留空间 */
-  /* 合并 padding 声明：top 56px（为 header 预留空间），left/right/bottom 0 */
   padding: 56px 20px 0 20px;
-  /* 使用 Flex 布局以支持子元素的高度计算 */
   display: flex;
   flex-direction: column;
 }
@@ -651,17 +638,10 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 /* 布局 */
-/* 
- * 【关键修复2】主内容区使用固定高度，用 margin-top 为 fixed header 预留空间
- * 当前行为：主内容区严格占据 "100vh - header高度" 的空间，不会随内容撑开
- * 高度计算：margin-top (56px) + height (calc(100vh - 56px)) = 100vh（正好填满）
- */
 .insight-page .insight-main {
     display: flex;
-    /* 使用 flex: 1 自动填充父容器剩余空间（100vh - 56px padding-top） */
     flex: 1;
     background: var(--insight-bg-primary);
-    /* 确保内部溢出不影响外层 */
     overflow: hidden;
 }
 
@@ -769,15 +749,8 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     /* 注意：display 由 v-show 控制，不在 CSS 中设置 */
     flex: 1;
     overflow-y: auto;
-    /* 【关键修复5】移除内边距，让内容完全填满可用空间 */
     padding: 0;
 }
-
-/* 当前实现兼容：如果不使用 v-show，可通过 active 类控制显示
-.tab-content.active {
-    display: block;
-}
-*/
 
 /* 选择书籍提示 */
 .insight-page .select-book-prompt {

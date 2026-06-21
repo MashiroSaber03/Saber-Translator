@@ -79,7 +79,7 @@ export function useTranslation() {
     const isTranslating = pipeline.isTranslating
     const progressPercent = pipeline.progressPercent
 
-    // 高质量翻译和校对状态（向后兼容）
+    // 高质量翻译和校对复用统一管线执行状态。
     const isHqTranslating = computed(() => pipeline.isExecuting.value)
     const isProofreading = computed(() => pipeline.isExecuting.value)
 

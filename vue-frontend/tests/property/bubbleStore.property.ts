@@ -1,7 +1,7 @@
 /**
  * 气泡状态管理属性测试
  * 
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 6: 气泡状态序列化往返一致性
  * Property 7: 气泡多选状态一致性
  * 
@@ -110,7 +110,7 @@ describe('气泡状态管理属性测试', () => {
    * 
    * 对于任意有效的气泡状态数组，序列化后再反序列化应当得到等价的气泡状态数组。
    * 
-   * Feature: vue-frontend-migration, Property 6: 气泡状态序列化往返一致性
+   * Feature: frontend-behavior, Property 6: 气泡状态序列化往返一致性
    * Validates: Requirements 30.4
    */
   it('气泡状态序列化往返一致性', () => {
@@ -170,7 +170,7 @@ describe('气泡状态管理属性测试', () => {
    * 对于任意气泡列表和选择操作序列，selectedIndices 数组应当准确反映所有被选中的气泡索引，
    * 且不包含重复项。
    * 
-   * Feature: vue-frontend-migration, Property 7: 气泡多选状态一致性
+   * Feature: frontend-behavior, Property 7: 气泡多选状态一致性
    * Validates: Requirements 37.1, 37.2
    */
   it('气泡多选状态一致性', () => {

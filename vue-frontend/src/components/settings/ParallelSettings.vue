@@ -10,7 +10,7 @@ import UiButton from '@/components/ui/UiButton.vue'
  */
 
 import { computed } from 'vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 
@@ -59,7 +59,15 @@ const lockSize = computed({
       <UiField class="ui-settings-field" :class="{ 'item-disabled': !parallelEnabled }">
         <label>深度学习并发数:</label>
         <div class="number-control">
-          <UiButton variant="secondary" @click="lockSize = Math.max(1, lockSize - 1)" :disabled="!parallelEnabled" size="sm">-</UiButton>
+          <UiButton
+            variant="secondary"
+            class="number-control__button"
+            @click="lockSize = Math.max(1, lockSize - 1)"
+            :disabled="!parallelEnabled"
+            size="sm"
+          >
+            -
+          </UiButton>
           <UiInput 
             type="number" 
             v-model.number="lockSize" 
@@ -68,7 +76,15 @@ const lockSize = computed({
             :disabled="!parallelEnabled"
             class="number-input"
           />
-          <UiButton variant="secondary" @click="lockSize = Math.min(4, lockSize + 1)" :disabled="!parallelEnabled" size="sm">+</UiButton>
+          <UiButton
+            variant="secondary"
+            class="number-control__button"
+            @click="lockSize = Math.min(4, lockSize + 1)"
+            :disabled="!parallelEnabled"
+            size="sm"
+          >
+            +
+          </UiButton>
         </div>
         <div class="ui-form-hint">控制检测/OCR/颜色/修复的最大并发数（建议1-2）</div>
       </UiField>
@@ -138,7 +154,7 @@ input:checked + .toggle-slider::before {
   gap: 4px;
 }
 
-.number-control .ui-button--sm {
+.number-control__button {
   width: 28px;
   height: 28px;
   padding: 0;

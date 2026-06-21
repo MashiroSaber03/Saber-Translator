@@ -1,7 +1,7 @@
 /**
  * 会话分批保存属性测试
  * 
- * **Feature: vue-frontend-migration, Property 34: 会话保存加载往返一致性**
+ * **Feature: frontend-behavior, Property 34: 会话保存加载往返一致性**
  * **Validates: Requirements 14.4**
  */
 

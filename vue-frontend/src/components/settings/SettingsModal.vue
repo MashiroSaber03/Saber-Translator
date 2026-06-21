@@ -95,7 +95,7 @@ import './SettingsModal.global.styles.css'
  * 基于 BaseModal 实现
  */
 import { ref, watch } from 'vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import OcrSettings from './OcrSettings.vue'
@@ -157,7 +157,7 @@ watch(
   (newVal) => {
     isOpen.value = newVal
     if (newVal) {
-      // 【修复问题2】如果指定了初始Tab，则跳转到该Tab
+      // 弹窗打开时尊重调用方指定的初始 tab。
       if (props.initialTab && tabs.some(t => t.id === props.initialTab)) {
         activeTab.value = props.initialTab
       }

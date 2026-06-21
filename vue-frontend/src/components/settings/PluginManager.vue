@@ -414,6 +414,16 @@ onMounted(() => {
   gap: 8px;
 }
 
+.plugin-manager {
+  --ui-button-sm-padding: 4px 8px;
+  --ui-button-sm-font-size: 12px;
+  --ui-button-danger-background: transparent;
+  --ui-button-danger-border: none;
+  --ui-button-danger-shadow: none;
+  --ui-button-danger-hover-background: transparent;
+  --ui-button-danger-hover-shadow: none;
+}
+
 .plugin-manager .plugin-list {
   border: 1px solid var(--color-border-muted);
   border-radius: 4px;
@@ -740,16 +750,6 @@ onMounted(() => {
   font-size: 13px;
   color: var(--color-text-supporting);
   margin-bottom: 10px;
-}
-
-.plugin-manager .ui-button--sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
-.plugin-manager .ui-button--danger {
-  background: transparent;
-  border: none;
 }
 
 .plugin-manager .sr-only {

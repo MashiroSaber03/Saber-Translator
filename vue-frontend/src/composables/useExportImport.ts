@@ -5,7 +5,7 @@
 
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { useToast } from '@/utils/toast'
 import {

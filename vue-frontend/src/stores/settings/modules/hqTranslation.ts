@@ -67,14 +67,24 @@ export function useHqTranslationSettings(
    * @param updates - 要更新的设置
    */
   function updateHqTranslation(updates: HqTranslationUiUpdates): void {
-    Object.assign(settings.value.hqTranslation, updates)
-    if (updates.rpmLimit !== undefined) settings.value.hqTranslation.openaiOptions.execution.rpmLimit = updates.rpmLimit
-    if (updates.transportRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.transportRetries = updates.transportRetries
-    if (updates.businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = updates.businessRetries
-    if (updates.forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
-    if (updates.useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = updates.useStream
+    const {
+      rpmLimit,
+      transportRetries,
+      businessRetries,
+      forceJsonOutput,
+      useStream,
+      extraBody,
+      ...hqUpdates
+    } = updates
+
+    Object.assign(settings.value.hqTranslation, hqUpdates)
+    if (rpmLimit !== undefined) settings.value.hqTranslation.openaiOptions.execution.rpmLimit = rpmLimit
+    if (transportRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.transportRetries = transportRetries
+    if (businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = businessRetries
+    if (forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJsonOutput
+    if (useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = useStream
     if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-      settings.value.hqTranslation.openaiOptions.request.extraBody = updates.extraBody
+      settings.value.hqTranslation.openaiOptions.request.extraBody = extraBody
     }
     saveToStorage()
   }
@@ -90,10 +100,10 @@ export function useHqTranslationSettings(
 
   /**
    * 设置高质量翻译强制JSON输出
-   * @param forceJson - 是否强制JSON输出
+   * @param forceJsonOutput - 是否强制 JSON 输出
    */
-  function setHqForceJsonOutput(forceJson: boolean): void {
-    settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJson
+  function setHqForceJsonOutput(forceJsonOutput: boolean): void {
+    settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJsonOutput
     saveToStorage()
   }
 

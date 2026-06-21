@@ -447,7 +447,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             variant="secondary" 
             
             :disabled="isReanalyzing || isReanalyzeTaskRunning"
-            :class="{ loading: isReanalyzing || isReanalyzeTaskRunning }"
+            :loading="isReanalyzing || isReanalyzeTaskRunning"
             @click="reanalyzePage" size="sm"
           >
             <span v-if="isReanalyzing || isReanalyzeTaskRunning" class="btn-spinner"></span>
@@ -506,59 +506,21 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 <style scoped>/* ==================== PageDetail样式 ==================== */
 
-/* ==================== 按钮样式 ==================== */
-.page-detail-section .ui-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-}
-
-.page-detail-section .ui-button--primary {
-  background: var(--insight-color-primary);
-  color: white;
-}
-
-.page-detail-section .ui-button--primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.page-detail-section .ui-button--primary:hover:not(:disabled) {
-  background: var(--insight-primary-dark);
-}
-
-.page-detail-section .ui-button--secondary {
-  background: var(--insight-bg-tertiary);
-  color: var(--insight-text-primary);
-  border: 1px solid var(--color-border-muted);
-}
-
-.page-detail-section .ui-button--secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.page-detail-section .ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-border-muted);
-}
-
-.page-detail-section .ui-button--sm {
-  padding: 8px 14px;
-  font-size: 13px;
-}
-
 /* ==================== 组件特定样式 ==================== */
 
 .workspace-section.page-detail-section {
+  --ui-button-padding: 10px 18px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--insight-color-primary);
+  --ui-button-primary-hover-background: var(--insight-primary-dark);
+  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-secondary-color: var(--insight-text-primary);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted);
+  --ui-button-secondary-hover-background: var(--color-border-muted);
+  --ui-button-sm-padding: 8px 14px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
+
   padding: 20px 18px;
 }
 
@@ -807,11 +769,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-muted);
-}
-
-.page-detail-section .ui-button.loading {
-  opacity: 0.7;
-  cursor: wait;
 }
 
 .page-detail-section .btn-spinner {

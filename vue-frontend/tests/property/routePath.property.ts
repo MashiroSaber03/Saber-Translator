@@ -2,7 +2,7 @@
  * 路由路径解析属性测试
  * 使用 fast-check 进行属性基测试，验证路由路径解析的一致性
  * 
- * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+ * Feature: frontend-behavior, Property 45: 路由路径解析一致性
  * Validates: Requirements 11.2, 11.3
  */
 import { describe, it } from 'vitest'
@@ -99,7 +99,7 @@ function buildVueStaticPath(filename: string): string {
 
 describe('路由路径解析属性测试', () => {
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * 对于任意 API 路径，应该被正确分类为 API 路由
@@ -133,7 +133,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * 对于任意静态资源路径，应该被正确分类为静态资源路由
@@ -141,7 +141,7 @@ describe('路由路径解析属性测试', () => {
   it('静态资源路径应该被正确分类为静态资源路由', () => {
     // 定义资源类型和示例文件名
     const resourceTypes = ['css', 'js', 'fonts', 'pic', 'vue']
-    const filenames = ['style.css', 'main.js', 'font.woff2', 'logo.png', 'index.html']
+    const filenames = ['layout.css', 'bundle.js', 'font.woff2', 'logo.png', 'index.html']
 
     fc.assert(
       fc.property(
@@ -162,7 +162,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * 对于任意前端路由路径，应该被正确分类为前端路由
@@ -187,7 +187,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * 路由分类应该是互斥的（一个路径只能属于一种类型）
@@ -200,8 +200,8 @@ describe('路由路径解析属性测试', () => {
       '/reader',
       '/insight',
       '/api/bookshelf/books',
-      '/static/css/style.css',
-      '/js/main.abc123.js',     // Vue JS 资源
+      '/static/css/layout.css',
+      '/js/bundle.abc123.js',     // Vue JS 资源
       '/assets/index.abc123.css', // Vue CSS 资源
       '/unknown/path',
     ]
@@ -233,7 +233,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * Vue 静态资源路径应该正确构建（使用新的 /js/ 和 /assets/ 路径）
@@ -270,7 +270,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * 带查询参数的前端路由应该被正确识别
@@ -302,7 +302,7 @@ describe('路由路径解析属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 45: 路由路径解析一致性
+   * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
    * API 路径构建应该保持一致性

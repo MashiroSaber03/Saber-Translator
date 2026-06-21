@@ -54,7 +54,7 @@ vi.mock('@/stores/bubbleStore', () => ({
   useBubbleStore: () => bubbleStoreMock,
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => settingsStoreMock,
 }))
 

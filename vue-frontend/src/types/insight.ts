@@ -28,8 +28,6 @@ export type OverviewTemplateType =
   | 'world_setting'
   | 'highlights'
   | 'reading_notes'
-  // 兼容旧版
-  | 'novel' | 'character' | 'timeline' | 'world' | 'theme' | 'relationship' | 'custom'
 
 /**
  * 页面数据（Store 使用，camelCase）
@@ -61,7 +59,6 @@ export interface ChapterInfo {
  */
 export interface OverviewData {
   type: OverviewTemplateType  // 使用 type 而非 template，与 store 代码一致
-  template?: OverviewTemplateType  // 兼容旧代码
   content: string
   generatedAt: string
 }
@@ -344,7 +341,7 @@ export interface InsightConfig {
   image_gen?: ImageGenConfig
   analysis?: AnalysisSettings
   prompts?: PromptsConfig
-  providerSettings?: Record<string, Record<string, Record<string, unknown>>>
+  provider_settings?: Record<string, Record<string, Record<string, unknown>>>
 }
 
 // ==================== 分析数据类型 ====================

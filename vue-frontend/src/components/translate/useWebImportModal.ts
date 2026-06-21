@@ -199,7 +199,7 @@ export function useWebImportModal() {
           webImportStore.setError(errorMsg)
         },
         selectedEngine.value,
-        // 新增：每收到一张图片就增量添加
+        // 每收到一张图片就增量添加。
         (page) => {
           webImportStore.addPageIncremental(page)
         }

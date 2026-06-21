@@ -1,7 +1,7 @@
 /**
  * 快捷键系统属性测试
  * 
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 10: 快捷键事件处理一致性
  * 
  * Validates: Requirements 19.1-19.7
@@ -170,7 +170,7 @@ describe('快捷键系统属性测试', () => {
    * 
    * 对于任意快捷键配置和键盘事件，处理结果应当一致且可预测。
    * 
-   * Feature: vue-frontend-migration, Property 10: 快捷键事件处理一致性
+   * Feature: frontend-behavior, Property 10: 快捷键事件处理一致性
    * Validates: Requirements 19.1-19.7
    */
   describe('Property 10: 快捷键事件处理一致性', () => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 describe('hybrid OCR settings', () => {
   const storageState: Record<string, string> = {}
@@ -37,13 +37,14 @@ describe('hybrid OCR settings', () => {
     expect(store.settings.hybridOcr.confidenceThreshold).toBe(0.2)
   })
 
-  it('loadFromStorage migrates legacy threshold fields and unsupported combos', () => {
+  it('loadFromStorage keeps the current confidence threshold and normalizes unsupported combos', () => {
     storageState['translationSettings'] = JSON.stringify({
+      settingsSchemaVersion: 3,
       ocrEngine: 'ai_vision',
       hybridOcr: {
         enabled: true,
         secondaryEngine: 'paddle_ocr',
-        threshold48px: 0.35
+        confidenceThreshold: 0.35
       }
     })
 
@@ -55,22 +56,35 @@ describe('hybrid OCR settings', () => {
     expect(store.settings.hybridOcr.confidenceThreshold).toBe(0.35)
   })
 
-  it('loadFromStorage migrates legacy custom provider ids and preserves zero-valued AI settings', () => {
+  it('loadFromStorage preserves current custom provider ids and zero-valued AI options', () => {
     storageState['translationSettings'] = JSON.stringify({
+      settingsSchemaVersion: 3,
       translation: {
-        provider: 'custom_openai',
-        rpmLimit: 0,
-        maxRetries: 0
+        provider: 'custom',
+        openaiOptions: {
+          execution: {
+            rpmLimit: 0,
+            businessRetries: 0
+          }
+        }
       },
       hqTranslation: {
-        provider: 'custom_openai',
-        rpmLimit: 0,
-        maxRetries: 0
+        provider: 'custom',
+        openaiOptions: {
+          execution: {
+            rpmLimit: 0,
+            businessRetries: 0
+          }
+        }
       },
       aiVisionOcr: {
-        provider: 'custom_openai_vision',
-        rpmLimit: 0,
-        minImageSize: 0
+        provider: 'custom',
+        minImageSize: 0,
+        openaiOptions: {
+          execution: {
+            rpmLimit: 0
+          }
+        }
       },
       proofreading: {
         maxRetries: 0
@@ -81,13 +95,13 @@ describe('hybrid OCR settings', () => {
     store.loadFromStorage()
 
     expect(store.settings.translation.provider).toBe('custom')
-    expect(store.settings.translation.rpmLimit).toBe(0)
-    expect(store.settings.translation.maxRetries).toBe(0)
+    expect(store.settings.translation.openaiOptions.execution.rpmLimit).toBe(0)
+    expect(store.settings.translation.openaiOptions.execution.businessRetries).toBe(0)
     expect(store.settings.hqTranslation.provider).toBe('custom')
-    expect(store.settings.hqTranslation.rpmLimit).toBe(0)
-    expect(store.settings.hqTranslation.maxRetries).toBe(0)
+    expect(store.settings.hqTranslation.openaiOptions.execution.rpmLimit).toBe(0)
+    expect(store.settings.hqTranslation.openaiOptions.execution.businessRetries).toBe(0)
     expect(store.settings.aiVisionOcr.provider).toBe('custom')
-    expect(store.settings.aiVisionOcr.rpmLimit).toBe(0)
+    expect(store.settings.aiVisionOcr.openaiOptions.execution.rpmLimit).toBe(0)
     expect(store.settings.aiVisionOcr.minImageSize).toBe(0)
     expect(store.settings.proofreading.maxRetries).toBe(0)
   })

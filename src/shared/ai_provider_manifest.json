@@ -84,8 +84,7 @@
     "requiresBaseUrl": true,
     "isLocal": false,
     "supportsStream": true,
-    "supportsJsonResponse": true,
-    "legacyIds": ["custom_openai", "custom_openai_vision"]
+    "supportsJsonResponse": true
   },
   {
     "id": "ollama",

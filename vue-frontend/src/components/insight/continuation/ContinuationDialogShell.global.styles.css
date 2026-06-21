@@ -18,6 +18,19 @@
 }
 
 .continuation-dialog-form {
+  --ui-input-padding: 10px 12px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-input-radius: 8px;
+  --ui-input-background: var(--color-surface-base);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-line-height: inherit;
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-textarea-radius: 8px;
+  --ui-textarea-background: var(--color-surface-base);
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-line-height: inherit;
+
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -35,17 +48,7 @@
 }
 
 .continuation-dialog-form .continuation-dialog__form-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 8px;
   font: inherit;
-  transition: border-color 0.2s;
-}
-
-.continuation-dialog-form .continuation-dialog__form-input:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .continuation-dialog-form .form-hint {
@@ -59,35 +62,21 @@
 }
 
 .continuation-dialog-actions {
+  --ui-button-padding: 10px 20px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-hover-shadow: none;
+  --ui-button-primary-hover-transform: none;
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-secondary-hover-border-color: var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-color: var(--color-text-default);
+
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-}
-
-.continuation-dialog-actions .ui-button {
-  padding: 10px 20px;
-  font-size: 14px;
-  box-shadow: none;
-}
-
-.continuation-dialog-actions .ui-button--primary {
-  background: var(--color-surface-brand);
-}
-
-.continuation-dialog-actions .ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-  transform: none;
-  box-shadow: none;
-}
-
-.continuation-dialog-actions .ui-button--secondary {
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.continuation-dialog-actions .ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  transform: none;
-  box-shadow: none;
 }

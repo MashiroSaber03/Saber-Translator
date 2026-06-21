@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -57,6 +57,7 @@ describe('settings store saber yolo refine', () => {
 
   it('loads enableSaberYoloRefine from localStorage', () => {
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
+      settingsSchemaVersion: 3,
       enableSaberYoloRefine: false,
       saberYoloRefineOverlapThreshold: 35,
       enableAuxYoloDetection: true,
@@ -78,6 +79,7 @@ describe('settings store saber yolo refine', () => {
     getUserSettingsMock.mockResolvedValue({
       success: true,
       settings: {
+        settingsSchemaVersion: 3,
         enableSaberYoloRefine: false,
         saberYoloRefineOverlapThreshold: '35',
         enableAuxYoloDetection: true,

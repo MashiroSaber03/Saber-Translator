@@ -1,7 +1,7 @@
 /**
  * 响应式布局 - 断点常量验证
  * 
- * **Feature: vue-frontend-migration, Property 43: 视口尺寸计算一致性**
+ * **Feature: frontend-behavior, Property 43: 视口尺寸计算一致性**
  * **Validates: Requirements 25.1, 25.4**
  */
 

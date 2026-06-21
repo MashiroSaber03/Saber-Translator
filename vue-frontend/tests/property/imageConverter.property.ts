@@ -1,7 +1,7 @@
 /**
  * 图片URL转Base64属性测试
  * 
- * **Feature: vue-frontend-migration, Property 33: 图片URL转Base64一致性**
+ * **Feature: frontend-behavior, Property 33: 图片URL转Base64一致性**
  * **Validates: Requirements 14.4**
  */
 

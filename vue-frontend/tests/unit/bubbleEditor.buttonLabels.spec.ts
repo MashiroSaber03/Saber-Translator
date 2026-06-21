@@ -5,7 +5,7 @@ import BubbleEditor from '@/components/edit/BubbleEditor.vue'
 import type { BubbleState } from '@/types/bubble'
 
 vi.mock('@/api/config', () => ({
-  getFontListApi: vi.fn().mockResolvedValue({ fonts: [] }),
+  getFontList: vi.fn().mockResolvedValue({ fonts: [] }),
 }))
 
 function makeBubble(): BubbleState {

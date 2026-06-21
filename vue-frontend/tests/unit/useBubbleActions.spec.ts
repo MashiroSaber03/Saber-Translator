@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 

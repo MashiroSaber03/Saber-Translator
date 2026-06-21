@@ -128,8 +128,8 @@ export function useWebImportSettings(
     webImportSettings.value.agent.useStream = useStream
   }
 
-  function setAgentForceJson(forceJson: boolean): void {
-    webImportSettings.value.agent.forceJsonOutput = forceJson
+  function setAgentForceJsonOutput(forceJsonOutput: boolean): void {
+    webImportSettings.value.agent.forceJsonOutput = forceJsonOutput
   }
 
   function setAgentTimeout(timeout: number): void {
@@ -277,7 +277,7 @@ export function useWebImportSettings(
     setAgentBaseUrl,
     setAgentModelName,
     setAgentUseStream,
-    setAgentForceJson,
+    setAgentForceJsonOutput,
     setAgentTimeout,
     saveAgentProviderConfig,
     restoreAgentProviderConfig,

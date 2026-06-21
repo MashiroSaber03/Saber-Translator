@@ -276,7 +276,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
         variant="secondary" 
         
         :disabled="isLoading || isRegenerating"
-        :class="{ loading: isRegenerating }"
+        :loading="isRegenerating"
         @click="regenerateTimeline" size="sm"
       >
         <span v-if="isRegenerating" class="btn-spinner"></span>
@@ -303,6 +303,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
         <p>完成漫画分析后会自动生成时间线，或点击下方按钮手动生成</p>
         <UiButton
           variant="primary" 
+          class="timeline-empty-state__action"
           
           :disabled="isRegenerating"
           @click="regenerateTimeline" size="sm"
@@ -484,53 +485,18 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 <style scoped>/* ==================== TimelinePanel样式 ==================== */
 
 /* ==================== 按钮样式 ==================== */
-.timeline-tab .ui-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-}
-
-.timeline-tab .ui-button--primary {
-  background: var(--insight-color-primary);
-  color: white;
-}
-
-.timeline-tab .ui-button--primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.timeline-tab .ui-button--primary:hover:not(:disabled) {
-  background: var(--insight-primary-dark);
-}
-
-.timeline-tab .ui-button--secondary {
-  background: var(--insight-bg-tertiary);
-  color: var(--insight-text-primary);
-  border: 1px solid var(--color-border-muted);
-}
-
-.timeline-tab .ui-button--secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.timeline-tab .ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-border-muted);
-}
-
-.timeline-tab .ui-button--sm {
-  padding: 8px 14px;
-  font-size: 13px;
+.timeline-tab {
+  --ui-button-padding: 10px 18px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--insight-color-primary);
+  --ui-button-primary-hover-background: var(--insight-primary-dark);
+  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-secondary-color: var(--insight-text-primary);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted);
+  --ui-button-secondary-hover-background: var(--color-border-muted);
+  --ui-button-sm-padding: 8px 14px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
 }
 
 /* ==================== 组件特定样式 ==================== */
@@ -973,12 +939,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin-bottom: 4px;
 }
 
-/* 按钮加载状态 */
-.timeline-tab .ui-button.loading {
-  opacity: 0.7;
-  cursor: wait;
-}
-
 .timeline-tab .btn-spinner {
   display: inline-block;
   width: 12px;
@@ -1185,7 +1145,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     margin-bottom: 20px;
 }
 
-.timeline-tab .timeline-empty-state .ui-button {
+.timeline-tab .timeline-empty-state__action {
     display: inline-flex;
     align-items: center;
     gap: 6px;

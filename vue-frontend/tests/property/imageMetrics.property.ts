@@ -1,7 +1,7 @@
 /**
  * 图片显示指标计算属性测试
  * 
- * **Feature: vue-frontend-migration, Property 37: 图片显示指标计算一致性**
+ * **Feature: frontend-behavior, Property 37: 图片显示指标计算一致性**
  * **Validates: Requirements 17.2**
  * 
  * 测试内容：

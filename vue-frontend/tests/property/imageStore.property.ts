@@ -2,7 +2,7 @@
  * 图片状态管理属性测试
  * 使用 fast-check 进行属性基测试，验证图片上传状态的一致性
  *
- * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+ * Feature: frontend-behavior, Property 3: 图片上传状态一致性
  * Validates: Requirements 4.1
  */
 import { describe, it, beforeEach } from 'vitest'
@@ -37,7 +37,7 @@ describe('图片状态管理属性测试', () => {
     .map((data) => `data:image/png;base64,${data}`)
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 对于任意有效图片文件，上传后 imageStore 中的图片数量应当增加相应数量
@@ -70,7 +70,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 对于任意有效图片，每张图片都应该有唯一的 ID
@@ -106,7 +106,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 对于任意有效图片，添加后应该有正确的初始状态
@@ -140,7 +140,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 添加第一张图片时，应该自动设置为当前图片
@@ -169,7 +169,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 删除图片后，图片数量应该正确减少
@@ -209,7 +209,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 清除所有图片后，状态应该重置
@@ -249,7 +249,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 图片索引切换应该在有效范围内
@@ -293,7 +293,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 上一张/下一张导航应该正确工作
@@ -343,7 +343,7 @@ describe('图片状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 3: 图片上传状态一致性
+   * Feature: frontend-behavior, Property 3: 图片上传状态一致性
    * Validates: Requirements 4.1
    *
    * 更新图片属性应该正确反映

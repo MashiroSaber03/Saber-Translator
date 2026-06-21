@@ -33,8 +33,8 @@ export async function parsePdfStart(
 /**
  * 获取 PDF 解析批次
  * @param sessionId 解析会话 ID
- * @param startIndex 起始索引（复刻原版）
- * @param count 批次数量（复刻原版）
+ * @param startIndex 起始索引
+ * @param count 批次数量
  */
 export async function parsePdfBatch(
   sessionId: string,
@@ -65,7 +65,7 @@ export interface MobiParseStartResponse {
   success: boolean
   session_id?: string
   total_pages?: number   // 后端实际返回的字段
-  total_images?: number  // 兼容旧版本
+  total_images?: number
   error?: string
 }
 

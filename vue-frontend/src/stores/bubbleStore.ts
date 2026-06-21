@@ -12,7 +12,7 @@ import type {
   BubbleStateUpdates
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 // 从 bubbleFactory 统一导入 store 内部使用的工厂函数
 import {
@@ -117,12 +117,11 @@ export const useBubbleStore = defineStore('bubble', () => {
   })
 
   // ============================================================
-  // 同步方法（复刻旧版 updateSingleBubbleState 的同步逻辑）
+  // 同步方法
   // ============================================================
 
   /**
    * 将当前气泡状态同步到 imageStore.currentImage.bubbleStates
-   * 复刻旧版 state.js 中 updateSingleBubbleState 的同步逻辑
    * 确保切换图片后气泡状态不丢失
    */
   function syncToCurrentImage(): void {
@@ -172,7 +171,7 @@ export const useBubbleStore = defineStore('bubble', () => {
 
   /**
    * 添加气泡
-   * 【复刻原版】从 settingsStore 读取当前 UI 设置作为新气泡的默认值
+   * 从 settingsStore 读取当前 UI 设置作为新气泡的默认值
    * @param coords - 气泡坐标
    * @param overrides - 可选的覆盖属性
    * @returns 新添加的气泡
@@ -181,7 +180,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     // 自动计算排版方向
     const autoDirection = detectTextDirection(coords)
 
-    // 【复刻原版 edit_mode.js addNewBubble】从 settingsStore 读取当前 UI 设置
+    // 新建气泡使用当前编辑设置作为默认文本样式。
     const settingsStore = useSettingsStore()
     const textStyle = settingsStore.settings.textStyle
 
@@ -293,7 +292,7 @@ export const useBubbleStore = defineStore('bubble', () => {
   }
 
   /**
-   * 【复刻原版】仅清除本地气泡状态，不同步到 imageStore
+   * 仅清除本地气泡状态，不同步到 imageStore。
    * 用于加载图片时：如果原图 bubbleStates 为 null，不应该把它写成 []
    * 这保持了 null（未处理）和 []（用户主动清空）的语义区分
    */
@@ -403,7 +402,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       }
       Object.assign(bubble, updates)
       console.log(`已更新气泡 ${index}`)
-      // 【同步】复刻旧版逻辑：每次更新单个气泡时同步到 currentImage
+      // 单个气泡更新后立即同步到 currentImage，避免切换图片时丢失编辑。
       syncToCurrentImage()
       return true
     }
@@ -462,7 +461,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         Object.assign(bubble, updatesWithAutoDirection)
       }
     }
-    // 【修复问题4】批量更新后同步到 currentImage，确保样式落盘
+    // 批量更新后同步到 currentImage，确保样式落盘。
     syncToCurrentImage()
     console.log(`已更新所有 ${bubbles.value.length} 个气泡`)
   }
@@ -561,7 +560,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         if (b.textDirection === 'vertical' || b.textDirection === 'horizontal') {
           return b.textDirection === 'vertical' ? 'v' : 'h'
         }
-        // 兼容旧数据：回退到 autoTextDirection
+        // textDirection 异常时回退到检测方向。
         if (b.autoTextDirection === 'vertical' || b.autoTextDirection === 'horizontal') {
           return b.autoTextDirection === 'vertical' ? 'v' : 'h'
         }

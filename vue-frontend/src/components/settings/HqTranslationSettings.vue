@@ -46,7 +46,13 @@
       <UiField class="ui-settings-field">
         <label for="settingsHqModelName">模型名称:</label>
         <div class="model-input-with-fetch">
-          <UiInput type="text" id="settingsHqModelName" v-model="localHqSettings.modelName" placeholder="请输入模型名称" />
+          <UiInput
+            type="text"
+            id="settingsHqModelName"
+            v-model="localHqSettings.modelName"
+            class="hq-translation-settings__model-input"
+            placeholder="请输入模型名称"
+          />
           <UiButton
             variant="toolbar"
             type="button"
@@ -140,7 +146,7 @@
           prompt-type="hq_translate"
           @select="handleHqPromptSelect"
         />
-        <UiButton variant="secondary" @click="resetHqPrompt" size="sm">重置为默认</UiButton>
+        <UiButton variant="secondary" class="hq-reset-prompt-btn" @click="resetHqPrompt" size="sm">重置为默认</UiButton>
       </UiField>
     </UiPanel>
   </div>
@@ -164,7 +170,7 @@ import {
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
@@ -390,6 +396,11 @@ function handleHqPromptSelect(content: string, name: string) {
 </script>
 
 <style scoped>
+.hq-translation-settings {
+  --ui-button-sm-padding: 4px 12px;
+  --ui-button-sm-font-size: 12px;
+}
+
 .ui-checkbox-label {
   display: flex;
   align-items: center;
@@ -401,21 +412,19 @@ function handleHqPromptSelect(content: string, name: string) {
   width: auto;
 }
 
-.ui-button--sm {
-  padding: 4px 12px;
-  font-size: 12px;
-  margin-top: 8px;
-}
-
 .hq-translation-settings .model-input-with-fetch {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.hq-translation-settings .model-input-with-fetch .ui-input {
+.hq-translation-settings .model-input-with-fetch .hq-translation-settings__model-input {
   flex: 1;
   min-width: 0;
+}
+
+.hq-reset-prompt-btn {
+  margin-top: 8px;
 }
 
 .hq-translation-settings .password-input-wrapper {
@@ -429,7 +438,7 @@ function handleHqPromptSelect(content: string, name: string) {
   padding-right: 36px;
 }
 
-.hq-translation-settings .password-toggle-btn.ui-button {
+.hq-translation-settings .password-toggle-btn {
   position: absolute;
   right: 8px;
   top: 50%;
@@ -444,11 +453,11 @@ function handleHqPromptSelect(content: string, name: string) {
   transition: opacity 0.2s ease;
 }
 
-.hq-translation-settings .password-toggle-btn.ui-button:hover {
+.hq-translation-settings .password-toggle-btn:hover {
   opacity: 1;
 }
 
-.hq-translation-settings .fetch-models-btn.ui-button {
+.hq-translation-settings .fetch-models-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -467,16 +476,16 @@ function handleHqPromptSelect(content: string, name: string) {
   transition: background 0.2s ease, opacity 0.2s ease;
 }
 
-.hq-translation-settings .fetch-models-btn.ui-button:hover:not(:disabled) {
+.hq-translation-settings .fetch-models-btn:hover:not(:disabled) {
   background: var(--translation-settings-surface-raised);
 }
 
-.hq-translation-settings .fetch-models-btn.ui-button:disabled {
+.hq-translation-settings .fetch-models-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.hq-translation-settings .settings-test-btn.ui-button {
+.hq-translation-settings .settings-test-btn {
   width: auto;
   padding: 10px 16px;
   border: none;
@@ -489,11 +498,11 @@ function handleHqPromptSelect(content: string, name: string) {
   transition: background-color 0.2s ease, opacity 0.2s ease;
 }
 
-.hq-translation-settings .settings-test-btn.ui-button:hover:not(:disabled) {
+.hq-translation-settings .settings-test-btn:hover:not(:disabled) {
   background-color: var(--color-status-info-hover);
 }
 
-.hq-translation-settings .settings-test-btn.ui-button:disabled {
+.hq-translation-settings .settings-test-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

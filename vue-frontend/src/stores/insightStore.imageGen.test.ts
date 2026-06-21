@@ -35,25 +35,6 @@ describe('useInsightStore imageGen config', () => {
     })
   })
 
-  it('migrates legacy local imageGen maxRetries into businessRetries', () => {
-    localStorage.setItem('manga_insight_config', JSON.stringify({
-      imageGen: {
-        provider: 'gpt2api',
-        apiKey: 'legacy-key',
-        model: 'gpt-image-2',
-        baseUrl: 'https://legacy.example.com/v1',
-        maxRetries: 6,
-      },
-    }))
-
-    const store = useInsightStore()
-    store.loadConfigFromStorage()
-
-    expect(store.config.imageGen.transportRetries).toBe(10)
-    expect(store.config.imageGen.businessRetries).toBe(6)
-    expect(store.config.imageGen.timeoutSeconds).toBe(0)
-  })
-
   it('restores per-provider imageGen runtime settings when switching providers', () => {
     const store = useInsightStore()
 
@@ -100,7 +81,7 @@ describe('useInsightStore imageGen config', () => {
     expect(store.config.imageGen.baseUrl).toBe('')
   })
 
-  it('fills missing reranker runtime fields when loading legacy provider cache', () => {
+  it('loads current reranker provider cache fields from storage', () => {
     const providerConfigs = ref<ProviderConfigsCache>({
       vlm: {},
       llm: {},
@@ -111,10 +92,13 @@ describe('useInsightStore imageGen config', () => {
     localStorage.setItem('insight_provider_configs', JSON.stringify({
       reranker: {
         jina: {
-          apiKey: 'legacy-key',
+          apiKey: 'reranker-key',
           model: 'jina-reranker-v2-base-multilingual',
           baseUrl: 'https://rerank.example.com/v1',
           topK: 5,
+          transportRetries: 7,
+          businessRetries: 8,
+          timeoutSeconds: 9,
         },
       },
     }))
@@ -123,17 +107,17 @@ describe('useInsightStore imageGen config', () => {
     manager.loadFromStorage()
 
     expect(providerConfigs.value.reranker.jina).toEqual({
-      apiKey: 'legacy-key',
+      apiKey: 'reranker-key',
       model: 'jina-reranker-v2-base-multilingual',
       baseUrl: 'https://rerank.example.com/v1',
       topK: 5,
-      transportRetries: 10,
-      businessRetries: 10,
-      timeoutSeconds: 0,
+      transportRetries: 7,
+      businessRetries: 8,
+      timeoutSeconds: 9,
     })
   })
 
-  it('preserves legacy zero max_retries when mapping imageGen API payloads', () => {
+  it('preserves explicit zero business_retries when mapping imageGen API payloads', () => {
     const store = useInsightStore()
 
     store.setConfigFromApi({
@@ -142,15 +126,15 @@ describe('useInsightStore imageGen config', () => {
         api_key: 'image-key',
         model: 'gpt-image-2',
         base_url: 'https://image.example.com/v1',
-        max_retries: 0,
+        business_retries: 0,
       },
-      providerSettings: {
+      provider_settings: {
         imageGenProvider: {
           gpt2api: {
             api_key: 'image-key',
             model: 'gpt-image-2',
             base_url: 'https://image.example.com/v1',
-            max_retries: 0,
+            business_retries: 0,
           },
         },
       },

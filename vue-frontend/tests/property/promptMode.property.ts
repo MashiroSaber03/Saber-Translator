@@ -2,13 +2,13 @@
  * 提示词模式切换属性测试
  * 使用 fast-check 进行属性基测试，验证提示词模式切换的一致性
  *
- * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+ * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
  * Validates: Requirements 22.1, 22.2
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import {
   DEFAULT_TRANSLATE_PROMPT,
   DEFAULT_TRANSLATE_JSON_PROMPT,
@@ -47,7 +47,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 对于任意初始模式状态，切换翻译提示词模式后状态应正确更新
@@ -62,28 +62,28 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 设置初始模式
-        store.updateTranslationService({ isJsonMode: initialJsonMode })
+        store.updateTranslationService({ forceJsonOutput: initialJsonMode })
 
         // 验证初始模式
-        if (store.settings.translation.isJsonMode !== initialJsonMode) return false
+        if (store.settings.translation.openaiOptions.request.forceJsonOutput !== initialJsonMode) return false
 
         // 切换模式
-        store.updateTranslationService({ isJsonMode: !initialJsonMode })
+        store.updateTranslationService({ forceJsonOutput: !initialJsonMode })
 
         // 验证模式已切换
         const expectedMode = !initialJsonMode
-        if (store.settings.translation.isJsonMode !== expectedMode) return false
+        if (store.settings.translation.openaiOptions.request.forceJsonOutput !== expectedMode) return false
 
         // 再次切换，应该回到初始模式
-        store.updateTranslationService({ isJsonMode: initialJsonMode })
-        return store.settings.translation.isJsonMode === initialJsonMode
+        store.updateTranslationService({ forceJsonOutput: initialJsonMode })
+        return store.settings.translation.openaiOptions.request.forceJsonOutput === initialJsonMode
       }),
       { numRuns: 100 }
     )
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 对于任意初始模式状态，切换AI视觉OCR提示词模式后状态应正确更新
@@ -98,35 +98,35 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 设置初始模式
-        store.updateAiVisionOcr({ isJsonMode: initialJsonMode })
+        store.updateAiVisionOcr({ forceJsonOutput: initialJsonMode })
 
         // 验证初始模式
-        if (store.settings.aiVisionOcr.isJsonMode !== initialJsonMode) return false
+        if (store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== initialJsonMode) return false
 
         // 切换模式
-        store.updateAiVisionOcr({ isJsonMode: !initialJsonMode })
+        store.updateAiVisionOcr({ forceJsonOutput: !initialJsonMode })
 
         // 验证模式已切换
         const expectedMode = !initialJsonMode
-        if (store.settings.aiVisionOcr.isJsonMode !== expectedMode) return false
+        if (store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== expectedMode) return false
 
         // 再次切换，应该回到初始模式
-        store.updateAiVisionOcr({ isJsonMode: initialJsonMode })
-        return store.settings.aiVisionOcr.isJsonMode === initialJsonMode
+        store.updateAiVisionOcr({ forceJsonOutput: initialJsonMode })
+        return store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput === initialJsonMode
       }),
       { numRuns: 100 }
     )
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 翻译提示词模式持久化往返一致性
    */
   it('翻译提示词模式持久化往返一致性', () => {
     fc.assert(
-      fc.property(fc.boolean(), (isJsonMode) => {
+      fc.property(fc.boolean(), (forceJsonOutput) => {
         // 每次迭代重新创建 Pinia 实例
         setActivePinia(createPinia())
         localStorageMock = {}
@@ -134,7 +134,7 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 设置模式
-        store.updateTranslationService({ isJsonMode })
+        store.updateTranslationService({ forceJsonOutput })
 
         // 验证设置已保存到 localStorage
         const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
@@ -146,21 +146,21 @@ describe('提示词模式切换属性测试', () => {
         newStore.loadFromStorage()
 
         // 验证模式已正确恢复
-        return newStore.settings.translation.isJsonMode === isJsonMode
+        return newStore.settings.translation.openaiOptions.request.forceJsonOutput === forceJsonOutput
       }),
       { numRuns: 100 }
     )
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * AI视觉OCR提示词模式持久化往返一致性
    */
   it('AI视觉OCR提示词模式持久化往返一致性', () => {
     fc.assert(
-      fc.property(fc.boolean(), (isJsonMode) => {
+      fc.property(fc.boolean(), (forceJsonOutput) => {
         // 每次迭代重新创建 Pinia 实例
         setActivePinia(createPinia())
         localStorageMock = {}
@@ -168,7 +168,7 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 设置模式
-        store.updateAiVisionOcr({ isJsonMode })
+        store.updateAiVisionOcr({ forceJsonOutput })
 
         // 验证设置已保存到 localStorage
         const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
@@ -180,14 +180,14 @@ describe('提示词模式切换属性测试', () => {
         newStore.loadFromStorage()
 
         // 验证模式已正确恢复
-        return newStore.settings.aiVisionOcr.isJsonMode === isJsonMode
+        return newStore.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput === forceJsonOutput
       }),
       { numRuns: 100 }
     )
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 默认提示词常量存在且不为空
@@ -213,7 +213,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 提示词内容保存和加载一致性
@@ -255,7 +255,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 模式切换不影响其他设置
@@ -266,7 +266,7 @@ describe('提示词模式切换属性测试', () => {
         fc.boolean(),
         fc.string({ minLength: 1, maxLength: 50 }),
         fc.string({ minLength: 1, maxLength: 50 }),
-        (isJsonMode, apiKey, modelName) => {
+        (forceJsonOutput, apiKey, modelName) => {
           // 每次迭代重新创建 Pinia 实例
           setActivePinia(createPinia())
           localStorageMock = {}
@@ -277,7 +277,7 @@ describe('提示词模式切换属性测试', () => {
           store.updateTranslationService({
             apiKey,
             modelName,
-            isJsonMode: false
+            forceJsonOutput: false
           })
 
           // 记录其他配置
@@ -285,13 +285,13 @@ describe('提示词模式切换属性测试', () => {
           const originalModelName = store.settings.translation.modelName
 
           // 切换模式
-          store.updateTranslationService({ isJsonMode })
+          store.updateTranslationService({ forceJsonOutput })
 
           // 验证其他配置未变
           return (
             store.settings.translation.apiKey === originalApiKey &&
             store.settings.translation.modelName === originalModelName &&
-            store.settings.translation.isJsonMode === isJsonMode
+            store.settings.translation.openaiOptions.request.forceJsonOutput === forceJsonOutput
           )
         }
       ),
@@ -300,7 +300,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 21: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 21: 提示词模式切换一致性
    * Validates: Requirements 22.1, 22.2
    *
    * 翻译和AI视觉OCR模式独立切换
@@ -318,20 +318,20 @@ describe('提示词模式切换属性测试', () => {
           const store = useSettingsStore()
 
           // 分别设置两种模式
-          store.updateTranslationService({ isJsonMode: translateJsonMode })
-          store.updateAiVisionOcr({ isJsonMode: aiVisionJsonMode })
+          store.updateTranslationService({ forceJsonOutput: translateJsonMode })
+          store.updateAiVisionOcr({ forceJsonOutput: aiVisionJsonMode })
 
           // 验证两种模式独立
-          if (store.settings.translation.isJsonMode !== translateJsonMode) return false
-          if (store.settings.aiVisionOcr.isJsonMode !== aiVisionJsonMode) return false
+          if (store.settings.translation.openaiOptions.request.forceJsonOutput !== translateJsonMode) return false
+          if (store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== aiVisionJsonMode) return false
 
           // 切换翻译模式，不影响AI视觉OCR模式
-          store.updateTranslationService({ isJsonMode: !translateJsonMode })
-          if (store.settings.aiVisionOcr.isJsonMode !== aiVisionJsonMode) return false
+          store.updateTranslationService({ forceJsonOutput: !translateJsonMode })
+          if (store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== aiVisionJsonMode) return false
 
           // 切换AI视觉OCR模式，不影响翻译模式
-          store.updateAiVisionOcr({ isJsonMode: !aiVisionJsonMode })
-          return store.settings.translation.isJsonMode === !translateJsonMode
+          store.updateAiVisionOcr({ forceJsonOutput: !aiVisionJsonMode })
+          return store.settings.translation.openaiOptions.request.forceJsonOutput === !translateJsonMode
         }
       ),
       { numRuns: 100 }
@@ -339,14 +339,14 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 40: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 40: 提示词模式切换一致性
    * Validates: Requirements 22.1, 16.2
    *
    * setTranslatePromptMode 函数切换模式后默认提示词正确更新
    */
   it('setTranslatePromptMode 切换模式后默认提示词正确更新', () => {
     fc.assert(
-      fc.property(fc.boolean(), (isJsonMode) => {
+      fc.property(fc.boolean(), (forceJsonOutput) => {
         // 每次迭代重新创建 Pinia 实例
         setActivePinia(createPinia())
         localStorageMock = {}
@@ -354,13 +354,13 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 使用 setTranslatePromptMode 切换模式
-        store.setTranslatePromptMode(isJsonMode)
+        store.setTranslatePromptMode(forceJsonOutput)
 
         // 验证模式状态正确
-        if (store.settings.translation.isJsonMode !== isJsonMode) return false
+        if (store.settings.translation.openaiOptions.request.forceJsonOutput !== forceJsonOutput) return false
 
         // 验证提示词内容正确更新
-        const expectedPrompt = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
+        const expectedPrompt = forceJsonOutput ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
         return store.settings.translatePrompt === expectedPrompt
       }),
       { numRuns: 100 }
@@ -368,14 +368,14 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 40: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 40: 提示词模式切换一致性
    * Validates: Requirements 22.1, 16.2
    *
    * setAiVisionOcrPromptMode 函数切换模式后默认提示词正确更新
    */
   it('setAiVisionOcrPromptMode 切换模式后默认提示词正确更新', () => {
     fc.assert(
-      fc.property(fc.boolean(), (isJsonMode) => {
+      fc.property(fc.boolean(), (forceJsonOutput) => {
         // 每次迭代重新创建 Pinia 实例
         setActivePinia(createPinia())
         localStorageMock = {}
@@ -383,13 +383,13 @@ describe('提示词模式切换属性测试', () => {
         const store = useSettingsStore()
 
         // 使用 setAiVisionOcrPromptMode 切换模式
-        store.setAiVisionOcrPromptMode(isJsonMode)
+        store.setAiVisionOcrPromptMode(forceJsonOutput)
 
         // 验证模式状态正确
-        if (store.settings.aiVisionOcr.isJsonMode !== isJsonMode) return false
+        if (store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== forceJsonOutput) return false
 
         // 验证提示词内容正确更新
-        const expectedPrompt = isJsonMode ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT
+        const expectedPrompt = forceJsonOutput ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT
         return store.settings.aiVisionOcr.prompt === expectedPrompt
       }),
       { numRuns: 100 }
@@ -397,7 +397,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 40: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 40: 提示词模式切换一致性
    * Validates: Requirements 22.1, 16.2
    *
    * 提示词模式切换后状态持久化正确
@@ -428,8 +428,8 @@ describe('提示词模式切换属性测试', () => {
           newStore.loadFromStorage()
 
           // 验证模式状态已正确恢复
-          if (newStore.settings.translation.isJsonMode !== translateJsonMode) return false
-          if (newStore.settings.aiVisionOcr.isJsonMode !== aiVisionJsonMode) return false
+          if (newStore.settings.translation.openaiOptions.request.forceJsonOutput !== translateJsonMode) return false
+          if (newStore.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput !== aiVisionJsonMode) return false
 
           // 验证提示词内容已正确恢复
           const expectedTranslatePrompt = translateJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
@@ -446,7 +446,7 @@ describe('提示词模式切换属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 40: 提示词模式切换一致性
+   * Feature: frontend-behavior, Property 40: 提示词模式切换一致性
    * Validates: Requirements 22.1, 16.2
    *
    * 模式切换往返一致性（切换两次回到原始状态）

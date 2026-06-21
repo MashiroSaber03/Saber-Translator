@@ -645,7 +645,7 @@ onUnmounted(() => {
   cursor: grabbing;
   background: var(--bubble-overlay-surface-overlay);
 }
-/* 【修复问题1】笔刷模式下禁用气泡框的鼠标事件，让事件穿透到下层viewport */
+/* 笔刷模式下让事件穿透到下层 viewport。 */
 .bubble-overlay.brush-mode .bubble-highlight-box,
 .bubble-overlay.brush-mode .resize-handle,
 .bubble-overlay.brush-mode .rotate-handle {

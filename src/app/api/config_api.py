@@ -224,7 +224,7 @@ def delete_textbox_prompt():
 
 # --- 用户设置保存/加载 ---
 def _sanitize_user_settings_payload(settings_data):
-    """清理已废弃的用户设置字段，保持平滑兼容。"""
+    """清理不属于当前用户设置结构的运行态字段。"""
     if not isinstance(settings_data, dict):
         return settings_data
 
@@ -240,7 +240,7 @@ def _sanitize_user_settings_payload(settings_data):
                 if isinstance(round_item, dict):
                     round_item.pop("sessionReset", None)
 
-    provider_settings = sanitized.get("providerSettings")
+    provider_settings = sanitized.get("provider_settings")
     if isinstance(provider_settings, dict):
         hq_provider_settings = provider_settings.get("hqTranslateProvider")
         if isinstance(hq_provider_settings, dict):

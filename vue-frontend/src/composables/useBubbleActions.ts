@@ -9,7 +9,7 @@ import { storeToRefs } from 'pinia'
 import { normalizeProviderId } from '@/config/aiProviders'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
 import { showToast } from '@/utils/toast'
@@ -22,7 +22,7 @@ import type { BubbleState, BubbleCoords } from '@/types/bubble'
 export interface BubbleActionCallbacks {
   /** 触发重新渲染 */
   onReRender?: () => void | Promise<unknown>
-  /** 【修复问题5】触发延迟渲染预览（用于实时预览，有防抖），支持返回Promise */
+  /** 触发延迟渲染预览，用于防抖后的实时预览。 */
   onDelayedPreview?: () => void | Promise<unknown>
 }
 
@@ -201,8 +201,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   const PREVIEW_DELAY = 150
 
   /**
-   * 【修复问题5】触发延迟渲染预览
-   * 使用防抖机制避免频繁渲染，等待渲染Promise完成后才解锁
+   * 触发延迟渲染预览。
+   * 使用防抖机制避免频繁渲染，等待渲染 Promise 完成后才解锁。
    */
   function triggerDelayedPreview(): void {
     if (previewTimer) {
@@ -219,8 +219,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       isRenderingPreview = true
 
       try {
-        // 【修复问题5】优先使用延迟预览回调，否则使用重新渲染回调
-        // 等待Promise完成后才释放锁
+        // 优先使用延迟预览回调，否则使用重新渲染回调。
+        // 等待 Promise 完成后才释放锁。
         if (callbacks?.onDelayedPreview) {
           await callbacks.onDelayedPreview()
         } else if (callbacks?.onReRender) {
@@ -229,7 +229,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       } catch (error) {
         console.error('延迟渲染预览失败:', error)
       } finally {
-        // 【修复问题5】渲染完成后才重置状态
+        // 渲染完成后才重置状态。
         isRenderingPreview = false
         if (previewRequestedWhileRendering) {
           previewRequestedWhileRendering = false

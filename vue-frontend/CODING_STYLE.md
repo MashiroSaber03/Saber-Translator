@@ -7,7 +7,7 @@
 
 | 文件 | 责任 |
 |------|------|
-| `src/styles/tokens/*.css` | 唯一 token 来源，按 `palette -> semantic -> component -> domain` 顺序显式导入 |
+| `src/styles/tokens/*.css` | 唯一 token 来源，按 `palette(custom media) -> semantic -> component -> domain` 顺序显式导入 |
 | `src/styles/reset.css` | 最小浏览器 reset；不得承载业务布局或组件样式 |
 | `src/styles/base.css` | 保持空壳或极少低层工具；业务样式必须下沉到组件或 primitive |
 | `src/components/ui/*` | 不绑定业务的按钮、字段、输入、面板、布局外壳等基础 UI |
@@ -27,11 +27,11 @@
 
 颜色、圆角、阴影、断点、z-index 必须来自 `src/styles/tokens/*`。业务组件禁止新增硬编码颜色、`--ui-color-*`、`--border-radius-*`、裸 `z-index` 数字和裸 `@media (...px)` 断点。
 
-业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 owner token、`--radius-*`、`--z-*`。`--palette-*` 是 token palette 层的私有实现细节，业务源码和测试不得直接引用。历史值命名颜色 token 已废弃，全仓库不得出现。
+业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；颜色值直接归属到 semantic、component 或 domain token。历史值命名颜色 token 已废弃，全仓库不得出现。
 
 业务 CSS 不得重新定义全局/历史通用 token，例如 `--text-primary`、`--text-secondary`、`--text-muted`、`--color-primary`、`--bg-primary`、`--bg-secondary`、`--success-color`、`--error-color`、`--primary`、`--danger`。页面或组件需要局部主题变量时，必须使用 owner 命名空间，例如 `--insight-text-primary`、`--translate-surface-main`、`--reader-control-text`、`--studio-accent`。这条规则避免页面根变量通过 CSS 继承污染子组件，是 `npm run lint:ui` 的强制检查项。
 
-所有 palette、semantic、domain、component、layout token 必须定义在全局 `:root` 中。`body` 不得定义 token 或兼容别名；旧 `--text-color`、`--bg-color`、`--card-bg-color`、`--border-color`、`--input-bg` 等变量的定义和引用都禁止出现。`:root` token 不得引用 body-only token，也不得引用未定义 token 或形成循环依赖；`npm run lint:ui` 会解析所有 token 文件的 `var(...)` 依赖链并在提交前失败。这条规则用于防止编辑模式背景这类“变量存在但作用域无效”的隐性视觉回归。
+所有 semantic、domain、component、layout token 必须定义在全局 `:root` 中。`body` 不得定义 token 或兼容别名；旧 `--text-color`、`--bg-color`、`--card-bg-color`、`--border-color`、`--input-bg` 等变量的定义和引用都禁止出现。`:root` token 不得引用 body-only token，也不得引用未定义 token 或形成循环依赖；`npm run lint:ui` 会解析所有 token 文件的 `var(...)` 依赖链并在提交前失败。这条规则用于防止编辑模式背景这类“变量存在但作用域无效”的隐性视觉回归。
 
 `--radius-*-legacy` 和 `--border-radius-*` 不允许继续存在；需要 16px 这类历史尺寸时，先在对应 token 文件增加有语义的 `--radius-*` token，再迁移引用。
 
@@ -55,7 +55,7 @@
 
 `docs/ui-maintenance-decisions.md` 记录最终维护策略，不记录“以后再拆”的 accepted debt。未登记的超硬安全网上限文件会让 `lint:ui` 失败；正常 audit 不输出大文件候选或 pending split decision。
 
-页面级 fixed、`calc(100vh - ...)`、以及用固定 margin 推开侧栏的布局都属于 layout bypass。新增这类布局前必须优先扩展 `AppShell` 或 `SidebarLayout`；确实属于 Teleport、编辑器覆盖层、Reader 沉浸控件、面板内部滚动等局部 owner 时，必须在 `check-ui-architecture.mjs` 的 layout bypass 决策表中登记原因。
+页面级 fixed、`calc(100vh - ...)`、以及用固定 margin 推开侧栏的布局都属于 layout bypass。新增这类布局前必须优先扩展 `AppShell` 或 `SidebarLayout`；确实属于 Teleport、编辑器覆盖层、Reader 沉浸控件、面板内部滚动等局部 owner 时，必须纳入 `check-ui-architecture.mjs` 的永久 layout owner allowlist。allowlist 只表达当前所有权，不记录迁移待办。
 
 业务 CSS 禁止直接选择 UI primitive 内部类，例如 `.ui-input`、`.ui-select`、`.ui-textarea`、`.ui-form-field`。需要不同尺寸、密度或视觉状态时，先扩展 primitive props/class contract，或给业务组件自己的元素加业务命名空间类。
 

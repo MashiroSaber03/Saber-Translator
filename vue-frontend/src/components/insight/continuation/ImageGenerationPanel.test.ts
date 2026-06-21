@@ -56,8 +56,8 @@ describe('ImageGenerationPanel', () => {
     expect(source).toContain('object-fit: contain;')
     expect(source).toContain('.btn-mini {')
     expect(source).toContain('border-radius: 6px;')
-    const legacyVisualTokenPrefix = ['--color', 'visual'].join('-') + '-'
-    expect(source).not.toContain(legacyVisualTokenPrefix)
+    const visualTokenPrefix = ['--color', 'visual'].join('-') + '-'
+    expect(source).not.toContain(visualTokenPrefix)
   })
 
   it('shows story sections as collapsed previews by default and expands them independently', async () => {

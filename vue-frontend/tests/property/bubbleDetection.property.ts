@@ -1,7 +1,7 @@
 /**
  * 气泡检测功能属性测试
  *
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 36: 气泡检测功能一致性
  *
  * Validates: Requirements 4.8
@@ -32,7 +32,7 @@ vi.mock('@/stores/imageStore', () => ({
   }))
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: vi.fn(() => ({
     settings: {
       textDetector: 'ctd',
@@ -250,7 +250,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试检测结果坐标格式正确
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('检测结果坐标格式应正确（4元素数组）', () => {
@@ -277,7 +277,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试检测响应数组长度一致性
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('检测响应中各数组长度应一致', () => {
@@ -305,7 +305,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试从检测响应创建气泡状态数量正确
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('从检测响应创建的气泡状态数量应与坐标数量一致', () => {
@@ -340,7 +340,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试自动方向检测正确性
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('自动方向检测应根据宽高比正确判断', () => {
@@ -366,7 +366,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试后端返回的自动方向应优先使用
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('后端返回的自动方向应优先于宽高比计算', () => {
@@ -409,7 +409,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试旋转角度正确传递
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('旋转角度应正确传递到气泡状态', () => {
@@ -453,7 +453,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试进度百分比计算正确性
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('进度百分比计算应正确', () => {
@@ -484,7 +484,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试总数为0时进度为0
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('总数为0时进度应为0', () => {
@@ -501,7 +501,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试完成时进度为100
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('完成时进度应为100', () => {
@@ -520,7 +520,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试有效坐标验证
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('有效坐标应通过验证', () => {
@@ -536,7 +536,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试无效坐标验证
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('无效坐标应被拒绝', () => {
@@ -562,7 +562,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试有效响应验证
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('有效响应应通过验证', () => {
@@ -578,7 +578,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试失败响应验证
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('失败响应也应通过格式验证', () => {
@@ -594,7 +594,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试无效响应验证
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('无效响应应被拒绝', () => {
@@ -613,7 +613,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试空坐标数组处理
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('空坐标数组应返回空状态数组', () => {
@@ -641,7 +641,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试无坐标字段处理
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('无坐标字段应返回空状态数组', () => {
@@ -670,7 +670,7 @@ describe('气泡检测功能属性测试', () => {
     /**
      * 测试默认设置正确应用到气泡状态
      *
-     * Feature: vue-frontend-migration, Property 36: 气泡检测功能一致性
+     * Feature: frontend-behavior, Property 36: 气泡检测功能一致性
      * Validates: Requirements 4.8
      */
     it('默认设置应正确应用到所有气泡状态', () => {

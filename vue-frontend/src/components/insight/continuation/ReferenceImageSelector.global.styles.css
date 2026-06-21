@@ -252,7 +252,7 @@
   text-overflow: ellipsis;
 }
 
-.reference-selector-modal .ui-button {
+.reference-selector-modal .reference-selector-modal__button {
   padding: 7px 14px;
   border: none;
   border-radius: 6px;
@@ -263,22 +263,22 @@
   white-space: nowrap;
 }
 
-.reference-selector-modal .ui-button--primary {
+.reference-selector-modal .reference-selector-modal__button--primary {
   background: var(--reference-image-selector-surface-muted);
   color: white;
 }
 
-.reference-selector-modal .ui-button--primary:hover {
+.reference-selector-modal .reference-selector-modal__button--primary:hover {
   background: var(--reference-image-selector-surface-selected);
 }
 
-.reference-selector-modal .ui-button--secondary {
+.reference-selector-modal .reference-selector-modal__button--secondary {
   background: white;
   color: var(--reference-image-selector-text-supporting);
   border: 1px solid var(--reference-image-selector-border-active);
 }
 
-.reference-selector-modal .ui-button--secondary:hover {
+.reference-selector-modal .reference-selector-modal__button--secondary:hover {
   background: var(--color-surface-muted);
   border-color: var(--reference-image-selector-border-focus);
 }

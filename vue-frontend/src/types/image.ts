@@ -39,19 +39,19 @@ export interface ImageData {
   // 气泡状态
   /** 气泡状态数组 */
   bubbleStates: BubbleState[] | null
-  /** 气泡坐标（兼容旧数据） */
+  /** 渲染任务使用的气泡坐标 */
   bubbleCoords?: BubbleCoords[]
-  /** 气泡角度（兼容旧数据） */
+  /** 渲染任务使用的气泡角度 */
   bubbleAngles?: number[]
-  /** 原文文本数组（兼容旧数据） */
+  /** 渲染任务使用的原文文本数组 */
   originalTexts?: string[]
   /** 每个气泡对应的原始文本行信息（内部复用） */
   textlinesPerBubble?: BubbleTextline[][]
   /** OCR 结果数组（统一对象结构） */
   ocrResults?: OcrResult[]
-  /** 译文文本数组（兼容旧数据） */
+  /** 渲染任务使用的译文文本数组 */
   bubbleTexts?: string[]
-  /** 文本框文本数组（兼容旧数据） */
+  /** 渲染任务使用的文本框文本数组 */
   textboxTexts?: string[]
 
   // 双掩膜系统

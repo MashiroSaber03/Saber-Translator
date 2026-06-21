@@ -30,22 +30,16 @@ export interface AiProviderManifestEntry {
   isLocal: boolean
   supportsStream: boolean
   supportsJsonResponse: boolean
-  legacyIds?: string[]
   defaultModels?: Partial<Record<ProviderModelType, string>>
 }
 
 export const AI_PROVIDER_MANIFEST = providerManifestData as AiProviderManifestEntry[]
 
-const LEGACY_PROVIDER_MAP = new Map(
-  AI_PROVIDER_MANIFEST.flatMap(entry => (entry.legacyIds || []).map(legacyId => [legacyId, entry.id] as const))
-)
-
 const PROVIDER_MAP = new Map(AI_PROVIDER_MANIFEST.map(entry => [entry.id, entry] as const))
 
 export function normalizeProviderId(provider?: string | null): string {
   if (!provider) return ''
-  const normalized = String(provider).trim()
-  return LEGACY_PROVIDER_MAP.get(normalized) || LEGACY_PROVIDER_MAP.get(normalized.toLowerCase()) || normalized
+  return String(provider).trim().toLowerCase()
 }
 
 export function getProviderManifest(provider?: string | null): AiProviderManifestEntry | undefined {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -50,6 +50,7 @@ describe('settings store min text block area percent', () => {
 
   it('hydrates minTextBlockAreaPercent from localStorage and preserves zero', () => {
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
+      settingsSchemaVersion: 3,
       minTextBlockAreaPercent: 0
     })
 

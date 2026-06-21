@@ -493,7 +493,7 @@ const brushCursorStyle = computed(() => {
 .toolbar-divider {
   width: 1px;
   height: 24px;
-  background: var(--color-surface-overlay-medium-2);
+  background: var(--color-surface-overlay-medium-muted);
   margin: 0 5px;
 }
 
@@ -528,7 +528,7 @@ const brushCursorStyle = computed(() => {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: var(--color-surface-overlay-light-2);
+  background: var(--color-surface-overlay-light-muted);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
@@ -536,7 +536,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .thumb-toggle-btn:hover {
-  background: var(--color-surface-overlay-medium-2);
+  background: var(--color-surface-overlay-medium-muted);
 }
 
 .thumb-toggle-btn.active {
@@ -575,7 +575,7 @@ const brushCursorStyle = computed(() => {
   height: 36px;
   border: none;
   border-radius: 6px;
-  background: var(--color-surface-overlay-light-2);
+  background: var(--color-surface-overlay-light-muted);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
@@ -583,7 +583,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .view-controls button:hover {
-  background: var(--color-surface-overlay-medium-2);
+  background: var(--color-surface-overlay-medium-muted);
 }
 
 .view-controls .zoom-level {
@@ -633,7 +633,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .action-secondary:hover {
-  background: var(--color-surface-overlay-light-2);
+  background: var(--color-surface-overlay-light-muted);
   border-color: var(--color-edit-action-border-hover);
 }
 
@@ -667,7 +667,7 @@ const brushCursorStyle = computed(() => {
   background: var(--color-edit-shell-chip-active);
 }
 
-/* 进度条样式（当前视觉与行为） */
+/* 编辑进度条 */
 .edit-progress-container {
   display: flex;
   align-items: center;
@@ -716,7 +716,7 @@ const brushCursorStyle = computed(() => {
 .edit-progress-bar {
   flex: 1;
   height: 6px;
-  background: var(--color-surface-overlay-light5);
+  background: var(--color-surface-overlay-light-soft);
   border-radius: 3px;
   overflow: hidden;
   min-width: 80px;

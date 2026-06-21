@@ -128,7 +128,7 @@
 
 import { computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useTranslation, type TranslationProgress } from '@/composables/useTranslationPipeline'
 import { useParallelTranslation } from '@/composables/translation/parallel'
 import type { PoolStatus } from '@/composables/translation/parallel/types'

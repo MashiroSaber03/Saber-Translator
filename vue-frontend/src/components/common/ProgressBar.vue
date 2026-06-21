@@ -1,5 +1,5 @@
 <template>
-  <!-- 通用进度条组件 - 当前视觉与行为样式 -->
+  <!-- 通用进度条组件 -->
   <div v-if="visible" class="translation-progress-bar">
     <div class="progress-bar-label">
       {{ label }}
@@ -16,7 +16,7 @@
 <script setup lang="ts">
 /**
  * 通用进度条组件
- * 当前视觉与行为 #translationProgressBar 的样式和行为
+ * 翻译流程和批处理任务共用的线性进度条。
  */
 
 interface Props {
@@ -35,8 +35,6 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <style scoped>
-/* 当前视觉与行为进度条样式 */
-
 .translation-progress-bar {
   margin: 20px auto;
   padding: 20px;

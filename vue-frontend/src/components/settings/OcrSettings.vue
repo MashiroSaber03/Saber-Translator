@@ -277,7 +277,7 @@ import {
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import {
@@ -499,7 +499,7 @@ function handlePromptModeChange(mode: string) {
   settingsStore.updateAiVisionOcr({ 
     prompt: newPrompt,
     promptMode: mode as 'normal' | 'json' | 'paddleocr_vl',
-    isJsonMode: mode === 'json'
+    forceJsonOutput: mode === 'json'
   })
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = mode as 'normal' | 'json' | 'paddleocr_vl'
@@ -512,7 +512,7 @@ function handlePaddleOcrVlLangChange(langCode: string) {
   settingsStore.updateAiVisionOcr({
     prompt: newPrompt,
     promptMode: 'paddleocr_vl',
-    isJsonMode: false
+    forceJsonOutput: false
   })
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = 'paddleocr_vl'
@@ -608,7 +608,7 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   settingsStore.updateAiVisionOcr({
     prompt: content,
     promptMode: inferredMode,
-    isJsonMode: inferredMode === 'json'
+    forceJsonOutput: inferredMode === 'json'
   })
   localAiVisionOcr.value.prompt = content
   localAiVisionOcr.value.promptMode = inferredMode

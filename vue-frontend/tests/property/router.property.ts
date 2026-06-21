@@ -2,7 +2,7 @@
  * 路由属性测试
  * 使用 fast-check 进行属性基测试，验证路由参数验证的一致性
  * 
- * Feature: vue-frontend-migration, Property: 路由参数验证一致性
+ * Feature: frontend-behavior, Property: 路由参数验证一致性
  * Validates: Requirements 2.2, 2.3
  */
 import { describe, it } from 'vitest'
@@ -11,7 +11,7 @@ import router from '@/router'
 
 describe('路由属性测试', () => {
   /**
-   * Feature: vue-frontend-migration, Property: 路由参数验证一致性
+   * Feature: frontend-behavior, Property: 路由参数验证一致性
    * Validates: Requirements 2.2, 2.3
    * 
    * 对于任意有效的路由路径，路由解析应该返回正确的路由名称
@@ -38,7 +38,7 @@ describe('路由属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property: 路由参数验证一致性
+   * Feature: frontend-behavior, Property: 路由参数验证一致性
    * Validates: Requirements 2.2, 2.3
    * 
    * 对于任意未定义的路由路径，应该重定向到书架页面
@@ -63,7 +63,7 @@ describe('路由属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property: 路由参数验证一致性
+   * Feature: frontend-behavior, Property: 路由参数验证一致性
    * Validates: Requirements 2.2, 2.3
    * 
    * 对于任意翻译路由的查询参数，应该正确传递给组件
@@ -97,7 +97,7 @@ describe('路由属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property: 路由参数验证一致性
+   * Feature: frontend-behavior, Property: 路由参数验证一致性
    * Validates: Requirements 2.2, 2.3
    * 
    * 对于任意漫画分析路由的查询参数，应该正确传递给组件

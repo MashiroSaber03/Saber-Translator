@@ -45,6 +45,7 @@
             type="text"
             id="settingsModelName"
             v-model="localSettings.modelName"
+            class="translation-settings__model-input"
             :placeholder="modelNamePlaceholder"
           />
           <UiButton
@@ -76,6 +77,7 @@
             type="text"
             id="settingsLocalModelName"
             v-model="localSettings.modelName"
+            class="translation-settings__model-input"
             :placeholder="localSettings.modelProvider === 'ollama' ? '例如: qwen2.5:7b' : '例如: sakura-14b-qwen2.5-v1.0'"
           />
           <UiButton
@@ -230,7 +232,7 @@ import {
   providerRequiresBaseUrl,
   providerSupportsCapability
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_JSON_PROMPT, DEFAULT_SINGLE_BUBBLE_PROMPT, DEFAULT_SINGLE_BUBBLE_JSON_PROMPT } from '@/constants'
@@ -258,13 +260,13 @@ const toast = useToast()
 // 本地状态（双向绑定用）
 // 根据翻译模式和JSON模式选择对应的提示词（4个独立存储字段之一）
 const currentTranslationMode = settingsStore.settings.translation.translationMode || 'batch'
-const currentIsJsonMode = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput || false
+const currentForceJsonOutput = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput || false
 const getCurrentPrompt = (): string => {
   const t = settingsStore.settings.translation
   if (currentTranslationMode === 'single') {
-    return currentIsJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+    return currentForceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
   } else {
-    return currentIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+    return currentForceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
   }
 }
 const localSettings = ref({
@@ -279,7 +281,7 @@ const localSettings = ref({
   extraBody: settingsStore.settings.translation.openaiOptions.request.extraBody,
   translationMode: currentTranslationMode,
   promptContent: getCurrentPrompt(),
-  translatePromptMode: currentIsJsonMode ? 'json' : 'normal',
+  translatePromptMode: currentForceJsonOutput ? 'json' : 'normal',
   enableTextboxPrompt: settingsStore.settings.useTextboxPrompt,
   textboxPromptContent: settingsStore.settings.textboxPrompt
 })
@@ -334,18 +336,18 @@ function handleProviderChange() {
 }
 // 处理提示词模式切换（普通 ↔ JSON）
 function handlePromptModeChange() {
-  const newIsJsonMode = localSettings.value.translatePromptMode === 'json'
-  const oldIsJsonMode = !newIsJsonMode  // 切换前的状态
+  const newForceJsonOutput = localSettings.value.translatePromptMode === 'json'
+  const oldForceJsonOutput = !newForceJsonOutput  // 切换前的状态
   const isSingleMode = localSettings.value.translationMode === 'single'
   // 先保存当前提示词到对应的字段（切换前的字段）
   if (isSingleMode) {
-    if (oldIsJsonMode) {
+    if (oldForceJsonOutput) {
       settingsStore.updateTranslationService({ singleJsonPrompt: localSettings.value.promptContent })
     } else {
       settingsStore.updateTranslationService({ singleNormalPrompt: localSettings.value.promptContent })
     }
   } else {
-    if (oldIsJsonMode) {
+    if (oldForceJsonOutput) {
       settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
     } else {
       settingsStore.updateTranslationService({ batchNormalPrompt: localSettings.value.promptContent })
@@ -354,29 +356,29 @@ function handlePromptModeChange() {
   const t = settingsStore.settings.translation
   let newPrompt: string
   if (isSingleMode) {
-    newPrompt = newIsJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+    newPrompt = newForceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
   } else {
-    newPrompt = newIsJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+    newPrompt = newForceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
   }
   localSettings.value.promptContent = newPrompt
-  settingsStore.updateTranslationService({ isJsonMode: newIsJsonMode })
+  settingsStore.updateTranslationService({ forceJsonOutput: newForceJsonOutput })
   settingsStore.setTranslatePrompt(newPrompt)
 }
 function handleTranslationModeChange(value: any) {
   const newMode = String(value) as 'batch' | 'single'
   const oldMode = localSettings.value.translationMode
-  const isJsonMode = localSettings.value.translatePromptMode === 'json'
+  const forceJsonOutput = localSettings.value.translatePromptMode === 'json'
   // 如果模式没变，不做任何操作
   if (newMode === oldMode) return
   // 先保存当前模式的提示词到对应字段（4个字段之一）
   if (oldMode === 'batch') {
-    if (isJsonMode) {
+    if (forceJsonOutput) {
       settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
     } else {
       settingsStore.updateTranslationService({ batchNormalPrompt: localSettings.value.promptContent })
     }
   } else {
-    if (isJsonMode) {
+    if (forceJsonOutput) {
       settingsStore.updateTranslationService({ singleJsonPrompt: localSettings.value.promptContent })
     } else {
       settingsStore.updateTranslationService({ singleNormalPrompt: localSettings.value.promptContent })
@@ -388,9 +390,9 @@ function handleTranslationModeChange(value: any) {
   const t = settingsStore.settings.translation
   let savedPrompt: string
   if (newMode === 'single') {
-    savedPrompt = isJsonMode ? t.singleJsonPrompt : t.singleNormalPrompt
+    savedPrompt = forceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
   } else {
-    savedPrompt = isJsonMode ? t.batchJsonPrompt : t.batchNormalPrompt
+    savedPrompt = forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
   }
   localSettings.value.promptContent = savedPrompt
   settingsStore.setTranslatePrompt(savedPrompt)
@@ -614,11 +616,11 @@ function handleTextboxPromptSelect(content: string, name: string) {
   toast.success(`已应用提示词: ${name}`)
 }
 function resetTranslatePromptToDefault() {
-  const isJsonMode = localSettings.value.translatePromptMode === 'json'
+  const forceJsonOutput = localSettings.value.translatePromptMode === 'json'
   if (localSettings.value.translationMode === 'single') {
-    localSettings.value.promptContent = isJsonMode ? DEFAULT_SINGLE_BUBBLE_JSON_PROMPT : DEFAULT_SINGLE_BUBBLE_PROMPT
+    localSettings.value.promptContent = forceJsonOutput ? DEFAULT_SINGLE_BUBBLE_JSON_PROMPT : DEFAULT_SINGLE_BUBBLE_PROMPT
   } else {
-    localSettings.value.promptContent = isJsonMode ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
+    localSettings.value.promptContent = forceJsonOutput ? DEFAULT_TRANSLATE_JSON_PROMPT : DEFAULT_TRANSLATE_PROMPT
   }
   toast.success('已重置为默认提示词')
 }
@@ -652,7 +654,7 @@ function resetTranslatePromptToDefault() {
   min-width: 0;
 }
 
-.translation-settings .fetch-models-btn.ui-button {
+.translation-settings .fetch-models-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -671,16 +673,16 @@ function resetTranslatePromptToDefault() {
   transition: background 0.2s ease, opacity 0.2s ease;
 }
 
-.translation-settings .fetch-models-btn.ui-button:hover:not(:disabled) {
+.translation-settings .fetch-models-btn:hover:not(:disabled) {
   background: var(--translation-settings-surface-raised);
 }
 
-.translation-settings .fetch-models-btn.ui-button:disabled {
+.translation-settings .fetch-models-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.translation-settings .settings-test-btn.ui-button {
+.translation-settings .settings-test-btn {
   width: 100%;
   padding: 10px 16px;
   border: 1px solid var(--color-border-muted);
@@ -693,13 +695,13 @@ function resetTranslatePromptToDefault() {
   transition: all 0.2s ease;
 }
 
-.translation-settings .settings-test-btn.ui-button:hover:not(:disabled) {
+.translation-settings .settings-test-btn:hover:not(:disabled) {
   border-color: var(--color-action-primary);
   background-color: var(--color-surface-hover);
   color: var(--color-action-primary);
 }
 
-.translation-settings .settings-test-btn.ui-button:disabled {
+.translation-settings .settings-test-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -711,7 +713,7 @@ function resetTranslatePromptToDefault() {
   align-items: center;
 }
 
-.password-input-wrapper input {
+.password-input-wrapper .secure-input {
   flex: 1;
   padding-right: 36px;
 }
@@ -771,7 +773,7 @@ function resetTranslatePromptToDefault() {
 .sakura-suggestion {
   margin-top: 6px;
   padding: 8px 12px;
-  background: var(--color-surface-base3cd);
+  background: var(--color-surface-warning-tint);
   border-radius: 6px;
   font-size: 12px;
   color: var(--translation-settings-text-secondary);

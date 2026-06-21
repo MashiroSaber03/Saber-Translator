@@ -2,7 +2,7 @@
  * 阅读器设置持久化属性测试
  * 使用 fast-check 进行属性基测试，验证阅读器设置的持久化一致性
  *
- * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+ * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
  * Validates: Requirements 5.4
  */
 import { describe, it, beforeEach, afterEach, vi } from 'vitest'
@@ -97,7 +97,7 @@ describe('阅读器设置持久化属性测试', () => {
   }
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 对于任意有效的阅读器设置，保存到 localStorage 后再读取应当得到等价的设置
@@ -131,7 +131,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 图片宽度设置应在有效范围内 (50-100)
@@ -163,7 +163,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 图片间距设置应在有效范围内 (0-50)
@@ -195,7 +195,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 背景颜色设置应为预设颜色之一
@@ -227,7 +227,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 多次保存设置后，最后一次保存的设置应被正确加载
@@ -264,7 +264,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 页面刷新后设置应正确恢复（模拟通过清空内存状态后重新加载）
@@ -298,7 +298,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * 设置合并：加载时应正确合并默认值和已保存的值
@@ -343,7 +343,7 @@ describe('阅读器设置持久化属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 15: 阅读器设置持久化往返一致性
+   * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
    * JSON 序列化往返一致性

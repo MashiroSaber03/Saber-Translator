@@ -1,7 +1,7 @@
 /**
  * ImageViewer 组件属性测试
  *
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 17: 图片缩放平移状态一致性
  *
  * Validates: Requirements 8.3
@@ -185,7 +185,7 @@ describe('ImageViewer 属性测试', () => {
     /**
      * 测试缩放后图片尺寸计算正确性
      *
-     * Feature: vue-frontend-migration, Property 17: 图片缩放平移状态一致性
+     * Feature: frontend-behavior, Property 17: 图片缩放平移状态一致性
      * Validates: Requirements 8.3
      */
     it('缩放后 scale 应在 minScale 和 maxScale 范围内', () => {

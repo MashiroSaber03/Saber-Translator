@@ -5,7 +5,7 @@
  */
 import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import ToastNotification from '@/components/common/ToastNotification.vue'
 
 // 初始化设置 Store 并应用主题

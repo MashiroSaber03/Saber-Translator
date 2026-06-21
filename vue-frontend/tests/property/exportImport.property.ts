@@ -1,7 +1,7 @@
 /**
  * 文本导出导入属性测试
  * 
- * **Feature: vue-frontend-migration, Property 14: 文本导出导入往返一致性**
+ * **Feature: frontend-behavior, Property 14: 文本导出导入往返一致性**
  * **Validates: Requirements 18.1, 18.2**
  * 
  * 测试内容：

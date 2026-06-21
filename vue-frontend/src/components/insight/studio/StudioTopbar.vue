@@ -134,7 +134,7 @@ defineEmits<{
 }
 
 .busy-pill {
-  background: var(--color-surface-studio-tint2);
+  background: var(--color-surface-studio-tint-muted);
   color: var(--color-text-primary-strong);
   overflow: hidden;
   text-overflow: ellipsis;

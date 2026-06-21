@@ -406,6 +406,18 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .workspace-section.notes-section {
+  --ui-button-padding: 10px 18px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--insight-color-primary);
+  --ui-button-primary-hover-background: var(--insight-primary-dark);
+  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-secondary-color: var(--insight-text-primary);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted);
+  --ui-button-secondary-hover-background: var(--color-border-muted);
+  --ui-button-sm-padding: 8px 14px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
+
   padding: 20px 18px;
 }
 
@@ -419,53 +431,8 @@ function getNoteTypeIcon(type: NoteType): string {
   gap: 8px;
 }
 
-/* ==================== 按钮样式 ==================== */
-.notes-section .ui-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-}
-
-.notes-section .ui-button--primary {
-  background: var(--insight-color-primary);
-  color: white;
-}
-
-.notes-section .ui-button--primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.notes-section .ui-button--primary:hover:not(:disabled) {
-  background: var(--insight-primary-dark);
-}
-
-.notes-section .ui-button--secondary {
-  background: var(--insight-bg-tertiary);
-  color: var(--insight-text-primary);
-  border: 1px solid var(--color-border-muted);
-}
-
-.notes-section .ui-button--secondary:hover {
-  background: var(--color-border-muted);
-}
-
 .notes-section .btn-block {
   width: 100%;
-}
-
-.notes-section .ui-button--sm {
-  padding: 8px 14px;
-  font-size: 13px;
 }
 
 /* ==================== 表单样式 ==================== */

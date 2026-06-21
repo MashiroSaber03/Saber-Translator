@@ -23,7 +23,7 @@ import {
   type PluginAgentToolResultPayload,
   type PluginAgentValidationPayload,
 } from '@/api/pluginAgent'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import type { PluginAgentProvider } from '@/types/settings'
 import { useToast } from '@/utils/toast'
 import { buildTimelineItems, type PluginAgentTimelineItem } from './pluginAgentTimeline'

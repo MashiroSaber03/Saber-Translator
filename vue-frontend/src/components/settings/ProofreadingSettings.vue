@@ -34,7 +34,13 @@
       <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-round">
         <div class="round-header">
           <span class="round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
-          <UiButton variant="danger" @click="removeRound(index)" :disabled="proofreadingRounds.length <= 1" size="sm">
+          <UiButton
+            variant="danger"
+            class="proofreading-round__delete-btn"
+            @click="removeRound(index)"
+            :disabled="proofreadingRounds.length <= 1"
+            size="sm"
+          >
             删除
           </UiButton>
         </div>
@@ -83,7 +89,12 @@
           <UiField class="ui-settings-field">
             <label>模型名称:</label>
             <div class="model-input-with-fetch">
-              <UiInput type="text" v-model="round.modelName" placeholder="请输入模型名称" />
+              <UiInput
+                type="text"
+                v-model="round.modelName"
+                class="proofreading-settings__model-input"
+                placeholder="请输入模型名称"
+              />
               <UiButton
                 variant="toolbar"
                 type="button"
@@ -196,7 +207,7 @@ import {
   providerSupportsCapability,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
@@ -385,6 +396,18 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 </script>
 
 <style scoped>
+.proofreading-settings {
+  --ui-button-sm-padding: 4px 12px;
+  --ui-button-sm-font-size: 12px;
+  --ui-button-danger-background: var(--proofreading-settings-surface-base);
+  --ui-button-danger-color: white;
+  --ui-button-danger-border: none;
+  --ui-button-danger-shadow: none;
+  --ui-button-danger-hover-background: var(--proofreading-settings-surface-raised);
+  --ui-button-danger-hover-shadow: none;
+  --ui-button-disabled-opacity: 0.5;
+}
+
 .proofreading-round {
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
@@ -420,34 +443,13 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   width: auto;
 }
 
-.ui-button--sm {
-  padding: 4px 12px;
-  font-size: 12px;
-}
-
-.ui-button--danger {
-  background: var(--proofreading-settings-surface-base);
-  color: white;
-  border: none;
-}
-
-.ui-button--danger:hover {
-  background: var(--proofreading-settings-surface-raised);
-}
-
-.ui-button--danger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 当前行为模型输入样式 */
 .model-input-with-fetch {
   display: flex;
   gap: 10px;
   align-items: center;
 }
 
-.model-input-with-fetch input {
+.model-input-with-fetch .proofreading-settings__model-input {
   flex: 1;
 }
 
@@ -504,7 +506,7 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   width: 100%;
 }
 
-.password-input-wrapper input {
+.password-input-wrapper .secure-input {
   flex: 1;
   padding-right: 40px;
 }

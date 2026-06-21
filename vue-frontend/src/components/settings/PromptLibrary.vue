@@ -34,7 +34,14 @@
           <span class="prompt-name">{{ prompt.name }}</span>
           <div class="prompt-actions">
             <UiButton variant="secondary" @click.stop="loadPrompt(prompt.name)" title="加载到编辑器" size="sm">📥</UiButton>
-            <UiButton variant="danger" @click.stop="deletePrompt(prompt.name)" title="删除" :disabled="prompt.name === 'default'" size="sm">
+            <UiButton
+              variant="danger"
+              class="prompt-actions__delete"
+              @click.stop="deletePrompt(prompt.name)"
+              title="删除"
+              :disabled="prompt.name === 'default'"
+              size="sm"
+            >
               🗑️
             </UiButton>
           </div>
@@ -73,7 +80,7 @@ import UiButton from '@/components/ui/UiButton.vue'
  */
 import { ref, computed, onMounted } from 'vue'
 import { configApi } from '@/api/config'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
@@ -143,8 +150,7 @@ const modeHint = computed(() => {
 
 function getTranslationPromptMode(): 'normal' | 'json' {
   const translationSettings = settingsStore.settings.translation
-  const forceJsonOutput =
-    translationSettings.openaiOptions?.request?.forceJsonOutput ?? translationSettings.isJsonMode
+  const forceJsonOutput = translationSettings.openaiOptions.request.forceJsonOutput
 
   return forceJsonOutput ? 'json' : 'normal'
 }
@@ -270,10 +276,10 @@ function handleTypeChange() {
 function handleModeChange() {
   // 更新 store 中的模式状态
   if (selectedType.value === 'translate') {
-    settingsStore.updateTranslationService({ isJsonMode: selectedMode.value === 'json' })
+    settingsStore.updateTranslationService({ forceJsonOutput: selectedMode.value === 'json' })
   } else if (selectedType.value === 'ai_vision_ocr') {
     settingsStore.updateAiVisionOcr({
-      isJsonMode: selectedMode.value === 'json',
+      forceJsonOutput: selectedMode.value === 'json',
       promptMode: selectedMode.value
     })
   }
@@ -299,6 +305,16 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.prompt-library {
+  --ui-button-sm-padding: 4px 8px;
+  --ui-button-sm-font-size: 12px;
+  --ui-button-danger-background: transparent;
+  --ui-button-danger-border: none;
+  --ui-button-danger-shadow: none;
+  --ui-button-danger-hover-background: transparent;
+  --ui-button-danger-hover-shadow: none;
+}
+
 .prompt-list {
   max-height: 200px;
   overflow-y: auto;
@@ -349,17 +365,7 @@ onMounted(() => {
   color: var(--color-text-supporting);
 }
 
-.ui-button--sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
-.ui-button--danger {
-  background: transparent;
-  border: none;
-}
-
-.ui-button--danger:disabled {
+.prompt-actions__delete:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }

@@ -42,7 +42,7 @@ export interface GetBooksParams {
  * @param params 可选的搜索和标签筛选参数
  */
 export async function getBooks(params?: GetBooksParams): Promise<BookListResponse> {
-  // 构建查询参数，与原版 bookshelf.js 保持一致
+  // 搜索和标签筛选通过查询参数交给后端执行。
   const queryParams = new URLSearchParams()
 
   if (params?.search) {
@@ -91,7 +91,7 @@ export async function createBook(
 
 /**
  * 更新书籍
- * 【复刻原版】支持更新 title, description, cover, tags
+ * 支持更新 title、description、cover、tags 和翻译约束。
  * @param bookId 书籍 ID
  * @param data 更新数据
  */
@@ -101,7 +101,7 @@ export async function updateBook(
     title?: string
     description?: string
     cover?: string
-    tags?: string[]  // 【复刻原版】支持更新 tags 数组
+    tags?: string[]
     translation_constraints?: BookTranslationConstraints
   }
 ): Promise<BookDetailResponse> {
@@ -278,13 +278,12 @@ export async function createTag(name: string, color?: string): Promise<TagDetail
  * @param tagId 标签 ID（标签名称）
  */
 export async function deleteTag(tagId: string): Promise<ApiResponse> {
-  // 与原版 bookshelf.js 一致，使用 encodeURIComponent 编码名称
+  // 标签名称作为路径参数传递，必须先进行 URL 编码。
   return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${encodeURIComponent(tagId)}`)
 }
 
 /**
  * 更新标签
- * 【复刻原版 bookshelf.js editTag】
  * @param tagId 标签 ID（原标签名称）
  * @param name 新标签名称
  * @param color 新标签颜色
@@ -294,13 +293,11 @@ export async function updateTag(
   name: string,
   color: string
 ): Promise<TagDetailResponse> {
-  // 原版 API 使用标签名称作为 URL 路径参数
+  // 后端使用标签名称作为 URL 路径参数。
   return apiClient.put<TagDetailResponse>(
     `/api/bookshelf/tags/${encodeURIComponent(tagId)}`,
     { name, color }
   )
 }
 
-// 【复刻原版 bookshelf.js】
-// 标签的增删通过 updateBook API 完成,传递完整的 tags 数组
-// 原版逻辑: GET 书籍 -> 修改 tags 数组 -> PUT 整个 tags 数组
+// 标签的增删通过 updateBook API 完成，传递完整 tags 数组。

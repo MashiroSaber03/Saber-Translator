@@ -7,7 +7,7 @@
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useValidation } from '../../useValidation'
 import { useToast } from '@/utils/toast'
 import { createProgressManager } from './progressManager'

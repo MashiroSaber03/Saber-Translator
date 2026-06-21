@@ -1,7 +1,7 @@
 /**
  * 气泡工厂函数属性测试
  *
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 11: 气泡状态创建一致性
  *
  * Validates: Requirements 30.1
@@ -110,7 +110,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 createBubbleState 默认值正确性
      *
-     * Feature: vue-frontend-migration, Property 11: 气泡状态创建一致性
+     * Feature: frontend-behavior, Property 11: 气泡状态创建一致性
      * Validates: Requirements 30.1
      */
     it('createBubbleState 无参数时应返回正确的默认值', () => {
@@ -147,7 +147,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 createBubbleState 覆盖参数正确性
      *
-     * Feature: vue-frontend-migration, Property 11: 气泡状态创建一致性
+     * Feature: frontend-behavior, Property 11: 气泡状态创建一致性
      * Validates: Requirements 30.1
      */
     it('createBubbleState 应正确应用覆盖参数', () => {
@@ -187,7 +187,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 createBubbleState 返回的对象是独立的
      *
-     * Feature: vue-frontend-migration, Property 11: 气泡状态创建一致性
+     * Feature: frontend-behavior, Property 11: 气泡状态创建一致性
      * Validates: Requirements 30.1
      */
     it('createBubbleState 每次调用应返回独立的对象', () => {
@@ -209,7 +209,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 detectTextDirection 宽高比判断正确性
      *
-     * Feature: vue-frontend-migration, Property 11: 气泡状态创建一致性
+     * Feature: frontend-behavior, Property 11: 气泡状态创建一致性
      * Validates: Requirements 30.1
      */
     it('高度大于宽度时应返回 vertical', () => {
@@ -280,7 +280,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isValidBubbleState 对有效状态的验证
      *
-     * Feature: vue-frontend-migration, Property 11: 气泡状态创建一致性
+     * Feature: frontend-behavior, Property 11: 气泡状态创建一致性
      * Validates: Requirements 30.1
      */
     it('有效的气泡状态应通过验证', () => {
@@ -653,7 +653,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 空多边形
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 空多边形应返回 false', () => {
@@ -665,7 +665,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 简单矩形多边形
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 应正确判断点在矩形多边形内', () => {
@@ -687,7 +687,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 三角形多边形
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 应正确判断点在三角形内', () => {
@@ -709,7 +709,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 凹多边形（L形）
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 应正确处理凹多边形', () => {
@@ -735,7 +735,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 属性：多边形内部点的随机测试
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 矩形多边形内部点应返回 true', () => {
@@ -774,7 +774,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 属性：多边形外部点的随机测试
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 矩形多边形外部点应返回 false', () => {
@@ -816,7 +816,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInBubbleArea 优先使用多边形
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInBubbleArea 有多边形时应优先使用多边形检测', () => {
@@ -840,7 +840,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInBubbleArea 无多边形时使用矩形
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInBubbleArea 无多边形时应使用矩形检测', () => {
@@ -860,7 +860,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInBubbleArea 属性：多边形优先级
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInBubbleArea 多边形应优先于矩形坐标', () => {
@@ -909,7 +909,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 边界点处理
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 边界点处理应一致', () => {
@@ -937,7 +937,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 isPointInPolygon 复杂凹多边形（星形）
      *
-     * Feature: vue-frontend-migration, Property 35: 多边形点击检测一致性
+     * Feature: frontend-behavior, Property 35: 多边形点击检测一致性
      * Validates: Requirements 17.2
      */
     it('isPointInPolygon 应正确处理复杂凹多边形', () => {
@@ -971,7 +971,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 getDefaultBubbleSettings 无参数时返回默认值
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1, 29.2
      */
     it('getDefaultBubbleSettings 无参数时应返回正确的默认值', () => {
@@ -992,7 +992,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 getDefaultBubbleSettings 应正确应用全局设置
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1
      */
     it('getDefaultBubbleSettings 应正确应用全局设置', () => {
@@ -1037,7 +1037,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 initBubbleStates 有保存状态时直接使用
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1
      */
     it('initBubbleStates 有保存状态时应直接使用', () => {
@@ -1070,7 +1070,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 initBubbleStates 无保存状态时根据坐标创建
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1
      */
     it('initBubbleStates 无保存状态时应根据坐标创建', () => {
@@ -1098,7 +1098,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 initBubbleStates 无坐标时返回空数组
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1
      */
     it('initBubbleStates 无坐标时应返回空数组', () => {
@@ -1112,7 +1112,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 initBubbleStates 自动排版方向检测
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 29.2
      */
     it('initBubbleStates 应正确设置自动排版方向', () => {
@@ -1142,7 +1142,7 @@ describe('气泡工厂函数属性测试', () => {
     /**
      * 测试 initBubbleStates 应用全局默认设置
      *
-     * Feature: vue-frontend-migration, Property 42: 气泡状态初始化一致性
+     * Feature: frontend-behavior, Property 42: 气泡状态初始化一致性
      * Validates: Requirements 30.1
      */
     it('initBubbleStates 应正确应用全局默认设置', () => {

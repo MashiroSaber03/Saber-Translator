@@ -6,7 +6,7 @@
 
 import { ref, computed, shallowRef, reactive } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import {
   providerRequiresApiKey,
   providerRequiresBaseUrl,

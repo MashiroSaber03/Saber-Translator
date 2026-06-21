@@ -1,7 +1,7 @@
 /**
  * 书架状态管理属性测试
  * 
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 1: 书籍搜索过滤一致性
  * Property 2: 标签筛选一致性
  * 
@@ -97,7 +97,7 @@ describe('书架状态管理属性测试', () => {
    * 对于任意书籍列表和搜索关键词，过滤后的结果应当仅包含标题或描述中包含该关键词的书籍，
    * 且不遗漏任何匹配项。
    * 
-   * Feature: vue-frontend-migration, Property 1: 书籍搜索过滤一致性
+   * Feature: frontend-behavior, Property 1: 书籍搜索过滤一致性
    * Validates: Requirements 3.3
    */
   it('书籍搜索过滤一致性', () => {
@@ -159,7 +159,7 @@ describe('书架状态管理属性测试', () => {
    * 对于任意书籍列表和标签集合，筛选后的结果应当仅包含拥有所选标签的书籍，
    * 且不遗漏任何匹配项。
    * 
-   * Feature: vue-frontend-migration, Property 2: 标签筛选一致性
+   * Feature: frontend-behavior, Property 2: 标签筛选一致性
    * Validates: Requirements 3.4
    */
   it('标签筛选一致性', () => {

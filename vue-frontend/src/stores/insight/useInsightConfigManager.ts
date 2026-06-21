@@ -115,37 +115,20 @@ export function useInsightConfigManager(
         }
         for (const config of Object.values(providerConfigs.value.vlm)) {
           config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
-            forceJsonOutput: (config as Record<string, unknown>).forceJson,
-            temperature: (config as Record<string, unknown>).temperature,
-            extraBody: (config as Record<string, unknown>).extraBody,
-            useStream: (config as Record<string, unknown>).useStream,
-            rpmLimit: (config as Record<string, unknown>).rpmLimit,
-            transportRetries: (config as Record<string, unknown>).transportRetries,
-            businessRetries: (config as Record<string, unknown>).businessRetries
-          }, {
             request: { forceJsonOutput: false, temperature: 0.3 },
             execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
           })
         }
         for (const config of Object.values(providerConfigs.value.llm)) {
           config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
-            forceJsonOutput: (config as Record<string, unknown>).forceJson,
-            extraBody: (config as Record<string, unknown>).extraBody,
-            useStream: (config as Record<string, unknown>).useStream,
-            rpmLimit: (config as Record<string, unknown>).rpmLimit,
-            transportRetries: (config as Record<string, unknown>).transportRetries,
-            businessRetries: (config as Record<string, unknown>).businessRetries
-          }, {
             request: { forceJsonOutput: false },
             execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
           })
         }
         for (const config of Object.values(providerConfigs.value.imageGen)) {
-          const legacyMaxRetries = (config as Record<string, unknown>).maxRetries
           if (config.transportRetries === undefined) config.transportRetries = 10
-          if (config.businessRetries === undefined) config.businessRetries = typeof legacyMaxRetries === 'number' ? legacyMaxRetries : 10
+          if (config.businessRetries === undefined) config.businessRetries = 10
           if (config.timeoutSeconds === undefined) config.timeoutSeconds = 0
-          delete (config as Record<string, unknown>).maxRetries
         }
         for (const config of Object.values(providerConfigs.value.reranker)) {
           if (config.transportRetries === undefined) config.transportRetries = 10
@@ -193,7 +176,7 @@ export function useInsightConfigManager(
       },
 
       /**
-       * 切换服务商（先保存旧的，再恢复新的）
+       * 切换服务商时保存当前配置，并恢复目标服务商配置。
        */
       switch(
         oldProvider: string,

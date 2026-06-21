@@ -38,7 +38,7 @@ vi.mock('@/api/parallelTranslate', () => ({
   parallelDetect: parallelDetectMock
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     settings: detectionSettingsSnapshot
   })

@@ -38,13 +38,6 @@ class APIProvider(Enum):
     NEWAPI = "newapi"
 
 
-# 向后兼容的别名（避免破坏现有代码）
-VLMProvider = APIProvider
-EmbeddingProvider = APIProvider
-RerankerProvider = APIProvider
-ImageGenProvider = APIProvider
-
-
 class AnalysisDepth(Enum):
     """分析深度枚举"""
     QUICK = "quick"        # 仅基础信息提取
@@ -228,32 +221,14 @@ class MangaInsightConfig(SerializableMixin):
     chat_llm: ChatLLMConfig = field(default_factory=ChatLLMConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
-    image_gen: ImageGenConfig = field(default_factory=ImageGenConfig)  # 新增：生图模型配置
+    image_gen: ImageGenConfig = field(default_factory=ImageGenConfig)
     analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
     # 服务商配置缓存（用于切换服务商时保存/恢复配置）
     provider_settings: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        """重写以保持向后兼容的键名"""
-        result = super().to_dict()
-        # 保持 providerSettings 键名向后兼容
-        result["providerSettings"] = result.pop("provider_settings", {})
-        return result
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MangaInsightConfig":
-        """重写以处理 providerSettings 键名兼容"""
-        if data is None:
-            data = {}
-        # 兼容 providerSettings 键名
-        if "providerSettings" in data and "provider_settings" not in data:
-            data["provider_settings"] = data.pop("providerSettings")
-        return super().from_dict(data)
-
-
 # ============================================================
-# 提示词模板 - 从 prompts.py 导入（保持向后兼容）
+# 提示词模板
 # ============================================================
 
 from .prompts import (
@@ -268,7 +243,7 @@ from .prompts import (
 )
 
 # ============================================================
-# 概要模板 - 从 overview_templates.py 导入（保持向后兼容）
+# 概要模板
 # ============================================================
 
 from .overview_templates import (

@@ -1,7 +1,6 @@
 /**
  * Toast 消息服务
  * 提供全局的消息提示功能
- * 兼容原版 showGeneralMessage 函数的所有功能
  */
 
 import { ref, type Ref } from 'vue'
@@ -49,7 +48,7 @@ export interface ToastService {
   info: (message: string, duration?: number) => number
   /** 显示警告消息 */
   warning: (message: string, duration?: number) => number
-  /** 显示通用消息（兼容原版API） */
+  /** 显示队列式通用消息 */
   showGeneralMessage: (message: string, type?: ToastType, isHTML?: boolean, duration?: number, messageId?: string) => string
   /** 按ID清除消息 */
   clearGeneralMessageById: (messageId: string) => void
@@ -63,7 +62,7 @@ const toasts = ref<Toast[]>([])
 // 消息 ID 计数器
 let toastId = 0
 
-// 安全超时时间（毫秒），复刻原版 ui.js 的逻辑：即使 duration=0 也会在 30 秒后自动消失
+// 安全超时时间（毫秒）：即使 duration=0 也会在 30 秒后自动消失。
 const SAFETY_TIMEOUT = 30000
 
 /**
@@ -156,7 +155,7 @@ const warning = (message: string, duration?: number): number => {
 }
 
 /**
- * 显示通用消息（完全复刻原版 ui.js showGeneralMessage API）
+ * 显示队列式通用消息
  * 队列模式：立即移除所有现有消息，只显示最新的一个
  * @param message - 消息内容（可以是 HTML）
  * @param type - 消息类型
@@ -181,8 +180,7 @@ const showGeneralMessage = (
   const id = ++toastId
   const toast: Toast = { id, messageId: msgId, message, type, isHTML }
 
-  // 复刻原版 ui.js 逻辑：添加自动超时安全机制
-  // 即使是 duration=0 的无限消息，也在 30 秒后自动消失
+  // 即使是 duration=0 的无限消息，也在 30 秒后自动消失。
   const safetyTimeout = Math.max(duration, SAFETY_TIMEOUT)
 
   // 设置定时消失：duration > 0 时使用 duration，否则使用 safetyTimeout
@@ -264,7 +262,6 @@ export function useToast(): ToastService {
 
 /**
  * 便捷函数：显示 Toast 消息
- * 兼容旧版 API，方便直接调用
  * @param message - 消息内容
  * @param type - 消息类型
  * @param duration - 显示时长（毫秒）
@@ -274,5 +271,5 @@ export function showToast(message: string, type: ToastType = 'info', duration: n
   return addToast(message, type, duration)
 }
 
-// 导出便捷函数，兼容原版 API
+// 导出当前通用消息 API
 export { showGeneralMessage, clearGeneralMessageById, clearAllGeneralMessages }

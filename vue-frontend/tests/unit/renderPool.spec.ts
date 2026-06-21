@@ -38,7 +38,7 @@ vi.mock('@/composables/translation/core/taskProjector', () => ({
   projectTaskContext: projectTaskContextMock,
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => settingsStoreMock,
 }))
 

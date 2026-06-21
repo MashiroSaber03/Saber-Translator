@@ -7,7 +7,7 @@
 
 import { useSessionStore } from '@/stores/sessionStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import {
   createPipelineRuntime,
   getBookshelfSessionPath,

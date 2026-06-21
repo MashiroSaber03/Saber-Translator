@@ -1,7 +1,7 @@
 /**
  * 漫画分析进度状态属性测试
  * 
- * **Feature: vue-frontend-migration, Property 31: 分析进度状态一致性**
+ * **Feature: frontend-behavior, Property 31: 分析进度状态一致性**
  * **Validates: Requirements 6.2**
  */
 

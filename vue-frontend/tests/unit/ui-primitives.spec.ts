@@ -194,14 +194,14 @@ describe('UI primitives architecture contracts', () => {
     expect(layout.attributes('style')).toContain('--ui-sidebar-right-width: 220px;')
     expect(layout.attributes('style')).toContain('--ui-sidebar-gap: 12px;')
 
-    const legacyLayout = mount(SidebarLayout, {
+    const fallbackLayout = mount(SidebarLayout, {
       slots: {
-        default: '<aside class="legacy-left">Left</aside><main class="legacy-main">Center</main>',
+        default: '<aside class="fallback-left">Left</aside><main class="fallback-main">Center</main>',
       },
     })
-    expect(legacyLayout.find('.ui-sidebar-layout__main').exists()).toBe(false)
-    expect(legacyLayout.find('.legacy-left').exists()).toBe(true)
-    expect(legacyLayout.find('.legacy-main').exists()).toBe(true)
+    expect(fallbackLayout.find('.ui-sidebar-layout__main').exists()).toBe(false)
+    expect(fallbackLayout.find('.fallback-left').exists()).toBe(true)
+    expect(fallbackLayout.find('.fallback-main').exists()).toBe(true)
   })
 
   it('keeps page layout algorithms in shell primitives instead of page CSS', () => {

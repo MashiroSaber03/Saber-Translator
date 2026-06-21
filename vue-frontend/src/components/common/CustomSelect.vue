@@ -281,7 +281,7 @@ onUnmounted(() => {
   padding: 0 12px;
   border: 1px solid var(--custom-select-border-default);
   border-radius: 8px;
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
   color: var(--custom-select-text-primary);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -327,7 +327,7 @@ onUnmounted(() => {
 
 .custom-select-arrow {
   margin-left: 8px;
-  color: var(--color-text-secondary666);
+  color: var(--color-text-secondary);
   transition: transform 0.2s;
 }
 
@@ -339,7 +339,7 @@ onUnmounted(() => {
   position: fixed; /* 改为 fixed 以配合 Teleport */
   /* top, left, width 由 JS 动态计算 */
   margin-top: 0; /* JS计算位置时已包含偏移 */
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
   box-shadow: 0 12px 26px var(--custom-select-shadow-raised);
@@ -352,13 +352,13 @@ onUnmounted(() => {
 
 .custom-select-options {
   padding: 6px 0;
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
   color: var(--custom-select-text-primary);
 }
 
 .custom-select-group {
   margin-bottom: 4px;
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
 }
 
 .custom-select-group:last-child {
@@ -369,7 +369,7 @@ onUnmounted(() => {
   padding: 8px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary666);
+  color: var(--color-text-secondary);
   background: var(--color-surface-subtle);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -379,7 +379,7 @@ onUnmounted(() => {
   padding: 9px 12px;
   cursor: pointer;
   color: var(--custom-select-text-primary);
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
   font-size: 14px;
   line-height: 1.4;
   transition: background 0.15s;

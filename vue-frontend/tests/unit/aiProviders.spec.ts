@@ -12,10 +12,10 @@ import {
 } from '@/config/aiProviders'
 
 describe('translation page AI provider manifest', () => {
-  it('normalizes legacy custom provider ids to custom', () => {
-    expect(normalizeProviderId('custom_openai')).toBe('custom')
-    expect(normalizeProviderId('custom_openai_vision')).toBe('custom')
+  it('normalizes current provider ids without translating retired ids', () => {
+    expect(normalizeProviderId(' CUSTOM ')).toBe('custom')
     expect(normalizeProviderId('custom')).toBe('custom')
+    expect(normalizeProviderId('unknown-provider')).toBe('unknown-provider')
   })
 
   it('derives provider capabilities from a shared manifest', () => {

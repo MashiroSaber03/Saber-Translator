@@ -2,16 +2,16 @@
  * 配置验证属性测试
  * 使用 fast-check 进行属性基测试，验证翻译配置验证的完整性和正确性
  *
- * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+ * Feature: frontend-behavior, Property 8: 配置验证完整性
  * Validates: Requirements 31.2, 31.3
  * 
- * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+ * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
  * Validates: Requirements 31.2, 31.3
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useValidation } from '@/composables/useValidation'
 import type { TranslationProvider, HqTranslationProvider, ProofreadingRound, OcrEngine } from '@/types/settings'
 
@@ -57,7 +57,7 @@ describe('配置验证属性测试', () => {
     'baidu_translate',
     'youdao_translate',
     'gemini',
-    'custom_openai'
+    'custom'
   ]
 
   /** 本地服务商 */
@@ -72,7 +72,7 @@ describe('配置验证属性测试', () => {
     'deepseek',
     'volcano',
     'gemini',
-    'custom_openai'
+    'custom'
   ]
 
   /** 生成有效的翻译服务商 */
@@ -151,7 +151,7 @@ describe('配置验证属性测试', () => {
   // ============================================================
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 对于任意完整的翻译配置，验证应当通过
@@ -191,7 +191,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 对于需要 API Key 的服务商，缺少 API Key 时验证应当失败
@@ -229,7 +229,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 对于本地服务商，缺少模型名称时验证应当失败
@@ -262,7 +262,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 自定义 OpenAI 服务商缺少 Base URL 时验证应当失败
@@ -279,7 +279,7 @@ describe('配置验证属性测试', () => {
 
         // 设置缺少 Base URL 的自定义 OpenAI 配置
         settingsStore.updateTranslationService({
-          provider: 'custom_openai',
+          provider: 'custom',
           apiKey,
           modelName,
           customBaseUrl: emptyBaseUrl
@@ -300,7 +300,7 @@ describe('配置验证属性测试', () => {
   // ============================================================
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 对于任意完整的高质量翻译配置，验证应当通过
@@ -340,7 +340,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 高质量翻译缺少 API Key 时验证应当失败
@@ -373,7 +373,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 高质量翻译缺少模型名称时验证应当失败
@@ -410,7 +410,7 @@ describe('配置验证属性测试', () => {
   // ============================================================
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 对于任意完整的校对轮次配置，验证应当通过
@@ -435,7 +435,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 空的校对轮次列表验证应当失败
@@ -456,7 +456,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 包含无效轮次的校对配置验证应当失败
@@ -485,7 +485,7 @@ describe('配置验证属性测试', () => {
   // ============================================================
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 验证结果应当包含正确的缺失项列表
@@ -521,7 +521,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 8: 配置验证完整性
+   * Feature: frontend-behavior, Property 8: 配置验证完整性
    * Validates: Requirements 31.2, 31.3
    *
    * 验证通过时不应有错误消息
@@ -565,7 +565,7 @@ describe('配置验证属性测试', () => {
 
   // ============================================================
   // OCR 配置验证测试
-  // Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+  // Feature: frontend-behavior, Property 38: 翻译配置验证一致性
   // Validates: Requirements 31.2, 31.3
   // ============================================================
 
@@ -576,7 +576,7 @@ describe('配置验证属性测试', () => {
   const localOcrEngineArb = fc.constantFrom(...localOcrEngines)
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 本地 OCR 引擎（MangaOCR、PaddleOCR）不需要额外配置，验证应当通过
@@ -605,7 +605,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 百度 OCR 缺少 API Key 时验证应当失败
@@ -638,7 +638,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 百度 OCR 缺少 Secret Key 时验证应当失败
@@ -671,7 +671,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 完整的百度 OCR 配置验证应当通过
@@ -704,7 +704,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * AI 视觉 OCR 缺少 API Key 时验证应当失败
@@ -738,7 +738,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * AI 视觉 OCR 缺少模型名称时验证应当失败
@@ -772,7 +772,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 完整的 AI 视觉 OCR 配置验证应当通过
@@ -807,12 +807,12 @@ describe('配置验证属性测试', () => {
 
   // ============================================================
   // 缺失项列表生成测试
-  // Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+  // Feature: frontend-behavior, Property 38: 翻译配置验证一致性
   // Validates: Requirements 31.2, 31.3
   // ============================================================
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 缺失项列表应当正确反映缺失的配置
@@ -849,7 +849,7 @@ describe('配置验证属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 38: 翻译配置验证一致性
+   * Feature: frontend-behavior, Property 38: 翻译配置验证一致性
    * Validates: Requirements 31.2, 31.3
    *
    * 各服务商必填字段验证正确

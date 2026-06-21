@@ -7,7 +7,7 @@ import {
   FONT_SIZE_STEP
 } from '@/constants'
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
-import { getFontListApi } from '@/api/config'
+import { getFontList } from '@/api/config'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
@@ -511,7 +511,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   /** 加载字体列表 */
   async function loadFontList(): Promise<void> {
     try {
-      const response = await getFontListApi()
+      const response = await getFontList()
       if (response.fonts) {
         const system: { name: string; path: string }[] = []
         const custom: { name: string; path: string }[] = []

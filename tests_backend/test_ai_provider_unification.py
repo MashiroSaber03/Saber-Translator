@@ -372,12 +372,12 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertEqual(translated, "你好")
         complete_mock.assert_called_once()
 
-    def test_translation_provider_registry_normalizes_legacy_custom_ids(self) -> None:
+    def test_translation_provider_registry_keeps_current_provider_ids(self) -> None:
         from src.shared.ai_providers import normalize_provider_id
 
-        self.assertEqual(normalize_provider_id("custom_openai"), "custom")
-        self.assertEqual(normalize_provider_id("custom_openai_vision"), "custom")
+        self.assertEqual(normalize_provider_id(" CUSTOM "), "custom")
         self.assertEqual(normalize_provider_id("custom"), "custom")
+        self.assertEqual(normalize_provider_id("unknown-provider"), "unknown-provider")
 
     def test_translation_provider_registry_exposes_capabilities(self) -> None:
         from src.shared.ai_providers import (

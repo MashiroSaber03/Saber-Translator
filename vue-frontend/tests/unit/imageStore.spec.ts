@@ -70,16 +70,16 @@ describe('imageStore', () => {
             expect(store.currentImageIndex).toBe(0)
         })
 
-        it('加载旧会话图片时应补齐统一的文字样式默认值', () => {
+        it('加载缺少样式字段的图片时应补齐统一的文字样式默认值', () => {
             const store = useImageStore()
 
             store.setImages([
                 {
-                    id: 'legacy-image',
-                    fileName: 'legacy.png',
+                    id: 'unstyled-image',
+                    fileName: 'unstyled.png',
                     width: 0,
                     height: 0,
-                    originalDataURL: 'data:image/png;base64,legacy',
+                    originalDataURL: 'data:image/png;base64,unstyled',
                     translatedDataURL: null,
                     cleanImageData: null,
                     bubbleStates: null,

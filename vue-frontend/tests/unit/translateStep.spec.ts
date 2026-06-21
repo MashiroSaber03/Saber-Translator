@@ -15,7 +15,7 @@ vi.mock('@/api/translate', () => ({
 }))
 
 import { executeTranslate } from '@/composables/translation/core/steps/translate'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
 describe('executeTranslate', () => {

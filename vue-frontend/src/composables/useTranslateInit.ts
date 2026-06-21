@@ -16,7 +16,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -422,7 +422,7 @@ export function useTranslateInit() {
     console.log(`[TranslateInit] 切换到图片: ${index}, ${newImage.fileName}`)
 
     // 加载新图片的气泡状态（skipSync=true 避免冗余同步）
-    // 【修复P0】使用 clearBubblesLocal 而非 clearBubbles，保持 null 和 [] 的语义区分：
+    // 使用 clearBubblesLocal 保持 null 和 [] 的语义区分：
     //   - bubbleStates === null: 从未处理过，翻译时应自动检测
     //   - bubbleStates === []: 用户主动清空，翻译时应跳过（避免"框复活"）
     if (newImage.bubbleStates && newImage.bubbleStates.length > 0) {

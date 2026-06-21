@@ -1,7 +1,7 @@
 /**
  * RPM 限速器属性测试
  *
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 12: RPM限速器行为一致性
  *
  * Validates: Requirements 9.4
@@ -47,7 +47,7 @@ describe('RPM 限速器属性测试', () => {
     /**
      * 测试 RPM=0 时无限制行为
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('RPM=0 时应无限制，acquire 立即返回', async () => {
@@ -69,7 +69,7 @@ describe('RPM 限速器属性测试', () => {
     /**
      * 测试 getRpm 返回正确的值
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('getRpm 应返回设置的 RPM 值', () => {
@@ -86,7 +86,7 @@ describe('RPM 限速器属性测试', () => {
     /**
      * 测试 setRpm 正确更新 RPM 值
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('setRpm 应正确更新 RPM 值', () => {
@@ -107,7 +107,7 @@ describe('RPM 限速器属性测试', () => {
     /**
      * 测试 reset 重置限速器状态
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('reset 应重置限速器状态', async () => {
@@ -130,7 +130,7 @@ describe('RPM 限速器属性测试', () => {
      * 测试请求间隔计算正确性
      * 对于 RPM=60，每个请求间隔应该是 1000ms
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('请求间隔应根据 RPM 正确计算', () => {
@@ -153,7 +153,7 @@ describe('RPM 限速器属性测试', () => {
     /**
      * 测试限速器在窗口内限制请求数量
      *
-     * Feature: vue-frontend-migration, Property 12: RPM限速器行为一致性
+     * Feature: frontend-behavior, Property 12: RPM限速器行为一致性
      * Validates: Requirements 9.4
      */
     it('限速器应在窗口内限制请求数量', async () => {

@@ -1,7 +1,7 @@
 /**
  * 图片下载功能属性测试
  * 
- * **Feature: vue-frontend-migration, Property 30: 图片下载格式一致性**
+ * **Feature: frontend-behavior, Property 30: 图片下载格式一致性**
  * **Validates: Requirements 18.3, 18.4**
  * 
  * 测试内容：

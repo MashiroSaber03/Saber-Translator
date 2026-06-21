@@ -100,7 +100,7 @@
 
 .web-import-modal .notice {
   padding: 10px 14px;
-  background: var(--color-surface-base8e6);
+  background: var(--color-surface-warning-subtle);
   border: 1px solid var(--web-import-modal-extract-border-default);
   border-radius: 6px;
   font-size: 13px;
@@ -418,7 +418,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  background: var(--color-surface-base5f5);
+  background: var(--color-surface-neutral-soft);
   border: 1px solid var(--web-import-modal-settings-border-default);
   border-radius: 6px;
   margin-bottom: 16px;

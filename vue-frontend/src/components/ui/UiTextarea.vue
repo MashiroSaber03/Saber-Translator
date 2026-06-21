@@ -74,22 +74,22 @@ function handleInput(event: Event) {
 :where(.ui-textarea) {
   box-sizing: border-box;
   width: 100%;
-  min-height: 96px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
+  min-height: var(--ui-textarea-min-height, 96px);
+  padding: var(--ui-textarea-padding, 10px 12px);
+  border: var(--ui-textarea-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-textarea-radius, 6px);
   resize: vertical;
-  background: var(--color-surface-input, var(--color-surface-card));
-  color: var(--color-text-default);
+  background: var(--ui-textarea-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-textarea-color, var(--color-text-default));
   font-family: inherit;
   font-size: inherit;
-  line-height: normal;
+  line-height: var(--ui-textarea-line-height, normal);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 :where(.ui-textarea):focus {
   outline: none;
-  border-color: var(--color-action-primary);
+  border-color: var(--ui-textarea-focus-border, var(--color-action-primary));
   box-shadow: 0 0 0 3px var(--ui-textarea-shadow-default);
 }
 

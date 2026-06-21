@@ -27,7 +27,7 @@ vi.mock('@/api/parallelTranslate', () => ({
   parallelRender: parallelRenderMock
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => settingsStoreMock
 }))
 
@@ -36,7 +36,7 @@ describe('executeRender', () => {
     parallelRenderMock.mockReset()
   })
 
-  it('preserves local textlines and ocrResult when backend returns legacy bubble states', async () => {
+  it('preserves local textlines and ocrResult when backend returns bubble states', async () => {
     parallelRenderMock.mockResolvedValue({
       success: true,
       final_image: 'rendered',

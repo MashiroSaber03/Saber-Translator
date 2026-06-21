@@ -1,5 +1,5 @@
 import { useSessionStore } from '@/stores/sessionStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'

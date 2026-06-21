@@ -93,6 +93,14 @@ defineEmits<{
 
 <style scoped>
 .character-detail-panel {
+  --ui-button-padding: 6px 12px;
+  --ui-button-radius: 6px;
+  --ui-button-font-size: 13px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+
   background: linear-gradient(135deg, var(--character-detail-panel-surface-base) 0%, var(--character-detail-panel-surface-raised) 100%);
   border-radius: 16px;
   border: 1px solid var(--character-detail-panel-border-default);
@@ -268,30 +276,6 @@ defineEmits<{
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
-}
-
-.ui-button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.ui-button--primary:hover {
-  background: var(--color-surface-brand-strong);
-}
-
-.ui-button--sm {
-  padding: 6px 12px;
-  font-size: 13px;
 }
 
 .empty-forms {

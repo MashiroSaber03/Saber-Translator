@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 export type ExitDialogState = 'closed' | 'confirm' | 'saving' | 'error'
 

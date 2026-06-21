@@ -20,7 +20,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useExportImport, type DownloadFormat } from '@/composables/useExportImport'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ProgressBar from '@/components/common/ProgressBar.vue'
@@ -463,7 +463,7 @@ async function handleImportFile(event: Event): Promise<void> {
   </section>
 </template>
 
-<style scoped>/* 结果区域卡片 - 当前视觉 #result-section 样式 */
+<style scoped>/* 结果区域卡片 */
 .image-result-display.result-section {
   display: flex;
   flex-direction: column;
@@ -480,7 +480,7 @@ async function handleImportFile(event: Event): Promise<void> {
   box-shadow: 0 8px 16px var(--image-result-display-shadow-raised);
 }
 
-/* 控制栏 - 当前视觉 .image-controls 样式 */
+/* 图片控制栏 */
 .image-result-display .image-controls {
   margin-bottom: 15px;
   display: flex;
@@ -583,7 +583,7 @@ async function handleImportFile(event: Event): Promise<void> {
   text-align: center;
 }
 
-/* 翻译后图片 - 当前视觉 #translatedImageDisplay 样式 */
+/* 翻译后图片 */
 .image-result-display .translated-image {
   position: relative;
   max-width: 100%;
@@ -651,7 +651,7 @@ async function handleImportFile(event: Event): Promise<void> {
   color: var(--color-text-supporting, var(--color-text-muted));
 }
 
-/* 下载区域样式 - 当前视觉 */
+/* 下载区域 */
 .image-result-display .download-section {
   width: 100%;
   margin-top: 20px;

@@ -87,11 +87,10 @@ async function fetchModels(): Promise<void> {
     return
   }
   
-  const apiProvider = provider.value === 'custom' ? 'custom_openai' : provider.value
   isFetchingModels.value = true
   
   try {
-    const response = await insightApi.fetchModels(apiProvider, apiKey.value, baseUrl.value || undefined)
+    const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
     if (response.success && response.models?.length) {
       models.value = response.models
       modelSelectVisible.value = true
@@ -297,38 +296,19 @@ defineExpose({ getConfig, syncFromStore })
   cursor: pointer;
 }
 
-.insight-settings-content .ui-button {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.insight-settings-content .ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.insight-settings-content .ui-button--primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.insight-settings-content .ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-}
-
-.insight-settings-content .ui-button--secondary {
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .ui-button--secondary:hover:not(:disabled) {
-  background: var(--color-surface-hover);
+.insight-settings-content {
+  --ui-button-padding: 10px 16px;
+  --ui-button-radius: 6px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
 }
 
 .insight-settings-content .form-row {
@@ -377,10 +357,6 @@ defineExpose({ getConfig, syncFromStore })
   justify-content: flex-end;
 }
 
-.insight-settings-content .ui-button--sm {
-  padding: 6px 12px;
-  font-size: 13px;
-}
 
 .insight-settings-content .section-divider {
   border: none;

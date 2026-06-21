@@ -7,7 +7,7 @@ const { saveToStorageMock, saveToBackendMock, saveDefaultsMock } = vi.hoisted(()
   saveDefaultsMock: vi.fn(),
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     saveToStorage: saveToStorageMock,
     saveToBackend: saveToBackendMock,

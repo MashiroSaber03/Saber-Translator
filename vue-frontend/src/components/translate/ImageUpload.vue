@@ -3,7 +3,7 @@
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { showToast } from '@/utils/toast'
 import { naturalSort } from '@/utils'
 import { useWebImportStore } from '@/stores/webImportStore'
@@ -437,7 +437,7 @@ defineExpose({
   position: relative;
   width: 100%;
 }
-/* 拖拽区域 - 当前视觉 #drop-area 样式 */
+/* 拖拽上传区域 */
 .drop-area {
   border: 2px dashed var(--image-upload-border-default);
   border-radius: 12px;
@@ -520,14 +520,14 @@ defineExpose({
 .file-input {
   display: none;
 }
-/* 错误消息 - 当前视觉 .error-message 样式 */
+/* 上传错误消息 */
 .error-message {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 15px;
   padding: 10px 15px;
-  background-color: var(--color-surface-base5f5);
+  background-color: var(--color-surface-neutral-soft);
   border-left: 4px solid var(--image-upload-border-strong);
   border-radius: 8px;
   color: var(--image-upload-text-subtle);

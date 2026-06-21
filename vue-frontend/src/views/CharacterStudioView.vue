@@ -483,7 +483,7 @@ watch(() => props.docId, async nextDocId => {
   display: inline-flex;
   padding: 6px 12px;
   border-radius: 999px;
-  background: var(--color-surface-studio-tint2);
+  background: var(--color-surface-studio-tint-muted);
   color: var(--color-text-primary-strong);
   font-size: 12px;
 }

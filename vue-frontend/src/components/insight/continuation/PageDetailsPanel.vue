@@ -110,6 +110,17 @@ function getStatusText(status: string): string {
 
 <style scoped>
 .page-details-panel {
+  --ui-button-padding: 10px 20px;
+  --ui-button-radius: 8px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-base);
+  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-button-secondary-hover-border-color: var(--color-border-brand);
+  --ui-button-secondary-hover-color: var(--color-text-brand);
+
   padding: 24px;
 }
 
@@ -219,33 +230,4 @@ function getStatusText(status: string): string {
   text-align: center;
 }
 
-.ui-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.ui-button--primary:hover:not(:disabled) {
-  background: var(--color-surface-brand-strong);
-}
-
-.ui-button--secondary {
-  background: var(--color-surface-base);
-  color: var(--color-text-default, var(--color-text-default));
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-}
-
-.ui-button--secondary:hover:not(:disabled) {
-  border-color: var(--color-border-brand);
-  color: var(--color-text-brand);
-}
 </style>

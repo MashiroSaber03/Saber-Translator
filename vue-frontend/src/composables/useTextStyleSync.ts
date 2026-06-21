@@ -10,7 +10,7 @@
 
 import { ref, watch, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { showToast } from '@/utils/toast'
 import { getEffectiveDirection } from '@/types/bubble'
@@ -174,8 +174,7 @@ export function useTextStyleSync() {
     // 双向同步 watchers
     // ============================================================
 
-    // 【关键修复】监听当前图片变化，同步图片的文字设置到侧边栏
-    // 这样切换图片时，侧边栏会显示该图片保存的设置（包括 autoFontSize、layoutDirection 等）
+    // 切换图片时，侧边栏展示该图片保存的文字设置。
     watch(
         () => imageStore.currentImage,
         (newImage) => {
@@ -192,8 +191,7 @@ export function useTextStyleSync() {
         { immediate: false } // 不需要立即执行，因为初始化时没有图片
     )
 
-    // 【关键修复】监听侧边栏文字设置变化，同步回当前图片
-    // 这样用户在侧边栏修改设置时，会保存到当前图片的 ImageData
+    // 侧边栏文字设置变化时，同步保存到当前图片。
     watch(
         () => settingsStore.settings.textStyle,
         (newStyle) => {

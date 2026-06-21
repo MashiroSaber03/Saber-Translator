@@ -2,15 +2,14 @@
  * 设置状态管理属性测试
  * 使用 fast-check 进行属性基测试，验证设置持久化和主题切换的一致性
  *
- * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
- * Feature: vue-frontend-migration, Property 5: 主题切换状态一致性
+ * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
+ * Feature: frontend-behavior, Property 5: 主题切换状态一致性
  * Validates: Requirements 7.2, 7.3, 10.1, 10.2
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
-import { normalizeProviderId } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { STORAGE_KEY_TRANSLATION_SETTINGS, STORAGE_KEY_THEME } from '@/constants'
 
 describe('设置状态管理属性测试', () => {
@@ -74,7 +73,7 @@ describe('设置状态管理属性测试', () => {
   const validInpaintMethodArb = fc.constantFrom('solid', 'lama_mpe', 'litelama')
 
   /**
-   * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
+   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
    * Validates: Requirements 7.2, 7.3
    *
    * 对于任意有效的文字样式设置，保存到 localStorage 后再读取应当得到等价的设置
@@ -137,7 +136,7 @@ describe('设置状态管理属性测试', () => {
 
 
   /**
-   * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
+   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
    * Validates: Requirements 7.2, 7.3
    *
    * 对于任意有效的OCR设置，保存到 localStorage 后再读取应当得到等价的设置
@@ -181,9 +180,9 @@ describe('设置状态管理属性测试', () => {
     )
   })
 
-  it('从 localStorage 加载旧版 yolov5 检测器设置时应迁移为 default', () => {
+  it('从 localStorage 加载无效检测器设置时应回退为 default', () => {
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
-      textDetector: 'yolov5'
+      textDetector: 'invalid-detector'
     })
 
     const store = useSettingsStore()
@@ -193,7 +192,7 @@ describe('设置状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
+   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
    * Validates: Requirements 7.2, 7.3
    *
    * 对于任意有效的翻译服务设置，保存到 localStorage 后再读取应当得到等价的设置
@@ -206,7 +205,7 @@ describe('设置状态管理属性测试', () => {
         fc.string({ minLength: 0, maxLength: 50 }),
         fc.integer({ min: 0, max: 100 }),
         fc.integer({ min: 1, max: 10 }),
-        (provider, apiKey, modelName, rpmLimit, maxRetries) => {
+        (provider, apiKey, modelName, rpmLimit, businessRetries) => {
           // 每次迭代重新创建 Pinia 实例
           setActivePinia(createPinia())
           localStorageMock = {}
@@ -219,7 +218,7 @@ describe('设置状态管理属性测试', () => {
             apiKey,
             modelName,
             rpmLimit,
-            maxRetries
+            businessRetries
           })
 
           // 验证设置已保存到 localStorage
@@ -236,8 +235,8 @@ describe('设置状态管理属性测试', () => {
             newStore.settings.translation.provider === provider &&
             newStore.settings.translation.apiKey === apiKey &&
             newStore.settings.translation.modelName === modelName &&
-            newStore.settings.translation.rpmLimit === rpmLimit &&
-            newStore.settings.translation.maxRetries === maxRetries
+            newStore.settings.translation.openaiOptions.execution.rpmLimit === rpmLimit &&
+            newStore.settings.translation.openaiOptions.execution.businessRetries === businessRetries
           )
         }
       ),
@@ -246,7 +245,7 @@ describe('设置状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 5: 主题切换状态一致性
+   * Feature: frontend-behavior, Property 5: 主题切换状态一致性
    * Validates: Requirements 10.1, 10.2
    *
    * 对于任意初始主题状态，切换主题后状态应当正确更新
@@ -286,7 +285,7 @@ describe('设置状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 5: 主题切换状态一致性
+   * Feature: frontend-behavior, Property 5: 主题切换状态一致性
    * Validates: Requirements 10.1, 10.2
    *
    * 主题持久化往返一致性
@@ -320,7 +319,7 @@ describe('设置状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
+   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
    * Validates: Requirements 7.2, 7.3
    *
    * 重置设置后应该恢复为默认值
@@ -363,7 +362,7 @@ describe('设置状态管理属性测试', () => {
   })
 
   /**
-   * Feature: vue-frontend-migration, Property 4: 设置持久化往返一致性
+   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
    * Validates: Requirements 7.2, 7.3
    *
    * 高质量翻译设置持久化往返一致性
@@ -371,7 +370,7 @@ describe('设置状态管理属性测试', () => {
   it('高质量翻译设置持久化往返一致性', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom', 'custom_openai'),
+        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom'),
         fc.integer({ min: 1, max: 10 }),
         fc.integer({ min: 1, max: 20 }),
         fc.boolean(),
@@ -384,7 +383,7 @@ describe('设置状态管理属性测试', () => {
 
           // 更新高质量翻译设置
           store.updateHqTranslation({
-            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom' | 'custom_openai',
+            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom',
             batchSize,
             rpmLimit,
             forceJsonOutput
@@ -401,10 +400,10 @@ describe('设置状态管理属性测试', () => {
 
           // 验证设置已正确恢复
           return (
-            newStore.settings.hqTranslation.provider === normalizeProviderId(provider) &&
+            newStore.settings.hqTranslation.provider === provider &&
             newStore.settings.hqTranslation.batchSize === batchSize &&
-            newStore.settings.hqTranslation.rpmLimit === rpmLimit &&
-            newStore.settings.hqTranslation.forceJsonOutput === forceJsonOutput
+            newStore.settings.hqTranslation.openaiOptions.execution.rpmLimit === rpmLimit &&
+            newStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput === forceJsonOutput
           )
         }
       ),

@@ -242,7 +242,7 @@ describe('API 请求参数构建属性测试', () => {
         gemini: { requiresApiKey: true, supportsCustomBaseUrl: false },
         ollama: { requiresApiKey: false, supportsCustomBaseUrl: true },
         sakura: { requiresApiKey: false, supportsCustomBaseUrl: true },
-        custom_openai: { requiresApiKey: true, supportsCustomBaseUrl: true },
+        custom: { requiresApiKey: true, supportsCustomBaseUrl: true },
       }
 
       fc.assert(
@@ -253,7 +253,7 @@ describe('API 请求参数构建属性测试', () => {
             'gemini',
             'ollama',
             'sakura',
-            'custom_openai'
+            'custom'
           ),
           provider => {
             const config = providerConfigs[provider as keyof typeof providerConfigs]

@@ -1,7 +1,7 @@
 /**
  * PDF 解析属性测试
  * 
- * **Feature: vue-frontend-migration, Property 27: PDF解析一致性**
+ * **Feature: frontend-behavior, Property 27: PDF解析一致性**
  * **Validates: Requirements 4.2**
  * 
  * 测试内容：

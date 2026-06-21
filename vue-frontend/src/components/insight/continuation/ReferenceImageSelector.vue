@@ -9,16 +9,16 @@
     <div class="modal-header">
       <h3>选择参考图 ({{ selectedCount }}/{{ maxCount }})</h3>
       <div class="header-actions">
-        <UiButton variant="secondary" @click="autoSelectLast">
+        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="autoSelectLast">
           自动选择最后{{ maxCount }}张
         </UiButton>
-        <UiButton variant="secondary" @click="clearSelection">
+        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="clearSelection">
           清空
         </UiButton>
       </div>
       <div class="header-right">
-        <UiButton variant="secondary" @click="handleCancel">取消</UiButton>
-        <UiButton variant="primary" @click="handleConfirm">确定</UiButton>
+        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="handleCancel">取消</UiButton>
+        <UiButton class="reference-selector-modal__button reference-selector-modal__button--primary" variant="primary" @click="handleConfirm">确定</UiButton>
       </div>
       <UiButton variant="toolbar" class="close-btn" @click="handleCancel">&times;</UiButton>
     </div>
@@ -289,4 +289,3 @@ function handleCancel(): void {
   emit('update:visible', false)
 }
 </script>
-

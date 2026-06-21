@@ -1,7 +1,7 @@
 import type { ComputedRef, Ref } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'

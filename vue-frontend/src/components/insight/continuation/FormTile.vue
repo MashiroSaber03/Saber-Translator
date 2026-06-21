@@ -96,7 +96,7 @@ function handleUpload(event: Event) {
 
 .form-tile:hover {
   border-color: var(--form-tile-border-strong);
-  box-shadow: 0 8px 24px var(--color-focus-brand-soft6);
+  box-shadow: 0 8px 24px var(--color-focus-brand-subtle);
   transform: translateY(-2px);
 }
 

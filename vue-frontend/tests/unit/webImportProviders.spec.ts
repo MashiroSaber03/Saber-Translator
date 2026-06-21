@@ -8,7 +8,7 @@ import {
   useWebImportSettings,
 } from '@/stores/settings/modules/webImport'
 
-describe('web import provider compatibility', () => {
+describe('web import provider settings', () => {
   it('exposes canonical custom provider in the selector list', () => {
     const providers = WEB_IMPORT_AGENT_PROVIDERS.map(provider => provider.value)
 
@@ -19,15 +19,14 @@ describe('web import provider compatibility', () => {
     expect(providers).toContain('gemini')
     expect(providers).toContain('custom')
     expect(providers).not.toContain('qwen')
-    expect(providers).not.toContain('custom_openai')
   })
 
-  it('normalizes legacy custom provider ids before saving settings', () => {
+  it('uses the current custom provider id when saving settings', () => {
     const settings = ref(createDefaultWebImportSettings())
     const providerConfigs = ref(createDefaultWebImportProviderConfigs())
     const { setAgentProvider } = useWebImportSettings(settings, providerConfigs)
 
-    setAgentProvider('custom_openai')
+    setAgentProvider('custom')
 
     expect(settings.value.agent.provider).toBe('custom')
   })

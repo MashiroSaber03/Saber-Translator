@@ -984,7 +984,7 @@ const {
   padding: 6px 10px;
   border: 1px solid var(--settings-sidebar-apply-actions-border-active);
   border-radius: 8px;
-  background: var(--color-surface-base1f1);
+  background: var(--color-surface-slate-soft);
   text-align: center;
 }
 
@@ -1139,7 +1139,7 @@ const {
   padding: 0 14px;
   border: 1px solid var(--settings-sidebar-workflow-border-strong);
   border-radius: 8px;
-  background: var(--color-surface-basefff);
+  background: var(--color-surface-plain);
   color: var(--settings-sidebar-workflow-text-subtle);
   font-size: 13px;
   font-weight: 600;

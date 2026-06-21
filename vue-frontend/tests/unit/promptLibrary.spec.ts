@@ -16,15 +16,23 @@ const {
 
 const settingsState = reactive({
   translation: {
-    isJsonMode: false,
+    openaiOptions: {
+      request: {
+        forceJsonOutput: false,
+      },
+    },
   },
   aiVisionOcr: {
-    isJsonMode: false,
+    openaiOptions: {
+      request: {
+        forceJsonOutput: false,
+      },
+    },
     promptMode: 'paddleocr_vl' as 'normal' | 'json' | 'paddleocr_vl',
   },
 })
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     settings: settingsState,
     updateTranslationService: updateTranslationServiceMock,
@@ -89,8 +97,8 @@ describe('PromptLibrary', () => {
     getPromptsMock.mockReset()
     getPromptsMock.mockResolvedValue({ prompt_names: [] })
 
-    settingsState.translation.isJsonMode = false
-    settingsState.aiVisionOcr.isJsonMode = false
+    settingsState.translation.openaiOptions.request.forceJsonOutput = false
+    settingsState.aiVisionOcr.openaiOptions.request.forceJsonOutput = false
     settingsState.aiVisionOcr.promptMode = 'paddleocr_vl'
   })
 
@@ -114,7 +122,7 @@ describe('PromptLibrary', () => {
     await modeSelect.setValue('paddleocr_vl')
 
     expect(updateAiVisionOcrMock).toHaveBeenLastCalledWith({
-      isJsonMode: false,
+      forceJsonOutput: false,
       promptMode: 'paddleocr_vl',
     })
     expect(toastInfoMock).toHaveBeenCalledWith('已切换到OCR模型提示词模式')

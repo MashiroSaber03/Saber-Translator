@@ -4,7 +4,6 @@ Manga Insight 配置工具
 用于加载和保存分析配置。
 """
 
-import copy
 import logging
 from typing import Dict, Any, List, TYPE_CHECKING
 
@@ -16,9 +15,6 @@ from src.shared.ai_providers import (
 )
 from src.shared.config_loader import load_json_config, save_json_config
 from .config_models import MangaInsightConfig
-from src.shared.openai_options import (
-    OpenAICompatibleOptions,
-)
 
 if TYPE_CHECKING:
     from .embedding_client import ChatClient
@@ -38,321 +34,12 @@ def has_provider_model_config(provider: str, model: str, api_key: str = "") -> b
     return bool(model and has_provider_credentials(provider, api_key))
 
 
-def _mapping_value(data: Dict[str, Any], *keys: str):
-    for key in keys:
-        if key in data and data.get(key) is not None:
-            return True, data.get(key)
-    return False, None
-
-
-def _migrate_openai_compatible_entry(
-    payload: Dict[str, Any],
-    *,
-    default_options: OpenAICompatibleOptions,
-) -> tuple[Dict[str, Any], bool]:
-    if not isinstance(payload, dict):
-        return payload, False
-
-    migrated = copy.deepcopy(payload)
-    options = OpenAICompatibleOptions.from_dict(default_options.to_dict())
-    changed = False
-
-    openai_options = migrated.get("openai_options")
-    if not isinstance(openai_options, dict):
-        openai_options = {}
-        changed = "openai_options" in migrated
-
-    request_payload = openai_options.get("request")
-    if not isinstance(request_payload, dict):
-        request_payload = {}
-        if "request" in openai_options:
-            changed = True
-
-    execution_payload = openai_options.get("execution")
-    if not isinstance(execution_payload, dict):
-        execution_payload = {}
-        if "execution" in openai_options:
-            changed = True
-
-    has_force_json, force_json_value = _mapping_value(
-        request_payload,
-        "force_json_output",
-        "force_json",
-        "forceJsonOutput",
-        "forceJson",
-    )
-    if has_force_json:
-        options.request.force_json_output = bool(force_json_value)
-        changed = True
-    else:
-        has_force_json, force_json_value = _mapping_value(
-            migrated,
-            "force_json_output",
-            "force_json",
-            "forceJsonOutput",
-            "forceJson",
-        )
-        if has_force_json:
-            options.request.force_json_output = bool(force_json_value)
-            changed = True
-
-    has_temperature, temperature_value = _mapping_value(request_payload, "temperature")
-    if has_temperature:
-        options.request.temperature = float(temperature_value)
-        changed = True
-    else:
-        has_temperature, temperature_value = _mapping_value(migrated, "temperature")
-        if has_temperature:
-            options.request.temperature = float(temperature_value)
-            changed = True
-
-    has_use_stream, use_stream_value = _mapping_value(
-        execution_payload,
-        "use_stream",
-        "useStream",
-    )
-    if has_use_stream:
-        options.execution.use_stream = bool(use_stream_value)
-        changed = True
-    else:
-        has_use_stream, use_stream_value = _mapping_value(
-            migrated,
-            "use_stream",
-            "useStream",
-        )
-        if has_use_stream:
-            options.execution.use_stream = bool(use_stream_value)
-            changed = True
-
-    has_rpm_limit, rpm_limit_value = _mapping_value(
-        execution_payload,
-        "rpm_limit",
-        "rpmLimit",
-    )
-    if has_rpm_limit:
-        options.execution.rpm_limit = max(0, int(rpm_limit_value))
-        changed = True
-    else:
-        has_rpm_limit, rpm_limit_value = _mapping_value(
-            migrated,
-            "rpm_limit",
-            "rpmLimit",
-        )
-        if has_rpm_limit:
-            options.execution.rpm_limit = max(0, int(rpm_limit_value))
-            changed = True
-
-    has_transport_retries, transport_retries_value = _mapping_value(
-        execution_payload,
-        "transport_retries",
-        "transportRetries",
-    )
-    if has_transport_retries:
-        options.execution.transport_retries = max(0, int(transport_retries_value))
-        changed = True
-    else:
-        options.execution.transport_retries = default_options.execution.transport_retries
-
-    has_business_retries, business_retries_value = _mapping_value(
-        execution_payload,
-        "business_retries",
-        "businessRetries",
-        "max_retries",
-        "maxRetries",
-    )
-    if has_business_retries:
-        options.execution.business_retries = max(0, int(business_retries_value))
-        changed = True
-    else:
-        has_business_retries, business_retries_value = _mapping_value(
-            migrated,
-            "business_retries",
-            "businessRetries",
-            "max_retries",
-            "maxRetries",
-        )
-        if has_business_retries:
-            options.execution.business_retries = max(0, int(business_retries_value))
-            changed = True
-
-    migrated["openai_options"] = options.to_dict()
-
-    for legacy_key in (
-        "force_json_output",
-        "force_json",
-        "forceJsonOutput",
-        "forceJson",
-        "temperature",
-        "use_stream",
-        "useStream",
-        "rpm_limit",
-        "rpmLimit",
-        "max_retries",
-        "maxRetries",
-        "transport_retries",
-        "transportRetries",
-        "business_retries",
-        "businessRetries",
-    ):
-        if legacy_key in migrated:
-            migrated.pop(legacy_key, None)
-            changed = True
-
-    return migrated, changed
-
-
-def _migrate_runtime_retry_entry(
-    payload: Dict[str, Any],
-    *,
-    default_transport_retries: int = 10,
-    default_business_retries: int = 10,
-    default_timeout_seconds: float = 0,
-) -> tuple[Dict[str, Any], bool]:
-    if not isinstance(payload, dict):
-        return payload, False
-
-    migrated = copy.deepcopy(payload)
-    changed = False
-
-    has_transport_retries, transport_retries_value = _mapping_value(
-        migrated,
-        "transport_retries",
-        "transportRetries",
-    )
-    if has_transport_retries:
-        migrated["transport_retries"] = max(0, int(transport_retries_value))
-        changed = changed or "transport_retries" not in migrated or migrated.get("transport_retries") != transport_retries_value
-    else:
-        migrated["transport_retries"] = default_transport_retries
-        changed = True
-
-    has_business_retries, business_retries_value = _mapping_value(
-        migrated,
-        "business_retries",
-        "businessRetries",
-        "max_retries",
-        "maxRetries",
-    )
-    if has_business_retries:
-        migrated["business_retries"] = max(0, int(business_retries_value))
-        changed = changed or "business_retries" not in migrated or migrated.get("business_retries") != business_retries_value
-    else:
-        migrated["business_retries"] = default_business_retries
-        changed = True
-
-    has_timeout_seconds, timeout_seconds_value = _mapping_value(
-        migrated,
-        "timeout_seconds",
-        "timeoutSeconds",
-    )
-    if has_timeout_seconds:
-        migrated["timeout_seconds"] = max(0.0, float(timeout_seconds_value))
-        changed = changed or "timeout_seconds" not in migrated or migrated.get("timeout_seconds") != timeout_seconds_value
-    else:
-        migrated["timeout_seconds"] = default_timeout_seconds
-        changed = True
-
-    for legacy_key in (
-        "transportRetries",
-        "businessRetries",
-        "timeoutSeconds",
-        "max_retries",
-        "maxRetries",
-    ):
-        if legacy_key in migrated:
-            migrated.pop(legacy_key, None)
-            changed = True
-
-    return migrated, changed
-
-
-def _migrate_legacy_config_payload(data: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+def _current_schema_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(data, dict):
-        return {}, False
-
-    migrated = copy.deepcopy(data)
-    changed = False
-
-    root_defaults = {
-        "vlm": OpenAICompatibleOptions.from_dict(
-            {
-                "request": {"force_json_output": False, "temperature": 0.3},
-                "execution": {
-                    "use_stream": True,
-                    "rpm_limit": 0,
-                    "transport_retries": 10,
-                    "business_retries": 10,
-                },
-            }
-        ),
-        "chat_llm": OpenAICompatibleOptions.from_dict(
-            {
-                "request": {"force_json_output": False},
-                "execution": {
-                    "use_stream": True,
-                    "rpm_limit": 0,
-                    "transport_retries": 10,
-                    "business_retries": 10,
-                },
-            }
-        ),
-    }
-
-    for field_name, default_options in root_defaults.items():
-        section = migrated.get(field_name)
-        if isinstance(section, dict):
-            migrated_section, section_changed = _migrate_openai_compatible_entry(
-                section,
-                default_options=default_options,
-            )
-            migrated[field_name] = migrated_section
-            changed = changed or section_changed
-
-    for field_name in ("reranker", "image_gen"):
-        section = migrated.get(field_name)
-        if isinstance(section, dict):
-            migrated_section, section_changed = _migrate_runtime_retry_entry(section)
-            migrated[field_name] = migrated_section
-            changed = changed or section_changed
-
-    provider_settings = migrated.get("provider_settings")
-    if not isinstance(provider_settings, dict):
-        provider_settings = migrated.get("providerSettings")
-
-    if isinstance(provider_settings, dict):
-        for group_name, default_options in (
-            ("vlmProvider", root_defaults["vlm"]),
-            ("llmProvider", root_defaults["chat_llm"]),
-        ):
-            provider_group = provider_settings.get(group_name)
-            if not isinstance(provider_group, dict):
-                continue
-            for provider_name, provider_payload in list(provider_group.items()):
-                if not isinstance(provider_payload, dict):
-                    continue
-                migrated_payload, payload_changed = _migrate_openai_compatible_entry(
-                    provider_payload,
-                    default_options=default_options,
-                )
-                provider_group[provider_name] = migrated_payload
-                changed = changed or payload_changed
-
-        for group_name in ("rerankerProvider", "imageGenProvider"):
-            provider_group = provider_settings.get(group_name)
-            if not isinstance(provider_group, dict):
-                continue
-            for provider_name, provider_payload in list(provider_group.items()):
-                if not isinstance(provider_payload, dict):
-                    continue
-                migrated_payload, payload_changed = _migrate_runtime_retry_entry(provider_payload)
-                provider_group[provider_name] = migrated_payload
-                changed = changed or payload_changed
-
-    if migrated.get("schema_version") != CURRENT_SCHEMA_VERSION:
-        migrated["schema_version"] = CURRENT_SCHEMA_VERSION
-        changed = True
-
-    return migrated, changed
+        return {}
+    if data.get("schema_version") != CURRENT_SCHEMA_VERSION:
+        return {}
+    return data
 
 
 def validate_config(config: MangaInsightConfig, strict: bool = False) -> List[str]:
@@ -472,10 +159,7 @@ def load_insight_config(strict: bool = False) -> MangaInsightConfig:
     """
     try:
         data = load_json_config(CONFIG_FILENAME, default_value={})
-        migrated_data, migration_changed = _migrate_legacy_config_payload(data)
-        config = MangaInsightConfig.from_dict(migrated_data)
-        if migration_changed:
-            save_insight_config(config)
+        config = MangaInsightConfig.from_dict(_current_schema_payload(data))
 
         # 验证配置（严格模式会抛出异常）
         issues = validate_config(config, strict=strict)
@@ -509,7 +193,7 @@ def save_insight_config(config: MangaInsightConfig) -> bool:
         if isinstance(config, MangaInsightConfig):
             data = config.to_dict()
         elif isinstance(config, dict):
-            data = config
+            data = MangaInsightConfig.from_dict(config).to_dict()
         else:
             logger.error(f"无效的配置类型: {type(config)}")
             return False

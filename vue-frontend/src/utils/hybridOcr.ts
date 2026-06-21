@@ -39,13 +39,7 @@ export function normalizeHybridOcrConfig(
     preferRecommendedOrder?: boolean
   }
 ): { primaryEngine: OcrEngine; hybrid: HybridOcrSettings } {
-  const legacyHybrid = hybrid as Record<string, unknown>
-  const confidenceThreshold = normalizeHybridThreshold(
-    legacyHybrid.threshold48px
-      ?? legacyHybrid.thresholdMangaOcr
-      ?? legacyHybrid.thresholdPaddleOcr
-      ?? hybrid.confidenceThreshold
-  )
+  const confidenceThreshold = normalizeHybridThreshold(hybrid.confidenceThreshold)
 
   if (!hybrid.enabled) {
     const normalizedSecondary = isSupportedHybridOcrEngine(primaryEngine)

@@ -709,7 +709,7 @@ onUnmounted(() => {
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--color-surface-studio-tint4), var(--character-studio-preview-shell-surface-base));
+  background: linear-gradient(135deg, var(--color-surface-studio-tint-strong), var(--character-studio-preview-shell-surface-base));
   color: var(--character-studio-preview-shell-text-muted);
   box-shadow: inset 0 0 0 1px var(--character-studio-preview-shell-shadow-raised);
 }
@@ -925,7 +925,7 @@ onUnmounted(() => {
   display: inline-flex;
   border-radius: 999px;
   padding: 4px 8px;
-  background: var(--color-surface-studio-tint2);
+  background: var(--color-surface-studio-tint-muted);
   color: var(--color-text-primary-strong);
 }
 

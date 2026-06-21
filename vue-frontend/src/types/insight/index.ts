@@ -7,5 +7,5 @@
 // 类型转换器
 export { toSnakeCase, toCamelCase, configToApi, configFromApi } from './converters'
 
-// 从主类型文件重新导出（保持向后兼容）
+// 统一导出主类型文件。
 export * from '../insight'

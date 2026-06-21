@@ -32,7 +32,7 @@ const {
   },
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => settingsStoreMock,
 }))
 

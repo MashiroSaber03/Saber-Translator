@@ -295,7 +295,13 @@ function closeOrthoDialog() {
 
 <style scoped>
 .character-management-panel {
-  /* 样式继承自原组件 */
+  --ui-button-padding: 10px 20px;
+  --ui-button-radius: 8px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
 }
 
 .section-header {
@@ -314,30 +320,6 @@ function closeOrthoDialog() {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.ui-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ui-button--primary {
-  background: var(--color-surface-brand);
-  color: white;
-}
-
-.ui-button--primary:hover {
-  background: var(--color-surface-brand-strong);
-}
-
-.ui-button--sm {
-  padding: 6px 12px;
-  font-size: 13px;
 }
 
 .empty-state {

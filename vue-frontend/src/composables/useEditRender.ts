@@ -7,7 +7,7 @@ import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
 import { executeRender } from '@/composables/translation/core/steps'
 

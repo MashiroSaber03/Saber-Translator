@@ -1,7 +1,7 @@
 /**
  * 侧边栏工作流按钮禁用状态属性测试
  *
- * **Feature: vue-frontend-migration, Property 48: 侧边栏工作流禁用状态一致性**
+ * **Feature: frontend-behavior, Property 48: 侧边栏工作流禁用状态一致性**
  * **Validates: Requirements 4.4, 4.5**
  */
 

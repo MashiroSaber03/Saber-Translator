@@ -14,7 +14,7 @@
 
 import { computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import { useValidation } from '@/composables/useValidation'
 import { useSequentialPipeline } from './SequentialPipeline'

@@ -1,7 +1,7 @@
 /**
  * 笔刷工具属性测试
  * 
- * Feature: vue-frontend-migration
+ * Feature: frontend-behavior
  * Property 22: 笔刷大小边界一致性
  * Property 23: 气泡旋转角度计算一致性
  * 
@@ -199,7 +199,7 @@ describe('笔刷大小控制属性测试', () => {
    * 
    * 对于任意笔刷大小设置，结果应当始终在 MIN-MAX 范围内。
    * 
-   * Feature: vue-frontend-migration, Property 22: 笔刷大小边界一致性
+   * Feature: frontend-behavior, Property 22: 笔刷大小边界一致性
    * Validates: Requirements 17.3
    */
   describe('Property 22: 笔刷大小边界一致性', () => {
@@ -341,7 +341,7 @@ describe('气泡旋转计算属性测试', () => {
    * 对于任意气泡坐标，旋转中心应当正确计算；
    * 对于任意角度，归一化后应当在 0-360 度范围内。
    * 
-   * Feature: vue-frontend-migration, Property 23: 气泡旋转角度计算一致性
+   * Feature: frontend-behavior, Property 23: 气泡旋转角度计算一致性
    * Validates: Requirements 33.1, 33.2
    */
   describe('Property 23: 气泡旋转角度计算一致性', () => {

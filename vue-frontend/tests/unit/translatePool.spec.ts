@@ -39,7 +39,7 @@ vi.mock('@/composables/translation/core/atomicSteps', () => ({
   executeBatchAtomicStep: executeBatchAtomicStepMock,
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => settingsStoreMock,
 }))
 

@@ -1,7 +1,7 @@
 /**
  * 折叠面板状态属性测试
  * 
- * **Feature: vue-frontend-migration, Property 47: 折叠面板状态一致性**
+ * **Feature: frontend-behavior, Property 47: 折叠面板状态一致性**
  * **Validates: Requirements 29.1**
  * 
  * 测试内容：

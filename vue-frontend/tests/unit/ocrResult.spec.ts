@@ -4,7 +4,7 @@ import { createBubbleState, createBubbleStatesFromResponse } from '@/utils/bubbl
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { executeOcr } from '@/composables/translation/core/steps/ocr'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const { parallelOcrMock } = vi.hoisted(() => ({
   parallelOcrMock: vi.fn(async () => ({
@@ -23,7 +23,7 @@ const { parallelOcrMock } = vi.hoisted(() => ({
   }))
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
+vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     settings: {
       ocrEngine: 'manga_ocr',
@@ -31,7 +31,7 @@ vi.mock('@/stores/settingsStore', () => ({
       baiduOcr: {},
       paddleOcrVl: { sourceLanguage: 'japanese' },
       aiVisionOcr: {
-        provider: 'custom_openai_vision',
+        provider: 'custom',
         apiKey: 'vision-key',
         modelName: 'vision-model',
         prompt: 'ocr prompt',
@@ -110,7 +110,7 @@ describe('OCR result integration', () => {
     ])
   })
 
-  it('createBubbleStatesFromResponse should fall back to legacy textlines when bubble state textlines are empty', () => {
+  it('createBubbleStatesFromResponse should use response textlines when bubble state textlines are empty', () => {
     const states = createBubbleStatesFromResponse({
       bubble_coords: [[0, 0, 100, 100]],
       bubble_states: [
@@ -139,7 +139,7 @@ describe('OCR result integration', () => {
     ])
   })
 
-  it('executeOcr should return both ocrResults and legacy originalTexts', async () => {
+  it('executeOcr should return OCR results and image-level original text mirrors', async () => {
     const settingsStore = useSettingsStore()
     const result = await executeOcr({
       imageIndex: 0,
@@ -188,7 +188,7 @@ describe('OCR result integration', () => {
     )
   })
 
-  it('imageStore should preserve ocrResults when loading legacy-compatible images', () => {
+  it('imageStore should preserve image-level OCR results when loading images', () => {
     const store = useImageStore()
     store.setImages([
       {

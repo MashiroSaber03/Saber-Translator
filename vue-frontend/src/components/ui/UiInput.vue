@@ -93,21 +93,21 @@ function handleCompositionEnd(event: CompositionEvent) {
 :where(.ui-input) {
   box-sizing: border-box;
   width: 100%;
-  min-height: 38px;
-  padding: 9px 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  background: var(--color-surface-input, var(--color-surface-card));
-  color: var(--color-text-default);
+  min-height: var(--ui-input-min-height, 38px);
+  padding: var(--ui-input-padding, 9px 12px);
+  border: var(--ui-input-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-input-radius, 6px);
+  background: var(--ui-input-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-input-color, var(--color-text-default));
   font-family: inherit;
   font-size: inherit;
-  line-height: normal;
+  line-height: var(--ui-input-line-height, normal);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 :where(.ui-input):focus {
   outline: none;
-  border-color: var(--color-action-primary);
+  border-color: var(--ui-input-focus-border, var(--color-action-primary));
   box-shadow: 0 0 0 3px var(--ui-input-shadow-default);
 }
 
