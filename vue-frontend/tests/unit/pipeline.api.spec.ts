@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => ({
 
 import { notifyPipelineBefore, PipelineCancelledError } from '@/api/pipeline'
 
-describe('pipeline API error compatibility', () => {
+describe('pipeline API error normalization', () => {
   it('still recognizes plugin-cancel errors when apiClient rejects Error instances', async () => {
     class MockApiClientError extends Error {
       readonly code = 'PIPELINE_CANCELLED'

@@ -22,7 +22,7 @@ body {
 }
 
 [id='app'] {
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 body.middle-button-drawing,

@@ -262,7 +262,7 @@ function getRoundModelOptions(index: number) {
   return options
 }
 
-/** 获取轮次模型列表（当前行为逻辑） */
+/** 获取轮次模型列表（业务逻辑） */
 async function fetchRoundModels(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
@@ -299,7 +299,7 @@ async function fetchRoundModels(index: number) {
   }
 }
 
-/** 测试轮次连接（当前行为逻辑） */
+/** 测试轮次连接（业务逻辑） */
 async function testRoundConnection(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return

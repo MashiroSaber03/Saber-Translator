@@ -54,6 +54,13 @@ defineEmits<{
 
 <style scoped>
 .studio-topbar {
+  /* owner tokens: studio-topbar */
+  --studio-topbar-shadow-default: rgba(37, 99, 199, .22);
+  --studio-topbar-surface-base: rgba(248, 251, 255, .9);
+  --studio-topbar-surface-raised: rgba(20, 56, 106, .06);
+  --studio-topbar-surface-muted: #2563c7;
+  --studio-topbar-surface-subtle: #4d86ee;
+
   display: flex;
   justify-content: space-between;
   gap: 16px;

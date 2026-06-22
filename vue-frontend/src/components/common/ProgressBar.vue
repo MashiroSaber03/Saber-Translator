@@ -36,6 +36,14 @@ withDefaults(defineProps<Props>(), {
 
 <style scoped>
 .translation-progress-bar {
+  /* owner tokens: progress-bar */
+  --progress-bar-accent-primary: rgba(99, 102, 241, .1);
+  --progress-bar-shadow-default: rgba(0, 0, 0, .05);
+  --progress-bar-shadow-raised: rgba(0, 0, 0, .1);
+  --progress-bar-surface-base: #edf2f7;
+  --progress-bar-surface-raised: #4cae4c;
+  --progress-bar-surface-muted: #5cb85c;
+
   margin: 20px auto;
   padding: 20px;
   border: none;

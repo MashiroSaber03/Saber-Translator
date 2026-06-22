@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -145,5 +146,41 @@ describe('settings store current schema boundaries', () => {
     expect('lowReasoning' in (store.settings.hqTranslation as any)).toBe(false)
     expect('noThinkingMethod' in (store.settings.hqTranslation as any)).toBe(false)
     expect(store.settings.hqTranslation.openaiOptions.request.forceJsonOutput).toBe(false)
+  })
+
+  it('ignores local settings with the current schema version when required current sections are missing', () => {
+    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
+      settingsSchemaVersion: 3,
+      translation: {
+        provider: 'custom',
+        apiKey: 'partial-key',
+      },
+    })
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect(store.settings.translation.provider).toBe(createDefaultSettings().translation.provider)
+    expect(store.settings.translation.apiKey).toBe('')
+  })
+
+  it('ignores backend settings with the current schema version when required current sections are missing', async () => {
+    getUserSettingsMock.mockResolvedValue({
+      success: true,
+      settings: {
+        settingsSchemaVersion: 3,
+        translation: {
+          provider: 'custom',
+          apiKey: 'partial-key',
+        },
+      },
+    })
+
+    const store = useSettingsStore()
+    const loaded = await store.loadFromBackend()
+
+    expect(loaded).toBe(false)
+    expect(store.settings.translation.provider).toBe(createDefaultSettings().translation.provider)
+    expect(store.settings.translation.apiKey).toBe('')
   })
 })

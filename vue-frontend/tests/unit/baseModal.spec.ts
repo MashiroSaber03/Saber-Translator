@@ -22,19 +22,19 @@ function mountModal(props: Record<string, unknown> = {}): VueWrapper {
 }
 
 function getOverlay(): HTMLDivElement {
-  const overlay = document.body.querySelector('.ui-modal__overlay')
+  const overlay = document.body.querySelector('[data-testid="base-dialog-overlay"]')
   expect(overlay).toBeTruthy()
   return overlay as HTMLDivElement
 }
 
 function getContainer(): HTMLDivElement {
-  const container = document.body.querySelector('.ui-modal__container')
+  const container = document.body.querySelector('[data-testid="base-dialog-container"]')
   expect(container).toBeTruthy()
   return container as HTMLDivElement
 }
 
 function getCloseButton(): HTMLButtonElement {
-  const closeButton = document.body.querySelector('.ui-modal__close')
+  const closeButton = document.body.querySelector('[data-testid="base-dialog-close"]')
   expect(closeButton).toBeTruthy()
   return closeButton as HTMLButtonElement
 }
@@ -152,11 +152,11 @@ describe('BaseModal', () => {
     })
 
     expect(getContainer().classList.contains('ui-modal__container--chrome-compact')).toBe(true)
-    const body = document.body.querySelector('.ui-modal__body')
+    const body = document.body.querySelector('[data-testid="base-dialog-body"]')
     expect(body?.classList.contains('custom-body')).toBe(true)
     expect(body?.classList.contains('ui-modal__body--padding-none')).toBe(true)
     expect(body?.classList.contains('ui-modal__body--scroll-contained')).toBe(true)
-    const footer = document.body.querySelector('.ui-modal__footer')
+    const footer = document.body.querySelector('[data-testid="base-dialog-footer"]')
     expect(footer?.classList.contains('custom-footer')).toBe(true)
   })
 })

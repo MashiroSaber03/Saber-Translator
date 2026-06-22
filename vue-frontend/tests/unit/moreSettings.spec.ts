@@ -71,7 +71,14 @@ describe('MoreSettings font upload UI', () => {
     settingsStoreMock.setEnableVerboseLogs.mockReset()
     settingsStoreMock.setLamaDisableResize.mockReset()
 
-    getFontListMock.mockResolvedValue({ fonts: ['fonts/TestFont.ttf'] })
+    getFontListMock.mockResolvedValue({
+      fonts: [{
+        file_name: 'TestFont.ttf',
+        display_name: 'TestFont',
+        path: 'fonts/TestFont.ttf',
+        is_default: false,
+      }],
+    })
     uploadFontMock.mockResolvedValue({ success: true, fontPath: 'fonts/TestFont.ttf' })
   })
 

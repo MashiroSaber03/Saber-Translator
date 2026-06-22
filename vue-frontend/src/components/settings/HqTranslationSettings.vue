@@ -257,13 +257,13 @@ const modelListOptions = computed(() => {
   return options
 })
 
-// 处理服务商切换（当前行为逻辑：独立保存每个服务商的配置）
+// 处理服务商切换（业务逻辑：独立保存每个服务商的配置）
 function handleProviderChange(newProvider: string) {
-  // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
+  // 切换服务商时保存当前配置并加载目标服务商配置
   settingsStore.setHqProvider(newProvider as import('@/types/settings').HqTranslationProvider)
   // 清空模型列表
   modelList.value = []
-  // 同步本地状态（服务商切换后 store 会恢复新服务商的配置）
+  // 同步目标服务商配置到本地表单
   syncLocalHqSettings()
 }
 
@@ -283,18 +283,18 @@ function syncLocalHqSettings() {
   localHqSettings.value.prompt = hq.prompt
 }
 
-// 获取服务商显示名称（与当前行为一致）
+// 获取服务商显示名称（按业务契约）
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
 
-// 获取模型列表（当前行为 doFetchModels 逻辑）
+// 获取模型列表（模型列表获取流程）
 async function fetchModels() {
   const provider = hqSettings.value.provider
   const apiKey = localHqSettings.value.apiKey?.trim()
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
-  // 验证（与当前行为一致）
+  // 验证（按业务契约）
   if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
@@ -330,7 +330,7 @@ async function fetchModels() {
   }
 }
 
-// 测试高质量翻译服务连接（当前行为逻辑）
+// 测试高质量翻译服务连接（业务逻辑）
 async function testConnection() {
   const provider = hqSettings.value.provider
   const apiKey = localHqSettings.value.apiKey?.trim()

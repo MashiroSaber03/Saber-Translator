@@ -14,9 +14,8 @@ afterEach(() => {
 
 async function clickConfirmButton(): Promise<void> {
   await nextTick()
-  const confirmButton = document.body.querySelector<HTMLButtonElement>(
-    '.reference-selector-modal button.ui-button--primary'
-  )
+  const confirmButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent?.trim() === '确定') ?? null
   expect(confirmButton).not.toBeNull()
   confirmButton?.click()
   await nextTick()

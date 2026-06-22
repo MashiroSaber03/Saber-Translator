@@ -22,7 +22,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 /**
  * Toast 通知组件
  * 使用全局 toastService 显示消息提示
- * 样式与当前实现完全一致：底部居中、彩色背景、白色文字
+ * 样式与业务契约完全一致：底部居中、彩色背景、白色文字
  */
 import { onUnmounted } from 'vue'
 import { toastService } from '@/utils/toast'

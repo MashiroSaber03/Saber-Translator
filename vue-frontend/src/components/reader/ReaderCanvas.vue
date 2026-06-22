@@ -146,11 +146,11 @@ watch(
 
 /* 主内容区 */
 .reader-main {
-  padding-top: 56px;
-  min-height: calc(100vh - 56px);
+  min-height: calc(100dvh - 56px);
   display: flex;
   flex-direction: column;
   align-items: center;
+  background: var(--reader-page-background, var(--reader-view-surface-base));
 }
 
 /* 加载状态 */
@@ -159,7 +159,7 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
   color: var(--reader-canvas-text-primary);
 }
 
@@ -178,7 +178,7 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
   color: var(--reader-canvas-text-primary);
   text-align: center;
   padding: 20px;

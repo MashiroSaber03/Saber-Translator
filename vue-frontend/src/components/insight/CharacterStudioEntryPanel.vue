@@ -30,6 +30,18 @@ function openStudio() {
 
 <style scoped>
 .entry-card {
+  /* owner tokens: character-studio-entry-panel */
+  --character-studio-entry-panel-accent-primary: rgba(86, 138, 225, .08);
+  --character-studio-entry-panel-accent-secondary: rgba(79, 136, 240, .12);
+  --character-studio-entry-panel-accent-muted: rgba(255, 255, 255, 0);
+  --character-studio-entry-panel-border-default: rgba(36, 76, 130, .14);
+  --character-studio-entry-panel-shadow-default: rgba(25, 49, 80, .1);
+  --character-studio-entry-panel-shadow-raised: rgba(38, 91, 184, .24);
+  --character-studio-entry-panel-surface-base: #2960c1;
+  --character-studio-entry-panel-surface-raised: #447fe5;
+  --character-studio-entry-panel-text-primary: #5778a4;
+  --character-studio-entry-panel-text-secondary: #566d86;
+
   width: 100%;
   min-height: 180px;
   padding: 28px 30px;

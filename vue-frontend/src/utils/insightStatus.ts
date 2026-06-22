@@ -4,7 +4,7 @@ import type { AnalysisStatus } from '@/types/insight'
 /**
  * 统一解析分析状态：
  * 1) 有 current_task 时优先任务状态
- * 2) 无任务时优先 fully_analyzed，再兼容 analyzed
+ * 2) 无任务时优先 fully_analyzed，再读取 analyzed
  */
 export function resolveAnalysisStatus(response: InsightStatusResponse): AnalysisStatus {
   const taskStatus = response.current_task?.status

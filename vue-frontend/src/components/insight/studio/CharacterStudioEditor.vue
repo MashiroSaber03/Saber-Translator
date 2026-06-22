@@ -347,7 +347,7 @@
             <div class="card-head">
               <div>
                 <h3>导出与诊断</h3>
-                <p>在这里完成结构诊断、兼容裁剪确认和最终导出。导出前建议先跑一遍诊断。</p>
+                <p>在这里完成结构诊断、上下文裁剪确认和最终导出。导出前建议先跑一遍诊断。</p>
               </div>
               <div class="head-actions">
                 <UiButton variant="toolbar" class="action-ghost" :disabled="pendingState.validating" @click="$emit('validate')" size="sm">
@@ -635,6 +635,22 @@ function toggleScriptFreeze(event: Event) {
 </script>
 
 <style scoped>.studio-editor {
+  --character-studio-editor-border-default: rgba(37, 99, 199, .16);
+  --character-studio-editor-shadow-default: rgba(37, 99, 199, .18);
+  --character-studio-editor-surface-base: rgba(255, 255, 255, .88);
+  --character-studio-editor-surface-raised: rgba(17, 39, 65, .04);
+  --character-studio-editor-surface-muted: rgba(255, 255, 255, .82);
+  --character-studio-editor-surface-subtle: rgba(20, 56, 106, .06);
+  --character-studio-editor-surface-hover: #2563c7;
+  --character-studio-editor-surface-active: #4d86ee;
+  --character-studio-editor-text-primary: #102741;
+  --character-studio-editor-text-secondary: #14304c;
+  --character-studio-editor-text-muted: #6f84a2;
+  --character-studio-editor-text-subtle: #153250;
+  --character-studio-editor-text-supporting: #112b47;
+  --character-studio-editor-text-disabled: #516882;
+  --character-studio-editor-text-inverse: #2b5f9f;
+
   display: flex;
   flex-direction: column;
   gap: 18px;

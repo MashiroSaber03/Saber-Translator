@@ -402,7 +402,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
 
   /** 重置气泡编辑 */
   function resetBubbleEdit(): void {
-    // 【当前行为 4.3】通知父组件重置当前气泡到初始状态
+    // 通知父组件重置当前气泡到初始状态
     // 父级编辑工作区持有进入编辑模式时的气泡快照。
     emit('resetCurrent', props.bubbleIndex)
   }
@@ -517,10 +517,9 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
         const custom: { name: string; path: string }[] = []
 
         for (const font of response.fonts) {
-          // API返回的字段是display_name，需要转换为name
           const fontItem = {
-            name: typeof font === 'string' ? font : font.display_name || font.file_name || '',
-            path: typeof font === 'string' ? font : font.path,
+            name: font.display_name || font.file_name || '',
+            path: font.path,
           }
           if (fontItem.path.startsWith('fonts/')) {
             system.push(fontItem)

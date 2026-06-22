@@ -120,4 +120,16 @@ const effectiveScrollMode = computed(() => props.contentScroll ?? props.scrollMo
   position: relative;
   z-index: var(--z-overlay);
 }
+
+.ui-app-shell--viewport-locked > .ui-app-shell__overlay,
+.ui-app-shell--viewport-immersive > .ui-app-shell__overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ui-app-shell--viewport-locked > .ui-app-shell__overlay > *,
+.ui-app-shell--viewport-immersive > .ui-app-shell__overlay > * {
+  pointer-events: auto;
+}
 </style>

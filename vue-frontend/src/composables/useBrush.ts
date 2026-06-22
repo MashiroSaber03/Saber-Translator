@@ -376,7 +376,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
    * 创建笔刷临时画布
    */
   function createBrushCanvas(viewport: HTMLElement): void {
-    // 移除旧画布
+    // 重建前清理上一轮临时画布
     removeBrushCanvas()
 
     const wrapper = viewport.querySelector('.image-canvas-wrapper') as HTMLElement

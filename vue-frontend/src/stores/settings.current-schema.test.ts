@@ -10,6 +10,7 @@ vi.mock('@/api/config', () => ({
 }))
 
 import { useSettingsStore } from './settings'
+import { createDefaultSettings } from './settings/defaults'
 
 describe('useSettingsStore backend schema loading', () => {
   beforeEach(() => {
@@ -41,25 +42,28 @@ describe('useSettingsStore backend schema loading', () => {
   })
 
   it('loads current schema settings and provider configs', async () => {
+    const settings = createDefaultSettings()
+    settings.translation = {
+      ...settings.translation,
+      provider: 'custom',
+      apiKey: 'translation-key',
+      modelName: 'translation-model',
+      customBaseUrl: 'https://translation.example.com/v1',
+      openaiOptions: {
+        request: { forceJsonOutput: true },
+        execution: {
+          useStream: true,
+          rpmLimit: 12,
+          transportRetries: 2,
+          businessRetries: 4,
+        },
+      },
+    }
+
     configMocks.getUserSettings.mockResolvedValue({
       success: true,
       settings: {
-        settingsSchemaVersion: 3,
-        translation: {
-          provider: 'custom',
-          apiKey: 'translation-key',
-          modelName: 'translation-model',
-          customBaseUrl: 'https://translation.example.com/v1',
-          openaiOptions: {
-            request: { forceJsonOutput: true },
-            execution: {
-              useStream: true,
-              rpmLimit: 12,
-              transportRetries: 2,
-              businessRetries: 4,
-            },
-          },
-        },
+        ...settings,
         providerConfigs: {
           translation: {
             custom: {
@@ -77,6 +81,9 @@ describe('useSettingsStore backend schema loading', () => {
               },
             },
           },
+          hqTranslation: {},
+          pluginAgent: {},
+          aiVisionOcr: {},
         },
       },
     })

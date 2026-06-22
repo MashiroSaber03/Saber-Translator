@@ -64,7 +64,7 @@ const exportImport = useExportImport()
 /** 图片大小百分比 */
 const imageSize = ref(100)
 
-/** 【修复6】是否显示原图（从当前图片状态读取，按图片持久化） */
+/** 是否显示原图（从当前图片状态读取，按图片持久化） */
 const showOriginal = computed({
   get: () => currentImage.value?.showOriginal ?? false,
   set: (val: boolean) => {
@@ -86,7 +86,7 @@ const isDownloading = computed(() => exportImport.isDownloading.value)
 /** 下载进度文本 */
 const downloadProgressText = computed(() => exportImport.downloadProgressText.value)
 
-/** 下载进度百分比 - 当前行为 */
+/** 下载进度百分比 - 业务契约 */
 const downloadProgress = computed(() => exportImport.downloadProgress.value)
 
 /** 是否有图片 */
@@ -393,7 +393,7 @@ async function handleImportFile(event: Event): Promise<void> {
     
     <!-- 下载和导出按钮区域 -->
     <div class="download-section">
-      <!-- 下载进度条 - 当前行为 #translationProgressBar -->
+      <!-- 下载进度条 - 业务契约 #translationProgressBar -->
       <ProgressBar
         v-if="isDownloading"
         :visible="true"
@@ -459,12 +459,37 @@ async function handleImportFile(event: Event): Promise<void> {
   
   <!-- 空状态提示 - 仅在没有图片时显示简洁提示 -->
   <section v-else class="empty-state-section">
-    <!-- 空状态不显示额外卡片，保持与当前行为一致 -->
+    <!-- 空状态不显示额外卡片，保持按业务契约 -->
   </section>
 </template>
 
 <style scoped>/* 结果区域卡片 */
 .image-result-display.result-section {
+  /* owner tokens: image-result-display */
+  --image-result-display-border-default: #e0e6ed;
+  --image-result-display-border-strong: #2980b9;
+  --image-result-display-border-muted: #e74c3c;
+  --image-result-display-shadow-default: rgba(0, 0, 0, .08);
+  --image-result-display-shadow-raised: rgba(0, 0, 0, .12);
+  --image-result-display-shadow-floating: rgba(52, 152, 219, .2);
+  --image-result-display-shadow-strong: rgba(52, 152, 219, .3);
+  --image-result-display-shadow-soft: rgba(39, 174, 96, .2);
+  --image-result-display-shadow-focus: rgba(243, 156, 18, .2);
+  --image-result-display-shadow-glow: rgba(243, 156, 18, .3);
+  --image-result-display-shadow-inset: rgba(0, 0, 0, .05);
+  --image-result-display-shadow-overlay: rgba(0, 0, 0, .1);
+  --image-result-display-shadow-brand: rgba(39, 174, 96, .3);
+  --image-result-display-surface-base: #2980b9;
+  --image-result-display-surface-raised: #1f6aa6;
+  --image-result-display-surface-muted: #2ecc71;
+  --image-result-display-surface-subtle: #e67e22;
+  --image-result-display-surface-hover: #f39c12;
+  --image-result-display-surface-active: #d35400;
+  --image-result-display-surface-selected: #f9f9f9;
+  --image-result-display-surface-overlay: #1e8449;
+  --image-result-display-text-primary: #555;
+  --image-result-display-text-secondary: #4a90d9;
+
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -595,7 +620,7 @@ async function handleImportFile(event: Event): Promise<void> {
   margin: 0 auto;
 }
 
-/* 空状态区域 - 保持与当前行为一致，不显示额外卡片 */
+/* 空状态区域 - 保持按业务契约，不显示额外卡片 */
 .image-result-display .empty-state-section {
   display: none;
 }

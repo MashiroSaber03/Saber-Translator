@@ -86,6 +86,12 @@ const scriptPanelStub = defineComponent({
   template: '<UiButton class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</UiButton>',
 })
 
+function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper.findAll('button').find(node => node.text().includes(text))
+  expect(button).toBeTruthy()
+  return button!
+}
+
 describe('ContinuationPanel', () => {
   beforeEach(() => {
     mocks.insightStore = reactive({
@@ -130,7 +136,7 @@ describe('ContinuationPanel', () => {
 
     expect(mocks.state.initializeData).toHaveBeenCalledTimes(1)
 
-    await wrapper.find('button.ui-button--danger').trigger('click')
+    await getButtonByText(wrapper, '清除数据重新开始').trigger('click')
     await nextTick()
 
     expect(mocks.clearContinuationData).toHaveBeenCalledWith('book-1')
@@ -152,7 +158,7 @@ describe('ContinuationPanel', () => {
       },
     })
 
-    await wrapper.find('button.ui-button--primary').trigger('click')
+    await getButtonByText(wrapper, '下一步：生成脚本').trigger('click')
     await nextTick()
 
     expect(mocks.saveConfig).toHaveBeenCalledWith('book-1', {

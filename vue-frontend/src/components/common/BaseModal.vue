@@ -6,12 +6,14 @@
         ref="overlayRef"
         class="ui-modal__overlay"
         :class="overlayClass"
+        data-testid="base-dialog-overlay"
         @mousedown.self="handleOverlayMouseDown"
       >
         <div
           class="ui-modal__container"
           :class="[uiSizeClass, uiChromeClass, customClass]"
           :style="customStyle"
+          data-testid="base-dialog-container"
         >
           <!-- 模态框头部 -->
           <div v-if="showHeader" class="ui-modal__header">
@@ -23,6 +25,7 @@
               v-if="showCloseButton"
               class="ui-modal__close"
               title="关闭"
+              data-testid="base-dialog-close"
               @click="close"
             >
               ✕
@@ -30,12 +33,21 @@
           </div>
 
           <!-- 模态框内容 -->
-          <div class="ui-modal__body" :class="[uiBodyPaddingClass, uiBodyScrollClass, bodyClass]">
+          <div
+            class="ui-modal__body"
+            :class="[uiBodyPaddingClass, uiBodyScrollClass, bodyClass]"
+            data-testid="base-dialog-body"
+          >
             <slot></slot>
           </div>
 
           <!-- 模态框底部 -->
-          <div v-if="$slots.footer" class="ui-modal__footer" :class="footerClass">
+          <div
+            v-if="$slots.footer"
+            class="ui-modal__footer"
+            :class="footerClass"
+            data-testid="base-dialog-footer"
+          >
             <slot name="footer"></slot>
           </div>
         </div>
@@ -74,7 +86,7 @@ interface Props {
   /** 底部自定义类名 */
   footerClass?: string
   /** 内容区 padding 策略 */
-  bodyPadding?: 'default' | 'none' | 'compact'
+  bodyPadding?: 'default' | 'none' | 'compact' | 'spacious'
   /** 内容区滚动策略 */
   scrollMode?: 'auto' | 'contained' | 'none'
   /** 弹窗 chrome 视觉变体 */
@@ -190,9 +202,10 @@ onUnmounted(() => {
 /* 模态框容器 */
 .ui-modal__container {
   background: var(--modal-bg, var(--color-surface-base));
-  border-radius: 12px;
-  box-shadow: 0 4px 20px var(--base-modal-shadow-default);
-  max-height: 90vh;
+  border: var(--ui-dialog-border, 0);
+  border-radius: var(--ui-dialog-radius, 12px);
+  box-shadow: var(--ui-dialog-shadow, 0 4px 20px var(--base-modal-shadow-default));
+  max-height: var(--ui-dialog-max-height, 90vh);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -224,38 +237,45 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
+  padding: var(--ui-dialog-header-padding, 16px 20px);
+  border-bottom: var(--ui-dialog-header-border, 1px solid var(--color-border-muted, var(--color-border-default)));
+  background: var(--ui-dialog-header-background, transparent);
+  color: var(--ui-dialog-header-color, inherit);
 }
 
 .ui-modal__title {
   margin: 0;
-  font-size: 1.2em;
-  font-weight: 600;
-  color: var(--color-text-strong, var(--color-text-heading));
+  font-size: var(--ui-dialog-title-font-size, 1.2em);
+  font-weight: var(--ui-dialog-title-font-weight, 600);
+  color: var(--ui-dialog-title-color, var(--color-text-strong, var(--color-text-heading)));
 }
 
 .ui-modal__close {
   background: none;
   border: none;
-  font-size: 1.2em;
+  font-size: var(--ui-dialog-close-font-size, 1.2em);
   cursor: pointer;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--ui-dialog-close-color, var(--color-text-supporting, var(--color-text-secondary)));
   padding: 4px 8px;
   border-radius: 4px;
   transition: all 0.2s ease;
 }
 
 .ui-modal__close:hover {
-  background-color: var(--base-modal-surface-raised);
-  color: var(--color-text-strong, var(--color-text-heading));
+  background-color: var(--ui-dialog-close-hover-background, var(--base-modal-surface-raised));
+  color: var(--ui-dialog-close-hover-color, var(--color-text-strong, var(--color-text-heading)));
 }
 
 /* 模态框内容 */
 .ui-modal__body {
-  padding: 20px;
+  display: var(--ui-dialog-body-display, block);
+  flex-direction: var(--ui-dialog-body-direction, row);
+  min-height: var(--ui-dialog-body-min-height, auto);
+  padding: var(--ui-dialog-body-padding, 20px);
   overflow-y: auto;
   flex: 1;
+  background: var(--ui-dialog-body-background, transparent);
+  text-align: var(--ui-dialog-body-text-align, start);
 }
 
 .ui-modal__body--padding-none {
@@ -264,6 +284,10 @@ onUnmounted(() => {
 
 .ui-modal__body--padding-compact {
   padding: 12px;
+}
+
+.ui-modal__body--padding-spacious {
+  padding: 24px;
 }
 
 .ui-modal__body--scroll-contained {
@@ -277,10 +301,12 @@ onUnmounted(() => {
 /* 模态框底部 */
 .ui-modal__footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  justify-content: var(--ui-dialog-actions-justify, flex-end);
+  flex-wrap: var(--ui-dialog-actions-wrap, nowrap);
+  gap: var(--ui-dialog-actions-gap, 10px);
+  padding: var(--ui-dialog-actions-padding, 16px 20px);
+  border-top: var(--ui-dialog-actions-border, 1px solid var(--color-border-muted, var(--color-border-default)));
+  background: var(--ui-dialog-actions-background, transparent);
 }
 
 .ui-modal__container--chrome-compact .ui-modal__header {

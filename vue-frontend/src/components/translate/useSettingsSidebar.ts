@@ -326,18 +326,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   async function loadFontList() {
     try {
       const response = await getFontList()
-      // 后端返回的是 { fonts: [{file_name, display_name, path, is_default}, ...] }
       if (response.fonts && Array.isArray(response.fonts) && response.fonts.length > 0) {
-        // 按对象数组或字符串数组读取术语表
-        const firstItem = response.fonts[0]
-        if (typeof firstItem === 'object' && 'path' in firstItem) {
-          // 新格式：提取字体路径
-          const serverFonts = response.fonts.map(f => (typeof f === 'object' ? f.path : f))
-          fontList.value = serverFonts
-        } else {
-          // 字符串数组格式：直接使用
-          fontList.value = response.fonts as string[]
-        }
+        fontList.value = response.fonts.map(font => font.path)
       } else {
         // 如果API失败，至少显示内置字体
         fontList.value = [...BUILTIN_FONTS]
@@ -410,13 +400,12 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   /**
    * 更新自动字号
-   * 【当前行为修复A】切换后触发 autoFontSizeChanged 事件
+   * 切换后触发 autoFontSizeChanged 事件，由父组件决定是否重绘。
    */
   function updateAutoFontSize(event: Event) {
     const checked = (event.target as HTMLInputElement).checked
     settingsStore.updateTextStyle({ autoFontSize: checked })
     console.log(`自动字号设置变更: ${checked}`)
-    // 【当前行为】触发事件，由父组件处理重新渲染逻辑
     emit('autoFontSizeChanged', checked)
   }
 

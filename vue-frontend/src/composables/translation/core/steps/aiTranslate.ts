@@ -269,7 +269,7 @@ function parseHqResponse(
             }
         }
 
-        // 兼容单张图片格式：{imageIndex, bubbles} -> [{imageIndex, bubbles}]
+        // 单张图片 payload 统一包装成批量数组
         if (parsed) {
             if (Array.isArray(parsed)) {
                 return parsed

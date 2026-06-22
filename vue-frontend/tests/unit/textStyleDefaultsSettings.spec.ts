@@ -61,7 +61,14 @@ describe('TextStyleDefaultsSettings', () => {
     getDefaultsMock.mockResolvedValue({ success: true, defaults: { ...initialDefaults } })
     saveDefaultsMock.mockResolvedValue({ success: true, defaults: { ...factoryDefaults } })
     resetDefaultsMock.mockResolvedValue({ success: true, defaults: { ...factoryDefaults } })
-    getFontListMock.mockResolvedValue({ fonts: ['fonts/思源黑体SourceHanSansK-Bold.TTF'] })
+    getFontListMock.mockResolvedValue({
+      fonts: [{
+        file_name: '思源黑体SourceHanSansK-Bold.TTF',
+        display_name: '思源黑体',
+        path: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
+        is_default: false,
+      }],
+    })
   })
 
   it('loads current defaults when the settings modal opens', async () => {

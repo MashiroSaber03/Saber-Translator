@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
 import UiButton from '@/components/ui/UiButton.vue'
+import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 /**
  * 页面详情组件
  * 显示选中页面的详细信息，包括图片、摘要和对话
@@ -467,11 +468,11 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     </div>
     
     <!-- 图片预览模态框 -->
-    <div 
+    <OverlayLayer
       v-if="showImagePreview" 
       class="image-preview-modal"
       tabindex="0"
-      @click="closeImagePreview"
+      @backdrop="closeImagePreview"
       @keydown="handlePreviewKeydown"
     >
       <div class="image-preview-content" @click.stop>
@@ -500,7 +501,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           </UiButton>
         </div>
       </div>
-    </div>
+    </OverlayLayer>
   </div>
 </template>
 
@@ -509,6 +510,16 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 /* ==================== 组件特定样式 ==================== */
 
 .workspace-section.page-detail-section {
+  /* owner tokens: page-detail */
+  --page-detail-surface-base: rgba(239, 68, 68, .1);
+  --page-detail-surface-raised: rgba(0, 0, 0, 0);
+  --page-detail-surface-muted: rgba(0, 0, 0, .3);
+  --page-detail-surface-subtle: rgba(34, 197, 94, .1);
+  --page-detail-surface-hover: rgba(0, 0, 0, .95);
+  --page-detail-surface-active: rgba(255, 255, 255, .2);
+  --page-detail-surface-selected: rgba(255, 255, 255, .3);
+  --page-detail-text-primary: #ef4444;
+  --page-detail-text-secondary: #22c55e;
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--insight-color-primary);
@@ -784,13 +795,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 /* 图片预览模态框 */
 .page-detail-section .image-preview-modal {
-  position: fixed;
-  inset: 0;
   background: var(--page-detail-surface-hover);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-overlay);
   outline: none;
 }
 

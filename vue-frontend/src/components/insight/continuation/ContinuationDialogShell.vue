@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import './ContinuationDialogShell.global.styles.css'
 import BaseModal from '@/components/common/BaseModal.vue'
+import { computed } from 'vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   customClass?: string
 }>(), {
@@ -12,6 +12,14 @@ withDefaults(defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+const modalStyle = computed(() => ({
+  width: '90%',
+  maxWidth: props.customClass.includes('continuation-dialog-modal--wide') ? '600px' : '520px',
+  maxHeight: '90vh',
+  borderRadius: '12px',
+  '--ui-dialog-actions-padding': '16px 24px',
+}))
 
 function handleUpdate(value: boolean): void {
   if (!value) {
@@ -26,6 +34,8 @@ function handleUpdate(value: boolean): void {
     :title="title"
     size="medium"
     :custom-class="['continuation-dialog-modal', customClass].filter(Boolean).join(' ')"
+    body-padding="spacious"
+    :custom-style="modalStyle"
     @update:model-value="handleUpdate"
     @close="emit('close')"
   >
@@ -36,5 +46,3 @@ function handleUpdate(value: boolean): void {
     </template>
   </BaseModal>
 </template>
-
-

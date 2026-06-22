@@ -1,7 +1,7 @@
 <!--
   气泡编辑器组件
   编辑单个气泡的文本、字体、颜色等属性
-  使用当前实现Office风格浅色主题
+  编辑器使用 Office 风格浅色主题
   - 支持原文和译文编辑
   - 支持日语软键盘输入
   - 支持单气泡重新OCR识别和翻译
@@ -10,7 +10,7 @@
 -->
 <template>
   <div class="edit-panel-content">
-    <!-- 【当前行为】始终显示编辑面板，不显示"请选择气泡"提示 -->
+    <!-- 始终显示编辑面板，不显示"请选择气泡"提示 -->
     <!-- 原文编辑区 -->
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
@@ -522,9 +522,36 @@ const {
 } = useBubbleEditor(props, emit)
 </script>
 
-<style scoped>/* ============ 编辑面板内容 - 使用当前实现浅色主题 ============ */
+<style scoped>/* ============ 编辑面板内容 - 使用浅色主题 ============ */
 
 .edit-panel-content {
+  /* owner tokens: bubble-editor */
+  --bubble-editor-border-default: #d0d7ea;
+  --bubble-editor-border-strong: #9aaefc;
+  --bubble-editor-border-muted: rgba(119, 130, 161, .35);
+  --bubble-editor-border-subtle: #7d96ff;
+  --bubble-editor-border-hover: #5670ff;
+  --bubble-editor-border-active: rgba(0, 0, 0, .2);
+  --bubble-editor-shadow-default: rgba(88, 125, 255, .15);
+  --bubble-editor-shadow-raised: rgba(0, 0, 0, .03);
+  --bubble-editor-shadow-floating: rgba(107, 125, 255, .25);
+  --bubble-editor-shadow-strong: rgba(255, 255, 255, .7);
+  --bubble-editor-shadow-soft: rgba(88, 125, 255, .2);
+  --bubble-editor-shadow-focus: rgba(52, 152, 219, .3);
+  --bubble-editor-surface-base: #f2f4ff;
+  --bubble-editor-surface-raised: #dfe4ff;
+  --bubble-editor-surface-muted: #e8edff;
+  --bubble-editor-surface-subtle: #d9e2ff;
+  --bubble-editor-surface-hover: #eef1ff;
+  --bubble-editor-surface-active: #5dade2;
+  --bubble-editor-text-primary: #2f46c8;
+  --bubble-editor-text-secondary: #1d34a8;
+  --bubble-editor-text-muted: #3b3f4f;
+  --bubble-editor-text-subtle: #2b4bff;
+  --bubble-editor-text-supporting: #3040c2;
+  --bubble-editor-text-disabled: #596071;
+  --bubble-editor-text-inverse: #4a4f63;
+
   flex: 1;
   display: flex;
   flex-direction: column;

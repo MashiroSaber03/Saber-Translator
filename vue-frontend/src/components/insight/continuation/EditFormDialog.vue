@@ -1,29 +1,29 @@
 <template>
   <ContinuationDialogShell title="✏️ 编辑形态" @close="close">
-    <div class="continuation-dialog-form">
-      <div class="continuation-dialog-form__field">
-        <label>形态名称</label>
+    <ContinuationDialogForm>
+      <ContinuationDialogField label="形态名称">
         <UiInput
           v-model="localFormName"
           type="text"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="形态显示名"
         />
-      </div>
+      </ContinuationDialogField>
 
-      <div class="continuation-dialog-form__field">
-        <label>形态描述</label>
+      <ContinuationDialogField label="形态描述">
         <UiTextarea
           v-model="localDescription"
           rows="2"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="形态描述..."
         />
-      </div>
-    </div>
+      </ContinuationDialogField>
+    </ContinuationDialogForm>
 
     <template #footer>
-      <div class="continuation-dialog-actions">
+      <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
@@ -32,7 +32,7 @@
         >
           {{ isSaving ? '保存中...' : '💾 保存' }}
         </UiButton>
-      </div>
+      </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
 </template>
@@ -43,6 +43,9 @@ import UiInput from '@/components/ui/UiInput.vue'
 import { ref, watch } from 'vue'
 import type { CharacterForm } from '@/api/continuation'
 import UiButton from '@/components/ui/UiButton.vue'
+import ContinuationDialogActions from './ContinuationDialogActions.vue'
+import ContinuationDialogField from './ContinuationDialogField.vue'
+import ContinuationDialogForm from './ContinuationDialogForm.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const props = defineProps<{

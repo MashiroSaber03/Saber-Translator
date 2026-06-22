@@ -233,8 +233,8 @@ export function usePipeline() {
             return { success: false, completed: 0, failed: 0, errors: ['没有可处理的页码'] }
         }
 
-        // 【修复】批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片
-        // 这样用户在翻译过程中切换图片时，侧边栏不会显示默认值，翻译也不会受影响
+        // 批量翻译开始时，将当前文字设置预先写入到所有待翻译的图片。
+        // 用户在翻译过程中切换图片时，侧边栏会继续显示本次任务使用的设置。
         if (imagesToProcess.length > 1) {
             const { textStyle } = settingsStore.settings
             console.log(`📝 [并行模式] 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)

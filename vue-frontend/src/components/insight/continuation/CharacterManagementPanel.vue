@@ -295,6 +295,16 @@ function closeOrthoDialog() {
 
 <style scoped>
 .character-management-panel {
+  /* owner tokens: character-management-panel */
+  --character-management-panel-border-default: #c7d2fe;
+  --character-management-panel-shadow-default: rgba(99, 102, 241, .2);
+  --character-management-panel-surface-base: #f5f7ff;
+  --character-management-panel-surface-raised: #eef2ff;
+  --character-management-panel-surface-muted: #e8e8ff;
+  --character-management-panel-surface-subtle: #f0f0f0;
+  --character-management-panel-surface-hover: #8b5cf6;
+  --character-management-panel-surface-active: rgba(239, 68, 68, .9);
+  --character-management-panel-text-primary: #374151;
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;

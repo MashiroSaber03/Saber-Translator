@@ -41,8 +41,8 @@ export interface InitState {
   isInitialized: boolean
   /** 初始化错误信息 */
   initError: string | null
-  /** 字体列表（支持新旧两种格式） */
-  fontList: FontInfo[] | string[]
+  /** 字体列表 */
+  fontList: FontInfo[]
   /** 提示词名称列表 */
   promptNames: string[]
   /** 文本框提示词名称列表 */
@@ -88,8 +88,8 @@ export function useTranslateInit() {
   /** 初始化错误信息 */
   const initError = ref<string | null>(null)
 
-  /** 字体列表（支持新旧两种格式） */
-  const fontList = ref<FontInfo[] | string[]>([])
+  /** 字体列表 */
+  const fontList = ref<FontInfo[]>([])
 
   /** 提示词名称列表 */
   const promptNames = ref<string[]>([])
@@ -123,8 +123,7 @@ export function useTranslateInit() {
    * @param force - 是否强制重新初始化（用于 SPA 场景下重新进入页面）
    */
   async function initializeApp(force: boolean = false): Promise<void> {
-    // 【修复】支持强制重新初始化
-    // SPA 场景：用户从书架返回翻译页，需要重新加载书籍/章节上下文
+    // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
     if (!force && (isInitializing.value || isInitialized.value)) {
       console.log('[TranslateInit] 已经初始化，仅重新加载上下文')
       // 即使跳过完整初始化，也需要重新处理 URL 参数（书架模式）
@@ -308,7 +307,7 @@ export function useTranslateInit() {
     if (!bookId || !chapterId) {
       console.log('[TranslateInit] 未指定书籍/章节参数，使用独立模式')
       isBookshelfMode.value = false
-      // 【修复】清空书籍/章节上下文，避免残留旧数据
+      // 进入独立模式时清空书籍/章节上下文，避免跨会话残留
       currentBookId.value = null
       currentChapterId.value = null
       currentBookTitle.value = null

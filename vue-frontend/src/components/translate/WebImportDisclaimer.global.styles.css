@@ -1,28 +1,17 @@
 .web-import-disclaimer-overlay.ui-modal__overlay {
-  background-color: var(--web-import-disclaimer-surface-base);
+  background-color: var(--color-overlay-backdrop-strong);
   z-index: var(--z-popover);
   backdrop-filter: blur(4px);
 }
-
 .web-import-disclaimer-modal.ui-modal__container {
   background: var(--color-surface-base);
-  border-radius: 16px;
   width: 90%;
   max-width: 700px;
   max-height: 85vh;
+  border-radius: 16px;
   box-shadow: 0 25px 80px var(--web-import-disclaimer-shadow-default);
   border: 2px solid var(--web-import-disclaimer-border-default);
 }
-
-.web-import-disclaimer-modal .ui-modal__body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  padding: 0;
-}
-
 @media (prefers-color-scheme: dark) {
   .web-import-disclaimer-modal.ui-modal__container {
     background: var(--web-import-disclaimer-surface-raised);

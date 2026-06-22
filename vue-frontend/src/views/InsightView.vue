@@ -224,7 +224,7 @@ async function loadAnalysisStatus(): Promise<void> {
 
 /**
  * 启动状态轮询
- * 与当前实现 JS 的 startProgressPolling 保持一致：
+ * 与接口流程 的 startProgressPolling 保持一致：
  * 分析完成后自动刷新概览数据和目录树
  */
 function startStatusPolling(): void {
@@ -312,7 +312,7 @@ function toggleMobileWorkspace(): void {
 
 /**
  * 跳转到翻译页面
- * 当前行为逻辑：根据章节情况决定是否弹窗选择
+ * 业务逻辑：根据章节情况决定是否弹窗选择
  */
 function goToTranslate(): void {
   if (!insightStore.currentBookId) {
@@ -394,7 +394,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 </script>
 
 <template>
-  <AppShell class="insight-page">
+  <AppShell class="insight-page" viewport-mode="locked">
     <!-- 页面头部 -->
     <AppHeader variant="insight" logo-title="书架首页">
       <template #header-links>
@@ -602,7 +602,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   --insight-error-color: var(--insight-view-text-muted);
   --insight-danger: var(--insight-view-accent-variant-013);
 
-  height: 100vh;
   overflow: hidden;
   margin: 0;
   padding: 56px 20px 0 20px;
@@ -818,17 +817,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     font-size: 13px;
 }
 
-.insight-page .loading-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--insight-view-surface-base);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-popover);
-}
-
 .loading-spinner {
     width: 48px;
     height: 48px;
@@ -851,7 +839,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   }
 }
 
-/* ==================== 书籍信息区域样式 - 与当前行为一致的垂直居中布局 ==================== */
+/* ==================== 书籍信息区域样式 - 按业务契约的垂直居中布局 ==================== */
 .book-info-section {
   display: flex;
   flex-direction: column;
@@ -930,7 +918,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   border-bottom: none;
 }
 
-/* ==================== v-show修复：标签页内容显示 ==================== */
+/* ==================== 标签页显示状态 ==================== */
 .tab-content[style*="display: none"] {
   display: none;
 }

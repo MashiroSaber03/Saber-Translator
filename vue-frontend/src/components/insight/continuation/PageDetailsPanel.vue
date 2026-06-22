@@ -110,6 +110,15 @@ function getStatusText(status: string): string {
 
 <style scoped>
 .page-details-panel {
+  /* owner tokens: page-details-panel */
+  --page-details-panel-surface-base: #fef3c7;
+  --page-details-panel-surface-raised: #dbeafe;
+  --page-details-panel-surface-muted: #d1fae5;
+  --page-details-panel-surface-subtle: #fee2e2;
+  --page-details-panel-text-primary: #92400e;
+  --page-details-panel-text-secondary: #1e40af;
+  --page-details-panel-text-muted: #065f46;
+  --page-details-panel-text-subtle: #991b1b;
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;

@@ -53,6 +53,14 @@ defineEmits<{
 <style scoped>
 /* 编辑模式缩略图面板 */
 .edit-thumbnails-panel {
+  /* owner tokens: edit-thumbnail-panel */
+  --edit-thumbnail-panel-border-default: rgba(255, 255, 255, .1);
+  --edit-thumbnail-panel-border-strong: rgba(255, 255, 255, .5);
+  --edit-thumbnail-panel-shadow-default: rgba(102, 126, 234, .5);
+  --edit-thumbnail-panel-surface-base: rgba(0, 0, 0, .3);
+  --edit-thumbnail-panel-surface-raised: rgba(255, 255, 255, .1);
+  --edit-thumbnail-panel-surface-muted: rgba(255, 255, 255, .3);
+
   position: relative;
   width: auto;
   background: var(--edit-thumbnail-panel-surface-base);

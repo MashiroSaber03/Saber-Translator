@@ -9,7 +9,7 @@ import type {
   WebImportSettings,
 } from '@/types/webImport'
 import { DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT } from '@/constants'
-import { normalizeProviderId } from '@/config/aiProviders'
+import { normalizeProviderId, providerSupportsCapability } from '@/config/aiProviders'
 
 // ============================================================
 // 默认值
@@ -74,6 +74,17 @@ export function createDefaultWebImportProviderConfigs(): WebImportProviderConfig
   }
 }
 
+export function isWebImportAgentProvider(provider: unknown): provider is WebImportSettings['agent']['provider'] {
+  return typeof provider === 'string'
+    && provider === normalizeProviderId(provider)
+    && providerSupportsCapability(provider, 'webImportAgent')
+}
+
+function toWebImportAgentProvider(provider: string): WebImportSettings['agent']['provider'] | null {
+  const canonicalProvider = normalizeProviderId(provider)
+  return isWebImportAgentProvider(canonicalProvider) ? canonicalProvider : null
+}
+
 function createEmptyAgentProviderConfig(): WebImportAgentProviderConfig {
   return {
     apiKey: '',
@@ -103,11 +114,12 @@ export function useWebImportSettings(
   // ============================================================
 
   function setAgentProvider(provider: string): void {
-    const canonicalProvider = normalizeProviderId(provider) as WebImportSettings['agent']['provider']
-    const oldProvider = normalizeProviderId(webImportSettings.value.agent.provider) as WebImportSettings['agent']['provider']
-    if (oldProvider === canonicalProvider) return
+    const canonicalProvider = toWebImportAgentProvider(provider)
+    if (!canonicalProvider) return
+    const previousProvider = webImportSettings.value.agent.provider
+    if (previousProvider === canonicalProvider) return
 
-    saveAgentProviderConfig(oldProvider)
+    saveAgentProviderConfig(previousProvider)
     webImportSettings.value.agent.provider = canonicalProvider
     restoreAgentProviderConfig(canonicalProvider)
   }
@@ -241,7 +253,7 @@ export function useWebImportSettings(
   }
 
   function saveAgentProviderConfig(provider: string): void {
-    const canonicalProvider = normalizeProviderId(provider)
+    const canonicalProvider = toWebImportAgentProvider(provider)
     if (!canonicalProvider) return
 
     providerConfigs.value.agent[canonicalProvider] = {
@@ -252,7 +264,7 @@ export function useWebImportSettings(
   }
 
   function restoreAgentProviderConfig(provider: string): void {
-    const canonicalProvider = normalizeProviderId(provider)
+    const canonicalProvider = toWebImportAgentProvider(provider)
     const cached = canonicalProvider ? providerConfigs.value.agent[canonicalProvider] : undefined
 
     if (cached) {

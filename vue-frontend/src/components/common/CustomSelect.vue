@@ -73,7 +73,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
 // 类型定义
-// 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，boolean 不兼容
+// 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，不能直接使用 boolean
 type SelectValue = string | number
 
 interface SelectOption {
@@ -336,9 +336,9 @@ onUnmounted(() => {
 }
 
 .custom-select-dropdown {
-  position: fixed; /* 改为 fixed 以配合 Teleport */
-  /* top, left, width 由 JS 动态计算 */
-  margin-top: 0; /* JS计算位置时已包含偏移 */
+  /* Teleport 下拉层使用视口坐标定位，top/left/width 由 JS 计算。 */
+  position: fixed;
+  margin-top: 0;
   background: var(--color-surface-plain);
   border: 1px solid var(--color-border-default);
   border-radius: 10px;

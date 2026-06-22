@@ -37,8 +37,6 @@ export async function getSessionList(): Promise<SessionListResponse> {
   return apiClient.get<SessionListResponse>('/api/sessions/list')
 }
 
-// 注意：旧的 saveSession 函数已移除，保存功能请使用 pageStorage.ts
-
 /**
  * 加载会话
  * @param name 会话名称

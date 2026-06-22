@@ -1,7 +1,7 @@
 # 前端 UI 架构规范
 
 > 最后更新：2026-06-20  
-> 目标：保持现有视觉稳定，同时让新增和重构 UI 默认走统一 token、layout shell 和 primitives。
+> 目标：新增和重构 UI 默认走统一 token、layout shell、overlay layer 和 primitives。
 
 ## 样式分层
 
@@ -29,6 +29,8 @@
 
 业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；颜色值直接归属到 semantic、component 或 domain token。历史值命名颜色 token 已废弃，全仓库不得出现。
 
+`domain.css` 只保留跨页面、跨业务域共享 token，不作为组件私有视觉仓库。单个组件或页面私有 token 必须定义在自己的 `<style scoped>` owner 根选择器中；`domain.css` 超过 200 个 token、或出现 `character-studio-preview-*` 这类组件私有 token，会让 `npm run lint:ui` 失败。
+
 业务 CSS 不得重新定义全局/历史通用 token，例如 `--text-primary`、`--text-secondary`、`--text-muted`、`--color-primary`、`--bg-primary`、`--bg-secondary`、`--success-color`、`--error-color`、`--primary`、`--danger`。页面或组件需要局部主题变量时，必须使用 owner 命名空间，例如 `--insight-text-primary`、`--translate-surface-main`、`--reader-control-text`、`--studio-accent`。这条规则避免页面根变量通过 CSS 继承污染子组件，是 `npm run lint:ui` 的强制检查项。
 
 所有 semantic、domain、component、layout token 必须定义在全局 `:root` 中。`body` 不得定义 token 或兼容别名；旧 `--text-color`、`--bg-color`、`--card-bg-color`、`--border-color`、`--input-bg` 等变量的定义和引用都禁止出现。`:root` token 不得引用 body-only token，也不得引用未定义 token 或形成循环依赖；`npm run lint:ui` 会解析所有 token 文件的 `var(...)` 依赖链并在提交前失败。这条规则用于防止编辑模式背景这类“变量存在但作用域无效”的隐性视觉回归。
@@ -51,11 +53,11 @@
 
 禁止 `<style src>`、CSS `@import`、`*.generated-*.css`、`part1/part2` 以及 `*.base/layout/panels/responsive.styles.css` 这类横切拆分。业务组件不得通过 `<script setup>` 导入普通 `*.styles.css`，因为它会绕过 Vue scoped 边界并形成隐藏全局样式入口。组件样式默认写在同一 SFC 的 `<style scoped>` 中；确实需要 Teleport 或 slot reach-through 时，使用同目录命名空间 `*.global.styles.css`，并让选择器从明确的 modal/body/owner class 开始。共享样式应沉淀为 UI primitive 或明确业务命名空间，不要用 scoped 共享 CSS 模拟全局组件库。
 
-行数预算只是硬安全网，不是拆分目标。不要为了贴近 300 行而横向切成 `base/layout/panels`；如果一个组件虽然较大但状态、模板和交互必须一起理解，可以保留整体。拆分只在真实 owner 边界清晰、能减少状态耦合或测试困难时进行。
+行数预算只是硬安全网，不是拆分目标。SFC 的 owner 门禁按模板+脚本逻辑行检查，scoped 样式另设安全网上限；不要为了贴近 300 行而横向切成 `base/layout/panels`。如果一个组件虽然较大但状态、模板和交互必须一起理解，可以保留整体。拆分只在真实 owner 边界清晰、能减少状态耦合或测试困难时进行。
 
-`docs/ui-maintenance-decisions.md` 记录最终维护策略，不记录“以后再拆”的 accepted debt。未登记的超硬安全网上限文件会让 `lint:ui` 失败；正常 audit 不输出大文件候选或 pending split decision。
+`docs/ui-maintenance-decisions.md` 记录最终维护策略，不记录“以后再拆”的待办项。未登记的超硬安全网上限文件会让 `lint:ui` 失败；正常 audit 不输出大文件候选或待拆分决策。
 
-页面级 fixed、`calc(100vh - ...)`、以及用固定 margin 推开侧栏的布局都属于 layout bypass。新增这类布局前必须优先扩展 `AppShell` 或 `SidebarLayout`；确实属于 Teleport、编辑器覆盖层、Reader 沉浸控件、面板内部滚动等局部 owner 时，必须纳入 `check-ui-architecture.mjs` 的永久 layout owner allowlist。allowlist 只表达当前所有权，不记录迁移待办。
+页面级 fixed、`calc(100vh - ...)`、以及用固定 margin 推开侧栏的布局都属于 layout bypass。新增这类布局前必须优先扩展 `AppShell`、`SidebarLayout` 或 `OverlayLayer`；确实属于 Teleport、编辑器覆盖层、Reader 沉浸控件、面板内部滚动等局部 owner 时，必须纳入 `check-ui-architecture.mjs` 的永久 layout owner 表。永久 owner 表只表达当前所有权，不记录迁移待办。
 
 业务 CSS 禁止直接选择 UI primitive 内部类，例如 `.ui-input`、`.ui-select`、`.ui-textarea`、`.ui-form-field`。需要不同尺寸、密度或视觉状态时，先扩展 primitive props/class contract，或给业务组件自己的元素加业务命名空间类。
 
@@ -67,7 +69,7 @@
 
 `npm run lint:ui` 对 UI 架构债使用零预算：旧兼容变量定义/引用、旧短别名变量、业务视觉兼容 token、历史值命名颜色 token、编号式 owner token、raw form controls、`variant="tool"`、`variant="unstyled"`、普通 script CSS import、`style src`、CSS `@import`、`*.generated-*.css`、`:global()`、`:deep()`、旧 settings shared 类、未归属的全局选择器、旧实现心智注释和业务 CSS 直接选择 primitive 内部类都会失败。默认输出必须保持安静，通过时只输出 `UI architecture check passed`。
 
-`npm run lint:ui:audit` 用于主动维护审查：它只输出 token 文件数量、`:root` token 数量、token 依赖数量和关键视觉覆盖数量。它不输出 review candidates、accepted large owner 或 pending layout bypass；如果某个文件从“保留更清晰”变成“多 owner 混杂”，应按真实 UI 边界拆分或抽 composable，并同步更新维护策略。
+`npm run lint:ui:audit` 用于主动维护审查：它只输出 token 文件数量、`:root` token 数量、token 依赖数量和关键视觉覆盖数量。它不输出 review candidates、已登记大文件或待处理 layout bypass；如果某个文件从“保留更清晰”变成“多 owner 混杂”，应按真实 UI 边界拆分或抽 composable，并同步更新维护策略。
 
 关键页面状态必须有视觉覆盖登记。默认 `lint:ui` 会检查 `tests/visual/ui-regression.spec.ts` 中是否仍覆盖 Translate 普通/已加载/编辑态、EditWorkspace 选中气泡编辑面板、Insight 侧栏、Reader、Character Studio 等高风险 UI shell。新增或重构关键状态时，应补视觉测试，而不是只依赖普通页面截图。
 

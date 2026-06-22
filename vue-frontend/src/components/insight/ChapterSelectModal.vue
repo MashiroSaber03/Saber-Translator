@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import './ChapterSelectModal.global.styles.css'
 /**
  * 章节选择弹窗组件
  * 用于在有多个章节时让用户选择要翻译的章节
@@ -77,6 +76,8 @@ function close(): void {
     title="📖 选择章节"
     size="small"
     custom-class="chapter-select-modal"
+    body-padding="spacious"
+    :custom-style="{ '--ui-dialog-actions-gap': '12px' }"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="close"

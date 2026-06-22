@@ -93,6 +93,24 @@ defineEmits<{
 
 <style scoped>
 .character-detail-panel {
+  /* owner tokens: character-detail-panel */
+  --character-detail-panel-border-default: #e0e4ff;
+  --character-detail-panel-border-strong: #e5e7eb;
+  --character-detail-panel-shadow-default: rgba(0, 0, 0, .2);
+  --character-detail-panel-shadow-raised: rgba(0, 0, 0, .08);
+  --character-detail-panel-shadow-floating: rgba(0, 0, 0, .12);
+  --character-detail-panel-surface-base: #fafbff;
+  --character-detail-panel-surface-raised: #f5f7ff;
+  --character-detail-panel-surface-muted: #f0f0f0;
+  --character-detail-panel-surface-subtle: #cbd5e1;
+  --character-detail-panel-surface-hover: #10b981;
+  --character-detail-panel-surface-active: #059669;
+  --character-detail-panel-surface-selected: #f0f2ff;
+  --character-detail-panel-surface-overlay: #fef2f2;
+  --character-detail-panel-text-primary: #9ca3af;
+  --character-detail-panel-text-secondary: #1a1a2e;
+  --character-detail-panel-text-muted: #6b7280;
+  --character-detail-panel-text-subtle: #374151;
   --ui-button-padding: 6px 12px;
   --ui-button-radius: 6px;
   --ui-button-font-size: 13px;

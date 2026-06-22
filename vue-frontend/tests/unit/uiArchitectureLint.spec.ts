@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -39,12 +39,17 @@ const oldProviderSettingsField = 'provider' + 'Settings'
 const oldStripMirrorHelper = 'strip' + 'LegacyOpenAiMirrorFields'
 const oldSyncMirrorHelper = 'sync' + 'LegacyOpenAiMirrorFields'
 const oldCoerceRetryHelper = 'coerce' + 'LegacyRetryValue'
+const oldSchemaMergeHelper = 'deep' + 'Merge'
 const threshold48pxField = 'threshold' + '48px'
 const thresholdMangaOcrField = 'threshold' + 'MangaOcr'
 const thresholdPaddleOcrField = 'threshold' + 'PaddleOcr'
 const oldIsJsonModeField = 'is' + 'JsonMode'
 const oldForceJsonField = 'force' + 'Json'
 const oldMaxRetriesField = 'max' + 'Retries'
+const primitiveButtonInternalSelector = '.ui-button' + '--primary'
+const primitiveModalBodySelector = '.ui-modal' + '__body'
+const componentPrivateDomainToken = '--character-studio-preview-shell-surface-base'
+const domainTokenLimit = 200
 
 function runUiArchitectureTokenFixture(tokensCss: string) {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
@@ -69,6 +74,7 @@ function runUiArchitectureTokenFixture(tokensCss: string) {
 function runUiArchitectureSourceFixture(relativePath: string, content: string) {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-source-'))
   const fixturePath = join(fixtureDir, relativePath)
+  mkdirSync(join(fixturePath, '..'), { recursive: true })
   writeFileSync(fixturePath, content)
 
   return spawnSync(
@@ -77,6 +83,8 @@ function runUiArchitectureSourceFixture(relativePath: string, content: string) {
       'scripts/check-ui-architecture.mjs',
       '--source-fixture',
       fixturePath,
+      '--source-fixture-path',
+      relativePath,
     ],
     {
       cwd: frontendRoot,
@@ -100,6 +108,35 @@ function runUiArchitectureAudit() {
 }
 
 describe('UI architecture token dependency lint', () => {
+  it('rejects component-private tokens in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${componentPrivateDomainToken}: var(--color-surface-panel);
+        --color-surface-panel: #fff;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('component-private domain token definition(s)')
+    expect(result.stderr).toContain(componentPrivateDomainToken)
+  })
+
+  it('rejects domain token files over the final owner budget', () => {
+    const tokenDefinitions = Array.from(
+      { length: domainTokenLimit + 1 },
+      (_, index) => `--translate-domain-token-${index}: #fff;`
+    ).join('\n')
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${tokenDefinitions}
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`domain.css defines ${domainTokenLimit + 1} tokens`)
+    expect(result.stderr).toContain(`below ${domainTokenLimit}`)
+  })
+
   it('rejects generated palette token names in token files', () => {
     const result = runUiArchitectureTokenFixture(`
       :root {
@@ -312,6 +349,49 @@ describe('UI architecture CSS variable ownership lint', () => {
 })
 
 describe('UI architecture style ownership lint', () => {
+  it('rejects non-shell SFCs above the final owner threshold', () => {
+    const longTemplate = Array.from(
+      { length: 901 },
+      (_, index) => `<div class="large-panel__row">${index}</div>`
+    ).join('\n')
+    const result = runUiArchitectureSourceFixture('LargePanel.vue', `
+      <template>
+        <section class="large-panel">
+          ${longTemplate}
+        </section>
+      </template>
+
+      <style scoped>
+      .large-panel { display: grid; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('SFC has')
+    expect(result.stderr).toContain('final owner threshold')
+  })
+
+  it('allows high-interaction owners under their explicit shell threshold', () => {
+    const longTemplate = Array.from(
+      { length: 1000 },
+      (_, index) => `<div class="edit-workspace__row">${index}</div>`
+    ).join('\n')
+    const result = runUiArchitectureSourceFixture('src/components/edit/EditWorkspace.vue', `
+      <template>
+        <section class="edit-workspace">
+          ${longTemplate}
+        </section>
+      </template>
+
+      <style scoped>
+      .edit-workspace { display: grid; }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
   it('rejects ordinary script CSS imports in UI components', () => {
     const result = runUiArchitectureSourceFixture('Panel.vue', `
       <script setup lang="ts">
@@ -397,6 +477,59 @@ describe('UI architecture style ownership lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('scoped styles must not target BaseModal .ui-modal__* internals')
   })
+
+  it('rejects tests that locate business UI through primitive internal classes', () => {
+    const result = runUiArchitectureSourceFixture('Panel.test.ts', `
+      const generateButton = wrapper.find('button${primitiveButtonInternalSelector}')
+      await generateButton.trigger('click')
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('primitive internal class selector(s)')
+    expect(result.stderr).toContain(primitiveButtonInternalSelector)
+  })
+
+  it('rejects tests that locate business modals through BaseModal internals', () => {
+    const result = runUiArchitectureSourceFixture('Panel.test.ts', `
+      const modalBody = document.body.querySelector('${primitiveModalBodySelector}')
+      expect(modalBody).toBeTruthy()
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('primitive internal class selector(s)')
+    expect(result.stderr).toContain(primitiveModalBodySelector)
+  })
+})
+
+describe('UI architecture layout shell lint', () => {
+  it('rejects page-owned viewport height algorithms', () => {
+    const result = runUiArchitectureSourceFixture('TranslateView.vue', `
+      <template><main class="translate-page"></main></template>
+      <style scoped>
+      .translate-page {
+        min-height: 100vh;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('layout bypass detected')
+  })
+
+  it('rejects page-owned fixed overlay algorithms', () => {
+    const result = runUiArchitectureSourceFixture('InsightView.vue', `
+      <template><main class="insight-page"></main></template>
+      <style scoped>
+      .insight-page .loading-overlay {
+        position: fixed;
+        inset: 0;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('layout bypass detected')
+  })
 })
 
 describe('UI architecture old implementation mindset lint', () => {
@@ -473,6 +606,7 @@ describe('UI architecture frontend schema compatibility lint', () => {
     const result = runUiArchitectureSourceFixture('settings.ts', `
       const ${legacyStorageKey} = 'saber-translator-settings'
       const payload = { ${oldProviderSettingsField}: {} }
+      function ${oldSchemaMergeHelper}() {}
       function ${oldStripMirrorHelper}() {}
       function ${oldSyncMirrorHelper}() {}
       function ${oldCoerceRetryHelper}() {}
@@ -482,6 +616,7 @@ describe('UI architecture frontend schema compatibility lint', () => {
     expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
     expect(result.stderr).toContain(legacyStorageKey)
     expect(result.stderr).toContain(oldProviderSettingsField)
+    expect(result.stderr).toContain(oldSchemaMergeHelper)
     expect(result.stderr).toContain(oldStripMirrorHelper)
     expect(result.stderr).toContain(oldSyncMirrorHelper)
     expect(result.stderr).toContain(oldCoerceRetryHelper)

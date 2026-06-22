@@ -84,6 +84,34 @@ function handleUpload(event: Event) {
 <style scoped>
 /* 卡片容器 */
 .form-tile {
+  /* owner tokens: form-tile */
+  --form-tile-border-default: #e8eaf6;
+  --form-tile-border-strong: #c7d2fe;
+  --form-tile-border-muted: #cbd5e1;
+  --form-tile-border-subtle: #a5b4fc;
+  --form-tile-border-hover: #818cf8;
+  --form-tile-border-active: #fecaca;
+  --form-tile-shadow-default: rgba(99, 102, 241, .08);
+  --form-tile-shadow-raised: rgba(0, 0, 0, .1);
+  --form-tile-shadow-floating: rgba(0, 0, 0, .2);
+  --form-tile-surface-base: #f8f9ff;
+  --form-tile-surface-raised: #f5f7ff;
+  --form-tile-surface-muted: #eef2ff;
+  --form-tile-surface-subtle: rgba(99, 102, 241, .92);
+  --form-tile-surface-hover: rgba(124, 58, 237, .92);
+  --form-tile-surface-active: #fee2e2;
+  --form-tile-surface-selected: #fecaca;
+  --form-tile-surface-overlay: #fafbff;
+  --form-tile-surface-inverse: #cbd5e1;
+  --form-tile-surface-contrast: #94a3b8;
+  --form-tile-surface-tint: #10b981;
+  --form-tile-surface-soft: #059669;
+  --form-tile-surface-strong: #fef2f2;
+  --form-tile-text-primary: #9ca3af;
+  --form-tile-text-secondary: #1e293b;
+  --form-tile-text-muted: #dc2626;
+  --form-tile-text-subtle: #64748b;
+
   background: linear-gradient(135deg, var(--color-surface-base) 0%, var(--form-tile-surface-base) 100%);
   border-radius: 16px;
   overflow: hidden;

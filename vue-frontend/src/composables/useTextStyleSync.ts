@@ -73,7 +73,7 @@ export function useTextStyleSync() {
     /**
      * 辅助函数：从图片同步文字设置到侧边栏
      * @param image 源图片数据
-     * 【修复】只同步图片中有明确定义的设置，undefined 值回退到当前 settingsStore 设置
+     * 只同步图片中有明确定义的设置，undefined 值回退到当前 settingsStore 设置。
      */
     function syncImageToSidebar(image: typeof imageStore.currentImage) {
         if (!image) return

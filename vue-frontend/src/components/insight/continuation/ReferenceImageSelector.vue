@@ -3,6 +3,42 @@
     :model-value="visible"
     :show-header="false"
     custom-class="reference-selector-modal"
+    body-padding="none"
+    scroll-mode="contained"
+    :custom-style="{
+      width: 'min(1120px, calc(100vw - 48px))',
+      maxHeight: 'min(88vh, 980px)',
+      background: 'var(--color-surface-base)',
+      border: '1px solid var(--reference-image-selector-border-default)',
+      borderRadius: '18px',
+      boxShadow: '0 24px 64px var(--reference-image-selector-shadow-default)',
+      '--ui-dialog-body-display': 'flex',
+      '--ui-dialog-body-direction': 'column',
+      '--ui-dialog-body-min-height': '0',
+      '--reference-image-selector-border-default': '#dbe3ef',
+      '--reference-image-selector-border-strong': '#cbd5e1',
+      '--reference-image-selector-border-muted': '#fcd34d',
+      '--reference-image-selector-border-subtle': '#e5e7eb',
+      '--reference-image-selector-border-hover': '#409eff',
+      '--reference-image-selector-border-active': '#d1d5db',
+      '--reference-image-selector-border-focus': '#9ca3af',
+      '--reference-image-selector-shadow-default': 'rgba(15, 23, 42, .28)',
+      '--reference-image-selector-shadow-raised': 'rgba(64, 158, 255, .25)',
+      '--reference-image-selector-shadow-floating': 'rgba(64, 158, 255, .2)',
+      '--reference-image-selector-shadow-strong': 'rgba(0, 0, 0, .25)',
+      '--reference-image-selector-surface-base': '#f8f9fa',
+      '--reference-image-selector-surface-raised': '#fef3c7',
+      '--reference-image-selector-surface-muted': '#409eff',
+      '--reference-image-selector-surface-subtle': 'rgba(0, 0, 0, .75)',
+      '--reference-image-selector-surface-hover': 'rgba(255, 255, 255, .6)',
+      '--reference-image-selector-surface-active': 'rgba(59, 130, 246, .9)',
+      '--reference-image-selector-surface-selected': '#337ecc',
+      '--reference-image-selector-text-primary': '#6b7280',
+      '--reference-image-selector-text-secondary': '#92400e',
+      '--reference-image-selector-text-muted': '#b45309',
+      '--reference-image-selector-text-subtle': '#4b5563',
+      '--reference-image-selector-text-supporting': '#374151'
+    }"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
     <!-- 标题栏 -->
@@ -127,8 +163,6 @@
 </template>
 
 <script setup lang="ts">
-import './ReferenceImageSelector.global.styles.css'
-
 import UiButton from '@/components/ui/UiButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import { ref, computed, watch, nextTick } from 'vue'
@@ -289,3 +323,285 @@ function handleCancel(): void {
   emit('update:visible', false)
 }
 </script>
+
+<style scoped>
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--reference-image-selector-surface-base);
+  border-bottom: 1px solid var(--color-border-default);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.header-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  line-height: 1;
+  margin-left: 8px;
+}
+
+.close-btn:hover {
+  color: var(--color-text-default);
+}
+
+.placeholder-card {
+  width: 100%;
+  height: 100%;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-surface-muted), var(--color-surface-hover));
+  color: var(--reference-image-selector-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px dashed var(--reference-image-selector-border-strong);
+}
+
+/* 角色档案区域 */
+.character-section {
+  padding: 12px 20px;
+  background: var(--reference-image-selector-surface-raised);
+  border-bottom: 1px solid var(--reference-image-selector-border-muted);
+  flex-shrink: 0;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--reference-image-selector-text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--reference-image-selector-text-muted);
+}
+
+.thumbnails-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 漫画图片区域 */
+.manga-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 20px;
+}
+
+.manga-section .section-label {
+  color: var(--reference-image-selector-text-subtle);
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.thumbnails-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 110px);
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+  justify-content: start;
+}
+
+.thumbnail {
+  position: relative;
+  width: 110px;
+  height: 154px;
+  border: 2px solid var(--reference-image-selector-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: white;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.thumbnail:hover {
+  border-color: var(--reference-image-selector-border-hover);
+  box-shadow: 0 2px 12px var(--reference-image-selector-shadow-raised);
+  transform: translateY(-2px);
+}
+
+.thumbnail.selected {
+  border-color: var(--reference-image-selector-border-hover);
+  box-shadow: 0 0 0 3px var(--reference-image-selector-shadow-floating);
+}
+
+.thumbnail.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.selection-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 26px;
+  height: 26px;
+  background: var(--reference-image-selector-surface-muted);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: bold;
+  box-shadow: 0 2px 6px var(--reference-image-selector-shadow-strong);
+  animation: badgePop 0.15s ease;
+}
+
+@keyframes badgePop {
+  from { transform: scale(0.8); }
+  to { transform: scale(1); }
+}
+
+.page-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: var(--reference-image-selector-surface-subtle);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.disabled-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--reference-image-selector-surface-hover);
+  cursor: not-allowed;
+}
+
+.continuation-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--reference-image-selector-surface-active);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.character-thumbnail {
+  width: 90px;
+  height: 126px;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.character-thumbnail:hover {
+  border-color: var(--reference-image-selector-border-muted);
+  box-shadow: none;
+  transform: none;
+}
+
+.character-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--reference-image-selector-surface-subtle);
+  color: white;
+  padding: 4px 6px;
+  font-size: 10px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reference-selector-modal__button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.reference-selector-modal__button--primary {
+  background: var(--reference-image-selector-surface-muted);
+  color: white;
+}
+
+.reference-selector-modal__button--primary:hover {
+  background: var(--reference-image-selector-surface-selected);
+}
+
+.reference-selector-modal__button--secondary {
+  background: white;
+  color: var(--reference-image-selector-text-supporting);
+  border: 1px solid var(--reference-image-selector-border-active);
+}
+
+.reference-selector-modal__button--secondary:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--reference-image-selector-border-focus);
+}
+
+/* 响应式适配 */
+
+@media (--breakpoint-lg-down) {
+  .modal-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-actions {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+  }
+
+  .thumbnails-grid {
+    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  }
+}
+</style>

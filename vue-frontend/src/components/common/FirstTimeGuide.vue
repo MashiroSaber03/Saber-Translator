@@ -19,7 +19,7 @@ import BaseModal from './BaseModal.vue'
 // 常量定义
 // ============================================================
 
-/** localStorage 存储键（与当前实现 translation_validator.js 保持一致） */
+/** localStorage 存储键（与首次引导状态 保持一致） */
 const GUIDE_SHOWN_KEY = 'saber_translator_dismiss_setup_reminder'
 
 // ============================================================
@@ -46,7 +46,7 @@ const dontShowAgain = ref(false)
 // ============================================================
 
 onMounted(() => {
-  // 检查是否已经显示过引导（与当前实现 translation_validator.js 保持一致）
+  // 检查是否已经显示过引导（与首次引导状态 保持一致）
   const dismissed = localStorage.getItem(GUIDE_SHOWN_KEY)
   if (dismissed !== 'true') {
     // 首次使用或未勾选"不再显示"，显示引导弹窗

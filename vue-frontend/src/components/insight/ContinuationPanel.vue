@@ -263,7 +263,7 @@ async function handleGenerateScript(payload: { referenceTokens: string[] | null;
         state.pages.value = []
         await persistPages([])
       }
-      const baseMessage = hadExistingPages ? '脚本生成成功，旧的页面剧情已清空' : '脚本生成成功'
+      const baseMessage = hadExistingPages ? '脚本生成成功，已有页面剧情已清空' : '脚本生成成功'
       const configResult = await persistContinuationConfig()
       if (configResult.success) {
         state.showMessage(baseMessage, 'success')
@@ -294,7 +294,7 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
       if (shouldInvalidatePages) {
         state.pages.value = []
         await persistPages([])
-        state.showMessage('脚本已更新，旧的页面剧情已清空，请重新生成。', 'info')
+        state.showMessage('脚本已更新，已有页面剧情已清空，请重新生成。', 'info')
         return true
       }
       if (showSuccessMessage) {
@@ -524,6 +524,23 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .continuation-panel {
+  /* owner tokens: continuation-panel */
+  --continuation-panel-border-default: #fecaca;
+  --continuation-panel-border-strong: #bbf7d0;
+  --continuation-panel-border-muted: #bfdbfe;
+  --continuation-panel-border-subtle: #22c55e;
+  --continuation-panel-border-hover: #fca5a5;
+  --continuation-panel-surface-base: #f7f7f7;
+  --continuation-panel-surface-raised: #fef2f2;
+  --continuation-panel-surface-muted: #f0fdf4;
+  --continuation-panel-surface-subtle: #eff6ff;
+  --continuation-panel-surface-hover: #22c55e;
+  --continuation-panel-surface-active: rgba(255, 255, 255, .2);
+  --continuation-panel-surface-selected: #fee2e2;
+  --continuation-panel-surface-overlay: #fecaca;
+  --continuation-panel-text-primary: #dc2626;
+  --continuation-panel-text-secondary: #16a34a;
+  --continuation-panel-text-muted: #2563eb;
   --ui-button-padding: 10px 20px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--color-surface-brand);

@@ -40,7 +40,7 @@ const availableTags = computed(() => bookshelfStore.tags)
 const filteredTagSuggestions = computed(() => {
   if (!tagInput.value) return availableTags.value
   const query = tagInput.value.toLowerCase()
-  // 【当前行为】使用 tag.name 作为唯一标识
+  // 使用 tag.name 作为唯一标识
   return availableTags.value.filter(tag => 
     tag.name.toLowerCase().includes(query) && !selectedTags.value.includes(tag.name)
   )
@@ -53,7 +53,7 @@ onMounted(() => {
     if (book) {
       title.value = book.title
       coverData.value = book.cover || null
-      // 【当前行为】book.tags 存储的是标签名称,直接使用即可
+      // book.tags 存储的是标签名称,直接使用即可
       if (book.tags && book.tags.length > 0) {
         selectedTags.value = [...book.tags]
       }
@@ -94,7 +94,7 @@ function handleCoverDrop(event: DragEvent) {
   reader.readAsDataURL(file)
 }
 
-// 添加标签 - 【当前行为】使用 name 作为标识
+// 添加标签 - 使用 name 作为标识
 function addTag(tagName: string) {
   if (!selectedTags.value.includes(tagName)) {
     selectedTags.value.push(tagName)
@@ -111,7 +111,7 @@ async function createAndAddTag() {
   // 检查是否已存在
   const existing = availableTags.value.find(t => t.name === name)
   if (existing) {
-    addTag(existing.name)  // 【当前行为】使用 name
+    addTag(existing.name)  // 使用 name
     return
   }
 
@@ -119,14 +119,14 @@ async function createAndAddTag() {
   try {
     const newTag = await bookshelfStore.createTag(name)
     if (newTag) {
-      addTag(newTag.name)  // 【当前行为】使用 name
+      addTag(newTag.name)  // 使用 name
     }
   } catch (error) {
     showToast('创建标签失败', 'error')
   }
 }
 
-// 移除标签 - 【当前行为】使用 name 作为标识
+// 移除标签 - 使用 name 作为标识
 function removeTag(tagName: string) {
   selectedTags.value = selectedTags.value.filter(name => name !== tagName)
 }
@@ -140,7 +140,7 @@ async function saveBook() {
     return
   }
 
-  // 【当前行为】selectedTags 已经是标签名称数组,直接使用
+  // selectedTags 已经是标签名称数组,直接使用
   const tagNames = selectedTags.value
 
   try {
@@ -149,7 +149,7 @@ async function saveBook() {
       const success = await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
         cover: coverData.value || undefined,
-        tags: tagNames  // 【当前行为】一同传递 tags 数组
+        tags: tagNames  // 一同传递 tags 数组
       })
       if (success) {
         showToast('书籍更新成功', 'success')
@@ -229,7 +229,7 @@ async function saveBook() {
         <div class="tag-input-container">
           <!-- 已选标签 -->
           <div class="selected-tags">
-            <!-- 【当前行为】selectedTags 已经存储标签名称,直接使用 -->
+            <!-- selectedTags 已经存储标签名称,直接使用 -->
             <span
               v-for="tagName in selectedTags"
               :key="tagName"
@@ -253,7 +253,7 @@ async function saveBook() {
               v-if="showTagSuggestions && filteredTagSuggestions.length > 0"
               class="tag-suggestions"
             >
-              <!-- 【当前行为】使用 tag.name 作为 key 和参数 -->
+              <!-- 使用 tag.name 作为 key 和参数 -->
               <UiButton
                 variant="toolbar"
                 v-for="tag in filteredTagSuggestions"

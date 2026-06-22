@@ -261,7 +261,7 @@ async function startAnalysis(): Promise<void> {
 
 /**
  * 暂停分析
- * 与当前实现 JS 一致：传递 task_id 参数
+ * 与接口流程 一致：传递 task_id 参数
  */
 async function pauseAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -281,7 +281,7 @@ async function pauseAnalysis(): Promise<void> {
 
 /**
  * 继续分析
- * 与当前实现 JS 一致：传递 task_id 参数
+ * 与接口流程 一致：传递 task_id 参数
  */
 async function resumeAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -302,7 +302,7 @@ async function resumeAnalysis(): Promise<void> {
 
 /**
  * 取消分析
- * 与当前实现 JS 一致：传递 task_id 参数
+ * 与接口流程 一致：传递 task_id 参数
  */
 async function cancelAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return

@@ -52,7 +52,7 @@ function handleImageError(event: Event) {
 </script>
 
 <template>
-  <!-- 书籍卡片 - 使用与当前实现相同的HTML结构 -->
+  <!-- 书籍卡片 -  -->
   <div class="book-card" @click="handleClick">
     <!-- 封面图片 -->
     <div class="book-cover">

@@ -239,11 +239,7 @@ async function loadFontList(): Promise<void> {
   try {
     const response = await configApi.getFontList()
     const fonts = response.fonts || []
-    if (fonts.length > 0 && typeof fonts[0] === 'object') {
-      fontList.value = fonts.map(font => (typeof font === 'object' ? font.path : String(font)))
-    } else {
-      fontList.value = fonts as string[]
-    }
+    fontList.value = fonts.map(font => font.path)
   } catch (error) {
     console.warn('[TextStyleDefaultsSettings] 加载字体列表失败:', error)
     fontList.value = [...BUILTIN_FONTS]

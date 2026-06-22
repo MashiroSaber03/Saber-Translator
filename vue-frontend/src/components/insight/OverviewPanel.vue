@@ -94,7 +94,7 @@ const renderedContent = computed(() => {
 
 /**
  * 模板变更处理 - 只读取缓存，不触发生成
- * 与当前实现 JS 的 onOverviewTemplateChange 一致
+ * 与接口流程 的 onOverviewTemplateChange 一致
  */
 async function onTemplateChange(): Promise<void> {
   await loadCachedOverview()
@@ -102,7 +102,7 @@ async function onTemplateChange(): Promise<void> {
 
 /**
  * 加载缓存的概览内容（不触发生成）
- * 与当前实现 JS 的 loadTemplateOverview 一致：GET /overview/{templateKey}
+ * 与接口流程 的 loadTemplateOverview 一致：GET /overview/{templateKey}
  */
 async function loadCachedOverview(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -138,7 +138,7 @@ async function loadCachedOverview(): Promise<void> {
 
 /**
  * 生成概览（点击按钮时调用）
- * 与当前实现 JS 的 generateOverviewWithTemplate 一致：POST /overview/generate
+ * 与接口流程 的 generateOverviewWithTemplate 一致：POST /overview/generate
  * @param regenerate - 是否强制重新生成（🔄按钮为true，📄按钮为false）
  */
 async function generateOverview(regenerate: boolean): Promise<void> {
@@ -179,8 +179,7 @@ async function generateOverview(regenerate: boolean): Promise<void> {
 
 /**
  * 加载已生成的模板列表
- * 【修复】与当前实现 HTML 一致：默认选中 no_spoiler，不自动切换到其他已生成模板
- * 当前实现 HTML 中 select 的第一个 option 是 no_spoiler，不会因为后端自动生成 story_summary 就切换
+ * 默认选中 no_spoiler，不因为后端自动生成 story_summary 切换用户当前选择。
  */
 async function loadGeneratedTemplates(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -197,8 +196,7 @@ async function loadGeneratedTemplates(): Promise<void> {
       }
       generatedTemplates.value = templates
       
-      // 【修复】不再自动切换模板，保持默认的 no_spoiler
-      // 用户可以在下拉框中自行选择其他已生成的模板
+      // 用户可以在下拉框中自行选择其他已生成的模板。
     }
   } catch (error) {
     console.error('加载模板列表失败:', error)

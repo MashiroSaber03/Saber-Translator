@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import AppShell from '@/components/ui/AppShell.vue'
+import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
@@ -236,12 +237,19 @@ describe('UI primitives architecture contracts', () => {
 
     const layout = mount(SidebarLayout, {
       props: {
-        height: 'calc(100vh - 72px)',
+        height: 'calc(100dvh - 72px)',
         leftWidth: '320px',
         rightWidth: '240px',
         leftInset: '320px',
         rightInset: '240px',
         contentInset: '20px',
+        leftOffset: '20px',
+        rightOffset: '24px',
+        leftTop: '72px',
+        rightTop: '20px',
+        leftHeight: 'calc(100dvh - 92px)',
+        rightHeight: 'calc(100dvh - 40px)',
+        mainClass: 'reader-layout__main',
         gap: '20px',
         mobileMode: 'drawer',
         paneScroll: true,
@@ -262,11 +270,38 @@ describe('UI primitives architecture contracts', () => {
       'ui-sidebar-layout--mobile-drawer',
       'ui-sidebar-layout--pane-scroll',
     ]))
-    expect(layout.attributes('style')).toContain('--ui-sidebar-height: calc(100vh - 72px);')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-height: calc(100dvh - 72px);')
     expect(layout.attributes('style')).toContain('--ui-sidebar-top: 72px;')
     expect(layout.attributes('style')).toContain('--ui-sidebar-left-inset: 320px;')
     expect(layout.attributes('style')).toContain('--ui-sidebar-right-inset: 240px;')
     expect(layout.attributes('style')).toContain('--ui-sidebar-content-inset: 20px;')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-left-offset: 20px;')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-right-offset: 24px;')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-left-top: 72px;')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-right-top: 20px;')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-left-height: calc(100dvh - 92px);')
+    expect(layout.attributes('style')).toContain('--ui-sidebar-right-height: calc(100dvh - 40px);')
+    expect(layout.get('.ui-sidebar-layout__main').classes()).toContain('reader-layout__main')
+  })
+
+  it('provides overlay ownership without forcing business components to use fixed positioning', async () => {
+    const overlay = mount(OverlayLayer, {
+      props: {
+        level: 'popover',
+        passthrough: true,
+      },
+      slots: {
+        default: '<button>Close</button>',
+      },
+    })
+
+    expect(overlay.classes()).toEqual(expect.arrayContaining([
+      'ui-overlay-layer',
+      'ui-overlay-layer--popover',
+      'ui-overlay-layer--passthrough',
+    ]))
+    await overlay.trigger('click')
+    expect(overlay.emitted('backdrop')).toHaveLength(1)
   })
 
   it('provides select checkbox and file input primitives for form migration', async () => {

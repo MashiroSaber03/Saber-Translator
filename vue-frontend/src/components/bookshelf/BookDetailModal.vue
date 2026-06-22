@@ -4,7 +4,7 @@ import UiInput from '@/components/ui/UiInput.vue'
 
 /**
  * 书籍详情模态框组件
- * 使用与当前实现bookshelf.html完全相同的HTML结构和CSS类名
+ * 使用与业务契约bookshelf.html完全相同的HTML结构和CSS类名
  */
 
 import { ref, computed, nextTick } from 'vue'
@@ -203,19 +203,19 @@ async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
       return true
     } else {
       showToast('排序保存失败', 'error')
-      // 【当前行为】刷新以恢复原始顺序
+      // 刷新以恢复原始顺序
       await refreshBookDetail()
       return false
     }
   } catch (error) {
     showToast('排序保存失败', 'error')
-    // 【当前行为】刷新以恢复原始顺序
+    // 刷新以恢复原始顺序
     await refreshBookDetail()
     return false
   }
 }
 
-// 【当前行为】刷新当前书籍详情（用于排序失败后恢复原顺序）
+// 刷新当前书籍详情（用于排序失败后恢复原顺序）
 async function refreshBookDetail() {
   if (!currentBook.value) return
   try {
@@ -290,7 +290,7 @@ const showAddTagModal = ref(false)
 const quickTagFilter = ref('')
 const quickTagInputRef = ref<HTMLInputElement | null>(null)
 
-// 【当前行为】过滤后的可用标签列表（排除已添加的标签）
+// 过滤后的可用标签列表（排除已添加的标签）
 const filteredAvailableTags = computed(() => {
   const currentTags = currentBook.value?.tags || []
   const filter = quickTagFilter.value.trim().toLowerCase()
@@ -301,7 +301,7 @@ const filteredAvailableTags = computed(() => {
   )
 })
 
-// 【当前行为】是否显示创建新标签选项
+// 是否显示创建新标签选项
 const showCreateNewTagOption = computed(() => {
   const filter = quickTagFilter.value.trim()
   if (!filter) return false
@@ -310,7 +310,7 @@ const showCreateNewTagOption = computed(() => {
   return !allTags.value.some(t => t.name.toLowerCase() === filter.toLowerCase())
 })
 
-// 【当前行为】打开添加标签弹窗
+// 打开添加标签弹窗
 function openAddTagModal() {
   quickTagFilter.value = ''
   showAddTagModal.value = true
@@ -321,13 +321,13 @@ function openAddTagModal() {
   })
 }
 
-// 【当前行为】关闭添加标签弹窗
+// 关闭添加标签弹窗
 function closeAddTagModal() {
   showAddTagModal.value = false
   quickTagFilter.value = ''
 }
 
-// 【当前行为】处理输入框回车事件
+// 处理输入框回车事件
 async function handleQuickTagInputEnter() {
   const tagName = quickTagFilter.value.trim()
   if (tagName) {
@@ -347,11 +347,11 @@ async function removeTag(tagName: string) {
   isTagLoading.value = true
   
   try {
-    // 【当前行为】获取当前的 tags 数组并过滤
+    // 获取当前的 tags 数组并过滤
     const currentTags = currentBook.value.tags || []
     const newTags = currentTags.filter(t => t !== tagName)
     
-    // 【当前行为】通过 updateBookApi 更新整个 tags 数组
+    // 通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
@@ -359,7 +359,7 @@ async function removeTag(tagName: string) {
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已移除', 'success')
-      // 【当前行为】刷新书籍列表和标签列表
+      // 标签写入后刷新书籍与标签索引。
       await bookshelfStore.loadBooks()
       await bookshelfStore.loadTags()
     } else {
@@ -373,7 +373,7 @@ async function removeTag(tagName: string) {
   }
 }
 
-// 【当前行为】快速添加标签到书籍（支持创建新标签）
+// 快速添加标签到书籍（支持创建新标签）
 // 步骤: 1. 如需创建新标签则创建  2. 获取当前 tags  3. 追加新标签  4. PUT 更新整个 tags 数组
 async function quickAddTagToBook(tagName: string) {
   if (!currentBook.value || !tagName || isTagLoading.value) return
@@ -401,11 +401,11 @@ async function quickAddTagToBook(tagName: string) {
       }
     }
     
-    // 【当前行为】获取当前 tags 并追加新标签
+    // 获取当前 tags 并追加新标签
     const currentTags = currentBook.value.tags || []
     const newTags = [...currentTags, tagName]
     
-    // 【当前行为】通过 updateBookApi 更新整个 tags 数组
+    // 通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
@@ -413,7 +413,7 @@ async function quickAddTagToBook(tagName: string) {
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已添加', 'success')
-      // 【当前行为】刷新书籍列表和标签列表
+      // 刷新书籍列表和标签列表
       await bookshelfStore.loadBooks()
       await bookshelfStore.loadTags()
     } else {
@@ -429,17 +429,34 @@ async function quickAddTagToBook(tagName: string) {
 </script>
 
 <template>
-  <!-- 书籍详情模态框 - 基于 BaseModal -->
   <BaseModal
     title="书籍详情"
     size="large"
     custom-class="book-detail-modal"
+    :custom-style="{
+      '--book-detail-modal-border-default': 'rgba(102, 126, 234, .4)',
+      '--book-detail-modal-border-strong': 'rgba(102, 126, 234, .6)',
+      '--book-detail-modal-shadow-default': 'rgba(0, 0, 0, .15)',
+      '--book-detail-modal-shadow-raised': 'rgba(102, 126, 234, .4)',
+      '--book-detail-modal-shadow-floating': 'rgba(40, 167, 69, .4)',
+      '--book-detail-modal-shadow-strong': 'rgba(102, 126, 234, .15)',
+      '--book-detail-modal-shadow-soft': 'rgba(102, 126, 234, .15)',
+      '--book-detail-modal-surface-base': '#7b8eef',
+      '--book-detail-modal-surface-raised': '#8a5cb5',
+      '--book-detail-modal-surface-muted': '#34ce57',
+      '--book-detail-modal-surface-subtle': '#38d9a9',
+      '--book-detail-modal-surface-hover': 'rgba(102, 126, 234, .1)',
+      '--book-detail-modal-surface-active': 'rgba(118, 75, 162, .1)',
+      '--book-detail-modal-surface-selected': 'rgba(102, 126, 234, .2)',
+      '--book-detail-modal-surface-overlay': 'rgba(118, 75, 162, .2)',
+      '--book-detail-modal-text-primary': '#667eea'
+    }"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="emit('close')"
   >
     <div v-if="currentBook" class="book-detail-container">
-      <!-- 书籍信息 - 与当前实现相同的垂直布局 -->
+      <!-- 书籍信息使用封面与元数据并列的详情布局。 -->
       <div class="book-info-section">
         <div class="book-cover-large">
           <img
@@ -569,7 +586,7 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-esc="true"
     @close="closeAddTagModal"
   >
-    <!-- 【当前行为】搜索/创建输入框 -->
+    <!-- 搜索/创建输入框 -->
     <div class="quick-tag-input-wrapper">
       <UiInput
         ref="quickTagInputRef"
@@ -581,7 +598,7 @@ async function quickAddTagToBook(tagName: string) {
       />
     </div>
           
-    <!-- 【当前行为】过滤后的可用标签列表 -->
+    <!-- 可选择并快速添加到当前书籍的标签列表。 -->
     <div class="quick-tag-list">
       <!-- 可用标签 -->
       <div
@@ -624,6 +641,7 @@ async function quickAddTagToBook(tagName: string) {
     title="确认删除"
     size="small"
     custom-class="confirm-modal"
+    :custom-style="{ '--ui-dialog-body-text-align': 'center' }"
     :close-on-overlay="true"
     :close-on-esc="true"
   >
@@ -956,7 +974,7 @@ async function quickAddTagToBook(tagName: string) {
     color: var(--color-text-supporting);
 }
 
-/* ==================== 【当前行为】快速添加标签样式 ==================== */
+/* ==================== 快速添加标签样式 ==================== */
 
 /* 快速标签输入框包装 */
 .quick-tag-input-wrapper {

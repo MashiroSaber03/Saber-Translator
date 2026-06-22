@@ -90,7 +90,7 @@
           v-model="localSettings.pdfProcessingMethod"
           :options="pdfMethodOptions"
         />
-        <div class="ui-form-hint">前端处理速度更快，后端处理兼容性更好</div>
+        <div class="ui-form-hint">前端处理速度更快，后端处理适配性更好</div>
       </UiField>
     </UiPanel>
 
@@ -196,7 +196,7 @@ const toast = useToast()
 
 // 状态
 const isLoadingFonts = ref(false)
-const fontList = ref<(string | import('@/types').FontInfo)[]>([])
+const fontList = ref<import('@/types').FontInfo[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<HTMLInputElement | null>(null)
 const selectedFontFileName = ref('')

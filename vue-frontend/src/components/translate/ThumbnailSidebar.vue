@@ -317,11 +317,32 @@ onMounted(() => {
    =================================== */
 
 .thumbnail-sidebar {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  width: 230px;
-  height: calc(100vh - 40px);
+  /* owner tokens: thumbnail-sidebar */
+  --thumbnail-sidebar-border-default: #f8fafc;
+  --thumbnail-sidebar-border-strong: #f0f0f0;
+  --thumbnail-sidebar-border-muted: #f0d78c;
+  --thumbnail-sidebar-shadow-default: rgba(240, 215, 140, .4);
+  --thumbnail-sidebar-shadow-raised: rgba(0, 0, 0, .1);
+  --thumbnail-sidebar-shadow-floating: rgba(52, 152, 219, .5);
+  --thumbnail-sidebar-shadow-strong: rgba(0, 0, 0, .3);
+  --thumbnail-sidebar-surface-base: #cbd5e0;
+  --thumbnail-sidebar-surface-raised: #e8f4fd;
+  --thumbnail-sidebar-surface-muted: #d4e8f8;
+  --thumbnail-sidebar-surface-subtle: #c0dcf0;
+  --thumbnail-sidebar-surface-hover: #ffe8b8;
+  --thumbnail-sidebar-surface-active: rgba(53, 152, 219, .8);
+  --thumbnail-sidebar-surface-selected: rgba(255, 0, 0, .8);
+  --thumbnail-sidebar-surface-overlay: rgba(0, 123, 255, .8);
+  --thumbnail-sidebar-surface-inverse: rgba(0, 0, 0, .6);
+  --thumbnail-sidebar-surface-contrast: rgba(34, 197, 94, .9);
+  --thumbnail-sidebar-text-primary: #cbd5e0;
+  --thumbnail-sidebar-text-secondary: #f8fafc;
+  --thumbnail-sidebar-text-muted: #94a3b8;
+  --thumbnail-sidebar-text-subtle: #5a4a00;
+  --thumbnail-sidebar-text-supporting: #8a7a30;
+
+  width: 100%;
+  height: 100%;
   overflow-y: auto;
   padding: 20px;
   margin-left: 0;
@@ -439,7 +460,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 280px);
+  max-height: calc(100dvh - 280px);
   overflow-y: auto;
 }
 
@@ -653,9 +674,6 @@ onMounted(() => {
 
 @media (--breakpoint-md-down) {
   .thumbnail-sidebar {
-    position: relative;
-    top: auto;
-    right: auto;
     order: 3;
     width: 100%;
     height: auto;

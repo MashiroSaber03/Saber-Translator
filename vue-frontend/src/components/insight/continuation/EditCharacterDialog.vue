@@ -1,33 +1,35 @@
 <template>
   <ContinuationDialogShell title="✏️ 编辑角色" @close="close">
-    <div class="continuation-dialog-form">
-      <div class="continuation-dialog-form__field">
-        <label>角色名称</label>
+    <ContinuationDialogForm>
+      <ContinuationDialogField label="角色名称">
         <UiInput
           v-model="localName"
           type="text"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="输入角色主名称"
         />
-      </div>
+      </ContinuationDialogField>
 
-      <div class="continuation-dialog-form__field">
-        <label>别名（用逗号分隔）</label>
+      <ContinuationDialogField
+        label="别名（用逗号分隔）"
+        hint="AI生成脚本时可能使用这些名字引用角色"
+      >
         <UiInput
           v-model="localAliases"
           type="text"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="例如: 桐乃, 新垣彩世"
         />
-        <p class="form-hint">AI生成脚本时可能使用这些名字引用角色</p>
-      </div>
-    </div>
+      </ContinuationDialogField>
+    </ContinuationDialogForm>
 
     <template #footer>
-      <div class="continuation-dialog-actions">
+      <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
         <UiButton variant="primary" @click="save">💾 保存</UiButton>
-      </div>
+      </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
 </template>
@@ -37,6 +39,9 @@ import UiInput from '@/components/ui/UiInput.vue'
 import { ref, watch } from 'vue'
 import type { CharacterProfile } from '@/api/continuation'
 import UiButton from '@/components/ui/UiButton.vue'
+import ContinuationDialogActions from './ContinuationDialogActions.vue'
+import ContinuationDialogField from './ContinuationDialogField.vue'
+import ContinuationDialogForm from './ContinuationDialogForm.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const props = defineProps<{

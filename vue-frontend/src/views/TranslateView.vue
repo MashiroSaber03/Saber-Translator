@@ -294,19 +294,35 @@ function showFeatureNotice() {
       </template>
     </AppHeader>
 
-    <SidebarLayout class="translate-shell">
+    <SidebarLayout
+      class="translate-shell"
+      sidebars="fixed"
+      left-width="300px"
+      right-width="230px"
+      left-inset="340px"
+      right-inset="240px"
+      left-offset="20px"
+      right-offset="20px"
+      left-top="70px"
+      right-top="20px"
+      left-height="calc(100dvh - 90px)"
+      right-height="calc(100dvh - 40px)"
+      main-class="translate-shell__main"
+    >
       <!-- 左侧设置侧边栏组件 -->
-      <SettingsSidebar
-        @run-workflow="handleRunWorkflow"
-        @previous="goToPrevious"
-        @next="goToNext"
-        @apply-to-all="handleApplyToAll"
-        @text-style-changed="handleTextStyleChanged"
-        @auto-font-size-changed="handleAutoFontSizeChanged"
-        @auto-text-color-changed="handleAutoTextColorChanged"
-        @open-glossary="showBookGlossaryModal = true"
-        @open-non-translate="showBookNonTranslateModal = true"
-      />
+      <template #left>
+        <SettingsSidebar
+          @run-workflow="handleRunWorkflow"
+          @previous="goToPrevious"
+          @next="goToNext"
+          @apply-to-all="handleApplyToAll"
+          @text-style-changed="handleTextStyleChanged"
+          @auto-font-size-changed="handleAutoFontSizeChanged"
+          @auto-text-color-changed="handleAutoTextColorChanged"
+          @open-glossary="showBookGlossaryModal = true"
+          @open-non-translate="showBookNonTranslateModal = true"
+        />
+      </template>
 
       <!-- 主内容区 -->
       <main class="translate-workspace">
@@ -353,11 +369,13 @@ function showFeatureNotice() {
       </main>
 
       <!-- 右侧缩略图侧边栏 -->
-      <ThumbnailSidebar 
-        v-show="showThumbnailSidebar"
-        :is-visible="showThumbnailSidebar"
-        @select="selectImage"
-      />
+      <template #right>
+        <ThumbnailSidebar 
+          v-show="showThumbnailSidebar"
+          :is-visible="showThumbnailSidebar"
+          @select="selectImage"
+        />
+      </template>
     </SidebarLayout>
     
     <!-- 编辑工作区（编辑模式时显示，放在页面布局外面实现全屏覆盖） -->
@@ -398,10 +416,19 @@ function showFeatureNotice() {
 
 /* 页面容器 */
 .translate-page {
-  --translate-sidebar-left-gutter: 340px;
-  --translate-sidebar-right-gutter: 240px;
+  /* owner tokens: translate-view */
+  --translate-view-shadow-default: rgba(74, 144, 217, .4);
+  --translate-view-shadow-raised: rgba(74, 144, 217, .6);
+  --translate-view-shadow-floating: #4a90d9;
+  --translate-view-surface-base: #f4f7f9;
+  --translate-view-surface-raised: rgba(0, 0, 0, .05);
+  --translate-view-surface-muted: rgba(0, 0, 0, .1);
+  --translate-view-surface-subtle: rgba(255, 105, 180, .15);
+  --translate-view-surface-hover: rgba(255, 105, 180, .25);
+  --translate-view-text-primary: #4a90d9;
+  --translate-view-text-secondary: #e53e3e;
+  --translate-view-text-muted: #e91e63;
 
-  min-height: 100vh;
   background-color: var(--translate-view-surface-base);
 }
 
@@ -416,12 +443,14 @@ function showFeatureNotice() {
   margin-top: 10px;
 }
 
+.translate-shell__main {
+  min-width: 0;
+}
+
 /* 主内容区 */
 .translate-workspace {
   flex-grow: 2.4;
   padding: 20px;
-  margin-left: var(--translate-sidebar-left-gutter);
-  margin-right: var(--translate-sidebar-right-gutter);
   max-width: none;
   display: flex;
   flex-direction: column;

@@ -95,8 +95,9 @@ export interface WebImportProviderConfigs {
 
 /** 网页导入设置持久化载荷 */
 export interface WebImportSettingsPayload {
-    settings: Partial<WebImportSettings>
-    providerConfigs: Partial<WebImportProviderConfigs>
+    webImportSettingsSchemaVersion?: number
+    settings: WebImportSettings
+    providerConfigs: WebImportProviderConfigs
 }
 
 /** 漫画页面 */

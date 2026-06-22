@@ -62,11 +62,11 @@
     </UiPanel>
 
     <!-- 插件配置模态框 -->
-    <div
+    <OverlayLayer
       v-if="showConfigModal"
-      ref="configModalOverlayRef"
       class="plugin-config-modal"
-      @mousedown.self="handleConfigModalOverlayMouseDown"
+      level="popover"
+      @backdrop="closeConfigModal"
     >
       <div class="plugin-config-content">
         <div class="plugin-config-header">
@@ -124,7 +124,7 @@
           <UiButton variant="primary" @click="savePluginConfig">保存</UiButton>
         </div>
       </div>
-    </div>
+    </OverlayLayer>
 
     <PluginAgentModal
       v-model="showAgentModal"
@@ -135,6 +135,7 @@
 
 <script setup lang="ts">
 import UiPanel from '@/components/ui/UiPanel.vue'
+import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'
@@ -150,7 +151,6 @@ import type { PluginData } from '@/types'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
-import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 type Plugin = PluginData
 
@@ -182,12 +182,6 @@ const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
 const showAgentModal = ref(false)
-const {
-  overlayRef: configModalOverlayRef,
-  handleOverlayMouseDown: handleConfigModalOverlayMouseDown,
-} = useOverlayDismiss(closeConfigModal, {
-  enabled: showConfigModal,
-})
 
 // 加载插件列表
 async function loadPlugins() {
@@ -415,6 +409,29 @@ onMounted(() => {
 }
 
 .plugin-manager {
+  /* owner tokens: plugin-manager */
+  --plugin-manager-accent-primary: rgba(255, 255, 255, .2);
+  --plugin-manager-accent-secondary: rgba(255, 255, 255, .2);
+  --plugin-manager-accent-muted: rgba(248, 250, 252, .52);
+  --plugin-manager-border-default: #d5deea;
+  --plugin-manager-border-strong: rgb(140, 158, 255);
+  --plugin-manager-border-muted: #5b73f2;
+  --plugin-manager-shadow-default: rgba(15, 23, 42, .26);
+  --plugin-manager-shadow-raised: rgba(15, 23, 42, .04);
+  --plugin-manager-shadow-floating: rgba(91, 115, 242, .14);
+  --plugin-manager-shadow-strong: rgba(15, 23, 42, .18);
+  --plugin-manager-surface-base: rgba(0, 0, 0, .5);
+  --plugin-manager-surface-raised: rgba(248, 250, 252, .96);
+  --plugin-manager-surface-muted: rgba(255, 255, 255, .98);
+  --plugin-manager-surface-subtle: rgba(15, 23, 42, .06);
+  --plugin-manager-surface-hover: #f9fafc;
+  --plugin-manager-surface-active: rgba(37, 99, 235, .08);
+  --plugin-manager-surface-selected: #cbd5e1;
+  --plugin-manager-surface-overlay: #2563eb;
+  --plugin-manager-surface-inverse: #6366f1;
+  --plugin-manager-surface-contrast: rgba(248, 250, 252, .9);
+  --plugin-manager-text-primary: #1a202c;
+  --plugin-manager-text-secondary: #2563eb;
   --ui-button-sm-padding: 4px 8px;
   --ui-button-sm-font-size: 12px;
   --ui-button-danger-background: transparent;
@@ -537,13 +554,10 @@ onMounted(() => {
 
 /* 配置模态框 */
 .plugin-manager .plugin-config-modal {
-  position: fixed;
-  inset: 0;
   background: var(--plugin-manager-surface-base);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-popover);
   padding: 20px;
 }
 

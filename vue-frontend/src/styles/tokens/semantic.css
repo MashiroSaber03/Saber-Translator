@@ -48,6 +48,7 @@
   --color-surface-overlay-medium: rgba(255, 255, 255, .2);
   --color-surface-overlay-medium-muted: rgba(255, 255, 255, .2);
   --color-surface-overlay-medium-strong: rgba(255, 255, 255, .25);
+  --color-overlay-backdrop-strong: rgba(0, 0, 0, .7);
   --color-surface-plain: #fff;
   --color-surface-slate-soft: #f1f5f9;
   --color-surface-warning-tint: #fff3cd;

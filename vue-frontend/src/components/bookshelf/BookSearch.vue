@@ -82,7 +82,7 @@ function isTagSelected(tagName: string): boolean {
     <div v-if="tags.length > 0" class="tag-filter">
       <span class="filter-label">标签筛选:</span>
       <div class="tag-chips">
-        <!-- 【当前行为】使用 tag.name 作为唯一标识 -->
+        <!-- 使用 tag.name 作为唯一标识 -->
         <span
           v-for="tag in tags"
           :key="tag.name"

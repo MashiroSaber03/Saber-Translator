@@ -133,7 +133,7 @@ async function processFiles(files: File[]) {
   showProgress.value = true
   uploadProgress.value = 0
   try {
-    // 当前行为：不在此处预排序，由 TranslateView.handleUploadComplete 统一排序
+    // 业务契约：不在此处预排序，由 TranslateView.handleUploadComplete 统一排序
     let processedCount = 0
     const totalFiles = files.length
     for (let i = 0; i < files.length; i++) {
@@ -222,23 +222,23 @@ async function processPdfFrontend(file: File): Promise<number> {
       uploadProgress.value = Math.round((pageNum / numPages) * 100)
       try {
         const page = await pdf.getPage(pageNum)
-        // 设置渲染比例（2.0 可以获得较高清晰度，与当前行为一致）
+        // 设置渲染比例（2.0 可以获得较高清晰度，按业务契约）
         const scale = 2.0
         const viewport = page.getViewport({ scale })
         let dataURL: string
         if (useOffscreen) {
-          // 使用 OffscreenCanvas - 后台也能继续渲染（当前行为）
+          // 使用 OffscreenCanvas - 后台也能继续渲染（业务契约）
           const offscreen = new OffscreenCanvas(viewport.width, viewport.height)
           const context = offscreen.getContext('2d')
           await page.render({
             canvasContext: context as unknown as CanvasRenderingContext2D,
             viewport: viewport
           }).promise
-          // OffscreenCanvas 转 Blob 再转 DataURL (JPEG 最高质量，当前行为)
+          // OffscreenCanvas 转 Blob 再转 DataURL (JPEG 最高质量，业务契约)
           const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 1.0 })
           dataURL = await blobToDataURL(blob)
         } else {
-          // 回退：使用普通 Canvas（当前行为）
+          // 回退：使用普通 Canvas（业务契约）
           const canvas = document.createElement('canvas')
           const context = canvas.getContext('2d')!
           canvas.width = viewport.width
@@ -247,7 +247,7 @@ async function processPdfFrontend(file: File): Promise<number> {
             canvasContext: context,
             viewport: viewport
           }).promise
-          // 输出 JPEG 格式（与当前行为一致）
+          // 输出 JPEG 格式（按业务契约）
           dataURL = canvas.toDataURL('image/jpeg', 1.0)
         }
         const pageName = `${file.name}_页面${pageNum}`
@@ -280,7 +280,7 @@ async function processPdfBackend(file: File): Promise<number> {
     console.log(`PDF ${file.name} 共 ${totalPages} 页，开始后端分批解析...`)
     showToast(`正在解析 PDF，共 ${totalPages} 页...`, 'info')
     let loadedCount = 0
-    // 步骤2: 分批获取页面（当前行为的 for 循环方式）
+    // 步骤2: 分批获取页面（业务契约的 for 循环方式）
     for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE) {
       currentFileName.value = `${file.name} - 处理中 ${Math.min(startIndex + BATCH_SIZE, totalPages)}/${totalPages} 页`
       uploadProgress.value = totalPages > 0 ? Math.round((startIndex / totalPages) * 100) : 0
@@ -289,7 +289,7 @@ async function processPdfBackend(file: File): Promise<number> {
         console.warn(`批次 ${startIndex} 获取失败:`, batchResponse.error)
         continue
       }
-      // 处理返回的图片（当前行为：images 是对象数组 {page_index, data_url}）
+      // 处理返回的图片（业务契约：images 是对象数组 {page_index, data_url}）
       if (batchResponse.images && batchResponse.images.length > 0) {
         for (const imgData of batchResponse.images) {
           if (!imgData || !imgData.data_url) continue
@@ -434,6 +434,17 @@ defineExpose({
 <style scoped>
 /* 图片上传组件样式 */
 .image-upload {
+  /* owner tokens: image-upload */
+  --image-upload-border-default: #b0bec5;
+  --image-upload-border-strong: #fc8181;
+  --image-upload-shadow-default: rgba(52, 152, 219, .3);
+  --image-upload-surface-base: #f7fafc;
+  --image-upload-surface-raised: #ecf5fe;
+  --image-upload-text-primary: #546e7a;
+  --image-upload-text-secondary: #2572a4;
+  --image-upload-text-muted: #b0bec5;
+  --image-upload-text-subtle: #c53030;
+
   position: relative;
   width: 100%;
 }

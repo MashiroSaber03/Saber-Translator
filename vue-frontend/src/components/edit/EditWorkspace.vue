@@ -243,6 +243,54 @@ const {
 
 /* ============ 编辑工作区 - 全屏覆盖 ============ */
 .edit-workspace {
+  /* owner tokens: edit-workspace */
+  --edit-workspace-canvas-border-default: rgba(255, 255, 255, .3);
+  --edit-workspace-canvas-border-strong: rgba(255, 255, 255, .5);
+  --edit-workspace-canvas-border-muted: #27ae60;
+  --edit-workspace-canvas-border-subtle: #219a52;
+  --edit-workspace-canvas-border-hover: rgba(82, 92, 105, .12);
+  --edit-workspace-canvas-border-active: #dee2e6;
+  --edit-workspace-canvas-border-focus: rgba(255, 193, 7, .5);
+  --edit-workspace-canvas-border-selected: #ffc107;
+  --edit-workspace-canvas-border-danger: #4caf50;
+  --edit-workspace-canvas-shadow-default: rgba(52, 152, 219, .15);
+  --edit-workspace-canvas-shadow-raised: rgba(39, 174, 96, .3);
+  --edit-workspace-canvas-shadow-floating: rgba(52, 152, 219, .3);
+  --edit-workspace-canvas-shadow-strong: rgba(255, 193, 7, .4);
+  --edit-workspace-canvas-surface-base: #219a52;
+  --edit-workspace-canvas-surface-raised: #2ecc71;
+  --edit-workspace-canvas-surface-muted: #5dade2;
+  --edit-workspace-canvas-surface-subtle: #f0f0f0;
+  --edit-workspace-canvas-surface-hover: #e9ecef;
+  --edit-workspace-canvas-surface-active: rgba(255, 193, 7, .15);
+  --edit-workspace-canvas-surface-selected: rgba(255, 193, 7, .3);
+  --edit-workspace-canvas-surface-overlay: rgba(255, 193, 7, .5);
+  --edit-workspace-canvas-surface-inverse: rgba(255, 193, 7, .9);
+  --edit-workspace-canvas-surface-contrast: rgba(76, 175, 80, .3);
+  --edit-workspace-canvas-surface-tint: rgba(76, 175, 80, .9);
+  --edit-workspace-canvas-surface-soft: rgba(33, 150, 243, .9);
+  --edit-workspace-canvas-text-primary: #6c757d;
+  --edit-workspace-canvas-text-secondary: #ffc107;
+  --edit-workspace-canvas-text-muted: #000;
+  --edit-workspace-canvas-text-subtle: #4caf50;
+  --edit-workspace-canvas-text-supporting: rgba(255, 255, 255, .7);
+  --edit-workspace-shell-border-default: rgba(255, 255, 255, .1);
+  --edit-workspace-shell-border-strong: rgba(255, 255, 255, .05);
+  --edit-workspace-shell-border-muted: rgba(255, 255, 255, .5);
+  --edit-workspace-shell-shadow-default: rgba(102, 126, 234, .5);
+  --edit-workspace-shell-surface-base: rgba(0, 0, 0, .15);
+  --edit-workspace-shell-surface-raised: rgba(255, 255, 255, .3);
+  --edit-workspace-shell-surface-muted: rgba(0, 0, 0, .7);
+  --edit-workspace-shell-text-primary: #667eea;
+  --edit-workspace-sidebars-shadow-default: rgba(0, 255, 136, .5);
+  --edit-workspace-sidebars-surface-base: rgba(102, 126, 234, .5);
+  --edit-workspace-sidebars-surface-raised: rgba(0, 0, 0, .7);
+  --edit-workspace-sidebars-surface-muted: rgba(0, 0, 0, .3);
+  --edit-workspace-sidebars-surface-subtle: #0f8;
+  --edit-workspace-sidebars-surface-hover: #00d4ff;
+  --edit-workspace-sidebars-text-primary: rgba(255, 255, 255, .9);
+  --edit-workspace-sidebars-text-secondary: #0f8;
+
   display: flex;
   flex-direction: column;
   position: fixed;

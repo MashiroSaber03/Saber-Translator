@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import './ConfirmModal.global.styles.css'
 /**
  * 确认对话框组件
  * 用于需要用户确认的操作，如删除、批量操作等
@@ -64,6 +63,7 @@ function handleCancel(): void {
     :title="title"
     size="small"
     custom-class="confirm-modal"
+    :custom-style="{ '--ui-dialog-body-text-align': 'center' }"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="handleCancel"

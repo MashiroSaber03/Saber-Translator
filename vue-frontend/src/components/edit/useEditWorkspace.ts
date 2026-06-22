@@ -91,7 +91,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     adjustBrushSize
   } = useBrush({
     onBrushComplete: () => reRenderFullImage(),
-    // 【当前行为】提供当前编辑面板的修复设置，不依赖气泡选中状态
+    // 提供当前编辑面板的修复设置，不依赖气泡选中状态
     getCurrentRepairSettings: () => ({
       inpaintMethod: currentInpaintMethod.value,
       fillColor: currentFillColor.value
@@ -190,8 +190,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   })
 
   // ============================================================
-  // 【当前行为】独立的修复设置状态（不依赖气泡选中）
-  // 对应当前实现 $('#bubbleInpaintMethodNew').val() 和 $('#fillColorNew').val()
+  // 独立的修复设置状态（不依赖气泡选中）
+  // 对应业务契约 $('#bubbleInpaintMethodNew').val() 和 $('#fillColorNew').val()
   // ============================================================
 
   /** 当前编辑面板选择的修复方式 */
@@ -208,7 +208,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   // ============================================================
   // 图片查看器状态
-  // 【当前行为 DualImageViewer】支持两套独立变换状态，syncEnabled 开启时联动
+  // 【业务契约 DualImageViewer】支持两套独立变换状态，syncEnabled 开启时联动
   // ============================================================
 
   // 原图查看器
@@ -221,7 +221,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const translateX = computed(() => translatedViewer.translateX.value)
   const translateY = computed(() => translatedViewer.translateY.value)
 
-  // 【当前行为】原图视口的缩放比例（sync关闭时两个视口可能缩放不同）
+  // 原图视口的缩放比例（sync关闭时两个视口可能缩放不同）
   const originalScale = computed(() => originalViewer.scale.value)
 
   // 当前活动的视口（用于拖动时确定操作哪个视口）
@@ -268,9 +268,9 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   // 图片导航方法
   // ============================================================
 
-  /** 导航前的公共处理（当前行为逻辑） */
+  /** 导航前的公共处理（业务逻辑） */
   function prepareForNavigation(): void {
-    // 【当前行为】退出笔刷模式，调用exitBrushMode确保状态正确清理
+    // 退出笔刷模式，调用exitBrushMode确保状态正确清理
     if (brushMode.value) {
       exitBrushMode()
     }
@@ -318,7 +318,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   function saveBubbleStatesToImage(): void {
     if (!currentImage.value) return
     
-    // 【当前行为 4.2】保持 null vs [] 语义区分：
+    // 保持 null vs [] 语义区分：
     // - null/undefined：从未处理过
     // - []：处理过但用户删光了
     // 只要 currentImage.bubbleStates 曾经是数组（包括空数组），就应该保存当前状态
@@ -394,12 +394,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       bubbleStore.setBubbles([...currentImage.value.bubbleStates], true)
       console.log(`已加载 ${currentImage.value.bubbleStates.length} 个气泡状态`)
     } else {
-      // 【当前行为】使用 clearBubblesLocal 仅清除本地状态，不同步到 imageStore
+      // 使用 clearBubblesLocal 仅清除本地状态，不同步到 imageStore
       // 这保持了 null（未处理）和 []（用户主动清空）的语义区分
       bubbleStore.clearBubblesLocal()
     }
     selectFirstBubbleIfExists()
-    // 【当前行为】切图时保持当前缩放和位置，不自动 fitToScreen
+    // 切图时保持当前缩放和位置，不自动 fitToScreen
   }
 
   const {
@@ -429,13 +429,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   /** 选择上一个气泡 */
   function selectPreviousBubble(): void {
     bubbleStore.selectPrevious()
-    // 【当前行为】selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
+    // selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
   }
 
   /** 选择下一个气泡 */
   function selectNextBubble(): void {
     bubbleStore.selectNext()
-    // 【当前行为】selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
+    // selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
   }
 
   // ============================================================
@@ -456,7 +456,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     } catch (e) {
       console.warn('保存布局模式失败:', e)
     }
-    // 【当前行为 4.4】切换布局后延迟 300ms 自动适应屏幕
+    // 切换布局后延迟 300ms 自动适应屏幕
     setTimeout(() => {
       fitToScreen()
     }, 300)
@@ -476,7 +476,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   function toggleSync(): void {
     syncEnabled.value = !syncEnabled.value
     console.log('双图同步:', syncEnabled.value ? '开启' : '关闭')
-    // 【当前行为】开启同步时，立即同步两个视口的变换状态
+    // 开启同步时，立即同步两个视口的变换状态
     if (syncEnabled.value) {
       originalViewer.setTransform(translatedViewer.getTransform())
     }
@@ -500,7 +500,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const newTranslateX = (viewportRect.width - img.naturalWidth * newScale) / 2
     const newTranslateY = (viewportRect.height - img.naturalHeight * newScale) / 2
 
-    // 【修复】切换图片时两个视口都需要适应屏幕，无论 syncEnabled 状态
+    // 切换图片时两个视口都需要适应屏幕，无论 syncEnabled 状态。
     const transform = { scale: newScale, translateX: newTranslateX, translateY: newTranslateY }
     translatedViewer.setTransform(transform)
     originalViewer.setTransform(transform)
@@ -525,7 +525,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
     const factor = event.deltaY > 0 ? 0.9 : 1.1
     
-    // 【当前行为 DualImageViewer】操作对应视口，同步时联动另一个
+    // 【业务契约 DualImageViewer】操作对应视口，同步时联动另一个
     const viewer = viewport === 'original' ? originalViewer : translatedViewer
     viewer.zoomAt(mouseX, mouseY, factor)
     
@@ -568,12 +568,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         return
       }
       
-      // 【当前行为】点击空白处清除多选（非 Shift 时）
+      // 点击空白处清除多选（非 Shift 时）
       if (!event.shiftKey) {
         handleClearMultiSelect()
       }
       
-      // 【当前行为】记录当前操作的视口
+      // 记录当前操作的视口
       activeViewport.value = viewport
       const viewer = viewport === 'original' ? originalViewer : translatedViewer
       viewer.startDrag(event.clientX, event.clientY)
@@ -592,7 +592,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const viewer = activeViewport.value === 'original' ? originalViewer : translatedViewer
     viewer.drag(event.clientX, event.clientY)
     
-    // 【当前行为 DualImageViewer】同步时联动另一个视口
+    // 【业务契约 DualImageViewer】同步时联动另一个视口
     if (syncEnabled.value) {
       const otherViewer = activeViewport.value === 'original' ? translatedViewer : originalViewer
       otherViewer.setTransform(viewer.getTransform())
@@ -616,7 +616,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   /** 开始绘制新气泡 */
   function startDrawing(event: MouseEvent, viewport: 'original' | 'translated' = 'translated'): void {
-    // 【修复】记录当前绘制的视口，用于后续坐标计算
+    // 记录当前绘制的视口，用于后续坐标计算。
     drawingViewport = viewport
     
     // 获取对应视口的wrapper和scale
@@ -644,7 +644,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   function handleDrawingMove(event: MouseEvent): void {
     if (!isDrawingBox.value) return
 
-    // 【修复】使用开始绘制时记录的视口
+    // 使用开始绘制时记录的视口。
     const wrapper = drawingViewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
     const viewer = drawingViewport === 'original' ? originalViewer : translatedViewer
     if (!wrapper) return
@@ -667,7 +667,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     document.removeEventListener('mousemove', handleDrawingMove)
     document.removeEventListener('mouseup', handleDrawingEnd)
 
-    // 【当前行为】先保存中键状态，再重置，用于后续判断是否退出绘制模式
+    // 先保存中键状态，再重置，用于后续判断是否退出绘制模式
     const wasMiddleButton = isMiddleButtonDown.value
 
     if (!isDrawingBox.value || !currentDrawingRect.value) {
@@ -694,7 +694,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     currentDrawingRect.value = null
     isMiddleButtonDown.value = false
 
-    // 【当前行为】如果不是中键绘制（即通过"添加"按钮进入的绘制模式），绘制完成后退出绘制模式
+    // 如果不是中键绘制（即通过"添加"按钮进入的绘制模式），绘制完成后退出绘制模式
     if (!wasMiddleButton && isDrawingMode.value) {
       isDrawingMode.value = false
     }
@@ -715,7 +715,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       updateImageDimensions()
     }
     
-    // 【修复】恢复当前实现逻辑：只在以下情况自动适应屏幕
+    // 只在以下情况自动适应屏幕：
     // 1. 初始状态（scale=1, translate=0,0）- 首次进入编辑模式
     // 2. 检测到超大图片（超过4K）- 强制适应以避免渲染问题
     const isInitialState = scale.value === 1 && translateX.value === 0 && translateY.value === 0
@@ -752,7 +752,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   /**
-   * 【当前行为】处理气泡更新并同步独立修复设置
+   * 处理气泡更新并同步独立修复设置
    * 即使没有选中气泡，也能更新编辑面板的修复设置状态
    */
   function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
@@ -771,7 +771,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   /**
-   * 【当前行为 4.3】重置当前气泡到初始状态
+   * 重置当前气泡到初始状态
    * 快照在进入编辑模式和切换图片时刷新，由工作区统一持有。
    */
   function handleResetCurrentBubble(index: number): void {
@@ -884,7 +884,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       }
     }
     
-    // 【当前行为】检查是否是最后一张
+    // 检查是否是最后一张
     if (canGoNext.value) {
       if (brushMode.value) {
         exitBrushMode()
@@ -968,8 +968,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       nextTick(() => {
         workspaceRef.value?.focus()
         updateImageDimensions()
-        // 【修复大图问题】进入编辑模式时延迟调用 fitToScreen，确保图片正确适应屏幕
-        // 特别是对于8K等超大图片，初始缩放必须正确计算
+        // 进入编辑模式时等待图片和容器完成布局，再计算初始缩放。
+        // 8K 等超大图片依赖这个时序获得正确视口尺寸。
         setTimeout(() => {
           fitToScreen()
         }, 100)
@@ -989,8 +989,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   })
 
-  // 【当前行为】监听选中气泡变化，同步修复设置到独立状态
-  // 对应当前实现 selectBubbleNew 中更新 $('#bubbleInpaintMethodNew') 的逻辑
+  // 监听选中气泡变化，同步修复设置到独立状态
+  // 对应业务契约 selectBubbleNew 中更新 $('#bubbleInpaintMethodNew') 的逻辑
   watch(selectedBubble, (bubble) => {
     if (bubble) {
       currentInpaintMethod.value = bubble.inpaintMethod || 'solid'

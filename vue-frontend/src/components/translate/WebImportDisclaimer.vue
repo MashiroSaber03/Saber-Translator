@@ -48,6 +48,51 @@ function handleCancel() {
     :show-header="false"
     custom-class="web-import-disclaimer-modal"
     overlay-class="web-import-disclaimer-overlay"
+    body-padding="none"
+    scroll-mode="contained"
+    :custom-style="{
+      '--ui-dialog-body-display': 'flex',
+      '--ui-dialog-body-direction': 'column',
+      '--ui-dialog-body-min-height': '0',
+      '--web-import-disclaimer-border-default': '#f0ad4e',
+      '--web-import-disclaimer-border-strong': '#6c757d',
+      '--web-import-disclaimer-border-muted': '#e74c3c',
+      '--web-import-disclaimer-border-subtle': '#2980b9',
+      '--web-import-disclaimer-border-hover': '#404060',
+      '--web-import-disclaimer-border-active': '#555',
+      '--web-import-disclaimer-shadow-default': 'rgba(0, 0, 0, .4)',
+      '--web-import-disclaimer-shadow-raised': 'rgba(52, 152, 219, .2)',
+      '--web-import-disclaimer-shadow-floating': 'rgba(39, 174, 96, .3)',
+      '--web-import-disclaimer-surface-raised': '#1a1a2e',
+      '--web-import-disclaimer-surface-muted': '#ffeeba',
+      '--web-import-disclaimer-surface-subtle': '#f8f9fa',
+      '--web-import-disclaimer-surface-hover': '#fdf2f2',
+      '--web-import-disclaimer-surface-active': '#e8f4fd',
+      '--web-import-disclaimer-surface-selected': '#d4eafc',
+      '--web-import-disclaimer-surface-overlay': '#6c757d',
+      '--web-import-disclaimer-surface-inverse': '#2ecc71',
+      '--web-import-disclaimer-surface-contrast': '#bdc3c7',
+      '--web-import-disclaimer-surface-tint': '#219a52',
+      '--web-import-disclaimer-surface-soft': '#f1f1f1',
+      '--web-import-disclaimer-surface-strong': '#c0c0c0',
+      '--web-import-disclaimer-surface-stronger': '#a0a0a0',
+      '--web-import-disclaimer-surface-highlight': '#3d3a1d',
+      '--web-import-disclaimer-surface-highlight-strong': '#4a4520',
+      '--web-import-disclaimer-surface-danger': '#252540',
+      '--web-import-disclaimer-surface-warning': '#3d2525',
+      '--web-import-disclaimer-surface-success': '#1a2a3a',
+      '--web-import-disclaimer-surface-info': '#1d3040',
+      '--web-import-disclaimer-surface-accent': '#16162a',
+      '--web-import-disclaimer-surface-accent-strong': '#555',
+      '--web-import-disclaimer-text-primary': '#856404',
+      '--web-import-disclaimer-text-secondary': '#c0392b',
+      '--web-import-disclaimer-text-muted': '#2980b9',
+      '--web-import-disclaimer-text-subtle': '#6c757d',
+      '--web-import-disclaimer-text-supporting': '#ffc107',
+      '--web-import-disclaimer-text-disabled': '#e0e0e0',
+      '--web-import-disclaimer-text-inverse': '#5dade2',
+      '--web-import-disclaimer-text-brand': '#aaa'
+    }"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
     <!-- 标题 -->

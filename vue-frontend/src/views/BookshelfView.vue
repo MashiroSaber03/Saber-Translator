@@ -74,7 +74,7 @@ onMounted(async () => {
     lanUrl.value = '获取失败'
   }
   
-  // 【当前行为】添加 pageshow 事件监听，处理浏览器 BFCache
+  // 添加 pageshow 事件监听，处理浏览器 BFCache
   window.addEventListener('pageshow', handlePageShow)
 })
 
@@ -132,7 +132,7 @@ async function openBookDetail(bookId: string) {
     showDetailModal.value = true
     
   } catch (error) {
-    // 【当前行为】失败时显示 toast 提示
+    // 失败时显示 toast 提示
     const errorMsg = error instanceof Error ? error.message : '未知错误'
     console.error('加载书籍详情失败:', error)
     showToast(`加载书籍详情失败: ${errorMsg}`, 'error')

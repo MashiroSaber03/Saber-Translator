@@ -51,7 +51,7 @@
     </div>
 
     <template #footer>
-      <div class="continuation-dialog-actions">
+      <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
         <UiButton
           v-if="!resultImagePath"
@@ -65,7 +65,7 @@
           <UiButton variant="secondary" @click="generate">重新生成</UiButton>
           <UiButton variant="primary" @click="useResult">✓ 使用三视图</UiButton>
         </template>
-      </div>
+      </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
 </template>
@@ -74,6 +74,7 @@
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import { computed, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const props = defineProps<{

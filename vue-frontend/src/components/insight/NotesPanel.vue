@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import './NotesPanel.global.styles.css'
-
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 
@@ -68,6 +66,12 @@ const noteTypeFilter = computed({
   get: () => insightStore.noteTypeFilter,
   set: (value) => insightStore.setNoteTypeFilter(value)
 })
+
+const noteModalStyle = {
+  maxWidth: '450px',
+  width: '90%',
+  borderRadius: '16px',
+}
 
 // ============================================================
 // 方法
@@ -288,6 +292,7 @@ function getNoteTypeIcon(type: NoteType): string {
       :title="editingNote ? '编辑笔记' : '添加笔记'"
       size="small"
       custom-class="notes-panel-modal"
+      :custom-style="noteModalStyle"
       @close="closeNoteModal"
     >
       <template #title>
@@ -436,11 +441,13 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 /* ==================== 表单样式 ==================== */
-.notes-section .notes-panel__field {
+.notes-section .notes-panel__field,
+.notes-modal-body .notes-panel__field {
   margin-bottom: 16px;
 }
 
-.notes-section .notes-panel__field label {
+.notes-section .notes-panel__field label,
+.notes-modal-body .notes-panel__field label {
   display: block;
   margin-bottom: 6px;
   font-size: 14px;
@@ -448,11 +455,10 @@ function getNoteTypeIcon(type: NoteType): string {
   color: var(--insight-text-primary);
 }
 
-.notes-section .notes-panel__field input,
-.notes-section .notes-panel__field select,
-.notes-section .notes-panel__field textarea,
 .notes-section .notes-panel__form-input,
-.notes-section .notes-panel__form-textarea {
+.notes-section .notes-panel__form-textarea,
+.notes-modal-body .notes-panel__form-input,
+.notes-modal-body .notes-panel__form-textarea {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
@@ -464,15 +470,16 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .notes-section .notes-panel__form-input,
-.notes-section .notes-panel__form-textarea {
+.notes-section .notes-panel__form-textarea,
+.notes-modal-body .notes-panel__form-input,
+.notes-modal-body .notes-panel__form-textarea {
   line-height: normal;
 }
 
-.notes-section .notes-panel__field input:focus,
-.notes-section .notes-panel__field select:focus,
-.notes-section .notes-panel__field textarea:focus,
 .notes-section .notes-panel__form-input:focus,
-.notes-section .notes-panel__form-textarea:focus {
+.notes-section .notes-panel__form-textarea:focus,
+.notes-modal-body .notes-panel__form-input:focus,
+.notes-modal-body .notes-panel__form-textarea:focus {
   outline: none;
   border-color: var(--insight-color-primary);
 }
@@ -486,13 +493,15 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 /* ==================== 组件特定样式 ==================== */
-.notes-section .label-optional {
+.notes-section .label-optional,
+.notes-modal-body .label-optional {
   font-size: 12px;
   color: var(--insight-text-secondary);
   font-weight: normal;
 }
 
-.notes-section .label-required {
+.notes-section .label-required,
+.notes-modal-body .label-required {
   color: var(--color-status-error, var(--notes-panel-text-primary));
   font-weight: normal;
 }
@@ -854,22 +863,26 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 /* 问答笔记查看模式 */
-.notes-section .qa-note-view {
+.notes-section .qa-note-view,
+.notes-modal-body .qa-note-view {
     background: var(--insight-bg-tertiary);
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 16px;
 }
 
-.notes-section .qa-section {
+.notes-section .qa-section,
+.notes-modal-body .qa-section {
     margin-bottom: 16px;
 }
 
-.notes-section .qa-section:last-child {
+.notes-section .qa-section:last-child,
+.notes-modal-body .qa-section:last-child {
     margin-bottom: 0;
 }
 
-.notes-section .qa-label {
+.notes-section .qa-label,
+.notes-modal-body .qa-label {
     display: block;
     font-size: 12px;
     font-weight: 600;
@@ -879,7 +892,8 @@ function getNoteTypeIcon(type: NoteType): string {
     margin-bottom: 8px;
 }
 
-.notes-section .qa-content {
+.notes-section .qa-content,
+.notes-modal-body .qa-content {
     font-size: 14px;
     line-height: 1.6;
     color: var(--insight-text-primary);
@@ -888,18 +902,21 @@ function getNoteTypeIcon(type: NoteType): string {
     border-radius: 8px;
 }
 
-.notes-section .qa-answer {
+.notes-section .qa-answer,
+.notes-modal-body .qa-answer {
     max-height: 200px;
     overflow-y: auto;
 }
 
-.notes-section .qa-citations {
+.notes-section .qa-citations,
+.notes-modal-body .qa-citations {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.notes-section .qa-citation-badge {
+.notes-section .qa-citation-badge,
+.notes-modal-body .qa-citation-badge {
     display: inline-flex;
     align-items: center;
     padding: 4px 10px;
@@ -912,7 +929,8 @@ function getNoteTypeIcon(type: NoteType): string {
     transition: opacity 0.2s;
 }
 
-.notes-section .qa-citation-badge:hover {
+.notes-section .qa-citation-badge:hover,
+.notes-modal-body .qa-citation-badge:hover {
     opacity: 0.8;
 }
 </style>

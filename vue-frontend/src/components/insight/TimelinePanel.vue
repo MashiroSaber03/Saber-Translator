@@ -16,7 +16,6 @@ import * as insightApi from '@/api/insight'
 // 类型定义
 // ============================================================
 
-/** 时间线分组 */
 interface TimelineGroup {
   id: string
   page_range: { start: number; end: number }
@@ -30,7 +29,6 @@ interface TimelineGroup {
   mood?: string
 }
 
-/** 时间线数据 */
 interface TimelineData {
   mode?: string
   groups?: TimelineGroup[]
@@ -79,54 +77,42 @@ interface TimelineData {
 
 const insightStore = useInsightStore()
 
-/** 是否正在加载 */
 const isLoading = ref(false)
 
-/** 是否正在重新生成 */
 const isRegenerating = ref(false)
 
-/** 时间线数据 */
 const timelineData = ref<TimelineData | null>(null)
 
-/** 展开的分组ID集合 */
 const expandedGroups = ref<Set<string>>(new Set())
 
-/** 错误消息 */
 const errorMessage = ref('')
 
 // ============================================================
 // 计算属性
 // ============================================================
 
-/** 是否有时间线数据 */
 const hasTimelineData = computed(() => {
   if (!timelineData.value) return false
-  // 简单模式检查groups，增强模式检查story_arcs/plot_arcs
+  // simple 模式读取 groups，enhanced 模式读取 story_arcs/plot_arcs
   const hasGroups = timelineData.value.groups && timelineData.value.groups.length > 0
   const hasArcs = timelineData.value.plot_arcs && timelineData.value.plot_arcs.length > 0
   return hasGroups || hasArcs
 })
 
-/** 总事件数 */
 const totalEvents = computed(() => timelineData.value?.stats?.total_events || 0)
 
-/** 总页数 */
 const totalPages = computed(() => timelineData.value?.stats?.total_pages || 0)
 
-/** 是否为增强模式数据 */
 const isEnhancedData = computed(() => {
   return timelineData.value?.mode === 'enhanced' || 
          !!timelineData.value?.story_summary ||
          !!timelineData.value?.plot_arcs?.length
 })
 
-/** 主要角色列表 */
 const mainCharacters = computed(() => timelineData.value?.main_characters || [])
 
-/** 剧情弧列表 */
 const plotArcs = computed(() => timelineData.value?.plot_arcs || [])
 
-/** 故事摘要 */
 const storySummary = computed(() => timelineData.value?.story_summary || '')
 
 // ============================================================
@@ -135,7 +121,7 @@ const storySummary = computed(() => timelineData.value?.story_summary || '')
 
 /**
  * 统一标准化后端时间线响应
- * 兼容 simple/enhanced 以及 story_arcs/plot_arcs 字段差异
+ * 统一 simple/enhanced 时间线响应以及 story_arcs/plot_arcs 字段
  */
 function normalizeTimelineResponse(response: any): TimelineData {
   return {
@@ -269,7 +255,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 <template>
   <div class="timeline-tab">
-    <!-- 头部 -->
     <div class="timeline-header">
       <h3>📈 剧情时间线</h3>
       <UiButton
@@ -284,19 +269,16 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
       </UiButton>
     </div>
     
-    <!-- 错误消息 -->
     <div v-if="errorMessage" class="error-message">
       ⚠️ {{ errorMessage }}
     </div>
     
     <div class="timeline-container">
-      <!-- 加载中 -->
       <div v-if="isLoading" class="loading-state">
         <div class="loading-spinner"></div>
         <p>加载时间线...</p>
       </div>
       
-      <!-- 无数据 -->
       <div v-else-if="!hasTimelineData" class="timeline-empty-state">
         <div class="empty-icon">📈</div>
         <h4>时间线尚未生成</h4>
@@ -312,9 +294,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
         </UiButton>
       </div>
       
-      <!-- 时间线内容 -->
       <template v-else>
-        <!-- 统计信息 -->
         <div class="timeline-stats">
           <span v-if="timelineData?.stats?.total_arcs" class="stat-badge">🎭 {{ timelineData.stats.total_arcs }} 个剧情弧</span>
           <span class="stat-badge">📊 {{ totalEvents }} 个事件</span>
@@ -323,7 +303,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           <span class="stat-badge">📄 {{ totalPages }} 页</span>
         </div>
         
-        <!-- 故事概要卡片 -->
         <div v-if="storySummary" class="timeline-summary-card">
           <h4>📖 故事概要</h4>
           <p class="one-sentence">{{ storySummary }}</p>
@@ -337,7 +316,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           </div>
         </div>
         
-        <!-- 主要角色 -->
         <div v-if="mainCharacters.length > 0" class="characters-section">
           <h4>👥 主要角色</h4>
           <div class="characters-grid">
@@ -354,12 +332,10 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           </div>
         </div>
         
-        <!-- 剧情发展标题 -->
         <div v-if="isEnhancedData && plotArcs.length > 0" class="timeline-section">
           <h4>🎭 剧情发展</h4>
         </div>
         
-        <!-- 增强模式：剧情弧时间线 -->
         <div v-if="isEnhancedData && plotArcs.length > 0" class="timeline-track">
           <div 
             v-for="(arc, index) in plotArcs" 
@@ -372,7 +348,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
               <div class="timeline-node-line"></div>
             </div>
             <div class="timeline-card">
-              <!-- 卡片头部 -->
               <div class="timeline-card-header" @click="toggleGroup(arc.id || `arc-${index}`)">
                 <img 
                   class="timeline-thumbnail" 
@@ -391,10 +366,8 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
                 <span class="expand-icon">{{ isGroupExpanded(arc.id || `arc-${index}`) ? '▼' : '▶' }}</span>
               </div>
               
-              <!-- 剧情弧描述 -->
               <div v-if="arc.description" class="timeline-summary">{{ arc.description }}</div>
               
-              <!-- 氛围 -->
               <div v-if="arc.mood" class="timeline-mood">
                 <span class="label">🎨 氛围：</span>{{ arc.mood }}
               </div>
@@ -402,7 +375,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           </div>
         </div>
         
-        <!-- 简单模式：事件分组时间线 -->
         <div v-else-if="timelineData?.groups && timelineData.groups.length > 0" class="timeline-track">
           <div 
             v-for="group in timelineData.groups" 
@@ -415,7 +387,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
               <div class="timeline-node-line"></div>
             </div>
             <div class="timeline-card">
-              <!-- 卡片头部 -->
               <div class="timeline-card-header" @click="toggleGroup(group.id)">
                 <img 
                   class="timeline-thumbnail" 
@@ -434,10 +405,8 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
                 <span class="expand-icon">{{ isGroupExpanded(group.id) ? '▼' : '▶' }}</span>
               </div>
               
-              <!-- 摘要 -->
               <div v-if="group.summary" class="timeline-summary">{{ group.summary }}</div>
               
-              <!-- 事件列表（展开时显示） -->
               <ul v-if="isGroupExpanded(group.id) && group.events.length > 0" class="timeline-events-list">
                 <li 
                   v-for="(event, index) in group.events" 
@@ -451,7 +420,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           </div>
         </div>
         
-        <!-- 伏笔与线索 -->
         <div v-if="timelineData?.plot_threads && timelineData.plot_threads.length > 0" class="timeline-section">
           <h4>🔗 伏笔与线索</h4>
           <div class="plot-threads-list">
@@ -473,7 +441,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
           </div>
         </div>
         
-        <!-- 无时间线数据时的提示 -->
         <div v-if="!hasTimelineData" class="placeholder-text">
           暂无详细时间线数据，点击"重新生成"按钮生成
         </div>
@@ -484,8 +451,21 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
 
 <style scoped>/* ==================== TimelinePanel样式 ==================== */
 
-/* ==================== 按钮样式 ==================== */
 .timeline-tab {
+  --timeline-panel-controls-border-default: #f59e0b;
+  --timeline-panel-controls-border-strong: #22c55e;
+  --timeline-panel-controls-surface-base: rgba(239, 68, 68, .1);
+  --timeline-panel-controls-surface-raised: rgba(34, 197, 94, .1);
+  --timeline-panel-controls-surface-muted: #f59e0b;
+  --timeline-panel-controls-text-primary: #ef4444;
+  --timeline-panel-controls-text-secondary: #22c55e;
+  --timeline-panel-entities-border-default: #dc2626;
+  --timeline-panel-entities-shadow-default: rgba(0, 0, 0, .05);
+  --timeline-panel-entities-surface-base: rgba(239, 68, 68, .05);
+  --timeline-panel-summaries-shadow-default: rgba(0, 0, 0, .1);
+  --timeline-panel-summaries-shadow-raised: rgba(0, 0, 0, .05);
+  --timeline-panel-summaries-surface-base: rgba(255, 255, 255, .2);
+  --timeline-panel-timeline-surface-base: #22c55e;
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--insight-color-primary);
@@ -499,9 +479,7 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   --ui-button-disabled-opacity: 0.6;
 }
 
-/* ==================== 组件特定样式 ==================== */
 
-/* 头部 */
 .timeline-tab .timeline-header {
   display: flex;
   justify-content: space-between;
@@ -520,7 +498,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   gap: 12px;
 }
 
-/* 模式切换 */
 .timeline-tab .mode-toggle {
   display: flex;
   border: 1px solid var(--color-border-muted);
@@ -528,7 +505,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   overflow: hidden;
 }
 
-/* 错误消息 */
 .timeline-tab .error-message {
   font-size: 12px;
   color: var(--timeline-panel-controls-text-primary);
@@ -538,7 +514,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin-bottom: 12px;
 }
 
-/* 加载状态 */
 .timeline-tab .loading-state {
   text-align: center;
   padding: 40px;
@@ -570,7 +545,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin: 0 0 16px;
 }
 
-/* 工具栏 */
 .timeline-tab .timeline-toolbar {
   display: flex;
   justify-content: space-between;
@@ -615,7 +589,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   text-decoration: underline;
 }
 
-/* 故事概要卡片 - 与当前行为一致的紫色渐变背景 */
 .timeline-tab .timeline-summary-card {
   background: linear-gradient(135deg, var(--color-action-primary, var(--color-surface-brand)) 0%, var(--color-surface-brand-strong) 100%);
   color: white;
@@ -624,7 +597,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin-bottom: 24px;
 }
 
-/* 剧情发展标题 */
 .timeline-tab .timeline-section {
   margin-bottom: 20px;
 }
@@ -639,7 +611,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   display: inline-block;
 }
 
-/* 角色部分 */
 .timeline-tab .characters-section {
   margin-bottom: 20px;
 }
@@ -686,7 +657,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   color: var(--insight-primary);
 }
 
-/* 伏笔与线索 */
 .timeline-tab .plot-threads-list {
   display: flex;
   flex-direction: column;
@@ -742,7 +712,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   color: var(--insight-text-muted);
 }
 
-/* 剧情弧部分 */
 .timeline-tab .plot-arcs-section {
   margin-bottom: 20px;
 }
@@ -787,7 +756,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   line-height: 1.4;
 }
 
-/* 时间线轨道 */
 .timeline-tab .timeline-track {
   position: relative;
   padding-left: 24px;
@@ -831,7 +799,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   display: none;
 }
 
-/* 时间线卡片 */
 .timeline-tab .timeline-card {
   background: var(--insight-bg-secondary);
   border-radius: 8px;
@@ -884,7 +851,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   transform: rotate(0deg);
 }
 
-/* 时间线内容 */
 .timeline-tab .timeline-summary {
   font-size: 13px;
   color: var(--insight-text-secondary);
@@ -908,7 +874,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   color: var(--insight-text-secondary);
 }
 
-/* 事件列表 */
 .timeline-tab .timeline-events-list {
   margin: 10px 0 0;
   padding: 10px 0 0 16px;
@@ -922,7 +887,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   line-height: 1.4;
 }
 
-/* 线索 */
 .timeline-tab .timeline-clues {
   font-size: 12px;
   margin-top: 8px;
@@ -950,12 +914,11 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
   margin-right: 6px;
 }
 
-/* ==================== 时间线样式 ==================== */
 
 .timeline-tab .timeline-container {
     padding: 20px;
     position: relative;
-    max-height: calc(100vh - 200px);
+    max-height: calc(100dvh - 200px);
     overflow-y: auto;
 }
 
@@ -1151,7 +1114,6 @@ watch(() => insightStore.dataRefreshKey, (newKey) => {
     gap: 6px;
 }
 
-/* 增强时间线样式 */
 .timeline-tab .enhanced-timeline {
     padding: 16px;
 }

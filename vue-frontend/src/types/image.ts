@@ -108,7 +108,7 @@ export interface ImageData {
   hasUnsavedChanges: boolean
   /** 是否为手动标注模式 */
   isManualAnnotation?: boolean
-  /** 【修复6】是否显示原图（按图片持久化，切换图片时保留状态） */
+  /** 是否显示原图（按图片持久化，切换图片时保留状态） */
   showOriginal?: boolean
 
   // 文件夹导入信息

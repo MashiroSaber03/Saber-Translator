@@ -1,5 +1,5 @@
 <template>
-  <AppShell class="studio-page">
+  <AppShell class="studio-page" variant="studio" viewport-mode="immersive">
     <StudioTopbar
       :book-title="currentBookTitle"
       :document-title="store.currentDocument?.meta.title || ''"
@@ -26,33 +26,6 @@
       <div v-if="store.errorMessage" class="workspace-error">
         <span>⚠ {{ store.errorMessage }}</span>
         <UiButton variant="toolbar" class="error-dismiss" @click="store.clearErrorMessage()">知道了</UiButton>
-      </div>
-
-      <div
-        v-if="store.resourcePanelOpen"
-        class="resource-overlay"
-        data-testid="resource-overlay"
-        @click.self="store.resourcePanelOpen = false"
-      >
-        <div class="resource-dialog" data-testid="resource-dialog">
-          <CharacterStudioSidebar
-            :documents="store.filteredDocuments"
-            :candidates="store.filteredCandidates"
-            :search="store.selectedLibrarySearch"
-            :current-document-id="store.currentDocument?.id || ''"
-            :has-timeline="store.hasTimeline"
-            :workspace-loading="store.isWorkspaceLoading"
-            :creating-manual="store.isCreatingManual"
-            :importing-file="store.isImportingFile"
-            :opening-document-id="store.openingDocumentId"
-            :creating-candidate-name="store.creatingCandidateName"
-            @update:search="store.selectedLibrarySearch = $event"
-            @open-document="openDocument"
-            @create-manual="createManual"
-            @create-from-candidate="createFromCandidate"
-            @import-file="importFile"
-          />
-        </div>
       </div>
 
       <div class="workspace-shell" :style="workspaceStyle">
@@ -121,6 +94,35 @@
         </section>
       </div>
     </div>
+
+    <template #overlay>
+      <div
+        v-if="store.resourcePanelOpen"
+        class="resource-overlay"
+        data-testid="resource-overlay"
+        @click.self="store.resourcePanelOpen = false"
+      >
+        <div class="resource-dialog" data-testid="resource-dialog">
+          <CharacterStudioSidebar
+            :documents="store.filteredDocuments"
+            :candidates="store.filteredCandidates"
+            :search="store.selectedLibrarySearch"
+            :current-document-id="store.currentDocument?.id || ''"
+            :has-timeline="store.hasTimeline"
+            :workspace-loading="store.isWorkspaceLoading"
+            :creating-manual="store.isCreatingManual"
+            :importing-file="store.isImportingFile"
+            :opening-document-id="store.openingDocumentId"
+            :creating-candidate-name="store.creatingCandidateName"
+            @update:search="store.selectedLibrarySearch = $event"
+            @open-document="openDocument"
+            @create-manual="createManual"
+            @create-from-candidate="createFromCandidate"
+            @import-file="importFile"
+          />
+        </div>
+      </div>
+    </template>
   </AppShell>
 </template>
 
@@ -371,15 +373,25 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
-  height: 100vh;
+  --studio-view-accent-primary: rgba(86, 138, 225, .08);
+  --studio-view-accent-secondary: #f4f7fb;
+  --studio-view-accent-muted: #f6f8fb;
+  --studio-view-accent-strong: #f8fafc;
+  --studio-view-border-default: rgba(217, 55, 55, .12);
+  --studio-view-surface-base: rgba(37, 99, 199, .22);
+  --studio-view-surface-raised: rgba(9, 25, 49, .38);
+  --studio-view-surface-muted: rgba(255, 244, 244, .92);
+  --studio-view-surface-subtle: rgba(255, 255, 255, .9);
+  --studio-view-text-primary: #122b47;
+
   margin: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background:
-    radial-gradient(circle at top right, var(--character-studio-view-accent-primary), transparent 24%),
-    linear-gradient(180deg, var(--character-studio-view-accent-secondary) 0%, var(--character-studio-view-accent-muted) 48%, var(--character-studio-view-accent-strong) 100%);
-  color: var(--character-studio-view-text-primary);
+    radial-gradient(circle at top right, var(--studio-view-accent-primary), transparent 24%),
+    linear-gradient(180deg, var(--studio-view-accent-secondary) 0%, var(--studio-view-accent-muted) 48%, var(--studio-view-accent-strong) 100%);
+  color: var(--studio-view-text-primary);
 }
 
 .workspace-root {
@@ -416,14 +428,13 @@ watch(() => props.docId, async nextDocId => {
   width: 8px;
   cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--color-surface-studio-tint), var(--character-studio-view-surface-base));
+  background: linear-gradient(180deg, var(--color-surface-studio-tint), var(--studio-view-surface-base));
 }
 
 .resource-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-mobile-overlay);
-  background: var(--character-studio-view-surface-raised);
+  width: 100%;
+  height: 100%;
+  background: var(--studio-view-surface-raised);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -433,8 +444,8 @@ watch(() => props.docId, async nextDocId => {
 
 .resource-dialog {
   width: min(1180px, 100%);
-  height: calc(100vh - 120px);
-  max-height: calc(100vh - 120px);
+  height: calc(100dvh - 120px);
+  max-height: calc(100dvh - 120px);
   min-height: 0;
   display: flex;
   overflow: hidden;
@@ -450,8 +461,8 @@ watch(() => props.docId, async nextDocId => {
   margin: 14px 20px 0;
   border-radius: 16px;
   padding: 12px 16px;
-  background: var(--character-studio-view-surface-muted);
-  border: 1px solid var(--character-studio-view-border-default);
+  background: var(--studio-view-surface-muted);
+  border: 1px solid var(--studio-view-border-default);
   color: var(--color-text-studio-danger);
   display: flex;
   align-items: center;
@@ -474,7 +485,7 @@ watch(() => props.docId, async nextDocId => {
   text-align: center;
   padding: 48px 32px;
   border-radius: 28px;
-  background: var(--character-studio-view-surface-subtle);
+  background: var(--studio-view-surface-subtle);
   border: 1px solid var(--color-border-studio);
   box-shadow: 0 26px 42px var(--shadow-studio-floating);
 }

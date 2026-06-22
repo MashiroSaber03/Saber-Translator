@@ -356,6 +356,13 @@ watch(() => props.pages.length, (pageCount) => {
 </script>
 
 <style scoped>.image-generation-panel {
+  --image-generation-panel-border-default: rgba(99, 102, 241, .25);
+  --image-generation-panel-surface-base: #f7f7f7;
+  --image-generation-panel-text-primary: #92400e;
+  --image-generation-panel-text-secondary: #1e40af;
+  --image-generation-panel-text-muted: #065f46;
+  --image-generation-panel-text-subtle: #991b1b;
+
   padding: 24px;
 }
 

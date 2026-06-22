@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import './QAPanel.global.styles.css'
-
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 
@@ -90,7 +88,7 @@ async function sendQuestion(): Promise<void> {
   // 清空输入
   questionInput.value = ''
 
-  // 清空之前的问答内容（单轮对话模式，与当前行为一致）
+  // 清空之前的问答内容（单轮对话模式，按业务契约）
   insightStore.clearQAHistory()
 
   // 添加用户消息
@@ -527,7 +525,13 @@ onUnmounted(() => {
       title="📝 添加笔记"
       size="medium"
       custom-class="qa-note-modal"
-      :custom-style="{ width: '90%', maxWidth: '560px' }"
+      body-padding="spacious"
+      :custom-style="{
+        width: '90%',
+        maxWidth: '560px',
+        borderRadius: '16px',
+        '--ui-dialog-actions-background': 'var(--insight-bg-secondary)'
+      }"
       @close="closeNoteModal"
     >
       <div class="qa-note-modal-body">
@@ -991,4 +995,112 @@ onUnmounted(() => {
   80%, 100% { content: '...'; }
 }
 
+.qa-preview {
+    background: var(--insight-bg-tertiary);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.qa-preview-section {
+    margin-bottom: 16px;
+}
+
+.qa-preview-section:last-child {
+    margin-bottom: 0;
+}
+
+.qa-preview-section label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--insight-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.qa-preview-content {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--insight-text-primary);
+    background: var(--insight-bg-secondary);
+    padding: 12px;
+    border-radius: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.qa-preview-citations {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qa-citation-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: var(--insight-color-primary);
+    color: white;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* 笔记表单 */
+.note-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.note-form .qa-note-modal__field {
+    margin-bottom: 0;
+}
+
+.note-form label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--insight-text-primary);
+    margin-bottom: 6px;
+}
+
+.note-form .optional {
+    font-weight: 400;
+    color: var(--insight-text-secondary);
+    font-size: 12px;
+}
+
+.note-form .qa-note-modal__form-input,
+.note-form .qa-note-modal__form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid var(--color-border-muted);
+    border-radius: 8px;
+    background: var(--insight-bg-secondary);
+    color: var(--insight-text-primary);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.note-form .qa-note-modal__form-input,
+.note-form .qa-note-modal__form-textarea {
+    border-radius: 8px;
+}
+
+.note-form .qa-note-modal__form-input:focus,
+.note-form .qa-note-modal__form-textarea:focus {
+    outline: none;
+    border-color: var(--insight-color-primary);
+    box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+}
+
+.note-form .qa-note-modal__form-textarea {
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    line-height: 1.5;
+}
 </style>

@@ -5,6 +5,24 @@
     title="⚙️ 设置"
     size="large"
     custom-class="settings-modal-wrapper"
+    :custom-style="{
+      maxWidth: '900px',
+      width: '90%',
+      minHeight: '510px',
+      maxHeight: '90vh',
+      '--ui-dialog-header-background': 'linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-hover) 100%)',
+      '--ui-dialog-header-color': 'white',
+      '--ui-dialog-header-padding': '20px 25px',
+      '--ui-dialog-title-color': 'white',
+      '--ui-dialog-title-font-size': '1.4em',
+      '--ui-dialog-close-color': 'var(--settings-modal-text-primary)',
+      '--ui-dialog-close-font-size': '20px',
+      '--ui-dialog-close-hover-color': 'white',
+      '--ui-dialog-close-hover-background': 'var(--settings-modal-surface-base)',
+      '--ui-dialog-body-padding': '0',
+      '--ui-dialog-body-display': 'flex',
+      '--ui-dialog-body-direction': 'column'
+    }"
     :show-header="true"
     :close-on-overlay="true"
     :close-on-esc="true"
@@ -223,7 +241,7 @@ async function handleSave() {
 
 /* 覆盖 BaseModal overlay 的 z-index 提升到最高 */
 
-/* 自定义头部样式 — 保留当前实现的渐变背景 */
+/* 自定义头部样式 — 保留业务契约的渐变背景 */
 
 /* BaseModal body 内的 tab + content 布局 */
 

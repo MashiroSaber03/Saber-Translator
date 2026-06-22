@@ -122,6 +122,17 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 
 <style scoped>
 .workshop-card {
+  /* owner tokens: lorebook-tree-editor */
+  --lorebook-tree-editor-border-default: rgba(34, 72, 125, .12);
+  --lorebook-tree-editor-shadow-default: rgba(21, 44, 77, .08);
+  --lorebook-tree-editor-surface-base: rgba(255, 255, 255, .84);
+  --lorebook-tree-editor-surface-raised: rgba(41, 96, 193, .1);
+  --lorebook-tree-editor-surface-muted: rgba(18, 47, 86, .08);
+  --lorebook-tree-editor-text-primary: #5d738c;
+  --lorebook-tree-editor-text-secondary: #275ebe;
+  --lorebook-tree-editor-text-muted: #244979;
+  --lorebook-tree-editor-text-subtle: #72869c;
+
   border-radius: 22px;
   padding: 18px;
   background: var(--lorebook-tree-editor-surface-base);

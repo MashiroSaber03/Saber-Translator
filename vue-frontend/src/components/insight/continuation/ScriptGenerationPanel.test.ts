@@ -13,6 +13,12 @@ vi.mock('@/api/continuation', () => ({
   }),
 }))
 
+function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper.findAll('button').find(node => node.text().includes(text))
+  expect(button).toBeTruthy()
+  return button!
+}
+
 describe('ScriptGenerationPanel', () => {
   it('emits script updates and includes reference count when generating', async () => {
     const wrapper = mount(ScriptGenerationPanel, {
@@ -41,8 +47,7 @@ describe('ScriptGenerationPanel', () => {
     const updateEvents = wrapper.emitted('update-script') || []
     expect(updateEvents[updateEvents.length - 1]).toEqual(['新脚本内容'])
 
-    const generateButton = wrapper.find('button.ui-button--primary')
-    await generateButton.trigger('click')
+    await getButtonByText(wrapper, '生成脚本').trigger('click')
     await nextTick()
 
     const generateEvents = wrapper.emitted('generate') || []
@@ -83,7 +88,7 @@ describe('ScriptGenerationPanel', () => {
     await wrapper.setProps({ script: null })
     await nextTick()
 
-    await wrapper.find('button.ui-button--primary').trigger('click')
+    await getButtonByText(wrapper, '生成脚本').trigger('click')
 
     const generateEvents = wrapper.emitted('generate') || []
     expect(generateEvents[generateEvents.length - 1]).toEqual([

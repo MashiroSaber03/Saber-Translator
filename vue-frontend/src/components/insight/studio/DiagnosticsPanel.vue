@@ -53,6 +53,16 @@ defineProps<{
 
 <style scoped>
 .diagnostics-shell {
+  /* owner tokens: diagnostics-panel */
+  --diagnostics-panel-border-default: rgba(25, 55, 94, .08);
+  --diagnostics-panel-surface-base: rgba(255, 255, 255, .86);
+  --diagnostics-panel-surface-raised: rgba(255, 244, 244, .86);
+  --diagnostics-panel-surface-muted: rgba(255, 249, 240, .86);
+  --diagnostics-panel-surface-subtle: rgba(32, 170, 103, .14);
+  --diagnostics-panel-text-primary: #153250;
+  --diagnostics-panel-text-secondary: #516882;
+  --diagnostics-panel-text-muted: #17784b;
+
   display: flex;
   flex-direction: column;
   gap: 16px;

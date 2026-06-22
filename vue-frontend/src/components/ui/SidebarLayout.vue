@@ -17,6 +17,15 @@ const props = withDefaults(defineProps<{
   leftInset?: string
   rightInset?: string
   contentInset?: string
+  leftOffset?: string
+  rightOffset?: string
+  leftTop?: string
+  rightTop?: string
+  leftHeight?: string
+  rightHeight?: string
+  leftClass?: string
+  mainClass?: string
+  rightClass?: string
   mobileMode?: 'stack' | 'drawer'
 }>(), {
   as: 'div',
@@ -34,6 +43,15 @@ const props = withDefaults(defineProps<{
   leftInset: '',
   rightInset: '',
   contentInset: '',
+  leftOffset: '',
+  rightOffset: '',
+  leftTop: '',
+  rightTop: '',
+  leftHeight: '',
+  rightHeight: '',
+  leftClass: '',
+  mainClass: '',
+  rightClass: '',
   mobileMode: 'stack',
 })
 
@@ -47,6 +65,12 @@ const layoutStyle = computed(() => ({
   ...(props.leftInset ? { '--ui-sidebar-left-inset': props.leftInset } : {}),
   ...(props.rightInset ? { '--ui-sidebar-right-inset': props.rightInset } : {}),
   ...(props.contentInset ? { '--ui-sidebar-content-inset': props.contentInset } : {}),
+  ...(props.leftOffset ? { '--ui-sidebar-left-offset': props.leftOffset } : {}),
+  ...(props.rightOffset ? { '--ui-sidebar-right-offset': props.rightOffset } : {}),
+  ...(props.leftTop ? { '--ui-sidebar-left-top': props.leftTop } : {}),
+  ...(props.rightTop ? { '--ui-sidebar-right-top': props.rightTop } : {}),
+  ...(props.leftHeight ? { '--ui-sidebar-left-height': props.leftHeight } : {}),
+  ...(props.rightHeight ? { '--ui-sidebar-right-height': props.rightHeight } : {}),
 }))
 </script>
 
@@ -68,13 +92,13 @@ const layoutStyle = computed(() => ({
       <slot />
     </template>
     <template v-else>
-      <div v-if="$slots.left" class="ui-sidebar-layout__left">
+      <div v-if="$slots.left" class="ui-sidebar-layout__left" :class="leftClass">
         <slot name="left" />
       </div>
-      <div class="ui-sidebar-layout__main">
+      <div class="ui-sidebar-layout__main" :class="mainClass">
         <slot />
       </div>
-      <div v-if="$slots.right" class="ui-sidebar-layout__right">
+      <div v-if="$slots.right" class="ui-sidebar-layout__right" :class="rightClass">
         <slot name="right" />
       </div>
     </template>
@@ -91,6 +115,12 @@ const layoutStyle = computed(() => ({
   --ui-sidebar-left-inset: 0;
   --ui-sidebar-right-inset: 0;
   --ui-sidebar-content-inset: 0;
+  --ui-sidebar-left-offset: 0;
+  --ui-sidebar-right-offset: 0;
+  --ui-sidebar-left-top: var(--ui-sidebar-top);
+  --ui-sidebar-right-top: var(--ui-sidebar-top);
+  --ui-sidebar-left-height: auto;
+  --ui-sidebar-right-height: auto;
 
   min-width: 0;
   height: var(--ui-sidebar-height);
@@ -145,16 +175,26 @@ const layoutStyle = computed(() => ({
   position: sticky;
   top: var(--ui-sidebar-top);
   align-self: flex-start;
-  max-height: calc(100vh - var(--ui-sidebar-top));
+  max-height: calc(100dvh - var(--ui-sidebar-top));
 }
 
 .ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__left,
+.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__left {
+  position: fixed;
+  top: var(--ui-sidebar-left-top);
+  left: var(--ui-sidebar-left-offset);
+  height: var(--ui-sidebar-left-height);
+  max-height: calc(100dvh - var(--ui-sidebar-left-top));
+  overflow: auto;
+}
+
 .ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__right,
-.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__left,
 .ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__right {
   position: fixed;
-  top: var(--ui-sidebar-top);
-  max-height: calc(100vh - var(--ui-sidebar-top));
+  top: var(--ui-sidebar-right-top);
+  right: var(--ui-sidebar-right-offset);
+  height: var(--ui-sidebar-right-height);
+  max-height: calc(100dvh - var(--ui-sidebar-right-top));
   overflow: auto;
 }
 
@@ -163,5 +203,36 @@ const layoutStyle = computed(() => ({
 .ui-sidebar-layout--right-collapsed > .ui-sidebar-layout__right,
 .ui-sidebar-layout--both-collapsed > .ui-sidebar-layout__right {
   display: none;
+}
+
+@media (--breakpoint-md-down) {
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-fixed,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-overlay {
+    height: auto;
+    flex-direction: column;
+  }
+
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__main,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__main {
+    order: -1;
+  }
+
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__left,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__right,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__left,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__right {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-fixed > .ui-sidebar-layout__main,
+  .ui-sidebar-layout--mobile-stack.ui-sidebar-layout--sidebars-overlay > .ui-sidebar-layout__main {
+    margin-left: 0;
+    margin-right: 0;
+    padding-inline: 0;
+  }
 }
 </style>

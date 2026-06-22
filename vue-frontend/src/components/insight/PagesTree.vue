@@ -200,8 +200,7 @@ onMounted(async () => {
 
 /**
  * 监听分析进度变化，自动刷新已分析页面标记
- * 【修复】当前实现在分析完成后会调用 renderPagesTree 重新渲染
- * Vue 版通过监听 analyzedPageCount 变化自动刷新
+ * 通过监听 analyzedPageCount 变化刷新页面分析状态。
  */
 watch(
   () => insightStore.analyzedPageCount,
@@ -209,7 +208,7 @@ watch(
     // 当已分析页数变化时，重新加载页面分析状态
     if (newCount !== oldCount && newCount > 0) {
       console.log(`已分析页数变化: ${oldCount} -> ${newCount}，刷新页面标记`)
-      // 清空现有标记并重新加载
+      // 清空现有标记并重新加载。
       pageAnalyzedMap.value.clear()
       await loadAnalyzedPages()
     }

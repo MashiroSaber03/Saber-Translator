@@ -21,6 +21,10 @@ const SOURCE_FIXTURE_INDEX = process.argv.indexOf('--source-fixture')
 const SOURCE_FIXTURE = SOURCE_FIXTURE_INDEX >= 0
   ? resolve(process.cwd(), process.argv[SOURCE_FIXTURE_INDEX + 1] || '')
   : null
+const SOURCE_FIXTURE_PATH_INDEX = process.argv.indexOf('--source-fixture-path')
+const SOURCE_FIXTURE_PATH = SOURCE_FIXTURE_PATH_INDEX >= 0
+  ? (process.argv[SOURCE_FIXTURE_PATH_INDEX + 1] || '').replaceAll('\\', '/')
+  : null
 const TOKEN_FILE_ORDER = [
   'src/styles/tokens/palette.css',
   'src/styles/tokens/semantic.css',
@@ -30,11 +34,13 @@ const TOKEN_FILE_ORDER = [
 const TOKEN_FILES = TOKENS_FIXTURE_INDEX >= 0
   ? [resolve(process.cwd(), process.argv[TOKENS_FIXTURE_INDEX + 1] || '')]
   : TOKEN_FILE_ORDER.map(file => join(process.cwd(), file))
-const SFC_MAX_LINES = 1800
-const SFC_REVIEW_LINES = 1500
-const SFC_MAX_STYLE_LINES = 1200
-const CSS_MAX_LINES = 1200
-const CSS_OWNER_REVIEW_LINES = 800
+const SFC_MAX_LINES = 900
+const SFC_SHELL_MAX_LINES = 1200
+const SFC_MAX_STYLE_LINES = 1000
+const CSS_MAX_LINES = 450
+const CSS_OWNER_REVIEW_LINES = 450
+const DOMAIN_TOKEN_MAX_DEFINITIONS = 200
+const GLOBAL_STYLE_MAX_LINES = 20
 const VUE_STYLE_RE = /<style(?![^>]*\bscoped\b)[^>]*>/g
 const CSS_ID_SELECTOR_RE = /^\s*#[A-Za-z0-9_-]+/m
 const IMPORTANT_RE = /!important\b/
@@ -61,7 +67,7 @@ const CSS_IMPORT_RE = /@import\s+/
 const BARE_Z_INDEX_RE = /z-index\s*:\s*\d+\s*;/
 const Z_INDEX_NUMERIC_FALLBACK_RE = /z-index\s*:\s*var\([^)]*,\s*\d+[^)]*\)/
 const BARE_MEDIA_BREAKPOINT_RE = /@media\s*\([^)]*\b\d{3,4}px\b[^)]*\)/
-const LAYOUT_BYPASS_RE = /position\s*:\s*fixed|(?:min-|max-)?height\s*:\s*calc\(100vh|margin-(?:left|right)\s*:\s*(?:240|340)px/
+const LAYOUT_BYPASS_RE = /position\s*:\s*fixed|(?:min-|max-)?height\s*:\s*(?:100vh|calc\(100vh)|margin-(?:left|right)\s*:\s*(?:240|340)px/
 const BASE_MODAL_LEGACY_RE = /\bmodal-(?:overlay|container|header|title|close-btn|body|footer|small|medium|large|full)\b/
 const BASE_MODAL_CUSTOM_CLASS_RE = /<BaseModal\b[\s\S]*?\bcustom-class="([^"]+)"/g
 const STATIC_CLASS_RE = /\bclass\s*=\s*["']([^"']+)["']/g
@@ -84,7 +90,9 @@ const CSS_LEGACY_BUTTON_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-action-btn|btn-pr
 const CSS_GENERIC_FORM_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(form-input|form-textarea)(?![A-Za-z0-9_-])/g
 const CSS_UNOWNED_GLOBAL_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(header-content|logo-container|app-logo|app-name|header-links|tutorial-link|github-link|donate-link|header-btn|mode-btn|upload-card|thumbnail-item|status-icon|ui-form-field)(?![A-Za-z0-9_-])/g
 const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
+const TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE = /\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea|ui-modal__[a-z0-9-]+)(?![A-Za-z0-9_-])/g
 const CSS_BARE_UI_MODAL_SELECTOR_RE = /^\s*\.ui-modal__/m
+const GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE = /\.ui-modal__(?:body|header|footer|title|close)\b/
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
@@ -97,6 +105,11 @@ const RAW_FORM_CONTROL_ALLOWED_FILES = new Set([
   'src/components/ui/UiSelect.vue',
   'src/components/ui/UiTextarea.vue',
   'tests/unit/ui-primitives.spec.ts',
+])
+const TEST_PRIMITIVE_SELECTOR_ALLOWED_FILES = new Set([
+  'tests/unit/baseModal.spec.ts',
+  'tests/unit/ui-primitives.spec.ts',
+  'tests/unit/uiArchitectureLint.spec.ts',
 ])
 const UNSTYLED_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
@@ -117,9 +130,10 @@ const VALUE_NAMED_TOKEN_RE = new RegExp(
 )
 const GENERATED_PALETTE_TOKEN_NAME_RE = /^--palette-(?:(?:border|color|shadow|surface|text)-\d{3}|[a-z]+-\d{2,3}-(?:[a-z]|bright|calm|clear|cool|dark|deep|dusty|fresh|light|muted|pale|quiet|rich|soft|solid|subtle|vivid|warm)(?:-[a-z]+)?)$/
 const GENERATED_OWNER_TOKEN_RE = /--color-[a-z0-9-]+-(?:surface|text|border|shadow|accent)-\d{3}/g
+const COMPONENT_PRIVATE_DOMAIN_TOKEN_RE = /^--(?:character-studio-preview|character-studio-editor|character-studio-view|character-studio-sidebar|edit-exit-save|reader-controls|image-generation-panel)-/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
-const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
+const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
 const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
 const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|旧版[^*\n\r]*|原版[^*\n\r]*|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
@@ -266,24 +280,21 @@ const ARCHITECTURE_DEBT_BUDGETS = {
 }
 
 const LAYOUT_OWNER_ALLOWED_FILES = new Set([
-  'src/views/InsightView.vue',
-  'src/views/ReaderView.vue',
-  'src/views/CharacterStudioView.vue',
   'src/components/common/AppHeader.vue',
   'src/components/common/BaseModal.vue',
   'src/components/common/CustomSelect.vue',
   'src/components/common/ToastNotification.vue',
-  'src/components/reader/ReaderCanvas.vue',
-  'src/components/reader/ReaderControls.vue',
-  'src/components/translate/SettingsSidebar.vue',
-  'src/components/translate/ThumbnailSidebar.vue',
   'src/components/ui/AppShell.vue',
+  'src/components/ui/OverlayLayer.vue',
   'src/components/ui/SidebarLayout.vue',
+  'src/components/edit/EditWorkspace.vue',
+])
+
+const LARGE_INTERACTION_OWNER_FILES = new Set([
+  'src/components/edit/BubbleEditor.vue',
+  'src/components/edit/BubbleOverlay.vue',
   'src/components/edit/EditToolbar.vue',
   'src/components/edit/EditWorkspace.vue',
-  'src/components/settings/PluginManager.vue',
-  'src/components/insight/PageDetail.vue',
-  'src/components/insight/TimelinePanel.vue',
 ])
 
 const failures = []
@@ -321,11 +332,18 @@ function addFailure(path, message) {
 }
 
 function normalizePath(path) {
+  if (SOURCE_FIXTURE && resolve(path) === SOURCE_FIXTURE && SOURCE_FIXTURE_PATH) {
+    return SOURCE_FIXTURE_PATH
+  }
   return relative(process.cwd(), path).replaceAll('\\', '/')
 }
 
 function isTokenFile(normalizedPath) {
   return TOKEN_FILE_ORDER.includes(normalizedPath)
+}
+
+function isDomainTokenFile(normalizedPath) {
+  return normalizedPath === 'src/styles/tokens/domain.css' || TOKENS_FIXTURE_INDEX >= 0
 }
 
 function escapeRegExp(value) {
@@ -570,6 +588,24 @@ function checkTokenDependencyArchitecture(paths) {
 
   for (const path of paths) {
     const content = readFileSync(path, 'utf8')
+    const normalizedPath = normalizePath(path)
+    if (isDomainTokenFile(normalizedPath)) {
+      const domainTokens = [...parseCustomPropertyScopes(content).root.keys()]
+      const domainTokenCount = domainTokens.length
+      if (domainTokenCount > DOMAIN_TOKEN_MAX_DEFINITIONS) {
+        addFailure(
+          path,
+          `domain.css defines ${domainTokenCount} tokens; keep domain tokens below ${DOMAIN_TOKEN_MAX_DEFINITIONS} by moving component-private tokens into scoped owners`
+        )
+      }
+      const componentPrivateTokens = domainTokens.filter(token => COMPONENT_PRIVATE_DOMAIN_TOKEN_RE.test(token))
+      if (componentPrivateTokens.length > 0) {
+        addFailure(
+          path,
+          `component-private domain token definition(s) ${componentPrivateTokens.join(', ')} are not allowed; move them into the owning component scoped style`
+        )
+      }
+    }
     appendTokenScopes(scopes, parseCustomPropertyScopes(content))
   }
 
@@ -644,6 +680,10 @@ function extractStyleContents(content, path) {
   return [...content.matchAll(STYLE_BLOCK_RE)].map(match => match[1])
 }
 
+function stripCustomPropertyDeclarations(css) {
+  return css.replace(CUSTOM_PROPERTY_RE, '')
+}
+
 function checkHardcodedColors(path, normalizedPath, content) {
   if (COLOR_LITERAL_ALLOWED_FILES.has(normalizedPath)) {
     return
@@ -652,13 +692,14 @@ function checkHardcodedColors(path, normalizedPath, content) {
   const styleContents = extractStyleContents(content, path)
   const colorMatches = new Set()
   for (const styleContent of styleContents) {
-    for (const match of stripCssComments(styleContent).matchAll(HARDCODED_COLOR_RE)) {
+    const css = stripCustomPropertyDeclarations(stripCssComments(styleContent))
+    for (const match of css.matchAll(HARDCODED_COLOR_RE)) {
       colorMatches.add(match[0])
     }
   }
 
   if (colorMatches.size > 0) {
-    addFailure(path, `style color literal(s) ${[...colorMatches].slice(0, 6).join(', ')} are not allowed; add/use tokens from src/styles/tokens/*`)
+    addFailure(path, `style color literal(s) ${[...colorMatches].slice(0, 6).join(', ')} are not allowed outside owner custom property definitions`)
   }
 }
 
@@ -680,11 +721,36 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
   }
 }
 
+function isTestFile(normalizedPath) {
+  return normalizedPath.startsWith('tests/')
+    || /\.test\.[jt]sx?$/.test(normalizedPath)
+    || /\.spec\.[jt]sx?$/.test(normalizedPath)
+}
+
+function checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments) {
+  if (!isTestFile(normalizedPath) || TEST_PRIMITIVE_SELECTOR_ALLOWED_FILES.has(normalizedPath)) {
+    return
+  }
+
+  const selectors = new Set()
+  for (const match of contentWithoutComments.matchAll(TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE)) {
+    selectors.add(`.${match[1]}`)
+  }
+
+  if (selectors.size > 0) {
+    addFailure(
+      path,
+      `primitive internal class selector(s) ${[...selectors].join(', ')} are not allowed in tests; query by role, label, text, data-testid, or a business-owned public class`
+    )
+  }
+}
+
 function checkFile(path) {
   const content = readFileSync(path, 'utf8')
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
+  checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
@@ -708,15 +774,17 @@ function checkFile(path) {
   }
 
   if (path.endsWith('.vue')) {
-    const lineCount = content.split(/\r?\n/).length
+    const contentWithoutStyleBlocks = content.replace(STYLE_BLOCK_RE, '')
+    const lineCount = contentWithoutStyleBlocks.split(/\r?\n/).length
     const styleLineCount = [...content.matchAll(/<style\b[\s\S]*?<\/style>/g)]
       .map(match => match[0].split(/\r?\n/).length)
       .reduce((sum, count) => sum + count, 0)
 
-    if (lineCount > SFC_MAX_LINES) {
-      addFailure(path, `SFC has ${lineCount} lines; split UI sections or move isolated UI behavior into composables`)
-    } else if (lineCount >= SFC_REVIEW_LINES) {
-      addFailure(path, `SFC has ${lineCount} lines; split UI sections or move isolated UI behavior into composables`)
+    const sfcLineLimit = LARGE_INTERACTION_OWNER_FILES.has(normalizedPath)
+      ? SFC_SHELL_MAX_LINES
+      : SFC_MAX_LINES
+    if (lineCount > sfcLineLimit) {
+      addFailure(path, `SFC has ${lineCount} lines; final owner threshold is ${sfcLineLimit}; split UI sections or move isolated UI behavior into composables`)
     }
     if (styleLineCount > SFC_MAX_STYLE_LINES) {
       addFailure(path, `SFC has ${styleLineCount} style lines; move repeated UI styling into primitives or split the component`)
@@ -763,7 +831,15 @@ function checkFile(path) {
   }
 
   if (path.endsWith('.css') && !LINE_BUDGET_EXCLUDED_CSS.has(normalizedPath)) {
-    const lineCount = content.split(/\r?\n/).length
+    const lineCount = content.replace(/\r?\n$/, '').split(/\r?\n/).length
+    if (normalizedPath.endsWith('.global.styles.css')) {
+      if (lineCount > GLOBAL_STYLE_MAX_LINES) {
+        addFailure(path, `global style owner has ${lineCount} lines; Teleport shell styles must stay at or below ${GLOBAL_STYLE_MAX_LINES} lines`)
+      }
+      if (GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE.test(content)) {
+        addFailure(path, 'global style owners may only target Teleport shell/container state; do not override .ui-modal__body/header/footer/title/close')
+      }
+    }
     if (lineCount > CSS_MAX_LINES) {
       addFailure(path, `CSS file has ${lineCount} lines; split by component boundary or move repeated rules into primitives`)
     } else if (lineCount >= CSS_OWNER_REVIEW_LINES) {
@@ -976,6 +1052,7 @@ function checkScriptFile(path) {
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
+  checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
 

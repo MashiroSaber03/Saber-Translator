@@ -18,9 +18,8 @@ import { ref } from 'vue'
 import type {
   TranslationSettings,
   TextDetector,
-  TranslationProvider,
   HqTranslationProvider,
-  PluginAgentProvider,
+  OpenAICompatibleOptions,
 } from '@/types/settings'
 import {
   STORAGE_KEY_TRANSLATION_SETTINGS,
@@ -41,6 +40,222 @@ import {
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
+
+type PlainRecord = Record<string, unknown>
+
+function isPlainRecord(value: unknown): value is PlainRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function parseNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function parseBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
+}
+
+function parseString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+function parseCurrentOpenAiOptions(
+  value: unknown,
+  defaults: OpenAICompatibleOptions
+): OpenAICompatibleOptions | null {
+  if (!isPlainRecord(value) || !isPlainRecord(value.request) || !isPlainRecord(value.execution)) {
+    return null
+  }
+
+  const forceJsonOutput = parseBoolean(value.request.forceJsonOutput)
+  const useStream = parseBoolean(value.execution.useStream)
+  const rpmLimit = parseNumber(value.execution.rpmLimit)
+  const transportRetries = parseNumber(value.execution.transportRetries)
+  const businessRetries = parseNumber(value.execution.businessRetries)
+  if (
+    forceJsonOutput === null ||
+    useStream === null ||
+    rpmLimit === null ||
+    transportRetries === null ||
+    businessRetries === null
+  ) {
+    return null
+  }
+
+  const request: OpenAICompatibleOptions['request'] = { forceJsonOutput }
+  if (value.request.temperature !== undefined) {
+    const temperature = parseNumber(value.request.temperature)
+    if (temperature === null) return null
+    request.temperature = temperature
+  } else if (defaults.request.temperature !== undefined) {
+    request.temperature = defaults.request.temperature
+  }
+  if (value.request.extraBody !== undefined) {
+    if (!isPlainRecord(value.request.extraBody)) return null
+    request.extraBody = cloneJson(value.request.extraBody)
+  }
+
+  return {
+    request,
+    execution: {
+      useStream,
+      rpmLimit,
+      transportRetries,
+      businessRetries,
+    },
+  }
+}
+
+function sanitizeByTemplate(value: unknown, template: unknown, path = ''): unknown | null {
+  if (path.endsWith('.openaiOptions')) {
+    return parseCurrentOpenAiOptions(value, template as OpenAICompatibleOptions)
+  }
+
+  if (Array.isArray(template)) {
+    return Array.isArray(value) ? cloneJson(value) : null
+  }
+
+  if (isPlainRecord(template)) {
+    if (!isPlainRecord(value)) return null
+    const result: PlainRecord = {}
+    for (const key of Object.keys(template)) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) return null
+      const sanitized = sanitizeByTemplate(value[key], template[key], `${path}.${key}`)
+      if (sanitized === null) return null
+      result[key] = sanitized
+    }
+    return result
+  }
+
+  if (typeof template === 'number') return parseNumber(value)
+  if (typeof template === 'boolean') return parseBoolean(value)
+  if (typeof template === 'string') return parseString(value)
+  return value === template ? value : null
+}
+
+function isCurrentProviderId(provider: unknown): provider is string {
+  return typeof provider === 'string'
+    && provider === normalizeProviderId(provider)
+    && Boolean(getProviderManifest(provider))
+}
+
+function sanitizeProofreadingRounds(value: unknown): TranslationSettings['proofreading']['rounds'] | null {
+  if (!Array.isArray(value)) return null
+  const rounds: TranslationSettings['proofreading']['rounds'] = []
+  for (const round of value) {
+    if (!isPlainRecord(round)) return null
+    if (!isCurrentProviderId(round.provider)) return null
+    const name = parseString(round.name)
+    const apiKey = parseString(round.apiKey)
+    const modelName = parseString(round.modelName)
+    const customBaseUrl = parseString(round.customBaseUrl)
+    const prompt = parseString(round.prompt)
+    const batchSize = parseNumber(round.batchSize)
+    const openaiOptions = parseCurrentOpenAiOptions(round.openaiOptions, createDefaultSettings().hqTranslation.openaiOptions)
+    if (
+      name === null ||
+      apiKey === null ||
+      modelName === null ||
+      customBaseUrl === null ||
+      prompt === null ||
+      batchSize === null ||
+      openaiOptions === null
+    ) {
+      return null
+    }
+    rounds.push({
+      name,
+      provider: round.provider as HqTranslationProvider,
+      apiKey,
+      modelName,
+      customBaseUrl,
+      openaiOptions,
+      batchSize,
+      prompt,
+    })
+  }
+  return rounds
+}
+
+function parseCurrentSettings(value: unknown): TranslationSettings | null {
+  if (!isPlainRecord(value) || value.settingsSchemaVersion !== 3) {
+    return null
+  }
+
+  const defaults = createDefaultSettings()
+  const sanitized = sanitizeByTemplate(value, defaults) as TranslationSettings | null
+  if (!sanitized) return null
+
+  if (!isCurrentProviderId(sanitized.translation.provider)) return null
+  if (!isCurrentProviderId(sanitized.hqTranslation.provider)) return null
+  if (!isCurrentProviderId(sanitized.pluginAgent.provider)) return null
+  if (!isCurrentProviderId(sanitized.aiVisionOcr.provider)) return null
+  const rounds = sanitizeProofreadingRounds((value.proofreading as PlainRecord).rounds)
+  if (!rounds) return null
+  sanitized.proofreading.rounds = rounds
+
+  return sanitized
+}
+
+function sanitizeProviderConfig(
+  value: unknown,
+  openaiDefaults: OpenAICompatibleOptions
+): PlainRecord | null {
+  if (!isPlainRecord(value)) return null
+  const result: PlainRecord = {}
+  for (const key of ['apiKey', 'modelName', 'customBaseUrl', 'prompt', 'translationMode', 'promptMode']) {
+    if (value[key] === undefined) continue
+    const parsed = parseString(value[key])
+    if (parsed === null) return null
+    result[key] = parsed
+  }
+  for (const key of ['batchSize', 'minImageSize']) {
+    if (value[key] === undefined) continue
+    const parsed = parseNumber(value[key])
+    if (parsed === null) return null
+    result[key] = parsed
+  }
+  if (value.openaiOptions !== undefined) {
+    const openaiOptions = parseCurrentOpenAiOptions(value.openaiOptions, openaiDefaults)
+    if (!openaiOptions) return null
+    result.openaiOptions = openaiOptions
+  }
+  return result
+}
+
+function parseCurrentProviderConfigs(value: unknown): ProviderConfigsCache | null {
+  if (!isPlainRecord(value)) return null
+  const defaults = createDefaultSettings()
+  const requiredGroups = ['translation', 'hqTranslation', 'pluginAgent', 'aiVisionOcr'] as const
+  for (const group of requiredGroups) {
+    if (!isPlainRecord(value[group])) return null
+  }
+
+  const parseGroup = (
+    group: (typeof requiredGroups)[number],
+    openaiDefaults: OpenAICompatibleOptions
+  ) => {
+    const records: Record<string, PlainRecord> = {}
+    for (const [provider, config] of Object.entries(value[group] as PlainRecord)) {
+      if (!isCurrentProviderId(provider)) continue
+      const parsed = sanitizeProviderConfig(config, openaiDefaults)
+      if (!parsed) continue
+      records[provider] = parsed
+    }
+    return records
+  }
+
+  return {
+    translation: parseGroup('translation', defaults.translation.openaiOptions),
+    hqTranslation: parseGroup('hqTranslation', defaults.hqTranslation.openaiOptions),
+    pluginAgent: parseGroup('pluginAgent', defaults.pluginAgent.openaiOptions),
+    aiVisionOcr: parseGroup('aiVisionOcr', defaults.aiVisionOcr.openaiOptions),
+  } as ProviderConfigsCache
+}
 
 // 导入各功能模块
 import {
@@ -124,9 +339,8 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const defaults = createDefaultSettings()
       const stored = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
-      const baseSettings = stored
-        ? deepMerge(defaults, JSON.parse(stored) as Partial<TranslationSettings>)
-        : defaults
+      const parsedSettings = stored ? parseCurrentSettings(JSON.parse(stored)) : null
+      const baseSettings = parsedSettings ? cloneJson(parsedSettings) : defaults
 
       baseSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
@@ -139,14 +353,14 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
       const parsed = stored
-        ? JSON.parse(stored) as Partial<ProviderConfigsCache>
-        : {}
+        ? parseCurrentProviderConfigs(JSON.parse(stored))
+        : null
 
       const nextProviderConfigs: ProviderConfigsCache = {
-        translation: parsed.translation || {},
-        hqTranslation: parsed.hqTranslation || {},
+        translation: parsed?.translation || {},
+        hqTranslation: parsed?.hqTranslation || {},
         pluginAgent: JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent)),
-        aiVisionOcr: parsed.aiVisionOcr || {}
+        aiVisionOcr: parsed?.aiVisionOcr || {}
       }
 
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, JSON.stringify(nextProviderConfigs))
@@ -164,15 +378,12 @@ export const useSettingsStore = defineStore('settings', () => {
       const data = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
 
       if (data) {
-        const parsed = JSON.parse(data) as Partial<TranslationSettings>
-        if (parsed.settingsSchemaVersion !== 3) {
-          console.warn('localStorage 设置 schemaVersion 无效，已忽略该设置对象')
+        const parsed = parseCurrentSettings(JSON.parse(data))
+        if (!parsed) {
+          console.warn('localStorage 设置不符合当前 schema，已忽略该设置对象')
           return
         }
-        const defaults = createDefaultSettings()
-        // 深度合并，确保新增的默认值不会丢失
-        settings.value = deepMerge(defaults, parsed)
-        normalizeProviderIds()
+        settings.value = parsed
         settings.value.textDetector = normalizeTextDetector(settings.value.textDetector)
         // 确保数值类型正确
         ensureNumericTypes()
@@ -198,16 +409,12 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
       if (data) {
-        const parsed = JSON.parse(data) as Partial<ProviderConfigsCache>
-        // 确保结构完整
-        providerConfigs.value = {
-          translation: parsed.translation || {},
-          hqTranslation: parsed.hqTranslation || {},
-          pluginAgent: parsed.pluginAgent || {},
-          aiVisionOcr: parsed.aiVisionOcr || {}
+        const parsed = parseCurrentProviderConfigs(JSON.parse(data))
+        if (!parsed) {
+          console.warn('服务商配置缓存不符合当前 schema，已忽略该缓存对象')
+          return
         }
-        normalizeProviderConfigIds()
-        normalizeProviderConfigOpenAiOptions()
+        providerConfigs.value = parsed
         console.log('已从 localStorage 加载服务商配置缓存')
       }
     } catch (error) {
@@ -368,141 +575,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   }
 
-  function normalizeCurrentProviderId(provider: unknown, fallback: string): string {
-    const normalized = normalizeProviderId(typeof provider === 'string' ? provider : '')
-    return getProviderManifest(normalized) ? normalized : fallback
-  }
-
-  function normalizeProviderIds(): void {
-    settings.value.translation.provider = normalizeCurrentProviderId(
-      settings.value.translation.provider,
-      'siliconflow'
-    ) as TranslationProvider
-    settings.value.hqTranslation.provider = normalizeCurrentProviderId(
-      settings.value.hqTranslation.provider,
-      'siliconflow'
-    ) as HqTranslationProvider
-    settings.value.pluginAgent.provider = normalizeCurrentProviderId(
-      settings.value.pluginAgent.provider,
-      'deepseek'
-    ) as PluginAgentProvider
-    settings.value.aiVisionOcr.provider = normalizeCurrentProviderId(settings.value.aiVisionOcr.provider, 'volcano')
-    settings.value.proofreading.rounds = settings.value.proofreading.rounds.map(round => ({
-      ...round,
-      provider: normalizeCurrentProviderId(round.provider, 'siliconflow') as HqTranslationProvider
-    }))
-  }
-
-  function normalizeProviderConfigIds(): void {
-    const normalizeRecord = <T>(record: Record<string, T>): Record<string, T> => {
-      const normalized: Record<string, T> = {}
-      for (const [provider, config] of Object.entries(record)) {
-        const providerId = normalizeProviderId(provider)
-        if (!getProviderManifest(providerId)) continue
-        normalized[providerId] = config
-      }
-      return normalized
-    }
-
-    providerConfigs.value.translation = normalizeRecord(providerConfigs.value.translation)
-    providerConfigs.value.hqTranslation = normalizeRecord(providerConfigs.value.hqTranslation)
-    providerConfigs.value.pluginAgent = normalizeRecord(providerConfigs.value.pluginAgent)
-    providerConfigs.value.aiVisionOcr = normalizeRecord(providerConfigs.value.aiVisionOcr)
-  }
-
-  function normalizeProviderConfigOpenAiOptions(): void {
-    for (const config of Object.values(providerConfigs.value.translation)) {
-      config.openaiOptions = normalizeOpenAiOptions(
-        config.openaiOptions,
-        {
-          execution: {
-            useStream: true,
-            rpmLimit: DEFAULT_RPM_TRANSLATION,
-            transportRetries: 1,
-            businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
-          }
-        }
-      )
-    }
-
-    for (const config of Object.values(providerConfigs.value.hqTranslation)) {
-      config.openaiOptions = normalizeOpenAiOptions(
-        config.openaiOptions,
-        {
-          execution: {
-            useStream: true,
-            rpmLimit: 7,
-            transportRetries: 3,
-            businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES
-          }
-        }
-      )
-    }
-
-    for (const config of Object.values(providerConfigs.value.pluginAgent)) {
-      config.openaiOptions = normalizeOpenAiOptions(
-        config.openaiOptions,
-        {
-          execution: {
-            useStream: true,
-            rpmLimit: 0,
-            transportRetries: 10,
-            businessRetries: 10
-          }
-        }
-      )
-    }
-
-    for (const config of Object.values(providerConfigs.value.aiVisionOcr)) {
-      config.openaiOptions = normalizeOpenAiOptions(
-        config.openaiOptions,
-        {
-          execution: {
-            useStream: false,
-            rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
-            transportRetries: 1,
-            businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
-          }
-        }
-      )
-    }
-  }
-
-  /**
-   * 深度合并对象
-   */
-  function deepMerge(
-    target: TranslationSettings,
-    source: Partial<TranslationSettings>
-  ): TranslationSettings {
-    const result = { ...target }
-    for (const key in source) {
-      if (Object.prototype.hasOwnProperty.call(source, key)) {
-        if (!(key in target)) continue
-        const k = key as keyof TranslationSettings
-        const sourceValue = source[k]
-        const targetValue = result[k]
-        if (
-          sourceValue !== null &&
-          sourceValue !== undefined &&
-          typeof sourceValue === 'object' &&
-          !Array.isArray(sourceValue) &&
-          targetValue !== null &&
-          typeof targetValue === 'object' &&
-          !Array.isArray(targetValue)
-        ) {
-          ; (result as Record<string, unknown>)[k] = {
-            ...(targetValue as unknown as Record<string, unknown>),
-            ...(sourceValue as unknown as Record<string, unknown>)
-          }
-        } else if (sourceValue !== undefined) {
-          ; (result as Record<string, unknown>)[k] = sourceValue
-        }
-      }
-    }
-    return result
-  }
-
   // ============================================================
   // 初始化各功能模块
   // ============================================================
@@ -649,23 +721,22 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     const { providerConfigs: nestedProviderConfigs, ...settingsPayload } = backendSettings
-    settings.value = deepMerge(
-      createDefaultSettings(),
-      settingsPayload as Partial<TranslationSettings>
-    )
+    const parsedSettings = parseCurrentSettings(settingsPayload)
+    if (!parsedSettings) {
+      console.warn('[Settings] 后端设置不符合当前 schema，已忽略该设置对象')
+      return false
+    }
+    settings.value = parsedSettings
 
     if (nestedProviderConfigs && typeof nestedProviderConfigs === 'object') {
-      providerConfigs.value = {
-        translation: (nestedProviderConfigs as ProviderConfigsCache).translation || {},
-        hqTranslation: (nestedProviderConfigs as ProviderConfigsCache).hqTranslation || {},
-        pluginAgent: (nestedProviderConfigs as ProviderConfigsCache).pluginAgent || {},
-        aiVisionOcr: (nestedProviderConfigs as ProviderConfigsCache).aiVisionOcr || {}
+      const parsedProviderConfigs = parseCurrentProviderConfigs(nestedProviderConfigs)
+      if (!parsedProviderConfigs) {
+        console.warn('[Settings] 后端服务商配置缓存不符合当前 schema，已忽略该缓存对象')
+        return false
       }
+      providerConfigs.value = parsedProviderConfigs
     }
 
-    normalizeProviderIds()
-    normalizeProviderConfigIds()
-    normalizeProviderConfigOpenAiOptions()
     console.log('[Settings] 后端设置已应用')
     return true
   }

@@ -752,7 +752,7 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
   await page.goto('/')
 
   await page.getByRole('button', { name: '新建书籍' }).click()
-  const createBookModal = page.locator('.ui-modal__container').filter({ hasText: '新建书籍' })
+  const createBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '新建书籍' })
   await expect(createBookModal).toBeVisible()
   await expect(createBookModal.locator('.book-modal__field').first()).toHaveCSS('margin-bottom', '20px')
   await expect(createBookModal).toHaveScreenshot('bookshelf-create-book-modal.png', {
@@ -761,7 +761,7 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: /管理标签/ }).click()
-  const tagModal = page.locator('.ui-modal__container').filter({ hasText: '标签管理' })
+  const tagModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '标签管理' })
   await expect(tagModal).toBeVisible()
   await expect(tagModal).toHaveScreenshot('bookshelf-tag-manage-modal.png', {
     animations: 'disabled',
@@ -770,7 +770,7 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
 
   await page.getByText('Demo Manga').click()
   await page.getByRole('button', { name: '编辑书籍' }).click()
-  const editBookModal = page.locator('.ui-modal__container').filter({ hasText: '编辑书籍' })
+  const editBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '编辑书籍' })
   await expect(editBookModal).toBeVisible()
   await expect(editBookModal.locator('.book-modal__field').first()).toHaveCSS('margin-bottom', '20px')
   await expect(editBookModal).toHaveScreenshot('bookshelf-edit-book-modal.png', {
@@ -787,7 +787,7 @@ test('book detail delete confirmation keeps BaseModal styling contract', async (
 
   const confirmModal = page.locator('.confirm-modal')
   await expect(confirmModal).toBeVisible()
-  await expect(confirmModal.locator('.ui-modal__body')).toHaveCSS('padding-top', '20px')
+  await expect(confirmModal.locator('[data-testid="base-dialog-body"]')).toHaveCSS('padding-top', '20px')
   await expect(confirmModal).toHaveScreenshot('book-detail-delete-confirm.png', {
     animations: 'disabled',
   })
@@ -813,8 +813,8 @@ test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ 
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-left', '20px')
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-right', '20px')
   await expect(page.locator('.thumbnail-sidebar .thumbnail-card h2')).toHaveCSS('color', 'rgb(44, 62, 80)')
-  await expect(page.locator('.translate-workspace')).toHaveCSS('margin-left', '340px')
-  await expect(page.locator('.translate-workspace')).toHaveCSS('margin-right', '240px')
+  await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-left', '340px')
+  await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-right', '240px')
   await expect(page).toHaveScreenshot('translate-loaded.png', {
     fullPage: true,
     animations: 'disabled',
@@ -907,7 +907,7 @@ test('translation settings modal keeps every tab layout contract', async ({ page
     await settingsModal.getByRole('button', { name: tab.label }).click()
     await expect(settingsModal.locator('.settings-tab.active')).toHaveText(tab.label)
     await settingsModal.evaluate((element) => {
-      element.querySelector<HTMLElement>('.ui-modal__body')?.scrollTo(0, 0)
+      element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
     })
     await expect(settingsModal).toHaveScreenshot(tab.snapshot, {
       animations: 'disabled',
@@ -927,7 +927,7 @@ test('web import expanded settings keep modal layout contract', async ({ page })
   await expect(webImportModal.locator('.web-import-modal__settings-tab.active')).toHaveText('高级设置')
   await webImportModal.evaluate((element) => {
     element.scrollTop = 0
-    element.querySelector<HTMLElement>('.ui-modal__body')?.scrollTo(0, 0)
+    element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
   })
   await expect(webImportModal).toHaveScreenshot('web-import-expanded-settings.png', {
     animations: 'disabled',
@@ -1044,7 +1044,7 @@ test('insight continuation add-character dialog keeps field layout contract', as
   const addCharacterDialog = page.locator('.continuation-dialog-modal').filter({ hasText: '新增角色' })
   await expect(addCharacterDialog).toBeVisible()
   await expect(addCharacterDialog.locator('.continuation-dialog-form')).toHaveCSS('gap', '16px')
-  await expect(addCharacterDialog.locator('.continuation-dialog-form__field').first()).toHaveCSS('margin-bottom', '0px')
+  await expect(addCharacterDialog.locator('.continuation-dialog-field').first()).toHaveCSS('margin-bottom', '0px')
   await expect(addCharacterDialog).toHaveScreenshot('insight-continuation-add-character-dialog.png', {
     animations: 'disabled',
   })
@@ -1066,9 +1066,9 @@ test('reader settings panel keeps its control layout contract', async ({ page })
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
   await page.locator('#settingsBtn').click()
-  const settingsPanel = page.locator('.settings-panel.active')
+  const settingsPanel = page.locator('.reader-controls__settings-panel')
   await expect(settingsPanel).toBeVisible()
-  await expect(settingsPanel.locator('.setting-item')).toHaveCount(3)
+  await expect(settingsPanel.locator('.reader-controls__setting-item')).toHaveCount(3)
   await expect(settingsPanel).toHaveScreenshot('reader-settings-panel.png', {
     animations: 'disabled',
   })

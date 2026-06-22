@@ -43,6 +43,39 @@ function requestClose(): void {
     size="small"
     custom-class="edit-exit-save-modal"
     overlay-class="edit-exit-save-modal-overlay"
+    :custom-style="{
+      width: 'min(360px, calc(100vw - 32px))',
+      '--edit-exit-save-modal-border-default': 'rgba(255, 255, 255, .12)',
+      '--edit-exit-save-modal-border-strong': 'rgba(255, 255, 255, .16)',
+      '--edit-exit-save-modal-border-muted': 'rgba(255, 255, 255, .24)',
+      '--edit-exit-save-modal-shadow-default': 'rgba(0, 0, 0, .35)',
+      '--edit-exit-save-modal-shadow-raised': 'rgba(0, 255, 136, .18)',
+      '--edit-exit-save-modal-surface-raised': 'rgba(12, 19, 37, .96)',
+      '--edit-exit-save-modal-surface-muted': '#0f8',
+      '--edit-exit-save-modal-surface-subtle': '#00cc6a',
+      '--edit-exit-save-modal-surface-hover': 'rgba(255, 255, 255, .08)',
+      '--edit-exit-save-modal-surface-active': '#00d4ff',
+      '--edit-exit-save-modal-text-primary': 'rgba(255, 255, 255, .82)',
+      '--edit-exit-save-modal-text-secondary': '#11212f',
+      '--edit-exit-save-modal-text-muted': '#0f8',
+      border: '1px solid var(--edit-exit-save-modal-border-default)',
+      borderRadius: '12px',
+      background: 'var(--edit-exit-save-modal-surface-raised)',
+      color: 'var(--color-text-inverse)',
+      boxShadow: '0 18px 48px var(--edit-exit-save-modal-shadow-default)',
+      backdropFilter: 'blur(10px)',
+      '--ui-dialog-header-padding': '16px 16px 0',
+      '--ui-dialog-header-border': '0',
+      '--ui-dialog-title-color': 'var(--color-text-inverse)',
+      '--ui-dialog-title-font-size': '15px',
+      '--ui-dialog-title-font-weight': '600',
+      '--ui-dialog-body-padding': '8px 16px 0',
+      '--ui-dialog-actions-padding': '14px 16px 16px',
+      '--ui-dialog-actions-border': '0',
+      '--ui-dialog-actions-gap': '8px',
+      '--ui-dialog-actions-justify': 'flex-start',
+      '--ui-dialog-actions-wrap': 'wrap'
+    }"
     :show-close-button="false"
     :close-on-overlay="!isSaving"
     :close-on-esc="!isSaving"

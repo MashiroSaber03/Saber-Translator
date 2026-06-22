@@ -59,4 +59,63 @@
   --z-toolbar: 40;
   --z-sidebar-overlay: 60;
   --z-modal-control: 1110;
+
+  --app-header-border-default: #dcdfe6;
+  --app-header-shadow-default: rgba(0, 0, 0, .1);
+  --app-header-shadow-raised: rgba(102, 126, 234, .3);
+  --app-header-shadow-floating: rgba(0, 0, 0, .2);
+  --app-header-surface-base: rgba(255, 255, 255, .9);
+  --app-header-surface-raised: rgba(0, 0, 0, .05);
+  --app-header-surface-muted: rgba(0, 0, 0, .1);
+  --app-header-surface-subtle: rgba(255, 105, 180, .15);
+  --app-header-surface-hover: rgba(255, 105, 180, .25);
+  --app-header-surface-active: rgba(0, 0, 0, .05);
+  --app-header-surface-selected: rgba(0, 0, 0, .1);
+  --app-header-surface-overlay: #f0f2f5;
+  --app-header-surface-inverse: #e6e8eb;
+  --app-header-text-primary: #e91e63;
+
+  --base-modal-shadow-default: rgba(0, 0, 0, .15);
+  --base-modal-surface-base: rgba(0, 0, 0, .5);
+  --base-modal-surface-raised: rgba(0, 0, 0, .1);
+
+  --custom-select-border-default: #cfd6e4;
+  --custom-select-border-strong: #b8c6dd;
+  --custom-select-border-muted: #8aa0f6;
+  --custom-select-border-subtle: #5b73f2;
+  --custom-select-shadow-default: rgba(88, 125, 255, .18);
+  --custom-select-shadow-raised: rgba(19, 36, 70, .18);
+  --custom-select-surface-base: #e3f2fd;
+  --custom-select-surface-raised: #e8edff;
+  --custom-select-text-primary: #1f2430;
+  --custom-select-text-secondary: #3040c2;
+
+  --toast-notification-shadow-default: rgba(0, 0, 0, .3);
+  --toast-notification-surface-base: rgba(0, 0, 0, .75);
+  --toast-notification-surface-raised: rgba(24, 144, 255, .85);
+  --toast-notification-surface-muted: rgba(82, 196, 26, .85);
+  --toast-notification-surface-subtle: rgba(250, 173, 20, .85);
+  --toast-notification-surface-hover: rgba(255, 77, 79, .85);
+  --toast-notification-text-primary: rgba(255, 255, 255, .7);
+
+  --ui-button-border-default: rgba(37, 99, 199, .18);
+  --ui-button-shadow-default: rgba(102, 126, 234, .3);
+  --ui-button-shadow-raised: rgba(102, 126, 234, .4);
+  --ui-button-shadow-floating: rgba(220, 53, 69, .3);
+  --ui-button-shadow-strong: rgba(220, 53, 69, .4);
+  --ui-button-surface-base: #dc3545;
+  --ui-button-surface-raised: #c82333;
+  --ui-button-surface-muted: #e04555;
+  --ui-button-surface-subtle: #d63343;
+  --ui-button-text-primary: #28a745;
+  --ui-button-text-secondary: #ffc107;
+  --ui-icon-button-surface-base: rgba(220, 53, 69, .1);
+  --ui-input-border-default: #dc3545;
+  --ui-input-shadow-default: rgba(102, 126, 234, .16);
+  --ui-panel-shadow-default: rgba(0, 0, 0, .08);
+  --ui-panel-surface-base: #f9fafc;
+  --ui-select-border-default: #dc3545;
+  --ui-select-shadow-default: rgba(102, 126, 234, .16);
+  --ui-textarea-border-default: #dc3545;
+  --ui-textarea-shadow-default: rgba(102, 126, 234, .16);
 }

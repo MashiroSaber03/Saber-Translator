@@ -445,13 +445,13 @@ function getSourceLanguageHint(): string {
       return '选择要识别的原文语言'
   }
 }
-// 处理AI视觉服务商切换（当前行为逻辑：独立保存每个服务商的配置）
+// 处理AI视觉服务商切换（业务逻辑：独立保存每个服务商的配置）
 function handleAiVisionProviderChange(newProvider: string) {
   newProvider = normalizeProviderId(newProvider)
-  // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
+  // 切换服务商时保存当前配置并加载目标服务商配置
   settingsStore.setAiVisionOcrProvider(newProvider)
   aiVisionModels.value = []
-  // 同步本地状态（服务商切换后 store 会恢复新服务商的配置）
+  // 同步目标服务商配置到本地表单
   syncLocalAiVisionOcr()
 }
 function syncLocalAiVisionOcr() {
@@ -517,7 +517,7 @@ function handlePaddleOcrVlLangChange(langCode: string) {
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = 'paddleocr_vl'
 }
-// 测试百度OCR连接（当前行为逻辑）
+// 测试百度OCR连接（业务逻辑）
 async function testBaiduOcr() {
   const apiKey = localBaiduOcr.value.apiKey?.trim()
   const secretKey = localBaiduOcr.value.secretKey?.trim()
@@ -563,12 +563,12 @@ async function testAiVisionOcr() {
     isTesting.value = false
   }
 }
-// 获取AI视觉模型列表（当前行为 doFetchModels 逻辑）
+// 获取AI视觉模型列表（模型列表获取流程）
 async function fetchAiVisionModels() {
   const provider = settingsStore.settings.aiVisionOcr.provider
   const apiKey = localAiVisionOcr.value.apiKey?.trim()
   const baseUrl = localAiVisionOcr.value.customBaseUrl?.trim()
-  // 验证（与当前行为一致）
+  // 验证（按业务契约）
   if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return

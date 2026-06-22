@@ -1,39 +1,39 @@
 <template>
   <ContinuationDialogShell title="➕ 新增角色" @close="close">
-    <div class="continuation-dialog-form">
-      <div class="continuation-dialog-form__field">
-        <label>角色名称 <span class="required">*</span></label>
+    <ContinuationDialogForm>
+      <ContinuationDialogField label="角色名称" required>
         <UiInput
           v-model="name"
           type="text"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="输入角色名称"
         />
-      </div>
+      </ContinuationDialogField>
 
-      <div class="continuation-dialog-form__field">
-        <label>别名（用逗号分隔，可选）</label>
+      <ContinuationDialogField label="别名（用逗号分隔，可选）">
         <UiInput
           v-model="aliases"
           type="text"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="例如: 小明, 阿明"
         />
-      </div>
+      </ContinuationDialogField>
 
-      <div class="continuation-dialog-form__field">
-        <label>角色描述（可选）</label>
+      <ContinuationDialogField label="角色描述（可选）">
         <UiTextarea
           v-model="description"
           rows="3"
           class="continuation-dialog__form-input"
+          style="font: inherit"
           placeholder="简单描述角色的外观特征..."
         />
-      </div>
-    </div>
+      </ContinuationDialogField>
+    </ContinuationDialogForm>
 
     <template #footer>
-      <div class="continuation-dialog-actions">
+      <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
@@ -42,7 +42,7 @@
         >
           {{ isAdding ? '添加中...' : '✓ 确认添加' }}
         </UiButton>
-      </div>
+      </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
 </template>
@@ -52,6 +52,9 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ContinuationDialogActions from './ContinuationDialogActions.vue'
+import ContinuationDialogField from './ContinuationDialogField.vue'
+import ContinuationDialogForm from './ContinuationDialogForm.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const emit = defineEmits<{

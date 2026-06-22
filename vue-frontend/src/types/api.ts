@@ -155,7 +155,7 @@ export interface ChapterData {
   imageCount: number
   /** 后端可能返回的 snake_case 格式 */
   image_count?: number
-  /** 页面数量（与 imageCount 同义，兼容不同命名） */
+  /** 页面数量（与 imageCount 同义命名） */
   page_count?: number
   hasSession: boolean
   /** 后端可能返回的 snake_case 格式 */
@@ -215,8 +215,8 @@ export interface FontInfo {
  */
 export interface FontListResponse {
   success?: boolean
-  /** 字体列表（新格式：对象数组） */
-  fonts?: FontInfo[] | string[]
+  /** 字体列表 */
+  fonts?: FontInfo[]
   /** 默认字体映射 */
   default_fonts?: Record<string, string>
   error?: string

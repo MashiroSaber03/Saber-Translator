@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
+import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 describe('hybrid OCR settings', () => {
   const storageState: Record<string, string> = {}
@@ -37,16 +39,15 @@ describe('hybrid OCR settings', () => {
     expect(store.settings.hybridOcr.confidenceThreshold).toBe(0.2)
   })
 
-  it('loadFromStorage keeps the current confidence threshold and normalizes unsupported combos', () => {
-    storageState['translationSettings'] = JSON.stringify({
-      settingsSchemaVersion: 3,
-      ocrEngine: 'ai_vision',
-      hybridOcr: {
-        enabled: true,
-        secondaryEngine: 'paddle_ocr',
-        confidenceThreshold: 0.35
-      }
-    })
+  it('loadFromStorage keeps current-schema confidence threshold and normalizes unsupported combos', () => {
+    const settings = createDefaultSettings()
+    settings.ocrEngine = 'ai_vision'
+    settings.hybridOcr = {
+      enabled: true,
+      secondaryEngine: 'paddle_ocr' as never,
+      confidenceThreshold: 0.35
+    }
+    storageState[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(settings)
 
     const store = useSettingsStore()
     store.loadFromStorage()
@@ -57,39 +58,18 @@ describe('hybrid OCR settings', () => {
   })
 
   it('loadFromStorage preserves current custom provider ids and zero-valued AI options', () => {
-    storageState['translationSettings'] = JSON.stringify({
-      settingsSchemaVersion: 3,
-      translation: {
-        provider: 'custom',
-        openaiOptions: {
-          execution: {
-            rpmLimit: 0,
-            businessRetries: 0
-          }
-        }
-      },
-      hqTranslation: {
-        provider: 'custom',
-        openaiOptions: {
-          execution: {
-            rpmLimit: 0,
-            businessRetries: 0
-          }
-        }
-      },
-      aiVisionOcr: {
-        provider: 'custom',
-        minImageSize: 0,
-        openaiOptions: {
-          execution: {
-            rpmLimit: 0
-          }
-        }
-      },
-      proofreading: {
-        maxRetries: 0
-      }
-    })
+    const settings = createDefaultSettings()
+    settings.translation.provider = 'custom'
+    settings.translation.openaiOptions.execution.rpmLimit = 0
+    settings.translation.openaiOptions.execution.businessRetries = 0
+    settings.hqTranslation.provider = 'custom'
+    settings.hqTranslation.openaiOptions.execution.rpmLimit = 0
+    settings.hqTranslation.openaiOptions.execution.businessRetries = 0
+    settings.aiVisionOcr.provider = 'custom'
+    settings.aiVisionOcr.openaiOptions.execution.rpmLimit = 0
+    settings.aiVisionOcr.minImageSize = 0
+    settings.proofreading.maxRetries = 0
+    storageState[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(settings)
 
     const store = useSettingsStore()
     store.loadFromStorage()

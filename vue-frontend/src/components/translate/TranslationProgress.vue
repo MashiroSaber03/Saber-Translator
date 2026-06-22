@@ -232,7 +232,7 @@ const progressPercent = computed(() => {
   return Math.round((currentIndex.value / totalCount.value) * 100)
 })
 
-/** 进度标签文本（优先使用自定义标签，当前行为） */
+/** 进度标签文本（优先使用自定义标签，业务契约） */
 const progressLabel = computed(() => {
   // 优先使用自定义标签
   if (currentProgress.value.label) {
@@ -247,6 +247,36 @@ const progressLabel = computed(() => {
    =================================== */
 
 .translation-progress-bar {
+  /* owner tokens: translation-progress */
+  --translation-progress-accent-primary: rgba(255, 255, 255, .92);
+  --translation-progress-border-default: #90caf9;
+  --translation-progress-shadow-default: rgba(0, 0, 0, .06);
+  --translation-progress-shadow-raised: rgba(0, 0, 0, .1);
+  --translation-progress-surface-base: #e2e8f0;
+  --translation-progress-surface-raised: #48bb78;
+  --translation-progress-surface-muted: #38a169;
+  --translation-progress-surface-subtle: #4299e1;
+  --translation-progress-surface-hover: #3182ce;
+  --translation-progress-surface-active: #ffc107;
+  --translation-progress-surface-selected: #e3f2fd;
+  --translation-progress-surface-overlay: #bbdefb;
+  --translation-progress-surface-inverse: #42a5f5;
+  --translation-progress-surface-contrast: #1976d2;
+  --translation-progress-surface-tint: #8b5cf6;
+  --translation-progress-surface-soft: #7c3aed;
+  --translation-progress-surface-strong: #68d391;
+  --translation-progress-surface-stronger: #edf2f7;
+  --translation-progress-surface-highlight: #4cae4c;
+  --translation-progress-surface-highlight-strong: #5cb85c;
+  --translation-progress-text-primary: #4a5568;
+  --translation-progress-text-secondary: #2d3748;
+  --translation-progress-text-muted: #a0aec0;
+  --translation-progress-text-subtle: #3182ce;
+  --translation-progress-text-supporting: #d69e2e;
+  --translation-progress-text-disabled: #1565c0;
+  --translation-progress-text-inverse: #7c3aed;
+  --translation-progress-text-brand: #e53e3e;
+
   margin: 20px auto;
   padding: 20px 24px;
   border: none;

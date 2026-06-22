@@ -216,7 +216,7 @@ function handleBubbleMouseDown(index: number, event: MouseEvent): void {
   // 阻止默认行为（文本选择等）
   event.preventDefault()
   event.stopPropagation()
-  // 【当前行为】Shift+点击进行多选
+  // Shift+点击进行多选
   if (event.shiftKey) {
     emit('multiSelect', index)
     return
@@ -507,6 +507,29 @@ onUnmounted(() => {
  * 解决高分辨率图片缩小显示时手柄过小难以操作的问题
  */
 .bubble-overlay {
+  /* owner tokens: bubble-overlay */
+  --bubble-overlay-border-default: rgba(255, 200, 0, .8);
+  --bubble-overlay-border-strong: #ff6b6b;
+  --bubble-overlay-border-muted: #0f8;
+  --bubble-overlay-border-subtle: #ff1744;
+  --bubble-overlay-border-hover: #fff;
+  --bubble-overlay-shadow-default: rgba(0, 255, 136, .5);
+  --bubble-overlay-shadow-raised: rgba(255, 23, 68, .6);
+  --bubble-overlay-shadow-floating: rgba(0, 0, 0, .3);
+  --bubble-overlay-shadow-strong: rgba(0, 255, 136, .8);
+  --bubble-overlay-shadow-soft: #0f8;
+  --bubble-overlay-surface-base: rgba(255, 200, 0, .1);
+  --bubble-overlay-surface-raised: rgba(255, 107, 107, .2);
+  --bubble-overlay-surface-muted: rgba(0, 255, 136, .15);
+  --bubble-overlay-surface-subtle: rgba(255, 23, 68, .25);
+  --bubble-overlay-surface-hover: rgba(0, 0, 0, .7);
+  --bubble-overlay-surface-active: rgba(0, 255, 136, .9);
+  --bubble-overlay-surface-selected: #0f8;
+  --bubble-overlay-surface-overlay: #00cc6a;
+  --bubble-overlay-surface-inverse: rgba(0, 255, 136, .6);
+  --bubble-overlay-surface-contrast: rgba(0, 255, 136, .1);
+  --bubble-overlay-text-primary: #1a1a2e;
+
   position: absolute;
   top: 0;
   left: 0;

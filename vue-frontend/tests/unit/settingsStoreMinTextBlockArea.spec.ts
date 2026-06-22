@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -49,6 +50,17 @@ describe('settings store min text block area percent', () => {
   })
 
   it('hydrates minTextBlockAreaPercent from localStorage and preserves zero', () => {
+    const settings = createDefaultSettings()
+    settings.minTextBlockAreaPercent = 0
+    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(settings)
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect(store.settings.minTextBlockAreaPercent).toBe(0)
+  })
+
+  it('ignores partial localStorage settings even when minTextBlockAreaPercent is present', () => {
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
       settingsSchemaVersion: 3,
       minTextBlockAreaPercent: 0
@@ -57,7 +69,7 @@ describe('settings store min text block area percent', () => {
     const store = useSettingsStore()
     store.loadFromStorage()
 
-    expect(store.settings.minTextBlockAreaPercent).toBe(0)
+    expect(store.settings.minTextBlockAreaPercent).toBe(createDefaultSettings().minTextBlockAreaPercent)
   })
 
   it('saves minTextBlockAreaPercent to backend settings', async () => {

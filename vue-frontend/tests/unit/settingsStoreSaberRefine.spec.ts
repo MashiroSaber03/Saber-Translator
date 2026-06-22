@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
   getUserSettingsMock: vi.fn(),
@@ -56,6 +57,25 @@ describe('settings store saber yolo refine', () => {
   })
 
   it('loads enableSaberYoloRefine from localStorage', () => {
+    const settings = createDefaultSettings()
+    settings.enableSaberYoloRefine = false
+    settings.saberYoloRefineOverlapThreshold = 35
+    settings.enableAuxYoloDetection = true
+    settings.auxYoloConfThreshold = 0.55
+    settings.auxYoloOverlapThreshold = 0.2
+    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(settings)
+
+    const store = useSettingsStore()
+    store.loadFromStorage()
+
+    expect(store.settings.enableSaberYoloRefine).toBe(false)
+    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(35)
+    expect(store.settings.enableAuxYoloDetection).toBe(true)
+    expect(store.settings.auxYoloConfThreshold).toBe(0.55)
+    expect(store.settings.auxYoloOverlapThreshold).toBe(0.2)
+  })
+
+  it('ignores partial localStorage settings even when saber refine fields are present', () => {
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
       settingsSchemaVersion: 3,
       enableSaberYoloRefine: false,
@@ -68,24 +88,24 @@ describe('settings store saber yolo refine', () => {
     const store = useSettingsStore()
     store.loadFromStorage()
 
-    expect(store.settings.enableSaberYoloRefine).toBe(false)
-    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(35)
-    expect(store.settings.enableAuxYoloDetection).toBe(true)
-    expect(store.settings.auxYoloConfThreshold).toBe(0.55)
-    expect(store.settings.auxYoloOverlapThreshold).toBe(0.2)
+    expect(store.settings.enableSaberYoloRefine).toBe(createDefaultSettings().enableSaberYoloRefine)
+    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(createDefaultSettings().saberYoloRefineOverlapThreshold)
+    expect(store.settings.enableAuxYoloDetection).toBe(createDefaultSettings().enableAuxYoloDetection)
+    expect(store.settings.auxYoloConfThreshold).toBe(createDefaultSettings().auxYoloConfThreshold)
+    expect(store.settings.auxYoloOverlapThreshold).toBe(createDefaultSettings().auxYoloOverlapThreshold)
   })
 
   it('loads enableSaberYoloRefine from backend settings', async () => {
+    const settings = createDefaultSettings()
+    settings.enableSaberYoloRefine = false
+    settings.saberYoloRefineOverlapThreshold = 35
+    settings.enableAuxYoloDetection = true
+    settings.auxYoloConfThreshold = 0.55
+    settings.auxYoloOverlapThreshold = 0.2
+
     getUserSettingsMock.mockResolvedValue({
       success: true,
-      settings: {
-        settingsSchemaVersion: 3,
-        enableSaberYoloRefine: false,
-        saberYoloRefineOverlapThreshold: '35',
-        enableAuxYoloDetection: true,
-        auxYoloConfThreshold: '0.55',
-        auxYoloOverlapThreshold: '0.2'
-      }
+      settings
     })
 
     const store = useSettingsStore()

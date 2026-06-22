@@ -168,6 +168,12 @@ function move(offset: -1 | 1) {
 
 <style scoped>
 .branch-node {
+  /* owner tokens: lorebook-tree-branch */
+  --lorebook-tree-branch-border-default: rgba(37, 99, 199, .12);
+  --lorebook-tree-branch-surface-base: rgba(255, 255, 255, .82);
+  --lorebook-tree-branch-text-primary: #14304c;
+  --lorebook-tree-branch-text-secondary: #516882;
+
   border-radius: 18px;
   background: var(--lorebook-tree-branch-surface-base);
   border: 1px solid var(--color-border-studio);

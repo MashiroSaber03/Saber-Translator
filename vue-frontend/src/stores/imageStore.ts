@@ -316,8 +316,8 @@ export const useImageStore = defineStore('image', () => {
    * 
    * 如果没有 relativePath（例如直接拖拽单个图片），则使用 fileName
    * 
-   * 【重要修复】排序后更新 currentImageIndex，使其仍然指向排序前的那张图片
-   * 这避免了排序后 currentImageIndex 指向错误图片，导致气泡状态保存错乱的问题
+   * 排序后更新 currentImageIndex，使其仍然指向排序前的那张图片。
+   * 这保证排序不会改变当前编辑上下文。
    */
   function sortImagesByFileName(): void {
     // 记录排序前当前图片的 id（用于排序后找回）

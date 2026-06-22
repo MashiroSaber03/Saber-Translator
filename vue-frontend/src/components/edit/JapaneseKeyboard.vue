@@ -394,6 +394,24 @@ function deleteChar(): void {
 <style scoped>
 /* 50音键盘容器 - 使用固定颜色值 */
 .kana-keyboard {
+  /* owner tokens: japanese-keyboard */
+  --japanese-keyboard-border-default: #2196f3;
+  --japanese-keyboard-border-strong: rgba(231, 76, 60, .3);
+  --japanese-keyboard-border-muted: rgba(231, 76, 60, .5);
+  --japanese-keyboard-shadow-default: rgba(0, 0, 0, .15);
+  --japanese-keyboard-shadow-raised: rgba(33, 150, 243, .3);
+  --japanese-keyboard-surface-base: #ff6b6b;
+  --japanese-keyboard-surface-raised: #ee5a5a;
+  --japanese-keyboard-surface-muted: rgba(255, 255, 255, .2);
+  --japanese-keyboard-surface-subtle: rgba(255, 255, 255, .3);
+  --japanese-keyboard-surface-hover: rgba(255, 255, 255, .4);
+  --japanese-keyboard-surface-active: #e74c3c;
+  --japanese-keyboard-surface-selected: #f8f9fa;
+  --japanese-keyboard-surface-overlay: #e3f2fd;
+  --japanese-keyboard-surface-inverse: #bbdefb;
+  --japanese-keyboard-surface-contrast: rgba(231, 76, 60, .1);
+  --japanese-keyboard-surface-tint: rgba(231, 76, 60, .2);
+
   background: var(--color-surface-base);
   border: 1px solid var(--color-border-default);
   border-radius: 8px;

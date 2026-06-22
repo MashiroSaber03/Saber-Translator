@@ -280,11 +280,13 @@
       ></div>
 
       <!-- 笔刷模式提示 -->
-      <div v-if="brushMode" class="brush-mode-hint">
-        {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
-      </div>
+      <OverlayLayer v-if="brushMode" class="brush-mode-hint-layer" passthrough>
+        <div class="brush-mode-hint">
+          {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
+        </div>
+      </OverlayLayer>
 
-      <!-- 进度条显示（紧跟快捷键图标右侧，当前行为位置） -->
+      <!-- 进度条显示（紧跟快捷键图标右侧，业务契约位置） -->
       <div 
         v-if="isProcessing" 
         class="edit-progress-container"
@@ -318,6 +320,7 @@
 <script setup lang="ts">
 
 import UiButton from '@/components/ui/UiButton.vue'
+import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 /**
  * 编辑模式工具栏组件
  * 包含双行布局：第一行导航和视图控制，第二行操作工具
@@ -436,7 +439,7 @@ const progressPercent = computed(() => {
   return Math.round((props.progressCurrent / props.progressTotal) * 100)
 })
 
-/** 进度是否完成（当前行为状态控制） */
+/** 进度是否完成（业务契约状态控制） */
 const isProgressCompleted = computed(() => {
   return props.progressTotal > 0 && props.progressCurrent >= props.progressTotal
 })
@@ -466,6 +469,28 @@ const brushCursorStyle = computed(() => {
 
 <style scoped>/* 顶部工具栏 */
 .edit-toolbar-wrapper {
+  /* owner tokens: edit-toolbar */
+  --edit-toolbar-border-default: #e5e7eb;
+  --edit-toolbar-border-strong: rgba(255, 255, 255, .2);
+  --edit-toolbar-border-muted: rgba(255, 255, 255, .3);
+  --edit-toolbar-border-subtle: rgba(102, 126, 234, .5);
+  --edit-toolbar-border-hover: rgba(0, 255, 136, .4);
+  --edit-toolbar-border-active: rgba(255, 193, 7, .4);
+  --edit-toolbar-shadow-default: rgba(0, 255, 136, .5);
+  --edit-toolbar-shadow-raised: rgba(0, 0, 0, .15);
+  --edit-toolbar-surface-base: #00d4ff;
+  --edit-toolbar-surface-raised: rgba(0, 0, 0, .8);
+  --edit-toolbar-surface-muted: rgba(255, 255, 255, .9);
+  --edit-toolbar-surface-subtle: rgba(0, 255, 136, .2);
+  --edit-toolbar-surface-hover: rgba(0, 255, 136, .3);
+  --edit-toolbar-surface-active: rgba(255, 193, 7, .2);
+  --edit-toolbar-surface-selected: rgba(255, 193, 7, .3);
+  --edit-toolbar-text-primary: #667eea;
+  --edit-toolbar-text-secondary: rgba(255, 255, 255, .9);
+  --edit-toolbar-text-muted: #5b73f2;
+  --edit-toolbar-text-subtle: #374151;
+  --edit-toolbar-text-supporting: #6b7280;
+
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--color-edit-shell-start) 0%, var(--color-edit-shell-end) 100%);
   border-bottom: 1px solid var(--color-edit-shell-divider);
@@ -637,7 +662,7 @@ const brushCursorStyle = computed(() => {
   border-color: var(--color-edit-action-border-hover);
 }
 
-/* 导航按钮样式 - 与当前行为一致 */
+/* 导航按钮样式 - 按业务契约 */
 .image-navigator .nav-btn,
 .bubble-navigator .nav-btn {
   width: 28px;
@@ -788,17 +813,19 @@ const brushCursorStyle = computed(() => {
 }
 
 /* 笔刷模式提示 */
+.brush-mode-hint-layer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 20px;
+}
+
 .brush-mode-hint {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
   padding: 8px 16px;
   background: var(--edit-toolbar-surface-raised);
   color: var(--color-text-inverse);
   border-radius: 6px;
   font-size: 13px;
-  z-index: var(--z-modal);
   pointer-events: none;
 }
 

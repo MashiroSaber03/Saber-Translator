@@ -567,8 +567,8 @@ export const useSessionStore = defineStore('session', () => {
         }
         imageStore.setCurrentImageIndex(newIndex)
 
-        // 恢复当前图片的气泡状态到 bubbleStore（skipSync=true 避免冗余同步）
-        // 【修复】使用 clearBubblesLocal 保持 null 和 [] 的语义区分
+        // 恢复当前图片的气泡状态到 bubbleStore（skipSync=true 避免冗余同步）。
+        // 无气泡状态时使用本地清空，保留 null 和 [] 的语义区分。
         const currentImage = images[newIndex]
         if (currentImage && currentImage.bubbleStates && currentImage.bubbleStates.length > 0) {
           bubbleStore.setBubbles(currentImage.bubbleStates, true)
@@ -660,7 +660,7 @@ export const useSessionStore = defineStore('session', () => {
       return false
     }
 
-    // 构建会话路径（使用新格式）
+    // 构建章节会话路径
     const sessionPath = `bookshelf/${bookId}/chapters/${chapterId}/session`
 
     setSaving(true)

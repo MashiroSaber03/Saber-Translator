@@ -319,7 +319,7 @@ const modelNamePlaceholder = computed(() => getTranslationModelNamePlaceholder(l
 function handleProviderChange() {
   const newProvider = localSettings.value.modelProvider as TranslationProvider
   localSettings.value.modelProvider = normalizeProviderId(newProvider)
-  // 使用 store 的方法切换服务商（会自动保存旧配置、恢复新配置）
+  // 切换服务商时保存当前配置并加载目标服务商配置
   settingsStore.setTranslationProvider(localSettings.value.modelProvider as TranslationProvider)
   localSettings.value.apiKey = settingsStore.settings.translation.apiKey
   localSettings.value.modelName = settingsStore.settings.translation.modelName
@@ -449,22 +449,22 @@ watch(() => localSettings.value.textboxPromptContent, (newVal) => {
   settingsStore.setTextboxPrompt(newVal)
 })
 // 注意：translationMode 不需要 watch，因为 handleTranslationModeChange 已经处理了 store 同步
-// 获取模型列表（当前行为 doFetchModels 逻辑）
+// 获取模型列表（模型列表获取流程）
 async function fetchModels() {
   const provider = localSettings.value.modelProvider
   const apiKey = localSettings.value.apiKey?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
-  // 验证（与当前行为一致）
+  // 验证（按业务契约）
   if (!apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
-  // 检查是否支持模型获取（与当前行为一致）
+  // 检查是否支持模型获取（按业务契约）
   if (!providerSupportsCapability(provider, 'modelFetch') || isLocalProviderId(provider)) {
     toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
     return
   }
-  // 自定义服务需要 base_url（与当前行为一致）
+  // 自定义服务需要 base_url（按业务契约）
   if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
@@ -486,7 +486,7 @@ async function fetchModels() {
     isFetchingModels.value = false
   }
 }
-// 获取服务商显示名称（与当前行为一致）
+// 获取服务商显示名称（按业务契约）
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
@@ -554,13 +554,13 @@ async function testLocalConnection() {
     isTesting.value = false
   }
 }
-// 测试云服务商连接（当前行为 testTranslationConnection 逻辑）
+// 测试云服务商连接（连接测试流程）
 async function testCloudConnection() {
   const provider = localSettings.value.modelProvider
   const apiKey = localSettings.value.apiKey?.trim()
   const modelName = localSettings.value.modelName?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
-  // 验证必填字段（与当前行为一致）
+  // 验证必填字段（按业务契约）
   if (!apiKey) {
     toast.warning('请先填写 API Key')
     return
@@ -577,7 +577,7 @@ async function testCloudConnection() {
   toast.info('正在测试连接...')
   try {
     let result
-    // 根据服务商类型分发到不同的测试函数（与当前行为一致）
+    // 根据服务商类型分发到不同的测试函数（按业务契约）
     switch (provider) {
       case 'baidu_translate':
         // 百度翻译使用 apiKey 作为 App ID，modelName 作为 App Key

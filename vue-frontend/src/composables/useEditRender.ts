@@ -100,13 +100,11 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     }
     const expectedImageId = image.id
 
-    // 检查是否有气泡
     // 没有气泡坐标时跳过后端渲染。
-    // 【Vue适配】将cleanImageData作为translatedDataURL显示，确保修复笔刷效果可见
     if (bubbles.value.length === 0) {
       console.log('reRenderFullImage: 没有气泡，跳过后端渲染')
 
-      // 将cleanImageData作为翻译图显示（修复笔刷场景）
+      // 无气泡时仍展示当前干净背景图，保证笔刷处理结果可见。
       const cleanBase64 = getCleanImageBase64()
       if (cleanBase64) {
         if (!isSameCurrentImage(expectedImageId)) {

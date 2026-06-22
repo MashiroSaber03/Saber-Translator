@@ -94,6 +94,16 @@ function handleFileSelect(event: Event) {
 
 <style scoped>
 .sidebar-shell {
+  --character-studio-sidebar-accent-primary: rgba(79, 136, 240, .12);
+  --character-studio-sidebar-accent-secondary: rgba(246, 249, 254, .88);
+  --character-studio-sidebar-shadow-default: rgba(37, 99, 199, .2);
+  --character-studio-sidebar-surface-base: rgba(252, 253, 255, .88);
+  --character-studio-sidebar-surface-raised: rgba(255, 255, 255, .92);
+  --character-studio-sidebar-surface-muted: #2563c7;
+  --character-studio-sidebar-surface-subtle: #4d86ee;
+  --character-studio-sidebar-text-primary: #6f84a2;
+  --character-studio-sidebar-text-secondary: #102741;
+
   display: flex;
   flex-direction: column;
   height: 100%;

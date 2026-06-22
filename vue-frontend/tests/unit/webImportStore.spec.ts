@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
-import { useWebImportStore } from '@/stores/webImportStore'
+import {
+  WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+  useWebImportStore,
+} from '@/stores/webImportStore'
+import {
+  createDefaultWebImportProviderConfigs,
+  createDefaultWebImportSettings,
+} from '@/stores/settings/modules/webImport'
 
 const { getWebImportSettingsMock, saveWebImportSettingsMock } = vi.hoisted(() => ({
   getWebImportSettingsMock: vi.fn(),
@@ -117,18 +124,51 @@ describe('webImportStore settings workflow', () => {
 
     expect(saveWebImportSettingsMock).toHaveBeenCalledTimes(1)
     expect(saveWebImportSettingsMock).toHaveBeenCalledWith({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: store.settings,
       providerConfigs: store.providerConfigs,
     })
 
     const stored = JSON.parse(localStorageMock[STORAGE_KEY_WEB_IMPORT_SETTINGS] || '{}')
+    expect(stored.webImportSettingsSchemaVersion).toBe(WEB_IMPORT_SETTINGS_SCHEMA_VERSION)
     expect(stored.settings.agent.provider).toBe('deepseek')
     expect(stored.providerConfigs.agent.deepseek.modelName).toBe('deepseek-chat')
   })
 
-  it('merges current backend data with defaults', async () => {
+  it('loads complete current backend data', async () => {
+    const settings = createDefaultWebImportSettings()
+    settings.agent.provider = 'custom'
+    settings.agent.apiKey = 'custom-key'
+    settings.agent.modelName = 'custom-model'
+    settings.agent.customBaseUrl = 'https://custom.example/v1'
+    const providerConfigs = createDefaultWebImportProviderConfigs()
+    providerConfigs.agent.custom = {
+      apiKey: 'custom-key',
+      modelName: 'custom-model',
+      customBaseUrl: 'https://custom.example/v1',
+    }
+
     getWebImportSettingsMock.mockResolvedValue({
       success: true,
+      settings,
+      providerConfigs,
+    })
+
+    const store = useWebImportStore()
+    const loaded = await store.loadFromBackend()
+
+    expect(loaded).toBe(true)
+    expect(store.settings.agent.provider).toBe('custom')
+    expect(store.settings.agent.apiKey).toBe('custom-key')
+    expect(store.settings.download.timeout).toBe(30)
+    expect(store.providerConfigs.agent.custom).toBeDefined()
+    expect(store.providerConfigs.agent.custom?.modelName).toBe('custom-model')
+  })
+
+  it('ignores incomplete backend data instead of filling missing fields', async () => {
+    getWebImportSettingsMock.mockResolvedValue({
+      success: true,
+      hasStoredSettings: true,
       settings: {
         agent: {
           provider: 'custom',
@@ -151,15 +191,50 @@ describe('webImportStore settings workflow', () => {
     const store = useWebImportStore()
     const loaded = await store.loadFromBackend()
 
-    expect(loaded).toBe(true)
-    expect(store.settings.agent.provider).toBe('custom')
-    expect(store.settings.agent.apiKey).toBe('custom-key')
-    expect(store.settings.download.timeout).toBe(30)
-    expect(store.providerConfigs.agent.custom).toBeDefined()
-    expect(store.providerConfigs.agent.custom?.modelName).toBe('custom-model')
+    expect(loaded).toBe(false)
+    expect(store.settings.agent.provider).toBe('openai')
+    expect(store.providerConfigs.agent.custom).toBeUndefined()
   })
 
   it('preserves localStorage settings when backend has no stored payload yet', async () => {
+    const settings = createDefaultWebImportSettings()
+    settings.firecrawl.apiKey = 'fc-local'
+    settings.agent.provider = 'deepseek'
+    settings.agent.apiKey = 'deepseek-local'
+    settings.agent.modelName = 'deepseek-chat'
+    settings.agent.customBaseUrl = 'https://deepseek.local/v1'
+    const providerConfigs = createDefaultWebImportProviderConfigs()
+    providerConfigs.agent.deepseek = {
+      apiKey: 'deepseek-local',
+      modelName: 'deepseek-chat',
+      customBaseUrl: 'https://deepseek.local/v1',
+    }
+
+    localStorageMock[STORAGE_KEY_WEB_IMPORT_SETTINGS] = JSON.stringify({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings,
+      providerConfigs,
+    })
+
+    getWebImportSettingsMock.mockResolvedValue({
+      success: true,
+      hasStoredSettings: false,
+      settings: {},
+      providerConfigs: { agent: {} },
+    })
+
+    const store = useWebImportStore()
+    store.loadFromStorage()
+    const loaded = await store.loadFromBackend()
+
+    expect(loaded).toBe(false)
+    expect(store.settings.firecrawl.apiKey).toBe('fc-local')
+    expect(store.settings.agent.provider).toBe('deepseek')
+    expect(store.settings.agent.modelName).toBe('deepseek-chat')
+    expect(store.providerConfigs.agent.deepseek?.apiKey).toBe('deepseek-local')
+  })
+
+  it('ignores localStorage payloads without the current web import schema marker', () => {
     localStorageMock[STORAGE_KEY_WEB_IMPORT_SETTINGS] = JSON.stringify({
       settings: {
         firecrawl: { apiKey: 'fc-local' },
@@ -181,21 +256,10 @@ describe('webImportStore settings workflow', () => {
       },
     })
 
-    getWebImportSettingsMock.mockResolvedValue({
-      success: true,
-      hasStoredSettings: false,
-      settings: {},
-      providerConfigs: { agent: {} },
-    })
-
     const store = useWebImportStore()
     store.loadFromStorage()
-    const loaded = await store.loadFromBackend()
 
-    expect(loaded).toBe(false)
-    expect(store.settings.firecrawl.apiKey).toBe('fc-local')
-    expect(store.settings.agent.provider).toBe('deepseek')
-    expect(store.settings.agent.modelName).toBe('deepseek-chat')
-    expect(store.providerConfigs.agent.deepseek?.apiKey).toBe('deepseek-local')
+    expect(store.settings.agent.provider).toBe('openai')
+    expect(store.providerConfigs.agent.deepseek).toBeUndefined()
   })
 })

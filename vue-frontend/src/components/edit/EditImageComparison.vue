@@ -244,6 +244,21 @@ defineExpose({
 <style scoped>
 /* ============ 双图对照区域 ============ */
 .edit-main-layout {
+  /* owner tokens: edit-image-comparison */
+  --edit-image-comparison-border-default: rgba(255, 255, 255, .1);
+  --edit-image-comparison-border-strong: #00d4ff;
+  --edit-image-comparison-surface-base: #16213e;
+  --edit-image-comparison-surface-raised: rgba(0, 0, 0, .3);
+  --edit-image-comparison-surface-muted: #0d1b2a;
+  --edit-image-comparison-surface-subtle: #0f0f23;
+  --edit-image-comparison-surface-hover: #f0f0f0;
+  --edit-image-comparison-surface-active: rgba(0, 212, 255, .1);
+  --edit-image-comparison-surface-selected: rgba(76, 175, 80, .05);
+  --edit-image-comparison-surface-overlay: rgba(33, 150, 243, .05);
+  --edit-image-comparison-text-primary: #ff6b6b;
+  --edit-image-comparison-text-secondary: #0f8;
+  --edit-image-comparison-text-muted: #444;
+
   display: flex;
   flex: 1;
   flex-direction: row;

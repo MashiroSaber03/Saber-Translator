@@ -153,7 +153,7 @@ async function deleteTag(tagName: string) {
         暂无标签，请在上方添加
       </div>
       
-      <!-- 【当前行为 renderTagManageList】标签项样式 -->
+      <!-- 【业务契约 renderTagManageList】标签项样式 -->
       <div
         v-for="tag in tags"
         :key="tag.name"
@@ -167,7 +167,7 @@ async function deleteTag(tagName: string) {
           ></span>
           <span class="tag-name">{{ tag.name }}</span>
           <span class="tag-book-count">{{ tag.book_count || 0 }} 本</span>
-          <!-- 【当前行为】编辑和删除按钮 -->
+          <!-- 编辑和删除按钮 -->
           <UiButton
             variant="toolbar"
             class="tag-edit-btn"
@@ -225,6 +225,16 @@ async function deleteTag(tagName: string) {
 
 <style scoped>
 .tag-manage-form {
+  /* owner tokens: tag-manage-modal */
+  --tag-manage-modal-shadow-default: rgba(220, 53, 69, .4);
+  --tag-manage-modal-shadow-raised: rgba(102, 126, 234, .2);
+  --tag-manage-modal-surface-base: #f8f9fa;
+  --tag-manage-modal-surface-raised: #dc3545;
+  --tag-manage-modal-surface-muted: #c82333;
+  --tag-manage-modal-surface-subtle: #218838;
+  --tag-manage-modal-surface-hover: #e9ecef;
+  --tag-manage-modal-surface-active: #dee2e6;
+
   margin-bottom: 20px;
 }
 
@@ -271,7 +281,7 @@ async function deleteTag(tagName: string) {
   color: var(--color-text-supporting, var(--color-text-muted));
 }
 
-/* 【当前行为 bookshelf.css .tag-manage-item】 */
+/* 【业务契约 bookshelf.css .tag-manage-item】 */
 .tag-manage-item {
   display: flex;
   align-items: center;
@@ -290,7 +300,7 @@ async function deleteTag(tagName: string) {
   width: 100%;
 }
 
-/* 【当前行为】颜色圆点 */
+/* 颜色圆点 */
 .tag-color-dot {
   width: 16px;
   height: 16px;
@@ -304,14 +314,14 @@ async function deleteTag(tagName: string) {
   color: var(--color-text-default, var(--color-text-default));
 }
 
-/* 【当前行为】书籍数量 */
+/* 书籍数量 */
 .tag-book-count {
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-muted));
   margin-right: 8px;
 }
 
-/* 【当前行为 .tag-edit-btn】编辑按钮样式 */
+/* 【业务契约 .tag-edit-btn】编辑按钮样式 */
 .tag-edit-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
@@ -328,7 +338,7 @@ async function deleteTag(tagName: string) {
   box-shadow: 0 2px 8px var(--shadow-brand-soft);
 }
 
-/* 【当前行为 .tag-delete-btn】删除按钮样式 */
+/* 【业务契约 .tag-delete-btn】删除按钮样式 */
 .tag-delete-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--tag-manage-modal-surface-raised) 0%, var(--tag-manage-modal-surface-muted) 100%);

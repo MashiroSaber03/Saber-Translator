@@ -192,57 +192,66 @@ watch(
 </script>
 
 <template>
-  <AppShell class="reader-page">
+  <AppShell
+    class="reader-page"
+    chrome="fixed"
+    header-height="56px"
+    header-offset="56px"
+    content-padding="0 20px"
+    content-class="reader-page__content"
+  >
     <!-- 阅读器头部 -->
-    <header class="reader-header">
-      <div class="reader-header__left">
-        <UiButton variant="toolbar" id="backBtn" class="reader-header__button" title="返回书架" @click="goBack">
-          <span class="reader-header__button-icon">←</span>
-          <span class="reader-header__button-text">返回</span>
-        </UiButton>
-        <div class="book-info">
-          <span id="bookTitle" class="reader-header__book-title">{{ bookInfo?.title || '加载中...' }}</span>
-          <span class="separator">·</span>
-          <span id="chapterTitle" class="chapter-title">{{ currentChapterInfo?.title || '-' }}</span>
-        </div>
-      </div>
-      <div class="reader-header__center">
-        <span id="pageInfo" class="page-info">{{ currentPage }} / {{ imagesData.length || '-' }}</span>
-      </div>
-      <div class="reader-header__right">
-        <div class="view-mode-toggle">
-          <UiButton
-            variant="toolbar" 
-            id="viewOriginalBtn" 
-            class="reader-header__mode-button" 
-            :class="{ active: currentViewMode === 'original' }"
-            data-mode="original" 
-            title="查看原图"
-            @click="setViewMode('original')"
-          >
-            原图
+    <template #header>
+      <header class="reader-header">
+        <div class="reader-header__left">
+          <UiButton variant="toolbar" id="backBtn" class="reader-header__button" title="返回书架" @click="goBack">
+            <span class="reader-header__button-icon">←</span>
+            <span class="reader-header__button-text">返回</span>
           </UiButton>
-          <UiButton
-            variant="toolbar" 
-            id="viewTranslatedBtn" 
-            class="reader-header__mode-button" 
-            :class="{ active: currentViewMode === 'translated' }"
-            data-mode="translated" 
-            title="查看翻译"
-            @click="setViewMode('translated')"
-          >
-            翻译
+          <div class="book-info">
+            <span id="bookTitle" class="reader-header__book-title">{{ bookInfo?.title || '加载中...' }}</span>
+            <span class="separator">·</span>
+            <span id="chapterTitle" class="chapter-title">{{ currentChapterInfo?.title || '-' }}</span>
+          </div>
+        </div>
+        <div class="reader-header__center">
+          <span id="pageInfo" class="page-info">{{ currentPage }} / {{ imagesData.length || '-' }}</span>
+        </div>
+        <div class="reader-header__right">
+          <div class="view-mode-toggle">
+            <UiButton
+              variant="toolbar" 
+              id="viewOriginalBtn" 
+              class="reader-header__mode-button" 
+              :class="{ active: currentViewMode === 'original' }"
+              data-mode="original" 
+              title="查看原图"
+              @click="setViewMode('original')"
+            >
+              原图
+            </UiButton>
+            <UiButton
+              variant="toolbar" 
+              id="viewTranslatedBtn" 
+              class="reader-header__mode-button" 
+              :class="{ active: currentViewMode === 'translated' }"
+              data-mode="translated" 
+              title="查看翻译"
+              @click="setViewMode('translated')"
+            >
+              翻译
+            </UiButton>
+          </div>
+          <UiButton variant="toolbar" id="settingsBtn" class="reader-header__button" title="阅读设置" @click="openSettings">
+            <span class="reader-header__button-icon">⚙️</span>
+          </UiButton>
+          <UiButton variant="primary" id="translateBtn" class="reader-header__button reader-header__button--primary" title="进入翻译页面" @click="goToTranslate">
+            <span class="reader-header__button-icon">✏️</span>
+            <span class="reader-header__button-text">翻译</span>
           </UiButton>
         </div>
-        <UiButton variant="toolbar" id="settingsBtn" class="reader-header__button" title="阅读设置" @click="openSettings">
-          <span class="reader-header__button-icon">⚙️</span>
-        </UiButton>
-        <UiButton variant="primary" id="translateBtn" class="reader-header__button reader-header__button--primary" title="进入翻译页面" @click="goToTranslate">
-          <span class="reader-header__button-icon">✏️</span>
-          <span class="reader-header__button-text">翻译</span>
-        </UiButton>
-      </div>
-    </header>
+      </header>
+    </template>
 
     <!-- 主阅读区域 -->
     <ReaderCanvas
@@ -272,20 +281,28 @@ watch(
 
 /* ==================== 页面容器样式 ==================== */
 .reader-page {
-    width: calc(100% - 40px);
-    margin: 0 20px;
+  /* owner tokens: reader-view */
+  --reader-view-shadow-default: rgba(0, 0, 0, .2);
+  --reader-view-surface-base: #1a1a2e;
+  --reader-view-surface-raised: rgba(255, 255, 255, .15);
+  --reader-view-surface-muted: rgba(255, 255, 255, .25);
+  --reader-view-surface-subtle: rgba(255, 255, 255, .9);
+  --reader-view-text-primary: #667eea;
+  --reader-view-text-secondary: rgba(255, 255, 255, .7);
+
+    width: 100%;
+    margin: 0;
     padding: 0;
-    background: var(--reader-page-background, var(--reader-view-surface-base));
-    min-height: 100vh;
+    background: var(--color-surface-page);
     overflow-x: hidden;
+}
+
+.reader-page__content {
+    width: 100%;
 }
 
 /* ==================== 头部样式 ==================== */
 .reader-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
     height: 56px;
     background: var(--header-bg, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
     display: flex;

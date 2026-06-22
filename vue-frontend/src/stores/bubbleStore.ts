@@ -556,7 +556,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       font_sizes: bubbles.value.map(b => b.fontSize),
       font_families: bubbles.value.map(b => b.fontFamily),
       text_directions: bubbles.value.map(b => {
-        // 【简化设计】直接使用 textDirection，兼容可能存在的 'auto' 值
+        // 文本方向直接采用当前气泡值，auto 交由渲染层处理
         if (b.textDirection === 'vertical' || b.textDirection === 'horizontal') {
           return b.textDirection === 'vertical' ? 'v' : 'h'
         }
