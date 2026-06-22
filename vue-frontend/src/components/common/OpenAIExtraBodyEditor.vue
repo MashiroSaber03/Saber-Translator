@@ -126,6 +126,10 @@ function formatJson(): void {
 
 <style scoped>
 .openai-extra-body-editor {
+  --open-aiextra-body-editor-text-primary: #d14343;
+}
+
+.openai-extra-body-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;

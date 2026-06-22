@@ -1,3 +1,10 @@
+:root {
+  --animations-shadow-default: rgba(53, 152, 219, .7);
+  --animations-shadow-raised: rgba(53, 152, 219, 0);
+  --animations-shadow-floating: rgba(74, 144, 217, .4);
+  --animations-shadow-strong: rgba(74, 144, 217, 0);
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);

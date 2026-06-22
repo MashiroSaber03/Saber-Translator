@@ -113,7 +113,7 @@ async function loadCachedOverview(): Promise<void> {
   try {
     // 使用 GET API 只读取缓存
     const response = await insightApi.getOverview(
-      insightStore.currentBookId, 
+      insightStore.currentBookId,
       currentTemplate.value
     ) as any
 
@@ -150,7 +150,7 @@ async function generateOverview(regenerate: boolean): Promise<void> {
   try {
     // 使用 POST API 生成概览
     const response = await insightApi.regenerateOverview(
-      insightStore.currentBookId, 
+      insightStore.currentBookId,
       currentTemplate.value,
       regenerate  // force 参数
     ) as any
@@ -195,7 +195,7 @@ async function loadGeneratedTemplates(): Promise<void> {
         templates = response.templates as OverviewTemplateType[]
       }
       generatedTemplates.value = templates
-      
+
       // 用户可以在下拉框中自行选择其他已生成的模板。
     }
   } catch (error) {
@@ -219,7 +219,7 @@ async function exportAnalysisData(): Promise<void> {
 
   try {
     const response = await insightApi.exportAnalysis(insightStore.currentBookId) as any
-    
+
     if (response.success && response.markdown) {
       // 下载 Markdown 文件
       const blob = new Blob([response.markdown], { type: 'text/markdown' })
@@ -229,7 +229,7 @@ async function exportAnalysisData(): Promise<void> {
       a.download = `${insightStore.currentBookId}_analysis.md`
       a.click()
       URL.revokeObjectURL(url)
-      
+
       alert('导出成功')
     } else {
       alert('导出失败: ' + (response.error || '未知错误'))
@@ -253,10 +253,10 @@ function exportCurrentOverview(): void {
 
   const template = templateOptions.find(t => t.value === currentTemplate.value)
   const fileName = `${insightStore.currentBookId}_${currentTemplate.value}.md`
-  
+
   // 构建 Markdown 内容
   const content = `# ${template?.label || currentTemplate.value}\n\n${overviewContent.value}`
-  
+
   const blob = new Blob([content], { type: 'text/markdown' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -280,7 +280,7 @@ async function loadRecentAnalyzedPages(): Promise<void> {
       const totalPages = insightStore.totalPageCount
       const analyzedCount = insightStore.analyzedPageCount
       const recentPages: Array<{ page_num: number; summary?: string }> = []
-      
+
       // 简单实现：显示最后分析的5页
       const startPage = Math.max(1, analyzedCount - 4)
       for (let i = 0; i < Math.min(5, analyzedCount); i++) {
@@ -292,7 +292,7 @@ async function loadRecentAnalyzedPages(): Promise<void> {
           })
         }
       }
-      
+
       recentAnalyzedPages.value = recentPages.reverse() // 最新的在前
     }
   } catch (error) {
@@ -366,16 +366,16 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         <div class="card-header-actions">
           <span class="template-status">{{ templateStatus }}</span>
           <UiButton
-            variant="toolbar" 
-            class="button-icon" 
+            variant="toolbar"
+            class="button-icon"
             title="生成/加载"
             @click="generateOverview(false)"
           >
             📄
           </UiButton>
           <UiButton
-            variant="toolbar" 
-            class="button-icon" 
+            variant="toolbar"
+            class="button-icon"
             title="重新生成"
             @click="generateOverview(true)"
           >
@@ -404,11 +404,11 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           <span class="stat-label">章节数</span>
         </div>
       </div>
-      
+
       <!-- 导出按钮 -->
       <div class="export-actions">
         <UiButton
-          variant="secondary" 
+          variant="secondary"
           class="overview-action-button overview-action-button--secondary"
           :disabled="isExporting || !overviewContent"
           title="导出当前概览"
@@ -417,7 +417,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           📄 导出当前
         </UiButton>
         <UiButton
-          variant="primary" 
+          variant="primary"
           class="overview-action-button overview-action-button--primary"
           :disabled="isExporting"
           title="导出完整分析数据"
@@ -433,8 +433,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       <h3 class="card-title">🕐 最近分析</h3>
       <div class="recent-pages">
         <div v-if="recentAnalyzedPages.length === 0" class="placeholder-text">暂无分析记录</div>
-        <div 
-          v-for="page in recentAnalyzedPages" 
+        <div
+          v-for="page in recentAnalyzedPages"
           :key="page.page_num"
           class="recent-page-item"
           @click="goToPage(page.page_num)"
@@ -447,7 +447,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   </div>
 </template>
 
-<style scoped>/* ==================== 概览面板样式 - 当前样式 ==================== */
+<style scoped>
+.overview-grid {
+  --overview-panel-text-secondary: #ef4444;
+}
+
+/* ==================== 概览面板样式 - 当前样式 ==================== */
 
 /* ==================== 组件样式 ==================== */
 

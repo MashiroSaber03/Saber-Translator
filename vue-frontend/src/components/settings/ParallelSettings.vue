@@ -103,6 +103,12 @@ const lockSize = computed({
 </template>
 
 <style scoped>
+.parallel-settings {
+  --parallel-settings-border-default: rgba(255, 193, 7, .3);
+  --parallel-settings-surface-base: rgba(255, 193, 7, .1);
+  --parallel-settings-text-primary: #ffc107;
+}
+
 /* 开关样式 */
 .toggle-switch {
   position: relative;

@@ -70,7 +70,7 @@ const showBaseUrl = computed(() => provider.value === 'custom')
 function onProviderChange(): void {
   const newProvider = provider.value
   const oldProvider = insightStore.config.vlm.provider
-  
+
   if (oldProvider !== newProvider) {
     insightStore.config.vlm.apiKey = apiKey.value
     insightStore.config.vlm.model = model.value
@@ -84,9 +84,9 @@ function onProviderChange(): void {
     insightStore.config.vlm.openaiOptions.execution.useStream = useStream.value
     insightStore.config.vlm.imageMaxSize = imageMaxSize.value
   }
-  
+
   insightStore.setVlmProvider(newProvider)
-  
+
   apiKey.value = insightStore.config.vlm.apiKey
   model.value = insightStore.config.vlm.model
   baseUrl.value = insightStore.config.vlm.baseUrl
@@ -98,7 +98,7 @@ function onProviderChange(): void {
   extraBody.value = insightStore.config.vlm.openaiOptions.request.extraBody
   useStream.value = insightStore.config.vlm.openaiOptions.execution.useStream
   imageMaxSize.value = insightStore.config.vlm.imageMaxSize
-  
+
   if (!model.value) {
     const defaultModel = VLM_DEFAULT_MODELS[newProvider]
     if (defaultModel) {
@@ -112,22 +112,22 @@ async function fetchModels(): Promise<void> {
     emit('showMessage', '请先填写 API Key', 'error')
     return
   }
-  
+
   if (!SUPPORTED_FETCH_PROVIDERS.includes(provider.value)) {
     emit('showMessage', `${provider.value} 不支持自动获取模型列表`, 'error')
     return
   }
-  
+
   if (provider.value === 'custom' && !baseUrl.value) {
     emit('showMessage', '自定义服务需要先填写 Base URL', 'error')
     return
   }
-  
+
   isFetchingModels.value = true
-  
+
   try {
     const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
-    
+
     if (response.success && response.models && response.models.length > 0) {
       models.value = response.models
       modelSelectVisible.value = true
@@ -152,9 +152,9 @@ function onModelSelected(modelId: string): void {
 
 async function testConnection(): Promise<void> {
   if (isTesting.value) return
-  
+
   isTesting.value = true
-  
+
   try {
     const response = await insightApi.testVlmConnection({
       provider: provider.value,
@@ -162,7 +162,7 @@ async function testConnection(): Promise<void> {
       model: model.value,
       base_url: baseUrl.value || undefined
     })
-    
+
     if (response.success) {
       emit('showMessage', 'VLM 连接成功', 'success')
     } else {
@@ -225,7 +225,7 @@ defineExpose({
 <template>
   <div class="insight-settings-content">
     <p class="settings-hint">VLM（视觉语言模型）用于分析漫画图片内容，提取对话和场景信息。</p>
-    
+
     <div class="insight-settings-field">
       <label>服务商</label>
       <CustomSelect
@@ -234,19 +234,19 @@ defineExpose({
         @change="onProviderChange"
       />
     </div>
-    
+
     <div v-if="providerRequiresApiKey(provider)" class="insight-settings-field">
       <label>API Key</label>
       <UiInput v-model="apiKey" type="password" placeholder="输入 API Key" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>模型</label>
       <div class="model-input-row">
         <UiInput v-model="model" type="text" placeholder="例如: gemini-2.0-flash" />
         <UiButton
-          variant="secondary" 
-          class="fetch-btn" 
+          variant="secondary"
+          class="fetch-btn"
           :disabled="isFetchingModels"
           @click="fetchModels" size="sm"
         >
@@ -254,7 +254,7 @@ defineExpose({
         </UiButton>
       </div>
       <div v-if="modelSelectVisible && models.length > 0" class="model-select-container">
-        <UiSelect 
+        <UiSelect
           class="model-select"
           :model-value="model"
           @change="onModelSelected"
@@ -267,12 +267,12 @@ defineExpose({
         <span class="model-count">共 {{ models.length }} 个模型</span>
       </div>
     </div>
-    
+
     <div v-if="showBaseUrl" class="insight-settings-field">
       <label>Base URL</label>
       <UiInput v-model="baseUrl" type="text" placeholder="自定义 API 地址" />
     </div>
-    
+
     <div class="form-row">
       <div class="insight-settings-field">
         <label>RPM 限制</label>
@@ -295,7 +295,7 @@ defineExpose({
         <p class="form-hint">0-1，越低越确定</p>
       </div>
     </div>
-    
+
     <div class="insight-settings-field">
       <label class="ui-checkbox-label">
         <UiInput v-model="forceJsonOutput" type="checkbox" />
@@ -303,7 +303,7 @@ defineExpose({
       </label>
       <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
     </div>
-    
+
     <div class="insight-settings-field">
       <label class="ui-checkbox-label">
         <UiInput v-model="useStream" type="checkbox" />
@@ -321,14 +321,20 @@ defineExpose({
       <UiInput v-model.number="imageMaxSize" type="number" min="0" max="4096" step="128" placeholder="0 表示不压缩" />
       <p class="form-hint">发送前将图片等比例缩放到指定最大边长（像素），0 表示不压缩</p>
     </div>
-    
+
     <UiButton variant="secondary" :disabled="isTesting" @click="testConnection">
       {{ isTesting ? '测试中...' : '测试连接' }}
     </UiButton>
   </div>
 </template>
 
-<style scoped>.insight-settings-content {
+<style scoped>
+.insight-settings-content {
+  --vlm-settings-tab-border-default: rgba(99, 102, 241, .2);
+  --vlm-settings-tab-surface-base: rgba(99, 102, 241, .05);
+}
+
+.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }

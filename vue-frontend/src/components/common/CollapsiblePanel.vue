@@ -196,6 +196,12 @@ defineExpose({
 </template>
 
 <style scoped>
+.collapsible-panel--settings {
+  --collapsible-panel-border-default: #dde7f4;
+  --collapsible-panel-text-primary: #304464;
+  --collapsible-panel-text-secondary: #6e81a2;
+}
+
 /* 可折叠面板容器 */
 .collapsible-panel {
   margin-bottom: 16px;

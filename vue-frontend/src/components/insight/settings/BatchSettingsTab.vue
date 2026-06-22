@@ -100,7 +100,7 @@ function syncFromStore(): void {
   pagesPerBatch.value = insightStore.config.batch.pagesPerBatch
   contextBatchCount.value = insightStore.config.batch.contextBatchCount
   architecturePreset.value = insightStore.config.batch.architecturePreset
-  
+
   // 同步 customLayers
   if (insightStore.config.batch.customLayers?.length > 0) {
     customLayers.value = insightStore.config.batch.customLayers.map((l: any) => ({
@@ -117,45 +117,45 @@ defineExpose({ getConfig, syncFromStore })
 <template>
   <div class="insight-settings-content">
     <p class="settings-hint">配置批量分析的参数，影响分析速度和质量。</p>
-    
+
     <div class="insight-settings-field">
       <label>每批次分析页数</label>
       <UiInput v-model.number="pagesPerBatch" type="number" min="1" max="10" @change="onPagesPerBatchChange" />
       <p class="form-hint">每次发送给 VLM 的图片数量，建议 3-5 张。{{ batchEstimate }}</p>
     </div>
-    
+
     <div class="insight-settings-field">
       <label>上文参考批次数</label>
       <UiInput v-model.number="contextBatchCount" type="number" min="0" max="5" />
       <p class="form-hint">每批分析时参考前几批的结果作为上下文，0 表示不参考</p>
     </div>
-    
+
     <div class="insight-settings-field">
       <label>分析架构</label>
       <CustomSelect v-model="architecturePreset" :options="ARCHITECTURE_OPTIONS" />
       <p class="form-hint">{{ architectureDescription }}</p>
     </div>
-    
+
     <!-- 自定义层级编辑器 -->
     <div v-if="showCustomLayersEditor" class="custom-layers-section">
       <label class="custom-layers-label">自定义层级</label>
       <div class="custom-layers-list">
-        <div 
-          v-for="(layer, idx) in customLayers" 
+        <div
+          v-for="(layer, idx) in customLayers"
           :key="idx"
           class="custom-layer-row"
         >
           <span class="layer-index">第{{ idx + 1 }}层</span>
-          <UiInput 
-            type="text" 
+          <UiInput
+            type="text"
             :value="layer.name"
             :disabled="!canEditLayerName(idx)"
             placeholder="层级名称"
             class="layer-name-input"
             @change="updateCustomLayer(idx, 'name', ($event.target as HTMLInputElement).value)"
           />
-          <UiInput 
-            type="number" 
+          <UiInput
+            type="number"
             :value="layer.units"
             :disabled="!canEditLayerUnits(idx)"
             :title="getLayerUnitsTitle(idx)"
@@ -173,7 +173,7 @@ defineExpose({ getConfig, syncFromStore })
       <UiButton variant="secondary" type="button" class="layer-add-btn" @click="addCustomLayer" size="sm">+ 添加层级</UiButton>
       <p class="form-hint">第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。</p>
     </div>
-    
+
     <!-- 当前架构预览 -->
     <div class="batch-info-box">
       <h4>当前架构预览</h4>
@@ -185,14 +185,22 @@ defineExpose({ getConfig, syncFromStore })
         </li>
       </ul>
     </div>
-    
+
     <div class="batch-estimate-box">
       <p>当前配置：每 <strong>{{ pagesPerBatch }}</strong> 页一批</p>
     </div>
   </div>
 </template>
 
-<style scoped>.insight-settings-content {
+<style scoped>
+.insight-settings-content {
+  --batch-settings-tab-border-default: rgba(99, 102, 241, .2);
+  --batch-settings-tab-surface-base: rgba(99, 102, 241, .05);
+  --batch-settings-tab-surface-raised: #ef4444;
+  --batch-settings-tab-surface-muted: #dc2626;
+}
+
+.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }

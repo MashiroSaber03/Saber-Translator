@@ -106,6 +106,10 @@ defineExpose({ refresh: loadPromptList })
 
 <style scoped>
 .saved-prompts-picker {
+  --saved-prompts-picker-surface-base: #4a90d9;
+}
+
+.saved-prompts-picker {
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--color-surface-input, var(--color-surface-subtle));

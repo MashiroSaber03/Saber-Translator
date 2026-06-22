@@ -1,70 +1,18 @@
 :root {
-  /* Owner-scoped semantic tokens for page and component visual contracts. */
-  --analysis-progress-shadow-default: rgba(99, 102, 241, .3);
-  --analysis-progress-surface-base: rgba(239, 68, 68, .1);
-  --analysis-progress-surface-raised: #f59e0b;
-  --analysis-progress-surface-muted: #16a34a;
-  --analysis-progress-text-primary: #ef4444;
-  --animations-shadow-default: rgba(53, 152, 219, .7);
-  --animations-shadow-raised: rgba(53, 152, 219, 0);
-  --animations-shadow-floating: rgba(74, 144, 217, .4);
-  --animations-shadow-strong: rgba(74, 144, 217, 0);
-  --batch-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --batch-settings-tab-surface-base: rgba(99, 102, 241, .05);
-  --batch-settings-tab-surface-raised: #ef4444;
-  --batch-settings-tab-surface-muted: #dc2626;
-  --book-card-border-default: rgba(102, 126, 234, .5);
-  --book-card-shadow-default: rgba(0, 0, 0, .08);
-  --book-card-shadow-raised: rgba(0, 0, 0, .15);
-  --book-card-surface-base: rgba(0, 0, 0, .6);
-  --book-card-text-primary: rgba(255, 255, 255, .8);
-  --book-modal-shadow-default: rgba(0, 0, 0, .1);
-  --book-search-shadow-default: rgba(0, 0, 0, .08);
-  --book-search-shadow-raised: rgba(102, 126, 234, .1);
-  --book-search-shadow-floating: rgba(102, 126, 234, .3);
-  --book-search-surface-base: rgba(255, 255, 255, .3);
-  --bookshelf-view-surface-base: rgba(255, 255, 255, .3);
-  --bookshelf-view-text-primary: rgba(255, 255, 255, .95);
-  --bookshelf-view-text-secondary: rgba(255, 255, 255, .9);  --candidate-list-pane-text-primary: #122b47;
-  --chapter-select-modal-border-default: #818cf8;
-  --chapter-select-modal-surface-base: #f1f5f9;
-  --chapter-select-modal-text-primary: #1a202c;
-  --chapter-select-modal-text-secondary: #64748b;  --collapsible-panel-border-default: #dde7f4;
-  --collapsible-panel-text-primary: #304464;
-  --collapsible-panel-text-secondary: #6e81a2;  --document-list-pane-border-default: rgba(37, 99, 199, .24);
-  --document-list-pane-shadow-default: rgba(31, 70, 120, .08);
-  --document-list-pane-surface-base: rgba(255, 255, 255, .95);
-  --document-list-pane-surface-raised: rgba(255, 178, 46, .16);
-  --document-list-pane-text-primary: #122b47;
-  --document-list-pane-text-secondary: #9a6708;
-  --edit-thumbnail-panel-surface-subtle: rgba(0, 0, 0, .7);  --embedding-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --embedding-settings-tab-surface-base: rgba(99, 102, 241, .05);
-  --export-panel-surface-base: rgba(99, 102, 241, .05);
-  --first-time-guide-surface-base: #4a90d9;
-  --first-time-guide-surface-raised: #3a7bc8;
-  --first-time-guide-text-primary: #4a90d9;
-  --form-primitives-text-primary: #1a202c;  --greeting-workbench-border-default: rgba(25, 55, 94, .08);
-  --greeting-workbench-surface-base: rgba(255, 255, 255, .82);
-  --greeting-workbench-surface-raised: rgba(247, 250, 254, .96);
-  --image-gen-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --image-gen-settings-tab-surface-base: rgba(99, 102, 241, .05);  --insight-settings-modal-border-default: #c3e6cb;
-  --insight-settings-modal-border-strong: #f5c6cb;
-  --insight-settings-modal-surface-base: #d4edda;
-  --insight-settings-modal-surface-raised: #f8d7da;
-  --insight-settings-modal-text-primary: #155724;
-  --insight-settings-modal-text-secondary: #721c24;
-  --insight-view-accent-primary: #fff;
-  --insight-view-accent-secondary: rgba(248, 250, 252, .52);
-  --insight-view-accent-muted: #f4f7fb;
-  --insight-view-accent-strong: rgba(245, 249, 255, .82);
-  --insight-view-accent-variant-012: #f6f8fb;
-  --insight-view-accent-variant-013: #f14c4c;
-  --insight-view-text-secondary: #f59e0b;
-  --insight-view-text-muted: #ef4444;
-  --insight-bg-primary: var(--insight-view-accent-primary);
-  --insight-bg-secondary: var(--insight-view-accent-secondary);
-  --insight-bg-tertiary: var(--insight-view-accent-muted);
-  --insight-bg-hover: var(--insight-view-accent-strong);
+  /* Shared Insight theme tokens used across the page shell and child panels. */
+  --insight-surface-page: #fff;
+  --insight-surface-secondary: rgba(248, 250, 252, .52);
+  --insight-surface-tertiary: #f4f7fb;
+  --insight-surface-hover: rgba(245, 249, 255, .82);
+  --insight-surface-warning-soft: #f6f8fb;
+  --insight-color-warning: #f59e0b;
+  --insight-color-error: #ef4444;
+  --insight-color-danger: #f14c4c;
+
+  --insight-bg-primary: var(--insight-surface-page);
+  --insight-bg-secondary: var(--insight-surface-secondary);
+  --insight-bg-tertiary: var(--insight-surface-tertiary);
+  --insight-bg-hover: var(--insight-surface-hover);
   --insight-text-primary: var(--color-text-default);
   --insight-text-secondary: var(--color-text-secondary);
   --insight-text-muted: var(--color-text-muted);
@@ -74,47 +22,8 @@
   --insight-primary-dark: var(--color-surface-brand-strong);
   --insight-success-color: var(--color-status-success);
   --insight-success: var(--color-status-success);
-  --insight-warning-color: var(--insight-view-text-secondary);
-  --insight-warning: var(--insight-view-accent-variant-012);
-  --insight-error-color: var(--insight-view-text-muted);
-  --insight-danger: var(--insight-view-accent-variant-013);
-  --llm-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --llm-settings-tab-surface-base: rgba(99, 102, 241, .05);  --more-settings-text-primary: #f0ad4e;
-  --notes-panel-surface-base: rgba(239, 68, 68, .1);
-  --notes-panel-text-primary: #ef4444;
-  --open-aiextra-body-editor-text-primary: #d14343;
-  --orthographic-dialog-surface-base: rgba(99, 102, 241, .05);
-  --orthographic-dialog-surface-raised: rgba(0, 0, 0, .7);  --overview-panel-text-secondary: #ef4444;  --pages-tree-shadow-default: rgba(99, 102, 241, .2);
-  --pages-tree-surface-base: rgba(0, 0, 0, .7);
-  --parallel-settings-border-default: rgba(255, 193, 7, .3);
-  --parallel-settings-surface-base: rgba(255, 193, 7, .1);
-  --parallel-settings-text-primary: #ffc107;  --prompts-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --prompts-settings-tab-surface-base: rgba(99, 102, 241, .05);
-  --proofreading-settings-surface-base: #dc3545;
-  --proofreading-settings-surface-raised: #c82333;
-  --proofreading-settings-surface-muted: #e7f3ff;
-  --reader-canvas-border-default: rgba(255, 255, 255, .1);
-  --reader-canvas-surface-base: rgba(255, 255, 255, .05);
-  --reader-canvas-surface-raised: rgba(0, 0, 0, .6);
-  --reader-canvas-text-primary: rgba(255, 255, 255, .7);  --regex-workbench-border-default: rgba(25, 55, 94, .08);
-  --regex-workbench-surface-base: rgba(255, 255, 255, .84);
-  --regex-workbench-text-primary: #516882;
-  --reranker-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --reranker-settings-tab-surface-base: rgba(99, 102, 241, .05);
-  --saved-prompts-picker-surface-base: #4a90d9;
-  --settings-modal-surface-base: rgba(255, 255, 255, .15);
-  --settings-modal-surface-raised: rgba(0, 0, 0, .03);
-  --settings-modal-text-primary: rgba(255, 255, 255, .8);  --studio-section-tabs-shadow-default: rgba(37, 99, 199, .16);
-  --studio-section-tabs-surface-base: rgba(16, 39, 65, .04);
-  --studio-section-tabs-surface-raised: rgba(37, 99, 199, .08);
-  --studio-section-tabs-surface-muted: rgba(77, 134, 238, .1);
-  --studio-section-tabs-text-primary: #55708f;
-  --studio-section-tabs-text-secondary: #16365b;  --studio-topbar-text-primary: #102741;  --task-workbench-border-default: rgba(25, 55, 94, .08);
-  --task-workbench-surface-base: rgba(255, 255, 255, .84);
-  --task-workbench-text-primary: #516882;
-  --text-style-defaults-settings-text-primary: #d14343;  --translation-constraint-table-border-default: #cfd6e4;
-  --translation-constraint-table-border-strong: #5b73f2;
-  --translation-constraint-table-shadow-default: rgba(88, 125, 255, .18);
-  --translation-constraint-table-text-primary: #1f2430;  --vlm-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --vlm-settings-tab-surface-base: rgba(99, 102, 241, .05);
+  --insight-warning-color: var(--insight-color-warning);
+  --insight-warning: var(--insight-surface-warning-soft);
+  --insight-error-color: var(--insight-color-error);
+  --insight-danger: var(--insight-color-danger);
 }

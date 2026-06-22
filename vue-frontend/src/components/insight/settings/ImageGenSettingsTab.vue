@@ -109,7 +109,7 @@ defineExpose({
 <template>
   <div class="insight-settings-content">
     <p class="settings-hint">生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。</p>
-    
+
     <div class="insight-settings-field">
       <label>服务商</label>
       <CustomSelect
@@ -118,24 +118,24 @@ defineExpose({
         @change="onProviderChange"
       />
     </div>
-    
+
     <div v-if="providerRequiresApiKey(provider)" class="insight-settings-field">
       <label>API Key</label>
       <UiInput v-model="apiKey" type="password" placeholder="输入 API Key" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>模型</label>
       <UiInput v-model="model" type="text" placeholder="例如: gpt-image-2" />
       <p class="form-hint">默认推荐使用当前服务商的默认生图模型。</p>
       <p v-if="showModelWarning" class="form-hint warning-text">当前服务商需要手动填写模型名。</p>
     </div>
-    
+
     <div v-if="showBaseUrl" class="insight-settings-field">
       <label>Base URL</label>
       <UiInput v-model="baseUrl" type="text" placeholder="例如: http://127.0.0.1:17200 或 http://127.0.0.1:17200/v1" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>传输重试次数</label>
       <UiInput v-model.number="transportRetries" type="number" min="0" max="100" />
@@ -156,7 +156,13 @@ defineExpose({
   </div>
 </template>
 
-<style scoped>.insight-settings-content {
+<style scoped>
+.insight-settings-content {
+  --image-gen-settings-tab-border-default: rgba(99, 102, 241, .2);
+  --image-gen-settings-tab-surface-base: rgba(99, 102, 241, .05);
+}
+
+.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }

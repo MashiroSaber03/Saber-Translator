@@ -114,6 +114,10 @@ async function clearAndRestart() {
 
 <style scoped>
 .export-panel {
+  --export-panel-surface-base: rgba(99, 102, 241, .05);
+}
+
+.export-panel {
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;

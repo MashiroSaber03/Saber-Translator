@@ -68,6 +68,12 @@ defineEmits<{
 
 <style scoped>
 .workbench {
+  --regex-workbench-border-default: rgba(25, 55, 94, .08);
+  --regex-workbench-surface-base: rgba(255, 255, 255, .84);
+  --regex-workbench-text-primary: #516882;
+}
+
+.workbench {
   display: flex;
   flex-direction: column;
   gap: 16px;

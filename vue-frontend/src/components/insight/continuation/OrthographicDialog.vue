@@ -197,6 +197,11 @@ defineExpose({
 
 <style scoped>
 .orthographic-dialog-body {
+  --orthographic-dialog-surface-base: rgba(99, 102, 241, .05);
+  --orthographic-dialog-surface-raised: rgba(0, 0, 0, .7);
+}
+
+.orthographic-dialog-body {
   display: flex;
   flex-direction: column;
   gap: 20px;

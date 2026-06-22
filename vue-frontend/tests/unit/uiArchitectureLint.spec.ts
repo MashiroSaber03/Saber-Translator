@@ -49,7 +49,10 @@ const oldMaxRetriesField = 'max' + 'Retries'
 const primitiveButtonInternalSelector = '.ui-button' + '--primary'
 const primitiveModalBodySelector = '.ui-modal' + '__body'
 const componentPrivateDomainToken = '--character-studio-preview-shell-surface-base'
-const domainTokenLimit = 200
+const genericComponentDomainToken = '--book-card-surface-base'
+const generatedInsightVariantToken = '--insight-view-accent-variant-012'
+const insightSharedThemeToken = '--insight-surface-page'
+const domainTokenLimit = 50
 
 function runUiArchitectureTokenFixture(tokensCss: string) {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
@@ -121,10 +124,45 @@ describe('UI architecture token dependency lint', () => {
     expect(result.stderr).toContain(componentPrivateDomainToken)
   })
 
+  it('rejects component owner tokens in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${genericComponentDomainToken}: rgba(0, 0, 0, .6);
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('component-private domain token definition(s)')
+    expect(result.stderr).toContain(genericComponentDomainToken)
+  })
+
+  it('allows insight shared theme tokens in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${insightSharedThemeToken}: #fff;
+      }
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects generated insight variant token names in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${generatedInsightVariantToken}: #f6f8fb;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('generated domain token definition(s)')
+    expect(result.stderr).toContain(generatedInsightVariantToken)
+  })
+
   it('rejects domain token files over the final owner budget', () => {
     const tokenDefinitions = Array.from(
       { length: domainTokenLimit + 1 },
-      (_, index) => `--translate-domain-token-${index}: #fff;`
+      (_, index) => `--insight-domain-token-${index}: #fff;`
     ).join('\n')
     const result = runUiArchitectureTokenFixture(`
       :root {

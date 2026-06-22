@@ -397,6 +397,12 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 <style scoped>
 .proofreading-settings {
+  --proofreading-settings-surface-base: #dc3545;
+  --proofreading-settings-surface-raised: #c82333;
+  --proofreading-settings-surface-muted: #e7f3ff;
+}
+
+.proofreading-settings {
   --ui-button-sm-padding: 4px 12px;
   --ui-button-sm-font-size: 12px;
   --ui-button-danger-background: var(--proofreading-settings-surface-base);

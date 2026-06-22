@@ -279,6 +279,10 @@ async function saveBook() {
 </template>
 
 <style scoped>
+.tag-suggestions {
+  --book-modal-shadow-default: rgba(0, 0, 0, .1);
+}
+
 .book-modal__field {
   margin-bottom: 20px;
 }

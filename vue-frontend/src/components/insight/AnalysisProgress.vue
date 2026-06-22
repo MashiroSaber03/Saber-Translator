@@ -162,12 +162,12 @@ const analysisModeDescription = computed(() => {
 const estimatedTime = computed(() => {
   const totalPages = insightStore.totalPageCount
   if (totalPages === 0) return ''
-  
+
   const pagesPerBatch = insightStore.config.batch.pagesPerBatch || 5
   const batches = Math.ceil(totalPages / pagesPerBatch)
   // 假设每批约需要10秒
   const seconds = batches * 10
-  
+
   if (seconds < 60) return `约 ${seconds} 秒`
   const minutes = Math.ceil(seconds / 60)
   return `约 ${minutes} 分钟`
@@ -239,7 +239,7 @@ async function startAnalysis(): Promise<void> {
     }
 
     const response = await insightApi.startAnalysis(insightStore.currentBookId, options) as any
-    
+
     if (response.success) {
       // 保存任务ID（用于后续暂停/恢复/取消操作）
       if (response.task_id) {
@@ -334,7 +334,7 @@ async function exportAnalysis(): Promise<void> {
 
   try {
     const response = await insightApi.exportAnalysis(insightStore.currentBookId) as any
-    
+
     if (response.success && response.markdown) {
       // 下载 Markdown 文件
       const blob = new Blob([response.markdown], { type: 'text/markdown' })
@@ -382,32 +382,32 @@ watch(analysisMode, () => {
         <span class="status-progress">{{ progressText }}</span>
       </div>
     </div>
-    
+
     <!-- 进度条（分析中或暂停时显示） -->
-    <div 
-      v-if="showRunningButtons || showPausedButtons" 
+    <div
+      v-if="showRunningButtons || showPausedButtons"
       class="progress-bar-slim"
       :class="{ paused: showPausedButtons }"
     >
-      <div 
-        class="progress-fill-slim" 
+      <div
+        class="progress-fill-slim"
         :style="{ width: insightStore.progressPercent + '%' }"
       ></div>
     </div>
-    
+
     <!-- 进度消息 -->
-    <div 
-      v-if="insightStore.progress.message && (showRunningButtons || showPausedButtons)" 
+    <div
+      v-if="insightStore.progress.message && (showRunningButtons || showPausedButtons)"
       class="progress-message"
     >
       {{ insightStore.progress.message }}
     </div>
-    
+
     <!-- 错误消息 -->
     <div v-if="errorMessage" class="error-message" @click="clearError">
       ⚠️ {{ errorMessage }}
     </div>
-    
+
     <!-- 控制按钮组 -->
     <div class="analysis-btn-group">
       <!-- 初始/完成状态 -->
@@ -419,8 +419,8 @@ watch(analysisMode, () => {
           @change="onAnalysisModeChange"
         />
         <UiButton
-          variant="toolbar" 
-          class="btn-analysis-start" 
+          variant="toolbar"
+          class="btn-analysis-start"
           :disabled="!canStartAnalysis"
           :class="{ loading: isStarting }"
           @click="startAnalysis"
@@ -432,12 +432,12 @@ watch(analysisMode, () => {
           <span>{{ isStarting ? '启动中...' : startButtonText }}</span>
         </UiButton>
       </div>
-      
+
       <!-- 运行中状态 -->
       <div v-if="showRunningButtons" class="btn-group-running">
         <UiButton
-          variant="toolbar" 
-          class="btn-control btn-pause" 
+          variant="toolbar"
+          class="btn-control btn-pause"
           title="暂停分析"
           @click="pauseAnalysis"
         >
@@ -447,8 +447,8 @@ watch(analysisMode, () => {
           <span class="btn-label">暂停</span>
         </UiButton>
         <UiButton
-          variant="toolbar" 
-          class="btn-control btn-cancel" 
+          variant="toolbar"
+          class="btn-control btn-cancel"
           title="取消分析"
           @click="cancelAnalysis"
         >
@@ -458,12 +458,12 @@ watch(analysisMode, () => {
           <span class="btn-label">取消</span>
         </UiButton>
       </div>
-      
+
       <!-- 暂停状态 -->
       <div v-if="showPausedButtons" class="btn-group-paused">
         <UiButton
-          variant="toolbar" 
-          class="btn-control btn-resume" 
+          variant="toolbar"
+          class="btn-control btn-resume"
           title="继续分析"
           @click="resumeAnalysis"
         >
@@ -473,8 +473,8 @@ watch(analysisMode, () => {
           <span class="btn-label">继续</span>
         </UiButton>
         <UiButton
-          variant="toolbar" 
-          class="btn-control btn-cancel" 
+          variant="toolbar"
+          class="btn-control btn-cancel"
           title="取消分析"
           @click="cancelAnalysis"
         >
@@ -485,50 +485,50 @@ watch(analysisMode, () => {
         </UiButton>
       </div>
     </div>
-    
+
     <!-- 章节选择（单章节模式时显示） -->
     <CustomSelect
       v-if="showChapterSelect"
       v-model="selectedChapterId"
       :options="chapterOptions"
     />
-    
+
     <!-- 页码输入（单页模式时显示） -->
     <div v-if="showPageInput" class="page-input-wrapper">
-      <UiInput 
+      <UiInput
         v-model.number="inputPageNum"
-        type="number" 
-        class="form-input-compact" 
-        placeholder="输入页码" 
+        type="number"
+        class="form-input-compact"
+        placeholder="输入页码"
         min="1"
         :max="insightStore.totalPageCount || undefined"
       />
       <span class="page-hint">/ {{ insightStore.totalPageCount || '?' }}</span>
     </div>
-    
+
     <!-- 分析模式描述 -->
     <div v-if="showIdleButtons && analysisModeDescription" class="mode-description">
       {{ analysisModeDescription }}
     </div>
-    
+
     <!-- 预估时间（全书模式时显示） -->
     <div v-if="showIdleButtons && analysisMode === 'full' && estimatedTime" class="estimated-time">
       ⏱️ {{ estimatedTime }}
     </div>
-    
+
     <!-- 选项行 -->
     <div class="analysis-options-row">
       <label class="checkbox-compact" title="仅分析未分析的页面，跳过已分析的页面">
-        <UiInput 
-          type="checkbox" 
+        <UiInput
+          type="checkbox"
           :checked="insightStore.incrementalAnalysis"
           @change="insightStore.setIncrementalAnalysis(($event.target as HTMLInputElement).checked)"
         />
         <span>增量模式</span>
       </label>
       <UiButton
-        variant="toolbar" 
-        class="button-icon-sm" 
+        variant="toolbar"
+        class="button-icon-sm"
         title="导出分析报告"
         :disabled="insightStore.analyzedPageCount === 0"
         @click="exportAnalysis"
@@ -543,7 +543,16 @@ watch(analysisMode, () => {
   </div>
 </template>
 
-<style scoped>/* ==================== AnalysisProgress样式 ==================== */
+<style scoped>
+.analysis-control-compact {
+  --analysis-progress-shadow-default: rgba(99, 102, 241, .3);
+  --analysis-progress-surface-base: rgba(239, 68, 68, .1);
+  --analysis-progress-surface-raised: #f59e0b;
+  --analysis-progress-surface-muted: #16a34a;
+  --analysis-progress-text-primary: #ef4444;
+}
+
+/* ==================== AnalysisProgress样式 ==================== */
 
 /* ==================== 组件特定样式 ==================== */
 

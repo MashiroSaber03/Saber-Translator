@@ -209,15 +209,15 @@ function getNoteTypeIcon(type: NoteType): string {
         />
       </div>
     </div>
-    
+
     <!-- 笔记列表 -->
     <div class="notes-list">
       <div v-if="filteredNotes.length === 0" class="placeholder-text">
         暂无笔记
       </div>
-      
-      <div 
-        v-for="note in filteredNotes" 
+
+      <div
+        v-for="note in filteredNotes"
         :key="note.id"
         class="note-item"
         :class="{ 'qa-note': note.type === 'qa' }"
@@ -256,8 +256,8 @@ function getNoteTypeIcon(type: NoteType): string {
         </div>
         <!-- 问答笔记显示引用页码 -->
         <div v-if="note.type === 'qa' && note.citations && note.citations.length > 0" class="note-citations">
-          <span 
-            v-for="citation in note.citations.slice(0, 3)" 
+          <span
+            v-for="citation in note.citations.slice(0, 3)"
             :key="citation.page"
             class="citation-badge"
             @click.stop="goToPage(citation.page)"
@@ -268,8 +268,8 @@ function getNoteTypeIcon(type: NoteType): string {
         </div>
         <div v-if="note.pageNum" class="note-page-link">
           <UiButton
-            variant="toolbar" 
-            class="btn-link" 
+            variant="toolbar"
+            class="btn-link"
             @click.stop="goToPage(note.pageNum)"
           >
             📄 第 {{ note.pageNum }} 页
@@ -277,16 +277,16 @@ function getNoteTypeIcon(type: NoteType): string {
         </div>
       </div>
     </div>
-    
+
     <!-- 添加笔记按钮 -->
     <UiButton
-      variant="secondary" 
-      class="btn-block" 
+      variant="secondary"
+      class="btn-block"
       @click="openNoteModal" size="sm"
     >
       + 添加笔记
     </UiButton>
-    
+
     <BaseModal
       v-model="showNoteModal"
       :title="editingNote ? '编辑笔记' : '添加笔记'"
@@ -314,8 +314,8 @@ function getNoteTypeIcon(type: NoteType): string {
             <div v-if="editingNote.citations && editingNote.citations.length > 0" class="qa-section">
               <label class="qa-label">引用页码</label>
               <div class="qa-citations">
-                <span 
-                  v-for="citation in editingNote.citations" 
+                <span
+                  v-for="citation in editingNote.citations"
                   :key="citation.page"
                   class="qa-citation-badge"
                   @click="goToPage(citation.page)"
@@ -331,9 +331,9 @@ function getNoteTypeIcon(type: NoteType): string {
           </div>
           <div class="notes-panel__field">
             <label>笔记标题 <span class="label-optional">(可选)</span></label>
-            <UiInput 
-              v-model="newNoteTitle" 
-              type="text" 
+            <UiInput
+              v-model="newNoteTitle"
+              type="text"
               class="notes-panel__form-input"
               placeholder="修改标题..."
             />
@@ -350,16 +350,16 @@ function getNoteTypeIcon(type: NoteType): string {
           </div>
           <div class="notes-panel__field">
             <label>标题 <span class="label-optional">(可选)</span></label>
-            <UiInput 
-              v-model="newNoteTitle" 
-              type="text" 
+            <UiInput
+              v-model="newNoteTitle"
+              type="text"
               class="notes-panel__form-input"
               placeholder="给笔记起个标题..."
             />
           </div>
           <div class="notes-panel__field">
             <label>内容 <span class="label-required">*</span></label>
-            <UiTextarea 
+            <UiTextarea
               v-model="newNoteContent"
               class="notes-panel__form-textarea"
               rows="5"
@@ -368,9 +368,9 @@ function getNoteTypeIcon(type: NoteType): string {
           </div>
           <div class="notes-panel__field">
             <label>关联页码 <span class="label-optional">(可选)</span></label>
-            <UiInput 
-              v-model.number="newNotePageNum" 
-              type="number" 
+            <UiInput
+              v-model.number="newNotePageNum"
+              type="number"
               class="notes-panel__form-input"
               placeholder="输入页码"
               min="1"
@@ -378,9 +378,9 @@ function getNoteTypeIcon(type: NoteType): string {
           </div>
           <div class="notes-panel__field">
             <label>标签 <span class="label-optional">(可选)</span></label>
-            <UiInput 
-              v-model="newNoteTags" 
-              type="text" 
+            <UiInput
+              v-model="newNoteTags"
+              type="text"
               class="notes-panel__form-input"
               placeholder="多个标签用逗号分隔，如: 角色,剧情"
             />
@@ -391,7 +391,7 @@ function getNoteTypeIcon(type: NoteType): string {
       <template #footer>
         <UiButton variant="secondary" @click="closeNoteModal">取消</UiButton>
         <UiButton
-          variant="primary" 
+          variant="primary"
           :disabled="editingNote?.type !== 'qa' && !newNoteContent.trim()"
           @click="saveNote"
         >
@@ -402,7 +402,14 @@ function getNoteTypeIcon(type: NoteType): string {
   </div>
 </template>
 
-<style scoped>/* ==================== NotesPanel样式 ==================== */
+<style scoped>
+.notes-section,
+.notes-modal-body {
+  --notes-panel-surface-base: rgba(239, 68, 68, .1);
+  --notes-panel-text-primary: #ef4444;
+}
+
+/* ==================== NotesPanel样式 ==================== */
 
 /* ==================== 工作区通用样式 ==================== */
 .notes-section .workspace-section {

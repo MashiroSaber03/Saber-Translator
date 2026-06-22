@@ -34,7 +34,7 @@
 .ui-settings-field .ui-textarea {
   padding: 10px 12px;
   background-color: var(--color-surface-card, var(--color-surface-plain));
-  color: var(--color-text-strong, var(--form-primitives-text-primary));
+  color: var(--color-text-strong);
   font-size: 0.95em;
 }
 

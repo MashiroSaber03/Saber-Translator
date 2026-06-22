@@ -27,9 +27,9 @@
 
 颜色、圆角、阴影、断点、z-index 必须来自 `src/styles/tokens/*`。业务组件禁止新增硬编码颜色、`--ui-color-*`、`--border-radius-*`、裸 `z-index` 数字和裸 `@media (...px)` 断点。
 
-业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；颜色值直接归属到 semantic、component 或 domain token。历史值命名颜色 token 已废弃，全仓库不得出现。
+业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 scoped owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；跨 owner 的颜色值归属到 semantic/component/domain token，单组件私有视觉值只归属到该组件 scoped owner 根变量。历史值命名颜色 token 已废弃，全仓库不得出现。
 
-`domain.css` 只保留跨页面、跨业务域共享 token，不作为组件私有视觉仓库。单个组件或页面私有 token 必须定义在自己的 `<style scoped>` owner 根选择器中；`domain.css` 超过 200 个 token、或出现 `character-studio-preview-*` 这类组件私有 token，会让 `npm run lint:ui` 失败。
+`domain.css` 只保留跨页面、跨业务域共享主题 token；当前只允许 `--insight-*` 这类被页面和多个子组件共同消费的 domain theme。单个组件或页面私有 token 必须定义在自己的 `<style scoped>` owner 根选择器中；`domain.css` 超过 50 个 token、出现 `*-panel-*`、`*-modal-*`、`*-card-*`、`*-tab-*`、`*-canvas-*` 等组件私有 token，或出现 `variant-012` 这类生成式命名，都会让 `npm run lint:ui` 失败。
 
 业务 CSS 不得重新定义全局/历史通用 token，例如 `--text-primary`、`--text-secondary`、`--text-muted`、`--color-primary`、`--bg-primary`、`--bg-secondary`、`--success-color`、`--error-color`、`--primary`、`--danger`。页面或组件需要局部主题变量时，必须使用 owner 命名空间，例如 `--insight-text-primary`、`--translate-surface-main`、`--reader-control-text`、`--studio-accent`。这条规则避免页面根变量通过 CSS 继承污染子组件，是 `npm run lint:ui` 的强制检查项。
 

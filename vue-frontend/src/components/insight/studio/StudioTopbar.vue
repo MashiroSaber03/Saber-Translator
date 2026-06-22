@@ -54,6 +54,10 @@ defineEmits<{
 
 <style scoped>
 .studio-topbar {
+  --studio-topbar-text-primary: #102741;
+}
+
+.studio-topbar {
   /* owner tokens: studio-topbar */
   --studio-topbar-shadow-default: rgba(37, 99, 199, .22);
   --studio-topbar-surface-base: rgba(248, 251, 255, .9);

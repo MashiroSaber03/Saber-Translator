@@ -39,7 +39,7 @@ const SFC_SHELL_MAX_LINES = 1200
 const SFC_MAX_STYLE_LINES = 1000
 const CSS_MAX_LINES = 450
 const CSS_OWNER_REVIEW_LINES = 450
-const DOMAIN_TOKEN_MAX_DEFINITIONS = 200
+const DOMAIN_TOKEN_MAX_DEFINITIONS = 50
 const GLOBAL_STYLE_MAX_LINES = 20
 const VUE_STYLE_RE = /<style(?![^>]*\bscoped\b)[^>]*>/g
 const CSS_ID_SELECTOR_RE = /^\s*#[A-Za-z0-9_-]+/m
@@ -130,7 +130,8 @@ const VALUE_NAMED_TOKEN_RE = new RegExp(
 )
 const GENERATED_PALETTE_TOKEN_NAME_RE = /^--palette-(?:(?:border|color|shadow|surface|text)-\d{3}|[a-z]+-\d{2,3}-(?:[a-z]|bright|calm|clear|cool|dark|deep|dusty|fresh|light|muted|pale|quiet|rich|soft|solid|subtle|vivid|warm)(?:-[a-z]+)?)$/
 const GENERATED_OWNER_TOKEN_RE = /--color-[a-z0-9-]+-(?:surface|text|border|shadow|accent)-\d{3}/g
-const COMPONENT_PRIVATE_DOMAIN_TOKEN_RE = /^--(?:character-studio-preview|character-studio-editor|character-studio-view|character-studio-sidebar|edit-exit-save|reader-controls|image-generation-panel)-/
+const DOMAIN_SHARED_TOKEN_RE = /^--insight-/
+const GENERATED_DOMAIN_TOKEN_RE = /^--[a-z0-9-]+-variant-\d{3}$/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
@@ -598,11 +599,18 @@ function checkTokenDependencyArchitecture(paths) {
           `domain.css defines ${domainTokenCount} tokens; keep domain tokens below ${DOMAIN_TOKEN_MAX_DEFINITIONS} by moving component-private tokens into scoped owners`
         )
       }
-      const componentPrivateTokens = domainTokens.filter(token => COMPONENT_PRIVATE_DOMAIN_TOKEN_RE.test(token))
+      const componentPrivateTokens = domainTokens.filter(token => !DOMAIN_SHARED_TOKEN_RE.test(token))
       if (componentPrivateTokens.length > 0) {
         addFailure(
           path,
           `component-private domain token definition(s) ${componentPrivateTokens.join(', ')} are not allowed; move them into the owning component scoped style`
+        )
+      }
+      const generatedDomainTokens = domainTokens.filter(token => GENERATED_DOMAIN_TOKEN_RE.test(token))
+      if (generatedDomainTokens.length > 0) {
+        addFailure(
+          path,
+          `generated domain token definition(s) ${generatedDomainTokens.join(', ')} are not allowed; name shared domain tokens by role`
         )
       }
     }

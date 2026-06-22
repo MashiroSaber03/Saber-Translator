@@ -99,6 +99,13 @@ function isTagSelected(tagName: string): boolean {
 </template>
 
 <style scoped>
+.filter-bar {
+  --book-search-shadow-default: rgba(0, 0, 0, .08);
+  --book-search-shadow-raised: rgba(102, 126, 234, .1);
+  --book-search-shadow-floating: rgba(102, 126, 234, .3);
+  --book-search-surface-base: rgba(255, 255, 255, .3);
+}
+
 /* ==================== 搜索和筛选栏样式 - 当前样式 ==================== */
 
 .filter-bar {

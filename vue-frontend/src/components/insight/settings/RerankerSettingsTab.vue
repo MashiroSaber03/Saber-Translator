@@ -43,7 +43,7 @@ const showBaseUrl = computed(() => provider.value === 'custom')
 function onProviderChange(): void {
   const newProvider = provider.value
   const oldProvider = insightStore.config.reranker.provider
-  
+
   if (oldProvider !== newProvider) {
     insightStore.config.reranker.apiKey = apiKey.value
     insightStore.config.reranker.model = model.value
@@ -53,9 +53,9 @@ function onProviderChange(): void {
     insightStore.config.reranker.businessRetries = businessRetries.value
     insightStore.config.reranker.timeoutSeconds = timeoutSeconds.value
   }
-  
+
   insightStore.setRerankerProvider(newProvider)
-  
+
   apiKey.value = insightStore.config.reranker.apiKey
   model.value = insightStore.config.reranker.model
   baseUrl.value = insightStore.config.reranker.baseUrl
@@ -63,7 +63,7 @@ function onProviderChange(): void {
   transportRetries.value = insightStore.config.reranker.transportRetries ?? 10
   businessRetries.value = insightStore.config.reranker.businessRetries ?? 10
   timeoutSeconds.value = insightStore.config.reranker.timeoutSeconds ?? 0
-  
+
   if (!model.value) {
     const defaultModel = RERANKER_DEFAULT_MODELS[newProvider]
     if (defaultModel) model.value = defaultModel
@@ -75,19 +75,19 @@ async function fetchModels(): Promise<void> {
     emit('showMessage', '请先填写 API Key', 'error')
     return
   }
-  
+
   if (!SUPPORTED_FETCH_PROVIDERS.includes(provider.value)) {
     emit('showMessage', `${provider.value} 不支持自动获取模型列表`, 'error')
     return
   }
-  
+
   if (provider.value === 'custom' && !baseUrl.value) {
     emit('showMessage', '自定义服务需要先填写 Base URL', 'error')
     return
   }
-  
+
   isFetchingModels.value = true
-  
+
   try {
     const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
     if (response.success && response.models?.length) {
@@ -113,7 +113,7 @@ function onModelSelected(modelId: string): void {
 async function testConnection(): Promise<void> {
   if (isTesting.value) return
   isTesting.value = true
-  
+
   try {
     const response = await insightApi.testRerankerConnection({
       provider: provider.value,
@@ -162,17 +162,17 @@ defineExpose({ getConfig, syncFromStore })
 <template>
   <div class="insight-settings-content">
     <p class="settings-hint">Reranker（重排序模型）用于对搜索结果进行重新排序，提高问答准确性。</p>
-    
+
     <div class="insight-settings-field">
       <label>服务商</label>
       <CustomSelect v-model="provider" :options="RERANKER_PROVIDER_OPTIONS" @change="onProviderChange" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>API Key</label>
       <UiInput v-model="apiKey" type="password" placeholder="输入 API Key" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>模型</label>
       <div class="model-input-row">
@@ -189,12 +189,12 @@ defineExpose({ getConfig, syncFromStore })
         <span class="model-count">共 {{ models.length }} 个模型</span>
       </div>
     </div>
-    
+
     <div v-if="showBaseUrl" class="insight-settings-field">
       <label>Base URL</label>
       <UiInput v-model="baseUrl" type="text" placeholder="自定义 API 地址" />
     </div>
-    
+
     <div class="insight-settings-field">
       <label>Top K</label>
       <UiInput v-model.number="topK" type="number" min="1" max="20" />
@@ -218,14 +218,20 @@ defineExpose({ getConfig, syncFromStore })
       <UiInput v-model.number="timeoutSeconds" type="number" min="0" max="3600" step="1" />
       <p class="form-hint">0 表示不限制；大于 0 时作为单次重排序 HTTP 请求超时</p>
     </div>
-    
+
     <UiButton variant="secondary" :disabled="isTesting" @click="testConnection">
       {{ isTesting ? '测试中...' : '测试连接' }}
     </UiButton>
   </div>
 </template>
 
-<style scoped>.insight-settings-content {
+<style scoped>
+.insight-settings-content {
+  --reranker-settings-tab-border-default: rgba(99, 102, 241, .2);
+  --reranker-settings-tab-surface-base: rgba(99, 102, 241, .05);
+}
+
+.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }

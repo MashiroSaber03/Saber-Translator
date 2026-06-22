@@ -117,6 +117,13 @@ function close(): void {
 </template>
 
 <style scoped>
+.chapter-select-body {
+  --chapter-select-modal-border-default: #818cf8;
+  --chapter-select-modal-surface-base: #f1f5f9;
+  --chapter-select-modal-text-primary: #1a202c;
+  --chapter-select-modal-text-secondary: #64748b;
+}
+
 /* 章节选择弹窗特定样式 */
 
 .chapter-select-body .hint-text {

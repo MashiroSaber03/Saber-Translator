@@ -80,10 +80,10 @@ async function savePromptToLibrary(): Promise<void> {
     emit('showMessage', '提示词内容不能为空', 'error')
     return
   }
-  
+
   const name = prompt('请输入提示词名称：')
   if (!name?.trim()) return
-  
+
   const newPrompt: SavedPromptItem = {
     id: Date.now().toString(),
     name: name.trim(),
@@ -91,7 +91,7 @@ async function savePromptToLibrary(): Promise<void> {
     content: content,
     created_at: new Date().toISOString()
   }
-  
+
   try {
     const response = await insightApi.savePromptToLibrary(newPrompt)
     if (response.success) {
@@ -114,7 +114,7 @@ function loadPromptFromLibrary(promptItem: SavedPromptItem): void {
 
 async function deletePromptFromLibrary(promptId: string): Promise<void> {
   if (!confirm('确定要删除这个提示词吗？')) return
-  
+
   try {
     const response = await insightApi.deletePromptFromLibrary(promptId)
     if (response.success) {
@@ -132,14 +132,14 @@ function exportAllPrompts(): void {
   if (currentPromptContent.value) {
     customPrompts.value[currentPromptType.value] = currentPromptContent.value
   }
-  
+
   const exportData = {
     version: '1.0',
     exported_at: new Date().toISOString(),
     prompts: customPrompts.value,
     library: savedPromptsLibrary.value
   }
-  
+
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -147,7 +147,7 @@ function exportAllPrompts(): void {
   a.download = `manga-insight-prompts-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
-  
+
   emit('showMessage', '提示词已导出', 'success')
 }
 
@@ -159,15 +159,15 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
-  
+
   try {
     const text = await file.text()
     const importData = JSON.parse(text)
-    
+
     if (importData.prompts) {
       customPrompts.value = { ...customPrompts.value, ...importData.prompts }
     }
-    
+
     if (importData.library && Array.isArray(importData.library)) {
       const existingIds = new Set(savedPromptsLibrary.value.map(p => p.id))
       for (const promptItem of importData.library) {
@@ -177,12 +177,12 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
       }
       await insightApi.importPromptsLibrary(savedPromptsLibrary.value)
     }
-    
+
     emit('showMessage', '提示词导入成功', 'success')
   } catch {
     emit('showMessage', '导入失败，请检查文件格式', 'error')
   }
-  
+
   target.value = ''
 }
 
@@ -224,26 +224,26 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
 <template>
   <div class="insight-settings-content prompts-settings">
     <p class="settings-hint">自定义分析过程中使用的提示词模板。</p>
-    
+
     <div class="insight-settings-field">
       <label>提示词类型</label>
       <CustomSelect v-model="currentPromptType" :options="PROMPT_TYPE_OPTIONS" />
       <p class="form-hint">{{ insightApi.PROMPT_METADATA[currentPromptType]?.hint }}</p>
     </div>
-    
+
     <div class="insight-settings-field">
       <label>提示词内容</label>
       <UiTextarea v-model="currentPromptContent" class="prompt-editor" rows="12" placeholder="输入提示词内容..." />
     </div>
-    
+
     <div class="prompt-actions-bar">
       <UiButton variant="secondary" @click="resetCurrentPrompt" title="重置为默认" size="sm">🔄 重置</UiButton>
       <UiButton variant="secondary" @click="copyPromptToClipboard" title="复制到剪贴板" size="sm">📋 复制</UiButton>
       <UiButton variant="primary" @click="savePromptToLibrary" title="保存到库" size="sm">💾 保存到库</UiButton>
     </div>
-    
+
     <hr class="section-divider">
-    
+
     <div class="prompts-library-section">
       <div class="library-header">
         <h4>📚 提示词库</h4>
@@ -253,7 +253,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
           <UiFileInput id="promptsFileInput" accept=".json" style="display: none" @change="handlePromptsFileImport" />
         </div>
       </div>
-      
+
       <div class="saved-prompts-list">
         <div v-if="isLoadingPrompts" class="loading-text">加载中...</div>
         <div v-else-if="savedPromptsLibrary.length === 0" class="placeholder-text">暂无保存的提示词</div>
@@ -267,7 +267,13 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
   </div>
 </template>
 
-<style scoped>.insight-settings-content {
+<style scoped>
+.insight-settings-content {
+  --prompts-settings-tab-border-default: rgba(99, 102, 241, .2);
+  --prompts-settings-tab-surface-base: rgba(99, 102, 241, .05);
+}
+
+.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }

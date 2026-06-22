@@ -324,6 +324,11 @@ watch(
 </template>
 
 <style scoped>
+.pages-tree-section {
+  --pages-tree-shadow-default: rgba(99, 102, 241, .2);
+  --pages-tree-surface-base: rgba(0, 0, 0, .7);
+}
+
 /* ==================== PagesTree样式 ==================== */
 
 /* ==================== 页面树样式 ==================== */

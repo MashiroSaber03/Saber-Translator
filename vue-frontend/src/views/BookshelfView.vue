@@ -264,6 +264,12 @@ function showFeatureNotice() {
 </template>
 
 <style scoped>
+.bookshelf-page {
+  --bookshelf-view-surface-base: rgba(255, 255, 255, .3);
+  --bookshelf-view-text-primary: rgba(255, 255, 255, .95);
+  --bookshelf-view-text-secondary: rgba(255, 255, 255, .9);
+}
+
 /* ==================== 书架页面样式 ==================== */
 
 /* header 内 slot 元素样式（需要 :deep 因为元素在 AppHeader 子组件 slot 中渲染） */

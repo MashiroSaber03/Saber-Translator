@@ -84,6 +84,14 @@ function handleImageError(event: Event) {
 </template>
 
 <style scoped>
+.book-card {
+  --book-card-border-default: rgba(102, 126, 234, .5);
+  --book-card-shadow-default: rgba(0, 0, 0, .08);
+  --book-card-shadow-raised: rgba(0, 0, 0, .15);
+  --book-card-surface-base: rgba(0, 0, 0, .6);
+  --book-card-text-primary: rgba(255, 255, 255, .8);
+}
+
 /* ==================== 书籍卡片样式 - 当前样式 ==================== */
 
 /* 书籍卡片 */

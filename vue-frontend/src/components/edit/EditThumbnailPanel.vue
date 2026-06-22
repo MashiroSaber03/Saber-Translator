@@ -51,6 +51,10 @@ defineEmits<{
 </script>
 
 <style scoped>
+.edit-thumbnails-panel {
+  --edit-thumbnail-panel-surface-subtle: rgba(0, 0, 0, .7);
+}
+
 /* 编辑模式缩略图面板 */
 .edit-thumbnails-panel {
   /* owner tokens: edit-thumbnail-panel */

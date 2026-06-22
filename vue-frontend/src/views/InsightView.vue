@@ -583,24 +583,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 /* ==================== 页面根容器固定布局 ==================== */
 .insight-page {
-  --insight-bg-primary: var(--insight-view-accent-primary);
-  --insight-bg-secondary: var(--insight-view-accent-secondary);
-  --insight-bg-tertiary: var(--insight-view-accent-muted);
-  --insight-bg-hover: var(--insight-view-accent-strong);
-  --insight-text-primary: var(--color-text-default);
-  --insight-text-secondary: var(--color-text-secondary);
-  --insight-text-muted: var(--color-text-muted);
   --insight-border-color: var(--color-border-muted);
-  --insight-color-primary: var(--color-text-brand);
-  --insight-primary: var(--insight-color-primary);
-  --insight-primary-light: var(--color-border-brand-gradient);
-  --insight-primary-dark: var(--color-surface-brand-strong);
-  --insight-success-color: var(--color-status-success);
-  --insight-success: var(--color-status-success);
-  --insight-warning-color: var(--insight-view-text-secondary);
-  --insight-warning: var(--insight-view-accent-variant-012);
-  --insight-error-color: var(--insight-view-text-muted);
-  --insight-danger: var(--insight-view-accent-variant-013);
 
   overflow: hidden;
   margin: 0;

@@ -70,6 +70,12 @@ defineEmits<{
 
 <style scoped>
 .workbench {
+  --task-workbench-border-default: rgba(25, 55, 94, .08);
+  --task-workbench-surface-base: rgba(255, 255, 255, .84);
+  --task-workbench-text-primary: #516882;
+}
+
+.workbench {
   display: flex;
   flex-direction: column;
   gap: 16px;

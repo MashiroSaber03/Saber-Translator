@@ -457,6 +457,10 @@ defineExpose({
 </script>
 
 <style scoped>
+.text-style-defaults-settings {
+  --text-style-defaults-settings-text-primary: #d14343;
+}
+
 .action-row {
   display: flex;
   justify-content: flex-start;

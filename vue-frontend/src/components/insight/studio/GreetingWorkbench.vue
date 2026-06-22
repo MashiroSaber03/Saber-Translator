@@ -67,6 +67,12 @@ defineEmits<{
 
 <style scoped>
 .workbench {
+  --greeting-workbench-border-default: rgba(25, 55, 94, .08);
+  --greeting-workbench-surface-base: rgba(255, 255, 255, .82);
+  --greeting-workbench-surface-raised: rgba(247, 250, 254, .96);
+}
+
+.workbench {
   display: flex;
   flex-direction: column;
   gap: 18px;

@@ -325,6 +325,10 @@ async function cleanTempFiles() {
 </script>
 
 <style scoped>
+.more-settings {
+  --more-settings-text-primary: #f0ad4e;
+}
+
 .font-upload-row {
   display: flex;
   align-items: center;

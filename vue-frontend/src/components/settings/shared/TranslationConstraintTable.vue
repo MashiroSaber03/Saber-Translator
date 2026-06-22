@@ -258,6 +258,13 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 </script>
 
 <style scoped>
+.constraint-table {
+  --translation-constraint-table-border-default: #cfd6e4;
+  --translation-constraint-table-border-strong: #5b73f2;
+  --translation-constraint-table-shadow-default: rgba(88, 125, 255, .18);
+  --translation-constraint-table-text-primary: #1f2430;
+}
+
 .constraint-toolbar {
   display: flex;
   align-items: center;

@@ -149,6 +149,12 @@ defineExpose({
 </template>
 
 <style scoped>
+.guide-content {
+  --first-time-guide-surface-base: #4a90d9;
+  --first-time-guide-surface-raised: #3a7bc8;
+  --first-time-guide-text-primary: #4a90d9;
+}
+
 /* 引导内容容器 */
 .guide-content {
   text-align: center;

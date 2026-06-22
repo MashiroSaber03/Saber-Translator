@@ -142,6 +142,13 @@ watch(
 </template>
 
 <style scoped>
+.reader-main {
+  --reader-canvas-border-default: rgba(255, 255, 255, .1);
+  --reader-canvas-surface-base: rgba(255, 255, 255, .05);
+  --reader-canvas-surface-raised: rgba(0, 0, 0, .6);
+  --reader-canvas-text-primary: rgba(255, 255, 255, .7);
+}
+
 /* ==================== ReaderCanvas样式 ==================== */
 
 /* 主内容区 */

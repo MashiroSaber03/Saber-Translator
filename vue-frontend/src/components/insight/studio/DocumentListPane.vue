@@ -60,6 +60,15 @@ function formatTime(value: string) {
 
 <style scoped>
 .pane {
+  --document-list-pane-border-default: rgba(37, 99, 199, .24);
+  --document-list-pane-shadow-default: rgba(31, 70, 120, .08);
+  --document-list-pane-surface-base: rgba(255, 255, 255, .95);
+  --document-list-pane-surface-raised: rgba(255, 178, 46, .16);
+  --document-list-pane-text-primary: #122b47;
+  --document-list-pane-text-secondary: #9a6708;
+}
+
+.pane {
   display: flex;
   flex-direction: column;
   gap: 10px;

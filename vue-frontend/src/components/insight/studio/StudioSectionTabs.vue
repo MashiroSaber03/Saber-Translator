@@ -29,6 +29,15 @@ defineEmits<{
 
 <style scoped>
 .studio-tabs {
+  --studio-section-tabs-shadow-default: rgba(37, 99, 199, .16);
+  --studio-section-tabs-surface-base: rgba(16, 39, 65, .04);
+  --studio-section-tabs-surface-raised: rgba(37, 99, 199, .08);
+  --studio-section-tabs-surface-muted: rgba(77, 134, 238, .1);
+  --studio-section-tabs-text-primary: #55708f;
+  --studio-section-tabs-text-secondary: #16365b;
+}
+
+.studio-tabs {
   display: flex;
   gap: 8px;
   padding: 8px;
