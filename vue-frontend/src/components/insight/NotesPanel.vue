@@ -32,12 +32,6 @@ const noteTypeFilter = computed({
   set: value => insightStore.setNoteTypeFilter(value),
 })
 
-const noteModalStyle = {
-  maxWidth: '450px',
-  width: '90%',
-  borderRadius: '16px',
-}
-
 function resetDraft(): void {
   newNoteTitle.value = ''
   newNoteContent.value = ''
@@ -138,7 +132,6 @@ function goToPage(pageNum: number): void {
     <NoteEditorModal
       :visible="showNoteModal"
       :editing-note="editingNote"
-      :modal-style="noteModalStyle"
       :note-type-options="noteTypeOptions"
       v-model:note-title="newNoteTitle"
       v-model:note-content="newNoteContent"
@@ -156,9 +149,9 @@ function goToPage(pageNum: number): void {
 .workspace-section.notes-section {
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-color-primary);
-  --ui-button-primary-hover-background: var(--insight-primary-dark);
-  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-primary-background: var(--insight-action-primary);
+  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
+  --ui-button-secondary-background: var(--insight-surface-tertiary);
   --ui-button-secondary-color: var(--insight-text-primary);
   --ui-button-secondary-border: 1px solid var(--color-border-muted);
   --ui-button-secondary-hover-background: var(--color-border-muted);

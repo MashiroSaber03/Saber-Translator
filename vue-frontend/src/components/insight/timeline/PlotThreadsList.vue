@@ -41,7 +41,7 @@ function isResolved(thread: PlotThread): boolean {
   padding: 14px;
   border-left: 3px solid var(--color-status-warning);
   border-radius: 10px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
 }
 
 .plot-thread-item.resolved {

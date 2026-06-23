@@ -4,13 +4,11 @@
     title="自动生成插件"
     size="full"
     custom-class="plugin-agent-modal"
-    :custom-style="{
-      width: '95vw',
-      height: '90vh',
-      maxHeight: '90vh',
-      '--ui-dialog-body-display': 'flex',
-      '--ui-dialog-body-min-height': '0'
-    }"
+    width="95vw"
+    height="90vh"
+    max-height="90vh"
+    body-display="flex"
+    body-min-height="0"
     @close="handleClose"
   >
     <div class="plugin-agent-layout">

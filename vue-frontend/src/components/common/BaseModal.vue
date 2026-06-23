@@ -12,7 +12,7 @@
         <div
           class="ui-modal__container"
           :class="[uiSizeClass, uiChromeClass, customClass]"
-          :style="customStyle"
+          :style="dialogStyle"
           data-testid="base-dialog-container"
         >
           <!-- 模态框头部 -->
@@ -91,8 +91,43 @@ interface Props {
   scrollMode?: 'auto' | 'contained' | 'none'
   /** 弹窗 chrome 视觉变体 */
   chromeVariant?: 'default' | 'compact' | 'plain'
-  /** 自定义样式 */
-  customStyle?: Record<string, string>
+  /** 容器布局 */
+  width?: string
+  height?: string
+  minHeight?: string
+  maxWidth?: string
+  maxHeight?: string
+  /** 容器视觉 */
+  background?: string
+  border?: string
+  borderRadius?: string
+  boxShadow?: string
+  /** 头部视觉 */
+  headerPadding?: string
+  headerBorder?: string
+  headerBackground?: string
+  headerColor?: string
+  titleColor?: string
+  titleFontSize?: string
+  titleFontWeight?: string
+  closeColor?: string
+  closeFontSize?: string
+  closeHoverColor?: string
+  closeHoverBackground?: string
+  /** 内容区布局 */
+  bodyDisplay?: string
+  bodyDirection?: string
+  bodyMinHeight?: string
+  bodyPaddingValue?: string
+  bodyTextAlign?: string
+  bodyBackground?: string
+  /** 底部布局 */
+  footerGap?: string
+  footerPadding?: string
+  footerBorder?: string
+  footerJustify?: string
+  footerWrap?: string
+  footerBackground?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -110,7 +145,38 @@ const props = withDefaults(defineProps<Props>(), {
   bodyPadding: 'default',
   scrollMode: 'auto',
   chromeVariant: 'default',
-  customStyle: () => ({})
+  width: '',
+  height: '',
+  minHeight: '',
+  maxWidth: '',
+  maxHeight: '',
+  background: '',
+  border: '',
+  borderRadius: '',
+  boxShadow: '',
+  headerPadding: '',
+  headerBorder: '',
+  headerBackground: '',
+  headerColor: '',
+  titleColor: '',
+  titleFontSize: '',
+  titleFontWeight: '',
+  closeColor: '',
+  closeFontSize: '',
+  closeHoverColor: '',
+  closeHoverBackground: '',
+  bodyDisplay: '',
+  bodyDirection: '',
+  bodyMinHeight: '',
+  bodyPaddingValue: '',
+  bodyTextAlign: '',
+  bodyBackground: '',
+  footerGap: '',
+  footerPadding: '',
+  footerBorder: '',
+  footerJustify: '',
+  footerWrap: '',
+  footerBackground: '',
 })
 
 // Emits 定义
@@ -137,6 +203,46 @@ const uiBodyPaddingClass = computed(() => {
 
 const uiBodyScrollClass = computed(() => {
   return `ui-modal__body--scroll-${props.scrollMode}`
+})
+
+const dialogStyle = computed(() => {
+  const entries: Array<[string, string]> = [
+    ['width', props.width],
+    ['height', props.height],
+    ['minHeight', props.minHeight],
+    ['maxWidth', props.maxWidth],
+    ['maxHeight', props.maxHeight],
+    ['--modal-bg', props.background],
+    ['--ui-dialog-border', props.border],
+    ['--ui-dialog-radius', props.borderRadius],
+    ['--ui-dialog-shadow', props.boxShadow],
+    ['--ui-dialog-max-height', props.maxHeight],
+    ['--ui-dialog-header-padding', props.headerPadding],
+    ['--ui-dialog-header-border', props.headerBorder],
+    ['--ui-dialog-header-background', props.headerBackground],
+    ['--ui-dialog-header-color', props.headerColor],
+    ['--ui-dialog-title-color', props.titleColor],
+    ['--ui-dialog-title-font-size', props.titleFontSize],
+    ['--ui-dialog-title-font-weight', props.titleFontWeight],
+    ['--ui-dialog-close-color', props.closeColor],
+    ['--ui-dialog-close-font-size', props.closeFontSize],
+    ['--ui-dialog-close-hover-color', props.closeHoverColor],
+    ['--ui-dialog-close-hover-background', props.closeHoverBackground],
+    ['--ui-dialog-body-display', props.bodyDisplay],
+    ['--ui-dialog-body-direction', props.bodyDirection],
+    ['--ui-dialog-body-min-height', props.bodyMinHeight],
+    ['--ui-dialog-body-padding', props.bodyPaddingValue],
+    ['--ui-dialog-body-text-align', props.bodyTextAlign],
+    ['--ui-dialog-body-background', props.bodyBackground],
+    ['--ui-dialog-actions-gap', props.footerGap],
+    ['--ui-dialog-actions-padding', props.footerPadding],
+    ['--ui-dialog-actions-border', props.footerBorder],
+    ['--ui-dialog-actions-justify', props.footerJustify],
+    ['--ui-dialog-actions-wrap', props.footerWrap],
+    ['--ui-dialog-actions-background', props.footerBackground],
+  ]
+
+  return Object.fromEntries(entries.filter(([, value]) => value !== ''))
 })
 
 // 关闭模态框
@@ -192,7 +298,7 @@ onUnmounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: var(--base-modal-surface-base);
+  background-color: var(--base-modal-overlay-background);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -204,7 +310,7 @@ onUnmounted(() => {
   background: var(--modal-bg, var(--color-surface-base));
   border: var(--ui-dialog-border, 0);
   border-radius: var(--ui-dialog-radius, 12px);
-  box-shadow: var(--ui-dialog-shadow, 0 4px 20px var(--base-modal-shadow-default));
+  box-shadow: var(--ui-dialog-shadow, 0 4px 20px var(--base-modal-container-shadow-color));
   max-height: var(--ui-dialog-max-height, 90vh);
   display: flex;
   flex-direction: column;
@@ -262,7 +368,7 @@ onUnmounted(() => {
 }
 
 .ui-modal__close:hover {
-  background-color: var(--ui-dialog-close-hover-background, var(--base-modal-surface-raised));
+  background-color: var(--ui-dialog-close-hover-background, var(--base-modal-close-hover-background));
   color: var(--ui-dialog-close-hover-color, var(--color-text-strong, var(--color-text-heading)));
 }
 

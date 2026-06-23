@@ -311,6 +311,6 @@ onUnmounted(() => {
 .chat-input-container {
   padding: 16px;
   border-top: 1px solid var(--color-border-muted);
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
 }
 </style>

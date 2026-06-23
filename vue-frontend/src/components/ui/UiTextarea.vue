@@ -90,7 +90,7 @@ function handleInput(event: Event) {
 :where(.ui-textarea):focus {
   outline: none;
   border-color: var(--ui-textarea-focus-border, var(--color-action-primary));
-  box-shadow: 0 0 0 3px var(--ui-textarea-shadow-default);
+  box-shadow: 0 0 0 3px var(--ui-textarea-focus-shadow);
 }
 
 :where(.ui-textarea--lg) {
@@ -112,7 +112,7 @@ function handleInput(event: Event) {
 }
 
 :where(.ui-textarea--error) {
-  border-color: var(--color-status-error, var(--ui-textarea-border-default));
+  border-color: var(--color-status-error, var(--ui-textarea-error-border));
 }
 
 :where(.ui-textarea):disabled {

@@ -603,12 +603,12 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .insight-page .insight-header__nav-link:hover {
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-primary);
 }
 
 .insight-page .insight-header__nav-link--active {
-    background: var(--insight-color-primary);
+    background: var(--insight-action-primary);
     color: white;
 }
 
@@ -623,14 +623,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 .insight-page .insight-main {
     display: flex;
     flex: 1;
-    background: var(--insight-bg-primary);
+    background: var(--insight-surface-page);
     overflow: hidden;
 }
 
 .insight-page .insight-sidebar {
     width: 280px;
     min-width: 280px;
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     border-right: 1px solid var(--insight-border-color);
     display: flex;
     flex-direction: column;
@@ -650,7 +650,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 .insight-page .insight-workspace {
     width: 320px;
     min-width: 320px;
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     border-left: 1px solid var(--insight-border-color);
     display: flex;
     flex-direction: column;
@@ -665,7 +665,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     gap: 4px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--insight-border-color);
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     align-items: center;
 }
 
@@ -680,7 +680,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     width: 36px;
     height: 36px;
     border-radius: 8px;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-primary);
     border: 1px solid var(--insight-border-color);
     cursor: pointer;
@@ -692,15 +692,15 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .insight-page .mobile-nav-btn:hover {
-    background: var(--insight-color-primary);
+    background: var(--insight-action-primary);
     color: white;
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .insight-page .mobile-nav-btn.active {
-    background: var(--insight-color-primary);
+    background: var(--insight-action-primary);
     color: white;
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .insight-page .tab-btn {
@@ -718,12 +718,12 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 }
 
 .insight-page .tab-btn:hover {
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-primary);
 }
 
 .insight-page .tab-btn.active {
-    background: var(--insight-color-primary);
+    background: var(--insight-action-primary);
     color: white;
 }
 
@@ -777,7 +777,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-primary);
 }
 
@@ -804,7 +804,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     width: 48px;
     height: 48px;
     border: 4px solid var(--insight-border-color);
-    border-top-color: var(--insight-color-primary);
+    border-top-color: var(--insight-action-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -838,7 +838,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   margin: 0 auto 12px;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   position: relative;
 }
 

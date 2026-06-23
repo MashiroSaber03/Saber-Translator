@@ -5,25 +5,17 @@
   --insight-surface-tertiary: #f4f7fb;
   --insight-surface-hover: rgba(245, 249, 255, .82);
   --insight-surface-warning-soft: #f6f8fb;
-  --insight-color-warning: #f59e0b;
-  --insight-color-error: #ef4444;
-  --insight-color-danger: #f14c4c;
 
-  --insight-bg-primary: var(--insight-surface-page);
-  --insight-bg-secondary: var(--insight-surface-secondary);
-  --insight-bg-tertiary: var(--insight-surface-tertiary);
-  --insight-bg-hover: var(--insight-surface-hover);
   --insight-text-primary: var(--color-text-default);
   --insight-text-secondary: var(--color-text-secondary);
   --insight-text-muted: var(--color-text-muted);
-  --insight-color-primary: var(--color-text-brand);
-  --insight-primary: var(--insight-color-primary);
-  --insight-primary-light: var(--color-border-brand-gradient);
-  --insight-primary-dark: var(--color-surface-brand-strong);
-  --insight-success-color: var(--color-status-success);
-  --insight-success: var(--color-status-success);
-  --insight-warning-color: var(--insight-color-warning);
-  --insight-warning: var(--insight-surface-warning-soft);
-  --insight-error-color: var(--insight-color-error);
-  --insight-danger: var(--insight-color-danger);
+
+  --insight-action-primary: var(--color-text-brand);
+  --insight-action-primary-soft: var(--color-border-brand-gradient);
+  --insight-action-primary-strong: var(--color-surface-brand-strong);
+
+  --insight-status-success: var(--color-status-success);
+  --insight-status-warning: #f59e0b;
+  --insight-status-error: #ef4444;
+  --insight-status-danger: #f14c4c;
 }

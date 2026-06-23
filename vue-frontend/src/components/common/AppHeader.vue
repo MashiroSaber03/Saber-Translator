@@ -153,9 +153,9 @@ function showFeatureNotice(): void {
   justify-content: space-between;
   align-items: center;
   padding: 6px 10px;
-  background: var(--app-header-surface-base);
+  background: var(--app-header-background);
   border-radius: 12px;
-  box-shadow: 0 2px 10px var(--app-header-shadow-default);
+  box-shadow: 0 2px 10px var(--app-header-shadow);
 }
 
 .app-header__logo-container {
@@ -194,7 +194,7 @@ function showFeatureNotice(): void {
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: var(--app-header-surface-raised);
+  background-color: var(--app-header-link-background);
   border-radius: 20px;
   color: var(--color-text-heading);
   text-decoration: none;
@@ -202,7 +202,7 @@ function showFeatureNotice(): void {
 }
 
 .app-header__link:hover {
-  background-color: var(--app-header-surface-muted);
+  background-color: var(--app-header-link-hover-background);
   transform: translateY(-2px);
 }
 
@@ -218,15 +218,15 @@ function showFeatureNotice(): void {
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: var(--app-header-surface-subtle);
+  background-color: var(--app-header-donate-background);
   border-radius: 20px;
-  color: var(--app-header-text-primary);
+  color: var(--app-header-donate-text);
   text-decoration: none;
   transition: all 0.3s ease;
 }
 
 .app-header__link--donate:hover {
-  background-color: var(--app-header-surface-hover);
+  background-color: var(--app-header-donate-hover-background);
   transform: translateY(-2px);
 }
 
@@ -281,7 +281,7 @@ function showFeatureNotice(): void {
   align-items: center;
   justify-content: center;
   padding: 8px 12px;
-  background-color: var(--app-header-surface-active);
+  background-color: var(--app-header-settings-background);
   border: none;
   border-radius: 20px;
   cursor: pointer;
@@ -290,7 +290,7 @@ function showFeatureNotice(): void {
 }
 
 .app-header__settings-button:hover {
-  background-color: var(--app-header-surface-selected);
+  background-color: var(--app-header-settings-hover-background);
   transform: translateY(-2px);
 }
 
@@ -300,8 +300,8 @@ function showFeatureNotice(): void {
 }
 
 .app-header__theme-toggle {
-  background-color: var(--app-header-surface-overlay);
-  border: 1px solid var(--app-header-border-default);
+  background-color: var(--app-header-theme-background);
+  border: 1px solid var(--app-header-panel-border);
   border-radius: 20px;
   cursor: pointer;
   padding: 6px 12px;
@@ -313,7 +313,7 @@ function showFeatureNotice(): void {
 }
 
 .app-header__theme-toggle:hover {
-  background-color: var(--app-header-surface-inverse);
+  background-color: var(--app-header-theme-hover-background);
 }
 
 .app-header__theme-icon {
@@ -383,7 +383,7 @@ function showFeatureNotice(): void {
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   padding: 0 24px;
   height: 64px;
-  box-shadow: 0 2px 20px var(--app-header-shadow-raised);
+  box-shadow: 0 2px 20px var(--app-header-bookshelf-shadow);
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
@@ -419,7 +419,7 @@ function showFeatureNotice(): void {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px var(--app-header-shadow-floating);
+  box-shadow: 0 2px 8px var(--app-header-logo-shadow);
   margin-right: 0;
 }
 

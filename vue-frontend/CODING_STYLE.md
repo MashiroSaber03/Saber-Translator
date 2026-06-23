@@ -7,7 +7,7 @@
 
 | 文件 | 责任 |
 |------|------|
-| `src/styles/tokens/*.css` | 唯一 token 来源，按 `palette(custom media) -> semantic -> component -> domain` 顺序显式导入 |
+| `src/styles/tokens/*.css` | 唯一 token 来源，按 `foundation(custom media/layout constants) -> semantic -> component -> domain` 顺序显式导入 |
 | `src/styles/reset.css` | 最小浏览器 reset；不得承载业务布局或组件样式 |
 | `src/styles/base.css` | 保持空壳或极少低层工具；业务样式必须下沉到组件或 primitive |
 | `src/components/ui/*` | 不绑定业务的按钮、字段、输入、面板、布局外壳等基础 UI |

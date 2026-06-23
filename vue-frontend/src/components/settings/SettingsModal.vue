@@ -5,24 +5,22 @@
     title="⚙️ 设置"
     size="large"
     custom-class="settings-modal-wrapper"
-    :custom-style="{
-      maxWidth: '900px',
-      width: '90%',
-      minHeight: '510px',
-      maxHeight: '90vh',
-      '--ui-dialog-header-background': 'linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-hover) 100%)',
-      '--ui-dialog-header-color': 'var(--color-text-inverse)',
-      '--ui-dialog-header-padding': '20px 25px',
-      '--ui-dialog-title-color': 'var(--color-text-inverse)',
-      '--ui-dialog-title-font-size': '1.4em',
-      '--ui-dialog-close-color': 'var(--settings-modal-text-primary)',
-      '--ui-dialog-close-font-size': '20px',
-      '--ui-dialog-close-hover-color': 'var(--color-text-inverse)',
-      '--ui-dialog-close-hover-background': 'var(--settings-modal-surface-base)',
-      '--ui-dialog-body-padding': '0',
-      '--ui-dialog-body-display': 'flex',
-      '--ui-dialog-body-direction': 'column'
-    }"
+    width="90%"
+    min-height="510px"
+    max-width="900px"
+    max-height="90vh"
+    header-background="linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-hover) 100%)"
+    header-color="var(--color-text-inverse)"
+    header-padding="20px 25px"
+    title-color="var(--color-text-inverse)"
+    title-font-size="1.4em"
+    close-color="var(--settings-modal-text-primary)"
+    close-font-size="20px"
+    close-hover-color="var(--color-text-inverse)"
+    close-hover-background="var(--settings-modal-surface-base)"
+    body-padding="none"
+    body-display="flex"
+    body-direction="column"
     :show-header="true"
     :close-on-overlay="true"
     :close-on-esc="true"

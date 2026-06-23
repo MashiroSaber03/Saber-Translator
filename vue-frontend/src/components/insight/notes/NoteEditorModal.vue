@@ -9,7 +9,6 @@ import type { NoteData, NoteType } from '@/stores/insightStore'
 
 const props = defineProps<{
   editingNote: NoteData | null
-  modalStyle: Record<string, string>
   noteContent: string
   notePageNum: number | null
   noteTags: string
@@ -64,7 +63,9 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
     :title="editingNote ? '编辑笔记' : '添加笔记'"
     size="small"
     custom-class="notes-panel-modal"
-    :custom-style="modalStyle"
+    width="90%"
+    max-width="450px"
+    border-radius="16px"
     @close="$emit('close')"
   >
     <template #title>
@@ -201,7 +202,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
   padding: 10px 12px;
   border: 1px solid var(--color-border-muted);
   border-radius: 6px;
-  background: var(--insight-bg-primary);
+  background: var(--insight-surface-page);
   color: var(--insight-text-primary);
   font-size: 14px;
   line-height: normal;
@@ -210,7 +211,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
 
 .notes-panel__form-input:focus,
 .notes-panel__form-textarea:focus {
-  border-color: var(--insight-color-primary);
+  border-color: var(--insight-action-primary);
   outline: none;
 }
 
@@ -229,7 +230,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
   margin-bottom: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
 }
 
 .qa-section {
@@ -253,7 +254,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
 .qa-content {
   padding: 12px;
   border-radius: 8px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-primary);
   font-size: 14px;
   line-height: 1.6;
@@ -275,7 +276,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
   align-items: center;
   padding: 4px 10px;
   border-radius: 12px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-weight: 500;
   font-size: 12px;

@@ -8,7 +8,7 @@ import App from './App.vue'
 import router from './router'
 
 // 引入全局样式 - token 层按依赖顺序显式加载
-import './styles/tokens/palette.css'
+import './styles/tokens/foundation.css'
 import './styles/tokens/semantic.css'
 import './styles/tokens/component.css'
 import './styles/tokens/domain.css'

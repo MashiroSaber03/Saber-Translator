@@ -654,21 +654,21 @@ watch(analysisMode, () => {
 }
 
 .analysis-control-compact .status-dot.running {
-    background: var(--insight-color-primary);
-    box-shadow: 0 0 8px var(--insight-color-primary);
+    background: var(--insight-action-primary);
+    box-shadow: 0 0 8px var(--insight-action-primary);
     animation: pulse-glow 1.5s infinite;
 }
 
 .analysis-control-compact .status-dot.paused {
-    background: var(--insight-warning-color);
+    background: var(--insight-status-warning);
 }
 
 .analysis-control-compact .status-dot.completed {
-    background: var(--insight-success-color);
+    background: var(--insight-status-success);
 }
 
 .analysis-control-compact .status-dot.failed {
-    background: var(--insight-error-color);
+    background: var(--insight-status-error);
 }
 
 .analysis-control-compact .status-label {
@@ -685,7 +685,7 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .progress-bar-slim {
     height: 3px;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     border-radius: 2px;
     overflow: hidden;
     margin-bottom: 10px;
@@ -693,7 +693,7 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .progress-fill-slim {
     height: 100%;
-    background: linear-gradient(90deg, var(--insight-color-primary), var(--insight-primary-light));
+    background: linear-gradient(90deg, var(--insight-action-primary), var(--insight-action-primary-soft));
     transition: width 0.3s ease;
     width: 0%;
 }
@@ -719,7 +719,7 @@ watch(analysisMode, () => {
     font-size: 13px;
     border: 1px solid var(--color-border-muted);
     border-radius: 8px;
-    background: var(--insight-bg-primary);
+    background: var(--insight-surface-page);
     color: var(--insight-text-primary);
     cursor: pointer;
     min-width: 70px;
@@ -727,7 +727,7 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .analysis-mode-select:focus {
     outline: none;
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .analysis-control-compact .btn-analysis-start {
@@ -739,7 +739,7 @@ watch(analysisMode, () => {
     padding: 8px 16px;
     font-size: 13px;
     font-weight: 500;
-    background: linear-gradient(135deg, var(--insight-color-primary), var(--insight-primary-dark));
+    background: linear-gradient(135deg, var(--insight-action-primary), var(--insight-action-primary-strong));
     color: white;
     border: none;
     border-radius: 8px;
@@ -779,17 +779,17 @@ watch(analysisMode, () => {
 }
 
 .analysis-control-compact .btn-pause {
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-primary);
 }
 
 .analysis-control-compact .btn-pause:hover {
-    background: var(--insight-warning-color);
+    background: var(--insight-status-warning);
     color: white;
 }
 
 .analysis-control-compact .btn-resume {
-    background: var(--insight-success-color);
+    background: var(--insight-status-success);
     color: white;
 }
 
@@ -798,12 +798,12 @@ watch(analysisMode, () => {
 }
 
 .analysis-control-compact .btn-cancel {
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-secondary);
 }
 
 .analysis-control-compact .btn-cancel:hover {
-    background: var(--insight-error-color);
+    background: var(--insight-status-error);
     color: white;
 }
 
@@ -814,7 +814,7 @@ watch(analysisMode, () => {
     font-size: 13px;
     border: 1px solid var(--color-border-muted);
     border-radius: 8px;
-    background: var(--insight-bg-primary);
+    background: var(--insight-surface-page);
     color: var(--insight-text-primary);
     margin-top: 8px;
 }
@@ -822,7 +822,7 @@ watch(analysisMode, () => {
 .analysis-control-compact .form-select-compact:focus,
 .analysis-control-compact .form-input-compact:focus {
     outline: none;
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .analysis-control-compact .analysis-options-row {
@@ -846,7 +846,7 @@ watch(analysisMode, () => {
     width: 14px;
     height: 14px;
     cursor: pointer;
-    accent-color: var(--insight-color-primary);
+    accent-color: var(--insight-action-primary);
 }
 
 .analysis-control-compact .button-icon-sm {
@@ -864,9 +864,9 @@ watch(analysisMode, () => {
 }
 
 .button-icon-sm:hover {
-    background: var(--insight-bg-tertiary);
-    color: var(--insight-color-primary);
-    border-color: var(--insight-color-primary);
+    background: var(--insight-surface-tertiary);
+    color: var(--insight-action-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .button-icon-sm:disabled {

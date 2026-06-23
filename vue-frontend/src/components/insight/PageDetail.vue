@@ -136,10 +136,10 @@ async function loadPageDetail(): Promise<void> {
 
   try {
     const response = await insightApi.getPageData(
-      insightStore.currentBookId, 
+      insightStore.currentBookId,
       selectedPageNum.value
     )
-    
+
     if (response.success) {
       // 后端API返回的是analysis字段，不是page字段
       if (response.analysis) {
@@ -193,10 +193,10 @@ async function reanalyzePage(): Promise<void> {
 
   try {
     const response = await insightApi.reanalyzePage(
-      insightStore.currentBookId, 
+      insightStore.currentBookId,
       selectedPageNum.value
     )
-    
+
     if (response.success) {
       if ((response as any).task_id) {
         insightStore.setCurrentTaskId((response as any).task_id)
@@ -234,7 +234,7 @@ function closeImagePreview(): void {
  */
 function handlePreviewKeydown(event: KeyboardEvent): void {
   if (!showImagePreview.value) return
-  
+
   switch (event.key) {
     case 'Escape':
       closeImagePreview()
@@ -268,12 +268,12 @@ async function exportPageData(): Promise<void> {
   try {
     // 构建 Markdown 内容
     let markdown = `# 第 ${selectedPageNum.value} 页分析数据\n\n`
-    
+
     // 页面摘要
     if (pageAnalysis.value.page_summary) {
       markdown += `## 📝 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
     }
-    
+
     // 场景和氛围
     if (pageAnalysis.value.scene) {
       markdown += `## 🎬 场景\n\n${pageAnalysis.value.scene}\n\n`
@@ -281,7 +281,7 @@ async function exportPageData(): Promise<void> {
     if (pageAnalysis.value.mood) {
       markdown += `## 🎭 氛围\n\n${pageAnalysis.value.mood}\n\n`
     }
-    
+
     // 对话内容
     if (dialogues.value.length > 0) {
       markdown += `## 💬 对话内容\n\n`
@@ -333,20 +333,20 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 <template>
   <div class="workspace-section page-detail-section">
     <h3 class="section-title">📄 页面详情</h3>
-    
+
     <div class="page-detail">
       <!-- 未选择页面 -->
       <div v-if="!selectedPageNum" class="placeholder-text">
         <div class="empty-icon">📄</div>
         <p>点击左侧导航树中的页面查看详情</p>
       </div>
-      
+
       <!-- 加载中 -->
       <div v-else-if="isLoading" class="loading-state">
         <div class="loading-spinner"></div>
         <p>加载中...</p>
       </div>
-      
+
       <!-- 页面详情内容 -->
       <div v-else class="page-detail-content">
         <!-- 页面标题和导航 -->
@@ -354,7 +354,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           <h4>📄 第 {{ selectedPageNum }} 页</h4>
           <div class="page-nav-buttons">
             <UiButton
-              variant="toolbar" 
+              variant="toolbar"
               class="btn-page-nav"
               :class="{ disabled: !hasPrevPage }"
               :disabled="!hasPrevPage"
@@ -365,7 +365,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             </UiButton>
             <span class="page-indicator">{{ selectedPageNum }} / {{ totalPages }}</span>
             <UiButton
-              variant="toolbar" 
+              variant="toolbar"
               class="btn-page-nav"
               :class="{ disabled: !hasNextPage }"
               :disabled="!hasNextPage"
@@ -376,16 +376,16 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             </UiButton>
           </div>
         </div>
-        
+
         <!-- 错误消息 -->
         <div v-if="errorMessage" class="error-message">
           ⚠️ {{ errorMessage }}
         </div>
-        
+
         <!-- 页面图片 -->
         <div class="page-detail-image" @click="openImagePreview">
-          <img 
-            :src="pageImageUrl" 
+          <img
+            :src="pageImageUrl"
             :alt="`第${selectedPageNum}页`"
             @error="($event.target as HTMLImageElement).style.display = 'none'"
           >
@@ -393,12 +393,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             <span class="zoom-hint">🔍 点击放大</span>
           </div>
         </div>
-        
+
         <!-- 分析状态标签 -->
         <div class="analysis-status-tag" :class="{ analyzed: isPageAnalyzed }">
           {{ isPageAnalyzed ? '✓ 已分析' : '○ 未分析' }}
         </div>
-        
+
         <!-- 页面摘要 -->
         <div v-if="pageAnalysis?.page_summary" class="page-summary">
           <h5>📝 页面摘要</h5>
@@ -407,7 +407,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         <div v-else class="page-summary empty">
           <p>此页尚未分析，点击下方按钮开始分析</p>
         </div>
-        
+
         <!-- 场景和氛围 -->
         <div v-if="sceneDescription || moodDescription" class="scene-mood-info">
           <div v-if="sceneDescription" class="info-item">
@@ -419,12 +419,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             <span class="info-value">{{ moodDescription }}</span>
           </div>
         </div>
-        
+
         <!-- 对话列表 -->
         <div v-if="dialogues.length > 0" class="dialogues-section">
           <h5>💬 对话内容 ({{ dialogues.length }})</h5>
-          <div 
-            v-for="(dialogue, index) in dialogues" 
+          <div
+            v-for="(dialogue, index) in dialogues"
             :key="index"
             class="dialogue-item"
           >
@@ -441,12 +441,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         <div v-else-if="isPageAnalyzed" class="dialogues-section empty">
           <p>此页没有检测到对话内容</p>
         </div>
-        
+
         <!-- 操作按钮 -->
         <div class="page-detail-actions">
           <UiButton
-            variant="secondary" 
-            
+            variant="secondary"
+
             :disabled="isReanalyzing || isReanalyzeTaskRunning"
             :loading="isReanalyzing || isReanalyzeTaskRunning"
             @click="reanalyzePage" size="sm"
@@ -455,9 +455,9 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
             {{ isReanalyzing ? '启动中...' : (isReanalyzeTaskRunning ? '分析中...' : '🔄 重新分析') }}
           </UiButton>
           <UiButton
-            variant="secondary" 
+            variant="secondary"
             v-if="isPageAnalyzed"
-            
+
             :disabled="isExporting"
             @click="exportPageData" size="sm"
           >
@@ -466,10 +466,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         </div>
       </div>
     </div>
-    
+
     <!-- 图片预览模态框 -->
     <OverlayLayer
-      v-if="showImagePreview" 
+      v-if="showImagePreview"
       class="image-preview-modal"
       tabindex="0"
       @backdrop="closeImagePreview"
@@ -481,7 +481,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         <!-- 预览模式导航 -->
         <div class="preview-nav">
           <UiButton
-            variant="toolbar" 
+            variant="toolbar"
             class="preview-nav-btn prev"
             :disabled="!hasPrevPage"
             title="上一页 (←)"
@@ -491,7 +491,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           </UiButton>
           <span class="preview-page-info">{{ selectedPageNum }} / {{ totalPages }}</span>
           <UiButton
-            variant="toolbar" 
+            variant="toolbar"
             class="preview-nav-btn next"
             :disabled="!hasNextPage"
             title="下一页 (→)"
@@ -522,9 +522,9 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   --page-detail-text-secondary: #22c55e;
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-color-primary);
-  --ui-button-primary-hover-background: var(--insight-primary-dark);
-  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-primary-background: var(--insight-action-primary);
+  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
+  --ui-button-secondary-background: var(--insight-surface-tertiary);
   --ui-button-secondary-color: var(--insight-text-primary);
   --ui-button-secondary-border: 1px solid var(--color-border-muted);
   --ui-button-secondary-hover-background: var(--color-border-muted);
@@ -563,7 +563,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   width: 32px;
   height: 32px;
   border: 3px solid var(--color-border-muted);
-  border-top-color: var(--insight-primary);
+  border-top-color: var(--insight-action-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin: 0 auto 12px;
@@ -585,14 +585,14 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   font-size: 12px;
   border: 1px solid var(--color-border-muted);
   border-radius: 4px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .page-detail-section .btn-page-nav:hover:not(.disabled) {
-  background: var(--insight-bg-hover);
-  border-color: var(--insight-primary);
+  background: var(--insight-surface-hover);
+  border-color: var(--insight-action-primary);
 }
 
 .page-detail-section .btn-page-nav.disabled {
@@ -663,7 +663,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-secondary);
   margin-bottom: 12px;
 }
@@ -702,7 +702,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   gap: 12px;
   margin-bottom: 16px;
   padding: 10px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   border-radius: 6px;
 }
 
@@ -738,9 +738,9 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .page-detail-section .dialogue-item {
   padding: 10px 12px;
   margin: 8px 0;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   border-radius: 8px;
-  border-left: 3px solid var(--insight-primary);
+  border-left: 3px solid var(--insight-action-primary);
 }
 
 .page-detail-section .dialogue-speaker {
@@ -749,7 +749,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   gap: 6px;
   font-weight: 500;
   font-size: 12px;
-  color: var(--insight-primary);
+  color: var(--insight-action-primary);
   margin-bottom: 6px;
 }
 

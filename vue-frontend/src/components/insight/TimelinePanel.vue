@@ -111,9 +111,9 @@ const {
   --timeline-panel-summary-tag-surface: rgba(255, 255, 255, .2);
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-color-primary);
-  --ui-button-primary-hover-background: var(--insight-primary-dark);
-  --ui-button-secondary-background: var(--insight-bg-tertiary);
+  --ui-button-primary-background: var(--insight-action-primary);
+  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
+  --ui-button-secondary-background: var(--insight-surface-tertiary);
   --ui-button-secondary-color: var(--insight-text-primary);
   --ui-button-secondary-border: 1px solid var(--color-border-muted);
   --ui-button-secondary-hover-background: var(--color-border-muted);
@@ -149,7 +149,7 @@ const {
   height: 32px;
   margin: 0 auto 12px;
   border: 3px solid var(--color-border-muted);
-  border-top-color: var(--insight-color-primary);
+  border-top-color: var(--insight-action-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -191,7 +191,7 @@ const {
   display: inline-block;
   margin: 0 0 16px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--insight-color-primary);
+  border-bottom: 2px solid var(--insight-action-primary);
   color: var(--insight-text-primary);
   font-weight: 600;
   font-size: 16px;

@@ -33,7 +33,7 @@ defineProps<{
   align-items: center;
   gap: 4px;
   padding: 6px 12px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   border-radius: 16px;
   font-size: 13px;
   color: var(--insight-text-secondary);

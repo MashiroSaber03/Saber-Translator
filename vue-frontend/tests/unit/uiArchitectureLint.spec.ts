@@ -52,11 +52,16 @@ const componentPrivateDomainToken = '--character-studio-preview-shell-surface-ba
 const genericComponentDomainToken = '--book-card-surface-base'
 const generatedInsightVariantToken = '--insight-view-accent-variant-012'
 const insightSharedThemeToken = '--insight-surface-page'
+const insightLegacyBgToken = '--insight-bg-primary'
+const insightLegacyPrimaryToken = '--insight-primary-dark'
+const insightActionPrimaryToken = '--insight-action-primary'
 const editDomainSemanticToken = '--color-edit-shell-start'
 const studioDomainSemanticToken = '--color-text-studio-strong'
+const vagueComponentToken = '--app-header-surface-base'
+const roleComponentToken = '--app-header-background'
 const domainTokenLimit = 50
 
-function runUiArchitectureTokenFixture(tokensCss: string) {
+function runUiArchitectureTokenFixture(tokensCss: string, tokenPath = 'src/styles/tokens/domain.css') {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
   const fixturePath = join(fixtureDir, 'tokens.css')
   writeFileSync(fixturePath, tokensCss)
@@ -67,6 +72,8 @@ function runUiArchitectureTokenFixture(tokensCss: string) {
       'scripts/check-ui-architecture.mjs',
       '--tokens-fixture',
       fixturePath,
+      '--tokens-fixture-path',
+      tokenPath,
       '--skip-source-scan',
     ],
     {
@@ -142,6 +149,31 @@ describe('UI architecture token dependency lint', () => {
     const result = runUiArchitectureTokenFixture(`
       :root {
         ${insightSharedThemeToken}: #fff;
+      }
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects legacy-style insight domain aliases in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${insightLegacyBgToken}: #fff;
+        ${insightLegacyPrimaryToken}: #4f46e5;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('legacy-style insight domain alias token definition(s)')
+    expect(result.stderr).toContain(insightLegacyBgToken)
+    expect(result.stderr).toContain(insightLegacyPrimaryToken)
+  })
+
+  it('allows role-named insight action tokens in domain token files', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${insightActionPrimaryToken}: #6366f1;
       }
     `)
 
@@ -228,6 +260,29 @@ describe('UI architecture token dependency lint', () => {
     expect(result.stderr).toContain('domain-specific semantic token definition(s)')
     expect(result.stderr).toContain(editDomainSemanticToken)
     expect(result.stderr).toContain(studioDomainSemanticToken)
+  })
+
+  it('rejects vague private component token names in global component tokens', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${vagueComponentToken}: #fff;
+      }
+    `, 'src/styles/tokens/component.css')
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('vague component token definition(s)')
+    expect(result.stderr).toContain(vagueComponentToken)
+  })
+
+  it('allows role-named component tokens in global component tokens', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${roleComponentToken}: #fff;
+      }
+    `, 'src/styles/tokens/component.css')
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
   })
 
   it('rejects root tokens that depend on body-only compatibility tokens', () => {
@@ -403,7 +458,7 @@ describe('UI architecture CSS variable ownership lint', () => {
 })
 
 describe('UI architecture style ownership lint', () => {
-  it('rejects non-shell SFCs above the final owner threshold', () => {
+  it('reports heavy owner review signals only in audit output', () => {
     const longTemplate = Array.from(
       { length: 901 },
       (_, index) => `<div class="large-panel__row">${index}</div>`
@@ -420,9 +475,8 @@ describe('UI architecture style ownership lint', () => {
       </style>
     `)
 
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('SFC has')
-    expect(result.stderr).toContain('final owner threshold')
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
   })
 
   it('allows high-interaction owners under their explicit shell threshold', () => {
@@ -571,6 +625,26 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('rgba(15, 23, 42, .05)')
   })
 
+  it('rejects business BaseModal customStyle maps even when values are layout-only', () => {
+    const result = runUiArchitectureSourceFixture('src/components/settings/PluginAgentModal.vue', `
+      <template>
+        <BaseModal
+          custom-class="plugin-agent-modal"
+          :custom-style="{
+            width: '95vw',
+            maxHeight: '90vh'
+          }"
+        />
+      </template>
+      <style scoped>
+      .plugin-agent-modal-owner { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('BaseModal customStyle is not allowed in business UI')
+  })
+
   it('rejects scoped BaseModal internals styling in business components', () => {
     const result = runUiArchitectureSourceFixture('Panel.vue', `
       <template>
@@ -694,6 +768,18 @@ describe('UI architecture old implementation mindset lint', () => {
     expect(result.stderr).not.toContain('accepted large CSS owners')
     expect(result.stderr).not.toContain('permanent shell/layout owners')
     expect(result.stderr).not.toContain('pending layout')
+    expect(result.stderr).toContain('heavy owner review signals')
+  })
+})
+
+describe('UI architecture source hygiene lint', () => {
+  it('rejects checked-in local build and dev log files', () => {
+    const result = runUiArchitectureSourceFixture('build_output.txt', `
+      vite build output
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('local build/dev log files are not allowed')
   })
 })
 

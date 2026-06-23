@@ -146,7 +146,7 @@ const thresholdModel = computed({
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
 }
 
 .qa-mode-btn {
@@ -162,12 +162,12 @@ const thresholdModel = computed({
 }
 
 .qa-mode-btn:hover {
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   color: var(--insight-text-primary);
 }
 
 .qa-mode-btn.active {
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-weight: 500;
 }
@@ -203,7 +203,7 @@ const thresholdModel = computed({
   padding: 2px 6px;
   border: 1px solid var(--color-border-muted);
   border-radius: 4px;
-  background: var(--insight-bg-primary);
+  background: var(--insight-surface-page);
   color: var(--insight-text-primary);
   font-size: 12px;
 }
@@ -231,7 +231,7 @@ const thresholdModel = computed({
 .example-tag {
   padding: 6px 12px;
   border-radius: 16px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-secondary);
   font-size: 13px;
   cursor: pointer;
@@ -239,7 +239,7 @@ const thresholdModel = computed({
 }
 
 .example-tag:hover {
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
 }
 </style>

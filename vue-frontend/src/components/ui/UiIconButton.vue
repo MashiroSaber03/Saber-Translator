@@ -67,7 +67,7 @@ withDefaults(defineProps<{
 }
 
 .ui-icon-button--danger {
-  background: var(--ui-icon-button-surface-base);
+  background: var(--ui-icon-button-danger-soft-background);
   color: var(--color-status-error, var(--color-text-danger));
 }
 

@@ -53,7 +53,7 @@ function hideFailedImage(event: Event): void {
 <style scoped>
 .timeline-card {
   flex: 1;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   border-radius: 12px;
   border: 1px solid var(--color-border-muted);
   overflow: hidden;
@@ -69,7 +69,7 @@ function hideFailedImage(event: Event): void {
   display: flex;
   gap: 12px;
   padding: 12px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   border-bottom: 1px solid var(--color-border-muted);
   cursor: pointer;
 }
@@ -81,7 +81,7 @@ function hideFailedImage(event: Event): void {
   border-radius: 6px;
   cursor: pointer;
   transition: transform 0.2s;
-  background: var(--insight-bg-primary);
+  background: var(--insight-surface-page);
 }
 
 .timeline-thumbnail:hover {
@@ -106,7 +106,7 @@ function hideFailedImage(event: Event): void {
   width: fit-content;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--insight-bg-primary);
+  background: var(--insight-surface-page);
   color: var(--insight-text-secondary);
   font-size: 12px;
 }
@@ -146,7 +146,7 @@ function hideFailedImage(event: Event): void {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   content: '';
 }
 

@@ -51,7 +51,7 @@ defineEmits<{
 .character-card {
   display: block;
   text-align: left;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 2px 8px var(--timeline-panel-character-shadow);
@@ -87,7 +87,7 @@ defineEmits<{
   width: fit-content;
   font-size: 12px;
   color: var(--insight-text-muted);
-  background: var(--insight-bg-primary);
+  background: var(--insight-surface-page);
   padding: 3px 8px;
   border-radius: 10px;
 }

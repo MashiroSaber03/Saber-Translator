@@ -37,12 +37,6 @@ const noteCommentModel = computed({
   set: value => emit('update:noteComment', value),
 })
 
-const modalStyle = {
-  width: '90%',
-  maxWidth: '560px',
-  borderRadius: '16px',
-  '--ui-dialog-actions-background': 'var(--insight-bg-secondary)',
-}
 </script>
 
 <template>
@@ -52,7 +46,10 @@ const modalStyle = {
     size="medium"
     custom-class="qa-note-modal"
     body-padding="spacious"
-    :custom-style="modalStyle"
+    width="90%"
+    max-width="560px"
+    border-radius="16px"
+    footer-background="var(--insight-surface-secondary)"
     @close="$emit('close')"
   >
     <div class="qa-note-modal-body">
@@ -115,7 +112,7 @@ const modalStyle = {
   margin-bottom: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
 }
 
 .qa-preview-section {
@@ -141,7 +138,7 @@ const modalStyle = {
   padding: 12px;
   overflow-y: auto;
   border-radius: 8px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-primary);
   font-size: 14px;
   line-height: 1.6;
@@ -158,7 +155,7 @@ const modalStyle = {
   align-items: center;
   padding: 4px 10px;
   border-radius: 12px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-weight: 500;
   font-size: 12px;
@@ -194,7 +191,7 @@ const modalStyle = {
   padding: 10px 12px;
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-primary);
   font-size: 14px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -202,7 +199,7 @@ const modalStyle = {
 
 .qa-note-modal__form-input:focus,
 .qa-note-modal__form-textarea:focus {
-  border-color: var(--insight-color-primary);
+  border-color: var(--insight-action-primary);
   outline: none;
   box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
 }

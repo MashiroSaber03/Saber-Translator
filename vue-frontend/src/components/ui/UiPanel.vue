@@ -22,7 +22,7 @@ withDefaults(defineProps<{
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   background: var(--color-surface-card);
-  box-shadow: var(--shadow-sm, 0 1px 3px var(--ui-panel-shadow-default));
+  box-shadow: var(--shadow-sm, 0 1px 3px var(--ui-panel-subtle-shadow-color));
 }
 
 .ui-panel--padded {
@@ -31,7 +31,7 @@ withDefaults(defineProps<{
 
 .ui-panel--settings {
   margin-bottom: 25px;
-  background-color: var(--color-surface-input, var(--ui-panel-surface-base));
+  background-color: var(--color-surface-input, var(--ui-panel-settings-background));
   border-color: var(--color-border-muted, var(--color-border-muted));
   border-radius: 10px;
   box-shadow: none;

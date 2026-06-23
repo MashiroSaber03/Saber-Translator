@@ -80,13 +80,13 @@ const buttonClasses = computed(() => {
 .ui-button--primary {
   background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
   color: var(--ui-button-primary-color, white);
-  box-shadow: var(--ui-button-primary-shadow, 0 2px 8px var(--ui-button-shadow-default));
+  box-shadow: var(--ui-button-primary-shadow, 0 2px 8px var(--ui-button-primary-shadow-color));
 }
 
 .ui-button--primary:hover:not(:disabled) {
   background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%)));
   transform: var(--ui-button-primary-hover-transform, translateY(-2px));
-  box-shadow: var(--ui-button-primary-hover-shadow, 0 6px 20px var(--ui-button-shadow-raised));
+  box-shadow: var(--ui-button-primary-hover-shadow, 0 6px 20px var(--ui-button-primary-hover-shadow-color));
 }
 
 .ui-button--secondary {
@@ -123,20 +123,20 @@ const buttonClasses = computed(() => {
 
 .ui-button--ghost:hover:not(:disabled) {
   background: var(--studio-surface-tint);
-  border-color: var(--ui-button-border-default);
+  border-color: var(--ui-button-secondary-border);
 }
 
 .ui-button--danger {
-  background: var(--ui-button-danger-background, linear-gradient(135deg, var(--ui-button-surface-base) 0%, var(--ui-button-surface-raised) 100%));
+  background: var(--ui-button-danger-background, linear-gradient(135deg, var(--ui-button-danger-background-start) 0%, var(--ui-button-danger-background-end) 100%));
   color: var(--ui-button-danger-color, white);
   border: var(--ui-button-danger-border, var(--ui-button-border, none));
-  box-shadow: var(--ui-button-danger-shadow, 0 2px 8px var(--ui-button-shadow-floating));
+  box-shadow: var(--ui-button-danger-shadow, 0 2px 8px var(--ui-button-danger-shadow-color));
 }
 
 .ui-button--danger:hover:not(:disabled) {
-  background: var(--ui-button-danger-hover-background, linear-gradient(135deg, var(--ui-button-surface-muted) 0%, var(--ui-button-surface-subtle) 100%));
+  background: var(--ui-button-danger-hover-background, linear-gradient(135deg, var(--ui-button-danger-hover-background-start) 0%, var(--ui-button-danger-hover-background-end) 100%));
   border-color: var(--ui-button-danger-hover-border-color, currentColor);
-  box-shadow: var(--ui-button-danger-hover-shadow, 0 6px 20px var(--ui-button-shadow-strong));
+  box-shadow: var(--ui-button-danger-hover-shadow, 0 6px 20px var(--ui-button-danger-hover-shadow-color));
 }
 
 .ui-button--lg:not(:where(.ui-button--bare)) {
@@ -169,11 +169,11 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--tone-success:not(:where(.ui-button--bare)) {
-  color: var(--status-success, var(--ui-button-text-primary));
+  color: var(--status-success, var(--ui-button-status-success-text));
 }
 
 .ui-button--tone-warning:not(:where(.ui-button--bare)) {
-  color: var(--status-warning, var(--ui-button-text-secondary));
+  color: var(--status-warning, var(--ui-button-status-warning-text));
 }
 
 .ui-button--tone-primary:not(:where(.ui-button--bare)) {

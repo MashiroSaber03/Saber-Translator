@@ -67,63 +67,6 @@ watch(totalImages, (count) => {
 const normalizedDraftSelection = computed(() => normalizePageSelection(draftSelectedPages.value))
 const selectedCount = computed(() => normalizedDraftSelection.value.length)
 const draftSummary = computed(() => createPageSelectionSummary(normalizedDraftSelection.value))
-const pageSelectionDialogStyle = {
-  width: 'min(1180px, 95vw)',
-  height: 'min(88vh, 920px)',
-  background: 'var(--color-surface-base)',
-  border: '1px solid var(--page-selection-modal-border-default)',
-  borderRadius: '14px',
-  boxShadow: '0 20px 50px var(--page-selection-modal-shadow-default)',
-  '--ui-dialog-header-padding': '18px 22px',
-  '--ui-dialog-header-border': '1px solid var(--page-selection-modal-border-strong)',
-  '--ui-dialog-title-color': 'var(--page-selection-modal-text-primary)',
-  '--ui-dialog-title-font-size': '22px',
-  '--ui-dialog-title-font-weight': '700',
-  '--ui-dialog-body-padding': '18px 20px',
-  '--ui-dialog-body-background': 'var(--page-selection-modal-surface-base)',
-  '--ui-dialog-actions-padding': '16px 20px',
-  '--ui-dialog-actions-border': '1px solid var(--page-selection-modal-border-strong)',
-  '--ui-dialog-actions-background': 'var(--color-surface-base)',
-  '--page-selection-modal-border-default': '#dbe4ef',
-  '--page-selection-modal-border-strong': '#e2e9f2',
-  '--page-selection-modal-border-muted': '#d3deed',
-  '--page-selection-modal-border-subtle': '#d8e3f1',
-  '--page-selection-modal-border-hover': '#cfdcec',
-  '--page-selection-modal-border-active': '#4a82ce',
-  '--page-selection-modal-border-focus': '#f0d78c',
-  '--page-selection-modal-shadow-default': 'rgba(28, 45, 72, .18)',
-  '--page-selection-modal-shadow-raised': 'rgba(28, 45, 72, .07)',
-  '--page-selection-modal-shadow-floating': 'rgba(74, 130, 206, .12)',
-  '--page-selection-modal-shadow-strong': 'rgba(240, 215, 140, .4)',
-  '--page-selection-modal-shadow-soft': 'rgba(0, 0, 0, .1)',
-  '--page-selection-modal-shadow-focus': 'rgba(52, 152, 219, .45)',
-  '--page-selection-modal-shadow-glow': 'rgba(0, 0, 0, .25)',
-  '--page-selection-modal-shadow-inset': 'rgba(0, 0, 0, .3)',
-  '--page-selection-modal-surface-base': '#f4f7f9',
-  '--page-selection-modal-surface-raised': '#f4f8fd',
-  '--page-selection-modal-surface-muted': '#f5f8fd',
-  '--page-selection-modal-surface-subtle': '#fbfdff',
-  '--page-selection-modal-surface-hover': '#4a82ce',
-  '--page-selection-modal-surface-active': '#3f74bc',
-  '--page-selection-modal-surface-selected': '#e8f4fd',
-  '--page-selection-modal-surface-overlay': '#d4e8f8',
-  '--page-selection-modal-surface-inverse': '#ffe8b8',
-  '--page-selection-modal-surface-contrast': '#f2f8ff',
-  '--page-selection-modal-surface-tint': 'rgba(74, 130, 206, .92)',
-  '--page-selection-modal-surface-soft': 'rgba(53, 152, 219, .8)',
-  '--page-selection-modal-surface-strong': 'rgba(255, 0, 0, .8)',
-  '--page-selection-modal-surface-stronger': 'rgba(0, 123, 255, .8)',
-  '--page-selection-modal-surface-highlight': 'rgba(0, 0, 0, .6)',
-  '--page-selection-modal-surface-highlight-strong': 'rgba(34, 197, 94, .9)',
-  '--page-selection-modal-text-primary': '#20314f',
-  '--page-selection-modal-text-secondary': '#273959',
-  '--page-selection-modal-text-muted': '#51637f',
-  '--page-selection-modal-text-subtle': '#5b6f8e',
-  '--page-selection-modal-text-supporting': '#243552',
-  '--page-selection-modal-text-disabled': '#94a3b8',
-  '--page-selection-modal-text-inverse': '#5a4a00',
-  '--page-selection-modal-text-brand': '#8a7a30',
-}
 
 function closeModal(): void {
   emit('update:modelValue', false)
@@ -179,7 +122,22 @@ function handleBreadcrumbClick(path: string): void {
     title="指定翻译页码"
     size="full"
     custom-class="page-selection-modal"
-    :custom-style="pageSelectionDialogStyle"
+    width="min(1180px, 95vw)"
+    height="min(88vh, 920px)"
+    background="var(--color-surface-base)"
+    border="1px solid #dbe4ef"
+    border-radius="14px"
+    box-shadow="0 20px 50px rgba(28, 45, 72, .18)"
+    header-padding="18px 22px"
+    header-border="1px solid #e2e9f2"
+    title-color="#20314f"
+    title-font-size="22px"
+    title-font-weight="700"
+    body-padding-value="18px 20px"
+    body-background="#f4f7f9"
+    footer-padding="16px 20px"
+    footer-border="1px solid #e2e9f2"
+    footer-background="var(--color-surface-base)"
     @update:model-value="emit('update:modelValue', $event)"
     @close="closeModal"
   >
@@ -313,6 +271,43 @@ function handleBreadcrumbClick(path: string): void {
 
 <style scoped>
 .page-selection-shell {
+  --page-selection-modal-border-default: #dbe4ef;
+  --page-selection-modal-border-strong: #e2e9f2;
+  --page-selection-modal-border-muted: #d3deed;
+  --page-selection-modal-border-subtle: #d8e3f1;
+  --page-selection-modal-border-hover: #cfdcec;
+  --page-selection-modal-border-active: #4a82ce;
+  --page-selection-modal-border-focus: #f0d78c;
+  --page-selection-modal-shadow-raised: rgba(28, 45, 72, .07);
+  --page-selection-modal-shadow-floating: rgba(74, 130, 206, .12);
+  --page-selection-modal-shadow-strong: rgba(240, 215, 140, .4);
+  --page-selection-modal-shadow-soft: rgba(0, 0, 0, .1);
+  --page-selection-modal-shadow-focus: rgba(52, 152, 219, .45);
+  --page-selection-modal-shadow-glow: rgba(0, 0, 0, .25);
+  --page-selection-modal-shadow-inset: rgba(0, 0, 0, .3);
+  --page-selection-modal-surface-raised: #f4f8fd;
+  --page-selection-modal-surface-muted: #f5f8fd;
+  --page-selection-modal-surface-subtle: #fbfdff;
+  --page-selection-modal-surface-hover: #4a82ce;
+  --page-selection-modal-surface-active: #3f74bc;
+  --page-selection-modal-surface-selected: #e8f4fd;
+  --page-selection-modal-surface-overlay: #d4e8f8;
+  --page-selection-modal-surface-inverse: #ffe8b8;
+  --page-selection-modal-surface-contrast: #f2f8ff;
+  --page-selection-modal-surface-tint: rgba(74, 130, 206, .92);
+  --page-selection-modal-surface-soft: rgba(53, 152, 219, .8);
+  --page-selection-modal-surface-strong: rgba(255, 0, 0, .8);
+  --page-selection-modal-surface-stronger: rgba(0, 123, 255, .8);
+  --page-selection-modal-surface-highlight: rgba(0, 0, 0, .6);
+  --page-selection-modal-surface-highlight-strong: rgba(34, 197, 94, .9);
+  --page-selection-modal-text-secondary: #273959;
+  --page-selection-modal-text-muted: #51637f;
+  --page-selection-modal-text-subtle: #5b6f8e;
+  --page-selection-modal-text-supporting: #243552;
+  --page-selection-modal-text-disabled: #94a3b8;
+  --page-selection-modal-text-inverse: #5a4a00;
+  --page-selection-modal-text-brand: #8a7a30;
+
   display: flex;
   flex-direction: column;
   gap: 14px;

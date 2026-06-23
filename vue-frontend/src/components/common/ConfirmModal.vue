@@ -63,7 +63,7 @@ function handleCancel(): void {
     :title="title"
     size="small"
     custom-class="confirm-modal"
-    :custom-style="{ '--ui-dialog-body-text-align': 'center' }"
+    body-text-align="center"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="handleCancel"

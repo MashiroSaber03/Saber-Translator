@@ -104,18 +104,18 @@ function getNoteTypeIcon(type: NoteType): string {
   padding: 12px;
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .note-item:hover {
-  border-color: var(--insight-color-primary);
+  border-color: var(--insight-action-primary);
   box-shadow: 0 2px 8px var(--color-focus-brand-soft);
 }
 
 .note-item.qa-note {
-  border-left: 3px solid var(--insight-color-primary);
+  border-left: 3px solid var(--insight-action-primary);
 }
 
 .note-header {
@@ -174,7 +174,7 @@ function getNoteTypeIcon(type: NoteType): string {
 .note-tag {
   padding: 2px 6px;
   border-radius: 10px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-size: 11px;
   opacity: 0.8;
@@ -191,7 +191,7 @@ function getNoteTypeIcon(type: NoteType): string {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-size: 11px;
   cursor: pointer;
@@ -210,7 +210,7 @@ function getNoteTypeIcon(type: NoteType): string {
   padding: 0;
   border: none;
   background: none;
-  color: var(--insight-primary);
+  color: var(--insight-action-primary);
   font-size: 12px;
   cursor: pointer;
 }

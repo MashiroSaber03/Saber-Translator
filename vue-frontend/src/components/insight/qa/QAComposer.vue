@@ -57,7 +57,7 @@ function handleKeydown(event: KeyboardEvent): void {
   padding: 12px 24px;
   border: none;
   border-radius: 12px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
   font-weight: 500;
   cursor: pointer;
@@ -65,7 +65,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 .send-btn:hover {
-  background: var(--insight-primary-dark);
+  background: var(--insight-action-primary-strong);
 }
 
 .send-btn:disabled {

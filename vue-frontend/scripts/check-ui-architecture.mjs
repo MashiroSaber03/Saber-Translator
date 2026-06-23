@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 const ROOTS = [
@@ -20,6 +20,10 @@ const ROOTS = [
 const IS_AUDIT = process.argv.includes('--audit')
 const SKIP_SOURCE_SCAN = process.argv.includes('--skip-source-scan')
 const TOKENS_FIXTURE_INDEX = process.argv.indexOf('--tokens-fixture')
+const TOKENS_FIXTURE_PATH_INDEX = process.argv.indexOf('--tokens-fixture-path')
+const TOKENS_FIXTURE_PATH = TOKENS_FIXTURE_PATH_INDEX >= 0
+  ? (process.argv[TOKENS_FIXTURE_PATH_INDEX + 1] || '').replaceAll('\\', '/')
+  : null
 const SOURCE_FIXTURE_INDEX = process.argv.indexOf('--source-fixture')
 const SOURCE_FIXTURE = SOURCE_FIXTURE_INDEX >= 0
   ? resolve(process.cwd(), process.argv[SOURCE_FIXTURE_INDEX + 1] || '')
@@ -29,7 +33,7 @@ const SOURCE_FIXTURE_PATH = SOURCE_FIXTURE_PATH_INDEX >= 0
   ? (process.argv[SOURCE_FIXTURE_PATH_INDEX + 1] || '').replaceAll('\\', '/')
   : null
 const TOKEN_FILE_ORDER = [
-  'src/styles/tokens/palette.css',
+  'src/styles/tokens/foundation.css',
   'src/styles/tokens/semantic.css',
   'src/styles/tokens/component.css',
   'src/styles/tokens/domain.css',
@@ -71,7 +75,7 @@ const BARE_Z_INDEX_RE = /z-index\s*:\s*\d+\s*;/
 const Z_INDEX_NUMERIC_FALLBACK_RE = /z-index\s*:\s*var\([^)]*,\s*\d+[^)]*\)/
 const BARE_MEDIA_BREAKPOINT_RE = /@media\s*\([^)]*\b\d{3,4}px\b[^)]*\)/
 const LAYOUT_BYPASS_RE = /position\s*:\s*fixed|(?:min-|max-)?height\s*:\s*(?:100vh|calc\(100vh)|margin-(?:left|right)\s*:\s*(?:240|340)px/
-const BASE_MODAL_LEGACY_RE = /\bmodal-(?:overlay|container|header|title|close-btn|body|footer|small|medium|large|full)\b/
+const BASE_MODAL_LEGACY_RE = /\bclass\s*=\s*["'][^"']*\bmodal-(?:overlay|container|header|title|close-btn|body|footer|small|medium|large|full)\b/
 const BASE_MODAL_CUSTOM_CLASS_RE = /<BaseModal\b[\s\S]*?\bcustom-class="([^"]+)"/g
 const STATIC_CLASS_RE = /\bclass\s*=\s*["']([^"']+)["']/g
 const LEGACY_CLASS_TOKENS = new Set(['btn', 'card', 'form-group', 'modal'])
@@ -139,6 +143,8 @@ const GENERATED_OWNER_TOKEN_RE = /--color-[a-z0-9-]+-(?:surface|text|border|shad
 const DOMAIN_SHARED_TOKEN_RE = /^--insight-/
 const GENERATED_DOMAIN_TOKEN_RE = /^--[a-z0-9-]+-variant-\d{3}$/
 const DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE = /^--(?:color-edit-|color-(?:surface|text|border|shadow)-studio|shadow-edit-|shadow-studio-)/
+const LEGACY_INSIGHT_DOMAIN_ALIAS_RE = /^--insight-(?:bg-[a-z0-9-]+|color-(?:primary|warning|error|danger)|primary(?:-[a-z0-9-]+)?|(?:success|warning|error|danger)(?:-color)?)$/
+const VAGUE_COMPONENT_TOKEN_RE = /^--(?:app-header|base-modal|custom-select|toast-notification|ui-button|ui-icon-button|ui-input|ui-panel|ui-select|ui-textarea)-(?:(?:surface|text|border|shadow)-(?:base|primary|secondary|default|raised|muted|subtle|hover|floating|strong|inverse|selected|overlay)|(?:border|shadow)-(?:muted|subtle|strong))$/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
@@ -313,6 +319,7 @@ const tokenArchitectureStats = {
   rootDependencies: 0,
 }
 const visualCoverageEntries = []
+const heavyOwnerReviewSignals = []
 const architectureDebtUsage = Object.fromEntries(
   Object.keys(ARCHITECTURE_DEBT_BUDGETS).map(key => [key, 0])
 )
@@ -343,6 +350,9 @@ function addFailure(path, message) {
 }
 
 function normalizePath(path) {
+  if (TOKENS_FIXTURE_INDEX >= 0 && TOKENS_FIXTURE_PATH && resolve(path) === resolve(process.cwd(), process.argv[TOKENS_FIXTURE_INDEX + 1] || '')) {
+    return TOKENS_FIXTURE_PATH
+  }
   if (SOURCE_FIXTURE && resolve(path) === SOURCE_FIXTURE && SOURCE_FIXTURE_PATH) {
     return SOURCE_FIXTURE_PATH
   }
@@ -354,7 +364,21 @@ function isTokenFile(normalizedPath) {
 }
 
 function isDomainTokenFile(normalizedPath) {
-  return normalizedPath === 'src/styles/tokens/domain.css' || TOKENS_FIXTURE_INDEX >= 0
+  return normalizedPath === 'src/styles/tokens/domain.css'
+}
+
+function isComponentTokenFile(normalizedPath) {
+  return normalizedPath === 'src/styles/tokens/component.css'
+}
+
+function addHeavyOwnerReviewSignal(path, kind, lines, limit, reason) {
+  heavyOwnerReviewSignals.push(`${normalizePath(path)}: ${kind} ${lines}/${limit} (${reason})`)
+}
+
+function checkLocalBuildArtifact(path, normalizedPath) {
+  if (/^(?:build_output\.txt|vite-dev\.log)$/.test(normalizedPath)) {
+    addFailure(path, 'local build/dev log files are not allowed in frontend source; remove the artifact and keep it ignored')
+  }
 }
 
 function escapeRegExp(value) {
@@ -631,6 +655,22 @@ function checkTokenDependencyArchitecture(paths) {
           `generated domain token definition(s) ${generatedDomainTokens.join(', ')} are not allowed; name shared domain tokens by role`
         )
       }
+      const legacyInsightAliasTokens = domainTokens.filter(token => LEGACY_INSIGHT_DOMAIN_ALIAS_RE.test(token))
+      if (legacyInsightAliasTokens.length > 0) {
+        addFailure(
+          path,
+          `legacy-style insight domain alias token definition(s) ${legacyInsightAliasTokens.join(', ')} are not allowed; use --insight-surface-*, --insight-action-*, or --insight-status-* names`
+        )
+      }
+    }
+    if (isComponentTokenFile(normalizedPath)) {
+      const vagueComponentTokens = rootTokenDefinitions.filter(token => VAGUE_COMPONENT_TOKEN_RE.test(token))
+      if (vagueComponentTokens.length > 0) {
+        addFailure(
+          path,
+          `vague component token definition(s) ${vagueComponentTokens.join(', ')} are not allowed; name component tokens by their concrete UI role`
+        )
+      }
     }
     appendTokenScopes(scopes, parseCustomPropertyScopes(content))
   }
@@ -794,6 +834,18 @@ function checkRawCustomStyleValues(path, content) {
   }
 }
 
+function checkBaseModalCustomStyleUsage(path, normalizedPath, content) {
+  if (normalizedPath === 'src/components/common/BaseModal.vue') {
+    return
+  }
+  if (CUSTOM_STYLE_ATTR_RE.test(content)) {
+    addFailure(
+      path,
+      'BaseModal customStyle is not allowed in business UI; use explicit BaseModal layout props or scoped owner variables'
+    )
+  }
+}
+
 function isTestFile(normalizedPath) {
   return normalizedPath.startsWith('tests/')
     || /\.test\.[jt]sx?$/.test(normalizedPath)
@@ -823,6 +875,7 @@ function checkFile(path) {
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
+  checkLocalBuildArtifact(path, normalizedPath)
   checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
@@ -830,6 +883,7 @@ function checkFile(path) {
   checkGlobalFormSkinSelectors(path, content)
   checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
   checkRawCustomStyleValues(path, content)
+  checkBaseModalCustomStyleUsage(path, normalizedPath, content)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
     addFailure(path, 'generated CSS files are not allowed; use co-located named .styles.css or component scoped styles')
@@ -860,10 +914,10 @@ function checkFile(path) {
       ? SFC_SHELL_MAX_LINES
       : SFC_MAX_LINES
     if (lineCount > sfcLineLimit) {
-      addFailure(path, `SFC has ${lineCount} lines; final owner threshold is ${sfcLineLimit}; split UI sections or move isolated UI behavior into composables`)
+      addHeavyOwnerReviewSignal(path, 'SFC owner lines', lineCount, sfcLineLimit, 'review owner boundaries; do not split solely for line count')
     }
     if (styleLineCount > SFC_MAX_STYLE_LINES) {
-      addFailure(path, `SFC has ${styleLineCount} style lines; move repeated UI styling into primitives or split the component`)
+      addHeavyOwnerReviewSignal(path, 'style owner lines', styleLineCount, SFC_MAX_STYLE_LINES, 'style owner is heavy; split only by real UI owner')
     }
     if (!TELEPORT_STYLE_OWNER_ALLOWED_FILES.has(normalizedPath)) {
       for (const match of content.matchAll(SCOPED_STYLE_BLOCK_RE)) {
@@ -917,9 +971,9 @@ function checkFile(path) {
       }
     }
     if (lineCount > CSS_MAX_LINES) {
-      addFailure(path, `CSS file has ${lineCount} lines; split by component boundary or move repeated rules into primitives`)
+      addHeavyOwnerReviewSignal(path, 'CSS owner lines', lineCount, CSS_MAX_LINES, 'style owner is heavy; split only by real UI owner')
     } else if (lineCount >= CSS_OWNER_REVIEW_LINES) {
-      addFailure(path, `CSS owner has ${lineCount} lines; split by component boundary or move repeated rules into primitives`)
+      addHeavyOwnerReviewSignal(path, 'CSS owner lines', lineCount, CSS_OWNER_REVIEW_LINES, 'style owner is near review threshold')
     }
   }
 
@@ -1084,7 +1138,7 @@ function checkFile(path) {
   }
 
   if (!isTokenFile(normalizedPath) && BARE_MEDIA_BREAKPOINT_RE.test(contentWithoutComments)) {
-    addFailure(path, 'bare media breakpoint numbers are not allowed; use @custom-media breakpoint tokens from src/styles/tokens/palette.css')
+    addFailure(path, 'bare media breakpoint numbers are not allowed; use @custom-media breakpoint tokens from src/styles/tokens/foundation.css')
   }
 
   if (contentWithoutComments.includes(':deep(')) {
@@ -1128,6 +1182,7 @@ function checkScriptFile(path) {
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
+  checkLocalBuildArtifact(path, normalizedPath)
   checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
@@ -1204,6 +1259,18 @@ function checkScriptFile(path) {
   }
 }
 
+function checkRepositoryLocalArtifacts() {
+  if (SOURCE_FIXTURE || SKIP_SOURCE_SCAN) {
+    return
+  }
+  for (const artifact of ['build_output.txt', 'vite-dev.log']) {
+    const path = join(process.cwd(), artifact)
+    if (existsSync(path)) {
+      checkScriptFile(path)
+    }
+  }
+}
+
 checkTokenDependencyArchitecture(TOKEN_FILES)
 checkCriticalVisualCoverage()
 
@@ -1217,6 +1284,7 @@ if (SOURCE_FIXTURE) {
   for (const root of ROOTS) {
     scanPath(root)
   }
+  checkRepositoryLocalArtifacts()
 }
 
 for (const [key, budget] of Object.entries(ARCHITECTURE_DEBT_BUDGETS)) {
@@ -1247,6 +1315,10 @@ if (IS_AUDIT) {
   console.warn(`- :root tokens: ${tokenArchitectureStats.rootTokens}`)
   console.warn(`- :root token dependencies: ${tokenArchitectureStats.rootDependencies}`)
   console.warn(`- critical visual states covered: ${visualCoverageEntries.length}`)
+  console.warn(`- heavy owner review signals: ${heavyOwnerReviewSignals.length}`)
+  for (const signal of heavyOwnerReviewSignals.slice(0, 12)) {
+    console.warn(`  - ${signal}`)
+  }
 }
 
 console.log('UI architecture check passed')

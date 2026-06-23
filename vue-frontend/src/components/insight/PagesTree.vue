@@ -357,7 +357,7 @@ watch(
 .page-count-badge {
     font-size: 11px;
     padding: 2px 8px;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     color: var(--insight-text-secondary);
     border-radius: 10px;
 }
@@ -383,7 +383,7 @@ watch(
 }
 
 .tree-chapter-header:hover {
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
 }
 
 .tree-chapter-header.active {
@@ -436,7 +436,7 @@ watch(
 }
 
 .tree-chapter-status.analyzed {
-    background: var(--insight-success-color);
+    background: var(--insight-status-success);
 }
 
 .btn-reanalyze-chapter {
@@ -463,7 +463,7 @@ watch(
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
     padding: 8px 16px 8px 40px;
-    background: var(--insight-bg-primary);
+    background: var(--insight-surface-page);
 }
 
 .tree-chapter.expanded .tree-pages-grid {
@@ -472,7 +472,7 @@ watch(
 
 .tree-page-item {
     aspect-ratio: 3/4;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     border-radius: 4px;
     overflow: hidden;
     cursor: pointer;
@@ -482,12 +482,12 @@ watch(
 }
 
 .tree-page-item:hover {
-    border-color: var(--insight-primary-light);
+    border-color: var(--insight-action-primary-soft);
     transform: scale(1.02);
 }
 
 .tree-page-item.selected {
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
     box-shadow: 0 0 0 2px var(--pages-tree-shadow-default);
 }
 
@@ -498,9 +498,9 @@ watch(
     right: 3px;
     width: 12px;
     height: 12px;
-    background: var(--insight-success-color);
+    background: var(--insight-status-success);
     border-radius: 50%;
-    border: 1.5px solid var(--insight-bg-primary);
+    border: 1.5px solid var(--insight-surface-page);
 }
 
 .tree-page-thumb {
@@ -511,7 +511,7 @@ watch(
     height: 100%;
     object-fit: cover;
     object-position: center;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
 }
 
 .tree-page-num {
@@ -541,7 +541,7 @@ watch(
 .btn-load-more {
     padding: 6px 16px;
     font-size: 12px;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     border: 1px solid var(--color-border-muted);
     border-radius: 6px;
     color: var(--insight-text-secondary);
@@ -550,7 +550,7 @@ watch(
 }
 
 .btn-load-more:hover {
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     color: var(--insight-text-primary);
 }
 </style>

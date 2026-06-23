@@ -5,13 +5,11 @@
     custom-class="reference-selector-modal"
     body-padding="none"
     scroll-mode="contained"
-    :custom-style="{
-      width: 'min(1120px, calc(100vw - 48px))',
-      maxHeight: 'min(88vh, 980px)',
-      '--ui-dialog-body-display': 'flex',
-      '--ui-dialog-body-direction': 'column',
-      '--ui-dialog-body-min-height': '0'
-    }"
+    width="min(1120px, calc(100vw - 48px))"
+    max-height="min(88vh, 980px)"
+    body-display="flex"
+    body-direction="column"
+    body-min-height="0"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
     <!-- 标题栏 -->

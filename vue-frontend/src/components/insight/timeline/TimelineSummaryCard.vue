@@ -26,7 +26,7 @@ defineProps<{
 
 <style scoped>
 .timeline-summary-card {
-  background: linear-gradient(135deg, var(--insight-color-primary) 0%, var(--insight-primary-dark) 100%);
+  background: linear-gradient(135deg, var(--insight-action-primary) 0%, var(--insight-action-primary-strong) 100%);
   color: white;
   border-radius: 12px;
   padding: 20px;

@@ -79,12 +79,12 @@ defineExpose({
 }
 
 .vue-toast-message {
-  background-color: var(--toast-notification-surface-base);
+  background-color: var(--toast-notification-default-background);
   border-radius: 8px;
   padding: 12px 24px;
   padding-right: 36px;
   margin-bottom: 0;
-  box-shadow: 0 4px 12px var(--toast-notification-shadow-default);
+  box-shadow: 0 4px 12px var(--toast-notification-shadow-color);
   position: relative;
   max-width: 100%;
   pointer-events: auto;
@@ -95,19 +95,19 @@ defineExpose({
 }
 
 .vue-toast-info {
-  background-color: var(--toast-notification-surface-raised);
+  background-color: var(--toast-notification-info-background);
 }
 
 .vue-toast-success {
-  background-color: var(--toast-notification-surface-muted);
+  background-color: var(--toast-notification-success-background);
 }
 
 .vue-toast-warning {
-  background-color: var(--toast-notification-surface-subtle);
+  background-color: var(--toast-notification-warning-background);
 }
 
 .vue-toast-error {
-  background-color: var(--toast-notification-surface-hover);
+  background-color: var(--toast-notification-error-background);
 }
 
 .vue-toast-close {
@@ -119,7 +119,7 @@ defineExpose({
   border: none;
   font-size: 18px;
   cursor: pointer;
-  color: var(--toast-notification-text-primary);
+  color: var(--toast-notification-close-text);
   line-height: 1;
   padding: 0;
   width: 20px;

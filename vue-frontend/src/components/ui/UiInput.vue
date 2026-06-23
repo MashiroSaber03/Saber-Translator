@@ -108,7 +108,7 @@ function handleCompositionEnd(event: CompositionEvent) {
 :where(.ui-input):focus {
   outline: none;
   border-color: var(--ui-input-focus-border, var(--color-action-primary));
-  box-shadow: 0 0 0 3px var(--ui-input-shadow-default);
+  box-shadow: 0 0 0 3px var(--ui-input-focus-shadow);
 }
 
 :where(.ui-input[type='checkbox']),
@@ -148,7 +148,7 @@ function handleCompositionEnd(event: CompositionEvent) {
 }
 
 :where(.ui-input--error) {
-  border-color: var(--color-status-error, var(--ui-input-border-default));
+  border-color: var(--color-status-error, var(--ui-input-error-border));
 }
 
 :where(.ui-input):disabled {

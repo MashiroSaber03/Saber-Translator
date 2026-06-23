@@ -43,20 +43,18 @@ function requestClose(): void {
     size="small"
     custom-class="edit-exit-save-modal"
     overlay-class="edit-exit-save-modal-overlay"
-    :custom-style="{
-      width: 'min(360px, calc(100vw - 32px))',
-      '--ui-dialog-header-padding': '16px 16px 0',
-      '--ui-dialog-header-border': '0',
-      '--ui-dialog-title-color': 'var(--color-text-inverse)',
-      '--ui-dialog-title-font-size': '15px',
-      '--ui-dialog-title-font-weight': '600',
-      '--ui-dialog-body-padding': '8px 16px 0',
-      '--ui-dialog-actions-padding': '14px 16px 16px',
-      '--ui-dialog-actions-border': '0',
-      '--ui-dialog-actions-gap': '8px',
-      '--ui-dialog-actions-justify': 'flex-start',
-      '--ui-dialog-actions-wrap': 'wrap'
-    }"
+    width="min(360px, calc(100vw - 32px))"
+    header-padding="16px 16px 0"
+    header-border="0"
+    title-color="var(--color-text-inverse)"
+    title-font-size="15px"
+    title-font-weight="600"
+    body-padding-value="8px 16px 0"
+    footer-padding="14px 16px 16px"
+    footer-border="0"
+    footer-gap="8px"
+    footer-justify="flex-start"
+    footer-wrap="wrap"
     :show-close-button="false"
     :close-on-overlay="!isSaving"
     :close-on-esc="!isSaving"

@@ -69,7 +69,7 @@ function handleChange(event: Event) {
 :where(.ui-select):focus {
   outline: none;
   border-color: var(--color-action-primary);
-  box-shadow: 0 0 0 3px var(--ui-select-shadow-default);
+  box-shadow: 0 0 0 3px var(--ui-select-focus-shadow);
 }
 
 :where(.ui-select--lg) {
@@ -91,7 +91,7 @@ function handleChange(event: Event) {
 }
 
 :where(.ui-select--error) {
-  border-color: var(--color-status-error, var(--ui-select-border-default));
+  border-color: var(--color-status-error, var(--ui-select-error-border));
 }
 
 :where(.ui-select):disabled {

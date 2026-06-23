@@ -50,11 +50,9 @@ function handleCancel() {
     overlay-class="web-import-disclaimer-overlay"
     body-padding="none"
     scroll-mode="contained"
-    :custom-style="{
-      '--ui-dialog-body-display': 'flex',
-      '--ui-dialog-body-direction': 'column',
-      '--ui-dialog-body-min-height': '0'
-    }"
+    body-display="flex"
+    body-direction="column"
+    body-min-height="0"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
     <!-- 标题 -->

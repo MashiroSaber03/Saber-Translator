@@ -66,12 +66,10 @@ const {
     title="🌐 从网页导入漫画"
     size="large"
     custom-class="web-import-modal"
-    :custom-style="{
-      maxWidth: '800px',
-      '--ui-dialog-actions-gap': '12px',
-      '--ui-dialog-actions-padding': '16px 20px',
-      '--ui-dialog-actions-border': '1px solid var(--color-border-muted, var(--color-border-soft))'
-    }"
+    max-width="800px"
+    footer-gap="12px"
+    footer-padding="16px 20px"
+    footer-border="1px solid var(--color-border-muted, var(--color-border-soft))"
     :close-on-overlay="!isProcessing"
     :close-on-esc="!isProcessing"
     @close="handleClose"

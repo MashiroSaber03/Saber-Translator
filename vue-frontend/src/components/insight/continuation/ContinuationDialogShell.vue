@@ -13,13 +13,9 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const modalStyle = computed(() => ({
-  width: '90%',
-  maxWidth: props.customClass.includes('continuation-dialog-modal--wide') ? '600px' : '520px',
-  maxHeight: '90vh',
-  borderRadius: '12px',
-  '--ui-dialog-actions-padding': '16px 24px',
-}))
+const modalMaxWidth = computed(() => (
+  props.customClass.includes('continuation-dialog-modal--wide') ? '600px' : '520px'
+))
 
 function handleUpdate(value: boolean): void {
   if (!value) {
@@ -35,7 +31,11 @@ function handleUpdate(value: boolean): void {
     size="medium"
     :custom-class="['continuation-dialog-modal', customClass].filter(Boolean).join(' ')"
     body-padding="spacious"
-    :custom-style="modalStyle"
+    width="90%"
+    :max-width="modalMaxWidth"
+    max-height="90vh"
+    border-radius="12px"
+    footer-padding="16px 24px"
     @update:model-value="handleUpdate"
     @close="emit('close')"
   >

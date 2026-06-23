@@ -114,10 +114,10 @@ function isExpanded(id: string): boolean {
 .timeline-node-dot {
   width: 14px;
   height: 14px;
-  border: 3px solid var(--insight-bg-primary);
+  border: 3px solid var(--insight-surface-page);
   border-radius: 50%;
-  background: var(--insight-color-primary);
-  box-shadow: 0 0 0 2px var(--insight-color-primary);
+  background: var(--insight-action-primary);
+  box-shadow: 0 0 0 2px var(--insight-action-primary);
   cursor: pointer;
   transition: transform 0.2s;
   z-index: var(--z-local);
@@ -131,7 +131,7 @@ function isExpanded(id: string): boolean {
   flex: 1;
   width: 2px;
   margin-top: 4px;
-  background: linear-gradient(180deg, var(--insight-color-primary), var(--color-border-muted));
+  background: linear-gradient(180deg, var(--insight-action-primary), var(--color-border-muted));
 }
 
 .timeline-group:last-child .timeline-node-line {

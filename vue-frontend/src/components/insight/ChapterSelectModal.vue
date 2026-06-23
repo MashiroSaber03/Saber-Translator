@@ -77,7 +77,7 @@ function close(): void {
     size="small"
     custom-class="chapter-select-modal"
     body-padding="spacious"
-    :custom-style="{ '--ui-dialog-actions-gap': '12px' }"
+    footer-gap="12px"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="close"
@@ -158,7 +158,7 @@ function close(): void {
 
 .chapter-select-body .chapter-item.selected {
   background: var(--color-focus-brand-soft);
-  border-color: var(--insight-color-primary);
+  border-color: var(--insight-action-primary);
 }
 
 .chapter-select-body .chapter-info {
@@ -181,7 +181,7 @@ function close(): void {
 
 .chapter-select-body .check-icon {
   font-size: 18px;
-  color: var(--insight-color-primary);
+  color: var(--insight-action-primary);
   font-weight: bold;
 }
 </style>

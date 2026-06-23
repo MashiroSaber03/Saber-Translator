@@ -464,7 +464,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .overview-grid .overview-card {
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     border-radius: 12px;
     padding: 20px;
     border: 1px solid var(--color-border-muted);
@@ -499,7 +499,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     font-weight: 600;
     border: 1px solid var(--color-border-muted);
     border-radius: 6px;
-    background: var(--insight-bg-secondary);
+    background: var(--insight-surface-secondary);
     color: var(--insight-text-primary);
     cursor: pointer;
     min-width: 140px;
@@ -507,12 +507,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .overview-grid .template-select:hover {
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
 }
 
 .overview-grid .template-select:focus {
     outline: none;
-    border-color: var(--insight-color-primary);
+    border-color: var(--insight-action-primary);
     box-shadow: 0 0 0 2px var(--overview-panel-shadow-default);
 }
 
@@ -541,7 +541,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 .overview-grid .template-status.status-generating {
     background: var(--color-focus-brand-soft);
-    color: var(--insight-color-primary);
+    color: var(--insight-action-primary);
     animation: pulse 1.5s infinite;
 }
 
@@ -559,7 +559,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .overview-grid .placeholder-text.generating {
-    color: var(--insight-color-primary);
+    color: var(--insight-action-primary);
     animation: pulse 1.5s infinite;
 }
 
@@ -587,7 +587,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     width: 32px;
     height: 32px;
     border: none;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     border-radius: 6px;
     cursor: pointer;
     font-size: 16px;
@@ -598,7 +598,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .overview-grid .button-icon:hover {
-    background: var(--insight-color-primary);
+    background: var(--insight-action-primary);
     color: white;
 }
 
@@ -661,8 +661,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .overview-grid .markdown-content blockquote {
     margin: 12px 0;
     padding: 8px 12px;
-    border-left: 3px solid var(--insight-color-primary);
-    background: var(--insight-bg-tertiary);
+    border-left: 3px solid var(--insight-action-primary);
+    background: var(--insight-surface-tertiary);
     border-radius: 0 6px 6px 0;
 }
 
@@ -685,7 +685,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .overview-grid .stat-item {
     text-align: center;
     padding: 12px;
-    background: var(--insight-bg-tertiary);
+    background: var(--insight-surface-tertiary);
     border-radius: 8px;
 }
 
@@ -693,7 +693,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     display: block;
     font-size: 28px;
     font-weight: 700;
-    color: var(--insight-color-primary);
+    color: var(--insight-action-primary);
 }
 
 .overview-grid .stat-label {
@@ -736,16 +736,16 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .overview-grid .overview-card .overview-action-button--primary {
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
 }
 
 .overview-grid .overview-card .overview-action-button--primary:hover:not(:disabled) {
-  background: var(--insight-primary-dark);
+  background: var(--insight-action-primary-strong);
 }
 
 .overview-grid .overview-card .overview-action-button--secondary {
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   color: var(--insight-text-primary);
   border: 1px solid var(--color-border-muted);
 }
@@ -766,7 +766,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -780,7 +780,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .overview-grid .recent-page-item .page-number {
   font-size: 13px;
   font-weight: 500;
-  color: var(--insight-color-primary);
+  color: var(--insight-action-primary);
 }
 
 .overview-grid .recent-page-item .page-summary {

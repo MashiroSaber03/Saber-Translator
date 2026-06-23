@@ -104,7 +104,7 @@ defineEmits<{
 }
 
 .chat-message.assistant .message-avatar {
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
 }
 
 .message-content {
@@ -116,14 +116,14 @@ defineEmits<{
 
 .chat-message.user .message-content {
   border-bottom-right-radius: 4px;
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
 }
 
 .chat-message.assistant .message-content {
   border: 1px solid var(--color-border-muted);
   border-bottom-left-radius: 4px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
 }
 
 .markdown-content {
@@ -139,7 +139,7 @@ defineEmits<{
   margin-bottom: 8px;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--insight-bg-secondary);
+  background: var(--insight-surface-secondary);
   color: var(--insight-text-secondary);
   font-size: 11px;
 }
@@ -157,12 +157,12 @@ defineEmits<{
   margin: 2px 4px;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   cursor: pointer;
 }
 
 .citation-item:hover {
-  background: var(--insight-color-primary);
+  background: var(--insight-action-primary);
   color: white;
 }
 
@@ -174,7 +174,7 @@ defineEmits<{
   padding: 6px 12px;
   border: 1px solid var(--color-border-muted);
   border-radius: 6px;
-  background: var(--insight-bg-tertiary);
+  background: var(--insight-surface-tertiary);
   color: var(--insight-text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -182,14 +182,14 @@ defineEmits<{
 }
 
 .message-save-btn:hover {
-  border-color: var(--insight-color-primary);
-  background: var(--insight-color-primary);
+  border-color: var(--insight-action-primary);
+  background: var(--insight-action-primary);
   color: white;
 }
 
 .message-save-btn.saved {
-  border-color: var(--insight-success-color);
-  background: var(--insight-success-color);
+  border-color: var(--insight-status-success);
+  background: var(--insight-status-success);
   color: white;
   cursor: default;
 }
