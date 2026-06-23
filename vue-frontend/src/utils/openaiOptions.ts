@@ -10,7 +10,19 @@ function cloneRecordOrUndefined(value: unknown): Record<string, unknown> | undef
 function parseNumberOrFallback(value: unknown, fallback: number): number {
   if (value === undefined || value === null || value === '') return fallback
   const parsed = Number(value)
-  return Number.isNaN(parsed) ? fallback : parsed
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function parseOptionalNumberOrFallback(value: unknown, fallback?: number): number | undefined {
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
 export function createDefaultOpenAiOptions(
@@ -40,9 +52,9 @@ export function normalizeOpenAiOptions(
   defaults?: Partial<OpenAICompatibleOptions>
 ): OpenAICompatibleOptions {
   const normalized = createDefaultOpenAiOptions(defaults)
-  const candidate = (raw && typeof raw === 'object') ? raw as Record<string, any> : {}
-  const request = (candidate.request && typeof candidate.request === 'object') ? candidate.request as Record<string, any> : {}
-  const execution = (candidate.execution && typeof candidate.execution === 'object') ? candidate.execution as Record<string, any> : {}
+  const candidate = recordOrEmpty(raw)
+  const request = recordOrEmpty(candidate.request)
+  const execution = recordOrEmpty(candidate.execution)
 
   normalized.request.forceJsonOutput = Boolean(
     request.forceJsonOutput ?? normalized.request.forceJsonOutput
@@ -50,7 +62,7 @@ export function normalizeOpenAiOptions(
 
   const temperature = request.temperature
   if (temperature !== undefined && temperature !== null && temperature !== '') {
-    normalized.request.temperature = Number(temperature)
+    normalized.request.temperature = parseOptionalNumberOrFallback(temperature, normalized.request.temperature)
   }
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extraBody)
@@ -60,15 +72,18 @@ export function normalizeOpenAiOptions(
   )
 
   normalized.execution.rpmLimit = parseNumberOrFallback(
-    execution.rpmLimit ?? normalized.execution.rpmLimit
+    execution.rpmLimit ?? normalized.execution.rpmLimit,
+    normalized.execution.rpmLimit
   )
 
   normalized.execution.transportRetries = parseNumberOrFallback(
-    execution.transportRetries ?? normalized.execution.transportRetries
+    execution.transportRetries ?? normalized.execution.transportRetries,
+    normalized.execution.transportRetries
   )
 
   normalized.execution.businessRetries = parseNumberOrFallback(
-    execution.businessRetries ?? normalized.execution.businessRetries
+    execution.businessRetries ?? normalized.execution.businessRetries,
+    normalized.execution.businessRetries
   )
 
   return normalized
@@ -79,9 +94,9 @@ export function deserializeOpenAICompatibleOptionsFromApi(
   defaults?: Partial<OpenAICompatibleOptions>
 ): OpenAICompatibleOptions {
   const normalized = createDefaultOpenAiOptions(defaults)
-  const candidate = (raw && typeof raw === 'object') ? raw as Record<string, any> : {}
-  const request = (candidate.request && typeof candidate.request === 'object') ? candidate.request as Record<string, any> : {}
-  const execution = (candidate.execution && typeof candidate.execution === 'object') ? candidate.execution as Record<string, any> : {}
+  const candidate = recordOrEmpty(raw)
+  const request = recordOrEmpty(candidate.request)
+  const execution = recordOrEmpty(candidate.execution)
 
   normalized.request.forceJsonOutput = Boolean(
     request.force_json_output ?? normalized.request.forceJsonOutput
@@ -89,7 +104,7 @@ export function deserializeOpenAICompatibleOptionsFromApi(
 
   const temperature = request.temperature
   if (temperature !== undefined && temperature !== null && temperature !== '') {
-    normalized.request.temperature = Number(temperature)
+    normalized.request.temperature = parseOptionalNumberOrFallback(temperature, normalized.request.temperature)
   }
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extra_body)

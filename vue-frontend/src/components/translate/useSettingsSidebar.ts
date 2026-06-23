@@ -286,6 +286,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   // ============================================================
 
   onMounted(async () => {
+    window.addEventListener('click', handleClickOutside)
+
     void loadWorkflowPreferences()
 
     // 加载字体列表
@@ -298,8 +300,6 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       fontList.value = [currentFont, ...fontList.value]
     }
 
-    // 监听点击外部关闭应用选项菜单
-    window.addEventListener('click', handleClickOutside)
   })
 
   onUnmounted(() => {
@@ -405,7 +405,6 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   function updateAutoFontSize(event: Event) {
     const checked = (event.target as HTMLInputElement).checked
     settingsStore.updateTextStyle({ autoFontSize: checked })
-    console.log(`自动字号设置变更: ${checked}`)
     emit('autoFontSizeChanged', checked)
   }
 

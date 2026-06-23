@@ -29,7 +29,6 @@ export function useDetectionSettings(
   function setTextDetector(detector: TextDetector): void {
     settings.value.textDetector = detector
     saveToStorage()
-    console.log(`文本检测器已设置为: ${detector}`)
   }
 
   /**
@@ -38,7 +37,6 @@ export function useDetectionSettings(
   function setMinTextBlockAreaPercent(percent: number): void {
     settings.value.minTextBlockAreaPercent = percent
     saveToStorage()
-    console.log(`最小文本框面积占比已设置为: ${percent}%`)
   }
 
   /**
@@ -47,7 +45,6 @@ export function useDetectionSettings(
   function setEnableAuxYoloDetection(enabled: boolean): void {
     settings.value.enableAuxYoloDetection = enabled
     saveToStorage()
-    console.log(`辅助 YSGYolo 检测已设置为: ${enabled}`)
   }
 
   /**
@@ -56,7 +53,6 @@ export function useDetectionSettings(
   function setAuxYoloConfThreshold(threshold: number): void {
     settings.value.auxYoloConfThreshold = threshold
     saveToStorage()
-    console.log(`辅助 YSGYolo 置信度阈值已设置为: ${threshold}`)
   }
 
   /**
@@ -65,7 +61,6 @@ export function useDetectionSettings(
   function setAuxYoloOverlapThreshold(threshold: number): void {
     settings.value.auxYoloOverlapThreshold = threshold
     saveToStorage()
-    console.log(`辅助 YSGYolo 重叠阈值已设置为: ${threshold}`)
   }
 
   /**
@@ -74,7 +69,6 @@ export function useDetectionSettings(
   function setEnableSaberYoloRefine(enabled: boolean): void {
     settings.value.enableSaberYoloRefine = enabled
     saveToStorage()
-    console.log(`SaberYOLO 二阶段纠错已设置为: ${enabled}`)
   }
 
   /**
@@ -83,7 +77,6 @@ export function useDetectionSettings(
   function setSaberYoloRefineOverlapThreshold(threshold: number): void {
     settings.value.saberYoloRefineOverlapThreshold = threshold
     saveToStorage()
-    console.log(`SaberYOLO 二阶段纠错重叠阈值已设置为: ${threshold}%`)
   }
 
   /**

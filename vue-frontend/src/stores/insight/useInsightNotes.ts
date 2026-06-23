@@ -14,6 +14,50 @@ export interface UseInsightNotesOptions {
   currentBookId: Ref<string | null>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNoteType(value: unknown): value is NoteType {
+  return value === 'text' || value === 'qa'
+}
+
+function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === 'string'
+}
+
+function hasOptionalNumber(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || (typeof value[key] === 'number' && Number.isFinite(value[key]))
+}
+
+function isCitation(value: unknown): value is { page: number; content: string } {
+  return isRecord(value)
+    && typeof value.page === 'number'
+    && Number.isFinite(value.page)
+    && typeof value.content === 'string'
+}
+
+function isNoteData(value: unknown): value is NoteData {
+  if (!isRecord(value)) return false
+  if (typeof value.id !== 'string' || !isNoteType(value.type) || typeof value.content !== 'string') {
+    return false
+  }
+  if (!hasOptionalNumber(value, 'pageNum')) return false
+  if (!hasOptionalString(value, 'createdAt')) return false
+  if (!hasOptionalString(value, 'updatedAt')) return false
+  if (!hasOptionalString(value, 'title')) return false
+  if (!hasOptionalString(value, 'question')) return false
+  if (!hasOptionalString(value, 'answer')) return false
+  if (!hasOptionalString(value, 'comment')) return false
+  if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every(tag => typeof tag === 'string'))) {
+    return false
+  }
+  if (value.citations !== undefined && (!Array.isArray(value.citations) || !value.citations.every(isCitation))) {
+    return false
+  }
+  return true
+}
+
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
 
@@ -59,7 +103,8 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     }
     try {
       const stored = localStorage.getItem(storageKey)
-      notes.value = stored ? JSON.parse(stored) as NoteData[] : []
+      const parsed = stored ? JSON.parse(stored) : []
+      notes.value = Array.isArray(parsed) ? parsed.filter(isNoteData) : []
     } catch (e) {
       console.warn('加载本地笔记失败:', e)
       notes.value = []
@@ -124,6 +169,11 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       return optimisticNote
     }
 
+    function rollbackOptimisticNote(): void {
+      notes.value = notes.value.filter(existing => existing.id !== optimisticNote.id)
+      saveNotesToStorage()
+    }
+
     try {
       const response = await insightApi.createNote(currentBookId.value, {
         type: note.type,
@@ -149,11 +199,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         saveNotesToStorage()
         return newNote
       }
+      error.value = response.error || '添加笔记失败'
     } catch (e) {
       console.error('添加笔记失败:', e)
       error.value = e instanceof Error ? e.message : '添加笔记失败'
     }
-    return optimisticNote
+    rollbackOptimisticNote()
+    return null
   }
 
   /**

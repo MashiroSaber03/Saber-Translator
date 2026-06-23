@@ -33,7 +33,7 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   // 渲染参数
   fontSize: TEXT_STYLE_DEFAULTS.fontSize,
   fontFamily: TEXT_STYLE_DEFAULTS.fontFamily,
-  textDirection: 'vertical',  // 简化设计：不再使用 'auto'，始终是具体方向
+  textDirection: 'vertical',  // 渲染状态始终保存具体方向。
   autoTextDirection: 'vertical',
   textColor: TEXT_STYLE_DEFAULTS.textColor,
   fillColor: TEXT_STYLE_DEFAULTS.fillColor,
@@ -157,7 +157,7 @@ export function createBubbleStatesFromResponse(
 
   // 否则根据坐标创建新的状态
   return bubble_coords.map((coords, index) => {
-    // 【简化设计】获取后端检测的方向（备份）
+    // 保存后端检测方向作为自动模式恢复备份。
     let autoDirection: TextDirection
     if (auto_directions[index]) {
       autoDirection = auto_directions[index] === 'v' ? 'vertical' : 'horizontal'
@@ -166,7 +166,7 @@ export function createBubbleStatesFromResponse(
       autoDirection = detectTextDirection(coords)
     }
 
-    // 【简化设计】textDirection 直接使用具体方向值：
+    // 渲染方向使用具体方向值：
     // - 如果全局设置是 'auto'，使用检测结果
     // - 否则使用全局设置的值
     const globalTextDir = globalDefaults?.textDirection
@@ -533,7 +533,7 @@ export function initBubbleStates(
   return coords.map((coord) => {
     const autoDirection = detectTextDirection(coord)
 
-    // 【简化设计】textDirection 直接使用具体方向值
+    // 渲染方向使用具体方向值。
     const globalTextDir = globalDefaults?.textDirection
     const textDirection: TextDirection =
       (globalTextDir === 'vertical' || globalTextDir === 'horizontal')

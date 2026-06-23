@@ -1,4 +1,4 @@
-import { ref, readonly, type Ref } from 'vue'
+import { getCurrentInstance, onBeforeUnmount, ref, readonly, type Ref } from 'vue'
 import type { CharacterProfile, ChapterScript, PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 
@@ -254,6 +254,12 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     function getGeneratedImageUrl(imagePath: string): string {
         if (!bookId.value || !imagePath) return ''
         return `/api/manga-insight/${bookId.value}/continuation/generated-image?path=${encodeURIComponent(imagePath)}`
+    }
+
+    if (getCurrentInstance()) {
+        onBeforeUnmount(() => {
+            clearMessageTimer()
+        })
     }
 
     return {

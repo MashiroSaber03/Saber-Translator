@@ -36,7 +36,7 @@ export interface ReRenderResponse {
   success: boolean
   translated_image?: string
   rendered_image?: string  // 后端实际返回的字段名
-  bubble_states?: Array<{ fontSize?: number;[key: string]: any }>
+  bubble_states?: BubbleState[]
   error?: string
 }
 

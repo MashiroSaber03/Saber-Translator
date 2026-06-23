@@ -40,7 +40,15 @@ defineEmits<{
             :style="{ background: getTagColor(tag) }"
           >
             {{ tag }}
-            <span class="remove-detail-tag" @click.stop="$emit('removeTag', tag)">×</span>
+            <UiButton
+              variant="toolbar"
+              type="button"
+              class="remove-detail-tag"
+              :aria-label="`移除标签 ${tag}`"
+              @click.stop="$emit('removeTag', tag)"
+            >
+              ×
+            </UiButton>
           </span>
         </span>
         <span v-else class="no-tags-hint">暂无标签</span>
@@ -48,6 +56,7 @@ defineEmits<{
           variant="toolbar"
           class="btn-add-tag"
           title="添加标签"
+          aria-label="添加标签"
           @click="$emit('addTag')"
         >
           +
@@ -127,11 +136,22 @@ defineEmits<{
 }
 
 .detail-tag {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 10px;
   color: var(--color-text-inverse);
   font-size: 0.75rem;
+}
+
+.remove-detail-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
 }
 
 .no-tags-hint {

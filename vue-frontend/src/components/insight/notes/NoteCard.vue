@@ -32,11 +32,6 @@ function getNoteTypeIcon(type: NoteType): string {
   <div
     class="note-item"
     :class="{ 'qa-note': note.type === 'qa' }"
-    role="button"
-    tabindex="0"
-    @click="$emit('edit', note)"
-    @keydown.enter="$emit('edit', note)"
-    @keydown.space.prevent="$emit('edit', note)"
   >
     <div class="note-header">
       <span class="note-type-icon">{{ getNoteTypeIcon(note.type) }}</span>
@@ -60,29 +55,34 @@ function getNoteTypeIcon(type: NoteType): string {
       </div>
     </div>
 
-    <div v-if="note.title" class="note-title">{{ note.title }}</div>
-    <div v-if="note.type === 'qa'" class="note-content">
-      <div class="qa-preview-text">Q: {{ note.question?.substring(0, 60) }}...</div>
-    </div>
-    <div v-else class="note-content">{{ note.content }}</div>
+    <UiButton
+      variant="toolbar"
+      class="note-open-button"
+      :aria-label="`编辑笔记：${note.title || note.question || note.content || '未命名笔记'}`"
+      @click="$emit('edit', note)"
+    >
+      <span v-if="note.title" class="note-title">{{ note.title }}</span>
+      <span v-if="note.type === 'qa'" class="note-content">
+        <span class="qa-preview-text">Q: {{ note.question?.substring(0, 60) }}...</span>
+      </span>
+      <span v-else class="note-content">{{ note.content }}</span>
 
-    <div v-if="note.tags && note.tags.length > 0" class="note-tags">
-      <span v-for="tag in note.tags" :key="tag" class="note-tag">{{ tag }}</span>
-    </div>
+      <span v-if="note.tags && note.tags.length > 0" class="note-tags">
+        <span v-for="tag in note.tags" :key="tag" class="note-tag">{{ tag }}</span>
+      </span>
+    </UiButton>
 
     <div v-if="note.type === 'qa' && note.citations && note.citations.length > 0" class="note-citations">
-      <span
+      <UiButton
         v-for="citation in note.citations.slice(0, 3)"
         :key="citation.page"
+        variant="toolbar"
         class="citation-badge"
-        role="button"
-        tabindex="0"
-        @click.stop="$emit('showPage', citation.page)"
-        @keydown.enter.stop="$emit('showPage', citation.page)"
-        @keydown.space.stop.prevent="$emit('showPage', citation.page)"
+        :aria-label="`查看第 ${citation.page} 页`"
+        @click="$emit('showPage', citation.page)"
       >
         第{{ citation.page }}页
-      </span>
+      </UiButton>
       <span v-if="note.citations.length > 3" class="citation-badge">+{{ note.citations.length - 3 }}</span>
     </div>
 
@@ -105,7 +105,6 @@ function getNoteTypeIcon(type: NoteType): string {
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   background: var(--insight-surface-tertiary);
-  cursor: pointer;
   transition: all 0.2s ease;
 }
 
@@ -141,7 +140,20 @@ function getNoteTypeIcon(type: NoteType): string {
   margin-left: auto;
 }
 
+.note-open-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
 .note-title {
+  display: block;
   margin-bottom: 6px;
   overflow: hidden;
   color: var(--insight-text-primary);
@@ -152,6 +164,7 @@ function getNoteTypeIcon(type: NoteType): string {
 }
 
 .note-content {
+  display: block;
   color: var(--insight-text-secondary);
   font-size: 14px;
   line-height: 1.5;
@@ -190,9 +203,11 @@ function getNoteTypeIcon(type: NoteType): string {
 .citation-badge {
   display: inline-block;
   padding: 2px 8px;
+  border: 0;
   border-radius: 10px;
   background: var(--insight-action-primary);
   color: white;
+  font: inherit;
   font-size: 11px;
   cursor: pointer;
   transition: opacity 0.2s;

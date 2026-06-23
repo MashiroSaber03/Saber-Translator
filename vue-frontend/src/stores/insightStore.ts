@@ -23,10 +23,7 @@ import type {
   QAMessage, NoteData, StoreVlmConfig, StoreLlmConfig, StoreEmbeddingConfig,
   StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
 } from '@/types/insight'
-import {
-  deserializeOpenAICompatibleOptionsFromApi,
-  normalizeOpenAiOptions
-} from '@/utils/openaiOptions'
+import { deserializeOpenAICompatibleOptionsFromApi } from '@/utils/openaiOptions'
 import { getProviderBaseUrl, getProviderDefaultModel, normalizeProviderId } from '@/config/aiProviders'
 
 // 公开 Store 相关类型
@@ -44,6 +41,153 @@ export type EmbeddingConfig = StoreEmbeddingConfig
 export type RerankerConfig = StoreRerankerConfig
 export type ImageGenConfig = StoreImageGenConfig
 export type InsightConfig = StoreInsightConfig
+
+const INSIGHT_CONFIG_SCHEMA_VERSION = 1
+
+type InsightConfigStoragePayload = {
+  insightConfigSchemaVersion: typeof INSIGHT_CONFIG_SCHEMA_VERSION
+  config: InsightConfig
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasStringField(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'string'
+}
+
+function hasOptionalStringField(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === 'string'
+}
+
+function hasNumberField(value: Record<string, unknown>, key: string): boolean {
+  const field = value[key]
+  return typeof field === 'number' && Number.isFinite(field)
+}
+
+function hasOptionalNumberField(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || hasNumberField(value, key)
+}
+
+function hasBooleanField(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'boolean'
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every(entry => typeof entry === 'string')
+}
+
+function isOpenAiOptions(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.request) || !isRecord(value.execution)) return false
+  if (!hasBooleanField(value.request, 'forceJsonOutput')) return false
+  if (!hasOptionalNumberField(value.request, 'temperature')) return false
+  if (value.request.extraBody !== undefined && !isRecord(value.request.extraBody)) return false
+  return (
+    hasBooleanField(value.execution, 'useStream') &&
+    hasNumberField(value.execution, 'rpmLimit') &&
+    hasNumberField(value.execution, 'transportRetries') &&
+    hasNumberField(value.execution, 'businessRetries')
+  )
+}
+
+function isStoreVlmConfig(value: unknown): value is StoreVlmConfig {
+  return (
+    isRecord(value) &&
+    hasStringField(value, 'provider') &&
+    hasStringField(value, 'apiKey') &&
+    hasStringField(value, 'model') &&
+    hasOptionalStringField(value, 'baseUrl') &&
+    isOpenAiOptions(value.openaiOptions) &&
+    hasOptionalNumberField(value, 'imageMaxSize')
+  )
+}
+
+function isStoreLlmConfig(value: unknown): value is StoreLlmConfig {
+  return (
+    isRecord(value) &&
+    hasBooleanField(value, 'useSameAsVlm') &&
+    hasStringField(value, 'provider') &&
+    hasStringField(value, 'apiKey') &&
+    hasStringField(value, 'model') &&
+    hasStringField(value, 'baseUrl') &&
+    isOpenAiOptions(value.openaiOptions)
+  )
+}
+
+function isStoreEmbeddingConfig(value: unknown): value is StoreEmbeddingConfig {
+  return (
+    isRecord(value) &&
+    hasStringField(value, 'provider') &&
+    hasStringField(value, 'apiKey') &&
+    hasStringField(value, 'model') &&
+    hasOptionalStringField(value, 'baseUrl') &&
+    hasOptionalNumberField(value, 'rpmLimit') &&
+    hasOptionalNumberField(value, 'transportRetries') &&
+    hasOptionalNumberField(value, 'businessRetries') &&
+    hasOptionalNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function isStoreRerankerConfig(value: unknown): value is StoreRerankerConfig {
+  return (
+    isRecord(value) &&
+    hasStringField(value, 'provider') &&
+    hasStringField(value, 'apiKey') &&
+    hasStringField(value, 'model') &&
+    hasOptionalStringField(value, 'baseUrl') &&
+    hasOptionalNumberField(value, 'topK') &&
+    hasOptionalNumberField(value, 'transportRetries') &&
+    hasOptionalNumberField(value, 'businessRetries') &&
+    hasOptionalNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function isStoreImageGenConfig(value: unknown): value is StoreImageGenConfig {
+  return (
+    isRecord(value) &&
+    hasStringField(value, 'provider') &&
+    hasStringField(value, 'apiKey') &&
+    hasStringField(value, 'model') &&
+    hasOptionalStringField(value, 'baseUrl') &&
+    hasOptionalNumberField(value, 'transportRetries') &&
+    hasOptionalNumberField(value, 'businessRetries') &&
+    hasOptionalNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function isBatchConfig(value: unknown): value is BatchConfig {
+  return (
+    isRecord(value) &&
+    hasNumberField(value, 'pagesPerBatch') &&
+    hasNumberField(value, 'contextBatchCount') &&
+    hasStringField(value, 'architecturePreset') &&
+    Array.isArray(value.customLayers) &&
+    value.customLayers.every(layer => (
+      isRecord(layer) &&
+      hasStringField(layer, 'name') &&
+      hasNumberField(layer, 'units') &&
+      hasBooleanField(layer, 'align')
+    ))
+  )
+}
+
+function parseInsightConfigStorage(value: unknown): InsightConfig | null {
+  if (!isRecord(value)) return null
+  if (value.insightConfigSchemaVersion !== INSIGHT_CONFIG_SCHEMA_VERSION) return null
+  if (!isRecord(value.config)) return null
+
+  const config = value.config
+  if (!isStoreVlmConfig(config.vlm)) return null
+  if (!isStoreLlmConfig(config.llm)) return null
+  if (!isStoreEmbeddingConfig(config.embedding)) return null
+  if (!isStoreRerankerConfig(config.reranker)) return null
+  if (!isStoreImageGenConfig(config.imageGen)) return null
+  if (!isBatchConfig(config.batch)) return null
+  if (!isStringRecord(config.prompts)) return null
+
+  return (value as InsightConfigStoragePayload).config
+}
 
 export const useInsightStore = defineStore('insight', () => {
   function normalizeRerankerConfig(
@@ -244,22 +388,26 @@ export const useInsightStore = defineStore('insight', () => {
   // ============================================================
 
   function updateVlmConfig(c: Partial<VlmConfig>): void {
-    config.value.vlm = { ...config.value.vlm, ...c }
-    if ((c as Record<string, unknown>).rpmLimit !== undefined) config.value.vlm.openaiOptions.execution.rpmLimit = (c as Record<string, any>).rpmLimit
-    if ((c as Record<string, unknown>).temperature !== undefined) config.value.vlm.openaiOptions.request.temperature = (c as Record<string, any>).temperature
-    if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
-      config.value.vlm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    config.value.vlm = {
+      provider: c.provider ?? config.value.vlm.provider,
+      apiKey: c.apiKey ?? config.value.vlm.apiKey,
+      model: c.model ?? config.value.vlm.model,
+      baseUrl: c.baseUrl ?? config.value.vlm.baseUrl,
+      openaiOptions: c.openaiOptions ?? config.value.vlm.openaiOptions,
+      imageMaxSize: c.imageMaxSize ?? config.value.vlm.imageMaxSize,
     }
-    if ((c as Record<string, unknown>).useStream !== undefined) config.value.vlm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)
     saveConfigToStorage()
   }
   function updateLlmConfig(c: Partial<LlmConfig>): void {
-    config.value.llm = { ...config.value.llm, ...c }
-    if (Object.prototype.hasOwnProperty.call(c, 'extraBody')) {
-      config.value.llm.openaiOptions.request.extraBody = (c as Record<string, any>).extraBody
+    config.value.llm = {
+      useSameAsVlm: c.useSameAsVlm ?? config.value.llm.useSameAsVlm,
+      provider: c.provider ?? config.value.llm.provider,
+      apiKey: c.apiKey ?? config.value.llm.apiKey,
+      model: c.model ?? config.value.llm.model,
+      baseUrl: c.baseUrl ?? config.value.llm.baseUrl,
+      openaiOptions: c.openaiOptions ?? config.value.llm.openaiOptions,
     }
-    if ((c as Record<string, unknown>).useStream !== undefined) config.value.llm.openaiOptions.execution.useStream = Boolean((c as Record<string, any>).useStream)
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
     saveConfigToStorage()
   }
@@ -283,11 +431,23 @@ export const useInsightStore = defineStore('insight', () => {
     }
     saveConfigToStorage()
   }
-  function saveConfigToStorage(): void { localStorage.setItem('manga_insight_config', JSON.stringify(config.value)) }
+  function saveConfigToStorage(): void {
+    localStorage.setItem('manga_insight_config', JSON.stringify({
+      insightConfigSchemaVersion: INSIGHT_CONFIG_SCHEMA_VERSION,
+      config: config.value,
+    }))
+  }
   function loadConfigFromStorage(): void {
     configManager.loadFromStorage()
     const stored = localStorage.getItem('manga_insight_config')
-      if (stored) { try { const p = JSON.parse(stored); config.value = { vlm: { ...config.value.vlm, ...p.vlm, openaiOptions: normalizeOpenAiOptions(p?.vlm?.openaiOptions, config.value.vlm.openaiOptions) }, llm: { ...config.value.llm, ...p.llm, openaiOptions: normalizeOpenAiOptions(p?.llm?.openaiOptions, config.value.llm.openaiOptions) }, embedding: { ...config.value.embedding, ...p.embedding }, reranker: normalizeRerankerConfig(p?.reranker, config.value.reranker), imageGen: normalizeImageGenConfig(p?.imageGen, config.value.imageGen), batch: { ...config.value.batch, ...p.batch }, prompts: p.prompts || {} } } catch (e) { console.error('加载配置失败:', e) } }
+    if (stored) {
+      try {
+        const parsed = parseInsightConfigStorage(JSON.parse(stored) as unknown)
+        if (parsed) config.value = parsed
+      } catch (e) {
+        console.error('加载配置失败:', e)
+      }
+    }
   }
 
   function getConfigForApi(): Record<string, unknown> {

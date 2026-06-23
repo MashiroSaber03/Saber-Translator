@@ -17,18 +17,26 @@ const pagesPerBatch = ref(insightStore.config.batch.pagesPerBatch)
 const contextBatchCount = ref(insightStore.config.batch.contextBatchCount)
 const architecturePreset = ref(insightStore.config.batch.architecturePreset)
 
+function createDefaultCustomLayers(): CustomLayer[] {
+  return [
+    { name: "批量分析", units: 5, align: false },
+    { name: "段落总结", units: 5, align: false },
+    { name: "全书总结", units: 0, align: false }
+  ]
+}
+
+function cloneCustomLayers(layers: CustomLayer[]): CustomLayer[] {
+  return layers.map(layer => ({
+    name: layer.name,
+    units: layer.units ?? 5,
+    align: layer.align ?? false
+  }))
+}
+
 const customLayers = ref<CustomLayer[]>(
   insightStore.config.batch.customLayers?.length > 0
-    ? insightStore.config.batch.customLayers.map((l: any) => ({
-        name: l.name,
-        units: l.units_per_group ?? l.units ?? 5,
-        align: l.align_to_chapter ?? l.align ?? false
-      }))
-    : [
-        { name: "批量分析", units: 5, align: false },
-        { name: "段落总结", units: 5, align: false },
-        { name: "全书总结", units: 0, align: false }
-      ]
+    ? cloneCustomLayers(insightStore.config.batch.customLayers)
+    : createDefaultCustomLayers()
 )
 
 const batchEstimate = computed(() => `每批次分析 ${pagesPerBatch.value || 5} 页`)
@@ -54,9 +62,16 @@ function removeCustomLayer(idx: number): void {
 }
 
 function updateCustomLayer(idx: number, field: keyof CustomLayer, value: string | number | boolean): void {
-  if (customLayers.value[idx]) {
-    (customLayers.value[idx] as any)[field] = value
-    if (idx === 0 && field === 'units') pagesPerBatch.value = value as number
+  const layer = customLayers.value[idx]
+  if (!layer) return
+
+  if (field === 'name' && typeof value === 'string') {
+    layer.name = value
+  } else if (field === 'units' && typeof value === 'number') {
+    layer.units = value
+    if (idx === 0) pagesPerBatch.value = value
+  } else if (field === 'align' && typeof value === 'boolean') {
+    layer.align = value
   }
 }
 
@@ -87,7 +102,6 @@ function getConfig() {
     pagesPerBatch: pagesPerBatch.value,
     contextBatchCount: contextBatchCount.value,
     architecturePreset: architecturePreset.value,
-    // 返回前端格式（units/align），getConfigForApi 会转换为后端格式
     customLayers: customLayers.value.map(l => ({
       name: l.name,
       units: l.units,
@@ -101,13 +115,10 @@ function syncFromStore(): void {
   contextBatchCount.value = insightStore.config.batch.contextBatchCount
   architecturePreset.value = insightStore.config.batch.architecturePreset
 
-  // 同步 customLayers
   if (insightStore.config.batch.customLayers?.length > 0) {
-    customLayers.value = insightStore.config.batch.customLayers.map((l: any) => ({
-      name: l.name,
-      units: l.units_per_group ?? l.units ?? 5,
-      align: l.align_to_chapter ?? l.align ?? false
-    }))
+    customLayers.value = cloneCustomLayers(insightStore.config.batch.customLayers)
+  } else {
+    customLayers.value = createDefaultCustomLayers()
   }
 }
 

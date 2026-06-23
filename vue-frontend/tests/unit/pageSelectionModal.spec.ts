@@ -74,4 +74,32 @@ describe('PageSelectionModal', () => {
 
     expect(wrapper.emitted('confirm')?.[0]).toEqual([[3]])
   })
+
+  it('uses button semantics for folder navigation controls', async () => {
+    const imageStore = useImageStore()
+    imageStore.updateImageByIndex(0, {
+      relativePath: 'chapter-a/001.png',
+      folderPath: 'chapter-a',
+    })
+    imageStore.updateImageByIndex(1, {
+      relativePath: 'chapter-a/002.png',
+      folderPath: 'chapter-a',
+    })
+
+    const wrapper = mount(PageSelectionModal, {
+      props: {
+        modelValue: true,
+        selectedPages: [],
+      },
+    })
+
+    const folderButton = wrapper.get('.page-selection-folder-item')
+    expect(folderButton.element.tagName).toBe('BUTTON')
+
+    await folderButton.trigger('click')
+
+    expect(wrapper.get('.page-selection-folder-back-btn').element.tagName).toBe('BUTTON')
+    expect(wrapper.get('.page-selection-breadcrumb-item').element.tagName).toBe('BUTTON')
+    expect(wrapper.get('.page-selection-thumbnail').element.tagName).toBe('BUTTON')
+  })
 })

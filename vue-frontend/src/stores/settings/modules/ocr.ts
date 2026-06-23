@@ -60,7 +60,6 @@ export function useOcrSettings(
     settings.value.ocrEngine = normalized.primaryEngine
     settings.value.hybridOcr = normalized.hybrid
     saveToStorage()
-    console.log(`OCR引擎已设置为: ${normalized.primaryEngine}`)
   }
 
   /**
@@ -70,7 +69,6 @@ export function useOcrSettings(
   function setSourceLanguage(language: string): void {
     settings.value.sourceLanguage = language
     saveToStorage()
-    console.log(`源语言已设置为: ${language}`)
   }
 
   /**
@@ -160,7 +158,6 @@ export function useOcrSettings(
     restoreAiVisionOcrProviderConfig(provider)
 
     saveToStorage()
-    console.log(`AI视觉OCR服务商已切换为: ${provider}`)
   }
 
   /**
@@ -181,7 +178,6 @@ export function useOcrSettings(
     }
 
     saveToStorage()
-    console.log(`AI视觉OCR提示词模式已切换为: ${normalizedMode}`)
   }
 
   // ============================================================
@@ -208,7 +204,6 @@ export function useOcrSettings(
 
     providerConfigs.value.aiVisionOcr[provider] = config
     saveProviderConfigsToStorage()
-    console.log(`[Settings] 保存AI视觉OCR服务商配置: ${provider}`, config)
   }
 
   /**
@@ -228,13 +223,11 @@ export function useOcrSettings(
       if (cached.promptMode !== undefined) settings.value.aiVisionOcr.promptMode = cached.promptMode
       if (cached.openaiOptions !== undefined) settings.value.aiVisionOcr.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.minImageSize !== undefined) settings.value.aiVisionOcr.minImageSize = cached.minImageSize
-      console.log(`[Settings] 恢复AI视觉OCR服务商配置: ${provider}`, cached)
     } else {
       // 无缓存时清空配置
       settings.value.aiVisionOcr.apiKey = ''
       settings.value.aiVisionOcr.modelName = ''
       settings.value.aiVisionOcr.customBaseUrl = ''
-      console.log(`[Settings] ${provider} 无缓存配置，使用默认值`)
     }
   }
 

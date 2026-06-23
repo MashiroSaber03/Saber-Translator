@@ -11,6 +11,7 @@ import { useInsightStore, type OverviewTemplateType } from '@/stores/insightStor
 import * as insightApi from '@/api/insight'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { marked } from 'marked'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 // ============================================================
 // 状态
@@ -85,7 +86,7 @@ const templateStatus = computed(() => {
 /** 渲染后的概览内容 */
 const renderedContent = computed(() => {
   if (!overviewContent.value) return ''
-  return marked.parse(overviewContent.value) as string
+  return sanitizeHtml(marked.parse(overviewContent.value) as string)
 })
 
 // ============================================================
@@ -93,16 +94,14 @@ const renderedContent = computed(() => {
 // ============================================================
 
 /**
- * 模板变更处理 - 只读取缓存，不触发生成
- * 与接口流程 的 onOverviewTemplateChange 一致
+ * 模板变更处理：只读取缓存，不触发生成。
  */
 async function onTemplateChange(): Promise<void> {
   await loadCachedOverview()
 }
 
 /**
- * 加载缓存的概览内容（不触发生成）
- * 与接口流程 的 loadTemplateOverview 一致：GET /overview/{templateKey}
+ * 加载缓存的概览内容，不触发生成。
  */
 async function loadCachedOverview(): Promise<void> {
   if (!insightStore.currentBookId) return
@@ -111,16 +110,13 @@ async function loadCachedOverview(): Promise<void> {
   overviewContent.value = ''
 
   try {
-    // 使用 GET API 只读取缓存
     const response = await insightApi.getOverview(
       insightStore.currentBookId,
       currentTemplate.value
-    ) as any
+    )
 
     if (response.success && response.content) {
-      // 有缓存内容
       overviewContent.value = response.content
-      // 更新已生成模板列表
       if (!generatedTemplates.value.includes(currentTemplate.value)) {
         generatedTemplates.value.push(currentTemplate.value)
       }
@@ -137,8 +133,7 @@ async function loadCachedOverview(): Promise<void> {
 }
 
 /**
- * 生成概览（点击按钮时调用）
- * 与接口流程 的 generateOverviewWithTemplate 一致：POST /overview/generate
+ * 生成概览（点击按钮时调用）。
  * @param regenerate - 是否强制重新生成（🔄按钮为true，📄按钮为false）
  */
 async function generateOverview(regenerate: boolean): Promise<void> {
@@ -148,17 +143,15 @@ async function generateOverview(regenerate: boolean): Promise<void> {
   overviewContent.value = ''
 
   try {
-    // 使用 POST API 生成概览
     const response = await insightApi.regenerateOverview(
       insightStore.currentBookId,
       currentTemplate.value,
-      regenerate  // force 参数
-    ) as any
+      regenerate
+    )
 
     if (response.success) {
       if (response.content) {
         overviewContent.value = response.content
-        // 更新已生成模板列表
         if (!generatedTemplates.value.includes(currentTemplate.value)) {
           generatedTemplates.value.push(currentTemplate.value)
         }
@@ -187,7 +180,6 @@ async function loadGeneratedTemplates(): Promise<void> {
   try {
     const response = await insightApi.getGeneratedTemplates(insightStore.currentBookId)
     if (response.success) {
-      // API返回的是generated字段，不是templates
       let templates: OverviewTemplateType[] = []
       if (response.generated) {
         templates = response.generated as OverviewTemplateType[]
@@ -218,7 +210,7 @@ async function exportAnalysisData(): Promise<void> {
   isExporting.value = true
 
   try {
-    const response = await insightApi.exportAnalysis(insightStore.currentBookId) as any
+    const response = await insightApi.exportAnalysis(insightStore.currentBookId)
 
     if (response.success && response.markdown) {
       // 下载 Markdown 文件
@@ -339,7 +331,6 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
 // 监听数据刷新触发器（分析完成后自动刷新）
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
   if (newKey > 0 && insightStore.currentBookId) {
-    console.log('OverviewPanel: 收到刷新信号，重新加载数据')
     await loadGeneratedTemplates()
     await loadRecentAnalyzedPages()
     // 自动加载已生成的模板内容
@@ -433,15 +424,17 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       <h3 class="card-title">🕐 最近分析</h3>
       <div class="recent-pages">
         <div v-if="recentAnalyzedPages.length === 0" class="placeholder-text">暂无分析记录</div>
-        <div
+        <UiButton
           v-for="page in recentAnalyzedPages"
           :key="page.page_num"
+          variant="toolbar"
           class="recent-page-item"
+          :aria-label="`查看第 ${page.page_num} 页分析详情`"
           @click="goToPage(page.page_num)"
         >
           <span class="page-number">第 {{ page.page_num }} 页</span>
           <span v-if="page.summary" class="page-summary">{{ page.summary }}</span>
-        </div>
+        </UiButton>
       </div>
     </div>
   </div>
@@ -452,7 +445,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   --overview-panel-text-secondary: #ef4444;
 }
 
-/* ==================== 概览面板样式 - 当前样式 ==================== */
+/* ==================== 概览面板样式 ==================== */
 
 /* ==================== 组件样式 ==================== */
 
@@ -765,10 +758,14 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   padding: 10px 12px;
+  border: 0;
   background: var(--insight-surface-tertiary);
   border-radius: 6px;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
   transition: all 0.2s;
 }
 

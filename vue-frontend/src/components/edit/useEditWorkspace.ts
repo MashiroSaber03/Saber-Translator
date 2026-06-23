@@ -40,8 +40,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const {
     reRenderFullImage
   } = useEditRender({
-    onRenderStart: () => console.log('开始重新渲染...'),
-    onRenderSuccess: (url) => console.log('渲染成功:', url.substring(0, 50) + '...'),
     onRenderError: (err) => console.error('渲染失败:', err)
   })
 
@@ -329,13 +327,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       imageStore.updateCurrentBubbleStates([...bubbles.value])
       // 设置手动标注标记，使缩略图显示标记
       imageStore.setManuallyAnnotated(true)
-      console.log('已保存气泡状态到当前图片，标记为手动标注')
     } else if (hadBubbleStates) {
       // 用户删光了气泡，保存空数组（保持"处理过"的语义）
       imageStore.updateCurrentBubbleStates([])
       // 删空也是手动操作，保持标记为 true，翻译时会跳过而不是重新检测
       imageStore.setManuallyAnnotated(true)
-      console.log('已保存空气泡状态到当前图片（用户主动清空，标记为手动标注）')
     }
     // 如果 bubbleStates 从未是数组且当前也没有气泡，不做任何操作（保持 null 语义）
   }
@@ -392,7 +388,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     if (currentImage.value?.bubbleStates) {
       // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
       bubbleStore.setBubbles([...currentImage.value.bubbleStates], true)
-      console.log(`已加载 ${currentImage.value.bubbleStates.length} 个气泡状态`)
     } else {
       // 使用 clearBubblesLocal 仅清除本地状态，不同步到 imageStore
       // 这保持了 null（未处理）和 []（用户主动清空）的语义区分
@@ -475,7 +470,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   /** 切换同步状态 */
   function toggleSync(): void {
     syncEnabled.value = !syncEnabled.value
-    console.log('双图同步:', syncEnabled.value ? '开启' : '关闭')
     // 开启同步时，立即同步两个视口的变换状态
     if (syncEnabled.value) {
       originalViewer.setTransform(translatedViewer.getTransform())
@@ -687,7 +681,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       bubbleStore.addBubble(currentDrawingRect.value)
       // 选中新添加的气泡
       bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
-      console.log('已添加新气泡:', currentDrawingRect.value)
     }
 
     isDrawingBox.value = false
@@ -708,8 +701,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const width = img?.naturalWidth || 0
     const height = img?.naturalHeight || 0
     
-    console.log(`[EditWorkspace] ${viewport} 图片加载完成，尺寸: ${width}x${height}`)
-    
     // 原图加载完成时更新尺寸
     if (viewport === 'original') {
       updateImageDimensions()
@@ -722,9 +713,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const isLargeImage = width > 3840 || height > 2160
     
     if (viewport === 'original' && (isInitialState || isLargeImage)) {
-      if (isLargeImage) {
-        console.log(`[EditWorkspace] 检测到大图（超过4K），自动适应屏幕`)
-      }
       nextTick(() => {
         setTimeout(() => {
           fitToScreen()
@@ -785,7 +773,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     // 使用初始状态的深拷贝来更新当前气泡
     const clonedState = JSON.parse(JSON.stringify(initialState))
     bubbleStore.updateBubble(index, clonedState)
-    console.log(`气泡 #${index + 1} 已重置到初始状态`)
     showToast('气泡已重置', 'success')
     
     // 触发重新渲染

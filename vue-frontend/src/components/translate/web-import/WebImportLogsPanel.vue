@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import type { AgentLog, WebImportState } from '@/types/webImport'
 
 defineProps<{
@@ -14,11 +15,17 @@ defineEmits<{
 
 <template>
   <div v-if="logs.length > 0" class="logs-section">
-    <div class="logs-header" @click="$emit('toggle')">
+    <UiButton
+      variant="toolbar"
+      type="button"
+      class="logs-header"
+      :aria-expanded="expanded ? 'true' : 'false'"
+      @click="$emit('toggle')"
+    >
       <span class="logs-toggle">{{ expanded ? '▼' : '▶' }}</span>
       <span>AI 工作日志</span>
       <span v-if="status === 'extracting'" class="extracting-hint">(提取中...)</span>
-    </div>
+    </UiButton>
     <div v-if="expanded" class="logs-content">
       <div
         v-for="(log, index) in logs"
@@ -45,10 +52,15 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 10px 14px;
+  border: 0;
   background: var(--web-import-modal-settings-surface-base);
+  color: inherit;
+  font: inherit;
   font-weight: 500;
   font-size: 14px;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }

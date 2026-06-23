@@ -42,7 +42,6 @@ export function useProofreadingSettings(
   function setProofreadingEnabled(enabled: boolean): void {
     settings.value.proofreading.enabled = enabled
     saveToStorage()
-    console.log(`AI校对已${enabled ? '启用' : '禁用'}`)
   }
 
   /**
@@ -52,7 +51,6 @@ export function useProofreadingSettings(
   function addProofreadingRound(round: ProofreadingRound): void {
     settings.value.proofreading.rounds.push(round)
     saveToStorage()
-    console.log(`已添加校对轮次: ${round.name}`)
   }
 
   /**
@@ -84,9 +82,8 @@ export function useProofreadingSettings(
    */
   function removeProofreadingRound(index: number): void {
     if (index >= 0 && index < settings.value.proofreading.rounds.length) {
-      const removed = settings.value.proofreading.rounds.splice(index, 1)
+      settings.value.proofreading.rounds.splice(index, 1)
       saveToStorage()
-      console.log(`已删除校对轮次: ${removed[0]?.name}`)
     }
   }
 

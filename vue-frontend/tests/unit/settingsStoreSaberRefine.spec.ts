@@ -37,6 +37,7 @@ describe('settings store saber yolo refine', () => {
     getUserSettingsMock.mockReset()
     saveUserSettingsMock.mockReset()
     saveUserSettingsMock.mockResolvedValue({ success: true })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {

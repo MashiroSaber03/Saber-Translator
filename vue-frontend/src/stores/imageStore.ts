@@ -196,7 +196,6 @@ export const useImageStore = defineStore('image', () => {
       currentImageIndex.value = 0
     }
 
-    console.log(`图片已添加: ${fileName}，当前共 ${images.value.length} 张图片`)
     return newImage
   }
 
@@ -224,7 +223,6 @@ export const useImageStore = defineStore('image', () => {
       currentImageIndex.value = 0
     }
 
-    console.log(`批量添加了 ${newImages.length} 张图片，当前共 ${images.value.length} 张`)
     return newImages
   }
 
@@ -259,7 +257,6 @@ export const useImageStore = defineStore('image', () => {
       currentImageIndex.value = -1
     }
 
-    console.log(`图片数组已设置，共 ${images.value.length} 张图片`)
   }
 
   /**
@@ -285,7 +282,6 @@ export const useImageStore = defineStore('image', () => {
       currentImageIndex.value--
     }
 
-    console.log(`图片已删除，当前共 ${images.value.length} 张图片`)
     return true
   }
 
@@ -304,7 +300,6 @@ export const useImageStore = defineStore('image', () => {
     images.value = []
     currentImageIndex.value = -1
     isBatchTranslationInProgress.value = false
-    console.log('所有图片已清除')
   }
 
   /**
@@ -334,12 +329,9 @@ export const useImageStore = defineStore('image', () => {
     if (currentImageId) {
       const newIndex = images.value.findIndex(img => img.id === currentImageId)
       if (newIndex >= 0 && newIndex !== currentImageIndex.value) {
-        console.log(`图片排序: currentImageIndex 从 ${currentImageIndex.value} 更新为 ${newIndex}`)
         currentImageIndex.value = newIndex
       }
     }
-
-    console.log('图片已按文件名排序')
   }
 
   // ============================================================
@@ -353,7 +345,6 @@ export const useImageStore = defineStore('image', () => {
   function setCurrentImageIndex(index: number): void {
     if (index >= -1 && index < images.value.length) {
       currentImageIndex.value = index
-      console.log(`当前图片索引已设置为 ${index}`)
     } else {
       console.warn(`设置索引失败: 无效的索引 ${index}`)
     }
@@ -397,7 +388,6 @@ export const useImageStore = defineStore('image', () => {
       if (updates.bubbleStates !== undefined) {
         applyBubbleStateMirrors(currentImage.value, updates.bubbleStates)
       }
-      console.log('当前图片属性已更新:', Object.keys(updates))
     } else {
       console.warn('更新失败: 当前没有选中的图片')
     }
@@ -416,7 +406,6 @@ export const useImageStore = defineStore('image', () => {
         if (updates.bubbleStates !== undefined) {
           applyBubbleStateMirrors(image, updates.bubbleStates)
         }
-        console.log(`图片 ${index} 属性已更新:`, Object.keys(updates))
       }
     } else {
       console.warn(`更新失败: 无效的索引 ${index}`)
@@ -431,7 +420,6 @@ export const useImageStore = defineStore('image', () => {
     if (currentImage.value) {
       applyBubbleStateMirrors(currentImage.value, bubbleStates)
       currentImage.value.hasUnsavedChanges = true
-      console.log(`当前图片气泡状态已更新，共 ${bubbleStates?.length ?? 0} 个气泡`)
     }
   }
 
@@ -444,7 +432,6 @@ export const useImageStore = defineStore('image', () => {
 
     currentImage.value.isManuallyAnnotated = isManual
     currentImage.value.hasUnsavedChanges = true
-    console.log(`手动标注标记已设置为: ${isManual}`)
   }
 
   /**
@@ -459,7 +446,6 @@ export const useImageStore = defineStore('image', () => {
     if (currentImage.value) {
       currentImage.value[key] = value
       currentImage.value.hasUnsavedChanges = true
-      console.log(`当前图片属性 ${String(key)} 已更新`)
     } else {
       console.warn(`更新失败: 当前没有选中的图片`)
     }
@@ -482,7 +468,6 @@ export const useImageStore = defineStore('image', () => {
       currentImage.value.translationStatus = 'completed'
       currentImage.value.translationFailed = false
       currentImage.value.hasUnsavedChanges = true
-      console.log('当前图片翻译结果已更新')
     }
   }
 
@@ -495,7 +480,6 @@ export const useImageStore = defineStore('image', () => {
     if (currentImage.value) {
       currentImage.value.width = width
       currentImage.value.height = height
-      console.log(`当前图片尺寸已更新: ${width} x ${height}`)
     }
   }
 
@@ -524,7 +508,6 @@ export const useImageStore = defineStore('image', () => {
         } else if (status !== 'failed') {
           image.errorMessage = undefined
         }
-        console.log(`图片 ${index} 翻译状态: ${status}`)
       }
     }
   }
@@ -538,7 +521,6 @@ export const useImageStore = defineStore('image', () => {
       currentImage.value.translationStatus = 'failed'
       currentImage.value.translationFailed = true
       currentImage.value.errorMessage = errorMessage
-      console.log(`当前图片翻译失败: ${errorMessage}`)
     }
   }
 
@@ -551,7 +533,6 @@ export const useImageStore = defineStore('image', () => {
       img.translationFailed = false
       img.errorMessage = undefined
     })
-    console.log('所有图片翻译状态已重置')
   }
 
   // ============================================================
@@ -564,7 +545,6 @@ export const useImageStore = defineStore('image', () => {
    */
   function setBatchTranslationInProgress(isInProgress: boolean): void {
     isBatchTranslationInProgress.value = isInProgress
-    console.log(`批量翻译状态: ${isInProgress ? '进行中' : '已完成'}`)
   }
 
   /**

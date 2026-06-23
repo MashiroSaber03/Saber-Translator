@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import type { TimelineCharacter } from './timelineTypes'
 
 defineProps<{
@@ -14,20 +15,19 @@ defineEmits<{
   <div class="characters-section">
     <h4>👥 主要角色</h4>
     <div class="characters-grid">
-      <div
+      <UiButton
         v-for="character in characters"
         :key="character.name"
+        variant="toolbar"
+        type="button"
         class="character-card"
-        role="button"
-        tabindex="0"
+        :aria-label="`查看角色${character.name}首次出现的第 ${character.first_appearance} 页`"
         @click="$emit('showPage', character.first_appearance)"
-        @keydown.enter="$emit('showPage', character.first_appearance)"
-        @keydown.space.prevent="$emit('showPage', character.first_appearance)"
       >
         <span class="character-name">{{ character.name }}</span>
         <span class="character-desc">{{ character.description }}</span>
         <span class="first-appear">首次出现：第 {{ character.first_appearance }} 页</span>
-      </div>
+      </UiButton>
     </div>
   </div>
 </template>
@@ -50,6 +50,7 @@ defineEmits<{
 
 .character-card {
   display: block;
+  width: 100%;
   text-align: left;
   background: var(--insight-surface-secondary);
   border-radius: 12px;

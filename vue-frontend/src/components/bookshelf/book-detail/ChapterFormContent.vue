@@ -17,11 +17,12 @@ defineEmits<{
     <UiInput
       id="chapterTitleInput"
       :model-value="modelValue"
+      class="chapter-form-input"
       type="text"
       autocomplete="off"
       placeholder="例如：第1话、序章"
       @update:model-value="$emit('update:modelValue', String($event))"
-      @keypress.enter="$emit('save')"
+      @keydown.enter="$emit('save')"
     />
   </div>
 </template>
@@ -45,7 +46,7 @@ defineEmits<{
   color: var(--color-text-danger-strong);
 }
 
-.chapter-form-field input[type='text'] {
+.chapter-form-input {
   width: 100%;
   min-height: 42px;
   padding: 10px 12px;
@@ -58,12 +59,12 @@ defineEmits<{
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.chapter-form-field input[type='text']:focus {
+.chapter-form-input:focus {
   border-color: var(--color-border-brand-gradient);
   box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-strong);
 }
 
-.chapter-form-field input[type='text']::placeholder {
+.chapter-form-input::placeholder {
   color: var(--color-text-supporting);
 }
 </style>

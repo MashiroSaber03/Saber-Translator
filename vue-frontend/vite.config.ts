@@ -38,7 +38,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
 
-  // 基础路径 - 改为根路径，Vue前端将作为主前端
+  // 基础路径 - Vue 前端从应用根路径提供
   base: '/',
 
   // 开发服务器配置
@@ -55,7 +55,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
-        // 设置代理超时时间为 5 分钟（LAMA 修复等操作可能需要较长时间）
+        // 设置代理超时时间为 5 分钟（图像处理操作可能需要较长时间）
         timeout: 300000,
         proxyTimeout: 300000,
       },

@@ -1,6 +1,5 @@
 /**
  * 修复步骤
- * 提取自 SequentialPipeline.ts Line 599-626
  */
 import { parallelInpaint, type ParallelInpaintResponse } from '@/api/parallelTranslate'
 import type { BubbleCoords } from '@/types/bubble'
@@ -32,9 +31,6 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     const settings = settingsSnapshot
     const { textStyle, preciseMask } = settings
     const base64 = extractBase64(image.originalDataURL)
-
-    // ✅ 分别发送 textMask 和 userMask，由后端合并处理
-    console.log(`修复步骤 - textMask: ${textMask ? '✅' : '❌'}, userMask: ${userMask ? '✅' : '❌'}`)
 
     const response: ParallelInpaintResponse = await parallelInpaint({
         image: base64,

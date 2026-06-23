@@ -18,6 +18,7 @@
             accept="image/*"
             multiple
             hidden
+            :aria-label="`上传 ${characterName} ${formName} 三视图源图`"
             @change="selectImages"
           />
           <div class="upload-placeholder">
@@ -28,9 +29,9 @@
           </div>
         </label>
 
-        <div v-if="sourceImages.length > 0" class="source-images">
-          <div v-for="(file, index) in sourceImages" :key="index" class="source-image">
-            <img :src="createObjectURL(file)" :alt="`源图${index + 1}`">
+        <div v-if="sourceImagePreviews.length > 0" class="source-images">
+          <div v-for="(preview, index) in sourceImagePreviews" :key="preview.url" class="source-image">
+            <img :src="preview.url" :alt="`源图${index + 1}`">
             <span class="image-index">{{ index + 1 }}</span>
           </div>
         </div>
@@ -72,7 +73,7 @@
 
 <script setup lang="ts">
 import UiFileInput from '@/components/ui/UiFileInput.vue'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
@@ -91,22 +92,54 @@ const emit = defineEmits<{
 }>()
 
 const sourceImages = ref<File[]>([])
+const sourceImagePreviews = ref<Array<{ url: string }>>([])
 const isDragging = ref(false)
 const isGenerating = ref(false)
 const progressMessage = ref('')
 const resultImagePath = ref<string | null>(null)
+let progressTimers: Array<ReturnType<typeof setTimeout>> = []
 const close = () => emit('close')
 const dialogTitle = computed(() => {
   const suffix = props.formName && props.formName !== '默认' ? ` (${props.formName})` : ''
   return `🎨 生成三视图 - ${props.characterName}${suffix}`
 })
 
+function revokeSourceImagePreviews(): void {
+  sourceImagePreviews.value.forEach(preview => {
+    window.URL.revokeObjectURL(preview.url)
+  })
+  sourceImagePreviews.value = []
+}
+
+function setSourceImages(files: File[]): void {
+  revokeSourceImagePreviews()
+  sourceImages.value = files
+  sourceImagePreviews.value = files.map(file => ({
+    url: window.URL.createObjectURL(file),
+  }))
+}
+
+function clearProgressTimers(): void {
+  progressTimers.forEach(timer => clearTimeout(timer))
+  progressTimers = []
+}
+
+function scheduleProgressMessage(delay: number, message: string): void {
+  const timer = setTimeout(() => {
+    progressTimers = progressTimers.filter(item => item !== timer)
+    if (isGenerating.value) {
+      progressMessage.value = message
+    }
+  }, delay)
+  progressTimers.push(timer)
+}
+
 function selectImages(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files) return
 
   const files = Array.from(input.files).slice(0, 5)
-  sourceImages.value = files
+  setSourceImages(files)
 }
 
 function handleDragEnter(event: DragEvent) {
@@ -140,7 +173,7 @@ function handleDrop(event: DragEvent) {
     .slice(0, 5)
 
   if (imageFiles.length > 0) {
-    sourceImages.value = imageFiles
+    setSourceImages(imageFiles)
   }
 }
 
@@ -150,17 +183,9 @@ async function generate() {
   isGenerating.value = true
   progressMessage.value = `正在上传 ${sourceImages.value.length} 张图片...`
 
-  setTimeout(() => {
-    if (isGenerating.value) {
-      progressMessage.value = 'AI 正在分析角色特征...'
-    }
-  }, 500)
-
-  setTimeout(() => {
-    if (isGenerating.value) {
-      progressMessage.value = '正在生成三视图，请耐心等待...'
-    }
-  }, 2000)
+  clearProgressTimers()
+  scheduleProgressMessage(500, 'AI 正在分析角色特征...')
+  scheduleProgressMessage(2000, '正在生成三视图，请耐心等待...')
 
   emit('generate', sourceImages.value)
 }
@@ -171,27 +196,32 @@ function useResult() {
   }
 }
 
-function createObjectURL(file: File): string {
-  return window.URL.createObjectURL(file)
-}
-
 function getResultUrl(): string {
   if (!props.bookId || !resultImagePath.value) return ''
   return `/api/manga-insight/${props.bookId}/continuation/generated-image?path=${encodeURIComponent(resultImagePath.value)}`
 }
 
 function setResult(imagePath: string) {
+  clearProgressTimers()
   resultImagePath.value = imagePath
   isGenerating.value = false
 }
 
 function setGenerating(generating: boolean) {
+  if (!generating) {
+    clearProgressTimers()
+  }
   isGenerating.value = generating
 }
 
 defineExpose({
   setResult,
   setGenerating,
+})
+
+onBeforeUnmount(() => {
+  clearProgressTimers()
+  revokeSourceImagePreviews()
 })
 </script>
 

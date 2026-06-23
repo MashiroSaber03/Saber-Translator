@@ -82,13 +82,68 @@ describe('useSequentialPipeline completion projection', () => {
     const { useSequentialPipeline } = await import('@/composables/translation/core/SequentialPipeline')
     const pipeline = useSequentialPipeline()
 
-    const result = await pipeline.execute({
-      mode: 'standard',
-      scope: 'current',
-    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    let result
+    try {
+      result = await pipeline.execute({
+        mode: 'standard',
+        scope: 'current',
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(result.success).toBe(true)
     expect(imageStore.images[0]?.translationStatus).toBe('completed')
     expect(imageStore.images[0]?.hasUnsavedChanges).toBe(false)
+  })
+
+  it('does not let a previous delayed finish close progress for a new run', async () => {
+    vi.useFakeTimers()
+    const imageStore = useImageStore()
+    imageStore.addImage('page-1.png', 'data:image/png;base64,orig')
+
+    const { useSequentialPipeline } = await import('@/composables/translation/core/SequentialPipeline')
+    const pipeline = useSequentialPipeline()
+
+    const firstResult = await pipeline.execute({
+      mode: 'standard',
+      scope: 'current',
+    })
+    expect(firstResult.success).toBe(true)
+    expect(pipeline.progress.value.isInProgress).toBe(true)
+
+    let resumeDetection: (() => void) | undefined
+    executeAtomicStepMock.mockImplementation(async (step: string, task: any) => {
+      if (step === 'detection') {
+        await new Promise<void>((resolve) => {
+          resumeDetection = resolve
+        })
+        return { ...task, bubbleCoords: [[0, 0, 10, 10]], bubbleAngles: [0], autoDirections: ['vertical'], bubbleStates: [], textlinesPerBubble: [] }
+      }
+      if (step === 'ocr') return { ...task, originalTexts: ['原文'], ocrResults: [] }
+      if (step === 'color') return { ...task, colors: [{ textColor: '#000000', bgColor: '#ffffff' }] }
+      if (step === 'translate') return { ...task, translatedTexts: ['译文'], textboxTexts: [''], warnings: [] }
+      if (step === 'inpaint') return { ...task, cleanImage: 'clean-image' }
+      if (step === 'render') return { ...task, finalImage: 'rendered-image', bubbleStates: [] }
+      if (step === 'save') return { ...task, persisted: true }
+      return task
+    })
+
+    const secondRun = pipeline.execute({
+      mode: 'standard',
+      scope: 'current',
+    })
+    await Promise.resolve()
+
+    expect(pipeline.progress.value.isInProgress).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(pipeline.progress.value.isInProgress).toBe(true)
+
+    resumeDetection?.()
+    await secondRun
+    await vi.runOnlyPendingTimersAsync()
+    vi.useRealTimers()
   })
 })

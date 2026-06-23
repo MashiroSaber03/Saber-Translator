@@ -81,4 +81,103 @@ describe('OverviewPanel', () => {
     expect(regenerateOverviewMock).toHaveBeenCalledWith('book-1', 'story_summary', true)
     expect(store.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
+
+  it('reloads generated overview data without routine console output when refresh key changes', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    mount(OverviewPanel, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<button class="custom-select-stub">story_summary</button>',
+            props: ['modelValue', 'options'],
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      store.triggerDataRefresh()
+      await flushPromises()
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it('sanitizes cached overview markdown before rendering', async () => {
+    getGeneratedTemplatesMock.mockResolvedValue({
+      success: true,
+      generated: ['no_spoiler'],
+    })
+    getOverviewMock.mockResolvedValue({
+      success: true,
+      content: [
+        '<script>alert("xss")</script>',
+        '<a href="javascript:alert(1)">bad link</a>',
+        '<a href="https://safe.example">safe link</a>',
+      ].join(''),
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(OverviewPanel, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<button class="custom-select-stub">no_spoiler</button>',
+            props: ['modelValue', 'options'],
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('script').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('javascript:')
+    const safeLink = wrapper.find('a[href="https://safe.example"]')
+    expect(safeLink.exists()).toBe(true)
+    expect(safeLink.attributes('rel')).toBe('noopener noreferrer')
+  })
+
+  it('uses button semantics for recent analyzed page shortcuts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(5)
+    store.setAnalyzedPagesCount(2)
+
+    const wrapper = mount(OverviewPanel, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<button class="custom-select-stub">story_summary</button>',
+            props: ['modelValue', 'options'],
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const recentItem = wrapper.find('.recent-page-item')
+    expect(recentItem.element.tagName).toBe('BUTTON')
+    expect(recentItem.attributes('type')).toBe('button')
+    expect(recentItem.attributes('aria-label')).toBe('查看第 2 页分析详情')
+
+    await recentItem.trigger('click')
+
+    expect(store.selectedPageNum).toBe(2)
+  })
 })

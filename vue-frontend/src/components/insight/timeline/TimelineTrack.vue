@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import TimelineArcCard from './TimelineArcCard.vue'
 import TimelineGroupCard from './TimelineGroupCard.vue'
 import type { TimelineArc, TimelineGroup } from './timelineTypes'
@@ -38,15 +39,14 @@ function isExpanded(id: string): boolean {
       :class="{ expanded: isExpanded(arcId(arc, index)) }"
     >
       <div class="timeline-node">
-        <div
+        <UiButton
+          variant="toolbar"
+          type="button"
           class="timeline-node-dot"
-          role="button"
-          tabindex="0"
           :aria-label="`切换剧情弧 ${arc.name}`"
+          :aria-expanded="String(isExpanded(arcId(arc, index)))"
           @click="$emit('toggle', arcId(arc, index))"
-          @keydown.enter="$emit('toggle', arcId(arc, index))"
-          @keydown.space.prevent="$emit('toggle', arcId(arc, index))"
-        ></div>
+        ></UiButton>
         <div class="timeline-node-line"></div>
       </div>
       <TimelineArcCard
@@ -68,15 +68,14 @@ function isExpanded(id: string): boolean {
       :class="{ expanded: isExpanded(group.id) }"
     >
       <div class="timeline-node">
-        <div
+        <UiButton
+          variant="toolbar"
+          type="button"
           class="timeline-node-dot"
-          role="button"
-          tabindex="0"
           :aria-label="`切换第 ${group.page_range.start}-${group.page_range.end} 页事件`"
+          :aria-expanded="String(isExpanded(group.id))"
           @click="$emit('toggle', group.id)"
-          @keydown.enter="$emit('toggle', group.id)"
-          @keydown.space.prevent="$emit('toggle', group.id)"
-        ></div>
+        ></UiButton>
         <div class="timeline-node-line"></div>
       </div>
       <TimelineGroupCard
@@ -114,6 +113,7 @@ function isExpanded(id: string): boolean {
 .timeline-node-dot {
   width: 14px;
   height: 14px;
+  padding: 0;
   border: 3px solid var(--insight-surface-page);
   border-radius: 50%;
   background: var(--insight-action-primary);

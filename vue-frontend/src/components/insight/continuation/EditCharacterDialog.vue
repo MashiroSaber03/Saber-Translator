@@ -5,6 +5,7 @@
         <UiInput
           v-model="localName"
           type="text"
+          aria-label="角色名称"
           class="continuation-dialog__form-input"
           style="font: inherit"
           placeholder="输入角色主名称"
@@ -18,6 +19,7 @@
         <UiInput
           v-model="localAliases"
           type="text"
+          aria-label="别名（用逗号分隔）"
           class="continuation-dialog__form-input"
           style="font: inherit"
           placeholder="例如: 桐乃, 新垣彩世"

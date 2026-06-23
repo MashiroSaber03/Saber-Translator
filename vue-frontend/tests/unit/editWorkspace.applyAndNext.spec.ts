@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
+import { createBubbleState } from '@/utils/bubbleFactory'
 
 const {
   reRenderFullImageMock,
@@ -169,6 +170,49 @@ describe('EditWorkspace applyAndNext', () => {
     expect(reRenderFullImageMock).toHaveBeenCalledTimes(1)
     expect(goToNextSpy).not.toHaveBeenCalled()
     expect(saveBookshelfPageProgressMock).not.toHaveBeenCalled()
+  })
+
+  it('loads and applies existing bubbles without routine console logs', async () => {
+    reRenderFullImageMock.mockResolvedValue(true)
+
+    const imageStore = useImageStore()
+    imageStore.updateCurrentImage({
+      bubbleStates: [
+        createBubbleState({
+          coords: [10, 20, 110, 120],
+          polygon: [],
+          originalText: '原文',
+          translatedText: '译文',
+        }),
+      ],
+    })
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      const wrapper = mount(EditWorkspace, {
+        props: {
+          isEditModeActive: true,
+        },
+        global: {
+          plugins: [pinia],
+          stubs: {
+            EditToolbar: EditToolbarStub,
+            EditThumbnailPanel: true,
+            BubbleOverlay: true,
+            BubbleEditor: true,
+          },
+        },
+      })
+
+      await wrapper.find('.apply-and-next-trigger').trigger('click')
+      await flushPromises()
+
+      expect(logSpy).not.toHaveBeenCalled()
+      expect(reRenderFullImageMock).toHaveBeenCalledTimes(1)
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 
   it('keeps the original behavior outside bookshelf mode', async () => {
@@ -342,7 +386,9 @@ describe('EditWorkspace applyAndNext', () => {
   it('does not navigate when persisting the current bookshelf page fails', async () => {
     reRenderFullImageMock.mockResolvedValue(true)
     isBookshelfSessionInitializedMock.mockResolvedValue(true)
-    saveBookshelfPageProgressMock.mockRejectedValue(new Error('保存失败'))
+    const saveError = new Error('保存失败')
+    saveBookshelfPageProgressMock.mockRejectedValue(saveError)
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     const imageStore = useImageStore()
     const sessionStore = useSessionStore()
@@ -350,25 +396,30 @@ describe('EditWorkspace applyAndNext', () => {
 
     const goToNextSpy = vi.spyOn(imageStore, 'goToNext')
 
-    const wrapper = mount(EditWorkspace, {
-      props: {
-        isEditModeActive: true,
-      },
-      global: {
-        plugins: [pinia],
-        stubs: {
-          EditToolbar: EditToolbarStub,
-          EditThumbnailPanel: true,
-          BubbleOverlay: true,
-          BubbleEditor: true,
+    try {
+      const wrapper = mount(EditWorkspace, {
+        props: {
+          isEditModeActive: true,
         },
-      },
-    })
+        global: {
+          plugins: [pinia],
+          stubs: {
+            EditToolbar: EditToolbarStub,
+            EditThumbnailPanel: true,
+            BubbleOverlay: true,
+            BubbleEditor: true,
+          },
+        },
+      })
 
-    await wrapper.find('.apply-and-next-trigger').trigger('click')
-    await flushPromises()
+      await wrapper.find('.apply-and-next-trigger').trigger('click')
+      await flushPromises()
 
-    expect(goToNextSpy).not.toHaveBeenCalled()
+      expect(goToNextSpy).not.toHaveBeenCalled()
+      expect(consoleErrorSpy).toHaveBeenCalledWith('[EditWorkspace] 书架模式持久化保存失败:', saveError)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('persists the last bookshelf page without navigating away', async () => {

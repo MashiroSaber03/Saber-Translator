@@ -145,7 +145,6 @@ export const useBubbleStore = defineStore('bubble', () => {
         fallbackUsed: false
       })
       currentImage.hasUnsavedChanges = true
-      console.log('气泡状态已同步到当前图片')
     }
   }
 
@@ -162,7 +161,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     bubbles.value = newBubbles
     initialStates.value = cloneBubbleStates(newBubbles)
     clearSelection()
-    console.log(`气泡数组已设置，共 ${newBubbles.length} 个气泡`)
     // 设置初始数据时通常不需要同步（避免覆盖），但可以选择同步
     if (!skipSync) {
       syncToCurrentImage()
@@ -184,7 +182,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     const settingsStore = useSettingsStore()
     const textStyle = settingsStore.settings.textStyle
 
-    // 【简化设计】textDirection 直接使用具体方向值：
+    // 渲染方向使用具体方向值：
     // - 如果全局设置是 'auto'，使用检测结果
     // - 否则使用全局设置的值
     const layoutDirection = textStyle.layoutDirection
@@ -217,8 +215,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       ...overrides
     })
     bubbles.value.push(newBubble)
-    console.log(`已添加气泡，当前共 ${bubbles.value.length} 个`)
-    // 【同步】添加气泡后同步到 currentImage
+    // 添加气泡后同步到 currentImage。
     syncToCurrentImage()
     return newBubble
   }
@@ -248,8 +245,7 @@ export const useBubbleStore = defineStore('bubble', () => {
       .filter((i) => i !== index)
       .map((i) => (i > index ? i - 1 : i))
 
-    console.log(`已删除气泡，当前共 ${bubbles.value.length} 个`)
-    // 【同步】删除气泡后同步到 currentImage
+    // 删除气泡后同步到 currentImage。
     syncToCurrentImage()
     return true
   }
@@ -274,8 +270,7 @@ export const useBubbleStore = defineStore('bubble', () => {
 
     // 清除选择
     clearSelection()
-    console.log(`已删除 ${indicesToDelete.length} 个气泡`)
-    // 【同步】批量删除后同步到 currentImage
+    // 批量删除后同步到 currentImage。
     syncToCurrentImage()
   }
 
@@ -286,8 +281,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     bubbles.value = []
     initialStates.value = []
     clearSelection()
-    console.log('所有气泡已清除')
-    // 【同步】清除后同步到 currentImage
+    // 清除后同步到 currentImage。
     syncToCurrentImage()
   }
 
@@ -300,7 +294,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     bubbles.value = []
     initialStates.value = []
     clearSelection()
-    console.log('本地气泡状态已清除（不同步到imageStore）')
   }
 
   // ============================================================
@@ -316,7 +309,6 @@ export const useBubbleStore = defineStore('bubble', () => {
       selectedIndex.value = index
       // 单选时清除多选
       selectedIndices.value = index >= 0 ? [index] : []
-      console.log(`已选中气泡 ${index}`)
     }
   }
 
@@ -339,7 +331,6 @@ export const useBubbleStore = defineStore('bubble', () => {
       selectedIndices.value.push(index)
       selectedIndex.value = index
     }
-    console.log(`多选状态: ${selectedIndices.value.join(', ')}`)
   }
 
   /**
@@ -401,7 +392,6 @@ export const useBubbleStore = defineStore('bubble', () => {
         updates.autoTextDirection = detectTextDirection(updates.coords)
       }
       Object.assign(bubble, updates)
-      console.log(`已更新气泡 ${index}`)
       // 单个气泡更新后立即同步到 currentImage，避免切换图片时丢失编辑。
       syncToCurrentImage()
       return true
@@ -441,9 +431,8 @@ export const useBubbleStore = defineStore('bubble', () => {
         Object.assign(bubble, updatesWithAutoDirection)
       }
     }
-    // 【同步】批量更新后统一同步一次
+    // 批量更新后统一同步一次。
     syncToCurrentImage()
-    console.log(`已批量更新 ${indices.length} 个气泡`)
   }
 
   /**
@@ -463,7 +452,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     }
     // 批量更新后同步到 currentImage，确保样式落盘。
     syncToCurrentImage()
-    console.log(`已更新所有 ${bubbles.value.length} 个气泡`)
   }
 
   /**
@@ -513,7 +501,6 @@ export const useBubbleStore = defineStore('bubble', () => {
   function resetToInitial(): void {
     bubbles.value = cloneBubbleStates(initialStates.value)
     clearSelection()
-    console.log('气泡状态已重置到初始状态')
   }
 
   /**
@@ -521,7 +508,6 @@ export const useBubbleStore = defineStore('bubble', () => {
    */
   function saveAsInitial(): void {
     initialStates.value = cloneBubbleStates(bubbles.value)
-    console.log('当前状态已保存为初始状态')
   }
 
   // ============================================================

@@ -515,6 +515,10 @@ onBeforeUnmount(() => {
     clearTimeout(promptSaveTimer)
     promptSaveTimer = null
   }
+  if (storySaveTimer) {
+    clearTimeout(storySaveTimer)
+    storySaveTimer = null
+  }
 })
 </script>
 

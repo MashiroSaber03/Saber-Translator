@@ -18,13 +18,15 @@
         >
           ◀◀
         </UiButton>
-        <span
+        <UiButton
+          variant="toolbar"
           class="image-indicator"
+          aria-label="显示或隐藏缩略图"
           @click="$emit('toggle-thumbnails')"
           title="点击展开缩略图"
         >
           图 <span>{{ currentImageIndex + 1 }}</span> / <span>{{ imageCount }}</span>
-        </span>
+        </UiButton>
         <UiButton
           variant="toolbar"
           class="nav-btn"
@@ -296,7 +298,14 @@
           <span class="edit-progress-text">{{ progressText }}</span>
           <span class="edit-progress-count">{{ progressCurrent }}/{{ progressTotal }}</span>
         </div>
-        <div class="edit-progress-bar">
+        <div
+          class="edit-progress-bar"
+          role="progressbar"
+          aria-label="编辑处理进度"
+          aria-valuemin="0"
+          :aria-valuemax="progressTotal"
+          :aria-valuenow="progressCurrent"
+        >
           <div
             class="edit-progress-fill"
             :class="{ animating: !isProgressCompleted }"

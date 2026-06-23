@@ -5,7 +5,7 @@ import UiButton from '@/components/ui/UiButton.vue'
  * 书籍搜索和标签筛选组件
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import type { TagData } from '@/types'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 
@@ -24,35 +24,41 @@ const bookshelfStore = useBookshelfStore()
 const searchQuery = ref('')
 const showClearBtn = computed(() => searchQuery.value.length > 0)
 
-// 处理搜索
 function handleSearch() {
   emit('search', searchQuery.value)
 }
 
-// 清除搜索
 function clearSearch() {
+  clearPendingSearch()
   searchQuery.value = ''
   emit('search', '')
 }
 
-// 处理输入（防抖）
-let searchTimeout: ReturnType<typeof setTimeout>
-function handleInput() {
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+
+function clearPendingSearch() {
+  if (!searchTimeout) return
   clearTimeout(searchTimeout)
+  searchTimeout = null
+}
+
+function handleInput() {
+  clearPendingSearch()
   searchTimeout = setTimeout(() => {
+    searchTimeout = null
     handleSearch()
   }, 300)
 }
 
-// 处理标签点击 - 使用标签名称进行筛选
 function handleTagClick(tagName: string) {
   emit('filterTag', tagName)
 }
 
-// 检查标签是否被选中 - 使用标签名称
 function isTagSelected(tagName: string): boolean {
   return bookshelfStore.selectedTagIds.includes(tagName)
 }
+
+onUnmounted(clearPendingSearch)
 </script>
 
 <template>
@@ -61,17 +67,29 @@ function isTagSelected(tagName: string): boolean {
     <div class="search-box">
       <UiInput
         v-model="searchQuery"
+        class="book-search-input"
         type="text"
         placeholder="搜索书籍名称或标签..."
         autocomplete="off"
+        aria-label="搜索书籍"
         @input="handleInput"
-        @keypress.enter="handleSearch"
+        @keydown.enter="handleSearch"
       />
-      <UiButton variant="toolbar" class="search-btn" @click="handleSearch">🔍</UiButton>
       <UiButton
         variant="toolbar"
+        class="search-btn"
+        aria-label="搜索"
+        title="搜索"
+        @click="handleSearch"
+      >
+        🔍
+      </UiButton>
+      <UiButton
         v-if="showClearBtn"
+        variant="toolbar"
         class="clear-search-btn"
+        aria-label="清除搜索"
+        title="清除搜索"
         @click="clearSearch"
       >
         ✕
@@ -82,17 +100,19 @@ function isTagSelected(tagName: string): boolean {
     <div v-if="tags.length > 0" class="tag-filter">
       <span class="filter-label">标签筛选:</span>
       <div class="tag-chips">
-        <!-- 使用 tag.name 作为唯一标识 -->
-        <span
+        <UiButton
           v-for="tag in tags"
           :key="tag.name"
+          variant="toolbar"
+          type="button"
           class="tag-chip"
           :class="{ active: isTagSelected(tag.name) }"
+          :aria-pressed="isTagSelected(tag.name) ? 'true' : 'false'"
           :style="tag.color ? { '--tag-color': tag.color, backgroundColor: isTagSelected(tag.name) ? tag.color : '' } : {}"
           @click="handleTagClick(tag.name)"
         >
           {{ tag.name }}
-        </span>
+        </UiButton>
       </div>
     </div>
   </div>
@@ -105,8 +125,6 @@ function isTagSelected(tagName: string): boolean {
   --book-search-shadow-floating: rgba(102, 126, 234, .3);
   --book-search-surface-base: rgba(255, 255, 255, .3);
 }
-
-/* ==================== 搜索和筛选栏样式 - 当前样式 ==================== */
 
 .filter-bar {
     display: flex;
@@ -127,7 +145,7 @@ function isTagSelected(tagName: string): boolean {
     position: relative;
 }
 
-.search-box input {
+.book-search-input {
     flex: 1;
     padding: 10px 16px;
     border: 1px solid var(--color-border-muted);
@@ -138,7 +156,7 @@ function isTagSelected(tagName: string): boolean {
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.search-box input:focus {
+.book-search-input:focus {
     outline: none;
     border-color: var(--color-border-brand-gradient);
     box-shadow: 0 0 0 3px var(--book-search-shadow-raised);
@@ -197,6 +215,7 @@ function isTagSelected(tagName: string): boolean {
 }
 
 .tag-chip {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -204,6 +223,7 @@ function isTagSelected(tagName: string): boolean {
     border-radius: 20px;
     font-size: 0.8rem;
     cursor: pointer;
+    font-family: inherit;
     transition: all 0.2s;
     background: var(--color-surface-interactive-hover);
     color: var(--color-text-default);

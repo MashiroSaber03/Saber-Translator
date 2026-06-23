@@ -10,6 +10,7 @@ import { BRUSH_MIN_SIZE, BRUSH_MAX_SIZE, BRUSH_DEFAULT_SIZE } from '@/constants'
 import { inpaintSingleBubble } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleCoords, InpaintMethod } from '@/types/bubble'
+import type { ImageData } from '@/types/image'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { addErasureToUserMask, addRestorationToUserMask } from '@/utils/maskMerger'
 
@@ -103,7 +104,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     updates: Parameters<typeof imageStore.updateCurrentImage>[0]
   ): boolean {
     if (!isSameCurrentImage(expectedImageId)) {
-      console.log('当前图片已切换，忽略过期的笔刷结果')
       return false
     }
     imageStore.updateCurrentImage(updates)
@@ -147,8 +147,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushMode.value = mode
     isBrushKeyDown.value = true
     brushPath.value = []
-
-    console.log(`进入${mode === 'repair' ? '修复' : '还原'}笔刷模式，笔刷大小: ${brushSize.value}px`)
   }
 
   /**
@@ -161,7 +159,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     }
 
     // 重置所有笔刷相关变量
-    const wasActive = brushMode.value !== null
     brushMode.value = null
     isBrushKeyDown.value = false
     isBrushPainting.value = false
@@ -169,10 +166,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
     // 清理画布
     removeBrushCanvas()
-
-    if (wasActive) {
-      console.log('退出笔刷模式')
-    }
   }
 
   /**
@@ -230,8 +223,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
       createBrushCanvas(viewport)
       drawBrushStroke(pos)
     }
-
-    console.log('开始笔刷涂抹')
   }
 
   /**
@@ -428,7 +419,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   /**
    * 还原笔刷区域（恢复为原图）
    */
-  async function restoreBrushArea(currentImage: any, bounds: BrushBounds, expectedImageId: string): Promise<void> {
+  async function restoreBrushArea(currentImage: ImageData, bounds: BrushBounds, expectedImageId: string): Promise<void> {
     if (!currentImage.originalDataURL) return
 
     // 获取当前干净背景
@@ -500,7 +491,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
           cleanImageData: newCleanImageData,
           userMask: newUserMask
         })
-        console.log('还原笔刷区域完成，userMask 已更新')
         resolve()
       }
 
@@ -518,7 +508,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
    * 修复笔刷区域（使用填充色或LAMA）
    * 从编辑面板读取修复方式，不依赖气泡选中状态
    */
-  async function repairBrushArea(currentImage: any, bounds: BrushBounds, expectedImageId: string): Promise<void> {
+  async function repairBrushArea(currentImage: ImageData, bounds: BrushBounds, expectedImageId: string): Promise<void> {
     // 通过回调读取编辑面板当前修复方式，不依赖气泡选中状态。
     const settings = callbacks?.getCurrentRepairSettings?.() || {
       inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod as InpaintMethod,
@@ -542,7 +532,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
    * 支持精确掩膜：根据用户的笔刷路径生成掩膜，而非使用外接矩形
    */
   async function repairBrushAreaWithLama(
-    currentImage: any,
+    currentImage: ImageData,
     bounds: BrushBounds,
     expectedImageId: string,
     inpaintMethod: 'lama_mpe' | 'litelama' = 'lama_mpe'
@@ -612,7 +602,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
           })
 
           if (!isSameCurrentImage(expectedImageId)) {
-            console.log('当前图片已切换，忽略过期的 LAMA 修复结果')
             resolve()
             return
           }
@@ -635,14 +624,12 @@ export function useBrush(callbacks?: BrushCallbacks) {
               resolve()
               return
             }
-            console.log('修复笔刷区域完成（LAMA 修复，精确掩膜），userMask 已更新')
             showToast('LAMA 修复完成', 'success')
           } else {
             throw new Error(response.error || 'LAMA 修复返回无效数据')
           }
         } catch (error) {
           if (!isSameCurrentImage(expectedImageId)) {
-            console.log('当前图片已切换，忽略过期的 LAMA 修复错误')
             resolve()
             return
           }
@@ -667,7 +654,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
    * 从编辑面板读取填充颜色，不依赖气泡选中状态
    */
   async function repairBrushAreaWithColor(
-    currentImage: any,
+    currentImage: ImageData,
     bounds: BrushBounds,
     expectedImageId: string,
     fillColor?: string
@@ -724,7 +711,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
           cleanImageData: newCleanImageData,
           userMask: newUserMask
         })
-        console.log('修复笔刷区域完成（纯色填充），userMask 已更新')
         resolve()
       }
       img.onerror = () => resolve()

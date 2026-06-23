@@ -88,4 +88,66 @@ describe('PagesTree', () => {
     expect(store.analysisStatus).toBe('running')
     expect(alertSpy).toHaveBeenCalledWith('章节分析已启动')
   })
+
+  it('refreshes analyzed page markers without routine console output', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(2)
+    store.setChapters([
+      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
+    ])
+
+    mount(PagesTree, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await flushPromises()
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      store.setAnalyzedPagesCount(1)
+      await flushPromises()
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it('uses explicit controls for chapter toggles and page selection', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(2)
+    store.setChapters([
+      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
+    ])
+
+    const wrapper = mount(PagesTree, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await flushPromises()
+
+    const chapterToggle = wrapper.find('.tree-chapter-toggle')
+    expect(chapterToggle.exists()).toBe(true)
+    expect(chapterToggle.element.tagName).toBe('BUTTON')
+    expect(chapterToggle.attributes('aria-expanded')).toBe('true')
+
+    const pageItem = wrapper.find('.tree-page-item')
+    expect(pageItem.element.tagName).toBe('BUTTON')
+    expect(pageItem.attributes('aria-label')).toBe('选择第 1 页')
+    expect(pageItem.attributes('aria-pressed')).toBe('false')
+
+    await pageItem.trigger('click')
+
+    expect(store.selectedPageNum).toBe(1)
+    expect(pageItem.attributes('aria-pressed')).toBe('true')
+  })
 })

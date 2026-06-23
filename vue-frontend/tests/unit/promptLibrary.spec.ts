@@ -7,11 +7,13 @@ const {
   updateAiVisionOcrMock,
   toastInfoMock,
   getPromptsMock,
+  getPromptContentMock,
 } = vi.hoisted(() => ({
   updateTranslationServiceMock: vi.fn(),
   updateAiVisionOcrMock: vi.fn(),
   toastInfoMock: vi.fn(),
   getPromptsMock: vi.fn(),
+  getPromptContentMock: vi.fn(),
 }))
 
 const settingsState = reactive({
@@ -52,7 +54,7 @@ vi.mock('@/utils/toast', () => ({
 vi.mock('@/api/config', () => ({
   configApi: {
     getPrompts: getPromptsMock,
-    getPromptContent: vi.fn(),
+    getPromptContent: getPromptContentMock,
     savePrompt: vi.fn(),
     deletePrompt: vi.fn(),
     getTextboxPrompts: vi.fn(),
@@ -95,7 +97,9 @@ describe('PromptLibrary', () => {
     updateAiVisionOcrMock.mockReset()
     toastInfoMock.mockReset()
     getPromptsMock.mockReset()
+    getPromptContentMock.mockReset()
     getPromptsMock.mockResolvedValue({ prompt_names: [] })
+    getPromptContentMock.mockResolvedValue({ prompt_content: '提示词内容' })
 
     settingsState.translation.openaiOptions.request.forceJsonOutput = false
     settingsState.aiVisionOcr.openaiOptions.request.forceJsonOutput = false
@@ -126,5 +130,31 @@ describe('PromptLibrary', () => {
       promptMode: 'paddleocr_vl',
     })
     expect(toastInfoMock).toHaveBeenCalledWith('已切换到OCR模型提示词模式')
+  })
+
+  it('uses separate controls for selecting, loading, and deleting prompt rows', async () => {
+    getPromptsMock.mockResolvedValue({ prompt_names: ['default', 'custom'] })
+    const wrapper = mount(PromptLibrary)
+    await flushPromises()
+
+    const promptRow = wrapper.find('.prompt-item')
+    expect(promptRow.element.tagName).toBe('DIV')
+
+    const selectButton = wrapper.find('.prompt-select')
+    expect(selectButton.element.tagName).toBe('BUTTON')
+    expect(selectButton.attributes('aria-label')).toBe('选择提示词：default')
+
+    await selectButton.trigger('click')
+    await flushPromises()
+
+    expect(getPromptContentMock).toHaveBeenCalledWith('translate', 'default')
+
+    const loadButton = wrapper.find('.prompt-actions__load')
+    expect(loadButton.element.tagName).toBe('BUTTON')
+    expect(loadButton.attributes('aria-label')).toBe('加载提示词：default')
+
+    const deleteButton = wrapper.find('.prompt-actions__delete')
+    expect(deleteButton.element.tagName).toBe('BUTTON')
+    expect(deleteButton.attributes('aria-label')).toBe('删除提示词：default')
   })
 })

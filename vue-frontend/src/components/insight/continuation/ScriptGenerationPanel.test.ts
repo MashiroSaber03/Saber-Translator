@@ -59,9 +59,29 @@ describe('ScriptGenerationPanel', () => {
     ])
   })
 
+  it('associates the reference-count label with the numeric input', () => {
+    const wrapper = mount(ScriptGenerationPanel, {
+      props: {
+        script: null,
+        isGenerating: false,
+        bookId: 'book-1',
+      },
+      global: {
+        stubs: {
+          ReferenceImageSelector: {
+            template: '<div />',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('label[for="script-reference-count"]').exists()).toBe(true)
+    expect(wrapper.find('input#script-reference-count').exists()).toBe(true)
+  })
+
   it('clears stale manual reference selections when the workflow is reset', async () => {
     const selectorStub = {
-      template: '<div />',
+      template: '<button class="selector-confirm" @click="$emit(\'confirm\', [\'original:1\'])">选择参考图</button>',
     }
 
     const wrapper = mount(ScriptGenerationPanel, {
@@ -82,7 +102,7 @@ describe('ScriptGenerationPanel', () => {
       },
     })
 
-    ;(wrapper.vm as any).handleSelectorConfirm(['original:1'])
+    await wrapper.find('.selector-confirm').trigger('click')
     await nextTick()
 
     await wrapper.setProps({ script: null })

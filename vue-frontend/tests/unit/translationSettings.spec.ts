@@ -127,4 +127,25 @@ describe('TranslationSettings', () => {
     })
     expect(testOllamaConnectionMock).not.toHaveBeenCalled()
   })
+
+  it('switches translation mode without routine console output', async () => {
+    const store = useSettingsStore()
+    store.settings.translation.translationMode = 'batch'
+
+    const wrapper = mount(TranslationSettings)
+    const modeSelect = wrapper.findAll('.custom-select-stub')
+      .find(select => select.text().includes('逐气泡翻译'))
+    expect(modeSelect).toBeTruthy()
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await modeSelect!.setValue('single')
+      await flushPromises()
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+
+    expect(store.settings.translation.translationMode).toBe('single')
+  })
 })

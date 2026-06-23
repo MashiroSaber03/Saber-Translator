@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
 import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -51,7 +52,6 @@ async function handleFolderSelect(event: Event) {
     return
   }
   const sortedFiles = naturalSort(imageFiles, (file) => file.webkitRelativePath)
-  console.log(`从文件夹导入 ${sortedFiles.length} 张图片`)
   await processFilesWithFolderInfo(sortedFiles)
   input.value = ''
 }
@@ -209,13 +209,9 @@ async function processPdfFrontend(file: File): Promise<number> {
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     const numPages = pdf.numPages
-    console.log(`PDF ${file.name} 共 ${numPages} 页，开始本地渲染...`)
     showToast(`正在解析 PDF，共 ${numPages} 页...`, 'info')
     // 检测是否支持 OffscreenCanvas（后台渲染不受页面可见性影响）
     const useOffscreen = typeof OffscreenCanvas !== 'undefined'
-    if (useOffscreen) {
-      console.log('使用 OffscreenCanvas 后台渲染模式')
-    }
     let processedCount = 0
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       currentFileName.value = `${file.name} - 第 ${pageNum}/${numPages} 页`
@@ -253,12 +249,10 @@ async function processPdfFrontend(file: File): Promise<number> {
         const pageName = `${file.name}_页面${pageNum}`
         imageStore.addImage(pageName, dataURL)
         processedCount++
-        console.log(`  页面 ${pageNum}/${numPages} 处理完成`)
       } catch (pageError) {
         console.warn(`PDF ${file.name} 第 ${pageNum} 页渲染失败:`, pageError)
       }
     }
-    console.log(`PDF ${file.name} 全部 ${numPages} 页处理完成`)
     return processedCount
   } catch (error) {
     console.error('前端 PDF 解析失败:', error)
@@ -277,7 +271,6 @@ async function processPdfBackend(file: File): Promise<number> {
     }
     sessionId = startResponse.session_id
     const totalPages = startResponse.total_pages || 0
-    console.log(`PDF ${file.name} 共 ${totalPages} 页，开始后端分批解析...`)
     showToast(`正在解析 PDF，共 ${totalPages} 页...`, 'info')
     let loadedCount = 0
     // 步骤2: 分批获取页面（业务契约的 for 循环方式）
@@ -298,9 +291,7 @@ async function processPdfBackend(file: File): Promise<number> {
           loadedCount++
         }
       }
-      console.log(`  已加载 ${loadedCount}/${totalPages} 页`)
     }
-    console.log(`PDF ${file.name} 全部 ${loadedCount} 页处理完成`)
     return loadedCount
   } catch (error) {
     console.error('后端 PDF 解析失败:', error)
@@ -385,17 +376,17 @@ defineExpose({
       <div class="drop-content">
         <p class="drop-text">
           拖拽图片、PDF或MOBI文件到这里，或 
-          <span class="select-link" @click="triggerFileSelect">
+          <UiButton variant="link" class="select-link" @click="triggerFileSelect">
             选择文件
-          </span>
+          </UiButton>
           <span class="separator"> | </span>
-          <span class="select-link folder-link" @click="triggerFolderSelect">
+          <UiButton variant="link" class="select-link folder-link" @click="triggerFolderSelect">
             📁 选择文件夹
-          </span>
+          </UiButton>
           <span class="separator"> | </span>
-          <span class="select-link web-import-link" @click="triggerWebImport">
+          <UiButton variant="link" class="select-link web-import-link" @click="triggerWebImport">
             🌐 从网页导入
-          </span>
+          </UiButton>
         </p>
       </div>
       <UiFileInput 
@@ -419,11 +410,17 @@ defineExpose({
       :percentage="uploadProgress"
       :label="currentFileName || '处理中...'"
     />
-    <div v-if="errorMessage" class="error-message" @click="clearError">
+    <UiButton
+      v-if="errorMessage"
+      variant="toolbar"
+      class="error-message"
+      aria-label="关闭上传错误提示"
+      @click="clearError"
+    >
       <span class="error-icon">⚠️</span>
       <span class="error-text">{{ errorMessage }}</span>
       <span class="error-close">×</span>
-    </div>
+    </UiButton>
     <div v-if="isLoading && !showProgress" class="loading-overlay">
       <div class="spinner"></div>
       <span class="loading-text">处理中...</span>
@@ -500,8 +497,13 @@ defineExpose({
 }
 
 .select-link {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
   color: var(--color-text-link);
   cursor: pointer;
+  font: inherit;
   text-decoration: underline;
   font-weight: bold;
   transition: color 0.3s;
@@ -536,14 +538,17 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   margin-top: 15px;
   padding: 10px 15px;
+  border: 0;
   background-color: var(--color-surface-neutral-soft);
   border-left: 4px solid var(--image-upload-border-strong);
   border-radius: 8px;
   color: var(--image-upload-text-subtle);
   font-size: 1em;
   font-weight: bold;
+  text-align: left;
   cursor: pointer;
 }
 

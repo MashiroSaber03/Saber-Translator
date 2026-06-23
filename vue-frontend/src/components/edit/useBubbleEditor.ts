@@ -395,7 +395,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
       lineSpacing: localLineSpacing.value,
       textAlign: localTextAlign.value,
     })
-    console.log('样式已应用到所有气泡')
     // 触发重新渲染
     emit('reRender')
   }

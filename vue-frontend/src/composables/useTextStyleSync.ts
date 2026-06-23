@@ -1,7 +1,7 @@
 /**
  * 文字样式同步与应用 composable
  * 
- * 从 TranslateView 提取的文字样式管理逻辑，负责：
+ * 负责翻译页图片、气泡和侧边栏之间的文字样式同步：
  * - 图片 ↔ 侧边栏的双向文字样式同步
  * - 「应用到全部」批量设置功能
  * - 自动字号开关变更处理
@@ -18,6 +18,9 @@ import { useTranslation } from '@/composables/useTranslationPipeline'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
 import { executeRender } from '@/composables/translation/core/steps'
+import type { BubbleState } from '@/types/bubble'
+import type { ImageDataUpdates } from '@/types/image'
+import type { SavedTextStyles } from '@/composables/translation/core/types'
 
 /**
  * 应用设置选项接口
@@ -128,7 +131,7 @@ export function useTextStyleSync() {
     }
 
     async function renderWithCurrentBubbleStates(
-        bubbleStates: typeof bubbleStore.bubbles,
+        bubbleStates: BubbleState[],
         cleanImageBase64: string,
         renderStylePolicy: {
             fontSize: 'preserve' | 'initialize_auto'
@@ -141,7 +144,7 @@ export function useTextStyleSync() {
         return await executeRender({
             imageIndex: imageStore.currentImageIndex,
             cleanImage: cleanImageBase64,
-            bubbleCoords: bubbleStates.map(bs => bs.coords) as any,
+            bubbleCoords: bubbleStates.map(bs => bs.coords),
             bubbleAngles: bubbleStates.map(bs => bs.rotationAngle || 0),
             autoDirections: bubbleStates.map(bs => bs.autoTextDirection || getEffectiveDirection(bs)),
             textlinesPerBubble: bubbleStates.map(bs => bs.textlines || []),
@@ -182,7 +185,6 @@ export function useTextStyleSync() {
                 isSyncingTextStyle.value = true
                 try {
                     syncImageToSidebar(newImage)
-                    console.log(`[useTextStyleSync] 已同步图片 ${imageStore.currentImageIndex} 的文字设置到侧边栏`)
                 } finally {
                     isSyncingTextStyle.value = false
                 }
@@ -199,7 +201,6 @@ export function useTextStyleSync() {
                 isSyncingTextStyle.value = true
                 try {
                     syncSidebarToImage(newStyle)
-                    console.log(`[useTextStyleSync] 已将侧边栏设置同步到图片 ${imageStore.currentImageIndex}`)
                 } finally {
                     isSyncingTextStyle.value = false
                 }
@@ -236,8 +237,6 @@ export function useTextStyleSync() {
             return
         }
 
-        console.log(`全局设置变更 (${settingKey}=${newValue})，准备重渲染...`)
-
         // 将设置键映射到气泡状态字段。
         const propertyMap: Record<string, string> = {
             'fontSize': 'fontSize',
@@ -254,11 +253,10 @@ export function useTextStyleSync() {
 
         const stateProperty = propertyMap[settingKey]
         if (stateProperty && image.bubbleStates) {
-            // 【简化设计】处理 layoutDirection 变更
+            // layoutDirection 为 auto 时恢复每个气泡的检测方向。
             if (settingKey === 'layoutDirection') {
                 if (newValue === 'auto') {
                     // 切换到"自动"：从备份的 autoTextDirection 恢复到 textDirection
-                    console.log("排版方向设置为 'auto'，从 autoTextDirection 恢复每个气泡的排版方向")
                     const updatedBubbles = image.bubbleStates.map(bs => ({
                         ...bs,
                         // 直接用备份的检测结果，不再是 'auto'
@@ -270,7 +268,6 @@ export function useTextStyleSync() {
                     bubbleStore.setBubbles(updatedBubbles)
                 } else {
                     // 切换到强制横排/竖排：直接赋值
-                    console.log(`排版方向设置为 '${newValue}'，应用到所有气泡`)
                     const updatedBubbles = image.bubbleStates.map(bs => ({
                         ...bs,
                         textDirection: newValue as 'vertical' | 'horizontal'
@@ -301,7 +298,6 @@ export function useTextStyleSync() {
 
             // 检查是否有有效的气泡坐标
             if (bubbleStates.length === 0 || !bubbleStates[0]?.coords) {
-                console.log('没有有效的气泡坐标，跳过重渲染')
                 return
             }
 
@@ -309,11 +305,10 @@ export function useTextStyleSync() {
             const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
             if (!cleanImageBase64) {
-                console.log('没有可用的背景图，跳过重渲染')
                 return
             }
 
-            const result = await renderWithCurrentBubbleStates(bubbleStates as any, cleanImageBase64)
+            const result = await renderWithCurrentBubbleStates(bubbleStates, cleanImageBase64)
 
             if (result.finalImage) {
                 imageStore.updateCurrentImage({
@@ -321,7 +316,6 @@ export function useTextStyleSync() {
                     bubbleStates: result.bubbleStates,
                     hasUnsavedChanges: true
                 })
-                console.log('设置变更后重新渲染成功')
             }
         } catch (error) {
             console.error('设置变更后重新渲染失败:', error)
@@ -343,32 +337,26 @@ export function useTextStyleSync() {
         const image = currentImage.value
         if (!image || !image.translatedDataURL) {
             // 没有已翻译的图片，仅影响下次翻译。
-            console.log(`自动字号设置变更: ${isAutoFontSize} (仅影响下次翻译)`)
             return
         }
 
         const bubbleStates = image.bubbleStates
         if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
-            console.log('当前图片没有 bubbleStates，跳过重渲染')
             return
         }
 
-        console.log(`自动字号设置变更: ${isAutoFontSize}，将重新渲染...`)
-
         if (isAutoFontSize) {
             // 开启自动字号时显式触发一次字号初始化。
-            console.log('自动字号已开启，重新计算字号并渲染...')
 
             try {
                 const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
                 if (!cleanImageBase64) {
-                    console.log('没有可用的背景图，跳过重渲染')
                     return
                 }
 
                 const result = await renderWithCurrentBubbleStates(
-                    bubbleStates as any,
+                    bubbleStates,
                     cleanImageBase64,
                     {
                         fontSize: 'initialize_auto',
@@ -394,7 +382,6 @@ export function useTextStyleSync() {
                             hasUnsavedChanges: true
                         })
                     }
-                    console.log('自动字号渲染成功')
                 }
             } catch (error) {
                 console.error('自动字号渲染出错:', error)
@@ -402,7 +389,6 @@ export function useTextStyleSync() {
         } else {
             // 关闭自动字号时将所有气泡设为输入框中的固定字号。
             const fixedFontSize = settingsStore.settings.textStyle.fontSize
-            console.log(`自动字号已关闭，使用固定字号 ${fixedFontSize} 渲染...`)
 
             // 更新所有气泡的字号
             const updatedBubbles = bubbleStates.map(bs => ({
@@ -422,22 +408,17 @@ export function useTextStyleSync() {
     async function handleAutoTextColorChanged(isAutoTextColor: boolean) {
         const image = currentImage.value
         if (!image || !image.translatedDataURL) {
-            console.log(`自动文字颜色设置变更: ${isAutoTextColor} (仅影响下次翻译)`)
             return
         }
 
         const bubbleStates = image.bubbleStates
         if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
-            console.log('当前图片没有 bubbleStates，跳过自动文字颜色应用')
             return
         }
 
         if (!isAutoTextColor) {
-            console.log('自动文字颜色已关闭，保留当前已物化的具体颜色')
             return
         }
-
-        console.log('自动文字颜色已开启，重新应用自动识别颜色...')
 
         const updatedBubbles = bubbleStates.map((bubble) => ({
             ...bubble,
@@ -455,12 +436,11 @@ export function useTextStyleSync() {
             const cleanImageBase64 = getRenderableBackgroundBase64(image)
 
             if (!cleanImageBase64) {
-                console.log('没有可用的背景图，跳过自动文字颜色重渲染')
                 return
             }
 
             const result = await renderWithCurrentBubbleStates(
-                updatedBubbles as any,
+                updatedBubbles,
                 cleanImageBase64,
                 {
                     fontSize: 'preserve',
@@ -475,7 +455,6 @@ export function useTextStyleSync() {
                     hasUnsavedChanges: true
                 })
                 bubbleStore.setBubbles(result.bubbleStates)
-                console.log('自动文字颜色渲染成功')
             }
         } catch (error) {
             console.error('自动文字颜色渲染出错:', error)
@@ -489,7 +468,7 @@ export function useTextStyleSync() {
     /**
      * 处理应用设置到全部
      * 
-     * 【增强版】支持应用自动设置：
+     * 支持将当前自动设置批量物化到所有图片：
      * - 自动排版方向：将每个气泡的 autoTextDirection 应用到 textDirection
      * - 自动文字颜色：将每个气泡的 autoFgColor/autoBgColor 应用到 textColor/fillColor
      * - 自动字号：调用后端重新计算每个气泡的最佳字号
@@ -515,7 +494,7 @@ export function useTextStyleSync() {
             return
         }
 
-        // 【优化】预先收集有气泡的图片索引，避免多次遍历
+        // 先收集有气泡的图片索引，后续只处理可应用的图片。
         const translatedImageIndices: number[] = []
         for (let i = 0; i < imageStore.images.length; i++) {
             const img = imageStore.images[i]
@@ -609,10 +588,10 @@ export function useTextStyleSync() {
                 return updatedBubble
             }
 
-            // 【优化】收集需要重渲染的图片索引（有翻译结果的图片）
+            // 收集需要重渲染的图片索引（有翻译结果的图片）
             const imagesToReRender: number[] = []
 
-            // 【优化】合并遍历：更新气泡状态 + 收集重渲染列表
+            // 合并遍历：更新气泡状态 + 收集重渲染列表
             for (const i of translatedImageIndices) {
                 const image = imageStore.images[i]
                 if (!image?.bubbleStates) continue
@@ -621,7 +600,7 @@ export function useTextStyleSync() {
                 const updatedBubbleStates = image.bubbleStates.map(applySettingsToBubble)
 
                 // 构建图片级别的设置更新
-                const imageUpdates: any = { bubbleStates: updatedBubbleStates }
+                const imageUpdates: ImageDataUpdates = { bubbleStates: updatedBubbleStates }
 
                 if (options.fontSize) {
                     imageUpdates.autoFontSize = isAutoFontSize
@@ -695,7 +674,6 @@ export function useTextStyleSync() {
                         const cleanImageBase64 = getRenderableBackgroundBase64(img)
 
                         if (!cleanImageBase64) {
-                            console.log(`handleApplyToAll: 图片 ${imageIndex} 没有可用的背景图，跳过`)
                             translation.progress.value.failed++
                             continue
                         }
@@ -717,7 +695,7 @@ export function useTextStyleSync() {
                         }))
 
                         // 构建savedTextStyles（从当前图片的设置）
-                        const savedTextStyles = {
+                        const savedTextStyles: SavedTextStyles = {
                             fontSize: img.fontSize,
                             autoFontSize: options.fontSize && isAutoFontSize,
                             fontFamily: img.fontFamily,
@@ -737,14 +715,14 @@ export function useTextStyleSync() {
                         const result = await executeRender({
                             imageIndex: imageIndex,
                             cleanImage: cleanImageBase64,
-                            bubbleCoords: bubbleCoords as any,
+                            bubbleCoords: bubbleCoords,
                             bubbleAngles: bubbleAngles,
                             autoDirections: autoDirections,
                             originalTexts: originalTexts,
                             translatedTexts: translatedTexts,
                             textboxTexts: textboxTexts,
                             colors: colors,
-                            savedTextStyles: savedTextStyles as any,
+                            savedTextStyles: savedTextStyles,
                             currentMode: 'standard',
                             settingsSnapshot: settingsStore.settings,
                             renderStylePolicy: {
@@ -782,14 +760,12 @@ export function useTextStyleSync() {
                 isSyncingTextStyle.value = true
                 try {
                     syncImageToSidebar(currentImg)
-                    console.log('[useTextStyleSync] 应用到全部完成，已同步当前图片设置到侧边栏')
                 } finally {
                     isSyncingTextStyle.value = false
                 }
             }
 
             showToast(`已将 ${appliedItems.join('、')} 应用到 ${translatedImageIndices.length} 张图片`, 'success')
-            console.log(`[useTextStyleSync] 应用设置到全部完成，更新了 ${translatedImageIndices.length} 张图片，重渲染了 ${imagesToReRender.length} 张`)
 
         } catch (error) {
             console.error('应用设置到全部失败:', error)

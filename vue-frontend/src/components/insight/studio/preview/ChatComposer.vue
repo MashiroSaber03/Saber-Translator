@@ -58,11 +58,9 @@ onUnmounted(() => {
 <template>
   <div class="composer-card">
     <div v-if="pendingFiles.length > 0" class="pending-files">
-      <UiButton
+      <div
         v-for="(file, index) in pendingFiles"
         :key="file.id"
-        variant="toolbar"
-        type="button"
         class="pending-image-card"
       >
         <div class="pending-image-thumb">
@@ -72,8 +70,16 @@ onUnmounted(() => {
           <strong>{{ file.file.name }}</strong>
           <span>{{ attachmentTypeLabel(file.file.type || 'application/octet-stream') }}</span>
         </div>
-        <span class="pending-remove" @click.stop="removePendingFile(index)">×</span>
-      </UiButton>
+        <UiButton
+          variant="toolbar"
+          type="button"
+          class="pending-remove"
+          :aria-label="`移除附件：${file.file.name}`"
+          @click="removePendingFile(index)"
+        >
+          ×
+        </UiButton>
+      </div>
     </div>
     <div class="composer-main">
       <UiTextarea
@@ -229,6 +235,7 @@ onUnmounted(() => {
   position: absolute;
   top: 6px;
   right: 8px;
+  padding: 2px 4px;
   color: var(--studio-text-muted);
   cursor: pointer;
 }

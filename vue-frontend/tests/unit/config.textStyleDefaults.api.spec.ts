@@ -13,6 +13,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import {
+  getUserSettings,
   getTextStyleDefaults,
   resetTextStyleDefaults,
   saveTextStyleDefaults,
@@ -30,6 +31,21 @@ describe('config text style defaults api', () => {
     await getTextStyleDefaults()
 
     expect(getMock).toHaveBeenCalledWith('/api/config/text-style-defaults')
+  })
+
+  it('getUserSettings should call the user settings route without routine console logs', async () => {
+    const response = { success: true, settings: { theme: 'light' } }
+    getMock.mockResolvedValue(response)
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      await expect(getUserSettings()).resolves.toBe(response)
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+
+    expect(getMock).toHaveBeenCalledWith('/api/get_settings')
   })
 
   it('saveTextStyleDefaults should post defaults payload', async () => {

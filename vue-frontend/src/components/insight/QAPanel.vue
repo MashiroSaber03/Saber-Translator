@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
 import { useInsightStore, type QAMessage } from '@/stores/insightStore'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import QAComposer from './qa/QAComposer.vue'
 import QAMessageList from './qa/QAMessageList.vue'
 import QAOptionsBar from './qa/QAOptionsBar.vue'
@@ -232,7 +233,7 @@ function startRebuildStatusPolling(taskId: string): void {
 
 function renderMarkdown(content: string): string {
   if (!content) return ''
-  return marked.parse(content) as string
+  return sanitizeHtml(marked.parse(content) as string)
 }
 
 function selectPage(pageNum: number): void {

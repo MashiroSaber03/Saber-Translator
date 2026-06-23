@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent, nextTick, reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import UiButton from '@/components/ui/UiButton.vue'
@@ -78,11 +78,16 @@ function createStateStub(currentStep = 0) {
   }
 }
 
-const scriptPanelStub = defineComponent({
+const scriptPanelStub = {
   components: { UiButton },
   emits: ['generate', 'update-script', 'save-script', 'reset-script'],
   template: '<UiButton class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</UiButton>',
-})
+}
+
+const pageDetailsPanelStub = {
+  emits: ['story-change'],
+  template: '<button class="trigger-story-change" @click="$emit(\'story-change\', 1)">story</button>',
+}
 
 function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   const button = wrapper.findAll('button').find(node => node.text().includes(text))
@@ -253,5 +258,46 @@ describe('ContinuationPanel', () => {
     await nextTick()
 
     expect(mocks.state.syncAnalysisData).toHaveBeenCalledWith('auto')
+  })
+
+  it('clears pending story autosave when the panel unmounts', async () => {
+    vi.useFakeTimers()
+    mocks.state = createStateStub(2)
+    mocks.state.pages.value = [
+      {
+        page_number: 1,
+        continuity_text: '承接',
+        story_text: '剧情',
+        dialogue_text: '对白',
+        characters: ['主角'],
+        character_forms: [],
+        final_prompt: '',
+        image_url: '',
+        previous_url: '',
+        status: 'pending',
+      },
+    ]
+
+    try {
+      const wrapper = mount(ContinuationPanel, {
+        global: {
+          stubs: {
+            CharacterManagementPanel: true,
+            ScriptGenerationPanel: scriptPanelStub,
+            PageDetailsPanel: pageDetailsPanelStub,
+            ImageGenerationPanel: true,
+            ExportPanel: true,
+          },
+        },
+      })
+
+      await wrapper.find('.trigger-story-change').trigger('click')
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(600)
+
+      expect(mocks.savePages).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

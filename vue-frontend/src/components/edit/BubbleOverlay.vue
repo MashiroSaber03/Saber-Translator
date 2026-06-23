@@ -387,7 +387,6 @@ function handleRotateStart(index: number, event: MouseEvent): void {
   document.body.classList.add('rotating-box')
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
-  console.log(`开始旋转气泡 #${index + 1}，初始角度: ${rotateInitialAngle.value}°`)
 }
 function updateRotating(event: MouseEvent): void {
   const dx = event.clientX - rotateCenterX.value
@@ -411,7 +410,6 @@ function finishRotating(_event: MouseEvent): void {
   emit('rotateEnd', index, finalAngle)
   isRotating.value = false
   rotatingIndex.value = -1
-  console.log(`气泡 #${index + 1} 旋转完成，角度: ${finalAngle}°`)
 }
 function startDrawing(event: MouseEvent): void {
   const pos = getMousePositionInImage(event)
@@ -425,7 +423,6 @@ function startDrawing(event: MouseEvent): void {
   drawingRect.value = [pos.x, pos.y, pos.x, pos.y]
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
-  console.log('开始绘制新框:', pos.x.toFixed(1), pos.y.toFixed(1))
 }
 function updateDrawing(event: MouseEvent): void {
   const pos = getMousePositionInImage(event)
@@ -451,12 +448,10 @@ function finishDrawing(event: MouseEvent): void {
   const y2 = Math.min(imgHeight, Math.round(Math.max(drawStartY.value, pos.y)))
   const minSize = 10
   if (x2 - x1 < minSize || y2 - y1 < minSize) {
-    console.log('绘制的框太小，已忽略')
     isDrawing.value = false
     drawingRect.value = null
     return
   }
-  console.log('完成绘制新框:', [x1, y1, x2, y2])
   emit('drawBubble', [x1, y1, x2, y2])
   isDrawing.value = false
   drawingRect.value = null
@@ -537,7 +532,7 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   user-select: none;
-  /* 【优化大图渲染】启用 GPU 加速，减少重绘闪烁 */
+  /* GPU compositing keeps large overlays stable while panning and zooming. */
   transform: translateZ(0);
   backface-visibility: hidden;
   will-change: contents;
@@ -551,7 +546,7 @@ onUnmounted(() => {
   cursor: pointer;
   pointer-events: auto;
   overflow: visible;
-  /* 【优化大图渲染】GPU 加速和优化重绘 */
+  /* Transform-heavy bubble boxes are isolated from surrounding layout. */
   will-change: transform, left, top, width, height;
   contain: layout style;
 }

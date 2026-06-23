@@ -88,10 +88,17 @@ describe('usePipeline validation', () => {
 
     const { usePipeline } = await import('@/composables/translation/core/pipeline')
     const pipeline = usePipeline()
-    const result = await pipeline.execute({
-      mode: 'removeText',
-      scope: 'all',
-    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    let result
+    try {
+      result = await pipeline.execute({
+        mode: 'removeText',
+        scope: 'all',
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(result.success).toBe(true)
     expect(validateBeforeTranslationMock).not.toHaveBeenCalled()
@@ -119,5 +126,36 @@ describe('usePipeline validation', () => {
     expect(result.errors).toEqual(['配置验证失败'])
     expect(validateBeforeTranslationMock).toHaveBeenCalledWith('ocr')
     expect(executeParallelMock).not.toHaveBeenCalled()
+  })
+
+  it('forwards selected pages to pipeline lifecycle hooks as selection scope', async () => {
+    const imageStore = useImageStore()
+    const settingsStore = useSettingsStore()
+    imageStore.addImage('page-1.png', 'data:image/png;base64,orig')
+    imageStore.addImage('page-2.png', 'data:image/png;base64,orig2')
+    imageStore.addImage('page-3.png', 'data:image/png;base64,orig3')
+    settingsStore.settings.parallel.enabled = true
+
+    validateBeforeTranslationMock.mockReturnValue(true)
+
+    const { usePipeline } = await import('@/composables/translation/core/pipeline')
+    const pipeline = usePipeline()
+    const result = await pipeline.execute({
+      mode: 'standard',
+      scope: 'selection',
+      pageSelection: { pages: [1, 3] },
+    })
+
+    expect(result.success).toBe(true)
+    expect(notifyPipelineBeforeMock).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'selection',
+      page_indexes: [0, 2],
+      total_images: 2,
+    }))
+    expect(notifyPipelineAfterMock).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'selection',
+      completed: 1,
+      failed: 0,
+    }))
   })
 })

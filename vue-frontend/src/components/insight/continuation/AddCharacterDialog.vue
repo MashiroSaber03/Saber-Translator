@@ -5,6 +5,7 @@
         <UiInput
           v-model="name"
           type="text"
+          aria-label="角色名称"
           class="continuation-dialog__form-input"
           style="font: inherit"
           placeholder="输入角色名称"
@@ -15,6 +16,7 @@
         <UiInput
           v-model="aliases"
           type="text"
+          aria-label="别名（用逗号分隔，可选）"
           class="continuation-dialog__form-input"
           style="font: inherit"
           placeholder="例如: 小明, 阿明"
@@ -25,6 +27,7 @@
         <UiTextarea
           v-model="description"
           rows="3"
+          aria-label="角色描述（可选）"
           class="continuation-dialog__form-input"
           style="font: inherit"
           placeholder="简单描述角色的外观特征..."
@@ -50,7 +53,7 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogField from './ContinuationDialogField.vue'
@@ -66,7 +69,15 @@ const name = ref('')
 const aliases = ref('')
 const description = ref('')
 const isAdding = ref(false)
+let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
+
+function clearLoadingTimer(): void {
+  if (loadingTimer) {
+    clearTimeout(loadingTimer)
+    loadingTimer = null
+  }
+}
 
 function add() {
   const charName = name.value.trim()
@@ -83,8 +94,14 @@ function add() {
   isAdding.value = true
   emit('add', charName, aliasList, description.value.trim())
 
-  setTimeout(() => {
+  clearLoadingTimer()
+  loadingTimer = setTimeout(() => {
     isAdding.value = false
+    loadingTimer = null
   }, 500)
 }
+
+onBeforeUnmount(() => {
+  clearLoadingTimer()
+})
 </script>

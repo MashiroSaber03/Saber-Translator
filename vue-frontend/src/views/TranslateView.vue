@@ -6,7 +6,7 @@ import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 /**
  * 翻译页面视图组件
  * 提供图片上传、翻译设置、翻译执行和编辑模式功能
- * 
+ *
  * 核心功能：
  * - 图片上传（支持拖拽、多图片、PDF、MOBI/AZW）
  * - 翻译设置侧边栏
@@ -55,9 +55,9 @@ const sessionStore = useSessionStore()
 const bubbleStore = useBubbleStore()
 
 // 配置验证
-const { 
-  validateBeforeTranslation, 
-  initValidation 
+const {
+  validateBeforeTranslation,
+  initValidation
 } = useValidation()
 
 // 翻译功能
@@ -70,8 +70,6 @@ const {
   handleAutoTextColorChanged,
   handleApplyToAll,
 } = useTextStyleSync()
-
-// 导出导入功能已移至具体按钮事件处理函数中
 
 // 翻译页面初始化
 const translateInit = useTranslateInit()
@@ -140,23 +138,21 @@ const pageTitle = computed(() => {
 // ============================================================
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
+
   // 进入翻译路由时重置工作区状态，保证书架模式和快速翻译模式互不串会话。
   imageStore.clearImages()
   bubbleStore.clearBubbles()
-  
+
   // 使用 useTranslateInit 进行完整初始化
   // 包括：设置初始化、字体列表、提示词、主题、书架模式会话加载
   await translateInit.initializeApp()
-  
+
   // 初始化配置验证（延迟显示首次使用引导）
   initValidation()
-  
-  // 添加全局键盘事件监听
-  window.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  // 移除全局键盘事件监听
   window.removeEventListener('keydown', handleKeydown)
 })
 
@@ -168,7 +164,7 @@ watch(
       // 进入书架章节前先同步清空当前图片和气泡状态。
       imageStore.clearImages()
       bubbleStore.clearBubbles()
-      
+
       await loadChapterSession()
     } else if (oldBook && oldChapter && !newBook && !newChapter) {
       // 从书架模式切回快速翻译时重置工作区。
@@ -176,7 +172,6 @@ watch(
       bubbleStore.clearBubbles()
       // 清空书籍/章节上下文
       await translateInit.initializeBookChapterContext()
-      console.log('[TranslateView] 从书架模式切换到快速翻译模式，已清空数据')
     }
   }
 )
@@ -256,37 +251,44 @@ function showFeatureNotice() {
     <!-- 页面头部 -->
     <AppHeader logo-title="返回书架">
       <template #header-links>
-        <router-link to="/" class="translate-header__back-link" title="返回书架">📚</router-link>
+        <router-link to="/" class="translate-header__back-link" title="返回书架" aria-label="返回书架">📚</router-link>
         <UiButton
-          variant="toolbar" 
+          variant="toolbar"
           v-if="isBookshelfMode"
-          class="translate-header__save-button" 
+          class="translate-header__save-button"
           title="保存进度"
+          aria-label="保存进度"
           @click="saveCurrentSession"
         >
           💾
         </UiButton>
         <UiButton
-          variant="toolbar" 
+          variant="toolbar"
           id="openSettingsBtn"
-          class="translate-header__settings-button" 
+          class="translate-header__settings-button"
           title="打开设置"
           @click="openSettings()"
         >
           <span class="icon">⚙️</span>
           <span>设置</span>
         </UiButton>
-        <a href="http://www.mashirosaber.top" target="_blank" class="translate-header__link translate-header__link--tutorial">使用教程</a>
-        <a href="javascript:void(0)" class="translate-header__link translate-header__link--donate" @click="openSponsor">
+        <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer" class="translate-header__link translate-header__link--tutorial">使用教程</a>
+        <UiButton
+          variant="toolbar"
+          class="translate-header__link translate-header__link--donate"
+          aria-label="请作者喝奶茶"
+          @click="openSponsor"
+        >
           <span>❤️ 请作者喝奶茶</span>
-        </a>
-        <a href="https://github.com/MashiroSaber03" target="_blank" class="translate-header__link translate-header__link--github">
+        </UiButton>
+        <a href="https://github.com/MashiroSaber03" target="_blank" rel="noopener noreferrer" aria-label="GitHub 主页" class="translate-header__link translate-header__link--github">
           <img :src="'/pic/github.jpg'" alt="GitHub" class="translate-header__github-icon">
         </a>
         <UiButton
-          variant="toolbar" 
-          class="translate-header__theme-toggle" 
+          variant="toolbar"
+          class="translate-header__theme-toggle"
           title="功能开发中"
+          aria-label="功能开发中"
           @click="showFeatureNotice"
         >
           <span class="translate-header__theme-icon">☀️</span>
@@ -335,9 +337,9 @@ function showFeatureNotice() {
               @upload-complete="handleUploadComplete"
             />
           </div>
-          
+
           <!-- 缩略图列表已移至右侧侧边栏 -->
-          
+
           <!-- 会话加载进度条 -->
           <ProgressBar
             v-if="sessionStore.loadingProgress.total > 0"
@@ -345,12 +347,11 @@ function showFeatureNotice() {
             :percentage="(sessionStore.loadingProgress.current / sessionStore.loadingProgress.total * 100)"
             :label="sessionStore.loadingProgress.message"
           />
-          
-          <!-- 翻译进度组件 -->
+
           <TranslationProgress
             :progress="translation.progress.value"
           />
-          
+
           <!-- 书架模式提示 -->
           <div v-if="isBatchTranslating && isBookshelfMode" class="translate-bookshelf-mode-hint">
             <span class="hint-text">
@@ -370,14 +371,14 @@ function showFeatureNotice() {
 
       <!-- 右侧缩略图侧边栏 -->
       <template #right>
-        <ThumbnailSidebar 
+        <ThumbnailSidebar
           v-show="showThumbnailSidebar"
           :is-visible="showThumbnailSidebar"
           @select="selectImage"
         />
       </template>
     </SidebarLayout>
-    
+
     <!-- 编辑工作区（编辑模式时显示，放在页面布局外面实现全屏覆盖） -->
     <EditWorkspace
       v-if="currentImage && isEditMode"
@@ -385,34 +386,35 @@ function showFeatureNotice() {
       @exit="toggleEditMode"
     />
 
-    
+
     <!-- 首次使用引导 -->
     <FirstTimeGuide @open-settings="openSettings" />
-    
+
     <!-- 设置模态框 -->
-    <SettingsModal 
+    <SettingsModal
       v-model="showSettingsModal"
       @save="handleSettingsSave"
     />
 
     <BookGlossaryModal v-model="showBookGlossaryModal" />
     <BookNonTranslateModal v-model="showBookNonTranslateModal" />
-    
+
     <!-- 赞助模态框 -->
-    <SponsorModal 
-      v-if="showSponsorModal" 
-      @close="showSponsorModal = false" 
+    <SponsorModal
+      v-if="showSponsorModal"
+      @close="showSponsorModal = false"
     />
-    
+
     <!-- 网页导入免责声明弹窗 -->
     <WebImportDisclaimer />
-    
+
     <!-- 网页导入模态框 -->
     <WebImportModal />
   </AppShell>
 </template>
 
-<style scoped>/* 翻译页面布局 */
+<style scoped>
+/* 翻译页面布局 */
 
 /* 页面容器 */
 .translate-page {
@@ -568,9 +570,12 @@ function showFeatureNotice() {
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
+  border: 0;
   background-color: var(--translate-view-surface-raised);
   border-radius: 20px;
   color: var(--color-text-heading);
+  cursor: pointer;
+  font: inherit;
   text-decoration: none;
   transition: all 0.3s ease;
 }

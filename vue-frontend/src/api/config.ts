@@ -369,10 +369,7 @@ export interface TranslateWorkflowPreferencesResponse {
  * 获取用户设置（从后端 config/user_settings.json 加载）
  */
 export async function getUserSettings(): Promise<UserSettingsResponse> {
-  console.log('[API] 正在调用 /api/get_settings ...')
-  const response = await apiClient.get<UserSettingsResponse>('/api/get_settings')
-  console.log('[API] /api/get_settings 响应:', response)
-  return response
+  return apiClient.get<UserSettingsResponse>('/api/get_settings')
 }
 
 /**

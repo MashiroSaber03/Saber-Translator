@@ -165,10 +165,9 @@ export interface BubbleGlobalDefaults {
 
 /**
  * 获取气泡的渲染方向
- * 【简化设计】直接返回 textDirection，不再需要复杂判断
- * - textDirection 始终只有 'vertical' 或 'horizontal'
- * - 翻译时/切换设置时，系统会自动填充正确的值
- * - autoTextDirection 仅作为备份，用于切换回"自动"时恢复
+ * - textDirection 是当前渲染方向
+ * - autoTextDirection 作为检测方向备份，用于自动模式恢复
+ * - 异常输入会按检测方向和气泡宽高比回退
  * 
  * @param bubble - 气泡状态
  * @returns 渲染方向 'vertical' | 'horizontal'
@@ -176,7 +175,7 @@ export interface BubbleGlobalDefaults {
 export function getEffectiveDirection(
   bubble: Pick<BubbleState, 'textDirection' | 'autoTextDirection' | 'coords'>
 ): 'vertical' | 'horizontal' {
-  // 直接使用 textDirection（简化后不再包含 'auto' 值）
+  // 直接使用当前渲染方向。
   if (bubble.textDirection === 'vertical' || bubble.textDirection === 'horizontal') {
     return bubble.textDirection
   }

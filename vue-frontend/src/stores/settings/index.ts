@@ -33,6 +33,7 @@ import {
   DEFAULT_PROOFREADING_MAX_RETRIES
 } from '@/constants'
 import { getProviderManifest, normalizeProviderId } from '@/config/aiProviders'
+import { getUserSettings, saveUserSettings } from '@/api/config'
 import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 import {
   normalizeOpenAiOptions
@@ -395,7 +396,6 @@ export const useSettingsStore = defineStore('settings', () => {
         } else {
           settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
         }
-        console.log('已从 localStorage 加载设置')
       }
     } catch (error) {
       console.error('从 localStorage 加载设置失败:', error)
@@ -415,7 +415,6 @@ export const useSettingsStore = defineStore('settings', () => {
           return
         }
         providerConfigs.value = parsed
-        console.log('已从 localStorage 加载服务商配置缓存')
       }
     } catch (error) {
       console.error('加载服务商配置缓存失败:', error)
@@ -640,7 +639,6 @@ export const useSettingsStore = defineStore('settings', () => {
   function resetToDefaults(): void {
     settings.value = createDefaultSettings()
     saveToStorage()
-    console.log('设置已重置为默认值')
   }
 
   function setTheme(nextTheme: 'light' | 'dark'): void {
@@ -680,13 +678,10 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   async function loadFromBackend(): Promise<boolean> {
     try {
-      console.log('[Settings] 开始从后端加载设置...')
-      const { getUserSettings } = await import('@/api/config')
       const response = await getUserSettings()
 
       if (response.success && response.settings) {
         const backendSettings = response.settings
-        console.log('[Settings] 从后端加载设置:', backendSettings)
         if (!applyBackendSettings(backendSettings)) {
           return false
         }
@@ -698,7 +693,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
         saveToStorage()
         saveProviderConfigsToStorage()
-        console.log('[Settings] 后端设置已应用（textStyle 使用默认值）')
         return true
       } else {
         console.warn('[Settings] 后端无设置数据，使用 localStorage 或默认值')
@@ -737,7 +731,6 @@ export const useSettingsStore = defineStore('settings', () => {
       providerConfigs.value = parsedProviderConfigs
     }
 
-    console.log('[Settings] 后端设置已应用')
     return true
   }
 
@@ -753,8 +746,6 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   async function saveToBackend(): Promise<boolean> {
     try {
-      const { saveUserSettings } = await import('@/api/config')
-
       // 保存当前所有服务商的配置到缓存
       translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
       hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
@@ -768,7 +759,6 @@ export const useSettingsStore = defineStore('settings', () => {
       const response = await saveUserSettings(backendSettings)
 
       if (response.success) {
-        console.log('[Settings] 设置已保存到后端')
         return true
       } else {
         console.error('[Settings] 保存设置到后端失败:', response)
@@ -793,7 +783,6 @@ export const useSettingsStore = defineStore('settings', () => {
       savePluginAgentSettingsToStorage()
       savePluginAgentProviderConfigsToStorage()
 
-      const { getUserSettings, saveUserSettings } = await import('@/api/config')
       let backendSettings: Record<string, unknown> = {}
 
       try {

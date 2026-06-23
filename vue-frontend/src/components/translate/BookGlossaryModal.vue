@@ -155,7 +155,7 @@ function handleClose(): void {
 }
 
 async function handleSave(): Promise<void> {
-  const error = validateRegexEntries(draft.value.entries as any, { patternField: 'source' })
+  const error = validateRegexEntries(draft.value.entries, { patternField: 'source' })
   if (error) {
     showToast(error, 'error')
     return

@@ -37,6 +37,7 @@
             class="app-header__settings-button"
             :class="{ 'app-header__settings-button--highlight': highlightSettings }"
             title="设置"
+            aria-label="打开设置"
             @click="$emit('openSettings')"
           >
             ⚙️
@@ -46,6 +47,7 @@
           <a
             href="http://www.mashirosaber.top"
             target="_blank"
+            rel="noopener noreferrer"
             class="app-header__link app-header__link--tutorial"
             title="使用教程"
           >
@@ -61,6 +63,7 @@
           <a
             href="https://github.com/MashiroSaber03/saber-translator"
             target="_blank"
+            rel="noopener noreferrer"
             class="app-header__link app-header__link--github"
             title="GitHub 仓库"
           >
@@ -68,7 +71,13 @@
             GitHub
           </a>
 
-          <UiButton variant="toolbar" class="app-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
+          <UiButton
+            variant="toolbar"
+            class="app-header__theme-toggle"
+            title="功能开发中"
+            aria-label="功能开发中"
+            @click="showFeatureNotice"
+          >
             <span class="app-header__theme-icon">☀️</span>
           </UiButton>
         </slot>

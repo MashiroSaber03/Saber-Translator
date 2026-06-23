@@ -4,6 +4,7 @@
  */
 
 import { ref, type Ref } from 'vue'
+import { sanitizeHtml } from './sanitizeHtml'
 
 /**
  * Toast 消息类型
@@ -173,12 +174,13 @@ const showGeneralMessage = (
 ): string => {
   // 生成唯一消息ID或使用提供的ID
   const msgId = messageId || `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const renderedMessage = isHTML ? sanitizeHtml(message) : message
 
   // 队列模式：立即移除所有现有消息，只显示最新的一个
   clearAll()
 
   const id = ++toastId
-  const toast: Toast = { id, messageId: msgId, message, type, isHTML }
+  const toast: Toast = { id, messageId: msgId, message: renderedMessage, type, isHTML }
 
   // 即使是 duration=0 的无限消息，也在 30 秒后自动消失。
   const safetyTimeout = Math.max(duration, SAFETY_TIMEOUT)

@@ -88,4 +88,28 @@ describe('PageDetail', () => {
     // 分析完成信号到达后自动刷新当前页详情
     expect(getPageDataMock).toHaveBeenCalledTimes(2)
   })
+
+  it('opens image preview from an accessible preview trigger', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.selectPage(3)
+    store.setBookTotalPages(20)
+
+    const wrapper = mount(PageDetail, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await flushPromises()
+
+    const previewTrigger = wrapper.find('.page-detail-image')
+    expect(previewTrigger.element.tagName).toBe('BUTTON')
+    expect(previewTrigger.attributes('aria-label')).toBe('预览第 3 页图片')
+
+    await previewTrigger.trigger('click')
+
+    expect(wrapper.find('.image-preview-modal').exists()).toBe(true)
+  })
 })

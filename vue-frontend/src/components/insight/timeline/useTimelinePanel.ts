@@ -2,18 +2,35 @@ import { computed, onMounted, ref, watch } from 'vue'
 import * as insightApi from '@/api/insight'
 import { useInsightStore } from '@/stores/insightStore'
 import type { TimelineData } from './timelineTypes'
+import type { InsightTimelineResponse } from '@/types'
 
-function normalizeTimelineResponse(response: any): TimelineData {
+type TimelinePayload = Partial<TimelineData> & {
+  summary?: string | { one_sentence?: string }
+  characters?: TimelineData['main_characters']
+  story_arcs?: TimelineData['plot_arcs']
+}
+
+type TimelineApiResponse = InsightTimelineResponse & TimelinePayload
+
+function getTimelinePayload(response: TimelineApiResponse): TimelinePayload {
+  return response.timeline && typeof response.timeline === 'object'
+    ? response.timeline as TimelinePayload
+    : response
+}
+
+function normalizeTimelineResponse(response: TimelineApiResponse): TimelineData {
+  const payload = getTimelinePayload(response)
+  const summary = payload.summary
   return {
-    mode: response.mode || 'simple',
-    groups: response.groups || [],
-    stats: response.stats,
-    story_summary: response.story_summary || response.summary?.one_sentence || response.summary || '',
-    main_characters: response.main_characters || response.characters || [],
-    plot_arcs: response.plot_arcs || response.story_arcs || [],
-    plot_threads: response.plot_threads || [],
-    events: response.events || [],
-    cached: response.cached,
+    mode: payload.mode || 'simple',
+    groups: payload.groups || [],
+    stats: payload.stats,
+    story_summary: payload.story_summary || (typeof summary === 'object' ? summary.one_sentence : summary) || '',
+    main_characters: payload.main_characters || payload.characters || [],
+    plot_arcs: payload.plot_arcs || payload.story_arcs || [],
+    plot_threads: payload.plot_threads || [],
+    events: payload.events || [],
+    cached: payload.cached,
   }
 }
 
@@ -24,6 +41,9 @@ export function useTimelinePanel() {
   const timelineData = ref<TimelineData | null>(null)
   const expandedGroups = ref<Set<string>>(new Set())
   const errorMessage = ref('')
+  let dataRequestId = 0
+  let loadRequestId = 0
+  let regenerateRequestId = 0
 
   const hasTimelineData = computed(() => {
     if (!timelineData.value) return false
@@ -47,33 +67,48 @@ export function useTimelinePanel() {
   })
 
   async function loadTimeline(): Promise<void> {
-    if (!insightStore.currentBookId) return
+    const bookId = insightStore.currentBookId
+    if (!bookId) return
+
+    const requestId = ++dataRequestId
+    const loadingId = ++loadRequestId
 
     isLoading.value = true
     errorMessage.value = ''
 
     try {
-      const response = await insightApi.getTimeline(insightStore.currentBookId) as any
+      const response = await insightApi.getTimeline(bookId) as TimelineApiResponse
+      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+
       if (response.success) {
         timelineData.value = normalizeTimelineResponse(response)
       } else {
         errorMessage.value = response.error || '加载时间线失败'
       }
     } catch (error) {
+      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
       errorMessage.value = error instanceof Error ? error.message : '加载失败'
     } finally {
-      isLoading.value = false
+      if (loadRequestId === loadingId) {
+        isLoading.value = false
+      }
     }
   }
 
   async function regenerateTimeline(): Promise<void> {
-    if (!insightStore.currentBookId) return
+    const bookId = insightStore.currentBookId
+    if (!bookId) return
+
+    const requestId = ++dataRequestId
+    const regeneratingId = ++regenerateRequestId
 
     isRegenerating.value = true
     errorMessage.value = ''
 
     try {
-      const response = await insightApi.regenerateTimeline(insightStore.currentBookId) as any
+      const response = await insightApi.regenerateTimeline(bookId) as TimelineApiResponse
+      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+
       if (response.success) {
         timelineData.value = normalizeTimelineResponse(response)
         insightStore.triggerDataRefresh()
@@ -81,9 +116,12 @@ export function useTimelinePanel() {
         errorMessage.value = '重新生成失败'
       }
     } catch (error) {
+      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
       errorMessage.value = error instanceof Error ? error.message : '重新生成失败'
     } finally {
-      isRegenerating.value = false
+      if (regenerateRequestId === regeneratingId) {
+        isRegenerating.value = false
+      }
     }
   }
 
@@ -117,6 +155,12 @@ export function useTimelinePanel() {
       timelineData.value = null
       expandedGroups.value = new Set()
       loadTimeline()
+    } else {
+      dataRequestId++
+      timelineData.value = null
+      expandedGroups.value = new Set()
+      isLoading.value = false
+      isRegenerating.value = false
     }
   })
 

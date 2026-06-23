@@ -31,8 +31,9 @@
     <!-- 参考图配置区域 -->
     <div class="reference-config">
       <div class="config-row">
-        <label>VLM参考图数:</label>
+        <label for="script-reference-count">VLM参考图数:</label>
         <UiInput
+          id="script-reference-count"
           type="number"
           v-model.number="refCount"
           min="1"

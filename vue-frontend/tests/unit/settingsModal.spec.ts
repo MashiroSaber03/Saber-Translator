@@ -90,8 +90,14 @@ describe('SettingsModal', () => {
     const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存设置'))
     expect(saveButton).toBeTruthy()
 
-    await saveButton!.trigger('click')
-    await flushPromises()
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await saveButton!.trigger('click')
+      await flushPromises()
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(saveDefaultsMock).toHaveBeenCalledTimes(1)
     expect(saveToStorageMock).toHaveBeenCalledTimes(1)

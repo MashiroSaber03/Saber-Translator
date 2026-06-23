@@ -30,14 +30,32 @@
       <div v-if="isLoading" class="loading-hint">加载中...</div>
       <div v-else-if="promptList.length === 0" class="empty-hint">暂无保存的提示词</div>
       <div v-else class="prompt-list">
-        <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }" @click="selectPrompt(prompt.name)">
-          <span class="prompt-name">{{ prompt.name }}</span>
+        <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }">
+          <UiButton
+            variant="toolbar"
+            type="button"
+            class="prompt-select"
+            :aria-label="`选择提示词：${prompt.name}`"
+            @click="selectPrompt(prompt.name)"
+          >
+            <span class="prompt-name">{{ prompt.name }}</span>
+          </UiButton>
           <div class="prompt-actions">
-            <UiButton variant="secondary" @click.stop="loadPrompt(prompt.name)" title="加载到编辑器" size="sm">📥</UiButton>
+            <UiButton
+              variant="secondary"
+              class="prompt-actions__load"
+              :aria-label="`加载提示词：${prompt.name}`"
+              @click="loadPrompt(prompt.name)"
+              title="加载到编辑器"
+              size="sm"
+            >
+              📥
+            </UiButton>
             <UiButton
               variant="danger"
               class="prompt-actions__delete"
-              @click.stop="deletePrompt(prompt.name)"
+              :aria-label="`删除提示词：${prompt.name}`"
+              @click="deletePrompt(prompt.name)"
               title="删除"
               :disabled="prompt.name === 'default'"
               size="sm"
@@ -328,7 +346,6 @@ onMounted(() => {
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-border-muted);
-  cursor: pointer;
 }
 
 .prompt-item:last-child {
@@ -344,7 +361,21 @@ onMounted(() => {
 }
 
 .prompt-name {
+  display: block;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-select {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0;
+  color: var(--color-text-default);
+  text-align: left;
 }
 
 .prompt-actions {

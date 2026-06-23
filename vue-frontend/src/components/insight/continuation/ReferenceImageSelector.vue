@@ -63,14 +63,19 @@
         <span>漫画图片</span>
       </div>
       <div class="thumbnails-grid" ref="thumbnailsGrid">
-        <div
+        <UiButton
           v-for="img in originalImages"
           :key="`original-${img.page_number}`"
+          variant="toolbar"
+          type="button"
           class="thumbnail"
           :class="{
             selected: isSelected(img),
-            disabled: !isSelected(img) && selectedCount >= maxCount
+            disabled: isThumbnailDisabled(img)
           }"
+          :aria-label="getThumbnailActionLabel(img, '原作')"
+          :aria-pressed="String(isSelected(img))"
+          :disabled="isThumbnailDisabled(img)"
           @click="toggleSelection(img)"
         >
           <img
@@ -91,20 +96,25 @@
           <div class="page-badge">{{ img.page_number }}</div>
           <!-- 禁用遮罩 -->
           <div
-            v-if="!isSelected(img) && selectedCount >= maxCount"
+            v-if="isThumbnailDisabled(img)"
             class="disabled-overlay"
             title="已达到最大数量，请先取消其他选择"
           ></div>
-        </div>
+        </UiButton>
 
-        <div
+        <UiButton
           v-for="img in continuationImages"
           :key="`continuation-${img.page_number}`"
+          variant="toolbar"
+          type="button"
           class="thumbnail continuation-thumbnail"
           :class="{
             selected: isSelected(img),
-            disabled: !isSelected(img) && selectedCount >= maxCount
+            disabled: isThumbnailDisabled(img)
           }"
+          :aria-label="getThumbnailActionLabel(img, '续写')"
+          :aria-pressed="String(isSelected(img))"
+          :disabled="isThumbnailDisabled(img)"
           @click="toggleSelection(img)"
         >
           <img
@@ -123,11 +133,11 @@
           <div class="page-badge">{{ img.page_number }}</div>
           <div class="continuation-badge">续写</div>
           <div
-            v-if="!isSelected(img) && selectedCount >= maxCount"
+            v-if="isThumbnailDisabled(img)"
             class="disabled-overlay"
             title="已达到最大数量，请先取消其他选择"
           ></div>
-        </div>
+        </UiButton>
       </div>
     </div>
   </BaseModal>
@@ -212,6 +222,15 @@ function getSelectionIndex(img: MangaImageInfo): number {
   const identifier = getImageIdentifier(img)
   const index = selectedTokens.value.indexOf(identifier)
   return index >= 0 ? index + 1 : 0
+}
+
+function isThumbnailDisabled(img: MangaImageInfo): boolean {
+  return !isSelected(img) && selectedCount.value >= props.maxCount
+}
+
+function getThumbnailActionLabel(img: MangaImageInfo, source: string): string {
+  const action = isSelected(img) ? '取消选择' : '选择'
+  return `${action}${source}第${img.page_number}页参考图`
 }
 
 // 切换选择状态

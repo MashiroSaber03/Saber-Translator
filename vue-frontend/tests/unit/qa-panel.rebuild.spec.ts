@@ -34,6 +34,7 @@ describe('QAPanel rebuild embeddings polling', () => {
 
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.spyOn(window, 'alert').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
 
   afterEach(() => {

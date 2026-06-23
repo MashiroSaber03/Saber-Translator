@@ -28,6 +28,7 @@ const isTesting = ref(false)
 const isFetchingModels = ref(false)
 const models = ref<ModelInfo[]>([])
 const modelSelectVisible = ref(false)
+let modelFetchRequestId = 0
 
 const provider = ref(insightStore.config.reranker.provider)
 const apiKey = ref(insightStore.config.reranker.apiKey)
@@ -40,9 +41,17 @@ const timeoutSeconds = ref(insightStore.config.reranker.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 
+function resetModelOptions(): void {
+  models.value = []
+  modelSelectVisible.value = false
+}
+
 function onProviderChange(): void {
   const newProvider = provider.value
   const oldProvider = insightStore.config.reranker.provider
+  modelFetchRequestId += 1
+  isFetchingModels.value = false
+  resetModelOptions()
 
   if (oldProvider !== newProvider) {
     insightStore.config.reranker.apiKey = apiKey.value
@@ -87,9 +96,21 @@ async function fetchModels(): Promise<void> {
   }
 
   isFetchingModels.value = true
+  const requestId = ++modelFetchRequestId
+  const requestProvider = provider.value
+  const requestApiKey = apiKey.value
+  const requestBaseUrl = baseUrl.value || undefined
+  const isCurrentRequest = () => (
+    modelFetchRequestId === requestId &&
+    provider.value === requestProvider &&
+    apiKey.value === requestApiKey &&
+    (baseUrl.value || undefined) === requestBaseUrl
+  )
 
   try {
-    const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
+    const response = await insightApi.fetchModels(requestProvider, requestApiKey, requestBaseUrl)
+    if (!isCurrentRequest()) return
+
     if (response.success && response.models?.length) {
       models.value = response.models
       modelSelectVisible.value = true
@@ -99,10 +120,14 @@ async function fetchModels(): Promise<void> {
       modelSelectVisible.value = false
     }
   } catch {
-    emit('showMessage', '获取模型列表失败', 'error')
-    modelSelectVisible.value = false
+    if (isCurrentRequest()) {
+      emit('showMessage', '获取模型列表失败', 'error')
+      modelSelectVisible.value = false
+    }
   } finally {
-    isFetchingModels.value = false
+    if (modelFetchRequestId === requestId) {
+      isFetchingModels.value = false
+    }
   }
 }
 

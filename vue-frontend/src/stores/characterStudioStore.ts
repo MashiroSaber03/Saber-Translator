@@ -96,6 +96,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
   let chatAbortController: AbortController | null = null
+  let chatStreamRollbackSession: CharacterStudioChatSession | null = null
   let chatStreamRunId = 0
 
   const canUndoPatch = computed(() => patchSnapshot.value !== null)
@@ -206,14 +207,20 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function abortActiveChatStream() {
     if (chatAbortController) {
+      revokeOptimisticSessionAssets(activeChatSession.value)
       chatAbortController.abort()
       chatAbortController = null
+      if (chatStreamRollbackSession) {
+        activeChatSession.value = chatStreamRollbackSession
+        chatStreamRollbackSession = null
+      }
     }
   }
 
   function resetWorkspaceState() {
     currentDocument.value = null
     markDocumentSynced(null)
+    abortActiveChatStream()
     resetChatState()
     diagnostics.value = null
     agentMessages.value = []
@@ -223,7 +230,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     activeEditorTab.value = 'overview'
     activeScriptTab.value = 'regex'
     activeWorkspaceTab.value = 'chat'
-    abortActiveChatStream()
     if (autosaveTimer) {
       clearTimeout(autosaveTimer)
       autosaveTimer = null
@@ -717,8 +723,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     if (!content.trim() && attachments.length === 0) return
     if (chatAbortController) {
-      chatAbortController.abort()
-      chatAbortController = null
+      abortActiveChatStream()
     }
     const controller = new AbortController()
     chatAbortController = controller
@@ -727,6 +732,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     clearErrorMessage()
     activeWorkspaceTab.value = 'chat'
     const previousSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
+    chatStreamRollbackSession = previousSession
     const optimisticSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
     optimisticSession.messages.push(
       createOptimisticMessage('user', content, attachments.map(createOptimisticAttachment)),
@@ -753,6 +759,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
             }
           } else if (event.type === 'state') {
             revokeOptimisticSessionAssets(activeChatSession.value)
+            chatStreamRollbackSession = null
             applyChatStatePayload({ session: event.session as CharacterStudioChatSession })
           } else if (event.type === 'error') {
             errorMessage.value = event.message
@@ -767,6 +774,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     } finally {
       if (chatAbortController === controller) {
         chatAbortController = null
+        chatStreamRollbackSession = null
       }
       if (streamRunId === chatStreamRunId) {
         isChatStreaming.value = false
@@ -838,8 +846,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   async function regenerateChatMessage(messageId: string) {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     if (chatAbortController) {
-      chatAbortController.abort()
-      chatAbortController = null
+      abortActiveChatStream()
     }
     const controller = new AbortController()
     chatAbortController = controller
@@ -847,6 +854,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatStreaming.value = true
     clearErrorMessage()
     const previousSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
+    chatStreamRollbackSession = previousSession
     const anchorIndex = previousSession.messages.findIndex(item => item.message_id === messageId)
     if (anchorIndex >= 0) {
       let userIndex = anchorIndex
@@ -883,6 +891,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
             }
           } else if (event.type === 'state') {
             revokeOptimisticSessionAssets(activeChatSession.value)
+            chatStreamRollbackSession = null
             applyChatStatePayload({ session: event.session as CharacterStudioChatSession })
           } else if (event.type === 'error') {
             errorMessage.value = event.message
@@ -898,6 +907,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     } finally {
       if (chatAbortController === controller) {
         chatAbortController = null
+        chatStreamRollbackSession = null
       }
       if (streamRunId === chatStreamRunId) {
         isChatStreaming.value = false

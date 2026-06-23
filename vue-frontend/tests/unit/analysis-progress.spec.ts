@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
@@ -36,6 +36,11 @@ describe('AnalysisProgress', () => {
       status: 409,
       message: '书籍 book-1 已有运行中的任务',
     })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('shows readable error on 409 and does not enter running state', async () => {
@@ -68,6 +73,14 @@ describe('AnalysisProgress', () => {
     expect(wrapper.text()).toContain('书籍 book-1 已有运行中的任务')
     expect(wrapper.emitted('start-polling')).toBeUndefined()
     expect(store.analysisStatus).toBe('idle')
+
+    const errorDismiss = wrapper.find('.error-message')
+    expect(errorDismiss.element.tagName).toBe('BUTTON')
+    expect(errorDismiss.attributes('aria-label')).toBe('清除分析错误')
+
+    await errorDismiss.trigger('click')
+
+    expect(wrapper.text()).not.toContain('书籍 book-1 已有运行中的任务')
   })
 
   it('shows full rerun description and sends full mode when incremental is off', async () => {

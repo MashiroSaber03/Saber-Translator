@@ -227,6 +227,47 @@ describe('PluginManager', () => {
     objectUrlSpy.mockRestore()
   })
 
+  it('uses an explicit button for closing the plugin config modal', async () => {
+    getPluginsMock.mockResolvedValue({
+      success: true,
+      plugins: [{
+        id: 'plugin_one',
+        display_name: 'Plugin One',
+        description: 'desc',
+        version: '1.0.0',
+        enabled: false,
+        default_enabled: false,
+        has_config: true,
+        supported_steps: ['ocr'],
+        supported_modes: ['standard'],
+      }],
+    })
+    getPluginConfigSchemaMock.mockResolvedValue({
+      success: true,
+      schema: {},
+    })
+    getPluginConfigMock.mockResolvedValue({
+      success: true,
+      config: {},
+    })
+
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const configButton = wrapper.findAll('button').find(button => button.attributes('title') === '配置')
+    expect(configButton).toBeTruthy()
+
+    await configButton!.trigger('click')
+    await flushPromises()
+
+    const closeButton = wrapper.find('.close-btn')
+    expect(closeButton.element.tagName).toBe('BUTTON')
+    expect(closeButton.attributes('aria-label')).toBe('关闭插件配置')
+
+    await closeButton.trigger('click')
+    expect(wrapper.find('.plugin-config-modal').exists()).toBe(false)
+  })
+
   it('retries import with replace after conflict confirmation', async () => {
     importPluginMock
       .mockRejectedValueOnce({

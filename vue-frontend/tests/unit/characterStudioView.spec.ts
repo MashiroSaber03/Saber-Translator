@@ -73,6 +73,41 @@ describe('CharacterStudioView workspace shell', () => {
     expect(wrapper.find('[data-testid="chat-scroll"]').exists()).toBe(true)
   })
 
+  it('exposes the pane resizer as a keyboard-adjustable separator', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+
+    bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
+    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
+    studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
+
+    const wrapper = mount(CharacterStudioView, {
+      props: {
+        bookId: 'book-demo',
+      },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+
+    const resizer = wrapper.find('.pane-resizer')
+    expect(resizer.attributes('role')).toBe('separator')
+    expect(resizer.attributes('aria-orientation')).toBe('vertical')
+    expect(resizer.attributes('aria-valuemin')).toBe('35')
+    expect(resizer.attributes('aria-valuemax')).toBe('70')
+    expect(resizer.attributes('aria-valuenow')).toBe('52')
+
+    await resizer.trigger('keydown', { key: 'ArrowRight' })
+
+    expect(resizer.attributes('aria-valuenow')).toBe('54')
+  })
+
   it('shows store error message in the workspace shell', async () => {
     const studioStore = useCharacterStudioStore()
     const bookshelfStore = useBookshelfStore()

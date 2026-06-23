@@ -140,15 +140,11 @@ export function useParallelTranslation() {
       // 确定模式
       const translationMode = mode ?? determineMode()
 
-      console.log(`🚀 开始并行翻译，模式: ${translationMode}，图片数: ${images.length}，页码索引: [${imageIndexes.join(', ')}]`)
-
       // 执行 - 传入原始图片索引
       const result = await pipeline.value.execute(images, translationMode, imageIndexes)
 
       // 最后同步一次
       syncProgress()
-
-      console.log(`✅ 并行翻译完成，成功: ${result.success}，失败: ${result.failed}`)
 
       return result
 

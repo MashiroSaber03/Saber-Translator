@@ -1,10 +1,10 @@
 /**
  * OCR 步骤
- * 提取自 SequentialPipeline.ts Line 289-325
+ * 负责按当前 OCR 配置识别气泡文本。
  */
 import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
 import { normalizeProviderId } from '@/config/aiProviders'
-import type { BubbleCoords, BubbleState } from '@/types/bubble'
+import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
 import type { TranslationSettings } from '@/types/settings'
@@ -17,7 +17,7 @@ export interface OcrInput {
     translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubbleStates?: BubbleState[] | null
-    textlinesPerBubble?: any[]
+    textlinesPerBubble?: BubbleTextline[][]
     settingsSnapshot: TranslationSettings
 }
 

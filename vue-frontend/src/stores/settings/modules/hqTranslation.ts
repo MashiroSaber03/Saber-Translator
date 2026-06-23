@@ -59,7 +59,6 @@ export function useHqTranslationSettings(
     restoreHqProviderConfig(provider)
 
     saveToStorage()
-    console.log(`高质量翻译服务商已切换为: ${provider}`)
   }
 
   /**
@@ -130,7 +129,6 @@ export function useHqTranslationSettings(
 
     providerConfigs.value.hqTranslation[provider] = config
     saveProviderConfigsToStorage()
-    console.log(`[Settings] 保存高质量翻译服务商配置: ${provider}`, config)
   }
 
   /**
@@ -149,13 +147,11 @@ export function useHqTranslationSettings(
       if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
       if (cached.openaiOptions !== undefined) settings.value.hqTranslation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
-      console.log(`[Settings] 恢复高质量翻译服务商配置: ${provider}`, cached)
     } else {
       // 无缓存时清空配置
       settings.value.hqTranslation.apiKey = ''
       settings.value.hqTranslation.modelName = ''
       settings.value.hqTranslation.customBaseUrl = ''
-      console.log(`[Settings] ${provider} 无缓存配置，使用默认值`)
     }
   }
 

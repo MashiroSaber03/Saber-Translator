@@ -47,11 +47,17 @@ defineEmits<{
 
 <template>
   <div class="web-import-modal__settings-section">
-    <div class="web-import-modal__settings-header" @click="$emit('update:settingsExpanded', !settingsExpanded)">
+    <UiButton
+      variant="toolbar"
+      type="button"
+      class="web-import-modal__settings-header"
+      :aria-expanded="settingsExpanded ? 'true' : 'false'"
+      @click="$emit('update:settingsExpanded', !settingsExpanded)"
+    >
       <span class="web-import-modal__settings-toggle">{{ settingsExpanded ? '▼' : '▶' }}</span>
       <span class="web-import-modal__settings-title">⚙️ 设置</span>
       <span class="web-import-modal__settings-hint">点击展开配置</span>
-    </div>
+    </UiButton>
 
     <div v-if="settingsExpanded" class="web-import-modal__settings-content">
       <div class="web-import-modal__settings-tabs">
@@ -414,9 +420,13 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 12px 14px;
+  border: 0;
   background: var(--web-import-modal-extract-surface-muted);
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   user-select: none;
   transition: background 0.2s;
 }

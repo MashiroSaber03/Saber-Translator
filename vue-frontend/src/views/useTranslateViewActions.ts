@@ -55,9 +55,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     }
   }
 
-  function handleUploadComplete(count: number) {
-    console.log(`上传完成，共 ${count} 张图片`)
-
+  function handleUploadComplete(_count: number) {
     if (imageStore.hasImages) {
       imageStore.sortImagesByFileName()
       translateInit.switchImage(0)

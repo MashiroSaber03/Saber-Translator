@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockFetchTextStyleDefaults } = vi.hoisted(() => ({
   mockFetchTextStyleDefaults: vi.fn()
@@ -24,6 +24,10 @@ describe('textStyleDefaults runtime reload', () => {
     mockFetchTextStyleDefaults.mockReset()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('重新加载后应更新运行时默认值并影响后续 settings 初始化', async () => {
     mockFetchTextStyleDefaults.mockResolvedValue({
       success: true,
@@ -45,6 +49,7 @@ describe('textStyleDefaults runtime reload', () => {
   })
 
   it('重新加载失败时应保留当前默认值', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     mockFetchTextStyleDefaults.mockRejectedValue(new Error('network error'))
 
     const reloaded = await reloadTextStyleDefaultsFromBackend()

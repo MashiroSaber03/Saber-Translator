@@ -201,4 +201,92 @@ describe('executeAiTranslate', () => {
     expect(secondPayload).not.toHaveProperty('low_reasoning')
     expect(secondPayload).not.toHaveProperty('no_thinking_method')
   })
+
+  it('normalizes a single-image JSON response without routine console output', async () => {
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.hqTranslation.apiKey = 'hq-key'
+    settingsStore.settings.hqTranslation.modelName = 'hq-model'
+    settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput = true
+    hqTranslateBatchMock.mockResolvedValueOnce({
+      success: true,
+      content: JSON.stringify({
+        imageIndex: 0,
+        bubbles: [{ translated: '单图译文' }],
+      }),
+    })
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    let result
+    try {
+      result = await executeAiTranslate({
+        mode: 'hq',
+        tasks: [
+          {
+            imageIndex: 0,
+            image: {
+              originalDataURL: 'data:image/png;base64,abc',
+            } as any,
+            originalTexts: ['こんにちは'],
+            autoDirections: ['vertical'],
+          },
+        ],
+        settingsSnapshot: settingsStore.settings,
+        bookTranslationConstraints: createEmptyBookTranslationConstraints(),
+        isBookshelfMode: false,
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+
+    expect(result.results).toEqual([
+      {
+        imageIndex: 0,
+        translatedTexts: ['单图译文'],
+        textboxTexts: [],
+        warnings: [],
+      }
+    ])
+  })
+
+  it('ignores malformed HQ result payloads instead of throwing', async () => {
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.hqTranslation.apiKey = 'hq-key'
+    settingsStore.settings.hqTranslation.modelName = 'hq-model'
+    hqTranslateBatchMock.mockResolvedValueOnce({
+      success: true,
+      results: [
+        {
+          imageIndex: 0,
+          bubbles: 'not-an-array',
+        },
+      ],
+    })
+
+    const result = await executeAiTranslate({
+      mode: 'hq',
+      tasks: [
+        {
+          imageIndex: 0,
+          image: {
+            originalDataURL: 'data:image/png;base64,abc',
+          } as any,
+          originalTexts: ['こんにちは'],
+          autoDirections: ['vertical'],
+        },
+      ],
+      settingsSnapshot: settingsStore.settings,
+      bookTranslationConstraints: createEmptyBookTranslationConstraints(),
+      isBookshelfMode: false,
+    })
+
+    expect(result.results).toEqual([
+      {
+        imageIndex: 0,
+        translatedTexts: [''],
+        textboxTexts: [],
+        warnings: [],
+      },
+    ])
+  })
 })

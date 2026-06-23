@@ -20,8 +20,17 @@ export interface ReaderSettings {
   bgColor: string
 }
 
-// localStorage 存储键名
+interface StoredReaderSettings extends ReaderSettings {
+  readerSettingsSchemaVersion: 1
+}
+
 const READER_SETTINGS_KEY = 'readerSettings'
+const READER_SETTINGS_SCHEMA_VERSION = 1
+const DEFAULT_READER_SETTINGS: ReaderSettings = {
+  imageWidth: 100,
+  imageGap: 8,
+  bgColor: '#1a1a2e'
+}
 
 // 组件属性
 const props = defineProps<{
@@ -48,11 +57,7 @@ const emit = defineEmits<{
 // ==================== 状态定义 ====================
 
 // 阅读设置
-const settings = ref<ReaderSettings>({
-  imageWidth: 100,
-  imageGap: 8,
-  bgColor: '#1a1a2e'
-})
+const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
 
 // 设置面板显示状态
 const isSettingsPanelOpen = ref(false)
@@ -67,6 +72,7 @@ const bgColorPresets = [
   { color: '#f5f5dc', name: '米色' },
   { color: '#2d2d2d', name: '深灰' }
 ]
+const bgColorValues = new Set(bgColorPresets.map((preset) => preset.color))
 
 // ==================== 方法 ====================
 
@@ -126,6 +132,23 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+function isNumberInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+}
+
+function isStoredReaderSettings(value: unknown): value is StoredReaderSettings {
+  if (!value || typeof value !== 'object') return false
+
+  const candidate = value as Partial<StoredReaderSettings>
+  return (
+    candidate.readerSettingsSchemaVersion === READER_SETTINGS_SCHEMA_VERSION &&
+    isNumberInRange(candidate.imageWidth, 50, 100) &&
+    isNumberInRange(candidate.imageGap, 0, 50) &&
+    typeof candidate.bgColor === 'string' &&
+    bgColorValues.has(candidate.bgColor)
+  )
+}
+
 /**
  * 加载设置
  */
@@ -133,8 +156,14 @@ function loadSettings() {
   const saved = localStorage.getItem(READER_SETTINGS_KEY)
   if (saved) {
     try {
-      const parsed = JSON.parse(saved)
-      settings.value = { ...settings.value, ...parsed }
+      const parsed: unknown = JSON.parse(saved)
+      if (isStoredReaderSettings(parsed)) {
+        settings.value = {
+          imageWidth: parsed.imageWidth,
+          imageGap: parsed.imageGap,
+          bgColor: parsed.bgColor
+        }
+      }
     } catch (e) {
       console.error('加载阅读设置失败:', e)
     }
@@ -146,7 +175,11 @@ function loadSettings() {
  * 保存设置
  */
 function saveSettings() {
-  localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(settings.value))
+  const payload: StoredReaderSettings = {
+    readerSettingsSchemaVersion: READER_SETTINGS_SCHEMA_VERSION,
+    ...settings.value
+  }
+  localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(payload))
 }
 
 /**
@@ -198,7 +231,7 @@ function navigateChapter(direction: 'prev' | 'next') {
 onMounted(() => {
   // 加载设置
   loadSettings()
-  
+
   // 初始化事件监听
   window.addEventListener('scroll', handleScroll)
   document.addEventListener('keydown', handleKeydown)
@@ -208,7 +241,7 @@ onUnmounted(() => {
   // 移除事件监听
   window.removeEventListener('scroll', handleScroll)
   document.removeEventListener('keydown', handleKeydown)
-  
+
   document.documentElement.style.removeProperty('--reader-page-background')
   document.documentElement.style.removeProperty('--reader-image-width')
   document.documentElement.style.removeProperty('--reader-gap')
@@ -227,8 +260,8 @@ defineExpose({
   <OverlayLayer v-if="showChapterNav" class="reader-controls__chapter-nav-layer" passthrough>
     <nav id="chapterNav" class="reader-controls__chapter-nav">
       <UiButton
-        variant="toolbar" 
-        id="prevChapterBtn" 
+        variant="toolbar"
+        id="prevChapterBtn"
         class="reader-controls__nav-button"
         :disabled="!hasPrevChapter"
         @click="navigateChapter('prev')"
@@ -237,8 +270,8 @@ defineExpose({
         <span class="reader-controls__nav-text">上一章</span>
       </UiButton>
       <UiButton
-        variant="toolbar" 
-        id="nextChapterBtn" 
+        variant="toolbar"
+        id="nextChapterBtn"
         class="reader-controls__nav-button"
         :disabled="!hasNextChapter"
         @click="navigateChapter('next')"
@@ -252,10 +285,11 @@ defineExpose({
   <!-- 回到顶部按钮 -->
   <OverlayLayer v-show="showScrollTopBtn" class="reader-controls__scroll-top-layer" passthrough>
     <UiButton
-      variant="toolbar" 
-      id="scrollTopBtn" 
+      variant="toolbar"
+      id="scrollTopBtn"
       class="reader-controls__scroll-top-button"
       title="回到顶部"
+      aria-label="回到顶部"
       @click="scrollToTop"
     >
       <span>↑</span>
@@ -268,54 +302,55 @@ defineExpose({
     <div class="reader-controls__settings-content">
       <div class="reader-controls__settings-header">
         <h3>阅读设置</h3>
-        <UiButton variant="toolbar" class="reader-controls__close-button" @click="closeSettings">×</UiButton>
+        <UiButton variant="toolbar" class="reader-controls__close-button" aria-label="关闭阅读设置" @click="closeSettings">×</UiButton>
       </div>
       <div class="reader-controls__settings-body">
         <!-- 图片宽度设置 -->
         <div class="reader-controls__setting-item">
           <label>图片宽度</label>
           <div class="reader-controls__setting-control">
-            <UiInput 
-              type="range" 
-              id="imageWidthSlider" 
-              min="50" 
-              max="100" 
+            <UiInput
+              type="range"
+              id="imageWidthSlider"
+              min="50"
+              max="100"
               :value="settings.imageWidth"
               @input="updateImageWidth(Number(($event.target as HTMLInputElement).value))"
             />
             <span id="imageWidthValue">{{ settings.imageWidth }}%</span>
           </div>
         </div>
-        
+
         <!-- 图片间距设置 -->
         <div class="reader-controls__setting-item">
           <label>图片间距</label>
           <div class="reader-controls__setting-control">
-            <UiInput 
-              type="range" 
-              id="imageGapSlider" 
-              min="0" 
-              max="50" 
+            <UiInput
+              type="range"
+              id="imageGapSlider"
+              min="0"
+              max="50"
               :value="settings.imageGap"
               @input="updateImageGap(Number(($event.target as HTMLInputElement).value))"
             />
             <span id="imageGapValue">{{ settings.imageGap }}px</span>
           </div>
         </div>
-        
+
         <!-- 背景颜色设置 -->
         <div class="reader-controls__setting-item">
           <label>背景颜色</label>
           <div class="reader-controls__setting-control reader-controls__bg-options">
             <UiButton
-              variant="toolbar" 
+              variant="toolbar"
               v-for="preset in bgColorPresets"
               :key="preset.color"
               class="reader-controls__bg-option"
               :class="{ active: settings.bgColor === preset.color }"
-              :data-bg="preset.color" 
+              :data-bg="preset.color"
               :style="{ background: preset.color }"
               :title="preset.name"
+              :aria-label="`设置背景颜色为${preset.name}`"
               @click="updateBgColor(preset.color)"
             ></UiButton>
           </div>
@@ -325,7 +360,8 @@ defineExpose({
   </OverlayLayer>
 </template>
 
-<style scoped>/* ==================== ReaderControls样式 ==================== */
+<style scoped>
+/* ==================== ReaderControls样式 ==================== */
 
 /* 章节导航 */
 .reader-controls__chapter-nav-layer,
@@ -552,12 +588,12 @@ defineExpose({
     left: 8px;
     width: auto;
   }
-  
+
   .reader-controls__nav-button {
     padding: 10px 16px;
     font-size: 13px;
   }
-  
+
   .reader-controls__scroll-top-button {
     right: 16px;
     bottom: 72px;
@@ -570,11 +606,11 @@ defineExpose({
   .reader-header {
     padding: 0 8px;
   }
-  
+
   .book-info {
     display: none;
   }
-  
+
   .view-mode-toggle {
     gap: 0;
   }

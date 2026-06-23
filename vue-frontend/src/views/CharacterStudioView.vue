@@ -51,7 +51,18 @@
           </div>
         </section>
 
-        <div class="pane-resizer" @mousedown="startResize"></div>
+        <div
+          class="pane-resizer"
+          role="separator"
+          tabindex="0"
+          aria-label="调整编辑区和预览区宽度"
+          aria-orientation="vertical"
+          :aria-valuemin="PANE_WIDTH_MIN"
+          :aria-valuemax="PANE_WIDTH_MAX"
+          :aria-valuenow="Math.round(leftPaneWidth)"
+          @mousedown="startResize"
+          @keydown="handleResizerKeydown"
+        ></div>
 
         <section class="chat-pane">
           <div class="column-scroll" data-testid="chat-scroll">
@@ -148,6 +159,9 @@ const props = defineProps<{
 const router = useRouter()
 const store = useCharacterStudioStore()
 const bookshelfStore = useBookshelfStore()
+const PANE_WIDTH_MIN = 35
+const PANE_WIDTH_MAX = 70
+const PANE_WIDTH_STEP = 2
 const leftPaneWidth = ref(52)
 const resizing = ref(false)
 
@@ -177,8 +191,7 @@ const workspaceStyle = computed(() => ({
 function handleMouseMove(event: MouseEvent) {
   if (!resizing.value) return
   const width = window.innerWidth || 1
-  const next = Math.min(70, Math.max(35, (event.clientX / width) * 100))
-  leftPaneWidth.value = next
+  leftPaneWidth.value = clampPaneWidth((event.clientX / width) * 100)
 }
 
 function handleMouseUp() {
@@ -189,6 +202,34 @@ function handleMouseUp() {
 function startResize() {
   resizing.value = true
   document.body.classList.add('studio-resizing')
+}
+
+function clampPaneWidth(value: number): number {
+  return Math.min(PANE_WIDTH_MAX, Math.max(PANE_WIDTH_MIN, value))
+}
+
+function handleResizerKeydown(event: KeyboardEvent) {
+  let next = leftPaneWidth.value
+
+  switch (event.key) {
+    case 'ArrowLeft':
+      next -= PANE_WIDTH_STEP
+      break
+    case 'ArrowRight':
+      next += PANE_WIDTH_STEP
+      break
+    case 'Home':
+      next = PANE_WIDTH_MIN
+      break
+    case 'End':
+      next = PANE_WIDTH_MAX
+      break
+    default:
+      return
+  }
+
+  event.preventDefault()
+  leftPaneWidth.value = clampPaneWidth(next)
 }
 
 async function runAction(action: () => Promise<void>) {
@@ -399,6 +440,10 @@ watch(() => props.docId, async nextDocId => {
   --studio-view-surface-muted: rgba(255, 244, 244, .92);
   --studio-view-surface-subtle: rgba(255, 255, 255, .9);
   --studio-view-text-primary: #122b47;
+  --ui-button-ghost-border: 1px solid var(--studio-border-default);
+  --ui-button-ghost-background: var(--color-surface-raised);
+  --ui-button-ghost-hover-border: 1px solid var(--studio-border-default);
+  --ui-button-ghost-hover-background: var(--studio-surface-tint);
 
   margin: 0;
   display: flex;
@@ -458,6 +503,11 @@ watch(() => props.docId, async nextDocId => {
   cursor: col-resize;
   border-radius: 999px;
   background: linear-gradient(180deg, var(--studio-surface-tint), var(--studio-view-surface-base));
+}
+
+.pane-resizer:focus-visible {
+  outline: 2px solid var(--color-border-brand);
+  outline-offset: 3px;
 }
 
 .resource-overlay {

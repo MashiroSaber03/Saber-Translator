@@ -10,7 +10,15 @@
         >
           <span v-if="toast.isHTML" v-html="toast.message"></span>
           <span v-else>{{ toast.message }}</span>
-          <UiButton variant="toolbar" class="vue-toast-close" @click.stop="removeToast(toast.id)">×</UiButton>
+          <UiButton
+            variant="toolbar"
+            class="vue-toast-close"
+            aria-label="关闭通知"
+            title="关闭通知"
+            @click.stop="removeToast(toast.id)"
+          >
+            ×
+          </UiButton>
         </div>
       </TransitionGroup>
     </div>
@@ -43,7 +51,7 @@ onUnmounted(() => {
   toastService.clearAll()
 })
 
-// 暴露方法供外部使用（保留外部调用 API）
+// 暴露 toast service 方法供测试和宿主调用。
 defineExpose({
   toasts,
   addToast: toastService.addToast,

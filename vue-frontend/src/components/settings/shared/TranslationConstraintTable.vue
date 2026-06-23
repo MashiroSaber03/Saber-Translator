@@ -34,10 +34,17 @@
           <th
             v-for="column in columns"
             :key="column.key"
-            class="sortable-header"
-            @click="toggleSort(column.key)"
+            :aria-sort="sortKey === column.key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"
           >
-            {{ column.label }}
+            <UiButton
+              variant="toolbar"
+              type="button"
+              class="sortable-header-button"
+              :aria-label="`按${column.label}排序`"
+              @click="toggleSort(column.key)"
+            >
+              {{ column.label }}
+            </UiButton>
           </th>
           <th>操作</th>
         </tr>
@@ -58,12 +65,14 @@
             </div>
             <UiTextarea
               v-else-if="column.type === 'textarea'"
+              class="constraint-cell-field"
               :model-value="String(row[column.key] ?? '')"
               :rows="2"
               @update:model-value="updateCell(originalIndex, column.key, $event)"
             />
             <UiInput
               v-else
+              class="constraint-cell-field"
               :value="String(row[column.key] ?? '')"
               type="text"
               @input="updateCell(originalIndex, column.key, ($event.target as HTMLInputElement).value)"
@@ -315,14 +324,8 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   vertical-align: top;
 }
 
-.settings-table input,
-.settings-table textarea,
-.settings-table select {
+.constraint-cell-field {
   width: 100%;
-}
-
-.settings-table input,
-.settings-table textarea {
   min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--translation-constraint-table-border-default);
@@ -334,14 +337,13 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   box-sizing: border-box;
 }
 
-.settings-table textarea {
+.constraint-cell-field:is(textarea) {
   min-height: 72px;
   padding: 10px 12px;
   resize: vertical;
 }
 
-.settings-table input:focus,
-.settings-table textarea:focus {
+.constraint-cell-field:focus {
   outline: none;
   border-color: var(--translation-constraint-table-border-strong);
   box-shadow: 0 0 0 2px var(--translation-constraint-table-shadow-default);
@@ -351,8 +353,11 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   min-width: 0;
 }
 
-.sortable-header {
-  cursor: pointer;
+.sortable-header-button {
+  width: 100%;
+  color: inherit;
+  font-weight: inherit;
+  text-align: left;
   user-select: none;
 }
 

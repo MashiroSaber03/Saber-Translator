@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BubbleOverlay from '@/components/edit/BubbleOverlay.vue'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import type { BubbleCoords } from '@/types/bubble'
@@ -194,5 +194,44 @@ describe('BubbleOverlay rotated resize', () => {
     expect(y2).toBeLessThanOrEqual(220)
     expect(x2).toBeGreaterThan(x1)
     expect(y2).toBeGreaterThan(y1)
+  })
+
+  it('rotates a selected bubble without routine console logs', async () => {
+    const rotationAngle = 15
+    const initialCoords: BubbleCoords = [100, 100, 200, 200]
+    const wrapper = mount(BubbleOverlay, {
+      props: {
+        bubbles: [makeBubble(initialCoords, rotationAngle)],
+        selectedIndex: 0,
+        selectedIndices: [0],
+        scale: 1,
+        isDrawingMode: false,
+        imageWidth: 1000,
+        imageHeight: 1000,
+      },
+    })
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      await wrapper.find('.rotate-handle').trigger('mousedown', {
+        button: 0,
+        clientX: 180,
+        clientY: 80,
+      })
+
+      document.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true,
+        button: 0,
+        clientX: 190,
+        clientY: 90,
+      }))
+
+      expect(wrapper.emitted('rotateStart')).toBeTruthy()
+      expect(wrapper.emitted('rotateEnd')).toBeTruthy()
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 })

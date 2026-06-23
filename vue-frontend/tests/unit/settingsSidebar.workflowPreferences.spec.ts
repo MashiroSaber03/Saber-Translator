@@ -3,13 +3,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, type PropType } from 'vue'
 
-const { getPreferencesMock, savePreferencesMock } = vi.hoisted(() => ({
+const { getFontListMock, getPreferencesMock, savePreferencesMock } = vi.hoisted(() => ({
+  getFontListMock: vi.fn(),
   getPreferencesMock: vi.fn(),
   savePreferencesMock: vi.fn(),
 }))
 
 vi.mock('@/api/config', () => ({
-  getFontList: async () => ({ fonts: [] }),
+  getFontList: getFontListMock,
   uploadFont: async () => ({ success: true }),
   getTranslateWorkflowPreferences: getPreferencesMock,
   saveTranslateWorkflowPreferences: savePreferencesMock,
@@ -69,8 +70,10 @@ import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 describe('SettingsSidebar workflow preferences', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    getFontListMock.mockReset()
     getPreferencesMock.mockReset()
     savePreferencesMock.mockReset()
+    getFontListMock.mockResolvedValue({ fonts: [] })
     getPreferencesMock.mockResolvedValue({
       success: true,
       preferences: {
@@ -216,5 +219,34 @@ describe('SettingsSidebar workflow preferences', () => {
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
     expect((wrapper.find('#rememberWorkflowModeCheckbox').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('registers outside-click handling before async font loading settles', () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
+    const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener')
+    getFontListMock.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = mount(SettingsSidebar)
+
+    expect(addEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function))
+
+    wrapper.unmount()
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function))
+
+    addEventListenerSpy.mockRestore()
+    removeEventListenerSpy.mockRestore()
+  })
+
+  it('updates auto font size without routine console noise', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const wrapper = mount(SettingsSidebar)
+
+      await wrapper.find('#autoFontSize').setValue(true)
+
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 })

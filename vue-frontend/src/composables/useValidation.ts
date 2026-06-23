@@ -9,7 +9,7 @@
  * - 设置按钮高亮引导动画
  */
 
-import { ref, computed } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
   isLocalProviderId,
@@ -82,6 +82,9 @@ export function useValidation() {
 
   /** 设置按钮是否正在高亮 */
   const isSettingsButtonHighlighted = ref(false)
+  let setupReminderTimer: ReturnType<typeof setTimeout> | null = null
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null
+  let highlightedSettingsButton: HTMLElement | null = null
 
   // ============================================================
   // 计算属性
@@ -450,23 +453,41 @@ export function useValidation() {
   // UI 交互函数
   // ============================================================
 
+  function clearSetupReminderTimer(): void {
+    if (setupReminderTimer) {
+      clearTimeout(setupReminderTimer)
+      setupReminderTimer = null
+    }
+  }
+
+  function clearHighlightTimer(): void {
+    if (highlightTimer) {
+      clearTimeout(highlightTimer)
+      highlightTimer = null
+    }
+    highlightedSettingsButton?.classList.remove('settings-highlight')
+    highlightedSettingsButton = null
+    isSettingsButtonHighlighted.value = false
+  }
+
   /**
    * 高亮设置按钮以引导用户
    * 添加脉冲动画和发光效果
    */
   function highlightSettingsButton(): void {
+    clearHighlightTimer()
     const settingsBtn = document.getElementById('openSettingsBtn')
     if (!settingsBtn) return
 
     isSettingsButtonHighlighted.value = true
+    highlightedSettingsButton = settingsBtn
 
     // 使用 CSS 类切换代替直接操作 style，样式由 AppHeader 和当前组件 owner 管理。
     settingsBtn.classList.add('settings-highlight')
 
     // 3秒后移除效果
-    setTimeout(() => {
-      settingsBtn.classList.remove('settings-highlight')
-      isSettingsButtonHighlighted.value = false
+    highlightTimer = setTimeout(() => {
+      clearHighlightTimer()
     }, 3000)
   }
 
@@ -476,7 +497,6 @@ export function useValidation() {
    */
   function checkAndShowSetupReminder(): void {
     if (isSetupReminderDismissed.value) {
-      console.log('用户已选择不再显示设置提醒')
       return
     }
     showSetupReminder.value = true
@@ -490,7 +510,6 @@ export function useValidation() {
     if (shouldDismiss) {
       try {
         localStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
-        console.log('用户选择永久关闭设置提醒')
       } catch (error) {
         console.error('保存设置提醒状态失败:', error)
       }
@@ -505,7 +524,6 @@ export function useValidation() {
   function resetSetupReminderDismiss(): void {
     try {
       localStorage.removeItem(DISMISS_SETUP_REMINDER_KEY)
-      console.log('设置提醒状态已重置')
     } catch (error) {
       console.error('重置设置提醒状态失败:', error)
     }
@@ -516,9 +534,18 @@ export function useValidation() {
    * 页面加载时延迟显示设置提醒弹窗
    */
   function initValidation(): void {
-    setTimeout(() => {
+    clearSetupReminderTimer()
+    setupReminderTimer = setTimeout(() => {
+      setupReminderTimer = null
       checkAndShowSetupReminder()
     }, 500)
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      clearSetupReminderTimer()
+      clearHighlightTimer()
+    })
   }
 
   // ============================================================

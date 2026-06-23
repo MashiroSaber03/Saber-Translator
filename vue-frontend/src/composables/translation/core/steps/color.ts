@@ -1,9 +1,9 @@
 /**
  * 颜色提取步骤
- * 提取自 SequentialPipeline.ts Line 327-346
+ * 负责为每个气泡提取文字与背景颜色。
  */
 import { parallelColor, type ParallelColorResponse } from '@/api/parallelTranslate'
-import type { BubbleCoords, BubbleState } from '@/types/bubble'
+import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
@@ -13,7 +13,7 @@ export interface ColorInput {
     translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubbleStates?: BubbleState[] | null
-    textlinesPerBubble?: any[]
+    textlinesPerBubble?: BubbleTextline[][]
 }
 
 export interface ColorOutput {

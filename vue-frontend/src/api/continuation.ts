@@ -384,7 +384,7 @@ export async function generateSinglePageDetails(
     return apiClient.post(`/api/manga-insight/${bookId}/continuation/pages/${pageNumber}`, {
         script
     }, {
-        timeout: 0  // 移除超时限制
+        timeout: 0
     })
 }
 
@@ -415,7 +415,7 @@ export async function generatePageImage(
         session_id: sessionId,
         style_ref_count: styleRefCount
     }, {
-        timeout: 0  // 移除超时限制，图片生成可能很耗时
+        timeout: 0
     })
 }
 
@@ -436,7 +436,7 @@ export async function regeneratePageImage(
         session_id: sessionId,
         style_ref_count: styleRefCount
     }, {
-        timeout: 0  // 移除超时限制
+        timeout: 0
     })
 }
 
@@ -556,6 +556,6 @@ export async function generateScriptWithRefs(
         reference_tokens: referenceTokens || null,
         reference_image_count: referenceImageCount,
     }, {
-        timeout: 0  // 移除超时限制，LLM 生成可能很耗时
+        timeout: 0
     })
 }

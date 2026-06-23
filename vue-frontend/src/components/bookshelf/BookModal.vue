@@ -131,8 +131,6 @@ function removeTag(tagName: string) {
   selectedTags.value = selectedTags.value.filter(name => name !== tagName)
 }
 
-// 【已删除】getTagName 函数不再需要,直接使用 name
-
 // 保存书籍
 async function saveBook() {
   if (!title.value.trim()) {
@@ -187,6 +185,7 @@ async function saveBook() {
         <UiInput
           id="bookTitle"
           v-model="title"
+          class="book-modal__title-input"
           type="text"
           placeholder="请输入书籍名称"
           required
@@ -196,16 +195,16 @@ async function saveBook() {
       <!-- 封面图片 -->
       <div class="book-modal__field">
         <label>封面图片</label>
-        <div
+        <label
+          for="bookCoverInput"
           class="cover-upload-area"
           @dragover.prevent
           @drop="handleCoverDrop"
-          @click="($refs.coverInput as HTMLInputElement).click()"
         >
           <UiFileInput
-            ref="coverInput"
+            id="bookCoverInput"
+            class="book-modal__cover-input"
             accept="image/*"
-            hidden
             @change="handleCoverUpload"
           />
           <div class="cover-preview">
@@ -219,7 +218,7 @@ async function saveBook() {
               <span>点击或拖拽上传封面</span>
             </div>
           </div>
-        </div>
+        </label>
         <p class="form-hint">支持 JPG、PNG、WebP 格式，建议比例 3:4</p>
       </div>
 
@@ -236,18 +235,27 @@ async function saveBook() {
               class="selected-tag"
             >
               {{ tagName }}
-              <UiButton variant="toolbar" type="button" class="remove-tag" @click="removeTag(tagName)">×</UiButton>
+              <UiButton
+                variant="toolbar"
+                type="button"
+                class="remove-tag"
+                :aria-label="`移除标签 ${tagName}`"
+                @click="removeTag(tagName)"
+              >
+                ×
+              </UiButton>
             </span>
           </div>
           <!-- 标签输入 -->
           <div class="tag-dropdown">
             <UiInput
               v-model="tagInput"
+              class="book-modal__tag-input"
               type="text"
               placeholder="输入标签名称..."
               autocomplete="off"
               @focus="showTagSuggestions = true"
-              @keypress.enter.prevent="createAndAddTag"
+              @keydown.enter.prevent="createAndAddTag"
             />
             <div
               v-if="showTagSuggestions && filteredTagSuggestions.length > 0"
@@ -298,7 +306,7 @@ async function saveBook() {
   color: var(--color-text-danger-strong);
 }
 
-.book-modal__field input[type="text"] {
+.book-modal__title-input {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
@@ -308,11 +316,13 @@ async function saveBook() {
   transition: border-color 0.2s;
 }
 
-.book-modal__field input[type="text"]:focus {
+.book-modal__title-input:focus {
   border-color: var(--color-action-primary, var(--color-border-brand-gradient));
 }
 
 .cover-upload-area {
+  position: relative;
+  display: block;
   cursor: pointer;
   border: 2px dashed var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
@@ -321,8 +331,22 @@ async function saveBook() {
   transition: border-color 0.2s;
 }
 
+.book-modal__cover-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .cover-upload-area:hover {
   border-color: var(--color-action-primary, var(--color-border-brand-gradient));
+}
+
+.book-modal__cover-input:focus-visible + .cover-preview {
+  outline: 2px solid var(--color-action-primary);
+  outline-offset: 4px;
 }
 
 .cover-preview {
@@ -399,7 +423,7 @@ async function saveBook() {
   position: relative;
 }
 
-.tag-dropdown input {
+.book-modal__tag-input {
   width: 100%;
   padding: 8px;
   border: none;

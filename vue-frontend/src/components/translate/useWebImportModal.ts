@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { configApi } from '@/api/config'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -79,9 +79,11 @@ export function useWebImportModal() {
 
   // 检查 URL 支持（防抖）
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
+  let focusInputTimeout: ReturnType<typeof setTimeout> | null = null
   async function checkUrlSupport(url: string) {
     if (checkSupportTimeout) {
       clearTimeout(checkSupportTimeout)
+      checkSupportTimeout = null
     }
     
     if (!url.trim()) {
@@ -91,6 +93,7 @@ export function useWebImportModal() {
     }
     
     checkSupportTimeout = setTimeout(async () => {
+      checkSupportTimeout = null
       checkingSupport.value = true
       try {
         const result = await checkGalleryDLSupport(url)
@@ -311,8 +314,13 @@ export function useWebImportModal() {
 
   // 监听模态框打开时聚焦输入框
   watch(isVisible, (visible) => {
+    if (focusInputTimeout) {
+      clearTimeout(focusInputTimeout)
+      focusInputTimeout = null
+    }
     if (visible) {
-      setTimeout(() => {
+      focusInputTimeout = setTimeout(() => {
+        focusInputTimeout = null
         const input = document.querySelector('.url-input') as HTMLInputElement
         input?.focus()
       }, 100)
@@ -426,6 +434,17 @@ export function useWebImportModal() {
       webImportStore.resetExtractionPrompt()
     }
   }
+
+  onUnmounted(() => {
+    if (checkSupportTimeout) {
+      clearTimeout(checkSupportTimeout)
+      checkSupportTimeout = null
+    }
+    if (focusInputTimeout) {
+      clearTimeout(focusInputTimeout)
+      focusInputTimeout = null
+    }
+  })
 
   return {
     webImportStore,

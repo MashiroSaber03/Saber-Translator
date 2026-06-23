@@ -68,7 +68,7 @@ export interface InsightChapterListResponse {
  */
 export interface GeneratedTemplatesResponse {
   success: boolean
-  templates?: Record<string, any>
+  templates?: Record<string, unknown> | string[]
   generated?: string[]
   generated_details?: Array<{ template_key: string; template_name?: string }>
   error?: string
@@ -254,7 +254,7 @@ export async function startAnalysis(
   }
 ): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/start`, options, {
-    timeout: 0  // 移除超时限制，分析可能很耗时
+    timeout: 0
   })
 }
 
@@ -306,7 +306,7 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightStatusRe
  */
 export interface PreviewAnalysisResponse {
   success: boolean
-  preview?: any
+  preview?: unknown
   persisted?: boolean
   message?: string
   error?: string
@@ -330,7 +330,7 @@ export async function previewAnalysis(
  */
 export async function reanalyzePage(bookId: string, pageNum: number): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/page/${pageNum}`, {}, {
-    timeout: 0  // 移除超时限制，AI分析可能很耗时
+    timeout: 0
   })
 }
 
@@ -341,7 +341,7 @@ export async function reanalyzePage(bookId: string, pageNum: number): Promise<Ap
  */
 export async function reanalyzeChapter(bookId: string, chapterId: string): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/chapter/${chapterId}`, {}, {
-    timeout: 0  // 移除超时限制，AI分析可能很耗时
+    timeout: 0
   })
 }
 
@@ -402,12 +402,19 @@ export async function getOverviewBasic(
 export async function getOverview(
   bookId: string,
   templateType?: string
-): Promise<any> {
-  // 使用正确的API路由: /overview/{template_key}
+): Promise<OverviewContentResponse> {
   if (templateType) {
-    return apiClient.get(`/api/manga-insight/${bookId}/overview/${templateType}`)
+    return apiClient.get<OverviewContentResponse>(`/api/manga-insight/${bookId}/overview/${templateType}`)
   }
-  return apiClient.get<InsightOverviewResponse>(`/api/manga-insight/${bookId}/overview`)
+  return apiClient.get<OverviewContentResponse>(`/api/manga-insight/${bookId}/overview`)
+}
+
+export interface OverviewContentResponse {
+  success: boolean
+  content?: string
+  cached?: boolean
+  error?: string
+  message?: string
 }
 
 /**
@@ -420,13 +427,12 @@ export async function regenerateOverview(
   bookId: string,
   templateType: string,
   force: boolean = false
-): Promise<any> {
-  // 使用正确的API路由: POST /overview/generate
-  return apiClient.post(`/api/manga-insight/${bookId}/overview/generate`, {
+): Promise<OverviewContentResponse> {
+  return apiClient.post<OverviewContentResponse>(`/api/manga-insight/${bookId}/overview/generate`, {
     template: templateType,
     force: force,
   }, {
-    timeout: 0  // 移除超时限制，概览生成可能很耗时
+    timeout: 0
   })
 }
 
@@ -453,9 +459,8 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
  * @param bookId 书籍 ID
  */
 export async function regenerateTimeline(bookId: string): Promise<InsightTimelineResponse> {
-  // 使用正确的API路由: POST /regenerate/timeline
   return apiClient.post<InsightTimelineResponse>(`/api/manga-insight/${bookId}/regenerate/timeline`, {}, {
-    timeout: 0  // 移除超时限制，时间线生成可能很耗时
+    timeout: 0
   })
 }
 
@@ -502,7 +507,7 @@ export async function sendChat(
     question,
     ...options,
   }, {
-    timeout: 0  // 移除超时限制，AI问答可能很耗时
+    timeout: 0
   })
 }
 
@@ -535,7 +540,7 @@ export interface RebuildEmbeddingsStatusResponse {
     }
     error_message?: string
     result_data?: {
-      build_result?: Record<string, any>
+      build_result?: Record<string, unknown>
     }
   } | null
   stats?: {
@@ -545,7 +550,7 @@ export interface RebuildEmbeddingsStatusResponse {
     scenes_count?: number
     events_count?: number
   }
-  build_result?: Record<string, any>
+  build_result?: Record<string, unknown>
   error?: string
 }
 
@@ -558,7 +563,7 @@ export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddin
     `/api/manga-insight/${bookId}/rebuild-embeddings`,
     {},
     {
-      timeout: 0  // 移除超时限制，向量索引重建可能很耗时
+      timeout: 0
     }
   )
 }

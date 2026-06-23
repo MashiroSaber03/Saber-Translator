@@ -4,8 +4,10 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useSettingsStore } from '@/stores/settings'
 import {
+  finalizeSave,
   forceInitializeBookshelfSession,
   isBookshelfSessionInitialized,
+  preSaveOriginalImages,
   resetSaveState,
   saveBookshelfPageProgress,
 } from '@/composables/translation/core/saveStep'
@@ -124,5 +126,24 @@ describe('saveStep bookshelf persistence helpers', () => {
       'bookshelf/book-2/chapters/chapter-2/session',
       expect.objectContaining({ currentImageIndex: 1 })
     )
+  })
+
+  it('keeps normal auto-save helper transitions quiet', async () => {
+    const settingsStore = useSettingsStore()
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await expect(preSaveOriginalImages()).resolves.toBe(true)
+
+      settingsStore.setAutoSaveInBookshelfMode(true)
+      await expect(preSaveOriginalImages()).resolves.toBe(true)
+      await expect(finalizeSave()).resolves.toBeUndefined()
+
+      resetSaveState()
+
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 })

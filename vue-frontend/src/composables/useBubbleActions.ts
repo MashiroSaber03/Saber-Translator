@@ -101,13 +101,12 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   /** 处理气泡拖动开始 */
   function handleBubbleDragStart(index: number, _event: MouseEvent): void {
-    console.log(`开始拖动气泡 #${index + 1}`)
+    void index
   }
 
   /** 处理气泡拖动结束 */
   function handleBubbleDragEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
-    console.log(`气泡 #${index + 1} 拖动完成:`, newCoords)
     // 拖动结束后触发重新渲染
     triggerDelayedPreview()
   }
@@ -118,13 +117,13 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   /** 处理气泡调整大小开始 */
   function handleBubbleResizeStart(index: number, handle: string, _event: MouseEvent): void {
-    console.log(`开始调整气泡 #${index + 1} 大小，手柄: ${handle}`)
+    void index
+    void handle
   }
 
   /** 处理气泡调整大小结束 */
   function handleBubbleResizeEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
-    console.log(`气泡 #${index + 1} 调整大小完成:`, newCoords)
     // 调整大小结束后触发重新渲染
     triggerDelayedPreview()
   }
@@ -135,13 +134,12 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   /** 处理气泡旋转开始 */
   function handleBubbleRotateStart(index: number, _event: MouseEvent): void {
-    console.log(`开始旋转气泡 #${index + 1}`)
+    void index
   }
 
   /** 处理气泡旋转结束 */
   function handleBubbleRotateEnd(index: number, angle: number): void {
     bubbleStore.updateBubble(index, { rotationAngle: angle })
-    console.log(`气泡 #${index + 1} 旋转完成: ${angle}°`)
     // 旋转结束后触发重新渲染
     triggerDelayedPreview()
   }
@@ -153,18 +151,12 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   /** 切换绘制模式 */
   function toggleDrawingMode(): void {
     isDrawingMode.value = !isDrawingMode.value
-    if (isDrawingMode.value) {
-      console.log('进入绘制模式')
-    } else {
-      console.log('退出绘制模式')
-    }
   }
 
   /** 处理绘制新气泡 */
   function handleDrawBubble(coords: BubbleCoords): void {
     bubbleStore.addBubble(coords)
     bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
-    console.log('已添加新气泡:', coords)
     // 添加新气泡后触发重新渲染
     callbacks?.onReRender?.()
   }
@@ -212,10 +204,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       previewTimer = null
       if (isRenderingPreview) {
         previewRequestedWhileRendering = true
-        console.log('预览渲染仍在进行中，已排队等待下一次渲染')
         return
       }
-      console.log('触发延迟渲染预览')
       isRenderingPreview = true
 
       try {
@@ -252,7 +242,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     updates: Parameters<typeof imageStore.updateCurrentImage>[0]
   ): boolean {
     if (!isSameCurrentImage(expectedImageId)) {
-      console.log('当前图片已切换，忽略过期的单气泡修复结果')
       return false
     }
     imageStore.updateCurrentImage(updates)
@@ -283,7 +272,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   function deleteSelectedBubbles(): void {
     if (hasSelection.value) {
       bubbleStore.deleteSelected()
-      console.log('已删除选中的气泡')
       // 删除后触发重新渲染。
       callbacks?.onReRender?.()
     }
@@ -311,8 +299,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     const rotationAngle = bubble.rotationAngle || 0
 
     try {
-      console.log(`开始修复气泡 #${index + 1} 背景，方法: ${inpaintMethod}`)
-
       // 获取基础图像数据（优先使用cleanImageData保留之前的修复效果）
       let baseImageData: string
       if (image.cleanImageData) {
@@ -350,7 +336,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           if (!updateCurrentImageIfStillCurrent(expectedImageId, { cleanImageData: response.inpainted_image })) {
             return
           }
-          console.log(`气泡 #${index + 1} LAMA背景修复成功`)
           triggerDelayedPreview()
         } else {
           console.error('LAMA修复失败:', response.error || '未知错误')
@@ -364,13 +349,11 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         // 使用纯色填充
         const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
         if (applied) {
-          console.log(`气泡 #${index + 1} 纯色填充修复成功`)
           triggerDelayedPreview()
         }
       }
     } catch (error) {
       if (!isSameCurrentImage(expectedImageId)) {
-        console.log(`背景修复异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
         return
       }
       console.error('背景修复出错:', error)
@@ -467,7 +450,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           imageStore.updateCurrentImage({ cleanImageData: newCleanData })
         }
 
-        console.log('已对气泡区域进行纯色填充:', coords, fillColor, '角度:', rotationAngle)
         resolve(true)
       }
       img.onerror = () => {
@@ -494,7 +476,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     const expectedBubble = bubble
 
     try {
-      console.log(`开始 OCR 识别气泡 #${index + 1}`)
       const imageData = image.originalDataURL.split(',')[1] || ''
       const settings = settingsStore.settings
       const bubbleTextlines = bubble.textlines?.length
@@ -539,7 +520,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
       if (response.success && response.text !== undefined) {
         if (!isSameBubbleTarget(expectedImageId, index, expectedBubble)) {
-          console.log(`OCR 识别结果已过期，忽略气泡 #${index + 1} 的更新`)
           return
         }
         bubbleStore.updateBubble(index, {
@@ -547,10 +527,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           textlines: response.textlines || bubbleTextlines,
           ocrResult: response.ocr_result || null
         })
-        console.log(`OCR 识别成功: "${response.text}"`)
       } else {
         if (!isSameCurrentImage(expectedImageId)) {
-          console.log(`OCR 识别失败结果已过期，忽略气泡 #${index + 1} 的错误提示`)
           return
         }
         const errorMsg = response.error || '识别失败'
@@ -559,7 +537,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       }
     } catch (error) {
       if (!isSameCurrentImage(expectedImageId)) {
-        console.log(`OCR 识别异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
         return
       }
       console.error('OCR 识别出错:', error)

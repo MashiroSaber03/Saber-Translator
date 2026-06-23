@@ -86,18 +86,16 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
           <div v-if="editingNote.citations && editingNote.citations.length > 0" class="qa-section">
             <label class="qa-label">引用页码</label>
             <div class="qa-citations">
-              <span
+              <UiButton
                 v-for="citation in editingNote.citations"
                 :key="citation.page"
+                variant="toolbar"
                 class="qa-citation-badge"
-                role="button"
-                tabindex="0"
+                :aria-label="`查看第 ${citation.page} 页`"
                 @click="$emit('showPage', citation.page)"
-                @keydown.enter="$emit('showPage', citation.page)"
-                @keydown.space.prevent="$emit('showPage', citation.page)"
               >
                 第{{ citation.page }}页
-              </span>
+              </UiButton>
             </div>
           </div>
           <div v-if="editingNote.comment" class="qa-section">
@@ -275,9 +273,11 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
+  border: 0;
   border-radius: 12px;
   background: var(--insight-action-primary);
   color: white;
+  font: inherit;
   font-weight: 500;
   font-size: 12px;
   cursor: pointer;

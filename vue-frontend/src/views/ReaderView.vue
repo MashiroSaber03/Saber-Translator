@@ -5,7 +5,7 @@ import AppShell from '@/components/ui/AppShell.vue'
  * 阅读器页面视图组件
  * 提供翻译后漫画的阅读体验，支持原图/翻译图切换和阅读设置
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBookDetail, getChapterImages, type ChapterImageData } from '@/api/bookshelf'
 import type { BookData, ChapterData } from '@/types'
@@ -47,6 +47,8 @@ const currentViewMode = ref<'original' | 'translated'>('translated')
 // 当前页码
 const currentPage = ref(1)
 
+let failureRedirectTimer: ReturnType<typeof setTimeout> | null = null
+
 // ==================== 计算属性 ====================
 
 // 当前章节索引
@@ -75,10 +77,26 @@ const showChapterNav = computed(() => !isLoading.value && imagesData.value.lengt
 
 // ==================== 方法 ====================
 
+function clearFailureRedirectTimer() {
+  if (failureRedirectTimer !== null) {
+    clearTimeout(failureRedirectTimer)
+    failureRedirectTimer = null
+  }
+}
+
+function scheduleFailureRedirect() {
+  clearFailureRedirectTimer()
+  failureRedirectTimer = setTimeout(() => {
+    failureRedirectTimer = null
+    router.push('/')
+  }, 2000)
+}
+
 /**
  * 加载阅读器数据
  */
 async function loadReaderData() {
+  clearFailureRedirectTimer()
   isLoading.value = true
   
   try {
@@ -107,8 +125,7 @@ async function loadReaderData() {
   } catch (error) {
     console.error('加载数据失败:', error)
     toast.error('加载失败: ' + (error instanceof Error ? error.message : '未知错误'))
-    // 2秒后返回书架
-    setTimeout(() => router.push('/'), 2000)
+    scheduleFailureRedirect()
   } finally {
     isLoading.value = false
   }
@@ -180,6 +197,10 @@ onMounted(() => {
   // 主题由 App.vue 的 initSettings() 统一管理，无需重复应用
 })
 
+onUnmounted(() => {
+  clearFailureRedirectTimer()
+})
+
 // 监听路由参数变化，重新加载数据
 watch(
   () => [props.bookId, props.chapterId],
@@ -242,7 +263,7 @@ watch(
               翻译
             </UiButton>
           </div>
-          <UiButton variant="toolbar" id="settingsBtn" class="reader-header__button" title="阅读设置" @click="openSettings">
+          <UiButton variant="toolbar" id="settingsBtn" class="reader-header__button" title="阅读设置" aria-label="阅读设置" @click="openSettings">
             <span class="reader-header__button-icon">⚙️</span>
           </UiButton>
           <UiButton variant="primary" id="translateBtn" class="reader-header__button reader-header__button--primary" title="进入翻译页面" @click="goToTranslate">
@@ -277,7 +298,7 @@ watch(
 </template>
 
 <style scoped>
-/* 阅读页面样式 - 当前样式 */
+/* 阅读页面样式 */
 
 /* ==================== 页面容器样式 ==================== */
 .reader-page {

@@ -1,6 +1,5 @@
 /**
  * 检测步骤
- * 提取自 SequentialPipeline.ts Line 234-287
  */
 import { parallelDetect, type ParallelDetectResponse } from '@/api/parallelTranslate'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
@@ -76,7 +75,7 @@ function createBubbleStatesFromDetection(
 }
 
 export async function executeDetection(input: DetectionInput): Promise<DetectionOutput> {
-    const { imageIndex, image, translationMode = 'standard', forceDetect = false, settingsSnapshot } = input
+    const { image, translationMode = 'standard', forceDetect = false, settingsSnapshot } = input
 
     // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
     // - bubbleStates === null/undefined: 从未处理过，需要自动检测
@@ -85,7 +84,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     const existingBubbles = image.bubbleStates
     if (!forceDetect && existingBubbles !== null && existingBubbles !== undefined) {
         if (existingBubbles.length > 0) {
-            console.log(`图片 ${imageIndex + 1} 已有 ${existingBubbles.length} 个气泡，跳过检测`)
             // 坐标需要转换为整数，后端 numpy 切片需要整数索引
             return {
                 bubbleCoords: existingBubbles.map(s =>
@@ -104,7 +102,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
                 bubbleStates: existingBubbles
             }
         } else {
-            console.log(`图片 ${imageIndex + 1} 气泡已被清空，跳过检测`)
             return {
                 bubbleCoords: [],
                 bubbleAngles: [],
@@ -149,7 +146,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     // 这样所有检测器都能享受精确掩膜的好处
     let textMaskData: string | undefined = undefined
 
-    console.log(`使用 Default 检测器生成精确文字掩膜...`)
     try {
         const maskResponse: ParallelDetectResponse = await parallelDetect({
             image: base64,
@@ -167,7 +163,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
 
         if (maskResponse.success && maskResponse.raw_mask) {
             textMaskData = maskResponse.raw_mask
-            console.log(`✅ 精确文字掩膜生成成功`)
         } else {
             console.warn(`⚠️ Default 检测器未能生成掩膜`)
         }

@@ -8,24 +8,30 @@
       </div>
       
       <div class="export-formats">
-        <div 
-          class="format-card" 
-          @click="selectedFormat = 'images'" 
+        <UiButton
+          variant="toolbar"
+          type="button"
+          class="format-card"
           :class="{ selected: selectedFormat === 'images' }"
+          :aria-pressed="String(selectedFormat === 'images')"
+          @click="selectedFormat = 'images'"
         >
           <span class="format-icon">🖼️</span>
           <span class="format-name">图片 ZIP</span>
           <span class="format-desc">所有页面打包下载</span>
-        </div>
-        <div 
-          class="format-card" 
-          @click="selectedFormat = 'pdf'" 
+        </UiButton>
+        <UiButton
+          variant="toolbar"
+          type="button"
+          class="format-card"
           :class="{ selected: selectedFormat === 'pdf' }"
+          :aria-pressed="String(selectedFormat === 'pdf')"
+          @click="selectedFormat = 'pdf'"
         >
           <span class="format-icon">📄</span>
           <span class="format-name">PDF 文档</span>
           <span class="format-desc">方便阅读和分享</span>
-        </div>
+        </UiButton>
       </div>
       
       <UiButton
@@ -168,6 +174,8 @@ async function clearAndRestart() {
 }
 
 .format-card {
+  display: block;
+  width: 100%;
   padding: 24px;
   border: 2px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 12px;

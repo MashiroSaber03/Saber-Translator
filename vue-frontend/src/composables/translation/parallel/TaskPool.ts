@@ -100,17 +100,24 @@ export abstract class TaskPool {
     })
 
     try {
-      let result: PipelineTask
+      let result: PipelineTask | null
 
       if (this.lock) {
         // 需要深度学习锁
         this.progressTracker.updatePool(this.name, { isWaitingLock: true })
         result = await this.lock.withLock(this.name, async () => {
           this.progressTracker.updatePool(this.name, { isWaitingLock: false })
+          if (this.isCancelled || !this.currentTask) {
+            return null
+          }
           return await this.process(this.currentTask!)
         })
       } else {
         result = await this.process(this.currentTask)
+      }
+
+      if (!result) {
+        return
       }
 
       this.completedCount++

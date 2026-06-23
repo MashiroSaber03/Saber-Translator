@@ -38,18 +38,17 @@ defineEmits<{
 
         <div v-if="message.citations && message.citations.length > 0" class="message-citations">
           <span>📖 引用: </span>
-          <span
+          <UiButton
             v-for="citation in message.citations"
             :key="citation.page"
+            variant="toolbar"
+            type="button"
             class="citation-item"
-            role="button"
-            tabindex="0"
+            :aria-label="`查看第 ${citation.page} 页`"
             @click="$emit('selectPage', citation.page)"
-            @keydown.enter="$emit('selectPage', citation.page)"
-            @keydown.space.prevent="$emit('selectPage', citation.page)"
           >
             第{{ citation.page }}页
-          </span>
+          </UiButton>
         </div>
 
         <UiButton

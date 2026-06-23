@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { getCurrentInstance, onUnmounted, ref, type Ref } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { executeDetection } from '@/composables/translation/core/steps'
 import { saveDetectionResultToImage } from '@/composables/translation/core/detectionResultWriter'
+import { translateSingleText } from '@/api/translate'
 import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import { showToast } from '@/utils/toast'
@@ -36,6 +37,29 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
   const progressCurrent = ref(0)
   const progressTotal = ref(0)
   const isTranslateLoading = ref(false)
+  let completionResetTimer: ReturnType<typeof setTimeout> | null = null
+
+  function clearCompletionResetTimer(): void {
+    if (completionResetTimer) {
+      clearTimeout(completionResetTimer)
+      completionResetTimer = null
+    }
+  }
+
+  function scheduleCompletionReset(): void {
+    clearCompletionResetTimer()
+    completionResetTimer = setTimeout(() => {
+      completionResetTimer = null
+      isProcessing.value = false
+    }, 2000)
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      clearCompletionResetTimer()
+      isProcessing.value = false
+    })
+  }
 
   async function handleReTranslateBubble(index: number): Promise<void> {
     const bubble = options.bubbles.value[index]
@@ -48,8 +72,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
 
     isTranslateLoading.value = true
     try {
-      console.log(`开始重新翻译气泡 #${index + 1}`)
-      const { translateSingleText } = await import('@/api/translate')
       const settings = settingsStore.settings
 
       const promptContent = settings.translation.openaiOptions.request.forceJsonOutput
@@ -73,11 +95,9 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
 
       if (response.success && response.data?.translated_text) {
         if (!expectedImageId || options.currentImage.value?.id !== expectedImageId || options.bubbles.value[index] !== expectedBubble) {
-          console.log(`翻译结果已过期，忽略气泡 #${index + 1} 的更新`)
           return
         }
         bubbleStore.updateBubble(index, { translatedText: response.data.translated_text })
-        console.log(`翻译成功: "${response.data.translated_text}"`)
         if (response.data.warnings && response.data.warnings.length > 0) {
           showToast(`有 ${response.data.warnings.length} 处术语未遵守`, 'warning')
           console.warn('[SingleBubbleTranslationWarnings]', response.data.warnings)
@@ -85,7 +105,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
         await options.reRenderFullImage()
       } else {
         if (!expectedImageId || options.currentImage.value?.id !== expectedImageId || options.bubbles.value[index] !== expectedBubble) {
-          console.log(`翻译失败结果已过期，忽略气泡 #${index + 1} 的错误提示`)
           return
         }
         console.error('翻译失败:', response.error || '未知错误')
@@ -93,7 +112,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       }
     } catch (error) {
       if (!expectedImageId || options.currentImage.value?.id !== expectedImageId || options.bubbles.value[index] !== expectedBubble) {
-        console.log(`翻译异常结果已过期，忽略气泡 #${index + 1} 的错误提示`)
         return
       }
       console.error('翻译出错:', error)
@@ -123,7 +141,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       })
 
       if (options.currentImage.value?.id !== expectedImageId || options.currentImageIndex.value !== expectedImageIndex) {
-        console.log('自动检测结果已过期，当前图片已切换，忽略本次结果')
         return
       }
 
@@ -137,7 +154,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       }
     } catch (error) {
       if (options.currentImage.value?.id !== expectedImageId) {
-        console.log('自动检测失败结果已过期，忽略当前图片切换后的错误提示')
         return
       }
       console.error('自动检测失败:', error)
@@ -159,6 +175,7 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
     const totalImages = options.images.value.length
 
     isProcessing.value = true
+    clearCompletionResetTimer()
     progressText.value = '批量检测中'
     progressTotal.value = totalImages
     progressCurrent.value = 0
@@ -203,12 +220,11 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
 
       showToast(`批量检测完成！共处理 ${totalImages} 张图片，检测到 ${totalDetected} 个文本框`, 'success')
 
-      setTimeout(() => {
-        isProcessing.value = false
-      }, 2000)
+      scheduleCompletionReset()
     } catch (error) {
       console.error('批量检测失败:', error)
       showToast('批量检测失败', 'error')
+      clearCompletionResetTimer()
       isProcessing.value = false
     }
   }

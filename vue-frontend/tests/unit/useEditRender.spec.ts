@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -17,6 +17,10 @@ describe('useEditRender', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     executeRenderMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('ignores render results when the user switches to another image before the request completes', async () => {
@@ -107,5 +111,57 @@ describe('useEditRender', () => {
         color: 'preserve',
       },
     }))
+  })
+
+  it('does not write routine console logs during successful edit rerenders', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    executeRenderMock.mockResolvedValue({
+      finalImage: 'rendered-page-1',
+      bubbleStates: [
+        createBubbleState({
+          coords: [0, 0, 120, 80],
+          polygon: [],
+          translatedText: '第一页译文',
+        }),
+      ],
+    })
+
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
+    imageStore.updateCurrentImage({ cleanImageData: 'clean-image' })
+    bubbleStore.setBubbles([
+      createBubbleState({
+        coords: [0, 0, 120, 80],
+        polygon: [],
+        translatedText: '第一页译文',
+      }),
+    ])
+
+    const { useEditRender } = await import('@/composables/useEditRender')
+    const { reRenderFullImage } = useEditRender()
+
+    await expect(reRenderFullImage()).resolves.toBe(true)
+    expect(consoleLog).not.toHaveBeenCalled()
+  })
+
+  it('does not write routine console logs when rendering the clean background without bubbles', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const onRenderSuccess = vi.fn()
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+
+    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
+    imageStore.updateCurrentImage({ cleanImageData: 'clean-image' })
+    bubbleStore.clearBubblesLocal()
+
+    const { useEditRender } = await import('@/composables/useEditRender')
+    const { reRenderFullImage } = useEditRender({ onRenderSuccess })
+
+    await expect(reRenderFullImage()).resolves.toBe(true)
+    expect(executeRenderMock).not.toHaveBeenCalled()
+    expect(imageStore.currentImage?.translatedDataURL).toBe('data:image/png;base64,clean-image')
+    expect(onRenderSuccess).toHaveBeenCalledWith('data:image/png;base64,clean-image')
+    expect(consoleLog).not.toHaveBeenCalled()
   })
 })

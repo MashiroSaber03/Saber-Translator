@@ -35,6 +35,7 @@ describe('useBubbleActions', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('runs one trailing preview render after updates arrive during an in-flight render', async () => {
@@ -159,5 +160,75 @@ describe('useBubbleActions', () => {
         }),
       }),
     )
+  })
+
+  it('does not write routine console logs during common bubble interactions', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    const onReRender = vi.fn()
+    const onDelayedPreview = vi.fn()
+
+    imageStore.setImages([
+      {
+        id: 'img-1',
+        fileName: 'test.png',
+        originalDataURL: 'data:image/png;base64,abc',
+        translatedDataURL: null,
+        cleanImageData: null,
+        bubbleStates: null,
+        translationStatus: 'pending',
+        translationFailed: false,
+        hasUnsavedChanges: false,
+      } as any,
+    ])
+    imageStore.setCurrentImageIndex(0)
+    bubbleStore.setBubbles([
+      createBubbleState({
+        coords: [0, 0, 100, 60],
+        polygon: [],
+        textlines: [],
+      }),
+      createBubbleState({
+        coords: [20, 20, 140, 100],
+        polygon: [],
+      }),
+    ])
+    bubbleStore.selectBubble(0)
+
+    const Harness = defineComponent({
+      setup() {
+        return {
+          ...useBubbleActions({ onReRender, onDelayedPreview }),
+        }
+      },
+      render() {
+        return h('div')
+      },
+    })
+
+    const wrapper = mount(Harness)
+    const actions = wrapper.vm as unknown as ReturnType<typeof useBubbleActions>
+
+    actions.handleBubbleDragStart(0, new MouseEvent('mousedown'))
+    actions.handleBubbleDragEnd(0, [1, 2, 101, 62])
+    actions.handleBubbleResizeStart(0, 'se', new MouseEvent('mousedown'))
+    actions.handleBubbleResizeEnd(0, [1, 2, 120, 80])
+    actions.handleBubbleRotateStart(0, new MouseEvent('mousedown'))
+    actions.handleBubbleRotateEnd(0, 12)
+    actions.toggleDrawingMode()
+    actions.toggleDrawingMode()
+    actions.handleDrawBubble([30, 30, 120, 120])
+    actions.handleBubbleUpdate({ translatedText: 'updated' })
+    await actions.handleOcrRecognize(0)
+    actions.deleteSelectedBubbles()
+
+    await vi.runOnlyPendingTimersAsync()
+    await flushPromises()
+
+    expect(onReRender).toHaveBeenCalled()
+    expect(onDelayedPreview).toHaveBeenCalled()
+    expect(ocrSingleBubbleMock).toHaveBeenCalled()
+    expect(consoleLog).not.toHaveBeenCalled()
   })
 })

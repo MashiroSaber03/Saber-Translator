@@ -1,8 +1,6 @@
 /**
  * 翻译步骤（普通翻译）
- * 提取自 SequentialPipeline.ts Line 348-468
- * 
- * 注意：这是最复杂的步骤，包含两种翻译模式
+ * 包含逐气泡翻译和整页批量翻译两种请求模式。
  */
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
@@ -75,8 +73,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
 
     if (requestMode === 'single') {
         // ==================== 逐气泡翻译模式 ====================
-        console.log(`[翻译] 使用逐气泡翻译模式，共 ${originalTexts.length} 个气泡`)
-
         const translatedTexts: string[] = []
         const textboxTexts: string[] = []
         const warnings: TranslationWarning[] = []
@@ -182,13 +178,10 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             }
         }
 
-        console.log(`[翻译] 逐气泡翻译完成，成功 ${translatedTexts.filter(t => t && !t.startsWith('[翻译')).length}/${originalTexts.length}`)
         return { translatedTexts, textboxTexts, warnings }
 
     } else {
         // ==================== 整页批量翻译模式 ====================
-        console.log(`[翻译] 使用整页批量翻译模式，共 ${originalTexts.length} 个气泡`)
-
         const response: ParallelTranslateResponse = await parallelTranslate({
             original_texts: originalTexts,
             translation_mode: pluginMode,

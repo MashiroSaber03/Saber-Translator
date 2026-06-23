@@ -138,4 +138,53 @@ describe('TranslatePool', () => {
     expect(nextPool.enqueue).toHaveBeenCalledTimes(2)
     expect(flushed.status).toBe('buffered')
   })
+
+  it('reports buffered HQ sibling tasks when a batch flush fails', async () => {
+    executeBatchAtomicStepMock.mockRejectedValue(new Error('ai batch failed'))
+
+    const nextPool = { enqueue: vi.fn() }
+    const onTaskComplete = vi.fn()
+    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
+    const pool = new TranslatePool(nextPool as any, { updatePool: vi.fn() } as any, onTaskComplete)
+    pool.setMode('hq', 2, nextPool as any)
+
+    const runtime = { mode: 'hq', settingsSnapshot: settingsStoreMock.settings }
+    const firstTask = {
+      id: 'task-1',
+      imageIndex: 0,
+      translationMode: 'hq',
+      runtime,
+      status: 'pending',
+      originalTexts: ['原文1'],
+      sourceImage: { originalDataURL: 'data:image/png;base64,abc1' },
+      bubbleCoords: [],
+      bubbleAngles: [],
+      bubblePolygons: [],
+      autoDirections: [],
+      textlinesPerBubble: [],
+      ocrResults: [],
+      colors: [],
+      translatedTexts: [],
+      textboxTexts: [],
+      warnings: [],
+      persisted: false,
+    } as any
+    const secondTask = {
+      ...firstTask,
+      id: 'task-2',
+      imageIndex: 1,
+      originalTexts: ['原文2'],
+      sourceImage: { originalDataURL: 'data:image/png;base64,abc2' },
+    }
+
+    await (pool as any).process(firstTask)
+    await expect((pool as any).process(secondTask)).rejects.toThrow('ai batch failed')
+
+    expect(onTaskComplete).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'task-1',
+      status: 'failed',
+      error: 'ai batch failed',
+    }))
+    expect(nextPool.enqueue).not.toHaveBeenCalled()
+  })
 })

@@ -1,3 +1,3 @@
 # Stylelint Ignore
-# 当前 UI 重构后的前端源码不再按组件忽略 stylelint。
-# 如需临时忽略生成产物或第三方代码，请在这里注明原因和移除条件。
+# Frontend source is stylelint-clean by default.
+# Document owner and removal conditions for any generated or third-party exclusion.

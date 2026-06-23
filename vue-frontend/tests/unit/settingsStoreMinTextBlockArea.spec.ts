@@ -37,6 +37,7 @@ describe('settings store min text block area percent', () => {
     getUserSettingsMock.mockReset()
     saveUserSettingsMock.mockReset()
     saveUserSettingsMock.mockResolvedValue({ success: true })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {

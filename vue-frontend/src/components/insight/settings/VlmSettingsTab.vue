@@ -42,6 +42,7 @@ const isTesting = ref(false)
 const isFetchingModels = ref(false)
 const models = ref<ModelInfo[]>([])
 const modelSelectVisible = ref(false)
+let modelFetchRequestId = 0
 
 // VLM 设置（从 store 同步）
 const provider = ref(insightStore.config.vlm.provider)
@@ -67,9 +68,17 @@ const showBaseUrl = computed(() => provider.value === 'custom')
 // 方法
 // ============================================================
 
+function resetModelOptions(): void {
+  models.value = []
+  modelSelectVisible.value = false
+}
+
 function onProviderChange(): void {
   const newProvider = provider.value
   const oldProvider = insightStore.config.vlm.provider
+  modelFetchRequestId += 1
+  isFetchingModels.value = false
+  resetModelOptions()
 
   if (oldProvider !== newProvider) {
     insightStore.config.vlm.apiKey = apiKey.value
@@ -124,9 +133,20 @@ async function fetchModels(): Promise<void> {
   }
 
   isFetchingModels.value = true
+  const requestId = ++modelFetchRequestId
+  const requestProvider = provider.value
+  const requestApiKey = apiKey.value
+  const requestBaseUrl = baseUrl.value || undefined
+  const isCurrentRequest = () => (
+    modelFetchRequestId === requestId &&
+    provider.value === requestProvider &&
+    apiKey.value === requestApiKey &&
+    (baseUrl.value || undefined) === requestBaseUrl
+  )
 
   try {
-    const response = await insightApi.fetchModels(provider.value, apiKey.value, baseUrl.value || undefined)
+    const response = await insightApi.fetchModels(requestProvider, requestApiKey, requestBaseUrl)
+    if (!isCurrentRequest()) return
 
     if (response.success && response.models && response.models.length > 0) {
       models.value = response.models
@@ -137,10 +157,14 @@ async function fetchModels(): Promise<void> {
       modelSelectVisible.value = false
     }
   } catch (error) {
-    emit('showMessage', '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-    modelSelectVisible.value = false
+    if (isCurrentRequest()) {
+      emit('showMessage', '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+      modelSelectVisible.value = false
+    }
   } finally {
-    isFetchingModels.value = false
+    if (modelFetchRequestId === requestId) {
+      isFetchingModels.value = false
+    }
   }
 }
 

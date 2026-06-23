@@ -88,4 +88,62 @@ describe('openai options schema boundaries', () => {
       },
     })
   })
+
+  it('falls back when numeric option fields are not finite', () => {
+    const frontendOptions = normalizeOpenAiOptions(
+      {
+        request: {
+          temperature: Number.POSITIVE_INFINITY,
+        },
+        execution: {
+          rpmLimit: 'Infinity',
+          transportRetries: Number.NEGATIVE_INFINITY,
+          businessRetries: Number.NaN,
+        },
+      },
+      {
+        request: {
+          temperature: 0.6,
+        },
+        execution: {
+          rpmLimit: 8,
+          transportRetries: 2,
+          businessRetries: 3,
+        },
+      }
+    )
+
+    expect(frontendOptions.request.temperature).toBe(0.6)
+    expect(frontendOptions.execution.rpmLimit).toBe(8)
+    expect(frontendOptions.execution.transportRetries).toBe(2)
+    expect(frontendOptions.execution.businessRetries).toBe(3)
+
+    const apiOptions = deserializeOpenAICompatibleOptionsFromApi(
+      {
+        request: {
+          temperature: 'Infinity',
+        },
+        execution: {
+          rpm_limit: Number.POSITIVE_INFINITY,
+          transport_retries: '-Infinity',
+          business_retries: Number.NaN,
+        },
+      },
+      {
+        request: {
+          temperature: 0.4,
+        },
+        execution: {
+          rpmLimit: 4,
+          transportRetries: 5,
+          businessRetries: 6,
+        },
+      }
+    )
+
+    expect(apiOptions.request.temperature).toBe(0.4)
+    expect(apiOptions.execution.rpmLimit).toBe(4)
+    expect(apiOptions.execution.transportRetries).toBe(5)
+    expect(apiOptions.execution.businessRetries).toBe(6)
+  })
 })

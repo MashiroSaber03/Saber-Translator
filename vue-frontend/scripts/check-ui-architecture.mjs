@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 const ROOTS = [
+  '.stylelintignore',
+  '.stylelintrc.json',
+  'eslint.config.js',
+  'package.json',
+  'playwright.config.ts',
+  'postcss.config.mjs',
   'src/App.vue',
   'src/main.ts',
   'src/api',
@@ -15,6 +21,11 @@ const ROOTS = [
   'src/utils',
   'src/views',
   'tests',
+  'tsconfig.app.json',
+  'tsconfig.json',
+  'tsconfig.node.json',
+  'vite.config.ts',
+  'vitest.config.ts',
   '../src/shared',
 ]
 const IS_AUDIT = process.argv.includes('--audit')
@@ -103,6 +114,8 @@ const GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE = /\.ui-modal__(?:body|header|footer
 const GLOBAL_FORM_SKIN_SELECTOR_RE = /(\.ui-settings-field\s+\.ui-(?:input|select|textarea)|\.ui-checkbox-label\s+input(?:\[[^\]]+\])?)/g
 const BUSINESS_PROVIDE_INJECT_RE = /\b(?:provide|inject)\s*\(/g
 const CUSTOM_STYLE_ATTR_RE = /(?::custom-style|custom-style)\s*=\s*(["'])([\s\S]*?)\1/g
+const UI_PRIMITIVE_BUSINESS_OWNER_TOKEN_RE = /--(?:bookshelf|book-card|character-studio|edit|insight|reader|studio|translate|web-import)-[A-Za-z0-9_-]+/g
+const PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE = /^--ui-/
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
@@ -149,8 +162,16 @@ const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
+const OPTIONAL_CURRENT_SCHEMA_VERSION_RE = /\b(?:settingsSchemaVersion|webImportSettingsSchemaVersion)\s*\?:/g
 const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
-const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|旧版[^*\n\r]*|原版[^*\n\r]*|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
+const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|对应原\s+[^*\n\r]+\.js|旧版[^*\n\r]*|原版[^*\n\r]*|【(?:简化设计|增强版|优化)[^】]*】|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
+const COMPOSABLE_IMPLEMENTATION_HISTORY_RE = /从\s+[^*\n\r]+提取|【(?:简化设计|增强版|优化)[^】]*】/g
+const EXPLICIT_ANY_RE = /\bas\s+any\b|:\s*any\b|\bany\[\]/g
+const RELATIVE_EXPORT_RE = /\bexport\s+(?:type\s+)?(?:\*|\{[\s\S]*?\})\s+from\s+['"](\.[^'"]+)['"]/g
+const TYPE_BARREL_REQUIRED_EXPORTS = new Set([
+  './characterStudio',
+  './webImport',
+])
 const CSS_BLOCK_RE = /([^{}]+)\{([^{}]*)\}/g
 const CUSTOM_PROPERTY_RE = /(--[A-Za-z0-9_-]+)\s*:\s*([^;]+);/g
 const VAR_REFERENCE_RE = /var\(\s*(--[A-Za-z0-9_-]+)/g
@@ -239,6 +260,12 @@ const RESERVED_GLOBAL_CUSTOM_PROPERTIES = new Set([
   ...LEGACY_SHORT_ALIAS_VARIABLES,
 ])
 const UI_MINDSET_SCAN_ROOTS = [
+  '.stylelintignore',
+  '.stylelintrc.json',
+  'eslint.config.js',
+  'package.json',
+  'playwright.config.ts',
+  'postcss.config.mjs',
   'src/api/',
   'src/config/',
   'src/components/',
@@ -249,6 +276,11 @@ const UI_MINDSET_SCAN_ROOTS = [
   'src/utils/',
   'src/views/',
   'tests/',
+  'tsconfig.app.json',
+  'tsconfig.json',
+  'tsconfig.node.json',
+  'vite.config.ts',
+  'vitest.config.ts',
 ]
 const PAGE_CUSTOM_PROPERTY_PREFIXES = new Map([
   ['src/views/BookshelfView.vue', '--bookshelf-'],
@@ -334,7 +366,7 @@ function scanPath(path) {
     checkFile(path)
     return
   }
-  if (/\.(?:js|jsx|ts|tsx|json)$/.test(path)) {
+  if (/\.(?:js|jsx|ts|tsx|json)$/.test(path) || path.endsWith('.stylelintignore')) {
     checkScriptFile(path)
   }
 }
@@ -523,6 +555,133 @@ function checkOldImplementationMindset(path, normalizedPath, content) {
   )
 }
 
+function isProductionComposable(normalizedPath) {
+  return normalizedPath.startsWith('src/composables/')
+    && !normalizedPath.endsWith('.test.ts')
+    && !normalizedPath.endsWith('.spec.ts')
+}
+
+function isProductionTypeFile(normalizedPath) {
+  return normalizedPath.startsWith('src/types/')
+    && normalizedPath.endsWith('.ts')
+    && !normalizedPath.endsWith('.test.ts')
+    && !normalizedPath.endsWith('.spec.ts')
+}
+
+function isProductionUtilFile(normalizedPath) {
+  return normalizedPath.startsWith('src/utils/')
+    && normalizedPath.endsWith('.ts')
+    && !normalizedPath.endsWith('.test.ts')
+    && !normalizedPath.endsWith('.spec.ts')
+}
+
+function checkComposableSourceHygiene(path, normalizedPath, content, contentWithoutComments) {
+  if (!isProductionComposable(normalizedPath)) {
+    return
+  }
+
+  const historyPhrases = new Set([...content.matchAll(COMPOSABLE_IMPLEMENTATION_HISTORY_RE)].map(match => match[0]))
+  if (historyPhrases.size > 0) {
+    addFailure(
+      path,
+      `composable implementation-history wording ${[...historyPhrases].join(', ')} is not allowed; describe the current behavior contract instead`
+    )
+  }
+
+  const explicitAny = new Set([...contentWithoutComments.matchAll(EXPLICIT_ANY_RE)].map(match => match[0]))
+  if (explicitAny.size > 0) {
+    addFailure(
+      path,
+      `explicit any in production composable ${[...explicitAny].join(', ')} is not allowed; use the current frontend types or an unknown boundary guard`
+    )
+  }
+}
+
+function checkTypeSourceHygiene(path, normalizedPath, contentWithoutComments) {
+  if (!isProductionTypeFile(normalizedPath)) {
+    return
+  }
+
+  const explicitAny = new Set([...contentWithoutComments.matchAll(EXPLICIT_ANY_RE)].map(match => match[0]))
+  if (explicitAny.size > 0) {
+    addFailure(
+      path,
+      `explicit any in production type ${[...explicitAny].join(', ')} is not allowed; use current frontend contracts or an unknown boundary guard`
+    )
+  }
+}
+
+function checkUtilSourceHygiene(path, normalizedPath, contentWithoutComments) {
+  if (!isProductionUtilFile(normalizedPath)) {
+    return
+  }
+
+  const explicitAny = new Set([...contentWithoutComments.matchAll(EXPLICIT_ANY_RE)].map(match => match[0]))
+  if (explicitAny.size > 0) {
+    addFailure(
+      path,
+      `explicit any in production util ${[...explicitAny].join(', ')} is not allowed; use current frontend types or an unknown boundary guard`
+    )
+  }
+}
+
+function relativeExportExists(path, specifier) {
+  const base = resolve(dirname(path), specifier)
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.vue`,
+    `${base}.js`,
+    `${base}.mjs`,
+    `${base}.css`,
+    join(base, 'index.ts'),
+    join(base, 'index.tsx'),
+    join(base, 'index.vue'),
+    join(base, 'index.js'),
+    join(base, 'index.mjs'),
+  ]
+
+  return candidates.some(candidate => existsSync(candidate))
+}
+
+function relativeExportSpecifiers(contentWithoutComments) {
+  return [...contentWithoutComments.matchAll(RELATIVE_EXPORT_RE)]
+    .map(match => match[1])
+    .filter(Boolean)
+}
+
+function checkRelativeExports(path, contentWithoutComments) {
+  const unresolved = []
+  for (const specifier of relativeExportSpecifiers(contentWithoutComments)) {
+    if (!relativeExportExists(path, specifier)) {
+      unresolved.push(specifier)
+    }
+  }
+
+  if (unresolved.length > 0) {
+    addFailure(
+      path,
+      `unresolved relative export(s) ${[...new Set(unresolved)].join(', ')} are not allowed; remove stale barrel exports or create the exported module`
+    )
+  }
+}
+
+function checkTypesBarrelExports(path, normalizedPath, contentWithoutComments) {
+  if (normalizedPath !== 'src/types/index.ts') {
+    return
+  }
+
+  const exports = new Set(relativeExportSpecifiers(contentWithoutComments))
+  const missing = [...TYPE_BARREL_REQUIRED_EXPORTS].filter(specifier => !exports.has(specifier))
+  if (missing.length > 0) {
+    addFailure(
+      path,
+      `types barrel missing export(s) ${missing.join(', ')}; keep current page-domain type modules available from @/types`
+    )
+  }
+}
+
 function checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments) {
   const compatMatches = new Set([...contentWithoutComments.matchAll(FRONTEND_SCHEMA_COMPAT_RE)].map(match => match[0]))
   if (SOURCE_FIXTURE || OPENAI_MIRROR_FIELD_PATH_RE.test(normalizedPath)) {
@@ -531,14 +690,20 @@ function checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutCo
     }
   }
 
-  if (compatMatches.size === 0) {
-    return
+  if (compatMatches.size > 0) {
+    addFailure(
+      path,
+      `legacy frontend schema/provider reference(s) ${[...compatMatches].join(', ')} are not allowed; use the current provider ids and current nested settings schema`
+    )
   }
 
-  addFailure(
-    path,
-    `legacy frontend schema/provider reference(s) ${[...compatMatches].join(', ')} are not allowed; use the current provider ids and current nested settings schema`
-  )
+  const optionalSchemaVersions = new Set([...contentWithoutComments.matchAll(OPTIONAL_CURRENT_SCHEMA_VERSION_RE)].map(match => match[0]))
+  if (optionalSchemaVersions.size > 0) {
+    addFailure(
+      path,
+      `current schema version fields must be required, not optional: ${[...optionalSchemaVersions].join(', ')}`
+    )
+  }
 }
 
 function checkCustomPropertyOwnership(path, normalizedPath, content) {
@@ -565,7 +730,10 @@ function checkCustomPropertyOwnership(path, normalizedPath, content) {
     return
   }
 
-  const unownedTokens = definitions.filter(token => !token.startsWith(pagePrefix))
+  const unownedTokens = definitions.filter(token => (
+    !token.startsWith(pagePrefix)
+    && !PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE.test(token)
+  ))
   if (unownedTokens.length > 0) {
     addFailure(
       path,
@@ -787,6 +955,20 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
   }
 }
 
+function checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithoutComments) {
+  if (!normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
+    return
+  }
+
+  const businessOwnerTokens = matchedTokens(contentWithoutComments, UI_PRIMITIVE_BUSINESS_OWNER_TOKEN_RE)
+  if (businessOwnerTokens.size > 0) {
+    addFailure(
+      path,
+      `business owner token reference(s) ${[...businessOwnerTokens].join(', ')} are not allowed in UI primitives; expose a --ui-* primitive variable and let business owners override it`
+    )
+  }
+}
+
 function checkGlobalFormSkinSelectors(path, content) {
   if (!normalizePath(path).endsWith('form-primitives.css')) {
     return
@@ -878,12 +1060,18 @@ function checkFile(path) {
   checkLocalBuildArtifact(path, normalizedPath)
   checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
+  checkComposableSourceHygiene(path, normalizedPath, content, contentWithoutComments)
+  checkTypeSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkUtilSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkRelativeExports(path, contentWithoutComments)
+  checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
   checkGlobalFormSkinSelectors(path, content)
   checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
   checkRawCustomStyleValues(path, content)
   checkBaseModalCustomStyleUsage(path, normalizedPath, content)
+  checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithoutComments)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
     addFailure(path, 'generated CSS files are not allowed; use co-located named .styles.css or component scoped styles')
@@ -1185,6 +1373,11 @@ function checkScriptFile(path) {
   checkLocalBuildArtifact(path, normalizedPath)
   checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
   checkOldImplementationMindset(path, normalizedPath, content)
+  checkComposableSourceHygiene(path, normalizedPath, content, contentWithoutComments)
+  checkTypeSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkUtilSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkRelativeExports(path, contentWithoutComments)
+  checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
 
   architectureDebtUsage.generatedCssReferences += countRegexMatches(contentWithoutComments, GENERATED_CSS_RE)

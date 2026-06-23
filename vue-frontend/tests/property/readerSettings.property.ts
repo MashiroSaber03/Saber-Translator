@@ -18,8 +18,13 @@ interface ReaderSettings {
   bgColor: string
 }
 
+interface StoredReaderSettings extends ReaderSettings {
+  readerSettingsSchemaVersion: 1
+}
+
 // localStorage 存储键名
 const READER_SETTINGS_KEY = 'readerSettings'
+const READER_SETTINGS_SCHEMA_VERSION = 1
 
 // 背景颜色预设
 const BG_COLOR_PRESETS = ['#1a1a2e', '#ffffff', '#f5f5dc', '#2d2d2d']
@@ -78,7 +83,27 @@ describe('阅读器设置持久化属性测试', () => {
    * 保存设置到 localStorage
    */
   function saveSettings(settings: ReaderSettings): void {
-    localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(settings))
+    localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify({
+      readerSettingsSchemaVersion: READER_SETTINGS_SCHEMA_VERSION,
+      ...settings,
+    }))
+  }
+
+  function isStoredReaderSettings(value: unknown): value is StoredReaderSettings {
+    if (!value || typeof value !== 'object') return false
+
+    const candidate = value as Partial<StoredReaderSettings>
+    return (
+      candidate.readerSettingsSchemaVersion === READER_SETTINGS_SCHEMA_VERSION &&
+      typeof candidate.imageWidth === 'number' &&
+      candidate.imageWidth >= 50 &&
+      candidate.imageWidth <= 100 &&
+      typeof candidate.imageGap === 'number' &&
+      candidate.imageGap >= 0 &&
+      candidate.imageGap <= 50 &&
+      typeof candidate.bgColor === 'string' &&
+      BG_COLOR_PRESETS.includes(candidate.bgColor)
+    )
   }
 
   /**
@@ -88,7 +113,15 @@ describe('阅读器设置持久化属性测试', () => {
     const saved = localStorage.getItem(READER_SETTINGS_KEY)
     if (saved) {
       try {
-        return JSON.parse(saved) as ReaderSettings
+        const parsed: unknown = JSON.parse(saved)
+        if (isStoredReaderSettings(parsed)) {
+          return {
+            imageWidth: parsed.imageWidth,
+            imageGap: parsed.imageGap,
+            bgColor: parsed.bgColor,
+          }
+        }
+        return null
       } catch {
         return null
       }
@@ -301,9 +334,9 @@ describe('阅读器设置持久化属性测试', () => {
    * Feature: frontend-behavior, Property 15: 阅读器设置持久化往返一致性
    * Validates: Requirements 5.4
    *
-   * 设置合并：加载时应正确合并默认值和已保存的值
+   * 当前 schema 要求完整设置载荷；部分设置会被忽略
    */
-  it('加载时应正确合并默认值和已保存的值', () => {
+  it('加载时应忽略不完整的设置载荷', () => {
     fc.assert(
       fc.property(validImageWidthArb, (imageWidth) => {
         // 重置 localStorage
@@ -313,30 +346,7 @@ describe('阅读器设置持久化属性测试', () => {
         const partialSettings = { imageWidth }
         localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(partialSettings))
 
-        // 加载设置并合并默认值
-        const defaultSettings: ReaderSettings = {
-          imageWidth: 100,
-          imageGap: 8,
-          bgColor: '#1a1a2e'
-        }
-
-        const saved = localStorage.getItem(READER_SETTINGS_KEY)
-        let loadedSettings = defaultSettings
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved)
-            loadedSettings = { ...defaultSettings, ...parsed }
-          } catch {
-            // 解析失败时使用默认值
-          }
-        }
-
-        // 验证已保存的值被正确加载，未保存的值使用默认值
-        return (
-          loadedSettings.imageWidth === imageWidth &&
-          loadedSettings.imageGap === defaultSettings.imageGap &&
-          loadedSettings.bgColor === defaultSettings.bgColor
-        )
+        return loadSettings() === null
       }),
       { numRuns: 100 }
     )

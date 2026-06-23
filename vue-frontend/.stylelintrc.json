@@ -45,8 +45,5 @@
                 ]
             }
         ]
-    },
-    "ignoreFiles": [
-        "src/styles/global.css"
-    ]
+    }
 }

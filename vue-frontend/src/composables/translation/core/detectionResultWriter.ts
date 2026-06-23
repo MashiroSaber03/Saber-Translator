@@ -1,4 +1,6 @@
 import { useImageStore } from '@/stores/imageStore'
+import type { BubbleState } from '@/types/bubble'
+import type { ImageDataUpdates } from '@/types/image'
 import type { DetectionOutput } from './steps/detection'
 
 /**
@@ -10,12 +12,12 @@ export function saveDetectionResultToImage(
   result: DetectionOutput,
   options?: {
     updateBubbleStates?: boolean
-    bubbleStates?: any[]
+    bubbleStates?: BubbleState[]
   }
 ): void {
   const imageStore = useImageStore()
 
-  const updateData: Record<string, any> = {
+  const updateData: ImageDataUpdates = {
     bubbleCoords: result.bubbleCoords,
     bubbleAngles: result.bubbleAngles,
     textMask: result.textMask || null,

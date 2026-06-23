@@ -5,8 +5,13 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useImageStore } from '@/stores/imageStore'
+import { useBubbleStore } from '@/stores/bubbleStore'
+import { persistAllPages } from '@/composables/translation/core/persistenceService'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
+import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
+import type { OcrResult } from '@/types/ocr'
 import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
 
@@ -72,6 +77,25 @@ interface BatchSaveState {
   sessionId: string | null
 }
 
+function isBubbleTextline(value: unknown): value is BubbleTextline {
+  if (!value || typeof value !== 'object') return false
+
+  const textline = value as Partial<BubbleTextline>
+  return (
+    Array.isArray(textline.polygon) &&
+    (textline.direction === 'h' || textline.direction === 'v') &&
+    typeof textline.confidence === 'number'
+  )
+}
+
+function readTextlinesPerBubble(value: unknown): BubbleTextline[][] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  return value.map((group) => (
+    Array.isArray(group) ? group.filter(isBubbleTextline) : []
+  ))
+}
+
 // ============================================================
 // Store 定义
 // ============================================================
@@ -117,6 +141,8 @@ export const useSessionStore = defineStore('session', () => {
     currentIndex: 0,
     sessionId: null,
   })
+
+  let progressClearTimer: ReturnType<typeof setTimeout> | null = null
 
   // ============================================================
   // 计算属性
@@ -164,7 +190,6 @@ export const useSessionStore = defineStore('session', () => {
       bookTitle,
       chapterTitle
     }
-    console.log(`会话上下文已设置: 书籍=${bookId}, 章节=${chapterId}`)
   }
 
   /**
@@ -193,7 +218,6 @@ export const useSessionStore = defineStore('session', () => {
       bookTitle: null,
       chapterTitle: null
     }
-    console.log('会话上下文已清除')
   }
 
   /**
@@ -219,7 +243,6 @@ export const useSessionStore = defineStore('session', () => {
    */
   function setSessionName(name: string | null): void {
     currentSessionName.value = name
-    console.log(`当前会话名称: ${name}`)
   }
 
   /**
@@ -239,7 +262,6 @@ export const useSessionStore = defineStore('session', () => {
    */
   function setSessionList(list: SessionListItem[]): void {
     sessionList.value = list
-    console.log(`会话列表已更新，共 ${list.length} 个会话`)
   }
 
   /**
@@ -331,6 +353,25 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function clearProgressClearTimer(): void {
+    if (progressClearTimer) {
+      clearTimeout(progressClearTimer)
+      progressClearTimer = null
+    }
+  }
+
+  function clearLoadingProgress(): void {
+    loadingProgress.value = { current: 0, total: 0, message: '' }
+  }
+
+  function scheduleLoadingProgressClear(delayMs: number): void {
+    clearProgressClearTimer()
+    progressClearTimer = setTimeout(() => {
+      clearLoadingProgress()
+      progressClearTimer = null
+    }, delayMs)
+  }
+
   function createSessionData(
     name: string,
     images: ImageData[],
@@ -363,6 +404,7 @@ export const useSessionStore = defineStore('session', () => {
    * 重置所有状态
    */
   function reset(): void {
+    clearProgressClearTimer()
     currentSessionName.value = null
     context.value = {
       bookId: null,
@@ -374,8 +416,8 @@ export const useSessionStore = defineStore('session', () => {
     isLoading.value = false
     isSaving.value = false
     error.value = null
+    clearLoadingProgress()
     completeBatchSave()
-    console.log('会话状态已重置')
   }
 
   // ============================================================
@@ -447,15 +489,13 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function loadSessionByPath(sessionPath: string): Promise<boolean> {
+    clearProgressClearTimer()
     setLoading(true)
     setError(null)
     loadingProgress.value = { current: 0, total: 0, message: '正在加载...' }
 
     try {
-      // 获取 store 实例
-      const { useImageStore } = await import('@/stores/imageStore')
       const { useSettingsStore } = await import('@/stores/settings')
-      const { useBubbleStore } = await import('@/stores/bubbleStore')
       const imageStore = useImageStore()
       const settingsStore = useSettingsStore()
       const bubbleStore = useBubbleStore()
@@ -472,12 +512,13 @@ export const useSessionStore = defineStore('session', () => {
       // 转换会话数据为 ImageData 格式
       if (sessionData.images && sessionData.images.length > 0) {
         const images: ImageData[] = sessionData.images.map((img, index) => {
+          const restoredTextlines = readTextlinesPerBubble(img.textlinesPerBubble)
           const bubbleStates = (img.bubbleStates !== undefined && img.bubbleStates !== null)
-            ? (img.bubbleStates as import('@/types/bubble').BubbleState[]).map((state, bubbleIndex) => ({
+            ? (img.bubbleStates as BubbleState[]).map((state, bubbleIndex) => ({
                 ...state,
                 textlines: state.textlines && state.textlines.length > 0
                   ? state.textlines
-                  : (Array.isArray(img.textlinesPerBubble) ? (img.textlinesPerBubble[bubbleIndex] as any[]) || [] : [])
+                  : restoredTextlines?.[bubbleIndex] ?? []
               }))
             : null
 
@@ -493,7 +534,7 @@ export const useSessionStore = defineStore('session', () => {
           bubbleStates: bubbleStates,
           bubbleCoords: bubbleStates
             ? bubbleStates.map((state) => state.coords)
-            : (img.bubbleCoords !== undefined ? (img.bubbleCoords as import('@/types/bubble').BubbleCoords[]) : undefined),
+            : (img.bubbleCoords !== undefined ? (img.bubbleCoords as BubbleCoords[]) : undefined),
           bubbleAngles: bubbleStates
             ? bubbleStates.map((state) => state.rotationAngle || 0)
             : (img.bubbleAngles !== undefined ? (img.bubbleAngles as number[]) : undefined),
@@ -508,14 +549,14 @@ export const useSessionStore = defineStore('session', () => {
             : (img.textboxTexts !== undefined ? (img.textboxTexts as string[]) : undefined),
           textlinesPerBubble: bubbleStates
             ? getTextlinesPerBubbleFromStates(bubbleStates)
-            : (img.textlinesPerBubble !== undefined ? (img.textlinesPerBubble as any[]) : undefined),
+            : restoredTextlines,
           // 恢复手动标注标记
           isManuallyAnnotated: Boolean(img.isManuallyAnnotated),
           // 恢复文件夹路径信息
           relativePath: (img.relativePath as string) || undefined,
           folderPath: (img.folderPath as string) || undefined,
           ocrResults: bubbleStates
-            ? bubbleStates.map((state, bubbleIndex) => state.ocrResult || ((img.ocrResults as import('@/types/ocr').OcrResult[] | undefined)?.[bubbleIndex] ?? {
+            ? bubbleStates.map((state, bubbleIndex) => state.ocrResult || ((img.ocrResults as OcrResult[] | undefined)?.[bubbleIndex] ?? {
                 text: state.originalText || '',
                 confidence: null,
                 confidenceSupported: false,
@@ -523,7 +564,7 @@ export const useSessionStore = defineStore('session', () => {
                 primaryEngine: '',
                 fallbackUsed: false
               }))
-            : (img.ocrResults !== undefined ? (img.ocrResults as import('@/types/ocr').OcrResult[]) : undefined),
+            : (img.ocrResults !== undefined ? (img.ocrResults as OcrResult[]) : undefined),
           fileName: img.fileName || `image-${index + 1}.png`,
           translationStatus: (img.translationStatus as 'pending' | 'processing' | 'completed' | 'failed') || 'pending',
           translationFailed: Boolean(img.translationFailed),
@@ -536,22 +577,15 @@ export const useSessionStore = defineStore('session', () => {
 
         // 将图片 URL 转换为 Base64，用于 Canvas 操作和翻译功能。
         if (images.length > 0) {
-          console.log('正在加载图片...')
           loadingProgress.value = { current: 0, total: images.length, message: '正在加载图片...' }
 
           await convertImagesToBase64(images, (current, total) => {
-            const progress = (current / total) * 100
             loadingProgress.value = { current, total, message: `加载图片 ${current}/${total}...` }
-            console.log(`加载图片 ${current}/${total}... (${progress.toFixed(0)}%)`)
           })
 
           loadingProgress.value = { current: images.length, total: images.length, message: '加载完成' }
-          console.log('图片加载完成，已转换为 Base64')
 
-          // 延迟清除进度信息
-          setTimeout(() => {
-            loadingProgress.value = { current: 0, total: 0, message: '' }
-          }, 500)
+          scheduleLoadingProgressClear(500)
         }
 
         // 设置图片到 imageStore
@@ -576,7 +610,6 @@ export const useSessionStore = defineStore('session', () => {
           bubbleStore.clearBubblesLocal()
         }
 
-        console.log(`按路径加载会话成功: ${sessionPath}, 共 ${images.length} 张图片`)
       }
 
       // 恢复 UI 设置到 settingsStore
@@ -614,7 +647,6 @@ export const useSessionStore = defineStore('session', () => {
           useAutoTextColor: (uiSettings.useAutoTextColor as boolean) ?? settingsStore.settings.textStyle.useAutoTextColor,
         })
 
-        console.log('UI 设置已恢复')
       }
 
       // 设置当前会话名称
@@ -624,6 +656,7 @@ export const useSessionStore = defineStore('session', () => {
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '加载会话失败'
       setError(errorMsg)
+      clearProgressClearTimer()
       console.error(`按路径加载会话失败: ${sessionPath}`, e)
       throw e
     } finally {
@@ -640,14 +673,10 @@ export const useSessionStore = defineStore('session', () => {
   async function saveChapterSession(bookId: string, chapterId: string): Promise<boolean> {
     // 检查参数
     if (!bookId || !chapterId) {
-      console.log('未在书籍/章节模式，不支持保存')
       return false
     }
 
-    console.log(`保存章节会话: book=${bookId}, chapter=${chapterId}`)
-
     // 获取 imageStore 和 settingsStore
-    const { useImageStore } = await import('@/stores/imageStore')
     const { useSettingsStore } = await import('@/stores/settings')
     const imageStore = useImageStore()
     const settingsStore = useSettingsStore()
@@ -656,13 +685,13 @@ export const useSessionStore = defineStore('session', () => {
     const allImages = Array.isArray(imageStore.images) ? imageStore.images : []
 
     if (!allImages || allImages.length === 0) {
-      console.log('没有图片数据可保存')
       return false
     }
 
     // 构建章节会话路径
     const sessionPath = `bookshelf/${bookId}/chapters/${chapterId}/session`
 
+    clearProgressClearTimer()
     setSaving(true)
     setError(null)
 
@@ -671,7 +700,6 @@ export const useSessionStore = defineStore('session', () => {
 
     try {
       const { createPipelineRuntime, hydrateTaskContextFromImage } = await import('@/composables/translation/core/runtime')
-      const { persistAllPages } = await import('@/composables/translation/core/persistenceService')
 
       const runtime = createPipelineRuntime('standard', {
         settingsSnapshot: settingsStore.settings,
@@ -700,13 +728,9 @@ export const useSessionStore = defineStore('session', () => {
         imageStore.updateImageByIndex(index, { hasUnsavedChanges: false })
       }
 
-      console.log(`章节保存完成: ${totalImages}/${totalImages} 张图片`)
-
       loadingProgress.value = { current: totalImages, total: totalImages, message: '保存完成' }
 
-      setTimeout(() => {
-        loadingProgress.value = { current: 0, total: 0, message: '' }
-      }, 1000)
+      scheduleLoadingProgressClear(1000)
 
       return true
 
@@ -714,7 +738,8 @@ export const useSessionStore = defineStore('session', () => {
       const errorMsg = e instanceof Error ? e.message : '保存章节会话失败'
       setError(errorMsg)
       console.error('保存失败:', e)
-      loadingProgress.value = { current: 0, total: 0, message: '' }
+      clearProgressClearTimer()
+      clearLoadingProgress()
       return false
     } finally {
       setSaving(false)

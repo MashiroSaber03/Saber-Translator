@@ -52,6 +52,24 @@ afterEach(() => {
 })
 
 describe('BaseModal', () => {
+  it('locks body scrolling when mounted in the open state', () => {
+    mountModal()
+
+    expect(document.body.style.overflow).toBe('hidden')
+  })
+
+  it('exposes dialog semantics and labels the dialog from its title', () => {
+    mountModal({ title: 'Accessible Modal' })
+
+    const container = getContainer()
+    expect(container.getAttribute('role')).toBe('dialog')
+    expect(container.getAttribute('aria-modal')).toBe('true')
+
+    const labelledBy = container.getAttribute('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    expect(document.getElementById(labelledBy || '')?.textContent).toContain('Accessible Modal')
+  })
+
   it('closes when the pointer press and release both happen on the overlay', () => {
     const wrapper = mountModal()
     const overlay = getOverlay()

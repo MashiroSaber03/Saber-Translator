@@ -1,35 +1,42 @@
 <template>
   <!-- 翻译进度组件 -->
   <div v-if="showProgress" id="translationProgressBar" class="translation-progress-bar">
-    <!-- 并行模式：新版多进度条 -->
+    <!-- 并行模式：多阶段进度条 -->
     <template v-if="isParallelMode && parallelProgress">
       <!-- 标题行 -->
       <div class="parallel-header">
         <span class="header-title">🚀 并行翻译中：{{ parallelProgress.totalCompleted }}/{{ parallelProgress.totalPages }}</span>
       </div>
-      
+
       <!-- 预保存进度（仅在预保存进行中显示） -->
       <div v-if="parallelProgress.preSave?.isRunning" class="presave-section">
         <div class="presave-label">
           📥 预保存原始图片：{{ parallelProgress.preSave.current }}/{{ parallelProgress.preSave.total }}
         </div>
-        <div class="presave-progress-bar">
-          <div 
-            class="presave-progress-fill" 
+        <div
+          class="presave-progress-bar"
+          role="progressbar"
+          aria-label="预保存原始图片进度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="getPreSavePercent()"
+        >
+          <div
+            class="presave-progress-fill"
             :style="{ width: getPreSavePercent() + '%' }"
           ></div>
         </div>
       </div>
-      
+
       <!-- 各池子进度条 -->
       <div class="pools-list">
-        <div 
-          v-for="pool in parallelProgress.pools" 
+        <div
+          v-for="pool in parallelProgress.pools"
           :key="pool.name"
           class="pool-row"
-          :class="{ 
+          :class="{
             'pool-processing': pool.processing,
-            'pool-waiting-lock': pool.isWaitingLock 
+            'pool-waiting-lock': pool.isWaitingLock
           }"
         >
           <!-- 图标 + 名称 -->
@@ -37,25 +44,32 @@
             <span class="pool-icon">{{ pool.icon }}</span>
             <span class="pool-name">{{ pool.name }}</span>
           </div>
-          
+
           <!-- 进度条 -->
-          <div class="pool-progress-bar">
+          <div
+            class="pool-progress-bar"
+            role="progressbar"
+            :aria-label="`${pool.name}进度`"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="getPoolCompletedPercent(pool)"
+          >
             <!-- 完成部分（绿色） -->
-            <div 
-              class="progress-completed" 
+            <div
+              class="progress-completed"
               :style="{ width: getPoolCompletedPercent(pool) + '%' }"
             ></div>
             <!-- 处理中部分（蓝色，仅当正在处理时显示） -->
-            <div 
+            <div
               v-if="pool.processing"
-              class="progress-processing" 
-              :style="{ 
+              class="progress-processing"
+              :style="{
                 left: getPoolCompletedPercent(pool) + '%',
                 width: getPoolProcessingWidth() + '%'
               }"
             ></div>
           </div>
-          
+
           <!-- 完成数/总数 -->
           <div class="pool-stats">
             <span class="completed-count">{{ pool.completed }}</span>
@@ -66,16 +80,23 @@
             <span v-if="pool.isWaitingLock" class="lock-indicator" title="等待深度学习锁">🔒</span>
           </div>
         </div>
-        
+
         <!-- 保存进度行（仅在启用自动保存时显示） -->
         <div v-if="parallelProgress.save" class="pool-row save-row">
           <div class="pool-label">
             <span class="pool-icon">💾</span>
             <span class="pool-name">保存</span>
           </div>
-          <div class="pool-progress-bar">
-            <div 
-              class="progress-completed save-progress" 
+          <div
+            class="pool-progress-bar"
+            role="progressbar"
+            aria-label="保存进度"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="getSavePercent()"
+          >
+            <div
+              class="progress-completed save-progress"
               :style="{ width: getSavePercent() + '%' }"
             ></div>
           </div>
@@ -85,10 +106,10 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 分隔线 -->
       <div class="divider"></div>
-      
+
       <!-- 总体进度 -->
       <div class="overall-section">
         <div class="overall-label">
@@ -97,12 +118,19 @@
             （{{ parallelProgress.totalFailed }} 失败）
           </span>
         </div>
-        <div class="overall-progress-bar">
+        <div
+          class="overall-progress-bar"
+          role="progressbar"
+          aria-label="翻译总进度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="parallelOverallPercent"
+        >
           <div class="overall-progress-fill progress-stripe" :style="{ width: parallelOverallPercent + '%' }"></div>
         </div>
       </div>
     </template>
-    
+
     <!-- 普通模式：单进度条 -->
     <template v-else>
       <div class="progress-bar-label">
@@ -111,7 +139,14 @@
           <span class="failed-count">（{{ failedCount }} 张失败）</span>
         </template>
       </div>
-      <div class="progress-bar">
+      <div
+        class="progress-bar"
+        role="progressbar"
+        aria-label="翻译进度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="progressPercent"
+      >
         <div class="progress progress-stripe" :style="{ width: `${progressPercent}%` }"></div>
       </div>
     </template>
@@ -242,8 +277,9 @@ const progressLabel = computed(() => {
 })
 </script>
 
-<style scoped>/* ===================================
-   进度条样式 - 新版并行进度条设计
+<style scoped>
+/* ===================================
+   进度条样式 - 并行进度条设计
    =================================== */
 
 .translation-progress-bar {
@@ -287,7 +323,7 @@ const progressLabel = computed(() => {
 }
 
 /* ===================================
-   并行模式 - 新版样式
+   并行模式样式
    =================================== */
 
 .parallel-header {
@@ -530,7 +566,7 @@ const progressLabel = computed(() => {
 }
 
 /* ===================================
-   普通模式样式 - 保持原有
+   普通模式样式
    =================================== */
 
 .progress-bar-label {

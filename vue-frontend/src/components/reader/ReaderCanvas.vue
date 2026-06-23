@@ -39,6 +39,15 @@ const showImagesContainer = computed(() => !props.isLoading && props.images.leng
 
 // ==================== 方法 ====================
 
+let pageInfoTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearPageInfoTimer() {
+  if (pageInfoTimer !== null) {
+    clearTimeout(pageInfoTimer)
+    pageInfoTimer = null
+  }
+}
+
 /**
  * 获取图片源
  * @param imageData 图片数据
@@ -76,6 +85,14 @@ function handleScroll() {
   updatePageInfo()
 }
 
+function schedulePageInfoUpdate() {
+  clearPageInfoTimer()
+  pageInfoTimer = setTimeout(() => {
+    pageInfoTimer = null
+    updatePageInfo()
+  }, 100)
+}
+
 /**
  * 进入翻译页面
  */
@@ -91,6 +108,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
+  clearPageInfoTimer()
 })
 
 // 监听图片数据变化，重新计算页码
@@ -98,7 +116,7 @@ watch(
   () => props.images,
   () => {
     // 延迟更新页码，等待 DOM 渲染完成
-    setTimeout(updatePageInfo, 100)
+    schedulePageInfoUpdate()
   },
   { deep: true }
 )

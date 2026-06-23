@@ -14,7 +14,14 @@
     <!-- 选择框显示区域 -->
     <div 
       class="custom-select-trigger" 
+      role="combobox"
+      :tabindex="disabled ? -1 : 0"
+      :aria-expanded="isOpen ? 'true' : 'false'"
+      aria-haspopup="listbox"
+      :aria-controls="isOpen ? dropdownId : undefined"
+      :aria-disabled="disabled ? 'true' : undefined"
       @click="toggleDropdown"
+      @keydown="handleTriggerKeydown"
       :title="title"
     >
       <span class="custom-select-value">{{ displayValue }}</span>
@@ -30,7 +37,9 @@
       <div 
         v-if="isOpen"
         ref="dropdownRef" 
+        :id="dropdownId"
         class="custom-select-dropdown"
+        role="listbox"
         :style="dropdownStyle"
       >
         <div class="custom-select-options">
@@ -46,6 +55,8 @@
                 :key="option.value"
                 class="custom-select-option"
                 :class="{ selected: option.value === modelValue }"
+                role="option"
+                :aria-selected="option.value === modelValue ? 'true' : 'false'"
                 @click="selectOption(option.value)"
               >
                 {{ option.label }}
@@ -58,6 +69,8 @@
               :key="option.value"
               class="custom-select-option"
               :class="{ selected: option.value === modelValue }"
+              role="option"
+              :aria-selected="option.value === modelValue ? 'true' : 'false'"
               @click="selectOption(option.value)"
             >
               {{ option.label }}
@@ -70,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, useId } from 'vue'
 
 // 类型定义
 // 注意：Vue 的 :key 需要 PropertyKey (string | number | symbol)，不能直接使用 boolean
@@ -125,6 +138,7 @@ const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
+const dropdownId = useId()
 
 const VIEWPORT_PADDING = 12
 const DROPDOWN_GAP = 6
@@ -156,16 +170,46 @@ const displayValue = computed(() => {
 // 切换下拉框
 function toggleDropdown(): void {
   if (props.disabled) return
-  
+
   if (!isOpen.value) {
-    isOpen.value = true
-    // 先渲染下拉，再根据视口和内容动态定位
-    nextTick(() => {
-      updatePosition()
-      requestAnimationFrame(() => updatePosition())
-    })
+    openDropdown()
   } else {
-    isOpen.value = false
+    closeDropdown()
+  }
+}
+
+function openDropdown(): void {
+  if (props.disabled || isOpen.value) return
+  isOpen.value = true
+  // 先渲染下拉，再根据视口和内容动态定位
+  nextTick(() => {
+    updatePosition()
+    requestAnimationFrame(() => updatePosition())
+  })
+}
+
+function closeDropdown(): void {
+  isOpen.value = false
+}
+
+function handleTriggerKeydown(event: KeyboardEvent): void {
+  if (props.disabled) return
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    toggleDropdown()
+    return
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    openDropdown()
+    return
+  }
+
+  if (event.key === 'Escape' && isOpen.value) {
+    event.preventDefault()
+    closeDropdown()
   }
 }
 
@@ -220,7 +264,7 @@ function updatePosition() {
 function selectOption(value: SelectValue): void {
   emit('update:modelValue', value)
   emit('change', value)
-  isOpen.value = false
+  closeDropdown()
 }
 
 // 点击外部关闭
@@ -235,7 +279,7 @@ function handleClickOutside(event: MouseEvent): void {
     return
   }
 
-  isOpen.value = false
+  closeDropdown()
 }
 
 // 监听页面滚动和调整大小，更新位置或关闭

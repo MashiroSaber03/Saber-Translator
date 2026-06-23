@@ -15,6 +15,7 @@ import { hqTranslateBatch } from '@/api/translate'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { ImageData } from '@/types/image'
 import type { TranslationSettings } from '@/types/settings'
+import type { HqTranslateResponse } from '@/types/api'
 import type { TranslationWarning } from '@/types/translationConstraints'
 import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
@@ -62,6 +63,16 @@ interface TranslationJsonData {
     }>
 }
 
+interface AiTranslateResultData {
+    imageIndex: number
+    bubbles: Array<{
+        bubbleIndex?: number
+        original?: string
+        translated: string
+        textDirection?: string
+    }>
+}
+
 // ============================================================
 // 主函数
 // ============================================================
@@ -92,7 +103,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                     translated: settings.useTextboxPrompt
                         ? (state.textboxText || state.translatedText || '')
                         : (state.translatedText || ''),
-                    // 【简化设计】直接使用 textDirection，它已经是具体方向值
+                    // textDirection 已经是渲染可用的具体方向值。
                     textDirection: (state.textDirection === 'vertical' || state.textDirection === 'horizontal')
                         ? state.textDirection
                         : (state.autoTextDirection === 'vertical' || state.autoTextDirection === 'horizontal')
@@ -158,7 +169,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     let latestWarnings = response.warnings || []
 
     // 6. 校对模式可能有多轮
-    let currentData = translatedData || jsonData
+    let currentData: AiTranslateResultData[] = translatedData || jsonData
     if (isProofread && settings.proofreading.rounds.length > 1) {
         for (let i = 1; i < settings.proofreading.rounds.length; i++) {
             const round = settings.proofreading.rounds[i]!
@@ -170,8 +181,8 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 custom_base_url: round.customBaseUrl,
                 translation_mode: 'proofread',
                 translation_scope: 'batch',
-                // 使用新接口
-                jsonData: currentData as any[],
+                // 使用结构化输入，由后端构建消息
+                jsonData: currentData,
                 imageBase64Array,
                 target_language: settings.targetLanguage,
                 prompt: round.prompt,
@@ -192,12 +203,12 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
 
     // 7. 构建输出结果
     const results = input.tasks.map(t => {
-        const taskData = (currentData as any[])?.find((d: any) => d.imageIndex === t.imageIndex)
+        const taskData = currentData.find((d) => d.imageIndex === t.imageIndex)
         const taskWarnings = latestWarnings.filter((warning) => warning.imageIndex === t.imageIndex)
         if (taskData) {
             return {
                 imageIndex: t.imageIndex,
-                translatedTexts: taskData.bubbles.map((b: any) => b.translated),
+                translatedTexts: taskData.bubbles.map((b) => b.translated),
                 textboxTexts: [] as string[],
                 warnings: taskWarnings
             }
@@ -232,9 +243,9 @@ function extractBase64(dataUrl: string): string {
  * 解析高质量翻译响应
  */
 function parseHqResponse(
-    response: { success: boolean; results?: any[]; content?: string; error?: string },
+    response: Pick<HqTranslateResponse, 'success' | 'results' | 'content' | 'error'>,
     forceJsonOutput: boolean
-): any[] | null {
+): AiTranslateResultData[] | null {
     if (!response.success) {
         console.error('API调用失败:', response.error)
         return null
@@ -242,16 +253,13 @@ function parseHqResponse(
 
     // 优先使用后端已解析的 results
     if (response.results && response.results.length > 0) {
-        const firstItem = response.results[0]
-        if (firstItem && 'imageIndex' in firstItem && 'bubbles' in firstItem) {
-            return response.results
-        }
+        return normalizeAiTranslateResultData(response.results)
     }
 
     // 尝试从 content 解析
     const content = (response as { content?: string }).content
     if (content) {
-        let parsed: any = null
+        let parsed: unknown = null
         if (forceJsonOutput) {
             try {
                 parsed = JSON.parse(content)
@@ -272,13 +280,50 @@ function parseHqResponse(
         // 单张图片 payload 统一包装成批量数组
         if (parsed) {
             if (Array.isArray(parsed)) {
-                return parsed
+                return normalizeAiTranslateResultData(parsed)
             } else if (typeof parsed === 'object' && 'imageIndex' in parsed && 'bubbles' in parsed) {
-                console.log('[executeAiTranslate] 检测到单张图片格式，自动包装为数组')
-                return [parsed]
+                return normalizeAiTranslateResultData([parsed])
             }
         }
     }
 
     return null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+}
+
+function normalizeAiTranslateResultData(value: unknown): AiTranslateResultData[] | null {
+    if (!Array.isArray(value)) {
+        return null
+    }
+
+    const normalized: AiTranslateResultData[] = []
+    for (const item of value) {
+        if (!isRecord(item) || typeof item.imageIndex !== 'number' || !Array.isArray(item.bubbles)) {
+            return null
+        }
+
+        const bubbles: AiTranslateResultData['bubbles'] = []
+        for (const bubble of item.bubbles) {
+            if (!isRecord(bubble) || typeof bubble.translated !== 'string') {
+                return null
+            }
+
+            bubbles.push({
+                ...(typeof bubble.bubbleIndex === 'number' ? { bubbleIndex: bubble.bubbleIndex } : {}),
+                ...(typeof bubble.original === 'string' ? { original: bubble.original } : {}),
+                translated: bubble.translated,
+                ...(typeof bubble.textDirection === 'string' ? { textDirection: bubble.textDirection } : {}),
+            })
+        }
+
+        normalized.push({
+            imageIndex: item.imageIndex,
+            bubbles,
+        })
+    }
+
+    return normalized
 }

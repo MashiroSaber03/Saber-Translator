@@ -13,11 +13,15 @@
           class="ui-modal__container"
           :class="[uiSizeClass, uiChromeClass, customClass]"
           :style="dialogStyle"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="showHeader ? titleId : undefined"
+          :aria-label="!showHeader && title ? title : undefined"
           data-testid="base-dialog-container"
         >
           <!-- 模态框头部 -->
           <div v-if="showHeader" class="ui-modal__header">
-            <h3 class="ui-modal__title">
+            <h3 :id="titleId" class="ui-modal__title">
               <slot name="title">{{ title }}</slot>
             </h3>
             <UiButton
@@ -58,7 +62,7 @@
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, watch, onMounted, onUnmounted, useId } from 'vue'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
 // Props 定义
@@ -193,6 +197,8 @@ const uiSizeClass = computed(() => {
   return `ui-modal__container--${props.size}`
 })
 
+const titleId = useId()
+
 const uiChromeClass = computed(() => {
   return `ui-modal__container--chrome-${props.chromeVariant}`
 })
@@ -281,6 +287,9 @@ watch(
 // 生命周期
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
+  if (props.modelValue) {
+    document.body.style.overflow = 'hidden'
+  }
 })
 
 onUnmounted(() => {

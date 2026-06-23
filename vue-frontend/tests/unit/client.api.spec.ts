@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const {
   requestUseMock,
@@ -33,7 +33,12 @@ vi.mock('axios', () => {
 })
 
 describe('apiClient error normalization', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('rejects API failures as real Error instances with backend metadata', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { ApiClientError } = await import('@/api/client')
     await import('@/api/client')
 

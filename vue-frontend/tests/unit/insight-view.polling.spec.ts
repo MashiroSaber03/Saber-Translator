@@ -74,6 +74,7 @@ describe('InsightView polling', () => {
       global: {
         plugins: [pinia],
         stubs: {
+          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
           AppHeader: { template: '<div><slot name="header-links" /></div>' },
           BookSelector: true,
           AnalysisProgress: true,
@@ -102,5 +103,90 @@ describe('InsightView polling', () => {
     expect(getAnalysisStatusMock).toHaveBeenCalledWith('book-1')
     expect(insightStore.analysisStatus).toBe('idle')
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
+  })
+
+  it('cancels the delayed completed refresh when unmounted', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    insightStore.setAnalysisStatus('idle')
+    insightStore.dataRefreshKey = 0
+
+    const bookshelfStore = useBookshelfStore()
+    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined) as any
+
+    getAnalysisStatusMock.mockResolvedValue({
+      success: true,
+      analyzed: true,
+      fully_analyzed: true,
+      analyzed_pages_count: 5,
+    })
+
+    const wrapper = shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
+          AppHeader: { template: '<div><slot name="header-links" /></div>' },
+          BookSelector: true,
+          AnalysisProgress: true,
+          OverviewPanel: true,
+          TimelinePanel: true,
+          QAPanel: true,
+          NotesPanel: true,
+          PageDetail: true,
+          PagesTree: true,
+          InsightSettingsModal: true,
+          ChapterSelectModal: true,
+          ContinuationPanel: true,
+          'router-link': { template: '<a><slot /></a>' },
+        },
+      },
+    })
+
+    const refreshKeyBefore = insightStore.dataRefreshKey
+    insightStore.setAnalysisStatus('running')
+    await nextTick()
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(insightStore.analysisStatus).toBe('completed')
+    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
+  })
+
+  it('uses safe header navigation semantics', () => {
+    const wrapper = shallowMount(InsightView, {
+      global: {
+        stubs: {
+          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
+          AppHeader: { template: '<div><slot name="header-links" /></div>' },
+          BookSelector: true,
+          AnalysisProgress: true,
+          OverviewPanel: true,
+          TimelinePanel: true,
+          QAPanel: true,
+          NotesPanel: true,
+          PageDetail: true,
+          PagesTree: true,
+          InsightSettingsModal: true,
+          ChapterSelectModal: true,
+          ContinuationPanel: true,
+          'router-link': { template: '<a><slot /></a>' },
+        },
+      },
+    })
+
+    expect(wrapper.find('a[href="javascript:void(0)"]').exists()).toBe(false)
+    expect(wrapper.get('a[href="https://www.mashirosaber.top/use/manga-insight.html"]').attributes('rel'))
+      .toBe('noopener noreferrer')
   })
 })

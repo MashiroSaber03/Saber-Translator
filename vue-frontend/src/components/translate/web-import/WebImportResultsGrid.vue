@@ -51,18 +51,17 @@ defineEmits<{
     </div>
 
     <div class="image-grid">
-      <div
+      <label
         v-for="page in extractResult.pages"
         :key="page.pageNumber"
         class="image-item"
         :class="{ selected: selectedPages.has(page.pageNumber) }"
-        @click="$emit('togglePage', page.pageNumber)"
       >
         <div class="image-checkbox">
           <UiInput
             type="checkbox"
+            :aria-label="`选择第 ${page.pageNumber} 页`"
             :checked="selectedPages.has(page.pageNumber)"
-            @click.stop
             @change="$emit('togglePage', page.pageNumber)"
           />
         </div>
@@ -70,7 +69,7 @@ defineEmits<{
           <img :src="previewUrlFor(page.imageUrl)" :alt="`第${page.pageNumber}页`" loading="lazy">
         </div>
         <div class="image-label">第 {{ page.pageNumber }} 页</div>
-      </div>
+      </label>
     </div>
   </div>
 
@@ -78,7 +77,14 @@ defineEmits<{
     <div class="progress-label">
       下载进度: {{ downloadProgress.current }}/{{ downloadProgress.total }}
     </div>
-    <div class="progress-bar">
+    <div
+      class="progress-bar"
+      role="progressbar"
+      aria-label="网页导入下载进度"
+      aria-valuemin="0"
+      :aria-valuemax="downloadProgress.total"
+      :aria-valuenow="downloadProgress.current"
+    >
       <div class="progress-fill" :style="{ width: `${downloadProgressPercent}%` }"></div>
     </div>
   </div>

@@ -45,13 +45,20 @@ describe('executeTranslate', () => {
       warnings: [{ imageIndex: 0, bubbleIndex: 0, source: 'Alice', expectedTarget: '爱丽丝', actualTranslation: '爱丽丝 <keep>' }],
     })
 
-    const result = await executeTranslate({
-      imageIndex: 0,
-      originalTexts: ['Alice <keep>'],
-      settingsSnapshot: settingsStore.settings,
-      bookTranslationConstraints: constraints,
-      isBookshelfMode: true,
-    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    let result
+    try {
+      result = await executeTranslate({
+        imageIndex: 0,
+        originalTexts: ['Alice <keep>'],
+        settingsSnapshot: settingsStore.settings,
+        bookTranslationConstraints: constraints,
+        isBookshelfMode: true,
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(parallelTranslateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -85,13 +92,19 @@ describe('executeTranslate', () => {
       },
     })
 
-    await executeTranslate({
-      imageIndex: 0,
-      originalTexts: ['Alice <keep>'],
-      settingsSnapshot: settingsStore.settings,
-      bookTranslationConstraints: constraints,
-      isBookshelfMode: true,
-    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await executeTranslate({
+        imageIndex: 0,
+        originalTexts: ['Alice <keep>'],
+        settingsSnapshot: settingsStore.settings,
+        bookTranslationConstraints: constraints,
+        isBookshelfMode: true,
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(translateSingleTextMock).toHaveBeenCalledWith(
       expect.objectContaining({

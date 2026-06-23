@@ -1,7 +1,9 @@
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useImageGeneration } from './useImageGeneration'
+import type { PageContent } from '@/api/continuation'
+import type { ContinuationState } from './useContinuationState'
 
 const {
   getAvailableImagesMock,
@@ -28,6 +30,34 @@ describe('useImageGeneration', () => {
     savePagesMock.mockReset()
   })
 
+  function createState(pages: Ref<PageContent[]>): ContinuationState {
+    return {
+      isLoading: ref(false),
+      isDataReady: ref(true),
+      isSyncingAnalysis: ref(false),
+      currentStep: ref(0),
+      messageType: ref(''),
+      errorMessage: ref(''),
+      successMessage: ref(''),
+      lastAnalysisSyncAt: ref(''),
+      pageCount: ref(10),
+      styleRefPages: ref(2),
+      continuationDirection: ref(''),
+      characters: ref([]),
+      chapterScript: ref(null),
+      pages,
+      imageRefreshKey: ref(0),
+      isGeneratingPages: ref(false),
+      initializeData: vi.fn(),
+      syncAnalysisData: vi.fn(),
+      resetState: vi.fn(),
+      showMessage: vi.fn(),
+      getCharacterImageUrl: vi.fn(),
+      getFormImageUrl: vi.fn(),
+      getGeneratedImageUrl: vi.fn(),
+    }
+  }
+
   it('maintains style reference tokens as the sliding window advances', async () => {
     getAvailableImagesMock.mockResolvedValue({
       success: true,
@@ -50,7 +80,7 @@ describe('useImageGeneration', () => {
     })
     savePagesMock.mockResolvedValue({ success: true })
 
-    const pages = ref([
+    const pages = ref<PageContent[]>([
       {
         page_number: 1,
         continuity_text: '原作末页摘要',
@@ -75,11 +105,7 @@ describe('useImageGeneration', () => {
       },
     ])
 
-    const state = {
-      styleRefPages: ref(2),
-      pages,
-      showMessage: vi.fn(),
-    } as any
+    const state = createState(pages)
 
     const composable = useImageGeneration(ref('book-1'), state)
     await composable.batchGenerateImages(pages.value)
@@ -107,7 +133,7 @@ describe('useImageGeneration', () => {
     })
     savePagesMock.mockResolvedValue({ success: true })
 
-    const pages = ref([
+    const pages = ref<PageContent[]>([
       {
         page_number: 1,
         continuity_text: '原作末页摘要',
@@ -132,11 +158,7 @@ describe('useImageGeneration', () => {
       },
     ])
 
-    const state = {
-      styleRefPages: ref(2),
-      pages,
-      showMessage: vi.fn(),
-    } as any
+    const state = createState(pages)
 
     const composable = useImageGeneration(ref('book-1'), state)
     await composable.batchGenerateImages(pages.value)

@@ -397,7 +397,6 @@ function handleTranslationModeChange(value: any) {
   }
   localSettings.value.promptContent = savedPrompt
   settingsStore.setTranslatePrompt(savedPrompt)
-  console.log(`翻译模式已切换为: ${newMode === 'batch' ? '整页批量翻译' : '逐气泡翻译'}`)
 }
 // 监听本地设置变化，同步到 store
 watch(() => localSettings.value.apiKey, (newVal) => {

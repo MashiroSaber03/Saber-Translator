@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   executeAtomicStepMock,
+  executeBatchAtomicStepMock,
   settingsStoreMock,
   imageStoreMock,
 } = vi.hoisted(() => ({
   executeAtomicStepMock: vi.fn(),
+  executeBatchAtomicStepMock: vi.fn(),
   settingsStoreMock: {
     settings: {
       removeTextWithOcr: false,
@@ -39,7 +41,7 @@ const {
 
 vi.mock('@/composables/translation/core/atomicSteps', () => ({
   executeAtomicStep: executeAtomicStepMock,
-  executeBatchAtomicStep: vi.fn(),
+  executeBatchAtomicStep: executeBatchAtomicStepMock,
 }))
 
 vi.mock('@/stores/settings', () => ({
@@ -53,12 +55,19 @@ vi.mock('@/stores/imageStore', () => ({
 describe('ParallelPipeline failure handling', () => {
   beforeEach(() => {
     executeAtomicStepMock.mockReset()
+    executeBatchAtomicStepMock.mockReset()
+    settingsStoreMock.settings.hqTranslation.batchSize = 1
     imageStoreMock.images = []
     imageStoreMock.setTranslationStatus.mockReset()
     imageStoreMock.updateImageByIndex.mockReset()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('resolves with a failed result when an early pool throws instead of hanging forever', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
     executeAtomicStepMock.mockRejectedValueOnce(new Error('detect exploded'))
 
     const { ParallelPipeline } = await import('@/composables/translation/parallel/ParallelPipeline')
@@ -126,5 +135,63 @@ describe('ParallelPipeline failure handling', () => {
     })
     expect(imageStoreMock.setTranslationStatus).toHaveBeenNthCalledWith(1, 0, 'processing')
     expect(imageStoreMock.setTranslationStatus).toHaveBeenNthCalledWith(2, 0, 'pending')
+  })
+
+  it('resolves all buffered HQ tasks as failed when the batch translation step throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    settingsStoreMock.settings.hqTranslation.batchSize = 2
+    executeAtomicStepMock.mockImplementation(async (_step: string, task: any) => ({
+      ...task,
+      bubbleCoords: [[0, 0, 10, 10]],
+      bubbleAngles: [0],
+      bubblePolygons: [],
+      autoDirections: ['vertical'],
+      textlinesPerBubble: [],
+      originalTexts: ['原文'],
+      ocrResults: [],
+      colors: [],
+    }))
+    executeBatchAtomicStepMock.mockRejectedValue(new Error('ai batch failed'))
+
+    const { ParallelPipeline } = await import('@/composables/translation/parallel/ParallelPipeline')
+    const pipeline = new ParallelPipeline({
+      enabled: true,
+      deepLearningLockSize: 1,
+    })
+
+    const images = [
+      {
+        originalDataURL: 'data:image/png;base64,abc1',
+        translatedDataURL: null,
+        cleanImageData: null,
+        bubbleStates: null,
+        userMask: null,
+      },
+      {
+        originalDataURL: 'data:image/png;base64,abc2',
+        translatedDataURL: null,
+        cleanImageData: null,
+        bubbleStates: null,
+        userMask: null,
+      },
+    ] as any[]
+    imageStoreMock.images = [
+      { translationStatus: 'pending' },
+      { translationStatus: 'pending' },
+    ]
+
+    const result = await Promise.race([
+      pipeline.execute(images, 'hq'),
+      new Promise(resolve => setTimeout(() => resolve('timeout'), 100)),
+    ])
+
+    expect(result).not.toBe('timeout')
+    expect(result).toEqual({
+      success: 0,
+      failed: 2,
+      errors: ['ai batch failed', 'ai batch failed'],
+    })
+    expect(imageStoreMock.setTranslationStatus).toHaveBeenCalledWith(0, 'failed', 'ai batch failed')
+    expect(imageStoreMock.setTranslationStatus).toHaveBeenCalledWith(1, 'failed', 'ai batch failed')
   })
 })

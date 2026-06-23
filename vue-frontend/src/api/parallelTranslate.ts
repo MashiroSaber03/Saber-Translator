@@ -177,7 +177,7 @@ export interface ParallelInpaintParams {
   translation_scope?: string
   bubble_polygons?: number[][][]
   raw_mask?: string       // 文字检测掩膜
-  user_mask?: string      // 用户笔刷掩膜（新增）
+  user_mask?: string      // 用户笔刷掩膜
   method?: string
   lama_model?: string
   fill_color?: string

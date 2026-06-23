@@ -5,14 +5,15 @@
  */
 
 import type { BookData } from '@/types'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 interface Props {
   book: BookData
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   click: []
@@ -20,6 +21,15 @@ const emit = defineEmits<{
 
 const bookshelfStore = useBookshelfStore()
 const allTags = computed(() => bookshelfStore.tags)
+const coverFailed = ref(false)
+
+const hasVisibleCover = computed(() => {
+  return Boolean(props.book.cover && props.book.cover.length > 0 && !coverFailed.value)
+})
+
+watch(() => props.book.cover, () => {
+  coverFailed.value = false
+})
 
 // 处理点击事件
 function handleClick() {
@@ -32,32 +42,24 @@ function getTagColor(tagName: string): string {
   return tagInfo?.color || '#667eea'
 }
 
-// 检查是否有有效封面
-function hasCover(book: BookData): boolean {
-  return !!book.cover && book.cover.length > 0
-}
-
 // 处理图片加载错误
-function handleImageError(event: Event) {
-  const img = event.target as HTMLImageElement
-  if (img.parentElement) {
-    img.style.display = 'none'
-    // 创建占位符
-    const placeholder = document.createElement('div')
-    placeholder.className = 'book-cover-placeholder'
-    placeholder.textContent = '📖'
-    img.parentElement.appendChild(placeholder)
-  }
+function handleImageError() {
+  coverFailed.value = true
 }
 </script>
 
 <template>
-  <!-- 书籍卡片 -  -->
-  <div class="book-card" @click="handleClick">
+  <UiButton
+    variant="toolbar"
+    type="button"
+    class="book-card"
+    :aria-label="`打开书籍：${book.title}`"
+    @click="handleClick"
+  >
     <!-- 封面图片 -->
     <div class="book-cover">
       <img
-        v-if="hasCover(book)"
+        v-if="hasVisibleCover"
         :src="book.cover"
         :alt="book.title"
         @error="handleImageError"
@@ -80,7 +82,7 @@ function handleImageError(event: Event) {
         </span>
       </div>
     </div>
-  </div>
+  </UiButton>
 </template>
 
 <style scoped>
@@ -92,10 +94,13 @@ function handleImageError(event: Event) {
   --book-card-text-primary: rgba(255, 255, 255, .8);
 }
 
-/* ==================== 书籍卡片样式 - 当前样式 ==================== */
-
 /* 书籍卡片 */
 .book-card {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    text-align: left;
     background: var(--color-surface-card);
     border-radius: var(--radius-lg);
     overflow: hidden;

@@ -23,13 +23,14 @@
           <label class="toggle-switch" title="启用/禁用角色">
             <UiInput 
               type="checkbox" 
+              :aria-label="`启用角色 ${character.name}`"
               :checked="character.enabled !== false"
               @change="$emit('toggle-character', ($event.target as HTMLInputElement).checked)"
             />
             <span class="toggle-slider"></span>
           </label>
-          <UiButton variant="toolbar" class="icon-btn-lg" @click="$emit('edit-character')" title="编辑角色">✏️</UiButton>
-          <UiButton variant="danger" class="icon-btn-lg" @click="$emit('delete-character')" title="删除角色">🗑️</UiButton>
+          <UiButton variant="toolbar" class="icon-btn-lg" :aria-label="`编辑角色 ${character.name}`" @click="$emit('edit-character')" title="编辑角色">✏️</UiButton>
+          <UiButton variant="danger" class="icon-btn-lg" :aria-label="`删除角色 ${character.name}`" @click="$emit('delete-character')" title="删除角色">🗑️</UiButton>
         </div>
       </div>
       

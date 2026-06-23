@@ -123,4 +123,30 @@ describe('ImageGenerationPanel', () => {
     expect(wrapper.find('.prompt-edit').exists()).toBe(false)
     expect(wrapper.find('.prompt-collapsed-hint').exists()).toBe(true)
   })
+
+  it('exposes form and progress semantics for generation controls', () => {
+    const wrapper = mount(ImageGenerationPanel, {
+      props: {
+        pages: [createPage()],
+        isGenerating: true,
+        progress: 42,
+        bookId: 'book-1',
+        state: stateStub,
+      },
+      global: {
+        stubs: {
+          ReferenceImageSelector: referenceSelectorStub,
+        },
+      },
+    })
+
+    expect(wrapper.find('label[for="continuation-style-reference-count"]').exists()).toBe(true)
+    expect(wrapper.find('input#continuation-style-reference-count').exists()).toBe(true)
+
+    const progressbar = wrapper.get('[role="progressbar"]')
+    expect(progressbar.attributes('aria-label')).toBe('图片生成进度')
+    expect(progressbar.attributes('aria-valuemin')).toBe('0')
+    expect(progressbar.attributes('aria-valuemax')).toBe('100')
+    expect(progressbar.attributes('aria-valuenow')).toBe('42')
+  })
 })

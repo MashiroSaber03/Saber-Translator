@@ -2,16 +2,15 @@
 /**
  * 可折叠面板组件
  * 提供可展开/折叠的面板容器
- * 
+ *
  * 功能：
  * - 点击标题展开/折叠
  * - 折叠状态图标切换（▶/▼）
  * - 支持默认展开状态
  * - 支持状态持久化（可选）
- * 
- * Requirements: UI一致性
  */
 
+import UiButton from '@/components/ui/UiButton.vue'
 import { ref, watch, onMounted } from 'vue'
 
 // ============================================================
@@ -171,10 +170,13 @@ defineExpose({
       [`collapsible-panel--${variant}`]: true
     }"
   >
-    <!-- 面板头部 -->
-    <div 
+    <UiButton
+      type="button"
+      variant="toolbar"
       class="collapsible-header"
       :class="{ 'clickable': !disabled }"
+      :disabled="disabled"
+      :aria-expanded="isExpanded ? 'true' : 'false'"
       @click="toggle"
     >
       <span class="collapsible-title">
@@ -183,7 +185,7 @@ defineExpose({
       <span class="toggle-icon" :class="{ 'expanded': isExpanded }">
         {{ isExpanded ? expandedIcon : collapsedIcon }}
       </span>
-    </div>
+    </UiButton>
     
     <!-- 面板内容 -->
     <div 
@@ -233,18 +235,20 @@ defineExpose({
   max-height: 0;
 }
 
-/* ===================================
-   可折叠面板样式 - 当前样式
-   =================================== */
-
 .collapsible-header {
   cursor: pointer;
   display: flex;
+  width: 100%;
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
   margin: 0;
+  border: 0;
   user-select: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .collapsible-header:hover {

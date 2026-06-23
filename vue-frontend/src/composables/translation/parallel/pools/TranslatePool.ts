@@ -92,7 +92,23 @@ export class TranslatePool extends TaskPool {
     const batch = [...this.batchBuffer]
     this.batchBuffer = []
 
-    const translatedBatch = await executeBatchAtomicStep('aiTranslate', batch, runtime)
+    let translatedBatch: PipelineTask[]
+    try {
+      translatedBatch = await executeBatchAtomicStep('aiTranslate', batch, runtime)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI 翻译失败'
+      for (const bufferedTask of batch) {
+        if (bufferedTask === task) {
+          continue
+        }
+        this.onTaskComplete?.({
+          ...bufferedTask,
+          status: 'failed',
+          error: message,
+        })
+      }
+      throw error
+    }
 
     for (const translatedTask of translatedBatch) {
       if (this.nextPool) {

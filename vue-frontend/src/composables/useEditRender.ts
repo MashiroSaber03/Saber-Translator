@@ -102,13 +102,10 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
 
     // 没有气泡坐标时跳过后端渲染。
     if (bubbles.value.length === 0) {
-      console.log('reRenderFullImage: 没有气泡，跳过后端渲染')
-
       // 无气泡时仍展示当前干净背景图，保证笔刷处理结果可见。
       const cleanBase64 = getCleanImageBase64()
       if (cleanBase64) {
         if (!isSameCurrentImage(expectedImageId)) {
-          console.log('reRenderFullImage: 图片已切换，忽略过期的空气泡渲染结果')
           return false
         }
         const translatedDataURL = `data:image/png;base64,${cleanBase64}`
@@ -138,8 +135,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
-      console.log('reRenderFullImage: 开始重新渲染，气泡数量:', bubbles.value.length)
-
       const bubbleStates = bubbles.value
       const response = await executeRender({
         imageIndex: imageStore.currentImageIndex,
@@ -173,16 +168,14 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
           fontSize: 'preserve',
           color: 'preserve',
         },
-      } as any)
+      })
 
       // 检查token是否过期（被新的渲染请求取代）
       if (currentRenderToken !== renderToken) {
-        console.log('reRenderFullImage: 渲染结果已过期，忽略')
         return false
       }
 
       if (!isSameCurrentImage(expectedImageId)) {
-        console.log('reRenderFullImage: 当前图片已切换，忽略过期渲染结果')
         return false
       }
 
@@ -194,7 +187,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
           hasUnsavedChanges: true,
         })
 
-        console.log('reRenderFullImage: 渲染成功')
         if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
         return true
       } else {

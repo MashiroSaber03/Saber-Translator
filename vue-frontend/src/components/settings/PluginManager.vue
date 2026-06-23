@@ -71,7 +71,15 @@
       <div class="plugin-config-content">
         <div class="plugin-config-header">
           <h4>{{ configPlugin?.display_name }} 配置</h4>
-          <span class="close-btn" @click="closeConfigModal">&times;</span>
+          <UiButton
+            variant="toolbar"
+            type="button"
+            class="close-btn"
+            aria-label="关闭插件配置"
+            @click="closeConfigModal"
+          >
+            &times;
+          </UiButton>
         </div>
         <div class="plugin-config-body">
           <div v-for="(field, key) in configSchema" :key="key" class="config-field" :class="`field-${field.type}`">
@@ -591,6 +599,9 @@ onMounted(() => {
 }
 
 .plugin-manager .close-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
   width: 36px;
   height: 36px;
   display: inline-flex;

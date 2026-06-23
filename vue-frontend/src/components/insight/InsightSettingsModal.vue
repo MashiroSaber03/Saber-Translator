@@ -1,18 +1,15 @@
 <script setup lang="ts">
 /**
- * 漫画分析设置模态框组件（重构版）
- * 配置VLM、LLM、Embedding、Reranker等模型参数
- * 
- * 子组件已拆分到 ./settings/ 目录
+ * 漫画分析设置模态框组件
+ * 配置 VLM、LLM、Embedding、Reranker、生图和提示词参数
  */
 
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 
-// 导入拆分的子组件
 import VlmSettingsTab from './settings/VlmSettingsTab.vue'
 import LlmSettingsTab from './settings/LlmSettingsTab.vue'
 import BatchSettingsTab from './settings/BatchSettingsTab.vue'
@@ -50,6 +47,8 @@ const testMessage = ref('')
 
 /** 测试结果类型 */
 const testMessageType = ref<'success' | 'error' | ''>('')
+let messageTimer: ReturnType<typeof setTimeout> | null = null
+let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 // ============================================================
 // 子组件引用
@@ -80,18 +79,36 @@ function switchSettingsTab(tab: typeof activeSettingsTab.value): void {
  * 关闭模态框
  */
 function close(): void {
+  clearMessageTimer()
+  clearCloseTimer()
   emit('close')
+}
+
+function clearMessageTimer(): void {
+  if (messageTimer) {
+    clearTimeout(messageTimer)
+    messageTimer = null
+  }
+}
+
+function clearCloseTimer(): void {
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
 }
 
 /**
  * 显示消息（由子组件调用）
  */
 function showMessage(message: string, type: 'success' | 'error'): void {
+  clearMessageTimer()
   testMessage.value = message
   testMessageType.value = type
-  setTimeout(() => {
+  messageTimer = setTimeout(() => {
     testMessage.value = ''
     testMessageType.value = ''
+    messageTimer = null
   }, 3000)
 }
 
@@ -139,7 +156,9 @@ async function saveSettings(): Promise<void> {
     
     if (response.success) {
       showMessage('设置已保存', 'success')
-      setTimeout(() => {
+      clearCloseTimer()
+      closeTimer = setTimeout(() => {
+        closeTimer = null
         close()
       }, 500)
     } else {
@@ -193,6 +212,11 @@ function syncAllFromStore(): void {
 
 onMounted(async () => {
   await loadConfig()
+})
+
+onBeforeUnmount(() => {
+  clearMessageTimer()
+  clearCloseTimer()
 })
 </script>
 

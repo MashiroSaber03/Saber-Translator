@@ -1,7 +1,6 @@
 /**
  * 图片查看器组合式函数
  * 提供缩放、平移、视口同步等功能
- * 对应原 image_viewer.js 中的 ImageViewer 类
  */
 
 import { ref, computed } from 'vue'
@@ -52,6 +51,13 @@ const DEFAULT_OPTIONS: Required<Omit<ImageViewerOptions, 'onScaleChange' | 'onTr
 export function useImageViewer(options: ImageViewerOptions = {}) {
   const config = { ...DEFAULT_OPTIONS, ...options }
 
+  function clampScale(value: number): number {
+    if (!Number.isFinite(value)) {
+      return config.minScale
+    }
+    return Math.min(Math.max(value, config.minScale), config.maxScale)
+  }
+
   // ============================================================
   // 状态
   // ============================================================
@@ -93,11 +99,10 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
    * @param factor - 缩放因子
    */
   function zoomAt(x: number, y: number, factor: number): void {
-    const newScale = Math.min(
-      Math.max(scale.value * factor, config.minScale),
-      config.maxScale
-    )
-    const scaleChange = newScale / scale.value
+    const currentScale = clampScale(scale.value)
+    scale.value = currentScale
+    const newScale = clampScale(currentScale * factor)
+    const scaleChange = newScale / currentScale
 
     // 以鼠标位置为中心缩放
     translateX.value = x - (x - translateX.value) * scaleChange
@@ -140,7 +145,8 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
    * @param viewportHeight - 视口高度
    */
   function setScale(newScale: number, viewportWidth = 800, viewportHeight = 600): void {
-    const factor = newScale / scale.value
+    scale.value = clampScale(scale.value)
+    const factor = clampScale(newScale) / scale.value
     zoomAt(viewportWidth / 2, viewportHeight / 2, factor)
   }
 
@@ -275,7 +281,7 @@ export function useImageViewer(options: ImageViewerOptions = {}) {
    */
   function setTransform(transform: Partial<TransformState>): void {
     if (transform.scale !== undefined) {
-      scale.value = transform.scale
+      scale.value = clampScale(transform.scale)
     }
     if (transform.translateX !== undefined) {
       translateX.value = transform.translateX

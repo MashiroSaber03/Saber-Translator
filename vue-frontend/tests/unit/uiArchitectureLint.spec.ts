@@ -29,8 +29,17 @@ const migrationMindsetOldVersion = '旧' + '版 handleBubbleMouseDown'
 const migrationMindsetMigratedFrom = '迁移' + '自 main' + '.js'
 const migrationMindsetOriginalReference = '对应' + '原' + '版 edit_mode' + '.js'
 const migrationMindsetOriginalCore = '原' + '版 edit_mode' + '.js'
+const migrationMindsetOriginalJsReference = '对应' + '原 image_viewer' + '.js'
 const migrationMindsetOldFileName = '当前行为 bookshelf' + '.js'
 const migrationMindsetOldFileNameCore = 'bookshelf' + '.js'
+const migrationMindsetSimplifiedDesign = '【简化' + '设计】'
+const composableHistoryExtracted = '从 TranslateView 提' + '取'
+const composableHistorySimplified = '简化' + '设计'
+const composableExplicitAny = 'as ' + 'any'
+const relativeExportStatement = 'export * fr' + 'om'
+const missingRelativeExport = './missing' + 'Type'
+const characterStudioTypeExport = './character' + 'Studio'
+const webImportTypeExport = './web' + 'Import'
 const legacyProviderCustomOpenAi = 'custom' + '_openai'
 const legacyProviderCustomOpenAiVision = 'custom' + '_openai_vision'
 const legacyIdsField = 'legacy' + 'Ids'
@@ -46,6 +55,7 @@ const thresholdPaddleOcrField = 'threshold' + 'PaddleOcr'
 const oldIsJsonModeField = 'is' + 'JsonMode'
 const oldForceJsonField = 'force' + 'Json'
 const oldMaxRetriesField = 'max' + 'Retries'
+const webImportSchemaVersionField = 'webImportSettings' + 'SchemaVersion'
 const primitiveButtonInternalSelector = '.ui-button' + '--primary'
 const primitiveModalBodySelector = '.ui-modal' + '__body'
 const componentPrivateDomainToken = '--character-studio-preview-shell-surface-base'
@@ -60,6 +70,7 @@ const studioDomainSemanticToken = '--color-text-studio-strong'
 const vagueComponentToken = '--app-header-surface-base'
 const roleComponentToken = '--app-header-background'
 const domainTokenLimit = 50
+const studioOwnerToken = '--studio-border-default'
 
 function runUiArchitectureTokenFixture(tokensCss: string, tokenPath = 'src/styles/tokens/domain.css') {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
@@ -367,6 +378,21 @@ describe('UI architecture CSS variable ownership lint', () => {
     expect(result.stdout).toContain('UI architecture check passed')
   })
 
+  it('allows page owners to set public UI primitive variables', () => {
+    const result = runUiArchitectureSourceFixture('src/views/CharacterStudioView.vue', `
+      <template><main class="studio-page"></main></template>
+      <style scoped>
+      .studio-page {
+        --studio-border-default: rgba(28, 55, 94, 0.08);
+        --ui-button-ghost-border: 1px solid var(--studio-border-default);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
   it('rejects business CSS that reads legacy compatibility variables', () => {
     const result = runUiArchitectureSourceFixture('BookSearch.vue', `
       <template><div class="book-search"></div></template>
@@ -556,6 +582,21 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('.ui-input')
   })
 
+  it('rejects domain owner token references from UI primitives', () => {
+    const result = runUiArchitectureSourceFixture('src/components/ui/UiButton.vue', `
+      <template><button class="ui-button">Button</button></template>
+      <style scoped>
+      .ui-button--ghost {
+        border: 1px solid var(${studioOwnerToken});
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('business owner token reference(s)')
+    expect(result.stderr).toContain(studioOwnerToken)
+  })
+
   it('allows explicit global style imports for Teleport or slot reach-through owners', () => {
     const result = runUiArchitectureSourceFixture('Panel.vue', `
       <script setup lang="ts">
@@ -743,6 +784,7 @@ describe('UI architecture old implementation mindset lint', () => {
       // ${migrationMindsetOldVersion}
       // ${migrationMindsetMigratedFrom}
       // ${migrationMindsetOriginalReference}
+      // ${migrationMindsetOriginalJsReference}
       // ${migrationMindsetOldFileName}
       </script>
       <style scoped>
@@ -757,7 +799,19 @@ describe('UI architecture old implementation mindset lint', () => {
     expect(result.stderr).toContain(migrationMindsetOldVersion)
     expect(result.stderr).toContain(migrationMindsetMigratedFrom)
     expect(result.stderr).toContain(migrationMindsetOriginalCore)
+    expect(result.stderr).toContain(migrationMindsetOriginalJsReference)
     expect(result.stderr).toContain(migrationMindsetOldFileNameCore)
+  })
+
+  it('rejects implementation-history labels in frontend contract comments', () => {
+    const result = runUiArchitectureSourceFixture('src/types/bubble.ts', `
+      // ${migrationMindsetSimplifiedDesign}
+      export type Direction = 'vertical' | 'horizontal'
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('old implementation mindset comment')
+    expect(result.stderr).toContain(migrationMindsetSimplifiedDesign)
   })
 
   it('keeps audit output free of accepted debt noise', () => {
@@ -773,6 +827,78 @@ describe('UI architecture old implementation mindset lint', () => {
 })
 
 describe('UI architecture source hygiene lint', () => {
+  it('rejects implementation-history wording inside production composables', () => {
+    const result = runUiArchitectureSourceFixture('src/composables/useExtractedState.ts', `
+      // ${composableHistoryExtracted}的逻辑。
+      // 【${composableHistorySimplified}】保留当前值。
+      export function useExtractedState() {
+        return {}
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('composable implementation-history wording')
+    expect(result.stderr).toContain(composableHistoryExtracted)
+    expect(result.stderr).toContain(composableHistorySimplified)
+  })
+
+  it('rejects explicit any in production composables', () => {
+    const result = runUiArchitectureSourceFixture('src/composables/useUnsafePayload.ts', `
+      export function useUnsafePayload(payload: unknown) {
+        return payload ${composableExplicitAny}
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('explicit any in production composable')
+    expect(result.stderr).toContain(composableExplicitAny)
+  })
+
+  it('rejects explicit any in production types', () => {
+    const result = runUiArchitectureSourceFixture('src/types/unsafePayload.ts', `
+      export interface UnsafePayload {
+        payload: ${'any'}
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('explicit any in production type')
+    expect(result.stderr).toContain(': any')
+  })
+
+  it('rejects explicit any in production utils', () => {
+    const result = runUiArchitectureSourceFixture('src/utils/unsafeParser.ts', `
+      export function parsePayload(payload: unknown) {
+        return payload ${composableExplicitAny}
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('explicit any in production util')
+    expect(result.stderr).toContain(composableExplicitAny)
+  })
+
+  it('rejects unresolved relative exports in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('src/types/index.ts', `
+      ${relativeExportStatement} '${missingRelativeExport}'
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('unresolved relative export')
+    expect(result.stderr).toContain(missingRelativeExport)
+  })
+
+  it('requires current page-domain type modules in the public type barrel', () => {
+    const result = runUiArchitectureSourceFixture('src/types/index.ts', `
+      export interface LocalOnly {}
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('types barrel missing export(s)')
+    expect(result.stderr).toContain(characterStudioTypeExport)
+    expect(result.stderr).toContain(webImportTypeExport)
+  })
+
   it('rejects checked-in local build and dev log files', () => {
     const result = runUiArchitectureSourceFixture('build_output.txt', `
       vite build output
@@ -838,5 +964,17 @@ describe('UI architecture frontend schema compatibility lint', () => {
     expect(result.stderr).toContain(threshold48pxField)
     expect(result.stderr).toContain(thresholdMangaOcrField)
     expect(result.stderr).toContain(thresholdPaddleOcrField)
+  })
+
+  it('rejects optional current schema version fields in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('src/types/webImport.ts', `
+      export interface WebImportSettingsPayload {
+        ${webImportSchemaVersionField}?: number
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('current schema version fields must be required')
+    expect(result.stderr).toContain(`${webImportSchemaVersionField}?:`)
   })
 })

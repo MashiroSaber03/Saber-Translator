@@ -72,14 +72,20 @@ describe('executeDetection saber yolo refine flags', () => {
 
     const { executeDetection } = await import('@/composables/translation/core/steps/detection')
 
-    await executeDetection({
-      imageIndex: 0,
-      image: {
-        originalDataURL: 'data:image/png;base64,ZmFrZQ==',
-        bubbleStates: undefined
-      } as any,
-      settingsSnapshot: detectionSettingsSnapshot,
-    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await executeDetection({
+        imageIndex: 0,
+        image: {
+          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
+          bubbleStates: undefined
+        } as any,
+        settingsSnapshot: detectionSettingsSnapshot,
+      })
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
 
     expect(parallelDetectMock).toHaveBeenCalledTimes(2)
     expect(parallelDetectMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -97,5 +103,43 @@ describe('executeDetection saber yolo refine flags', () => {
       enable_aux_yolo_detection: false
     }))
     expect(parallelDetectMock.mock.calls[1]?.[0]).not.toHaveProperty('min_text_block_area_percent')
+  })
+
+  it('keeps existing and cleared bubble detection skips quiet', async () => {
+    const { executeDetection } = await import('@/composables/translation/core/steps/detection')
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      await executeDetection({
+        imageIndex: 0,
+        image: {
+          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
+          bubbleStates: [
+            {
+              coords: [0, 0, 10, 10],
+              rotationAngle: 0,
+              autoTextDirection: 'vertical',
+              textDirection: 'vertical',
+              originalText: '原文',
+              textlines: [],
+            }
+          ]
+        } as any,
+        settingsSnapshot: detectionSettingsSnapshot,
+      })
+
+      await executeDetection({
+        imageIndex: 1,
+        image: {
+          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
+          bubbleStates: []
+        } as any,
+        settingsSnapshot: detectionSettingsSnapshot,
+      })
+
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
   })
 })

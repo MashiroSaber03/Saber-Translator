@@ -3,17 +3,20 @@
 /**
  * 右侧缩略图侧边栏组件
  * 显示图片概览列表，固定在页面右侧
- * 
+ *
  * 支持两种模式：
  * - 扁平模式：普通的图片列表
  * - 文件夹模式：面包屑导航 + 扁平列表（无缩进）
  */
 
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, type ComponentPublicInstance } from 'vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useFolderTree } from '@/composables/useFolderTree'
 import { useThumbnailSelection } from '@/composables/useThumbnailSelection'
 import type { FolderNode } from '@/types/folder'
+
+type TemplateElementRef = Element | ComponentPublicInstance | null
 
 // ============================================================
 // Props 和 Emits
@@ -65,8 +68,8 @@ const hasImages = computed(() => imageStore.hasImages)
 // 文件夹树逻辑（使用 Composable）
 // ============================================================
 
-const { 
-  useTreeMode, 
+const {
+  useTreeMode,
   breadcrumbs,
   currentSubfolders,
   currentImages,
@@ -124,24 +127,24 @@ function handleBreadcrumbClick(path: string) {
 function scrollToActiveThumbnail() {
   nextTick(() => {
     const activeThumb = thumbnailRefs.value[currentIndex.value]
-    
+
     // 智能选择滚动容器：
     // - 文件夹模式：使用 containerRef (.folder-content-list)
     // - 扁平模式：使用 sidebarRef (aside)
-    const scrollContainer = (useTreeMode.value && containerRef.value) 
-      ? containerRef.value 
+    const scrollContainer = (useTreeMode.value && containerRef.value)
+      ? containerRef.value
       : sidebarRef.value
-    
+
     if (activeThumb && scrollContainer) {
       // 计算缩略图相对于滚动容器的位置
       const thumbRect = activeThumb.getBoundingClientRect()
       const containerRect = scrollContainer.getBoundingClientRect()
-      
+
       // 计算需要滚动的距离，使缩略图居中显示
       const thumbCenter = thumbRect.top + thumbRect.height / 2
       const containerCenter = containerRect.top + containerRect.height / 2
       const scrollOffset = thumbCenter - containerCenter
-      
+
       scrollContainer.scrollTo({
         top: scrollContainer.scrollTop + scrollOffset,
         behavior: 'smooth'
@@ -153,8 +156,16 @@ function scrollToActiveThumbnail() {
 /**
  * 设置缩略图引用
  */
-function setThumbnailRef(el: HTMLElement | null, index: number) {
-  thumbnailRefs.value[index] = el
+function resolveTemplateElement(el: TemplateElementRef): HTMLElement | null {
+  if (!el) return null
+  if (el instanceof HTMLElement) return el
+
+  const componentElement = el.$el
+  return componentElement instanceof HTMLElement ? componentElement : null
+}
+
+function setThumbnailRef(el: TemplateElementRef, index: number) {
+  thumbnailRefs.value[index] = resolveTemplateElement(el)
 }
 
 // 监听当前索引变化
@@ -181,40 +192,52 @@ onMounted(() => {
   <aside ref="sidebarRef" id="thumbnail-sidebar" class="thumbnail-sidebar">
     <div class="ui-panel-card thumbnail-card">
       <h2>图片概览</h2>
-      
+
       <!-- 文件夹模式：面包屑导航 + 扁平列表 -->
       <template v-if="hasImages && useTreeMode && folderTree">
         <!-- 面包屑导航 -->
         <div class="breadcrumb-nav">
           <template v-for="(crumb, idx) in breadcrumbs" :key="crumb.path">
-            <span 
-              class="breadcrumb-item"
-              :class="{ active: idx === breadcrumbs.length - 1 }"
-              @click="idx < breadcrumbs.length - 1 && handleBreadcrumbClick(crumb.path)"
+            <span
+              v-if="idx === breadcrumbs.length - 1"
+              class="breadcrumb-item active"
+              aria-current="page"
             >
               {{ idx === 0 ? '📁' : '' }}{{ crumb.name }}
             </span>
+            <UiButton
+              v-else
+              variant="toolbar"
+              class="breadcrumb-item"
+              :aria-label="`打开${crumb.name}`"
+              @click="handleBreadcrumbClick(crumb.path)"
+            >
+              {{ idx === 0 ? '📁' : '' }}{{ crumb.name }}
+            </UiButton>
             <span v-if="idx < breadcrumbs.length - 1" class="breadcrumb-sep">/</span>
           </template>
         </div>
 
         <!-- 返回上级按钮 -->
-        <div 
-          v-if="currentFolderPath" 
+        <UiButton
+          v-if="currentFolderPath"
+          variant="toolbar"
           class="folder-back-btn"
           @click="goUp"
         >
           <span class="back-icon">⬅️</span>
           <span>返回上级</span>
-        </div>
+        </UiButton>
 
         <!-- 内容列表 -->
         <div ref="containerRef" class="folder-content-list">
           <!-- 子文件夹列表 -->
-          <div
+          <UiButton
             v-for="subfolder in currentSubfolders"
             :key="subfolder.path"
+            variant="toolbar"
             class="folder-item"
+            :aria-label="`打开文件夹 ${subfolder.name}`"
             @click="handleFolderClick(subfolder)"
           >
             <span class="folder-icon">📁</span>
@@ -222,21 +245,24 @@ onMounted(() => {
               <span class="folder-name" :title="subfolder.name">{{ subfolder.name }}</span>
               <span class="folder-count">({{ getFolderImageCount(subfolder) }})</span>
             </div>
-          </div>
-          
+          </UiButton>
+
           <!-- 当前文件夹的图片 -->
-          <div
+          <UiButton
             v-for="image in currentImages"
             :key="image.id"
-            :ref="(el) => setThumbnailRef(el as HTMLElement | null, getImageGlobalIndex(image))"
+            :ref="(el) => setThumbnailRef(el, getImageGlobalIndex(image))"
+            variant="toolbar"
             class="thumbnail-sidebar__item"
             :class="{ active: getImageGlobalIndex(image) === currentIndex }"
             :title="getThumbnailTitle(image)"
+            :aria-current="getImageGlobalIndex(image) === currentIndex ? 'true' : undefined"
+            :aria-label="`选择图片 ${getImageGlobalIndex(image) + 1}: ${image.fileName}`"
             @click="handleClick(getImageGlobalIndex(image))"
           >
-            <img 
+            <img
               v-if="image.originalDataURL"
-              :src="image.originalDataURL" 
+              :src="image.originalDataURL"
               :alt="image.fileName"
               class="thumbnail-image"
             >
@@ -248,20 +274,20 @@ onMounted(() => {
             <span v-if="getStatusType(image) === 'failed'" class="translation-failed-indicator">!</span>
             <span v-else-if="getStatusType(image) === 'labeled'" class="labeled-indicator">✏️</span>
             <div v-if="getStatusType(image) === 'processing'" class="thumbnail-processing-indicator">⟳</div>
-          </div>
+          </UiButton>
 
           <!-- 空文件夹提示 -->
-          <div 
-            v-if="currentSubfolders.length === 0 && currentImages.length === 0" 
+          <div
+            v-if="currentSubfolders.length === 0 && currentImages.length === 0"
             class="empty-folder"
           >
             <p>此文件夹为空</p>
           </div>
         </div>
       </template>
-      
-      <!-- 扁平模式（保留原有完整代码） -->
-      <ul 
+
+      <!-- 扁平模式：按当前图片列表顺序展示缩略图 -->
+      <ul
         v-else-if="hasImages"
         ref="containerRef"
         id="thumbnailList"
@@ -270,41 +296,48 @@ onMounted(() => {
         <li
           v-for="(image, index) in images"
           :key="image.id"
-          :ref="(el) => setThumbnailRef(el as HTMLElement | null, index)"
-          class="thumbnail-sidebar__item"
-          :class="{ active: index === currentIndex }"
-          :title="getThumbnailTitle(image)"
+          class="thumbnail-list__entry"
           :data-index="index"
-          @click="handleClick(index)"
         >
-          <img 
-            v-if="image.originalDataURL"
-            :src="image.originalDataURL" 
-            :alt="image.fileName"
-            class="thumbnail-image"
+          <UiButton
+            :ref="(el) => setThumbnailRef(el, index)"
+            variant="toolbar"
+            class="thumbnail-sidebar__item"
+            :class="{ active: index === currentIndex }"
+            :title="getThumbnailTitle(image)"
+            :aria-current="index === currentIndex ? 'true' : undefined"
+            :aria-label="`选择图片 ${index + 1}: ${image.fileName}`"
+            @click="handleClick(index)"
           >
-          <!-- 页码角标（左下角） -->
-          <span class="page-number-indicator">{{ index + 1 }}</span>
-          <!-- 已翻译角标（左上角） -->
-          <span v-if="isTranslated(image)" class="translated-indicator">✓</span>
-          <!-- 状态角标 -->
-          <span 
-            v-if="getStatusType(image) === 'failed'"
-            class="translation-failed-indicator"
-          >!</span>
-          <span 
-            v-else-if="getStatusType(image) === 'labeled'"
-            class="labeled-indicator"
-          >✏️</span>
-          <div 
-            v-if="getStatusType(image) === 'processing'"
-            class="thumbnail-processing-indicator"
-          >
-            ⟳
-          </div>
+            <img
+              v-if="image.originalDataURL"
+              :src="image.originalDataURL"
+              :alt="image.fileName"
+              class="thumbnail-image"
+            >
+            <!-- 页码角标（左下角） -->
+            <span class="page-number-indicator">{{ index + 1 }}</span>
+            <!-- 已翻译角标（左上角） -->
+            <span v-if="isTranslated(image)" class="translated-indicator">✓</span>
+            <!-- 状态角标 -->
+            <span
+              v-if="getStatusType(image) === 'failed'"
+              class="translation-failed-indicator"
+            >!</span>
+            <span
+              v-else-if="getStatusType(image) === 'labeled'"
+              class="labeled-indicator"
+            >✏️</span>
+            <div
+              v-if="getStatusType(image) === 'processing'"
+              class="thumbnail-processing-indicator"
+            >
+              ⟳
+            </div>
+          </UiButton>
         </li>
       </ul>
-      
+
       <div v-else class="empty-state">
         <p>暂无图片</p>
       </div>
@@ -312,7 +345,8 @@ onMounted(() => {
   </aside>
 </template>
 
-<style scoped>/* ===================================
+<style scoped>
+/* ===================================
    缩略图侧边栏样式 - 缩略图列表
    =================================== */
 
@@ -407,6 +441,7 @@ onMounted(() => {
 .breadcrumb-item {
   color: var(--color-text-link);
   cursor: pointer;
+  font: inherit;
   word-break: break-word;
 }
 
@@ -433,13 +468,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 8px 12px;
+  border: 0;
   background: linear-gradient(135deg, var(--thumbnail-sidebar-surface-raised) 0%, var(--thumbnail-sidebar-surface-muted) 100%);
   border-radius: 8px;
   cursor: pointer;
+  font: inherit;
   margin-bottom: 12px;
   font-size: 13px;
   color: var(--color-text-link);
+  text-align: left;
   transition: all 0.2s;
 }
 
@@ -467,11 +506,15 @@ onMounted(() => {
 /* 文件夹项样式 */
 .folder-item {
   position: relative;
+  display: block;
+  width: 100%;
   padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
   border: 1px solid var(--thumbnail-sidebar-border-muted);
+  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
   border-radius: 8px;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   transition: all 0.2s;
   flex-shrink: 0;
 }
@@ -534,17 +577,24 @@ onMounted(() => {
   gap: 15px;
 }
 
+.thumbnail-list__entry {
+  margin: 0;
+}
+
 /* ===================================
    缩略图项基础样式（两种模式通用）
    =================================== */
 
 .thumbnail-sidebar .thumbnail-sidebar__item,
 .folder-content-list .thumbnail-sidebar__item {
+  display: block;
+  width: 100%;
   margin-bottom: 0;
   cursor: pointer;
   border: 2px solid var(--color-border-muted);
   border-radius: 8px;
   padding: 5px;
+  background: transparent;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;

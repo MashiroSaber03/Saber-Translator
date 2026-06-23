@@ -5,10 +5,24 @@
  * **Validates: Requirements 24.4**
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useInsightStore, type NoteData, type NoteType } from '@/stores/insightStore'
+
+const insightApiMocks = vi.hoisted(() => ({
+  getNotes: vi.fn(),
+  createNote: vi.fn(),
+  updateNote: vi.fn(),
+  deleteNote: vi.fn(),
+}))
+
+vi.mock('@/api/insight', () => ({
+  getNotes: insightApiMocks.getNotes,
+  createNote: insightApiMocks.createNote,
+  updateNote: insightApiMocks.updateNote,
+  deleteNote: insightApiMocks.deleteNote,
+}))
 
 // ============================================================
 // 测试数据生成器
@@ -64,6 +78,16 @@ describe('漫画分析笔记属性测试', () => {
   beforeEach(() => {
     // 创建新的 Pinia 实例
     setActivePinia(createPinia())
+    insightApiMocks.getNotes.mockResolvedValue({ success: false })
+    insightApiMocks.createNote.mockResolvedValue({ success: true })
+    insightApiMocks.updateNote.mockResolvedValue({ success: true })
+    insightApiMocks.deleteNote.mockResolvedValue({ success: true })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   /**

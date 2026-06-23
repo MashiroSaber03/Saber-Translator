@@ -257,10 +257,27 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
       <div class="saved-prompts-list">
         <div v-if="isLoadingPrompts" class="loading-text">加载中...</div>
         <div v-else-if="savedPromptsLibrary.length === 0" class="placeholder-text">暂无保存的提示词</div>
-        <div v-else v-for="promptItem in savedPromptsLibrary" :key="promptItem.id" class="saved-prompt-item" @click="loadPromptFromLibrary(promptItem)">
-          <span class="prompt-name">{{ promptItem.name }}</span>
-          <span class="prompt-type-badge">{{ insightApi.PROMPT_METADATA[promptItem.type]?.label || promptItem.type }}</span>
-          <UiButton variant="toolbar" class="button-icon-sm" @click.stop="deletePromptFromLibrary(promptItem.id)" title="删除">🗑️</UiButton>
+        <div v-else v-for="promptItem in savedPromptsLibrary" :key="promptItem.id" class="saved-prompt-item">
+          <UiButton
+            variant="toolbar"
+            type="button"
+            class="saved-prompt-load"
+            :aria-label="`加载提示词：${promptItem.name}`"
+            @click="loadPromptFromLibrary(promptItem)"
+          >
+            <span class="prompt-name">{{ promptItem.name }}</span>
+            <span class="prompt-type-badge">{{ insightApi.PROMPT_METADATA[promptItem.type]?.label || promptItem.type }}</span>
+          </UiButton>
+          <UiButton
+            variant="toolbar"
+            type="button"
+            class="button-icon-sm saved-prompt-delete"
+            :aria-label="`删除提示词：${promptItem.name}`"
+            title="删除"
+            @click="deletePromptFromLibrary(promptItem.id)"
+          >
+            🗑️
+          </UiButton>
         </div>
       </div>
     </div>
@@ -444,8 +461,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
+  padding: 0 12px 0 0;
   border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
   transition: background 0.2s;
 }
@@ -456,6 +472,17 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
 
 .insight-settings-content .saved-prompt-item:hover {
   background: var(--color-surface-hover);
+}
+
+.insight-settings-content .saved-prompt-load {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0 8px 12px;
+  color: inherit;
+  text-align: left;
 }
 
 .insight-settings-content .prompt-name {

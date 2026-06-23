@@ -9,7 +9,12 @@
       </div>
       <label class="upload-overlay">
         <span class="upload-text">{{ form.reference_image ? '更换图片' : '上传图片' }}</span>
-        <UiFileInput accept="image/*" hidden @change="handleUpload" />
+        <UiFileInput
+          accept="image/*"
+          hidden
+          :aria-label="`上传 ${characterName} ${form.form_name} 参考图`"
+          @change="handleUpload"
+        />
       </label>
     </div>
     
@@ -28,21 +33,22 @@
         <label class="toggle-control" :title="form.enabled !== false ? '点击禁用' : '点击启用'">
           <UiInput 
             type="checkbox" 
+            :aria-label="`启用 ${characterName} ${form.form_name}`"
             :checked="form.enabled !== false"
             @change="$emit('toggle-enabled', ($event.target as HTMLInputElement).checked)"
           />
           <span class="toggle-track"></span>
         </label>
-        <UiButton variant="toolbar" class="action-btn generate-btn" @click="$emit('generate-orthographic')" title="生成三视图">
+        <UiButton variant="toolbar" class="action-btn generate-btn" :aria-label="`生成 ${characterName} ${form.form_name} 三视图`" @click="$emit('generate-orthographic')" title="生成三视图">
           <span>🎨</span>
         </UiButton>
-        <UiButton variant="toolbar" v-if="form.reference_image" class="action-btn delete-btn" @click="$emit('delete-image')" title="删除图片">
+        <UiButton variant="toolbar" v-if="form.reference_image" class="action-btn delete-btn" :aria-label="`删除 ${characterName} ${form.form_name} 参考图`" @click="$emit('delete-image')" title="删除图片">
           <span>🗑️</span>
         </UiButton>
       </div>
       <div class="action-row secondary">
-        <UiButton variant="toolbar" class="icon-btn edit-btn" @click="$emit('edit')" title="编辑形态">✏️</UiButton>
-        <UiButton variant="toolbar" class="icon-btn delete-btn" @click="$emit('delete')" title="删除形态">🗑️</UiButton>
+        <UiButton variant="toolbar" class="icon-btn edit-btn" :aria-label="`编辑 ${characterName} ${form.form_name}`" @click="$emit('edit')" title="编辑形态">✏️</UiButton>
+        <UiButton variant="toolbar" class="icon-btn delete-btn" :aria-label="`删除 ${characterName} ${form.form_name}`" @click="$emit('delete')" title="删除形态">🗑️</UiButton>
       </div>
     </div>
   </div>

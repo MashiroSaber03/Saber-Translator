@@ -222,7 +222,6 @@ async function handleSave() {
   // 同时保存到后端（config/user_settings.json）
   try {
     await settingsStore.saveToBackend()
-    console.log('[SettingsModal] 设置已保存到后端')
   } catch (error) {
     console.warn('[SettingsModal] 保存到后端失败，仅保存到 localStorage:', error)
   }

@@ -783,6 +783,108 @@ describe('characterStudioStore', () => {
     expect(store.activeChatSession?.messages[0]?.content).toBe('保存后同步的新开场')
   })
 
+  it('releases optimistic attachment URLs when workspace reset aborts streaming chat', async () => {
+    const createObjectURLSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(file => `blob:${(file as File).name}`)
+    const revokeObjectURLSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {})
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
+      _bookId: string,
+      _docId: string,
+      options: { signal: AbortSignal },
+    ) => new Promise<void>((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const file = new File(['image'], 'panel.png', { type: 'image/png' })
+    const sendPromise = store.sendChatMessage('看这张图', [file])
+    await Promise.resolve()
+
+    expect(createObjectURLSpy).toHaveBeenCalledWith(file)
+
+    getCharacterStudioIndexMock.mockResolvedValueOnce({
+      success: true,
+      book_id: 'book-other',
+      documents: [],
+      candidates: [],
+      count: 0,
+    })
+
+    await store.loadWorkspace('book-other')
+    await sendPromise
+
+    expect(store.activeChatSession).toBeNull()
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:panel.png')
+
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
+  })
+
+  it('releases optimistic attachment URLs when a new send supersedes active streaming chat', async () => {
+    const createObjectURLSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(file => `blob:${(file as File).name}`)
+    const revokeObjectURLSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {})
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    let secondSend: Promise<void> | null = null
+
+    streamCharacterStudioChatMessageMock
+      .mockImplementationOnce(async (
+        _bookId: string,
+        _docId: string,
+        options: { signal: AbortSignal },
+      ) => new Promise<void>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      }))
+      .mockImplementationOnce(async (
+        _bookId: string,
+        _docId: string,
+        options: { signal: AbortSignal },
+      ) => new Promise<void>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      }))
+
+    try {
+      await store.loadWorkspace('book-demo')
+      await store.openDocument('doc_alpha')
+
+      const file = new File(['image'], 'superseded.png', { type: 'image/png' })
+      const firstSend = store.sendChatMessage('第一条带图消息', [file])
+      await Promise.resolve()
+
+      secondSend = store.sendChatMessage('第二条消息')
+      await Promise.resolve()
+      await firstSend
+
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:superseded.png')
+    } finally {
+      if (secondSend) {
+        getCharacterStudioIndexMock.mockResolvedValueOnce({
+          success: true,
+          book_id: 'book-other',
+          documents: [],
+          candidates: [],
+          count: 0,
+        })
+        await store.loadWorkspace('book-other')
+        await secondSend
+      }
+      createObjectURLSpy.mockRestore()
+      revokeObjectURLSpy.mockRestore()
+    }
+  })
+
   it('updates locally derived greeting options and clears stale diagnostics/prompt preview on document edits', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()

@@ -4,7 +4,7 @@
  */
 
 import { setActivePinia, createPinia } from 'pinia'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useImageStore } from '@/stores/imageStore'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
@@ -116,6 +116,29 @@ describe('imageStore', () => {
             expect(store.currentImage?.translationStatus).toBe('processing')
             expect(store.currentImage?.translationFailed).toBe(false)
             expect(store.currentImage?.errorMessage).toBeUndefined()
+        })
+
+        it('正常状态变更不应输出常规控制台日志', () => {
+            const store = useImageStore()
+            const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+            try {
+                store.addImage('test1.png', 'data:image/png;base64,mockdata1')
+                store.addImages([{ fileName: 'test2.png', originalDataURL: 'data:image/png;base64,mockdata2' }])
+                store.sortImagesByFileName()
+                store.setCurrentImageIndex(1)
+                store.updateCurrentImage({ translatedDataURL: 'data:image/png;base64,translated' })
+                store.updateImageByIndex(0, { translationStatus: 'processing' })
+                store.updateCurrentImageDimensions(800, 600)
+                store.setBatchTranslationInProgress(true)
+                store.resetAllTranslationStatus()
+                store.deleteCurrentImage()
+                store.clearImages()
+
+                expect(logSpy).not.toHaveBeenCalled()
+            } finally {
+                logSpy.mockRestore()
+            }
         })
     })
 

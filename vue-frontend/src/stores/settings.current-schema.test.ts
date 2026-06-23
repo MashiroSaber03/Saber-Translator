@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configMocks = vi.hoisted(() => ({
   getUserSettings: vi.fn(),
@@ -17,6 +17,11 @@ describe('useSettingsStore backend schema loading', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     configMocks.getUserSettings.mockReset()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('ignores backend settings without the current schema version', async () => {

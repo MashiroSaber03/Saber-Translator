@@ -21,8 +21,7 @@ const bookshelfStore = useBookshelfStore()
 const newTagName = ref('')
 const newTagColor = ref('#667eea')
 
-// 编辑状态 - 使用 tag.name 作为标识符（后端 API 不返回 id）
-const editingTagName_id = ref<string | null>(null)  // 正在编辑的标签名称
+const editingTagName = ref<string | null>(null)
 const editTagName = ref('')
 const editTagColor = ref('')
 
@@ -44,39 +43,33 @@ async function createTag() {
   }
 
   try {
-    await bookshelfStore.createTag(name, newTagColor.value)
-    showToast('标签创建成功', 'success')
-    newTagName.value = ''
-    newTagColor.value = '#667eea'
+    const tag = await bookshelfStore.createTag(name, newTagColor.value)
+    if (tag) {
+      showToast('标签创建成功', 'success')
+      newTagName.value = ''
+      newTagColor.value = '#667eea'
+    } else {
+      showToast('创建失败', 'error')
+    }
   } catch (error) {
     showToast('创建失败', 'error')
   }
 }
 
-/**
- * 开始编辑标签
- * 使用 tag.name 作为唯一标识符（后端 API 不返回 id）
- */
 function startEditTag(tag: { name: string; color?: string }) {
-  editingTagName_id.value = tag.name  // 使用 name 作为标识
+  editingTagName.value = tag.name
   editTagName.value = tag.name
   editTagColor.value = tag.color || '#667eea'
 }
 
-/**
- * 取消编辑
- */
 function cancelEdit() {
-  editingTagName_id.value = null
+  editingTagName.value = null
   editTagName.value = ''
   editTagColor.value = ''
 }
 
-/**
- * 保存编辑
- */
 async function saveEditTag() {
-  if (!editingTagName_id.value) return
+  if (!editingTagName.value) return
   
   const name = editTagName.value.trim()
   if (!name) {
@@ -84,8 +77,7 @@ async function saveEditTag() {
     return
   }
   
-  // editingTagName_id 就是原标签名称（API 使用名称作为路径参数）
-  const originalTagName = editingTagName_id.value
+  const originalTagName = editingTagName.value
   
   // 检查新名称是否与其他标签重复（排除自己）
   if (name !== originalTagName && tags.value.some(t => t.name === name)) {
@@ -134,12 +126,14 @@ async function deleteTag(tagName: string) {
       <div class="form-row">
         <UiInput
           v-model="newTagName"
+          class="tag-manage-modal__new-name-input"
           type="text"
           placeholder="输入新标签名称..."
-          @keypress.enter="createTag"
+          @keydown.enter="createTag"
         />
         <UiInput
           v-model="newTagColor"
+          class="tag-manage-modal__new-color-input"
           type="color"
           title="选择颜色"
         />
@@ -153,14 +147,13 @@ async function deleteTag(tagName: string) {
         暂无标签，请在上方添加
       </div>
       
-      <!-- 【业务契约 renderTagManageList】标签项样式 -->
       <div
         v-for="tag in tags"
         :key="tag.name"
         class="tag-manage-item"
       >
         <!-- 非编辑状态：显示标签信息和操作按钮 -->
-        <div v-if="editingTagName_id !== tag.name" class="tag-view-mode">
+        <div v-if="editingTagName !== tag.name" class="tag-view-mode">
           <span
             class="tag-color-dot"
             :style="{ backgroundColor: tag.color || '#667eea' }"
@@ -185,7 +178,7 @@ async function deleteTag(tagName: string) {
         </div>
         
         <!-- 编辑状态：内联编辑表单 -->
-        <div v-if="editingTagName_id === tag.name" class="tag-edit-mode">
+        <div v-if="editingTagName === tag.name" class="tag-edit-mode">
           <UiInput
             v-model="editTagColor"
             type="color"
@@ -197,7 +190,7 @@ async function deleteTag(tagName: string) {
             type="text"
             class="edit-name-input"
             placeholder="标签名称"
-            @keypress.enter="saveEditTag"
+            @keydown.enter="saveEditTag"
           />
           <UiButton
             variant="toolbar"
@@ -243,7 +236,7 @@ async function deleteTag(tagName: string) {
   gap: 8px;
 }
 
-.form-row input[type="text"] {
+.tag-manage-modal__new-name-input {
   flex: 1;
   padding: 10px 12px;
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
@@ -254,11 +247,11 @@ async function deleteTag(tagName: string) {
   color: var(--color-text-default, var(--color-text-default));
 }
 
-.form-row input[type="text"]:focus {
+.tag-manage-modal__new-name-input:focus {
   border-color: var(--color-action-primary, var(--color-border-brand-gradient));
 }
 
-.form-row input[type="color"] {
+.tag-manage-modal__new-color-input {
   width: 40px;
   height: 40px;
   padding: 2px;
@@ -281,7 +274,6 @@ async function deleteTag(tagName: string) {
   color: var(--color-text-supporting, var(--color-text-muted));
 }
 
-/* 【业务契约 bookshelf.css .tag-manage-item】 */
 .tag-manage-item {
   display: flex;
   align-items: center;
@@ -291,7 +283,6 @@ async function deleteTag(tagName: string) {
   border-radius: 6px;
 }
 
-/* 标签查看模式和编辑模式容器 */
 .tag-view-mode,
 .tag-edit-mode {
   display: flex;
@@ -300,7 +291,6 @@ async function deleteTag(tagName: string) {
   width: 100%;
 }
 
-/* 颜色圆点 */
 .tag-color-dot {
   width: 16px;
   height: 16px;
@@ -314,14 +304,12 @@ async function deleteTag(tagName: string) {
   color: var(--color-text-default, var(--color-text-default));
 }
 
-/* 书籍数量 */
 .tag-book-count {
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-muted));
   margin-right: 8px;
 }
 
-/* 【业务契约 .tag-edit-btn】编辑按钮样式 */
 .tag-edit-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
@@ -338,7 +326,6 @@ async function deleteTag(tagName: string) {
   box-shadow: 0 2px 8px var(--shadow-brand-soft);
 }
 
-/* 【业务契约 .tag-delete-btn】删除按钮样式 */
 .tag-delete-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--tag-manage-modal-surface-raised) 0%, var(--tag-manage-modal-surface-muted) 100%);

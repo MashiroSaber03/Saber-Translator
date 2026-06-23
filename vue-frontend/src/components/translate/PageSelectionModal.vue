@@ -169,30 +169,45 @@ function handleBreadcrumbClick(path: string): void {
           <div class="page-selection-breadcrumb-nav">
             <template v-for="(crumb, idx) in breadcrumbs" :key="crumb.path">
               <span
-                class="page-selection-breadcrumb-item"
-                :class="{ active: idx === breadcrumbs.length - 1 }"
-                @click="idx < breadcrumbs.length - 1 && handleBreadcrumbClick(crumb.path)"
+                v-if="idx === breadcrumbs.length - 1"
+                class="page-selection-breadcrumb-item active"
+                aria-current="page"
               >
                 {{ idx === 0 ? '📁' : '' }}{{ crumb.name }}
               </span>
+              <UiButton
+                v-else
+                variant="toolbar"
+                type="button"
+                class="page-selection-breadcrumb-item"
+                :aria-label="`打开${crumb.name}`"
+                @click="handleBreadcrumbClick(crumb.path)"
+              >
+                {{ idx === 0 ? '📁' : '' }}{{ crumb.name }}
+              </UiButton>
               <span v-if="idx < breadcrumbs.length - 1" class="page-selection-breadcrumb-sep">/</span>
             </template>
           </div>
 
-          <div
+          <UiButton
             v-if="currentFolderPath"
+            variant="toolbar"
+            type="button"
             class="page-selection-folder-back-btn"
             @click="goUp"
           >
             <span class="back-icon">⬅️</span>
             <span>返回上级</span>
-          </div>
+          </UiButton>
 
           <div class="page-selection-grid">
-            <div
+            <UiButton
               v-for="subfolder in currentSubfolders"
               :key="subfolder.path"
+              variant="toolbar"
+              type="button"
               class="page-selection-folder-item"
+              :aria-label="`打开文件夹 ${subfolder.name}`"
               @click="handleFolderClick(subfolder.path)"
             >
               <span class="folder-icon">📁</span>
@@ -200,7 +215,7 @@ function handleBreadcrumbClick(path: string): void {
                 <span class="folder-name" :title="subfolder.name">{{ subfolder.name }}</span>
                 <span class="folder-count">({{ getFolderImageCount(subfolder) }})</span>
               </div>
-            </div>
+            </UiButton>
 
             <UiButton
               variant="toolbar"
@@ -426,8 +441,11 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-breadcrumb-item {
+  border: 0;
+  background: transparent;
   color: var(--color-text-link);
   cursor: pointer;
+  font: inherit;
   word-break: break-word;
 }
 
@@ -446,13 +464,17 @@ function handleBreadcrumbClick(path: string): void {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 8px 12px;
+  border: 0;
   background: linear-gradient(135deg, var(--page-selection-modal-surface-selected) 0%, var(--page-selection-modal-surface-overlay) 100%);
   border-radius: 8px;
   cursor: pointer;
+  font: inherit;
   margin-bottom: 12px;
   font-size: 13px;
   color: var(--color-text-link);
+  text-align: left;
   transition: all 0.2s;
 }
 
@@ -468,12 +490,16 @@ function handleBreadcrumbClick(path: string): void {
 
 .page-selection-folder-item {
   position: relative;
+  display: block;
+  width: 100%;
   min-height: 88px;
   padding: 12px;
-  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
   border: 1px solid var(--page-selection-modal-border-focus);
+  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
   border-radius: 10px;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   transition: all 0.2s;
 }
 

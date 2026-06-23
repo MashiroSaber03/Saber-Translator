@@ -8,10 +8,11 @@
  * Validates: Requirements 3.3, 3.4
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, TagData } from '@/types/api'
 
 // ============================================================
@@ -89,6 +90,14 @@ const bookshelfDataArb = fc.array(tagDataArb, { minLength: 0, maxLength: 10 })
 describe('书架状态管理属性测试', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue({
+      success: false,
+      error: 'Property test keeps backend refresh outside this invariant'
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   /**

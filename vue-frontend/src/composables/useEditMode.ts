@@ -1,6 +1,6 @@
 /**
  * 编辑模式组合式函数
- * 简化版：仅提供编辑模式状态管理
+ * 提供编辑模式入口状态管理
  * 具体的编辑功能由 EditWorkspace.vue 和相关 composables 处理
  */
 
@@ -50,14 +50,11 @@ export function useEditMode() {
     } else if (currentImage && Array.isArray(currentImage.bubbleStates) && currentImage.bubbleStates.length > 0) {
       // 用户删除了所有气泡，需要同步更新为空数组（保持"已处理过"的语义）
       imageStore.updateCurrentBubbleStates([])
-      console.log('退出编辑模式（无重渲染），用户已删除所有气泡')
     }
 
     // 清理状态
     isActive.value = false
     bubbleStore.clearSelection()
-
-    console.log('已退出编辑模式（无重渲染）')
   }
 
   // ============================================================

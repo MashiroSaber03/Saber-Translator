@@ -84,7 +84,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
   const { progressCallback, respectAutoSaveSetting, markPreSaveCompleted = false } = options
 
   if (respectAutoSaveSetting && !shouldEnableAutoSave()) {
-    console.log('[AutoSave] 自动保存未启用或非书架模式，跳过预保存')
     return true
   }
 
@@ -104,7 +103,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
   }
 
   const contexts = allImages.map((image, index) => hydrateTaskContextFromImage(index, image, 'standard', runtime))
-  console.log(`[AutoSave] 预保存开始：${totalImages} 页（逐页保存）`)
   progressCallback?.onStart?.(totalImages)
 
   try {
@@ -126,7 +124,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
       preSaveCompleted = true
     }
 
-    console.log(`[AutoSave] 预保存完成，共保存 ${totalImages}/${totalImages} 页`)
     progressCallback?.onComplete?.()
     return true
   } catch (error) {
@@ -190,7 +187,6 @@ export async function finalizeSave(): Promise<void> {
 
   const runtime = createSaveRuntime(true)
   if (!runtime.sessionPath || !preSaveCompleted) {
-    console.log('[AutoSave] 未执行预保存，跳过完成保存')
     return
   }
 
@@ -200,7 +196,6 @@ export async function finalizeSave(): Promise<void> {
       totalPages: imageStore.images.length,
       currentImageIndex: imageStore.currentImageIndex,
     })
-    console.log('[AutoSave] 会话保存完成')
   } catch (error) {
     console.error('[AutoSave] 完成保存失败:', error)
   } finally {
@@ -212,5 +207,4 @@ export async function finalizeSave(): Promise<void> {
 export function resetSaveState(): void {
   sessionPathCache = null
   preSaveCompleted = false
-  console.log('[AutoSave] 保存状态已重置')
 }

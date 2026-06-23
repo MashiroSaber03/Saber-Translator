@@ -18,11 +18,13 @@
     <div v-else class="character-panel-layout">
       <!-- 左侧：角色网格 -->
       <div class="character-grid-panel">
-        <div 
+        <UiButton
           v-for="char in characters" 
           :key="char.name" 
+          variant="toolbar"
           class="character-tile"
           :class="{ selected: selectedCharacter === char.name, disabled: char.enabled === false }"
+          :aria-pressed="selectedCharacter === char.name"
           @click="selectCharacter(char.name)"
         >
           <div class="tile-avatar">
@@ -36,7 +38,7 @@
             <div v-if="char.enabled === false" class="tile-disabled-badge">禁用</div>
           </div>
           <div class="tile-name">{{ char.name }}</div>
-        </div>
+        </UiButton>
       </div>
       
       <!-- 右侧：角色详情面板 -->
@@ -366,7 +368,10 @@ function closeOrthoDialog() {
   border-radius: 12px;
   background: var(--color-surface-base);
   border: 2px solid transparent;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
+  text-align: center;
   transition: all 0.2s ease;
 }
 

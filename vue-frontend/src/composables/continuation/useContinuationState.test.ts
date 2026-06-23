@@ -1,4 +1,5 @@
-import { ref } from 'vue'
+import { defineComponent, ref } from 'vue'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import { useContinuationState } from './useContinuationState'
@@ -209,5 +210,32 @@ describe('useContinuationState', () => {
     expect(state.messageType.value).toBe('')
 
     vi.useRealTimers()
+  })
+
+  it('does not let a pending transient message timer mutate state after owner unmount', () => {
+    vi.useFakeTimers()
+
+    try {
+      let state: ReturnType<typeof useContinuationState> | undefined
+      const Host = defineComponent({
+        setup() {
+          state = useContinuationState(ref('book-1'))
+          state.showMessage('短暂提示', 'success')
+          return () => null
+        },
+      })
+
+      const wrapper = mount(Host)
+      expect(state?.successMessage.value).toBe('短暂提示')
+
+      wrapper.unmount()
+      const messageAfterUnmount = state?.successMessage.value
+
+      vi.advanceTimersByTime(3000)
+
+      expect(state?.successMessage.value).toBe(messageAfterUnmount)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -134,7 +134,6 @@ export function useTranslationSettings(
     settings.value.translatePrompt = prompt
 
     saveToStorage()
-    console.log(`翻译提示词模式已切换为: ${forceJsonOutput ? 'JSON格式' : '普通模式'}`)
   }
 
   // ============================================================
@@ -159,7 +158,6 @@ export function useTranslationSettings(
 
     providerConfigs.value.translation[provider] = config
     saveProviderConfigsToStorage()
-    console.log(`[Settings] 保存翻译服务商配置: ${provider}`, config)
   }
 
   /**
@@ -178,13 +176,11 @@ export function useTranslationSettings(
       if (cached.customBaseUrl !== undefined) settings.value.translation.customBaseUrl = cached.customBaseUrl
       if (cached.openaiOptions !== undefined) settings.value.translation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
       if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
-      console.log(`[Settings] 恢复翻译服务商配置: ${provider}`, cached)
     } else {
       // 无缓存时清空配置（保留默认值）
       settings.value.translation.apiKey = ''
       settings.value.translation.modelName = ''
       settings.value.translation.customBaseUrl = ''
-      console.log(`[Settings] ${provider} 无缓存配置，使用默认值`)
     }
   }
 

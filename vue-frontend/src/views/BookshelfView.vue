@@ -14,7 +14,6 @@ import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
 import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
-import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import AppShell from '@/components/ui/AppShell.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -31,10 +30,7 @@ const lanUrl = ref<string>('获取中...')
 const showBookModal = ref(false)
 const showDetailModal = ref(false)
 const showTagManageModal = ref(false)
-const showConfirmModal = ref(false)
 const editingBookId = ref<string | null>(null)
-const confirmMessage = ref('')
-const confirmCallback = ref<(() => void) | null>(null)
 
 // 计算属性
 const filteredBooks = computed(() => bookshelfStore.filteredBooks)
@@ -45,7 +41,6 @@ const isEmpty = computed(() => filteredBooks.value.length === 0 && !bookshelfSto
 // 当从翻译页面返回时（通过浏览器后退按钮），如果页面被 BFCache 缓存，自动刷新数据
 function handlePageShow(event: PageTransitionEvent) {
   if (event.persisted) {
-    console.log('[BookshelfView] 页面从 BFCache 恢复，刷新数据')
     bookshelfStore.loadBooks()
     bookshelfStore.loadTags()
     // 如果详情模态框已打开，刷新当前书籍详情
@@ -57,6 +52,8 @@ function handlePageShow(event: PageTransitionEvent) {
 
 // 初始化
 onMounted(async () => {
+  window.addEventListener('pageshow', handlePageShow)
+
   // 加载书籍和标签
   await Promise.all([
     bookshelfStore.loadBooks(),
@@ -74,8 +71,6 @@ onMounted(async () => {
     lanUrl.value = '获取失败'
   }
   
-  // 添加 pageshow 事件监听，处理浏览器 BFCache
-  window.addEventListener('pageshow', handlePageShow)
 })
 
 // 清理事件监听器
@@ -163,13 +158,33 @@ function showFeatureNotice() {
         <span class="bookshelf-header__lan-access" title="其他设备可通过此地址访问">
           <span class="bookshelf-header__lan-icon">🌐局域网设备可通过该网址访问</span>
           <span id="lanUrl">{{ lanUrl }}</span>
-          <UiButton variant="toolbar" class="bookshelf-header__copy-button" title="复制地址" @click="copyLanUrl">📋</UiButton>
+          <UiButton
+            variant="toolbar"
+            class="bookshelf-header__copy-button"
+            title="复制地址"
+            aria-label="复制局域网地址"
+            @click="copyLanUrl"
+          >
+            📋
+          </UiButton>
         </span>
-        <a href="http://www.mashirosaber.top" target="_blank" class="bookshelf-header__tutorial-link">使用教程</a>
-        <a href="https://github.com/MashiroSaber03/Saber-Translator" target="_blank" class="bookshelf-header__github-link">
+        <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer" class="bookshelf-header__tutorial-link">使用教程</a>
+        <a
+          href="https://github.com/MashiroSaber03/Saber-Translator"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="bookshelf-header__github-link"
+          aria-label="打开 GitHub 仓库"
+        >
           <img src="/pic/github.jpg" alt="GitHub" class="bookshelf-header__github-icon">
         </a>
-        <UiButton variant="toolbar" class="bookshelf-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
+        <UiButton
+          variant="toolbar"
+          class="bookshelf-header__theme-toggle"
+          title="功能开发中"
+          aria-label="功能开发中"
+          @click="showFeatureNotice"
+        >
           <span class="bookshelf-header__theme-icon">☀️</span>
         </UiButton>
       </template>
@@ -253,13 +268,6 @@ function showFeatureNotice() {
       v-if="showTagManageModal"
       @close="showTagManageModal = false"
     />
-
-    <ConfirmModal
-      v-if="showConfirmModal"
-      :message="confirmMessage"
-      @confirm="confirmCallback?.(); showConfirmModal = false"
-      @cancel="showConfirmModal = false"
-    />
   </AppShell>
 </template>
 
@@ -270,9 +278,6 @@ function showFeatureNotice() {
   --bookshelf-view-text-secondary: rgba(255, 255, 255, .9);
 }
 
-/* ==================== 书架页面样式 ==================== */
-
-/* header 内 slot 元素样式（需要 :deep 因为元素在 AppHeader 子组件 slot 中渲染） */
 .bookshelf-header__lan-access {
     display: flex;
     align-items: center;

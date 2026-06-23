@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 
 const { getTimelineMock, regenerateTimelineMock, getThumbnailUrlMock } = vi.hoisted(() => ({
@@ -16,6 +17,14 @@ vi.mock('@/api/insight', () => ({
 }))
 
 import TimelinePanel from '@/components/insight/TimelinePanel.vue'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
 
 describe('TimelinePanel', () => {
   beforeEach(() => {
@@ -88,5 +97,50 @@ describe('TimelinePanel', () => {
     expect(wrapper.text()).toContain('高潮')
     expect(wrapper.text()).toContain('重生概要')
     expect(store.dataRefreshKey).not.toBe(refreshKeyBefore)
+  })
+
+  it('ignores stale timeline responses after switching books', async () => {
+    const firstTimeline = deferred<Record<string, unknown>>()
+    const secondTimeline = deferred<Record<string, unknown>>()
+    getTimelineMock
+      .mockReturnValueOnce(firstTimeline.promise)
+      .mockReturnValueOnce(secondTimeline.promise)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(TimelinePanel, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    expect(getTimelineMock).toHaveBeenCalledWith('book-1')
+
+    store.currentBookId = 'book-2'
+    await nextTick()
+    expect(getTimelineMock).toHaveBeenCalledWith('book-2')
+
+    secondTimeline.resolve({
+      success: true,
+      mode: 'enhanced',
+      story_arcs: [{ id: 'book-2-arc', name: '当前书时间线', page_range: { start: 2, end: 4 } }],
+      stats: { total_events: 1, total_pages: 4 },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前书时间线')
+
+    firstTimeline.resolve({
+      success: true,
+      mode: 'enhanced',
+      story_arcs: [{ id: 'book-1-arc', name: '旧书时间线', page_range: { start: 1, end: 3 } }],
+      stats: { total_events: 1, total_pages: 3 },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前书时间线')
+    expect(wrapper.text()).not.toContain('旧书时间线')
   })
 })

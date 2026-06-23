@@ -207,7 +207,6 @@ watch(
   async (newCount, oldCount) => {
     // 当已分析页数变化时，重新加载页面分析状态
     if (newCount !== oldCount && newCount > 0) {
-      console.log(`已分析页数变化: ${oldCount} -> ${newCount}，刷新页面标记`)
       // 清空现有标记并重新加载。
       pageAnalyzedMap.value.clear()
       await loadAnalyzedPages()
@@ -231,15 +230,18 @@ watch(
         </div>
         <!-- 无章节时直接显示页面网格 -->
         <div v-else class="tree-all-pages">
-          <div 
+          <UiButton
             v-for="pageNum in getPageRange(1, Math.min(totalPages, displayedPageCount))"
             :key="pageNum"
+            variant="toolbar"
             class="tree-page-item"
             :class="{ 
               selected: isPageSelected(pageNum),
               analyzed: isPageAnalyzed(pageNum)
             }"
             :data-page="pageNum"
+            :aria-label="`选择第 ${pageNum} 页`"
+            :aria-pressed="isPageSelected(pageNum)"
             @click="selectPage(pageNum)"
           >
             <img 
@@ -250,7 +252,7 @@ watch(
               @error="handleImageError($event)"
             >
             <span class="tree-page-num">{{ pageNum }}</span>
-          </div>
+          </UiButton>
         </div>
         <!-- 加载更多按钮 -->
         <div v-if="totalPages > displayedPageCount" class="tree-load-more">
@@ -269,21 +271,26 @@ watch(
           :class="{ expanded: isChapterExpanded(chapter.id) }"
         >
           <!-- 章节标题 -->
-          <div 
-            class="tree-chapter-header"
-            @click="toggleChapter(chapter.id)"
-          >
-            <span class="tree-expand-icon">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l8 7-8 7z" /></svg>
-            </span>
-            <div class="tree-chapter-info">
-              <span class="tree-chapter-title">{{ chapter.title }}</span>
-              <span class="tree-chapter-meta">{{ chapter.endPage - chapter.startPage + 1 }}页</span>
-            </div>
-            <span 
-              class="tree-chapter-status" 
-              :class="{ analyzed: isChapterAnalyzed(chapter) }"
-            ></span>
+          <div class="tree-chapter-header">
+            <UiButton
+              variant="toolbar"
+              class="tree-chapter-toggle"
+              :aria-expanded="isChapterExpanded(chapter.id)"
+              :aria-label="`${isChapterExpanded(chapter.id) ? '收起' : '展开'}${chapter.title}`"
+              @click="toggleChapter(chapter.id)"
+            >
+              <span class="tree-expand-icon">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l8 7-8 7z" /></svg>
+              </span>
+              <span class="tree-chapter-info">
+                <span class="tree-chapter-title">{{ chapter.title }}</span>
+                <span class="tree-chapter-meta">{{ chapter.endPage - chapter.startPage + 1 }}页</span>
+              </span>
+              <span
+                class="tree-chapter-status"
+                :class="{ analyzed: isChapterAnalyzed(chapter) }"
+              ></span>
+            </UiButton>
             <UiButton
               variant="toolbar" 
               class="btn-reanalyze-chapter" 
@@ -296,15 +303,18 @@ watch(
           
           <!-- 章节页面网格（4列） -->
           <div class="tree-pages-grid">
-            <div 
+            <UiButton
               v-for="pageNum in getPageRange(chapter.startPage, chapter.endPage)"
               :key="pageNum"
+              variant="toolbar"
               class="tree-page-item"
               :class="{ 
                 selected: isPageSelected(pageNum),
                 analyzed: isPageAnalyzed(pageNum)
               }"
               :data-page="pageNum"
+              :aria-label="`选择第 ${pageNum} 页`"
+              :aria-pressed="isPageSelected(pageNum)"
               @click="selectPage(pageNum)"
             >
               <img 
@@ -315,7 +325,7 @@ watch(
                 @error="handleImageError($event)"
               >
               <span class="tree-page-num">{{ pageNum }}</span>
-            </div>
+            </UiButton>
           </div>
         </div>
       </template>
@@ -377,7 +387,6 @@ watch(
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    cursor: pointer;
     transition: background 0.15s;
     user-select: none;
 }
@@ -388,6 +397,20 @@ watch(
 
 .tree-chapter-header.active {
     background: var(--color-focus-brand-soft);
+}
+
+.tree-chapter-toggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
 }
 
 .tree-expand-icon {
@@ -477,6 +500,12 @@ watch(
     overflow: hidden;
     cursor: pointer;
     position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     border: 2px solid transparent;
     transition: all 0.15s;
 }

@@ -68,7 +68,14 @@ function requestClose(): void {
     <template v-else-if="state === 'saving'">
       <p class="exit-save-dialog-text">{{ message }}</p>
       <div class="exit-save-dialog-progress">
-        <div class="exit-save-dialog-progress-bar">
+        <div
+          class="exit-save-dialog-progress-bar"
+          role="progressbar"
+          aria-label="退出编辑保存进度"
+          aria-valuemin="0"
+          :aria-valuemax="total"
+          :aria-valuenow="current"
+        >
           <div
             class="exit-save-dialog-progress-fill"
             :style="{ width: `${progressPercent}%` }"

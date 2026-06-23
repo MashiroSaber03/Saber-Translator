@@ -5,10 +5,10 @@
  */
 
 import type { Ref } from 'vue'
-import { normalizeOpenAiOptions } from '@/utils/openaiOptions'
 
 /** localStorage 存储键 */
 const STORAGE_KEY = 'insight_provider_configs'
+const INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION = 1
 
 /** 服务商配置字段映射 */
 interface ProviderFieldMap {
@@ -85,6 +85,105 @@ export interface ProviderConfigsCache {
   imageGen: Record<string, Partial<ImageGenFields>>
 }
 
+type ProviderConfigsStoragePayload = ProviderConfigsCache & {
+  insightProviderConfigSchemaVersion: typeof INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasStringField(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'string'
+}
+
+function hasNumberField(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'number' && Number.isFinite(value[key])
+}
+
+function hasBooleanField(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'boolean'
+}
+
+function isOpenAiOptions(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.request) || !isRecord(value.execution)) return false
+  if (!hasBooleanField(value.request, 'forceJsonOutput')) return false
+  if (value.request.temperature !== undefined && !hasNumberField(value.request, 'temperature')) return false
+  if (value.request.extraBody !== undefined && !isRecord(value.request.extraBody)) return false
+  return (
+    hasBooleanField(value.execution, 'useStream') &&
+    hasNumberField(value.execution, 'rpmLimit') &&
+    hasNumberField(value.execution, 'transportRetries') &&
+    hasNumberField(value.execution, 'businessRetries')
+  )
+}
+
+function isProviderGroup<T extends Record<string, unknown>>(
+  value: unknown,
+  isConfig: (config: Record<string, unknown>) => config is T,
+): value is Record<string, T> {
+  if (!isRecord(value)) return false
+  return Object.values(value).every(config => isRecord(config) && isConfig(config))
+}
+
+function hasBaseProviderFields(value: Record<string, unknown>): boolean {
+  return hasStringField(value, 'apiKey') && hasStringField(value, 'model') && hasStringField(value, 'baseUrl')
+}
+
+function isVlmConfig(value: Record<string, unknown>): value is VlmFields {
+  return hasBaseProviderFields(value) && isOpenAiOptions(value.openaiOptions) && hasNumberField(value, 'imageMaxSize')
+}
+
+function isLlmConfig(value: Record<string, unknown>): value is LlmFields {
+  return hasBaseProviderFields(value) && isOpenAiOptions(value.openaiOptions)
+}
+
+function isEmbeddingConfig(value: Record<string, unknown>): value is EmbeddingFields {
+  return (
+    hasBaseProviderFields(value) &&
+    hasNumberField(value, 'rpmLimit') &&
+    hasNumberField(value, 'transportRetries') &&
+    hasNumberField(value, 'businessRetries') &&
+    hasNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function isRerankerConfig(value: Record<string, unknown>): value is RerankerFields {
+  return (
+    hasBaseProviderFields(value) &&
+    hasNumberField(value, 'topK') &&
+    hasNumberField(value, 'transportRetries') &&
+    hasNumberField(value, 'businessRetries') &&
+    hasNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function isImageGenConfig(value: Record<string, unknown>): value is ImageGenFields {
+  return (
+    hasBaseProviderFields(value) &&
+    hasNumberField(value, 'transportRetries') &&
+    hasNumberField(value, 'businessRetries') &&
+    hasNumberField(value, 'timeoutSeconds')
+  )
+}
+
+function parseProviderConfigsStorage(value: unknown): ProviderConfigsCache | null {
+  if (!isRecord(value)) return null
+  if (value.insightProviderConfigSchemaVersion !== INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION) return null
+  if (!isProviderGroup(value.vlm, isVlmConfig)) return null
+  if (!isProviderGroup(value.llm, isLlmConfig)) return null
+  if (!isProviderGroup(value.embedding, isEmbeddingConfig)) return null
+  if (!isProviderGroup(value.reranker, isRerankerConfig)) return null
+  if (!isProviderGroup(value.imageGen, isImageGenConfig)) return null
+  return {
+    vlm: value.vlm,
+    llm: value.llm,
+    embedding: value.embedding,
+    reranker: value.reranker,
+    imageGen: value.imageGen,
+  }
+}
+
 /**
  * 创建配置管理器
  */
@@ -95,7 +194,11 @@ export function useInsightConfigManager(
    * 保存配置缓存到 localStorage
    */
   function saveToStorage(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(providerConfigs.value))
+    const payload: ProviderConfigsStoragePayload = {
+      insightProviderConfigSchemaVersion: INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION,
+      ...providerConfigs.value,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }
 
   /**
@@ -105,36 +208,8 @@ export function useInsightConfigManager(
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        const parsed = JSON.parse(stored)
-        providerConfigs.value = {
-          vlm: parsed.vlm || {},
-          llm: parsed.llm || {},
-          embedding: parsed.embedding || {},
-          reranker: parsed.reranker || {},
-          imageGen: parsed.imageGen || {}
-        }
-        for (const config of Object.values(providerConfigs.value.vlm)) {
-          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
-            request: { forceJsonOutput: false, temperature: 0.3 },
-            execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
-          })
-        }
-        for (const config of Object.values(providerConfigs.value.llm)) {
-          config.openaiOptions = normalizeOpenAiOptions(config.openaiOptions, {
-            request: { forceJsonOutput: false },
-            execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
-          })
-        }
-        for (const config of Object.values(providerConfigs.value.imageGen)) {
-          if (config.transportRetries === undefined) config.transportRetries = 10
-          if (config.businessRetries === undefined) config.businessRetries = 10
-          if (config.timeoutSeconds === undefined) config.timeoutSeconds = 0
-        }
-        for (const config of Object.values(providerConfigs.value.reranker)) {
-          if (config.transportRetries === undefined) config.transportRetries = 10
-          if (config.businessRetries === undefined) config.businessRetries = 10
-          if (config.timeoutSeconds === undefined) config.timeoutSeconds = 0
-        }
+        const parsed = parseProviderConfigsStorage(JSON.parse(stored) as unknown)
+        if (parsed) providerConfigs.value = parsed
       } catch (e) {
         console.error('[Insight] 加载服务商配置缓存失败:', e)
       }

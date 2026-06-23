@@ -404,9 +404,15 @@ watch(analysisMode, () => {
     </div>
 
     <!-- 错误消息 -->
-    <div v-if="errorMessage" class="error-message" @click="clearError">
+    <UiButton
+      v-if="errorMessage"
+      variant="toolbar"
+      class="error-message"
+      aria-label="清除分析错误"
+      @click="clearError"
+    >
       ⚠️ {{ errorMessage }}
-    </div>
+    </UiButton>
 
     <!-- 控制按钮组 -->
     <div class="analysis-btn-group">
@@ -566,13 +572,17 @@ watch(analysisMode, () => {
 
 /* 错误消息 */
 .analysis-control-compact .error-message {
+  display: block;
+  width: 100%;
   font-size: 12px;
   color: var(--analysis-progress-text-primary);
   background: var(--analysis-progress-surface-base);
+  border: 0;
   padding: 6px 10px;
   border-radius: 4px;
   margin-top: 8px;
   cursor: pointer;
+  text-align: left;
 }
 
 /* 按钮标签 */

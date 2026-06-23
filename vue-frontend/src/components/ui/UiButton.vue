@@ -116,14 +116,15 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--ghost {
-  border: 1px solid var(--studio-border-default);
-  background: var(--color-surface-raised);
-  color: var(--color-text-default);
+  border: var(--ui-button-ghost-border, 1px solid var(--color-border-muted));
+  background: var(--ui-button-ghost-background, var(--color-surface-raised));
+  color: var(--ui-button-ghost-color, var(--color-text-default));
 }
 
 .ui-button--ghost:hover:not(:disabled) {
-  background: var(--studio-surface-tint);
-  border-color: var(--ui-button-secondary-border);
+  background: var(--ui-button-ghost-hover-background, var(--color-surface-interactive-hover));
+  border: var(--ui-button-ghost-hover-border, var(--ui-button-ghost-border, 1px solid var(--color-border-muted)));
+  color: var(--ui-button-ghost-hover-color, var(--ui-button-ghost-color, var(--color-text-default)));
 }
 
 .ui-button--danger {
@@ -169,11 +170,11 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--tone-success:not(:where(.ui-button--bare)) {
-  color: var(--status-success, var(--ui-button-status-success-text));
+  color: var(--ui-button-status-success-color, var(--color-status-success, var(--ui-button-status-success-text)));
 }
 
 .ui-button--tone-warning:not(:where(.ui-button--bare)) {
-  color: var(--status-warning, var(--ui-button-status-warning-text));
+  color: var(--ui-button-status-warning-color, var(--color-status-warning, var(--ui-button-status-warning-text)));
 }
 
 .ui-button--tone-primary:not(:where(.ui-button--bare)) {

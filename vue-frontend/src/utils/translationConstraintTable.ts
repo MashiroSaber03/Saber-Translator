@@ -76,8 +76,13 @@ export function normalizeImportedRow(
   return normalized
 }
 
-export function validateRegexEntries(
-  rows: Array<Record<string, string>>,
+function getStringField(row: object, field: string): string {
+  const value = (row as Record<string, unknown>)[field]
+  return typeof value === 'string' ? value : ''
+}
+
+export function validateRegexEntries<Row extends object>(
+  rows: readonly Row[],
   options: {
     patternField: string
     matchModeField?: string
@@ -86,11 +91,11 @@ export function validateRegexEntries(
   const { patternField, matchModeField = 'matchMode' } = options
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index] || {}
-    if ((row[matchModeField] || 'text') !== 'regex') {
+    if ((getStringField(row, matchModeField) || 'text') !== 'regex') {
       continue
     }
 
-    const pattern = row[patternField] || ''
+    const pattern = getStringField(row, patternField)
     if (!pattern) {
       continue
     }

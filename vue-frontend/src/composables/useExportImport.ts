@@ -3,7 +3,7 @@
  * 提供文本导出、文本导入、图片下载等功能
  */
 
-import { ref, computed } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
@@ -37,6 +37,21 @@ export interface ExportTextData {
  */
 export type DownloadFormat = 'zip' | 'pdf' | 'cbz'
 
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+
+  try {
+    document.body.appendChild(link)
+    link.click()
+  } finally {
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+}
+
 /**
  * 导出导入功能组合式函数
  */
@@ -66,6 +81,8 @@ export function useExportImport() {
 
   /** 导入进度文本 */
   const importProgressText = ref('')
+  let importProgressResetTimer: ReturnType<typeof setTimeout> | null = null
+  let downloadProgressResetTimer: ReturnType<typeof setTimeout> | null = null
 
   // ============================================================
   // 计算属性
@@ -79,6 +96,38 @@ export function useExportImport() {
 
   /** 是否可以下载 */
   const canDownload = computed(() => imageStore.hasImages)
+
+  function clearImportProgressResetTimer(): void {
+    if (importProgressResetTimer) {
+      clearTimeout(importProgressResetTimer)
+      importProgressResetTimer = null
+    }
+  }
+
+  function clearDownloadProgressResetTimer(): void {
+    if (downloadProgressResetTimer) {
+      clearTimeout(downloadProgressResetTimer)
+      downloadProgressResetTimer = null
+    }
+  }
+
+  function scheduleImportProgressReset(): void {
+    clearImportProgressResetTimer()
+    importProgressResetTimer = setTimeout(() => {
+      importProgressResetTimer = null
+      importProgress.value = 0
+      importProgressText.value = ''
+    }, 2000)
+  }
+
+  function scheduleDownloadProgressReset(): void {
+    clearDownloadProgressResetTimer()
+    downloadProgressResetTimer = setTimeout(() => {
+      downloadProgressResetTimer = null
+      downloadProgress.value = 0
+      downloadProgressText.value = ''
+    }, 2000)
+  }
 
   // ============================================================
   // 文本导出功能
@@ -142,19 +191,10 @@ export function useExportImport() {
 
     // 创建 Blob 并触发下载
     const blob = new Blob([jsonData], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-
     // 生成文件名：translations_YYYYMMDD_HHMMSS.json
     const now = new Date()
     const dateStr = now.toISOString().replace(/[-:T]/g, '').slice(0, 15)
-    a.download = `translations_${dateStr}.json`
-
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    triggerBlobDownload(blob, `translations_${dateStr}.json`)
 
     toast.success('文本导出成功！')
   }
@@ -388,18 +428,16 @@ export function useExportImport() {
               cleanImageBase64 = img.originalDataURL.includes('base64,')
                 ? (img.originalDataURL.split('base64,')[1] || '')
                 : img.originalDataURL
-              console.log(`importText: 图片 ${imageIndex} 使用原图作为背景（兜底）`)
             }
 
             if (!cleanImageBase64) {
-              console.log(`importText: 图片 ${imageIndex} 没有可用的背景图，跳过`)
               continue
             }
 
             const result = await executeRender({
               imageIndex,
               cleanImage: cleanImageBase64,
-              bubbleCoords: img.bubbleStates.map(bs => bs.coords) as any,
+              bubbleCoords: img.bubbleStates.map(bs => bs.coords),
               bubbleAngles: img.bubbleStates.map(bs => bs.rotationAngle || 0),
               autoDirections: img.bubbleStates.map(bs => bs.autoTextDirection || bs.textDirection || 'vertical'),
               textlinesPerBubble: img.bubbleStates.map(bs => bs.textlines || []),
@@ -436,7 +474,6 @@ export function useExportImport() {
                 bubbleStates: result.bubbleStates || img.bubbleStates,
                 hasUnsavedChanges: true
               })
-              console.log(`importText: 图片 ${imageIndex} 渲染成功`)
             }
           } catch (err) {
             console.error(`importText: 重渲染图片 ${imageIndex} 失败:`, err)
@@ -458,11 +495,7 @@ export function useExportImport() {
       toast.error(`导入失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       isImporting.value = false
-      // 延时重置进度
-      setTimeout(() => {
-        importProgress.value = 0
-        importProgressText.value = ''
-      }, 2000)
+      scheduleImportProgressReset()
     }
   }
 
@@ -565,23 +598,12 @@ export function useExportImport() {
       }
 
       const blob = new Blob(byteArrays, { type: 'image/png' })
-      const url = URL.createObjectURL(blob)
-
-      // 创建下载链接
-      const a = document.createElement('a')
-      a.href = url
-
       // 生成文件名
       let fileName = currentImage.fileName || `image_${imageStore.currentImageIndex}.png`
       // 为已翻译和未翻译的图片使用不同前缀
       const prefix = currentImage.translatedDataURL ? 'translated' : 'original'
       fileName = `${prefix}_${fileName.replace(/\.[^/.]+$/, '')}.png`
-      a.download = fileName
-
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      triggerBlobDownload(blob, fileName)
 
       toast.success(`下载成功: ${fileName}`)
     } catch (e) {
@@ -737,8 +759,7 @@ export function useExportImport() {
       // 启动后台清理过期文件的请求（1分钟后）
       setTimeout(async () => {
         try {
-          const cleanResponse = await cleanTempFiles()
-          console.log('临时文件清理结果:', cleanResponse)
+          await cleanTempFiles()
         } catch (error) {
           console.error('清理临时文件失败:', error)
         }
@@ -748,12 +769,15 @@ export function useExportImport() {
       toast.error(`下载失败: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       isDownloading.value = false
-      // 延时重置进度
-      setTimeout(() => {
-        downloadProgress.value = 0
-        downloadProgressText.value = ''
-      }, 2000)
+      scheduleDownloadProgressReset()
     }
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      clearImportProgressResetTimer()
+      clearDownloadProgressResetTimer()
+    })
   }
 
   // ============================================================

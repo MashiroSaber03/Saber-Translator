@@ -5,8 +5,9 @@
     <div class="generation-controls">
       <div class="batch-config">
         <div class="config-row">
-          <label>画风参考图数量:</label>
+          <label for="continuation-style-reference-count">画风参考图数量:</label>
           <UiInput
+            id="continuation-style-reference-count"
             type="number"
             v-model.number="refCount"
             min="1"
@@ -33,7 +34,15 @@
         {{ isGenerating ? '生成中...' : '🚀 批量生成图片' }}
       </UiButton>
 
-      <div v-if="isGenerating" class="progress-bar">
+      <div
+        v-if="isGenerating"
+        class="progress-bar"
+        role="progressbar"
+        aria-label="图片生成进度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="progress"
+      >
         <div class="progress-fill" :style="{ width: progress + '%' }"></div>
         <span class="progress-text">{{ progress }}%</span>
       </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { TimelineArc } from './timelineTypes'
 
 const props = defineProps<{
@@ -25,20 +26,35 @@ function hideFailedImage(event: Event): void {
 
 <template>
   <div class="timeline-card">
-    <div class="timeline-card-header" @click="$emit('toggle', arcId)">
-      <img
-        class="timeline-thumbnail"
-        :src="thumbnailUrl"
-        :alt="`第${startPage}页`"
-        loading="lazy"
-        @error="hideFailedImage"
-        @click.stop="$emit('showPage', startPage)"
+    <div class="timeline-card-header">
+      <UiButton
+        variant="toolbar"
+        type="button"
+        class="timeline-thumbnail-action"
+        :aria-label="`查看第 ${startPage} 页`"
+        @click="$emit('showPage', startPage)"
       >
-      <div class="timeline-card-title">
-        <span class="timeline-page-range">第 {{ startPage }}-{{ endPage }} 页</span>
-        <span class="timeline-event-count">{{ arc.name }}</span>
-      </div>
-      <span class="expand-icon">{{ expanded ? '▼' : '▶' }}</span>
+        <img
+          class="timeline-thumbnail"
+          :src="thumbnailUrl"
+          :alt="`第${startPage}页`"
+          loading="lazy"
+          @error="hideFailedImage"
+        >
+      </UiButton>
+      <UiButton
+        variant="toolbar"
+        type="button"
+        class="timeline-card-toggle"
+        :aria-expanded="String(expanded)"
+        @click="$emit('toggle', arcId)"
+      >
+        <span class="timeline-card-title">
+          <span class="timeline-page-range">第 {{ startPage }}-{{ endPage }} 页</span>
+          <span class="timeline-event-count">{{ arc.name }}</span>
+        </span>
+        <span class="expand-icon">{{ expanded ? '▼' : '▶' }}</span>
+      </UiButton>
     </div>
 
     <div v-if="arc.description" class="timeline-summary">{{ arc.description }}</div>
@@ -70,7 +86,20 @@ function hideFailedImage(event: Event): void {
   padding: 12px;
   background: var(--insight-surface-tertiary);
   border-bottom: 1px solid var(--color-border-muted);
-  cursor: pointer;
+}
+
+.timeline-thumbnail-action {
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+
+.timeline-card-toggle {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  justify-content: space-between;
+  min-width: 0;
+  text-align: left;
 }
 
 .timeline-thumbnail {
@@ -78,12 +107,11 @@ function hideFailedImage(event: Event): void {
   height: 80px;
   object-fit: cover;
   border-radius: 6px;
-  cursor: pointer;
   transition: transform 0.2s;
   background: var(--insight-surface-page);
 }
 
-.timeline-thumbnail:hover {
+.timeline-thumbnail-action:hover .timeline-thumbnail {
   transform: scale(1.05);
 }
 

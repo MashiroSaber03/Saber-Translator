@@ -114,18 +114,17 @@ const thresholdModel = computed({
     <div v-else class="global-mode-hint">
       <span class="hint-text">💡 全局模式使用全文摘要回答，适合总结性问题</span>
       <div class="welcome-examples">
-        <span
+        <UiButton
           v-for="(example, index) in globalModeExamples"
           :key="index"
+          variant="toolbar"
+          type="button"
           class="example-tag"
-          role="button"
-          tabindex="0"
+          :aria-label="`提问示例：${example}`"
           @click="$emit('askExample', example)"
-          @keydown.enter="$emit('askExample', example)"
-          @keydown.space.prevent="$emit('askExample', example)"
         >
           {{ example }}
-        </span>
+        </UiButton>
       </div>
     </div>
   </div>

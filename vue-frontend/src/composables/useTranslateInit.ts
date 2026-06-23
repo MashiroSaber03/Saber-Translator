@@ -3,7 +3,7 @@
  * 负责翻译页面启动初始化
  * 
  * 功能：
- * - 页面加载时初始化所有设置（从 localStorage 恢复）
+ * - 页面加载时初始化当前设置缓存
  * - 初始化提示词状态
  * - 初始化字体列表
  * - 初始化主题状态
@@ -13,7 +13,7 @@
  * Requirements: 7.3, 10.2
  */
 
-import { ref, onMounted } from 'vue'
+import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -111,6 +111,23 @@ export function useTranslateInit() {
 
   /** 是否为书架模式 */
   const isBookshelfMode = ref(false)
+  let switchImageFlagTimer: ReturnType<typeof setTimeout> | null = null
+
+  function clearSwitchImageFlagTimer(): void {
+    if (switchImageFlagTimer) {
+      clearTimeout(switchImageFlagTimer)
+      switchImageFlagTimer = null
+    }
+  }
+
+  function resetSwitchImageFlag(): void {
+    clearSwitchImageFlagTimer()
+    window._isChangingFromSwitchImage = false
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(resetSwitchImageFlag)
+  }
 
   // ============================================================
   // 初始化方法
@@ -125,18 +142,16 @@ export function useTranslateInit() {
   async function initializeApp(force: boolean = false): Promise<void> {
     // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
     if (!force && (isInitializing.value || isInitialized.value)) {
-      console.log('[TranslateInit] 已经初始化，仅重新加载上下文')
       // 即使跳过完整初始化，也需要重新处理 URL 参数（书架模式）
       await initializeBookChapterContext()
       return
     }
 
-    console.log('[TranslateInit] 开始初始化应用...')
     isInitializing.value = true
     initError.value = null
 
     try {
-      // 1. 初始化设置（优先从后端加载，备选 localStorage）
+      // 1. 初始化设置（后端配置覆盖当前浏览器缓存）
       await initializeSettings()
 
       // 2. 初始化字体列表
@@ -152,7 +167,6 @@ export function useTranslateInit() {
       // 5. 处理书籍/章节 URL 参数
       await initializeBookChapterContext()
 
-      console.log('[TranslateInit] 应用初始化完成')
       isInitialized.value = true
     } catch (error) {
       console.error('[TranslateInit] 应用初始化失败:', error)
@@ -165,30 +179,21 @@ export function useTranslateInit() {
   /**
    * 初始化设置
    * 优先从后端加载设置（config/user_settings.json）
-   * 如果后端无数据，则从 localStorage 恢复
+   * 后端无数据时保留当前浏览器设置缓存
    */
   async function initializeSettings(): Promise<void> {
-    console.log('[TranslateInit] 初始化设置...')
-
     // 先重新拉取一次最新的文字样式默认值
     await reloadTextStyleDefaultsFromBackend()
 
-    // 先从 localStorage 加载（作为基础/备份）
+    // 先读取当前浏览器设置缓存。
     settingsStore.initSettings()
 
-    // 尝试从后端加载设置（会覆盖 localStorage 中的值）
+    // 尝试从后端加载设置（会覆盖浏览器缓存中的值）
     try {
-      const loaded = await settingsStore.loadFromBackend()
-      if (loaded) {
-        console.log('[TranslateInit] 已从后端加载设置')
-      } else {
-        console.log('[TranslateInit] 后端无设置，使用 localStorage 数据')
-      }
+      await settingsStore.loadFromBackend()
     } catch (error) {
-      console.warn('[TranslateInit] 从后端加载设置失败，使用 localStorage 数据:', error)
+      console.warn('[TranslateInit] 从后端加载设置失败，使用当前浏览器设置缓存:', error)
     }
-
-    console.log('[TranslateInit] 设置初始化完成')
   }
 
   /**
@@ -196,14 +201,11 @@ export function useTranslateInit() {
    * 从后端获取系统字体列表
    */
   async function initializeFontList(): Promise<void> {
-    console.log('[TranslateInit] 初始化字体列表...')
-
     try {
       const response = await getFontList()
       // 后端 API 直接返回 { fonts: [...] }，不包含 success 字段
       if (response.fonts && response.fonts.length > 0) {
         fontList.value = response.fonts
-        console.log(`[TranslateInit] 已加载 ${response.fonts.length} 个字体`)
       } else if (response.error) {
         console.warn('[TranslateInit] 获取字体列表失败:', response.error)
       } else {
@@ -220,8 +222,6 @@ export function useTranslateInit() {
    * 从后端获取提示词列表和默认内容
    */
   async function initializePromptSettings(): Promise<void> {
-    console.log('[TranslateInit] 初始化翻译提示词设置...')
-
     try {
       const response = await getPrompts()
       // 后端 API 直接返回 { prompt_names: [...], default_prompt_content: "..." }
@@ -232,8 +232,6 @@ export function useTranslateInit() {
         if (!settingsStore.settings.translatePrompt && response.default_prompt_content) {
           settingsStore.setTranslatePrompt(response.default_prompt_content)
         }
-
-        console.log(`[TranslateInit] 已加载 ${promptNames.value.length} 个翻译提示词`)
       } else if (response.error) {
         console.warn('[TranslateInit] 获取翻译提示词失败:', response.error)
       }
@@ -248,8 +246,6 @@ export function useTranslateInit() {
    * 从后端获取文本框提示词列表和默认内容
    */
   async function initializeTextboxPromptSettings(): Promise<void> {
-    console.log('[TranslateInit] 初始化文本框提示词设置...')
-
     try {
       const response = await getTextboxPrompts()
       // 后端 API 直接返回 { prompt_names: [...], default_prompt_content: "..." }
@@ -260,8 +256,6 @@ export function useTranslateInit() {
         if (!settingsStore.settings.textboxPrompt && response.default_prompt_content) {
           settingsStore.setTextboxPrompt(response.default_prompt_content)
         }
-
-        console.log(`[TranslateInit] 已加载 ${textboxPromptNames.value.length} 个文本框提示词`)
       } else if (response.error) {
         console.warn('[TranslateInit] 获取文本框提示词失败:', response.error)
       }
@@ -276,17 +270,9 @@ export function useTranslateInit() {
    * 清理显存并卸载已加载的模型，确保 GPU 状态干净
    */
   async function initializeGpu(): Promise<void> {
-    console.log('[TranslateInit] 清理 GPU 资源...')
-
     try {
       const response = await cleanupGpu()
-      if (response.success) {
-        const unloadedModels = response.unloaded_models || []
-        if (unloadedModels.length > 0) {
-          console.log(`[TranslateInit] 已卸载模型: ${unloadedModels.join(', ')}`)
-        }
-        console.log(`[TranslateInit] GPU 清理完成 - 已分配: ${response.memory_allocated_mb}MB, 已预留: ${response.memory_reserved_mb}MB`)
-      } else {
+      if (!response.success) {
         console.warn('[TranslateInit] GPU 清理失败:', response.error)
       }
     } catch (error) {
@@ -305,7 +291,6 @@ export function useTranslateInit() {
     const chapterId = route.query.chapter as string | undefined
 
     if (!bookId || !chapterId) {
-      console.log('[TranslateInit] 未指定书籍/章节参数，使用独立模式')
       isBookshelfMode.value = false
       // 进入独立模式时清空书籍/章节上下文，避免跨会话残留
       currentBookId.value = null
@@ -317,7 +302,6 @@ export function useTranslateInit() {
       return
     }
 
-    console.log(`[TranslateInit] 检测到书籍/章节参数: book=${bookId}, chapter=${chapterId}`)
     isBookshelfMode.value = true
     currentBookId.value = bookId
     currentChapterId.value = chapterId
@@ -359,15 +343,12 @@ export function useTranslateInit() {
       // 尝试加载章节的会话数据（仅当章节有已保存的图片时才尝试加载）
       const hasData = chapter.page_count && chapter.page_count > 0
       if (chapter.session_path && hasData) {
-        console.log(`[TranslateInit] 尝试加载章节会话: ${chapter.session_path}`)
         try {
           await sessionStore.loadSessionByPath(chapter.session_path)
           showToast(`已加载章节: ${chapter.title}`, 'success')
         } catch {
-          console.log('[TranslateInit] 章节会话数据不存在或加载失败，将创建新会话')
+          // 会话不可用时保持当前章节上下文，等待用户重新保存。
         }
-      } else if (!hasData) {
-        console.log('[TranslateInit] 新章节，无需加载会话数据')
       }
 
     } catch (error) {
@@ -394,6 +375,7 @@ export function useTranslateInit() {
 
     // 设置全局标记，表示当前正在进行切换图片操作
     // 这个标记用于避免在切换图片时触发不必要的重渲染
+    clearSwitchImageFlagTimer()
     window._isChangingFromSwitchImage = true
 
     // 如果在编辑模式，退出编辑模式但不触发重渲染
@@ -414,11 +396,9 @@ export function useTranslateInit() {
 
     if (!newImage) {
       console.warn('[TranslateInit] 切换到的图片不存在')
-      window._isChangingFromSwitchImage = false
+      resetSwitchImageFlag()
       return
     }
-
-    console.log(`[TranslateInit] 切换到图片: ${index}, ${newImage.fileName}`)
 
     // 加载新图片的气泡状态（skipSync=true 避免冗余同步）
     // 使用 clearBubblesLocal 保持 null 和 [] 的语义区分：
@@ -436,9 +416,9 @@ export function useTranslateInit() {
     // 当 currentImage 变化时，watch 会调用 syncImageToSidebar
 
     // 重置切换图片操作的标记
-    setTimeout(() => {
+    switchImageFlagTimer = setTimeout(() => {
+      switchImageFlagTimer = null
       window._isChangingFromSwitchImage = false
-      console.log('[TranslateInit] 已重置切换图片操作标记')
     }, 100)
   }
 

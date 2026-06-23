@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { onUnmounted, ref, type Ref } from 'vue'
 
 interface UseEditWorkspaceResizeActionsOptions {
   layoutMode: Ref<'horizontal' | 'vertical'>
@@ -107,6 +107,15 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
     document.removeEventListener('mousemove', handlePanelResize)
     document.removeEventListener('mouseup', stopPanelResize)
   }
+
+  onUnmounted(() => {
+    if (isDraggingDivider.value) {
+      stopDividerDrag()
+    }
+    if (isResizingPanel.value) {
+      stopPanelResize()
+    }
+  })
 
   return {
     startDividerDrag,

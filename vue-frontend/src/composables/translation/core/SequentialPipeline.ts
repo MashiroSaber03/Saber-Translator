@@ -52,9 +52,25 @@ export function useSequentialPipeline() {
   const { progress, reporter } = createProgressManager()
   const isExecuting = ref(false)
   let savedTextStyles: SavedTextStyles | null = null
+  let finishTimer: ReturnType<typeof setTimeout> | null = null
 
   const isTranslating = computed(() => isExecuting.value || imageStore.isBatchTranslationInProgress)
   const progressPercent = computed(() => progress.value.percentage || 0)
+
+  function clearFinishTimer(): void {
+    if (finishTimer !== null) {
+      clearTimeout(finishTimer)
+      finishTimer = null
+    }
+  }
+
+  function scheduleFinish(): void {
+    clearFinishTimer()
+    finishTimer = setTimeout(() => {
+      finishTimer = null
+      reporter.finish()
+    }, 1000)
+  }
 
   function validateConfig(config: PipelineConfig): boolean {
     if (config.mode === 'removeText' && !settingsStore.settings.removeTextWithOcr) {
@@ -138,7 +154,6 @@ export function useSequentialPipeline() {
       let task = tasks[imageIdx]!
 
       if ((config.scope === 'all' || config.scope === 'selection') && !imageStore.isBatchTranslationInProgress) {
-        console.log('⏹️ 批量翻译已取消，停止处理')
         break
       }
 
@@ -172,7 +187,6 @@ export function useSequentialPipeline() {
         tasks[imageIdx] = completedTask
         projectTaskContext(completedTask, runtime)
         completed++
-        console.log(`✅ 图片 ${imageIdx + 1}/${tasks.length} 处理完成`)
       }
     }
 
@@ -197,7 +211,6 @@ export function useSequentialPipeline() {
 
     for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
       if ((config.scope === 'all' || config.scope === 'selection') && !imageStore.isBatchTranslationInProgress) {
-        console.log('⏹️ 批量翻译已取消，停止处理')
         break
       }
 
@@ -284,12 +297,10 @@ export function useSequentialPipeline() {
           tasks[batchStart + index] = completedTask
           projectTaskContext(completedTask, runtime)
           completed++
-          console.log(`✅ 图片 ${batchStart + index + 1} 处理完成`)
         }
       }
 
       failed += failedIndices.size
-      console.log(`✅ 批次 ${batchIdx + 1}/${totalBatches} 处理完成`)
     }
 
     return { completed, failed }
@@ -306,6 +317,7 @@ export function useSequentialPipeline() {
     }
 
     const usePerImageMode = shouldUsePerImageMode(config.mode)
+    clearFinishTimer()
     isExecuting.value = true
     if (config.scope === 'all' || config.scope === 'failed' || config.scope === 'selection') {
       imageStore.setBatchTranslationInProgress(true)
@@ -316,7 +328,6 @@ export function useSequentialPipeline() {
     const errors: string[] = []
 
     if (savedTextStyles && imagesToProcess.length > 1) {
-      console.log(`📝 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
       for (const { index } of imagesToProcess) {
         imageStore.updateImageByIndex(index, {
           fontSize: savedTextStyles.fontSize,
@@ -346,12 +357,6 @@ export function useSequentialPipeline() {
       removeTextWithOcr: runtime.settingsSnapshot.removeTextWithOcr,
       autoSaveEnabled: enableAutoSave,
     })
-
-    console.log('🚀 顺序管线启动')
-    console.log(`   模式: ${config.mode}`)
-    console.log(`   处理方式: ${usePerImageMode ? '逐张处理' : '批次处理'}`)
-    console.log(`   步骤链: [${stepChain.join(' → ')}]`)
-    console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
 
     const tasks: TaskContext[] = imagesToProcess.map(({ image, index }) =>
       hydrateTaskContextFromImage(index, image, config.mode, runtime),
@@ -447,11 +452,12 @@ export function useSequentialPipeline() {
         bubbleStore.setBubbles(currentImage.bubbleStates, true)
       }
 
-      setTimeout(() => reporter.finish(), 1000)
+      scheduleFinish()
     }
   }
 
   function cancel(): void {
+    clearFinishTimer()
     if (imageStore.isBatchTranslationInProgress) {
       imageStore.setBatchTranslationInProgress(false)
       resetSaveState()

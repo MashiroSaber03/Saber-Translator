@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsSidebar from './SettingsSidebar.vue'
 
@@ -26,6 +26,11 @@ describe('SettingsSidebar defaults', () => {
     apiMocks.getTranslateWorkflowPreferences.mockRejectedValue(new Error('offline'))
     apiMocks.saveTranslateWorkflowPreferences.mockResolvedValue({ success: true })
     apiMocks.uploadFont.mockResolvedValue({ success: true, fontPath: 'fonts/custom.ttf' })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('defaults remember workflow mode to disabled before remote preferences load', async () => {

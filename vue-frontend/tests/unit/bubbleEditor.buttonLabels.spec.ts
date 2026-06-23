@@ -151,4 +151,45 @@ describe('BubbleEditor button labels', () => {
 
     expect(wrapper.emitted('update')).toEqual([[{ translatedText: '你好' }]])
   })
+
+  it('applies style to all bubbles without routine console logs', async () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+        isOcrLoading: false,
+        isTranslateLoading: false,
+      },
+      global: {
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            template: '<div class="jp-keyboard-stub"></div>',
+          },
+        },
+      },
+    })
+
+    const applyButton = wrapper.findAll('button')
+      .find(button => button.text().trim() === '样式同步到本页全部气泡')
+    expect(applyButton).toBeDefined()
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      await applyButton?.trigger('click')
+      expect(logSpy).not.toHaveBeenCalled()
+      expect(wrapper.emitted('reRender')).toHaveLength(1)
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
 })

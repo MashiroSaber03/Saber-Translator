@@ -81,7 +81,7 @@ describe('useInsightStore imageGen config', () => {
     expect(store.config.imageGen.baseUrl).toBe('')
   })
 
-  it('loads current reranker provider cache fields from storage', () => {
+  it('ignores unversioned provider cache from storage', () => {
     const providerConfigs = ref<ProviderConfigsCache>({
       vlm: {},
       llm: {},
@@ -90,6 +90,33 @@ describe('useInsightStore imageGen config', () => {
       imageGen: {},
     })
     localStorage.setItem('insight_provider_configs', JSON.stringify({
+      reranker: {
+        jina: {
+          apiKey: 'old-reranker-key',
+          model: 'old-reranker-model',
+        },
+      },
+    }))
+
+    const manager = useInsightConfigManager(providerConfigs)
+    manager.loadFromStorage()
+
+    expect(providerConfigs.value.reranker).toEqual({})
+  })
+
+  it('loads current versioned reranker provider cache fields from storage', () => {
+    const providerConfigs = ref<ProviderConfigsCache>({
+      vlm: {},
+      llm: {},
+      embedding: {},
+      reranker: {},
+      imageGen: {},
+    })
+    localStorage.setItem('insight_provider_configs', JSON.stringify({
+      insightProviderConfigSchemaVersion: 1,
+      vlm: {},
+      llm: {},
+      embedding: {},
       reranker: {
         jina: {
           apiKey: 'reranker-key',
@@ -101,6 +128,7 @@ describe('useInsightStore imageGen config', () => {
           timeoutSeconds: 9,
         },
       },
+      imageGen: {},
     }))
 
     const manager = useInsightConfigManager(providerConfigs)

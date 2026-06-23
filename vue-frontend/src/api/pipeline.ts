@@ -12,7 +12,7 @@ import type { ApiError, ApiResponse } from '@/types'
 export type PipelineMode = 'standard' | 'hq' | 'proofread' | 'remove_text'
 
 /** 翻译范围（与前端 PipelineConfig.scope 对齐） */
-export type PipelineScope = 'current' | 'all' | 'range' | 'failed'
+export type PipelineScope = 'current' | 'all' | 'selection' | 'failed'
 
 export interface PipelineBeforePayload {
   pipeline_id: string

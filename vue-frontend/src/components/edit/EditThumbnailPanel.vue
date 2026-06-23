@@ -1,21 +1,23 @@
 <!--
   编辑模式缩略图面板组件
   显示所有图片的缩略图，支持点击切换
-  从 EditWorkspace.vue 拆分出来
 -->
 <template>
   <div v-if="visible" class="edit-thumbnails-panel">
     <div class="thumbnails-scroll">
-      <div
+      <UiButton
         v-for="(image, index) in images"
         :key="image.id"
+        variant="toolbar"
         class="edit-thumbnail-item"
         :class="{ active: index === currentImageIndex }"
+        :aria-label="`切换到图片 ${index + 1}`"
+        :aria-pressed="index === currentImageIndex"
         @click="$emit('switch-to-image', index)"
       >
         <img :src="image.translatedDataURL || image.originalDataURL" :alt="`图片 ${index + 1}`" />
         <span class="thumb-index">{{ index + 1 }}</span>
-      </div>
+      </UiButton>
     </div>
   </div>
 </template>
@@ -23,8 +25,9 @@
 <script setup lang="ts">
 /**
  * 编辑模式缩略图面板组件
- * 显示所有图片的缩略图，支持点击切换
+ * 显示所有图片的缩略图并发出切换请求。
  */
+import UiButton from '@/components/ui/UiButton.vue'
 import type { ImageData } from '@/types/image'
 
 // ============================================================

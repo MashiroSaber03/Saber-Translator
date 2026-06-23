@@ -141,7 +141,7 @@ const detectedTexts = computed<Array<{ original: string; translated: string }>>(
     }))
   }
   
-  // 读取历史数据格式
+  // 读取渲染任务镜像字段。
   const originalTexts = currentImage.value.originalTexts || []
   const translatedTexts = useTextboxPrompt.value
     ? (currentImage.value.textboxTexts || currentImage.value.bubbleTexts || [])
@@ -630,8 +630,8 @@ async function handleImportFile(event: Event): Promise<void> {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--secondary-bg, var(--image-result-display-surface-selected));
-  border: 1px solid var(--color-border-muted, var(--color-border-soft));
+  background-color: var(--image-result-display-surface-selected);
+  border: 1px solid var(--color-border-muted);
   border-radius: 4px;
   white-space: pre-wrap;
   font-family: var(--font-mono);
@@ -645,7 +645,7 @@ async function handleImportFile(event: Event): Promise<void> {
 .image-result-display .text-info h3 {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-weight: 600;
 }
 
@@ -661,7 +661,7 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 .image-result-display .original-text {
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .image-result-display .translated-text {
@@ -681,8 +681,8 @@ async function handleImportFile(event: Event): Promise<void> {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--secondary-bg, var(--image-result-display-surface-selected));
-  border: 1px solid var(--color-border-muted, var(--color-border-soft));
+  background-color: var(--image-result-display-surface-selected);
+  border: 1px solid var(--color-border-muted);
   border-radius: 8px;
 }
 

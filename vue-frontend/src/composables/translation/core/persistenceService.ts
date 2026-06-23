@@ -5,6 +5,8 @@ import {
   saveSessionMeta,
 } from '@/api/pageStorage'
 import { apiClient } from '@/api/client'
+import type { BubbleState, BubbleTextline } from '@/types/bubble'
+import type { OcrResult } from '@/types/ocr'
 import type { PipelineRuntime, TaskContext } from './runtime'
 
 interface PersistPageOptions {
@@ -108,9 +110,9 @@ function buildResolvedStyleFields(context: TaskContext, runtime: PipelineRuntime
 }
 
 function bubbleValueOrFallback<T>(
-  bubbleStates: unknown,
+  bubbleStates: BubbleState[] | null | undefined,
   index: number,
-  pick: (bubble: any) => T | undefined,
+  pick: (bubble: BubbleState) => T | undefined,
   fallback: T[]
 ): T | undefined {
   if (Array.isArray(bubbleStates)) {
@@ -127,7 +129,7 @@ function bubbleValueOrFallback<T>(
 
 function buildPageMeta(context: TaskContext, runtime: PipelineRuntime): Record<string, unknown> {
   const image = context.sourceImage
-  const bubbleStates = Array.isArray(context.bubbleStates) ? context.bubbleStates : image.bubbleStates
+  const bubbleStates: BubbleState[] | null | undefined = Array.isArray(context.bubbleStates) ? context.bubbleStates : image.bubbleStates
   const hasRenderedResult = Boolean(context.finalImage || context.cleanImage)
   const translationStatus = context.status === 'failed'
     ? 'failed'
@@ -160,10 +162,10 @@ function buildPageMeta(context: TaskContext, runtime: PipelineRuntime): Record<s
       bubbleValueOrFallback<string>(bubbleStates, index, (bubble) => bubble.textboxText || '', context.textboxTexts) || '',
     ),
     textlinesPerBubble: Array.from({ length: Math.max(context.textlinesPerBubble.length, Array.isArray(bubbleStates) ? bubbleStates.length : 0) }, (_, index) =>
-      bubbleValueOrFallback<any[]>(bubbleStates, index, (bubble) => bubble.textlines || [], context.textlinesPerBubble) || [],
+      bubbleValueOrFallback<BubbleTextline[]>(bubbleStates, index, (bubble) => bubble.textlines || [], context.textlinesPerBubble) || [],
     ),
     ocrResults: Array.from({ length: Math.max(context.ocrResults.length, Array.isArray(bubbleStates) ? bubbleStates.length : 0) }, (_, index) =>
-      bubbleValueOrFallback<any>(bubbleStates, index, (bubble) => bubble.ocrResult || {
+      bubbleValueOrFallback<OcrResult>(bubbleStates, index, (bubble) => bubble.ocrResult || {
           text: bubble?.originalText || '',
           confidence: null,
           confidenceSupported: false,

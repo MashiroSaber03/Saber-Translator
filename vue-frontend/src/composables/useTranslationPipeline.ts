@@ -1,13 +1,13 @@
 /**
- * 翻译功能组合式函数 - 重构版
- * 
- * 使用统一的翻译入口，支持：
+ * 翻译功能组合式函数
+ *
+ * 统一翻译入口支持：
  * - 单页翻译
  * - 指定页翻译
  * - 全部翻译
  * - 重试失败页面
  * 
- * 核心设计：统一使用 translatePages(pageIndexes, mode) 入口
+ * 核心契约：所有调用都通过 translatePages(pageIndexes, mode) 执行。
  */
 
 import { computed } from 'vue'
@@ -149,9 +149,12 @@ export function useTranslation() {
             }
 
             config = getModeConfig(mode, 'current')
-            const pipelineResult = await pipeline.execute(config)
-
-            imageStore.setCurrentImageIndex(originalIndex)
+            let pipelineResult
+            try {
+                pipelineResult = await pipeline.execute(config)
+            } finally {
+                imageStore.setCurrentImageIndex(originalIndex)
+            }
             return {
                 success: pipelineResult.success,
                 completed: pipelineResult.completed,

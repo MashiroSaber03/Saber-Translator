@@ -96,4 +96,44 @@ describe('ReferenceImageSelector', () => {
 
     expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:185', 'original:186']])
   })
+
+  it('uses explicit button controls for selectable manga thumbnails', async () => {
+    const wrapper = mount(ReferenceImageSelector, {
+      attachTo: document.body,
+      props: {
+        visible: true,
+        mode: 'script',
+        maxCount: 2,
+        originalImages: [
+          {
+            page_number: 1,
+            path: '/tmp/page-1.png',
+            has_image: true,
+            token: 'original:1',
+          },
+          {
+            page_number: 2,
+            path: '/tmp/page-2.png',
+            has_image: true,
+            token: 'original:2',
+          },
+        ],
+        continuationImages: [],
+        characterForms: [],
+        initialSelection: [],
+        bookId: 'book-1',
+      },
+    })
+
+    await nextTick()
+    const thumbnailButtons = [...document.body.querySelectorAll<HTMLButtonElement>('button.thumbnail')]
+
+    expect(thumbnailButtons).toHaveLength(2)
+    expect(thumbnailButtons[0].getAttribute('aria-pressed')).toBe('true')
+
+    thumbnailButtons[0].click()
+    await clickConfirmButton()
+
+    expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:2']])
+  })
 })

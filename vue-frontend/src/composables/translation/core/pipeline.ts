@@ -1,14 +1,14 @@
 /**
  * 翻译管线执行引擎 - 统一入口
  * 
- * 重构后的设计：
+ * 当前执行契约：
  * - 此文件作为统一入口，根据配置委托给具体的管线实现
  * - SequentialPipeline: 顺序执行（适用于单张或需要严格顺序的场景）
  * - ParallelPipeline: 并行执行（适用于批量处理，提高效率）
  * 
  * 核心设计理念：
  * - 所有模式统一使用步骤链配置
- * - 消除 executeStandardMode, executeHqMode 等重复代码
+ * - 模式步骤链由注册表统一解析
  * - 简化选项传递（skipTranslation, skipOcr 等）
  */
 
@@ -32,7 +32,6 @@ import {
     notifyPipelineBefore,
     PipelineCancelledError,
     type PipelineMode,
-    type PipelineScope,
 } from '@/api/pipeline'
 
 /** 把前端 TranslationMode 映射为后端 PLUGIN_MODES（仅 'removeText' → 'remove_text'）。 */
@@ -151,7 +150,7 @@ export function usePipeline() {
             failedIndices
         )
         const backendMode = toBackendMode(config.mode)
-        const backendScope = config.scope as PipelineScope
+        const backendScope = config.scope
 
         try {
             await notifyPipelineBefore({
@@ -201,7 +200,6 @@ export function usePipeline() {
                 ? await executeParallelMode(config)
                 : await sequentialPipeline.execute(config)
 
-            console.log(`🚀 ${shouldUseParallel ? '并行' : '顺序'}管线完成，模式: ${config.mode}, pipeline_id=${pipelineId}`)
             void sendAfter(result)
             return result
         } catch (err) {
@@ -237,7 +235,6 @@ export function usePipeline() {
         // 用户在翻译过程中切换图片时，侧边栏会继续显示本次任务使用的设置。
         if (imagesToProcess.length > 1) {
             const { textStyle } = settingsStore.settings
-            console.log(`📝 [并行模式] 预分发文字设置到 ${imagesToProcess.length} 张待翻译图片...`)
             for (const imageIndex of pageIndexes) {
                 imageStore.updateImageByIndex(imageIndex, {
                     fontSize: textStyle.fontSize,
@@ -269,7 +266,6 @@ export function usePipeline() {
 
             // 如果启用自动保存，先执行预保存（保存所有原始图片）
             if (enableAutoSave) {
-                console.log('[ParallelPipeline] 执行预保存...')
                 toast.info('开始预保存原始图片...')
 
                 // 通过进度回调更新预保存进度
@@ -313,11 +309,6 @@ export function usePipeline() {
 
             // 映射模式
             const parallelMode: ParallelTranslationMode = config.mode as ParallelTranslationMode
-
-            console.log(`🚀 启动并行翻译模式: ${parallelMode}`)
-            console.log(`   图片数量: ${imagesToProcess.length}`)
-            console.log(`   页码索引: [${pageIndexes.join(', ')}]`)
-            console.log(`   自动保存: ${enableAutoSave ? '启用' : '禁用'}`)
 
             // 初始化保存进度
             if (enableAutoSave) {
@@ -387,7 +378,6 @@ export function usePipeline() {
 
             // 如果启用了自动保存，完成保存会话
             if (enableAutoSave) {
-                console.log('[ParallelPipeline] 完成保存...')
                 await finalizeSave()
             }
         }

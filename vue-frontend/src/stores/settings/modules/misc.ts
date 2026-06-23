@@ -59,7 +59,6 @@ export function useMiscSettings(
   function setPdfProcessingMethod(method: PdfProcessingMethod): void {
     settings.value.pdfProcessingMethod = method
     saveToStorage()
-    console.log(`PDF处理方式已设置为: ${method}`)
   }
 
   /**
@@ -78,7 +77,6 @@ export function useMiscSettings(
   function setAutoSaveInBookshelfMode(enabled: boolean): void {
     settings.value.autoSaveInBookshelfMode = enabled
     saveToStorage()
-    console.log(`书架模式自动保存已${enabled ? '启用' : '禁用'}`)
   }
 
   /**
@@ -88,7 +86,6 @@ export function useMiscSettings(
   function setRemoveTextWithOcr(enabled: boolean): void {
     settings.value.removeTextWithOcr = enabled
     saveToStorage()
-    console.log(`消除文字模式OCR已${enabled ? '启用' : '禁用'}`)
   }
 
   /**
@@ -98,7 +95,6 @@ export function useMiscSettings(
   function setEnableVerboseLogs(enabled: boolean): void {
     settings.value.enableVerboseLogs = enabled
     saveToStorage()
-    console.log(`详细日志已${enabled ? '启用' : '禁用'}`)
   }
 
   /**
@@ -108,7 +104,6 @@ export function useMiscSettings(
   function setLamaDisableResize(disabled: boolean): void {
     settings.value.lamaDisableResize = disabled
     saveToStorage()
-    console.log(`LAMA修复自动缩放已${disabled ? '禁用' : '启用'}`)
   }
 
   return {

@@ -1,8 +1,6 @@
 /**
  * 渲染步骤
- * 提取自 SequentialPipeline.ts Line 628-715
- * 
- * 注意：这是最复杂的步骤之一，需要处理文字方向、颜色、savedTextStyles等
+ * 负责将清理后的图片、译文、方向、颜色和保存的文字样式投影为最终图像。
  */
 import { parallelRender, type ParallelRenderResponse } from '@/api/parallelTranslate'
 import type { BubbleState, BubbleCoords, BubbleTextline } from '@/types/bubble'
@@ -116,7 +114,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     const shouldInitializeAutoFontSize = renderStylePolicy.fontSize === 'initialize_auto' && autoFontSizeEnabled
     const shouldInitializeAutoColor = renderStylePolicy.color === 'initialize_auto' && autoTextColorEnabled
 
-    // 【简化设计】计算 textDirection：
+    // 计算每个气泡最终用于渲染的 textDirection：
     // - 如果全局设置是 'auto'，使用检测结果
     // - 否则使用全局设置的值
     const globalTextDir = savedTextStyles?.autoTextDirection
@@ -136,7 +134,7 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
                 : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
         const baseState = bubbleStatesSource?.[idx]
 
-        // 【简化设计】textDirection 直接使用具体方向值
+        // textDirection 直接使用具体方向值，异常时回退到检测方向。
         const textDirection =
             (baseState?.textDirection === 'vertical' || baseState?.textDirection === 'horizontal')
                 ? baseState.textDirection

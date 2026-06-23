@@ -26,8 +26,10 @@ import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
 import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntryPanel.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
+import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
+import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
 // ============================================================
 // 路由和状态
@@ -56,6 +58,9 @@ const showMobileWorkspace = ref(false)
 
 /** 分析状态轮询定时器 */
 let statusPollingTimer: ReturnType<typeof setInterval> | null = null
+
+/** 分析完成后的面板刷新定时器 */
+let refreshDataTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 当前加载的书籍详情 */
 const loadedBookDetail = ref<{
@@ -100,6 +105,41 @@ function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'chara
   activeTab.value = tab
 }
 
+function getChapterPageCount(chapter: ChapterData): number {
+  return chapter.page_count ?? chapter.image_count ?? chapter.imageCount ?? 0
+}
+
+function mapBookChaptersToInsightChapters(chapters: ChapterData[]): ChapterInfo[] {
+  let pageOffset = 0
+  return chapters.map((chapter, index) => {
+    const pageCount = getChapterPageCount(chapter)
+    const startPage = pageOffset + 1
+    const endPage = pageOffset + pageCount
+    pageOffset = endPage
+    return {
+      id: chapter.id,
+      title: chapter.title || `第 ${index + 1} 章`,
+      startPage,
+      endPage,
+      analyzed: false,
+    }
+  })
+}
+
+function setLoadedBookDetail(book: BookData): void {
+  loadedBookDetail.value = {
+    id: book.id,
+    title: book.title,
+    cover: book.cover,
+    total_pages: book.total_pages || 0,
+  }
+  insightStore.setBookTotalPages(book.total_pages || 0)
+
+  if (book.chapters?.length) {
+    insightStore.setChapters(mapBookChaptersToInsightChapters(book.chapters))
+  }
+}
+
 /**
  * 加载书籍
  * @param bookId - 书籍ID
@@ -111,43 +151,14 @@ async function loadBook(bookId: string): Promise<void> {
   insightStore.setLoading(true)
 
   try {
-    // 获取书籍详情
-    const bookResponse = await fetch(`/api/bookshelf/books/${bookId}`)
-    const bookData = await bookResponse.json()
+    const bookData = await getBookDetail(bookId)
 
     if (!bookData.success) {
       throw new Error(bookData.error || '获取书籍信息失败')
     }
 
-    // 存储书籍详情数据
     if (bookData.book) {
-      loadedBookDetail.value = {
-        id: bookData.book.id,
-        title: bookData.book.title,
-        cover: bookData.book.cover,
-        total_pages: bookData.book.total_pages || 0
-      }
-      // 设置书籍总页数到store
-      insightStore.setBookTotalPages(bookData.book.total_pages || 0)
-      
-      // 从书籍信息中获取章节数据（与当前页面行为一致）
-      if (bookData.book.chapters && bookData.book.chapters.length > 0) {
-        let pageOffset = 0
-        const chaptersFromBook = bookData.book.chapters.map((ch: any, idx: number) => {
-          const chapterId = ch.id || ch.chapter_id || `ch_${idx + 1}`
-          const pageCount = ch.page_count || ch.pages?.length || 0
-          const startPage = pageOffset + 1
-          const endPage = pageOffset + pageCount
-          pageOffset = endPage
-          return {
-            id: chapterId,
-            title: ch.title || `第 ${idx + 1} 章`,
-            startPage,
-            endPage
-          }
-        })
-        insightStore.setChapters(chaptersFromBook)
-      }
+      setLoadedBookDetail(bookData.book)
     }
 
     // 获取分析状态
@@ -163,7 +174,7 @@ async function loadBook(bookId: string): Promise<void> {
             title: ch.title,
             startPage: ch.start_page,
             endPage: ch.end_page,
-            analyzed: true  // 从 API 返回的章节默认已分析
+            analyzed: true
           })))
         }
       } catch (e) {
@@ -248,7 +259,8 @@ function startStatusPolling(): void {
 
       if (status === 'completed') {
         // completed 时保留延迟，等待后端汇总任务完成
-        setTimeout(() => {
+        refreshDataTimer = setTimeout(() => {
+          refreshDataTimer = null
           void refreshData()
         }, 1000)
       } else {
@@ -266,6 +278,10 @@ function stopStatusPolling(): void {
   if (statusPollingTimer) {
     clearInterval(statusPollingTimer)
     statusPollingTimer = null
+  }
+  if (refreshDataTimer) {
+    clearTimeout(refreshDataTimer)
+    refreshDataTimer = null
   }
 }
 
@@ -399,9 +415,9 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     <AppHeader variant="insight" logo-title="书架首页">
       <template #header-links>
         <router-link to="/" class="insight-header__nav-link">📚 书架</router-link>
-        <a href="javascript:void(0)" class="insight-header__nav-link" @click="goToTranslate">🌐 翻译</a>
+        <UiButton variant="link" class="insight-header__nav-link" @click="goToTranslate">🌐 翻译</UiButton>
         <span class="insight-header__nav-link insight-header__nav-link--active">🔍 分析</span>
-        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" class="insight-header__nav-link" title="使用教程">📖 教程</a>
+        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" rel="noopener noreferrer" class="insight-header__nav-link" title="使用教程">📖 教程</a>
         <UiButton variant="toolbar" id="settingsBtn" class="insight-settings-action" title="设置" @click="openSettingsModal">⚙️</UiButton>
         <UiButton variant="toolbar" id="themeToggle" class="insight-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
           <span class="insight-header__theme-icon">☀️</span>

@@ -24,11 +24,14 @@ export * from './folder'
 // Manga Insight 类型
 export * from './insight'
 
+// 角色工坊类型
+export * from './characterStudio'
+
+// 网页导入类型
+export * from './webImport'
+
 // 翻译页工作流类型
 export * from './workflow'
-
-// 角色卡工坊类型
-export * from './characterCard'
 
 // 书籍级翻译约束
 export * from './bookTranslationConstraints'

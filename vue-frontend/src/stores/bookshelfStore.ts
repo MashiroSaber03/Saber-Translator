@@ -128,7 +128,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    */
   function setBooks(bookList: BookData[]): void {
     books.value = bookList
-    console.log(`书籍列表已设置，共 ${bookList.length} 本书`)
   }
 
   /**
@@ -137,7 +136,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    */
   function addBook(book: BookData): void {
     books.value.unshift(book)
-    console.log(`已添加书籍: ${book.title}`)
   }
 
   function upsertBook(book: BookData): void {
@@ -160,7 +158,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       const book = books.value[index]
       if (book) {
         books.value[index] = { ...book, ...updates }
-        console.log(`已更新书籍: ${bookId}`)
       }
     }
   }
@@ -182,7 +179,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (selectedBookIds.value.delete(bookId)) {
         selectedBookIds.value = new Set(selectedBookIds.value)
       }
-      console.log(`已删除书籍: ${bookId}`)
     }
   }
 
@@ -227,7 +223,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         book.chapters = []
       }
       book.chapters.push(chapter)
-      console.log(`已添加章节到书籍 ${bookId}: ${chapter.title}`)
     }
   }
 
@@ -243,7 +238,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       const chapter = book.chapters.find(c => c.id === chapterId)
       if (chapter) {
         Object.assign(chapter, updates)
-        console.log(`已更新章节: ${chapterId}`)
       }
     }
   }
@@ -259,7 +253,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       const index = book.chapters.findIndex(c => c.id === chapterId)
       if (index >= 0) {
         book.chapters.splice(index, 1)
-        console.log(`已删除章节: ${chapterId}`)
       }
     }
   }
@@ -281,7 +274,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         }
       }
       book.chapters = reordered
-      console.log(`已重新排序章节: ${bookId}`)
     }
   }
 
@@ -295,7 +287,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    */
   function setTags(tagList: TagData[]): void {
     tags.value = tagList
-    console.log(`标签列表已设置，共 ${tagList.length} 个标签`)
   }
 
   /**
@@ -304,7 +295,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    */
   function addTag(tag: TagData): void {
     tags.value.push(tag)
-    console.log(`已添加标签: ${tag.name}`)
   }
 
   /**
@@ -321,7 +311,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (selectedIndex >= 0) {
         selectedTagIds.value.splice(selectedIndex, 1)
       }
-      console.log(`已删除标签: ${tagName}`)
     }
   }
 
@@ -822,7 +811,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     expandedBookId.value = null
     isLoading.value = false
     error.value = null
-    console.log('书架状态已重置')
   }
 
   // ============================================================
@@ -916,7 +904,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     updateChapterApi,
     deleteChapterApi,
     reorderChaptersApi,
-    // 【已删除】addTagsToBookApi 和 removeTagsFromBookApi,改用 updateBookApi 传递完整 tags 数组
+    // 标签写入通过 updateBookApi 提交完整 tags 数组。
 
     // 重置
     reset

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiInput from '@/components/ui/UiInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { TagData } from '@/types/api'
 
 defineProps<{
@@ -24,30 +25,36 @@ defineEmits<{
       placeholder="输入标签名称进行搜索或创建..."
       autofocus
       @update:model-value="$emit('update:filter', String($event))"
-      @keypress.enter="$emit('submit')"
+      @keydown.enter="$emit('submit')"
     />
   </div>
 
   <div class="quick-tag-list">
-    <div
+    <UiButton
       v-for="tag in availableTags"
       :key="tag.name"
+      variant="toolbar"
+      type="button"
       class="quick-tag-item"
+      :aria-label="`添加标签 ${tag.name}`"
       @click="$emit('add', tag.name)"
     >
       <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
       <span class="quick-tag-name">{{ tag.name }}</span>
       <span class="tag-add-icon">+</span>
-    </div>
+    </UiButton>
 
-    <div
+    <UiButton
       v-if="showCreateNewTagOption"
+      variant="toolbar"
+      type="button"
       class="quick-tag-item new-tag"
+      :aria-label="`创建并添加标签 ${filter.trim()}`"
       @click="$emit('add', filter.trim())"
     >
       <span class="tag-icon">+</span>
       <span>创建并添加 "{{ filter.trim() }}"</span>
-    </div>
+    </UiButton>
 
     <p
       v-if="availableTags.length === 0 && !showCreateNewTagOption"
@@ -95,11 +102,14 @@ defineEmits<{
 .quick-tag-item {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 12px;
   padding: 12px 16px;
   border-radius: 8px;
   background: var(--color-surface-interactive-hover);
+  color: inherit;
   cursor: pointer;
+  text-align: left;
   transition: all 0.2s;
 }
 

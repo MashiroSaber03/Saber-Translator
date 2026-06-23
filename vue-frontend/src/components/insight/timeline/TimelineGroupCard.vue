@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
 import type { TimelineGroup } from './timelineTypes'
 
 defineProps<{
@@ -20,20 +21,35 @@ function hideFailedImage(event: Event): void {
 
 <template>
   <div class="timeline-card">
-    <div class="timeline-card-header" @click="$emit('toggle', group.id)">
-      <img
-        class="timeline-thumbnail"
-        :src="thumbnailUrl"
-        :alt="`第${group.page_range.start}页`"
-        loading="lazy"
-        @error="hideFailedImage"
-        @click.stop="$emit('showPage', group.page_range.start)"
+    <div class="timeline-card-header">
+      <UiButton
+        variant="toolbar"
+        type="button"
+        class="timeline-thumbnail-action"
+        :aria-label="`查看第 ${group.page_range.start} 页`"
+        @click="$emit('showPage', group.page_range.start)"
       >
-      <div class="timeline-card-title">
-        <span class="timeline-page-range">第 {{ group.page_range.start }}-{{ group.page_range.end }} 页</span>
-        <span class="timeline-event-count">{{ group.events.length }} 个事件</span>
-      </div>
-      <span class="expand-icon">{{ expanded ? '▼' : '▶' }}</span>
+        <img
+          class="timeline-thumbnail"
+          :src="thumbnailUrl"
+          :alt="`第${group.page_range.start}页`"
+          loading="lazy"
+          @error="hideFailedImage"
+        >
+      </UiButton>
+      <UiButton
+        variant="toolbar"
+        type="button"
+        class="timeline-card-toggle"
+        :aria-expanded="String(expanded)"
+        @click="$emit('toggle', group.id)"
+      >
+        <span class="timeline-card-title">
+          <span class="timeline-page-range">第 {{ group.page_range.start }}-{{ group.page_range.end }} 页</span>
+          <span class="timeline-event-count">{{ group.events.length }} 个事件</span>
+        </span>
+        <span class="expand-icon">{{ expanded ? '▼' : '▶' }}</span>
+      </UiButton>
     </div>
 
     <div v-if="group.summary" class="timeline-summary">{{ group.summary }}</div>
@@ -71,7 +87,20 @@ function hideFailedImage(event: Event): void {
   padding: 12px;
   background: var(--insight-surface-tertiary);
   border-bottom: 1px solid var(--color-border-muted);
-  cursor: pointer;
+}
+
+.timeline-thumbnail-action {
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+
+.timeline-card-toggle {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  justify-content: space-between;
+  min-width: 0;
+  text-align: left;
 }
 
 .timeline-thumbnail {
@@ -79,12 +108,11 @@ function hideFailedImage(event: Event): void {
   height: 80px;
   object-fit: cover;
   border-radius: 6px;
-  cursor: pointer;
   transition: transform 0.2s;
   background: var(--insight-surface-page);
 }
 
-.timeline-thumbnail:hover {
+.timeline-thumbnail-action:hover .timeline-thumbnail {
   transform: scale(1.05);
 }
 

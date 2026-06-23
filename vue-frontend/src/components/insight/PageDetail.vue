@@ -383,7 +383,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         </div>
 
         <!-- 页面图片 -->
-        <div class="page-detail-image" @click="openImagePreview">
+        <UiButton
+          variant="toolbar"
+          class="page-detail-image"
+          :aria-label="`预览第 ${selectedPageNum} 页图片`"
+          @click="openImagePreview"
+        >
           <img
             :src="pageImageUrl"
             :alt="`第${selectedPageNum}页`"
@@ -392,7 +397,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           <div class="image-overlay">
             <span class="zoom-hint">🔍 点击放大</span>
           </div>
-        </div>
+        </UiButton>
 
         <!-- 分析状态标签 -->
         <div class="analysis-status-tag" :class="{ analyzed: isPageAnalyzed }">
@@ -620,10 +625,16 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 /* 页面图片 */
 .page-detail-section .page-detail-image {
   position: relative;
+  display: block;
+  width: 100%;
   margin-bottom: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   border-radius: 4px;
   overflow: hidden;
+  text-align: left;
 }
 
 .page-detail-section .page-detail-image img {
