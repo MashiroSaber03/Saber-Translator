@@ -58,7 +58,9 @@
         <CharacterManagementPanel 
           v-if="insightStore.currentBookId"
           :book-id="insightStore.currentBookId"
+          :character-management="charMgmt"
           :is-loading="state.isLoading.value"
+          :state="state"
         />
         <div class="actions">
           <UiButton variant="danger" @click="handleClearAndRestart">🗑️ 清除数据重新开始</UiButton>
@@ -106,6 +108,7 @@
           :is-generating="imageGen.isGenerating.value"
           :progress="imageGen.generationProgress.value"
           :book-id="insightStore.currentBookId || ''"
+          :state="state"
           @batch-generate="handleBatchGenerate"
           @regenerate="handleRegenerateImage"
           @use-previous="handleUsePrevious"
@@ -115,6 +118,7 @@
           v-if="insightStore.currentBookId"
           :book-id="insightStore.currentBookId"
           :generated-count="generatedPagesCount"
+          :state="state"
           @clear-and-restart="handleClearAndRestart"
         />
         <div class="actions">
@@ -129,16 +133,10 @@
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, computed, watch, provide, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
-import { 
-  useContinuationState,
-  ContinuationStateKey
-} from '@/composables/continuation/useContinuationState'
-import { 
-  useCharacterManagement,
-  CharacterManagementKey
-} from '@/composables/continuation/useCharacterManagement'
+import { useContinuationState } from '@/composables/continuation/useContinuationState'
+import { useCharacterManagement } from '@/composables/continuation/useCharacterManagement'
 import { useImageGeneration } from '@/composables/continuation/useImageGeneration'
 import CharacterManagementPanel from './continuation/CharacterManagementPanel.vue'
 import ScriptGenerationPanel from './continuation/ScriptGenerationPanel.vue'
@@ -149,13 +147,11 @@ import * as continuationApi from '@/api/continuation'
 import { hasUsableStoryContent } from '@/composables/continuation/promptValidation'
 const insightStore = useInsightStore()
 const bookId = computed(() => insightStore.currentBookId || '')
-// 提供所有composables的状态，直接传递bookId
 const stateComposable = useContinuationState(bookId)
-provide(ContinuationStateKey, stateComposable)
 const charMgmtComposable = useCharacterManagement(bookId, stateComposable)
-provide(CharacterManagementKey, charMgmtComposable)
 const imageGenComposable = useImageGeneration(bookId, stateComposable)
 const state = stateComposable
+const charMgmt = charMgmtComposable
 const imageGen = imageGenComposable
 const stepNames = ['角色设置', '生成脚本', '页面剧情', '图片生成/导出']
 const isGeneratingScript = ref(false)

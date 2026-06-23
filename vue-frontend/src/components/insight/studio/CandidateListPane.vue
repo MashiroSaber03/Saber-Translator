@@ -61,11 +61,11 @@ defineEmits<{
 
 .pane-head span {
   font-size: 12px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
 }
 
 .empty-copy {
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 13px;
   line-height: 1.6;
   padding: 8px 0;
@@ -95,7 +95,7 @@ defineEmits<{
 
 .candidate-meta {
   margin-top: 6px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -104,7 +104,7 @@ defineEmits<{
   border: none;
   border-radius: 12px;
   padding: 8px 12px;
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   color: var(--color-text-primary-strong);
   cursor: pointer;
 }

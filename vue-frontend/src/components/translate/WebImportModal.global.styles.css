@@ -1,0 +1,4 @@
+.web-import-modal.ui-modal__container {
+  --web-import-modal-shadow-default: rgba(0, 0, 0, .3);
+  box-shadow: 0 20px 60px var(--web-import-modal-shadow-default);
+}

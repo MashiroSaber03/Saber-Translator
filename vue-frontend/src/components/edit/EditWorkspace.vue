@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   编辑模式工作区组件
   提供双图对照、气泡编辑、笔刷工具等功能
 -->
@@ -244,6 +244,46 @@ const {
 /* ============ 编辑工作区 - 全屏覆盖 ============ */
 .edit-workspace {
   /* owner tokens: edit-workspace */
+  --edit-shell-start: #16213e;
+  --edit-shell-end: #1a1a2e;
+  --edit-shell-divider: rgba(255, 255, 255, .1);
+  --edit-shell-divider-soft: rgba(255, 255, 255, .05);
+  --edit-shell-overlay: rgba(0, 0, 0, .15);
+  --edit-shell-chip: rgba(102, 126, 234, .2);
+  --edit-shell-chip-hover: rgba(102, 126, 234, .4);
+  --edit-shell-chip-active: rgba(102, 126, 234, .5);
+  --edit-shell-control: rgba(102, 126, 234, .3);
+  --edit-shell-progress: rgba(0, 0, 0, .3);
+  --edit-shell-progress-muted: rgba(0, 0, 0, .3);
+  --edit-accent: #0f8;
+  --edit-action-start: #0f8;
+  --edit-action-end: #00cc6a;
+  --edit-action-text: #1a1a2e;
+  --edit-action-border: rgba(255, 255, 255, .3);
+  --edit-action-border-hover: rgba(255, 255, 255, .5);
+  --edit-panel-divider: #e9ecef;
+  --edit-panel-text: #495057;
+  --edit-panel-success: #27ae60;
+  --edit-control-bg: #f8f9fa;
+  --edit-original-bg: var(--color-surface-editor-original);
+  --edit-translated-bg: #f8fff8;
+  --edit-style-bg: #f5f6fb;
+  --edit-style-border: rgba(82, 92, 105, .12);
+  --edit-toolbar-border: rgba(96, 110, 140, .22);
+  --edit-toolbar-row-border: rgba(226, 232, 240, .9);
+  --edit-toolbar-row-start: #fbfcff;
+  --edit-toolbar-row-end: #f4f6ff;
+  --edit-toolbar-label: #57607c;
+  --edit-toolbar-divider: rgba(15, 23, 42, .08);
+  --edit-input-border: #cfd6e4;
+  --edit-input-text: #1f2430;
+  --edit-input-border-hover: #8aa0f6;
+  --edit-input-border-focus: #5b73f2;
+  --edit-muted-border-hover: #adb5bd;
+  --edit-shadow-focus-blue: rgba(52, 152, 219, .15);
+  --edit-shadow-toolbar: rgba(15, 23, 42, .12);
+  --edit-shadow-input-focus: rgba(88, 125, 255, .18);
+  --edit-shadow-action: rgba(0, 255, 136, .3);
   --edit-workspace-canvas-border-default: rgba(255, 255, 255, .3);
   --edit-workspace-canvas-border-strong: rgba(255, 255, 255, .5);
   --edit-workspace-canvas-border-muted: #27ae60;
@@ -298,7 +338,7 @@ const {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: var(--color-edit-shell-end);
+  background: var(--edit-shell-end);
   z-index: var(--z-overlay);
   overflow: hidden;
   margin: 0;
@@ -308,7 +348,7 @@ const {
 /* ============ 顶部工具栏 - 双行布局 ============ */
 .edit-toolbar-wrapper {
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-edit-shell-start) 0%, var(--color-edit-shell-end) 100%);
+  background: linear-gradient(135deg, var(--edit-shell-start) 0%, var(--edit-shell-end) 100%);
   border-bottom: 1px solid var(--edit-workspace-shell-border-default);
 }
 
@@ -350,7 +390,7 @@ const {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: var(--color-edit-shell-control);
+  background: var(--edit-shell-control);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 12px;
@@ -358,7 +398,7 @@ const {
 }
 
 .image-navigator .nav-btn:hover {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 
 .image-navigator .nav-btn:disabled {
@@ -370,14 +410,14 @@ const {
   color: var(--color-text-inverse);
   font-size: 14px;
   padding: 6px 12px;
-  background: var(--color-edit-shell-chip);
+  background: var(--edit-shell-chip);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .image-indicator:hover {
-  background: var(--color-edit-shell-chip-hover);
+  background: var(--edit-shell-chip-hover);
 }
 
 .image-indicator span {
@@ -402,7 +442,7 @@ const {
 }
 
 .thumb-toggle-btn.active {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 
 /* 编辑模式缩略图面板 */
@@ -414,7 +454,7 @@ const {
   left: auto;
   width: auto;
   max-height: none;
-  background: var(--color-edit-shell-progress);
+  background: var(--edit-shell-progress);
   padding: 10px 15px;
   border-bottom: 1px solid var(--edit-workspace-shell-border-default);
   flex-shrink: 0;
@@ -520,7 +560,7 @@ const {
 
 .bubble-indicator span {
   font-weight: bold;
-  color: var(--color-edit-accent);
+  color: var(--edit-accent);
 }
 
 /* 视图控制按钮 */
@@ -574,8 +614,8 @@ const {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: linear-gradient(135deg, var(--color-edit-action-start) 0%, var(--color-edit-action-end) 100%);
-  color: var(--color-edit-action-text);
+  background: linear-gradient(135deg, var(--edit-action-start) 0%, var(--edit-action-end) 100%);
+  color: var(--edit-action-text);
   font-weight: 600;
   cursor: pointer;
   font-size: 13px;
@@ -585,7 +625,7 @@ const {
 .edit-toolbar .action-primary:hover,
 .quick-actions .action-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow-edit-action);
+  box-shadow: 0 4px 12px var(--edit-shadow-action);
 }
 /* 次要按钮 */
 .edit-toolbar .action-secondary,
@@ -629,13 +669,13 @@ const {
   align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
+  border-bottom: 2px solid var(--color-border-muted, var(--edit-panel-divider));
 }
 
 .column-title {
   font-weight: 600;
   font-size: 14px;
-  color: var(--color-text-strong, var(--color-edit-panel-text));
+  color: var(--color-text-strong, var(--edit-panel-text));
 }
 
 .original-text-column .column-title {
@@ -643,7 +683,7 @@ const {
 }
 
 .translated-text-column .column-title {
-  color: var(--color-edit-panel-success);
+  color: var(--edit-panel-success);
 }
 
 .re-ocr-btn,
@@ -652,7 +692,7 @@ const {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--color-surface-app, var(--color-edit-control-bg));
+  background: var(--color-surface-app, var(--edit-control-bg));
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
@@ -669,7 +709,7 @@ const {
   width: 100%;
   min-height: 60px;
   padding: 12px;
-  border: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
+  border: 2px solid var(--color-border-muted, var(--edit-panel-divider));
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
@@ -690,7 +730,7 @@ const {
 }
 
 .translated-editor {
-  background: var(--color-edit-translated-bg);
+  background: var(--edit-translated-bg);
 }
 
 .text-actions {
@@ -711,8 +751,8 @@ const {
 }
 
 .text-actions button:hover {
-  background: var(--color-surface-app, var(--color-edit-control-bg));
-  border-color: var(--color-edit-muted-border-hover);
+  background: var(--color-surface-app, var(--edit-control-bg));
+  border-color: var(--edit-muted-border-hover);
 }
 
 .text-actions .apply-text-btn {
@@ -732,7 +772,7 @@ const {
 .style-settings-section {
   width: 100%;
   padding: 16px;
-  background: var(--color-edit-style-bg);
+  background: var(--edit-style-bg);
   border-radius: 10px;
   border: 1px solid var(--edit-workspace-canvas-border-hover);
   overflow-y: auto;
@@ -743,7 +783,7 @@ const {
   display: flex;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border-muted, var(--color-edit-panel-divider));
+  border-top: 1px solid var(--color-border-muted, var(--edit-panel-divider));
   margin-top: 12px;
 }
 
@@ -857,7 +897,7 @@ const {
   font-size: 12px;
   color: var(--edit-workspace-canvas-text-supporting);
   padding: 4px 8px;
-  background: var(--color-edit-shell-progress);
+  background: var(--edit-shell-progress);
   border-radius: 4px;
   margin-left: 5px;
 }

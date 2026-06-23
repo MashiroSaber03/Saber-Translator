@@ -2,10 +2,13 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 const ROOTS = [
+  'src/App.vue',
+  'src/main.ts',
   'src/api',
   'src/components',
   'src/config',
   'src/composables',
+  'src/router',
   'src/stores',
   'src/styles',
   'src/types',
@@ -93,6 +96,9 @@ const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+
 const TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE = /\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea|ui-modal__[a-z0-9-]+)(?![A-Za-z0-9_-])/g
 const CSS_BARE_UI_MODAL_SELECTOR_RE = /^\s*\.ui-modal__/m
 const GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE = /\.ui-modal__(?:body|header|footer|title|close)\b/
+const GLOBAL_FORM_SKIN_SELECTOR_RE = /(\.ui-settings-field\s+\.ui-(?:input|select|textarea)|\.ui-checkbox-label\s+input(?:\[[^\]]+\])?)/g
+const BUSINESS_PROVIDE_INJECT_RE = /\b(?:provide|inject)\s*\(/g
+const CUSTOM_STYLE_ATTR_RE = /(?::custom-style|custom-style)\s*=\s*(["'])([\s\S]*?)\1/g
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
@@ -132,6 +138,7 @@ const GENERATED_PALETTE_TOKEN_NAME_RE = /^--palette-(?:(?:border|color|shadow|su
 const GENERATED_OWNER_TOKEN_RE = /--color-[a-z0-9-]+-(?:surface|text|border|shadow|accent)-\d{3}/g
 const DOMAIN_SHARED_TOKEN_RE = /^--insight-/
 const GENERATED_DOMAIN_TOKEN_RE = /^--[a-z0-9-]+-variant-\d{3}$/
+const DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE = /^--(?:color-edit-|color-(?:surface|text|border|shadow)-studio|shadow-edit-|shadow-studio-)/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
@@ -310,21 +317,24 @@ const architectureDebtUsage = Object.fromEntries(
   Object.keys(ARCHITECTURE_DEBT_BUDGETS).map(key => [key, 0])
 )
 
+function scanPath(path) {
+  const stat = statSync(path)
+  if (stat.isDirectory()) {
+    walk(path)
+    return
+  }
+  if (path.endsWith('.vue') || path.endsWith('.css')) {
+    checkFile(path)
+    return
+  }
+  if (/\.(?:js|jsx|ts|tsx|json)$/.test(path)) {
+    checkScriptFile(path)
+  }
+}
+
 function walk(dir) {
   for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry)
-    const stat = statSync(path)
-    if (stat.isDirectory()) {
-      walk(path)
-      continue
-    }
-    if (path.endsWith('.vue') || path.endsWith('.css')) {
-      checkFile(path)
-      continue
-    }
-    if (/\.(?:js|jsx|ts|tsx|json)$/.test(path)) {
-      checkScriptFile(path)
-    }
+    scanPath(join(dir, entry))
   }
 }
 
@@ -590,8 +600,16 @@ function checkTokenDependencyArchitecture(paths) {
   for (const path of paths) {
     const content = readFileSync(path, 'utf8')
     const normalizedPath = normalizePath(path)
+    const rootTokenDefinitions = [...parseCustomPropertyScopes(content).root.keys()]
+    const domainSpecificGlobalTokens = rootTokenDefinitions.filter(token => DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE.test(token))
+    if (domainSpecificGlobalTokens.length > 0) {
+      addFailure(
+        path,
+        `domain-specific semantic token definition(s) ${domainSpecificGlobalTokens.join(', ')} are not allowed in global token files; move them into domain tokens or scoped owner variables`
+      )
+    }
     if (isDomainTokenFile(normalizedPath)) {
-      const domainTokens = [...parseCustomPropertyScopes(content).root.keys()]
+      const domainTokens = rootTokenDefinitions
       const domainTokenCount = domainTokens.length
       if (domainTokenCount > DOMAIN_TOKEN_MAX_DEFINITIONS) {
         addFailure(
@@ -729,6 +747,53 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
   }
 }
 
+function checkGlobalFormSkinSelectors(path, content) {
+  if (!normalizePath(path).endsWith('form-primitives.css')) {
+    return
+  }
+  const selectors = new Set()
+  for (const styleContent of extractStyleContents(content, path)) {
+    for (const match of stripCssComments(styleContent).matchAll(GLOBAL_FORM_SKIN_SELECTOR_RE)) {
+      selectors.add(match[1].replace(/\s+/g, ' '))
+    }
+  }
+  if (selectors.size > 0) {
+    addFailure(
+      path,
+      `global form skin selector(s) ${[...selectors].join(', ')} are not allowed; express settings form layout through UiField/UiPanel/Form primitives`
+    )
+  }
+}
+
+function checkBusinessProvideInject(path, normalizedPath, contentWithoutComments) {
+  if (!path.endsWith('.vue') || normalizedPath.startsWith('src/components/ui/')) {
+    return
+  }
+  const matches = new Set([...contentWithoutComments.matchAll(BUSINESS_PROVIDE_INJECT_RE)].map(match => match[0].replace(/\s*\($/, '')))
+  if (matches.size > 0) {
+    addFailure(
+      path,
+      `business provide/inject usage ${[...matches].join(', ')} is not allowed for UI component splitting; pass typed props/emits or move shared workflow state into a composable owner`
+    )
+  }
+}
+
+function checkRawCustomStyleValues(path, content) {
+  const rawValues = new Set()
+  for (const match of content.matchAll(CUSTOM_STYLE_ATTR_RE)) {
+    const attr = match[0]
+    for (const color of attr.matchAll(HARDCODED_COLOR_RE)) {
+      rawValues.add(color[0])
+    }
+  }
+  if (rawValues.size > 0) {
+    addFailure(
+      path,
+      `raw visual customStyle value(s) ${[...rawValues].join(', ')} are not allowed; use BaseModal layout props, semantic tokens, or scoped owner variables`
+    )
+  }
+}
+
 function isTestFile(normalizedPath) {
   return normalizedPath.startsWith('tests/')
     || /\.test\.[jt]sx?$/.test(normalizedPath)
@@ -762,6 +827,9 @@ function checkFile(path) {
   checkOldImplementationMindset(path, normalizedPath, content)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
+  checkGlobalFormSkinSelectors(path, content)
+  checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
+  checkRawCustomStyleValues(path, content)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
     addFailure(path, 'generated CSS files are not allowed; use co-located named .styles.css or component scoped styles')
@@ -1147,7 +1215,7 @@ if (SOURCE_FIXTURE) {
   }
 } else if (!SKIP_SOURCE_SCAN) {
   for (const root of ROOTS) {
-    walk(root)
+    scanPath(root)
   }
 }
 

@@ -20,10 +20,6 @@ const stateStub = {
   getGeneratedImageUrl: vi.fn((path: string) => path),
 }
 
-vi.mock('@/composables/continuation/useContinuationState', () => ({
-  useContinuationStateInject: () => stateStub,
-}))
-
 const referenceSelectorStub = defineComponent({
   name: 'ReferenceImageSelector',
   template: '<div class="reference-selector-stub" />',
@@ -67,6 +63,7 @@ describe('ImageGenerationPanel', () => {
         isGenerating: false,
         progress: 0,
         bookId: 'book-1',
+        state: stateStub,
       },
       global: {
         stubs: {
@@ -99,6 +96,7 @@ describe('ImageGenerationPanel', () => {
         isGenerating: false,
         progress: 0,
         bookId: 'book-1',
+        state: stateStub,
       },
       global: {
         stubs: {

@@ -116,13 +116,13 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--ghost {
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
   background: var(--color-surface-raised);
   color: var(--color-text-default);
 }
 
 .ui-button--ghost:hover:not(:disabled) {
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   border-color: var(--ui-button-border-default);
 }
 

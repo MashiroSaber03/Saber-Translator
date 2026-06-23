@@ -101,8 +101,8 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import { ref, computed } from 'vue'
-import { useCharacterManagementInject } from '@/composables/continuation/useCharacterManagement'
-import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
+import type { CharacterManagementComposable } from '@/composables/continuation/useCharacterManagement'
+import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import CharacterDetailPanel from './CharacterDetailPanel.vue'
 import AddCharacterDialog from './AddCharacterDialog.vue'
 import EditCharacterDialog from './EditCharacterDialog.vue'
@@ -111,13 +111,15 @@ import EditFormDialog from './EditFormDialog.vue'
 import OrthographicDialog from './OrthographicDialog.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
 
-defineProps<{
+const props = defineProps<{
   bookId: string
+  characterManagement: CharacterManagementComposable
   isLoading?: boolean
+  state: ContinuationState
 }>()
 
-const charMgmt = useCharacterManagementInject()
-const state = useContinuationStateInject()
+const charMgmt = props.characterManagement
+const state = props.state
 
 // 角色选择
 const selectedCharacter = ref<string | null>(null)

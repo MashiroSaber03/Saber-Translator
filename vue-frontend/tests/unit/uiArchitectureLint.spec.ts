@@ -52,6 +52,8 @@ const componentPrivateDomainToken = '--character-studio-preview-shell-surface-ba
 const genericComponentDomainToken = '--book-card-surface-base'
 const generatedInsightVariantToken = '--insight-view-accent-variant-012'
 const insightSharedThemeToken = '--insight-surface-page'
+const editDomainSemanticToken = '--color-edit-shell-start'
+const studioDomainSemanticToken = '--color-text-studio-strong'
 const domainTokenLimit = 50
 
 function runUiArchitectureTokenFixture(tokensCss: string) {
@@ -212,6 +214,20 @@ describe('UI architecture token dependency lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('value-named token definition(s)')
     expect(result.stderr).toContain(valueNamedSemanticToken)
+  })
+
+  it('rejects domain-specific token definitions in the global semantic layer', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${editDomainSemanticToken}: #16213e;
+        ${studioDomainSemanticToken}: #183351;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('domain-specific semantic token definition(s)')
+    expect(result.stderr).toContain(editDomainSemanticToken)
+    expect(result.stderr).toContain(studioDomainSemanticToken)
   })
 
   it('rejects root tokens that depend on body-only compatibility tokens', () => {
@@ -497,6 +513,62 @@ describe('UI architecture style ownership lint', () => {
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects global form primitive skins that style primitive internals from a helper CSS file', () => {
+    const result = runUiArchitectureSourceFixture('src/components/ui/form-primitives.css', `
+      .ui-settings-field .ui-input,
+      .ui-settings-field .ui-select {
+        padding: 10px 12px;
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('global form skin selector(s)')
+    expect(result.stderr).toContain('.ui-settings-field .ui-input')
+    expect(result.stderr).toContain('.ui-settings-field .ui-select')
+  })
+
+  it('rejects business provide/inject as a component split transport', () => {
+    const result = runUiArchitectureSourceFixture('src/components/insight/ContinuationPanel.vue', `
+      <script setup lang="ts">
+      import { provide, inject } from 'vue'
+      provide(ContinuationStateKey, state)
+      const continuationState = inject(ContinuationStateKey)
+      </script>
+      <template><section class="continuation-panel"></section></template>
+      <style scoped>
+      .continuation-panel { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('business provide/inject')
+    expect(result.stderr).toContain('provide')
+    expect(result.stderr).toContain('inject')
+  })
+
+  it('rejects raw visual values inside BaseModal customStyle maps', () => {
+    const result = runUiArchitectureSourceFixture('src/components/settings/PluginAgentModal.vue', `
+      <template>
+        <BaseModal
+          custom-class="plugin-agent-modal"
+          :custom-style="{
+            width: '95vw',
+            '--plugin-agent-modal-surface-base': '#eee',
+            '--plugin-agent-modal-shadow-default': 'rgba(15, 23, 42, .05)'
+          }"
+        />
+      </template>
+      <style scoped>
+      .plugin-agent-modal-owner { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('raw visual customStyle value(s)')
+    expect(result.stderr).toContain('#eee')
+    expect(result.stderr).toContain('rgba(15, 23, 42, .05)')
   })
 
   it('rejects scoped BaseModal internals styling in business components', () => {

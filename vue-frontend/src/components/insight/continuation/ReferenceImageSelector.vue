@@ -8,36 +8,9 @@
     :custom-style="{
       width: 'min(1120px, calc(100vw - 48px))',
       maxHeight: 'min(88vh, 980px)',
-      background: 'var(--color-surface-base)',
-      border: '1px solid var(--reference-image-selector-border-default)',
-      borderRadius: '18px',
-      boxShadow: '0 24px 64px var(--reference-image-selector-shadow-default)',
       '--ui-dialog-body-display': 'flex',
       '--ui-dialog-body-direction': 'column',
-      '--ui-dialog-body-min-height': '0',
-      '--reference-image-selector-border-default': '#dbe3ef',
-      '--reference-image-selector-border-strong': '#cbd5e1',
-      '--reference-image-selector-border-muted': '#fcd34d',
-      '--reference-image-selector-border-subtle': '#e5e7eb',
-      '--reference-image-selector-border-hover': '#409eff',
-      '--reference-image-selector-border-active': '#d1d5db',
-      '--reference-image-selector-border-focus': '#9ca3af',
-      '--reference-image-selector-shadow-default': 'rgba(15, 23, 42, .28)',
-      '--reference-image-selector-shadow-raised': 'rgba(64, 158, 255, .25)',
-      '--reference-image-selector-shadow-floating': 'rgba(64, 158, 255, .2)',
-      '--reference-image-selector-shadow-strong': 'rgba(0, 0, 0, .25)',
-      '--reference-image-selector-surface-base': '#f8f9fa',
-      '--reference-image-selector-surface-raised': '#fef3c7',
-      '--reference-image-selector-surface-muted': '#409eff',
-      '--reference-image-selector-surface-subtle': 'rgba(0, 0, 0, .75)',
-      '--reference-image-selector-surface-hover': 'rgba(255, 255, 255, .6)',
-      '--reference-image-selector-surface-active': 'rgba(59, 130, 246, .9)',
-      '--reference-image-selector-surface-selected': '#337ecc',
-      '--reference-image-selector-text-primary': '#6b7280',
-      '--reference-image-selector-text-secondary': '#92400e',
-      '--reference-image-selector-text-muted': '#b45309',
-      '--reference-image-selector-text-subtle': '#4b5563',
-      '--reference-image-selector-text-supporting': '#374151'
+      '--ui-dialog-body-min-height': '0'
     }"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
@@ -163,6 +136,7 @@
 </template>
 
 <script setup lang="ts">
+import './ReferenceImageSelector.global.styles.css'
 import UiButton from '@/components/ui/UiButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import { ref, computed, watch, nextTick } from 'vue'

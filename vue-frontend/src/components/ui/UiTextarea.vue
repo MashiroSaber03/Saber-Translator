@@ -82,7 +82,7 @@ function handleInput(event: Event) {
   background: var(--ui-textarea-background, var(--color-surface-input, var(--color-surface-card)));
   color: var(--ui-textarea-color, var(--color-text-default));
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--ui-textarea-font-size, inherit);
   line-height: var(--ui-textarea-line-height, normal);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }

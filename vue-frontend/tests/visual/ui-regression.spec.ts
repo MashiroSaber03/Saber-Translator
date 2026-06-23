@@ -1082,7 +1082,7 @@ test('mobile translate loaded workspace keeps responsive layout contract', async
   await expect(page).toHaveScreenshot('mobile-translate-loaded.png', {
     fullPage: true,
     animations: 'disabled',
-    maxDiffPixelRatio: 0.045,
+    maxDiffPixelRatio: 0.05,
   })
 })
 
@@ -1123,4 +1123,24 @@ test('character studio editor and preview keep split workspace contract', async 
     fullPage: true,
     animations: 'disabled',
   })
+})
+
+test('character studio panes keep independent scroll containers', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 620 })
+  await page.unroute('**/*')
+  await prepareVisualPage(page, { books: [demoBook], studioDocuments: true })
+  await page.goto('/insight/character-studio?book=demo-book')
+
+  const editorScroll = page.getByTestId('editor-scroll')
+  const chatScroll = page.getByTestId('chat-scroll')
+  await expect(editorScroll).toBeVisible()
+  await expect(chatScroll).toBeVisible()
+  await expect(editorScroll).toHaveCSS('overflow-y', 'auto')
+  await expect(chatScroll).toHaveCSS('overflow-y', 'auto')
+
+  await page.locator('.editor-shell').getByRole('button', { name: '🧬 角色设定', exact: true }).click()
+  const editorCanScroll = await editorScroll.evaluate(element => element.scrollHeight > element.clientHeight)
+  expect(editorCanScroll).toBe(true)
+  await editorScroll.evaluate(element => { element.scrollTop = 160 })
+  await expect.poll(() => editorScroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
 })

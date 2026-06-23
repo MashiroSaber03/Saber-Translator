@@ -1,0 +1,64 @@
+<script setup lang="ts">
+import UiButton from '@/components/ui/UiButton.vue'
+
+defineProps<{
+  canGoNext: boolean
+  canGoPrevious: boolean
+}>()
+
+defineEmits<{
+  (event: 'next'): void
+  (event: 'previous'): void
+}>()
+</script>
+
+<template>
+  <div class="navigation-buttons">
+    <UiButton
+      id="prevImageButton"
+      variant="toolbar"
+      :disabled="!canGoPrevious"
+      @click="$emit('previous')"
+    >
+      上一张
+    </UiButton>
+    <UiButton
+      id="nextImageButton"
+      variant="toolbar"
+      :disabled="!canGoNext"
+      @click="$emit('next')"
+    >
+      下一张
+    </UiButton>
+  </div>
+</template>
+
+<style scoped>
+.navigation-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.navigation-buttons :where(button) {
+  flex: 1;
+  min-height: 38px;
+  border: none;
+  border-radius: 8px;
+  background: var(--settings-sidebar-workflow-surface-selected);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.navigation-buttons :where(button):disabled {
+  background: var(--settings-sidebar-workflow-surface-overlay);
+  cursor: not-allowed;
+}
+
+.navigation-buttons :where(button):hover:not(:disabled) {
+  background: var(--settings-sidebar-workflow-surface-inverse);
+}
+</style>

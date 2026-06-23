@@ -95,7 +95,7 @@ defineEmits<{
 
 .workbench-head p {
   margin: 6px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -135,11 +135,11 @@ defineEmits<{
 input,
 textarea,
 select {
-  border: 1px solid var(--color-border-studio-strong);
-  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--studio-border-strong);
+  background: var(--studio-surface-soft);
   border-radius: 14px;
   padding: 11px 12px;
-  color: var(--color-text-studio-strong);
+  color: var(--studio-text-strong);
   font-size: 13px;
 }
 
@@ -171,14 +171,14 @@ label {
 .action-secondary,
 .action-ghost {
   padding: 10px 14px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .action-danger {
   padding: 10px 14px;
   background: var(--color-surface-danger-soft);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
 }
 
 .action-secondary:disabled,
@@ -194,7 +194,7 @@ label {
 }
 
 .empty-copy {
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 13px;
 }
 

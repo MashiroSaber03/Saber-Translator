@@ -9,27 +9,7 @@
       height: '90vh',
       maxHeight: '90vh',
       '--ui-dialog-body-display': 'flex',
-      '--ui-dialog-body-min-height': '0',
-      '--plugin-agent-modal-accent-primary': 'rgba(255, 255, 255, .94)',
-      '--plugin-agent-modal-accent-secondary': 'rgba(255, 255, 255, .02)',
-      '--plugin-agent-modal-border-default': '#d0d0d0',
-      '--plugin-agent-modal-border-strong': 'rgba(148, 163, 184, .28)',
-      '--plugin-agent-modal-shadow-default': 'rgba(15, 23, 42, .05)',
-      '--plugin-agent-modal-surface-base': '#eee',
-      '--plugin-agent-modal-surface-raised': 'rgba(37, 99, 235, .08)',
-      '--plugin-agent-modal-surface-muted': 'rgba(148, 163, 184, .5)',
-      '--plugin-agent-modal-surface-subtle': '#2563eb',
-      '--plugin-agent-modal-surface-hover': '#38bdf8',
-      '--plugin-agent-modal-surface-active': '#16a34a',
-      '--plugin-agent-modal-surface-selected': '#4ade80',
-      '--plugin-agent-modal-surface-overlay': '#dc2626',
-      '--plugin-agent-modal-surface-inverse': '#fb7185',
-      '--plugin-agent-modal-surface-contrast': '#d97706',
-      '--plugin-agent-modal-surface-tint': '#fbbf24',
-      '--plugin-agent-modal-surface-soft': 'rgba(37, 99, 235, .1)',
-      '--plugin-agent-modal-surface-strong': 'rgba(15, 23, 42, .03)',
-      '--plugin-agent-modal-text-primary': '#757575',
-      '--plugin-agent-modal-text-secondary': '#1d4ed8'
+      '--ui-dialog-body-min-height': '0'
     }"
     @close="handleClose"
   >
@@ -420,6 +400,27 @@ const {
 
 <style scoped>
 .plugin-agent-layout {
+  --plugin-agent-modal-accent-primary: rgba(255, 255, 255, .94);
+  --plugin-agent-modal-accent-secondary: rgba(255, 255, 255, .02);
+  --plugin-agent-modal-border-default: #d0d0d0;
+  --plugin-agent-modal-border-strong: rgba(148, 163, 184, .28);
+  --plugin-agent-modal-shadow-default: rgba(15, 23, 42, .05);
+  --plugin-agent-modal-surface-base: #eee;
+  --plugin-agent-modal-surface-raised: rgba(37, 99, 235, .08);
+  --plugin-agent-modal-surface-muted: rgba(148, 163, 184, .5);
+  --plugin-agent-modal-surface-subtle: #2563eb;
+  --plugin-agent-modal-surface-hover: #38bdf8;
+  --plugin-agent-modal-surface-active: #16a34a;
+  --plugin-agent-modal-surface-selected: #4ade80;
+  --plugin-agent-modal-surface-overlay: #dc2626;
+  --plugin-agent-modal-surface-inverse: #fb7185;
+  --plugin-agent-modal-surface-contrast: #d97706;
+  --plugin-agent-modal-surface-tint: #fbbf24;
+  --plugin-agent-modal-surface-soft: rgba(37, 99, 235, .1);
+  --plugin-agent-modal-surface-strong: rgba(15, 23, 42, .03);
+  --plugin-agent-modal-text-primary: #757575;
+  --plugin-agent-modal-text-secondary: #1d4ed8;
+
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
   gap: 16px;
@@ -569,6 +570,13 @@ const {
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+}
+
+.plugin-agent-checkboxes .ui-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
 
 .plugin-agent-field input,

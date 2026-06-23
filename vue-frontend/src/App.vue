@@ -22,7 +22,3 @@ onMounted(() => {
   <!-- 全局 Toast 通知（只挂载一次） -->
   <ToastNotification />
 </template>
-
-<style>
-/* 全局样式通过 CSS 入口文件引入 */
-</style>

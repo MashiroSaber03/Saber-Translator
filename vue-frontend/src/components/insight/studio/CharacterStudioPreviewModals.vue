@@ -122,3 +122,125 @@ const imageModel = computed({
     </div>
   </BaseModal>
 </template>
+
+<style scoped>
+.modal-copy p,
+.modal-empty,
+.modal-loading {
+  color: var(--studio-text-default);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.greeting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.greeting-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--studio-border-default);
+  border-radius: 16px;
+  background: var(--character-studio-preview-workspace-surface-tint);
+  text-align: left;
+}
+
+.greeting-card.active {
+  border-color: var(--character-studio-preview-details-border-default);
+  box-shadow: 0 0 0 2px var(--character-studio-preview-details-shadow-default);
+}
+
+.greeting-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.greeting-badge {
+  color: var(--character-studio-preview-details-text-primary);
+  font-weight: 700;
+}
+
+.greeting-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--character-studio-preview-details-surface-active);
+  color: var(--color-text-inverse);
+  line-height: 22px;
+  text-align: center;
+}
+
+.greeting-card p {
+  margin: 0;
+  color: var(--studio-text-default);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.prompt-preview-body pre {
+  max-height: 420px;
+  margin: 10px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--studio-border-default);
+  border-radius: 16px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-text-strong);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.prompt-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.image-preview-body {
+  display: flex;
+  justify-content: center;
+}
+
+.image-preview-body img {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 16px;
+  object-fit: contain;
+}
+
+.action-ghost,
+.action-primary {
+  border: none;
+  border-radius: 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.action-ghost {
+  padding: 10px 14px;
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
+}
+
+.action-primary {
+  padding: 11px 16px;
+  background: linear-gradient(135deg, var(--character-studio-preview-details-surface-active), var(--character-studio-preview-details-surface-selected));
+  box-shadow: 0 12px 24px var(--character-studio-preview-details-shadow-raised);
+  color: var(--color-text-inverse);
+}
+
+.action-ghost:disabled,
+.action-primary:disabled {
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.68;
+}
+</style>

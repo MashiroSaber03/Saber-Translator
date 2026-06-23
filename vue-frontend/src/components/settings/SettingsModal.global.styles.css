@@ -1,3 +1,9 @@
+.settings-modal-wrapper.ui-modal__container {
+  --settings-modal-surface-base: rgba(255, 255, 255, .15);
+  --settings-modal-surface-raised: rgba(0, 0, 0, .03);
+  --settings-modal-text-primary: rgba(255, 255, 255, .8);
+}
+
 @media (--breakpoint-md-down) {
   .settings-modal-wrapper.ui-modal__container {
     margin: 0;

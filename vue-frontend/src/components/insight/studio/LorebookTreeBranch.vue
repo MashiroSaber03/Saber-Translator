@@ -176,7 +176,7 @@ function move(offset: -1 | 1) {
 
   border-radius: 18px;
   background: var(--lorebook-tree-branch-surface-base);
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
 }
 
 .node-details {
@@ -216,7 +216,7 @@ function move(offset: -1 | 1) {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 8px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 11px;
 }
 
@@ -252,11 +252,11 @@ label {
 input,
 textarea,
 select {
-  border: 1px solid var(--color-border-studio-strong);
-  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--studio-border-strong);
+  background: var(--studio-surface-soft);
   border-radius: 14px;
   padding: 10px 12px;
-  color: var(--color-text-studio-strong);
+  color: var(--studio-text-strong);
   font-size: 13px;
 }
 
@@ -281,13 +281,13 @@ textarea {
 }
 
 .mini-btn {
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .action-danger {
   background: var(--color-surface-danger-soft);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
 }
 
 .children {

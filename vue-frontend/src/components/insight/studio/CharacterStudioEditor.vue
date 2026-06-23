@@ -17,36 +17,16 @@
     </div>
 
     <template v-else>
-      <section class="overview-hero">
-        <div class="hero-main">
-          <div class="avatar-shell">
-            <img v-if="avatarUrl" :src="avatarUrl" alt="角色头像">
-            <div v-else class="avatar-placeholder">{{ localDocument.identity.name.slice(0, 1) || '角' }}</div>
-          </div>
-          <div class="hero-copy">
-            <div class="hero-kicker">当前角色</div>
-            <h2>{{ localDocument.meta.title || localDocument.identity.name }}</h2>
-            <p>{{ localDocument.identity.description || '当前角色还没有完善简介，建议先使用“AI 一键补全整卡”，再回到分区里精修。' }}</p>
-            <div class="hero-meta">
-              <span class="meta-pill">{{ formatOrigin(localDocument.origin.type) }}</span>
-              <span class="meta-pill" v-if="localDocument.origin.source_character">来源: {{ localDocument.origin.source_character }}</span>
-              <span class="meta-pill" v-if="localDocument.meta.tags.length > 0">{{ localDocument.meta.tags.length }} 个标签</span>
-              <span class="meta-pill" v-if="localDocument.status.frozen_sections.length > 0">已钉住 {{ localDocument.status.frozen_sections.length }} 区块</span>
-            </div>
-          </div>
-        </div>
-        <div class="hero-actions">
-          <UiButton variant="toolbar" class="action-primary" :disabled="isGenerationLocked" @click="$emit('generate', 'full')">
-            {{ isGenerating('full') ? '整卡补全中...' : 'AI 一键补全整卡' }}
-          </UiButton>
-          <UiButton variant="toolbar" class="action-ghost" :disabled="isGenerationLocked" @click="$emit('generate', 'review')">
-            {{ isGenerating('review') ? '审查中...' : 'AI 审查当前角色' }}
-          </UiButton>
-          <UiButton variant="toolbar" class="action-danger" :disabled="pendingState.deleting" @click="$emit('delete')">
-            {{ pendingState.deleting ? '删除中...' : '删除文档' }}
-          </UiButton>
-        </div>
-      </section>
+      <StudioHeroSection
+        :avatar-url="avatarUrl"
+        :document="localDocument"
+        :format-origin="formatOrigin"
+        :is-generation-locked="isGenerationLocked"
+        :is-generating="isGenerating"
+        :pending-state="pendingState"
+        @delete="$emit('delete')"
+        @generate="$emit('generate', $event)"
+      />
 
       <section class="editor-shell">
         <StudioSectionTabs
@@ -55,116 +35,20 @@
           @update:model-value="$emit('update:activeTab', normalizeTab($event))"
         />
 
-        <section v-if="activeTab === 'overview'" class="panel-stack">
-          <div class="summary-grid">
-            <article class="summary-card">
-              <span class="summary-label">来源摘要</span>
-              <strong>{{ formatOrigin(localDocument.origin.type) }}</strong>
-              <p v-if="localDocument.origin.source_character">通过分析候选「{{ localDocument.origin.source_character }}」锁定角色名创建</p>
-              <p v-else>当前文档为手工或外部导入角色。</p>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">运行时资源</span>
-              <strong>{{ localDocument.regexScripts.length + localDocument.stateTasks.length }}</strong>
-              <p>{{ localDocument.regexScripts.length }} 个脚本 · {{ localDocument.stateTasks.length }} 个任务</p>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">问候语库存</span>
-              <strong>{{ localDocument.coreMessages.alternate_greetings.length + (localDocument.coreMessages.first_message ? 1 : 0) }}</strong>
-              <p>1 条主问候 + {{ localDocument.coreMessages.alternate_greetings.length }} 条备用问候</p>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">知识量</span>
-              <strong>{{ flattenedLorebookCount }}</strong>
-              <p>世界书树当前共有 {{ flattenedLorebookCount }} 个节点。</p>
-            </article>
-          </div>
-
-          <div class="workspace-row">
-            <section class="workspace-card">
-              <div class="card-head">
-                <div>
-                  <h3>快速入口</h3>
-                  <p>直接跳到你现在最可能继续编辑的模块。</p>
-                </div>
-              </div>
-              <div class="quick-grid">
-                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'character')">
-                  <span class="quick-icon">🧬</span>
-                  <strong>角色设定</strong>
-                  <p>完善简介、性格、场景、标签。</p>
-                </UiButton>
-                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'greetings')">
-                  <span class="quick-icon">💬</span>
-                  <strong>问候语</strong>
-                  <p>打磨主问候和备用开场。</p>
-                </UiButton>
-                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'lorebook')">
-                  <span class="quick-icon">📚</span>
-                  <strong>世界书</strong>
-                  <p>维护角色知识树和触发条目。</p>
-                </UiButton>
-                <UiButton variant="toolbar" class="quick-card" @click="$emit('update:activeTab', 'scripts')">
-                  <span class="quick-icon">⚙️</span>
-                  <strong>脚本任务</strong>
-                  <p>配置正则脚本和状态任务。</p>
-                </UiButton>
-              </div>
-            </section>
-
-            <section class="workspace-card">
-              <div class="card-head">
-                <div>
-                  <h3>保护设置</h3>
-                  <p>被钉住的区块不会被 AI 再生成或 Agent patch 覆盖。</p>
-                </div>
-              </div>
-              <div class="freeze-grid">
-                <label v-for="item in freezeItems" :key="item.key" class="freeze-item">
-                  <span class="freeze-item-label">{{ item.label }}</span>
-                  <span class="freeze-item-control">
-                    <UiInput :checked="isFrozen(item.key)" type="checkbox" @change="toggleFrozen(item.key, $event)" />
-                  </span>
-                </label>
-              </div>
-            </section>
-          </div>
-
-          <div class="workspace-row single">
-            <section class="workspace-card">
-              <div class="card-head">
-                <div>
-                  <h3>最近诊断摘要</h3>
-                  <p>导出前先看这里，能快速判断当前角色是否存在结构性问题。</p>
-                </div>
-                <UiButton variant="toolbar" class="action-ghost" :disabled="pendingState.validating" @click="$emit('validate')" size="sm">
-                  {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
-                </UiButton>
-              </div>
-              <DiagnosticsPanel :diagnostics="diagnostics" />
-            </section>
-          </div>
-
-          <div v-if="latestReview" class="workspace-row single">
-            <section class="workspace-card">
-              <div class="card-head">
-                <div>
-                  <h3>最近审查</h3>
-                  <p>这里展示最近一次“AI 审查当前角色”的结果，方便你直接据此继续补卡。</p>
-                </div>
-              </div>
-              <div class="review-summary">
-                <strong>{{ latestReview.summary }}</strong>
-                <ul v-if="latestReview.issues.length > 0" class="review-list">
-                  <li v-for="(item, index) in latestReview.issues" :key="`review-issue-${index}`">{{ item }}</li>
-                </ul>
-                <ul v-if="latestReview.suggestions.length > 0" class="review-list suggestions">
-                  <li v-for="(item, index) in latestReview.suggestions" :key="`review-suggestion-${index}`">{{ item }}</li>
-                </ul>
-              </div>
-            </section>
-          </div>
-        </section>
+        <StudioOverviewTab
+          v-if="activeTab === 'overview'"
+          :diagnostics="diagnostics"
+          :document="localDocument"
+          :flattened-lorebook-count="flattenedLorebookCount"
+          :format-origin="formatOrigin"
+          :freeze-items="freezeItems"
+          :is-frozen="isFrozen"
+          :latest-review="latestReview"
+          :pending-state="pendingState"
+          @tab="$emit('update:activeTab', $event)"
+          @toggle-frozen="toggleFrozen"
+          @validate="$emit('validate')"
+        />
 
         <section v-else-if="activeTab === 'character'" class="panel-stack">
           <section class="workspace-card">
@@ -411,6 +295,8 @@ import RegexWorkbench from './RegexWorkbench.vue'
 import TaskWorkbench from './TaskWorkbench.vue'
 import DiagnosticsPanel from './DiagnosticsPanel.vue'
 import { editorTabItems, freezeItems, scriptTabItems } from './characterStudioEditorConfig'
+import StudioHeroSection from './editor/StudioHeroSection.vue'
+import StudioOverviewTab from './editor/StudioOverviewTab.vue'
 
 const props = defineProps<{
   document: CharacterStudioDocument | null
@@ -634,7 +520,8 @@ function toggleScriptFreeze(event: Event) {
 }
 </script>
 
-<style scoped>.studio-editor {
+<style scoped>
+.studio-editor {
   --character-studio-editor-border-default: rgba(37, 99, 199, .16);
   --character-studio-editor-shadow-default: rgba(37, 99, 199, .18);
   --character-studio-editor-surface-base: rgba(255, 255, 255, .88);
@@ -664,12 +551,11 @@ function toggleScriptFreeze(event: Event) {
 }
 
 .empty-card,
-.overview-hero,
 .editor-shell {
   border-radius: 28px;
   background: var(--character-studio-editor-surface-base);
-  border: 1px solid var(--color-border-studio);
-  box-shadow: 0 26px 42px var(--shadow-studio-floating);
+  border: 1px solid var(--studio-border-default);
+  box-shadow: 0 26px 42px var(--studio-shadow-floating);
 }
 
 .empty-card {
@@ -682,7 +568,7 @@ function toggleScriptFreeze(event: Event) {
   align-items: center;
   padding: 6px 10px;
   border-radius: 999px;
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   color: var(--color-text-primary-strong);
   font-size: 12px;
   font-weight: 600;
@@ -697,7 +583,7 @@ function toggleScriptFreeze(event: Event) {
 .empty-card p {
   max-width: 560px;
   margin: 12px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   line-height: 1.8;
 }
 
@@ -711,8 +597,8 @@ function toggleScriptFreeze(event: Event) {
 .empty-tip {
   border-radius: 18px;
   padding: 16px;
-  background: var(--color-surface-studio-soft);
-  border: 1px solid var(--color-border-studio);
+  background: var(--studio-surface-soft);
+  border: 1px solid var(--studio-border-default);
 }
 
 .empty-tip strong {
@@ -724,91 +610,6 @@ function toggleScriptFreeze(event: Event) {
   margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.7;
-}
-
-.overview-hero {
-  padding: 22px;
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.hero-main {
-  display: flex;
-  gap: 18px;
-  min-width: 0;
-}
-
-.avatar-shell {
-  width: 116px;
-  height: 164px;
-  border-radius: 24px;
-  overflow: hidden;
-  background: linear-gradient(180deg, var(--color-surface-studio-tint-strong), var(--character-studio-editor-surface-raised));
-  flex-shrink: 0;
-}
-
-.avatar-shell img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-primary-strong);
-  font-size: 32px;
-  font-weight: 700;
-}
-
-.hero-copy {
-  min-width: 0;
-}
-
-.hero-kicker {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--character-studio-editor-text-muted);
-}
-
-.hero-copy h2 {
-  margin: 10px 0 0;
-  color: var(--character-studio-editor-text-primary);
-  font-size: 30px;
-}
-
-.hero-copy p {
-  margin: 12px 0 0;
-  color: var(--color-text-studio-muted);
-  line-height: 1.8;
-}
-
-.hero-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-}
-
-.meta-pill {
-  border-radius: 999px;
-  padding: 5px 10px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
-  font-size: 11px;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  justify-content: flex-end;
 }
 
 .editor-shell {
@@ -824,30 +625,10 @@ function toggleScriptFreeze(event: Event) {
   gap: 16px;
 }
 
-.summary-grid,
-.workspace-row,
-.quick-grid,
 .export-grid,
 .form-grid {
   display: grid;
   gap: 14px;
-}
-
-.summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.workspace-row {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.workspace-row.single {
-  grid-template-columns: 1fr;
-}
-
-.quick-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 16px;
 }
 
 .export-grid {
@@ -860,37 +641,14 @@ function toggleScriptFreeze(event: Event) {
 }
 
 .workspace-card,
-.summary-card,
-.quick-card,
 .export-card {
   border-radius: 22px;
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
   background: var(--character-studio-editor-surface-muted);
 }
 
-.workspace-card,
-.summary-card {
+.workspace-card {
   padding: 18px;
-}
-
-.summary-card .summary-label {
-  display: block;
-  color: var(--character-studio-editor-text-muted);
-  font-size: 12px;
-}
-
-.summary-card strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 24px;
-  color: var(--character-studio-editor-text-subtle);
-}
-
-.summary-card p {
-  margin: 8px 0 0;
-  color: var(--color-text-studio-muted);
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .card-head {
@@ -908,7 +666,7 @@ function toggleScriptFreeze(event: Event) {
 
 .card-head p {
   margin: 6px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -919,7 +677,6 @@ function toggleScriptFreeze(event: Event) {
   flex-wrap: wrap;
 }
 
-.quick-card,
 .export-card {
   text-align: left;
   padding: 16px;
@@ -927,14 +684,12 @@ function toggleScriptFreeze(event: Event) {
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.quick-card:hover,
 .export-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 28px var(--shadow-studio-floating);
+  box-shadow: 0 18px 28px var(--studio-shadow-floating);
   border-color: var(--character-studio-editor-border-default);
 }
 
-.quick-icon,
 .export-icon {
   display: inline-flex;
   width: 36px;
@@ -942,12 +697,11 @@ function toggleScriptFreeze(event: Event) {
   border-radius: 14px;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   color: var(--color-text-primary-strong);
   font-size: 16px;
 }
 
-.quick-card strong,
 .export-card strong {
   display: block;
   margin-top: 14px;
@@ -955,10 +709,9 @@ function toggleScriptFreeze(event: Event) {
   font-size: 14px;
 }
 
-.quick-card p,
 .export-card p {
   margin: 8px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -978,11 +731,11 @@ label {
 input,
 textarea,
 select {
-  border: 1px solid var(--color-border-studio-strong);
-  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--studio-border-strong);
+  background: var(--studio-surface-soft);
   border-radius: 16px;
   padding: 12px 14px;
-  color: var(--color-text-studio-strong);
+  color: var(--studio-text-strong);
   font-size: 13px;
 }
 
@@ -1005,43 +758,7 @@ textarea {
   padding: 9px 12px;
   border-radius: 999px;
   background: var(--character-studio-editor-surface-subtle);
-  color: var(--color-text-studio);
-}
-
-.freeze-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.freeze-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: var(--color-surface-studio-soft);
-  border: 1px solid var(--color-border-studio);
-}
-
-.freeze-item-label {
-  color: var(--color-text-studio-strong);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.freeze-item-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.freeze-item-control input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
+  color: var(--studio-text-default);
 }
 
 .action-ghost,
@@ -1054,8 +771,8 @@ textarea {
 
 .action-ghost {
   padding: 11px 14px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .action-primary {
@@ -1068,7 +785,7 @@ textarea {
 .action-danger {
   padding: 11px 14px;
   background: var(--color-surface-danger-soft);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
 }
 
 .action-ghost:disabled,
@@ -1090,47 +807,8 @@ textarea {
   margin-top: 16px;
 }
 
-.review-summary {
-  margin-top: 14px;
-  border-radius: 18px;
-  padding: 16px;
-  background: var(--color-surface-studio-soft);
-  border: 1px solid var(--color-border-studio);
-}
-
-.review-summary strong {
-  display: block;
-  color: var(--character-studio-editor-text-secondary);
-  font-size: 15px;
-  line-height: 1.7;
-}
-
-.review-list {
-  margin: 12px 0 0;
-  padding-left: 18px;
-  color: var(--character-studio-editor-text-disabled);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.review-list.suggestions {
-  color: var(--character-studio-editor-text-inverse);
-}
-
-@media (--breakpoint-modal-wide-down) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (--breakpoint-lg-down) {
-  .overview-hero,
-  .hero-main,
-  .hero-actions,
-  .workspace-row,
-  .quick-grid,
   .export-grid,
-  .summary-grid,
   .empty-grid,
   .form-grid,
   .card-head {

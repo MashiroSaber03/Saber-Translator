@@ -287,8 +287,8 @@
       </OverlayLayer>
 
       <!-- 进度条显示（紧跟快捷键图标右侧，业务契约位置） -->
-      <div 
-        v-if="isProcessing" 
+      <div
+        v-if="isProcessing"
         class="edit-progress-container"
         :class="{ completed: isProgressCompleted }"
       >
@@ -297,8 +297,8 @@
           <span class="edit-progress-count">{{ progressCurrent }}/{{ progressTotal }}</span>
         </div>
         <div class="edit-progress-bar">
-          <div 
-            class="edit-progress-fill" 
+          <div
+            class="edit-progress-fill"
             :class="{ animating: !isProgressCompleted }"
             :style="{ width: progressPercent + '%' }"
           ></div>
@@ -446,10 +446,10 @@ const isProgressCompleted = computed(() => {
 
 /** 笔刷光标样式 */
 const brushCursorStyle = computed(() => {
-  const color = props.brushMode === 'repair' 
+  const color = props.brushMode === 'repair'
     ? { fill: 'rgba(76, 175, 80, 0.4)', border: '#4CAF50' }
     : { fill: 'rgba(33, 150, 243, 0.4)', border: '#2196F3' }
-  
+
   return {
     position: 'fixed' as const,
     left: `${props.mouseX}px`,
@@ -467,7 +467,8 @@ const brushCursorStyle = computed(() => {
 })
 </script>
 
-<style scoped>/* 顶部工具栏 */
+<style scoped>
+/* 顶部工具栏 */
 .edit-toolbar-wrapper {
   /* owner tokens: edit-toolbar */
   --edit-toolbar-border-default: #e5e7eb;
@@ -492,8 +493,8 @@ const brushCursorStyle = computed(() => {
   --edit-toolbar-text-supporting: #6b7280;
 
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-edit-shell-start) 0%, var(--color-edit-shell-end) 100%);
-  border-bottom: 1px solid var(--color-edit-shell-divider);
+  background: linear-gradient(135deg, var(--edit-shell-start) 0%, var(--edit-shell-end) 100%);
+  border-bottom: 1px solid var(--edit-shell-divider);
 }
 
 .edit-toolbar {
@@ -504,11 +505,11 @@ const brushCursorStyle = computed(() => {
 }
 
 .toolbar-row-1 {
-  border-bottom: 1px solid var(--color-edit-shell-divider-soft);
+  border-bottom: 1px solid var(--edit-shell-divider-soft);
 }
 
 .toolbar-row-2 {
-  background: var(--color-edit-shell-overlay);
+  background: var(--edit-shell-overlay);
 }
 
 .toolbar-spacer {
@@ -533,14 +534,14 @@ const brushCursorStyle = computed(() => {
   color: var(--color-text-inverse);
   font-size: 14px;
   padding: 6px 12px;
-  background: var(--color-edit-shell-chip);
+  background: var(--edit-shell-chip);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .image-indicator:hover {
-  background: var(--color-edit-shell-chip-hover);
+  background: var(--edit-shell-chip-hover);
 }
 
 .image-indicator span {
@@ -565,7 +566,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .thumb-toggle-btn.active {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 
 /* 气泡导航 */
@@ -579,13 +580,13 @@ const brushCursorStyle = computed(() => {
   color: var(--color-text-inverse);
   font-size: 13px;
   padding: 4px 10px;
-  background: var(--color-edit-shell-progress-2);
+  background: var(--edit-shell-progress-muted);
   border-radius: 6px;
 }
 
 .bubble-indicator span {
   font-weight: bold;
-  color: var(--color-edit-accent);
+  color: var(--edit-accent);
 }
 
 /* 视图控制按钮组 */
@@ -633,8 +634,8 @@ const brushCursorStyle = computed(() => {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: linear-gradient(135deg, var(--color-edit-action-start) 0%, var(--color-edit-action-end) 100%);
-  color: var(--color-edit-action-text);
+  background: linear-gradient(135deg, var(--edit-action-start) 0%, var(--edit-action-end) 100%);
+  color: var(--edit-action-text);
   font-weight: 600;
   cursor: pointer;
   font-size: 13px;
@@ -643,12 +644,12 @@ const brushCursorStyle = computed(() => {
 
 .action-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow-edit-action);
+  box-shadow: 0 4px 12px var(--edit-shadow-action);
 }
 
 .action-secondary {
   padding: 8px 16px;
-  border: 1px solid var(--color-edit-action-border);
+  border: 1px solid var(--edit-action-border);
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-inverse);
@@ -659,7 +660,7 @@ const brushCursorStyle = computed(() => {
 
 .action-secondary:hover {
   background: var(--color-surface-overlay-light-muted);
-  border-color: var(--color-edit-action-border-hover);
+  border-color: var(--edit-action-border-hover);
 }
 
 /* 导航按钮样式 - 按业务契约 */
@@ -669,7 +670,7 @@ const brushCursorStyle = computed(() => {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--color-edit-shell-control);
+  background: var(--edit-shell-control);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 10px;
@@ -689,7 +690,7 @@ const brushCursorStyle = computed(() => {
 
 .image-navigator .nav-btn:not(:disabled):hover,
 .bubble-navigator .nav-btn:not(:disabled):hover {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 
 /* 编辑进度条 */
@@ -699,7 +700,7 @@ const brushCursorStyle = computed(() => {
   gap: 12px;
   padding: 6px 16px;
   margin-left: 12px;
-  background: var(--color-edit-shell-progress);
+  background: var(--edit-shell-progress);
   border-radius: 20px;
   min-width: 200px;
   max-width: 350px;
@@ -733,7 +734,7 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-count {
   font-size: 12px;
-  color: var(--color-edit-accent);
+  color: var(--edit-accent);
   font-weight: 600;
   font-family: var(--font-mono);
 }
@@ -749,7 +750,7 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--color-edit-action-start), var(--edit-toolbar-surface-base));
+  background: linear-gradient(90deg, var(--edit-action-start), var(--edit-toolbar-surface-base));
   border-radius: 3px;
   transition: width 0.3s ease;
   box-shadow: 0 0 8px var(--edit-toolbar-shadow-default);
@@ -757,7 +758,7 @@ const brushCursorStyle = computed(() => {
 
 /* 进度条动画效果（仅在进行中时播放） */
 .edit-progress-fill.animating {
-  background: linear-gradient(90deg, var(--color-edit-action-start), var(--edit-toolbar-surface-base), var(--color-edit-action-start));
+  background: linear-gradient(90deg, var(--edit-action-start), var(--edit-toolbar-surface-base), var(--edit-action-start));
   background-size: 200% 100%;
   animation: progressShine 1.5s ease-in-out infinite;
 }
@@ -769,12 +770,12 @@ const brushCursorStyle = computed(() => {
 
 /* 完成状态 */
 .edit-progress-container.completed .edit-progress-fill {
-  background: var(--color-edit-action-start);
+  background: var(--edit-action-start);
   animation: none;
 }
 
 .edit-progress-container.completed .edit-progress-text {
-  color: var(--color-edit-accent);
+  color: var(--edit-accent);
 }
 
 /* 修复按钮 Loading 状态 */
@@ -802,7 +803,7 @@ const brushCursorStyle = computed(() => {
 /* 激活状态按钮 */
 .annotation-btn.active,
 .brush-btn.active {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
   border-color: var(--color-border-brand-gradient);
 }
 
@@ -843,7 +844,7 @@ const brushCursorStyle = computed(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--color-edit-input-border);
+  border: 1px solid var(--edit-input-border);
   border-radius: 14px;
   background: var(--edit-toolbar-surface-muted);
   color: var(--color-text-secondary);
@@ -859,7 +860,7 @@ const brushCursorStyle = computed(() => {
 
 .help-tooltip-btn:hover {
   background: var(--color-surface-base);
-  border-color: var(--color-edit-input-border-focus);
+  border-color: var(--edit-input-border-focus);
   color: var(--edit-toolbar-text-muted);
 }
 
@@ -965,18 +966,18 @@ const brushCursorStyle = computed(() => {
 }
 
 .detect-btn {
-  background: var(--color-edit-shell-control);
+  background: var(--edit-shell-control);
   border-color: var(--edit-toolbar-border-subtle);
 }
 
 .detect-btn:hover {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 
 .primary-action-btn {
   background: var(--edit-toolbar-surface-subtle);
   border-color: var(--edit-toolbar-border-hover);
-  color: var(--color-edit-accent);
+  color: var(--edit-accent);
 }
 
 .primary-action-btn:hover {
@@ -994,6 +995,6 @@ const brushCursorStyle = computed(() => {
 
 /* sync按钮激活状态 */
 .view-controls button.active {
-  background: var(--color-edit-shell-chip-active);
+  background: var(--edit-shell-chip-active);
 }
 </style>

@@ -140,6 +140,15 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     console.log(`已添加书籍: ${book.title}`)
   }
 
+  function upsertBook(book: BookData): void {
+    const index = books.value.findIndex(item => item.id === book.id)
+    if (index >= 0) {
+      books.value[index] = book
+      return
+    }
+    books.value.unshift(book)
+  }
+
   /**
    * 更新书籍
    * @param bookId - 书籍ID
@@ -563,6 +572,20 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
+  async function loadBookDetail(bookId: string): Promise<BookData | null> {
+    try {
+      const response = await bookshelfApi.getBookDetail(bookId)
+      if (response.success && response.book) {
+        upsertBook(response.book)
+        return response.book
+      }
+      return null
+    } catch (err) {
+      console.error('加载书籍详情失败:', err)
+      return null
+    }
+  }
+
   /**
    * 从服务器加载标签列表
    */
@@ -881,6 +904,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     // API 调用方法
     loadBooks,
     fetchBooks: loadBooks,
+    loadBookDetail,
     loadTags,
     createBook,
     updateBookApi,

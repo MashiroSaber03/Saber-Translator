@@ -85,6 +85,12 @@ const effectiveScrollMode = computed(() => props.contentScroll ?? props.scrollMo
   overflow: hidden;
 }
 
+.ui-app-shell--viewport-locked,
+.ui-app-shell--viewport-immersive {
+  display: flex;
+  flex-direction: column;
+}
+
 .ui-app-shell__header {
   min-height: var(--ui-app-shell-header-height);
 }
@@ -92,6 +98,14 @@ const effectiveScrollMode = computed(() => props.contentScroll ?? props.scrollMo
 .ui-app-shell__content {
   min-width: 0;
   padding: var(--ui-app-shell-content-padding);
+}
+
+.ui-app-shell--viewport-locked > .ui-app-shell__content,
+.ui-app-shell--viewport-immersive > .ui-app-shell__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .ui-app-shell--chrome-fixed > .ui-app-shell__content {

@@ -86,7 +86,7 @@ defineProps<{
 .summary-card .label {
   display: block;
   font-size: 12px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
 }
 
 .summary-card strong {
@@ -137,11 +137,11 @@ defineProps<{
 
 .check-pill.bad {
   background: var(--color-surface-danger-soft);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
 }
 
 .empty-copy {
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 13px;
   line-height: 1.6;
 }

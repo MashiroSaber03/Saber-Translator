@@ -1,19 +1,16 @@
 <script setup lang="ts">
-
-import UiInput from '@/components/ui/UiInput.vue'
-
-/**
- * 书籍详情模态框组件
- * 使用与业务契约bookshelf.html完全相同的HTML结构和CSS类名
- */
-
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import BookDeleteConfirmContent from './book-detail/BookDeleteConfirmContent.vue'
+import BookDetailSummary from './book-detail/BookDetailSummary.vue'
+import ChapterFormContent from './book-detail/ChapterFormContent.vue'
+import ChapterList from './book-detail/ChapterList.vue'
+import QuickTagPicker from './book-detail/QuickTagPicker.vue'
 
 const emit = defineEmits<{
   close: []
@@ -258,7 +255,7 @@ function handleChapterDragLeave() {
 // 章节放置
 async function handleChapterDrop(event: DragEvent, targetIndex: number) {
   event.preventDefault()
-  
+
   if (draggedChapterIndex.value === null || draggedChapterIndex.value === targetIndex || !currentBook.value) {
     draggedChapterIndex.value = null
     dragOverChapterIndex.value = null
@@ -288,14 +285,13 @@ function handleChapterDragEnd() {
 // 添加标签弹窗状态
 const showAddTagModal = ref(false)
 const quickTagFilter = ref('')
-const quickTagInputRef = ref<HTMLInputElement | null>(null)
 
 // 过滤后的可用标签列表（排除已添加的标签）
 const filteredAvailableTags = computed(() => {
   const currentTags = currentBook.value?.tags || []
   const filter = quickTagFilter.value.trim().toLowerCase()
-  
-  return allTags.value.filter(t => 
+
+  return allTags.value.filter(t =>
     !currentTags.includes(t.name) &&
     (filter === '' || t.name.toLowerCase().includes(filter))
   )
@@ -305,7 +301,7 @@ const filteredAvailableTags = computed(() => {
 const showCreateNewTagOption = computed(() => {
   const filter = quickTagFilter.value.trim()
   if (!filter) return false
-  
+
   // 如果过滤词不完全匹配任何已有标签，则显示创建选项
   return !allTags.value.some(t => t.name.toLowerCase() === filter.toLowerCase())
 })
@@ -314,11 +310,6 @@ const showCreateNewTagOption = computed(() => {
 function openAddTagModal() {
   quickTagFilter.value = ''
   showAddTagModal.value = true
-  
-  // 聚焦输入框
-  nextTick(() => {
-    quickTagInputRef.value?.focus()
-  })
 }
 
 // 关闭添加标签弹窗
@@ -343,19 +334,19 @@ const isTagLoading = ref(false)
 // 步骤: 1. 获取当前书籍 tags  2. 过滤掉要删除的标签  3. PUT 更新整个 tags 数组
 async function removeTag(tagName: string) {
   if (!currentBook.value || isTagLoading.value) return
-  
+
   isTagLoading.value = true
-  
+
   try {
     // 获取当前的 tags 数组并过滤
     const currentTags = currentBook.value.tags || []
     const newTags = currentTags.filter(t => t !== tagName)
-    
+
     // 通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
-    
+
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已移除', 'success')
@@ -377,18 +368,18 @@ async function removeTag(tagName: string) {
 // 步骤: 1. 如需创建新标签则创建  2. 获取当前 tags  3. 追加新标签  4. PUT 更新整个 tags 数组
 async function quickAddTagToBook(tagName: string) {
   if (!currentBook.value || !tagName || isTagLoading.value) return
-  
+
   // 检查是否已存在
   if (currentBook.value.tags?.includes(tagName)) {
     showToast('该标签已存在', 'info')
     return
   }
-  
+
   isTagLoading.value = true
-  
+
   try {
     const { createTag } = await import('@/api/bookshelf')
-    
+
     // 如果是新标签，先创建
     if (!allTags.value.some(t => t.name === tagName)) {
       const createResponse = await createTag(tagName)
@@ -400,16 +391,16 @@ async function quickAddTagToBook(tagName: string) {
         return
       }
     }
-    
+
     // 获取当前 tags 并追加新标签
     const currentTags = currentBook.value.tags || []
     const newTags = [...currentTags, tagName]
-    
+
     // 通过 updateBookApi 更新整个 tags 数组
     const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
-    
+
     if (success) {
       // updateBookApi 已经自动更新了本地状态,不需要手动调用 updateBook
       showToast('标签已添加', 'success')
@@ -433,123 +424,38 @@ async function quickAddTagToBook(tagName: string) {
     title="书籍详情"
     size="large"
     custom-class="book-detail-modal"
-    :custom-style="{
-      '--book-detail-modal-border-default': 'rgba(102, 126, 234, .4)',
-      '--book-detail-modal-border-strong': 'rgba(102, 126, 234, .6)',
-      '--book-detail-modal-shadow-default': 'rgba(0, 0, 0, .15)',
-      '--book-detail-modal-shadow-raised': 'rgba(102, 126, 234, .4)',
-      '--book-detail-modal-shadow-floating': 'rgba(40, 167, 69, .4)',
-      '--book-detail-modal-shadow-strong': 'rgba(102, 126, 234, .15)',
-      '--book-detail-modal-shadow-soft': 'rgba(102, 126, 234, .15)',
-      '--book-detail-modal-surface-base': '#7b8eef',
-      '--book-detail-modal-surface-raised': '#8a5cb5',
-      '--book-detail-modal-surface-muted': '#34ce57',
-      '--book-detail-modal-surface-subtle': '#38d9a9',
-      '--book-detail-modal-surface-hover': 'rgba(102, 126, 234, .1)',
-      '--book-detail-modal-surface-active': 'rgba(118, 75, 162, .1)',
-      '--book-detail-modal-surface-selected': 'rgba(102, 126, 234, .2)',
-      '--book-detail-modal-surface-overlay': 'rgba(118, 75, 162, .2)',
-      '--book-detail-modal-text-primary': '#667eea'
-    }"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="emit('close')"
   >
     <div v-if="currentBook" class="book-detail-container">
-      <!-- 书籍信息使用封面与元数据并列的详情布局。 -->
-      <div class="book-info-section">
-        <div class="book-cover-large">
-          <img
-            v-if="currentBook.cover"
-            :src="currentBook.cover"
-            alt="封面"
-          >
-          <div v-else class="book-cover-placeholder">📖</div>
-        </div>
-        <div class="book-meta">
-          <h3>{{ currentBook.title }}</h3>
-          <p class="meta-item">
-            <span>标签：</span>
-            <span v-if="currentBook.tags && currentBook.tags.length > 0" class="detail-tags">
-              <span
-                v-for="tag in currentBook.tags"
-                :key="tag"
-                class="detail-tag"
-                :style="{ background: getTagColor(tag) }"
-              >
-                {{ tag }}
-                <span class="remove-detail-tag" @click.stop="removeTag(tag)">×</span>
-              </span>
-            </span>
-            <span v-else class="no-tags-hint">暂无标签</span>
-            <UiButton variant="toolbar" class="btn-add-tag" title="添加标签" @click="openAddTagModal">+</UiButton>
-          </p>
-          <p class="meta-item"><span>章节数：</span><span>{{ chapters.length }}</span></p>
-          <p class="meta-item"><span>创建时间：</span><span>{{ formatDate(currentBook.created_at || currentBook.createdAt) }}</span></p>
-          <p class="meta-item"><span>最后更新：</span><span>{{ formatDate(currentBook.updated_at || currentBook.updatedAt) }}</span></p>
-          <div class="book-actions">
-            <UiButton size="sm" variant="primary" @click="goToInsight">● 漫画分析</UiButton>
-            <UiButton size="sm" variant="secondary" @click="editCurrentBook">编辑书籍</UiButton>
-            <UiButton size="sm" variant="danger" @click="deleteCurrentBook">删除书籍</UiButton>
-          </div>
-        </div>
-      </div>
+      <BookDetailSummary
+        :book="currentBook"
+        :chapter-count="chapters.length"
+        :format-date="formatDate"
+        :get-tag-color="getTagColor"
+        @add-tag="openAddTagModal"
+        @delete="deleteCurrentBook"
+        @edit="editCurrentBook"
+        @insight="goToInsight"
+        @remove-tag="removeTag"
+      />
 
-      <!-- 章节列表 -->
-      <div class="chapters-section">
-        <div class="section-header">
-          <h3>章节列表</h3>
-          <UiButton size="sm" variant="primary" @click="openCreateChapterModal">
-            <span class="button-icon">+</span> 新建章节
-          </UiButton>
-        </div>
-        <div v-if="chapters.length > 0" class="chapters-list">
-          <div
-            v-for="(chapter, index) in chapters"
-            :key="chapter.id"
-            class="chapter-item"
-            :class="{
-              dragging: draggedChapterIndex === index,
-              'drag-over': dragOverChapterIndex === index && draggedChapterIndex !== index
-            }"
-            draggable="true"
-            @dragstart="handleChapterDragStart($event, index)"
-            @dragover="handleChapterDragOver($event, index)"
-            @dragleave="handleChapterDragLeave"
-            @drop="handleChapterDrop($event, index)"
-            @dragend="handleChapterDragEnd"
-          >
-            <div class="chapter-drag-handle" title="拖拽排序">⋮⋮</div>
-            <div class="chapter-info">
-              <span class="chapter-order">#{{ index + 1 }}</span>
-              <span class="chapter-title">{{ chapter.title }}</span>
-              <span class="chapter-meta">{{ chapter.image_count || chapter.imageCount || 0 }} 张图片</span>
-            </div>
-            <div class="chapter-actions">
-              <UiButton variant="toolbar" class="chapter-action-btn chapter-enter-btn" @click="goToTranslate(chapter.id)">
-                进入翻译
-              </UiButton>
-              <UiButton
-                variant="toolbar"
-                class="chapter-action-btn chapter-read-btn"
-                :disabled="(chapter.image_count || chapter.imageCount || 0) === 0"
-                @click="goToReader(chapter.id)"
-              >
-                进入阅读
-              </UiButton>
-              <UiButton variant="toolbar" class="chapter-action-btn" @click="openEditChapterModal(chapter.id)">
-                编辑
-              </UiButton>
-              <UiButton variant="danger" class="chapter-action-btn" @click="deleteChapter(chapter.id)">
-                删除
-              </UiButton>
-            </div>
-          </div>
-        </div>
-        <div v-else class="empty-state-small">
-          <p>暂无章节，点击上方按钮创建</p>
-        </div>
-      </div>
+      <ChapterList
+        :chapters="chapters"
+        :drag-over-chapter-index="dragOverChapterIndex"
+        :dragged-chapter-index="draggedChapterIndex"
+        @create="openCreateChapterModal"
+        @delete="deleteChapter"
+        @drag-end="handleChapterDragEnd"
+        @drag-leave="handleChapterDragLeave"
+        @drag-over="handleChapterDragOver"
+        @drag-start="handleChapterDragStart"
+        @drop="handleChapterDrop"
+        @edit="openEditChapterModal"
+        @read="goToReader"
+        @translate="goToTranslate"
+      />
     </div>
   </BaseModal>
 
@@ -561,17 +467,7 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-overlay="true"
     :close-on-esc="true"
   >
-    <div class="chapter-form-field">
-      <label for="chapterTitleInput">章节名称 <span class="required">*</span></label>
-      <UiInput
-        id="chapterTitleInput"
-        v-model="chapterTitle"
-        type="text"
-        autocomplete="off"
-        placeholder="例如：第1话、序章"
-        @keypress.enter="saveChapter"
-      />
-    </div>
+    <ChapterFormContent v-model="chapterTitle" @save="saveChapter" />
     <template #footer>
       <UiButton type="button" variant="secondary" @click="showChapterModal = false">取消</UiButton>
       <UiButton type="button" variant="primary" @click="saveChapter">保存</UiButton>
@@ -586,50 +482,13 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-esc="true"
     @close="closeAddTagModal"
   >
-    <!-- 搜索/创建输入框 -->
-    <div class="quick-tag-input-wrapper">
-      <UiInput
-        ref="quickTagInputRef"
-        v-model="quickTagFilter"
-        type="text"
-        class="quick-tag-input"
-        placeholder="输入标签名称进行搜索或创建..."
-        @keypress.enter="handleQuickTagInputEnter"
-      />
-    </div>
-          
-    <!-- 可选择并快速添加到当前书籍的标签列表。 -->
-    <div class="quick-tag-list">
-      <!-- 可用标签 -->
-      <div
-        v-for="tag in filteredAvailableTags"
-        :key="tag.name"
-        class="quick-tag-item"
-        @click="quickAddTagToBook(tag.name)"
-      >
-        <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
-        <span class="quick-tag-name">{{ tag.name }}</span>
-        <span class="tag-add-icon">+</span>
-      </div>
-            
-      <!-- 创建新标签选项 -->
-      <div
-        v-if="showCreateNewTagOption"
-        class="quick-tag-item new-tag"
-        @click="quickAddTagToBook(quickTagFilter.trim())"
-      >
-        <span class="tag-icon">+</span>
-        <span>创建并添加 "{{ quickTagFilter.trim() }}"</span>
-      </div>
-            
-      <!-- 无可用标签提示 -->
-      <p 
-        v-if="filteredAvailableTags.length === 0 && !showCreateNewTagOption" 
-        class="quick-tags-empty"
-      >
-        {{ quickTagFilter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
-      </p>
-    </div>
+    <QuickTagPicker
+      v-model:filter="quickTagFilter"
+      :available-tags="filteredAvailableTags"
+      :show-create-new-tag-option="showCreateNewTagOption"
+      @add="quickAddTagToBook"
+      @submit="handleQuickTagInputEnter"
+    />
     <template #footer>
       <UiButton type="button" variant="secondary" @click="closeAddTagModal">关闭</UiButton>
     </template>
@@ -645,12 +504,7 @@ async function quickAddTagToBook(tagName: string) {
     :close-on-overlay="true"
     :close-on-esc="true"
   >
-    <p>
-      {{ deleteTarget === 'book' 
-        ? '确定要删除这本书籍吗？所有章节数据将一并删除，此操作不可恢复。' 
-        : '确定要删除这个章节吗？此操作不可恢复。' 
-      }}
-    </p>
+    <BookDeleteConfirmContent :target="deleteTarget" />
     <template #footer>
       <UiButton type="button" variant="secondary" @click="showDeleteConfirm = false">取消</UiButton>
       <UiButton type="button" variant="danger" @click="confirmDelete">删除</UiButton>
@@ -658,429 +512,27 @@ async function quickAddTagToBook(tagName: string) {
   </BaseModal>
 </template>
 
-<style scoped>/* ==================== 书籍详情模态框样式 - 当前样式 ==================== */
-
-/* 书籍详情容器 */
+<style scoped>
 .book-detail-container {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
+  --book-detail-modal-border-default: rgba(102, 126, 234, .4);
+  --book-detail-modal-border-strong: rgba(102, 126, 234, .6);
+  --book-detail-modal-shadow-default: rgba(0, 0, 0, .15);
+  --book-detail-modal-shadow-raised: rgba(102, 126, 234, .4);
+  --book-detail-modal-shadow-floating: rgba(40, 167, 69, .4);
+  --book-detail-modal-shadow-strong: rgba(102, 126, 234, .15);
+  --book-detail-modal-shadow-soft: rgba(102, 126, 234, .15);
+  --book-detail-modal-surface-base: #7b8eef;
+  --book-detail-modal-surface-raised: #8a5cb5;
+  --book-detail-modal-surface-muted: #34ce57;
+  --book-detail-modal-surface-subtle: #38d9a9;
+  --book-detail-modal-surface-hover: rgba(102, 126, 234, .1);
+  --book-detail-modal-surface-active: rgba(118, 75, 162, .1);
+  --book-detail-modal-surface-selected: rgba(102, 126, 234, .2);
+  --book-detail-modal-surface-overlay: rgba(118, 75, 162, .2);
+  --book-detail-modal-text-primary: #667eea;
 
-/* 书籍信息区域 */
-.book-info-section {
-    display: flex;
-    gap: 24px;
-    align-items: flex-start;
-}
-
-.book-cover-large {
-    width: 140px;
-    flex-shrink: 0;
-    aspect-ratio: 3 / 4;
-    border-radius: 12px;
-    overflow: hidden;
-    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
-    box-shadow: 0 8px 24px var(--book-detail-modal-shadow-default);
-}
-
-.book-cover-large img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-/* 书籍详情右侧信息区 - 垂直排列 */
-.book-meta {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-}
-
-.book-meta h3 {
-    font-size: 1.3rem;
-    margin: 0 0 16px 0;
-    color: var(--color-text-default);
-    font-weight: 600;
-    line-height: 1.3;
-    word-break: break-word;
-}
-
-/* 书籍详情元信息项 - 垂直排列 */
-.book-meta .meta-item {
-    font-size: 0.9rem;
-    color: var(--color-text-supporting);
-    margin: 6px 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.book-meta .meta-item span:first-child {
-    color: var(--color-text-default);
-    font-weight: 500;
-    flex-shrink: 0;
-    min-width: 70px;
-}
-
-.book-meta .detail-tags {
-    display: inline-flex;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.book-meta .detail-tag {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    color: white;
-}
-
-.book-meta .no-tags-hint {
-    color: var(--color-text-supporting);
-    font-style: italic;
-}
-
-.book-meta .btn-add-tag {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 1px dashed var(--color-border-muted);
-    background: transparent;
-    color: var(--color-text-supporting);
-    font-size: 0.9rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 6px;
-}
-
-.book-meta .btn-add-tag:hover {
-    border-color: var(--color-border-brand-gradient);
-    color: var(--book-detail-modal-text-primary);
-}
-
-/* 操作按钮组 */
-.book-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 16px;
-    flex-wrap: wrap;
-}
-
-/* 章节区域 */
-.chapters-section {
-    border-top: 1px solid var(--color-border-muted);
-    padding-top: 16px;
-}
-
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.section-header h3 {
-    font-size: 1.05rem;
-    margin: 0;
-    color: var(--color-text-default);
-    font-weight: 600;
-}
-
-.chapters-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 280px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-right: 4px;
-}
-
-/* 自定义滚动条 */
-.chapters-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.chapters-list::-webkit-scrollbar-track {
-    background: var(--color-surface-interactive-hover);
-    border-radius: 3px;
-}
-
-.chapters-list::-webkit-scrollbar-thumb {
-    background: var(--color-border-muted);
-    border-radius: 3px;
-}
-
-.chapters-list::-webkit-scrollbar-thumb:hover {
-    background: var(--color-text-supporting);
-}
-
-.chapter-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    background: var(--color-surface-interactive-hover);
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    gap: 12px;
-}
-
-.chapter-item:hover {
-    background: var(--color-border-muted);
-}
-
-.chapter-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-}
-
-.chapter-order {
-    font-size: 0.8rem;
-    color: var(--color-text-supporting);
-    min-width: 32px;
-    flex-shrink: 0;
-}
-
-.chapter-title {
-    font-weight: 500;
-    font-size: 0.9rem;
-    color: var(--color-text-default);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.chapter-meta {
-    font-size: 0.75rem;
-    color: var(--color-text-supporting);
-}
-
-.chapter-actions {
-    display: flex;
-    gap: 6px;
-    opacity: 1;
-    flex-shrink: 0;
-}
-
-.chapter-action-btn {
-    background: none;
-    border: none;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    color: var(--color-text-supporting);
-    cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s;
-}
-
-.chapter-action-btn:hover {
-    background: var(--color-surface-card);
-    color: var(--color-text-default);
-}
-
-.chapter-action-btn.danger:hover {
-    color: var(--color-text-danger);
-}
-
-.chapter-enter-btn {
-    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
-    color: white;
-    font-weight: 500;
-}
-
-.chapter-enter-btn:hover {
-    background: linear-gradient(135deg, var(--book-detail-modal-surface-base) 0%, var(--book-detail-modal-surface-raised) 100%);
-    color: white;
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px var(--book-detail-modal-shadow-raised);
-}
-
-.chapter-read-btn {
-    background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
-    color: white;
-    font-weight: 500;
-}
-
-.chapter-read-btn:disabled {
-    background: var(--color-border-muted);
-    color: var(--color-text-supporting);
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.chapter-read-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--book-detail-modal-surface-muted) 0%, var(--book-detail-modal-surface-subtle) 100%);
-    color: white;
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px var(--book-detail-modal-shadow-floating);
-}
-
-/* 空状态 */
-.empty-state-small {
-    padding: 40px 20px;
-    text-align: center;
-    color: var(--color-text-supporting);
-}
-
-/* 章节编辑弹窗表单 */
-.chapter-form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.chapter-form-field label {
-    display: block;
-    color: var(--color-text-default);
-    font-size: 0.95rem;
-    font-weight: 500;
-    line-height: 1.4;
-}
-
-.required {
-    color: var(--color-text-danger-strong);
-}
-
-.chapter-form-field input[type='text'] {
-    width: 100%;
-    min-height: 42px;
-    padding: 10px 12px;
-    border: 1px solid var(--color-border-muted);
-    border-radius: 8px;
-    outline: none;
-    background: var(--color-surface-card);
-    color: var(--color-text-default);
-    font-size: 0.95rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.chapter-form-field input[type='text']:focus {
-    border-color: var(--color-border-brand-gradient);
-    box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-strong);
-}
-
-.chapter-form-field input[type='text']::placeholder {
-    color: var(--color-text-supporting);
-}
-
-/* ==================== 快速添加标签样式 ==================== */
-
-/* 快速标签输入框包装 */
-.quick-tag-input-wrapper {
-    margin-bottom: 16px;
-}
-
-.quick-tag-input {
-    width: 100%;
-    padding: 12px 16px;
-    border: 1px solid var(--color-border-muted);
-    border-radius: 8px;
-    font-size: 0.95rem;
-    background: var(--color-surface-card);
-    color: var(--color-text-default);
-    transition: all 0.2s;
-}
-
-.quick-tag-input:focus {
-    outline: none;
-    border-color: var(--color-border-brand-gradient);
-    box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-soft);
-}
-
-.quick-tag-input::placeholder {
-    color: var(--color-text-supporting);
-}
-
-/* 快速标签列表 */
-.quick-tag-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 260px;
-    overflow-y: auto;
-}
-
-/* 快速标签项 */
-.quick-tag-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: var(--color-surface-interactive-hover);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.quick-tag-item:hover {
-    background: var(--color-border-muted);
-    transform: translateX(4px);
-}
-
-.quick-tag-item .tag-color-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.quick-tag-item .quick-tag-name {
-    flex: 1;
-    font-weight: 500;
-    color: var(--color-text-default);
-}
-
-.quick-tag-item .tag-add-icon {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: var(--book-detail-modal-text-primary);
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.quick-tag-item:hover .tag-add-icon {
-    opacity: 1;
-}
-
-/* 创建新标签选项 */
-.quick-tag-item.new-tag {
-    background: linear-gradient(135deg, var(--book-detail-modal-surface-hover) 0%, var(--book-detail-modal-surface-active) 100%);
-    border: 1px dashed var(--book-detail-modal-border-default);
-}
-
-.quick-tag-item.new-tag:hover {
-    background: linear-gradient(135deg, var(--book-detail-modal-surface-selected) 0%, var(--book-detail-modal-surface-overlay) 100%);
-    border-color: var(--book-detail-modal-border-strong);
-}
-
-.quick-tag-item .tag-icon {
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--book-detail-modal-text-primary);
-}
-
-/* 无标签提示 */
-.quick-tags-empty {
-    text-align: center;
-    color: var(--color-text-supporting);
-    font-style: italic;
-    padding: 24px 16px;
-    margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 </style>

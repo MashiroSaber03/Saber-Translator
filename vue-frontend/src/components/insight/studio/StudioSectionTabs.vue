@@ -43,7 +43,7 @@ defineEmits<{
   padding: 8px;
   border-radius: 18px;
   background: var(--studio-section-tabs-surface-base);
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
   overflow-x: auto;
 }
 
@@ -64,11 +64,11 @@ defineEmits<{
 .tab-btn:hover {
   transform: translateY(-1px);
   background: var(--studio-section-tabs-surface-raised);
-  color: var(--color-text-studio);
+  color: var(--studio-text-default);
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--color-surface-studio-tint-strong), var(--studio-section-tabs-surface-muted));
+  background: linear-gradient(135deg, var(--studio-surface-tint-strong), var(--studio-section-tabs-surface-muted));
   color: var(--studio-section-tabs-text-secondary);
   box-shadow: inset 0 0 0 1px var(--studio-section-tabs-shadow-default);
 }

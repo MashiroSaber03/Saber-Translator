@@ -112,14 +112,14 @@ function handleFileSelect(event: Event) {
   border-radius: 26px;
   overflow: hidden;
   background: var(--character-studio-sidebar-surface-base);
-  border: 1px solid var(--color-border-studio);
-  box-shadow: 0 24px 40px var(--shadow-studio-floating);
+  border: 1px solid var(--studio-border-default);
+  box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 
 .sidebar-toolbar {
   flex-shrink: 0;
   padding: 18px 18px 16px;
-  border-bottom: 1px solid var(--color-border-studio);
+  border-bottom: 1px solid var(--studio-border-default);
   background:
     linear-gradient(180deg, var(--character-studio-sidebar-accent-primary), var(--character-studio-sidebar-accent-secondary));
 }
@@ -140,7 +140,7 @@ function handleFileSelect(event: Event) {
 
 .toolbar-copy p {
   margin: 10px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -151,11 +151,11 @@ function handleFileSelect(event: Event) {
 
 .search-input {
   width: 100%;
-  border: 1px solid var(--color-border-studio-strong);
+  border: 1px solid var(--studio-border-strong);
   background: var(--character-studio-sidebar-surface-raised);
   border-radius: 14px;
   padding: 12px 14px;
-  color: var(--color-text-studio-strong);
+  color: var(--studio-text-strong);
   font-size: 13px;
 }
 
@@ -182,8 +182,8 @@ function handleFileSelect(event: Event) {
 
 .action-ghost {
   padding: 11px 14px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .action-primary:disabled,

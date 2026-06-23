@@ -205,6 +205,9 @@ async function hydrateWorkspace(nextBookId: string) {
     if (!bookshelfStore.books.length) {
       await bookshelfStore.fetchBooks()
     }
+    if (!bookshelfStore.getBookById(nextBookId)) {
+      await bookshelfStore.loadBookDetail(nextBookId)
+    }
     await store.loadWorkspace(nextBookId)
     if (props.docId) {
       const openedRequested = await runAction(() => store.openDocument(props.docId!))
@@ -373,6 +376,19 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
+  --studio-surface-soft: rgba(245, 249, 254, 0.92);
+  --studio-surface-tint: rgba(37, 99, 199, 0.1);
+  --studio-surface-tint-muted: rgba(37, 99, 199, 0.12);
+  --studio-surface-tint-strong: rgba(37, 99, 199, 0.14);
+  --studio-surface-muted: rgba(20, 56, 106, 0.07);
+  --studio-text-strong: #183351;
+  --studio-text-default: #234977;
+  --studio-text-muted: #607794;
+  --studio-text-subtle: #6d839f;
+  --studio-text-danger: #b83535;
+  --studio-border-default: rgba(28, 55, 94, 0.08);
+  --studio-border-strong: rgba(28, 55, 94, 0.12);
+  --studio-shadow-floating: rgba(20, 46, 82, 0.08);
   --studio-view-accent-primary: rgba(86, 138, 225, .08);
   --studio-view-accent-secondary: #f4f7fb;
   --studio-view-accent-muted: #f6f8fb;
@@ -422,13 +438,26 @@ watch(() => props.docId, async nextDocId => {
 .column-scroll {
   height: 100%;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.editor-pane > .column-scroll {
+  scrollbar-gutter: stable;
+}
+
+.column-scroll > .studio-editor,
+.column-scroll > .chat-shell {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
 }
 
 .pane-resizer {
   width: 8px;
   cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--color-surface-studio-tint), var(--studio-view-surface-base));
+  background: linear-gradient(180deg, var(--studio-surface-tint), var(--studio-view-surface-base));
 }
 
 .resource-overlay {
@@ -463,7 +492,7 @@ watch(() => props.docId, async nextDocId => {
   padding: 12px 16px;
   background: var(--studio-view-surface-muted);
   border: 1px solid var(--studio-view-border-default);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -486,15 +515,15 @@ watch(() => props.docId, async nextDocId => {
   padding: 48px 32px;
   border-radius: 28px;
   background: var(--studio-view-surface-subtle);
-  border: 1px solid var(--color-border-studio);
-  box-shadow: 0 26px 42px var(--shadow-studio-floating);
+  border: 1px solid var(--studio-border-default);
+  box-shadow: 0 26px 42px var(--studio-shadow-floating);
 }
 
 .empty-badge {
   display: inline-flex;
   padding: 6px 12px;
   border-radius: 999px;
-  background: var(--color-surface-studio-tint-muted);
+  background: var(--studio-surface-tint-muted);
   color: var(--color-text-primary-strong);
   font-size: 12px;
 }
@@ -506,7 +535,7 @@ watch(() => props.docId, async nextDocId => {
 
 .studio-empty-state p {
   margin: 12px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   line-height: 1.7;
 }
 

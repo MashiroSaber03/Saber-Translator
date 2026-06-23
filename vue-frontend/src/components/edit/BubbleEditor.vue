@@ -16,11 +16,11 @@
       <div class="text-column-header">
         <span class="column-title">漫画原文</span>
         <UiButton
-          variant="toolbar" 
-          class="re-ocr-btn" 
+          variant="toolbar"
+          class="re-ocr-btn"
           :class="{ 'is-loading': isOcrLoading }"
           :disabled="isOcrLoading"
-          @click="handleOcrRecognize" 
+          @click="handleOcrRecognize"
           title="重新OCR此气泡"
         >
           <span class="button-icon">🔄</span>
@@ -56,11 +56,11 @@
       <div class="text-column-header">
         <span class="column-title">译文</span>
         <UiButton
-          variant="toolbar" 
-          class="re-translate-btn" 
+          variant="toolbar"
+          class="re-translate-btn"
           :class="{ 'is-loading': isTranslateLoading }"
           :disabled="isTranslateLoading"
-          @click="handleReTranslate" 
+          @click="handleReTranslate"
           title="重新翻译此气泡"
         >
           <span class="button-icon">🔄</span>
@@ -522,7 +522,8 @@ const {
 } = useBubbleEditor(props, emit)
 </script>
 
-<style scoped>/* ============ 编辑面板内容 - 使用浅色主题 ============ */
+<style scoped>
+/* ============ 编辑面板内容 - 使用浅色主题 ============ */
 
 .edit-panel-content {
   /* owner tokens: bubble-editor */
@@ -577,13 +578,13 @@ const {
   align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
+  border-bottom: 2px solid var(--color-border-muted, var(--edit-panel-divider));
 }
 
 .column-title {
   font-weight: 600;
   font-size: 14px;
-  color: var(--color-text-strong, var(--color-edit-panel-text));
+  color: var(--color-text-strong, var(--edit-panel-text));
 }
 
 .original-text-column .column-title {
@@ -591,7 +592,7 @@ const {
 }
 
 .translated-text-column .column-title {
-  color: var(--color-edit-panel-success);
+  color: var(--edit-panel-success);
 }
 
 /* 重新OCR/翻译按钮 */
@@ -601,7 +602,7 @@ const {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--color-surface-app, var(--color-edit-control-bg));
+  background: var(--color-surface-app, var(--edit-control-bg));
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
@@ -633,7 +634,7 @@ const {
   width: 100%;
   min-height: 60px;
   padding: 12px;
-  border: 2px solid var(--color-border-muted, var(--color-edit-panel-divider));
+  border: 2px solid var(--color-border-muted, var(--edit-panel-divider));
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
@@ -647,7 +648,7 @@ const {
 .text-editor:focus {
   outline: none;
   border-color: var(--color-border-accent);
-  box-shadow: 0 0 0 3px var(--shadow-edit-focus-blue);
+  box-shadow: 0 0 0 3px var(--edit-shadow-focus-blue);
 }
 
 .original-editor {
@@ -656,7 +657,7 @@ const {
 }
 
 .translated-editor {
-  background: var(--color-edit-translated-bg);
+  background: var(--edit-translated-bg);
 }
 
 /* 文本操作按钮 */
@@ -678,12 +679,12 @@ const {
 }
 
 .text-actions button:hover {
-  background: var(--color-surface-app, var(--color-edit-control-bg));
-  border-color: var(--color-edit-muted-border-hover);
+  background: var(--color-surface-app, var(--edit-control-bg));
+  border-color: var(--edit-muted-border-hover);
 }
 
 .keyboard-toggle-btn {
-  background: var(--color-surface-app, var(--color-edit-control-bg));
+  background: var(--color-surface-app, var(--edit-control-bg));
 }
 
 /* ============ 样式设置区 ============ */
@@ -691,9 +692,9 @@ const {
 .style-settings-section {
   width: 100%;
   padding: 16px;
-  background: var(--color-edit-style-bg);
+  background: var(--edit-style-bg);
   border-radius: 10px;
-  border: 1px solid var(--color-edit-style-border);
+  border: 1px solid var(--edit-style-border);
   overflow-y: auto;
 }
 
@@ -705,9 +706,9 @@ const {
   gap: 12px;
   padding: 14px;
   background: var(--color-surface-base);
-  border: 1px solid var(--color-edit-toolbar-border);
+  border: 1px solid var(--edit-toolbar-border);
   border-radius: 12px;
-  box-shadow: 0 10px 24px var(--shadow-edit-toolbar);
+  box-shadow: 0 10px 24px var(--edit-shadow-toolbar);
 }
 
 .toolbar-row {
@@ -727,9 +728,9 @@ const {
 .toolbar-row-bottom {
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--color-edit-toolbar-row-border);
+  border: 1px solid var(--edit-toolbar-row-border);
   border-radius: 10px;
-  background: linear-gradient(180deg, var(--color-edit-toolbar-row-start) 0%, var(--color-edit-toolbar-row-end) 100%);
+  background: linear-gradient(180deg, var(--edit-toolbar-row-start) 0%, var(--edit-toolbar-row-end) 100%);
 }
 
 .linespacing-input {
@@ -741,7 +742,7 @@ const {
   flex-direction: column;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-edit-toolbar-label);
+  color: var(--edit-toolbar-label);
 }
 
 .combo-control label {
@@ -758,7 +759,7 @@ const {
 .toolbar-divider {
   width: 1px;
   height: 26px;
-  background: var(--color-edit-toolbar-divider);
+  background: var(--edit-toolbar-divider);
 }
 
 .toolbar-divider.vertical {
@@ -779,11 +780,11 @@ const {
   min-width: 160px;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid var(--color-edit-input-border);
+  border: 1px solid var(--edit-input-border);
   border-radius: 8px;
   font-size: 13px;
   background: var(--color-surface-base);
-  color: var(--color-edit-input-text);
+  color: var(--edit-input-text);
   cursor: pointer;
   transition:
     border-color 0.15s,
@@ -791,31 +792,31 @@ const {
 }
 
 .toolbar-font-select:hover {
-  border-color: var(--color-edit-input-border-hover);
+  border-color: var(--edit-input-border-hover);
 }
 
 .toolbar-font-select:focus {
   outline: none;
-  border-color: var(--color-edit-input-border-focus);
-  box-shadow: 0 0 0 2px var(--shadow-edit-input-focus);
+  border-color: var(--edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--edit-shadow-input-focus);
 }
 
 /* 字号输入 */
 .toolbar-fontsize-input {
   width: 60px;
   height: 36px;
-  border: 1px solid var(--color-edit-input-border);
+  border: 1px solid var(--edit-input-border);
   border-radius: 8px;
   padding: 0 8px;
   font-size: 14px;
   text-align: center;
   background: var(--color-surface-base);
-  color: var(--color-edit-input-text);
+  color: var(--edit-input-text);
 }
 
 .toolbar-fontsize-input:focus {
   outline: none;
-  border-color: var(--color-edit-input-border-focus);
+  border-color: var(--edit-input-border-focus);
   box-shadow: 0 0 0 2px var(--bubble-editor-shadow-default);
 }
 
@@ -940,11 +941,11 @@ const {
 .toolbar-inpaint-select {
   height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--color-edit-input-border);
+  border: 1px solid var(--edit-input-border);
   border-radius: 8px;
   font-size: 12px;
   background: var(--color-surface-base);
-  color: var(--color-edit-input-text);
+  color: var(--edit-input-text);
   cursor: pointer;
   transition:
     border-color 0.15s,
@@ -952,13 +953,13 @@ const {
 }
 
 .toolbar-inpaint-select:hover {
-  border-color: var(--color-edit-input-border-hover);
+  border-color: var(--edit-input-border-hover);
 }
 
 .toolbar-inpaint-select:focus {
   outline: none;
-  border-color: var(--color-edit-input-border-focus);
-  box-shadow: 0 0 0 2px var(--shadow-edit-input-focus);
+  border-color: var(--edit-input-border-focus);
+  box-shadow: 0 0 0 2px var(--edit-shadow-input-focus);
 }
 
 .toolbar-solid-color-options {
@@ -982,18 +983,18 @@ const {
 .toolbar-mini-input {
   width: 46px;
   height: 32px;
-  border: 1px solid var(--color-edit-input-border);
+  border: 1px solid var(--edit-input-border);
   border-radius: 6px;
   padding: 0 6px;
   font-size: 12px;
   text-align: center;
   background: var(--color-surface-base);
-  color: var(--color-edit-input-text);
+  color: var(--edit-input-text);
 }
 
 .toolbar-mini-input:focus {
   outline: none;
-  border-color: var(--color-edit-input-border-focus);
+  border-color: var(--edit-input-border-focus);
   box-shadow: 0 0 0 2px var(--bubble-editor-shadow-soft);
 }
 
@@ -1041,7 +1042,7 @@ const {
 .fontsize-presets-panel summary {
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-strong, var(--color-edit-panel-text));
+  color: var(--color-text-strong, var(--edit-panel-text));
   font-weight: 500;
   padding: 4px 0;
 }
@@ -1109,11 +1110,11 @@ const {
 .btn-reset {
   background: var(--color-surface-card, var(--color-surface-base));
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  color: var(--color-text-strong, var(--color-edit-panel-text));
+  color: var(--color-text-strong, var(--edit-panel-text));
 }
 
 .btn-reset:hover {
-  background: var(--color-surface-app, var(--color-edit-control-bg));
-  border-color: var(--color-edit-muted-border-hover);
+  background: var(--color-surface-app, var(--edit-control-bg));
+  border-color: var(--edit-muted-border-hover);
 }
 </style>

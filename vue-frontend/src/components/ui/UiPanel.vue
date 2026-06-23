@@ -57,4 +57,11 @@ withDefaults(defineProps<{
   font-size: 1.1em;
   font-weight: 600;
 }
+
+.ui-panel :slotted(.ui-form-hint) {
+  margin-top: 6px;
+  color: var(--color-text-supporting, var(--color-text-secondary));
+  font-size: 0.85em;
+  line-height: 1.45;
+}
 </style>

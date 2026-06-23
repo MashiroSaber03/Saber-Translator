@@ -3,11 +3,11 @@
  * 处理角色CRUD、形态管理、图片上传等
  */
 
-import { inject, type Ref, type InjectionKey } from 'vue'
+import type { Ref } from 'vue'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
 
-interface CharacterManagementComposable {
+export interface CharacterManagementComposable {
     addCharacter: (name: string, aliases: string[], description: string) => Promise<void>
     deleteCharacter: (name: string) => Promise<void>
     updateCharacterInfo: (name: string, newName: string, aliases: string[]) => Promise<void>
@@ -21,10 +21,6 @@ interface CharacterManagementComposable {
     generateOrtho: (charName: string, formId: string, sourceImages: File[]) => Promise<{ success: boolean; image_path?: string; error?: string }>
     setFormReference: (charName: string, formId: string, imagePath: string) => Promise<void>
 }
-
-const CharacterManagementKey: InjectionKey<CharacterManagementComposable> = Symbol('CharacterManagement')
-
-export { CharacterManagementKey }
 
 export function useCharacterManagement(bookId: Ref<string | undefined>, state: ContinuationState): CharacterManagementComposable {
     async function addCharacter(name: string, aliases: string[], description: string) {
@@ -290,12 +286,4 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         generateOrtho,
         setFormReference
     }
-}
-
-export function useCharacterManagementInject(): CharacterManagementComposable {
-    const composable = inject(CharacterManagementKey)
-    if (!composable) {
-        throw new Error('useCharacterManagementInject must be used inside ContinuationPanel')
-    }
-    return composable
 }

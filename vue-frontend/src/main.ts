@@ -15,7 +15,6 @@ import './styles/tokens/domain.css'
 import './styles/reset.css'
 import './styles/animations.css'
 import './styles/base.css'
-import './components/ui/form-primitives.css'
 
 // 创建 Vue 应用实例
 const app = createApp(App)
@@ -30,7 +29,6 @@ app.use(router)
 // 全局错误处理
 app.config.errorHandler = (err, _instance, info) => {
   console.error('Vue 错误:', err, info)
-  // TODO: 集成全局错误提示组件
 }
 
 // 挂载应用

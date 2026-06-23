@@ -54,15 +54,15 @@ function handleChange(event: Event) {
 :where(.ui-select) {
   box-sizing: border-box;
   width: 100%;
-  min-height: 38px;
-  padding: 9px 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  background: var(--color-surface-input, var(--color-surface-card));
-  color: var(--color-text-default);
+  min-height: var(--ui-select-min-height, 38px);
+  padding: var(--ui-select-padding, 9px 12px);
+  border: var(--ui-select-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-select-radius, 6px);
+  background: var(--ui-select-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-select-color, var(--color-text-default));
   font-family: inherit;
-  font-size: inherit;
-  line-height: normal;
+  font-size: var(--ui-select-font-size, inherit);
+  line-height: var(--ui-select-line-height, normal);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 

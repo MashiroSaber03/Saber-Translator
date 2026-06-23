@@ -134,7 +134,7 @@
     <!-- 缓存清理 -->
     <UiPanel variant="settings">
       <template #title>缓存清理</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <UiButton variant="secondary" @click="cleanDebugFiles" :disabled="isCleaning">
             {{ isCleaning ? '清理中...' : '🗑️ 清理调试文件' }}
@@ -147,7 +147,7 @@
           </UiButton>
           <div class="ui-form-hint">清理下载和处理过程中的临时文件</div>
         </UiField>
-      </div>
+      </UiFormGrid>
     </UiPanel>
 
     <!-- 关于 -->
@@ -168,6 +168,7 @@
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'

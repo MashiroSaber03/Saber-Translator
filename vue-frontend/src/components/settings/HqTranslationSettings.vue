@@ -3,7 +3,7 @@
     <!-- 高质量翻译服务配置 -->
     <UiPanel variant="settings">
       <template #title>高质量翻译服务配置</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsHqTranslateProvider">服务商:</label>
           <CustomSelect
@@ -29,7 +29,7 @@
             </UiButton>
           </div>
         </UiField>
-      </div>
+      </UiFormGrid>
 
       <!-- 自定义Base URL -->
       <UiField v-show="providerRequiresBaseUrl(hqSettings.provider)" class="ui-settings-field">
@@ -86,14 +86,14 @@
     <!-- 批处理设置 -->
     <UiPanel variant="settings">
       <template #title>批处理设置</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsHqBatchSize">批次大小:</label>
           <UiInput type="number" id="settingsHqBatchSize" v-model.number="localHqSettings.batchSize" min="1" max="10" step="1" />
           <div class="ui-form-hint">每批处理的图片数量 (推荐3-5张)</div>
         </UiField>
-      </div>
-      <div class="ui-settings-row">
+      </UiFormGrid>
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsHqRpmLimit">RPM限制:</label>
           <UiInput type="number" id="settingsHqRpmLimit" v-model.number="localHqSettings.rpmLimit" min="0" step="1" />
@@ -109,13 +109,13 @@
           <UiInput type="number" id="settingsHqTransportRetries" v-model.number="localHqSettings.transportRetries" min="0" max="10" step="1" />
           <div class="ui-form-hint">网络超时/429/5xx</div>
         </UiField>
-      </div>
+      </UiFormGrid>
     </UiPanel>
 
     <!-- 高级选项 -->
     <UiPanel variant="settings">
       <template #title>高级选项</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label class="ui-checkbox-label">
             <UiInput type="checkbox" v-model="localHqSettings.forceJsonOutput" />
@@ -130,7 +130,7 @@
           </label>
           <div class="ui-form-hint">使用流式API调用</div>
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField class="ui-settings-field">
         <OpenAIExtraBodyEditor v-model="localHqSettings.extraBody" />
       </UiField>
@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'

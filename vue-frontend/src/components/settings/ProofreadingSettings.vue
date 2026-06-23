@@ -53,7 +53,7 @@
           </UiField>
 
           <!-- 服务商选择 -->
-          <div class="ui-settings-row">
+          <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>服务商:</label>
               <CustomSelect
@@ -77,7 +77,7 @@
                 </UiButton>
               </div>
             </UiField>
-          </div>
+          </UiFormGrid>
 
           <!-- 自定义Base URL -->
           <UiField v-show="providerRequiresBaseUrl(round.provider)" class="ui-settings-field">
@@ -130,7 +130,7 @@
           </UiField>
 
           <!-- 批处理设置 -->
-          <div class="ui-settings-row">
+          <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>批次大小:</label>
               <UiInput type="number" v-model.number="round.batchSize" min="1" max="10" step="1" />
@@ -139,10 +139,10 @@
               <label>RPM限制:</label>
               <UiInput type="number" v-model.number="round.openaiOptions.execution.rpmLimit" min="0" step="1" />
             </UiField>
-          </div>
+          </UiFormGrid>
 
           <!-- 高级选项 -->
-          <div class="ui-settings-row">
+          <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>业务重试:</label>
               <UiInput type="number" v-model.number="round.openaiOptions.execution.businessRetries" min="0" max="10" step="1" />
@@ -151,8 +151,8 @@
               <label>传输重试:</label>
               <UiInput type="number" v-model.number="round.openaiOptions.execution.transportRetries" min="0" max="10" step="1" />
             </UiField>
-          </div>
-          <div class="ui-settings-row">
+          </UiFormGrid>
+          <UiFormGrid>
             <UiField class="ui-settings-field">
               <label class="ui-checkbox-label">
                 <UiInput type="checkbox" v-model="round.openaiOptions.request.forceJsonOutput" />
@@ -167,7 +167,7 @@
               </label>
               <div class="ui-form-hint">使用流式API调用，避免超时</div>
             </UiField>
-          </div>
+          </UiFormGrid>
           <UiField class="ui-settings-field">
             <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
           </UiField>
@@ -192,6 +192,7 @@
 <script setup lang="ts">
 
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'

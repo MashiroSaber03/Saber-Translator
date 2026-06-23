@@ -73,7 +73,7 @@ defineEmits<{
   position: sticky;
   top: 0;
   z-index: var(--z-app-header);
-  border-bottom: 1px solid var(--color-border-studio);
+  border-bottom: 1px solid var(--studio-border-default);
   background: var(--studio-topbar-surface-base);
   backdrop-filter: blur(18px);
 }
@@ -106,7 +106,7 @@ defineEmits<{
   padding: 8px 12px;
   border-radius: 18px;
   background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
 }
 
 .title-row {
@@ -135,17 +135,17 @@ defineEmits<{
   border-radius: 999px;
   padding: 4px 9px;
   background: var(--studio-topbar-surface-raised);
-  color: var(--color-text-studio);
+  color: var(--studio-text-default);
   font-size: 11px;
   line-height: 1.2;
 }
 
 .status-pill.empty {
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
 }
 
 .busy-pill {
-  background: var(--color-surface-studio-tint-muted);
+  background: var(--studio-surface-tint-muted);
   color: var(--color-text-primary-strong);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -169,8 +169,8 @@ defineEmits<{
 .back-btn,
 .action-ghost {
   padding: 11px 15px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .back-btn:hover,

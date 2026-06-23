@@ -29,7 +29,7 @@
         </label>
         <div class="ui-form-hint">使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量</div>
       </UiField>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsAuxYoloConfThreshold">辅助 YSGYolo 置信度:</label>
           <UiInput
@@ -52,7 +52,7 @@
             step="0.05"
           />
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField class="ui-settings-field">
         <label class="ui-checkbox-label">
           <UiInput type="checkbox" v-model="settings.enableSaberYoloRefine" />
@@ -82,7 +82,7 @@
         <UiInput type="number" id="settingsBoxExpandRatio" v-model.number="settings.boxExpandRatio" min="0" max="50" step="1" />
         <div class="ui-form-hint">向四周均匀扩展的百分比 (0-50%)</div>
       </UiField>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsBoxExpandTop">上方扩展 (%):</label>
           <UiInput type="number" id="settingsBoxExpandTop" v-model.number="settings.boxExpandTop" min="0" max="50" step="1" />
@@ -91,8 +91,8 @@
           <label for="settingsBoxExpandBottom">下方扩展 (%):</label>
           <UiInput type="number" id="settingsBoxExpandBottom" v-model.number="settings.boxExpandBottom" min="0" max="50" step="1" />
         </UiField>
-      </div>
-      <div class="ui-settings-row">
+      </UiFormGrid>
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsBoxExpandLeft">左侧扩展 (%):</label>
           <UiInput type="number" id="settingsBoxExpandLeft" v-model.number="settings.boxExpandLeft" min="0" max="50" step="1" />
@@ -101,14 +101,14 @@
           <label for="settingsBoxExpandRight">右侧扩展 (%):</label>
           <UiInput type="number" id="settingsBoxExpandRight" v-model.number="settings.boxExpandRight" min="0" max="50" step="1" />
         </UiField>
-      </div>
+      </UiFormGrid>
     </UiPanel>
 
 
     <!-- 精确文字掩膜设置 (常驻功能) -->
     <UiPanel variant="settings">
       <template #title>精确文字掩膜</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsMaskDilateSize">膨胀大小:</label>
           <UiInput type="number" id="settingsMaskDilateSize" v-model.number="settings.maskDilateSize" min="0" step="1" />
@@ -126,7 +126,7 @@
           />
           <div class="ui-form-hint">标注框区域扩大百分比</div>
         </UiField>
-      </div>
+      </UiFormGrid>
     </UiPanel>
 
     <!-- 调试选项 -->
@@ -145,6 +145,7 @@
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 /**

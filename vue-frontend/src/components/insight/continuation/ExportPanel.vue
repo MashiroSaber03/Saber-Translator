@@ -49,19 +49,20 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import { ref } from 'vue'
-import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
+import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import * as continuationApi from '@/api/continuation'
 
 const props = defineProps<{
   bookId: string
   generatedCount: number
+  state: ContinuationState
 }>()
 
 const emit = defineEmits<{
   'clear-and-restart': []
 }>()
 
-const state = useContinuationStateInject()
+const state = props.state
 const selectedFormat = ref<'images' | 'pdf'>('images')
 const isExporting = ref(false)
 

@@ -100,7 +100,7 @@ function handleCompositionEnd(event: CompositionEvent) {
   background: var(--ui-input-background, var(--color-surface-input, var(--color-surface-card)));
   color: var(--ui-input-color, var(--color-text-default));
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--ui-input-font-size, inherit);
   line-height: var(--ui-input-line-height, normal);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -120,6 +120,7 @@ function handleCompositionEnd(event: CompositionEvent) {
   border: 0;
   border-radius: 0;
   background: transparent;
+  margin: var(--ui-input-control-margin);
 }
 
 :where(.ui-input[type='checkbox']):focus,

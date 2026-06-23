@@ -1,0 +1,158 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
+import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
+import ChatComposer from './ChatComposer.vue'
+import MessageList from './MessageList.vue'
+import SessionToolbar from './SessionToolbar.vue'
+import type {
+  CharacterStudioChatAttachment,
+  CharacterStudioChatSession,
+  CharacterStudioChatSessionSummary,
+  CharacterStudioDocument,
+} from '@/types/characterStudio'
+
+const props = defineProps<{
+  archivedSessions: CharacterStudioChatSessionSummary[]
+  bookId: string
+  chatExporting: boolean
+  chatImporting: boolean
+  chatLoading: boolean
+  chatMutating: boolean
+  chatPromptLoading: boolean
+  chatStreaming: boolean
+  chatSummarizing: boolean
+  document: CharacterStudioDocument | null
+  session: CharacterStudioChatSession | null
+}>()
+
+const emit = defineEmits<{
+  (event: 'delete-message', messageId: string): void
+  (event: 'edit-message', value: { messageId: string; content: string }): void
+  (event: 'export-session'): void
+  (event: 'import-session', file: File): void
+  (event: 'new-session', greetingId?: string): void
+  (event: 'open-greeting-picker'): void
+  (event: 'open-image-preview', attachment: CharacterStudioChatAttachment): void
+  (event: 'open-prompt-preview'): void
+  (event: 'regenerate-message', messageId: string): void
+  (event: 'send-chat', value: { content: string; attachments: File[] }): void
+  (event: 'summarize-session', cutoffMessageId?: string): void
+  (event: 'switch-session', sessionId: string): void
+}>()
+
+const currentSessionId = computed(() => props.session?.session_id || '')
+const currentSessionLabel = computed(() => props.session?.title || '当前会话')
+const currentSessionExcerpt = computed(() => {
+  const messages = props.session?.messages || []
+  const last = messages[messages.length - 1]
+  return last?.content || ''
+})
+const currentSessionMeta = computed(() => `${props.session?.messages.length || 0} 条消息`)
+const displayGreetings = computed(() => buildCharacterStudioGreetingOptions(props.document))
+const currentGreetingId = computed(() => {
+  const source = props.session?.greeting_source || {}
+  if (source.type === 'first_message') {
+    const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first_message')
+    if (hasFirstMessage) return 'first_message'
+  }
+  if (source.type === 'alternate_greetings' && typeof source.index === 'number') {
+    const greetingId = `alternate_${source.index + 1}`
+    const hasAlternate = displayGreetings.value.some(item => item.greeting_id === greetingId)
+    if (hasAlternate) return greetingId
+  }
+  return displayGreetings.value[0]?.greeting_id || ''
+})
+const currentGreetingLabel = computed(() => {
+  const selected = displayGreetings.value.find(item => item.greeting_id === currentGreetingId.value)
+  return selected?.label || '选择开场白'
+})
+const assistantName = computed(() => props.document?.identity.name || '角色')
+
+function attachmentUrl(attachment: CharacterStudioChatAttachment) {
+  if (!props.bookId || !props.document) return attachment.asset_path
+  return getCharacterStudioChatAttachmentUrl(props.bookId, props.document.id, attachment.asset_path)
+}
+
+function switchSession(sessionId: string) {
+  if (!sessionId || sessionId === props.session?.session_id) return
+  emit('switch-session', sessionId)
+}
+</script>
+
+<template>
+  <section class="workspace-card chat-workspace">
+    <SessionToolbar
+      :archived-sessions="archivedSessions"
+      :can-use-greeting="displayGreetings.length > 0"
+      :chat-exporting="chatExporting"
+      :chat-importing="chatImporting"
+      :chat-mutating="chatMutating"
+      :chat-prompt-loading="chatPromptLoading"
+      :chat-streaming="chatStreaming"
+      :chat-summarizing="chatSummarizing"
+      :current-greeting-label="currentGreetingLabel"
+      :current-session-excerpt="currentSessionExcerpt"
+      :current-session-id="currentSessionId"
+      :current-session-label="currentSessionLabel"
+      :current-session-meta="currentSessionMeta"
+      :has-document="Boolean(document)"
+      :has-session="Boolean(session)"
+      @choose-session="switchSession"
+      @export-session="$emit('export-session')"
+      @import-session="$emit('import-session', $event)"
+      @new-session="$emit('new-session')"
+      @open-greeting-picker="$emit('open-greeting-picker')"
+      @open-prompt-preview="$emit('open-prompt-preview')"
+      @summarize-session="$emit('summarize-session')"
+    />
+
+    <div v-if="!document" class="empty-copy">选择角色文档后可开始聊天。</div>
+    <template v-else-if="!session">
+      <div class="empty-copy">{{ chatLoading ? '聊天会话加载中...' : '当前还没有聊天会话。' }}</div>
+    </template>
+    <template v-else>
+      <MessageList
+        :assistant-name="assistantName"
+        :attachment-url-for="attachmentUrl"
+        :chat-mutating="chatMutating"
+        :chat-streaming="chatStreaming"
+        :session="session"
+        @delete-message="$emit('delete-message', $event)"
+        @edit-message="$emit('edit-message', $event)"
+        @open-image-preview="$emit('open-image-preview', $event)"
+        @regenerate-message="$emit('regenerate-message', $event)"
+      />
+      <ChatComposer
+        :chat-streaming="chatStreaming"
+        @send-chat="$emit('send-chat', $event)"
+      />
+    </template>
+  </section>
+</template>
+
+<style scoped>
+.workspace-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--studio-border-default);
+  border-radius: 24px;
+  background: var(--character-studio-preview-shell-surface-raised);
+  box-shadow: 0 24px 40px var(--studio-shadow-floating);
+}
+
+.chat-workspace {
+  gap: 12px;
+  min-height: 0;
+}
+
+.empty-copy {
+  color: var(--studio-text-subtle);
+  font-size: 13px;
+  line-height: 1.7;
+}
+</style>

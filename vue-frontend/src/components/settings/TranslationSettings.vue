@@ -2,7 +2,7 @@
   <div class="translation-settings">
     <UiPanel variant="settings">
       <template #title>翻译服务配置</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsModelProvider">翻译服务商:</label>
           <CustomSelect
@@ -28,7 +28,7 @@
             </UiButton>
           </div>
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField v-show="providerRequiresBaseUrl(localSettings.modelProvider)" class="ui-settings-field">
         <label for="settingsCustomBaseUrl">Base URL:</label>
         <UiInput
@@ -101,7 +101,7 @@
           <span class="model-count">共 {{ localModelList.length }} 个模型</span>
         </div>
       </UiField>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField v-show="showRpmLimit" class="ui-settings-field">
           <label for="settingsRpmTranslation">RPM限制:</label>
           <UiInput type="number" id="settingsRpmTranslation" v-model.number="localSettings.rpmTranslation" min="0" step="1" />
@@ -131,7 +131,7 @@
           />
           <div class="ui-form-hint">网络超时/429/5xx</div>
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField v-show="showRpmLimit" class="ui-settings-field">
         <label class="ui-checkbox-label">
           <UiInput type="checkbox" v-model="localSettings.useStream" />
@@ -218,6 +218,7 @@
 <script setup lang="ts">
 
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'

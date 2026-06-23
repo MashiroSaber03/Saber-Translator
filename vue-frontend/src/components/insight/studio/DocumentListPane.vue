@@ -87,11 +87,11 @@ function formatTime(value: string) {
 
 .pane-head span {
   font-size: 12px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
 }
 
 .empty-copy {
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 13px;
   line-height: 1.6;
   padding: 8px 0;
@@ -142,7 +142,7 @@ function formatTime(value: string) {
   display: flex;
   gap: 8px;
   margin-top: 6px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 11px;
   flex-wrap: wrap;
 }
@@ -163,7 +163,7 @@ function formatTime(value: string) {
 }
 
 .opening-pill {
-  background: var(--color-surface-studio-tint-strong);
+  background: var(--studio-surface-tint-strong);
   color: var(--color-text-primary-strong);
 }
 
@@ -173,7 +173,7 @@ function formatTime(value: string) {
 }
 
 .source-pill {
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   color: var(--color-text-primary-strong);
 }
 </style>

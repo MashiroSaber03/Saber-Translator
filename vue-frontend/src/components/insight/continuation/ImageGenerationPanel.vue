@@ -189,7 +189,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import { ref, watch, onMounted } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
-import { useContinuationStateInject } from '@/composables/continuation/useContinuationState'
+import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
 type StorySectionKey = 'continuity' | 'story' | 'dialogue'
@@ -199,6 +199,7 @@ const props = defineProps<{
   isGenerating: boolean
   progress: number
   bookId: string
+  state: ContinuationState
 }>()
 
 const emit = defineEmits<{
@@ -208,7 +209,7 @@ const emit = defineEmits<{
   'prompt-change': [pageNumber: number]
 }>()
 
-const state = useContinuationStateInject()
+const state = props.state
 const editingPromptPage = ref<number | null>(null)
 const expandedStorySections = ref<Record<string, boolean>>({})
 const refCount = ref(state.styleRefPages?.value || 3)

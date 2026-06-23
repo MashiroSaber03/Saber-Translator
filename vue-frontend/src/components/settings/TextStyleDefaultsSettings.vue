@@ -28,7 +28,7 @@
 
     <UiPanel variant="settings">
       <template #title>字体排版</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="textDefaultsFontSize">字号</label>
           <UiInput
@@ -50,7 +50,7 @@
             <span class="checkbox-text">自动计算初始字号</span>
           </label>
         </UiField>
-      </div>
+      </UiFormGrid>
 
       <UiField class="ui-settings-field">
         <label for="textDefaultsFontFamily">文本字体</label>
@@ -67,7 +67,7 @@
         />
       </UiField>
 
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="textDefaultsLayoutDirection">排版方向</label>
           <CustomSelect
@@ -84,7 +84,7 @@
             @change="handleTextAlignChange"
           />
         </UiField>
-      </div>
+      </UiFormGrid>
 
       <UiField class="ui-settings-field">
         <label for="textDefaultsLineSpacing">行间距</label>
@@ -113,7 +113,7 @@
           <span class="checkbox-text">自动识别文字颜色</span>
         </label>
       </UiField>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="textDefaultsTextColor">文字颜色</label>
           <UiInput
@@ -132,7 +132,7 @@
             @change="handleInpaintMethodChange"
           />
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField v-if="draftDefaults.inpaintMethod === 'solid'" class="ui-settings-field">
         <label for="textDefaultsFillColor">填充颜色</label>
         <UiInput
@@ -156,7 +156,7 @@
           <span class="checkbox-text">启用描边</span>
         </label>
       </UiField>
-      <div v-if="draftDefaults.strokeEnabled" class="ui-settings-row">
+      <UiFormGrid v-if="draftDefaults.strokeEnabled">
         <UiField class="ui-settings-field">
           <label for="textDefaultsStrokeColor">描边颜色</label>
           <UiInput
@@ -178,13 +178,14 @@
           />
           <div class="ui-form-hint">0 表示无描边。</div>
         </UiField>
-      </div>
+      </UiFormGrid>
     </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'

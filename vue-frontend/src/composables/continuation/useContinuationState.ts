@@ -1,9 +1,4 @@
-/**
- * 续写面板全局状态管理
- * 使用 provide/inject 模式在组件树中共享状态
- */
-
-import { ref, readonly, type Ref, inject, type InjectionKey } from 'vue'
+import { ref, readonly, type Ref } from 'vue'
 import type { CharacterProfile, ChapterScript, PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 
@@ -43,10 +38,6 @@ export interface ContinuationState {
     getFormImageUrl: (imagePath: string) => string
     getGeneratedImageUrl: (imagePath: string) => string
 }
-
-const ContinuationStateKey: InjectionKey<ContinuationState> = Symbol('ContinuationState')
-
-export { ContinuationStateKey }
 
 export function useContinuationState(bookId: Ref<string | undefined>): ContinuationState {
     const isLoading = ref(false)
@@ -301,14 +292,4 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         getFormImageUrl,
         getGeneratedImageUrl
     }
-}
-
-export function useContinuationStateInject(): ContinuationState {
-    const state = inject(ContinuationStateKey)
-
-    if (!state) {
-        throw new Error('useContinuationStateInject must be used inside ContinuationPanel')
-    }
-
-    return state
 }

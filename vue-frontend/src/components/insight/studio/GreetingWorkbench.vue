@@ -103,7 +103,7 @@ defineEmits<{
 .hero-head p,
 .list-head p {
   margin: 6px 0 0;
-  color: var(--color-text-studio-muted);
+  color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -111,11 +111,11 @@ defineEmits<{
 textarea {
   width: 100%;
   margin-top: 14px;
-  border: 1px solid var(--color-border-studio-strong);
-  background: var(--color-surface-studio-soft);
+  border: 1px solid var(--studio-border-strong);
+  background: var(--studio-surface-soft);
   border-radius: 16px;
   padding: 14px;
-  color: var(--color-text-studio-strong);
+  color: var(--studio-text-strong);
   resize: vertical;
   font-size: 13px;
   line-height: 1.7;
@@ -129,7 +129,7 @@ textarea {
 }
 
 .alternate-card {
-  border: 1px solid var(--color-border-studio);
+  border: 1px solid var(--studio-border-default);
   border-radius: 18px;
   padding: 14px;
   background: var(--greeting-workbench-surface-raised);
@@ -144,7 +144,7 @@ textarea {
 .index-chip {
   border-radius: 999px;
   padding: 3px 8px;
-  background: var(--color-surface-studio-tint);
+  background: var(--studio-surface-tint);
   color: var(--color-text-primary-strong);
   font-size: 11px;
 }
@@ -166,14 +166,14 @@ textarea {
 .action-secondary,
 .action-ghost {
   padding: 10px 14px;
-  background: var(--color-surface-studio-muted);
-  color: var(--color-text-studio);
+  background: var(--studio-surface-muted);
+  color: var(--studio-text-default);
 }
 
 .action-danger {
   padding: 10px 14px;
   background: var(--color-surface-danger-soft);
-  color: var(--color-text-studio-danger);
+  color: var(--studio-text-danger);
 }
 
 .action-secondary:disabled,
@@ -190,7 +190,7 @@ textarea {
 
 .empty-copy {
   margin-top: 14px;
-  color: var(--color-text-studio-subtle);
+  color: var(--studio-text-subtle);
   font-size: 13px;
 }
 

@@ -33,7 +33,7 @@
           @change="handleHybridOcrEnabledEvent"
         />
       </UiField>
-      <div v-show="settings.hybridOcr.enabled" class="ui-settings-row">
+      <UiFormGrid v-show="settings.hybridOcr.enabled">
         <UiField class="ui-settings-field">
           <label for="settingsHybridSecondaryOcr">备用OCR:</label>
           <CustomSelect
@@ -42,8 +42,8 @@
             @change="(v: any) => handleHybridSecondaryEngineChange(v)"
           />
         </UiField>
-      </div>
-      <div v-show="settings.hybridOcr.enabled" class="ui-settings-row">
+      </UiFormGrid>
+      <UiFormGrid v-show="settings.hybridOcr.enabled">
         <UiField class="ui-settings-field">
           <label for="settingsHybridThreshold">混合阈值:</label>
           <UiInput
@@ -56,7 +56,7 @@
             @change="handleHybridThresholdInput($event)"
           />
         </UiField>
-      </div>
+      </UiFormGrid>
       <div v-show="settings.hybridOcr.enabled" class="ui-form-hint">
         首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。
       </div>
@@ -77,7 +77,7 @@
     </UiPanel>
     <UiPanel variant="settings" v-show="settings.ocrEngine === 'baidu_ocr'">
       <template #title>百度OCR 设置</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsBaiduApiKey">API Key:</label>
           <div class="password-input-wrapper">
@@ -112,8 +112,8 @@
             </UiButton>
           </div>
         </UiField>
-      </div>
-      <div class="ui-settings-row">
+      </UiFormGrid>
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsBaiduVersion">识别版本:</label>
           <CustomSelect
@@ -128,14 +128,14 @@
             :options="baiduSourceLanguageOptions"
           />
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiButton variant="toolbar" class="settings-test-btn" @click="testBaiduOcr" :disabled="isTesting">
         {{ isTesting ? '测试中...' : '🔗 测试连接' }}
       </UiButton>
     </UiPanel>
     <UiPanel variant="settings" v-show="settings.ocrEngine === 'ai_vision'">
       <template #title>AI视觉OCR 设置</template>
-      <div class="ui-settings-row">
+      <UiFormGrid>
         <UiField class="ui-settings-field">
           <label for="settingsAiVisionProvider">服务商:</label>
           <CustomSelect
@@ -161,7 +161,7 @@
             </UiButton>
           </div>
         </UiField>
-      </div>
+      </UiFormGrid>
       <UiField v-show="providerRequiresBaseUrl(settings.aiVisionOcr.provider)" class="ui-settings-field">
         <label for="settingsCustomAiVisionBaseUrl">Base URL:</label>
         <UiInput
@@ -266,6 +266,7 @@
 <script setup lang="ts">
 
 import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'

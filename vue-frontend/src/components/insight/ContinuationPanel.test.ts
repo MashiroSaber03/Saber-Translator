@@ -23,12 +23,10 @@ vi.mock('@/stores/insightStore', () => ({
 
 vi.mock('@/composables/continuation/useContinuationState', () => ({
   useContinuationState: () => mocks.state,
-  ContinuationStateKey: Symbol('ContinuationStateKey'),
 }))
 
 vi.mock('@/composables/continuation/useCharacterManagement', () => ({
   useCharacterManagement: () => mocks.characterManagement,
-  CharacterManagementKey: Symbol('CharacterManagementKey'),
 }))
 
 vi.mock('@/composables/continuation/useImageGeneration', () => ({
