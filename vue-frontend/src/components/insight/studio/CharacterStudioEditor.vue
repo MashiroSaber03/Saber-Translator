@@ -537,6 +537,25 @@ function toggleScriptFreeze(event: Event) {
   --character-studio-editor-text-supporting: #112b47;
   --character-studio-editor-text-disabled: #516882;
   --character-studio-editor-text-inverse: #2b5f9f;
+  --ui-input-border: 1px solid var(--studio-border-strong);
+  --ui-input-background: var(--studio-surface-soft);
+  --ui-input-radius: 16px;
+  --ui-input-padding: 12px 14px;
+  --ui-input-color: var(--studio-text-strong);
+  --ui-input-font-size: 13px;
+  --ui-select-border: 1px solid var(--studio-border-strong);
+  --ui-select-background: var(--studio-surface-soft);
+  --ui-select-radius: 16px;
+  --ui-select-padding: 12px 14px;
+  --ui-select-color: var(--studio-text-strong);
+  --ui-select-font-size: 13px;
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 16px;
+  --ui-textarea-padding: 12px 14px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
+  --ui-textarea-line-height: 1.7;
 
   display: flex;
   flex-direction: column;
@@ -726,22 +745,6 @@ label {
 
 .full {
   grid-column: 1 / -1;
-}
-
-input,
-textarea,
-select {
-  border: 1px solid var(--studio-border-strong);
-  background: var(--studio-surface-soft);
-  border-radius: 16px;
-  padding: 12px 14px;
-  color: var(--studio-text-strong);
-  font-size: 13px;
-}
-
-textarea {
-  resize: vertical;
-  line-height: 1.7;
 }
 
 .option-row {

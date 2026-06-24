@@ -13,10 +13,10 @@ describe('insight store clears OpenAI extraBody', () => {
   it('ignores unversioned local config from storage', () => {
     localStorage.setItem('manga_insight_config', JSON.stringify({
       vlm: {
-        provider: 'old-provider',
-        apiKey: 'old-key',
-        model: 'old-model',
-        baseUrl: 'https://old.example.com/v1',
+        provider: 'ignored-top-level-provider',
+        apiKey: 'ignored-top-level-key',
+        model: 'ignored-top-level-model',
+        baseUrl: 'https://ignored.example.com/v1',
       },
     }))
     const store = useInsightStore()
@@ -117,19 +117,19 @@ describe('insight store clears OpenAI extraBody', () => {
 
   it('ignores top-level OpenAI mirror fields on VLM and LLM updates', () => {
     const store = useInsightStore()
-    const oldVlmPatch = {
+    const topLevelVlmPatch = {
       extraBody: { stale: true },
       rpmLimit: 77,
       temperature: 0.9,
       useStream: false,
     } as unknown as Parameters<typeof store.updateVlmConfig>[0]
-    const oldLlmPatch = {
+    const topLevelLlmPatch = {
       extraBody: { stale: true },
       useStream: false,
     } as unknown as Parameters<typeof store.updateLlmConfig>[0]
 
-    store.updateVlmConfig(oldVlmPatch)
-    store.updateLlmConfig(oldLlmPatch)
+    store.updateVlmConfig(topLevelVlmPatch)
+    store.updateLlmConfig(topLevelLlmPatch)
 
     expect(store.config.vlm.openaiOptions.request.extraBody).toBeUndefined()
     expect(store.config.vlm.openaiOptions.request.temperature).toBe(0.3)

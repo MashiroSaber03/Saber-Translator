@@ -144,10 +144,6 @@ defineEmits<{
   color: var(--color-text-default);
 }
 
-.chapter-action-btn.danger:hover {
-  color: var(--color-text-danger);
-}
-
 .chapter-enter-btn {
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
   color: var(--color-text-inverse);
@@ -155,10 +151,10 @@ defineEmits<{
 }
 
 .chapter-enter-btn:hover {
-  background: linear-gradient(135deg, var(--book-detail-modal-surface-base) 0%, var(--book-detail-modal-surface-raised) 100%);
+  background: linear-gradient(135deg, var(--book-detail-primary-action-hover-start) 0%, var(--book-detail-primary-action-hover-end) 100%);
   color: var(--color-text-inverse);
   transform: scale(1.02);
-  box-shadow: 0 4px 12px var(--book-detail-modal-shadow-raised);
+  box-shadow: 0 4px 12px var(--book-detail-primary-action-shadow);
 }
 
 .chapter-read-btn {
@@ -175,9 +171,9 @@ defineEmits<{
 }
 
 .chapter-read-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--book-detail-modal-surface-muted) 0%, var(--book-detail-modal-surface-subtle) 100%);
+  background: linear-gradient(135deg, var(--book-detail-success-action-hover-start) 0%, var(--book-detail-success-action-hover-end) 100%);
   color: var(--color-text-inverse);
   transform: scale(1.02);
-  box-shadow: 0 4px 12px var(--book-detail-modal-shadow-floating);
+  box-shadow: 0 4px 12px var(--book-detail-success-action-shadow);
 }
 </style>

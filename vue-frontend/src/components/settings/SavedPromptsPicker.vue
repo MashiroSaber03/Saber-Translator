@@ -23,33 +23,20 @@
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 提示词快速选择器组件
- * 显示用户保存的提示词列表，点击可快速应用到对应的输入框
- * 
- * 使用方式:
- * <SavedPromptsPicker prompt-type="translate" @select="handlePromptSelect" />
- */
 import { ref, onMounted, watch } from 'vue'
 import { configApi } from '@/api/config'
 
-// Props
 const props = defineProps<{
-  /** 提示词类型: translate | textbox | ai_vision_ocr | hq_translate | proofreading */
   promptType: string
 }>()
 
-// Emits
 const emit = defineEmits<{
-  /** 选择提示词时触发，返回提示词内容 */
   (e: 'select', content: string, name: string): void
 }>()
 
-// 状态
 const promptList = ref<{ name: string }[]>([])
 const isLoading = ref(false)
 
-/** 加载提示词列表 */
 async function loadPromptList() {
   isLoading.value = true
   try {
@@ -59,19 +46,15 @@ async function loadPromptList() {
     } else {
       result = await configApi.getPrompts(props.promptType)
     }
-    // API 返回的可能是 { name: string }[] 或 string[]，统一处理
-    // 后端返回的是字符串数组 prompt_names
     const names = result.prompt_names || []
     promptList.value = (names as unknown as string[]).map(name => ({ name }))
-  } catch (error) {
-    console.error('加载提示词列表失败:', error)
+  } catch {
     promptList.value = []
   } finally {
     isLoading.value = false
   }
 }
 
-/** 处理选择提示词 */
 async function handleSelect(name: string) {
   try {
     let result
@@ -83,32 +66,23 @@ async function handleSelect(name: string) {
     if (result.prompt_content) {
       emit('select', result.prompt_content, name)
     }
-  } catch (error) {
-    console.error('加载提示词内容失败:', error)
+  } catch {
+    // Prompt selection is optional; the picker remains available for another choice.
   }
 }
 
-
-
-// 监听 promptType 变化时刷新列表
 watch(() => props.promptType, () => {
   loadPromptList()
 })
 
-// 初始化加载
 onMounted(() => {
   loadPromptList()
 })
 
-// 暴露刷新方法
 defineExpose({ refresh: loadPromptList })
 </script>
 
 <style scoped>
-.saved-prompts-picker {
-  --saved-prompts-picker-surface-base: #4a90d9;
-}
-
 .saved-prompts-picker {
   margin-top: 10px;
   padding: 10px 12px;
@@ -148,8 +122,8 @@ defineExpose({ refresh: loadPromptList })
 }
 
 .prompt-chip:hover {
-  background: var(--color-action-primary, var(--saved-prompts-picker-surface-base));
-  color: white;
+  background: var(--color-action-primary);
+  color: var(--color-text-inverse);
   border-color: var(--color-action-primary, var(--color-border-info));
 }
 

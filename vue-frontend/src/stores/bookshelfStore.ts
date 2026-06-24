@@ -42,7 +42,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const searchKeyword = ref('')
 
   /** 选中的标签名称列表，用于后端筛选。 */
-  const selectedTagIds = ref<string[]>([])
+  const selectedTagNames = ref<string[]>([])
 
   /** 排序方式 */
   const sortBy = ref<BookSortBy>('updatedAt')
@@ -78,7 +78,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    */
   const filteredBooks = computed(() => {
     const keyword = searchKeyword.value.trim().toLowerCase()
-    const tagFilters = selectedTagIds.value
+    const tagFilters = selectedTagNames.value
 
     return books.value.filter((book) => {
       const matchesKeyword = !keyword
@@ -86,7 +86,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         || Boolean(book.description?.toLowerCase().includes(keyword))
 
       const matchesTags = tagFilters.length === 0
-        || tagFilters.every(tagId => book.tags?.includes(tagId))
+        || tagFilters.every(tagName => book.tags?.includes(tagName))
 
       return matchesKeyword && matchesTags
     })
@@ -307,9 +307,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     if (index >= 0) {
       tags.value.splice(index, 1)
       // 从选中列表中移除
-      const selectedIndex = selectedTagIds.value.indexOf(tagName)
+      const selectedIndex = selectedTagNames.value.indexOf(tagName)
       if (selectedIndex >= 0) {
-        selectedTagIds.value.splice(selectedIndex, 1)
+        selectedTagNames.value.splice(selectedIndex, 1)
       }
     }
   }
@@ -318,33 +318,33 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
    * 为书籍添加标签
    * 业务保存仍通过 updateBookApi 提交完整 tags 数组。
    */
-  function addTagToBook(bookId: string, tagId: string): void {
+  function addTagToBook(bookId: string, tagName: string): void {
     const book = books.value.find(item => item.id === bookId)
     if (!book) return
 
     const currentTags = book.tags ?? []
-    if (!currentTags.includes(tagId)) {
-      book.tags = [...currentTags, tagId]
+    if (!currentTags.includes(tagName)) {
+      book.tags = [...currentTags, tagName]
     }
   }
 
   /**
    * 从书籍移除标签
    */
-  function removeTagFromBook(bookId: string, tagId: string): void {
+  function removeTagFromBook(bookId: string, tagName: string): void {
     const book = books.value.find(item => item.id === bookId)
     if (!book?.tags) return
 
-    book.tags = book.tags.filter(item => item !== tagId)
+    book.tags = book.tags.filter(item => item !== tagName)
   }
 
   /**
    * 批量添加标签
    */
-  function batchAddTags(bookIds: string[], tagIds: string[]): void {
+  function batchAddTags(bookIds: string[], tagNames: string[]): void {
     for (const bookId of bookIds) {
-      for (const tagId of tagIds) {
-        addTagToBook(bookId, tagId)
+      for (const tagName of tagNames) {
+        addTagToBook(bookId, tagName)
       }
     }
   }
@@ -352,10 +352,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /**
    * 批量移除标签
    */
-  function batchRemoveTags(bookIds: string[], tagIds: string[]): void {
+  function batchRemoveTags(bookIds: string[], tagNames: string[]): void {
     for (const bookId of bookIds) {
-      for (const tagId of tagIds) {
-        removeTagFromBook(bookId, tagId)
+      for (const tagName of tagNames) {
+        removeTagFromBook(bookId, tagName)
       }
     }
   }
@@ -381,14 +381,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 切换标签筛选并重新加载书籍
-   * @param tagId - 标签ID
+   * @param tagName - 标签名称
    */
-  function toggleTagFilter(tagId: string): void {
-    const index = selectedTagIds.value.indexOf(tagId)
+  function toggleTagFilter(tagName: string): void {
+    const index = selectedTagNames.value.indexOf(tagName)
     if (index >= 0) {
-      selectedTagIds.value.splice(index, 1)
+      selectedTagNames.value.splice(index, 1)
     } else {
-      selectedTagIds.value.push(tagId)
+      selectedTagNames.value.push(tagName)
     }
     // 每次标签变化都从后端重新加载数据。
     loadBooks()
@@ -396,17 +396,17 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /**
    * 设置标签筛选
-   * @param tagIds - 标签ID列表
+   * @param tagNames - 标签名称列表
    */
-  function setTagFilter(tagIds: string[]): void {
-    selectedTagIds.value = tagIds
+  function setTagFilter(tagNames: string[]): void {
+    selectedTagNames.value = tagNames
   }
 
   /**
    * 清除标签筛选
    */
   function clearTagFilter(): void {
-    selectedTagIds.value = []
+    selectedTagNames.value = []
   }
 
   /**
@@ -542,9 +542,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (searchKeyword.value.trim()) {
         params.search = searchKeyword.value.trim()
       }
-      if (selectedTagIds.value.length > 0) {
-        // selectedTagIds 实际存储的是标签名称
-        params.tags = selectedTagIds.value
+      if (selectedTagNames.value.length > 0) {
+        params.tags = selectedTagNames.value
       }
 
       const response = await bookshelfApi.getBooks(params)
@@ -555,7 +554,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载书籍失败')
-      console.error('加载书籍失败:', err)
     } finally {
       setLoading(false)
     }
@@ -569,8 +567,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return response.book
       }
       return null
-    } catch (err) {
-      console.error('加载书籍详情失败:', err)
+    } catch {
       return null
     }
   }
@@ -584,8 +581,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (response.success && response.tags) {
         setTags(response.tags)
       }
-    } catch (err) {
-      console.error('加载标签失败:', err)
+    } catch {
+      return
     }
   }
 
@@ -604,8 +601,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return response.book
       }
       return null
-    } catch (err) {
-      console.error('创建书籍失败:', err)
+    } catch {
       return null
     }
   }
@@ -629,8 +625,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('更新书籍失败:', err)
+    } catch {
       return false
     }
   }
@@ -647,8 +642,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('删除书籍失败:', err)
+    } catch {
       return false
     }
   }
@@ -666,26 +660,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return response.tag
       }
       return null
-    } catch (err) {
-      console.error('创建标签失败:', err)
+    } catch {
       return null
     }
   }
 
   /**
    * 删除标签（调用API）
-   * @param tagId - 标签ID
+   * @param tagName - 标签名称
    */
-  async function deleteTagApi(tagId: string): Promise<boolean> {
+  async function deleteTagApi(tagName: string): Promise<boolean> {
     try {
-      const response = await bookshelfApi.deleteTag(tagId)
+      const response = await bookshelfApi.deleteTag(tagName)
       if (response.success) {
-        deleteTag(tagId)
+        deleteTag(tagName)
         return true
       }
       return false
-    } catch (err) {
-      console.error('删除标签失败:', err)
+    } catch {
       return false
     }
   }
@@ -693,13 +685,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /**
    * 更新标签（调用API）
    * 更新成功后刷新标签列表和书籍列表
-   * @param tagId - 标签ID（原标签名称）
+   * @param currentName - 当前标签名称
    * @param name - 新标签名称
    * @param color - 新标签颜色
    */
-  async function updateTagApi(tagId: string, name: string, color: string): Promise<boolean> {
+  async function updateTagApi(currentName: string, name: string, color: string): Promise<boolean> {
     try {
-      const response = await bookshelfApi.updateTag(tagId, name, color)
+      const response = await bookshelfApi.updateTag(currentName, name, color)
       if (response.success) {
         // 更新成功后重新加载标签和书籍列表。
         await loadTags()
@@ -707,8 +699,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('更新标签失败:', err)
+    } catch {
       return false
     }
   }
@@ -726,8 +717,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return response.chapter
       }
       return null
-    } catch (err) {
-      console.error('创建章节失败:', err)
+    } catch {
       return null
     }
   }
@@ -746,8 +736,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('更新章节失败:', err)
+    } catch {
       return false
     }
   }
@@ -765,8 +754,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('删除章节失败:', err)
+    } catch {
       return false
     }
   }
@@ -784,8 +772,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         return true
       }
       return false
-    } catch (err) {
-      console.error('重新排序章节失败:', err)
+    } catch {
       return false
     }
   }
@@ -803,7 +790,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     books.value = []
     tags.value = []
     searchKeyword.value = ''
-    selectedTagIds.value = []
+    selectedTagNames.value = []
     batchMode.value = false
     selectedBookIds.value = new Set()
     sortBy.value = 'updatedAt'
@@ -822,7 +809,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     books,
     tags,
     searchKeyword,
-    selectedTagIds,
+    selectedTagNames,
     sortBy,
     sortOrder,
     expandedBookId,

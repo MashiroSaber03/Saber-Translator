@@ -54,16 +54,12 @@ defineEmits<{
 
 <style scoped>
 .studio-topbar {
-  --studio-topbar-text-primary: #102741;
-}
-
-.studio-topbar {
-  /* owner tokens: studio-topbar */
-  --studio-topbar-shadow-default: rgba(37, 99, 199, .22);
-  --studio-topbar-surface-base: rgba(248, 251, 255, .9);
-  --studio-topbar-surface-raised: rgba(20, 56, 106, .06);
-  --studio-topbar-surface-muted: #2563c7;
-  --studio-topbar-surface-subtle: #4d86ee;
+  --studio-topbar-backdrop-background: rgba(248, 251, 255, .9);
+  --studio-topbar-primary-action-end: #4d86ee;
+  --studio-topbar-primary-action-shadow: rgba(37, 99, 199, .22);
+  --studio-topbar-primary-action-start: #2563c7;
+  --studio-topbar-status-background: rgba(20, 56, 106, .06);
+  --studio-topbar-title-text: #102741;
 
   display: flex;
   justify-content: space-between;
@@ -74,7 +70,7 @@ defineEmits<{
   top: 0;
   z-index: var(--z-app-header);
   border-bottom: 1px solid var(--studio-border-default);
-  background: var(--studio-topbar-surface-base);
+  background: var(--studio-topbar-backdrop-background);
   backdrop-filter: blur(18px);
 }
 
@@ -120,7 +116,7 @@ defineEmits<{
   margin: 0;
   font-size: 20px;
   line-height: 1.1;
-  color: var(--studio-topbar-text-primary);
+  color: var(--studio-topbar-title-text);
   white-space: nowrap;
 }
 
@@ -134,7 +130,7 @@ defineEmits<{
 .status-pill {
   border-radius: 999px;
   padding: 4px 9px;
-  background: var(--studio-topbar-surface-raised);
+  background: var(--studio-topbar-status-background);
   color: var(--studio-text-default);
   font-size: 11px;
   line-height: 1.2;
@@ -180,9 +176,9 @@ defineEmits<{
 
 .action-primary {
   padding: 11px 18px;
-  background: linear-gradient(135deg, var(--studio-topbar-surface-muted), var(--studio-topbar-surface-subtle));
+  background: linear-gradient(135deg, var(--studio-topbar-primary-action-start), var(--studio-topbar-primary-action-end));
   color: var(--color-text-inverse);
-  box-shadow: 0 12px 24px var(--studio-topbar-shadow-default);
+  box-shadow: 0 12px 24px var(--studio-topbar-primary-action-shadow);
 }
 
 .back-btn:disabled,

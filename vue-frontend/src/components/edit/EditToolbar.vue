@@ -1,13 +1,6 @@
-<!--
-  编辑模式工具栏组件
-  包含双行布局：第一行导航和视图控制，第二行操作工具
-  从 EditWorkspace.vue 拆分出来
--->
 <template>
   <div class="edit-toolbar-wrapper">
-    <!-- 第一行：导航和视图控制 -->
     <div class="edit-toolbar toolbar-row-1">
-      <!-- 图片导航 -->
       <div class="image-navigator">
         <UiButton
           variant="toolbar"
@@ -49,7 +42,6 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- 气泡导航 -->
       <div class="bubble-navigator">
         <UiButton
           variant="toolbar"
@@ -78,11 +70,10 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- 视图控制 -->
       <div class="view-controls">
         <UiButton
           variant="toolbar"
-          class="layout-toggle-btn"
+          class="view-control-btn layout-toggle-btn"
           @click="$emit('toggle-layout')"
           title="切换布局：左右/上下"
         >
@@ -97,7 +88,7 @@
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="view-mode-btn"
+          class="view-control-btn view-mode-btn"
           @click="$emit('toggle-view-mode')"
           title="切换视图模式"
         >
@@ -105,18 +96,18 @@
         </UiButton>
         <UiButton
           variant="toolbar"
+          class="view-control-btn sync-toggle-btn"
           :class="{ active: syncEnabled }"
           @click="$emit('toggle-sync')"
           title="同步缩放/拖动"
-          style="font-size: 12px;"
         >
           🔗
         </UiButton>
-        <UiButton variant="toolbar" @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</UiButton>
-        <UiButton variant="toolbar" @click="$emit('zoom-in')" title="放大 (+)">+</UiButton>
+        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</UiButton>
+        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('zoom-in')" title="放大 (+)">+</UiButton>
         <span id="zoomLevel" class="zoom-level">{{ Math.round(scale * 100) }}%</span>
-        <UiButton variant="toolbar" @click="$emit('zoom-out')" title="缩小 (-)">−</UiButton>
-        <UiButton variant="toolbar" @click="$emit('reset-zoom')" title="原始大小">1:1</UiButton>
+        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('zoom-out')" title="缩小 (-)">−</UiButton>
+        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('reset-zoom')" title="原始大小">1:1</UiButton>
       </div>
 
       <div class="toolbar-spacer"></div>
@@ -124,9 +115,7 @@
       <UiButton variant="toolbar" class="action-secondary" @click="$emit('exit-edit-mode')">退出编辑</UiButton>
     </div>
 
-    <!-- 第二行：操作工具 -->
     <div class="edit-toolbar toolbar-row-2">
-      <!-- 气泡操作工具组 -->
       <div class="annotation-tools">
         <UiButton
           variant="toolbar"
@@ -212,7 +201,6 @@
 
         <div class="toolbar-divider"></div>
 
-        <!-- 笔刷工具 -->
         <UiButton
           variant="toolbar"
           class="annotation-btn brush-btn"
@@ -243,7 +231,6 @@
           笔刷: {{ brushSize }}px
         </span>
 
-        <!-- 快捷键帮助 -->
         <div class="help-tooltip-container">
           <UiButton variant="toolbar" class="help-tooltip-btn" title="快捷键操作帮助">
             <svg viewBox="0 0 16 16" width="14" height="14">
@@ -274,21 +261,18 @@
         </div>
       </div>
 
-      <!-- 笔刷光标 -->
       <div
         v-if="brushMode"
         class="brush-cursor"
         :style="brushCursorStyle"
       ></div>
 
-      <!-- 笔刷模式提示 -->
       <OverlayLayer v-if="brushMode" class="brush-mode-hint-layer" passthrough>
         <div class="brush-mode-hint">
           {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
         </div>
       </OverlayLayer>
 
-      <!-- 进度条显示（紧跟快捷键图标右侧，业务契约位置） -->
       <div
         v-if="isProcessing"
         class="edit-progress-container"
@@ -303,8 +287,8 @@
           role="progressbar"
           aria-label="编辑处理进度"
           aria-valuemin="0"
-          :aria-valuemax="progressTotal"
-          :aria-valuenow="progressCurrent"
+          :aria-valuemax="progressAriaMax"
+          :aria-valuenow="progressAriaValue"
         >
           <div
             class="edit-progress-fill"
@@ -316,7 +300,6 @@
 
       <div class="toolbar-spacer"></div>
 
-      <!-- 快捷操作 -->
       <div class="quick-actions">
         <UiButton variant="toolbar" class="action-primary" @click="$emit('apply-and-next')" title="应用更改并跳转下一张 (Ctrl+Enter)">
           应用并下一张
@@ -330,134 +313,75 @@
 
 import UiButton from '@/components/ui/UiButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-/**
- * 编辑模式工具栏组件
- * 包含双行布局：第一行导航和视图控制，第二行操作工具
- */
 import { computed } from 'vue'
 
-// ============================================================
-// Props
-// ============================================================
-
 const props = defineProps<{
-  /** 当前图片索引 */
   currentImageIndex: number
-  /** 图片总数 */
   imageCount: number
-  /** 是否可以切换到上一张 */
   canGoPrevious: boolean
-  /** 是否可以切换到下一张 */
   canGoNext: boolean
-  /** 是否显示缩略图 */
   showThumbnails: boolean
-  /** 是否有气泡 */
   hasBubbles: boolean
-  /** 选中的气泡索引 */
   selectedBubbleIndex: number
-  /** 气泡总数 */
   bubbleCount: number
-  /** 布局模式 */
   layoutMode: 'horizontal' | 'vertical'
-  /** 是否同步 */
   syncEnabled: boolean
-  /** 缩放比例 */
   scale: number
-  /** 是否处于绘制模式 */
   isDrawingMode: boolean
-  /** 是否有选中 */
   hasSelection: boolean
-  /** 笔刷模式 */
   brushMode: 'repair' | 'restore' | null
-  /** 笔刷大小 */
   brushSize: number
-  /** 鼠标X坐标 */
   mouseX: number
-  /** 鼠标Y坐标 */
   mouseY: number
-  /** 是否正在处理 */
   isProcessing: boolean
-  /** 进度文本 */
   progressText: string
-  /** 当前进度 */
   progressCurrent: number
-  /** 总进度 */
   progressTotal: number
-  /** 修复气泡背景中 */
   isRepairLoading?: boolean
 }>()
 
-// ============================================================
-// Emits
-// ============================================================
-
 defineEmits<{
-  /** 切换到上一张图片 */
   (e: 'go-previous-image'): void
-  /** 切换到下一张图片 */
   (e: 'go-next-image'): void
-  /** 切换缩略图显示 */
   (e: 'toggle-thumbnails'): void
-  /** 选择上一个气泡 */
   (e: 'select-previous-bubble'): void
-  /** 选择下一个气泡 */
   (e: 'select-next-bubble'): void
-  /** 切换布局 */
   (e: 'toggle-layout'): void
-  /** 切换视图模式 */
   (e: 'toggle-view-mode'): void
-  /** 切换同步 */
   (e: 'toggle-sync'): void
-  /** 适应屏幕 */
   (e: 'fit-to-screen'): void
-  /** 放大 */
   (e: 'zoom-in'): void
-  /** 缩小 */
   (e: 'zoom-out'): void
-  /** 重置缩放 */
   (e: 'reset-zoom'): void
-  /** 退出编辑模式 */
   (e: 'exit-edit-mode'): void
-  /** 自动检测气泡 */
   (e: 'auto-detect-bubbles'): void
-  /** 批量检测所有图片 */
   (e: 'detect-all-images'): void
-  /** 使用当前气泡翻译 */
   (e: 'translate-with-bubbles'): void
-  /** 切换绘制模式 */
   (e: 'toggle-drawing-mode'): void
-  /** 删除选中气泡 */
   (e: 'delete-selected-bubbles'): void
-  /** 修复选中气泡 */
   (e: 'repair-selected-bubble'): void
-  /** 激活修复笔刷 */
   (e: 'activate-repair-brush'): void
-  /** 激活还原笔刷 */
   (e: 'activate-restore-brush'): void
-  /** 应用并下一张 */
   (e: 'apply-and-next'): void
 }>()
 
-// ============================================================
-// 计算属性
-// ============================================================
+const progressAriaMax = computed(() => Math.max(0, props.progressTotal))
+const progressAriaValue = computed(() => Math.max(0, Math.min(props.progressCurrent, progressAriaMax.value)))
 
-/** 进度百分比 */
 const progressPercent = computed(() => {
-  if (props.progressTotal === 0) return 0
-  return Math.round((props.progressCurrent / props.progressTotal) * 100)
+  if (progressAriaMax.value === 0) return 0
+  const percent = Math.round((progressAriaValue.value / progressAriaMax.value) * 100)
+  return Math.max(0, Math.min(100, percent))
 })
 
-/** 进度是否完成（业务契约状态控制） */
 const isProgressCompleted = computed(() => {
   return props.progressTotal > 0 && props.progressCurrent >= props.progressTotal
 })
 
-/** 笔刷光标样式 */
 const brushCursorStyle = computed(() => {
   const color = props.brushMode === 'repair'
-    ? { fill: 'rgba(76, 175, 80, 0.4)', border: '#4CAF50' }
-    : { fill: 'rgba(33, 150, 243, 0.4)', border: '#2196F3' }
+    ? { fill: 'var(--edit-toolbar-brush-repair-fill)', border: 'var(--edit-toolbar-brush-repair-border)' }
+    : { fill: 'var(--edit-toolbar-brush-restore-fill)', border: 'var(--edit-toolbar-brush-restore-border)' }
 
   return {
     position: 'fixed' as const,
@@ -469,7 +393,7 @@ const brushCursorStyle = computed(() => {
     border: `2px solid ${color.border}`,
     backgroundColor: color.fill,
     pointerEvents: 'none' as const,
-    zIndex: 99999,
+    zIndex: 'var(--z-toast)',
     transform: 'translate(-50%, -50%)',
     display: props.brushMode ? 'block' : 'none'
   }
@@ -477,9 +401,7 @@ const brushCursorStyle = computed(() => {
 </script>
 
 <style scoped>
-/* 顶部工具栏 */
 .edit-toolbar-wrapper {
-  /* owner tokens: edit-toolbar */
   --edit-toolbar-border-default: #e5e7eb;
   --edit-toolbar-border-strong: rgba(255, 255, 255, .2);
   --edit-toolbar-border-muted: rgba(255, 255, 255, .3);
@@ -500,6 +422,10 @@ const brushCursorStyle = computed(() => {
   --edit-toolbar-text-muted: #5b73f2;
   --edit-toolbar-text-subtle: #374151;
   --edit-toolbar-text-supporting: #6b7280;
+  --edit-toolbar-brush-repair-fill: rgba(76, 175, 80, .4);
+  --edit-toolbar-brush-repair-border: #4caf50;
+  --edit-toolbar-brush-restore-fill: rgba(33, 150, 243, .4);
+  --edit-toolbar-brush-restore-border: #2196f3;
 
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--edit-shell-start) 0%, var(--edit-shell-end) 100%);
@@ -532,7 +458,6 @@ const brushCursorStyle = computed(() => {
   margin: 0 5px;
 }
 
-/* 图片导航 */
 .image-navigator {
   display: flex;
   align-items: center;
@@ -578,7 +503,6 @@ const brushCursorStyle = computed(() => {
   background: var(--edit-shell-chip-active);
 }
 
-/* 气泡导航 */
 .bubble-navigator {
   display: flex;
   align-items: center;
@@ -598,14 +522,13 @@ const brushCursorStyle = computed(() => {
   color: var(--edit-accent);
 }
 
-/* 视图控制按钮组 */
 .view-controls {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.view-controls button {
+.view-control-btn {
   width: 36px;
   height: 36px;
   border: none;
@@ -617,7 +540,7 @@ const brushCursorStyle = computed(() => {
   transition: all 0.2s;
 }
 
-.view-controls button:hover {
+.view-control-btn:hover {
   background: var(--color-surface-overlay-medium-muted);
 }
 
@@ -633,7 +556,10 @@ const brushCursorStyle = computed(() => {
   font-size: 18px;
 }
 
-/* 快捷操作 */
+.sync-toggle-btn {
+  font-size: 12px;
+}
+
 .quick-actions {
   display: flex;
   gap: 10px;
@@ -672,7 +598,6 @@ const brushCursorStyle = computed(() => {
   border-color: var(--edit-action-border-hover);
 }
 
-/* 导航按钮样式 - 按业务契约 */
 .image-navigator .nav-btn,
 .bubble-navigator .nav-btn {
   width: 28px;
@@ -702,7 +627,6 @@ const brushCursorStyle = computed(() => {
   background: var(--edit-shell-chip-active);
 }
 
-/* 编辑进度条 */
 .edit-progress-container {
   display: flex;
   align-items: center;
@@ -765,7 +689,6 @@ const brushCursorStyle = computed(() => {
   box-shadow: 0 0 8px var(--edit-toolbar-shadow-default);
 }
 
-/* 进度条动画效果（仅在进行中时播放） */
 .edit-progress-fill.animating {
   background: linear-gradient(90deg, var(--edit-action-start), var(--edit-toolbar-surface-base), var(--edit-action-start));
   background-size: 200% 100%;
@@ -777,7 +700,6 @@ const brushCursorStyle = computed(() => {
   100% { background-position: -200% 0; }
 }
 
-/* 完成状态 */
 .edit-progress-container.completed .edit-progress-fill {
   background: var(--edit-action-start);
   animation: none;
@@ -787,7 +709,6 @@ const brushCursorStyle = computed(() => {
   color: var(--edit-accent);
 }
 
-/* 修复按钮 Loading 状态 */
 .annotation-btn.is-loading {
   opacity: 0.7;
   cursor: wait;
@@ -798,8 +719,6 @@ const brushCursorStyle = computed(() => {
   animation: spin-repair-icon 1s linear infinite;
 }
 
-/* 笔刷大小指示器 */
-
 .brush-size-indicator {
   color: var(--color-text-inverse);
   font-size: 12px;
@@ -809,20 +728,17 @@ const brushCursorStyle = computed(() => {
   margin-left: 8px;
 }
 
-/* 激活状态按钮 */
 .annotation-btn.active,
 .brush-btn.active {
   background: var(--edit-shell-chip-active);
   border-color: var(--color-border-brand-gradient);
 }
 
-/* 笔刷光标 */
 .brush-cursor {
   pointer-events: none;
   transition: width 0.1s, height 0.1s;
 }
 
-/* 笔刷模式提示 */
 .brush-mode-hint-layer {
   display: flex;
   align-items: flex-end;
@@ -838,8 +754,6 @@ const brushCursorStyle = computed(() => {
   font-size: 13px;
   pointer-events: none;
 }
-
-/* ============ 快捷键帮助提示框样式 ============ */
 
 .help-tooltip-container {
   position: relative;
@@ -935,7 +849,6 @@ const brushCursorStyle = computed(() => {
   color: var(--edit-toolbar-text-subtle);
 }
 
-/* annotation-tools 样式 */
 .annotation-tools {
   display: flex;
   align-items: center;
@@ -1002,8 +915,7 @@ const brushCursorStyle = computed(() => {
   background: var(--edit-toolbar-surface-selected);
 }
 
-/* sync按钮激活状态 */
-.view-controls button.active {
+.view-control-btn.active {
   background: var(--edit-shell-chip-active);
 }
 </style>

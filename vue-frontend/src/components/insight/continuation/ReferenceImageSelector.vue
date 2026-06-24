@@ -12,132 +12,128 @@
     body-min-height="0"
     @update:model-value="value => { if (!value) handleCancel() }"
   >
-    <!-- 标题栏 -->
-    <div class="modal-header">
-      <h3>选择参考图 ({{ selectedCount }}/{{ maxCount }})</h3>
-      <div class="header-actions">
-        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="autoSelectLast">
-          自动选择最后{{ maxCount }}张
-        </UiButton>
-        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="clearSelection">
-          清空
-        </UiButton>
+    <div class="reference-selector-content">
+      <div class="modal-header">
+        <h3>选择参考图 ({{ selectedCount }}/{{ maxCount }})</h3>
+        <div class="header-actions">
+          <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="autoSelectLast">
+            自动选择最后{{ maxCount }}张
+          </UiButton>
+          <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="clearSelection">
+            清空
+          </UiButton>
+        </div>
+        <div class="header-right">
+          <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="handleCancel">取消</UiButton>
+          <UiButton class="reference-selector-modal__button reference-selector-modal__button--primary" variant="primary" @click="handleConfirm">确定</UiButton>
+        </div>
+        <UiButton variant="toolbar" class="close-btn" @click="handleCancel">&times;</UiButton>
       </div>
-      <div class="header-right">
-        <UiButton class="reference-selector-modal__button reference-selector-modal__button--secondary" variant="secondary" @click="handleCancel">取消</UiButton>
-        <UiButton class="reference-selector-modal__button reference-selector-modal__button--primary" variant="primary" @click="handleConfirm">确定</UiButton>
-      </div>
-      <UiButton variant="toolbar" class="close-btn" @click="handleCancel">&times;</UiButton>
-    </div>
 
-    <!-- 角色档案区域（仅生图场景显示） -->
-    <div v-if="mode === 'image' && characterForms.length > 0" class="character-section">
-      <div class="section-label">
-        <span>角色档案</span>
-        <span class="section-hint">（自动添加，不计入选择数量）</span>
-      </div>
-      <div class="thumbnails-row">
-        <div
-          v-for="form in characterForms"
-          :key="form.token || `${form.character_name}-${form.form_id}`"
-          class="thumbnail character-thumbnail"
-        >
-          <img
-            v-if="form.has_image && form.path"
-            :src="getImageUrl(form.path)"
-            :alt="`${form.character_name} - ${form.form_name}`"
-            loading="lazy"
-            @error="handleImageError"
-          />
-          <div v-else class="placeholder-card">
-            <span>角色图缺失</span>
+      <div v-if="mode === 'image' && characterForms.length > 0" class="character-section">
+        <div class="section-label">
+          <span>角色档案</span>
+          <span class="section-hint">（自动添加，不计入选择数量）</span>
+        </div>
+        <div class="thumbnails-row">
+          <div
+            v-for="form in characterForms"
+            :key="form.token || `${form.character_name}-${form.form_id}`"
+            class="thumbnail character-thumbnail"
+          >
+            <img
+              v-if="form.has_image && form.path"
+              :src="getImageUrl(form.path)"
+              :alt="`${form.character_name} - ${form.form_name}`"
+              loading="lazy"
+              @error="handleImageError"
+            />
+            <div v-else class="placeholder-card">
+              <span>角色图缺失</span>
+            </div>
+            <div class="character-label">{{ form.character_name }} - {{ form.form_name }}</div>
           </div>
-          <div class="character-label">{{ form.character_name }} - {{ form.form_name }}</div>
         </div>
       </div>
-    </div>
 
-    <!-- 漫画图片区域 -->
-    <div class="manga-section">
-      <div class="section-label">
-        <span>漫画图片</span>
-      </div>
-      <div class="thumbnails-grid" ref="thumbnailsGrid">
-        <UiButton
-          v-for="img in originalImages"
-          :key="`original-${img.page_number}`"
-          variant="toolbar"
-          type="button"
-          class="thumbnail"
-          :class="{
-            selected: isSelected(img),
-            disabled: isThumbnailDisabled(img)
-          }"
-          :aria-label="getThumbnailActionLabel(img, '原作')"
-          :aria-pressed="String(isSelected(img))"
-          :disabled="isThumbnailDisabled(img)"
-          @click="toggleSelection(img)"
-        >
-          <img
-            v-if="img.has_image"
-            :src="getOriginalThumbnailUrl(img.page_number)"
-            :alt="`第${img.page_number}页`"
-            loading="lazy"
-            @error="handleImageError"
-          />
-          <div v-else class="placeholder-card">
-            <span>原作页缺失</span>
-          </div>
-          <!-- 选中标记 -->
-          <div v-if="isSelected(img)" class="selection-badge">
-            {{ getSelectionIndex(img) }}
-          </div>
-          <!-- 页码徽章 -->
-          <div class="page-badge">{{ img.page_number }}</div>
-          <!-- 禁用遮罩 -->
-          <div
-            v-if="isThumbnailDisabled(img)"
-            class="disabled-overlay"
-            title="已达到最大数量，请先取消其他选择"
-          ></div>
-        </UiButton>
+      <div class="manga-section">
+        <div class="section-label">
+          <span>漫画图片</span>
+        </div>
+        <div class="thumbnails-grid" ref="thumbnailsGrid">
+          <UiButton
+            v-for="img in originalImages"
+            :key="`original-${img.page_number}`"
+            variant="toolbar"
+            type="button"
+            class="thumbnail"
+            :class="{
+              selected: isSelected(img),
+              disabled: isThumbnailDisabled(img)
+            }"
+            :aria-label="getThumbnailActionLabel(img, '原作')"
+            :aria-pressed="String(isSelected(img))"
+            :disabled="isThumbnailDisabled(img)"
+            @click="toggleSelection(img)"
+          >
+            <img
+              v-if="img.has_image"
+              :src="getOriginalThumbnailUrl(img.page_number)"
+              :alt="`第${img.page_number}页`"
+              loading="lazy"
+              @error="handleImageError"
+            />
+            <div v-else class="placeholder-card">
+              <span>原作页缺失</span>
+            </div>
+            <div v-if="isSelected(img)" class="selection-badge">
+              {{ getSelectionIndex(img) }}
+            </div>
+            <div class="page-badge">{{ img.page_number }}</div>
+            <div
+              v-if="isThumbnailDisabled(img)"
+              class="disabled-overlay"
+              title="已达到最大数量，请先取消其他选择"
+            ></div>
+          </UiButton>
 
-        <UiButton
-          v-for="img in continuationImages"
-          :key="`continuation-${img.page_number}`"
-          variant="toolbar"
-          type="button"
-          class="thumbnail continuation-thumbnail"
-          :class="{
-            selected: isSelected(img),
-            disabled: isThumbnailDisabled(img)
-          }"
-          :aria-label="getThumbnailActionLabel(img, '续写')"
-          :aria-pressed="String(isSelected(img))"
-          :disabled="isThumbnailDisabled(img)"
-          @click="toggleSelection(img)"
-        >
-          <img
-            v-if="img.has_image && img.path"
-            :src="getImageUrl(img.path)"
-            :alt="`第${img.page_number}页续写图`"
-            loading="lazy"
-            @error="handleImageError"
-          />
-          <div v-else class="placeholder-card">
-            <span>占位页</span>
-          </div>
-          <div v-if="isSelected(img)" class="selection-badge">
-            {{ getSelectionIndex(img) }}
-          </div>
-          <div class="page-badge">{{ img.page_number }}</div>
-          <div class="continuation-badge">续写</div>
-          <div
-            v-if="isThumbnailDisabled(img)"
-            class="disabled-overlay"
-            title="已达到最大数量，请先取消其他选择"
-          ></div>
-        </UiButton>
+          <UiButton
+            v-for="img in continuationImages"
+            :key="`continuation-${img.page_number}`"
+            variant="toolbar"
+            type="button"
+            class="thumbnail continuation-thumbnail"
+            :class="{
+              selected: isSelected(img),
+              disabled: isThumbnailDisabled(img)
+            }"
+            :aria-label="getThumbnailActionLabel(img, '续写')"
+            :aria-pressed="String(isSelected(img))"
+            :disabled="isThumbnailDisabled(img)"
+            @click="toggleSelection(img)"
+          >
+            <img
+              v-if="img.has_image && img.path"
+              :src="getImageUrl(img.path)"
+              :alt="`第${img.page_number}页续写图`"
+              loading="lazy"
+              @error="handleImageError"
+            />
+            <div v-else class="placeholder-card">
+              <span>占位页</span>
+            </div>
+            <div v-if="isSelected(img)" class="selection-badge">
+              {{ getSelectionIndex(img) }}
+            </div>
+            <div class="page-badge">{{ img.page_number }}</div>
+            <div class="continuation-badge">续写</div>
+            <div
+              v-if="isThumbnailDisabled(img)"
+              class="disabled-overlay"
+              title="已达到最大数量，请先取消其他选择"
+            ></div>
+          </UiButton>
+        </div>
       </div>
     </div>
   </BaseModal>
@@ -168,16 +164,10 @@ const emit = defineEmits<{
   'cancel': []
 }>()
 
-// 选中的参考图 token 列表（按选择顺序）
 const selectedTokens = ref<string[]>([])
-
-// 缩略图网格引用
 const thumbnailsGrid = ref<HTMLElement | null>(null)
-
-// 计算选中数量
 const selectedCount = computed(() => selectedTokens.value.length)
 
-// 监听可见性变化，初始化选择状态
 watch(() => props.visible, (newVisible) => {
   if (newVisible) {
     const availableTokens = new Set(
@@ -189,35 +179,30 @@ watch(() => props.visible, (newVisible) => {
         .filter(Boolean)
     )
 
-    // 恢复之前的选择状态，或自动预选最后N张
     if (props.initialSelection && props.initialSelection.length > 0) {
       selectedTokens.value = props.initialSelection.filter(token => availableTokens.has(token))
       if (selectedTokens.value.length === 0) {
         autoSelectLast()
       }
     } else {
-      // 自动预选最后N张
       autoSelectLast()
     }
-    // 滚动到底部
+
     nextTick(() => {
       scrollToBottom()
     })
   }
 }, { immediate: true })
 
-// 获取图片的唯一标识符（使用 token）
 function getImageIdentifier(img: MangaImageInfo): string {
   return img.token || ''
 }
 
-// 检查图片是否被选中
 function isSelected(img: MangaImageInfo): boolean {
   const identifier = getImageIdentifier(img)
   return identifier ? selectedTokens.value.includes(identifier) : false
 }
 
-// 获取选中序号
 function getSelectionIndex(img: MangaImageInfo): number {
   const identifier = getImageIdentifier(img)
   const index = selectedTokens.value.indexOf(identifier)
@@ -233,24 +218,20 @@ function getThumbnailActionLabel(img: MangaImageInfo, source: string): string {
   return `${action}${source}第${img.page_number}页参考图`
 }
 
-// 切换选择状态
 function toggleSelection(img: MangaImageInfo): void {
   const identifier = getImageIdentifier(img)
   if (!identifier) return
 
   const index = selectedTokens.value.indexOf(identifier)
   if (index >= 0) {
-    // 取消选择
-    selectedTokens.value.splice(index, 1)
-  } else {
-    // 添加选择（检查是否达到上限）
-    if (selectedTokens.value.length < props.maxCount) {
-      selectedTokens.value.push(identifier)
-    }
+      selectedTokens.value.splice(index, 1)
+    } else {
+      if (selectedTokens.value.length < props.maxCount) {
+        selectedTokens.value.push(identifier)
+      }
   }
 }
 
-// 自动选择最后N张
 function autoSelectLast(): void {
   selectedTokens.value = []
 
@@ -261,54 +242,44 @@ function autoSelectLast(): void {
     .filter(img => img.token && img.has_image && img.path)
     .sort((left, right) => left.page_number - right.page_number)
 
-  // 取最后N张
   const lastN = validImages.slice(-props.maxCount)
   selectedTokens.value = lastN.map(img => img.token)
 
-  // 滚动到底部
   nextTick(() => {
     scrollToBottom()
   })
 }
 
-// 清空选择
 function clearSelection(): void {
   selectedTokens.value = []
 }
 
-// 滚动到底部
 function scrollToBottom(): void {
   if (thumbnailsGrid.value) {
     thumbnailsGrid.value.scrollTop = thumbnailsGrid.value.scrollHeight
   }
 }
 
-// 获取原作图片缩略图URL（使用缩略图接口，性能更好）
 function getOriginalThumbnailUrl(pageNum: number): string {
   if (!props.bookId) return ''
   return insightApi.getThumbnailUrl(props.bookId, pageNum)
 }
 
-// 获取其他图片URL（角色档案等）
 function getImageUrl(path: string): string {
   if (!path) return ''
-  // 通过后端文件服务接口获取图片
   return `/api/manga-insight/file?path=${encodeURIComponent(path)}`
 }
 
-// 图片加载失败处理
 function handleImageError(event: Event): void {
   const img = event.target as HTMLImageElement
   img.style.display = 'none'
 }
 
-// 确认选择
 function handleConfirm(): void {
   emit('confirm', [...selectedTokens.value])
   emit('update:visible', false)
 }
 
-// 取消选择
 function handleCancel(): void {
   emit('cancel')
   emit('update:visible', false)
@@ -316,11 +287,40 @@ function handleCancel(): void {
 </script>
 
 <style scoped>
+.reference-selector-content {
+  --reference-image-selector-border-active: #d1d5db;
+  --reference-image-selector-border-focus: #9ca3af;
+  --reference-image-selector-border-hover: #409eff;
+  --reference-image-selector-border-muted: #fcd34d;
+  --reference-image-selector-border-strong: #cbd5e1;
+  --reference-image-selector-border-subtle: #e5e7eb;
+  --reference-image-selector-shadow-floating: rgba(64, 158, 255, .2);
+  --reference-image-selector-shadow-raised: rgba(64, 158, 255, .25);
+  --reference-image-selector-shadow-strong: rgba(0, 0, 0, .25);
+  --reference-image-selector-surface-active: rgba(59, 130, 246, .9);
+  --reference-image-selector-surface-header: #f8f9fa;
+  --reference-image-selector-surface-overlay: rgba(255, 255, 255, .6);
+  --reference-image-selector-surface-primary: #409eff;
+  --reference-image-selector-surface-primary-strong: #337ecc;
+  --reference-image-selector-surface-scrim: rgba(0, 0, 0, .75);
+  --reference-image-selector-surface-section: #fef3c7;
+  --reference-image-selector-text-character: #92400e;
+  --reference-image-selector-text-muted: #b45309;
+  --reference-image-selector-text-placeholder: #6b7280;
+  --reference-image-selector-text-section: #4b5563;
+  --reference-image-selector-text-supporting: #374151;
+
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
   padding: 16px 20px;
-  background: var(--reference-image-selector-surface-base);
+  background: var(--reference-image-selector-surface-header);
   border-bottom: 1px solid var(--color-border-default);
   gap: 12px;
   flex-shrink: 0;
@@ -368,16 +368,15 @@ function handleCancel(): void {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--color-surface-muted), var(--color-surface-hover));
-  color: var(--reference-image-selector-text-primary);
+  color: var(--reference-image-selector-text-placeholder);
   font-size: 13px;
   font-weight: 600;
   border: 1px dashed var(--reference-image-selector-border-strong);
 }
 
-/* 角色档案区域 */
 .character-section {
   padding: 12px 20px;
-  background: var(--reference-image-selector-surface-raised);
+  background: var(--reference-image-selector-surface-section);
   border-bottom: 1px solid var(--reference-image-selector-border-muted);
   flex-shrink: 0;
 }
@@ -385,7 +384,7 @@ function handleCancel(): void {
 .section-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--reference-image-selector-text-secondary);
+  color: var(--reference-image-selector-text-character);
   margin-bottom: 10px;
   display: flex;
   align-items: center;
@@ -404,7 +403,6 @@ function handleCancel(): void {
   flex-wrap: wrap;
 }
 
-/* 漫画图片区域 */
 .manga-section {
   flex: 1;
   display: flex;
@@ -414,7 +412,7 @@ function handleCancel(): void {
 }
 
 .manga-section .section-label {
-  color: var(--reference-image-selector-text-subtle);
+  color: var(--reference-image-selector-text-section);
   margin-bottom: 12px;
   flex-shrink: 0;
 }
@@ -437,7 +435,7 @@ function handleCancel(): void {
   border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
-  background: white;
+  background: var(--color-surface-base);
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
@@ -470,8 +468,8 @@ function handleCancel(): void {
   left: 6px;
   width: 26px;
   height: 26px;
-  background: var(--reference-image-selector-surface-muted);
-  color: white;
+  background: var(--reference-image-selector-surface-primary);
+  color: var(--color-text-inverse);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -491,8 +489,8 @@ function handleCancel(): void {
   position: absolute;
   bottom: 4px;
   right: 4px;
-  background: var(--reference-image-selector-surface-subtle);
-  color: white;
+  background: var(--reference-image-selector-surface-scrim);
+  color: var(--color-text-inverse);
   padding: 3px 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -502,7 +500,7 @@ function handleCancel(): void {
 .disabled-overlay {
   position: absolute;
   inset: 0;
-  background: var(--reference-image-selector-surface-hover);
+  background: var(--reference-image-selector-surface-overlay);
   cursor: not-allowed;
 }
 
@@ -511,7 +509,7 @@ function handleCancel(): void {
   top: 6px;
   right: 6px;
   background: var(--reference-image-selector-surface-active);
-  color: white;
+  color: var(--color-text-inverse);
   padding: 2px 6px;
   border-radius: 999px;
   font-size: 10px;
@@ -536,8 +534,8 @@ function handleCancel(): void {
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--reference-image-selector-surface-subtle);
-  color: white;
+  background: var(--reference-image-selector-surface-scrim);
+  color: var(--color-text-inverse);
   padding: 4px 6px;
   font-size: 10px;
   text-align: center;
@@ -558,16 +556,16 @@ function handleCancel(): void {
 }
 
 .reference-selector-modal__button--primary {
-  background: var(--reference-image-selector-surface-muted);
-  color: white;
+  background: var(--reference-image-selector-surface-primary);
+  color: var(--color-text-inverse);
 }
 
 .reference-selector-modal__button--primary:hover {
-  background: var(--reference-image-selector-surface-selected);
+  background: var(--reference-image-selector-surface-primary-strong);
 }
 
 .reference-selector-modal__button--secondary {
-  background: white;
+  background: var(--color-surface-base);
   color: var(--reference-image-selector-text-supporting);
   border: 1px solid var(--reference-image-selector-border-active);
 }
@@ -576,8 +574,6 @@ function handleCancel(): void {
   background: var(--color-surface-muted);
   border-color: var(--reference-image-selector-border-focus);
 }
-
-/* 响应式适配 */
 
 @media (--breakpoint-lg-down) {
   .modal-header {

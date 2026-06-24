@@ -95,7 +95,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   async function reRenderFullImage(silentMode = false): Promise<boolean> {
     const image = currentImage.value
     if (!image) {
-      console.warn('reRenderFullImage: 没有当前图片')
       return false
     }
     const expectedImageId = image.id
@@ -119,7 +118,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     const cleanBase64 = getCleanImageBase64()
 
     if (!cleanBase64) {
-      console.error('reRenderFullImage: 缺少图像数据')
       renderError.value = '缺少图像数据'
       if (!silentMode) callbacks?.onRenderError?.('缺少图像数据')
       return false
@@ -191,7 +189,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         return true
       } else {
         const errorMsg = '渲染失败'
-        console.error('reRenderFullImage: 渲染失败 -', errorMsg)
         renderError.value = errorMsg
         if (!silentMode) callbacks?.onRenderError?.(errorMsg)
         return false
@@ -203,7 +200,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       }
 
       const errorMsg = error instanceof Error ? error.message : '渲染请求失败'
-      console.error('reRenderFullImage: 渲染出错 -', error)
       renderError.value = errorMsg
       if (!silentMode) callbacks?.onRenderError?.(errorMsg)
       return false

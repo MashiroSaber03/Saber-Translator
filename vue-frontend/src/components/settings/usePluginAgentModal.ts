@@ -775,8 +775,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       )
       if (result.success && result.models?.length) {
         fetchedModels.value = result.models.map(model => ({
-          id: typeof model === 'string' ? model : model.id,
-          name: typeof model === 'string' ? model : (model.name || model.id),
+          id: model.id,
+          name: model.name || model.id,
         }))
         toast.success(`获取到 ${result.models.length} 个模型`)
       } else {

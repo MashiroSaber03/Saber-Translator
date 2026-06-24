@@ -1,7 +1,7 @@
 /**
  * Manga Insight 类型转换器
  *
- * 提供 camelCase <-> snake_case 自动转换，消除手动字段映射代码。
+ * 集中当前 Store/API 字段转换和少量非对称字段映射。
  */
 
 /**

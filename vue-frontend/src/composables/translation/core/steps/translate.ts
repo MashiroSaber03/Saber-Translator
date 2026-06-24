@@ -112,8 +112,7 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                 if (response.success && response.data) {
                     translatedTexts.push(response.data.translated_text || '')
                 } else {
-                    console.warn(`[翻译] 气泡 ${i + 1} 翻译失败: ${response.error}`)
-                    translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
+                    translatedTexts.push(`【翻译失败】${response.error || '请检查翻译设置或稍后重试'}`)
                 }
 
                 // 文本框提示词（如果启用）
@@ -170,8 +169,8 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                 }
 
             } catch (error) {
-                console.error(`[翻译] 气泡 ${i + 1} 翻译出错:`, error)
-                translatedTexts.push(`【翻译失败】请检查终端中的错误日志`)
+                const message = error instanceof Error ? error.message : '请检查翻译设置或稍后重试'
+                translatedTexts.push(`【翻译失败】${message}`)
                 if (settings.useTextboxPrompt) {
                     textboxTexts.push('')
                 }

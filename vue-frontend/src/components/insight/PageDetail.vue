@@ -2,88 +2,43 @@
 
 import UiButton from '@/components/ui/UiButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-/**
- * 页面详情组件
- * 显示选中页面的详细信息，包括图片、摘要和对话
- * 支持上一页/下一页导航、重新分析、图片预览等功能
- */
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
-
-// ============================================================
-// 状态
-// ============================================================
+import type { PageAnalysisData } from '@/api/insight'
 
 const insightStore = useInsightStore()
 
-/** 页面分析数据 */
-const pageAnalysis = ref<{
-  page_num?: number
-  page_summary?: string
-  scene?: string
-  mood?: string
-  analyzed?: boolean
-  panels?: Array<{
-    dialogues?: Array<{
-      speaker_name?: string
-      character?: string
-      text?: string
-      translated_text?: string
-    }>
-  }>
-} | null>(null)
-
-/** 是否正在加载 */
+const pageAnalysis = ref<PageAnalysisData | null>(null)
 const isLoading = ref(false)
-
-/** 是否正在重新分析 */
 const isReanalyzing = ref(false)
-
-/** 是否等待异步重分析任务完成 */
 const pendingReanalyzePage = ref<number | null>(null)
-
-/** 是否显示图片预览 */
 const showImagePreview = ref(false)
-
-/** 错误消息 */
 const errorMessage = ref('')
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 当前选中的页码 */
 const selectedPageNum = computed(() => insightStore.selectedPageNum)
-
-/** 总页数 */
 const totalPages = computed(() => insightStore.totalPageCount)
 
-/** 是否有上一页 */
 const hasPrevPage = computed(() => {
   return selectedPageNum.value !== null && selectedPageNum.value > 1
 })
 
-/** 是否有下一页 */
 const hasNextPage = computed(() => {
   return selectedPageNum.value !== null && selectedPageNum.value < totalPages.value
 })
 
-/** 页面图片URL */
 const pageImageUrl = computed(() => {
   if (!insightStore.currentBookId || !selectedPageNum.value) return ''
   return insightApi.getPageImageUrl(insightStore.currentBookId, selectedPageNum.value)
 })
 
-/** 对话列表 */
 const dialogues = computed(() => {
   if (!pageAnalysis.value?.panels) return []
   const result: Array<{ speaker: string; text: string; originalText?: string }> = []
   for (const panel of pageAnalysis.value.panels) {
     if (panel.dialogues) {
       for (const d of panel.dialogues) {
-        // 优先使用译文，其次使用原文
         const text = d.translated_text || d.text
         if (text) {
           result.push({
@@ -98,18 +53,13 @@ const dialogues = computed(() => {
   return result
 })
 
-/** 页面是否已分析 */
 const isPageAnalyzed = computed(() => {
   return pageAnalysis.value?.analyzed === true || !!pageAnalysis.value?.page_summary
 })
 
-/** 场景描述 */
 const sceneDescription = computed(() => pageAnalysis.value?.scene || '')
-
-/** 氛围/情绪 */
 const moodDescription = computed(() => pageAnalysis.value?.mood || '')
 
-/** 当前页是否存在进行中的重分析任务 */
 const isReanalyzeTaskRunning = computed(() => {
   return (
     pendingReanalyzePage.value !== null &&
@@ -118,13 +68,6 @@ const isReanalyzeTaskRunning = computed(() => {
   )
 })
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 加载页面详情
- */
 async function loadPageDetail(): Promise<void> {
   if (!insightStore.currentBookId || !selectedPageNum.value) {
     pageAnalysis.value = null
@@ -141,14 +84,7 @@ async function loadPageDetail(): Promise<void> {
     )
 
     if (response.success) {
-      // 后端API返回的是analysis字段，不是page字段
-      if (response.analysis) {
-        pageAnalysis.value = response.analysis as any
-      } else if (response.page) {
-        pageAnalysis.value = response.page as any
-      } else {
-        pageAnalysis.value = null
-      }
+      pageAnalysis.value = response.analysis ?? response.page ?? null
     } else {
       pageAnalysis.value = null
       if (response.error) {
@@ -156,7 +92,6 @@ async function loadPageDetail(): Promise<void> {
       }
     }
   } catch (error) {
-    console.error('加载页面详情失败:', error)
     pageAnalysis.value = null
     errorMessage.value = error instanceof Error ? error.message : '加载失败'
   } finally {
@@ -164,27 +99,18 @@ async function loadPageDetail(): Promise<void> {
   }
 }
 
-/**
- * 导航到上一页
- */
 function navigatePrev(): void {
   if (hasPrevPage.value && selectedPageNum.value) {
     insightStore.selectPage(selectedPageNum.value - 1)
   }
 }
 
-/**
- * 导航到下一页
- */
 function navigateNext(): void {
   if (hasNextPage.value && selectedPageNum.value) {
     insightStore.selectPage(selectedPageNum.value + 1)
   }
 }
 
-/**
- * 重新分析当前页面
- */
 async function reanalyzePage(): Promise<void> {
   if (!insightStore.currentBookId || !selectedPageNum.value) return
 
@@ -198,8 +124,8 @@ async function reanalyzePage(): Promise<void> {
     )
 
     if (response.success) {
-      if ((response as any).task_id) {
-        insightStore.setCurrentTaskId((response as any).task_id)
+      if (response.task_id) {
+        insightStore.setCurrentTaskId(response.task_id)
       }
       pendingReanalyzePage.value = selectedPageNum.value
       insightStore.setAnalysisStatus('running')
@@ -207,7 +133,6 @@ async function reanalyzePage(): Promise<void> {
       errorMessage.value = response.error || '重新分析失败'
     }
   } catch (error) {
-    console.error('重新分析失败:', error)
     const message = (error as { message?: string })?.message
     errorMessage.value = message || '重新分析失败'
   } finally {
@@ -215,23 +140,14 @@ async function reanalyzePage(): Promise<void> {
   }
 }
 
-/**
- * 打开图片预览
- */
 function openImagePreview(): void {
   showImagePreview.value = true
 }
 
-/**
- * 关闭图片预览
- */
 function closeImagePreview(): void {
   showImagePreview.value = false
 }
 
-/**
- * 处理键盘事件（图片预览模式）
- */
 function handlePreviewKeydown(event: KeyboardEvent): void {
   if (!showImagePreview.value) return
 
@@ -252,12 +168,8 @@ function handlePreviewKeydown(event: KeyboardEvent): void {
   }
 }
 
-/** 是否正在导出 */
 const isExporting = ref(false)
 
-/**
- * 导出当前页面分析数据为 Markdown 文件
- */
 async function exportPageData(): Promise<void> {
   if (!insightStore.currentBookId || !selectedPageNum.value || !pageAnalysis.value) {
     return
@@ -266,15 +178,12 @@ async function exportPageData(): Promise<void> {
   isExporting.value = true
 
   try {
-    // 构建 Markdown 内容
     let markdown = `# 第 ${selectedPageNum.value} 页分析数据\n\n`
 
-    // 页面摘要
     if (pageAnalysis.value.page_summary) {
       markdown += `## 📝 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
     }
 
-    // 场景和氛围
     if (pageAnalysis.value.scene) {
       markdown += `## 🎬 场景\n\n${pageAnalysis.value.scene}\n\n`
     }
@@ -282,7 +191,6 @@ async function exportPageData(): Promise<void> {
       markdown += `## 🎭 氛围\n\n${pageAnalysis.value.mood}\n\n`
     }
 
-    // 对话内容
     if (dialogues.value.length > 0) {
       markdown += `## 💬 对话内容\n\n`
       for (const d of dialogues.value) {
@@ -293,33 +201,28 @@ async function exportPageData(): Promise<void> {
       }
     }
 
-    // 下载文件
     const blob = new Blob([markdown], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`
-    a.click()
-    URL.revokeObjectURL(url)
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`
+      a.click()
+    } finally {
+      URL.revokeObjectURL(url)
+    }
 
-  } catch (error) {
-    console.error('导出页面数据失败:', error)
+  } catch {
     errorMessage.value = '导出失败'
   } finally {
     isExporting.value = false
   }
 }
 
-// ============================================================
-// 监听
-// ============================================================
-
-// 监听选中页码变化
 watch(selectedPageNum, () => {
   loadPageDetail()
 }, { immediate: true })
 
-// 分析完成后自动刷新当前页详情（依赖全局轮询触发 dataRefreshKey）
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
   if (newKey <= 0 || !selectedPageNum.value) return
 
@@ -335,21 +238,17 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     <h3 class="section-title">📄 页面详情</h3>
 
     <div class="page-detail">
-      <!-- 未选择页面 -->
       <div v-if="!selectedPageNum" class="placeholder-text">
         <div class="empty-icon">📄</div>
         <p>点击左侧导航树中的页面查看详情</p>
       </div>
 
-      <!-- 加载中 -->
       <div v-else-if="isLoading" class="loading-state">
         <div class="loading-spinner"></div>
         <p>加载中...</p>
       </div>
 
-      <!-- 页面详情内容 -->
       <div v-else class="page-detail-content">
-        <!-- 页面标题和导航 -->
         <div class="page-detail-header">
           <h4>📄 第 {{ selectedPageNum }} 页</h4>
           <div class="page-nav-buttons">
@@ -377,12 +276,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           </div>
         </div>
 
-        <!-- 错误消息 -->
         <div v-if="errorMessage" class="error-message">
           ⚠️ {{ errorMessage }}
         </div>
 
-        <!-- 页面图片 -->
         <UiButton
           variant="toolbar"
           class="page-detail-image"
@@ -399,12 +296,10 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           </div>
         </UiButton>
 
-        <!-- 分析状态标签 -->
         <div class="analysis-status-tag" :class="{ analyzed: isPageAnalyzed }">
           {{ isPageAnalyzed ? '✓ 已分析' : '○ 未分析' }}
         </div>
 
-        <!-- 页面摘要 -->
         <div v-if="pageAnalysis?.page_summary" class="page-summary">
           <h5>📝 页面摘要</h5>
           <p>{{ pageAnalysis.page_summary }}</p>
@@ -413,7 +308,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           <p>此页尚未分析，点击下方按钮开始分析</p>
         </div>
 
-        <!-- 场景和氛围 -->
         <div v-if="sceneDescription || moodDescription" class="scene-mood-info">
           <div v-if="sceneDescription" class="info-item">
             <span class="info-label">🎬 场景：</span>
@@ -425,7 +319,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           </div>
         </div>
 
-        <!-- 对话列表 -->
         <div v-if="dialogues.length > 0" class="dialogues-section">
           <h5>💬 对话内容 ({{ dialogues.length }})</h5>
           <div
@@ -447,24 +340,23 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
           <p>此页没有检测到对话内容</p>
         </div>
 
-        <!-- 操作按钮 -->
         <div class="page-detail-actions">
           <UiButton
             variant="secondary"
-
+            size="sm"
             :disabled="isReanalyzing || isReanalyzeTaskRunning"
             :loading="isReanalyzing || isReanalyzeTaskRunning"
-            @click="reanalyzePage" size="sm"
+            @click="reanalyzePage"
           >
             <span v-if="isReanalyzing || isReanalyzeTaskRunning" class="btn-spinner"></span>
             {{ isReanalyzing ? '启动中...' : (isReanalyzeTaskRunning ? '分析中...' : '🔄 重新分析') }}
           </UiButton>
           <UiButton
-            variant="secondary"
             v-if="isPageAnalyzed"
-
+            variant="secondary"
+            size="sm"
             :disabled="isExporting"
-            @click="exportPageData" size="sm"
+            @click="exportPageData"
           >
             {{ isExporting ? '导出中...' : '📄 导出此页' }}
           </UiButton>
@@ -472,7 +364,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       </div>
     </div>
 
-    <!-- 图片预览模态框 -->
     <OverlayLayer
       v-if="showImagePreview"
       class="image-preview-modal"
@@ -483,7 +374,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       <div class="image-preview-content" @click.stop>
         <UiButton variant="toolbar" class="preview-close" title="关闭 (Esc)" @click="closeImagePreview">&times;</UiButton>
         <img :src="pageImageUrl" :alt="`第${selectedPageNum}页`">
-        <!-- 预览模式导航 -->
         <div class="preview-nav">
           <UiButton
             variant="toolbar"
@@ -510,12 +400,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   </div>
 </template>
 
-<style scoped>/* ==================== PageDetail样式 ==================== */
-
-/* ==================== 组件特定样式 ==================== */
-
+<style scoped>
 .workspace-section.page-detail-section {
-  /* owner tokens: page-detail */
   --page-detail-surface-base: rgba(239, 68, 68, .1);
   --page-detail-surface-raised: rgba(0, 0, 0, 0);
   --page-detail-surface-muted: rgba(0, 0, 0, .3);
@@ -540,7 +426,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   padding: 20px 18px;
 }
 
-/* 空状态 */
 .page-detail-section .placeholder-text {
   text-align: center;
   padding: 24px;
@@ -557,7 +442,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   margin-bottom: 12px;
 }
 
-/* 加载状态 */
 .page-detail-section .loading-state {
   text-align: center;
   padding: 24px;
@@ -612,7 +496,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   text-align: center;
 }
 
-/* 错误消息 */
 .page-detail-section .error-message {
   font-size: 12px;
   color: var(--page-detail-text-primary);
@@ -622,7 +505,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   margin-bottom: 12px;
 }
 
-/* 页面图片 */
 .page-detail-section .page-detail-image {
   position: relative;
   display: block;
@@ -658,7 +540,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .zoom-hint {
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 14px;
   opacity: 0;
   transition: opacity 0.2s;
@@ -668,7 +550,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   opacity: 1;
 }
 
-/* 分析状态标签 */
 .page-detail-section .analysis-status-tag {
   display: inline-block;
   font-size: 11px;
@@ -684,7 +565,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   color: var(--page-detail-text-secondary);
 }
 
-/* 页面摘要 */
 .page-detail-section .page-summary {
   margin-bottom: 16px;
 }
@@ -706,7 +586,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   font-style: italic;
 }
 
-/* 场景和氛围信息 */
 .page-detail-section .scene-mood-info {
   display: flex;
   flex-wrap: wrap;
@@ -729,7 +608,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   color: var(--insight-text-primary);
 }
 
-/* 对话部分 */
 .page-detail-section .dialogues-section {
   margin-bottom: 16px;
 }
@@ -786,7 +664,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   font-weight: 500;
 }
 
-/* 操作按钮 */
 .page-detail-section .page-detail-actions {
   margin-top: 16px;
   padding-top: 12px;
@@ -804,7 +681,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   margin-right: 6px;
 }
 
-/* 图片预览模态框 */
 .page-detail-section .image-preview-modal {
   background: var(--page-detail-surface-hover);
   display: flex;
@@ -834,7 +710,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   right: 0;
   background: none;
   border: none;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 36px;
   cursor: pointer;
   padding: 5px 10px;
@@ -845,7 +721,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   transform: scale(1.1);
 }
 
-/* 预览导航 */
 .page-detail-section .preview-nav {
   display: flex;
   align-items: center;
@@ -859,7 +734,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   border: none;
   border-radius: 50%;
   background: var(--page-detail-surface-active);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 18px;
   cursor: pointer;
   transition: all 0.2s;
@@ -875,7 +750,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .preview-page-info {
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 14px;
   min-width: 80px;
   text-align: center;

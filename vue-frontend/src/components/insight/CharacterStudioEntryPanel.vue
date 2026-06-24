@@ -30,7 +30,6 @@ function openStudio() {
 
 <style scoped>
 .entry-card {
-  /* owner tokens: character-studio-entry-panel */
   --character-studio-entry-panel-accent-primary: rgba(86, 138, 225, .08);
   --character-studio-entry-panel-accent-secondary: rgba(79, 136, 240, .12);
   --character-studio-entry-panel-accent-muted: rgba(255, 255, 255, 0);

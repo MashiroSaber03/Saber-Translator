@@ -1,6 +1,5 @@
 <template>
   <div class="detection-settings">
-    <!-- 文字检测器设置 -->
     <UiPanel variant="settings">
       <template #title>文字检测器</template>
       <UiField class="ui-settings-field">
@@ -24,7 +23,7 @@
       </UiField>
       <UiField class="ui-settings-field">
         <label class="ui-checkbox-label">
-          <UiInput type="checkbox" v-model="settings.enableAuxYoloDetection" />
+          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.enableAuxYoloDetection" />
           启用辅助 YSGYolo 检测
         </label>
         <div class="ui-form-hint">使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量</div>
@@ -55,7 +54,7 @@
       </UiFormGrid>
       <UiField class="ui-settings-field">
         <label class="ui-checkbox-label">
-          <UiInput type="checkbox" v-model="settings.enableSaberYoloRefine" />
+          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.enableSaberYoloRefine" />
           启用 SaberYOLO 二阶段纠错
         </label>
         <div class="ui-form-hint">使用 SaberYOLO 对误合并的大文本块进行二次拆分修正</div>
@@ -74,7 +73,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- 文本框扩展参数 -->
     <UiPanel variant="settings">
       <template #title>文本框扩展参数</template>
       <UiField class="ui-settings-field">
@@ -105,7 +103,6 @@
     </UiPanel>
 
 
-    <!-- 精确文字掩膜设置 (常驻功能) -->
     <UiPanel variant="settings">
       <template #title>精确文字掩膜</template>
       <UiFormGrid>
@@ -129,12 +126,11 @@
       </UiFormGrid>
     </UiPanel>
 
-    <!-- 调试选项 -->
     <UiPanel variant="settings">
       <template #title>调试选项</template>
       <UiField class="ui-settings-field">
         <label class="ui-checkbox-label">
-          <UiInput type="checkbox" v-model="settings.showDetectionDebug" />
+          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.showDetectionDebug" />
           显示检测框调试信息
         </label>
         <div class="ui-form-hint">在翻译结果中显示气泡检测框，用于调试</div>
@@ -148,25 +144,18 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-/**
- * 检测设置组件
- * 管理文字检测器和相关参数配置
- */
 import { reactive, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
-/** 检测器类型选项 */
 const detectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },
   { label: 'YOLO', value: 'yolo' },
   { label: 'Default (DBNet)', value: 'default' }
 ]
 
-// Store
 const settingsStore = useSettingsStore()
 
-// 本地设置状态（用于双向绑定）
 const settings = reactive({
   textDetector: settingsStore.settings.textDetector,
   minTextBlockAreaPercent: settingsStore.settings.minTextBlockAreaPercent,
@@ -185,7 +174,6 @@ const settings = reactive({
   showDetectionDebug: settingsStore.settings.showDetectionDebug
 })
 
-// 监听本地设置变化，同步到 store
 watch(() => settings.textDetector, (value) => {
   settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'default')
 })
@@ -255,7 +243,7 @@ watch(() => settings.showDetectionDebug, (value) => {
   cursor: pointer;
 }
 
-.ui-checkbox-label input[type='checkbox'] {
+.detection-settings__checkbox-input {
   width: auto;
 }
 </style>

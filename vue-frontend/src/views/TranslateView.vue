@@ -159,14 +159,14 @@ onUnmounted(() => {
 // 监听路由参数变化
 watch(
   () => [route.query.book, route.query.chapter],
-  async ([newBook, newChapter], [oldBook, oldChapter]) => {
+  async ([newBook, newChapter], [previousBook, previousChapter]) => {
     if (newBook && newChapter) {
       // 进入书架章节前先同步清空当前图片和气泡状态。
       imageStore.clearImages()
       bubbleStore.clearBubbles()
 
       await loadChapterSession()
-    } else if (oldBook && oldChapter && !newBook && !newChapter) {
+    } else if (previousBook && previousChapter && !newBook && !newChapter) {
       // 从书架模式切回快速翻译时重置工作区。
       imageStore.clearImages()
       bubbleStore.clearBubbles()
@@ -333,12 +333,9 @@ function showFeatureNotice() {
           <!-- 图片上传组件 -->
           <div class="translate-upload-actions">
             <ImageUpload
-              ref="imageUploadRef"
               @upload-complete="handleUploadComplete"
             />
           </div>
-
-          <!-- 缩略图列表已移至右侧侧边栏 -->
 
           <!-- 会话加载进度条 -->
           <ProgressBar
@@ -362,7 +359,6 @@ function showFeatureNotice() {
 
         <!-- 结果显示区域 -->
         <ImageResultDisplay
-          ref="imageResultRef"
           :is-edit-mode="isEditMode"
           @toggle-edit-mode="toggleEditMode"
           @retry-failed="handleRetryFailed"
@@ -419,19 +415,16 @@ function showFeatureNotice() {
 /* 页面容器 */
 .translate-page {
   /* owner tokens: translate-view */
-  --translate-view-shadow-default: rgba(74, 144, 217, .4);
-  --translate-view-shadow-raised: rgba(74, 144, 217, .6);
-  --translate-view-shadow-floating: #4a90d9;
-  --translate-view-surface-base: #f4f7f9;
-  --translate-view-surface-raised: rgba(0, 0, 0, .05);
-  --translate-view-surface-muted: rgba(0, 0, 0, .1);
-  --translate-view-surface-subtle: rgba(255, 105, 180, .15);
-  --translate-view-surface-hover: rgba(255, 105, 180, .25);
-  --translate-view-text-primary: #4a90d9;
-  --translate-view-text-secondary: #e53e3e;
-  --translate-view-text-muted: #e91e63;
+  --translate-view-page-background: #f4f7f9;
+  --translate-view-settings-pulse-shadow: rgba(74, 144, 217, .4);
+  --translate-view-settings-pulse-shadow-strong: rgba(74, 144, 217, .6);
+  --translate-view-header-control-background: rgba(0, 0, 0, .05);
+  --translate-view-header-control-background-hover: rgba(0, 0, 0, .1);
+  --translate-view-donate-background: rgba(255, 105, 180, .15);
+  --translate-view-donate-background-hover: rgba(255, 105, 180, .25);
+  --translate-view-donate-text: #e91e63;
 
-  background-color: var(--translate-view-surface-base);
+  background-color: var(--translate-view-page-background);
 }
 
 /* 页面主容器 */
@@ -492,76 +485,18 @@ function showFeatureNotice() {
 @keyframes settingsBtnPulse {
   0%, 100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 var(--translate-view-shadow-default);
+    box-shadow: 0 0 0 0 var(--translate-view-settings-pulse-shadow);
   }
 
   50% {
     transform: scale(1.05);
-    box-shadow: 0 0 15px var(--translate-view-shadow-raised);
+    box-shadow: 0 0 15px var(--translate-view-settings-pulse-shadow-strong);
   }
 }
 
 .translate-header__settings-button.highlight {
   animation: settingsBtnPulse 0.5s ease-in-out 3;
-  box-shadow: 0 0 10px var(--color-action-primary, var(--translate-view-shadow-floating));
-}
-
-/* 书籍/章节信息样式 */
-.translate-book-chapter-info {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  font-size: 0.9em;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  max-width: 400px;
-  overflow: hidden;
-}
-
-.translate-book-chapter-info .translate-book-chapter-info__separator {
-  margin: 0 6px;
-  color: var(--color-text-disabled, var(--color-text-muted));
-}
-
-.translate-book-chapter-info__book-title,
-.translate-book-chapter-info__chapter-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
-}
-
-.translate-book-chapter-info__book-title {
-  color: var(--color-text-default, var(--color-text-default));
-  font-weight: 500;
-}
-
-.translate-book-chapter-info__chapter-title {
-  color: var(--color-action-primary, var(--translate-view-text-primary));
-}
-
-/* 响应式：小屏幕隐藏书籍/章节信息 */
-@media (--breakpoint-md-down) {
-  .translate-book-chapter-info {
-    display: none;
-  }
-}
-
-/* 开源声明 */
-.translate-open-source-notice {
-  font-weight: bold;
-  color: var(--translate-view-text-secondary);
-  padding: 5px 12px;
-  background-color: var(--translate-view-surface-raised);
-  border-radius: 20px;
-  font-size: 0.9em;
-  white-space: nowrap;
-}
-
-/* 响应式：小屏幕隐藏开源声明 */
-@media (--breakpoint-lg-down) {
-  .translate-open-source-notice {
-    display: none;
-  }
+  box-shadow: 0 0 10px var(--color-action-primary);
 }
 
 /* 翻译页 header slot 内容 */
@@ -571,7 +506,7 @@ function showFeatureNotice() {
   gap: 5px;
   padding: 8px 12px;
   border: 0;
-  background-color: var(--translate-view-surface-raised);
+  background-color: var(--translate-view-header-control-background);
   border-radius: 20px;
   color: var(--color-text-heading);
   cursor: pointer;
@@ -581,7 +516,7 @@ function showFeatureNotice() {
 }
 
 .translate-header__link:hover {
-  background-color: var(--translate-view-surface-muted);
+  background-color: var(--translate-view-header-control-background-hover);
   transform: translateY(-2px);
 }
 
@@ -596,15 +531,15 @@ function showFeatureNotice() {
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: var(--translate-view-surface-subtle);
+  background-color: var(--translate-view-donate-background);
   border-radius: 20px;
-  color: var(--translate-view-text-muted);
+  color: var(--translate-view-donate-text);
   text-decoration: none;
   transition: all 0.3s ease;
 }
 
 .translate-header__link--donate:hover {
-  background-color: var(--translate-view-surface-hover);
+  background-color: var(--translate-view-donate-background-hover);
   transform: translateY(-2px);
 }
 
@@ -655,7 +590,7 @@ function showFeatureNotice() {
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
-  background-color: var(--translate-view-surface-raised);
+  background-color: var(--translate-view-header-control-background);
   border: none;
   border-radius: 20px;
   color: var(--color-text-heading);
@@ -665,7 +600,7 @@ function showFeatureNotice() {
 }
 
 .translate-header__settings-button:hover {
-  background-color: var(--translate-view-surface-muted);
+  background-color: var(--translate-view-header-control-background-hover);
   transform: translateY(-2px);
 }
 
@@ -674,7 +609,7 @@ function showFeatureNotice() {
   align-items: center;
   justify-content: center;
   padding: 8px 12px;
-  background-color: var(--translate-view-surface-raised);
+  background-color: var(--translate-view-header-control-background);
   border: none;
   border-radius: 20px;
   cursor: pointer;
@@ -682,7 +617,7 @@ function showFeatureNotice() {
 }
 
 .translate-header__theme-toggle:hover {
-  background-color: var(--translate-view-surface-muted);
+  background-color: var(--translate-view-header-control-background-hover);
   transform: translateY(-2px);
 }
 
@@ -701,9 +636,7 @@ function showFeatureNotice() {
   font-size: 0.85em;
 }
 
-/* 编辑工作区 - 不添加任何额外样式，使用全局 edit-mode.css 中的样式 */
-
-/* .edit-workspace 样式由全局 edit-mode.css 控制，确保全屏覆盖 */
+/* EditWorkspace owns the fullscreen editor surface; the page only hides route chrome while it is active. */
 
 /* ============ 编辑模式激活时隐藏其他元素 ============ */
 

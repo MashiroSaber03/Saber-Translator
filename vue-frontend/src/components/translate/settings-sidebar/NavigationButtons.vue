@@ -16,6 +16,7 @@ defineEmits<{
   <div class="navigation-buttons">
     <UiButton
       id="prevImageButton"
+      class="navigation-button"
       variant="toolbar"
       :disabled="!canGoPrevious"
       @click="$emit('previous')"
@@ -24,6 +25,7 @@ defineEmits<{
     </UiButton>
     <UiButton
       id="nextImageButton"
+      class="navigation-button"
       variant="toolbar"
       :disabled="!canGoNext"
       @click="$emit('next')"
@@ -40,7 +42,7 @@ defineEmits<{
   margin-top: 16px;
 }
 
-.navigation-buttons :where(button) {
+.navigation-button {
   flex: 1;
   min-height: 38px;
   border: none;
@@ -53,12 +55,12 @@ defineEmits<{
   transition: background-color 0.2s ease;
 }
 
-.navigation-buttons :where(button):disabled {
+.navigation-button:disabled {
   background: var(--settings-sidebar-workflow-surface-overlay);
   cursor: not-allowed;
 }
 
-.navigation-buttons :where(button):hover:not(:disabled) {
+.navigation-button:hover:not(:disabled) {
   background: var(--settings-sidebar-workflow-surface-inverse);
 }
 </style>

@@ -13,7 +13,6 @@
         <UiButton
           variant="secondary"
           type="button"
-         
           data-testid="reset-text-style-defaults"
           :disabled="isLoading"
           @click="resetDraftToFactory"
@@ -241,8 +240,7 @@ async function loadFontList(): Promise<void> {
     const response = await configApi.getFontList()
     const fonts = response.fonts || []
     fontList.value = fonts.map(font => font.path)
-  } catch (error) {
-    console.warn('[TextStyleDefaultsSettings] 加载字体列表失败:', error)
+  } catch {
     fontList.value = [...BUILTIN_FONTS]
   }
 }
@@ -458,17 +456,9 @@ defineExpose({
 </script>
 
 <style scoped>
-.text-style-defaults-settings {
-  --text-style-defaults-settings-text-primary: #d14343;
-}
-
 .action-row {
   display: flex;
   justify-content: flex-start;
-}
-
-.error-hint {
-  color: var(--color-status-error, var(--text-style-defaults-settings-text-primary));
 }
 
 .text-style-defaults-settings code {

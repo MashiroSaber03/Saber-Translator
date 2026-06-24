@@ -1,6 +1,5 @@
 import { getProviderOptionsForCapability } from '@/config/aiProviders'
 
-/** OCR引擎选项 */
 export const allOcrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
   { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
@@ -10,13 +9,11 @@ export const allOcrEngineOptions = [
   { label: 'AI视觉OCR', value: 'ai_vision' }
 ]
 
-/** 百度OCR版本选项 */
 export const baiduVersionOptions = [
   { label: '标准版', value: 'standard' },
   { label: '高精度版', value: 'high_precision' }
 ]
 
-/** 百度OCR源语言选项 */
 export const baiduSourceLanguageOptions = [
   { label: '自动检测', value: 'auto_detect' },
   { label: '中英文混合', value: 'CHN_ENG' },
@@ -28,10 +25,8 @@ export const baiduSourceLanguageOptions = [
   { label: '俄语', value: 'RUS' }
 ]
 
-/** AI视觉服务商选项 */
 export const aiVisionProviderOptions = getProviderOptionsForCapability('visionOcr')
 
-/** PaddleOCR-VL 源语言选项（分组） */
 export const paddleOcrVlSourceLanguageGroups = [
   {
     label: '🎌 东亚语言',
@@ -77,14 +72,12 @@ export const paddleOcrVlSourceLanguageGroups = [
   }
 ]
 
-/** 提示词模式选项 */
 export const promptModeOptions = [
   { label: '普通提示词', value: 'normal' },
   { label: 'JSON提示词', value: 'json' },
   { label: 'OCR模型提示词', value: 'paddleocr_vl' }
 ]
 
-/** 源语言选项（分组） */
 export const sourceLanguageGroups = [
   {
     label: '🚀 常用语言',

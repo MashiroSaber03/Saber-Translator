@@ -12,6 +12,7 @@
  */
 
 import { hqTranslateBatch } from '@/api/translate'
+import type { HqTranslateJsonData } from '@/api/translate'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { ImageData } from '@/types/image'
 import type { TranslationSettings } from '@/types/settings'
@@ -52,17 +53,6 @@ export interface AiTranslateOutput {
     }>
 }
 
-/** 翻译JSON数据格式 */
-interface TranslationJsonData {
-    imageIndex: number
-    bubbles: Array<{
-        bubbleIndex: number
-        original: string
-        translated: string
-        textDirection: string
-    }>
-}
-
 interface AiTranslateResultData {
     imageIndex: number
     bubbles: Array<{
@@ -92,7 +82,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     })
 
     // 1. 收集 JSON 数据
-    const jsonData: TranslationJsonData[] = input.tasks.map(t => {
+    const jsonData: HqTranslateJsonData[] = input.tasks.map(t => {
         if (isProofread) {
             // 校对模式：使用已有译文
             return {
@@ -247,7 +237,6 @@ function parseHqResponse(
     forceJsonOutput: boolean
 ): AiTranslateResultData[] | null {
     if (!response.success) {
-        console.error('API调用失败:', response.error)
         return null
     }
 

@@ -12,6 +12,7 @@ import type {
   InpaintSingleBubbleResponse,
   HqTranslateResponse,
   BubbleCoords,
+  BubbleTextline,
 } from '@/types'
 import type {
   GlossarySettings,
@@ -77,13 +78,13 @@ export interface HqTranslateParams {
   // 服务设置
   provider: string
   api_key: string
-  model_name: string  // 后端期望 model_name 而不是 model
+  model_name: string  // 当前后端协议字段
   custom_base_url?: string
   translation_mode?: string
   translation_scope?: string
 
   // 结构化输入：传数据，后端构建消息
-  jsonData: any[]
+  jsonData: HqTranslateJsonData[]
   imageBase64Array: string[]
   target_language?: string
   prompt?: string
@@ -107,6 +108,16 @@ export interface HqTranslateParams {
       business_retries: number
     }
   }
+}
+
+export interface HqTranslateJsonData {
+  imageIndex: number
+  bubbles: Array<{
+    bubbleIndex: number
+    original: string
+    translated: string
+    textDirection: string
+  }>
 }
 
 /**
@@ -253,7 +264,7 @@ export async function ocrSingleBubble(
     enable_hybrid_ocr?: boolean
     secondary_ocr_engine?: string
     hybrid_ocr_threshold?: number
-    bubble_textlines?: any[]
+    bubble_textlines?: BubbleTextline[]
     text_detector?: string
     enable_aux_yolo_detection?: boolean
     aux_yolo_conf_threshold?: number

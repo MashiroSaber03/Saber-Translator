@@ -134,7 +134,6 @@ export abstract class TaskPool {
     } catch (error) {
       this.currentTask.status = 'failed'
       this.currentTask.error = (error as Error).message
-      console.error(`[${this.name}] 处理任务失败:`, error)
       this.onTaskComplete?.(this.currentTask)
     } finally {
       this.currentTask = null
@@ -169,7 +168,7 @@ export abstract class TaskPool {
       icon: this.icon,
       waiting: this.queue.length,
       processing: this.isRunning,
-      currentPage: this.currentTask?.imageIndex,
+      currentPage: this.currentTask ? this.currentTask.imageIndex + 1 : undefined,
       completed: this.completedCount,
       isWaitingLock: this.lock?.isWaiting(this.name) ?? false
     }

@@ -71,7 +71,7 @@ const documentWithPatchTargets: CharacterStudioDocument = {
         comment: '世界观设定',
         keys: ['学院'],
         secondary_keys: [],
-        content: '旧内容',
+        content: '初始内容',
         enabled: true,
         constant: false,
         selective: true,
@@ -197,7 +197,7 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
       archivedSessions: [
         {
           session_id: 'chat-archived',
-          title: '旧会话',
+          title: '归档会话',
           message_count: 5,
           updated_at: '2026-05-15T01:00:00',
           archived_at: '2026-05-15T01:00:00',
@@ -257,7 +257,7 @@ const summaryPatch: CharacterStudioAgentPatchV2 = {
 }
 
 describe('CharacterStudioPreview workspace', () => {
-  it('renders the chat tab with a compact toolbar instead of the old workspace intro banner', () => {
+  it('renders the chat tab with the compact toolbar contract', () => {
     const wrapper = mountPreview()
 
     expect(wrapper.find('.workspace-head').exists()).toBe(false)
@@ -268,7 +268,7 @@ describe('CharacterStudioPreview workspace', () => {
     expect(wrapper.text()).toContain('查看提示词')
   })
 
-  it('renders chat / assistant / runtime tabs without old native selectors', () => {
+  it('renders chat / assistant / runtime tabs through public tab controls', () => {
     const wrapper = mountPreview()
 
     expect(wrapper.text()).toContain('聊天')
@@ -288,7 +288,7 @@ describe('CharacterStudioPreview workspace', () => {
     expect((undoButton!.element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('uses a full-height assistant workspace instead of the old fixed compact message panel', () => {
+  it('uses a full-height assistant workspace with a scrollable message panel', () => {
     const wrapper = mountPreview({
       activeTab: 'assistant',
     })
@@ -335,7 +335,7 @@ describe('CharacterStudioPreview workspace', () => {
 
     await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
 
-    expect(wrapper.text()).toContain('旧会话')
+    expect(wrapper.text()).toContain('归档会话')
     expect(wrapper.text()).toContain('上一次聊到这里')
   })
 

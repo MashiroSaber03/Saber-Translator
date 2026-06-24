@@ -46,11 +46,11 @@ export function useHqTranslationSettings(
    */
   function setHqProvider(provider: HqTranslationProvider): void {
     provider = normalizeProviderId(provider) as HqTranslationProvider
-    const oldProvider = settings.value.hqTranslation.provider
-    if (oldProvider === provider) return
+    const previousProvider = settings.value.hqTranslation.provider
+    if (previousProvider === provider) return
 
     // 保存当前服务商配置
-    saveHqProviderConfig(oldProvider)
+    saveHqProviderConfig(previousProvider)
 
     // 切换服务商
     settings.value.hqTranslation.provider = provider

@@ -1,13 +1,13 @@
 <template>
   <ContinuationDialogShell title="✏️ 编辑角色" @close="close">
     <ContinuationDialogForm>
-      <ContinuationDialogField label="角色名称">
+      <ContinuationDialogField label="角色名称" required :error="nameError">
         <UiInput
           v-model="localName"
           type="text"
           aria-label="角色名称"
           class="continuation-dialog__form-input"
-          style="font: inherit"
+          :error="Boolean(nameError)"
           placeholder="输入角色主名称"
         />
       </ContinuationDialogField>
@@ -21,7 +21,6 @@
           type="text"
           aria-label="别名（用逗号分隔）"
           class="continuation-dialog__form-input"
-          style="font: inherit"
           placeholder="例如: 桐乃, 新垣彩世"
         />
       </ContinuationDialogField>
@@ -30,7 +29,7 @@
     <template #footer>
       <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
-        <UiButton variant="primary" @click="save">💾 保存</UiButton>
+        <UiButton variant="primary" :disabled="!localName.trim()" @click="save">💾 保存</UiButton>
       </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
@@ -57,6 +56,7 @@ const emit = defineEmits<{
 
 const localName = ref(props.character.name)
 const localAliases = ref(props.character.aliases.join(', '))
+const nameError = ref('')
 const close = () => emit('close')
 
 watch(() => props.character, (newChar) => {
@@ -72,9 +72,10 @@ function save() {
     .filter(a => a.length > 0)
 
   if (!name) {
-    alert('角色名不能为空')
+    nameError.value = '请输入角色名称'
     return
   }
+  nameError.value = ''
 
   emit('save', name, aliases)
 }

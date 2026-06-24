@@ -163,7 +163,6 @@ export function usePipeline() {
         } catch (err) {
             if (err instanceof PipelineCancelledError) {
                 toast.error(`翻译被插件取消：${err.message}`)
-                console.warn('[pipeline.before] 插件取消任务', err.details)
                 return {
                     success: false,
                     completed: 0,
@@ -171,7 +170,6 @@ export function usePipeline() {
                     errors: [`插件取消任务: ${err.message}`],
                 }
             }
-            console.warn('[pipeline.before] 通知失败（继续执行翻译）:', err)
         }
 
         // 2. 执行真实翻译；3. 无论成败都通知 after_pipeline
@@ -337,7 +335,6 @@ export function usePipeline() {
             )
             if (warningCount > 0) {
                 toast.warning(`有 ${warningCount} 处术语未遵守`)
-                console.warn('[TranslationWarnings]', imagesToProcess.flatMap(image => image.translationWarnings || []))
             }
 
             const autoGlossaryStats = result.autoGlossaryStats || {

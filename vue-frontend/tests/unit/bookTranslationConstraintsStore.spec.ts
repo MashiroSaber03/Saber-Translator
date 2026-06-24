@@ -168,7 +168,7 @@ describe('bookTranslationConstraintsStore', () => {
     expect(store.glossary).toEqual({ enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] })
   })
 
-  it('preserves autoExtractEnabled when backend response omits the new field', async () => {
+  it('applies auto glossary settings returned by the backend response', async () => {
     updateBookMock.mockResolvedValueOnce({
       success: true,
       book: {

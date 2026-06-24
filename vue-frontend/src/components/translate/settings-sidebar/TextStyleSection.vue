@@ -72,6 +72,7 @@ defineEmits<{
           >
             <UiInput
               id="autoFontSize"
+              class="toggle-pill__checkbox"
               type="checkbox"
               :checked="textStyle.autoFontSize"
               @change="$emit('updateAutoFontSize', $event)"
@@ -131,6 +132,7 @@ defineEmits<{
             <label for="textColor">文字颜色</label>
             <label class="toggle-pill auto-color-toggle" title="翻译时自动使用识别到的文字颜色">
               <UiInput
+                class="toggle-pill__checkbox"
                 type="checkbox"
                 :checked="textStyle.useAutoTextColor"
                 @change="$emit('updateUseAutoTextColor', $event)"
@@ -184,6 +186,7 @@ defineEmits<{
           <label class="toggle-pill stroke-toggle" for="strokeEnabled">
             <UiInput
               id="strokeEnabled"
+              class="toggle-pill__checkbox"
               type="checkbox"
               :checked="textStyle.strokeEnabled"
               @change="$emit('updateStrokeEnabled', $event)"
@@ -356,7 +359,7 @@ defineEmits<{
   user-select: none;
 }
 
-.toggle-pill input[type='checkbox'] {
+.toggle-pill__checkbox {
   width: 14px;
   height: 14px;
   margin: 0;
@@ -364,7 +367,7 @@ defineEmits<{
   cursor: pointer;
 }
 
-.toggle-pill:has(input:checked) {
+.toggle-pill:has(.toggle-pill__checkbox:checked) {
   border-color: var(--settings-sidebar-shell-border-active);
   background: var(--settings-sidebar-shell-surface-active);
   color: var(--settings-sidebar-shell-text-success);

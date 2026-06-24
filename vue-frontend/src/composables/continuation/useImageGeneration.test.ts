@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useImageGeneration } from './useImageGeneration'
 import type { PageContent } from '@/api/continuation'
+import type * as ContinuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
+
+type GeneratePageImageArgs = Parameters<typeof ContinuationApi.generatePageImage>
 
 const {
   getAvailableImagesMock,
@@ -71,7 +74,7 @@ describe('useImageGeneration', () => {
     })
 
     const styleRefSnapshots: string[][] = []
-    generatePageImageMock.mockImplementation(async (...args: any[]) => {
+    generatePageImageMock.mockImplementation(async (...args: GeneratePageImageArgs) => {
       styleRefSnapshots.push([...(args[3] || [])])
       return {
         success: true,

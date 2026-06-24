@@ -4,16 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
 
 import { useWebImportModal } from '@/components/translate/useWebImportModal'
+import { useImageStore } from '@/stores/imageStore'
 
-const { checkGalleryDLSupportMock } = vi.hoisted(() => ({
+const { checkGalleryDLSupportMock, getGalleryDLImagesMock, showToastMock } = vi.hoisted(() => ({
   checkGalleryDLSupportMock: vi.fn(),
+  getGalleryDLImagesMock: vi.fn(),
+  showToastMock: vi.fn(),
 }))
 
 vi.mock('@/api/webImport', () => ({
   checkGalleryDLSupport: checkGalleryDLSupportMock,
   downloadImages: vi.fn(),
   extractImages: vi.fn(),
-  getGalleryDLImages: vi.fn(),
+  getGalleryDLImages: getGalleryDLImagesMock,
   testAgentConnection: vi.fn(),
   testFirecrawlConnection: vi.fn(),
 }))
@@ -24,6 +27,10 @@ vi.mock('@/api/config', () => ({
   },
 }))
 
+vi.mock('@/utils/toast', () => ({
+  showToast: showToastMock,
+}))
+
 describe('useWebImportModal', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -31,6 +38,8 @@ describe('useWebImportModal', () => {
     localStorage.clear()
     checkGalleryDLSupportMock.mockReset()
     checkGalleryDLSupportMock.mockResolvedValue({ available: true, supported: true })
+    getGalleryDLImagesMock.mockReset()
+    showToastMock.mockReset()
   })
 
   afterEach(() => {
@@ -59,6 +68,46 @@ describe('useWebImportModal', () => {
     await vi.advanceTimersByTimeAsync(150)
 
     expect(querySelectorSpy).not.toHaveBeenCalled()
+  })
+
+  it('imports the selected gallery-dl page numbers instead of the first downloaded images', async () => {
+    const exposed = mountComposableHost()
+    const imageStore = useImageStore()
+    exposed.api.webImportStore.setExtractResult({
+      success: true,
+      comicTitle: 'Chapter',
+      chapterTitle: 'Episode',
+      sourceUrl: 'https://example.com/chapter',
+      totalPages: 4,
+      engine: 'gallery-dl',
+      pages: [
+        { pageNumber: 1, imageUrl: '/api/web-import/static/temp/gallery_dl/001.webp' },
+        { pageNumber: 2, imageUrl: '/api/web-import/static/temp/gallery_dl/002.webp' },
+        { pageNumber: 3, imageUrl: '/api/web-import/static/temp/gallery_dl/003.webp' },
+        { pageNumber: 4, imageUrl: '/api/web-import/static/temp/gallery_dl/004.webp' },
+      ],
+    })
+    exposed.api.webImportStore.togglePageSelection(1)
+    exposed.api.webImportStore.togglePageSelection(3)
+    getGalleryDLImagesMock.mockResolvedValue({
+      success: true,
+      total: 4,
+      images: [
+        { filename: '001.webp', data: 'data:image/webp;base64,page1' },
+        { filename: '002.webp', data: 'data:image/webp;base64,page2' },
+        { filename: '003.webp', data: 'data:image/webp;base64,page3' },
+        { filename: '004.webp', data: 'data:image/webp;base64,page4' },
+      ],
+    })
+
+    await exposed.api.handleImport()
+
+    expect(imageStore.images.map((image) => image.fileName)).toEqual(['002.webp', '004.webp'])
+    expect(imageStore.images.map((image) => image.originalDataURL)).toEqual([
+      'data:image/webp;base64,page2',
+      'data:image/webp;base64,page4',
+    ])
+    expect(showToastMock).toHaveBeenCalledWith('成功导入 2 张图片', 'success')
   })
 })
 

@@ -1,10 +1,6 @@
 <script setup lang="ts">
 
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 概览面板组件
- * 显示漫画分析的概览统计、摘要和最近分析记录
- */
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { useInsightStore, type OverviewTemplateType } from '@/stores/insightStore'
@@ -12,37 +8,21 @@ import * as insightApi from '@/api/insight'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { marked } from 'marked'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
-
-// ============================================================
-// 状态
-// ============================================================
+import { showToast } from '@/utils/toast'
 
 const insightStore = useInsightStore()
 
-/** 当前选中的模板类型 */
 const currentTemplate = ref<OverviewTemplateType>('no_spoiler')
-
-/** 概览内容 */
 const overviewContent = ref('')
-
-/** 是否正在加载 */
 const isLoading = ref(false)
-
-/** 已生成的模板列表 */
 const generatedTemplates = ref<OverviewTemplateType[]>([])
 
-/** 最近分析的页面 */
 const recentAnalyzedPages = ref<Array<{
   page_num: number
   summary?: string
   analyzed_at?: string
 }>>([])
 
-// ============================================================
-// 模板配置
-// ============================================================
-
-/** 模板选项 */
 const templateOptions: Array<{ value: OverviewTemplateType; label: string; icon: string; description: string }> = [
   { value: 'no_spoiler', label: '无剧透简介', icon: '🎁', description: '不含剧透的简短介绍，适合推荐给他人' },
   { value: 'story_summary', label: '故事概要', icon: '📖', description: '完整的剧情回顾，包含所有剧透' },
@@ -53,29 +33,21 @@ const templateOptions: Array<{ value: OverviewTemplateType; label: string; icon:
   { value: 'reading_notes', label: '阅读笔记', icon: '📝', description: '阅读过程中的重点笔记' }
 ]
 
-/** 模板选项（用于CustomSelect） */
 const templateSelectOptions = templateOptions.map(t => ({
   label: `${t.icon} ${t.label}`,
   value: t.value
 }))
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 当前模板图标 */
 const currentTemplateIcon = computed(() => {
   const template = templateOptions.find(t => t.value === currentTemplate.value)
   return template?.icon || '📊'
 })
 
-/** 当前模板描述 */
 const currentTemplateDescription = computed(() => {
   const template = templateOptions.find(t => t.value === currentTemplate.value)
   return template?.description || ''
 })
 
-/** 模板状态文本 */
 const templateStatus = computed(() => {
   if (generatedTemplates.value.includes(currentTemplate.value)) {
     return '已生成'
@@ -83,26 +55,15 @@ const templateStatus = computed(() => {
   return ''
 })
 
-/** 渲染后的概览内容 */
 const renderedContent = computed(() => {
   if (!overviewContent.value) return ''
   return sanitizeHtml(marked.parse(overviewContent.value) as string)
 })
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 模板变更处理：只读取缓存，不触发生成。
- */
 async function onTemplateChange(): Promise<void> {
   await loadCachedOverview()
 }
 
-/**
- * 加载缓存的概览内容，不触发生成。
- */
 async function loadCachedOverview(): Promise<void> {
   if (!insightStore.currentBookId) return
 
@@ -121,21 +82,15 @@ async function loadCachedOverview(): Promise<void> {
         generatedTemplates.value.push(currentTemplate.value)
       }
     } else {
-      // 无缓存，显示提示
       overviewContent.value = ''
     }
-  } catch (error) {
-    console.error('加载概览失败:', error)
+  } catch {
     overviewContent.value = '加载失败，请重试'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * 生成概览（点击按钮时调用）。
- * @param regenerate - 是否强制重新生成（🔄按钮为true，📄按钮为false）
- */
 async function generateOverview(regenerate: boolean): Promise<void> {
   if (!insightStore.currentBookId) return
 
@@ -162,18 +117,13 @@ async function generateOverview(regenerate: boolean): Promise<void> {
     } else {
       overviewContent.value = `生成失败: ${response.error || '未知错误'}`
     }
-  } catch (error) {
-    console.error('生成概览失败:', error)
+  } catch {
     overviewContent.value = '生成失败，请重试'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * 加载已生成的模板列表
- * 默认选中 no_spoiler，不因为后端自动生成 story_summary 切换用户当前选择。
- */
 async function loadGeneratedTemplates(): Promise<void> {
   if (!insightStore.currentBookId) return
 
@@ -187,23 +137,17 @@ async function loadGeneratedTemplates(): Promise<void> {
         templates = response.templates as OverviewTemplateType[]
       }
       generatedTemplates.value = templates
-
-      // 用户可以在下拉框中自行选择其他已生成的模板。
     }
-  } catch (error) {
-    console.error('加载模板列表失败:', error)
+  } catch {
+    generatedTemplates.value = []
   }
 }
 
-/** 是否正在导出 */
 const isExporting = ref(false)
 
-/**
- * 导出完整分析数据
- */
 async function exportAnalysisData(): Promise<void> {
   if (!insightStore.currentBookId) {
-    alert('请先选择书籍')
+    showToast('请先选择书籍', 'warning')
     return
   }
 
@@ -213,67 +157,62 @@ async function exportAnalysisData(): Promise<void> {
     const response = await insightApi.exportAnalysis(insightStore.currentBookId)
 
     if (response.success && response.markdown) {
-      // 下载 Markdown 文件
       const blob = new Blob([response.markdown], { type: 'text/markdown' })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${insightStore.currentBookId}_analysis.md`
-      a.click()
-      URL.revokeObjectURL(url)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${insightStore.currentBookId}_analysis.md`
+        a.click()
+      } finally {
+        URL.revokeObjectURL(url)
+      }
 
-      alert('导出成功')
+      showToast('导出成功', 'success')
     } else {
-      alert('导出失败: ' + (response.error || '未知错误'))
+      showToast('导出失败: ' + (response.error || '未知错误'), 'error')
     }
-  } catch (error) {
-    console.error('导出失败:', error)
-    alert('导出失败')
+  } catch {
+    showToast('导出失败', 'error')
   } finally {
     isExporting.value = false
   }
 }
 
-/**
- * 导出当前概览内容
- */
 function exportCurrentOverview(): void {
   if (!overviewContent.value) {
-    alert('暂无内容可导出')
+    showToast('暂无内容可导出', 'warning')
     return
   }
 
   const template = templateOptions.find(t => t.value === currentTemplate.value)
   const fileName = `${insightStore.currentBookId}_${currentTemplate.value}.md`
 
-  // 构建 Markdown 内容
   const content = `# ${template?.label || currentTemplate.value}\n\n${overviewContent.value}`
 
   const blob = new Blob([content], { type: 'text/markdown' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+  showToast('导出成功', 'success')
 }
 
-/**
- * 加载最近分析的页面
- */
 async function loadRecentAnalyzedPages(): Promise<void> {
   if (!insightStore.currentBookId) return
 
   try {
-    // 获取最近分析的页面 (显示最多5个)
     const stats = await insightApi.getAnalysisStatus(insightStore.currentBookId)
     if (stats.success && insightStore.analyzedPageCount > 0) {
-      // 从已分析页数倒推获取最近的几页
       const totalPages = insightStore.totalPageCount
       const analyzedCount = insightStore.analyzedPageCount
       const recentPages: Array<{ page_num: number; summary?: string }> = []
 
-      // 简单实现：显示最后分析的5页
       const startPage = Math.max(1, analyzedCount - 4)
       for (let i = 0; i < Math.min(5, analyzedCount); i++) {
         const pageNum = startPage + i
@@ -285,35 +224,25 @@ async function loadRecentAnalyzedPages(): Promise<void> {
         }
       }
 
-      recentAnalyzedPages.value = recentPages.reverse() // 最新的在前
+      recentAnalyzedPages.value = recentPages.reverse()
     }
-  } catch (error) {
-    console.error('加载最近分析页面失败:', error)
+  } catch {
+    recentAnalyzedPages.value = []
   }
 }
 
-/**
- * 跳转到指定页面
- * @param pageNum - 页码
- */
 function goToPage(pageNum: number): void {
   insightStore.selectPage(pageNum)
 }
 
-// ============================================================
-// 生命周期
-// ============================================================
-
 onMounted(async () => {
   await loadGeneratedTemplates()
   await loadRecentAnalyzedPages()
-  // 如果当前模板已生成，自动加载
   if (generatedTemplates.value.includes(currentTemplate.value)) {
     await loadCachedOverview()
   }
 })
 
-// 监听书籍ID变化，重新加载概览数据
 watch(() => insightStore.currentBookId, async (newBookId) => {
   if (newBookId) {
     overviewContent.value = ''
@@ -321,19 +250,16 @@ watch(() => insightStore.currentBookId, async (newBookId) => {
     recentAnalyzedPages.value = []
     await loadGeneratedTemplates()
     await loadRecentAnalyzedPages()
-    // 如果当前模板已生成，自动加载
     if (generatedTemplates.value.includes(currentTemplate.value)) {
       await loadCachedOverview()
     }
   }
 })
 
-// 监听数据刷新触发器（分析完成后自动刷新）
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
   if (newKey > 0 && insightStore.currentBookId) {
     await loadGeneratedTemplates()
     await loadRecentAnalyzedPages()
-    // 自动加载已生成的模板内容
     if (generatedTemplates.value.includes(currentTemplate.value)) {
       await loadCachedOverview()
     }
@@ -343,7 +269,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 <template>
   <div class="overview-grid">
-    <!-- 摘要卡片 -->
     <div class="overview-card summary-card">
       <div class="card-header">
         <div class="card-title-with-selector">
@@ -382,7 +307,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       </div>
     </div>
 
-    <!-- 统计卡片 -->
     <div class="overview-card stats-card">
       <h3 class="card-title">📊 分析统计</h3>
       <div class="stats-grid">
@@ -396,7 +320,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
         </div>
       </div>
 
-      <!-- 导出按钮 -->
       <div class="export-actions">
         <UiButton
           variant="secondary"
@@ -419,7 +342,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
       </div>
     </div>
 
-    <!-- 最近分析卡片 -->
     <div class="overview-card recent-card">
       <h3 class="card-title">🕐 最近分析</h3>
       <div class="recent-pages">
@@ -445,11 +367,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   --overview-panel-text-secondary: #ef4444;
 }
 
-/* ==================== 概览面板样式 ==================== */
-
-/* ==================== 组件样式 ==================== */
-
-/* 概览网格 */
 .overview-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -474,7 +391,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     margin-bottom: 12px;
 }
 
-/* 模板选择器样式 */
 .overview-grid .card-title-with-selector {
     display: flex;
     align-items: center;
@@ -484,29 +400,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .overview-grid .card-title-icon {
     font-size: 20px;
     line-height: 1;
-}
-
-.overview-grid .template-select {
-    padding: 6px 12px;
-    font-size: 14px;
-    font-weight: 600;
-    border: 1px solid var(--color-border-muted);
-    border-radius: 6px;
-    background: var(--insight-surface-secondary);
-    color: var(--insight-text-primary);
-    cursor: pointer;
-    min-width: 140px;
-    transition: all 0.2s;
-}
-
-.overview-grid .template-select:hover {
-    border-color: var(--insight-action-primary);
-}
-
-.overview-grid .template-select:focus {
-    outline: none;
-    border-color: var(--insight-action-primary);
-    box-shadow: 0 0 0 2px var(--overview-panel-shadow-default);
 }
 
 .overview-grid .card-header-actions {
@@ -522,42 +415,12 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     white-space: nowrap;
 }
 
-.overview-grid .template-status.status-cached {
-    background: var(--overview-panel-surface-base);
-    color: var(--overview-panel-text-primary);
-}
-
-.overview-grid .template-status.status-empty {
-    background: var(--overview-panel-surface-raised);
-    color: var(--text-tertiary);
-}
-
-.overview-grid .template-status.status-generating {
-    background: var(--color-focus-brand-soft);
-    color: var(--insight-action-primary);
-    animation: pulse 1.5s infinite;
-}
-
-.overview-grid .template-status.status-error {
-    background: var(--overview-panel-surface-muted);
-    color: var(--overview-panel-text-secondary);
-}
-
 .overview-grid .template-description {
     font-size: 12px;
-    color: var(--text-tertiary);
+    color: var(--insight-text-muted);
     margin: 0 0 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--color-border-muted);
-}
-
-.overview-grid .placeholder-text.generating {
-    color: var(--insight-action-primary);
-    animation: pulse 1.5s infinite;
-}
-
-.overview-grid .placeholder-text.error {
-    color: var(--overview-panel-text-secondary);
 }
 
 .overview-grid .placeholder-text {
@@ -592,7 +455,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 .overview-grid .button-icon:hover {
     background: var(--insight-action-primary);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .overview-grid .card-content {
@@ -600,7 +463,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     line-height: 1.6;
 }
 
-/* Markdown 渲染样式 */
 .overview-grid .markdown-content {
     font-size: 14px;
     line-height: 1.8;
@@ -730,7 +592,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 .overview-grid .overview-card .overview-action-button--primary {
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .overview-grid .overview-card .overview-action-button--primary:hover:not(:disabled) {
@@ -747,7 +609,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   background: var(--color-border-muted);
 }
 
-/* 最近分析页面项 */
 .overview-grid .recent-pages {
   display: flex;
   flex-direction: column;

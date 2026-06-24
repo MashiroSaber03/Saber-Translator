@@ -5,9 +5,9 @@
       <UiButton
         variant="secondary"
         type="button"
-       
         :disabled="disabled || !localText.trim()"
-        @click="formatJson" size="sm"
+        size="sm"
+        @click="formatJson"
       >
         格式化
       </UiButton>
@@ -126,10 +126,6 @@ function formatJson(): void {
 
 <style scoped>
 .openai-extra-body-editor {
-  --open-aiextra-body-editor-text-primary: #d14343;
-}
-
-.openai-extra-body-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -153,7 +149,7 @@ function formatJson(): void {
 }
 
 .input-error {
-  color: var(--open-aiextra-body-editor-text-primary);
+  color: var(--color-text-danger-strong);
   font-size: 12px;
 }
 </style>

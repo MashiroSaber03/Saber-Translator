@@ -156,7 +156,7 @@ const noteCommentModel = computed({
   padding: 4px 10px;
   border-radius: 12px;
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 500;
   font-size: 12px;
 }

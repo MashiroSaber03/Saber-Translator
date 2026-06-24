@@ -388,7 +388,6 @@ describe('EditWorkspace applyAndNext', () => {
     isBookshelfSessionInitializedMock.mockResolvedValue(true)
     const saveError = new Error('保存失败')
     saveBookshelfPageProgressMock.mockRejectedValue(saveError)
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     const imageStore = useImageStore()
     const sessionStore = useSessionStore()
@@ -396,30 +395,26 @@ describe('EditWorkspace applyAndNext', () => {
 
     const goToNextSpy = vi.spyOn(imageStore, 'goToNext')
 
-    try {
-      const wrapper = mount(EditWorkspace, {
-        props: {
-          isEditModeActive: true,
+    const wrapper = mount(EditWorkspace, {
+      props: {
+        isEditModeActive: true,
+      },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          EditToolbar: EditToolbarStub,
+          EditThumbnailPanel: true,
+          BubbleOverlay: true,
+          BubbleEditor: true,
         },
-        global: {
-          plugins: [pinia],
-          stubs: {
-            EditToolbar: EditToolbarStub,
-            EditThumbnailPanel: true,
-            BubbleOverlay: true,
-            BubbleEditor: true,
-          },
-        },
-      })
+      },
+    })
 
-      await wrapper.find('.apply-and-next-trigger').trigger('click')
-      await flushPromises()
+    await wrapper.find('.apply-and-next-trigger').trigger('click')
+    await flushPromises()
 
-      expect(goToNextSpy).not.toHaveBeenCalled()
-      expect(consoleErrorSpy).toHaveBeenCalledWith('[EditWorkspace] 书架模式持久化保存失败:', saveError)
-    } finally {
-      consoleErrorSpy.mockRestore()
-    }
+    expect(goToNextSpy).not.toHaveBeenCalled()
+    expect(showToastMock).toHaveBeenCalledWith('保存失败', 'error')
   })
 
   it('persists the last bookshelf page without navigating away', async () => {

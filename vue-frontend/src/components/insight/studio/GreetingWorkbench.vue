@@ -10,7 +10,7 @@
           {{ generating ? '生成中...' : '批量生成' }}
         </UiButton>
       </div>
-      <UiTextarea :value="firstMessage" rows="6" @input="$emit('update:firstMessage', ($event.target as HTMLTextAreaElement).value)" />
+      <UiTextarea class="workbench-textarea" :value="firstMessage" rows="6" @input="$emit('update:firstMessage', ($event.target as HTMLTextAreaElement).value)" />
     </div>
 
     <div class="list-block">
@@ -38,7 +38,7 @@
               <UiButton variant="toolbar" class="action-danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
             </div>
           </div>
-          <UiTextarea :value="item" rows="4" @input="$emit('update:item', index, ($event.target as HTMLTextAreaElement).value)" />
+          <UiTextarea class="workbench-textarea" :value="item" rows="4" @input="$emit('update:item', index, ($event.target as HTMLTextAreaElement).value)" />
         </article>
       </div>
     </div>
@@ -70,9 +70,14 @@ defineEmits<{
   --greeting-workbench-border-default: rgba(25, 55, 94, .08);
   --greeting-workbench-surface-base: rgba(255, 255, 255, .82);
   --greeting-workbench-surface-raised: rgba(247, 250, 254, .96);
-}
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 16px;
+  --ui-textarea-padding: 14px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
+  --ui-textarea-line-height: 1.7;
 
-.workbench {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -108,17 +113,8 @@ defineEmits<{
   line-height: 1.6;
 }
 
-textarea {
-  width: 100%;
+.workbench-textarea {
   margin-top: 14px;
-  border: 1px solid var(--studio-border-strong);
-  background: var(--studio-surface-soft);
-  border-radius: 16px;
-  padding: 14px;
-  color: var(--studio-text-strong);
-  resize: vertical;
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .alternate-list {

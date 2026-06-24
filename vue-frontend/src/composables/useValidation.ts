@@ -510,8 +510,8 @@ export function useValidation() {
     if (shouldDismiss) {
       try {
         localStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
-      } catch (error) {
-        console.error('保存设置提醒状态失败:', error)
+      } catch {
+        // Storage can be unavailable in restricted browser contexts; the reminder remains dismissible for this session.
       }
     }
     showSetupReminder.value = false
@@ -524,8 +524,8 @@ export function useValidation() {
   function resetSetupReminderDismiss(): void {
     try {
       localStorage.removeItem(DISMISS_SETUP_REMINDER_KEY)
-    } catch (error) {
-      console.error('重置设置提醒状态失败:', error)
+    } catch {
+      // Storage can be unavailable in restricted browser contexts; the computed value already falls back safely.
     }
   }
 

@@ -80,16 +80,15 @@ describe('RerankerSettingsTab', () => {
       },
     })
 
-    const inputs = wrapper.findAll('input')
-    await inputs[0].setValue('rerank-key')
-    await inputs[1].setValue('jina-reranker-v2-base-multilingual')
-    await inputs[2].setValue('6')
-    await inputs[3].setValue('7')
-    await inputs[4].setValue('8')
-    await inputs[5].setValue('9')
+    await wrapper.get('[data-testid="reranker-api-key"]').setValue('rerank-key')
+    await wrapper.get('[data-testid="reranker-model"]').setValue('jina-reranker-v2-base-multilingual')
+    await wrapper.get('[data-testid="reranker-top-k"]').setValue('6')
+    await wrapper.get('[data-testid="reranker-transport-retries"]').setValue('7')
+    await wrapper.get('[data-testid="reranker-business-retries"]').setValue('8')
+    await wrapper.get('[data-testid="reranker-timeout-seconds"]').setValue('9')
     const testButton = wrapper.findAll('button').find(button => button.text().includes('测试连接'))
-    expect(testButton).toBeTruthy()
-    await testButton!.trigger('click')
+    if (!testButton) throw new Error('Missing reranker connection test button')
+    await testButton.trigger('click')
 
     expect(testRerankerConnection).toHaveBeenCalledWith({
       provider: 'jina',

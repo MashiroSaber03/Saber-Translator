@@ -16,7 +16,6 @@
           />
           <UiButton
             variant="secondary"
-           
             @click="openBatchReferenceSelector"
           >
             📷 选择初始参考图 ({{ getInitialRefCount() }})
@@ -27,9 +26,9 @@
       <UiButton
         variant="primary"
         block
-       
         :disabled="isGenerating || pages.length === 0"
-        @click="handleBatchGenerate" size="lg"
+        size="lg"
+        @click="handleBatchGenerate"
       >
         {{ isGenerating ? '生成中...' : '🚀 批量生成图片' }}
       </UiButton>
@@ -41,10 +40,10 @@
         aria-label="图片生成进度"
         aria-valuemin="0"
         aria-valuemax="100"
-        :aria-valuenow="progress"
+        :aria-valuenow="boundedProgress"
       >
-        <div class="progress-fill" :style="{ width: progress + '%' }"></div>
-        <span class="progress-text">{{ progress }}%</span>
+        <div class="progress-fill" :style="{ width: `${boundedProgress}%` }"></div>
+        <span class="progress-text">{{ boundedProgress }}%</span>
       </div>
     </div>
 
@@ -156,17 +155,17 @@
         <div class="image-actions">
           <UiButton
             variant="secondary"
-           
             :disabled="page.status === 'generating'"
-            @click="$emit('regenerate', page.page_number)" size="sm"
+            size="sm"
+            @click="$emit('regenerate', page.page_number)"
           >
             ↺ 重新生成
           </UiButton>
           <UiButton
             variant="secondary"
             v-if="page.previous_url"
-           
-            @click="$emit('use-previous', page.page_number)" size="sm"
+            size="sm"
+            @click="$emit('use-previous', page.page_number)"
           >
             ◀ 上一版本
           </UiButton>
@@ -184,18 +183,15 @@
       :initial-selection="batchInitialReferenceTokens"
       :book-id="bookId"
       @confirm="handleSelectorConfirm"
-      @cancel="handleSelectorCancel"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, watch, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
@@ -227,6 +223,7 @@ const selectorVisible = ref(false)
 const availableOriginalImages = ref<MangaImageInfo[]>([])
 const availableContinuationImages = ref<MangaImageInfo[]>([])
 const availableCharacterForms = ref<CharacterFormInfo[]>([])
+const boundedProgress = computed(() => Math.min(100, Math.max(0, Number(props.progress) || 0)))
 
 function togglePromptEdit(pageNumber: number) {
   if (editingPromptPage.value === pageNumber) {
@@ -312,8 +309,11 @@ async function openBatchReferenceSelector() {
       availableContinuationImages.value = response.continuation_images || []
       availableCharacterForms.value = response.character_forms || []
     }
-  } catch (error) {
-    console.error('加载可用图片失败:', error)
+  } catch {
+    availableOriginalImages.value = []
+    availableContinuationImages.value = []
+    availableCharacterForms.value = []
+    state.showMessage('加载可用参考图失败', 'error')
   }
 
   selectorVisible.value = true
@@ -321,10 +321,6 @@ async function openBatchReferenceSelector() {
 
 function handleSelectorConfirm(tokens: string[]) {
   batchInitialReferenceTokens.value = tokens
-}
-
-function handleSelectorCancel() {
-  // noop
 }
 
 function handleBatchGenerate() {
@@ -365,13 +361,30 @@ watch(() => props.pages.length, (pageCount) => {
 })
 </script>
 
-<style scoped>.image-generation-panel {
-  --image-generation-panel-border-default: rgba(99, 102, 241, .25);
-  --image-generation-panel-surface-base: #f7f7f7;
-  --image-generation-panel-text-primary: #92400e;
-  --image-generation-panel-text-secondary: #1e40af;
-  --image-generation-panel-text-muted: #065f46;
-  --image-generation-panel-text-subtle: #991b1b;
+<style scoped>
+.image-generation-panel {
+  --image-generation-panel-empty-preview-background: #f7f7f7;
+  --image-generation-panel-focus-ring: rgba(99, 102, 241, .25);
+  --image-generation-panel-status-failed-text: #991b1b;
+  --image-generation-panel-status-generated-text: #065f46;
+  --image-generation-panel-status-generating-text: #1e40af;
+  --image-generation-panel-status-pending-text: #92400e;
+  --ui-input-padding: 8px 10px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-input-radius: 6px;
+  --ui-input-font-size: 14px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
+  --ui-textarea-padding: 12px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-textarea-radius: 8px;
+  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-textarea-color: var(--color-text-default);
+  --ui-textarea-line-height: 1.6;
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
 
   padding: 24px;
 }
@@ -404,15 +417,11 @@ watch(() => props.pages.length, (pageCount) => {
 .image-generation-panel .config-row label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .image-generation-panel .ref-count-input {
   width: 60px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 6px;
-  font-size: 14px;
   text-align: center;
 }
 
@@ -467,7 +476,7 @@ watch(() => props.pages.length, (pageCount) => {
   width: 100%;
   border: 1px dashed var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
-  background: var(--image-generation-panel-surface-base);
+  background: var(--image-generation-panel-empty-preview-background);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -516,7 +525,7 @@ watch(() => props.pages.length, (pageCount) => {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.55;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-size: 13px;
 }
 
@@ -556,11 +565,6 @@ watch(() => props.pages.length, (pageCount) => {
 .image-generation-panel .prompt-input {
   width: 100%;
   white-space: pre-wrap;
-  line-height: 1.6;
-  padding: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 8px;
-  font-family: inherit;
 }
 
 .image-generation-panel .btn-mini {
@@ -582,7 +586,7 @@ watch(() => props.pages.length, (pageCount) => {
 }
 
 .image-generation-panel .btn-mini:focus-visible {
-  outline: 2px solid var(--image-generation-panel-border-default);
+  outline: 2px solid var(--image-generation-panel-focus-ring);
   outline-offset: 1px;
 }
 
@@ -638,19 +642,19 @@ watch(() => props.pages.length, (pageCount) => {
 }
 
 .image-generation-panel .image-status.pending {
-  color: var(--image-generation-panel-text-primary);
+  color: var(--image-generation-panel-status-pending-text);
 }
 
 .image-generation-panel .image-status.generating {
-  color: var(--image-generation-panel-text-secondary);
+  color: var(--image-generation-panel-status-generating-text);
 }
 
 .image-generation-panel .image-status.generated {
-  color: var(--image-generation-panel-text-muted);
+  color: var(--image-generation-panel-status-generated-text);
 }
 
 .image-generation-panel .image-status.failed {
-  color: var(--image-generation-panel-text-subtle);
+  color: var(--image-generation-panel-status-failed-text);
 }
 
 @media (--breakpoint-xl-down) {

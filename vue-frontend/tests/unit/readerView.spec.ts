@@ -3,10 +3,11 @@ import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReaderView from '@/views/ReaderView.vue'
 
-const { routerPushMock, getBookDetailMock, getChapterImagesMock } = vi.hoisted(() => ({
+const { routerPushMock, getBookDetailMock, getChapterImagesMock, toastErrorMock } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
   getBookDetailMock: vi.fn(),
   getChapterImagesMock: vi.fn(),
+  toastErrorMock: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -20,7 +21,7 @@ vi.mock('@/api/bookshelf', () => ({
 
 vi.mock('@/utils/toast', () => ({
   useToast: () => ({
-    error: vi.fn(),
+    error: toastErrorMock,
   }),
 }))
 
@@ -31,6 +32,7 @@ const AppShellStub = defineComponent({
 describe('ReaderView', () => {
   beforeEach(() => {
     routerPushMock.mockReset()
+    toastErrorMock.mockReset()
     getBookDetailMock.mockReset().mockResolvedValue({
       success: true,
       book: {
@@ -69,33 +71,28 @@ describe('ReaderView', () => {
 
   it('cancels the delayed failure redirect when the view unmounts', async () => {
     vi.useFakeTimers()
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     getBookDetailMock.mockRejectedValueOnce(new Error('network down'))
 
-    try {
-      const wrapper = mount(ReaderView, {
-        props: {
-          bookId: 'book-1',
-          chapterId: 'chapter-1',
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ReaderCanvas: true,
+          ReaderControls: true,
         },
-        global: {
-          stubs: {
-            AppShell: AppShellStub,
-            ReaderCanvas: true,
-            ReaderControls: true,
-          },
-        },
-      })
+      },
+    })
 
-      await flushPromises()
-      wrapper.unmount()
+    await flushPromises()
+    wrapper.unmount()
 
-      await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
 
-      expect(routerPushMock).not.toHaveBeenCalledWith('/')
-      expect(consoleError).toHaveBeenCalled()
-    } finally {
-      consoleError.mockRestore()
-    }
+    expect(routerPushMock).not.toHaveBeenCalledWith('/')
+    expect(toastErrorMock).toHaveBeenCalledWith('加载失败: network down')
   })
 })

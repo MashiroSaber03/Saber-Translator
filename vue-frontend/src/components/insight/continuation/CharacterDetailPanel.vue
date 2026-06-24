@@ -23,6 +23,7 @@
           <label class="toggle-switch" title="启用/禁用角色">
             <UiInput 
               type="checkbox" 
+              class="toggle-switch-input"
               :aria-label="`启用角色 ${character.name}`"
               :checked="character.enabled !== false"
               @change="$emit('toggle-character', ($event.target as HTMLInputElement).checked)"
@@ -94,7 +95,6 @@ defineEmits<{
 
 <style scoped>
 .character-detail-panel {
-  /* owner tokens: character-detail-panel */
   --character-detail-panel-border-default: #e0e4ff;
   --character-detail-panel-border-strong: #e5e7eb;
   --character-detail-panel-shadow-default: rgba(0, 0, 0, .2);
@@ -186,7 +186,7 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 24px;
   font-weight: 600;
 }
@@ -209,7 +209,6 @@ defineEmits<{
   gap: 8px;
 }
 
-/* Toggle Switch */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -218,7 +217,7 @@ defineEmits<{
   cursor: pointer;
 }
 
-.toggle-switch input {
+.toggle-switch-input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -240,17 +239,17 @@ defineEmits<{
   width: 16px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--color-surface-base);
   transition: 0.3s;
   border-radius: 50%;
   box-shadow: 0 1px 3px var(--character-detail-panel-shadow-default);
 }
 
-.toggle-switch input:checked + .toggle-slider {
+.toggle-switch-input:checked + .toggle-slider {
   background: linear-gradient(135deg, var(--character-detail-panel-surface-hover), var(--character-detail-panel-surface-active));
 }
 
-.toggle-switch input:checked + .toggle-slider::before {
+.toggle-switch-input:checked + .toggle-slider::before {
   transform: translateX(18px);
 }
 

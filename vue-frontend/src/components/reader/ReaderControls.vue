@@ -4,19 +4,11 @@ import UiInput from '@/components/ui/UiInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-/**
- * 阅读器控制组件
- * 包含页码指示器、阅读设置面板、章节导航、回到顶部按钮、键盘快捷键
- */
 import { ref, onMounted, onUnmounted } from 'vue'
 
-// 阅读设置接口
 export interface ReaderSettings {
-  /** 图片宽度百分比 (50-100) */
   imageWidth: number
-  /** 图片间距像素 (0-50) */
   imageGap: number
-  /** 背景颜色 */
   bgColor: string
 }
 
@@ -32,40 +24,22 @@ const DEFAULT_READER_SETTINGS: ReaderSettings = {
   bgColor: '#1a1a2e'
 }
 
-// 组件属性
 const props = defineProps<{
-  /** 当前页码 */
   currentPage: number
-  /** 总页数 */
   totalPages: number
-  /** 是否有上一章 */
   hasPrevChapter: boolean
-  /** 是否有下一章 */
   hasNextChapter: boolean
-  /** 是否显示章节导航 */
   showChapterNav: boolean
 }>()
 
-// 组件事件
 const emit = defineEmits<{
-  /** 导航到上一章/下一章 */
   (e: 'navigateChapter', direction: 'prev' | 'next'): void
-  /** 设置变化 */
   (e: 'settingsChange', settings: ReaderSettings): void
 }>()
 
-// ==================== 状态定义 ====================
-
-// 阅读设置
 const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
-
-// 设置面板显示状态
 const isSettingsPanelOpen = ref(false)
-
-// 回到顶部按钮显示状态
 const showScrollTopBtn = ref(false)
-
-// 背景颜色预设
 const bgColorPresets = [
   { color: '#1a1a2e', name: '深蓝' },
   { color: '#ffffff', name: '白色' },
@@ -74,40 +48,23 @@ const bgColorPresets = [
 ]
 const bgColorValues = new Set(bgColorPresets.map((preset) => preset.color))
 
-// ==================== 方法 ====================
-
-/**
- * 打开设置面板
- */
 function openSettings() {
   isSettingsPanelOpen.value = true
 }
 
-/**
- * 关闭设置面板
- */
 function closeSettings() {
   isSettingsPanelOpen.value = false
 }
 
-/**
- * 回到顶部
- */
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-/**
- * 处理滚动事件
- */
 function handleScroll() {
   const scrollTop = window.scrollY
   showScrollTopBtn.value = scrollTop > 500
 }
 
-/**
- * 处理键盘事件
- */
 function handleKeydown(e: KeyboardEvent) {
   switch (e.key) {
     case 'Escape':
@@ -149,9 +106,6 @@ function isStoredReaderSettings(value: unknown): value is StoredReaderSettings {
   )
 }
 
-/**
- * 加载设置
- */
 function loadSettings() {
   const saved = localStorage.getItem(READER_SETTINGS_KEY)
   if (saved) {
@@ -164,27 +118,25 @@ function loadSettings() {
           bgColor: parsed.bgColor
         }
       }
-    } catch (e) {
-      console.error('加载阅读设置失败:', e)
+    } catch {
+      settings.value = { ...DEFAULT_READER_SETTINGS }
     }
   }
   applySettings()
 }
 
-/**
- * 保存设置
- */
 function saveSettings() {
   const payload: StoredReaderSettings = {
     readerSettingsSchemaVersion: READER_SETTINGS_SCHEMA_VERSION,
     ...settings.value
   }
-  localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(payload))
+  try {
+    localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(payload))
+  } catch {
+    // 当前会话内设置已应用；持久化不可写时静默降级。
+  }
 }
 
-/**
- * 应用阅读器设置到页面级 reader owner 变量
- */
 function applySettings() {
   document.documentElement.style.setProperty('--reader-page-background', settings.value.bgColor)
   document.documentElement.style.setProperty('--reader-image-width', `${settings.value.imageWidth}%`)
@@ -192,53 +144,36 @@ function applySettings() {
   emit('settingsChange', settings.value)
 }
 
-/**
- * 更新图片宽度设置
- */
 function updateImageWidth(value: number) {
   settings.value.imageWidth = value
   applySettings()
   saveSettings()
 }
 
-/**
- * 更新图片间距设置
- */
 function updateImageGap(value: number) {
   settings.value.imageGap = value
   applySettings()
   saveSettings()
 }
 
-/**
- * 更新背景颜色设置
- */
 function updateBgColor(color: string) {
   settings.value.bgColor = color
   applySettings()
   saveSettings()
 }
 
-/**
- * 导航到上一章/下一章
- */
 function navigateChapter(direction: 'prev' | 'next') {
   emit('navigateChapter', direction)
 }
 
-// ==================== 生命周期 ====================
-
 onMounted(() => {
-  // 加载设置
   loadSettings()
 
-  // 初始化事件监听
   window.addEventListener('scroll', handleScroll)
   document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  // 移除事件监听
   window.removeEventListener('scroll', handleScroll)
   document.removeEventListener('keydown', handleKeydown)
 
@@ -247,7 +182,6 @@ onUnmounted(() => {
   document.documentElement.style.removeProperty('--reader-gap')
 })
 
-// 暴露方法给父组件
 defineExpose({
   openSettings,
   closeSettings,
@@ -256,7 +190,6 @@ defineExpose({
 </script>
 
 <template>
-  <!-- 章节导航 -->
   <OverlayLayer v-if="showChapterNav" class="reader-controls__chapter-nav-layer" passthrough>
     <nav id="chapterNav" class="reader-controls__chapter-nav">
       <UiButton
@@ -282,7 +215,6 @@ defineExpose({
     </nav>
   </OverlayLayer>
 
-  <!-- 回到顶部按钮 -->
   <OverlayLayer v-show="showScrollTopBtn" class="reader-controls__scroll-top-layer" passthrough>
     <UiButton
       variant="toolbar"
@@ -296,7 +228,6 @@ defineExpose({
     </UiButton>
   </OverlayLayer>
 
-  <!-- 阅读设置面板 -->
   <OverlayLayer v-if="isSettingsPanelOpen" id="settingsPanel" class="reader-controls__settings-panel" level="popover">
     <div class="reader-controls__settings-overlay" @click="closeSettings"></div>
     <div class="reader-controls__settings-content">
@@ -305,13 +236,13 @@ defineExpose({
         <UiButton variant="toolbar" class="reader-controls__close-button" aria-label="关闭阅读设置" @click="closeSettings">×</UiButton>
       </div>
       <div class="reader-controls__settings-body">
-        <!-- 图片宽度设置 -->
         <div class="reader-controls__setting-item">
           <label>图片宽度</label>
           <div class="reader-controls__setting-control">
             <UiInput
               type="range"
               id="imageWidthSlider"
+              class="reader-controls__range"
               min="50"
               max="100"
               :value="settings.imageWidth"
@@ -321,13 +252,13 @@ defineExpose({
           </div>
         </div>
 
-        <!-- 图片间距设置 -->
         <div class="reader-controls__setting-item">
           <label>图片间距</label>
           <div class="reader-controls__setting-control">
             <UiInput
               type="range"
               id="imageGapSlider"
+              class="reader-controls__range"
               min="0"
               max="50"
               :value="settings.imageGap"
@@ -337,7 +268,6 @@ defineExpose({
           </div>
         </div>
 
-        <!-- 背景颜色设置 -->
         <div class="reader-controls__setting-item">
           <label>背景颜色</label>
           <div class="reader-controls__setting-control reader-controls__bg-options">
@@ -361,9 +291,6 @@ defineExpose({
 </template>
 
 <style scoped>
-/* ==================== ReaderControls样式 ==================== */
-
-/* 章节导航 */
 .reader-controls__chapter-nav-layer,
 .reader-controls__scroll-top-layer,
 .reader-controls__settings-panel {
@@ -407,7 +334,7 @@ defineExpose({
   background: var(--reader-controls-surface-muted);
   border: 1px solid var(--reader-controls-border-default);
   border-radius: 8px;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
@@ -426,7 +353,6 @@ defineExpose({
   font-size: 12px;
 }
 
-/* 回到顶部按钮 */
 .reader-controls__scroll-top-layer {
   display: flex;
   align-items: flex-end;
@@ -440,7 +366,7 @@ defineExpose({
   background: var(--color-action-primary, var(--color-surface-brand-gradient-start));
   border: none;
   border-radius: 50%;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 20px;
   cursor: pointer;
   box-shadow: 0 4px 12px var(--shadow-brand-soft);
@@ -453,7 +379,6 @@ defineExpose({
   box-shadow: 0 6px 16px var(--reader-controls-shadow-default);
 }
 
-/* 设置面板 */
 .reader-controls__settings-panel {
   display: block;
 }
@@ -486,7 +411,7 @@ defineExpose({
 
 .reader-controls__settings-header h3 {
   margin: 0;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 16px;
   font-weight: 500;
 }
@@ -497,7 +422,7 @@ defineExpose({
   background: var(--reader-controls-surface-muted);
   border: none;
   border-radius: 50%;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 18px;
   cursor: pointer;
   transition: background 0.2s;
@@ -533,7 +458,7 @@ defineExpose({
   gap: 12px;
 }
 
-.reader-controls__setting-control input[type="range"] {
+.reader-controls__range {
   flex: 1;
   height: 4px;
   appearance: none;
@@ -542,7 +467,7 @@ defineExpose({
   outline: none;
 }
 
-.reader-controls__setting-control input[type="range"]::-webkit-slider-thumb {
+.reader-controls__range::-webkit-slider-thumb {
   appearance: none;
   width: 16px;
   height: 16px;
@@ -552,7 +477,7 @@ defineExpose({
 }
 
 .reader-controls__setting-control span {
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 13px;
   min-width: 45px;
   text-align: right;
@@ -581,7 +506,6 @@ defineExpose({
   box-shadow: 0 0 0 2px var(--reader-controls-shadow-floating);
 }
 
-/* 响应式设计 */
 @media (--breakpoint-md-down) {
   .reader-controls__settings-content {
     right: 8px;
@@ -599,20 +523,6 @@ defineExpose({
     bottom: 72px;
     width: 40px;
     height: 40px;
-  }
-}
-
-@media (--breakpoint-xs-down) {
-  .reader-header {
-    padding: 0 8px;
-  }
-
-  .book-info {
-    display: none;
-  }
-
-  .view-mode-toggle {
-    gap: 0;
   }
 }
 </style>

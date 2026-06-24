@@ -35,7 +35,8 @@ export function useEditWorkspaceExit(options: UseEditWorkspaceExitOptions) {
   const exitSaveHasProgress = computed(() => exitSaveTotal.value > 0)
   const exitSaveProgressPercent = computed(() => {
     if (!exitSaveHasProgress.value) return 0
-    return Math.round((exitSaveCurrent.value / exitSaveTotal.value) * 100)
+    const percent = Math.round((exitSaveCurrent.value / exitSaveTotal.value) * 100)
+    return Math.max(0, Math.min(100, percent))
   })
   const exitSaveMessage = computed(() => {
     const message = options.sessionLoadingProgress.value.message?.trim()
@@ -97,7 +98,6 @@ export function useEditWorkspaceExit(options: UseEditWorkspaceExitOptions) {
       closeExitDialog()
       options.emitExit()
     } catch (error) {
-      console.error('[EditWorkspace] 保存后退出失败:', error)
       exitDialogError.value = error instanceof Error
         ? error.message
         : (options.sessionSaveError.value || '保存失败，请重试')

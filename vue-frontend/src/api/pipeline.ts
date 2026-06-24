@@ -84,12 +84,12 @@ export async function notifyPipelineBefore(payload: PipelineBeforePayload): Prom
 /**
  * 通知后端「一次完整翻译任务已结束」。
  *
- * after 阶段不应阻断流程：本函数捕获所有异常并打印 warning，永远不会抛出。
+ * after 阶段不应阻断流程：本函数捕获所有异常，永远不会抛出。
  */
 export async function notifyPipelineAfter(payload: PipelineAfterPayload): Promise<void> {
   try {
     await apiClient.post<PipelineResponse>('/api/pipeline/after', payload)
-  } catch (err) {
-    console.warn('[pipeline.after] 触发失败（已忽略）:', err)
+  } catch {
+    return
   }
 }

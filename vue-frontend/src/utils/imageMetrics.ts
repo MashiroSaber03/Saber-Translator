@@ -34,7 +34,7 @@ export interface ImageDisplayMetrics {
  * 计算图像内容在其 img 元素中的实际显示指标
  * 考虑到 object-fit: contain 的影响
  * 
- * @param imageElement - 图片 DOM 元素（HTMLImageElement 或 jQuery 对象）
+ * @param imageElement - 图片 DOM 元素
  * @returns 图片显示指标对象，如果图片无效或未加载完成则返回 null
  * 
  * @example
@@ -51,15 +51,11 @@ export interface ImageDisplayMetrics {
 export function calculateImageDisplayMetrics(
   imageElement: HTMLImageElement | null | undefined
 ): ImageDisplayMetrics | null {
-  // 参数验证
   if (!imageElement) {
-    console.error('calculateImageDisplayMetrics: 图像元素无效')
     return null
   }
 
-  // 检查图片是否加载完成
   if (!imageElement.complete || imageElement.naturalWidth === 0 || imageElement.naturalHeight === 0) {
-    console.warn('calculateImageDisplayMetrics: 图像未完全加载或尺寸为0')
     return null
   }
 

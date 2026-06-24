@@ -210,7 +210,6 @@ export function useImageConverter() {
       // 提取 MIME 类型和数据
       const matches = base64.match(/^data:([^;]+);base64,(.+)$/)
       if (!matches) {
-        console.error('无效的 Base64 格式')
         return null
       }
 
@@ -227,8 +226,7 @@ export function useImageConverter() {
       }
 
       return new Blob([uint8Array], { type: mimeType })
-    } catch (error) {
-      console.error('Base64 转 Blob 失败:', error)
+    } catch {
       return null
     }
   }

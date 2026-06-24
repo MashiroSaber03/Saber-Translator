@@ -1,6 +1,5 @@
 <template>
   <div class="prompt-library">
-    <!-- 提示词类型选择 -->
     <UiPanel variant="settings">
       <template #title>提示词管理</template>
       <UiField class="ui-settings-field">
@@ -12,7 +11,6 @@
         />
       </UiField>
 
-      <!-- 提示词模式切换（仅翻译和AI视觉OCR支持） -->
       <UiField v-if="supportsModeSwitch" class="ui-settings-field">
         <label for="promptMode">提示词模式:</label>
         <CustomSelect
@@ -24,7 +22,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- 已保存的提示词列表 -->
     <UiPanel variant="settings">
       <template #title>已保存的提示词</template>
       <div v-if="isLoading" class="loading-hint">加载中...</div>
@@ -67,7 +64,6 @@
       </div>
     </UiPanel>
 
-    <!-- 提示词编辑器 -->
     <UiPanel variant="settings">
       <template #title>提示词编辑</template>
       <UiField class="ui-settings-field">
@@ -91,18 +87,12 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 提示词管理组件
- * 管理各类提示词的保存、加载和删除
- * 支持提示词模式切换（翻译: 普通/JSON；AI视觉OCR: 普通/JSON/OCR模型）
- */
 import { ref, computed, onMounted } from 'vue'
 import { configApi } from '@/api/config'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
-/** 提示词类型选项 */
 const promptTypeOptions = [
   { label: '翻译提示词', value: 'translate' },
   { label: '文本框提示词', value: 'textbox' },
@@ -111,7 +101,6 @@ const promptTypeOptions = [
   { label: '校对提示词', value: 'proofreading' }
 ]
 
-/** 提示词模式选项 */
 const translatePromptModeOptions = [
   { label: '普通模式', value: 'normal' },
   { label: 'JSON格式模式', value: 'json' }
@@ -123,11 +112,9 @@ const aiVisionPromptModeOptions = [
   { label: 'OCR模型提示词', value: 'paddleocr_vl' }
 ]
 
-// Toast 和 Store
 const toast = useToast()
 const settingsStore = useSettingsStore()
 
-// 状态
 const selectedType = ref('translate')
 const promptList = ref<{ name: string }[]>([])
 const selectedPrompt = ref('')
@@ -136,11 +123,6 @@ const editingContent = ref('')
 const isLoading = ref(false)
 const selectedMode = ref<'normal' | 'json' | 'paddleocr_vl'>('normal')
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 是否支持模式切换（仅翻译和AI视觉OCR支持） */
 const supportsModeSwitch = computed(() => {
   return selectedType.value === 'translate' || selectedType.value === 'ai_vision_ocr'
 })
@@ -151,7 +133,6 @@ const availablePromptModeOptions = computed(() => {
     : translatePromptModeOptions
 })
 
-/** 模式提示文字 */
 const modeHint = computed(() => {
   if (selectedType.value === 'ai_vision_ocr' && selectedMode.value === 'paddleocr_vl') {
     return '适用于 PaddleOCR-VL、GLM-OCR 等专用 OCR 模型'
@@ -162,10 +143,6 @@ const modeHint = computed(() => {
   return '适用于普通翻译场景'
 })
 
-// ============================================================
-// 提示词列表操作
-// ============================================================
-
 function getTranslationPromptMode(): 'normal' | 'json' {
   const translationSettings = settingsStore.settings.translation
   const forceJsonOutput = translationSettings.openaiOptions.request.forceJsonOutput
@@ -173,7 +150,6 @@ function getTranslationPromptMode(): 'normal' | 'json' {
   return forceJsonOutput ? 'json' : 'normal'
 }
 
-/** 加载提示词列表 */
 async function loadPromptList() {
   isLoading.value = true
   try {
@@ -183,9 +159,8 @@ async function loadPromptList() {
     } else {
       result = await configApi.getPrompts(selectedType.value)
     }
-    // 后端返回的是字符串数组，需要转换为对象数组以匹配类型定义
     const names = result.prompt_names || []
-    promptList.value = (names as unknown as string[]).map(name => ({ name }))
+    promptList.value = names.map(name => ({ name }))
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '加载提示词列表失败'
     toast.error(errorMessage)
@@ -194,15 +169,12 @@ async function loadPromptList() {
   }
 }
 
-/** 选择提示词（同时加载内容） */
 async function selectPrompt(name: string) {
   selectedPrompt.value = name
   editingName.value = name
-  // 自动加载提示词内容
   await loadPrompt(name)
 }
 
-/** 加载提示词内容 */
 async function loadPrompt(name: string) {
   try {
     let result
@@ -221,7 +193,6 @@ async function loadPrompt(name: string) {
   }
 }
 
-/** 保存提示词 */
 async function savePrompt() {
   if (!editingName.value || !editingContent.value) {
     toast.warning('请输入提示词名称和内容')
@@ -234,12 +205,8 @@ async function savePrompt() {
       await configApi.savePrompt(selectedType.value, editingName.value, editingContent.value)
     }
     toast.success('提示词保存成功')
-    
-    // 清空编辑器内容
     editingName.value = ''
     editingContent.value = ''
-    
-    // 强制刷新列表
     await loadPromptList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '保存提示词失败'
@@ -247,7 +214,6 @@ async function savePrompt() {
   }
 }
 
-/** 删除提示词 */
 async function deletePrompt(name: string) {
   if (name === 'default') {
     toast.warning('默认提示词不能删除')
@@ -272,13 +238,10 @@ async function deletePrompt(name: string) {
   }
 }
 
-/** 处理类型变化 */
 function handleTypeChange() {
   selectedPrompt.value = ''
   editingName.value = ''
   editingContent.value = ''
-  
-  // 同步模式状态
   if (selectedType.value === 'translate') {
     selectedMode.value = getTranslationPromptMode()
   } else if (selectedType.value === 'ai_vision_ocr') {
@@ -290,9 +253,7 @@ function handleTypeChange() {
   loadPromptList()
 }
 
-/** 处理模式切换 */
 function handleModeChange() {
-  // 更新 store 中的模式状态
   if (selectedType.value === 'translate') {
     settingsStore.updateTranslationService({ forceJsonOutput: selectedMode.value === 'json' })
   } else if (selectedType.value === 'ai_vision_ocr') {
@@ -310,13 +271,7 @@ function handleModeChange() {
   toast.info(`已切换到${modeLabel}模式`)
 }
 
-// ============================================================
-// 监听和初始化
-// ============================================================
-
-// 初始化
 onMounted(() => {
-  // 同步初始模式状态
   selectedMode.value = getTranslationPromptMode()
   loadPromptList()
 })

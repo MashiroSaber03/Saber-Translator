@@ -1,6 +1,6 @@
 # 前端 UI 架构规范
 
-> 最后更新：2026-06-20  
+> 最后更新：2026-06-24
 > 目标：新增和重构 UI 默认走统一 token、layout shell、overlay layer 和 primitives。
 
 ## 样式分层

@@ -1,6 +1,5 @@
 <template>
   <div class="plugin-manager">
-    <!-- 插件列表 -->
     <UiPanel variant="settings">
       <template #title>
         <span>已安装插件</span>
@@ -37,7 +36,7 @@
           </div>
           <div class="plugin-controls">
             <label class="switch">
-              <UiInput type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
+              <UiInput class="plugin-manager__toggle-input" type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
               <span class="slider"></span>
             </label>
             <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
@@ -48,20 +47,18 @@
       </div>
     </UiPanel>
 
-    <!-- 默认启用状态设置 -->
     <UiPanel variant="settings">
       <template #title>默认启用状态</template>
       <p class="settings-hint">设置插件在新会话中的默认启用状态</p>
       <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="default-state-item">
         <span class="plugin-name">{{ plugin.display_name }}</span>
         <label class="switch">
-          <UiInput type="checkbox" :checked="defaultStates[plugin.id]" @change="updateDefaultState(plugin.id, $event)" />
+          <UiInput class="plugin-manager__toggle-input" type="checkbox" :checked="defaultStates[plugin.id]" @change="updateDefaultState(plugin.id, $event)" />
           <span class="slider"></span>
         </label>
       </div>
     </UiPanel>
 
-    <!-- 插件配置模态框 -->
     <OverlayLayer
       v-if="showConfigModal"
       class="plugin-config-modal"
@@ -90,7 +87,7 @@
             <div class="config-field-control">
               <template v-if="field.type === 'boolean'">
                 <label class="config-switch">
-                  <UiInput type="checkbox" :id="'config-' + key" v-model="configValues[key]" />
+                  <UiInput class="plugin-manager__config-toggle-input" type="checkbox" :id="'config-' + key" v-model="configValues[key]" />
                   <span class="config-switch-track"></span>
                   <span class="config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
                 </label>
@@ -149,10 +146,6 @@ import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 插件管理组件
- * 管理插件的刷新、启用/禁用、配置和删除
- */
 import { ref, onMounted } from 'vue'
 import * as pluginApi from '@/api/plugin'
 import type { PluginData } from '@/types'
@@ -162,7 +155,6 @@ import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
 
 type Plugin = PluginData
 
-// 配置字段接口
 interface ConfigField {
   type: string
   label?: string
@@ -173,10 +165,8 @@ interface ConfigField {
   max?: number
 }
 
-// Toast
 const toast = useToast()
 
-// 状态
 const plugins = ref<Plugin[]>([])
 const defaultStates = ref<Record<string, boolean>>({})
 const isLoading = ref(false)
@@ -184,14 +174,12 @@ const isRefreshing = ref(false)
 const isImporting = ref(false)
 const pluginImportInputRef = ref<HTMLInputElement | null>(null)
 
-// 配置模态框状态
 const showConfigModal = ref(false)
 const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
 const showAgentModal = ref(false)
 
-// 加载插件列表
 async function loadPlugins() {
   isLoading.value = true
   try {
@@ -205,17 +193,15 @@ async function loadPlugins() {
   }
 }
 
-// 加载默认状态
 async function loadDefaultStates() {
   try {
     const result = await pluginApi.getPluginDefaultStates()
     defaultStates.value = result.default_states || {}
-  } catch (error: unknown) {
-    console.error('加载默认状态失败:', error)
+  } catch {
+    defaultStates.value = {}
   }
 }
 
-// 刷新插件列表并触发后端热重载
 async function refreshPluginList() {
   await refreshPluginListCore({ showToast: true })
 }
@@ -248,7 +234,6 @@ async function refreshPluginListCore(options: { showToast: boolean }) {
   }
 }
 
-// 切换插件启用状态
 async function togglePlugin(plugin: Plugin) {
   try {
     if (plugin.enabled) {
@@ -266,7 +251,6 @@ async function togglePlugin(plugin: Plugin) {
   }
 }
 
-// 设置默认启用状态
 async function updateDefaultState(pluginName: string, event: Event) {
   const target = event.target as HTMLInputElement
   const enabled = target.checked
@@ -277,20 +261,16 @@ async function updateDefaultState(pluginName: string, event: Event) {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '设置失败'
     toast.error(errorMessage)
-    // 恢复原状态
     target.checked = !enabled
   }
 }
 
-// 打开插件配置
 async function openPluginConfig(plugin: Plugin) {
   configPlugin.value = plugin
   try {
-    // 获取配置规范
     const schemaResult = await pluginApi.getPluginConfigSchema(plugin.id)
     configSchema.value = (schemaResult.schema || {}) as Record<string, ConfigField>
 
-    // 获取当前配置
     const configResult = await pluginApi.getPluginConfig(plugin.id)
     configValues.value = configResult.config || {}
 
@@ -301,7 +281,6 @@ async function openPluginConfig(plugin: Plugin) {
   }
 }
 
-// 关闭配置模态框
 function closeConfigModal() {
   showConfigModal.value = false
   configPlugin.value = null
@@ -309,7 +288,6 @@ function closeConfigModal() {
   configValues.value = {}
 }
 
-// 保存插件配置
 async function savePluginConfig() {
   if (!configPlugin.value) return
   try {
@@ -322,7 +300,6 @@ async function savePluginConfig() {
   }
 }
 
-// 删除插件
 async function deletePlugin(plugin: Plugin) {
   if (!confirm(`确定要删除插件 "${plugin.display_name}" 吗？`)) {
     return
@@ -345,12 +322,15 @@ function triggerImport() {
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
+  try {
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+  } finally {
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
 }
 
 async function downloadPlugin(plugin: Plugin) {
@@ -403,7 +383,6 @@ async function handlePluginAgentRefresh() {
   await loadDefaultStates()
 }
 
-// 初始化
 onMounted(() => {
   loadPlugins()
   loadDefaultStates()
@@ -417,7 +396,6 @@ onMounted(() => {
 }
 
 .plugin-manager {
-  /* owner tokens: plugin-manager */
   --plugin-manager-accent-primary: rgba(255, 255, 255, .2);
   --plugin-manager-accent-secondary: rgba(255, 255, 255, .2);
   --plugin-manager-accent-muted: rgba(248, 250, 252, .52);
@@ -504,7 +482,6 @@ onMounted(() => {
   gap: 8px;
 }
 
-/* 开关样式 */
 .plugin-manager .switch {
   position: relative;
   display: inline-block;
@@ -512,7 +489,7 @@ onMounted(() => {
   height: 22px;
 }
 
-.plugin-manager .switch input {
+.plugin-manager .plugin-manager__toggle-input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -534,20 +511,19 @@ onMounted(() => {
   width: 16px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--color-text-inverse);
   transition: 0.3s;
   border-radius: 50%;
 }
 
-.plugin-manager input:checked + .slider {
+.plugin-manager .plugin-manager__toggle-input:checked + .slider {
   background-color: var(--color-action-primary);
 }
 
-.plugin-manager input:checked + .slider::before {
+.plugin-manager .plugin-manager__toggle-input:checked + .slider::before {
   transform: translateX(18px);
 }
 
-/* 默认状态设置 */
 .plugin-manager .default-state-item {
   display: flex;
   justify-content: space-between;
@@ -560,7 +536,6 @@ onMounted(() => {
   border-bottom: none;
 }
 
-/* 配置模态框 */
 .plugin-manager .plugin-config-modal {
   background: var(--plugin-manager-surface-base);
   display: flex;
@@ -706,7 +681,7 @@ onMounted(() => {
   user-select: none;
 }
 
-.plugin-manager .config-switch input {
+.plugin-manager .plugin-manager__config-toggle-input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -734,11 +709,11 @@ onMounted(() => {
   transition: transform var(--transition-fast);
 }
 
-.plugin-manager .config-switch input:checked + .config-switch-track {
+.plugin-manager .plugin-manager__config-toggle-input:checked + .config-switch-track {
   background: linear-gradient(135deg, var(--plugin-manager-surface-overlay) 0%, var(--plugin-manager-surface-inverse) 100%);
 }
 
-.plugin-manager .config-switch input:checked + .config-switch-track::after {
+.plugin-manager .plugin-manager__config-toggle-input:checked + .config-switch-track::after {
   transform: translateX(20px);
 }
 

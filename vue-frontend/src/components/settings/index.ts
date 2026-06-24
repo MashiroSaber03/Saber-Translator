@@ -1,7 +1,3 @@
-/**
- * 设置组件导出
- */
-
 export { default as SettingsModal } from './SettingsModal.vue'
 export { default as OcrSettings } from './OcrSettings.vue'
 export { default as TranslationSettings } from './TranslationSettings.vue'

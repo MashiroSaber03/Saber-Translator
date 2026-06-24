@@ -74,7 +74,7 @@ describe('useTextStyleSync', () => {
 
     imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
     imageStore.updateCurrentImage({
-      translatedDataURL: 'data:image/png;base64,old-render',
+      translatedDataURL: 'data:image/png;base64,existing-render',
       cleanImageData: 'clean-image',
     })
 
@@ -130,7 +130,7 @@ describe('useTextStyleSync', () => {
 
     imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
     imageStore.updateCurrentImage({
-      translatedDataURL: 'data:image/png;base64,old-render',
+      translatedDataURL: 'data:image/png;base64,existing-render',
       cleanImageData: 'clean-image',
     })
 
@@ -206,12 +206,12 @@ describe('useTextStyleSync', () => {
     })
 
     imageStore.addImage('page-1.png', 'data:image/png;base64,page1', {
-      translatedDataURL: 'data:image/png;base64,old-render-1',
+      translatedDataURL: 'data:image/png;base64,existing-render-1',
       cleanImageData: 'clean-image-1',
       bubbleStates: [firstBubble],
     })
     imageStore.addImage('page-2.png', 'data:image/png;base64,page2', {
-      translatedDataURL: 'data:image/png;base64,old-render-2',
+      translatedDataURL: 'data:image/png;base64,existing-render-2',
       cleanImageData: 'clean-image-2',
       bubbleStates: [secondBubble],
     })

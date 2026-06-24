@@ -102,8 +102,8 @@ describe('useContinuationState', () => {
         story_text: '旧剧情',
         dialogue_text: '旧对白',
         characters: ['旧角色'],
-        final_prompt: '旧最终提示词',
-        image_url: '/tmp/old.png',
+        final_prompt: '已有最终提示词',
+        image_url: '/tmp/previous.png',
         previous_url: '',
         status: 'generated',
       },
@@ -138,8 +138,8 @@ describe('useContinuationState', () => {
             story_text: '原有剧情',
             dialogue_text: '',
             characters: ['主角'],
-            final_prompt: '原有提示词',
-            image_url: '/tmp/old.png',
+            final_prompt: '已有提示词',
+            image_url: '/tmp/previous.png',
             previous_url: '',
             status: 'generated',
           },
@@ -190,7 +190,7 @@ describe('useContinuationState', () => {
     expect(state.lastAnalysisSyncAt.value).toBe('2026-05-21T20:00:00')
   })
 
-  it('shows info messages without letting an older timer clear a newer message', () => {
+  it('shows info messages without letting a previous timer clear a newer message', () => {
     vi.useFakeTimers()
 
     const state = useContinuationState(ref('book-1'))

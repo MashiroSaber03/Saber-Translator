@@ -112,8 +112,7 @@ export async function reloadTextStyleDefaultsFromBackend(): Promise<boolean> {
 
     applyTextStyleDefaults(parseTextStyleDefaults(response.defaults))
     return true
-  } catch (error) {
-    console.warn('[textStyleDefaults] 重新加载默认值失败，继续使用当前缓存:', error)
+  } catch {
     return false
   }
 }

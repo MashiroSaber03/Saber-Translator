@@ -46,11 +46,11 @@ export function useTranslationSettings(
    */
   function setTranslationProvider(provider: TranslationProvider): void {
     provider = normalizeProviderId(provider) as TranslationProvider
-    const oldProvider = settings.value.translation.provider
-    if (oldProvider === provider) return
+    const previousProvider = settings.value.translation.provider
+    if (previousProvider === provider) return
 
     // 保存当前服务商配置
-    saveTranslationProviderConfig(oldProvider)
+    saveTranslationProviderConfig(previousProvider)
 
     // 切换服务商
     settings.value.translation.provider = provider

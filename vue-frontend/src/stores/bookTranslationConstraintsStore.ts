@@ -57,8 +57,7 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
         },
       }
       return true
-    } catch (error) {
-      console.error('保存书籍级翻译约束失败:', error)
+    } catch {
       return false
     } finally {
       isSaving.value = false

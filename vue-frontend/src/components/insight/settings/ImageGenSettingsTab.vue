@@ -2,10 +2,6 @@
 
 import UiInput from '@/components/ui/UiInput.vue'
 
-/**
- * 生图模型设置选项卡组件
- * 用于续写功能的图片生成配置
- */
 import { computed, ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel, getProviderBaseUrl } from '@/config/aiProviders'
@@ -15,16 +11,8 @@ import {
   PROVIDER_DEFAULT_MODELS,
 } from './types'
 
-// ============================================================
-// Store
-// ============================================================
-
 const insightStore = useInsightStore()
 const initialProvider = insightStore.config.imageGen?.provider || 'gpt2api'
-
-// ============================================================
-// 状态
-// ============================================================
 
 const provider = ref(initialProvider)
 const apiKey = ref(insightStore.config.imageGen?.apiKey || '')
@@ -37,19 +25,15 @@ const timeoutSeconds = ref(insightStore.config.imageGen?.timeoutSeconds ?? 0)
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
 const showModelWarning = computed(() => providerRequiresModel(provider.value) && !model.value.trim())
 
-// ============================================================
-// 方法
-// ============================================================
-
 function getDefaultModel(providerId: string): string {
   return PROVIDER_DEFAULT_MODELS[providerId]?.imageGen || ''
 }
 
 function onProviderChange(): void {
   const newProvider = provider.value
-  const oldProvider = insightStore.config.imageGen.provider
+  const previousProvider = insightStore.config.imageGen.provider
 
-  if (oldProvider !== newProvider) {
+  if (previousProvider !== newProvider) {
     insightStore.config.imageGen.apiKey = apiKey.value
     insightStore.config.imageGen.model = model.value
     insightStore.config.imageGen.baseUrl = baseUrl.value
@@ -72,7 +56,6 @@ function onProviderChange(): void {
   }
 }
 
-/** 获取当前配置 */
 function getConfig() {
   return {
     provider: provider.value,
@@ -85,7 +68,6 @@ function getConfig() {
   }
 }
 
-/** 从store同步 */
 function syncFromStore(): void {
   const imageGen = insightStore.config.imageGen
   if (imageGen) {
@@ -99,7 +81,6 @@ function syncFromStore(): void {
   }
 }
 
-// 暴露方法给父组件
 defineExpose({
   getConfig,
   syncFromStore
@@ -158,11 +139,15 @@ defineExpose({
 
 <style scoped>
 .insight-settings-content {
-  --image-gen-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --image-gen-settings-tab-surface-base: rgba(99, 102, 241, .05);
-}
+  --ui-input-padding: 10px 12px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-input-radius: 6px;
+  --ui-input-font-size: 14px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
 
-.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }
@@ -185,30 +170,7 @@ defineExpose({
   margin-bottom: 6px;
   font-weight: 500;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .insight-settings-field input[type="text"],
-.insight-settings-content .insight-settings-field input[type="password"],
-.insight-settings-content .insight-settings-field input[type="number"],
-.insight-settings-content .insight-settings-field select,
-.insight-settings-content .insight-settings-field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 6px;
-  font-size: 14px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.insight-settings-content .insight-settings-field input:focus,
-.insight-settings-content .insight-settings-field select:focus,
-.insight-settings-content .insight-settings-field textarea:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+  color: var(--color-text-default);
 }
 
 .insight-settings-content .form-hint {
@@ -217,266 +179,4 @@ defineExpose({
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.insight-settings-content .ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-weight: normal;
-}
-
-.insight-settings-content .ui-checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-.insight-settings-content {
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-}
-
-.insight-settings-content .form-row {
-  display: flex;
-  gap: 16px;
-}
-
-.insight-settings-content .form-row .insight-settings-field {
-  flex: 1;
-}
-
-.insight-settings-content .placeholder-text {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  text-align: center;
-  padding: 40px;
-}
-
-.insight-settings-content .prompts-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.insight-settings-content .prompt-editor {
-  width: 100%;
-  min-height: 200px;
-  font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  resize: vertical;
-}
-
-.insight-settings-content .prompt-editor:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-}
-
-.insight-settings-content .prompt-actions-bar {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-
-.insight-settings-content .section-divider {
-  border: none;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
-  margin: 16px 0;
-}
-
-.insight-settings-content .prompts-library-section {
-  margin-top: 8px;
-}
-
-.insight-settings-content .library-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.insight-settings-content .library-header h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.insight-settings-content .library-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.insight-settings-content .saved-prompts-list {
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-}
-
-.insight-settings-content .saved-prompt-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
-  transition: background 0.2s;
-}
-
-.insight-settings-content .saved-prompt-item:last-child {
-  border-bottom: none;
-}
-
-.insight-settings-content .saved-prompt-item:hover {
-  background: var(--color-surface-hover);
-}
-
-.insight-settings-content .prompt-name {
-  flex: 1;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.insight-settings-content .prompt-type-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--color-focus-brand-soft);
-  color: var(--color-text-brand);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.insight-settings-content .button-icon-sm {
-  padding: 2px 6px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.insight-settings-content .button-icon-sm:hover {
-  opacity: 1;
-}
-
-.insight-settings-content .loading-text {
-  text-align: center;
-  padding: 20px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.insight-settings-content .batch-info-box {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 8px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .batch-info-box h4 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .layers-preview-list {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.insight-settings-content .layers-preview-list li {
-  margin-bottom: 4px;
-}
-
-.insight-settings-content .align-badge {
-  color: var(--color-text-brand);
-  font-size: 12px;
-}
-
-.insight-settings-content .batch-estimate-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--image-gen-settings-tab-surface-base));
-  border-radius: 6px;
-  border: 1px solid var(--image-gen-settings-tab-border-default);
-}
-
-.insight-settings-content .batch-estimate-box p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .batch-estimate-box strong {
-  color: var(--color-text-brand);
-}
-
-.insight-settings-content .model-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.insight-settings-content .model-input-row input {
-  flex: 1;
-}
-
-.insight-settings-content .fetch-btn {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.insight-settings-content .model-select-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 6px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .model-select {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  font-size: 13px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
-  cursor: pointer;
-}
-
-.insight-settings-content .model-select:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-}
-
-.insight-settings-content .model-count {
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  white-space: nowrap;
-}
 </style>

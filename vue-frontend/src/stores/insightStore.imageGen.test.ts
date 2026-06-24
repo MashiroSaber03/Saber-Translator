@@ -92,8 +92,8 @@ describe('useInsightStore imageGen config', () => {
     localStorage.setItem('insight_provider_configs', JSON.stringify({
       reranker: {
         jina: {
-          apiKey: 'old-reranker-key',
-          model: 'old-reranker-model',
+          apiKey: 'cached-reranker-key',
+          model: 'cached-reranker-model',
         },
       },
     }))

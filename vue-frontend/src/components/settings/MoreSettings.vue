@@ -1,15 +1,14 @@
 <template>
   <div class="more-settings">
-    <!-- 并行翻译设置 -->
     <ParallelSettings />
 
-    <!-- 书架模式自动保存 -->
     <UiPanel variant="settings">
       <template #title>自动保存设置</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
         <label class="ui-checkbox-label">
           <UiInput 
             type="checkbox" 
+            class="more-settings__checkbox-input"
             v-model="localSettings.autoSaveInBookshelfMode"
           />
           <span class="checkbox-text">书架模式自动保存</span>
@@ -22,13 +21,13 @@
       </UiField>
     </UiPanel>
 
-    <!-- 消除文字模式设置 -->
     <UiPanel variant="settings">
       <template #title>消除文字模式</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
         <label class="ui-checkbox-label">
           <UiInput 
             type="checkbox" 
+            class="more-settings__checkbox-input"
             v-model="localSettings.removeTextWithOcr"
           />
           <span class="checkbox-text">同时执行OCR识别</span>
@@ -41,13 +40,13 @@
       </UiField>
     </UiPanel>
 
-    <!-- LAMA 修复设置 -->
     <UiPanel variant="settings">
       <template #title>LAMA 修复设置</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
         <label class="ui-checkbox-label">
           <UiInput 
             type="checkbox" 
+            class="more-settings__checkbox-input"
             v-model="localSettings.lamaDisableResize"
           />
           <span class="checkbox-text">禁用自动缩放</span>
@@ -62,13 +61,13 @@
       </UiField>
     </UiPanel>
 
-    <!-- 详细日志设置 -->
     <UiPanel variant="settings">
       <template #title>调试选项</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
         <label class="ui-checkbox-label">
           <UiInput 
             type="checkbox" 
+            class="more-settings__checkbox-input"
             v-model="localSettings.enableVerboseLogs"
           />
           <span class="checkbox-text">详细日志</span>
@@ -81,7 +80,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- PDF处理方式 -->
     <UiPanel variant="settings">
       <template #title>PDF处理设置</template>
       <UiField class="ui-settings-field">
@@ -94,7 +92,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- 字体设置 -->
     <UiPanel variant="settings">
       <template #title>字体设置</template>
       <UiField class="ui-settings-field">
@@ -131,7 +128,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- 缓存清理 -->
     <UiPanel variant="settings">
       <template #title>缓存清理</template>
       <UiFormGrid>
@@ -150,15 +146,14 @@
       </UiFormGrid>
     </UiPanel>
 
-    <!-- 关于 -->
     <UiPanel variant="settings">
       <template #title>关于</template>
       <div class="about-info">
         <p><strong>Saber-Translator</strong></p>
         <p>AI驱动的漫画翻译工具</p>
         <p class="links">
-          <a href="http://www.mashirosaber.top" target="_blank">📖 使用教程</a>
-          <a href="https://github.com/MashiroSaber/saber-translator" target="_blank">🐙 GitHub</a>
+          <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer">📖 使用教程</a>
+          <a href="https://github.com/MashiroSaber/saber-translator" target="_blank" rel="noopener noreferrer">🐙 GitHub</a>
         </p>
         <p class="disclaimer">本项目完全开源免费，请勿上当受骗</p>
       </div>
@@ -173,10 +168,6 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 更多设置组件
- * 管理PDF处理、字体、缓存清理等杂项设置
- */
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
@@ -185,24 +176,20 @@ import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ParallelSettings from './ParallelSettings.vue'
 
-/** PDF处理方式选项 */
 const pdfMethodOptions = [
   { label: '前端 pdf.js (推荐)', value: 'frontend' },
   { label: '后端 PyMuPDF', value: 'backend' }
 ]
 
-// Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
-// 状态
 const isLoadingFonts = ref(false)
 const fontList = ref<import('@/types').FontInfo[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<HTMLInputElement | null>(null)
 const selectedFontFileName = ref('')
 
-// 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localSettings = ref({
   pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
   autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false,
@@ -211,9 +198,6 @@ const localSettings = ref({
   lamaDisableResize: settingsStore.settings.lamaDisableResize || false
 })
 
-// ============================================================
-// Watch 同步：本地状态变化时自动保存到 store
-// ============================================================
 watch(() => localSettings.value.pdfProcessingMethod, (val) => {
   settingsStore.setPdfProcessingMethod(val as 'frontend' | 'backend')
 })
@@ -234,7 +218,6 @@ watch(() => localSettings.value.lamaDisableResize, (val) => {
   settingsStore.setLamaDisableResize(val)
 })
 
-// 刷新字体列表
 async function refreshFontList() {
   isLoadingFonts.value = true
   try {
@@ -253,18 +236,17 @@ function triggerFontUpload() {
   fontInput.value?.click()
 }
 
-// 上传自定义字体
 async function handleFontUpload(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
   selectedFontFileName.value = file.name
 
-  // 验证文件类型
   const validExtensions = ['.ttf', '.ttc', '.otf']
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
   if (!validExtensions.includes(ext)) {
     toast.error('不支持的字体格式，请上传 .ttf, .ttc 或 .otf 文件')
+    target.value = ''
     return
   }
 
@@ -272,7 +254,6 @@ async function handleFontUpload(event: Event) {
     const result = await configApi.uploadFont(file)
     if (result.success) {
       toast.success(`字体 "${result.fontPath || file.name}" 上传成功`)
-      // 刷新字体列表
       await refreshFontList()
     } else {
       toast.error(result.error || '字体上传失败')
@@ -281,14 +262,12 @@ async function handleFontUpload(event: Event) {
     const errorMessage = error instanceof Error ? error.message : '字体上传失败'
     toast.error(errorMessage)
   } finally {
-    // 清空文件输入
     if (fontInput.value) {
       fontInput.value.value = ''
     }
   }
 }
 
-// 清理调试文件
 async function cleanDebugFiles() {
   isCleaning.value = true
   try {
@@ -306,7 +285,6 @@ async function cleanDebugFiles() {
   }
 }
 
-// 清理临时文件
 async function cleanTempFiles() {
   isCleaning.value = true
   try {
@@ -326,10 +304,6 @@ async function cleanTempFiles() {
 </script>
 
 <style scoped>
-.more-settings {
-  --more-settings-text-primary: #f0ad4e;
-}
-
 .font-upload-row {
   display: flex;
   align-items: center;
@@ -385,15 +359,8 @@ async function cleanTempFiles() {
 }
 
 .about-info .disclaimer {
-  color: var(--color-status-warning, var(--more-settings-text-primary));
+  color: var(--color-status-warning);
   font-weight: 500;
-}
-
-/* 复选框设置项样式 */
-.checkbox-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .ui-checkbox-label {
@@ -404,7 +371,7 @@ async function cleanTempFiles() {
   font-weight: 500;
 }
 
-.ui-checkbox-label input[type="checkbox"] {
+.more-settings__checkbox-input {
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -416,7 +383,7 @@ async function cleanTempFiles() {
 }
 
 .hint-note {
-  color: var(--color-status-warning, var(--more-settings-text-primary));
+  color: var(--color-status-warning);
   font-size: 12px;
 }
 </style>

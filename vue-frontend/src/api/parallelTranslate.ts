@@ -5,7 +5,7 @@
  */
 
 import { apiClient } from './client'
-import type { BubbleState } from '@/types/bubble'
+import type { BubbleState, BubbleTextline } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
 import type {
   GlossarySettings,
@@ -40,7 +40,7 @@ export interface ParallelDetectResponse {
   bubble_polygons?: number[][][]
   auto_directions?: string[]
   raw_mask?: string
-  textlines_per_bubble?: any[]
+  textlines_per_bubble?: BubbleTextline[][]
   error?: string
 }
 
@@ -84,14 +84,14 @@ export interface ParallelOcrParams {
   enable_hybrid_ocr?: boolean
   secondary_ocr_engine?: string
   hybrid_ocr_threshold?: number
-  textlines_per_bubble?: any[]
+  textlines_per_bubble?: BubbleTextline[][]
 }
 
 export interface ParallelOcrResponse {
   success: boolean
   original_texts?: string[]
   ocr_results?: OcrResult[]
-  textlines_per_bubble?: any[]
+  textlines_per_bubble?: BubbleTextline[][]
   error?: string
 }
 
@@ -106,7 +106,7 @@ export interface ParallelColorParams {
   bubble_coords: number[][]
   translation_mode?: string
   translation_scope?: string
-  textlines_per_bubble?: any[]
+  textlines_per_bubble?: BubbleTextline[][]
 }
 
 export interface ParallelColorResponse {

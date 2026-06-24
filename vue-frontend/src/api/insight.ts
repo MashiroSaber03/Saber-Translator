@@ -19,33 +19,34 @@ export type { InsightOverviewResponse, InsightTimelineResponse }
 /**
  * 页面数据响应
  */
+export interface PageDialogueData {
+  speaker_name?: string
+  character?: string
+  text?: string
+  translated_text?: string
+}
+
+export interface PageAnalysisData {
+  page_num?: number
+  page_summary?: string
+  scene?: string
+  mood?: string
+  analyzed?: boolean
+  panels?: Array<{
+    dialogues?: PageDialogueData[]
+  }>
+}
+
 export interface PageDataResponse {
   success: boolean
-  page?: {
-    page_num: number
-    summary?: string
-    dialogues?: Array<{
-      character?: string
-      text: string
-      translated_text?: string
-    }>
-    analyzed: boolean
-  }
-  // 后端API实际返回的是analysis字段
-  analysis?: {
-    page_num?: number
-    page_summary?: string
-    scene?: string
-    mood?: string
-    panels?: Array<{
-      dialogues?: Array<{
-        speaker_name?: string
-        character?: string
-        text?: string
-        translated_text?: string
-      }>
-    }>
-  }
+  page?: PageAnalysisData
+  analysis?: PageAnalysisData
+  error?: string
+}
+
+export interface InsightPagesResponse {
+  success: boolean
+  pages?: number[]
   error?: string
 }
 
@@ -231,6 +232,21 @@ export interface ConnectionTestResponse {
   message?: string
 }
 
+export interface StartAnalysisResponse {
+  success: boolean
+  task_id?: string
+  error?: string
+  message?: string
+}
+
+export type ReanalyzeResponse = StartAnalysisResponse
+
+export interface ExportAnalysisResponse {
+  success: boolean
+  markdown?: string
+  error?: string
+}
+
 // ==================== 分析控制 API ====================
 
 /**
@@ -238,7 +254,7 @@ export interface ConnectionTestResponse {
  * @param bookId 书籍 ID
  * @param options 分析选项
  * 
- * 后端期望的 mode 为：
+ * 当前后端协议的 mode 为：
  * - 'full': 全书分析（强制重新分析所有页面）
  * - 'incremental': 增量分析（仅分析未分析的页面）
  * - 'chapters': 章节分析，需要配合 chapters 数组
@@ -252,8 +268,8 @@ export async function startAnalysis(
     pages?: number[]      // 页码数组（pages模式）
     force?: boolean       // 是否强制重新分析
   }
-): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/analyze/start`, options, {
+): Promise<StartAnalysisResponse> {
+  return apiClient.post<StartAnalysisResponse>(`/api/manga-insight/${bookId}/analyze/start`, options, {
     timeout: 0
   })
 }
@@ -328,8 +344,8 @@ export async function previewAnalysis(
  * @param bookId 书籍 ID
  * @param pageNum 页码
  */
-export async function reanalyzePage(bookId: string, pageNum: number): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/page/${pageNum}`, {}, {
+export async function reanalyzePage(bookId: string, pageNum: number): Promise<ReanalyzeResponse> {
+  return apiClient.post<ReanalyzeResponse>(`/api/manga-insight/${bookId}/reanalyze/page/${pageNum}`, {}, {
     timeout: 0
   })
 }
@@ -339,8 +355,8 @@ export async function reanalyzePage(bookId: string, pageNum: number): Promise<Ap
  * @param bookId 书籍 ID
  * @param chapterId 章节 ID
  */
-export async function reanalyzeChapter(bookId: string, chapterId: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/manga-insight/${bookId}/reanalyze/chapter/${chapterId}`, {}, {
+export async function reanalyzeChapter(bookId: string, chapterId: string): Promise<ReanalyzeResponse> {
+  return apiClient.post<ReanalyzeResponse>(`/api/manga-insight/${bookId}/reanalyze/chapter/${chapterId}`, {}, {
     timeout: 0
   })
 }
@@ -354,6 +370,10 @@ export async function reanalyzeChapter(bookId: string, chapterId: string): Promi
  */
 export async function getPageData(bookId: string, pageNum: number): Promise<PageDataResponse> {
   return apiClient.get<PageDataResponse>(`/api/manga-insight/${bookId}/pages/${pageNum}`)
+}
+
+export async function getAnalyzedPages(bookId: string): Promise<InsightPagesResponse> {
+  return apiClient.get<InsightPagesResponse>(`/api/manga-insight/${bookId}/pages`)
 }
 
 /**
@@ -856,7 +876,7 @@ export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<
  */
 export async function exportAnalysis(
   bookId: string
-): Promise<ApiResponse<{ markdown: string }>> {
+): Promise<ExportAnalysisResponse> {
   return apiClient.get(`/api/manga-insight/${bookId}/export`)
 }
 

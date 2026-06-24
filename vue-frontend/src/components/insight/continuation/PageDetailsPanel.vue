@@ -8,7 +8,6 @@
       <p>尚未生成页面剧情</p>
       <UiButton
         variant="primary"
-       
         :disabled="isGenerating"
         @click="$emit('generate-details')"
       >
@@ -110,25 +109,40 @@ function getStatusText(status: string): string {
 
 <style scoped>
 .page-details-panel {
-  /* owner tokens: page-details-panel */
-  --page-details-panel-surface-base: #fef3c7;
-  --page-details-panel-surface-raised: #dbeafe;
-  --page-details-panel-surface-muted: #d1fae5;
-  --page-details-panel-surface-subtle: #fee2e2;
-  --page-details-panel-text-primary: #92400e;
-  --page-details-panel-text-secondary: #1e40af;
-  --page-details-panel-text-muted: #065f46;
-  --page-details-panel-text-subtle: #991b1b;
+  --page-details-panel-status-failed-background: #fee2e2;
+  --page-details-panel-status-failed-text: #991b1b;
+  --page-details-panel-status-generated-background: #d1fae5;
+  --page-details-panel-status-generated-text: #065f46;
+  --page-details-panel-status-generating-background: #dbeafe;
+  --page-details-panel-status-generating-text: #1e40af;
+  --page-details-panel-status-pending-background: #fef3c7;
+  --page-details-panel-status-pending-text: #92400e;
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--color-surface-brand);
   --ui-button-primary-hover-background: var(--color-surface-brand-strong);
   --ui-button-secondary-background: var(--color-surface-base);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-color: var(--color-text-default);
   --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   --ui-button-secondary-hover-border-color: var(--color-border-brand);
   --ui-button-secondary-hover-color: var(--color-text-brand);
+  --ui-input-padding: 8px 12px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-input-radius: 6px;
+  --ui-input-font-size: 13px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: transparent;
+  --ui-textarea-padding: 8px 12px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  --ui-textarea-radius: 6px;
+  --ui-textarea-font-size: 13px;
+  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-textarea-color: var(--color-text-default);
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-focus-shadow: transparent;
 
   padding: 24px;
 }
@@ -189,23 +203,23 @@ function getStatusText(status: string): string {
 }
 
 .page-status.pending {
-  background: var(--page-details-panel-surface-base);
-  color: var(--page-details-panel-text-primary);
+  background: var(--page-details-panel-status-pending-background);
+  color: var(--page-details-panel-status-pending-text);
 }
 
 .page-status.generating {
-  background: var(--page-details-panel-surface-raised);
-  color: var(--page-details-panel-text-secondary);
+  background: var(--page-details-panel-status-generating-background);
+  color: var(--page-details-panel-status-generating-text);
 }
 
 .page-status.generated {
-  background: var(--page-details-panel-surface-muted);
-  color: var(--page-details-panel-text-muted);
+  background: var(--page-details-panel-status-generated-background);
+  color: var(--page-details-panel-status-generated-text);
 }
 
 .page-status.failed {
-  background: var(--page-details-panel-surface-subtle);
-  color: var(--page-details-panel-text-subtle);
+  background: var(--page-details-panel-status-failed-background);
+  color: var(--page-details-panel-status-failed-text);
 }
 
 .page-fields {
@@ -222,16 +236,6 @@ function getStatusText(status: string): string {
 
 .field-input {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: inherit;
-}
-
-.field-input:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .page-actions {

@@ -1,6 +1,5 @@
 <template>
   <div class="hq-translation-settings">
-    <!-- 高质量翻译服务配置 -->
     <UiPanel variant="settings">
       <template #title>高质量翻译服务配置</template>
       <UiFormGrid>
@@ -9,7 +8,7 @@
           <CustomSelect
             :model-value="hqSettings.provider"
             :options="providerOptions"
-            @change="(v: any) => handleProviderChange(v)"
+            @change="handleProviderChange"
           />
         </UiField>
         <UiField v-show="providerRequiresApiKey(hqSettings.provider)" class="ui-settings-field">
@@ -31,7 +30,6 @@
         </UiField>
       </UiFormGrid>
 
-      <!-- 自定义Base URL -->
       <UiField v-show="providerRequiresBaseUrl(hqSettings.provider)" class="ui-settings-field">
         <label for="settingsHqCustomBaseUrl">Base URL:</label>
         <UiInput
@@ -42,7 +40,6 @@
         />
       </UiField>
 
-      <!-- 模型名称 -->
       <UiField class="ui-settings-field">
         <label for="settingsHqModelName">模型名称:</label>
         <div class="model-input-with-fetch">
@@ -65,7 +62,6 @@
             <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
           </UiButton>
         </div>
-        <!-- 模型选择下拉框 -->
         <div v-if="modelList.length > 0" class="model-select-container">
           <CustomSelect
             v-model="localHqSettings.modelName"
@@ -75,7 +71,6 @@
         </div>
       </UiField>
 
-      <!-- 测试连接按钮 -->
       <UiField class="ui-settings-field">
         <UiButton variant="toolbar" class="settings-test-btn" @click="testConnection" :disabled="isTesting">
           {{ isTesting ? '测试中...' : '🔗 测试连接' }}
@@ -83,7 +78,6 @@
       </UiField>
     </UiPanel>
 
-    <!-- 批处理设置 -->
     <UiPanel variant="settings">
       <template #title>批处理设置</template>
       <UiFormGrid>
@@ -112,20 +106,19 @@
       </UiFormGrid>
     </UiPanel>
 
-    <!-- 高级选项 -->
     <UiPanel variant="settings">
       <template #title>高级选项</template>
       <UiFormGrid>
         <UiField class="ui-settings-field">
           <label class="ui-checkbox-label">
-            <UiInput type="checkbox" v-model="localHqSettings.forceJsonOutput" />
+            <UiInput type="checkbox" class="hq-translation-settings__checkbox-input" v-model="localHqSettings.forceJsonOutput" />
             强制JSON输出
           </label>
           <div class="ui-form-hint">使用 response_format: json_object</div>
         </UiField>
         <UiField class="ui-settings-field">
           <label class="ui-checkbox-label">
-            <UiInput type="checkbox" v-model="localHqSettings.useStream" />
+            <UiInput type="checkbox" class="hq-translation-settings__checkbox-input" v-model="localHqSettings.useStream" />
             流式调用
           </label>
           <div class="ui-form-hint">使用流式API调用</div>
@@ -136,12 +129,10 @@
       </UiField>
     </UiPanel>
 
-    <!-- 高质量翻译提示词 -->
     <UiPanel variant="settings">
       <template #title>高质量翻译提示词</template>
       <UiField class="ui-settings-field">
         <UiTextarea id="settingsHqPrompt" v-model="localHqSettings.prompt" rows="6" placeholder="高质量翻译提示词" />
-        <!-- 快速选择提示词 -->
         <SavedPromptsPicker
           prompt-type="hq_translate"
           @select="handleHqPromptSelect"
@@ -159,10 +150,6 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 高质量翻译设置组件
- * 管理高质量翻译服务配置
- */
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -175,21 +162,19 @@ import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
+import type { HqTranslationProvider } from '@/types/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
-/** 服务商选项 */
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
+type SelectValue = string | number
 
-// Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
-// 获取高质量翻译设置的响应式引用（用于显示条件判断）
 const hqSettings = computed(() => settingsStore.settings.hqTranslation)
 
-// 本地设置状态（用于双向绑定，修改后自动同步到 store）
 const localHqSettings = ref({
   apiKey: settingsStore.settings.hqTranslation.apiKey,
   modelName: settingsStore.settings.hqTranslation.modelName,
@@ -204,9 +189,6 @@ const localHqSettings = ref({
   prompt: settingsStore.settings.hqTranslation.prompt
 })
 
-// ============================================================
-// Watch 同步：本地状态变化时自动保存到 store
-// ============================================================
 watch(() => localHqSettings.value.apiKey, (val) => {
   settingsStore.updateHqTranslation({ apiKey: val })
 })
@@ -241,34 +223,25 @@ watch(() => localHqSettings.value.prompt, (val) => {
   settingsStore.updateHqTranslation({ prompt: val })
 })
 
-// 密码显示状态
 const showApiKey = ref(false)
 
-// 模型获取状态
 const isFetchingModels = ref(false)
 const modelList = ref<string[]>([])
 
-// 测试状态
 const isTesting = ref(false)
 
-/** 模型列表选项（用于CustomSelect） */
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   modelList.value.forEach(model => options.push({ label: model, value: model }))
   return options
 })
 
-// 处理服务商切换（业务逻辑：独立保存每个服务商的配置）
-function handleProviderChange(newProvider: string) {
-  // 切换服务商时保存当前配置并加载目标服务商配置
-  settingsStore.setHqProvider(newProvider as import('@/types/settings').HqTranslationProvider)
-  // 清空模型列表
+function handleProviderChange(newProvider: SelectValue) {
+  settingsStore.setHqProvider(String(newProvider) as HqTranslationProvider)
   modelList.value = []
-  // 同步目标服务商配置到本地表单
   syncLocalHqSettings()
 }
 
-// 同步本地高质量翻译状态
 function syncLocalHqSettings() {
   const hq = settingsStore.settings.hqTranslation
   localHqSettings.value.apiKey = hq.apiKey
@@ -284,30 +257,25 @@ function syncLocalHqSettings() {
   localHqSettings.value.prompt = hq.prompt
 }
 
-// 获取服务商显示名称（按业务契约）
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
 
-// 获取模型列表（模型列表获取流程）
 async function fetchModels() {
   const provider = hqSettings.value.provider
   const apiKey = localHqSettings.value.apiKey?.trim()
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
-  // 验证（按业务契约）
   if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
   }
 
-  // 检查是否支持模型获取
   if (!providerSupportsCapability(provider, 'modelFetch')) {
     toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
     return
   }
 
-  // 自定义服务需要 base_url
   if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要先填写 Base URL')
     return
@@ -317,7 +285,6 @@ async function fetchModels() {
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
     if (result.success && result.models && result.models.length > 0) {
-      // 后端返回的是 {id, name} 对象数组，提取 id 作为模型列表
       modelList.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
@@ -331,14 +298,12 @@ async function fetchModels() {
   }
 }
 
-// 测试高质量翻译服务连接（业务逻辑）
 async function testConnection() {
   const provider = hqSettings.value.provider
   const apiKey = localHqSettings.value.apiKey?.trim()
   const modelName = localHqSettings.value.modelName?.trim()
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
-  // 验证必填字段
   if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
@@ -349,7 +314,6 @@ async function testConnection() {
     return
   }
 
-  // 自定义服务需要 base_url
   if (providerRequiresBaseUrl(provider) && !baseUrl) {
     toast.warning('自定义服务需要填写 Base URL')
     return
@@ -379,18 +343,14 @@ async function testConnection() {
   }
 }
 
-// 重置高质量翻译提示词
 function resetHqPrompt() {
   settingsStore.updateHqTranslation({ prompt: DEFAULT_HQ_TRANSLATE_PROMPT })
-  // 同步本地状态
   localHqSettings.value.prompt = DEFAULT_HQ_TRANSLATE_PROMPT
   toast.success('已重置为默认提示词')
 }
 
-// 处理高质量翻译提示词选择
 function handleHqPromptSelect(content: string, name: string) {
   settingsStore.updateHqTranslation({ prompt: content })
-  // 同步本地状态
   localHqSettings.value.prompt = content
   toast.success(`已应用提示词: ${name}`)
 }
@@ -409,7 +369,7 @@ function handleHqPromptSelect(content: string, name: string) {
   cursor: pointer;
 }
 
-.ui-checkbox-label input[type='checkbox'] {
+.hq-translation-settings__checkbox-input {
   width: auto;
 }
 
@@ -467,7 +427,7 @@ function handleHqPromptSelect(content: string, name: string) {
   padding: 8px 12px;
   border: none;
   border-radius: 6px;
-  background: var(--color-action-primary, var(--translation-settings-surface-base));
+  background: var(--color-action-primary);
   color: var(--color-text-inverse);
   font-size: 0.9em;
   font-weight: 500;
@@ -478,7 +438,7 @@ function handleHqPromptSelect(content: string, name: string) {
 }
 
 .hq-translation-settings .fetch-models-btn:hover:not(:disabled) {
-  background: var(--translation-settings-surface-raised);
+  background: var(--color-action-primary-hover);
 }
 
 .hq-translation-settings .fetch-models-btn:disabled {

@@ -4,9 +4,6 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 提示词设置选项卡组件
- */
 import { ref, watch, onMounted } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
@@ -38,8 +35,8 @@ async function loadDefaultPrompts(): Promise<void> {
     if (response.success && response.prompts) {
       defaultPrompts.value = response.prompts
     }
-  } catch (error) {
-    console.error('加载默认提示词失败:', error)
+  } catch {
+    emit('showMessage', '默认提示词加载失败', 'error')
   }
 }
 
@@ -142,11 +139,14 @@ function exportAllPrompts(): void {
 
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `manga-insight-prompts-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `manga-insight-prompts-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 
   emit('showMessage', '提示词已导出', 'success')
 }
@@ -186,9 +186,9 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
   target.value = ''
 }
 
-watch(currentPromptType, (newType, oldType) => {
-  if (oldType && currentPromptContent.value) {
-    customPrompts.value[oldType] = currentPromptContent.value
+watch(currentPromptType, (newType, previousType) => {
+  if (previousType && currentPromptContent.value) {
+    customPrompts.value[previousType] = currentPromptContent.value
   }
   if (newType) {
     currentPromptContent.value = customPrompts.value[newType] || defaultPrompts.value[newType] || ''
@@ -250,7 +250,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
         <div class="library-actions">
           <UiButton variant="secondary" @click="exportAllPrompts" title="导出所有提示词" size="sm">📤 导出</UiButton>
           <UiButton variant="secondary" @click="triggerImportPrompts" title="导入提示词" size="sm">📥 导入</UiButton>
-          <UiFileInput id="promptsFileInput" accept=".json" style="display: none" @change="handlePromptsFileImport" />
+          <UiFileInput id="promptsFileInput" accept=".json" hidden @change="handlePromptsFileImport" />
         </div>
       </div>
 
@@ -286,11 +286,29 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
 
 <style scoped>
 .insight-settings-content {
-  --prompts-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --prompts-settings-tab-surface-base: rgba(99, 102, 241, .05);
-}
+  --ui-textarea-min-height: 200px;
+  --ui-textarea-padding: 12px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-textarea-radius: 4px;
+  --ui-textarea-background: var(--color-surface-muted);
+  --ui-textarea-color: var(--color-text-default);
+  --ui-textarea-font-size: 13px;
+  --ui-textarea-line-height: 1.5;
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
+  --ui-button-padding: 10px 16px;
+  --ui-button-radius: 6px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
 
-.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }
@@ -313,30 +331,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
   margin-bottom: 6px;
   font-weight: 500;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .insight-settings-field input[type="text"],
-.insight-settings-content .insight-settings-field input[type="password"],
-.insight-settings-content .insight-settings-field input[type="number"],
-.insight-settings-content .insight-settings-field select,
-.insight-settings-content .insight-settings-field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 6px;
-  font-size: 14px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.insight-settings-content .insight-settings-field input:focus,
-.insight-settings-content .insight-settings-field select:focus,
-.insight-settings-content .insight-settings-field textarea:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+  color: var(--color-text-default);
 }
 
 .insight-settings-content .form-hint {
@@ -345,51 +340,13 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.insight-settings-content .ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-weight: normal;
-}
-
-.insight-settings-content .ui-checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-.insight-settings-content {
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-}
-
-.insight-settings-content .form-row {
-  display: flex;
-  gap: 16px;
-}
-
-.insight-settings-content .form-row .insight-settings-field {
-  flex: 1;
-}
-
 .insight-settings-content .placeholder-text {
   color: var(--color-text-supporting, var(--color-text-secondary));
   text-align: center;
   padding: 40px;
 }
 
-.insight-settings-content .prompts-settings {
+.insight-settings-content.prompts-settings {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -397,21 +354,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
 
 .insight-settings-content .prompt-editor {
   width: 100%;
-  min-height: 200px;
   font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  resize: vertical;
-}
-
-.insight-settings-content .prompt-editor:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .insight-settings-content .prompt-actions-bar {
@@ -521,100 +464,4 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.insight-settings-content .batch-info-box {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 8px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .batch-info-box h4 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .layers-preview-list {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.insight-settings-content .layers-preview-list li {
-  margin-bottom: 4px;
-}
-
-.insight-settings-content .align-badge {
-  color: var(--color-text-brand);
-  font-size: 12px;
-}
-
-.insight-settings-content .batch-estimate-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--prompts-settings-tab-surface-base));
-  border-radius: 6px;
-  border: 1px solid var(--prompts-settings-tab-border-default);
-}
-
-.insight-settings-content .batch-estimate-box p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .batch-estimate-box strong {
-  color: var(--color-text-brand);
-}
-
-.insight-settings-content .model-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.insight-settings-content .model-input-row input {
-  flex: 1;
-}
-
-.insight-settings-content .fetch-btn {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.insight-settings-content .model-select-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 6px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .model-select {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  font-size: 13px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
-  cursor: pointer;
-}
-
-.insight-settings-content .model-select:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-}
-
-.insight-settings-content .model-count {
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  white-space: nowrap;
-}
 </style>

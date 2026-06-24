@@ -1,6 +1,6 @@
 /**
  * Vue Router 配置
- * 配置应用的路由系统，支持书架、翻译、阅读器和漫画分析四个主要页面
+ * 配置应用的路由系统，支持书架、翻译、阅读器、漫画分析和角色工坊页面
  */
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 

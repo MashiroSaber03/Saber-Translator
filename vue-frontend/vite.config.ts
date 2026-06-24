@@ -1,15 +1,19 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { fileURLToPath } from 'node:url'
 
 // https://vite.dev/config/
+const projectRoot = fileURLToPath(new URL('.', import.meta.url))
+const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
+
 export default defineConfig({
   plugins: [vue()],
 
   // 路径别名配置
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': resolve(projectRoot, 'src'),
     },
   },
 
@@ -17,7 +21,7 @@ export default defineConfig({
   build: {
     outDir: '../src/app/static/vue',
     emptyOutDir: true,
-    // 生成 sourcemap 便于调试
+    // 生产构建默认不输出 sourcemap
     sourcemap: false,
     // 代码分割配置
     rollupOptions: {
@@ -47,7 +51,7 @@ export default defineConfig({
     // 允许局域网访问
     host: true,
     fs: {
-      allow: [resolve(__dirname, '..')],
+      allow: [workspaceRoot],
     },
     // API 请求代理到 Flask 后端
     proxy: {

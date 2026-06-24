@@ -40,8 +40,7 @@ async function dataUrlFromApiUrl(url: string): Promise<string | null> {
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(blob)
     })
-  } catch (error) {
-    console.error(`转换图片 URL 失败: ${url}`, error)
+  } catch {
     return null
   }
 }
@@ -286,8 +285,8 @@ export async function persistSessionMeta(
       await apiClient.put(`/api/bookshelf/books/${runtime.bookId}/chapters/${runtime.chapterId}/image-count`, {
         count: options.totalPages,
       })
-    } catch (error) {
-      console.warn('更新章节图片数量失败（非致命）:', error)
+    } catch {
+      // Chapter image-count sync is best-effort after page/session data has been persisted.
     }
   }
 }

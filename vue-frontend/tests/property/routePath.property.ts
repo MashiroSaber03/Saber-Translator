@@ -49,7 +49,7 @@ function classifyRoute(path: string): RouteClassification {
  * @returns 是否为有效的前端路由
  */
 function isValidFrontendRoute(path: string): boolean {
-  const validRoutes = ['/', '/translate', '/reader', '/insight']
+  const validRoutes = ['/', '/translate', '/reader', '/insight', '/insight/character-studio']
   const normalizedPath = path.startsWith('/') ? path : '/' + path
 
   // 检查是否为有效的前端路由（包括带查询参数的情况）
@@ -80,7 +80,7 @@ function buildStaticPath(resourceType: string, filename: string): string {
 
 /**
  * 构建 Vue 静态资源路径
- * Vue 静态资源现在使用根路径 /js/ 和 /assets/
+ * Vue 静态资源使用根路径 /js/ 和 /assets/
  * @param filename 文件名
  * @returns 完整的 Vue 静态资源路径
  */
@@ -168,7 +168,7 @@ describe('路由路径解析属性测试', () => {
    * 对于任意前端路由路径，应该被正确分类为前端路由
    */
   it('前端路由路径应该被正确分类为前端路由', () => {
-    const frontendRoutes = ['/', '/translate', '/reader', '/insight']
+    const frontendRoutes = ['/', '/translate', '/reader', '/insight', '/insight/character-studio']
 
     fc.assert(
       fc.property(
@@ -199,6 +199,7 @@ describe('路由路径解析属性测试', () => {
       '/translate',
       '/reader',
       '/insight',
+      '/insight/character-studio',
       '/api/bookshelf/books',
       '/static/css/layout.css',
       '/js/bundle.abc123.js',     // Vue JS 资源
@@ -236,7 +237,7 @@ describe('路由路径解析属性测试', () => {
    * Feature: frontend-behavior, Property 45: 路由路径解析一致性
    * Validates: Requirements 11.2, 11.3
    * 
-   * Vue 静态资源路径应该正确构建（使用新的 /js/ 和 /assets/ 路径）
+   * Vue 静态资源路径应该正确构建（使用 /js/ 和 /assets/ 路径）
    */
   it('Vue 静态资源路径应该正确构建', () => {
     // JS 文件
@@ -278,7 +279,7 @@ describe('路由路径解析属性测试', () => {
   it('带查询参数的前端路由应该被正确识别', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('/translate', '/reader', '/insight'),
+        fc.constantFrom('/translate', '/reader', '/insight', '/insight/character-studio'),
         fc.record({
           book: fc.option(fc.hexaString({ minLength: 8, maxLength: 8 }), { nil: undefined }),
           chapter: fc.option(fc.hexaString({ minLength: 8, maxLength: 8 }), { nil: undefined }),

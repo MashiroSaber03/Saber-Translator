@@ -45,10 +45,10 @@ export default [
         caughtErrorsIgnorePattern: '^_|^error$'  // 允许 catch 块中的 error 变量
       }],
       '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',  // External API boundaries can require explicit any.
+      '@typescript-eslint/no-explicit-any': 'off', // Architecture lint and typecheck own production boundary review.
       '@typescript-eslint/ban-ts-comment': 'off', // 允许 @ts-ignore
       
-      // 通用规则 - 开发阶段允许 console，生产构建时由 Vite 移除
+      // 通用规则
       'no-console': 'off',
       'no-debugger': 'warn',
     },

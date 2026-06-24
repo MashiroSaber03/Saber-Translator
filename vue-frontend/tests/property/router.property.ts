@@ -23,6 +23,7 @@ describe('路由属性测试', () => {
       { path: '/translate', expectedName: 'translate' },
       { path: '/reader', expectedName: 'reader' },
       { path: '/insight', expectedName: 'insight' },
+      { path: '/insight/character-studio', expectedName: 'character-studio' },
     ]
 
     fc.assert(

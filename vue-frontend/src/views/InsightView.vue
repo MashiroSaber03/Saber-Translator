@@ -3,10 +3,6 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import AppShell from '@/components/ui/AppShell.vue'
 import SidebarLayout from '@/components/ui/SidebarLayout.vue'
-/**
- * 漫画分析页面视图组件
- * 提供AI驱动的漫画内容分析，包括概览、时间线、问答和笔记功能
- */
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -31,38 +27,18 @@ import { showToast } from '@/utils/toast'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
 import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
-// ============================================================
-// 路由和状态
-// ============================================================
-
 const route = useRoute()
 const router = useRouter()
 const insightStore = useInsightStore()
 const bookshelfStore = useBookshelfStore()
 
-// ============================================================
-// 响应式状态
-// ============================================================
-
-/** 当前激活的选项卡 */
 const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'>('overview')
-
-/** 是否显示设置模态框 */
 const showSettingsModal = ref(false)
-
-/** 是否显示移动端侧边栏 */
 const showMobileSidebar = ref(false)
-
-/** 是否显示移动端工作区 */
 const showMobileWorkspace = ref(false)
-
-/** 分析状态轮询定时器 */
 let statusPollingTimer: ReturnType<typeof setInterval> | null = null
-
-/** 分析完成后的面板刷新定时器 */
 let refreshDataTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 当前加载的书籍详情 */
 const loadedBookDetail = ref<{
   id: string
   title: string
@@ -70,37 +46,21 @@ const loadedBookDetail = ref<{
   total_pages: number
 } | null>(null)
 
-/** 是否显示章节选择弹窗 */
 const showChapterSelectModal = ref(false)
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 当前书籍信息 - 优先使用加载的详情数据 */
 const currentBook = computed(() => {
   if (loadedBookDetail.value) return loadedBookDetail.value
   if (!insightStore.currentBookId) return null
   return bookshelfStore.books.find(b => b.id === insightStore.currentBookId)
 })
 
-/** 是否已选择书籍 */
 const hasSelectedBook = computed(() => !!insightStore.currentBookId)
 
-/** 书籍封面URL */
 const bookCoverUrl = computed(() => {
   if (!currentBook.value?.cover) return ''
   return currentBook.value.cover
 })
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 切换选项卡
- * @param tab - 选项卡名称
- */
 function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'): void {
   activeTab.value = tab
 }
@@ -140,10 +100,6 @@ function setLoadedBookDetail(book: BookData): void {
   }
 }
 
-/**
- * 加载书籍
- * @param bookId - 书籍ID
- */
 async function loadBook(bookId: string): Promise<void> {
   if (!bookId) return
 
@@ -161,10 +117,8 @@ async function loadBook(bookId: string): Promise<void> {
       setLoadedBookDetail(bookData.book)
     }
 
-    // 获取分析状态
     await loadAnalysisStatus()
 
-    // 如果书籍信息中没有章节，尝试从章节API获取
     if (insightStore.chapters.length === 0) {
       try {
         const chaptersResponse = await insightApi.getInsightChapters(bookId)
@@ -177,43 +131,32 @@ async function loadBook(bookId: string): Promise<void> {
             analyzed: true
           })))
         }
-      } catch (e) {
-        console.warn('获取章节列表失败:', e)
+      } catch {
+        // 章节补充接口不可用时保留书籍详情中的章节状态。
       }
     }
 
-    // 加载笔记（通过API）
     await insightStore.loadNotesFromAPI()
 
-    // 注：概览和时间线数据由 OverviewPanel 和 TimelinePanel 组件在 onMounted 时自行加载
-    // triggerDataRefresh 仅在分析完成后由轮询逻辑调用
-
-    // 更新URL参数
     router.replace({ query: { book: bookId } })
 
-    // 如果正在分析，启动轮询
     if (insightStore.isAnalyzing) {
       startStatusPolling()
     }
 
   } catch (error) {
-    console.error('加载书籍失败:', error)
     insightStore.setError(error instanceof Error ? error.message : '加载书籍失败')
   } finally {
     insightStore.setLoading(false)
   }
 }
 
-/**
- * 加载分析状态
- */
 async function loadAnalysisStatus(): Promise<void> {
   if (!insightStore.currentBookId) return
 
   try {
     const response = await insightApi.getAnalysisStatus(insightStore.currentBookId)
     if (response.success) {
-      // 更新已分析页数
       if (response.analyzed_pages_count !== undefined) {
         insightStore.setAnalyzedPagesCount(response.analyzed_pages_count)
       }
@@ -228,52 +171,39 @@ async function loadAnalysisStatus(): Promise<void> {
         )
       }
     }
-  } catch (error) {
-    console.error('获取分析状态失败:', error)
+  } catch {
+    // 轮询失败时保持上一次可用状态，下一轮继续尝试。
   }
 }
 
-/**
- * 启动状态轮询
- * 与接口流程 的 startProgressPolling 保持一致：
- * 分析完成后自动刷新概览数据和目录树
- */
 function startStatusPolling(): void {
   stopStatusPolling()
   statusPollingTimer = setInterval(async () => {
     const statusBeforePolling = insightStore.analysisStatus
     await loadAnalysisStatus()
     
-    // 检查分析状态变化
     const status = insightStore.analysisStatus
     const wasActiveTask = statusBeforePolling === 'running' || statusBeforePolling === 'paused'
     if ((status === 'completed' || status === 'failed' || status === 'idle') && wasActiveTask) {
-      // 停止轮询
       stopStatusPolling()
 
       const refreshData = async () => {
         await loadAnalysisStatus()
-        // 触发面板组件刷新（通过 Store 的 dataRefreshKey）
         insightStore.triggerDataRefresh()
       }
 
       if (status === 'completed') {
-        // completed 时保留延迟，等待后端汇总任务完成
         refreshDataTimer = setTimeout(() => {
           refreshDataTimer = null
           void refreshData()
         }, 1000)
       } else {
-        // idle/failed 终态也要刷新，确保章节/单页任务结束后界面闭环
         await refreshData()
       }
     }
   }, 3000)
 }
 
-/**
- * 停止状态轮询
- */
 function stopStatusPolling(): void {
   if (statusPollingTimer) {
     clearInterval(statusPollingTimer)
@@ -285,30 +215,18 @@ function stopStatusPolling(): void {
   }
 }
 
-/**
- * 打开设置模态框
- */
 function openSettingsModal(): void {
   showSettingsModal.value = true
 }
 
-/**
- * 显示功能开发中提示
- */
 function showFeatureNotice(): void {
   showToast('🌙 该功能正在开发中，敬请期待！', 'info')
 }
 
-/**
- * 关闭设置模态框
- */
 function closeSettingsModal(): void {
   showSettingsModal.value = false
 }
 
-/**
- * 切换移动端侧边栏
- */
 function toggleMobileSidebar(): void {
   showMobileSidebar.value = !showMobileSidebar.value
   if (showMobileSidebar.value) {
@@ -316,9 +234,6 @@ function toggleMobileSidebar(): void {
   }
 }
 
-/**
- * 切换移动端工作区
- */
 function toggleMobileWorkspace(): void {
   showMobileWorkspace.value = !showMobileWorkspace.value
   if (showMobileWorkspace.value) {
@@ -326,25 +241,17 @@ function toggleMobileWorkspace(): void {
   }
 }
 
-/**
- * 跳转到翻译页面
- * 业务逻辑：根据章节情况决定是否弹窗选择
- */
 function goToTranslate(): void {
   if (!insightStore.currentBookId) {
-    // 未选书：直接跳转
     router.push('/translate')
     return
   }
 
-  // 获取书籍的章节信息
   const chapters = insightStore.chapters
   
   if (!chapters || chapters.length === 0) {
-    // 无章节：只带 book 参数跳转
     router.push({ path: '/translate', query: { book: insightStore.currentBookId } })
   } else if (chapters.length === 1) {
-    // 只有 1 章：直接跳转，带上章节参数
     router.push({ 
       path: '/translate', 
       query: { 
@@ -353,15 +260,10 @@ function goToTranslate(): void {
       } 
     })
   } else {
-    // 多章：弹窗让用户选择
     showChapterSelectModal.value = true
   }
 }
 
-/**
- * 处理章节选择
- * @param chapterId - 选中的章节ID
- */
 function handleChapterSelect(chapterId: string): void {
   showChapterSelectModal.value = false
   router.push({ 
@@ -373,22 +275,13 @@ function handleChapterSelect(chapterId: string): void {
   })
 }
 
-/**
- * 关闭章节选择弹窗
- */
 function closeChapterSelectModal(): void {
   showChapterSelectModal.value = false
 }
 
-// ============================================================
-// 生命周期
-// ============================================================
-
 onMounted(async () => {
-  // 加载书籍列表
   await bookshelfStore.fetchBooks()
 
-  // 检查URL参数
   const bookId = route.query.book as string
   if (bookId) {
     await loadBook(bookId)
@@ -399,7 +292,6 @@ onUnmounted(() => {
   stopStatusPolling()
 })
 
-// 监听分析状态变化
 watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   if (isAnalyzing) {
     startStatusPolling()
@@ -411,7 +303,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 <template>
   <AppShell class="insight-page" viewport-mode="locked">
-    <!-- 页面头部 -->
     <AppHeader variant="insight" logo-title="书架首页">
       <template #header-links>
         <router-link to="/" class="insight-header__nav-link">📚 书架</router-link>
@@ -425,17 +316,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
       </template>
     </AppHeader>
 
-    <!-- 主内容区 -->
     <SidebarLayout as="main" class="insight-main">
-      <!-- 左侧边栏 -->
       <aside class="insight-sidebar" :class="{ 'mobile-visible': showMobileSidebar }">
-        <!-- 书籍信息 -->
         <div class="sidebar-section book-info-section">
           <div class="book-cover-wrapper">
-            <img 
-              v-if="bookCoverUrl" 
-              :src="bookCoverUrl" 
-              alt="封面" 
+            <img
+              v-if="bookCoverUrl"
+              :src="bookCoverUrl"
+              :alt="`${currentBook?.title || '书籍'}封面`"
               class="book-cover"
             >
             <div v-else class="book-cover-placeholder">
@@ -455,20 +343,16 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           </div>
         </div>
 
-        <!-- 分析控制 -->
         <AnalysisProgress 
           v-if="hasSelectedBook"
           @start-polling="startStatusPolling"
           @stop-polling="stopStatusPolling"
         />
 
-        <!-- 章节与页面导航树 -->
         <PagesTree v-if="hasSelectedBook" />
       </aside>
 
-      <!-- 主内容区 -->
       <div class="insight-content">
-        <!-- 选择书籍提示 -->
         <div v-if="!hasSelectedBook" class="select-book-prompt">
           <div class="prompt-icon">📚</div>
           <h2>选择要分析的书籍</h2>
@@ -476,7 +360,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           <BookSelector @select="loadBook" />
         </div>
 
-        <!-- 标签页导航 -->
         <div v-else class="content-tabs">
           <UiButton
             variant="toolbar" 
@@ -538,53 +421,43 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           </UiButton>
         </div>
 
-        <!-- 概览标签页 -->
         <div v-show="activeTab === 'overview' && hasSelectedBook" class="tab-content">
           <OverviewPanel />
         </div>
 
-        <!-- 智能问答标签页 -->
         <div v-show="activeTab === 'qa' && hasSelectedBook" class="tab-content">
           <QAPanel />
         </div>
 
-        <!-- 时间线标签页 -->
         <div v-show="activeTab === 'timeline' && hasSelectedBook" class="tab-content">
           <TimelinePanel />
         </div>
 
-        <!-- 续写标签页 -->
         <div v-show="activeTab === 'continuation' && hasSelectedBook" class="tab-content">
           <ContinuationPanel />
         </div>
 
-        <!-- 角色工坊标签页 -->
         <div v-show="activeTab === 'character_studio' && hasSelectedBook" class="tab-content">
           <CharacterStudioEntryPanel />
         </div>
       </div>
 
-      <!-- 右侧工作区 -->
       <aside 
         v-if="hasSelectedBook" 
         class="insight-workspace"
         :class="{ 'mobile-visible': showMobileWorkspace }"
       >
-        <!-- 页面详情 -->
         <PageDetail />
 
-        <!-- 笔记 -->
         <NotesPanel />
       </aside>
     </SidebarLayout>
 
-    <!-- 设置模态框 -->
     <InsightSettingsModal 
       v-if="showSettingsModal"
       @close="closeSettingsModal"
     />
     
-    <!-- 章节选择弹窗 -->
     <ChapterSelectModal
       v-if="showChapterSelectModal && insightStore.currentBookId"
       :chapters="insightStore.chapters"
@@ -595,9 +468,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 </template>
 
 <style scoped>
-/* ==================== 漫画分析页面样式 ==================== */
-
-/* ==================== 页面根容器固定布局 ==================== */
 .insight-page {
   --insight-border-color: var(--color-border-muted);
 
@@ -608,7 +478,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   flex-direction: column;
 }
 
-/* Header 内 slot 元素样式 */
 .insight-page .insight-header__nav-link {
     color: var(--insight-text-secondary);
     text-decoration: none;
@@ -625,7 +494,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 .insight-page .insight-header__nav-link--active {
     background: var(--insight-action-primary);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .insight-page .insight-header__theme-toggle {
@@ -635,7 +504,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     font-size: 18px;
 }
 
-/* 布局 */
 .insight-page .insight-main {
     display: flex;
     flex: 1;
@@ -651,7 +519,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    /* 高度填满父容器，内容溢出时滚动 */
     max-height: 100%;
 }
 
@@ -671,11 +538,9 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    /* 高度填满父容器，内容溢出时滚动 */
     max-height: 100%;
 }
 
-/* 标签页 */
 .insight-page .content-tabs {
     display: flex;
     gap: 4px;
@@ -709,13 +574,13 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 .insight-page .mobile-nav-btn:hover {
     background: var(--insight-action-primary);
-    color: white;
+    color: var(--color-text-inverse);
     border-color: var(--insight-action-primary);
 }
 
 .insight-page .mobile-nav-btn.active {
     background: var(--insight-action-primary);
-    color: white;
+    color: var(--color-text-inverse);
     border-color: var(--insight-action-primary);
 }
 
@@ -740,17 +605,15 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 .insight-page .tab-btn.active {
     background: var(--insight-action-primary);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .insight-page .tab-content {
-    /* 注意：display 由 v-show 控制，不在 CSS 中设置 */
     flex: 1;
     overflow-y: auto;
-    padding: 0;
+    padding: 20px;
 }
 
-/* 选择书籍提示 */
 .insight-page .select-book-prompt {
     flex: 1;
     display: flex;
@@ -801,7 +664,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     background: var(--insight-border-color);
 }
 
-/* 通用样式 */
 .insight-page .placeholder-text {
     color: var(--insight-text-muted);
     text-align: center;
@@ -825,20 +687,17 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
     animation: spin 1s linear infinite;
 }
 
-/* 移动端侧边栏显示控制 */
 .insight-sidebar.mobile-visible,
 .insight-workspace.mobile-visible {
   display: block;
 }
 
-/* 移动端导航按钮 */
 @media (--breakpoint-md-up) {
   .mobile-nav-btn {
     display: none;
   }
 }
 
-/* ==================== 书籍信息区域样式 - 按业务契约的垂直居中布局 ==================== */
 .book-info-section {
   display: flex;
   flex-direction: column;
@@ -907,7 +766,6 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   font-size: 14px;
 }
 
-/* ==================== 侧边栏区域通用样式 ==================== */
 .sidebar-section {
   padding: 12px 0;
   border-bottom: 1px solid var(--insight-border-color);
@@ -917,15 +775,4 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   border-bottom: none;
 }
 
-/* ==================== 标签页显示状态 ==================== */
-.tab-content[style*="display: none"] {
-  display: none;
-}
-
-.tab-content:not([style*="display: none"]) {
-  display: block;
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
 </style>

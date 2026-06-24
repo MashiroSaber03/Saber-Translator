@@ -4,9 +4,6 @@ import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * LLM 设置选项卡组件
- */
 import { ref, computed } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
@@ -52,12 +49,12 @@ function resetModelOptions(): void {
 
 function onProviderChange(): void {
   const newProvider = provider.value
-  const oldProvider = insightStore.config.llm.provider
+  const previousProvider = insightStore.config.llm.provider
   modelFetchRequestId += 1
   isFetchingModels.value = false
   resetModelOptions()
 
-  if (oldProvider !== newProvider) {
+  if (previousProvider !== newProvider) {
     insightStore.config.llm.apiKey = apiKey.value
     insightStore.config.llm.model = model.value
     insightStore.config.llm.baseUrl = baseUrl.value
@@ -225,7 +222,7 @@ defineExpose({ getConfig, syncFromStore })
     <div class="insight-settings-field">
       <label>模型</label>
       <div class="model-input-row">
-        <UiInput v-model="model" type="text" placeholder="例如: gpt-4o-mini" />
+        <UiInput v-model="model" type="text" placeholder="例如: gpt-4o-mini" class="model-field-input" />
         <UiButton variant="secondary" class="fetch-btn" :disabled="isFetchingModels" @click="fetchModels" size="sm">
           {{ isFetchingModels ? '获取中...' : '🔍 获取模型' }}
         </UiButton>
@@ -261,7 +258,7 @@ defineExpose({ getConfig, syncFromStore })
 
     <div class="insight-settings-field">
       <label class="ui-checkbox-label">
-        <UiInput v-model="forceJsonOutput" type="checkbox" />
+        <UiInput v-model="forceJsonOutput" type="checkbox" class="llm-settings-tab__checkbox-input" />
         <span>强制 JSON 输出</span>
       </label>
       <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
@@ -269,7 +266,7 @@ defineExpose({ getConfig, syncFromStore })
 
     <div class="insight-settings-field">
       <label class="ui-checkbox-label">
-        <UiInput v-model="useStream" type="checkbox" />
+        <UiInput v-model="useStream" type="checkbox" class="llm-settings-tab__checkbox-input" />
         <span>使用流式请求</span>
       </label>
     </div>
@@ -286,11 +283,34 @@ defineExpose({ getConfig, syncFromStore })
 
 <style scoped>
 .insight-settings-content {
-  --llm-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --llm-settings-tab-surface-base: rgba(99, 102, 241, .05);
-}
+  --ui-input-padding: 10px 12px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-input-radius: 6px;
+  --ui-input-font-size: 14px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
+  --ui-select-padding: 8px 12px;
+  --ui-select-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-select-radius: 4px;
+  --ui-select-font-size: 13px;
+  --ui-select-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-select-color: var(--color-text-default);
+  --ui-select-focus-shadow: var(--color-focus-brand-soft);
+  --ui-button-padding: 10px 16px;
+  --ui-button-radius: 6px;
+  --ui-button-font-size: 14px;
+  --ui-button-primary-background: var(--color-surface-brand);
+  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-secondary-background: var(--color-surface-muted);
+  --ui-button-secondary-color: var(--color-text-default);
+  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-button-secondary-hover-background: var(--color-surface-hover);
+  --ui-button-sm-padding: 6px 12px;
+  --ui-button-sm-font-size: 13px;
+  --ui-button-disabled-opacity: 0.6;
 
-.insight-settings-content {
   padding: 16px 0;
   min-height: 300px;
 }
@@ -313,30 +333,7 @@ defineExpose({ getConfig, syncFromStore })
   margin-bottom: 6px;
   font-weight: 500;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .insight-settings-field input[type="text"],
-.insight-settings-content .insight-settings-field input[type="password"],
-.insight-settings-content .insight-settings-field input[type="number"],
-.insight-settings-content .insight-settings-field select,
-.insight-settings-content .insight-settings-field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 6px;
-  font-size: 14px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.insight-settings-content .insight-settings-field input:focus,
-.insight-settings-content .insight-settings-field select:focus,
-.insight-settings-content .insight-settings-field textarea:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+  color: var(--color-text-default);
 }
 
 .insight-settings-content .form-hint {
@@ -353,26 +350,12 @@ defineExpose({ getConfig, syncFromStore })
   font-weight: normal;
 }
 
-.insight-settings-content .ui-checkbox-label input[type="checkbox"] {
+.llm-settings-tab__checkbox-input {
   width: 16px;
   height: 16px;
   cursor: pointer;
 }
 
-.insight-settings-content {
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-}
 
 .insight-settings-content .form-row {
   display: flex;
@@ -383,190 +366,13 @@ defineExpose({ getConfig, syncFromStore })
   flex: 1;
 }
 
-.insight-settings-content .placeholder-text {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  text-align: center;
-  padding: 40px;
-}
-
-.insight-settings-content .prompts-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.insight-settings-content .prompt-editor {
-  width: 100%;
-  min-height: 200px;
-  font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-default, var(--color-text-default));
-  resize: vertical;
-}
-
-.insight-settings-content .prompt-editor:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-}
-
-.insight-settings-content .prompt-actions-bar {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-
-.insight-settings-content .section-divider {
-  border: none;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
-  margin: 16px 0;
-}
-
-.insight-settings-content .prompts-library-section {
-  margin-top: 8px;
-}
-
-.insight-settings-content .library-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.insight-settings-content .library-header h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.insight-settings-content .library-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.insight-settings-content .saved-prompts-list {
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-}
-
-.insight-settings-content .saved-prompt-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
-  transition: background 0.2s;
-}
-
-.insight-settings-content .saved-prompt-item:last-child {
-  border-bottom: none;
-}
-
-.insight-settings-content .saved-prompt-item:hover {
-  background: var(--color-surface-hover);
-}
-
-.insight-settings-content .prompt-name {
-  flex: 1;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.insight-settings-content .prompt-type-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--color-focus-brand-soft);
-  color: var(--color-text-brand);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.insight-settings-content .button-icon-sm {
-  padding: 2px 6px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.insight-settings-content .button-icon-sm:hover {
-  opacity: 1;
-}
-
-.insight-settings-content .loading-text {
-  text-align: center;
-  padding: 20px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.insight-settings-content .batch-info-box {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 8px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .batch-info-box h4 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .layers-preview-list {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.insight-settings-content .layers-preview-list li {
-  margin-bottom: 4px;
-}
-
-.insight-settings-content .align-badge {
-  color: var(--color-text-brand);
-  font-size: 12px;
-}
-
-.insight-settings-content .batch-estimate-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--llm-settings-tab-surface-base));
-  border-radius: 6px;
-  border: 1px solid var(--llm-settings-tab-border-default);
-}
-
-.insight-settings-content .batch-estimate-box p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-default, var(--color-text-default));
-}
-
-.insight-settings-content .batch-estimate-box strong {
-  color: var(--color-text-brand);
-}
-
 .insight-settings-content .model-input-row {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.insight-settings-content .model-input-row input {
+.insight-settings-content .model-field-input {
   flex: 1;
 }
 
@@ -593,7 +399,7 @@ defineExpose({ getConfig, syncFromStore })
   border-radius: 4px;
   font-size: 13px;
   background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   cursor: pointer;
 }
 

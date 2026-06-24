@@ -1,11 +1,10 @@
 <template>
   <div class="proofreading-settings">
-    <!-- AI校对启用开关 -->
     <UiPanel variant="settings">
       <template #title>AI校对设置</template>
       <UiField class="ui-settings-field">
         <label class="ui-checkbox-label">
-          <UiInput type="checkbox" v-model="isProofreadingEnabled" />
+          <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="isProofreadingEnabled" />
           启用AI校对
         </label>
         <div class="ui-form-hint">翻译完成后自动进行AI校对</div>
@@ -23,14 +22,12 @@
       </UiField>
     </UiPanel>
 
-    <!-- 校对轮次配置 -->
     <UiPanel variant="settings" v-show="isProofreadingEnabled">
       <template #title>
         校对轮次配置
         <UiButton variant="secondary" @click="addRound" size="sm">+ 添加轮次</UiButton>
       </template>
 
-      <!-- 轮次列表 -->
       <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-round">
         <div class="round-header">
           <span class="round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
@@ -46,13 +43,11 @@
         </div>
 
         <div class="round-content">
-          <!-- 轮次名称 -->
           <UiField class="ui-settings-field">
             <label>轮次名称:</label>
             <UiInput type="text" v-model="round.name" placeholder="如: 第一轮校对" />
           </UiField>
 
-          <!-- 服务商选择 -->
           <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>服务商:</label>
@@ -79,13 +74,11 @@
             </UiField>
           </UiFormGrid>
 
-          <!-- 自定义Base URL -->
           <UiField v-show="providerRequiresBaseUrl(round.provider)" class="ui-settings-field">
             <label>Base URL:</label>
             <UiInput type="text" v-model="round.customBaseUrl" placeholder="例如: https://api.example.com/v1" />
           </UiField>
 
-          <!-- 模型名称 -->
           <UiField class="ui-settings-field">
             <label>模型名称:</label>
             <div class="model-input-with-fetch">
@@ -107,7 +100,6 @@
                 <span class="fetch-text">{{ roundFetchingStates[index] ? '获取中...' : '获取模型' }}</span>
               </UiButton>
             </div>
-            <!-- 模型选择下拉框 -->
             <div v-if="roundModelLists[index] && roundModelLists[index].length > 0" class="model-select-container">
               <CustomSelect
                 v-model="round.modelName"
@@ -117,7 +109,6 @@
             </div>
           </UiField>
 
-          <!-- 测试连接按钮 -->
           <UiField class="ui-settings-field">
             <UiButton
               variant="toolbar" 
@@ -129,7 +120,6 @@
             </UiButton>
           </UiField>
 
-          <!-- 批处理设置 -->
           <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>批次大小:</label>
@@ -141,7 +131,6 @@
             </UiField>
           </UiFormGrid>
 
-          <!-- 高级选项 -->
           <UiFormGrid>
             <UiField class="ui-settings-field">
               <label>业务重试:</label>
@@ -155,14 +144,14 @@
           <UiFormGrid>
             <UiField class="ui-settings-field">
               <label class="ui-checkbox-label">
-                <UiInput type="checkbox" v-model="round.openaiOptions.request.forceJsonOutput" />
+                <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="round.openaiOptions.request.forceJsonOutput" />
                 强制JSON输出
               </label>
               <div class="ui-form-hint">使用 response_format: json_object</div>
             </UiField>
             <UiField class="ui-settings-field">
               <label class="ui-checkbox-label">
-                <UiInput type="checkbox" v-model="round.openaiOptions.execution.useStream" />
+                <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="round.openaiOptions.execution.useStream" />
                 流式调用
               </label>
               <div class="ui-form-hint">使用流式API调用，避免超时</div>
@@ -172,11 +161,9 @@
             <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
           </UiField>
 
-          <!-- 校对提示词 -->
           <UiField class="ui-settings-field">
             <label>校对提示词:</label>
             <UiTextarea v-model="round.prompt" rows="4" placeholder="校对提示词" />
-            <!-- 快速选择提示词 -->
             <SavedPromptsPicker
               prompt-type="proofreading"
               @select="(content, name) => handleProofreadingPromptSelect(index, content, name)"
@@ -197,10 +184,6 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * AI校对设置组件
- * 管理多轮AI校对配置
- */
 import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
@@ -217,20 +200,15 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 
-/** 服务商选项 */
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
-// Store
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
-// ---- 新增状态变量 ----
-// 用于存储每个轮次的加载状态（使用 Record 以映射索引）
 const roundFetchingStates = ref<Record<number, boolean>>({})
 const roundTestingStates = ref<Record<number, boolean>>({})
 const roundModelLists = ref<Record<number, string[]>>({})
 
-// 计算属性 - 访问校对设置
 const proofreadingRounds = computed(() => settingsStore.settings.proofreading.rounds)
 const proofreadingMaxRetries = computed({
   get: () => settingsStore.settings.proofreading.maxRetries,
@@ -241,21 +219,14 @@ const isProofreadingEnabled = computed({
   set: (val: boolean) => settingsStore.setProofreadingEnabled(val)
 })
 
-// ============================================================
-// Watch 同步：轮次设置变化时自动保存到 localStorage
-// ============================================================
 watch(
   () => settingsStore.settings.proofreading.rounds,
   () => {
-    // 轮次内的任何字段变化时自动保存
     settingsStore.saveToStorage()
   },
   { deep: true }
 )
 
-// ---- 新增函数 ----
-
-/** 获取轮次模型的选项列表 */
 function getRoundModelOptions(index: number) {
   const models = roundModelLists.value[index] || []
   const options = [{ label: '-- 选择模型 --', value: '' }]
@@ -263,7 +234,6 @@ function getRoundModelOptions(index: number) {
   return options
 }
 
-/** 获取轮次模型列表（业务逻辑） */
 async function fetchRoundModels(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
@@ -277,7 +247,6 @@ async function fetchRoundModels(index: number) {
     return
   }
 
-  // 检查支持性
   if (!providerSupportsCapability(provider, 'modelFetch')) {
     toast.warning('当前服务商不支持获取模型列表')
     return
@@ -300,7 +269,6 @@ async function fetchRoundModels(index: number) {
   }
 }
 
-/** 测试轮次连接（业务逻辑） */
 async function testRoundConnection(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
@@ -344,9 +312,6 @@ async function testRoundConnection(index: number) {
   }
 }
 
-// ---- 原有函数 ----
-
-// 添加校对轮次
 function addRound() {
   const newRound: ProofreadingRound = {
     name: `第${proofreadingRounds.value.length + 1}轮校对`,
@@ -373,7 +338,6 @@ function addRound() {
   toast.success('已添加新的校对轮次')
 }
 
-// 删除校对轮次
 function removeRound(index: number) {
   if (proofreadingRounds.value.length <= 1) {
     toast.warning('至少需要保留一个校对轮次')
@@ -383,13 +347,11 @@ function removeRound(index: number) {
   toast.success('已删除校对轮次')
 }
 
-// 重置轮次提示词
 function resetRoundPrompt(index: number) {
   settingsStore.updateProofreadingRound(index, { prompt: DEFAULT_PROOFREADING_PROMPT })
   toast.success('已重置为默认提示词')
 }
 
-// 处理校对提示词选择
 function handleProofreadingPromptSelect(index: number, content: string, name: string) {
   settingsStore.updateProofreadingRound(index, { prompt: content })
   toast.success(`已应用提示词: ${name}`)
@@ -398,19 +360,13 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 <style scoped>
 .proofreading-settings {
-  --proofreading-settings-surface-base: #dc3545;
-  --proofreading-settings-surface-raised: #c82333;
-  --proofreading-settings-surface-muted: #e7f3ff;
-}
-
-.proofreading-settings {
   --ui-button-sm-padding: 4px 12px;
   --ui-button-sm-font-size: 12px;
-  --ui-button-danger-background: var(--proofreading-settings-surface-base);
-  --ui-button-danger-color: white;
+  --ui-button-danger-background: var(--color-status-error);
+  --ui-button-danger-color: var(--color-text-inverse);
   --ui-button-danger-border: none;
   --ui-button-danger-shadow: none;
-  --ui-button-danger-hover-background: var(--proofreading-settings-surface-raised);
+  --ui-button-danger-hover-background: var(--color-status-error-hover);
   --ui-button-danger-hover-shadow: none;
   --ui-button-disabled-opacity: 0.5;
 }
@@ -446,7 +402,7 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   cursor: pointer;
 }
 
-.ui-checkbox-label input[type='checkbox'] {
+.proofreading-settings__checkbox-input {
   width: auto;
 }
 
@@ -505,7 +461,6 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   margin-top: 4px;
 }
 
-/* 密码输入框 */
 .password-input-wrapper {
   position: relative;
   display: flex;
@@ -533,7 +488,6 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   justify-content: center;
 }
 
-/* 统一测试连接按钮样式 */
 .settings-test-btn {
   width: 100%;
   padding: 10px 16px;
@@ -563,6 +517,6 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 }
 
 .settings-test-btn:active:not(:disabled) {
-  background-color: var(--proofreading-settings-surface-muted);
+  background-color: var(--color-surface-interactive-hover);
 }
 </style>

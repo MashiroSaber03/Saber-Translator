@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
+import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 
 function cloneDocument<T>(value: T): T {
@@ -87,8 +87,8 @@ const structuredDocument: CharacterStudioDocument = {
   regexScripts: [
     {
       id: 'regex_alpha',
-      scriptName: '旧脚本',
-      findRegex: '旧内容',
+      scriptName: '初始脚本',
+      findRegex: '初始内容',
       replaceString: '新内容',
       placement: [2],
       markdownOnly: false,
@@ -898,8 +898,8 @@ describe('characterStudioStore', () => {
       warnings: [],
       checks: {},
     }
-    store.chatPromptPreview = '旧提示词缓存'
-    store.chatPromptPreviewError = '旧错误'
+    store.chatPromptPreview = '过期提示词缓存'
+    store.chatPromptPreviewError = '过期错误'
 
     if (!store.currentDocument) {
       throw new Error('currentDocument missing in test setup')
@@ -934,7 +934,7 @@ describe('characterStudioStore', () => {
       set: {
         'identity.name': '新名字',
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -962,7 +962,7 @@ describe('characterStudioStore', () => {
           priority: 250,
         },
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -991,7 +991,7 @@ describe('characterStudioStore', () => {
           keys: ['测试', '支线'],
         },
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -1002,7 +1002,7 @@ describe('characterStudioStore', () => {
       worldbook_delete: {
         id: 'entry_child',
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -1036,7 +1036,7 @@ describe('characterStudioStore', () => {
           commands: '<<taskjs>>\nawait STscript(\'/setvar key=trust_score 40\');\n<</taskjs>>',
         },
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -1048,7 +1048,7 @@ describe('characterStudioStore', () => {
     store.pendingAgentPatch = {
       regex_delete: { id: 'regex_alpha' },
       task_delete: { id: 'task_alpha' },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -1070,7 +1070,7 @@ describe('characterStudioStore', () => {
 
     const before = cloneDocument(store.currentDocument)
 
-    const missingPatch = {
+    const missingPatch: CharacterStudioAgentPatchV2 = {
       regex_update: {
         id: 'regex_missing',
         changes: {
@@ -1079,7 +1079,7 @@ describe('characterStudioStore', () => {
       },
     }
 
-    store.pendingAgentPatch = missingPatch as any
+    store.pendingAgentPatch = missingPatch
     store.applyPendingPatch()
 
     expect(store.currentDocument).toEqual(before)
@@ -1106,7 +1106,7 @@ describe('characterStudioStore', () => {
     }
 
     const before = cloneDocument(store.currentDocument)
-    store.pendingAgentPatch = unsupportedPatch as any
+    store.pendingAgentPatch = unsupportedPatch as unknown as CharacterStudioAgentPatchV2
     store.applyPendingPatch()
 
     expect(store.currentDocument).toEqual(before)
@@ -1127,13 +1127,13 @@ describe('characterStudioStore', () => {
     await store.openDocument('doc_alpha')
 
     const before = cloneDocument(store.currentDocument)
-    const invalidSetPatch = {
+    const invalidSetPatch: CharacterStudioAgentPatchV2 = {
       set: {
         'regexScripts.0.disabled': true,
       },
     }
 
-    store.pendingAgentPatch = invalidSetPatch as any
+    store.pendingAgentPatch = invalidSetPatch
     store.applyPendingPatch()
 
     expect(store.currentDocument).toEqual(before)
@@ -1153,7 +1153,7 @@ describe('characterStudioStore', () => {
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    const invalidRegexPatch = {
+    const invalidRegexPatch: CharacterStudioAgentPatchV2 = {
       regex_update: {
         id: 'regex_alpha',
         changes: {
@@ -1163,7 +1163,7 @@ describe('characterStudioStore', () => {
     }
 
     const before = cloneDocument(store.currentDocument)
-    store.pendingAgentPatch = invalidRegexPatch as any
+    store.pendingAgentPatch = invalidRegexPatch
     store.applyPendingPatch()
 
     expect(store.currentDocument).toEqual(before)
@@ -1183,7 +1183,7 @@ describe('characterStudioStore', () => {
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    const invalidWorldbookPatch = {
+    const invalidWorldbookPatch: CharacterStudioAgentPatchV2 = {
       worldbook_update: {
         id: 'entry_root',
         changes: {
@@ -1193,7 +1193,7 @@ describe('characterStudioStore', () => {
     }
 
     const before = cloneDocument(store.currentDocument)
-    store.pendingAgentPatch = invalidWorldbookPatch as any
+    store.pendingAgentPatch = invalidWorldbookPatch
     store.applyPendingPatch()
 
     expect(store.currentDocument).toEqual(before)
@@ -1229,7 +1229,7 @@ describe('characterStudioStore', () => {
           disabled: true,
         },
       },
-    } as any
+    }
 
     store.applyPendingPatch()
 
@@ -1253,7 +1253,7 @@ describe('characterStudioStore', () => {
       task_delete: {
         id: 'task_alpha',
       },
-    } as any
+    }
 
     store.applyPendingPatch()
     expect(store.currentDocument?.stateTasks).toEqual([])
@@ -1264,8 +1264,8 @@ describe('characterStudioStore', () => {
       warnings: [],
       checks: {},
     }
-    store.chatPromptPreview = '旧提示词缓存'
-    store.chatPromptPreviewError = '旧错误'
+    store.chatPromptPreview = '过期提示词缓存'
+    store.chatPromptPreviewError = '过期错误'
 
     store.undoLastPatch()
     expect(store.currentDocument?.stateTasks[0]?.id).toBe('task_alpha')
@@ -1297,7 +1297,7 @@ describe('characterStudioStore', () => {
           content: '不会生效',
         },
       },
-    } as any
+    }
 
     store.applyPendingPatch()
     await vi.advanceTimersByTimeAsync(1500)

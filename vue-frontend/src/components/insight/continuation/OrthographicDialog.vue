@@ -227,11 +227,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .orthographic-dialog-body {
-  --orthographic-dialog-surface-base: rgba(99, 102, 241, .05);
-  --orthographic-dialog-surface-raised: rgba(0, 0, 0, .7);
-}
+  --orthographic-dialog-badge-background: rgba(0, 0, 0, .7);
+  --orthographic-dialog-upload-hover-background: rgba(99, 102, 241, .05);
 
-.orthographic-dialog-body {
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -250,7 +248,7 @@ onBeforeUnmount(() => {
 .upload-area:hover,
 .upload-area.drag-over {
   border-color: var(--color-border-brand);
-  background: var(--orthographic-dialog-surface-base);
+  background: var(--orthographic-dialog-upload-hover-background);
 }
 
 .upload-placeholder {
@@ -305,8 +303,8 @@ onBeforeUnmount(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--orthographic-dialog-surface-raised);
-  color: white;
+  background: var(--orthographic-dialog-badge-background);
+  color: var(--color-text-inverse);
   font-size: 12px;
   font-weight: bold;
 }

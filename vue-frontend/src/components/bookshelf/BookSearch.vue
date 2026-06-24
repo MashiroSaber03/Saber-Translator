@@ -7,20 +7,21 @@ import UiButton from '@/components/ui/UiButton.vue'
 
 import { ref, computed, onUnmounted } from 'vue'
 import type { TagData } from '@/types'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
 
 interface Props {
   tags: TagData[]
+  selectedTagNames?: string[]
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  selectedTagNames: () => [],
+})
 
 const emit = defineEmits<{
   search: [query: string]
-  filterTag: [tagId: string]
+  filterTag: [tagName: string]
 }>()
 
-const bookshelfStore = useBookshelfStore()
 const searchQuery = ref('')
 const showClearBtn = computed(() => searchQuery.value.length > 0)
 
@@ -55,7 +56,7 @@ function handleTagClick(tagName: string) {
 }
 
 function isTagSelected(tagName: string): boolean {
-  return bookshelfStore.selectedTagIds.includes(tagName)
+  return props.selectedTagNames.includes(tagName)
 }
 
 onUnmounted(clearPendingSearch)
@@ -120,10 +121,9 @@ onUnmounted(clearPendingSearch)
 
 <style scoped>
 .filter-bar {
-  --book-search-shadow-default: rgba(0, 0, 0, .08);
-  --book-search-shadow-raised: rgba(102, 126, 234, .1);
-  --book-search-shadow-floating: rgba(102, 126, 234, .3);
-  --book-search-surface-base: rgba(255, 255, 255, .3);
+  --book-search-panel-shadow: rgba(0, 0, 0, .08);
+  --book-search-focus-shadow: rgba(102, 126, 234, .1);
+  --book-search-active-chip-shadow: rgba(102, 126, 234, .3);
 }
 
 .filter-bar {
@@ -134,7 +134,7 @@ onUnmounted(clearPendingSearch)
     padding: 16px;
     background: var(--color-surface-card);
     border-radius: 12px;
-    box-shadow: 0 4px 12px var(--book-search-shadow-default);
+    box-shadow: 0 4px 12px var(--book-search-panel-shadow);
 }
 
 /* 搜索框 */
@@ -159,7 +159,7 @@ onUnmounted(clearPendingSearch)
 .book-search-input:focus {
     outline: none;
     border-color: var(--color-border-brand-gradient);
-    box-shadow: 0 0 0 3px var(--book-search-shadow-raised);
+    box-shadow: 0 0 0 3px var(--book-search-focus-shadow);
 }
 
 .search-btn, .clear-search-btn {
@@ -239,19 +239,6 @@ onUnmounted(clearPendingSearch)
     background: var(--tag-color, var(--color-surface-brand-gradient-start));
     color: white;
     border-color: var(--tag-color, var(--color-border-brand-gradient));
-    box-shadow: 0 2px 8px var(--book-search-shadow-floating);
-}
-
-.tag-count {
-    background: var(--book-search-surface-base);
-    padding: 1px 6px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-}
-
-.no-tags {
-    color: var(--color-text-supporting);
-    font-size: 0.85rem;
-    font-style: italic;
+    box-shadow: 0 2px 8px var(--book-search-active-chip-shadow);
 }
 </style>

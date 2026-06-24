@@ -125,18 +125,18 @@ function handleBreadcrumbClick(path: string): void {
     width="min(1180px, 95vw)"
     height="min(88vh, 920px)"
     background="var(--color-surface-base)"
-    border="1px solid #dbe4ef"
+    border="1px solid var(--color-border-muted)"
     border-radius="14px"
-    box-shadow="0 20px 50px rgba(28, 45, 72, .18)"
+    box-shadow="0 20px 50px var(--shadow-medium)"
     header-padding="18px 22px"
-    header-border="1px solid #e2e9f2"
-    title-color="#20314f"
+    header-border="1px solid var(--color-border-muted)"
+    title-color="var(--color-text-heading)"
     title-font-size="22px"
     title-font-weight="700"
     body-padding-value="18px 20px"
-    body-background="#f4f7f9"
+    body-background="var(--color-surface-page)"
     footer-padding="16px 20px"
-    footer-border="1px solid #e2e9f2"
+    footer-border="1px solid var(--color-border-muted)"
     footer-background="var(--color-surface-base)"
     @update:model-value="emit('update:modelValue', $event)"
     @close="closeModal"
@@ -403,18 +403,18 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-toolbar-btn:hover,
-.page-selection-footer-btn.secondary:hover {
+.page-selection-footer-btn:hover {
   border-color: var(--page-selection-modal-border-active);
   box-shadow: 0 0 0 3px var(--page-selection-modal-shadow-floating);
 }
 
-.page-selection-footer-btn.primary {
+.page-selection-confirm-btn {
   border-color: var(--page-selection-modal-border-active);
   background: var(--page-selection-modal-surface-hover);
   color: var(--color-text-inverse);
 }
 
-.page-selection-footer-btn.primary:hover {
+.page-selection-confirm-btn:hover {
   background: var(--page-selection-modal-surface-active);
 }
 
@@ -583,7 +583,7 @@ function handleBreadcrumbClick(path: string): void {
   top: 5px;
   right: 5px;
   background-color: var(--page-selection-modal-surface-soft);
-  color: white;
+  color: var(--color-text-inverse);
   width: 15px;
   height: 15px;
   border-radius: 50%;
@@ -610,7 +610,7 @@ function handleBreadcrumbClick(path: string): void {
   bottom: 3px;
   right: 3px;
   background-color: var(--page-selection-modal-surface-strong);
-  color: white;
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -623,7 +623,7 @@ function handleBreadcrumbClick(path: string): void {
   bottom: 3px;
   right: 3px;
   background-color: var(--page-selection-modal-surface-stronger);
-  color: white;
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -635,7 +635,7 @@ function handleBreadcrumbClick(path: string): void {
   bottom: 3px;
   left: 3px;
   background-color: var(--page-selection-modal-surface-highlight);
-  color: white;
+  color: var(--color-text-inverse);
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
@@ -649,7 +649,7 @@ function handleBreadcrumbClick(path: string): void {
   top: 3px;
   left: 3px;
   background-color: var(--page-selection-modal-surface-highlight-strong);
-  color: white;
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;

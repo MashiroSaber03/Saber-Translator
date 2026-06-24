@@ -53,7 +53,6 @@ onMounted(() => {
     if (book) {
       title.value = book.title
       coverData.value = book.cover || null
-      // book.tags 存储的是标签名称,直接使用即可
       if (book.tags && book.tags.length > 0) {
         selectedTags.value = [...book.tags]
       }
@@ -94,7 +93,6 @@ function handleCoverDrop(event: DragEvent) {
   reader.readAsDataURL(file)
 }
 
-// 添加标签 - 使用 name 作为标识
 function addTag(tagName: string) {
   if (!selectedTags.value.includes(tagName)) {
     selectedTags.value.push(tagName)
@@ -111,7 +109,7 @@ async function createAndAddTag() {
   // 检查是否已存在
   const existing = availableTags.value.find(t => t.name === name)
   if (existing) {
-    addTag(existing.name)  // 使用 name
+      addTag(existing.name)
     return
   }
 
@@ -119,14 +117,13 @@ async function createAndAddTag() {
   try {
     const newTag = await bookshelfStore.createTag(name)
     if (newTag) {
-      addTag(newTag.name)  // 使用 name
+      addTag(newTag.name)
     }
   } catch (error) {
     showToast('创建标签失败', 'error')
   }
 }
 
-// 移除标签 - 使用 name 作为标识
 function removeTag(tagName: string) {
   selectedTags.value = selectedTags.value.filter(name => name !== tagName)
 }
@@ -138,7 +135,6 @@ async function saveBook() {
     return
   }
 
-  // selectedTags 已经是标签名称数组,直接使用
   const tagNames = selectedTags.value
 
   try {
@@ -147,7 +143,7 @@ async function saveBook() {
       const success = await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
         cover: coverData.value || undefined,
-        tags: tagNames  // 一同传递 tags 数组
+        tags: tagNames
       })
       if (success) {
         showToast('书籍更新成功', 'success')
@@ -228,7 +224,6 @@ async function saveBook() {
         <div class="tag-input-container">
           <!-- 已选标签 -->
           <div class="selected-tags">
-            <!-- selectedTags 已经存储标签名称,直接使用 -->
             <span
               v-for="tagName in selectedTags"
               :key="tagName"
@@ -261,7 +256,6 @@ async function saveBook() {
               v-if="showTagSuggestions && filteredTagSuggestions.length > 0"
               class="tag-suggestions"
             >
-              <!-- 使用 tag.name 作为 key 和参数 -->
               <UiButton
                 variant="toolbar"
                 v-for="tag in filteredTagSuggestions"
@@ -299,7 +293,7 @@ async function saveBook() {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .required {
@@ -455,7 +449,7 @@ async function saveBook() {
   border: none;
   cursor: pointer;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .tag-suggestion:hover {

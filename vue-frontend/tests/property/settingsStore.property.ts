@@ -181,7 +181,6 @@ describe('设置状态管理属性测试', () => {
   })
 
   it('从 localStorage 加载无效检测器设置时应回退为 default', () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
       textDetector: 'invalid-detector'
     })

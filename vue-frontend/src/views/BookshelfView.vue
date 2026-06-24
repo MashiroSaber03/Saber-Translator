@@ -66,8 +66,7 @@ onMounted(async () => {
     if (response.success && response.lan_url) {
       lanUrl.value = response.lan_url
     }
-  } catch (error) {
-    console.error('获取服务器信息失败:', error)
+  } catch {
     lanUrl.value = '获取失败'
   }
   
@@ -84,13 +83,16 @@ async function copyLanUrl() {
     await navigator.clipboard.writeText(lanUrl.value)
     showToast('局域网地址已复制！', 'success')
   } catch {
-    // 降级方案
     const textArea = document.createElement('textarea')
     textArea.value = lanUrl.value
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
+    textArea.setAttribute('readonly', '')
+    try {
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+    } finally {
+      textArea.remove()
+    }
     showToast('局域网地址已复制！', 'success')
   }
 }
@@ -129,7 +131,6 @@ async function openBookDetail(bookId: string) {
   } catch (error) {
     // 失败时显示 toast 提示
     const errorMsg = error instanceof Error ? error.message : '未知错误'
-    console.error('加载书籍详情失败:', error)
     showToast(`加载书籍详情失败: ${errorMsg}`, 'error')
   }
 }
@@ -212,6 +213,7 @@ function showFeatureNotice() {
       <!-- 搜索和筛选栏 -->
       <BookSearch
         :tags="allTags"
+        :selected-tag-names="bookshelfStore.selectedTagNames"
         @search="bookshelfStore.setSearchQuery"
         @filter-tag="bookshelfStore.toggleTagFilter"
       />
@@ -223,6 +225,7 @@ function showFeatureNotice() {
             v-for="book in filteredBooks"
             :key="book.id"
             :book="book"
+            :tags="allTags"
             @click="openBookDetail(book.id)"
           />
         </div>
@@ -273,16 +276,16 @@ function showFeatureNotice() {
 
 <style scoped>
 .bookshelf-page {
-  --bookshelf-view-surface-base: rgba(255, 255, 255, .3);
-  --bookshelf-view-text-primary: rgba(255, 255, 255, .95);
-  --bookshelf-view-text-secondary: rgba(255, 255, 255, .9);
+  --bookshelf-header-access-text: rgba(255, 255, 255, .95);
+  --bookshelf-header-link-text: rgba(255, 255, 255, .9);
+  --bookshelf-header-control-hover-background: rgba(255, 255, 255, .3);
 }
 
 .bookshelf-header__lan-access {
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--bookshelf-view-text-primary);
+    color: var(--bookshelf-header-access-text);
     font-size: 0.85rem;
     background: var(--color-surface-overlay-light-raised);
     padding: 6px 12px;
@@ -292,7 +295,7 @@ function showFeatureNotice() {
 }
 
 .bookshelf-header__tutorial-link {
-    color: var(--bookshelf-view-text-secondary);
+    color: var(--bookshelf-header-link-text);
     text-decoration: none;
     padding: 6px 12px;
     border-radius: 20px;
@@ -337,7 +340,7 @@ function showFeatureNotice() {
 }
 
 .bookshelf-header__theme-toggle:hover {
-    background: var(--bookshelf-view-surface-base);
+    background: var(--bookshelf-header-control-hover-background);
     transform: rotate(15deg);
 }
 

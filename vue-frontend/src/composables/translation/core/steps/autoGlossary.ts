@@ -130,8 +130,7 @@ export async function executeAutoGlossary(input: AutoGlossaryInput): Promise<Aut
         failedPages: 0,
       },
     }
-  } catch (error) {
-    console.warn('[AutoGlossary] 自动术语提取失败，继续执行翻译', error)
+  } catch {
     return {
       ...fallback,
       autoGlossaryStats: {

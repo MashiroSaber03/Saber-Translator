@@ -108,6 +108,8 @@ const CSS_LEGACY_BUTTON_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-action-btn|btn-pr
 const CSS_GENERIC_FORM_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(form-input|form-textarea)(?![A-Za-z0-9_-])/g
 const CSS_UNOWNED_GLOBAL_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(header-content|logo-container|app-logo|app-name|header-links|tutorial-link|github-link|donate-link|header-btn|mode-btn|upload-card|thumbnail-item|status-icon|ui-form-field)(?![A-Za-z0-9_-])/g
 const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
+const CSS_UI_PRIMITIVE_RELATIONAL_SELECTOR_RE = /:where\(\s*button\s*\)|:has\(\s*input\b[^)]*\)/g
+const CSS_UI_PRIMITIVE_INPUT_SELECTOR_RE = /\binput\s*\[\s*type\s*=\s*['"]checkbox['"]\s*\]/g
 const TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE = /\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea|ui-modal__[a-z0-9-]+)(?![A-Za-z0-9_-])/g
 const CSS_BARE_UI_MODAL_SELECTOR_RE = /^\s*\.ui-modal__/m
 const GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE = /\.ui-modal__(?:body|header|footer|title|close)\b/
@@ -357,6 +359,9 @@ const architectureDebtUsage = Object.fromEntries(
 )
 
 function scanPath(path) {
+  if (!existsSync(path)) {
+    return
+  }
   const stat = statSync(path)
   if (stat.isDirectory()) {
     walk(path)
@@ -408,7 +413,7 @@ function addHeavyOwnerReviewSignal(path, kind, lines, limit, reason) {
 }
 
 function checkLocalBuildArtifact(path, normalizedPath) {
-  if (/^(?:build_output\.txt|vite-dev\.log)$/.test(normalizedPath)) {
+  if (/^(?:build_output\.txt|build_error\.txt|vite-dev\.log)$/.test(normalizedPath)) {
     addFailure(path, 'local build/dev log files are not allowed in frontend source; remove the artifact and keep it ignored')
   }
 }
@@ -944,14 +949,29 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
 
   const styleContents = extractStyleContents(content, path)
   const primitiveSelectors = new Set()
+  const primitiveRelationalSelectors = new Set()
+  const primitiveInputSelectors = new Set()
   for (const styleContent of styleContents) {
-    for (const match of stripCssComments(styleContent).matchAll(CSS_UI_PRIMITIVE_SELECTOR_RE)) {
+    const css = stripCssComments(styleContent)
+    for (const match of css.matchAll(CSS_UI_PRIMITIVE_SELECTOR_RE)) {
       primitiveSelectors.add(match[2])
+    }
+    for (const match of css.matchAll(CSS_UI_PRIMITIVE_RELATIONAL_SELECTOR_RE)) {
+      primitiveRelationalSelectors.add(match[0])
+    }
+    for (const match of css.matchAll(CSS_UI_PRIMITIVE_INPUT_SELECTOR_RE)) {
+      primitiveInputSelectors.add(match[0])
     }
   }
 
   if (primitiveSelectors.size > 0) {
     addFailure(path, `UI primitive selector(s) ${[...primitiveSelectors].map(token => `.${token}`).join(', ')} are not allowed in business CSS; use primitive props/classes or a business-owned class`)
+  }
+  if (primitiveRelationalSelectors.size > 0) {
+    addFailure(path, `UI primitive relational selector(s) ${[...primitiveRelationalSelectors].join(', ')} are not allowed in business CSS; attach a business-owned public class to the primitive instead`)
+  }
+  if (primitiveInputSelectors.size > 0) {
+    addFailure(path, `UI primitive input selector(s) ${[...primitiveInputSelectors].join(', ')} are not allowed in business CSS; attach a business-owned public class to the primitive instead`)
   }
 }
 
@@ -1456,7 +1476,7 @@ function checkRepositoryLocalArtifacts() {
   if (SOURCE_FIXTURE || SKIP_SOURCE_SCAN) {
     return
   }
-  for (const artifact of ['build_output.txt', 'vite-dev.log']) {
+  for (const artifact of ['build_output.txt', 'build_error.txt', 'vite-dev.log']) {
     const path = join(process.cwd(), artifact)
     if (existsSync(path)) {
       checkScriptFile(path)

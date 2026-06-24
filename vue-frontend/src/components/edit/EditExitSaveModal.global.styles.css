@@ -1,12 +1,15 @@
 .edit-exit-save-modal-overlay.ui-modal__overlay {
-  --edit-exit-save-modal-surface-base: rgba(4, 8, 18, .22);
-  align-items: flex-start; justify-content: flex-end; padding: 64px 16px 16px; background: var(--edit-exit-save-modal-surface-base);
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 64px 16px 16px;
+  background: var(--color-overlay-backdrop-strong);
 }
 
 .edit-exit-save-modal.ui-modal__container {
-  --edit-exit-save-modal-border-default: rgba(255, 255, 255, .12); --edit-exit-save-modal-border-strong: rgba(255, 255, 255, .16); --edit-exit-save-modal-border-muted: rgba(255, 255, 255, .24);
-  --edit-exit-save-modal-shadow-default: rgba(0, 0, 0, .35); --edit-exit-save-modal-shadow-raised: rgba(0, 255, 136, .18);
-  --edit-exit-save-modal-surface-raised: rgba(12, 19, 37, .96); --edit-exit-save-modal-surface-muted: #0f8; --edit-exit-save-modal-surface-subtle: #00cc6a; --edit-exit-save-modal-surface-hover: rgba(255, 255, 255, .08); --edit-exit-save-modal-surface-active: #00d4ff;
-  --edit-exit-save-modal-text-primary: rgba(255, 255, 255, .82); --edit-exit-save-modal-text-secondary: #11212f; --edit-exit-save-modal-text-muted: #0f8;
-  border: 1px solid var(--edit-exit-save-modal-border-default); border-radius: 12px; background: var(--edit-exit-save-modal-surface-raised); color: var(--color-text-inverse); box-shadow: 0 18px 48px var(--edit-exit-save-modal-shadow-default); backdrop-filter: blur(10px);
+  border: 1px solid var(--color-surface-overlay-light-soft);
+  border-radius: 12px;
+  background: var(--color-gray-900);
+  color: var(--color-text-inverse);
+  box-shadow: 0 18px 48px var(--shadow-medium);
+  backdrop-filter: blur(10px);
 }

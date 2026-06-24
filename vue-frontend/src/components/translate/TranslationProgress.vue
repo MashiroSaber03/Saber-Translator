@@ -65,7 +65,7 @@
               class="progress-processing"
               :style="{
                 left: getPoolCompletedPercent(pool) + '%',
-                width: getPoolProcessingWidth() + '%'
+                width: getPoolProcessingWidth(pool) + '%'
               }"
             ></div>
           </div>
@@ -202,40 +202,47 @@ const isParallelMode = computed(() => {
 /** 并行进度数据 */
 const parallelProgress = computed(() => parallelTranslation.progress.value)
 
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value))
+}
+
 /** 并行总体进度百分比 */
 const parallelOverallPercent = computed(() => {
   const progress = parallelProgress.value
   if (!progress || progress.totalPages === 0) return 0
-  return Math.round((progress.totalCompleted / progress.totalPages) * 100)
+  return clampPercent(Math.round((progress.totalCompleted / progress.totalPages) * 100))
 })
 
 /** 获取池子完成百分比 */
 function getPoolCompletedPercent(pool: PoolStatus): number {
   const total = parallelProgress.value?.totalPages || 0
   if (total === 0) return 0
-  return Math.round((pool.completed / total) * 100)
+  return clampPercent(Math.round((pool.completed / total) * 100))
 }
 
 /** 获取池子处理中部分宽度（固定一小段） */
-function getPoolProcessingWidth(): number {
+function getPoolProcessingWidth(pool: PoolStatus): number {
   const total = parallelProgress.value?.totalPages || 0
   if (total === 0) return 0
   // 处理中显示一个任务的宽度
-  return Math.max(3, Math.round((1 / total) * 100))
+  const completedPercent = getPoolCompletedPercent(pool)
+  const oneTaskPercent = Math.max(3, Math.round((1 / total) * 100))
+  return clampPercent(Math.min(100 - completedPercent, oneTaskPercent))
 }
 
 /** 获取预保存百分比 */
 function getPreSavePercent(): number {
   const preSave = parallelProgress.value?.preSave
   if (!preSave || preSave.total === 0) return 0
-  return Math.round((preSave.current / preSave.total) * 100)
+  return clampPercent(Math.round((preSave.current / preSave.total) * 100))
 }
 
 /** 获取保存百分比 */
 function getSavePercent(): number {
   const save = parallelProgress.value?.save
   if (!save || save.total === 0) return 0
-  return Math.round((save.completed / save.total) * 100)
+  return clampPercent(Math.round((save.completed / save.total) * 100))
 }
 
 /** 当前进度数据 */
@@ -261,10 +268,10 @@ const failedCount = computed(() => currentProgress.value.failed)
 const progressPercent = computed(() => {
   // 优先使用自定义百分比
   if (currentProgress.value.percentage !== undefined) {
-    return currentProgress.value.percentage
+    return clampPercent(currentProgress.value.percentage)
   }
   if (totalCount.value === 0) return 0
-  return Math.round((currentIndex.value / totalCount.value) * 100)
+  return clampPercent(Math.round((currentIndex.value / totalCount.value) * 100))
 })
 
 /** 进度标签文本（优先使用自定义标签，业务契约） */

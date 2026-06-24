@@ -167,7 +167,7 @@ const thresholdModel = computed({
 
 .qa-mode-btn.active {
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 500;
 }
 
@@ -239,6 +239,6 @@ const thresholdModel = computed({
 
 .example-tag:hover {
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 </style>

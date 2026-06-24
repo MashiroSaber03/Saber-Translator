@@ -216,6 +216,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.agent.forceJsonOutput"
                 @change="webImportStore.setAgentForceJsonOutput(($event.target as HTMLInputElement).checked)"
               />
@@ -224,6 +225,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.agent.useStream"
                 @change="webImportStore.setAgentUseStream(($event.target as HTMLInputElement).checked)"
               />
@@ -331,6 +333,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.download.useReferer"
                 @change="webImportStore.setDownloadUseReferer(($event.target as HTMLInputElement).checked)"
               />
@@ -345,6 +348,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.ui.showAgentLogs"
                 @change="webImportStore.setShowAgentLogs(($event.target as HTMLInputElement).checked)"
               />
@@ -353,6 +357,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.ui.autoImport"
                 @change="webImportStore.setAutoImport(($event.target as HTMLInputElement).checked)"
               />
@@ -396,6 +401,7 @@ defineEmits<{
             <label class="ui-checkbox-label">
               <UiInput
                 type="checkbox"
+                class="web-import-modal__checkbox-input"
                 :checked="draftSettings.advanced.bypassProxy"
                 @change="webImportStore.setBypassProxy(($event.target as HTMLInputElement).checked)"
               />
@@ -441,7 +447,7 @@ defineEmits<{
 }
 
 .web-import-modal__settings-title {
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-weight: 500;
   font-size: 14px;
 }
@@ -510,7 +516,7 @@ defineEmits<{
 .web-import-modal__settings-action-secondary {
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   background: var(--color-surface-base);
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .web-import-modal__settings-action-secondary:hover:not(:disabled) {
@@ -548,7 +554,7 @@ defineEmits<{
 }
 
 .web-import-modal__settings-tab.active {
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-weight: 500;
 }
 
@@ -562,7 +568,7 @@ defineEmits<{
   align-items: center;
   justify-content: space-between;
   margin: 0 0 12px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-weight: 600;
   font-size: 14px;
 }
@@ -598,7 +604,7 @@ defineEmits<{
   border-radius: 6px;
   outline: none;
   background: var(--color-surface-base);
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-size: 14px;
   transition: border-color 0.2s;
 }
@@ -644,12 +650,12 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   font-size: 14px;
   cursor: pointer;
 }
 
-.ui-checkbox-label input[type='checkbox'] {
+.web-import-modal__checkbox-input {
   width: 16px;
   height: 16px;
   cursor: pointer;

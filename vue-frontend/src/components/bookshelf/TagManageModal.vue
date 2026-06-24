@@ -98,9 +98,8 @@ async function saveEditTag() {
     } else {
       showToast('更新失败', 'error')
     }
-  } catch (error) {
+  } catch {
     showToast('更新失败', 'error')
-    console.error('更新标签失败:', error)
   }
 }
 
@@ -218,15 +217,14 @@ async function deleteTag(tagName: string) {
 
 <style scoped>
 .tag-manage-form {
-  /* owner tokens: tag-manage-modal */
-  --tag-manage-modal-shadow-default: rgba(220, 53, 69, .4);
-  --tag-manage-modal-shadow-raised: rgba(102, 126, 234, .2);
-  --tag-manage-modal-surface-base: #f8f9fa;
-  --tag-manage-modal-surface-raised: #dc3545;
-  --tag-manage-modal-surface-muted: #c82333;
-  --tag-manage-modal-surface-subtle: #218838;
-  --tag-manage-modal-surface-hover: #e9ecef;
-  --tag-manage-modal-surface-active: #dee2e6;
+  --tag-manage-modal-danger-shadow: rgba(220, 53, 69, .4);
+  --tag-manage-modal-focus-shadow: rgba(102, 126, 234, .2);
+  --tag-manage-modal-row-background: #f8f9fa;
+  --tag-manage-modal-delete-start: #dc3545;
+  --tag-manage-modal-delete-end: #c82333;
+  --tag-manage-modal-save-end: #218838;
+  --tag-manage-modal-cancel-background: #e9ecef;
+  --tag-manage-modal-cancel-hover-background: #dee2e6;
 
   margin-bottom: 20px;
 }
@@ -244,7 +242,7 @@ async function deleteTag(tagName: string) {
   font-size: 14px;
   outline: none;
   background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .tag-manage-modal__new-name-input:focus {
@@ -279,7 +277,7 @@ async function deleteTag(tagName: string) {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: var(--tag-manage-modal-surface-base);
+  background: var(--tag-manage-modal-row-background);
   border-radius: 6px;
 }
 
@@ -301,7 +299,7 @@ async function deleteTag(tagName: string) {
 .tag-name {
   flex: 1;
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .tag-book-count {
@@ -328,7 +326,7 @@ async function deleteTag(tagName: string) {
 
 .tag-delete-btn {
   padding: 4px 12px;
-  background: linear-gradient(135deg, var(--tag-manage-modal-surface-raised) 0%, var(--tag-manage-modal-surface-muted) 100%);
+  background: linear-gradient(135deg, var(--tag-manage-modal-delete-start) 0%, var(--tag-manage-modal-delete-end) 100%);
   color: white;
   border: none;
   border-radius: 4px;
@@ -339,10 +337,9 @@ async function deleteTag(tagName: string) {
 
 .tag-delete-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--tag-manage-modal-shadow-default);
+  box-shadow: 0 2px 8px var(--tag-manage-modal-danger-shadow);
 }
 
-/* 编辑状态样式 */
 .edit-color-input {
   width: 32px;
   height: 32px;
@@ -361,16 +358,16 @@ async function deleteTag(tagName: string) {
   font-size: 14px;
   outline: none;
   background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .edit-name-input:focus {
-  box-shadow: 0 0 0 2px var(--tag-manage-modal-shadow-raised);
+  box-shadow: 0 0 0 2px var(--tag-manage-modal-focus-shadow);
 }
 
 .tag-save-btn {
   padding: 4px 12px;
-  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--tag-manage-modal-surface-subtle) 100%);
+  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--tag-manage-modal-save-end) 100%);
   color: white;
   border: none;
   border-radius: 4px;
@@ -386,8 +383,8 @@ async function deleteTag(tagName: string) {
 
 .tag-cancel-btn {
   padding: 4px 12px;
-  background: var(--tag-manage-modal-surface-hover);
-  color: var(--color-text-default, var(--color-text-default));
+  background: var(--tag-manage-modal-cancel-background);
+  color: var(--color-text-default);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -396,6 +393,6 @@ async function deleteTag(tagName: string) {
 }
 
 .tag-cancel-btn:hover {
-  background: var(--color-surface-interactive-hover, var(--tag-manage-modal-surface-active));
+  background: var(--color-surface-interactive-hover, var(--tag-manage-modal-cancel-hover-background));
 }
 </style>

@@ -145,11 +145,11 @@ export function useOcrSettings(
    */
   function setAiVisionOcrProvider(provider: string): void {
     provider = normalizeProviderId(provider)
-    const oldProvider = settings.value.aiVisionOcr.provider
-    if (oldProvider === provider) return
+    const previousProvider = settings.value.aiVisionOcr.provider
+    if (previousProvider === provider) return
 
     // 保存当前服务商配置
-    saveAiVisionOcrProviderConfig(oldProvider)
+    saveAiVisionOcrProviderConfig(previousProvider)
 
     // 切换服务商
     settings.value.aiVisionOcr.provider = provider

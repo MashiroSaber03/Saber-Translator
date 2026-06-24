@@ -227,7 +227,6 @@ export const useBubbleStore = defineStore('bubble', () => {
    */
   function deleteBubble(index: number): boolean {
     if (index < 0 || index >= bubbles.value.length) {
-      console.warn(`删除失败: 无效的索引 ${index}`)
       return false
     }
 
@@ -382,7 +381,6 @@ export const useBubbleStore = defineStore('bubble', () => {
    */
   function updateBubble(index: number, updates: BubbleStateUpdates): boolean {
     if (index < 0 || index >= bubbles.value.length) {
-      console.warn(`更新失败: 无效的索引 ${index}`)
       return false
     }
 
@@ -406,7 +404,6 @@ export const useBubbleStore = defineStore('bubble', () => {
    */
   function updateSelectedBubble(updates: BubbleStateUpdates): boolean {
     if (selectedIndex.value < 0) {
-      console.warn('更新失败: 没有选中的气泡')
       return false
     }
     return updateBubble(selectedIndex.value, updates)
@@ -581,7 +578,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     try {
       const parsed = JSON.parse(json)
       if (!Array.isArray(parsed)) {
-        console.error('反序列化失败: 数据不是数组')
         return false
       }
 
@@ -590,15 +586,12 @@ export const useBubbleStore = defineStore('bubble', () => {
       for (const item of parsed) {
         if (isValidBubbleState(item)) {
           validStates.push(item as BubbleState)
-        } else {
-          console.warn('跳过无效的气泡状态:', item)
         }
       }
 
       setBubbles(validStates)
       return true
-    } catch (error) {
-      console.error('反序列化失败:', error)
+    } catch {
       return false
     }
   }

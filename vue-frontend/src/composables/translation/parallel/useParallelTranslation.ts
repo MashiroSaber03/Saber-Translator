@@ -149,7 +149,6 @@ export function useParallelTranslation() {
       return result
 
     } catch (error) {
-      console.error('并行翻译出错:', error)
       return {
         success: 0,
         failed: images.length,

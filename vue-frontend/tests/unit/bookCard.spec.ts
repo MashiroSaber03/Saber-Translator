@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import type { BookData } from '@/types'
 
@@ -20,7 +19,6 @@ function book(overrides: Partial<BookData> = {}): BookData {
 
 describe('BookCard', () => {
   it('uses a native button for opening the book card', async () => {
-    setActivePinia(createPinia())
     const wrapper = mount(BookCard, {
       props: { book: book({ title: 'Saber' }) },
     })
@@ -34,7 +32,6 @@ describe('BookCard', () => {
   })
 
   it('uses Vue state to show one cover placeholder after image load fails', async () => {
-    setActivePinia(createPinia())
     const wrapper = mount(BookCard, {
       props: { book: book() },
     })
@@ -45,5 +42,16 @@ describe('BookCard', () => {
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.findAll('.book-cover-placeholder')).toHaveLength(1)
     expect(wrapper.find('.book-cover-placeholder').text()).toBe('📖')
+  })
+
+  it('receives tag colors as explicit page-owned data', () => {
+    const wrapper = mount(BookCard, {
+      props: {
+        book: book({ tags: ['Drama'] }),
+        tags: [{ name: 'Drama', color: '#aa6644' }],
+      },
+    })
+
+    expect(wrapper.get('.book-tag').attributes('style')).toContain('background: rgb(170, 102, 68);')
   })
 })

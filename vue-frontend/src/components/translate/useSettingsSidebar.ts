@@ -332,8 +332,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
         // 如果API失败，至少显示内置字体
         fontList.value = [...BUILTIN_FONTS]
       }
-    } catch (error) {
-      console.error('加载字体列表失败:', error)
+    } catch {
       // 出错时也显示内置字体
       fontList.value = [...BUILTIN_FONTS]
     }
@@ -357,8 +356,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       ) {
         selectedWorkflowMode.value = preferences.lastWorkflowMode
       }
-    } catch (error) {
-      console.warn('加载翻译页操作模式偏好失败:', error)
+    } catch {
+      // Workflow preferences are optional; defaults remain valid when loading fails.
     }
   }
 
@@ -380,8 +379,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
       try {
         await saveTranslateWorkflowPreferences(nextPreferences)
-      } catch (error) {
-        console.warn('保存翻译页操作模式偏好失败:', error)
+      } catch {
+        // Preference persistence is best-effort and must not interrupt translation.
       }
     }
     isPersistingWorkflowPreferences = false
@@ -438,8 +437,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       } else {
         showToast(response.error || '字体上传失败', 'error')
       }
-    } catch (error) {
-      console.error('字体上传失败:', error)
+    } catch {
       showToast('字体上传失败', 'error')
     } finally {
       // 清空文件输入

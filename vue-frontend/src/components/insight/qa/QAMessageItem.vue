@@ -116,7 +116,7 @@ defineEmits<{
 .chat-message.user .message-content {
   border-bottom-right-radius: 4px;
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .chat-message.assistant .message-content {
@@ -162,7 +162,7 @@ defineEmits<{
 
 .citation-item:hover {
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .message-save-btn {
@@ -183,13 +183,13 @@ defineEmits<{
 .message-save-btn:hover {
   border-color: var(--insight-action-primary);
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .message-save-btn.saved {
   border-color: var(--insight-status-success);
   background: var(--insight-status-success);
-  color: white;
+  color: var(--color-text-inverse);
   cursor: default;
 }
 

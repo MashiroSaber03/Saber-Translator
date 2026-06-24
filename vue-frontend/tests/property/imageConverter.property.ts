@@ -5,14 +5,10 @@
  * **Validates: Requirements 14.4**
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { useImageConverter } from '@/composables/useImageConverter'
 
 describe('图片URL转Base64属性测试', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   // 有效的 Base64 PNG 图片（1x1 像素）
   const validPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
@@ -53,7 +49,6 @@ describe('图片URL转Base64属性测试', () => {
   })
 
   it('base64ToBlob 无效输入返回 null', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { base64ToBlob } = useImageConverter()
     expect(base64ToBlob('')).toBeNull()
     expect(base64ToBlob('not-a-base64')).toBeNull()

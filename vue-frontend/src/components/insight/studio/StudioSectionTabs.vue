@@ -35,9 +35,7 @@ defineEmits<{
   --studio-section-tabs-surface-muted: rgba(77, 134, 238, .1);
   --studio-section-tabs-text-primary: #55708f;
   --studio-section-tabs-text-secondary: #16365b;
-}
 
-.studio-tabs {
   display: flex;
   gap: 8px;
   padding: 8px;

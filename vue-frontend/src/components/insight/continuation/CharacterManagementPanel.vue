@@ -16,7 +16,6 @@
     </div>
     
     <div v-else class="character-panel-layout">
-      <!-- 左侧：角色网格 -->
       <div class="character-grid-panel">
         <UiButton
           v-for="char in characters" 
@@ -41,7 +40,6 @@
         </UiButton>
       </div>
       
-      <!-- 右侧：角色详情面板 -->
       <CharacterDetailPanel
         :character="getSelectedCharacterData()"
         :avatar-url="selectedCharacter ? getCharacterImageUrl(selectedCharacter) : ''"
@@ -59,7 +57,6 @@
       />
     </div>
     
-    <!-- 对话框 -->
     <AddCharacterDialog
       v-if="showAddCharDialog"
       @close="showAddCharDialog = false"
@@ -123,10 +120,8 @@ const props = defineProps<{
 const charMgmt = props.characterManagement
 const state = props.state
 
-// 角色选择
 const selectedCharacter = ref<string | null>(null)
 
-// 对话框状态
 const showAddCharDialog = ref(false)
 const showEditCharDialog = ref(false)
 const showAddFormDialog = ref(false)
@@ -162,7 +157,6 @@ function getFormImageUrl(charName: string, formId: string): string {
   return state.getFormImageUrl(form.reference_image)
 }
 
-// 角色操作
 function openAddCharacterDialog() {
   showAddCharDialog.value = true
 }
@@ -198,7 +192,6 @@ async function handleToggleCharacter(enabled: boolean) {
   await charMgmt.toggleCharacterEnabled(selectedCharacter.value, enabled)
 }
 
-// 形态操作
 function openAddFormDialog() {
   if (!selectedCharacter.value) return
   showAddFormDialog.value = true
@@ -246,7 +239,6 @@ async function handleToggleFormEnabled(formId: string, enabled: boolean) {
   await charMgmt.toggleFormEnabled(selectedCharacter.value, formId, enabled)
 }
 
-// 三视图生成
 function handleGenerateOrthographic(formId: string, formName: string) {
   orthoFormId.value = formId
   orthoFormName.value = formName
@@ -299,7 +291,6 @@ function closeOrthoDialog() {
 
 <style scoped>
 .character-management-panel {
-  /* owner tokens: character-management-panel */
   --character-management-panel-border-default: #c7d2fe;
   --character-management-panel-shadow-default: rgba(99, 102, 241, .2);
   --character-management-panel-surface-base: #f5f7ff;
@@ -414,7 +405,7 @@ function closeOrthoDialog() {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 20px;
   font-weight: 600;
 }
@@ -424,7 +415,7 @@ function closeOrthoDialog() {
   bottom: -4px;
   right: -4px;
   background: linear-gradient(135deg, var(--color-surface-brand) 0%, var(--character-management-panel-surface-hover) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 10px;
   font-weight: 600;
   min-width: 18px;
@@ -433,7 +424,7 @@ function closeOrthoDialog() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid white;
+  border: 2px solid var(--color-surface-base);
 }
 
 .tile-disabled-badge {
@@ -441,7 +432,7 @@ function closeOrthoDialog() {
   top: 2px;
   left: 2px;
   background: var(--character-management-panel-surface-active);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 9px;
   font-weight: 500;
   padding: 1px 4px;

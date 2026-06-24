@@ -129,11 +129,6 @@ const failedResponseArb = fc.record({
   error: fc.string({ minLength: 1, maxLength: 100 })
 })
 
-// Base64 图片数据生成器（保留用于未来扩展）
-// const base64ImageArb = fc.string({ minLength: 100, maxLength: 500 }).map(
-//   (s) => `data:image/png;base64,${btoa(s)}`
-// )
-
 // ============================================================
 // 辅助函数（从 useBubbleDetection 中提取的纯函数逻辑）
 // ============================================================

@@ -46,4 +46,22 @@ describe('TranslationProgress', () => {
     expect(progressbar.attributes('aria-valuemax')).toBe('100')
     expect(progressbar.attributes('aria-valuenow')).toBe('40')
   })
+
+  it('clamps custom progress percentages to the progressbar range', () => {
+    const wrapper = mount(TranslationProgress, {
+      props: {
+        progress: {
+          isInProgress: true,
+          current: 8,
+          total: 5,
+          failed: 0,
+          percentage: 140,
+        },
+      },
+    })
+
+    const progressbar = wrapper.get('[role="progressbar"]')
+    expect(progressbar.attributes('aria-valuenow')).toBe('100')
+    expect(wrapper.get('.progress').attributes('style')).toContain('width: 100%;')
+  })
 })

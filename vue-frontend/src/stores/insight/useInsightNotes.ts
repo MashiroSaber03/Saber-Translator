@@ -90,8 +90,8 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     if (!storageKey) return
     try {
       localStorage.setItem(storageKey, JSON.stringify(notes.value))
-    } catch (e) {
-      console.warn('保存本地笔记失败:', e)
+    } catch {
+      return
     }
   }
 
@@ -105,8 +105,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       const stored = localStorage.getItem(storageKey)
       const parsed = stored ? JSON.parse(stored) : []
       notes.value = Array.isArray(parsed) ? parsed.filter(isNoteData) : []
-    } catch (e) {
-      console.warn('加载本地笔记失败:', e)
+    } catch {
       notes.value = []
     }
   }
@@ -133,7 +132,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         saveNotesToStorage()
       }
     } catch (e) {
-      console.error('加载笔记失败:', e)
       error.value = e instanceof Error ? e.message : '加载笔记失败'
       loadNotesFromStorage()
     } finally {
@@ -201,7 +199,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       }
       error.value = response.error || '添加笔记失败'
     } catch (e) {
-      console.error('添加笔记失败:', e)
       error.value = e instanceof Error ? e.message : '添加笔记失败'
     }
     rollbackOptimisticNote()
@@ -237,7 +234,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         return true
       }
     } catch (e) {
-      console.error('更新笔记失败:', e)
       error.value = e instanceof Error ? e.message : '更新笔记失败'
     }
     return false
@@ -258,7 +254,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         return true
       }
     } catch (e) {
-      console.error('删除笔记失败:', e)
       error.value = e instanceof Error ? e.message : '删除笔记失败'
     }
     return false

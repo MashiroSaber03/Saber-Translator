@@ -4,6 +4,7 @@ import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
 import { useInsightStore, type QAMessage } from '@/stores/insightStore'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { showToast } from '@/utils/toast'
 import QAComposer from './qa/QAComposer.vue'
 import QAMessageList from './qa/QAMessageList.vue'
 import QAOptionsBar from './qa/QAOptionsBar.vue'
@@ -100,8 +101,7 @@ async function sendQuestion(): Promise<void> {
         timestamp: new Date().toISOString(),
       })
     }
-  } catch (error) {
-    console.error('问答请求失败:', error)
+  } catch {
     insightStore.removeLoadingMessages()
     insightStore.addQAMessage({
       id: (Date.now() + 2).toString(),
@@ -132,10 +132,8 @@ async function rebuildEmbeddings(): Promise<void> {
     const response = await insightApi.rebuildEmbeddings(insightStore.currentBookId)
 
     if (!response.success || !response.task_id) {
-      alert('重建失败: ' + (response.error || '未知错误'))
-      isRebuildingEmbeddings.value = false
-      rebuildProgressLabel.value = ''
-      insightStore.setLoading(false)
+      showToast('重建失败: ' + (response.error || '未知错误'), 'error')
+      resetRebuildState()
       return
     }
 
@@ -144,12 +142,9 @@ async function rebuildEmbeddings(): Promise<void> {
     rebuildPollingFailures.value = 0
     startRebuildStatusPolling(response.task_id)
   } catch (error) {
-    console.error('重建向量索引失败:', error)
     const message = error instanceof Error ? error.message : '重建向量索引失败'
-    alert(message)
-    isRebuildingEmbeddings.value = false
-    rebuildProgressLabel.value = ''
-    insightStore.setLoading(false)
+    showToast(message, 'error')
+    resetRebuildState()
   }
 }
 
@@ -160,18 +155,22 @@ function stopRebuildStatusPolling(): void {
   }
 }
 
+function resetRebuildState(): void {
+  stopRebuildStatusPolling()
+  isRebuildingEmbeddings.value = false
+  insightStore.setLoading(false)
+  rebuildTaskId.value = null
+  rebuildProgressLabel.value = ''
+}
+
 async function pollRebuildStatus(taskId: string): Promise<void> {
   if (!insightStore.currentBookId) return
 
   const response = await insightApi.getRebuildEmbeddingsStatus(insightStore.currentBookId, taskId)
   const task = response.task
   if (!task) {
-    stopRebuildStatusPolling()
-    isRebuildingEmbeddings.value = false
-    insightStore.setLoading(false)
-    rebuildTaskId.value = null
-    rebuildProgressLabel.value = ''
-    alert('重建失败: 未找到向量重建任务状态')
+    resetRebuildState()
+    showToast('重建失败: 未找到向量重建任务状态', 'error')
     return
   }
 
@@ -186,11 +185,7 @@ async function pollRebuildStatus(taskId: string): Promise<void> {
   }
 
   if (task.status === 'completed') {
-    stopRebuildStatusPolling()
-    isRebuildingEmbeddings.value = false
-    insightStore.setLoading(false)
-    rebuildTaskId.value = null
-    rebuildProgressLabel.value = ''
+    resetRebuildState()
 
     let message = '向量索引重建完成'
     if (response.stats) {
@@ -199,33 +194,24 @@ async function pollRebuildStatus(taskId: string): Promise<void> {
         message += `\n事件向量: ${response.stats.events_count || 0} 条`
       }
     }
-    alert(message)
+    showToast(message, 'success', 6000)
     return
   }
 
   if (task.status === 'failed' || task.status === 'cancelled') {
-    stopRebuildStatusPolling()
-    isRebuildingEmbeddings.value = false
-    insightStore.setLoading(false)
-    rebuildTaskId.value = null
-    rebuildProgressLabel.value = ''
-    alert('重建失败: ' + (task.error_message || response.error || '未知错误'))
+    resetRebuildState()
+    showToast('重建失败: ' + (task.error_message || response.error || '未知错误'), 'error')
   }
 }
 
 function startRebuildStatusPolling(taskId: string): void {
   stopRebuildStatusPolling()
   rebuildPollingTimer = setInterval(() => {
-    void pollRebuildStatus(taskId).catch((error) => {
-      console.error('轮询向量重建状态失败:', error)
+    void pollRebuildStatus(taskId).catch(() => {
       rebuildPollingFailures.value += 1
       if (rebuildPollingFailures.value >= 3) {
-        stopRebuildStatusPolling()
-        isRebuildingEmbeddings.value = false
-        insightStore.setLoading(false)
-        rebuildTaskId.value = null
-        rebuildProgressLabel.value = ''
-        alert('重建失败: 无法获取任务状态，请稍后查看结果')
+        resetRebuildState()
+        showToast('重建失败: 无法获取任务状态，请稍后查看结果', 'error')
       }
     })
   }, 3000)

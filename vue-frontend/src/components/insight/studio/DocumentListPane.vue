@@ -66,9 +66,7 @@ function formatTime(value: string) {
   --document-list-pane-surface-raised: rgba(255, 178, 46, .16);
   --document-list-pane-text-primary: #122b47;
   --document-list-pane-text-secondary: #9a6708;
-}
 
-.pane {
   display: flex;
   flex-direction: column;
   gap: 10px;

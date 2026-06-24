@@ -19,7 +19,7 @@ import BaseModal from './BaseModal.vue'
 // 常量定义
 // ============================================================
 
-/** localStorage 存储键（与首次引导状态 保持一致） */
+/** 设置提醒关闭状态的 localStorage 存储键 */
 const GUIDE_SHOWN_KEY = 'saber_translator_dismiss_setup_reminder'
 
 // ============================================================
@@ -46,7 +46,7 @@ const dontShowAgain = ref(false)
 // ============================================================
 
 onMounted(() => {
-  // 检查是否已经显示过引导（与首次引导状态 保持一致）
+  // 检查用户是否已关闭设置提醒
   const dismissed = localStorage.getItem(GUIDE_SHOWN_KEY)
   if (dismissed !== 'true') {
     // 首次使用或未勾选"不再显示"，显示引导弹窗
@@ -139,6 +139,7 @@ defineExpose({
         <label class="dont-show-option">
           <UiInput 
             type="checkbox" 
+            class="guide-checkbox"
             v-model="dontShowAgain"
           />
           <span>不再显示此提醒</span>
@@ -149,13 +150,6 @@ defineExpose({
 </template>
 
 <style scoped>
-.guide-content {
-  --first-time-guide-surface-base: #4a90d9;
-  --first-time-guide-surface-raised: #3a7bc8;
-  --first-time-guide-text-primary: #4a90d9;
-}
-
-/* 引导内容容器 */
 .guide-content {
   text-align: center;
   padding: 16px 0;
@@ -175,19 +169,19 @@ defineExpose({
 .guide-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   margin-bottom: 12px;
 }
 
 .guide-text {
   font-size: 14px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
   margin-bottom: 8px;
   line-height: 1.6;
 }
 
 .highlight {
-  color: var(--color-action-primary, var(--first-time-guide-text-primary));
+  color: var(--color-action-primary);
   font-weight: 500;
 }
 
@@ -201,7 +195,7 @@ defineExpose({
 
 .guide-list li {
   font-size: 14px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
   margin-bottom: 8px;
   line-height: 1.5;
 }
@@ -226,26 +220,6 @@ defineExpose({
   transition: all 0.2s;
 }
 
-.guide-btn.primary {
-  background-color: var(--color-action-primary, var(--first-time-guide-surface-base));
-  color: white;
-  border: none;
-}
-
-.guide-btn.primary:hover {
-  background-color: var(--first-time-guide-surface-raised);
-}
-
-.guide-btn.secondary {
-  background-color: transparent;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.guide-btn.secondary:hover {
-  background-color: var(--color-surface-interactive-hover, var(--color-surface-subtle));
-}
-
 .button-icon {
   font-size: 16px;
 }
@@ -261,13 +235,11 @@ defineExpose({
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
   cursor: pointer;
 }
 
-.dont-show-option input {
+.guide-checkbox {
   cursor: pointer;
 }
-
-/* .settings-highlight 及 @keyframes settingsHighlight 由基础样式入口提供 */
 </style>

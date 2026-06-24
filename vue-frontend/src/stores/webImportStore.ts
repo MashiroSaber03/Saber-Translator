@@ -62,6 +62,11 @@ function parseBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
 }
 
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
 function parseImageFormat(value: unknown): WebImportSettings['imagePreprocess']['formatConvert']['targetFormat'] | null {
   return value === 'jpeg' || value === 'png' || value === 'webp' || value === 'original'
     ? value
@@ -313,7 +318,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   const selectedCount = computed(() => selectedPages.value.size)
   const downloadProgressPercent = computed(() => {
     if (downloadProgress.value.total === 0) return 0
-    return Math.round((downloadProgress.value.current / downloadProgress.value.total) * 100)
+    return clampPercent((downloadProgress.value.current / downloadProgress.value.total) * 100)
   })
   const hasUnsavedSettings = computed(() => {
     return (
@@ -365,8 +370,8 @@ export const useWebImportStore = defineStore('webImport', () => {
   function saveToStorage(): void {
     try {
       localStorage.setItem(STORAGE_KEY_WEB_IMPORT_SETTINGS, JSON.stringify(toStoragePayload()))
-    } catch (e) {
-      console.error('保存网页导入设置失败:', e)
+    } catch {
+      return
     }
   }
 
@@ -378,13 +383,11 @@ export const useWebImportStore = defineStore('webImport', () => {
       const parsed = JSON.parse(data)
       const payload = parseCurrentLocalPayload(parsed)
       if (!payload) {
-        console.warn('网页导入本地设置不符合当前 schema，已忽略该设置对象')
         syncDraftFromCommitted()
         return
       }
       applyLoadedPayload(payload)
-    } catch (e) {
-      console.error('加载网页导入设置失败:', e)
+    } catch {
       syncDraftFromCommitted()
     }
   }
@@ -402,14 +405,12 @@ export const useWebImportStore = defineStore('webImport', () => {
       if (!hasStoredSettings) return false
 
       if (!applyLoadedPayload(responsePayload)) {
-        console.warn('网页导入后端设置不符合当前 schema，已忽略该设置对象')
         return false
       }
       saveToStorage()
       hasLoadedBackendSettings.value = true
       return true
-    } catch (e) {
-      console.error('从后端加载网页导入设置失败:', e)
+    } catch {
       return false
     }
   }
@@ -418,8 +419,7 @@ export const useWebImportStore = defineStore('webImport', () => {
     try {
       const response = await saveWebImportSettings(toStoragePayload())
       return Boolean(response.success)
-    } catch (e) {
-      console.error('保存网页导入设置到后端失败:', e)
+    } catch {
       return false
     }
   }
@@ -521,8 +521,8 @@ export const useWebImportStore = defineStore('webImport', () => {
 
     try {
       localStorage.setItem(STORAGE_KEY_DISCLAIMER_ACCEPTED, 'true')
-    } catch (e) {
-      console.error('保存免责声明状态失败:', e)
+    } catch {
+      // Disclaimer persistence is best-effort; the accepted state is already applied in memory.
     }
 
     await initSettings()
@@ -538,8 +538,8 @@ export const useWebImportStore = defineStore('webImport', () => {
     try {
       const accepted = localStorage.getItem(STORAGE_KEY_DISCLAIMER_ACCEPTED)
       disclaimerAccepted.value = accepted === 'true'
-    } catch (e) {
-      console.error('加载免责声明状态失败:', e)
+    } catch {
+      disclaimerAccepted.value = false
     }
   }
 

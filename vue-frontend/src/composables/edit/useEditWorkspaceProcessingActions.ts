@@ -64,7 +64,7 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
   async function handleReTranslateBubble(index: number): Promise<void> {
     const bubble = options.bubbles.value[index]
     if (!bubble?.originalText) {
-      console.warn('无法重新翻译：缺少气泡或原文')
+      showToast('缺少气泡原文，无法重新翻译', 'warning')
       return
     }
     const expectedImageId = options.currentImage.value?.id
@@ -100,21 +100,18 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
         bubbleStore.updateBubble(index, { translatedText: response.data.translated_text })
         if (response.data.warnings && response.data.warnings.length > 0) {
           showToast(`有 ${response.data.warnings.length} 处术语未遵守`, 'warning')
-          console.warn('[SingleBubbleTranslationWarnings]', response.data.warnings)
         }
         await options.reRenderFullImage()
       } else {
         if (!expectedImageId || options.currentImage.value?.id !== expectedImageId || options.bubbles.value[index] !== expectedBubble) {
           return
         }
-        console.error('翻译失败:', response.error || '未知错误')
         showToast(response.error || '重新翻译失败', 'error')
       }
     } catch (error) {
       if (!expectedImageId || options.currentImage.value?.id !== expectedImageId || options.bubbles.value[index] !== expectedBubble) {
         return
       }
-      console.error('翻译出错:', error)
       showToast(error instanceof Error ? error.message : '重新翻译失败', 'error')
     } finally {
       isTranslateLoading.value = false
@@ -156,7 +153,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       if (options.currentImage.value?.id !== expectedImageId) {
         return
       }
-      console.error('自动检测失败:', error)
       showToast('自动检测失败', 'error')
     }
   }
@@ -182,6 +178,7 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
 
     try {
       let totalDetected = 0
+      let failedCount = 0
 
       for (let i = 0; i < totalImages; i++) {
         const image = options.images.value[i]
@@ -205,8 +202,8 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
               options.loadBubbleStatesFromImage()
             }
           }
-        } catch (error) {
-          console.error(`图片 ${i + 1} 检测失败:`, error)
+        } catch {
+          failedCount += 1
         }
       }
 
@@ -218,11 +215,14 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       }
       options.loadBubbleStatesFromImage()
 
-      showToast(`批量检测完成！共处理 ${totalImages} 张图片，检测到 ${totalDetected} 个文本框`, 'success')
+      if (failedCount > 0) {
+        showToast(`批量检测完成，${failedCount} 张图片检测失败，检测到 ${totalDetected} 个文本框`, 'warning')
+      } else {
+        showToast(`批量检测完成！共处理 ${totalImages} 张图片，检测到 ${totalDetected} 个文本框`, 'success')
+      }
 
       scheduleCompletionReset()
-    } catch (error) {
-      console.error('批量检测失败:', error)
+    } catch {
       showToast('批量检测失败', 'error')
       clearCompletionResetTimer()
       isProcessing.value = false
@@ -250,7 +250,6 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
         options.selectFirstBubbleIfExists()
       }
     } catch (error) {
-      console.error('翻译失败:', error)
       showToast(`翻译失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error')
     }
   }

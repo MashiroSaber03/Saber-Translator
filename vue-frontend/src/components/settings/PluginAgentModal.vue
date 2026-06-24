@@ -101,11 +101,11 @@
               <UiInput v-model.number="localAgentSettings.transportRetries" :disabled="unref(isRunning)" type="number" min="0" max="10" step="1" />
             </div>
             <div class="plugin-agent-checkboxes">
-              <label class="ui-checkbox-label">
+              <label class="plugin-agent-checkbox-label">
                 <UiInput v-model="localAgentSettings.forceJsonOutput" :disabled="unref(isRunning)" type="checkbox" />
                 强制 JSON 输出
               </label>
-              <label class="ui-checkbox-label">
+              <label class="plugin-agent-checkbox-label">
                 <UiInput v-model="localAgentSettings.useStream" :disabled="unref(isRunning)" type="checkbox" />
                 流式调用
               </label>
@@ -418,6 +418,16 @@ const {
   --plugin-agent-modal-surface-strong: rgba(15, 23, 42, .03);
   --plugin-agent-modal-text-primary: #757575;
   --plugin-agent-modal-text-secondary: #1d4ed8;
+  --ui-input-border: 1px solid var(--color-border-muted);
+  --ui-input-radius: 10px;
+  --ui-input-padding: 10px 12px;
+  --ui-input-background: var(--color-surface-subtle);
+  --ui-input-color: var(--color-text-default);
+  --ui-textarea-border: 1px solid var(--color-border-muted);
+  --ui-textarea-radius: 10px;
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-background: var(--color-surface-subtle);
+  --ui-textarea-color: var(--color-text-default);
 
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
@@ -508,11 +518,11 @@ const {
 
 .plugin-agent-mode-btn.active {
   background: var(--color-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
-.plugin-agent-start-btn.ui-button:disabled,
-.plugin-agent-begin-btn.ui-button:disabled {
+.plugin-agent-start-btn:disabled,
+.plugin-agent-begin-btn:disabled {
   border: 1px solid var(--plugin-agent-modal-border-default);
   background: var(--plugin-agent-modal-surface-base);
   color: var(--plugin-agent-modal-text-primary);
@@ -521,14 +531,14 @@ const {
   transform: none;
 }
 
-.plugin-agent-start-btn.ui-button,
-.plugin-agent-begin-btn.ui-button {
+.plugin-agent-start-btn,
+.plugin-agent-begin-btn {
   width: 69px;
   padding-right: 0;
   padding-left: 0;
 }
 
-.plugin-agent-start-btn.ui-button {
+.plugin-agent-start-btn {
   height: 24px;
   min-height: 0;
   padding-top: 3px;
@@ -536,7 +546,7 @@ const {
   font-size: 12px;
 }
 
-.plugin-agent-begin-btn.ui-button {
+.plugin-agent-begin-btn {
   flex: 0 0 69px;
   height: 80px;
   min-height: 80px;
@@ -570,21 +580,11 @@ const {
   gap: 8px;
 }
 
-.plugin-agent-checkboxes .ui-checkbox-label {
+.plugin-agent-checkbox-label {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-}
-
-.plugin-agent-field input,
-.plugin-agent-input {
-  width: 100%;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--color-surface-subtle);
-  color: var(--color-text-default);
 }
 
 .plugin-agent-list {
@@ -861,7 +861,7 @@ const {
   gap: 12px;
 }
 
-.plugin-agent-composer textarea {
+.plugin-agent-input {
   flex: 1;
 }
 

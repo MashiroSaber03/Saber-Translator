@@ -105,7 +105,7 @@ describe('Insight settings model fetch ownership', () => {
   it.each(settingsFetchCases)('ignores stale $name model-list responses after provider changes', async (testCase) => {
     const deferred = createDeferred({
       success: true,
-      models: [{ id: 'old-provider-model', name: 'Old Provider Model' }],
+      models: [{ id: 'previous-provider-model', name: 'Previous Provider Model' }],
     })
     fetchModelsMock.mockReturnValueOnce(deferred.promise)
 
@@ -136,12 +136,12 @@ describe('Insight settings model fetch ownership', () => {
     await wrapper.find('.provider-stub').trigger('click')
     deferred.resolve({
       success: true,
-      models: [{ id: 'old-provider-model', name: 'Old Provider Model' }],
+      models: [{ id: 'previous-provider-model', name: 'Previous Provider Model' }],
     })
     await flushPromises()
 
     const emittedMessages = wrapper.emitted('showMessage') ?? []
     expect(emittedMessages).not.toContainEqual(['获取到 1 个模型', 'success'])
-    expect(wrapper.text()).not.toContain('Old Provider Model')
+    expect(wrapper.text()).not.toContain('Previous Provider Model')
   })
 })

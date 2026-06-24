@@ -128,6 +128,15 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   justify-content: space-between;
 }
 
+.editor-row {
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 14px;
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
+}
+
 .messages-panel {
   display: flex;
   flex: 1 1 auto;
@@ -177,16 +186,6 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
-}
-
-.editor-row textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--studio-border-strong);
-  border-radius: 14px;
-  background: var(--studio-surface-soft);
-  color: var(--studio-text-strong);
-  font-size: 13px;
 }
 
 .attachment-grid {

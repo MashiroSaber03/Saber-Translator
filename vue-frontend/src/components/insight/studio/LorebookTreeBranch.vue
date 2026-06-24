@@ -168,11 +168,28 @@ function move(offset: -1 | 1) {
 
 <style scoped>
 .branch-node {
-  /* owner tokens: lorebook-tree-branch */
   --lorebook-tree-branch-border-default: rgba(37, 99, 199, .12);
   --lorebook-tree-branch-surface-base: rgba(255, 255, 255, .82);
   --lorebook-tree-branch-text-primary: #14304c;
   --lorebook-tree-branch-text-secondary: #516882;
+  --ui-input-border: 1px solid var(--studio-border-strong);
+  --ui-input-background: var(--studio-surface-soft);
+  --ui-input-radius: 14px;
+  --ui-input-padding: 10px 12px;
+  --ui-input-color: var(--studio-text-strong);
+  --ui-input-font-size: 13px;
+  --ui-select-border: 1px solid var(--studio-border-strong);
+  --ui-select-background: var(--studio-surface-soft);
+  --ui-select-radius: 14px;
+  --ui-select-padding: 10px 12px;
+  --ui-select-color: var(--studio-text-strong);
+  --ui-select-font-size: 13px;
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 14px;
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
 
   border-radius: 18px;
   background: var(--lorebook-tree-branch-surface-base);
@@ -247,21 +264,6 @@ label {
   gap: 6px;
   color: var(--lorebook-tree-branch-text-secondary);
   font-size: 12px;
-}
-
-input,
-textarea,
-select {
-  border: 1px solid var(--studio-border-strong);
-  background: var(--studio-surface-soft);
-  border-radius: 14px;
-  padding: 10px 12px;
-  color: var(--studio-text-strong);
-  font-size: 13px;
-}
-
-textarea {
-  resize: vertical;
 }
 
 .toggles {

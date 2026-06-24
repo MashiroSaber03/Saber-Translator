@@ -124,6 +124,13 @@ const imageStyle = computed(() => ({
   width: `${imageSize.value}%`
 }))
 
+const displayImageAlt = computed(() => {
+  const fileName = currentImage.value?.fileName || currentImage.value?.name || '当前图片'
+  return showOriginal.value || !currentImage.value?.translatedDataURL
+    ? `原图：${fileName}`
+    : `翻译图：${fileName}`
+})
+
 /** 是否使用文本框提示词（决定显示 textboxText 还是 translatedText） */
 const useTextboxPrompt = computed(() => settingsStore.settings.useTextboxPrompt)
 
@@ -258,7 +265,9 @@ function toggleEditMode(): void {
  */
 function updateImageSize(event: Event): void {
   const input = event.target as HTMLInputElement
-  imageSize.value = parseInt(input.value, 10)
+  const nextSize = parseInt(input.value, 10)
+  if (Number.isNaN(nextSize)) return
+  imageSize.value = Math.min(200, Math.max(50, nextSize))
 }
 
 /**
@@ -371,8 +380,8 @@ async function handleImportFile(event: Event): Promise<void> {
         <!-- 翻译后图片 -->
         <img
           class="translated-image"
-          :src="displayImageUrl" 
-          alt="翻译后图片"
+          :src="displayImageUrl"
+          :alt="displayImageAlt"
           :style="imageStyle"
         >
       </div>
@@ -446,10 +455,10 @@ async function handleImportFile(event: Event): Promise<void> {
           导入文本
         </UiButton>
         <!-- 隐藏的文件输入框，用于导入文本 -->
-        <UiFileInput 
+        <UiFileInput
           ref="importFileInput"
-          id="importTextFileInput" 
-          style="display: none;" 
+          id="importTextFileInput"
+          hidden
           accept=".json"
           @change="handleImportFile"
         />
@@ -620,11 +629,6 @@ async function handleImportFile(event: Event): Promise<void> {
   margin: 0 auto;
 }
 
-/* 空状态区域 - 保持按业务契约，不显示额外卡片 */
-.image-result-display .empty-state-section {
-  display: none;
-}
-
 /* 检测文本信息区域 */
 .image-result-display .text-info {
   width: 100%;
@@ -711,17 +715,6 @@ async function handleImportFile(event: Event): Promise<void> {
   cursor: not-allowed;
 }
 
-.image-result-display .download-btn.primary {
-  background: linear-gradient(135deg, var(--image-result-display-surface-base) 0%, var(--color-surface-accent) 100%);
-  color: white;
-}
-
-.image-result-display .download-btn.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--image-result-display-surface-raised) 0%, var(--color-surface-accent) 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 10px var(--image-result-display-shadow-strong);
-}
-
 .image-result-display .download-btn.success {
   background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-surface-muted) 100%);
   color: white;
@@ -743,42 +736,6 @@ async function handleImportFile(event: Event): Promise<void> {
 .image-result-display .download-format-selector {
   width: auto;
   max-width: 150px;
-}
-
-.image-result-display .download-format-selector select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--image-result-display-border-default);
-  border-radius: 8px;
-  font-size: 0.9em;
-  background-color: var(--color-surface-quiet);
-  margin-top: 5px;
-  transition: border-color 0.3s, box-shadow 0.3s;
-  cursor: pointer;
-}
-
-.image-result-display .download-format-selector select:hover {
-  border-color: var(--color-action-primary, var(--color-border-info));
-}
-
-.image-result-display .download-format-selector select:focus {
-  border-color: var(--color-border-accent);
-  box-shadow: 0 0 0 3px var(--image-result-display-shadow-floating);
-  outline: none;
-}
-
-.image-result-display .highlight-bubble {
-  position: absolute;
-  border: 1px solid var(--image-result-display-border-strong);
-  pointer-events: auto;
-  z-index: var(--z-overlay);
-  border-radius: 5px;
-  overflow: visible;
-  cursor: pointer;
-}
-
-.image-result-display .highlight-bubble.selected {
-  border: 1px solid var(--image-result-display-border-muted);
 }
 
 @media (--breakpoint-md-down) {

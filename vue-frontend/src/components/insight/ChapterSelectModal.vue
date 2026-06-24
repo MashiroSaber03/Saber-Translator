@@ -1,17 +1,7 @@
 <script setup lang="ts">
-/**
- * 章节选择弹窗组件
- * 用于在有多个章节时让用户选择要翻译的章节
- * 基于 BaseModal 实现
- */
-
 import { ref } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-
-// ============================================================
-// 类型定义
-// ============================================================
 
 interface Chapter {
   id: string
@@ -24,10 +14,6 @@ interface Props {
   chapters: Chapter[]
 }
 
-// ============================================================
-// Props 和 Emits
-// ============================================================
-
 defineProps<Props>()
 
 const emit = defineEmits<{
@@ -35,37 +21,18 @@ const emit = defineEmits<{
   select: [chapterId: string]
 }>()
 
-// ============================================================
-// 状态
-// ============================================================
-
-/** 选中的章节ID */
 const selectedChapterId = ref<string>('')
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 选择章节
- * @param chapterId - 章节ID
- */
 function selectChapter(chapterId: string): void {
   selectedChapterId.value = chapterId
 }
 
-/**
- * 确认选择
- */
 function confirmSelection(): void {
   if (selectedChapterId.value) {
     emit('select', selectedChapterId.value)
   }
 }
 
-/**
- * 关闭弹窗
- */
 function close(): void {
   emit('close')
 }
@@ -124,15 +91,12 @@ function close(): void {
   --chapter-select-modal-text-secondary: #64748b;
 }
 
-/* 章节选择弹窗特定样式 */
-
 .chapter-select-body .hint-text {
   font-size: 14px;
   color: var(--insight-text-secondary);
   margin: 0 0 16px;
 }
 
-/* 章节列表 */
 .chapter-select-body .chapters-list {
   display: flex;
   flex-direction: column;
@@ -171,12 +135,12 @@ function close(): void {
 .chapter-select-body .chapter-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-default, var(--chapter-select-modal-text-primary));
+  color: var(--chapter-select-modal-text-primary);
 }
 
 .chapter-select-body .chapter-pages {
   font-size: 12px;
-  color: var(--color-text-supporting, var(--chapter-select-modal-text-secondary));
+  color: var(--chapter-select-modal-text-secondary);
 }
 
 .chapter-select-body .check-icon {

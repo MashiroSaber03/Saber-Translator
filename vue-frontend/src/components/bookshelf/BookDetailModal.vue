@@ -220,8 +220,8 @@ async function refreshBookDetail() {
     if (response.success && response.book) {
       bookshelfStore.updateBook(currentBook.value.id, response.book)
     }
-  } catch (error) {
-    console.error('刷新书籍详情失败:', error)
+  } catch {
+    // Sort rollback is best-effort; the visible order remains unchanged if refresh fails.
   }
 }
 
@@ -356,9 +356,8 @@ async function removeTag(tagName: string) {
     } else {
       showToast('移除标签失败', 'error')
     }
-  } catch (error) {
+  } catch {
     showToast('操作失败', 'error')
-    console.error('移除标签失败:', error)
   } finally {
     isTagLoading.value = false
   }
@@ -403,9 +402,8 @@ async function quickAddTagToBook(tagName: string) {
     } else {
       showToast('添加标签失败', 'error')
     }
-  } catch (error) {
+  } catch {
     showToast('操作失败', 'error')
-    console.error('快速添加标签失败:', error)
   } finally {
     isTagLoading.value = false
   }
@@ -507,22 +505,21 @@ async function quickAddTagToBook(tagName: string) {
 
 <style scoped>
 .book-detail-container {
-  --book-detail-modal-border-default: rgba(102, 126, 234, .4);
-  --book-detail-modal-border-strong: rgba(102, 126, 234, .6);
-  --book-detail-modal-shadow-default: rgba(0, 0, 0, .15);
-  --book-detail-modal-shadow-raised: rgba(102, 126, 234, .4);
-  --book-detail-modal-shadow-floating: rgba(40, 167, 69, .4);
-  --book-detail-modal-shadow-strong: rgba(102, 126, 234, .15);
-  --book-detail-modal-shadow-soft: rgba(102, 126, 234, .15);
-  --book-detail-modal-surface-base: #7b8eef;
-  --book-detail-modal-surface-raised: #8a5cb5;
-  --book-detail-modal-surface-muted: #34ce57;
-  --book-detail-modal-surface-subtle: #38d9a9;
-  --book-detail-modal-surface-hover: rgba(102, 126, 234, .1);
-  --book-detail-modal-surface-active: rgba(118, 75, 162, .1);
-  --book-detail-modal-surface-selected: rgba(102, 126, 234, .2);
-  --book-detail-modal-surface-overlay: rgba(118, 75, 162, .2);
-  --book-detail-modal-text-primary: #667eea;
+  --book-detail-accent: #667eea;
+  --book-detail-cover-shadow: rgba(0, 0, 0, .15);
+  --book-detail-focus-shadow: rgba(102, 126, 234, .15);
+  --book-detail-primary-action-shadow: rgba(102, 126, 234, .4);
+  --book-detail-success-action-shadow: rgba(40, 167, 69, .4);
+  --book-detail-primary-action-hover-start: #7b8eef;
+  --book-detail-primary-action-hover-end: #8a5cb5;
+  --book-detail-success-action-hover-start: #34ce57;
+  --book-detail-success-action-hover-end: #38d9a9;
+  --book-detail-new-tag-border: rgba(102, 126, 234, .4);
+  --book-detail-new-tag-border-hover: rgba(102, 126, 234, .6);
+  --book-detail-new-tag-background-start: rgba(102, 126, 234, .1);
+  --book-detail-new-tag-background-end: rgba(118, 75, 162, .1);
+  --book-detail-new-tag-hover-start: rgba(102, 126, 234, .2);
+  --book-detail-new-tag-hover-end: rgba(118, 75, 162, .2);
 
   display: flex;
   flex-direction: column;

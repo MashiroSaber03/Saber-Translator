@@ -40,9 +40,7 @@ defineEmits<{
 <style scoped>
 .pane {
   --candidate-list-pane-text-primary: #122b47;
-}
 
-.pane {
   display: flex;
   flex-direction: column;
   gap: 10px;

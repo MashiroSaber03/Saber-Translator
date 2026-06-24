@@ -19,7 +19,6 @@ describe('Property 25: 标签批量操作一致性', () => {
    * 生成标签数据的 Arbitrary
    */
   const tagArbitrary = fc.record({
-    id: fc.uuid(),
     name: fc.string({ minLength: 1, maxLength: 20 }),
     color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`), { nil: undefined }),
   }) as fc.Arbitrary<TagData>
@@ -32,7 +31,7 @@ describe('Property 25: 标签批量操作一致性', () => {
     title: fc.string({ minLength: 1, maxLength: 100 }),
     description: fc.option(fc.string({ maxLength: 200 }), { nil: undefined }),
     cover: fc.option(fc.string(), { nil: undefined }),
-    tags: fc.array(fc.uuid(), { maxLength: 3 }),
+    tags: fc.array(fc.string({ minLength: 1, maxLength: 20 }), { maxLength: 3 }),
     chapters: fc.constant([]),
     createdAt: fc.date().map(d => d.toISOString()),
     updatedAt: fc.date().map(d => d.toISOString()),
@@ -49,16 +48,16 @@ describe('Property 25: 标签批量操作一致性', () => {
           store.setTags(tags)
 
           const bookIds = books.map(b => b.id)
-          const tagIds = tags.map(t => t.id)
+          const tagNames = tags.map(t => t.name)
 
           // 批量添加标签
-          store.batchAddTags(bookIds, tagIds)
+          store.batchAddTags(bookIds, tagNames)
 
           // 验证：每本书都包含所有添加的标签
           for (const bookId of bookIds) {
             const book = store.getBookById(bookId)
-            for (const tagId of tagIds) {
-              expect(book?.tags).toContain(tagId)
+            for (const tagName of tagNames) {
+              expect(book?.tags).toContain(tagName)
             }
           }
           
@@ -77,12 +76,12 @@ describe('Property 25: 标签批量操作一致性', () => {
           const store = useBookshelfStore()
           
           // 创建带有标签的书籍
-          const tagIds = tags.map(t => t.id)
+          const tagNames = tags.map(t => t.name)
           const books: BookData[] = [
             {
               id: 'book-1',
               title: '测试书籍1',
-              tags: [...tagIds],
+              tags: [...tagNames],
               chapters: [],
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -90,7 +89,7 @@ describe('Property 25: 标签批量操作一致性', () => {
             {
               id: 'book-2',
               title: '测试书籍2',
-              tags: [...tagIds],
+              tags: [...tagNames],
               chapters: [],
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -101,7 +100,7 @@ describe('Property 25: 标签批量操作一致性', () => {
           store.setTags(tags)
 
           // 选择要移除的标签（第一个）
-          const tagsToRemove = [tagIds[0]]
+          const tagsToRemove = [tagNames[0]]
           const bookIds = books.map(b => b.id)
 
           // 批量移除标签
@@ -131,7 +130,7 @@ describe('Property 25: 标签批量操作一致性', () => {
           const book: BookData = {
             id: 'book-1',
             title: '测试书籍',
-            tags: [tag.id],
+            tags: [tag.name],
             chapters: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -141,11 +140,11 @@ describe('Property 25: 标签批量操作一致性', () => {
           store.setTags([tag])
 
           // 再次添加相同标签
-          store.addTagToBook(book.id, tag.id)
+          store.addTagToBook(book.id, tag.name)
 
           // 验证：标签不会重复
           const updatedBook = store.getBookById(book.id)
-          const tagCount = updatedBook?.tags?.filter(t => t === tag.id).length || 0
+          const tagCount = updatedBook?.tags?.filter(t => t === tag.name).length || 0
           expect(tagCount).toBe(1)
           
           return true
@@ -159,19 +158,18 @@ describe('Property 25: 标签批量操作一致性', () => {
     fc.assert(
       fc.property(
         fc.array(tagArbitrary, { minLength: 1, maxLength: 3 }),
-        fc.uuid(),
-        (tags, nonExistentTagId) => {
-          // 确保标签ID不在列表中
-          const existingIds = new Set(tags.map(t => t.id))
-          if (existingIds.has(nonExistentTagId)) return true
+        fc.string({ minLength: 1, maxLength: 20 }),
+        (tags, nonExistentTagName) => {
+          const existingNames = new Set(tags.map(t => t.name))
+          if (existingNames.has(nonExistentTagName)) return true
 
           const store = useBookshelfStore()
           
-          const tagIds = tags.map(t => t.id)
+          const tagNames = tags.map(t => t.name)
           const book: BookData = {
             id: 'book-1',
             title: '测试书籍',
-            tags: [...tagIds],
+            tags: [...tagNames],
             chapters: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -183,7 +181,7 @@ describe('Property 25: 标签批量操作一致性', () => {
           const originalTags = [...(store.getBookById(book.id)?.tags || [])]
 
           // 尝试移除不存在的标签
-          store.removeTagFromBook(book.id, nonExistentTagId)
+          store.removeTagFromBook(book.id, nonExistentTagName)
 
           // 验证：标签列表不变
           const updatedBook = store.getBookById(book.id)
@@ -203,7 +201,7 @@ describe('Property 25: 标签批量操作一致性', () => {
         (tags) => {
           const store = useBookshelfStore()
           
-          const tagIds = tags.map(t => t.id)
+          const tagNames = tags.map(t => t.name)
           const books: BookData[] = [
             {
               id: 'book-1',
@@ -235,7 +233,7 @@ describe('Property 25: 标签批量操作一致性', () => {
           store.setTags(tags)
 
           // 只对前两本书添加标签
-          store.batchAddTags(['book-1', 'book-2'], tagIds)
+          store.batchAddTags(['book-1', 'book-2'], tagNames)
 
           // 验证：第三本书不受影响
           const book3 = store.getBookById('book-3')

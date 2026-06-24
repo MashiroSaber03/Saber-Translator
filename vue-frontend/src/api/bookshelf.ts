@@ -275,27 +275,27 @@ export async function createTag(name: string, color?: string): Promise<TagDetail
 
 /**
  * 删除标签
- * @param tagId 标签 ID（标签名称）
+ * @param tagName 标签名称
  */
-export async function deleteTag(tagId: string): Promise<ApiResponse> {
+export async function deleteTag(tagName: string): Promise<ApiResponse> {
   // 标签名称作为路径参数传递，必须先进行 URL 编码。
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${encodeURIComponent(tagId)}`)
+  return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${encodeURIComponent(tagName)}`)
 }
 
 /**
  * 更新标签
- * @param tagId 标签 ID（原标签名称）
+ * @param currentName 当前标签名称
  * @param name 新标签名称
  * @param color 新标签颜色
  */
 export async function updateTag(
-  tagId: string,
+  currentName: string,
   name: string,
   color: string
 ): Promise<TagDetailResponse> {
   // 后端使用标签名称作为 URL 路径参数。
   return apiClient.put<TagDetailResponse>(
-    `/api/bookshelf/tags/${encodeURIComponent(tagId)}`,
+    `/api/bookshelf/tags/${encodeURIComponent(currentName)}`,
     { name, color }
   )
 }

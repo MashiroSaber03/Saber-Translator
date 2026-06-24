@@ -89,7 +89,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
 
   const runtime = createSaveRuntime(true)
   if (!runtime.sessionPath) {
-    console.warn('[AutoSave] 缺少书籍/章节ID，跳过预保存')
     progressCallback?.onError?.('缺少书籍/章节ID')
     return false
   }
@@ -97,7 +96,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
   const allImages = imageStore.images
   const totalImages = allImages.length
   if (totalImages === 0) {
-    console.warn('[AutoSave] 没有图片，跳过预保存')
     progressCallback?.onError?.('没有图片')
     return false
   }
@@ -127,7 +125,6 @@ async function initializeBookshelfSession(options: InitializeSessionOptions): Pr
     progressCallback?.onComplete?.()
     return true
   } catch (error) {
-    console.error('[AutoSave] 预保存失败:', error)
     progressCallback?.onError?.(error instanceof Error ? error.message : '预保存失败')
     sessionPathCache = null
     preSaveCompleted = false
@@ -196,8 +193,8 @@ export async function finalizeSave(): Promise<void> {
       totalPages: imageStore.images.length,
       currentImageIndex: imageStore.currentImageIndex,
     })
-  } catch (error) {
-    console.error('[AutoSave] 完成保存失败:', error)
+  } catch {
+    // Final session metadata persistence is best-effort; page data was already saved during the pipeline.
   } finally {
     sessionPathCache = null
     preSaveCompleted = false

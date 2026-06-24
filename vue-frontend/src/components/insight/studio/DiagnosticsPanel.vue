@@ -53,7 +53,6 @@ defineProps<{
 
 <style scoped>
 .diagnostics-shell {
-  /* owner tokens: diagnostics-panel */
   --diagnostics-panel-border-default: rgba(25, 55, 94, .08);
   --diagnostics-panel-surface-base: rgba(255, 255, 255, .86);
   --diagnostics-panel-surface-raised: rgba(255, 244, 244, .86);

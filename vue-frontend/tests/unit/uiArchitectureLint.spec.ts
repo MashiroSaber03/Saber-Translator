@@ -582,6 +582,41 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('.ui-input')
   })
 
+  it('rejects business CSS that styles primitives through relational element selectors', () => {
+    const result = runUiArchitectureSourceFixture('SettingsPanel.vue', `
+      <template><section class="settings-panel"></section></template>
+      <style scoped>
+      .settings-panel :where(button) {
+        min-height: 38px;
+      }
+
+      .settings-panel__toggle:has(input:checked) {
+        color: var(--color-text-brand);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive relational selector(s)')
+    expect(result.stderr).toContain(':where(button)')
+    expect(result.stderr).toContain(':has(input:checked)')
+  })
+
+  it('rejects business CSS that styles checkbox primitives through raw input selectors', () => {
+    const result = runUiArchitectureSourceFixture('SettingsPanel.vue', `
+      <template><section class="settings-panel"></section></template>
+      <style scoped>
+      .settings-panel__checkbox input[type='checkbox'] {
+        width: auto;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive input selector(s)')
+    expect(result.stderr).toContain("input[type='checkbox']")
+  })
+
   it('rejects domain owner token references from UI primitives', () => {
     const result = runUiArchitectureSourceFixture('src/components/ui/UiButton.vue', `
       <template><button class="ui-button">Button</button></template>
@@ -899,14 +934,17 @@ describe('UI architecture source hygiene lint', () => {
     expect(result.stderr).toContain(webImportTypeExport)
   })
 
-  it('rejects checked-in local build and dev log files', () => {
-    const result = runUiArchitectureSourceFixture('build_output.txt', `
-      vite build output
-    `)
+  it.each(['build_output.txt', 'build_error.txt', 'vite-dev.log'])(
+    'rejects checked-in local build and dev log file %s',
+    artifactName => {
+      const result = runUiArchitectureSourceFixture(artifactName, `
+        vite build output
+      `)
 
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('local build/dev log files are not allowed')
-  })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('local build/dev log files are not allowed')
+    }
+  )
 })
 
 describe('UI architecture frontend schema compatibility lint', () => {

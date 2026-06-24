@@ -59,7 +59,7 @@ describe('useTranslateViewActions', () => {
     const options = createOptions()
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
-    const actions = useTranslateViewActions(options as any)
+    const actions = useTranslateViewActions(options as unknown as Parameters<typeof useTranslateViewActions>[0])
     actions.handleUploadComplete(3)
 
     expect(options.imageStore.sortImagesByFileName).toHaveBeenCalled()

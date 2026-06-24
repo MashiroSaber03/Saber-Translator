@@ -55,7 +55,7 @@ export async function getPromptContent(type: string, name: string): Promise<Prom
  * @param content 提示词内容
  */
 export async function savePrompt(type: string, name: string, content: string): Promise<ApiResponse> {
-  // 后端期望 prompt_name 和 prompt_content
+  // 当前后端协议字段为 prompt_name 和 prompt_content。
   return apiClient.post<ApiResponse>('/api/save_prompt', {
     type,
     prompt_name: name,
@@ -231,9 +231,9 @@ export async function testAiVisionOcrConnection(
   return apiClient.post<ConnectionTestResponse>('/api/test_ai_vision_ocr', {
     provider: normalizeProviderId(params.provider),
     api_key: params.apiKey,
-    model_name: params.modelName,  // 后端期望 model_name
-    custom_ai_vision_base_url: params.customBaseUrl,  // 后端期望 custom_ai_vision_base_url
-    prompt: params.prompt || '', // 增加：将提示词发送到后端
+    model_name: params.modelName,
+    custom_ai_vision_base_url: params.customBaseUrl,
+    prompt: params.prompt || '',
   })
 }
 

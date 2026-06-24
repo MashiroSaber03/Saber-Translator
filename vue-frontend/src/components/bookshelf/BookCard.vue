@@ -4,23 +4,23 @@
  * 展示书籍封面、标题、标签和基础统计信息。
  */
 
-import type { BookData } from '@/types'
+import type { BookData, TagData } from '@/types'
 import UiButton from '@/components/ui/UiButton.vue'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { computed, ref, watch } from 'vue'
 
 interface Props {
   book: BookData
+  tags?: TagData[]
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  tags: () => [],
+})
 
 const emit = defineEmits<{
   click: []
 }>()
 
-const bookshelfStore = useBookshelfStore()
-const allTags = computed(() => bookshelfStore.tags)
 const coverFailed = ref(false)
 
 const hasVisibleCover = computed(() => {
@@ -38,7 +38,7 @@ function handleClick() {
 
 // 获取标签颜色
 function getTagColor(tagName: string): string {
-  const tagInfo = allTags.value.find((t: { name: string; color?: string }) => t.name === tagName)
+  const tagInfo = props.tags.find(tag => tag.name === tagName)
   return tagInfo?.color || '#667eea'
 }
 
@@ -87,11 +87,11 @@ function handleImageError() {
 
 <style scoped>
 .book-card {
-  --book-card-border-default: rgba(102, 126, 234, .5);
-  --book-card-shadow-default: rgba(0, 0, 0, .08);
-  --book-card-shadow-raised: rgba(0, 0, 0, .15);
-  --book-card-surface-base: rgba(0, 0, 0, .6);
-  --book-card-text-primary: rgba(255, 255, 255, .8);
+  --book-card-hover-border: rgba(102, 126, 234, .5);
+  --book-card-shadow: rgba(0, 0, 0, .08);
+  --book-card-hover-shadow: rgba(0, 0, 0, .15);
+  --book-card-cover-overlay: rgba(0, 0, 0, .6);
+  --book-card-cover-placeholder: rgba(255, 255, 255, .8);
 }
 
 /* 书籍卡片 */
@@ -104,7 +104,7 @@ function handleImageError() {
     background: var(--color-surface-card);
     border-radius: var(--radius-lg);
     overflow: hidden;
-    box-shadow: 0 4px 12px var(--book-card-shadow-default);
+    box-shadow: 0 4px 12px var(--book-card-shadow);
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
@@ -122,11 +122,11 @@ function handleImageError() {
 
 .book-card:hover {
     transform: translateY(-6px) scale(1.02);
-    box-shadow: 0 12px 32px var(--book-card-shadow-raised);
+    box-shadow: 0 12px 32px var(--book-card-hover-shadow);
 }
 
 .book-card:hover::after {
-    border-color: var(--book-card-border-default);
+    border-color: var(--book-card-hover-border);
 }
 
 .book-card:active {
@@ -161,7 +161,7 @@ function handleImageError() {
     content: '查看详情';
     position: absolute;
     inset: 0;
-    background: var(--book-card-surface-base);
+    background: var(--book-card-cover-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -183,7 +183,7 @@ function handleImageError() {
     left: 50%;
     transform: translate(-50%, -50%);
     font-size: 3rem;
-    color: var(--book-card-text-primary);
+    color: var(--book-card-cover-placeholder);
 }
 
 /* 书籍信息 */

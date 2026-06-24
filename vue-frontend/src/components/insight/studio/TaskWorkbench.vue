@@ -73,9 +73,25 @@ defineEmits<{
   --task-workbench-border-default: rgba(25, 55, 94, .08);
   --task-workbench-surface-base: rgba(255, 255, 255, .84);
   --task-workbench-text-primary: #516882;
-}
+  --ui-input-border: 1px solid var(--studio-border-strong);
+  --ui-input-background: var(--studio-surface-soft);
+  --ui-input-radius: 14px;
+  --ui-input-padding: 11px 12px;
+  --ui-input-color: var(--studio-text-strong);
+  --ui-input-font-size: 13px;
+  --ui-select-border: 1px solid var(--studio-border-strong);
+  --ui-select-background: var(--studio-surface-soft);
+  --ui-select-radius: 14px;
+  --ui-select-padding: 11px 12px;
+  --ui-select-color: var(--studio-text-strong);
+  --ui-select-font-size: 13px;
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 14px;
+  --ui-textarea-padding: 11px 12px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
 
-.workbench {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -131,25 +147,9 @@ defineEmits<{
   grid-column: 1 / -1;
 }
 
-.title-input,
-input,
-textarea,
-select {
-  border: 1px solid var(--studio-border-strong);
-  background: var(--studio-surface-soft);
-  border-radius: 14px;
-  padding: 11px 12px;
-  color: var(--studio-text-strong);
-  font-size: 13px;
-}
-
 .title-input {
   flex: 1;
   font-weight: 600;
-}
-
-textarea {
-  resize: vertical;
 }
 
 label {

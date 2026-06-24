@@ -15,6 +15,8 @@ describe('Property 24: 书籍CRUD操作一致性', () => {
     setActivePinia(createPinia())
   })
 
+  const tagNameArbitrary = fc.string({ minLength: 1, maxLength: 40 })
+
   /**
    * 生成书籍数据的 Arbitrary
    */
@@ -23,7 +25,7 @@ describe('Property 24: 书籍CRUD操作一致性', () => {
     title: fc.string({ minLength: 1, maxLength: 100 }),
     description: fc.option(fc.string({ maxLength: 200 }), { nil: undefined }),
     cover: fc.option(fc.string(), { nil: undefined }),
-    tags: fc.array(fc.uuid(), { maxLength: 5 }),
+    tags: fc.array(tagNameArbitrary, { maxLength: 5 }),
     chapters: fc.constant([]),
     createdAt: fc.date().map(d => d.toISOString()),
     updatedAt: fc.date().map(d => d.toISOString()),

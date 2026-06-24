@@ -58,6 +58,19 @@ describe('BaseModal', () => {
     expect(document.body.style.overflow).toBe('hidden')
   })
 
+  it('keeps body scrolling locked until every open modal closes', async () => {
+    const first = mountModal({ title: 'First Modal' })
+    const second = mountModal({ title: 'Second Modal' })
+
+    expect(document.body.style.overflow).toBe('hidden')
+
+    await first.setProps({ modelValue: false })
+    expect(document.body.style.overflow).toBe('hidden')
+
+    await second.setProps({ modelValue: false })
+    expect(document.body.style.overflow).toBe('')
+  })
+
   it('exposes dialog semantics and labels the dialog from its title', () => {
     mountModal({ title: 'Accessible Modal' })
 

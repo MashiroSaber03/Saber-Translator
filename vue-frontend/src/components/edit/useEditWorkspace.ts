@@ -20,6 +20,7 @@ import { showToast } from '@/utils/toast'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
+import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 export interface EditWorkspaceProps {
   /** 编辑模式是否激活 */
@@ -40,7 +41,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const {
     reRenderFullImage
   } = useEditRender({
-    onRenderError: (err) => console.error('渲染失败:', err)
+    onRenderError: () => showToast('渲染失败，请重试', 'error')
   })
 
   // 使用气泡操作 composable
@@ -187,16 +188,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     editPanelRef,
   })
 
-  // ============================================================
-  // 独立的修复设置状态（不依赖气泡选中）
-  // 对应业务契约 $('#bubbleInpaintMethodNew').val() 和 $('#fillColorNew').val()
-  // ============================================================
+  // 独立修复设置由编辑工作区持有，未选中气泡时仍能作为新气泡默认值。
 
   /** 当前编辑面板选择的修复方式 */
   const currentInpaintMethod = ref<InpaintMethod>('solid')
 
   /** 当前编辑面板选择的填充颜色 */
-  const currentFillColor = ref('#FFFFFF')
+  const currentFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
 
   /** 单气泡 OCR 识别中 */
   const isOcrLoading = ref(false)
@@ -448,8 +446,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     // 保存到 localStorage
     try {
       localStorage.setItem(LAYOUT_MODE_KEY, layoutMode.value)
-    } catch (e) {
-      console.warn('保存布局模式失败:', e)
+    } catch {
+      // 布局偏好不可写时继续使用当前会话内状态。
     }
     // 切换布局后延迟 300ms 自动适应屏幕
     setTimeout(() => {
@@ -765,7 +763,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   function handleResetCurrentBubble(index: number): void {
     const initialState = bubbleStore.initialStates[index]
     if (!initialState) {
-      console.warn(`无法重置气泡 #${index + 1}：找不到初始状态`)
       showToast('无法重置：找不到初始状态', 'warning')
       return
     }
@@ -862,7 +859,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
         await saveBookshelfPageProgress(sourceImageIndex, targetImageIndex)
       } catch (error) {
-        console.error('[EditWorkspace] 书架模式持久化保存失败:', error)
         const message = error instanceof Error
           ? error.message
           : '当前页保存失败，未跳转到下一张'
@@ -890,15 +886,10 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   // 错误边界
   // ============================================================
 
-  /** 捕获子组件错误，提供用户友好的错误提示 */
-  onErrorCaptured((err, _instance, info) => {
-    console.error('[EditWorkspace] 捕获到错误:', err, info)
-    
-    // 显示用户友好的错误提示
+  onErrorCaptured((err) => {
     const userMessage = err instanceof Error ? err.message : '操作失败，请重试'
     showToast(userMessage, 'error')
-    
-    // 返回 false 阻止错误继续传播
+
     return false
   })
 
@@ -913,8 +904,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       if (savedLayout === 'horizontal' || savedLayout === 'vertical') {
         layoutMode.value = savedLayout
       }
-    } catch (e) {
-      console.warn('加载布局模式失败:', e)
+    } catch {
+      // 布局偏好不可读时使用默认水平布局。
     }
 
     // 键盘快捷键需要在编辑工作区获得焦点之外仍然可用。
@@ -976,12 +967,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   })
 
-  // 监听选中气泡变化，同步修复设置到独立状态
-  // 对应业务契约 selectBubbleNew 中更新 $('#bubbleInpaintMethodNew') 的逻辑
+  // 选中气泡变化时，同步编辑工作区持有的修复默认值。
   watch(selectedBubble, (bubble) => {
     if (bubble) {
       currentInpaintMethod.value = bubble.inpaintMethod || 'solid'
-      currentFillColor.value = bubble.fillColor || '#FFFFFF'
+      currentFillColor.value = bubble.fillColor || TEXT_STYLE_DEFAULTS.fillColor
     }
   }, { immediate: true })
 

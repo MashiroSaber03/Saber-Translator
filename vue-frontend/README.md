@@ -1,6 +1,6 @@
 # Saber-Translator 前端开发说明
 
-> 最后更新：2026-05-09
+> 最后更新：2026-06-24
 
 这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明，不再使用 Vite 默认模板 README。
 
@@ -24,10 +24,12 @@
 npm install
 npm run dev
 npm run build
-npm run test:unit
+npm test
+npm run lint:ui
+npm run lint:css
+npm run lint
+npm run typecheck
 ```
-
-如果需要 lint / 类型检查，请以当前 `package.json` 脚本为准。
 
 ---
 
@@ -36,7 +38,7 @@ npm run test:unit
 ### 页面与组件
 
 - `src/views/`
-  - 主要页面入口，如翻译页、书架页、阅读页、Insight 页
+  - 主要页面入口，如书架页、翻译页、阅读页、Insight 页、角色工坊页
 
 - `src/components/`
   - 页面组件与通用组件
@@ -130,6 +132,6 @@ useTranslationPipeline
 
 - [CODING_STYLE.md](/C:/Users/33252/Desktop/Saber-Translator/vue-frontend/CODING_STYLE.md)
 
-如果你在处理历史样式问题，还可以参考：
+架构维护策略见：
 
-- [docs/frontend-style-audit-2026-04-26.md](/C:/Users/33252/Desktop/Saber-Translator/docs/frontend-style-audit-2026-04-26.md)
+- [docs/ui-maintenance-decisions.md](/C:/Users/33252/Desktop/Saber-Translator/vue-frontend/docs/ui-maintenance-decisions.md)

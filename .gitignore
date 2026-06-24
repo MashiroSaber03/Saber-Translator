@@ -69,6 +69,8 @@ Thumbs.db
 
 # --- 文档 ---
 docs/
+!vue-frontend/docs/
+!vue-frontend/docs/**
 
 # --- AI 助手配置 ---
 .claude/

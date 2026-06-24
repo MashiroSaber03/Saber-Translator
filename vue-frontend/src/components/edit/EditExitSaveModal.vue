@@ -94,7 +94,7 @@ function requestClose(): void {
     <template v-if="state !== 'saving'" #footer>
       <UiButton
         v-if="state === 'confirm'"
-        class="exit-save-dialog-btn"
+        class="exit-save-dialog-btn exit-save-dialog-btn--secondary"
         variant="secondary"
         data-testid="exit-without-save-button"
         @click="emit('exitWithoutSaving')"
@@ -102,7 +102,7 @@ function requestClose(): void {
         直接退出
       </UiButton>
       <UiButton
-        class="exit-save-dialog-btn"
+        class="exit-save-dialog-btn exit-save-dialog-btn--primary"
         variant="primary"
         :data-testid="state === 'confirm' ? 'save-and-exit-button' : 'retry-save-and-exit-button'"
         @click="emit('saveAndExit')"
@@ -110,7 +110,7 @@ function requestClose(): void {
         {{ state === 'confirm' ? '保存后退出' : '重试保存' }}
       </UiButton>
       <UiButton
-        class="exit-save-dialog-btn ghost"
+        class="exit-save-dialog-btn exit-save-dialog-btn--ghost"
         variant="toolbar"
         :data-testid="state === 'confirm' ? 'cancel-exit-save-button' : 'return-to-editing-button'"
         @click="emit('cancel')"
@@ -122,6 +122,24 @@ function requestClose(): void {
 </template>
 
 <style scoped>
+.exit-save-dialog-text,
+.exit-save-dialog-btn,
+.exit-save-dialog-progress,
+.exit-save-dialog-progress-bar,
+.exit-save-dialog-progress-fill,
+.exit-save-dialog-progress-meta {
+  --edit-exit-save-modal-border-strong: rgba(255, 255, 255, .16);
+  --edit-exit-save-modal-border-muted: rgba(255, 255, 255, .24);
+  --edit-exit-save-modal-shadow-raised: rgba(0, 255, 136, .18);
+  --edit-exit-save-modal-surface-muted: #0f8;
+  --edit-exit-save-modal-surface-subtle: #00cc6a;
+  --edit-exit-save-modal-surface-hover: rgba(255, 255, 255, .08);
+  --edit-exit-save-modal-surface-active: #00d4ff;
+  --edit-exit-save-modal-text-primary: rgba(255, 255, 255, .82);
+  --edit-exit-save-modal-text-secondary: #11212f;
+  --edit-exit-save-modal-text-muted: #0f8;
+}
+
 .exit-save-dialog-text {
   margin: 0;
   color: var(--edit-exit-save-modal-text-primary);
@@ -139,26 +157,26 @@ function requestClose(): void {
   transition: all 0.2s ease;
 }
 
-.exit-save-dialog-btn.primary {
+.exit-save-dialog-btn--primary {
   background: linear-gradient(135deg, var(--edit-exit-save-modal-surface-muted) 0%, var(--edit-exit-save-modal-surface-subtle) 100%);
   color: var(--edit-exit-save-modal-text-secondary);
   font-weight: 600;
 }
 
-.exit-save-dialog-btn.primary:hover {
+.exit-save-dialog-btn--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 24px var(--edit-exit-save-modal-shadow-raised);
 }
 
-.exit-save-dialog-btn.secondary,
-.exit-save-dialog-btn.ghost {
+.exit-save-dialog-btn--secondary,
+.exit-save-dialog-btn--ghost {
   border-color: var(--edit-exit-save-modal-border-strong);
   background: var(--edit-exit-save-modal-surface-hover);
   color: var(--color-text-inverse);
 }
 
-.exit-save-dialog-btn.secondary:hover,
-.exit-save-dialog-btn.ghost:hover {
+.exit-save-dialog-btn--secondary:hover,
+.exit-save-dialog-btn--ghost:hover {
   border-color: var(--edit-exit-save-modal-border-muted);
   background: var(--color-surface-overlay-light-prominent);
 }

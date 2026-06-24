@@ -1,13 +1,13 @@
 <template>
   <ContinuationDialogShell title="➕ 新增角色" @close="close">
     <ContinuationDialogForm>
-      <ContinuationDialogField label="角色名称" required>
+      <ContinuationDialogField label="角色名称" required :error="nameError">
         <UiInput
           v-model="name"
           type="text"
           aria-label="角色名称"
           class="continuation-dialog__form-input"
-          style="font: inherit"
+          :error="Boolean(nameError)"
           placeholder="输入角色名称"
         />
       </ContinuationDialogField>
@@ -18,7 +18,6 @@
           type="text"
           aria-label="别名（用逗号分隔，可选）"
           class="continuation-dialog__form-input"
-          style="font: inherit"
           placeholder="例如: 小明, 阿明"
         />
       </ContinuationDialogField>
@@ -29,7 +28,6 @@
           rows="3"
           aria-label="角色描述（可选）"
           class="continuation-dialog__form-input"
-          style="font: inherit"
           placeholder="简单描述角色的外观特征..."
         />
       </ContinuationDialogField>
@@ -68,6 +66,7 @@ const emit = defineEmits<{
 const name = ref('')
 const aliases = ref('')
 const description = ref('')
+const nameError = ref('')
 const isAdding = ref(false)
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
@@ -82,9 +81,10 @@ function clearLoadingTimer(): void {
 function add() {
   const charName = name.value.trim()
   if (!charName) {
-    alert('角色名不能为空')
+    nameError.value = '请输入角色名称'
     return
   }
+  nameError.value = ''
 
   const aliasList = aliases.value
     .split(/[,，]/)

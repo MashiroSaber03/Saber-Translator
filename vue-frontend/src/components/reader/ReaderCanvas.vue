@@ -1,43 +1,21 @@
 <script setup lang="ts">
-/**
- * 阅读器图片画布组件
- * 负责图片显示、滚动监听、原图/翻译图切换、图片懒加载
- */
 import { computed, watch, onMounted, onUnmounted } from 'vue'
 import type { ChapterImageData } from '@/api/bookshelf'
 import UiButton from '@/components/ui/UiButton.vue'
 
-// 组件属性
 const props = defineProps<{
-  /** 图片数据列表 */
   images: ChapterImageData[]
-  /** 当前查看模式 */
   viewMode: 'original' | 'translated'
-  /** 是否正在加载 */
   isLoading: boolean
 }>()
 
-// 组件事件
 const emit = defineEmits<{
-  /** 页码变化事件 */
   (e: 'pageChange', page: number): void
-  /** 进入翻译页面事件 */
   (e: 'goTranslate'): void
 }>()
 
-// ==================== 计算属性 ====================
-
-/**
- * 是否显示空状态
- */
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
-
-/**
- * 是否显示图片容器
- */
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
-
-// ==================== 方法 ====================
 
 let pageInfoTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -48,21 +26,13 @@ function clearPageInfoTimer() {
   }
 }
 
-/**
- * 获取图片源
- * @param imageData 图片数据
- */
 function getImageSource(imageData: ChapterImageData): string {
   if (props.viewMode === 'translated') {
-    // 优先显示翻译后的图片，如果没有则显示原图
     return imageData.translated || imageData.original
   }
   return imageData.original
 }
 
-/**
- * 更新页码信息
- */
 function updatePageInfo() {
   const images = document.querySelectorAll('.reader-image-wrapper')
   const viewportCenter = window.innerHeight / 2
@@ -78,9 +48,6 @@ function updatePageInfo() {
   emit('pageChange', currentPage)
 }
 
-/**
- * 处理滚动事件
- */
 function handleScroll() {
   updatePageInfo()
 }
@@ -93,14 +60,9 @@ function schedulePageInfoUpdate() {
   }, 100)
 }
 
-/**
- * 进入翻译页面
- */
 function goToTranslate() {
   emit('goTranslate')
 }
-
-// ==================== 生命周期 ====================
 
 onMounted(() => {
   window.addEventListener('scroll', handleScroll)
@@ -111,11 +73,9 @@ onUnmounted(() => {
   clearPageInfoTimer()
 })
 
-// 监听图片数据变化，重新计算页码
 watch(
   () => props.images,
   () => {
-    // 延迟更新页码，等待 DOM 渲染完成
     schedulePageInfoUpdate()
   },
   { deep: true }
@@ -124,13 +84,11 @@ watch(
 
 <template>
   <main class="reader-main">
-    <!-- 加载状态 -->
     <div v-if="isLoading" id="loadingState" class="loading-state">
       <div class="loading-spinner"></div>
       <p>正在加载...</p>
     </div>
 
-    <!-- 空状态 -->
     <div v-else-if="showEmptyState" id="emptyState" class="reader-empty-state">
       <div class="empty-icon">📖</div>
       <h2>暂无图片</h2>
@@ -140,7 +98,6 @@ watch(
       </UiButton>
     </div>
 
-    <!-- 图片容器 -->
     <div v-else-if="showImagesContainer" id="imagesContainer" class="images-container">
       <div 
         v-for="(img, index) in images" 
@@ -167,9 +124,6 @@ watch(
   --reader-canvas-text-primary: rgba(255, 255, 255, .7);
 }
 
-/* ==================== ReaderCanvas样式 ==================== */
-
-/* 主内容区 */
 .reader-main {
   min-height: calc(100dvh - 56px);
   display: flex;
@@ -178,7 +132,6 @@ watch(
   background: var(--reader-page-background, var(--reader-view-surface-base));
 }
 
-/* 加载状态 */
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -197,7 +150,6 @@ watch(
   animation: spin 1s linear infinite;
 }
 
-/* 空状态 */
 .reader-empty-state {
   display: flex;
   flex-direction: column;
@@ -216,7 +168,7 @@ watch(
 
 .reader-empty-state h2 {
   margin: 0 0 8px;
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 500;
 }
 
@@ -225,7 +177,6 @@ watch(
   font-size: 14px;
 }
 
-/* 图片容器 */
 .images-container {
   width: 100%;
   max-width: var(--reader-max-width, 100%);
@@ -263,7 +214,7 @@ watch(
   top: 8px;
   left: 8px;
   background: var(--reader-canvas-surface-raised);
-  color: white;
+  color: var(--color-text-inverse);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;

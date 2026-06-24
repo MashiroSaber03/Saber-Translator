@@ -12,54 +12,33 @@ import { createBubbleState } from '@/utils/bubbleFactory'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 export interface BubbleEditorProps {
-  /** 当前选中的气泡；无选中时为 null */
   bubble: BubbleState | null
-  /** 当前气泡索引 */
   bubbleIndex: number
-  /** OCR 识别中 */
   isOcrLoading?: boolean
-  /** 翻译中 */
   isTranslateLoading?: boolean
 }
 
 export type BubbleEditorEmit = {
-  /** 更新当前气泡 */
   (e: 'update', updates: Partial<BubbleState>): void
-  /** 重新渲染 */
   (e: 'reRender'): void
-  /** 重新 OCR 识别 */
   (e: 'ocrRecognize', index: number): void
-  /** 重新翻译当前气泡 */
   (e: 'reTranslate', index: number): void
-  /** 重置当前气泡到进入编辑模式时的状态 */
   (e: 'resetCurrent', index: number): void
 }
 
 export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
-  // ============================================================
-  // Store
-  // ============================================================
-
   const bubbleStore = useBubbleStore()
-
-  // ============================================================
-  // 默认值
-  // ============================================================
 
   const defaultBubble: BubbleState = createBubbleState({
     coords: [0, 0, 0, 0],
     polygon: [],
   })
 
-  // ============================================================
-  // 本地状态（用于双向绑定）
-  // ============================================================
-
   const localOriginalText = ref('')
   const localTranslatedText = ref('')
   const localFontSize = ref(TEXT_STYLE_DEFAULTS.fontSize)
   const localFontFamily = ref(TEXT_STYLE_DEFAULTS.fontFamily)
-  const localTextDirection = ref<TextDirection>('vertical')  // 简化设计：不再使用 'auto'
+  const localTextDirection = ref<TextDirection>('vertical')
   const localTextColor = ref(TEXT_STYLE_DEFAULTS.textColor)
   const localFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
   const localStrokeEnabled = ref(TEXT_STYLE_DEFAULTS.strokeEnabled)
@@ -72,20 +51,16 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const localLineSpacing = ref(TEXT_STYLE_DEFAULTS.lineSpacing)
   const localTextAlign = ref<TextAlign>(TEXT_STYLE_DEFAULTS.textAlign)
 
-  // 文本输入框引用
   const originalTextInput = ref<HTMLTextAreaElement | null>(null)
   const translatedTextInput = ref<HTMLTextAreaElement | null>(null)
 
-  // 颜色选择器引用
   const textColorInput = ref<HTMLInputElement | null>(null)
   const fillColorInput = ref<HTMLInputElement | null>(null)
   const strokeColorInput = ref<HTMLInputElement | null>(null)
 
-  // 日语软键盘状态
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
 
-  // 字体相关
   const systemFonts = ref<{ name: string; path: string }[]>([
     { name: '思源黑体', path: TEXT_STYLE_DEFAULTS.fontFamily },
     { name: '华文楷体', path: 'fonts/STKAITI.TTF' },
@@ -95,23 +70,16 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   ])
   const customFonts = ref<{ name: string; path: string }[]>([])
 
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 位置X */
   const positionX = computed(() => {
     if (!props.bubble) return 0
     return props.bubble.coords[0] + localPositionX.value
   })
 
-  /** 位置Y */
   const positionY = computed(() => {
     if (!props.bubble) return 0
     return props.bubble.coords[1] + localPositionY.value
   })
 
-  /** 字体选择器分组选项（用于CustomSelect） */
   const fontSelectGroups = computed(() => {
     const groups = [
       {
@@ -128,18 +96,12 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     return groups
   })
 
-  /** 背景修复方式选项（用于CustomSelect） */
   const inpaintMethodOptions = [
     { label: '纯色填充', value: 'solid' },
     { label: 'LAMA修复(漫画)', value: 'lama_mpe' },
     { label: 'LAMA修复(通用)', value: 'litelama' },
   ]
 
-  // ============================================================
-  // 同步本地状态
-  // ============================================================
-
-  /** 从气泡数据同步到本地状态 */
   function syncFromBubble(bubble: BubbleState | null): void {
     const b = bubble || defaultBubble
     localOriginalText.value = b.originalText
@@ -160,7 +122,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     localTextAlign.value = b.textAlign ?? TEXT_STYLE_DEFAULTS.textAlign
   }
 
-  // 监听 props 变化，同步本地状态
   watch(
     () => props.bubble,
     newBubble => {
@@ -169,135 +130,91 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     { deep: true, immediate: true }
   )
 
-  // ============================================================
-  // 事件处理 - 文本
-  // ============================================================
-
-  /** 处理原文变化 */
   function handleOriginalTextChange(): void {
     emit('update', { originalText: localOriginalText.value })
   }
 
-  /** 处理译文变化 */
   function handleTextChange(): void {
     emit('update', { translatedText: localTranslatedText.value })
   }
 
-  /** 复制原文 */
+  function copyText(text: string): void {
+    void navigator.clipboard.writeText(text).catch(() => undefined)
+  }
+
   function copyOriginalText(): void {
-    navigator.clipboard.writeText(localOriginalText.value)
+    copyText(localOriginalText.value)
   }
 
-  /** 复制译文 */
   function copyTranslatedText(): void {
-    navigator.clipboard.writeText(localTranslatedText.value)
+    copyText(localTranslatedText.value)
   }
 
-  // ============================================================
-  // 事件处理 - 字体和字号
-  // ============================================================
-
-  /** 处理字号变化 */
   function handleFontSizeChange(): void {
     emit('update', { fontSize: localFontSize.value })
   }
 
-  /** 设置字号 */
   function setFontSize(size: number): void {
     localFontSize.value = size
     emit('update', { fontSize: size })
   }
 
-  /** 增大字号 */
   function increaseFontSize(): void {
     localFontSize.value = Math.min(FONT_SIZE_MAX, localFontSize.value + FONT_SIZE_STEP)
     emit('update', { fontSize: localFontSize.value })
   }
 
-  /** 减小字号 */
   function decreaseFontSize(): void {
     localFontSize.value = Math.max(FONT_SIZE_MIN, localFontSize.value - FONT_SIZE_STEP)
     emit('update', { fontSize: localFontSize.value })
   }
 
-  /** 处理字体变化 */
   function handleFontFamilyChange(): void {
     emit('update', { fontFamily: localFontFamily.value })
   }
 
-  // ============================================================
-  // 事件处理 - 排版方向
-  // ============================================================
-
-  /** 设置排版方向 */
   function setTextDirection(direction: TextDirection): void {
     localTextDirection.value = direction
     emit('update', { textDirection: direction })
   }
 
-  // ============================================================
-  // 事件处理 - 颜色
-  // ============================================================
-
-  /** 触发文字颜色选择器 */
   function triggerTextColorPicker(): void {
     textColorInput.value?.click()
   }
 
-  /** 处理文字颜色变化 */
   function handleTextColorChange(): void {
     emit('update', { textColor: localTextColor.value })
   }
 
-  /** 触发填充颜色选择器 */
   function triggerFillColorPicker(): void {
     fillColorInput.value?.click()
   }
 
-  /** 处理填充颜色变化 */
   function handleFillColorChange(): void {
     emit('update', { fillColor: localFillColor.value })
   }
 
-  /** 触发描边颜色选择器 */
   function triggerStrokeColorPicker(): void {
     strokeColorInput.value?.click()
   }
 
-  /** 处理描边颜色变化 */
   function handleStrokeColorChange(): void {
     emit('update', { strokeColor: localStrokeColor.value })
   }
 
-  // ============================================================
-  // 事件处理 - 描边
-  // ============================================================
-
-  /** 切换描边 */
   function toggleStroke(): void {
     localStrokeEnabled.value = !localStrokeEnabled.value
     emit('update', { strokeEnabled: localStrokeEnabled.value })
   }
 
-  /** 处理描边宽度变化 */
   function handleStrokeWidthChange(): void {
     emit('update', { strokeWidth: localStrokeWidth.value })
   }
 
-  // ============================================================
-  // 事件处理 - 修复方式
-  // ============================================================
-
-  /** 处理修复方式变化 */
   function handleInpaintMethodChange(): void {
     emit('update', { inpaintMethod: localInpaintMethod.value })
   }
 
-  // ============================================================
-  // 事件处理 - 行间距与对齐
-  // ============================================================
-
-  /** 处理行间距变化（限制在 0.5-3.0） */
   function handleLineSpacingChange(): void {
     let v = Number(localLineSpacing.value)
     if (!Number.isFinite(v) || v <= 0) v = TEXT_STYLE_DEFAULTS.lineSpacing
@@ -306,81 +223,58 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { lineSpacing: v })
   }
 
-  /** 设置对齐方式 */
   function setTextAlign(align: TextAlign): void {
     localTextAlign.value = align
     emit('update', { textAlign: align })
   }
 
-  // ============================================================
-  // 事件处理 - 旋转
-  // ============================================================
-
-  /** 处理旋转角度变化 */
   function handleRotationChange(): void {
     emit('update', { rotationAngle: localRotationAngle.value })
   }
 
-  /** 逆时针旋转 */
   function rotateLeft(): void {
     localRotationAngle.value = Math.max(-180, localRotationAngle.value - 5)
     emit('update', { rotationAngle: localRotationAngle.value })
   }
 
-  /** 顺时针旋转 */
   function rotateRight(): void {
     localRotationAngle.value = Math.min(180, localRotationAngle.value + 5)
     emit('update', { rotationAngle: localRotationAngle.value })
   }
 
-  /** 重置旋转 */
   function resetRotation(): void {
     localRotationAngle.value = 0
     emit('update', { rotationAngle: 0 })
   }
 
-  // ============================================================
-  // 事件处理 - 位置
-  // ============================================================
-
   const MOVE_STEP = 2
 
-  /** 左移 */
   function moveLeft(): void {
     localPositionX.value -= MOVE_STEP
     emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
   }
 
-  /** 右移 */
   function moveRight(): void {
     localPositionX.value += MOVE_STEP
     emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
   }
 
-  /** 上移 */
   function moveUp(): void {
     localPositionY.value -= MOVE_STEP
     emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
   }
 
-  /** 下移 */
   function moveDown(): void {
     localPositionY.value += MOVE_STEP
     emit('update', { position: { x: localPositionX.value, y: localPositionY.value } })
   }
 
-  /** 重置位置 */
   function resetPosition(): void {
     localPositionX.value = 0
     localPositionY.value = 0
     emit('update', { position: { x: 0, y: 0 } })
   }
 
-  // ============================================================
-  // 事件处理 - 操作按钮
-  // ============================================================
-
-  /** 应用到全部气泡 */
   function applyToAll(): void {
     bubbleStore.updateAllBubbles({
       fontSize: localFontSize.value,
@@ -395,37 +289,26 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
       lineSpacing: localLineSpacing.value,
       textAlign: localTextAlign.value,
     })
-    // 触发重新渲染
     emit('reRender')
   }
 
-  /** 重置气泡编辑 */
   function resetBubbleEdit(): void {
-    // 通知父组件重置当前气泡到初始状态
     // 父级编辑工作区持有进入编辑模式时的气泡快照。
     emit('resetCurrent', props.bubbleIndex)
   }
 
-  /** 重新OCR识别 */
   function handleOcrRecognize(): void {
     emit('ocrRecognize', props.bubbleIndex)
   }
 
-  /** 重新翻译单个气泡 */
   function handleReTranslate(): void {
     emit('reTranslate', props.bubbleIndex)
   }
 
-  // ============================================================
-  // 日语软键盘相关
-  // ============================================================
-
-  /** 切换日语软键盘显示 */
   function toggleJpKeyboard(): void {
     showJpKeyboard.value = !showJpKeyboard.value
   }
 
-  /** 处理假名插入 */
   function handleKanaInsert(char: string, target: 'original' | 'translated'): void {
     if (target === 'original') {
       const input = originalTextInput.value
@@ -456,7 +339,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     }
   }
 
-  /** 处理假名删除 */
   function handleKanaDelete(target: 'original' | 'translated'): void {
     if (target === 'original') {
       const input = originalTextInput.value
@@ -503,11 +385,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     }
   }
 
-  // ============================================================
-  // 字体管理
-  // ============================================================
-
-  /** 加载字体列表 */
   async function loadFontList(): Promise<void> {
     try {
       const response = await getFontList()
@@ -532,14 +409,10 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
         }
         customFonts.value = custom
       }
-    } catch (error) {
-      console.error('加载字体列表失败:', error)
+    } catch {
+      customFonts.value = []
     }
   }
-
-  // ============================================================
-  // 生命周期
-  // ============================================================
 
   onMounted(() => {
     loadFontList()

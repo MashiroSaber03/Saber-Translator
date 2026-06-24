@@ -122,7 +122,6 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 
 <style scoped>
 .workshop-card {
-  /* owner tokens: lorebook-tree-editor */
   --lorebook-tree-editor-border-default: rgba(34, 72, 125, .12);
   --lorebook-tree-editor-shadow-default: rgba(21, 44, 77, .08);
   --lorebook-tree-editor-surface-base: rgba(255, 255, 255, .84);

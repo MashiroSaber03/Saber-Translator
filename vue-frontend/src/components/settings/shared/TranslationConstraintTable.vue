@@ -220,10 +220,13 @@ async function handleImport(event: Event, format: 'json' | 'xlsx'): Promise<void
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  try {
+    link.href = url
+    link.download = filename
+    link.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 function exportJson(): void {

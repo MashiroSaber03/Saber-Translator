@@ -96,8 +96,8 @@ function loadExpandedState() {
     if (saved !== null) {
       isExpanded.value = saved === 'true'
     }
-  } catch (error) {
-    console.warn('[CollapsiblePanel] 加载展开状态失败:', error)
+  } catch {
+    // Storage access can fail in restricted contexts; default expansion remains valid.
   }
 }
 
@@ -109,8 +109,8 @@ function saveExpandedState() {
   
   try {
     localStorage.setItem(`collapsible_${props.storageKey}`, String(isExpanded.value))
-  } catch (error) {
-    console.warn('[CollapsiblePanel] 保存展开状态失败:', error)
+  } catch {
+    // Persisting the optional expansion state is best-effort.
   }
 }
 
@@ -182,7 +182,7 @@ defineExpose({
       <span class="collapsible-title">
         <slot name="title">{{ title }}</slot>
       </span>
-      <span class="toggle-icon" :class="{ 'expanded': isExpanded }">
+      <span class="toggle-icon">
         {{ isExpanded ? expandedIcon : collapsedIcon }}
       </span>
     </UiButton>
@@ -199,40 +199,24 @@ defineExpose({
 
 <style scoped>
 .collapsible-panel--settings {
-  --collapsible-panel-border-default: #dde7f4;
-  --collapsible-panel-text-primary: #304464;
-  --collapsible-panel-text-secondary: #6e81a2;
+  --collapsible-panel-settings-border: #dde7f4;
+  --collapsible-panel-settings-title: #304464;
+  --collapsible-panel-settings-icon: #6e81a2;
 }
 
-/* 可折叠面板容器 */
 .collapsible-panel {
   margin-bottom: 16px;
 }
 
-/* 标题 */
 .collapsible-title {
   font-weight: 600;
   font-size: 20px;
 }
 
-/* 切换图标 */
 .toggle-icon {
   font-size: 12px;
   transition: transform 0.2s ease;
   color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-/* 动画效果（可选） */
-.collapsible-content-enter-active,
-.collapsible-content-leave-active {
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-
-.collapsible-content-enter-from,
-.collapsible-content-leave-to {
-  opacity: 0;
-  max-height: 0;
 }
 
 .collapsible-header {
@@ -265,20 +249,11 @@ defineExpose({
   transition: max-height 0.3s ease;
 }
 
-.collapsible-content.collapsed {
-  max-height: 0;
-  overflow: hidden;
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
 .collapsible-panel--settings .collapsible-header {
   margin: 0 0 10px;
   padding: 0 0 8px;
-  color: var(--collapsible-panel-text-primary);
-  border-bottom: 1px solid var(--collapsible-panel-border-default);
+  color: var(--collapsible-panel-settings-title);
+  border-bottom: 1px solid var(--collapsible-panel-settings-border);
 }
 
 .collapsible-panel--settings .collapsible-title {
@@ -287,12 +262,8 @@ defineExpose({
 }
 
 .collapsible-panel--settings .toggle-icon {
-  color: var(--collapsible-panel-text-secondary);
+  color: var(--collapsible-panel-settings-icon);
   font-size: 12px;
-}
-
-.collapsible-header.collapsed .toggle-icon {
-  transform: rotate(-90deg);
 }
 
 .is-disabled .collapsible-header {

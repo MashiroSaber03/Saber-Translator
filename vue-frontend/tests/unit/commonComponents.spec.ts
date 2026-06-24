@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppHeader from '@/components/common/AppHeader.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import ProgressBar from '@/components/common/ProgressBar.vue'
 import ToastNotification from '@/components/common/ToastNotification.vue'
 import { toastService } from '@/utils/toast'
 
@@ -93,5 +94,30 @@ describe('common component accessibility contracts', () => {
     await trigger.trigger('click')
 
     expect(trigger.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('exposes linear progress semantics and clamps the rendered percentage', () => {
+    const overLimit = mount(ProgressBar, {
+      props: {
+        label: '导出进度',
+        percentage: 150,
+      },
+    })
+
+    const progressbar = overLimit.get('[role="progressbar"]')
+    expect(progressbar.attributes('aria-label')).toBe('导出进度')
+    expect(progressbar.attributes('aria-valuemin')).toBe('0')
+    expect(progressbar.attributes('aria-valuemax')).toBe('100')
+    expect(progressbar.attributes('aria-valuenow')).toBe('100')
+    expect(overLimit.get('.progress').attributes('style')).toContain('width: 100%;')
+
+    const underLimit = mount(ProgressBar, {
+      props: {
+        percentage: -25,
+      },
+    })
+
+    expect(underLimit.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('0')
+    expect(underLimit.get('.progress').attributes('style')).toContain('width: 0%;')
   })
 })

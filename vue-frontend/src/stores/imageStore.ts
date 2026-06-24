@@ -266,7 +266,6 @@ export const useImageStore = defineStore('image', () => {
    */
   function deleteImage(index: number): boolean {
     if (index < 0 || index >= images.value.length) {
-      console.warn(`删除失败: 无效的索引 ${index}`)
       return false
     }
 
@@ -345,8 +344,6 @@ export const useImageStore = defineStore('image', () => {
   function setCurrentImageIndex(index: number): void {
     if (index >= -1 && index < images.value.length) {
       currentImageIndex.value = index
-    } else {
-      console.warn(`设置索引失败: 无效的索引 ${index}`)
     }
   }
 
@@ -388,8 +385,6 @@ export const useImageStore = defineStore('image', () => {
       if (updates.bubbleStates !== undefined) {
         applyBubbleStateMirrors(currentImage.value, updates.bubbleStates)
       }
-    } else {
-      console.warn('更新失败: 当前没有选中的图片')
     }
   }
 
@@ -407,8 +402,6 @@ export const useImageStore = defineStore('image', () => {
           applyBubbleStateMirrors(image, updates.bubbleStates)
         }
       }
-    } else {
-      console.warn(`更新失败: 无效的索引 ${index}`)
     }
   }
 
@@ -446,8 +439,6 @@ export const useImageStore = defineStore('image', () => {
     if (currentImage.value) {
       currentImage.value[key] = value
       currentImage.value.hasUnsavedChanges = true
-    } else {
-      console.warn(`更新失败: 当前没有选中的图片`)
     }
   }
 

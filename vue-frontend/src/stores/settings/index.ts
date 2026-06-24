@@ -319,8 +319,8 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const data = JSON.stringify(settings.value)
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, data)
-    } catch (error) {
-      console.error('保存设置到 localStorage 失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -331,8 +331,8 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const data = JSON.stringify(providerConfigs.value)
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, data)
-    } catch (error) {
-      console.error('保存服务商配置缓存失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -345,8 +345,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
       baseSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
-    } catch (error) {
-      console.error('保存插件 Agent 设置到 localStorage 失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -365,8 +365,8 @@ export const useSettingsStore = defineStore('settings', () => {
       }
 
       localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, JSON.stringify(nextProviderConfigs))
-    } catch (error) {
-      console.error('保存插件 Agent 服务商配置缓存失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -381,7 +381,6 @@ export const useSettingsStore = defineStore('settings', () => {
       if (data) {
         const parsed = parseCurrentSettings(JSON.parse(data))
         if (!parsed) {
-          console.warn('localStorage 设置不符合当前 schema，已忽略该设置对象')
           return
         }
         settings.value = parsed
@@ -397,8 +396,8 @@ export const useSettingsStore = defineStore('settings', () => {
           settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
         }
       }
-    } catch (error) {
-      console.error('从 localStorage 加载设置失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -411,13 +410,12 @@ export const useSettingsStore = defineStore('settings', () => {
       if (data) {
         const parsed = parseCurrentProviderConfigs(JSON.parse(data))
         if (!parsed) {
-          console.warn('服务商配置缓存不符合当前 schema，已忽略该缓存对象')
           return
         }
         providerConfigs.value = parsed
       }
-    } catch (error) {
-      console.error('加载服务商配置缓存失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -649,8 +647,8 @@ export const useSettingsStore = defineStore('settings', () => {
         document.documentElement.setAttribute('data-theme', nextTheme)
         document.body.setAttribute('data-theme', nextTheme)
       }
-    } catch (error) {
-      console.warn('保存主题设置失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -664,8 +662,8 @@ export const useSettingsStore = defineStore('settings', () => {
       if (storedTheme === 'light' || storedTheme === 'dark') {
         setTheme(storedTheme)
       }
-    } catch (error) {
-      console.warn('读取主题设置失败:', error)
+    } catch {
+      return
     }
   }
 
@@ -694,12 +692,9 @@ export const useSettingsStore = defineStore('settings', () => {
         saveToStorage()
         saveProviderConfigsToStorage()
         return true
-      } else {
-        console.warn('[Settings] 后端无设置数据，使用 localStorage 或默认值')
-        return false
       }
-    } catch (error) {
-      console.error('[Settings] 从后端加载设置失败:', error)
+      return false
+    } catch {
       return false
     }
   }
@@ -710,14 +705,12 @@ export const useSettingsStore = defineStore('settings', () => {
   function applyBackendSettings(backendSettings: Record<string, unknown>): boolean {
     const schemaVersion = backendSettings.settingsSchemaVersion
     if (schemaVersion !== 3) {
-      console.warn('[Settings] 后端设置 schemaVersion 无效，已忽略该设置对象')
       return false
     }
 
     const { providerConfigs: nestedProviderConfigs, ...settingsPayload } = backendSettings
     const parsedSettings = parseCurrentSettings(settingsPayload)
     if (!parsedSettings) {
-      console.warn('[Settings] 后端设置不符合当前 schema，已忽略该设置对象')
       return false
     }
     settings.value = parsedSettings
@@ -725,7 +718,6 @@ export const useSettingsStore = defineStore('settings', () => {
     if (nestedProviderConfigs && typeof nestedProviderConfigs === 'object') {
       const parsedProviderConfigs = parseCurrentProviderConfigs(nestedProviderConfigs)
       if (!parsedProviderConfigs) {
-        console.warn('[Settings] 后端服务商配置缓存不符合当前 schema，已忽略该缓存对象')
         return false
       }
       providerConfigs.value = parsedProviderConfigs
@@ -760,12 +752,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
       if (response.success) {
         return true
-      } else {
-        console.error('[Settings] 保存设置到后端失败:', response)
-        return false
       }
-    } catch (error) {
-      console.error('[Settings] 保存设置到后端出错:', error)
+      return false
+    } catch {
       return false
     }
   }
@@ -790,8 +779,8 @@ export const useSettingsStore = defineStore('settings', () => {
         if (response.success && response.settings && typeof response.settings === 'object') {
           backendSettings = JSON.parse(JSON.stringify(response.settings))
         }
-      } catch (error) {
-        console.warn('[Settings] 读取后端设置失败，插件 Agent 将基于空设置保存:', error)
+      } catch {
+        // Backend settings are best-effort; saving proceeds with the current plugin Agent state.
       }
 
       backendSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
@@ -810,10 +799,8 @@ export const useSettingsStore = defineStore('settings', () => {
         return true
       }
 
-      console.error('[Settings] 保存插件 Agent 设置到后端失败:', saveResponse)
       return false
-    } catch (error) {
-      console.error('[Settings] 保存插件 Agent 设置时出错:', error)
+    } catch {
       return false
     }
   }

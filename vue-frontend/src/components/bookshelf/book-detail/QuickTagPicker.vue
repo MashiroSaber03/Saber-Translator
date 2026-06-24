@@ -84,7 +84,7 @@ defineEmits<{
 .quick-tag-input:focus {
   outline: none;
   border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-soft);
+  box-shadow: 0 0 0 3px var(--book-detail-focus-shadow);
 }
 
 .quick-tag-input::placeholder {
@@ -132,7 +132,7 @@ defineEmits<{
 }
 
 .tag-add-icon {
-  color: var(--book-detail-modal-text-primary);
+  color: var(--book-detail-accent);
   font-weight: 600;
   font-size: 1.2rem;
   opacity: 0;
@@ -144,13 +144,13 @@ defineEmits<{
 }
 
 .quick-tag-item.new-tag {
-  border: 1px dashed var(--book-detail-modal-border-default);
-  background: linear-gradient(135deg, var(--book-detail-modal-surface-hover) 0%, var(--book-detail-modal-surface-active) 100%);
+  border: 1px dashed var(--book-detail-new-tag-border);
+  background: linear-gradient(135deg, var(--book-detail-new-tag-background-start) 0%, var(--book-detail-new-tag-background-end) 100%);
 }
 
 .quick-tag-item.new-tag:hover {
-  border-color: var(--book-detail-modal-border-strong);
-  background: linear-gradient(135deg, var(--book-detail-modal-surface-selected) 0%, var(--book-detail-modal-surface-overlay) 100%);
+  border-color: var(--book-detail-new-tag-border-hover);
+  background: linear-gradient(135deg, var(--book-detail-new-tag-hover-start) 0%, var(--book-detail-new-tag-hover-end) 100%);
 }
 
 .tag-icon {
@@ -159,7 +159,7 @@ defineEmits<{
   justify-content: center;
   width: 20px;
   height: 20px;
-  color: var(--book-detail-modal-text-primary);
+  color: var(--book-detail-accent);
   font-weight: 600;
   font-size: 1.1rem;
 }

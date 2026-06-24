@@ -54,7 +54,7 @@ const emit = defineEmits<{
 
 .sponsor-message {
   font-size: 16px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   margin-bottom: 24px;
 }
 

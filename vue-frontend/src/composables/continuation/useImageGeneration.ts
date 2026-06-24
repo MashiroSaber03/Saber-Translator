@@ -1,8 +1,3 @@
-/**
- * 图片生成Composable
- * 处理页面图片生成、滑动窗口参考图、三视图生成等
- */
-
 import { ref, type Ref } from 'vue'
 import type { PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
@@ -23,29 +18,25 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
     async function resolveStyleReferenceTokens(currentPageNumber: number): Promise<string[]> {
         if (!bookId.value) return []
 
-        try {
-            const availableResult = await continuationApi.getAvailableImages(
-                bookId.value,
-                'image'
-            )
+        const availableResult = await continuationApi.getAvailableImages(
+            bookId.value,
+            'image'
+        ).catch(() => null)
 
-            if (availableResult.success) {
-                const currentAbsolutePage = (availableResult.total_original_pages || 0) + currentPageNumber
-                const merged = [
-                    ...(availableResult.original_images || []),
-                    ...(availableResult.continuation_images || []),
-                ]
-                    .filter(image => image.has_image && image.path && image.token)
-                    .filter(image => image.page_number < currentAbsolutePage)
-                    .sort((left, right) => left.page_number - right.page_number)
-                    .map(image => image.token)
+        if (availableResult?.success) {
+            const currentAbsolutePage = (availableResult.total_original_pages || 0) + currentPageNumber
+            const merged = [
+                ...(availableResult.original_images || []),
+                ...(availableResult.continuation_images || []),
+            ]
+                .filter(image => image.has_image && image.path && image.token)
+                .filter(image => image.page_number < currentAbsolutePage)
+                .sort((left, right) => left.page_number - right.page_number)
+                .map(image => image.token)
 
-                if (merged.length > 0) {
-                    return merged.slice(-state.styleRefPages.value)
-                }
+            if (merged.length > 0) {
+                return merged.slice(-state.styleRefPages.value)
             }
-        } catch (error) {
-            console.warn('获取可用参考图失败，回退到默认逻辑:', error)
         }
 
         const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
@@ -62,7 +53,6 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         let completedPages = 0
 
         try {
-            // 确定初始画风参考图
             let styleReferenceTokens: string[]
             if (initialStyleReferenceTokens && initialStyleReferenceTokens.length > 0) {
                 styleReferenceTokens = [...initialStyleReferenceTokens]
@@ -113,8 +103,7 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                     } else {
                         page.status = 'failed'
                     }
-                } catch (error) {
-                    console.error(`生成第 ${page.page_number} 页失败:`, error)
+                } catch {
                     page.status = 'failed'
                 }
 

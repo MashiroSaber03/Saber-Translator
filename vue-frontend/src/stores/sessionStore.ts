@@ -293,11 +293,11 @@ export const useSessionStore = defineStore('session', () => {
 
   /**
    * 重命名会话
-   * @param oldName - 旧名称
+   * @param currentName - 当前名称
    * @param newName - 新名称
    */
-  function renameInSessionList(oldName: string, newName: string): void {
-    const session = sessionList.value.find(s => s.name === oldName)
+  function renameInSessionList(currentName: string, newName: string): void {
+    const session = sessionList.value.find(s => s.name === currentName)
     if (session) {
       session.name = newName
     }
@@ -445,8 +445,7 @@ export const useSessionStore = defineStore('session', () => {
         reader.onerror = () => resolve(null)
         reader.readAsDataURL(blob)
       })
-    } catch (error) {
-      console.error(`转换图片 URL 失败: ${url}`, error)
+    } catch {
       return null
     }
   }
@@ -657,7 +656,6 @@ export const useSessionStore = defineStore('session', () => {
       const errorMsg = e instanceof Error ? e.message : '加载会话失败'
       setError(errorMsg)
       clearProgressClearTimer()
-      console.error(`按路径加载会话失败: ${sessionPath}`, e)
       throw e
     } finally {
       setLoading(false)
@@ -737,7 +735,6 @@ export const useSessionStore = defineStore('session', () => {
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '保存章节会话失败'
       setError(errorMsg)
-      console.error('保存失败:', e)
       clearProgressClearTimer()
       clearLoadingProgress()
       return false

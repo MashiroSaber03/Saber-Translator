@@ -1,13 +1,5 @@
-<!--
-  50音软键盘组件
-  提供日语假名输入功能
-  - 支持平假名和片假名切换
-  - 支持基本、浊音、拗音、特殊字符标签页
-  - 支持向指定文本框插入字符
--->
 <template>
   <div v-if="visible" class="kana-keyboard">
-    <!-- 键盘头部 -->
     <div class="kana-keyboard-header">
       <span class="kana-keyboard-title">50音键盘</span>
       <div class="kana-keyboard-tabs">
@@ -25,7 +17,6 @@
       <UiButton variant="toolbar" class="kana-keyboard-close" @click="close">✕</UiButton>
     </div>
 
-    <!-- 模式和目标选择 -->
     <div class="kana-keyboard-options">
       <div class="kana-mode-select">
         <label>
@@ -34,6 +25,7 @@
             name="kanaMode"
             value="hiragana"
             v-model="kanaMode"
+            class="kana-mode-radio"
           />
           平假名
         </label>
@@ -43,6 +35,7 @@
             name="kanaMode"
             value="katakana"
             v-model="kanaMode"
+            class="kana-mode-radio"
           />
           片假名
         </label>
@@ -56,7 +49,6 @@
       </div>
     </div>
 
-    <!-- 基本50音 -->
     <div class="kana-tab-content" :class="{ active: activeTab === 'basic' }">
       <table class="kana-table">
         <thead>
@@ -89,7 +81,6 @@
       </table>
     </div>
 
-    <!-- 浊音/半浊音 -->
     <div class="kana-tab-content" :class="{ active: activeTab === 'dakuten' }">
       <table class="kana-table">
         <thead>
@@ -122,7 +113,6 @@
       </table>
     </div>
 
-    <!-- 拗音 -->
     <div class="kana-tab-content" :class="{ active: activeTab === 'combo' }">
       <table class="kana-table combo-table">
         <thead>
@@ -153,7 +143,6 @@
       </table>
     </div>
 
-    <!-- 特殊字符 -->
     <div class="kana-tab-content" :class="{ active: activeTab === 'special' }">
       <div class="special-chars-grid">
         <UiButton
@@ -170,7 +159,6 @@
       </div>
     </div>
 
-    <!-- 底部工具栏 -->
     <div class="kana-keyboard-footer">
       <UiButton variant="toolbar" class="kana-backspace" @click="deleteChar">⌫ 退格</UiButton>
     </div>
@@ -181,20 +169,12 @@
 
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 50音软键盘组件
- * 提供日语假名输入功能
- */
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 
-// ============================================================
-// 类型定义
-// ============================================================
-
 interface KanaChar {
-  h: string  // 平假名
-  k: string  // 片假名
+  h: string
+  k: string
 }
 
 interface KanaRow {
@@ -207,14 +187,8 @@ interface SpecialChar {
   label?: string
 }
 
-// ============================================================
-// Props 和 Emits
-// ============================================================
-
 const props = withDefaults(defineProps<{
-  /** 是否显示 */
   visible?: boolean
-  /** 默认目标字段 */
   defaultTarget?: 'original' | 'translated'
 }>(), {
   visible: false,
@@ -222,39 +196,21 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  /** 关闭键盘 */
   (e: 'close'): void
-  /** 插入字符 */
   (e: 'insert', char: string, target: 'original' | 'translated'): void
-  /** 删除字符 */
   (e: 'delete', target: 'original' | 'translated'): void
 }>()
 
-// ============================================================
-// 状态
-// ============================================================
-
-/** 当前激活的标签页 */
 const activeTab = ref<'basic' | 'dakuten' | 'combo' | 'special'>('basic')
-
-/** 假名模式：平假名或片假名 */
 const kanaMode = ref<'hiragana' | 'katakana'>('hiragana')
-
-/** 目标字段 */
 const targetField = ref<'original' | 'translated'>(props.defaultTarget)
-
-/** 当前按下的键（用于视觉反馈） */
 const pressedKey = ref<string | null>(null)
+let pressFeedbackTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 目标字段选项（用于CustomSelect） */
 const targetFieldOptions = [
   { label: '原文', value: 'original' },
   { label: '译文', value: 'translated' }
 ]
-
-// ============================================================
-// 标签页配置
-// ============================================================
 
 const tabs = [
   { id: 'basic' as const, label: '基本' },
@@ -263,11 +219,6 @@ const tabs = [
   { id: 'special' as const, label: '特殊' }
 ]
 
-// ============================================================
-// 假名数据
-// ============================================================
-
-/** 基本50音 */
 const basicKana: KanaRow[] = [
   { label: 'あ行', chars: [{ h: 'あ', k: 'ア' }, { h: 'い', k: 'イ' }, { h: 'う', k: 'ウ' }, { h: 'え', k: 'エ' }, { h: 'お', k: 'オ' }] },
   { label: 'か行', chars: [{ h: 'か', k: 'カ' }, { h: 'き', k: 'キ' }, { h: 'く', k: 'ク' }, { h: 'け', k: 'ケ' }, { h: 'こ', k: 'コ' }] },
@@ -282,7 +233,6 @@ const basicKana: KanaRow[] = [
   { label: 'ん', chars: [{ h: 'ん', k: 'ン' }, null, null, null, null] }
 ]
 
-/** 浊音/半浊音 */
 const dakutenKana: KanaRow[] = [
   { label: 'が行', chars: [{ h: 'が', k: 'ガ' }, { h: 'ぎ', k: 'ギ' }, { h: 'ぐ', k: 'グ' }, { h: 'げ', k: 'ゲ' }, { h: 'ご', k: 'ゴ' }] },
   { label: 'ざ行', chars: [{ h: 'ざ', k: 'ザ' }, { h: 'じ', k: 'ジ' }, { h: 'ず', k: 'ズ' }, { h: 'ぜ', k: 'ゼ' }, { h: 'ぞ', k: 'ゾ' }] },
@@ -291,7 +241,6 @@ const dakutenKana: KanaRow[] = [
   { label: 'ぱ行', chars: [{ h: 'ぱ', k: 'パ' }, { h: 'ぴ', k: 'ピ' }, { h: 'ぷ', k: 'プ' }, { h: 'ぺ', k: 'ペ' }, { h: 'ぽ', k: 'ポ' }] }
 ]
 
-/** 拗音 */
 const comboKana: KanaRow[] = [
   { label: 'きゃ行', chars: [{ h: 'きゃ', k: 'キャ' }, { h: 'きゅ', k: 'キュ' }, { h: 'きょ', k: 'キョ' }] },
   { label: 'しゃ行', chars: [{ h: 'しゃ', k: 'シャ' }, { h: 'しゅ', k: 'シュ' }, { h: 'しょ', k: 'ショ' }] },
@@ -306,7 +255,6 @@ const comboKana: KanaRow[] = [
   { label: 'ぴゃ行', chars: [{ h: 'ぴゃ', k: 'ピャ' }, { h: 'ぴゅ', k: 'ピュ' }, { h: 'ぴょ', k: 'ピョ' }] }
 ]
 
-/** 特殊字符 */
 const specialChars: SpecialChar[] = [
   { char: 'っ', label: '促音' },
   { char: 'ッ', label: '促音' },
@@ -344,57 +292,47 @@ const specialChars: SpecialChar[] = [
   { char: 'ョ', label: '小ヨ' }
 ]
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 关闭键盘
- */
 function close(): void {
   emit('close')
 }
 
-/**
- * 插入假名字符
- */
+function flashPressedKey(key: string): void {
+  if (pressFeedbackTimer) {
+    clearTimeout(pressFeedbackTimer)
+  }
+  pressedKey.value = key
+  pressFeedbackTimer = setTimeout(() => {
+    pressedKey.value = null
+    pressFeedbackTimer = null
+  }, 100)
+}
+
 function insertKana(kana: KanaChar): void {
   const char = kanaMode.value === 'hiragana' ? kana.h : kana.k
-  
-  // 视觉反馈
-  pressedKey.value = kana.h
-  setTimeout(() => {
-    pressedKey.value = null
-  }, 100)
+  flashPressedKey(kana.h)
   
   emit('insert', char, targetField.value)
 }
 
-/**
- * 插入特殊字符
- */
 function insertSpecialChar(char: string): void {
-  // 视觉反馈
-  pressedKey.value = char
-  setTimeout(() => {
-    pressedKey.value = null
-  }, 100)
+  flashPressedKey(char)
   
   emit('insert', char, targetField.value)
 }
 
-/**
- * 删除字符
- */
 function deleteChar(): void {
   emit('delete', targetField.value)
 }
+
+onUnmounted(() => {
+  if (pressFeedbackTimer) {
+    clearTimeout(pressFeedbackTimer)
+  }
+})
 </script>
 
 <style scoped>
-/* 50音键盘容器 - 使用固定颜色值 */
 .kana-keyboard {
-  /* owner tokens: japanese-keyboard */
   --japanese-keyboard-border-default: #2196f3;
   --japanese-keyboard-border-strong: rgba(231, 76, 60, .3);
   --japanese-keyboard-border-muted: rgba(231, 76, 60, .5);
@@ -421,7 +359,6 @@ function deleteChar(): void {
   color: var(--color-text-default);
 }
 
-/* 键盘头部 - 红色渐变背景 */
 .kana-keyboard-header {
   display: flex;
   align-items: center;
@@ -482,7 +419,6 @@ function deleteChar(): void {
   background: var(--japanese-keyboard-surface-hover);
 }
 
-/* 选项区域 */
 .kana-keyboard-options {
   display: flex;
   align-items: center;
@@ -509,20 +445,10 @@ function deleteChar(): void {
   color: var(--color-text-default);
 }
 
-.kana-mode-select input[type="radio"] {
+.kana-mode-radio {
   accent-color: var(--japanese-keyboard-surface-active);
 }
 
-.kana-target-select select {
-  padding: 4px 8px;
-  background: var(--color-surface-base);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
-  color: var(--color-text-default);
-  font-size: 12px;
-}
-
-/* 标签页内容区域 */
 .kana-tab-content {
   padding: 10px;
   max-height: 280px;
@@ -530,7 +456,6 @@ function deleteChar(): void {
   background: var(--color-surface-base);
 }
 
-/* 假名表格 */
 .kana-table {
   width: 100%;
   border-collapse: collapse;
@@ -562,7 +487,6 @@ function deleteChar(): void {
   white-space: nowrap;
 }
 
-/* 假名按键 - 浅色主题 */
 .kana-key {
   width: 42px;
   height: 42px;
@@ -581,7 +505,6 @@ function deleteChar(): void {
   padding: 2px;
 }
 
-/* 假名文字样式 */
 .kana-hiragana {
   color: var(--color-text-default);
   font-size: 13px;
@@ -607,7 +530,6 @@ function deleteChar(): void {
   background: var(--japanese-keyboard-surface-inverse);
 }
 
-/* 特殊字符网格 */
 .special-chars-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
@@ -630,12 +552,10 @@ function deleteChar(): void {
   margin-top: 2px;
 }
 
-/* 拗音表格 */
 .combo-table .kana-key {
   width: 56px;
 }
 
-/* 底部工具栏 */
 .kana-keyboard-footer {
   display: flex;
   align-items: center;

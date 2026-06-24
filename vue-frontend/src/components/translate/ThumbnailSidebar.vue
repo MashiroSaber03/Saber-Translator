@@ -90,8 +90,8 @@ const {
 } = useThumbnailSelection(images)
 
 // 当图片列表变化时，重置到根目录
-watch(() => images.value.length, (newLen, oldLen) => {
-  if (newLen === 0 || (oldLen === 0 && newLen > 0)) {
+watch(() => images.value.length, (newLen, previousLen) => {
+  if (newLen === 0 || (previousLen === 0 && newLen > 0)) {
     resetToRoot()
   }
 })
@@ -174,8 +174,8 @@ watch(currentIndex, () => {
 })
 
 // 监听可见性变化，当从隐藏变为显示时重新定位
-watch(() => props.isVisible, (newVisible, oldVisible) => {
-  if (newVisible && !oldVisible) {
+watch(() => props.isVisible, (newVisible, previousVisible) => {
+  if (newVisible && !previousVisible) {
     // 组件从隐藏变为显示，触发滚动定位
     scrollToActiveThumbnail()
   }

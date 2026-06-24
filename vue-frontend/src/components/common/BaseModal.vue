@@ -60,10 +60,46 @@
   </Teleport>
 </template>
 
+<script lang="ts">
+let openModalCount = 0
+let previousBodyOverflow: string | null = null
+
+function lockBodyScroll() {
+  if (openModalCount === 0) {
+    previousBodyOverflow = document.body.style.overflow
+  }
+  openModalCount += 1
+  document.body.style.overflow = 'hidden'
+}
+
+function unlockBodyScroll() {
+  if (openModalCount === 0) return
+  openModalCount -= 1
+  if (openModalCount === 0) {
+    document.body.style.overflow = previousBodyOverflow ?? ''
+    previousBodyOverflow = null
+  }
+}
+</script>
+
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import { computed, watch, onMounted, onUnmounted, useId } from 'vue'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
+
+let hasLockedBodyScroll = false
+
+function ensureBodyScrollLocked() {
+  if (hasLockedBodyScroll) return
+  lockBodyScroll()
+  hasLockedBodyScroll = true
+}
+
+function releaseBodyScrollLock() {
+  if (!hasLockedBodyScroll) return
+  unlockBodyScroll()
+  hasLockedBodyScroll = false
+}
 
 // Props 定义
 interface Props {
@@ -274,12 +310,10 @@ watch(
   (newValue) => {
     if (newValue) {
       emit('open')
-      // 打开时禁止背景滚动
-      document.body.style.overflow = 'hidden'
+      ensureBodyScrollLocked()
     } else {
       resetOverlayDismissState()
-      // 关闭时恢复背景滚动
-      document.body.style.overflow = ''
+      releaseBodyScrollLock()
     }
   }
 )
@@ -288,14 +322,13 @@ watch(
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
   if (props.modelValue) {
-    document.body.style.overflow = 'hidden'
+    ensureBodyScrollLocked()
   }
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
-  // 确保恢复背景滚动
-  document.body.style.overflow = ''
+  releaseBodyScrollLock()
 })
 </script>
 

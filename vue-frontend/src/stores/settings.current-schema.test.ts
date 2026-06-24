@@ -17,7 +17,6 @@ describe('useSettingsStore backend schema loading', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     configMocks.getUserSettings.mockReset()
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -25,13 +24,13 @@ describe('useSettingsStore backend schema loading', () => {
   })
 
   it('ignores backend settings without the current schema version', async () => {
-    const oldProviderSettingsKey = 'provider' + 'Settings'
+    const nonCurrentProviderSettingsKey = 'provider' + 'Settings'
     configMocks.getUserSettings.mockResolvedValue({
       success: true,
       settings: {
         modelProvider: 'siliconflow',
         hqTranslateProvider: 'siliconflow',
-        [oldProviderSettingsKey]: {
+        [nonCurrentProviderSettingsKey]: {
           modelProvider: {
             siliconflow: {},
           },

@@ -497,8 +497,8 @@ watch(() => insightStore.currentBookId, (newBookId) => {
     state.resetState()
   }
 }, { immediate: true })
-watch(() => insightStore.dataRefreshKey, async (newKey, oldKey) => {
-  if (!insightStore.currentBookId || newKey <= 0 || newKey === oldKey) return
+watch(() => insightStore.dataRefreshKey, async (newKey, previousKey) => {
+  if (!insightStore.currentBookId || newKey <= 0 || newKey === previousKey) return
   await state.syncAnalysisData('auto')
 })
 watch(() => state.chapterScript.value, (script) => {
@@ -524,7 +524,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .continuation-panel {
-  /* owner tokens: continuation-panel */
   --continuation-panel-border-default: #fecaca;
   --continuation-panel-border-strong: #bbf7d0;
   --continuation-panel-border-muted: #bfdbfe;
@@ -541,12 +540,28 @@ onBeforeUnmount(() => {
   --continuation-panel-text-primary: #dc2626;
   --continuation-panel-text-secondary: #16a34a;
   --continuation-panel-text-muted: #2563eb;
+  --ui-input-padding: 10px 12px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-input-radius: 8px;
+  --ui-input-font-size: 14px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-textarea-radius: 8px;
+  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-textarea-color: var(--color-text-default);
+  --ui-textarea-font-size: 14px;
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
   --ui-button-padding: 10px 20px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--color-surface-brand);
   --ui-button-primary-hover-background: var(--color-surface-brand-strong);
   --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-color: var(--color-text-default);
   --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-button-secondary-hover-background: var(--color-surface-hover);
   --ui-button-danger-background: var(--continuation-panel-surface-selected);
@@ -582,14 +597,14 @@ onBeforeUnmount(() => {
 .analysis-sync-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
 }
 
 .analysis-sync-status {
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
-/* 消息提示 */
+
 .message {
   padding: 12px 16px;
   border-radius: 8px;
@@ -614,7 +629,7 @@ onBeforeUnmount(() => {
   color: var(--continuation-panel-text-muted);
   border: 1px solid var(--continuation-panel-border-muted);
 }
-/* 步骤指示器 */
+
 .step-indicator {
   display: flex;
   justify-content: center;
@@ -647,13 +662,13 @@ onBeforeUnmount(() => {
 .step.active {
   background: var(--color-surface-brand);
   border-color: var(--color-border-brand);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .step.completed {
   background: var(--continuation-panel-surface-hover);
   border-color: var(--continuation-panel-border-subtle);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .step-number {
@@ -676,7 +691,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 500;
 }
-/* 步骤内容 */
+
 .step-content {
   background: var(--color-surface-base);
   border-radius: 12px;
@@ -692,7 +707,7 @@ onBeforeUnmount(() => {
   font-size: 18px;
   font-weight: 600;
 }
-/* 表单样式 */
+
 .continuation-panel__field {
   margin-bottom: 16px;
 }
@@ -702,22 +717,6 @@ onBeforeUnmount(() => {
   margin-bottom: 6px;
   font-weight: 500;
   font-size: 14px;
-}
-
-.continuation-panel__field input,
-.continuation-panel__field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.continuation-panel__field input:focus,
-.continuation-panel__field textarea:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .hint {

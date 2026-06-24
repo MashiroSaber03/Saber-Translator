@@ -169,7 +169,6 @@ export function useTranslateInit() {
 
       isInitialized.value = true
     } catch (error) {
-      console.error('[TranslateInit] 应用初始化失败:', error)
       initError.value = error instanceof Error ? error.message : '初始化失败'
     } finally {
       isInitializing.value = false
@@ -191,8 +190,8 @@ export function useTranslateInit() {
     // 尝试从后端加载设置（会覆盖浏览器缓存中的值）
     try {
       await settingsStore.loadFromBackend()
-    } catch (error) {
-      console.warn('[TranslateInit] 从后端加载设置失败，使用当前浏览器设置缓存:', error)
+    } catch {
+      // Backend settings are optional; the current browser settings remain active.
     }
   }
 
@@ -207,12 +206,9 @@ export function useTranslateInit() {
       if (response.fonts && response.fonts.length > 0) {
         fontList.value = response.fonts
       } else if (response.error) {
-        console.warn('[TranslateInit] 获取字体列表失败:', response.error)
-      } else {
-        console.warn('[TranslateInit] 字体列表为空')
+        showToast(response.error, 'warning')
       }
-    } catch (error) {
-      console.error('[TranslateInit] 获取字体列表失败:', error)
+    } catch {
       // 字体列表获取失败不阻止初始化
     }
   }
@@ -233,10 +229,9 @@ export function useTranslateInit() {
           settingsStore.setTranslatePrompt(response.default_prompt_content)
         }
       } else if (response.error) {
-        console.warn('[TranslateInit] 获取翻译提示词失败:', response.error)
+        showToast(response.error, 'warning')
       }
-    } catch (error) {
-      console.error('[TranslateInit] 获取翻译提示词失败:', error)
+    } catch {
       // 提示词获取失败不阻止初始化
     }
   }
@@ -257,10 +252,9 @@ export function useTranslateInit() {
           settingsStore.setTextboxPrompt(response.default_prompt_content)
         }
       } else if (response.error) {
-        console.warn('[TranslateInit] 获取文本框提示词失败:', response.error)
+        showToast(response.error, 'warning')
       }
-    } catch (error) {
-      console.error('[TranslateInit] 获取文本框提示词失败:', error)
+    } catch {
       // 提示词获取失败不阻止初始化
     }
   }
@@ -273,10 +267,9 @@ export function useTranslateInit() {
     try {
       const response = await cleanupGpu()
       if (!response.success) {
-        console.warn('[TranslateInit] GPU 清理失败:', response.error)
+        showToast(response.error || 'GPU 清理失败', 'warning')
       }
-    } catch (error) {
-      console.warn('[TranslateInit] GPU 清理失败:', error)
+    } catch {
       // GPU 清理失败不阻止初始化
     }
   }
@@ -311,7 +304,6 @@ export function useTranslateInit() {
       const bookResponse = await getBookDetail(bookId)
 
       if (!bookResponse.success || !bookResponse.book) {
-        console.warn('[TranslateInit] 书籍不存在:', bookId)
         bookTranslationConstraintsStore.resetBookConstraints()
         showToast('书籍不存在', 'warning')
         return
@@ -321,7 +313,6 @@ export function useTranslateInit() {
       const chapter = book.chapters?.find(c => c.id === chapterId)
 
       if (!chapter) {
-        console.warn('[TranslateInit] 章节不存在:', chapterId)
         bookTranslationConstraintsStore.resetBookConstraints()
         showToast('章节不存在', 'warning')
         return
@@ -351,8 +342,7 @@ export function useTranslateInit() {
         }
       }
 
-    } catch (error) {
-      console.error('[TranslateInit] 加载书籍/章节信息失败:', error)
+    } catch {
       bookTranslationConstraintsStore.resetBookConstraints()
       showToast('加载书籍信息失败', 'error')
     }
@@ -369,7 +359,6 @@ export function useTranslateInit() {
    */
   function switchImage(index: number): void {
     if (index < 0 || index >= imageStore.imageCount) {
-      console.warn(`[TranslateInit] 无效的图片索引: ${index}`)
       return
     }
 
@@ -395,7 +384,6 @@ export function useTranslateInit() {
     const newImage = imageStore.currentImage
 
     if (!newImage) {
-      console.warn('[TranslateInit] 切换到的图片不存在')
       resetSwitchImageFlag()
       return
     }

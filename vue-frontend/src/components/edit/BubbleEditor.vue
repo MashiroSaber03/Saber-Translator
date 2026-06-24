@@ -1,17 +1,5 @@
-<!--
-  气泡编辑器组件
-  编辑单个气泡的文本、字体、颜色等属性
-  编辑器使用 Office 风格浅色主题
-  - 支持原文和译文编辑
-  - 支持日语软键盘输入
-  - 支持单气泡重新OCR识别和翻译
-  - 支持样式设置（字号、字体、颜色、描边等）
-  - 支持修复方式选择
--->
 <template>
   <div class="edit-panel-content">
-    <!-- 始终显示编辑面板，不显示"请选择气泡"提示 -->
-    <!-- 原文编辑区 -->
     <div class="text-column original-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">漫画原文</span>
@@ -35,13 +23,17 @@
         @input="handleOriginalTextChange"
       />
       <div class="text-actions">
-        <UiButton variant="toolbar" class="copy-btn" @click="copyOriginalText">📋 复制</UiButton>
-        <UiButton variant="toolbar" class="keyboard-toggle-btn" @click="toggleJpKeyboard" title="显示/隐藏50音键盘">
+        <UiButton variant="toolbar" class="text-action-btn copy-btn" @click="copyOriginalText">📋 复制</UiButton>
+        <UiButton
+          variant="toolbar"
+          class="text-action-btn keyboard-toggle-btn"
+          @click="toggleJpKeyboard"
+          title="显示/隐藏50音键盘"
+        >
           ⌨️ 50音
         </UiButton>
       </div>
 
-      <!-- 50音软键盘 -->
       <JapaneseKeyboard
         :visible="showJpKeyboard"
         :default-target="jpKeyboardTarget"
@@ -51,7 +43,6 @@
       />
     </div>
 
-    <!-- 译文编辑区 -->
     <div class="text-column translated-text-column text-block">
       <div class="text-column-header">
         <span class="column-title">译文</span>
@@ -75,15 +66,12 @@
         @input="handleTextChange"
       />
       <div class="text-actions">
-        <UiButton variant="toolbar" class="copy-btn" @click="copyTranslatedText">📋 复制</UiButton>
+        <UiButton variant="toolbar" class="text-action-btn copy-btn" @click="copyTranslatedText">📋 复制</UiButton>
       </div>
     </div>
 
-    <!-- 样式设置区 -->
     <div class="style-settings-section text-block">
-      <!-- Office风格文字设置工具栏 -->
       <div class="office-toolbar">
-        <!-- 第一行：字体 + 字号 -->
         <div class="toolbar-row toolbar-row-top">
           <div class="combo-control font-control">
             <label>字体</label>
@@ -119,9 +107,7 @@
           </div>
         </div>
 
-        <!-- 第二行：样式工具按钮 -->
         <div class="toolbar-row toolbar-row-actions">
-          <!-- 排版方向 -->
           <div class="toolbar-icon-group" aria-label="排版方向">
             <UiButton
               variant="toolbar"
@@ -159,7 +145,6 @@
 
           <div class="toolbar-divider vertical"></div>
 
-          <!-- 文字颜色 -->
           <div class="toolbar-color-group">
             <div class="toolbar-color-picker" title="文字颜色">
               <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerTextColorPicker">
@@ -189,7 +174,6 @@
               @change="handleInpaintMethodChange"
             />
 
-            <!-- 纯色填充时的颜色选择器 -->
             <div
               class="toolbar-color-picker toolbar-solid-color-options"
               :class="{ hidden: localInpaintMethod !== 'solid' }"
@@ -222,7 +206,6 @@
 
           <div class="toolbar-divider vertical"></div>
 
-          <!-- 描边设置 -->
           <div class="toolbar-stroke-cluster">
             <UiButton
               variant="toolbar"
@@ -285,7 +268,6 @@
           </div>
         </div>
 
-        <!-- 行间距 + 对齐 -->
         <div class="toolbar-row toolbar-row-typography">
           <div class="combo-control linespacing-control">
             <label>行间距</label>
@@ -340,7 +322,6 @@
           </div>
         </div>
 
-        <!-- 第三行：旋转 + 位置 -->
         <div class="toolbar-row toolbar-row-bottom">
           <div class="toolbar-rotation-group" title="旋转角度">
             <UiButton variant="toolbar" class="toolbar-btn" @click="rotateLeft" title="逆时针旋转">
@@ -413,7 +394,6 @@
         </div>
       </div>
 
-      <!-- 字号预设快捷按钮（可折叠） -->
       <details class="fontsize-presets-panel">
         <summary>字号预设</summary>
         <div class="font-size-presets">
@@ -430,7 +410,6 @@
         </div>
       </details>
 
-      <!-- 操作按钮 -->
       <div class="edit-action-buttons">
         <UiButton variant="toolbar" class="btn-apply-all" @click="applyToAll">样式同步到本页全部气泡</UiButton>
         <UiButton variant="toolbar" class="btn-reset" @click="resetBubbleEdit">重置</UiButton>
@@ -523,10 +502,7 @@ const {
 </script>
 
 <style scoped>
-/* ============ 编辑面板内容 - 使用浅色主题 ============ */
-
 .edit-panel-content {
-  /* owner tokens: bubble-editor */
   --bubble-editor-border-default: #d0d7ea;
   --bubble-editor-border-strong: #9aaefc;
   --bubble-editor-border-muted: rgba(119, 130, 161, .35);
@@ -595,7 +571,6 @@ const {
   color: var(--edit-panel-success);
 }
 
-/* 重新OCR/翻译按钮 */
 .re-ocr-btn,
 .re-translate-btn {
   width: 28px;
@@ -614,7 +589,6 @@ const {
   color: var(--color-text-inverse);
 }
 
-/* Loading 状态 */
 .re-ocr-btn.is-loading,
 .re-translate-btn.is-loading {
   opacity: 0.7;
@@ -660,7 +634,6 @@ const {
   background: var(--edit-translated-bg);
 }
 
-/* 文本操作按钮 */
 .text-actions {
   display: flex;
   gap: 8px;
@@ -668,17 +641,17 @@ const {
   justify-content: flex-end;
 }
 
-.text-actions button {
+.text-action-btn {
   padding: 6px 12px;
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 4px;
-  background: var(--color-surface-card, white);
+  background: var(--color-surface-card);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.15s;
 }
 
-.text-actions button:hover {
+.text-action-btn:hover {
   background: var(--color-surface-app, var(--edit-control-bg));
   border-color: var(--edit-muted-border-hover);
 }
@@ -686,8 +659,6 @@ const {
 .keyboard-toggle-btn {
   background: var(--color-surface-app, var(--edit-control-bg));
 }
-
-/* ============ 样式设置区 ============ */
 
 .style-settings-section {
   width: 100%;
@@ -697,8 +668,6 @@ const {
   border: 1px solid var(--edit-style-border);
   overflow-y: auto;
 }
-
-/* ============ Office风格工具栏 ============ */
 
 .office-toolbar {
   display: flex;
@@ -775,33 +744,6 @@ const {
   gap: 6px;
 }
 
-/* 字体选择器 */
-.toolbar-font-select {
-  min-width: 160px;
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--edit-input-border);
-  border-radius: 8px;
-  font-size: 13px;
-  background: var(--color-surface-base);
-  color: var(--edit-input-text);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-
-.toolbar-font-select:hover {
-  border-color: var(--edit-input-border-hover);
-}
-
-.toolbar-font-select:focus {
-  outline: none;
-  border-color: var(--edit-input-border-focus);
-  box-shadow: 0 0 0 2px var(--edit-shadow-input-focus);
-}
-
-/* 字号输入 */
 .toolbar-fontsize-input {
   width: 60px;
   height: 36px;
@@ -844,7 +786,6 @@ const {
   color: var(--bubble-editor-text-secondary);
 }
 
-/* 工具栏按钮 */
 .toolbar-btn {
   width: 34px;
   height: 34px;
@@ -890,7 +831,6 @@ const {
   font-weight: 600;
 }
 
-/* 颜色选择器 */
 .toolbar-color-picker {
   position: relative;
   display: inline-flex;
@@ -921,7 +861,6 @@ const {
   border: 0;
 }
 
-/* 描边选项 */
 .toolbar-stroke-options {
   transition: opacity 0.2s;
 }
@@ -931,35 +870,10 @@ const {
   pointer-events: none;
 }
 
-/* 背景修复方式选择器 */
 .toolbar-inpaint-group {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.toolbar-inpaint-select {
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--edit-input-border);
-  border-radius: 8px;
-  font-size: 12px;
-  background: var(--color-surface-base);
-  color: var(--edit-input-text);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-
-.toolbar-inpaint-select:hover {
-  border-color: var(--edit-input-border-hover);
-}
-
-.toolbar-inpaint-select:focus {
-  outline: none;
-  border-color: var(--edit-input-border-focus);
-  box-shadow: 0 0 0 2px var(--edit-shadow-input-focus);
 }
 
 .toolbar-solid-color-options {
@@ -1003,7 +917,6 @@ const {
   color: var(--bubble-editor-text-disabled);
 }
 
-/* 旋转控制组 */
 .toolbar-rotation-group {
   display: flex;
   align-items: center;
@@ -1015,7 +928,6 @@ const {
   width: 58px;
 }
 
-/* 位置控制组 */
 .toolbar-position-group {
   display: flex;
   align-items: center;
@@ -1032,7 +944,6 @@ const {
   background: var(--bubble-editor-surface-hover);
 }
 
-/* 字号预设面板 */
 .fontsize-presets-panel {
   margin-top: 12px;
   border-top: 1px solid var(--color-border-muted, var(--color-border-default));
@@ -1076,7 +987,6 @@ const {
   color: var(--bubble-editor-text-supporting);
 }
 
-/* 操作按钮 */
 .edit-action-buttons {
   display: flex;
   gap: 10px;
@@ -1099,7 +1009,7 @@ const {
 .btn-apply-all {
   background: linear-gradient(135deg, var(--color-surface-accent) 0%, var(--bubble-editor-surface-active) 100%);
   border: none;
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .btn-apply-all:hover {

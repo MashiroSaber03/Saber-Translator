@@ -1,47 +1,20 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 页面导航树组件
- * 显示章节和页面的树状结构，支持展开/折叠和页面选择
- */
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
-
-// ============================================================
-// 状态
-// ============================================================
+import { showToast } from '@/utils/toast'
 
 const insightStore = useInsightStore()
 
-/** 展开的章节ID集合 */
 const expandedChapters = ref<Set<string>>(new Set())
-
-/** 页面分析状态映射 */
 const pageAnalyzedMap = ref<Map<number, boolean>>(new Map())
-
-/** 已显示的页面数量（无章节模式下分页用） */
 const displayedPageCount = ref(100)
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 章节列表 */
 const chapters = computed(() => insightStore.chapters)
-
-/** 总页数 */
 const totalPages = computed(() => insightStore.totalPageCount)
 
-// ============================================================
-// 方法
-// ============================================================
-
-/**
- * 切换章节展开状态
- * @param chapterId - 章节ID
- */
 function toggleChapter(chapterId: string): void {
   if (expandedChapters.value.has(chapterId)) {
     expandedChapters.value.delete(chapterId)
@@ -50,43 +23,22 @@ function toggleChapter(chapterId: string): void {
   }
 }
 
-/**
- * 检查章节是否展开
- * @param chapterId - 章节ID
- */
 function isChapterExpanded(chapterId: string): boolean {
   return expandedChapters.value.has(chapterId)
 }
 
-/**
- * 选择页面
- * @param pageNum - 页码
- */
 function selectPage(pageNum: number): void {
   insightStore.selectPage(pageNum)
 }
 
-/**
- * 检查页面是否已分析
- * @param pageNum - 页码
- */
 function isPageAnalyzed(pageNum: number): boolean {
   return pageAnalyzedMap.value.get(pageNum) || false
 }
 
-/**
- * 检查页面是否被选中
- * @param pageNum - 页码
- */
 function isPageSelected(pageNum: number): boolean {
   return insightStore.selectedPageNum === pageNum
 }
 
-/**
- * 获取章节的页面范围数组
- * @param startPage - 起始页
- * @param endPage - 结束页
- */
 function getPageRange(startPage: number, endPage: number): number[] {
   const pages: number[] = []
   for (let i = startPage; i <= endPage; i++) {
@@ -95,18 +47,11 @@ function getPageRange(startPage: number, endPage: number): number[] {
   return pages
 }
 
-/**
- * 获取缩略图URL
- * @param pageNum - 页码
- */
 function getThumbnailUrl(pageNum: number): string {
   if (!insightStore.currentBookId) return ''
   return insightApi.getThumbnailUrl(insightStore.currentBookId, pageNum)
 }
 
-/**
- * 加载更多页面（无章节模式下分页）
- */
 function loadMorePages(): void {
   displayedPageCount.value = Math.min(
     displayedPageCount.value + 100,
@@ -114,19 +59,11 @@ function loadMorePages(): void {
   )
 }
 
-/**
- * 处理图片加载错误
- * @param event - 错误事件
- */
 function handleImageError(event: Event): void {
   const img = event.target as HTMLImageElement
   img.style.opacity = '0'
 }
 
-/**
- * 检查章节是否已完全分析
- * @param chapter - 章节信息
- */
 function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boolean {
   const pageCount = chapter.endPage - chapter.startPage + 1
   let analyzedCount = 0
@@ -138,10 +75,6 @@ function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boo
   return analyzedCount === pageCount
 }
 
-/**
- * 重新分析章节
- * @param chapterId - 章节ID
- */
 async function reanalyzeChapter(chapterId: string): Promise<void> {
   if (!insightStore.currentBookId) return
   if (!confirm('确定要重新分析此章节吗？')) return
@@ -149,65 +82,50 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
   try {
     const response = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
     if (response.success) {
-      const taskId = (response as any).task_id
+      const taskId = response.task_id
       if (taskId) {
         insightStore.setCurrentTaskId(taskId)
       }
       insightStore.setAnalysisStatus('running')
-      alert('章节分析已启动')
+      showToast('章节分析已启动', 'success')
     } else {
-      alert('启动失败: ' + (response.error || '未知错误'))
+      showToast('启动失败: ' + (response.error || '未知错误'), 'error')
     }
-  } catch (error) {
-    console.error('重新分析章节失败:', error)
-    alert('重新分析失败')
+  } catch {
+    showToast('重新分析失败', 'error')
   }
 }
 
-/**
- * 加载已分析页面列表
- */
 async function loadAnalyzedPages(): Promise<void> {
   if (!insightStore.currentBookId) return
   
   try {
-    const response = await fetch(`/api/manga-insight/${insightStore.currentBookId}/pages`)
-    const data = await response.json()
-    if (data.success && data.pages) {
-      const analyzedPages = data.pages as number[]
+    const response = await insightApi.getAnalyzedPages(insightStore.currentBookId)
+    if (response.success && response.pages) {
+      const nextMap = new Map<number, boolean>()
+      const analyzedPages = response.pages
       analyzedPages.forEach(p => {
-        pageAnalyzedMap.value.set(p, true)
+        nextMap.set(p, true)
       })
+      pageAnalyzedMap.value = nextMap
     }
-  } catch (error) {
-    console.error('加载已分析页面失败:', error)
+  } catch {
+    showToast('加载页面分析状态失败', 'error')
   }
 }
 
-// ============================================================
-// 生命周期
-// ============================================================
-
 onMounted(async () => {
-  // 加载已分析页面
   await loadAnalyzedPages()
   
-  // 默认展开第一个章节
   if (chapters.value.length > 0 && chapters.value[0]) {
     expandedChapters.value.add(chapters.value[0].id)
   }
 })
 
-/**
- * 监听分析进度变化，自动刷新已分析页面标记
- * 通过监听 analyzedPageCount 变化刷新页面分析状态。
- */
 watch(
   () => insightStore.analyzedPageCount,
-  async (newCount, oldCount) => {
-    // 当已分析页数变化时，重新加载页面分析状态
-    if (newCount !== oldCount && newCount > 0) {
-      // 清空现有标记并重新加载。
+  async (newCount, previousCount) => {
+    if (newCount !== previousCount && newCount > 0) {
       pageAnalyzedMap.value.clear()
       await loadAnalyzedPages()
     }
@@ -223,12 +141,10 @@ watch(
     </div>
     
     <div class="pages-tree">
-      <!-- 无章节时显示提示或直接显示页面网格 -->
       <template v-if="chapters.length === 0">
         <div v-if="totalPages === 0" class="empty-hint">
           暂无页面
         </div>
-        <!-- 无章节时直接显示页面网格 -->
         <div v-else class="tree-all-pages">
           <UiButton
             v-for="pageNum in getPageRange(1, Math.min(totalPages, displayedPageCount))"
@@ -254,7 +170,6 @@ watch(
             <span class="tree-page-num">{{ pageNum }}</span>
           </UiButton>
         </div>
-        <!-- 加载更多按钮 -->
         <div v-if="totalPages > displayedPageCount" class="tree-load-more">
           <UiButton variant="toolbar" class="btn-load-more" @click="loadMorePages">
             加载更多 (还有 {{ totalPages - displayedPageCount }} 页)
@@ -262,7 +177,6 @@ watch(
         </div>
       </template>
       
-      <!-- 有章节时：按章节组织 -->
       <template v-else>
         <div 
           v-for="chapter in chapters" 
@@ -270,7 +184,6 @@ watch(
           class="tree-chapter"
           :class="{ expanded: isChapterExpanded(chapter.id) }"
         >
-          <!-- 章节标题 -->
           <div class="tree-chapter-header">
             <UiButton
               variant="toolbar"
@@ -301,7 +214,6 @@ watch(
             </UiButton>
           </div>
           
-          <!-- 章节页面网格（4列） -->
           <div class="tree-pages-grid">
             <UiButton
               v-for="pageNum in getPageRange(chapter.startPage, chapter.endPage)"
@@ -338,10 +250,6 @@ watch(
   --pages-tree-shadow-default: rgba(99, 102, 241, .2);
   --pages-tree-surface-base: rgba(0, 0, 0, .7);
 }
-
-/* ==================== PagesTree样式 ==================== */
-
-/* ==================== 页面树样式 ==================== */
 
 .pages-tree-section {
     flex: 1;
@@ -393,10 +301,6 @@ watch(
 
 .tree-chapter-header:hover {
     background: var(--insight-surface-tertiary);
-}
-
-.tree-chapter-header.active {
-    background: var(--color-focus-brand-soft);
 }
 
 .tree-chapter-toggle {
@@ -477,6 +381,10 @@ watch(
     opacity: 0.6;
 }
 
+.tree-chapter-header:focus-within .btn-reanalyze-chapter {
+    opacity: 0.6;
+}
+
 .tree-chapter-header:hover .btn-reanalyze-chapter:hover {
     opacity: 1;
 }
@@ -550,7 +458,7 @@ watch(
     right: 0;
     padding: 2px 4px;
     background: linear-gradient(transparent, var(--pages-tree-surface-base));
-    color: white;
+    color: var(--color-text-inverse);
     font-size: 10px;
     text-align: center;
 }

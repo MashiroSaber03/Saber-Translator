@@ -89,7 +89,7 @@
 </template>
 <script setup lang="ts">
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -130,7 +130,6 @@ const emit = defineEmits<{
   (e: 'rotateStart', index: number, event: MouseEvent): void
   (e: 'rotateEnd', index: number, angle: number): void
   (e: 'drawBubble', coords: BubbleCoords): void
-  // 注意：clearMultiSelect 事件已移除，清除多选逻辑在 EditWorkspace.handleMouseDown 中实现
 }>()
 // 状态定义（本地状态，拖动状态从store共享）
 const overlayRef = ref<HTMLElement | null>(null)
@@ -203,8 +202,6 @@ function handleOverlayMouseDown(event: MouseEvent): void {
     return
   }
   if (event.button !== 0) return
-  // 注意：清除多选的逻辑已移至 EditWorkspace.handleMouseDown
-  // 因为 .bubble-overlay 是 pointer-events: none，此函数不会被空白处点击触发
   if (props.isDrawingMode) {
     startDrawing(event)
   }
@@ -322,6 +319,13 @@ function updateResizing(event: MouseEvent): void {
   // 直接更新ref值，Vue会自动触发重新渲染
   resizeCurrentCoords.value = nextCoords
 }
+function resetResizingState(): void {
+  isResizing.value = false
+  resizingIndex.value = -1
+  resizeInitialCoords.value = null
+  resizeCurrentCoords.value = null
+  resizeHandle.value = ''
+}
 function finishResizing(event: MouseEvent): void {
   if (!resizeInitialCoords.value || !resizeHandle.value) return
   const scale = props.scale || 1
@@ -345,20 +349,11 @@ function finishResizing(event: MouseEvent): void {
     }
   )
   if (!nextCoords) {
-    console.warn('调整后尺寸过小，已撤销')
-    isResizing.value = false
-    resizingIndex.value = -1
-    resizeInitialCoords.value = null
-    resizeCurrentCoords.value = null
-    resizeHandle.value = ''
+    resetResizingState()
     return
   }
   emit('resizeEnd', resizingIndex.value, nextCoords)
-  isResizing.value = false
-  resizingIndex.value = -1
-  resizeInitialCoords.value = null
-  resizeCurrentCoords.value = null
-  resizeHandle.value = ''
+  resetResizingState()
 }
 function handleRotateStart(index: number, event: MouseEvent): void {
   // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
@@ -485,8 +480,6 @@ function handleMouseUp(event: MouseEvent): void {
     finishDrawing(event)
   }
 }
-onMounted(() => {
-})
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', handleMouseUp)
@@ -502,7 +495,6 @@ onUnmounted(() => {
  * 解决高分辨率图片缩小显示时手柄过小难以操作的问题
  */
 .bubble-overlay {
-  /* owner tokens: bubble-overlay */
   --bubble-overlay-border-default: rgba(255, 200, 0, .8);
   --bubble-overlay-border-strong: #ff6b6b;
   --bubble-overlay-border-muted: #0f8;

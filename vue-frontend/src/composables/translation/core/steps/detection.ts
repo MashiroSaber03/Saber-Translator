@@ -163,11 +163,8 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
 
         if (maskResponse.success && maskResponse.raw_mask) {
             textMaskData = maskResponse.raw_mask
-        } else {
-            console.warn(`⚠️ Default 检测器未能生成掩膜`)
         }
-    } catch (error) {
-        console.error(`❌ 生成精确文字掩膜失败:`, error)
+    } catch {
         // 掩膜生成失败不影响主流程，继续使用检测结果
     }
 

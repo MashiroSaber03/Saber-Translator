@@ -15,6 +15,11 @@ describe('Property 13: 章节排序一致性', () => {
     setActivePinia(createPinia())
   })
 
+  const tagNameArbitrary = fc.stringOf(
+    fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')),
+    { minLength: 1, maxLength: 20 }
+  ).map((value) => `tag-${value}`)
+
   /**
    * 生成章节数据的 Arbitrary
    */
@@ -36,7 +41,7 @@ describe('Property 13: 章节排序一致性', () => {
     title: fc.string({ minLength: 1, maxLength: 100 }),
     description: fc.option(fc.string({ maxLength: 200 }), { nil: undefined }),
     cover: fc.option(fc.string(), { nil: undefined }),
-    tags: fc.array(fc.uuid(), { maxLength: 5 }),
+    tags: fc.array(tagNameArbitrary, { maxLength: 5 }),
     chapters: fc.array(chapterArbitrary, { minLength: 1, maxLength: 20 }),
     createdAt: fc.date().map(d => d.toISOString()),
     updatedAt: fc.date().map(d => d.toISOString()),

@@ -547,7 +547,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       baseImageData = currentImage.originalDataURL.split(',')[1]
       baseImageSrc = currentImage.originalDataURL
     } else {
-      console.error('无法获取基础图像用于 LAMA 修复')
+      showToast('无法获取基础图像用于 LAMA 修复', 'error')
       return
     }
 
@@ -565,7 +565,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
         const maskCtx = maskCanvas.getContext('2d')
 
         if (!maskCtx) {
-          console.error('无法创建掩膜画布上下文')
+          showToast('无法创建掩膜画布上下文', 'error')
           resolve()
           return
         }
@@ -633,7 +633,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
             resolve()
             return
           }
-          console.error('LAMA 修复失败，回退到纯色填充:', error)
           showToast('LAMA 修复失败，使用纯色填充', 'warning')
           // 回退到纯色填充时重新读取当前填充颜色。
           const fallbackSettings = callbacks?.getCurrentRepairSettings?.()
@@ -642,7 +641,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
         resolve()
       }
       img.onerror = () => {
-        console.error('加载图像失败，无法进行 LAMA 修复')
+        showToast('加载图像失败，无法进行 LAMA 修复', 'error')
         resolve()
       }
       img.src = baseImageSrc

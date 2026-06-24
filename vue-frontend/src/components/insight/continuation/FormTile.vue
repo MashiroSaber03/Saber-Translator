@@ -1,6 +1,5 @@
 <template>
   <div class="form-tile" :class="{ disabled: form.enabled === false }">
-    <!-- 图片区域 -->
     <div class="form-image-section">
       <img v-if="form.reference_image" :src="formImageUrl" alt="">
       <div v-else class="image-placeholder">
@@ -18,7 +17,6 @@
       </label>
     </div>
     
-    <!-- 信息区域 -->
     <div class="form-content">
       <div class="form-header">
         <h4 class="form-title">{{ form.form_name }}</h4>
@@ -27,12 +25,12 @@
       <p v-if="form.description" class="form-description">{{ form.description }}</p>
     </div>
     
-    <!-- 操作区域 -->
     <div class="form-actions">
       <div class="action-row">
         <label class="toggle-control" :title="form.enabled !== false ? '点击禁用' : '点击启用'">
           <UiInput 
             type="checkbox" 
+            class="toggle-control-input"
             :aria-label="`启用 ${characterName} ${form.form_name}`"
             :checked="form.enabled !== false"
             @change="$emit('toggle-enabled', ($event.target as HTMLInputElement).checked)"
@@ -88,9 +86,7 @@ function handleUpload(event: Event) {
 </script>
 
 <style scoped>
-/* 卡片容器 */
 .form-tile {
-  /* owner tokens: form-tile */
   --form-tile-border-default: #e8eaf6;
   --form-tile-border-strong: #c7d2fe;
   --form-tile-border-muted: #cbd5e1;
@@ -143,7 +139,6 @@ function handleUpload(event: Event) {
   transform: none;
 }
 
-/* 图片区域 */
 .form-image-section {
   aspect-ratio: 1;
   position: relative;
@@ -180,7 +175,6 @@ function handleUpload(event: Event) {
   color: var(--form-tile-text-primary);
 }
 
-/* 上传遮罩 */
 .upload-overlay {
   position: absolute;
   inset: 0;
@@ -194,7 +188,7 @@ function handleUpload(event: Event) {
 }
 
 .upload-text {
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -205,7 +199,6 @@ function handleUpload(event: Event) {
   opacity: 1;
 }
 
-/* 内容区域 */
 .form-content {
   padding: 14px 12px 12px;
   flex: 1;
@@ -257,7 +250,6 @@ function handleUpload(event: Event) {
   overflow: hidden;
 }
 
-/* 操作区域 */
 .form-actions {
   padding: 10px 12px;
   background: linear-gradient(to bottom, var(--form-tile-surface-overlay), var(--form-tile-surface-base));
@@ -277,7 +269,6 @@ function handleUpload(event: Event) {
   padding-top: 2px;
 }
 
-/* Toggle开关 */
 .toggle-control {
   position: relative;
   display: inline-block;
@@ -287,7 +278,7 @@ function handleUpload(event: Event) {
   flex-shrink: 0;
 }
 
-.toggle-control input {
+.toggle-control-input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -309,27 +300,26 @@ function handleUpload(event: Event) {
   width: 14px;
   left: 2px;
   bottom: 2px;
-  background: white;
+  background: var(--color-surface-base);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
   box-shadow: 0 2px 4px var(--form-tile-shadow-floating);
 }
 
-.toggle-control input:checked + .toggle-track {
+.toggle-control-input:checked + .toggle-track {
   background: linear-gradient(135deg, var(--form-tile-surface-tint), var(--form-tile-surface-soft));
 }
 
-.toggle-control input:checked + .toggle-track::before {
+.toggle-control-input:checked + .toggle-track::before {
   transform: translateX(14px);
 }
 
-/* 图标按钮 */
 .action-btn {
   flex: 1;
   height: 32px;
   padding: 0 10px;
   border: 1.5px solid var(--color-border-muted);
-  background: white;
+  background: var(--color-surface-base);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -359,13 +349,12 @@ function handleUpload(event: Event) {
   border-color: var(--form-tile-border-active);
 }
 
-/* 图标按钮（次要行） */
 .icon-btn {
   width: 32px;
   height: 32px;
   padding: 0;
   border: 1.5px solid var(--color-border-muted);
-  background: white;
+  background: var(--color-surface-base);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;

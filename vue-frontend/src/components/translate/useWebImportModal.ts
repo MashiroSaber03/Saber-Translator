@@ -6,6 +6,7 @@ import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImage
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
 import { getProviderDisplayName, normalizeProviderId, providerRequiresApiKey, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
+import { showToast } from '@/utils/toast'
 
 export function useWebImportModal() {
   const webImportStore = useWebImportStore()
@@ -122,7 +123,7 @@ export function useWebImportModal() {
   async function handleSaveSettings(showSuccessFeedback = true): Promise<boolean> {
     const success = await webImportStore.saveSettings()
     if (showSuccessFeedback) {
-      alert(success ? '设置已保存' : '设置保存失败，请重试')
+      showToast(success ? '设置已保存' : '设置保存失败，请重试', success ? 'success' : 'error')
     }
     return success
   }
@@ -144,7 +145,7 @@ export function useWebImportModal() {
     if (shouldSave) {
       const success = await handleSaveSettings(false)
       if (!success) {
-        alert('设置保存失败，请重试')
+        showToast('设置保存失败，请重试', 'error')
       }
       return success
     }
@@ -166,7 +167,7 @@ export function useWebImportModal() {
 
     const url = urlInput.value.trim()
     if (!url) {
-      alert('请输入网址')
+      showToast('请输入网址', 'warning')
       return
     }
 
@@ -174,7 +175,7 @@ export function useWebImportModal() {
     try {
       new URL(url)
     } catch {
-      alert('请输入有效的网址')
+      showToast('请输入有效的网址', 'warning')
       return
     }
 
@@ -237,7 +238,7 @@ export function useWebImportModal() {
     }
 
     if (!extractResult.value?.pages || selectedCount.value === 0) {
-      alert('请选择要导入的图片')
+      showToast('请选择要导入的图片', 'warning')
       return
     }
 
@@ -259,19 +260,24 @@ export function useWebImportModal() {
         
         if (galleryResult.success && galleryResult.images.length > 0) {
           let importedCount = 0
-          const maxImport = Math.min(galleryResult.images.length, selectedPagesList.length)
-          
-          for (let i = 0; i < maxImport; i++) {
-            const img = galleryResult.images[i]
+          let processedCount = 0
+
+          for (const page of selectedPagesList) {
+            const img = galleryResult.images[page.pageNumber - 1]
+            processedCount++
             if (img && img.filename && img.data) {
               imageStore.addImage(img.filename, img.data)
               importedCount++
-              webImportStore.updateDownloadProgress(importedCount, maxImport)
             }
+            webImportStore.updateDownloadProgress(processedCount, selectedPagesList.length)
           }
-          
+
+          if (importedCount === 0) {
+            throw new Error('未能导入选中的图片')
+          }
+
           webImportStore.setStatus('completed')
-          alert(`成功导入 ${importedCount} 张图片`)
+          showToast(`成功导入 ${importedCount} 张图片`, 'success')
           handleClose()
           return
         } else {
@@ -300,7 +306,7 @@ export function useWebImportModal() {
 
         // 提示成功
         const failedMsg = result.failedCount > 0 ? `，${result.failedCount} 张失败` : ''
-        alert(`成功导入 ${result.images.length} 张图片${failedMsg}`)
+        showToast(`成功导入 ${result.images.length} 张图片${failedMsg}`, result.failedCount > 0 ? 'warning' : 'success')
 
         // 关闭模态框
         handleClose()
@@ -344,7 +350,7 @@ export function useWebImportModal() {
   // 测试 Firecrawl 连接
   async function handleTestFirecrawl() {
     if (!draftSettings.value.firecrawl.apiKey) {
-      alert('请输入 Firecrawl API Key')
+      showToast('请输入 Firecrawl API Key', 'warning')
       return
     }
 
@@ -352,12 +358,12 @@ export function useWebImportModal() {
     try {
       const result = await testFirecrawlConnection(draftSettings.value.firecrawl.apiKey)
       if (result.success) {
-        alert('✅ Firecrawl 连接成功')
+        showToast('Firecrawl 连接成功', 'success')
       } else {
-        alert(`❌ 连接失败: ${result.error}`)
+        showToast(`连接失败: ${result.error}`, 'error')
       }
     } catch (e) {
-      alert(`❌ 连接失败: ${e instanceof Error ? e.message : '未知错误'}`)
+      showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
     } finally {
       testingFirecrawl.value = false
     }
@@ -366,7 +372,7 @@ export function useWebImportModal() {
   // 测试 Agent 连接
   async function handleTestAgent() {
     if (providerRequiresApiKey(draftSettings.value.agent.provider) && !draftSettings.value.agent.apiKey) {
-      alert('请输入 AI Agent API Key')
+      showToast('请输入 AI Agent API Key', 'warning')
       return
     }
 
@@ -379,12 +385,12 @@ export function useWebImportModal() {
         draftSettings.value.agent.modelName
       )
       if (result.success) {
-        alert('✅ AI Agent 连接成功')
+        showToast('AI Agent 连接成功', 'success')
       } else {
-        alert(`❌ 连接失败: ${result.error}`)
+        showToast(`连接失败: ${result.error}`, 'error')
       }
     } catch (e) {
-      alert(`❌ 连接失败: ${e instanceof Error ? e.message : '未知错误'}`)
+      showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
     } finally {
       testingAgent.value = false
     }
@@ -396,17 +402,17 @@ export function useWebImportModal() {
     const baseUrl = draftSettings.value.agent.customBaseUrl?.trim()
 
     if (providerRequiresApiKey(provider) && !apiKey) {
-      alert('请先填写 API Key')
+      showToast('请先填写 API Key', 'warning')
       return
     }
 
     if (!providerSupportsCapability(provider, 'modelFetch')) {
-      alert(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
+      showToast(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`, 'warning')
       return
     }
 
     if (providerRequiresBaseUrl(provider) && !baseUrl) {
-      alert('自定义服务需要先填写 Base URL')
+      showToast('自定义服务需要先填写 Base URL', 'warning')
       return
     }
 
@@ -415,14 +421,14 @@ export function useWebImportModal() {
       const result = await configApi.fetchModels(provider, apiKey, baseUrl || '')
       if (result.success && result.models && result.models.length > 0) {
         modelList.value = result.models.map(model => model.id)
-        alert(`获取到 ${result.models.length} 个模型`)
+        showToast(`获取到 ${result.models.length} 个模型`, 'success')
       } else {
         modelList.value = []
-        alert(result.message || '未获取到可用模型')
+        showToast(result.message || '未获取到可用模型', 'warning')
       }
     } catch (error: unknown) {
       modelList.value = []
-      alert(error instanceof Error ? error.message : '获取模型列表失败')
+      showToast(error instanceof Error ? error.message : '获取模型列表失败', 'error')
     } finally {
       isFetchingModels.value = false
     }

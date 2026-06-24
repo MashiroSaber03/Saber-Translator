@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import AppShell from '@/components/ui/AppShell.vue'
-/**
- * 阅读器页面视图组件
- * 提供翻译后漫画的阅读体验，支持原图/翻译图切换和阅读设置
- */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBookDetail, getChapterImages, type ChapterImageData } from '@/api/bookshelf'
@@ -14,7 +10,6 @@ import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ReaderControls from '@/components/reader/ReaderControls.vue'
 import type { ReaderSettings } from '@/components/reader/ReaderControls.vue'
 
-// 接收路由参数（必需）
 const props = defineProps<{
   bookId: string
   chapterId: string
@@ -23,59 +18,39 @@ const props = defineProps<{
 const router = useRouter()
 const toast = useToast()
 
-// 子组件引用
 const readerControlsRef = ref<InstanceType<typeof ReaderControls> | null>(null)
 
-// ==================== 状态定义 ====================
-
-// 书籍和章节信息
 const bookInfo = ref<BookData | null>(null)
 const chaptersData = ref<ChapterData[]>([])
 const currentChapterInfo = computed(() => 
   chaptersData.value.find(c => c.id === props.chapterId)
 )
 
-// 图片数据
 const imagesData = ref<ChapterImageData[]>([])
-
-// 加载状态
 const isLoading = ref(true)
-
-// 当前查看模式：'original' 或 'translated'
 const currentViewMode = ref<'original' | 'translated'>('translated')
-
-// 当前页码
 const currentPage = ref(1)
 
 let failureRedirectTimer: ReturnType<typeof setTimeout> | null = null
 
-// ==================== 计算属性 ====================
-
-// 当前章节索引
 const currentChapterIndex = computed(() => 
   chaptersData.value.findIndex(c => c.id === props.chapterId)
 )
 
-// 是否有上一章
 const hasPrevChapter = computed(() => currentChapterIndex.value > 0)
 
-// 是否有下一章
 const hasNextChapter = computed(() => 
   currentChapterIndex.value >= 0 && 
   currentChapterIndex.value < chaptersData.value.length - 1
 )
 
-// 页面标题
 const pageTitle = computed(() => {
   const chapterTitle = currentChapterInfo.value?.title || '阅读'
   const bookTitle = bookInfo.value?.title || 'Saber-Translator'
   return `${chapterTitle} - ${bookTitle}`
 })
 
-// 是否显示章节导航
 const showChapterNav = computed(() => !isLoading.value && imagesData.value.length > 0)
-
-// ==================== 方法 ====================
 
 function clearFailureRedirectTimer() {
   if (failureRedirectTimer !== null) {
@@ -92,15 +67,11 @@ function scheduleFailureRedirect() {
   }, 2000)
 }
 
-/**
- * 加载阅读器数据
- */
 async function loadReaderData() {
   clearFailureRedirectTimer()
   isLoading.value = true
   
   try {
-    // 并行加载书籍信息和章节图片
     const [bookResult, imagesResult] = await Promise.all([
       getBookDetail(props.bookId),
       getChapterImages(props.bookId, props.chapterId)
@@ -119,11 +90,9 @@ async function loadReaderData() {
       throw new Error(imagesResult.error || '获取章节图片失败')
     }
     
-    // 更新页面标题
     document.title = pageTitle.value
     
   } catch (error) {
-    console.error('加载数据失败:', error)
     toast.error('加载失败: ' + (error instanceof Error ? error.message : '未知错误'))
     scheduleFailureRedirect()
   } finally {
@@ -131,16 +100,10 @@ async function loadReaderData() {
   }
 }
 
-/**
- * 设置查看模式
- */
 function setViewMode(mode: 'original' | 'translated') {
   currentViewMode.value = mode
 }
 
-/**
- * 导航到上一章/下一章
- */
 function navigateChapter(direction: 'prev' | 'next') {
   const newIndex = direction === 'prev' 
     ? currentChapterIndex.value - 1 
@@ -154,59 +117,38 @@ function navigateChapter(direction: 'prev' | 'next') {
   }
 }
 
-/**
- * 返回书架
- */
 function goBack() {
   router.push('/')
 }
 
-/**
- * 进入翻译页面
- */
 function goToTranslate() {
   router.push(`/translate?book=${props.bookId}&chapter=${props.chapterId}`)
 }
 
-/**
- * 打开设置面板
- */
 function openSettings() {
   readerControlsRef.value?.openSettings()
 }
 
-/**
- * 处理页码变化
- */
 function handlePageChange(page: number) {
   currentPage.value = page
 }
 
-/**
- * 处理设置变化
- */
 function handleSettingsChange(_settings: ReaderSettings) {
   // 设置已在 ReaderControls 组件中应用
 }
 
-// ==================== 生命周期 ====================
-
 onMounted(() => {
-  // 加载数据
-  loadReaderData()
-  // 主题由 App.vue 的 initSettings() 统一管理，无需重复应用
+  void loadReaderData()
 })
 
 onUnmounted(() => {
   clearFailureRedirectTimer()
 })
 
-// 监听路由参数变化，重新加载数据
 watch(
   () => [props.bookId, props.chapterId],
   () => {
-    loadReaderData()
-    // 滚动到顶部
+    void loadReaderData()
     window.scrollTo({ top: 0 })
   }
 )
@@ -221,7 +163,6 @@ watch(
     content-padding="0 20px"
     content-class="reader-page__content"
   >
-    <!-- 阅读器头部 -->
     <template #header>
       <header class="reader-header">
         <div class="reader-header__left">
@@ -274,7 +215,6 @@ watch(
       </header>
     </template>
 
-    <!-- 主阅读区域 -->
     <ReaderCanvas
       :images="imagesData"
       :view-mode="currentViewMode"
@@ -283,7 +223,6 @@ watch(
       @go-translate="goToTranslate"
     />
 
-    <!-- 阅读器控制组件 -->
     <ReaderControls
       ref="readerControlsRef"
       :current-page="currentPage"
@@ -298,11 +237,7 @@ watch(
 </template>
 
 <style scoped>
-/* 阅读页面样式 */
-
-/* ==================== 页面容器样式 ==================== */
 .reader-page {
-  /* owner tokens: reader-view */
   --reader-view-shadow-default: rgba(0, 0, 0, .2);
   --reader-view-surface-base: #1a1a2e;
   --reader-view-surface-raised: rgba(255, 255, 255, .15);
@@ -322,7 +257,6 @@ watch(
     width: 100%;
 }
 
-/* ==================== 头部样式 ==================== */
 .reader-header {
     height: 56px;
     background: var(--header-bg, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
@@ -355,7 +289,7 @@ watch(
     background: var(--reader-view-surface-raised);
     border: none;
     border-radius: 8px;
-    color: white;
+    color: var(--color-text-inverse);
     font-size: 14px;
     cursor: pointer;
     transition: all 0.2s;
@@ -371,7 +305,7 @@ watch(
 }
 
 .reader-header__button--primary:hover {
-    background: white;
+    background: var(--color-surface-base);
 }
 
 .reader-header__button-icon {
@@ -382,7 +316,7 @@ watch(
     display: flex;
     align-items: center;
     gap: 8px;
-    color: white;
+    color: var(--color-text-inverse);
     font-size: 14px;
 }
 
@@ -407,12 +341,11 @@ watch(
 }
 
 .page-info {
-    color: white;
+    color: var(--color-text-inverse);
     font-size: 14px;
     opacity: 0.9;
 }
 
-/* 查看模式切换 */
 .view-mode-toggle {
     display: flex;
     background: var(--reader-view-surface-raised);
@@ -431,7 +364,7 @@ watch(
 }
 
 .reader-header__mode-button:hover {
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .reader-header__mode-button.active {
@@ -440,7 +373,6 @@ watch(
     font-weight: 500;
 }
 
-/* ==================== 响应式设计 ==================== */
 @media (--breakpoint-md-down) {
     .reader-header__button .reader-header__button-text {
         display: none;

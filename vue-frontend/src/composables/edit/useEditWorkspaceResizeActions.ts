@@ -65,10 +65,10 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
   }
 
   function startPanelResize(event: MouseEvent): void {
-    isResizingPanel.value = true
     const panel = options.editPanelRef.value
     if (!panel) return
 
+    isResizingPanel.value = true
     panelResizeStart.value = {
       x: event.clientX,
       y: event.clientY,

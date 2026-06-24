@@ -6,9 +6,11 @@ import { useInsightStore } from '@/stores/insightStore'
 const {
   reanalyzeChapterMock,
   getThumbnailUrlMock,
+  showToastMock,
 } = vi.hoisted(() => ({
   reanalyzeChapterMock: vi.fn(),
   getThumbnailUrlMock: vi.fn((bookId: string, pageNum: number) => `/thumb/${bookId}/${pageNum}`),
+  showToastMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
@@ -16,10 +18,13 @@ vi.mock('@/api/insight', () => ({
   getThumbnailUrl: getThumbnailUrlMock,
 }))
 
+vi.mock('@/utils/toast', () => ({
+  showToast: showToastMock,
+}))
+
 import PagesTree from '@/components/insight/PagesTree.vue'
 
 describe('PagesTree', () => {
-  let alertSpy: ReturnType<typeof vi.spyOn>
   let confirmSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
@@ -41,18 +46,17 @@ describe('PagesTree', () => {
       task_id: 'task-chapter-1',
     })
     getThumbnailUrlMock.mockClear()
+    showToastMock.mockReset()
 
     ;(globalThis as any).fetch = vi.fn().mockResolvedValue({
       json: async () => ({ success: true, pages: [] }),
     })
 
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
   })
 
   afterEach(() => {
     confirmSpy.mockRestore()
-    alertSpy.mockRestore()
     vi.clearAllMocks()
   })
 
@@ -86,7 +90,7 @@ describe('PagesTree', () => {
     expect(reanalyzeChapterMock).toHaveBeenCalledWith('book-1', 'ch-1')
     expect(store.currentTaskId).toBe('task-chapter-1')
     expect(store.analysisStatus).toBe('running')
-    expect(alertSpy).toHaveBeenCalledWith('章节分析已启动')
+    expect(showToastMock).toHaveBeenCalledWith('章节分析已启动', 'success')
   })
 
   it('refreshes analyzed page markers without routine console output', async () => {

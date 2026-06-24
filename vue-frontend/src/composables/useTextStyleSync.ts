@@ -317,8 +317,8 @@ export function useTextStyleSync() {
                     hasUnsavedChanges: true
                 })
             }
-        } catch (error) {
-            console.error('设置变更后重新渲染失败:', error)
+        } catch {
+            showToast('设置变更后重新渲染失败', 'error')
         }
     }
 
@@ -383,8 +383,8 @@ export function useTextStyleSync() {
                         })
                     }
                 }
-            } catch (error) {
-                console.error('自动字号渲染出错:', error)
+            } catch {
+                showToast('自动字号渲染失败', 'error')
             }
         } else {
             // 关闭自动字号时将所有气泡设为输入框中的固定字号。
@@ -456,8 +456,8 @@ export function useTextStyleSync() {
                 })
                 bubbleStore.setBubbles(result.bubbleStates)
             }
-        } catch (error) {
-            console.error('自动文字颜色渲染出错:', error)
+        } catch {
+            showToast('自动文字颜色渲染失败', 'error')
         }
     }
 
@@ -745,8 +745,7 @@ export function useTextStyleSync() {
                         } else {
                             translation.progress.value.failed++
                         }
-                    } catch (err) {
-                        console.error(`重渲染图片 ${imageIndex} 失败:`, err)
+                    } catch {
                         translation.progress.value.failed++
                     }
                 }
@@ -767,8 +766,7 @@ export function useTextStyleSync() {
 
             showToast(`已将 ${appliedItems.join('、')} 应用到 ${translatedImageIndices.length} 张图片`, 'success')
 
-        } catch (error) {
-            console.error('应用设置到全部失败:', error)
+        } catch {
             showToast('应用设置失败', 'error')
         }
     }

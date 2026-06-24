@@ -24,7 +24,7 @@ defineEmits<{
       <img
         v-if="book.cover"
         :src="book.cover"
-        alt="封面"
+        :alt="`${book.title} 封面`"
       >
       <div v-else class="book-cover-placeholder">📖</div>
     </div>
@@ -88,7 +88,7 @@ defineEmits<{
   border-radius: 12px;
   aspect-ratio: 3 / 4;
   background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
-  box-shadow: 0 8px 24px var(--book-detail-modal-shadow-default);
+  box-shadow: 0 8px 24px var(--book-detail-cover-shadow);
 }
 
 .book-cover-large img {
@@ -176,7 +176,7 @@ defineEmits<{
 
 .btn-add-tag:hover {
   border-color: var(--color-border-brand-gradient);
-  color: var(--book-detail-modal-text-primary);
+  color: var(--book-detail-accent);
 }
 
 .book-actions {

@@ -37,10 +37,10 @@ export function usePluginAgentSettings(
 
   function setPluginAgentProvider(provider: PluginAgentProvider): void {
     provider = normalizeProviderId(provider) as PluginAgentProvider
-    const oldProvider = settings.value.pluginAgent.provider
-    if (oldProvider === provider) return
+    const previousProvider = settings.value.pluginAgent.provider
+    if (previousProvider === provider) return
 
-    savePluginAgentProviderConfig(oldProvider)
+    savePluginAgentProviderConfig(previousProvider)
     settings.value.pluginAgent.provider = provider
     restorePluginAgentProviderConfig(provider)
     saveToStorage()

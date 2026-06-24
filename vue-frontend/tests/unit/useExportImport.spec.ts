@@ -82,7 +82,7 @@ describe('useExportImport', () => {
 
     const imageStore = useImageStore()
     imageStore.addImage('page-1.png', 'data:image/png;base64,original-image', {
-      translatedDataURL: 'data:image/png;base64,old-render',
+      translatedDataURL: 'data:image/png;base64,existing-render',
       bubbleStates: [
         createBubbleState({
           coords: [0, 0, 120, 80],

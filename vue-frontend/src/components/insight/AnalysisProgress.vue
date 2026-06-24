@@ -3,12 +3,6 @@
 import UiInput from '@/components/ui/UiInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 分析进度组件
- * 显示分析进度、状态指示和控制按钮
- * 支持全书分析、单章节分析、单页分析三种模式
- * 支持增量分析（仅分析未分析的页面）
- */
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
@@ -16,14 +10,12 @@ import * as insightApi from '@/api/insight'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import type { ApiError } from '@/types'
 
-/** 分析模式选项 */
 const analysisModeOptions = [
   { label: '全书', value: 'full' },
   { label: '章节', value: 'chapter' },
   { label: '单页', value: 'page' }
 ]
 
-/** 章节选项（动态计算） */
 const chapterOptions = computed(() => {
   const options = [{ label: '选择章节...', value: '' }]
   insightStore.chapters.forEach(chapter => {
@@ -35,43 +27,19 @@ const chapterOptions = computed(() => {
   return options
 })
 
-// ============================================================
-// 事件定义
-// ============================================================
-
 const emit = defineEmits<{
-  /** 启动轮询事件 */
   (e: 'start-polling'): void
-  /** 停止轮询事件 */
   (e: 'stop-polling'): void
 }>()
 
-// ============================================================
-// 状态
-// ============================================================
-
 const insightStore = useInsightStore()
 
-/** 分析模式 */
 const analysisMode = ref<AnalysisMode>('full')
-
-/** 选中的章节ID */
 const selectedChapterId = ref('')
-
-/** 输入的页码 */
 const inputPageNum = ref<number | null>(null)
-
-/** 是否正在启动分析 */
 const isStarting = ref(false)
-
-/** 错误消息 */
 const errorMessage = ref('')
 
-// ============================================================
-// 计算属性
-// ============================================================
-
-/** 状态点样式类 */
 const statusDotClass = computed(() => {
   const status = insightStore.analysisStatus
   return {
@@ -83,7 +51,6 @@ const statusDotClass = computed(() => {
   }
 })
 
-/** 状态标签文本 */
 const statusLabel = computed(() => {
   switch (insightStore.analysisStatus) {
     case 'running': return '分析中'
@@ -94,57 +61,44 @@ const statusLabel = computed(() => {
   }
 })
 
-/** 进度文本 */
 const progressText = computed(() => {
   const { current, total } = insightStore.progress
   if (total === 0) return ''
   return `${current}/${total}`
 })
 
-/** 是否显示空闲状态按钮组 */
 const showIdleButtons = computed(() => {
   return insightStore.analysisStatus === 'idle'
     || insightStore.analysisStatus === 'completed'
     || insightStore.analysisStatus === 'failed'
 })
 
-/** 是否显示运行中按钮组 */
 const showRunningButtons = computed(() => {
   return insightStore.analysisStatus === 'running'
 })
 
-/** 是否显示暂停状态按钮组 */
 const showPausedButtons = computed(() => {
   return insightStore.analysisStatus === 'paused'
 })
 
-/** 开始按钮文本 */
 const startButtonText = computed(() => {
   return (insightStore.analysisStatus === 'completed' || insightStore.analysisStatus === 'failed')
     ? '重新分析'
     : '开始分析'
 })
 
-/** 是否显示章节选择 */
 const showChapterSelect = computed(() => analysisMode.value === 'chapter')
 
-/** 是否显示页码输入 */
 const showPageInput = computed(() => analysisMode.value === 'page')
 
-/** 是否可以开始分析 */
 const canStartAnalysis = computed(() => {
-  // 正在启动中不能再次启动
   if (isStarting.value) return false
-  // 正在分析中不能启动
   if (insightStore.isAnalyzing) return false
-  // 章节模式需要选择章节
   if (analysisMode.value === 'chapter' && !selectedChapterId.value) return false
-  // 单页模式需要输入页码
   if (analysisMode.value === 'page' && !inputPageNum.value) return false
   return true
 })
 
-/** 分析模式描述 */
 const analysisModeDescription = computed(() => {
   switch (analysisMode.value) {
     case 'full':
@@ -158,14 +112,12 @@ const analysisModeDescription = computed(() => {
   }
 })
 
-/** 预估分析时间（基于页数和每批页数） */
 const estimatedTime = computed(() => {
   const totalPages = insightStore.totalPageCount
   if (totalPages === 0) return ''
 
   const pagesPerBatch = insightStore.config.batch.pagesPerBatch || 5
   const batches = Math.ceil(totalPages / pagesPerBatch)
-  // 假设每批约需要10秒
   const seconds = batches * 10
 
   if (seconds < 60) return `约 ${seconds} 秒`
@@ -173,13 +125,8 @@ const estimatedTime = computed(() => {
   return `约 ${minutes} 分钟`
 })
 
-// ============================================================
-// 方法
-// ============================================================
+const progressPercent = computed(() => Math.max(0, Math.min(100, insightStore.progressPercent)))
 
-/**
- * 分析模式变更处理
- */
 function onAnalysisModeChange(): void {
   insightStore.setAnalysisMode(analysisMode.value)
 }
@@ -195,19 +142,14 @@ function getStartErrorMessage(error: unknown): string {
   return '启动分析失败'
 }
 
-/**
- * 开始分析
- */
 async function startAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
 
-  // 防止重复启动
   if (insightStore.isAnalyzing || isStarting.value) {
-    console.warn('分析正在进行中或正在启动')
+    errorMessage.value = '分析正在进行中，请稍候'
     return
   }
 
-  // 验证输入
   if (analysisMode.value === 'chapter' && !selectedChapterId.value) {
     errorMessage.value = '请选择要分析的章节'
     return
@@ -221,27 +163,21 @@ async function startAnalysis(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    // 构建符合后端 API 协议的参数
-    // 后端期望: mode = 'full' | 'incremental' | 'chapters' | 'pages'
     const options: Parameters<typeof insightApi.startAnalysis>[1] = {}
 
     if (analysisMode.value === 'chapter' && selectedChapterId.value) {
-      // 章节模式：mode='chapters', chapters=[id]
       options.mode = 'chapters'
       options.chapters = [selectedChapterId.value]
     } else if (analysisMode.value === 'page' && inputPageNum.value) {
-      // 单页模式：mode='pages', pages=[num]
       options.mode = 'pages'
       options.pages = [inputPageNum.value]
     } else {
-      // 全书模式：根据增量开关决定是 'incremental' 还是 'full'
       options.mode = insightStore.incrementalAnalysis ? 'incremental' : 'full'
     }
 
-    const response = await insightApi.startAnalysis(insightStore.currentBookId, options) as any
+    const response = await insightApi.startAnalysis(insightStore.currentBookId, options)
 
     if (response.success) {
-      // 保存任务ID（用于后续暂停/恢复/取消操作）
       if (response.task_id) {
         insightStore.setCurrentTaskId(response.task_id)
       }
@@ -249,22 +185,17 @@ async function startAnalysis(): Promise<void> {
       emit('start-polling')
     } else {
       errorMessage.value = response.error || '启动分析失败'
-      console.error('启动分析失败:', response.error)
     }
   } catch (error) {
     errorMessage.value = getStartErrorMessage(error)
-    console.error('启动分析失败:', error)
   } finally {
     isStarting.value = false
   }
 }
 
-/**
- * 暂停分析
- * 与接口流程 一致：传递 task_id 参数
- */
 async function pauseAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
+  errorMessage.value = ''
 
   try {
     const response = await insightApi.pauseAnalysis(
@@ -273,18 +204,17 @@ async function pauseAnalysis(): Promise<void> {
     )
     if (response.success) {
       insightStore.setAnalysisStatus('paused')
+    } else {
+      errorMessage.value = response.error || '暂停分析失败'
     }
-  } catch (error) {
-    console.error('暂停分析失败:', error)
+  } catch {
+    errorMessage.value = '暂停分析失败'
   }
 }
 
-/**
- * 继续分析
- * 与接口流程 一致：传递 task_id 参数
- */
 async function resumeAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
+  errorMessage.value = ''
 
   try {
     const response = await insightApi.resumeAnalysis(
@@ -294,19 +224,18 @@ async function resumeAnalysis(): Promise<void> {
     if (response.success) {
       insightStore.setAnalysisStatus('running')
       emit('start-polling')
+    } else {
+      errorMessage.value = response.error || '继续分析失败'
     }
-  } catch (error) {
-    console.error('继续分析失败:', error)
+  } catch {
+    errorMessage.value = '继续分析失败'
   }
 }
 
-/**
- * 取消分析
- * 与接口流程 一致：传递 task_id 参数
- */
 async function cancelAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) return
   if (!confirm('确定要取消分析吗？')) return
+  errorMessage.value = ''
 
   try {
     const response = await insightApi.cancelAnalysis(
@@ -317,15 +246,14 @@ async function cancelAnalysis(): Promise<void> {
       insightStore.setAnalysisStatus('idle')
       insightStore.setCurrentTaskId(null)
       emit('stop-polling')
+    } else {
+      errorMessage.value = response.error || '取消分析失败'
     }
-  } catch (error) {
-    console.error('取消分析失败:', error)
+  } catch {
+    errorMessage.value = '取消分析失败'
   }
 }
 
-/**
- * 导出分析报告
- */
 async function exportAnalysis(): Promise<void> {
   if (!insightStore.currentBookId) {
     errorMessage.value = '请先选择书籍'
@@ -333,38 +261,31 @@ async function exportAnalysis(): Promise<void> {
   }
 
   try {
-    const response = await insightApi.exportAnalysis(insightStore.currentBookId) as any
+    const response = await insightApi.exportAnalysis(insightStore.currentBookId)
 
     if (response.success && response.markdown) {
-      // 下载 Markdown 文件
       const blob = new Blob([response.markdown], { type: 'text/markdown' })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${insightStore.currentBookId}_analysis.md`
-      a.click()
-      URL.revokeObjectURL(url)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${insightStore.currentBookId}_analysis.md`
+        a.click()
+      } finally {
+        URL.revokeObjectURL(url)
+      }
     } else {
       errorMessage.value = response.error || '导出失败'
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '导出失败'
-    console.error('导出失败:', error)
   }
 }
 
-/**
- * 清除错误消息
- */
 function clearError(): void {
   errorMessage.value = ''
 }
 
-// ============================================================
-// 监听
-// ============================================================
-
-// 监听分析模式变化，清除错误消息
 watch(analysisMode, () => {
   clearError()
 })
@@ -372,7 +293,6 @@ watch(analysisMode, () => {
 
 <template>
   <div class="sidebar-section analysis-control-compact">
-    <!-- 状态栏 -->
     <div class="analysis-status-bar">
       <div class="status-left">
         <span :class="statusDotClass"></span>
@@ -383,7 +303,6 @@ watch(analysisMode, () => {
       </div>
     </div>
 
-    <!-- 进度条（分析中或暂停时显示） -->
     <div
       v-if="showRunningButtons || showPausedButtons"
       class="progress-bar-slim"
@@ -391,11 +310,10 @@ watch(analysisMode, () => {
     >
       <div
         class="progress-fill-slim"
-        :style="{ width: insightStore.progressPercent + '%' }"
+        :style="{ width: progressPercent + '%' }"
       ></div>
     </div>
 
-    <!-- 进度消息 -->
     <div
       v-if="insightStore.progress.message && (showRunningButtons || showPausedButtons)"
       class="progress-message"
@@ -403,7 +321,6 @@ watch(analysisMode, () => {
       {{ insightStore.progress.message }}
     </div>
 
-    <!-- 错误消息 -->
     <UiButton
       v-if="errorMessage"
       variant="toolbar"
@@ -414,9 +331,7 @@ watch(analysisMode, () => {
       ⚠️ {{ errorMessage }}
     </UiButton>
 
-    <!-- 控制按钮组 -->
     <div class="analysis-btn-group">
-      <!-- 初始/完成状态 -->
       <div v-if="showIdleButtons" class="btn-group-idle">
         <CustomSelect
           v-model="analysisMode"
@@ -439,7 +354,6 @@ watch(analysisMode, () => {
         </UiButton>
       </div>
 
-      <!-- 运行中状态 -->
       <div v-if="showRunningButtons" class="btn-group-running">
         <UiButton
           variant="toolbar"
@@ -465,7 +379,6 @@ watch(analysisMode, () => {
         </UiButton>
       </div>
 
-      <!-- 暂停状态 -->
       <div v-if="showPausedButtons" class="btn-group-paused">
         <UiButton
           variant="toolbar"
@@ -492,14 +405,12 @@ watch(analysisMode, () => {
       </div>
     </div>
 
-    <!-- 章节选择（单章节模式时显示） -->
     <CustomSelect
       v-if="showChapterSelect"
       v-model="selectedChapterId"
       :options="chapterOptions"
     />
 
-    <!-- 页码输入（单页模式时显示） -->
     <div v-if="showPageInput" class="page-input-wrapper">
       <UiInput
         v-model.number="inputPageNum"
@@ -512,21 +423,19 @@ watch(analysisMode, () => {
       <span class="page-hint">/ {{ insightStore.totalPageCount || '?' }}</span>
     </div>
 
-    <!-- 分析模式描述 -->
     <div v-if="showIdleButtons && analysisModeDescription" class="mode-description">
       {{ analysisModeDescription }}
     </div>
 
-    <!-- 预估时间（全书模式时显示） -->
     <div v-if="showIdleButtons && analysisMode === 'full' && estimatedTime" class="estimated-time">
       ⏱️ {{ estimatedTime }}
     </div>
 
-    <!-- 选项行 -->
     <div class="analysis-options-row">
       <label class="checkbox-compact" title="仅分析未分析的页面，跳过已分析的页面">
         <UiInput
           type="checkbox"
+          class="analysis-progress__incremental-checkbox"
           :checked="insightStore.incrementalAnalysis"
           @change="insightStore.setIncrementalAnalysis(($event.target as HTMLInputElement).checked)"
         />
@@ -558,11 +467,6 @@ watch(analysisMode, () => {
   --analysis-progress-text-primary: #ef4444;
 }
 
-/* ==================== AnalysisProgress样式 ==================== */
-
-/* ==================== 组件特定样式 ==================== */
-
-/* 进度消息 */
 .analysis-control-compact .progress-message {
   font-size: 12px;
   color: var(--insight-text-secondary);
@@ -570,7 +474,6 @@ watch(analysisMode, () => {
   text-align: center;
 }
 
-/* 错误消息 */
 .analysis-control-compact .error-message {
   display: block;
   width: 100%;
@@ -585,13 +488,11 @@ watch(analysisMode, () => {
   text-align: left;
 }
 
-/* 按钮标签 */
 .analysis-control-compact .btn-label {
   font-size: 12px;
   margin-left: 4px;
 }
 
-/* 页码输入包装器 */
 .analysis-control-compact .page-input-wrapper {
   display: flex;
   align-items: center;
@@ -604,7 +505,6 @@ watch(analysisMode, () => {
   color: var(--insight-text-secondary);
 }
 
-/* 模式描述 */
 .analysis-control-compact .mode-description {
   font-size: 11px;
   color: var(--insight-text-secondary);
@@ -612,20 +512,17 @@ watch(analysisMode, () => {
   font-style: italic;
 }
 
-/* 预估时间 */
 .analysis-control-compact .estimated-time {
   font-size: 11px;
   color: var(--insight-text-secondary);
   margin-top: 4px;
 }
 
-/* 加载中按钮 */
 .analysis-control-compact .btn-analysis-start.loading {
   opacity: 0.7;
   cursor: wait;
 }
 
-/* 加载动画 */
 .analysis-control-compact .loading-spinner {
   display: inline-block;
   width: 14px;
@@ -635,8 +532,6 @@ watch(analysisMode, () => {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-
-/* ==================== 分析控制样式 ==================== */
 
 .sidebar-section.analysis-control-compact {
     padding: 12px 16px;
@@ -723,23 +618,6 @@ watch(analysisMode, () => {
     flex-wrap: nowrap;
 }
 
-.analysis-control-compact .analysis-mode-select {
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    font-size: 13px;
-    border: 1px solid var(--color-border-muted);
-    border-radius: 8px;
-    background: var(--insight-surface-page);
-    color: var(--insight-text-primary);
-    cursor: pointer;
-    min-width: 70px;
-}
-
-.analysis-control-compact .analysis-mode-select:focus {
-    outline: none;
-    border-color: var(--insight-action-primary);
-}
-
 .analysis-control-compact .btn-analysis-start {
     flex: 1;
     display: flex;
@@ -750,7 +628,7 @@ watch(analysisMode, () => {
     font-size: 13px;
     font-weight: 500;
     background: linear-gradient(135deg, var(--insight-action-primary), var(--insight-action-primary-strong));
-    color: white;
+    color: var(--color-text-inverse);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -795,12 +673,12 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .btn-pause:hover {
     background: var(--insight-status-warning);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .analysis-control-compact .btn-resume {
     background: var(--insight-status-success);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
 .analysis-control-compact .btn-resume:hover {
@@ -814,10 +692,9 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .btn-cancel:hover {
     background: var(--insight-status-error);
-    color: white;
+    color: var(--color-text-inverse);
 }
 
-.analysis-control-compact .form-select-compact,
 .analysis-control-compact .form-input-compact {
     width: 100%;
     padding: 8px 12px;
@@ -829,7 +706,6 @@ watch(analysisMode, () => {
     margin-top: 8px;
 }
 
-.analysis-control-compact .form-select-compact:focus,
 .analysis-control-compact .form-input-compact:focus {
     outline: none;
     border-color: var(--insight-action-primary);
@@ -852,7 +728,7 @@ watch(analysisMode, () => {
     cursor: pointer;
 }
 
-.analysis-control-compact .checkbox-compact input[type="checkbox"] {
+.analysis-progress__incremental-checkbox {
     width: 14px;
     height: 14px;
     cursor: pointer;

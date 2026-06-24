@@ -233,6 +233,13 @@ defineEmits<{
 }
 
 .composer-card {
+  --ui-textarea-border: 1px solid var(--studio-border-strong);
+  --ui-textarea-background: var(--studio-surface-soft);
+  --ui-textarea-radius: 14px;
+  --ui-textarea-padding: 10px 12px;
+  --ui-textarea-color: var(--studio-text-strong);
+  --ui-textarea-font-size: 13px;
+
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -258,16 +265,6 @@ defineEmits<{
 .chat-composer-input {
   min-height: 64px;
   resize: vertical;
-}
-
-.composer-card textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--studio-border-strong);
-  border-radius: 14px;
-  background: var(--studio-surface-soft);
-  color: var(--studio-text-strong);
-  font-size: 13px;
 }
 
 .compact-actions {

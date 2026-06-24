@@ -52,7 +52,6 @@ describe('webImportStore settings workflow', () => {
     vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
       delete localStorageMock[key]
     })
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -262,5 +261,15 @@ describe('webImportStore settings workflow', () => {
 
     expect(store.settings.agent.provider).toBe('openai')
     expect(store.providerConfigs.agent.deepseek).toBeUndefined()
+  })
+
+  it('clamps download progress percentage to the progressbar range', () => {
+    const store = useWebImportStore()
+
+    store.updateDownloadProgress(8, 4)
+    expect(store.downloadProgressPercent).toBe(100)
+
+    store.updateDownloadProgress(-1, 4)
+    expect(store.downloadProgressPercent).toBe(0)
   })
 })

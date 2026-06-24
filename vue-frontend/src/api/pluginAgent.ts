@@ -304,8 +304,8 @@ export async function subscribePluginAgentEvents(
           try {
             const parsed = JSON.parse(eventData) as PluginAgentEvent
             options.onEvent({ ...parsed, type: eventType })
-          } catch (error) {
-            console.error('解析插件 Agent SSE 失败:', error)
+          } catch {
+            options.onError('解析插件 Agent 事件失败')
           }
           eventType = ''
           eventData = ''

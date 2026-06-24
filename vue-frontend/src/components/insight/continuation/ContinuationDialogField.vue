@@ -3,6 +3,7 @@ defineProps<{
   label: string
   required?: boolean
   hint?: string
+  error?: string
 }>()
 </script>
 
@@ -13,6 +14,7 @@ defineProps<{
       <span v-if="required" class="continuation-dialog-field__required">*</span>
     </label>
     <slot />
+    <p v-if="error" class="continuation-dialog-field__error">{{ error }}</p>
     <p v-if="hint" class="continuation-dialog-field__hint">{{ hint }}</p>
   </div>
 </template>
@@ -37,5 +39,15 @@ defineProps<{
   margin: 6px 0 0;
   color: var(--color-text-supporting, var(--color-text-subtle));
   font-size: 12px;
+}
+
+.continuation-dialog-field__error {
+  margin: 6px 0 0;
+  color: var(--color-text-danger);
+  font-size: 12px;
+}
+
+:slotted(.continuation-dialog__form-input) {
+  font: inherit;
 }
 </style>

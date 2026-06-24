@@ -1,7 +1,3 @@
-<!--
-  编辑模式缩略图面板组件
-  显示所有图片的缩略图，支持点击切换
--->
 <template>
   <div v-if="visible" class="edit-thumbnails-panel">
     <div class="thumbnails-scroll">
@@ -23,16 +19,8 @@
 </template>
 
 <script setup lang="ts">
-/**
- * 编辑模式缩略图面板组件
- * 显示所有图片的缩略图并发出切换请求。
- */
 import UiButton from '@/components/ui/UiButton.vue'
 import type { ImageData } from '@/types/image'
-
-// ============================================================
-// Props
-// ============================================================
 
 defineProps<{
   /** 是否显示 */
@@ -43,10 +31,6 @@ defineProps<{
   currentImageIndex: number
 }>()
 
-// ============================================================
-// Emits
-// ============================================================
-
 defineEmits<{
   /** 切换到指定图片 */
   (e: 'switch-to-image', index: number): void
@@ -55,18 +39,13 @@ defineEmits<{
 
 <style scoped>
 .edit-thumbnails-panel {
-  --edit-thumbnail-panel-surface-subtle: rgba(0, 0, 0, .7);
-}
-
-/* 编辑模式缩略图面板 */
-.edit-thumbnails-panel {
-  /* owner tokens: edit-thumbnail-panel */
   --edit-thumbnail-panel-border-default: rgba(255, 255, 255, .1);
   --edit-thumbnail-panel-border-strong: rgba(255, 255, 255, .5);
   --edit-thumbnail-panel-shadow-default: rgba(102, 126, 234, .5);
   --edit-thumbnail-panel-surface-base: rgba(0, 0, 0, .3);
   --edit-thumbnail-panel-surface-raised: rgba(255, 255, 255, .1);
   --edit-thumbnail-panel-surface-muted: rgba(255, 255, 255, .3);
+  --edit-thumbnail-panel-surface-subtle: rgba(0, 0, 0, .7);
 
   position: relative;
   width: auto;

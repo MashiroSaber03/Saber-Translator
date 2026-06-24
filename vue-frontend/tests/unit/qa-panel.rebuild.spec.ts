@@ -6,15 +6,21 @@ import { useInsightStore } from '@/stores/insightStore'
 const {
   rebuildEmbeddingsMock,
   getRebuildEmbeddingsStatusMock,
+  showToastMock,
 } = vi.hoisted(() => ({
   rebuildEmbeddingsMock: vi.fn(),
   getRebuildEmbeddingsStatusMock: vi.fn(),
+  showToastMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   sendChat: vi.fn(),
   rebuildEmbeddings: rebuildEmbeddingsMock,
   getRebuildEmbeddingsStatus: getRebuildEmbeddingsStatusMock,
+}))
+
+vi.mock('@/utils/toast', () => ({
+  showToast: showToastMock,
 }))
 
 import QAPanel from '@/components/insight/QAPanel.vue'
@@ -31,10 +37,9 @@ describe('QAPanel rebuild embeddings polling', () => {
 
     rebuildEmbeddingsMock.mockReset()
     getRebuildEmbeddingsStatusMock.mockReset()
+    showToastMock.mockReset()
 
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    vi.spyOn(window, 'alert').mockImplementation(() => {})
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -65,7 +70,10 @@ describe('QAPanel rebuild embeddings polling', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
 
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('未找到向量重建任务状态'))
+    expect(showToastMock).toHaveBeenCalledWith(
+      expect.stringContaining('未找到向量重建任务状态'),
+      'error'
+    )
     expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
     expect(store.isLoading).toBe(false)
   })
@@ -92,7 +100,10 @@ describe('QAPanel rebuild embeddings polling', () => {
     await flushPromises()
 
     expect(getRebuildEmbeddingsStatusMock).toHaveBeenCalledTimes(3)
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('无法获取任务状态'))
+    expect(showToastMock).toHaveBeenCalledWith(
+      expect.stringContaining('无法获取任务状态'),
+      'error'
+    )
     expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
     expect(store.isLoading).toBe(false)
   })

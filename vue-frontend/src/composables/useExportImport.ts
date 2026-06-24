@@ -314,7 +314,6 @@ export function useExportImport() {
 
         // 检查图片索引是否有效
         if (imageIndex < 0 || imageIndex >= imageStore.images.length) {
-          console.warn(`跳过无效的图片索引: ${imageIndex}`)
           continue
         }
 
@@ -475,8 +474,8 @@ export function useExportImport() {
                 hasUnsavedChanges: true
               })
             }
-          } catch (err) {
-            console.error(`importText: 重渲染图片 ${imageIndex} 失败:`, err)
+          } catch {
+            // Individual render failures do not block importing the remaining text entries.
           }
         }
       }
@@ -491,7 +490,6 @@ export function useExportImport() {
         : `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`
       toast.success(message)
     } catch (error) {
-      console.error('导入文本出错:', error)
       toast.error(`导入失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       isImporting.value = false
@@ -606,8 +604,7 @@ export function useExportImport() {
       triggerBlobDownload(blob, fileName)
 
       toast.success(`下载成功: ${fileName}`)
-    } catch (e) {
-      console.error('下载图片时出错:', e)
+    } catch {
       toast.error('下载失败')
     } finally {
       isDownloading.value = false
@@ -704,11 +701,9 @@ export function useExportImport() {
           if (uploadResponse.success) {
             uploadedCount++
           } else {
-            console.error(`上传图片 ${i} 失败:`, uploadResponse.error)
             failedCount++
           }
-        } catch (e) {
-          console.error(`上传图片 ${i} 出错:`, e)
+        } catch {
           failedCount++
         }
       }
@@ -760,12 +755,11 @@ export function useExportImport() {
       setTimeout(async () => {
         try {
           await cleanTempFiles()
-        } catch (error) {
-          console.error('清理临时文件失败:', error)
+        } catch {
+          // Temporary-file cleanup is best-effort after the download has started.
         }
       }, 60000)
     } catch (e) {
-      console.error('下载所有图片时出错:', e)
       toast.error(`下载失败: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       isDownloading.value = false

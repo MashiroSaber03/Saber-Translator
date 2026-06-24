@@ -216,8 +216,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         } else if (callbacks?.onReRender) {
           await callbacks.onReRender()
         }
-      } catch (error) {
-        console.error('延迟渲染预览失败:', error)
+      } catch {
+        showToast('预览渲染失败', 'error')
       } finally {
         // 渲染完成后才重置状态。
         isRenderingPreview = false
@@ -281,14 +281,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   async function repairSelectedBubble(): Promise<void> {
     const index = selectedBubbleIndex.value
     if (index < 0) {
-      console.warn('请先选中要修复的气泡框')
+      showToast('请先选中要修复的气泡框', 'warning')
       return
     }
 
     const bubble = bubbles.value[index]
     const image = currentImage.value
     if (!bubble || !image?.originalDataURL) {
-      console.warn('无法修复背景：缺少气泡或图片数据')
+      showToast('无法修复背景：缺少气泡或图片数据', 'warning')
       return
     }
     const expectedImageId = image.id
@@ -307,7 +307,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         const match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
         baseImageData = match && match[1] ? match[1] : ''
         if (!baseImageData) {
-          console.error('无法解析图像数据')
+          showToast('无法解析图像数据', 'error')
           return
         }
       }
@@ -338,8 +338,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           }
           triggerDelayedPreview()
         } else {
-          console.error('LAMA修复失败:', response.error || '未知错误')
-          // 回退到纯色填充
+          showToast('LAMA 修复失败，已使用纯色填充', 'warning')
           const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
           if (applied) {
             triggerDelayedPreview()
@@ -356,7 +355,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       if (!isSameCurrentImage(expectedImageId)) {
         return
       }
-      console.error('背景修复出错:', error)
       const errorMessage = error instanceof Error ? error.message : '背景修复失败'
       showToast(errorMessage, 'error')
     }
@@ -381,7 +379,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     } else if (image.originalDataURL) {
       baseSrc = image.originalDataURL
     } else {
-      console.error('无法找到基础图像用于填充')
+      showToast('无法找到基础图像用于填充', 'error')
       return false
     }
 
@@ -453,7 +451,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         resolve(true)
       }
       img.onerror = () => {
-        console.error('加载基础图像失败')
+        showToast('加载基础图像失败', 'error')
         resolve(false)
       }
       img.src = baseSrc
@@ -469,7 +467,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     const bubble = bubbles.value[index]
     const image = currentImage.value
     if (!bubble || !image?.originalDataURL) {
-      console.warn('无法进行 OCR 识别：缺少气泡或图片数据')
+      showToast('无法进行 OCR 识别：缺少气泡或图片数据', 'warning')
       return
     }
     const expectedImageId = image.id
@@ -532,14 +530,12 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
           return
         }
         const errorMsg = response.error || '识别失败'
-        console.error('OCR 识别失败:', errorMsg)
         showToast(errorMsg, 'error')
       }
     } catch (error) {
       if (!isSameCurrentImage(expectedImageId)) {
         return
       }
-      console.error('OCR 识别出错:', error)
       const errorMessage = error instanceof Error ? error.message : 'OCR 识别出错'
       showToast(errorMessage, 'error')
     }

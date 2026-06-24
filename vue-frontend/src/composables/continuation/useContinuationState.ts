@@ -3,7 +3,6 @@ import type { CharacterProfile, ChapterScript, PageContent } from '@/api/continu
 import * as continuationApi from '@/api/continuation'
 
 export interface ContinuationState {
-    // 状态
     isLoading: Readonly<Ref<boolean>>
     isDataReady: Readonly<Ref<boolean>>
     isSyncingAnalysis: Readonly<Ref<boolean>>
@@ -13,27 +12,22 @@ export interface ContinuationState {
     successMessage: Ref<string>
     lastAnalysisSyncAt: Ref<string>
 
-    // 配置
     pageCount: Ref<number>
     styleRefPages: Ref<number>
     continuationDirection: Ref<string>
 
-    // 数据
     characters: Ref<CharacterProfile[]>
     chapterScript: Ref<ChapterScript | null>
     pages: Ref<PageContent[]>
     imageRefreshKey: Ref<number>
 
-    // 生成状态
     isGeneratingPages: Ref<boolean>
 
-    // 方法
     initializeData: () => Promise<void>
     syncAnalysisData: (source?: 'auto' | 'manual') => Promise<void>
     resetState: () => void
     showMessage: (message: string, type: 'success' | 'error' | 'info') => void
 
-    // URL获取方法
     getCharacterImageUrl: (characterName: string) => string
     getFormImageUrl: (imagePath: string) => string
     getGeneratedImageUrl: (imagePath: string) => string
@@ -50,19 +44,14 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const lastAnalysisSyncAt = ref('')
     let messageTimer: ReturnType<typeof setTimeout> | null = null
 
-    // 配置数据
     const pageCount = ref(10)
     const styleRefPages = ref(3)
     const continuationDirection = ref('')
 
-    // 核心数据
     const characters = ref<CharacterProfile[]>([])
     const chapterScript = ref<ChapterScript | null>(null)
     const pages = ref<PageContent[]>([])
-    // 生成状态
     const isGeneratingPages = ref(false)
-
-    // 图片刷新key
     const imageRefreshKey = ref(Date.now())
 
     function resetLoadedContinuationData(): void {
@@ -186,8 +175,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             } else if (!result.success && result.error) {
                 setMessageState(result.error, 'error', true)
             }
-        } catch (error) {
-            console.error('初始化数据失败:', error)
+        } catch {
             setMessageState('初始化数据失败', 'error', true)
         } finally {
             isLoading.value = false
@@ -240,7 +228,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         setMessageState(message, type, false)
     }
 
-    // URL获取方法
     function getCharacterImageUrl(characterName: string): string {
         if (!bookId.value) return ''
         return `/api/manga-insight/${bookId.value}/continuation/characters/${encodeURIComponent(characterName)}/image?t=${imageRefreshKey.value}`
@@ -263,7 +250,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     return {
-        // 状态
         isLoading: readonly(isLoading),
         isDataReady: readonly(isDataReady),
         isSyncingAnalysis: readonly(isSyncingAnalysis),
@@ -273,27 +259,22 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         successMessage,
         lastAnalysisSyncAt,
 
-        // 配置
         pageCount,
         styleRefPages,
         continuationDirection,
 
-        // 数据
         characters,
         chapterScript,
         pages,
         imageRefreshKey,
 
-        // 生成状态
         isGeneratingPages,
 
-        // 方法
         initializeData,
         syncAnalysisData,
         resetState,
         showMessage,
 
-        // URL获取方法
         getCharacterImageUrl,
         getFormImageUrl,
         getGeneratedImageUrl

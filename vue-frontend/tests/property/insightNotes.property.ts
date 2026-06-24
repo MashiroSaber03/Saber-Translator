@@ -82,8 +82,6 @@ describe('漫画分析笔记属性测试', () => {
     insightApiMocks.createNote.mockResolvedValue({ success: true })
     insightApiMocks.updateNote.mockResolvedValue({ success: true })
     insightApiMocks.deleteNote.mockResolvedValue({ success: true })
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {

@@ -7,7 +7,7 @@
         <CustomSelect
           :model-value="settings.ocrEngine"
           :options="ocrEngineOptions"
-          @change="(v: any) => handleOcrEngineChange(String(v))"
+          @change="handleOcrEngineChange"
         />
       </UiField>
       <UiField v-show="settings.ocrEngine === 'paddle_ocr'" class="ui-settings-field">
@@ -15,7 +15,7 @@
         <CustomSelect
           :model-value="settings.sourceLanguage"
           :groups="sourceLanguageGroups"
-          @change="(v: any) => { settings.sourceLanguage = v; handleSourceLanguageChange() }"
+          @change="handleSourceLanguageSelect"
         />
         <div class="ui-form-hint">
           {{ getSourceLanguageHint() }}
@@ -39,7 +39,7 @@
           <CustomSelect
             :model-value="settings.hybridOcr.secondaryEngine"
             :options="hybridSecondaryEngineOptions"
-            @change="(v: any) => handleHybridSecondaryEngineChange(v)"
+            @change="handleHybridSecondaryEngineChange"
           />
         </UiField>
       </UiFormGrid>
@@ -68,7 +68,7 @@
         <CustomSelect
           :model-value="settings.paddleOcrVl.sourceLanguage"
           :groups="paddleOcrVlSourceLanguageGroups"
-          @change="(v: any) => handlePaddleOcrVlSourceLanguageChange(v)"
+          @change="handlePaddleOcrVlSourceLanguageChange"
         />
         <div class="ui-form-hint">
           选择图像中的源语言，用于优化 OCR 识别效果
@@ -141,7 +141,7 @@
           <CustomSelect
             :model-value="settings.aiVisionOcr.provider"
             :options="aiVisionProviderOptions"
-            @change="(v: any) => handleAiVisionProviderChange(v)"
+            @change="handleAiVisionProviderChange"
           />
         </UiField>
         <UiField v-show="providerRequiresApiKey(settings.aiVisionOcr.provider)" class="ui-settings-field">
@@ -292,7 +292,9 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import {
+  getHybridCounterpartEngine,
   isSupportedHybridOcrEngine,
+  RECOMMENDED_HYBRID_SECONDARY_ENGINE,
   SUPPORTED_HYBRID_OCR_ENGINES
 } from '@/utils/hybridOcr'
 import {
@@ -306,7 +308,7 @@ import {
 } from './ocrSettingsOptions'
 const settingsStore = useSettingsStore()
 const toast = useToast()
-// 本地设置状态（用于双向绑定，修改后自动同步到 store）
+type SelectValue = string | number
 const localBaiduOcr = ref({
   apiKey: settingsStore.settings.baiduOcr.apiKey,
   secretKey: settingsStore.settings.baiduOcr.secretKey,
@@ -326,9 +328,7 @@ const localAiVisionOcr = ref({
   useStream: settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream,
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
-// 直接访问 store 的只读设置（用于显示条件判断）
 const settings = computed(() => settingsStore.settings)
-// Watch 同步：本地状态变化时自动保存到 store
 watch(() => localBaiduOcr.value.apiKey, (val) => {
   settingsStore.updateBaiduOcr({ apiKey: val })
 })
@@ -400,8 +400,21 @@ const hybridSecondaryEngineOptions = computed(() =>
     )
     .map(option => ({ ...option }))
 )
-function handleOcrEngineChange(value: string) {
-  settingsStore.setOcrEngine(value as OcrEngine)
+function toSelectString(value: SelectValue): string {
+  return String(value)
+}
+function isOcrEngine(value: string): value is OcrEngine {
+  return allOcrEngineOptions.some(option => option.value === value)
+}
+function handleOcrEngineChange(value: SelectValue) {
+  const nextEngine = toSelectString(value)
+  if (isOcrEngine(nextEngine)) {
+    settingsStore.setOcrEngine(nextEngine)
+  }
+}
+function handleSourceLanguageSelect(value: SelectValue) {
+  settings.value.sourceLanguage = toSelectString(value)
+  handleSourceLanguageChange()
 }
 function handleSourceLanguageChange() {
   settingsStore.saveToStorage()
@@ -413,8 +426,16 @@ function handleHybridOcrEnabledEvent(event: Event) {
   const target = event.target as HTMLInputElement | null
   handleHybridOcrEnabledChange(Boolean(target?.checked))
 }
-function handleHybridSecondaryEngineChange(value: string) {
-  settingsStore.updateHybridOcr({ secondaryEngine: value as any })
+function handleHybridSecondaryEngineChange(value: SelectValue) {
+  const secondaryEngine = toSelectString(value)
+  if (isSupportedHybridOcrEngine(secondaryEngine)) {
+    settingsStore.updateHybridOcr({ secondaryEngine })
+    return
+  }
+  const fallback = isSupportedHybridOcrEngine(settings.value.ocrEngine)
+    ? getHybridCounterpartEngine(settings.value.ocrEngine)
+    : RECOMMENDED_HYBRID_SECONDARY_ENGINE
+  settingsStore.updateHybridOcr({ secondaryEngine: fallback })
 }
 function handleHybridThresholdChange(value: number) {
   const normalized = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
@@ -424,8 +445,8 @@ function handleHybridThresholdInput(event: Event) {
   const target = event.target as HTMLInputElement | null
   handleHybridThresholdChange(Number(target?.value))
 }
-function handlePaddleOcrVlSourceLanguageChange(value: string) {
-  settingsStore.updatePaddleOcrVl({ sourceLanguage: value })
+function handlePaddleOcrVlSourceLanguageChange(value: SelectValue) {
+  settingsStore.updatePaddleOcrVl({ sourceLanguage: toSelectString(value) })
 }
 function getSourceLanguageHint(): string {
   const engine = settingsStore.settings.ocrEngine
@@ -446,13 +467,10 @@ function getSourceLanguageHint(): string {
       return '选择要识别的原文语言'
   }
 }
-// 处理AI视觉服务商切换（业务逻辑：独立保存每个服务商的配置）
-function handleAiVisionProviderChange(newProvider: string) {
-  newProvider = normalizeProviderId(newProvider)
-  // 切换服务商时保存当前配置并加载目标服务商配置
+function handleAiVisionProviderChange(providerValue: SelectValue) {
+  const newProvider = normalizeProviderId(toSelectString(providerValue))
   settingsStore.setAiVisionOcrProvider(newProvider)
   aiVisionModels.value = []
-  // 同步目标服务商配置到本地表单
   syncLocalAiVisionOcr()
 }
 function syncLocalAiVisionOcr() {
@@ -468,7 +486,6 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.useStream = settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
 }
-// 当前提示词模式（计算属性）
 const currentPromptMode = computed(() => {
   return settingsStore.settings.aiVisionOcr.promptMode || 'normal'
 })
@@ -493,7 +510,7 @@ function handlePromptModeChange(mode: string) {
       newPrompt = getPaddleOcrVlPrompt(langName)
       break
     }
-    default: // 'normal'
+    default:
       newPrompt = DEFAULT_AI_VISION_OCR_PROMPT
       break
   }
@@ -518,7 +535,6 @@ function handlePaddleOcrVlLangChange(langCode: string) {
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = 'paddleocr_vl'
 }
-// 测试百度OCR连接（业务逻辑）
 async function testBaiduOcr() {
   const apiKey = localBaiduOcr.value.apiKey?.trim()
   const secretKey = localBaiduOcr.value.secretKey?.trim()
@@ -564,12 +580,10 @@ async function testAiVisionOcr() {
     isTesting.value = false
   }
 }
-// 获取AI视觉模型列表（模型列表获取流程）
 async function fetchAiVisionModels() {
   const provider = settingsStore.settings.aiVisionOcr.provider
   const apiKey = localAiVisionOcr.value.apiKey?.trim()
   const baseUrl = localAiVisionOcr.value.customBaseUrl?.trim()
-  // 验证（按业务契约）
   if (providerRequiresApiKey(provider) && !apiKey) {
     toast.warning('请先填写 API Key')
     return
@@ -586,7 +600,6 @@ async function fetchAiVisionModels() {
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
     if (result.success && result.models && result.models.length > 0) {
-      // 后端返回的是 {id, name} 对象数组，提取 id 作为模型列表
       aiVisionModels.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
     } else {
@@ -672,7 +685,7 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   color: var(--color-text-inverse);
   border-color: var(--color-action-primary);
 }
-/* PaddleOCR-VL 语言选择器 */
+
 .paddleocr-vl-lang-selector {
   display: flex;
   align-items: center;

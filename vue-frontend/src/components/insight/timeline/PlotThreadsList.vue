@@ -68,7 +68,7 @@ function isResolved(thread: PlotThread): boolean {
   padding: 3px 10px;
   border-radius: 10px;
   background: var(--color-status-warning);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 11px;
 }
 

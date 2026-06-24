@@ -93,7 +93,6 @@ async function processFilesWithFolderInfo(files: File[]) {
       emit('uploadComplete', processedCount)
     }
   } catch (error) {
-    console.error('处理文件失败:', error)
     const errMsg = error instanceof Error ? error.message : '处理文件失败'
     showToast(errMsg, 'error')
   } finally {
@@ -152,7 +151,6 @@ async function processFiles(files: File[]) {
         const count = await processMobiFile(file)
         processedCount += count
       } else {
-        console.warn(`不支持的文件类型: ${file.name}`)
         showToast(`不支持的文件类型: ${file.name}`, 'warning')
       }
       uploadProgress.value = Math.round(((i + 1) / totalFiles) * 100)
@@ -162,7 +160,6 @@ async function processFiles(files: File[]) {
       emit('uploadComplete', processedCount)
     }
   } catch (error) {
-    console.error('处理文件失败:', error)
     const errMsg = error instanceof Error ? error.message : '处理文件失败，请重试'
     errorMessage.value = errMsg
     showToast(errMsg, 'error')
@@ -249,13 +246,12 @@ async function processPdfFrontend(file: File): Promise<number> {
         const pageName = `${file.name}_页面${pageNum}`
         imageStore.addImage(pageName, dataURL)
         processedCount++
-      } catch (pageError) {
-        console.warn(`PDF ${file.name} 第 ${pageNum} 页渲染失败:`, pageError)
+      } catch {
+        // A single page can fail without invalidating the rest of the document import.
       }
     }
     return processedCount
-  } catch (error) {
-    console.error('前端 PDF 解析失败:', error)
+  } catch {
     showToast('前端 PDF 解析失败，尝试使用后端解析...', 'warning')
     return await processPdfBackend(file)
   }
@@ -279,7 +275,6 @@ async function processPdfBackend(file: File): Promise<number> {
       uploadProgress.value = totalPages > 0 ? Math.round((startIndex / totalPages) * 100) : 0
       const batchResponse = await parsePdfBatch(sessionId, startIndex, BATCH_SIZE)
       if (!batchResponse.success) {
-        console.warn(`批次 ${startIndex} 获取失败:`, batchResponse.error)
         continue
       }
       // 处理返回的图片（业务契约：images 是对象数组 {page_index, data_url}）
@@ -293,15 +288,12 @@ async function processPdfBackend(file: File): Promise<number> {
       }
     }
     return loadedCount
-  } catch (error) {
-    console.error('后端 PDF 解析失败:', error)
-    throw error
   } finally {
     if (sessionId) {
       try {
         await parsePdfCleanup(sessionId)
-      } catch (cleanupError) {
-        console.warn('PDF 会话清理失败:', cleanupError)
+      } catch {
+        // Temporary backend sessions are cleaned up on a best-effort basis.
       }
     }
   }
@@ -340,15 +332,12 @@ async function processMobiFile(file: File): Promise<number> {
       hasMore = batchResponse.has_more ?? false
     }
     return processedCount
-  } catch (error) {
-    console.error('MOBI/AZW 解析失败:', error)
-    throw error
   } finally {
     if (sessionId) {
       try {
         await parseMobiCleanup(sessionId)
-      } catch (cleanupError) {
-        console.warn('MOBI/AZW 会话清理失败:', cleanupError)
+      } catch {
+        // Temporary backend sessions are cleaned up on a best-effort basis.
       }
     }
   }

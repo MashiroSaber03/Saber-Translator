@@ -1,12 +1,12 @@
 <template>
   <div class="export-panel">
     <h3>📦 导出成品</h3>
-    
+
     <div class="export-options">
       <div class="export-summary">
         <p>共生成 <strong>{{ generatedCount }}</strong> 页图片，可导出为以下格式：</p>
       </div>
-      
+
       <div class="export-formats">
         <UiButton
           variant="toolbar"
@@ -33,18 +33,18 @@
           <span class="format-desc">方便阅读和分享</span>
         </UiButton>
       </div>
-      
+
       <UiButton
-        variant="primary" 
+        variant="primary"
         class="export-download-action"
         block
-        
         :disabled="isExporting"
-        @click="handleExport" size="lg"
+        size="lg"
+        @click="handleExport"
       >
         {{ isExporting ? '导出中...' : '📥 下载' }}
       </UiButton>
-      
+
       <div class="export-actions">
         <UiButton variant="secondary" @click="clearAndRestart">🗑️ 清空并重新开始</UiButton>
       </div>
@@ -77,13 +77,13 @@ async function handleExport() {
     state.showMessage('没有可导出的页面', 'error')
     return
   }
-  
+
   isExporting.value = true
-  
+
   try {
     let blob: Blob
     let filename: string
-    
+
     if (selectedFormat.value === 'images') {
       blob = await continuationApi.exportAsImages(props.bookId)
       filename = `continuation_${Date.now()}.zip`
@@ -91,17 +91,19 @@ async function handleExport() {
       blob = await continuationApi.exportAsPdf(props.bookId)
       filename = `continuation_${Date.now()}.pdf`
     }
-    
-    // 创建下载链接
+
     const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    window.URL.revokeObjectURL(url)
-    
+    try {
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    } finally {
+      window.URL.revokeObjectURL(url)
+    }
+
     state.showMessage('导出成功', 'success')
   } catch (error) {
     state.showMessage('导出失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
@@ -114,24 +116,21 @@ async function clearAndRestart() {
   if (!confirm('确定要清空所有续写数据并重新开始吗？此操作不可恢复。')) {
     return
   }
-  
+
   emit('clear-and-restart')
 }
 </script>
 
 <style scoped>
 .export-panel {
-  --export-panel-surface-base: rgba(99, 102, 241, .05);
-}
-
-.export-panel {
+  --export-panel-selected-format-background: rgba(99, 102, 241, .05);
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--color-surface-brand);
   --ui-button-primary-hover-background: var(--color-surface-brand-strong);
   --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-color: var(--color-text-default);
   --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-button-secondary-hover-background: var(--color-surface-hover);
   --ui-button-disabled-opacity: 0.5;
@@ -192,7 +191,7 @@ async function clearAndRestart() {
 
 .format-card.selected {
   border-color: var(--color-border-brand);
-  background: var(--export-panel-surface-base);
+  background: var(--export-panel-selected-format-background);
 }
 
 .format-icon {

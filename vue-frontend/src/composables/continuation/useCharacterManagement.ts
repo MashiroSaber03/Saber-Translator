@@ -1,8 +1,3 @@
-/**
- * 角色管理Composable
- * 处理角色CRUD、形态管理、图片上传等
- */
-
 import type { Ref } from 'vue'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
@@ -84,15 +79,13 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
     async function toggleCharacterEnabled(name: string, enabled: boolean) {
         if (!bookId.value) return
 
-        // 乐观更新：先立即更新本地状态
         const char = state.characters.value.find(c => c.name === name)
         if (!char) return
-        
+
         const previousEnabled = char.enabled
         char.enabled = enabled
 
         try {
-            // 异步保存到后端
             const result = await continuationApi.updateCharacterInfo(bookId.value, name, {
                 name: char.name,
                 aliases: char.aliases || [],
@@ -100,12 +93,10 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
             })
 
             if (!result.success) {
-                // 如果失败，回滚状态
                 char.enabled = previousEnabled
                 state.showMessage('操作失败: ' + result.error, 'error')
             }
         } catch (error) {
-            // 如果出错，回滚状态
             char.enabled = previousEnabled
             state.showMessage('操作失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
         }
@@ -219,27 +210,23 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
     async function toggleFormEnabled(charName: string, formId: string, enabled: boolean) {
         if (!bookId.value) return
 
-        // 乐观更新：先立即更新本地状态
         const char = state.characters.value.find(c => c.name === charName)
         if (!char) return
-        
+
         const form = char.forms?.find(f => f.form_id === formId)
         if (!form) return
-        
+
         const previousEnabled = form.enabled
         form.enabled = enabled
 
         try {
-            // 异步保存到后端
             const result = await continuationApi.toggleFormEnabled(bookId.value, charName, formId, enabled)
 
             if (!result.success) {
-                // 如果失败，回滚状态
                 form.enabled = previousEnabled
                 state.showMessage('操作失败: ' + result.error, 'error')
             }
         } catch (error) {
-            // 如果出错，回滚状态
             form.enabled = previousEnabled
             state.showMessage('操作失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
         }

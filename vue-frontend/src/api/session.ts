@@ -77,18 +77,17 @@ export async function loadSessionByPath(path: string): Promise<SessionLoadRespon
  * @param name 会话名称
  */
 export async function deleteSession(name: string): Promise<ApiResponse> {
-  // 后端期望 session_name 字段
   return apiClient.post<ApiResponse>('/api/sessions/delete', { session_name: name })
 }
 
 /**
  * 重命名会话
- * @param oldName 原名称
+ * @param currentName 当前名称
  * @param newName 新名称
  */
-export async function renameSession(oldName: string, newName: string): Promise<ApiResponse> {
+export async function renameSession(currentName: string, newName: string): Promise<ApiResponse> {
   return apiClient.post<ApiResponse>('/api/sessions/rename', {
-    old_name: oldName,
+    old_name: currentName,
     new_name: newName,
   })
 }

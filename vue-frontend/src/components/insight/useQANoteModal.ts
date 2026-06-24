@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { showToast } from '@/utils/toast'
 
 interface QANoteSourceMessage {
   id: string
@@ -62,9 +63,8 @@ export function useQANoteModal(insightStore: ReturnType<typeof useInsightStore>)
         message.saved = true
       }
       closeNoteModal()
-    } catch (error) {
-      console.error('保存笔记失败:', error)
-      alert('保存笔记失败')
+    } catch {
+      showToast('保存笔记失败', 'error')
     }
   }
 

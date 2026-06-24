@@ -1,13 +1,13 @@
 <template>
   <ContinuationDialogShell title="➕ 新增形态" @close="close">
     <ContinuationDialogForm>
-      <ContinuationDialogField label="形态名称" required>
+      <ContinuationDialogField label="形态名称" required :error="formNameError">
         <UiInput
           v-model="formName"
           type="text"
           aria-label="形态名称"
           class="continuation-dialog__form-input"
-          style="font: inherit"
+          :error="Boolean(formNameError)"
           placeholder="例如: 战斗服、黑化形态、常服"
         />
       </ContinuationDialogField>
@@ -18,7 +18,6 @@
           rows="2"
           aria-label="形态描述（可选）"
           class="continuation-dialog__form-input"
-          style="font: inherit"
           placeholder="简单描述该形态的特征..."
         />
       </ContinuationDialogField>
@@ -56,6 +55,7 @@ const emit = defineEmits<{
 
 const formName = ref('')
 const description = ref('')
+const formNameError = ref('')
 const isAdding = ref(false)
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
@@ -71,9 +71,10 @@ function add() {
   const name = formName.value.trim()
 
   if (!name) {
-    alert('请填写形态名称')
+    formNameError.value = '请输入形态名称'
     return
   }
+  formNameError.value = ''
 
   isAdding.value = true
   emit('add', name, description.value.trim())

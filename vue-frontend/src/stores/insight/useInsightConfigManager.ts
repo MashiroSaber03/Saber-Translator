@@ -210,8 +210,8 @@ export function useInsightConfigManager(
       try {
         const parsed = parseProviderConfigsStorage(JSON.parse(stored) as unknown)
         if (parsed) providerConfigs.value = parsed
-      } catch (e) {
-        console.error('[Insight] 加载服务商配置缓存失败:', e)
+      } catch {
+        return
       }
     }
   }
@@ -254,12 +254,12 @@ export function useInsightConfigManager(
        * 切换服务商时保存当前配置，并恢复目标服务商配置。
        */
       switch(
-        oldProvider: string,
+        previousProvider: string,
         newProvider: string,
         currentConfig: Record<string, unknown>
       ): void {
-        if (oldProvider === newProvider) return
-        this.save(oldProvider, currentConfig)
+        if (previousProvider === newProvider) return
+        this.save(previousProvider, currentConfig)
         this.restore(newProvider, currentConfig)
       }
     }

@@ -49,8 +49,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
 
     try {
       await translateInit.initializeBookChapterContext()
-    } catch (error) {
-      console.error('加载章节会话失败:', error)
+    } catch {
       showToast('加载章节会话失败', 'error')
     }
   }
@@ -210,7 +209,6 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       const success = await sessionStore.saveChapterSession(currentBookId.value, currentChapterId.value)
       showToast(success ? '章节进度已保存' : '保存失败', success ? 'success' : 'error')
     } catch (error) {
-      console.error('保存会话失败:', error)
       showToast('保存失败: ' + (error instanceof Error ? error.message : '未知错误'), 'error')
     }
   }

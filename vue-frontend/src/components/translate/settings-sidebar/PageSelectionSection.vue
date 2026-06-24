@@ -30,6 +30,7 @@ defineEmits<{
       <div class="range-header-row">
         <label class="page-selection-toggle-compact">
           <UiInput
+            class="page-selection-toggle-input"
             type="checkbox"
             :model-value="enabled"
             :disabled="totalImages === 0 || !supportsPageSelection"
@@ -106,7 +107,7 @@ defineEmits<{
   cursor: pointer;
 }
 
-.page-selection-toggle-compact:has(input:checked) {
+.page-selection-toggle-compact:has(.page-selection-toggle-input:checked) {
   border-color: var(--settings-sidebar-apply-actions-border-hover);
   background: var(--settings-sidebar-apply-actions-surface-contrast);
   color: var(--settings-sidebar-apply-actions-text-supporting);

@@ -1,7 +1,3 @@
-/**
- * Insight Settings 子组件索引
- */
-
 export { default as VlmSettingsTab } from './VlmSettingsTab.vue'
 export { default as LlmSettingsTab } from './LlmSettingsTab.vue'
 export { default as BatchSettingsTab } from './BatchSettingsTab.vue'

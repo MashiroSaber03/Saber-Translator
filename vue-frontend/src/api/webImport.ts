@@ -135,8 +135,8 @@ export async function extractImages(
             } else if (eventType === 'error') {
               onError(data.error || '未知错误')
             }
-          } catch (e) {
-            console.error('解析 SSE 数据失败:', e)
+          } catch {
+            onError('解析网页导入事件失败')
           }
           eventType = ''
           eventData = ''

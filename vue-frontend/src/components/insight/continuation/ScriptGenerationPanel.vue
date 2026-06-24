@@ -28,7 +28,6 @@
       <p>点击下方按钮生成续写脚本</p>
     </div>
 
-    <!-- 参考图配置区域 -->
     <div class="reference-config">
       <div class="config-row">
         <label for="script-reference-count">VLM参考图数:</label>
@@ -59,7 +58,6 @@
       {{ isGenerating ? '生成中...' : '🎯 生成脚本' }}
     </UiButton>
 
-    <!-- 参考图选择器 -->
     <ReferenceImageSelector
       v-model:visible="selectorVisible"
       mode="script"
@@ -114,7 +112,6 @@ watch(() => props.script, (newScript) => {
   }
 })
 
-// 加载可用图片列表
 async function loadAvailableImages() {
   if (!props.bookId) return
 
@@ -123,38 +120,30 @@ async function loadAvailableImages() {
     if (response.success && response.original_images) {
       availableOriginalImages.value = response.original_images
     }
-  } catch (error) {
-    console.error('加载可用图片失败:', error)
+  } catch {
+    availableOriginalImages.value = []
   }
 }
 
-// 打开参考图选择器
 function openReferenceSelector() {
-  // 确保已加载图片列表
   if (availableOriginalImages.value.length === 0) {
     loadAvailableImages()
   }
   selectorVisible.value = true
 }
 
-// 选择器确认
 function handleSelectorConfirm(tokens: string[]) {
   selectedReferenceTokens.value = tokens
 }
 
-// 获取显示的参考图数量
 function getDisplayRefCount(): number {
-  // 如果用户已手动选择，显示选择的数量
   if (selectedReferenceTokens.value.length > 0) {
     return selectedReferenceTokens.value.length
   }
-  // 否则显示配置的默认数量
   return refCount.value
 }
 
-// 生成脚本
 function handleGenerate() {
-  // 如果用户选择了参考图，传递选择的路径；否则传null使用自动逻辑
   const refs = selectedReferenceTokens.value.length > 0 ? selectedReferenceTokens.value : null
   emit('generate', {
     referenceTokens: refs,
@@ -170,7 +159,6 @@ function handleSave() {
   emit('save-script')
 }
 
-// 监听 bookId 变化
 watch(() => props.bookId, (newBookId) => {
   if (newBookId) {
     loadAvailableImages()
@@ -187,25 +175,42 @@ watch(() => props.bookId, (newBookId) => {
 
 <style scoped>
 .script-panel {
-  padding: 24px;
-
+  --ui-input-padding: 6px 10px;
+  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-input-radius: 6px;
+  --ui-input-font-size: 14px;
+  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-input-color: var(--color-text-default);
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
+  --ui-textarea-padding: 16px;
+  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
+  --ui-textarea-radius: 8px;
+  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
+  --ui-textarea-color: var(--color-text-default);
+  --ui-textarea-font-size: 14px;
+  --ui-textarea-line-height: 1.6;
+  --ui-textarea-focus-border: var(--color-border-brand);
+  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
   --ui-button-padding: 10px 20px;
   --ui-button-radius: 8px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-color: white;
+  --ui-button-primary-color: var(--color-text-inverse);
   --ui-button-primary-shadow: none;
   --ui-button-primary-hover-background: var(--color-surface-brand-strong);
   --ui-button-primary-hover-transform: none;
   --ui-button-primary-hover-shadow: none;
   --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default, var(--color-text-default));
+  --ui-button-secondary-color: var(--color-text-default);
   --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-button-secondary-hover-background: var(--color-surface-hover);
   --ui-button-secondary-hover-border-color: var(--color-border-muted, var(--color-border-default));
   --ui-button-sm-padding: 6px 12px;
   --ui-button-sm-font-size: 13px;
   --ui-button-disabled-opacity: 0.5;
+
+  padding: 24px;
 }
 
 .script-panel h3 {
@@ -237,18 +242,6 @@ watch(() => props.bookId, (newBookId) => {
 
 .script-textarea {
   width: 100%;
-  padding: 16px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.script-textarea:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .script-actions {
@@ -265,7 +258,6 @@ watch(() => props.bookId, (newBookId) => {
   margin: 0;
 }
 
-/* 参考图配置区域 */
 .reference-config {
   margin-bottom: 16px;
   padding: 12px 16px;
@@ -281,22 +273,13 @@ watch(() => props.bookId, (newBookId) => {
 
 .config-row label {
   font-size: 14px;
-  color: var(--color-text-default, var(--color-text-default));
+  color: var(--color-text-default);
   white-space: nowrap;
 }
 
 .ref-count-input {
   width: 60px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 6px;
-  font-size: 14px;
   text-align: center;
-}
-
-.ref-count-input:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
 }
 
 .ref-btn {

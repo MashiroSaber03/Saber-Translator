@@ -58,7 +58,7 @@ function handleKeydown(event: KeyboardEvent): void {
   border: none;
   border-radius: 12px;
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s;

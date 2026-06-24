@@ -42,6 +42,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_selectAll"
+          class="apply-option-checkbox"
           type="checkbox"
           :checked="Object.values(applyOptions).every(Boolean)"
           @change="$emit('toggleSelectAll')"
@@ -52,6 +53,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_fontSize"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.fontSize"
           @update:model-value="$emit('updateOption', 'fontSize', Boolean($event))"
@@ -61,6 +63,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_fontFamily"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.fontFamily"
           @update:model-value="$emit('updateOption', 'fontFamily', Boolean($event))"
@@ -70,6 +73,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_layoutDirection"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.layoutDirection"
           @update:model-value="$emit('updateOption', 'layoutDirection', Boolean($event))"
@@ -79,6 +83,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_lineSpacing"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.lineSpacing"
           @update:model-value="$emit('updateOption', 'lineSpacing', Boolean($event))"
@@ -88,6 +93,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_textAlign"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.textAlign"
           @update:model-value="$emit('updateOption', 'textAlign', Boolean($event))"
@@ -97,6 +103,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_textColor"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.textColor"
           @update:model-value="$emit('updateOption', 'textColor', Boolean($event))"
@@ -106,6 +113,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_fillColor"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.fillColor"
           @update:model-value="$emit('updateOption', 'fillColor', Boolean($event))"
@@ -115,6 +123,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_strokeEnabled"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.strokeEnabled"
           @update:model-value="$emit('updateOption', 'strokeEnabled', Boolean($event))"
@@ -124,6 +133,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_strokeColor"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.strokeColor"
           @update:model-value="$emit('updateOption', 'strokeColor', Boolean($event))"
@@ -133,6 +143,7 @@ defineEmits<{
       <div class="apply-option">
         <UiInput
           id="apply_strokeWidth"
+          class="apply-option-checkbox"
           type="checkbox"
           :model-value="applyOptions.strokeWidth"
           @update:model-value="$emit('updateOption', 'strokeWidth', Boolean($event))"
@@ -211,7 +222,7 @@ defineEmits<{
   cursor: pointer;
 }
 
-.apply-option input[type='checkbox'] {
+.apply-option-checkbox {
   width: 14px;
   height: 14px;
   margin: 0;

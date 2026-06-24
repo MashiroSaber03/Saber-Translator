@@ -398,7 +398,6 @@ export function useSequentialPipeline() {
       const warningCount = tasks.reduce((total, task) => total + task.warnings.length, 0)
       if (warningCount > 0) {
         toast.warning(`有 ${warningCount} 处术语未遵守`)
-        console.warn('[TranslationWarnings]', tasks.flatMap((task) => task.warnings))
       }
 
       const autoGlossaryStats = tasks.reduce((total, task) => ({

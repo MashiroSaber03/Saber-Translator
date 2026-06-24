@@ -84,7 +84,7 @@ describe('useEditRender', () => {
 
     imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
     imageStore.updateCurrentImage({
-      translatedDataURL: 'data:image/png;base64,old-render',
+      translatedDataURL: 'data:image/png;base64,existing-render',
       cleanImageData: 'clean-image',
     })
 

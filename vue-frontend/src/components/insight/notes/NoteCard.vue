@@ -188,7 +188,7 @@ function getNoteTypeIcon(type: NoteType): string {
   padding: 2px 6px;
   border-radius: 10px;
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 11px;
   opacity: 0.8;
 }
@@ -206,7 +206,7 @@ function getNoteTypeIcon(type: NoteType): string {
   border: 0;
   border-radius: 10px;
   background: var(--insight-action-primary);
-  color: white;
+  color: var(--color-text-inverse);
   font: inherit;
   font-size: 11px;
   cursor: pointer;

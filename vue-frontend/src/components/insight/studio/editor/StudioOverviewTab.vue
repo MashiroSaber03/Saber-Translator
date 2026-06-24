@@ -102,7 +102,7 @@ defineEmits<{
           <label v-for="item in freezeItems" :key="item.key" class="freeze-item">
             <span class="freeze-item-label">{{ item.label }}</span>
             <span class="freeze-item-control">
-              <UiInput :checked="isFrozen(item.key)" type="checkbox" @change="$emit('toggleFrozen', item.key, $event)" />
+              <UiInput class="freeze-checkbox" :checked="isFrozen(item.key)" type="checkbox" @change="$emit('toggleFrozen', item.key, $event)" />
             </span>
           </label>
         </div>
@@ -305,7 +305,7 @@ defineEmits<{
   justify-content: center;
 }
 
-.freeze-item-control input {
+.freeze-checkbox {
   width: 18px;
   height: 18px;
   margin: 0;

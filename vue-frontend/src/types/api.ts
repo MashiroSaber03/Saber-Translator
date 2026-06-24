@@ -166,11 +166,9 @@ export interface ChapterData {
 
 /**
  * 标签数据
- * 后端使用 name 作为唯一标识符，不返回独立的 id 字段。
+ * 后端使用 name 作为唯一标识符。
  */
 export interface TagData {
-  /** 标签ID(可选,后端不返回,应使用 name 作为唯一标识) */
-  id?: string
   /** 标签名称(作为主键) */
   name: string
   /** 标签颜色 */

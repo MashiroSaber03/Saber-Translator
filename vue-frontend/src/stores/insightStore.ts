@@ -21,9 +21,13 @@ import type {
   AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
   StoreAnalysisProgress, PageData, ChapterInfo, OverviewData, TimelineEvent,
   QAMessage, NoteData, StoreVlmConfig, StoreLlmConfig, StoreEmbeddingConfig,
-  StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
+  StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig,
+  StoreOpenAICompatibleOptions
 } from '@/types/insight'
-import { deserializeOpenAICompatibleOptionsFromApi } from '@/utils/openaiOptions'
+import {
+  deserializeOpenAICompatibleOptionsFromApi,
+  serializeOpenAICompatibleOptionsForApi
+} from '@/utils/openaiOptions'
 import { getProviderBaseUrl, getProviderDefaultModel, normalizeProviderId } from '@/config/aiProviders'
 
 // 公开 Store 相关类型
@@ -76,6 +80,10 @@ function hasBooleanField(value: Record<string, unknown>, key: string): boolean {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every(entry => typeof entry === 'string')
+}
+
+function serializeInsightOpenAiOptions(options: StoreOpenAICompatibleOptions): ReturnType<typeof serializeOpenAICompatibleOptionsForApi> {
+  return serializeOpenAICompatibleOptionsForApi(options)
 }
 
 function isOpenAiOptions(value: unknown): boolean {
@@ -432,21 +440,25 @@ export const useInsightStore = defineStore('insight', () => {
     saveConfigToStorage()
   }
   function saveConfigToStorage(): void {
-    localStorage.setItem('manga_insight_config', JSON.stringify({
-      insightConfigSchemaVersion: INSIGHT_CONFIG_SCHEMA_VERSION,
-      config: config.value,
-    }))
+    try {
+      localStorage.setItem('manga_insight_config', JSON.stringify({
+        insightConfigSchemaVersion: INSIGHT_CONFIG_SCHEMA_VERSION,
+        config: config.value,
+      }))
+    } catch {
+      return
+    }
   }
   function loadConfigFromStorage(): void {
-    configManager.loadFromStorage()
-    const stored = localStorage.getItem('manga_insight_config')
-    if (stored) {
-      try {
+    try {
+      configManager.loadFromStorage()
+      const stored = localStorage.getItem('manga_insight_config')
+      if (stored) {
         const parsed = parseInsightConfigStorage(JSON.parse(stored) as unknown)
         if (parsed) config.value = parsed
-      } catch (e) {
-        console.error('加载配置失败:', e)
       }
+    } catch {
+      return
     }
   }
 
@@ -487,8 +499,19 @@ export const useInsightStore = defineStore('insight', () => {
       analysis: { batch: { pages_per_batch: config.value.batch.pagesPerBatch, context_batch_count: config.value.batch.contextBatchCount, architecture_preset: config.value.batch.architecturePreset, custom_layers: config.value.batch.customLayers.map(l => ({ name: l.name, units_per_group: l.units, align_to_chapter: l.align })) } },
       prompts: config.value.prompts,
       provider_settings: {
-        vlmProvider: mapProvider(providerConfigs.value.vlm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature ?? 0.3, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } }, image_max_size: c.imageMaxSize ?? 1280 })),
-        llmProvider: mapProvider(providerConfigs.value.llm, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', openai_options: { request: { force_json_output: (c.openaiOptions as any)?.request?.forceJsonOutput ?? false, temperature: (c.openaiOptions as any)?.request?.temperature, ...((c.openaiOptions as any)?.request?.extraBody !== undefined ? { extra_body: (c.openaiOptions as any)?.request?.extraBody } : {}) }, execution: { use_stream: (c.openaiOptions as any)?.execution?.useStream ?? true, rpm_limit: (c.openaiOptions as any)?.execution?.rpmLimit ?? 0, transport_retries: (c.openaiOptions as any)?.execution?.transportRetries ?? 10, business_retries: (c.openaiOptions as any)?.execution?.businessRetries ?? 10 } } })),
+        vlmProvider: mapProvider(providerConfigs.value.vlm, c => ({
+          api_key: c.apiKey || '',
+          model: c.model || '',
+          base_url: c.baseUrl || '',
+          openai_options: serializeInsightOpenAiOptions(c.openaiOptions),
+          image_max_size: c.imageMaxSize ?? 1280
+        })),
+        llmProvider: mapProvider(providerConfigs.value.llm, c => ({
+          api_key: c.apiKey || '',
+          model: c.model || '',
+          base_url: c.baseUrl || '',
+          openai_options: serializeInsightOpenAiOptions(c.openaiOptions)
+        })),
         embeddingProvider: mapProvider(providerConfigs.value.embedding, c => ({
           api_key: c.apiKey || '',
           model: c.model || '',
@@ -512,8 +535,8 @@ export const useInsightStore = defineStore('insight', () => {
     const batch = (apiConfig.analysis as Record<string, unknown> | undefined)?.batch as Record<string, unknown> | undefined
     const imageGen = apiConfig.image_gen as Record<string, unknown> | undefined
 
-    if (vlm) config.value.vlm = { provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((vlm.openai_options as any), { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 }
-    if (chatLlm) config.value.llm = { useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((chatLlm.openai_options as any), { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
+    if (vlm) config.value.vlm = { provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(vlm.openai_options, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 }
+    if (chatLlm) config.value.llm = { useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(chatLlm.openai_options, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
     if (embedding) config.value.embedding = {
       provider: (embedding.provider as string) || 'openai',
       apiKey: (embedding.api_key as string) || '',
@@ -547,8 +570,8 @@ export const useInsightStore = defineStore('insight', () => {
 
     const ps = apiConfig.provider_settings as Record<string, Record<string, Record<string, unknown>>> | undefined
     if (ps) {
-      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((c.openai_options as any), { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
-      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi((c.openai_options as any), { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
+      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(c.openai_options, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
+      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(c.openai_options, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
       if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = {
         apiKey: (c.api_key as string) || '',
         model: (c.model as string) || '',

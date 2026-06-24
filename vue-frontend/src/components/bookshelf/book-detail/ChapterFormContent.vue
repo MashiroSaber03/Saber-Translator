@@ -61,7 +61,7 @@ defineEmits<{
 
 .chapter-form-input:focus {
   border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 3px var(--book-detail-modal-shadow-strong);
+  box-shadow: 0 0 0 3px var(--book-detail-focus-shadow);
 }
 
 .chapter-form-input::placeholder {

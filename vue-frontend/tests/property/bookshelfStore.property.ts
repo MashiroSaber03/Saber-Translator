@@ -25,11 +25,6 @@ import type { BookData, TagData } from '@/types/api'
 const bookIdArb = fc.uuid()
 
 /**
- * 生成有效的标签ID
- */
-const tagIdArb = fc.uuid()
-
-/**
  * 生成有效的书籍标题
  */
 const bookTitleArb = fc.string({ minLength: 1, maxLength: 100 })
@@ -49,7 +44,6 @@ const dateStringArb = fc.date({ min: new Date('2020-01-01'), max: new Date('2025
  * 生成有效的标签数据
  */
 const tagDataArb: fc.Arbitrary<TagData> = fc.record({
-  id: tagIdArb,
   name: fc.string({ minLength: 1, maxLength: 50 }),
   color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(h => `#${h}`), { nil: undefined })
 })
@@ -57,13 +51,13 @@ const tagDataArb: fc.Arbitrary<TagData> = fc.record({
 /**
  * 生成有效的书籍数据
  */
-const bookDataArb = (tagIds: string[]): fc.Arbitrary<BookData> => fc.record({
+const bookDataArb = (tagNames: string[]): fc.Arbitrary<BookData> => fc.record({
   id: bookIdArb,
   title: bookTitleArb,
   description: bookDescriptionArb,
   cover: fc.option(fc.string(), { nil: undefined }),
   tags: fc.option(
-    fc.subarray(tagIds, { minLength: 0, maxLength: Math.min(tagIds.length, 5) }),
+    fc.subarray(tagNames, { minLength: 0, maxLength: Math.min(tagNames.length, 5) }),
     { nil: undefined }
   ),
   chapters: fc.constant(undefined),
@@ -76,10 +70,10 @@ const bookDataArb = (tagIds: string[]): fc.Arbitrary<BookData> => fc.record({
  */
 const bookshelfDataArb = fc.array(tagDataArb, { minLength: 0, maxLength: 10 })
   .chain(tags => {
-    const tagIds = tags.map(t => t.id)
+    const tagNames = tags.map(t => t.name)
     return fc.tuple(
       fc.constant(tags),
-      fc.array(bookDataArb(tagIds), { minLength: 0, maxLength: 20 })
+      fc.array(bookDataArb(tagNames), { minLength: 0, maxLength: 20 })
     )
   })
 
@@ -181,9 +175,9 @@ describe('书架状态管理属性测试', () => {
         store.setBooks(books)
         
         // 随机选择一些标签进行筛选
-        const tagIds = tags.map(t => t.id)
-        const selectedTagCount = Math.min(tagIds.length, 3)
-        const selectedTags = tagIds.slice(0, selectedTagCount)
+        const tagNames = tags.map(t => t.name)
+        const selectedTagCount = Math.min(tagNames.length, 3)
+        const selectedTags = tagNames.slice(0, selectedTagCount)
         
         // 设置标签筛选
         store.setTagFilter(selectedTags)
@@ -196,14 +190,14 @@ describe('书架状态管理属性测试', () => {
         } else {
           // 验证所有过滤结果都包含所有选中的标签
           for (const book of filtered) {
-            for (const tagId of selectedTags) {
-              expect(book.tags?.includes(tagId)).toBe(true)
+            for (const tagName of selectedTags) {
+              expect(book.tags?.includes(tagName)).toBe(true)
             }
           }
           
           // 验证没有遗漏匹配项
           for (const book of books) {
-            const hasAllTags = selectedTags.every(tagId => book.tags?.includes(tagId))
+            const hasAllTags = selectedTags.every(tagName => book.tags?.includes(tagName))
             const isIncluded = filtered.some(b => b.id === book.id)
             expect(isIncluded).toBe(hasAllTags)
           }
@@ -338,14 +332,14 @@ describe('书架状态管理属性测试', () => {
           
           for (const index of toggleIndices) {
             if (index < tags.length) {
-              const tagId = tags[index]?.id
-              if (tagId) {
-                store.toggleTagFilter(tagId)
+              const tagName = tags[index]?.name
+              if (tagName) {
+                store.toggleTagFilter(tagName)
                 
-                if (expectedSelected.has(tagId)) {
-                  expectedSelected.delete(tagId)
+                if (expectedSelected.has(tagName)) {
+                  expectedSelected.delete(tagName)
                 } else {
-                  expectedSelected.add(tagId)
+                  expectedSelected.add(tagName)
                 }
               }
             }
@@ -353,11 +347,11 @@ describe('书架状态管理属性测试', () => {
           
           // 验证选中的标签数量
           const expectedArray = Array.from(expectedSelected)
-          expect(store.selectedTagIds.length).toBe(expectedArray.length)
+          expect(store.selectedTagNames.length).toBe(expectedArray.length)
           
           // 验证每个期望的标签都在选中列表中
-          for (const tagId of expectedArray) {
-            expect(store.selectedTagIds.includes(tagId)).toBe(true)
+          for (const tagName of expectedArray) {
+            expect(store.selectedTagNames.includes(tagName)).toBe(true)
           }
           
           return true

@@ -3,12 +3,6 @@ import UiField from '@/components/ui/UiField.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-/**
- * 并行翻译设置组件
- * 
- * 放在设置面板的"更多"tab中
- */
-
 import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -41,21 +35,18 @@ const lockSize = computed({
 
 <template>
   <div class="parallel-settings">
-    <!-- 并行翻译设置 -->
     <UiPanel variant="settings">
       <template #title>🚀 并行翻译</template>
       
-      <!-- 启用开关 -->
       <UiField class="ui-settings-field">
         <label>启用并行模式:</label>
         <label class="toggle-switch">
-          <UiInput type="checkbox" v-model="parallelEnabled" />
+          <UiInput type="checkbox" class="parallel-settings__toggle-input" v-model="parallelEnabled" />
           <span class="toggle-slider"></span>
         </label>
         <div class="ui-form-hint">使用流水线并行处理，可能提升批量翻译速度</div>
       </UiField>
 
-      <!-- 深度学习锁大小 -->
       <UiField class="ui-settings-field" :class="{ 'item-disabled': !parallelEnabled }">
         <label>深度学习并发数:</label>
         <div class="number-control">
@@ -89,7 +80,6 @@ const lockSize = computed({
         <div class="ui-form-hint">控制检测/OCR/颜色/修复的最大并发数（建议1-2）</div>
       </UiField>
 
-      <!-- 说明 -->
       <div class="settings-note" v-if="parallelEnabled">
         <div class="note-title">⚠️ 注意事项：</div>
         <ul>
@@ -109,7 +99,6 @@ const lockSize = computed({
   --parallel-settings-text-primary: #ffc107;
 }
 
-/* 开关样式 */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -118,7 +107,7 @@ const lockSize = computed({
   margin-left: 8px;
 }
 
-.toggle-switch input {
+.parallel-settings__toggle-input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -140,20 +129,19 @@ const lockSize = computed({
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--color-text-inverse);
   transition: 0.3s;
   border-radius: 50%;
 }
 
-input:checked + .toggle-slider {
+.parallel-settings__toggle-input:checked + .toggle-slider {
   background-color: var(--color-action-primary);
 }
 
-input:checked + .toggle-slider::before {
+.parallel-settings__toggle-input:checked + .toggle-slider::before {
   transform: translateX(20px);
 }
 
-/* 数字控制 */
 .number-control {
   display: flex;
   align-items: center;
@@ -184,13 +172,11 @@ input:checked + .toggle-slider::before {
   margin: 0;
 }
 
-/* 禁用状态 */
 .item-disabled {
   opacity: 0.5;
   pointer-events: none;
 }
 
-/* 说明提示 */
 .settings-note {
   margin-top: 12px;
   padding: 10px 12px;

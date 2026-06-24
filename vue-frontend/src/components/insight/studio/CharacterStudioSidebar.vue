@@ -103,6 +103,14 @@ function handleFileSelect(event: Event) {
   --character-studio-sidebar-surface-subtle: #4d86ee;
   --character-studio-sidebar-text-primary: #6f84a2;
   --character-studio-sidebar-text-secondary: #102741;
+  --ui-input-padding: 12px 14px;
+  --ui-input-border: 1px solid var(--studio-border-strong);
+  --ui-input-radius: 14px;
+  --ui-input-background: var(--character-studio-sidebar-surface-raised);
+  --ui-input-color: var(--studio-text-strong);
+  --ui-input-font-size: 13px;
+  --ui-input-focus-border: var(--color-border-brand);
+  --ui-input-focus-shadow: var(--color-focus-brand-soft);
 
   display: flex;
   flex-direction: column;
@@ -151,12 +159,6 @@ function handleFileSelect(event: Event) {
 
 .search-input {
   width: 100%;
-  border: 1px solid var(--studio-border-strong);
-  background: var(--character-studio-sidebar-surface-raised);
-  border-radius: 14px;
-  padding: 12px 14px;
-  color: var(--studio-text-strong);
-  font-size: 13px;
 }
 
 .action-row {
